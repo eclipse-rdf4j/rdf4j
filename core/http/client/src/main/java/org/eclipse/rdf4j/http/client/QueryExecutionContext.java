@@ -22,6 +22,7 @@ import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -209,6 +210,20 @@ public final class QueryExecutionContext {
 						workerScopes == null ? List.of() : List.copyOf(workerScopes.reversed()));
 	}
 
+	/** Returns the owner that interrupted the currently installed worker scope, if any. */
+	@InternalUseOnly
+	public static Object consumeInterruptionOwner() {
+		InstalledReplayContext installed = INSTALLED_REPLAY_CONTEXT.get();
+		return installed == null ? null : installed.context().consumeInterruptionOwner();
+	}
+
+	/** Tests a captured cancellation owner against the currently installed worker scope. */
+	@InternalUseOnly
+	public static boolean currentOwnsCancellation(Object owner) {
+		InstalledReplayContext installed = INSTALLED_REPLAY_CONTEXT.get();
+		return installed != null && installed.context().ownsCancellation(owner);
+	}
+
 	/** Checks whether the current evaluation should cooperatively abandon its unobserved read attempt. */
 	public static void checkpointReplaySafepoint() {
 		checkpointReplaySafepoint(REPLAY.get());
@@ -319,6 +334,18 @@ public final class QueryExecutionContext {
 		 */
 		default void checkActive() {
 		}
+
+		/** Tests an opaque owner captured at the point a cancellation was observed. */
+		@InternalUseOnly
+		default boolean ownsCancellation(Object owner) {
+			return false;
+		}
+
+		/** Claims the owner that issued this active scope's current-thread interrupt, if any. */
+		@InternalUseOnly
+		default Object consumeInterruptionOwner() {
+			return null;
+		}
 	}
 
 	private record InstalledReplayContext(ReplayContext context, ReplaySafepoint safepoint, boolean deferral,
@@ -358,6 +385,31 @@ public final class QueryExecutionContext {
 			for (int i = 0; i < workerScopes.size(); i++) {
 				workerScopes.get(i).checkActive();
 			}
+		}
+
+		@InternalUseOnly
+		public boolean ownsCancellation(Object owner) {
+			if (owner == null) {
+				return false;
+			}
+			for (WorkerScope scope : workerScopes) {
+				if (scope.ownsCancellation(owner)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		@InternalUseOnly
+		public Object consumeInterruptionOwner() {
+			Object owner = null;
+			for (WorkerScope scope : workerScopes) {
+				Object observed = scope.consumeInterruptionOwner();
+				if (owner == null) {
+					owner = observed;
+				}
+			}
+			return owner;
 		}
 
 		/** Runs an integer-returning operation with this context installed, then restores the worker's context. */

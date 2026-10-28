@@ -119,7 +119,7 @@ final class NativeStructuralCounts implements AutoCloseable {
 			for (int index = 0; index < count; index++) {
 				int width = Math.min(CHANNELS_PER_STORE, channels - index * CHANNELS_PER_STORE);
 				stores[index] = new NativeCountGroupStore(1, new boolean[width], key -> key,
-						LmdbNativeProbeDeadline.currentKernelCancellation(this.cancellation::isCancellationRequested,
+						LmdbNativeProbeDeadline.currentKernelCancellation(this.cancellation,
 								null),
 						ledger);
 			}

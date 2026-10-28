@@ -234,7 +234,8 @@ final class LmdbNativeDistinctRootCount {
 	}
 
 	private static void check(NativeCancellationToken cancellation, AtomicBoolean abort) {
-		if (cancellation.isCancellationRequested() || abort != null && abort.get()) {
+		cancellation.check();
+		if (abort != null && abort.get()) {
 			throw KernelQueryCancelledException.INSTANCE;
 		}
 	}
