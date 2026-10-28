@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -40,16 +41,23 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterPlacementTestSupport;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -128,14 +136,91 @@ class FilterInValuesOptimizerTest {
 						fanout), new Not(new Exists(flags))));
 		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance(), source);
 		assertThat(expected).hasSize((patientCount / 2 + 1) * 2 * armFanout);
-		source.lookups.clear();
+		source.resetLookups();
 		QueryRoot optimized = original.clone();
 		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
-		assertThat(evaluate(optimized, EmptyBindingSet.getInstance(), source))
+		Filter outer = (Filter) optimized.getArg();
+		assertThat(((Exists) ((Not) outer.getCondition()).getArg()).getSubQuery()).isInstanceOf(Join.class);
+		assertThat(evaluate(optimized.clone(), EmptyBindingSet.getInstance(), source))
+				.containsExactlyInAnyOrderElementsOf(expected);
+		// Every admitted first trial runs, independently of whether noisy elapsed times later commit that cut.
+		AdaptiveFilterPlacementTestSupport.firstTrialCohorts().forEach(index -> {
+			int expectedLookups = index % 2 == 0 ? 0 : 1;
+			IRI patient = VF.createIRI("urn:patient:" + index);
+			assertThat(source.lookups(patient, MEDICATION)).as("first trial medication for %s", patient)
+					.isEqualTo(expectedLookups);
+			assertThat(source.lookups(patient, ENCOUNTER)).as("first trial encounter for %s", patient)
+					.isEqualTo(expectedLookups);
+			assertThat(source.lookups(VF.createIRI("urn:encounter:" + index), OBSERVATION))
+					.as("first trial observation for %s", patient)
+					.isEqualTo(expectedLookups);
+		});
+
+		// Execute the exact proved cut without adaptation to measure its work independently of convergence.
+		source.resetLookups();
+		assertThat(evaluateFixedCut(installCut(optimized, true), source))
 				.containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(source.lookups.getOrDefault(MEDICATION, 0))
 				.as("generated finite VALUES must permit rejecting a patient before either UNION arm fans out")
 				.isLessThan(patientCount * 3 / 4);
+		assertThat(source.lookups.getOrDefault(ENCOUNTER, 0)).isLessThan(patientCount * 3 / 4);
+		assertThat(source.lookups.getOrDefault(OBSERVATION, 0)).isLessThan(patientCount * 3 / 4);
+
+		// The same bag at the original cut must fail that work bound, detecting an accidental no-op relocation.
+		source.resetLookups();
+		assertThat(evaluateFixedCut(installCut(optimized, false), source))
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(source.lookups.getOrDefault(MEDICATION, 0)).isEqualTo(patients.size());
+		assertThat(source.lookups.getOrDefault(MEDICATION, 0)).isGreaterThanOrEqualTo(patientCount * 3 / 4);
+	}
+
+	private static QueryRoot installCut(QueryRoot original, boolean earliest) {
+		QueryRoot copy = original.clone();
+		Filter filter = (Filter) copy.getArg();
+		FilterPlacementAnalyzer.Envelope envelope = new FilterPlacementAnalyzer(copy,
+				QueryAlgebraBindingAnalysis.withBindingValues(copy, EmptyBindingSet.getInstance())).analyze(filter);
+		FilterPlacementAnalyzer.Alternative cut = earliest
+				? envelope.earliestCompleteCut(argument -> true).orElseThrow()
+				: new FilterPlacementAnalyzer.Alternative(List.of(envelope.originalSite()));
+		if (earliest) {
+			assertThat(cut.cut()).singleElement().satisfies(site -> {
+				assertThat(site.argument()).isInstanceOf(BindingSetAssignment.class);
+				assertThat(site.argument().getBindingNames()).containsExactly("patient");
+			});
+		}
+		ConditionBindingScope sourceScope = FilterBindingScope.resolve(filter);
+		ValueExpr condition = filter.getCondition().clone();
+		QueryModelNormalizerOptimizer.replacePreservingScope(filter, filter.getArg());
+		for (FilterPlacementAnalyzer.Site site : cut.cut()) {
+			TupleExpr argument = site.argument();
+			Filter gate = new Filter();
+			gate.setCondition(condition.clone());
+			gate.setConditionBindingScope(sourceScope);
+			gate.setVariableScopeChange(TupleExprs.isVariableScopeChange(argument));
+			if (argument instanceof VariableScopeChange scope) {
+				scope.setVariableScopeChange(false);
+			}
+			argument.replaceWith(gate);
+			gate.setArg(argument);
+		}
+		return copy;
+	}
+
+	private static List<BindingSet> evaluateFixedCut(QueryRoot expression, TripleSource source) {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Filter filter, QueryEvaluationContext context) {
+				// Existing extension contract: a custom prepared wrapper declines movable-filter capability.
+				QueryEvaluationStep ordinary = super.prepare(filter, context);
+				return ordinary::evaluate;
+			}
+		};
+		List<BindingSet> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.precompile(expression)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			iteration.forEachRemaining(rows::add);
+		}
+		return rows;
 	}
 
 	@Test
@@ -166,7 +251,7 @@ class FilterInValuesOptimizerTest {
 		List<FilterPlacementAnalyzer.Envelope> correlated = new FilterPlacementAnalyzer(optimized,
 				QueryAlgebraBindingAnalysis.withBindingValues(optimized, EmptyBindingSet.getInstance())).analyzeAll()
 						.stream()
-						.filter(envelope -> envelope.filter().getCondition()instanceof Not not
+						.filter(envelope -> envelope.filter().getCondition() instanceof Not not
 								&& not.getArg() instanceof Exists)
 						.toList();
 		assertThat(correlated).singleElement().satisfies(envelope -> {
@@ -298,6 +383,16 @@ class FilterInValuesOptimizerTest {
 	private static final class CountingSource implements TripleSource {
 		private final Map<AccessKey, List<Statement>> statements = new HashMap<>();
 		private final Map<IRI, Integer> lookups = new HashMap<>();
+		private final Map<AccessKey, Integer> lookupsBySubject = new HashMap<>();
+
+		void resetLookups() {
+			lookups.clear();
+			lookupsBySubject.clear();
+		}
+
+		int lookups(Resource subject, IRI predicate) {
+			return lookupsBySubject.getOrDefault(new AccessKey(subject, predicate), 0);
+		}
 
 		void add(Resource subject, IRI predicate, Value object) {
 			statements.computeIfAbsent(new AccessKey(subject, predicate), ignored -> new ArrayList<>())
@@ -308,6 +403,7 @@ class FilterInValuesOptimizerTest {
 		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 				Resource... contexts) {
 			lookups.merge(predicate, 1, Integer::sum);
+			lookupsBySubject.merge(new AccessKey(subject, predicate), 1, Integer::sum);
 			List<Statement> candidates = subject == null
 					? statements.entrySet()
 							.stream()

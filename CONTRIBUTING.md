@@ -42,6 +42,8 @@ You must digitally sign the [Eclipse Contributor Agreement (ECA)](https://www.ec
 
 ## Creating your contribution
 
+Use the JDK and Maven versions listed in [Building from source](README.md#building-from-source).
+
 Once the legalities are out of the way you can dig in. Here's how:
 
 1. Create an issue in the [issue tracker](https://github.com/eclipse/rdf4j/issues) that describes your improvement, new feature, or bug fix. Alternatively, comment on an existing issue to indicate you're keen to help solve it.

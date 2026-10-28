@@ -1,0 +1,24 @@
+<!doctype html>
+<!--
+  Standalone development page for the graph explorer island (npm run dev).
+  Pass ?repository=<id> to pick the repository; the Vite dev server proxies
+  /rdf4j-workbench and /rdf4j-server to http://127.0.0.1:8080.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Graph explorer (dev)</title>
+    <link rel="stylesheet" href="/rdf4j-workbench/styles/workbench-refresh.css" />
+  </head>
+  <body class="workbench-body">
+    <div id="workbench-outlet"><div data-graph-explorer-mount></div></div>
+    <script type="module">
+      import { mount } from "../graph-explorer/main.tsx";
+      const params = new URLSearchParams(window.location.search);
+      mount(document.getElementById("workbench-outlet"), {
+        context: { basePath: "/rdf4j-workbench", repositoryId: params.get("repository") },
+      });
+    </script>
+  </body>
+</html>

@@ -21,11 +21,14 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 
 /**
@@ -53,6 +56,9 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
+			if (!QueryEvaluationUtility.isRepeatable(filter.getCondition())) {
+				return;
+			}
 
 			List<ValueExpr> conjunctiveConstraints = new ArrayList<>(16);
 			getConjunctiveConstraints(filter.getCondition(), conjunctiveConstraints);
@@ -61,14 +67,32 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 				return;
 			}
 
+			Set<String> declarations = filter.getBindingNames();
+			if (!declarations.equals(filter.getArg().getBindingNames())) {
+				return;
+			}
+			ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+			boolean explicitScope = !filter.getConditionBindingScope().isAuto();
+			List<Filter> splitFilters = new ArrayList<>();
 			TupleExpr filterArg = filter.getArg();
 
 			for (int i = 0; i < conjunctiveConstraints.size() - 1; i++) {
-				filterArg = new Filter(filterArg, conjunctiveConstraints.get(i).clone());
+				filterArg = new Filter(filterArg, FilterBindingScope
+						.conditionPreservingDeclarations(conjunctiveConstraints.get(i).clone(), declarations));
+				splitFilters.add((Filter) filterArg);
 			}
 
-			filter.setCondition(conjunctiveConstraints.getLast().clone());
+			filter.setCondition(FilterBindingScope
+					.conditionPreservingDeclarations(conjunctiveConstraints.getLast().clone(), declarations));
 			filter.setArg(filterArg);
+			splitFilters.add(filter);
+			for (Filter split : splitFilters) {
+				if (explicitScope) {
+					split.setConditionBindingScope(bindingScope);
+				} else {
+					FilterBindingScope.preserve(split, bindingScope);
+				}
+			}
 			analysis.invalidate();
 		}
 
@@ -76,7 +100,7 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 		public void meet(LeftJoin node) {
 			super.meet(node);
 
-			if (node.getCondition() != null) {
+			if (node.getCondition() != null && QueryEvaluationUtility.isRepeatable(node.getCondition())) {
 				List<ValueExpr> conjunctiveConstraints = new ArrayList<>();
 				getConjunctiveConstraints(node.getCondition(), conjunctiveConstraints);
 				if (!conjunctiveConstraints.stream().allMatch(AlgebraEvaluationSafety::isRepeatable)) {

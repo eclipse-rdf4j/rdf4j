@@ -57,3 +57,8 @@ if failures:
 	print("\n".join(failures), file=sys.stderr)
 	raise SystemExit(1)
 PY
+
+python3 "${script_dir}/check-rest-api.py" \
+	"${site_dir}/static/documentation/reference/rest-api/index.html" \
+	"${output_dir}/documentation/reference/rest-api/index.html" \
+	"${site_dir}/../core/http/client/src/main/java/org/eclipse/rdf4j/http/client/RDF4JProtocolSession.java"

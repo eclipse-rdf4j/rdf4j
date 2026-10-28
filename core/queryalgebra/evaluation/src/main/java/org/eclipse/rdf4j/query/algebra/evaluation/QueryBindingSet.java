@@ -17,11 +17,14 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.MutableCarrier;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
@@ -30,11 +33,30 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
  * implementations differs from {@link MapBindingSet} in that it maps variable names to Value objects and that the
  * Binding objects are created lazily.
  */
-public class QueryBindingSet extends AbstractBindingSet implements MutableBindingSet {
+public class QueryBindingSet extends AbstractBindingSet implements MutableBindingSet, MutableCarrier {
 
 	private static final long serialVersionUID = -2010715346095527301L;
 
 	private final Map<String, Value> bindings;
+	private GraphFrameBindings graphFrames;
+
+	@Override
+	@InternalUseOnly
+	public GraphFrameBindings getGraphFrameBindings() {
+		return graphFrames;
+	}
+
+	@Override
+	@InternalUseOnly
+	public void setGraphFrameBindings(GraphFrameBindings frames) {
+		graphFrames = frames == GraphFrameBindings.EMPTY ? null : frames;
+	}
+
+	private void forgetGraphFrame(String name) {
+		if (graphFrames != null) {
+			setGraphFrameBindings(graphFrames.without(name));
+		}
+	}
 
 	public QueryBindingSet() {
 		this(8);
@@ -52,6 +74,10 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public void addAll(BindingSet bindingSet) {
+		GraphFrameBindings supplied = GraphFrameBindings.from(bindingSet);
+		if (graphFrames != null) {
+			bindingSet.getBindingNames().forEach(this::forgetGraphFrame);
+		}
 		if (bindingSet instanceof QueryBindingSet) {
 			bindings.putAll(((QueryBindingSet) bindingSet).bindings);
 		} else {
@@ -59,6 +85,7 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 				this.addBinding(binding);
 			}
 		}
+		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));
 	}
 
 	/**
@@ -88,11 +115,13 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public void setBinding(String name, Value value) {
+		forgetGraphFrame(name);
 		bindings.put(name, value);
 	}
 
 	@Override
 	public void removeBinding(String name) {
+		forgetGraphFrame(name);
 		bindings.remove(name);
 	}
 

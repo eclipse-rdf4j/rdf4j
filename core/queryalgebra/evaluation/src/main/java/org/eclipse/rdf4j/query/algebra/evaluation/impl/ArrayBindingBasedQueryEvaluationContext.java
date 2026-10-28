@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
@@ -124,8 +125,33 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public Value captureConstant(Value value, Function<Value, Value> capturer) {
+		return context.captureConstant(value, capturer);
+	}
+
+	@Override
 	public Dataset getDataset() {
 		return context.getDataset();
+	}
+
+	@Override
+	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+		return context.getBlankNodeAllocationScope();
+	}
+
+	@Override
+	public ActiveGraph getActiveGraph() {
+		return context.getActiveGraph();
+	}
+
+	@Override
+	public Set<String> getSubstitutionBindingNames() {
+		return context.getSubstitutionBindingNames();
+	}
+
+	@Override
+	public boolean hasEnclosingProjection() {
+		return context.hasEnclosingProjection();
 	}
 
 	@Override
@@ -472,7 +498,12 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				// BindingSet anyway
 				if (!(node.isConstant() && node.getParentNode() instanceof StatementPattern)) {
 					Var replacement = Var.of(varNames.computeIfAbsent(node.getName(), k -> k), node.getValue(),
-							node.isAnonymous(), node.isConstant());
+							node.isAnonymous(), node.isConstant(), node.isBNode());
+					if (node.hasApiInputOrigin()) {
+						replacement = replacement.withApiInputOrigin();
+					}
+					replacement.setGraphContextDepth(node.getGraphContextDepth());
+					replacement.setVariableScopeChange(node.isVariableScopeChange());
 					node.replaceWith(replacement);
 				}
 			}

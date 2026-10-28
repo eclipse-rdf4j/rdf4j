@@ -17,9 +17,13 @@ import static jakarta.servlet.http.HttpServletResponse.SC_OK;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -29,6 +33,8 @@ import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+import org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultWriter;
+import org.eclipse.rdf4j.query.resultio.binary.QueryErrorType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -67,65 +73,87 @@ public class TupleQueryResultView extends QueryResultView {
 	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 			throws IOException {
-		TupleQueryResultWriterFactory qrWriterFactory = (TupleQueryResultWriterFactory) model.get(FACTORY_KEY);
-		TupleQueryResultFormat qrFormat = qrWriterFactory.getTupleQueryResultFormat();
+		TupleQueryResult pendingResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
+		boolean reportingStarted = false;
+		try {
+			TupleQueryResultWriterFactory qrWriterFactory = (TupleQueryResultWriterFactory) model.get(FACTORY_KEY);
+			TupleQueryResultFormat qrFormat = qrWriterFactory.getTupleQueryResultFormat();
+			UnaryOperator<Value> origin = bNodeOriginMapper(model, request, response, qrFormat);
 
-		response.setStatus(SC_OK);
-		setContentType(response, qrFormat);
-		setContentDisposition(model, response, qrFormat);
+			response.setStatus(SC_OK);
+			setContentType(response, qrFormat);
+			setContentDisposition(model, response, qrFormat);
 
-		final Boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
-		if (headersOnly == null || !headersOnly.booleanValue()) {
-			QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
-			// Keep the legacy branch for callers that do not hand off a heartbeat, including transactional responses.
-			if (heartbeat == null) {
-				try (OutputStream out = response.getOutputStream()) {
-					// ensure we handle exceptions _before_ closing the stream
+			final Boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
+			if (headersOnly == null || !headersOnly.booleanValue()) {
+				QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+				// Keep the legacy branch for callers that do not hand off a heartbeat, including transactional
+				// responses.
+				if (heartbeat == null) {
+					try (OutputStream out = response.getOutputStream()) {
+						// ensure we handle exceptions _before_ closing the stream
+						try {
+							TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
+							configureWriter(qrWriter, request);
+							TupleQueryResult resultToReport = origin == null ? pendingResult
+									: BNodeOriginTransport.map(pendingResult, origin);
+							reportingStarted = true;
+							QueryResults.report(resultToReport, qrWriter);
+						} catch (QueryInterruptedException e) {
+							if (isExplicitlyCancelled(model)) {
+								return;
+							}
+							logger.error("Query interrupted", e);
+							sendServiceUnavailable(response, e, "Query evaluation took too long");
+						} catch (QueryEvaluationException e) {
+							if (isExplicitlyCancelled(model)) {
+								return;
+							}
+							logger.error("Query evaluation error", e);
+							response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+						} catch (TupleQueryResultHandlerException e) {
+							logger.error("Serialization error", e);
+							response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+						}
+					}
+				} else {
 					try {
-						TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
-						configureWriter(qrWriter, request);
-						TupleQueryResult tupleQueryResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
-						QueryResults.report(tupleQueryResult, qrWriter);
+						TupleQueryResult tupleQueryResult;
+						try {
+							tupleQueryResult = PrefetchedQueryResults.tuple(pendingResult);
+						} catch (RuntimeException e) {
+							// PrefetchedQueryResults closes its delegate when prefetching fails.
+							pendingResult = null;
+							throw e;
+						}
+						pendingResult = tupleQueryResult;
+						model.put(QUERY_RESULT_KEY, tupleQueryResult);
+						TupleQueryResultWriter qrWriter = (TupleQueryResultWriter) model.get(RESPONSE_WRITER_KEY);
+						if (qrWriter == null) {
+							qrWriter = qrWriterFactory.getWriter(heartbeat.getOutputStream());
+							configureWriter(qrWriter, request);
+						}
+						TupleQueryResult resultToReport = origin == null ? tupleQueryResult
+								: BNodeOriginTransport.map(tupleQueryResult, origin);
+						reportingStarted = true;
+						QueryResults.report(resultToReport, qrWriter);
+						heartbeat.complete();
 					} catch (QueryInterruptedException e) {
-						if (isExplicitlyCancelled(model)) {
-							return;
-						}
-						logger.error("Query interrupted", e);
-						sendServiceUnavailable(response, e, "Query evaluation took too long");
+						handleHeartbeatFailure(model, response, e, "Query evaluation took too long");
 					} catch (QueryEvaluationException e) {
-						if (isExplicitlyCancelled(model)) {
-							return;
-						}
-						logger.error("Query evaluation error", e);
-						response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+						handleHeartbeatFailure(model, response, e,
+								"Query evaluation error: " + e.getMessage());
 					} catch (TupleQueryResultHandlerException e) {
-						logger.error("Serialization error", e);
-						response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+						handleHeartbeatFailure(model, response, e, "Serialization error: " + e.getMessage());
 					}
-				}
-			} else {
-				try {
-					TupleQueryResult tupleQueryResult = PrefetchedQueryResults
-							.tuple((TupleQueryResult) model.get(QUERY_RESULT_KEY));
-					model.put(QUERY_RESULT_KEY, tupleQueryResult);
-					TupleQueryResultWriter qrWriter = (TupleQueryResultWriter) model.get(RESPONSE_WRITER_KEY);
-					if (qrWriter == null) {
-						qrWriter = qrWriterFactory.getWriter(heartbeat.getOutputStream());
-						configureWriter(qrWriter, request);
-					}
-					QueryResults.report(tupleQueryResult, qrWriter);
-					heartbeat.complete();
-				} catch (QueryInterruptedException e) {
-					handleHeartbeatFailure(model, response, e, "Query evaluation took too long");
-				} catch (QueryEvaluationException e) {
-					handleHeartbeatFailure(model, response, e,
-							"Query evaluation error: " + e.getMessage());
-				} catch (TupleQueryResultHandlerException e) {
-					handleHeartbeatFailure(model, response, e, "Serialization error: " + e.getMessage());
 				}
 			}
+			logEndOfRequest(request);
+		} finally {
+			if (!reportingStarted && pendingResult != null) {
+				pendingResult.close();
+			}
 		}
-		logEndOfRequest(request);
 	}
 
 	public static void configureWriter(TupleQueryResultWriter writer, HttpServletRequest request) throws IOException {
@@ -157,6 +185,9 @@ public class TupleQueryResultView extends QueryResultView {
 			return;
 		}
 		if (responseWasCommitted(model, response)) {
+			if (writeCommittedBinaryError(model, exception, message)) {
+				return;
+			}
 			abortResponseHeartbeat(model);
 			throw exception;
 		}
@@ -165,6 +196,30 @@ public class TupleQueryResultView extends QueryResultView {
 			sendServiceUnavailable(response, (QueryInterruptedException) exception, message);
 		} else {
 			response.sendError(SC_INTERNAL_SERVER_ERROR, message);
+		}
+	}
+
+	@SuppressWarnings("rawtypes")
+	private boolean writeCommittedBinaryError(Map model, RuntimeException exception, String message) {
+		if (!(exception instanceof QueryEvaluationException)
+				|| !(model.get(RESPONSE_WRITER_KEY) instanceof BinaryQueryResultWriter writer)) {
+			return false;
+		}
+
+		try {
+			QueryCircuitBreaker.CircuitBreakerException breakerException = QueryCircuitBreaker
+					.asCircuitBreakerException(exception);
+			String terminalMessage = breakerException == null ? message : breakerException.getMessage();
+			writer.error(QueryErrorType.QUERY_EVALUATION_ERROR, terminalMessage);
+			writer.getOutputStream().flush();
+			QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+			if (heartbeat != null) {
+				heartbeat.complete();
+			}
+			return true;
+		} catch (IOException e) {
+			exception.addSuppressed(e);
+			return false;
 		}
 	}
 }

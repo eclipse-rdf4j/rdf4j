@@ -1,0 +1,53 @@
+name: SPARQL generated sources
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generated-source-replay:
+    name: Regenerate, patch, format and compare
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+      - name: Cache workspace Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: .m2_repo
+          key: ${{ runner.os }}-sparql-ast-${{ hashFiles('**/pom.xml', 'core/queryparser/sparql/JavaCC/generated-sources.json', 'scripts/manage-sparql-ast.py') }}
+          restore-keys: |
+            ${{ runner.os }}-sparql-ast-
+      - name: Regenerate, apply Git patches, format and verify exact bytes
+        run: python3 scripts/manage-sparql-ast.py --check --online --work-dir logs/sparql-ast-ci
+      - name: Test the workflow and real negative controls
+        env:
+          SPARQL_AST_JAVACC_JAR: ${{ github.workspace }}/.m2_repo/net/java/dev/javacc/javacc/7.0.12/javacc-7.0.12.jar
+        run: python3 -m unittest discover -s scripts -p test_sparql_ast.py -v
+      - name: Retain failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sparql-generated-source-evidence
+          path: |
+            logs/sparql-ast-ci/**/*.log
+            logs/sparql-ast-ci/diffs/**
+            /tmp/rdf4j-sparql-ast-*/**/*.log
+            /tmp/rdf4j-sparql-ast-*/diffs/**
+          if-no-files-found: ignore

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -178,6 +179,29 @@ public class OverflowBenchmarkSynthetic {
 				)
 				)
 				.forEach(connection::add);
+	}
+
+	final class ConfigUtil {
+		private static final String DEFAULT_TRIPLE_INDEXES = "spoc,ospc,psoc,posc";
+		private static final String ALL_TRIPLE_INDEXES = "spoc,psoc,sopc,opsc,posc,ospc";
+		private static final int THEME_SUBJECT_BUCKET_COUNT = 4096;
+		private static final int THEME_PREDICATE_BUCKET_COUNT = 64;
+		private static final int THEME_OBJECT_BUCKET_COUNT = 4096;
+		private static final int THEME_CONTEXT_BUCKET_COUNT = 16;
+
+		static LmdbStoreConfig createConfig() {
+			return createConfig(DEFAULT_TRIPLE_INDEXES);
+		}
+
+		static LmdbStoreConfig createAllIndexesConfig() {
+			return createConfig(ALL_TRIPLE_INDEXES);
+		}
+
+		private static LmdbStoreConfig createConfig(String tripleIndexes) {
+			LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes);
+			config.setForceSync(false);
+			return config;
+		}
 	}
 
 }

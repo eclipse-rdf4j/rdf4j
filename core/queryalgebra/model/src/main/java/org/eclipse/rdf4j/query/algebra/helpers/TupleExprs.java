@@ -18,6 +18,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -27,9 +28,12 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -38,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * Utility methods for {@link TupleExpr} objects.
@@ -45,6 +50,80 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
  * @author Jeen Broekstra
  */
 public class TupleExprs {
+
+	/** The direct-SELECT exemption used when preparing an RDF4J LATERAL caller scope. */
+	public static boolean preservesDirectSubSelectBindings(TupleExpr rightArg, Set<String> newInputNames) {
+		TupleExpr node = rightArg;
+		while (node instanceof Slice || node instanceof Order || node instanceof Distinct || node instanceof Reduced) {
+			node = ((UnaryTupleOperator) node).getArg();
+		}
+		return node instanceof Projection && !rightArg.getBindingNames().containsAll(newInputNames);
+	}
+
+	/** Projection source names, before any output alias, determine lexical LATERAL visibility. */
+	public static boolean projectsSourceName(ProjectionElemList elements, String name) {
+		return elements.getElements().stream().anyMatch(element -> element.getName().equals(name));
+	}
+
+	/**
+	 * Whether a local operand contains a GRAPH boundary and therefore must receive invocation input rather than a
+	 * sibling's produced bindings. Remote SERVICE bodies have their own scope and are not inspected.
+	 */
+	public static boolean containsGraphBoundary(TupleExpr expression) {
+		if (expression instanceof Graph) {
+			return true;
+		}
+		if (expression instanceof Service) {
+			return false;
+		}
+		for (TupleExpr child : getChildren(expression)) {
+			if (containsGraphBoundary(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Identifies operands whose own scope must not receive bindings produced by an ordinary join sibling. */
+	public static boolean requiresIndependentEvaluation(TupleExpr expression) {
+		// SERVICE is a parameterized remote call. Its endpoint input remains in the caller's evaluator frame.
+		return !(expression instanceof Service)
+				&& (isVariableScopeChange(expression) || containsSubquery(expression)
+						|| containsGraphBoundary(expression));
+	}
+
+	/**
+	 * Whether a bind join would expose a sibling's binding to a non-projected local variable of a nested SELECT. Unlike
+	 * {@link #containsSubquery(TupleExpr)}, this proof inspects projections inside joins as well. Projected names
+	 * remain compatible join keys; an unprojected name must not constrain the SELECT body through sibling-row
+	 * injection.
+	 */
+	@InternalUseOnly
+	public static boolean subqueryObservesInjectedBindings(TupleExpr subtree, Set<String> injectedNames) {
+		if (injectedNames.isEmpty()) {
+			return false;
+		}
+		boolean[] observes = { false };
+		subtree.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+			@Override
+			public void meet(Projection projection) {
+				if (observes[0]) {
+					return;
+				}
+				if (projection.isSubquery()) {
+					Set<String> projected = projection.getBindingNames();
+					for (String name : VarNameCollector.process(projection.getArg())) {
+						if (injectedNames.contains(name) && !projected.contains(name)) {
+							observes[0] = true;
+							return;
+						}
+					}
+				}
+				super.meet(projection);
+			}
+		});
+		return observes[0];
+	}
 
 	/**
 	 * Whether an Extension executes this element. Root aggregate expressions describe results already computed by a
@@ -241,8 +320,8 @@ public class TupleExprs {
 	}
 
 	/**
-	 * Creates an (anonymous) Var representing a constant value. The variable name will be derived from the actual value
-	 * to guarantee uniqueness.
+	 * Creates an (anonymous) Var representing a constant value using a legacy hash-derived name hint. Distinct values
+	 * may receive the same name; translators that combine constants must allocate unique names in their own scope.
 	 *
 	 * @param value
 	 * @return an (anonymous) Var representing a constant value.
@@ -252,6 +331,7 @@ public class TupleExprs {
 		return Var.of(varName, value, true, true);
 	}
 
+	/** Returns a stable hash-derived name hint, which is not guaranteed to be unique. */
 	public static String getConstVarName(Value value) {
 		if (value == null) {
 			throw new IllegalArgumentException("value can not be null");

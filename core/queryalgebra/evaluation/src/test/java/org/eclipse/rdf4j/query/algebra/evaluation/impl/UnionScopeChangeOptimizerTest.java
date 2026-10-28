@@ -653,7 +653,7 @@ public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 		List<Union> unions = findUnions(optimized);
 		assertThat(unions).hasSize(2);
 		Union outerUnion = unions.stream()
-				.filter(union -> union.getParentNode()instanceof Join join
+				.filter(union -> union.getParentNode() instanceof Join join
 						&& (join.getLeftArg().getBindingNames().contains("x")
 								|| join.getRightArg().getBindingNames().contains("x")))
 				.findFirst()

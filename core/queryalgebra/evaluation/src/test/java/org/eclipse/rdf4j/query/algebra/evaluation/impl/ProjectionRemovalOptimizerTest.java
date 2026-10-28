@@ -126,6 +126,18 @@ public class ProjectionRemovalOptimizerTest {
 	}
 
 	@Test
+	public void testNotRemovingProjectionOfAdditionalValuesBindings() {
+		String query = "SELECT DISTINCT ?x WHERE { VALUES (?x ?y) { (1 10) (1 20) (2 30) } } "
+				+ "ORDER BY ?x RAND() LIMIT 2";
+		TupleExpr original = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		TupleExpr optimized = original.clone();
+
+		new ProjectionRemovalOptimizer().optimize(optimized, null, null);
+
+		assertEquals(original, optimized, "the projection must discard the VALUES column before DISTINCT");
+	}
+
+	@Test
 	public void testNotRemovingOptimizationTooMany() throws RDF4JException {
 		String query = "SELECT ?s ?p ?o ?o2 WHERE { ?s ?p ?o }";
 

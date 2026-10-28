@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
@@ -81,7 +82,7 @@ public class ServiceJoinConversionIteration extends ConvertingIteration<BindingS
 		return res;
 	}
 
-	private static int getRowIndex(BindingSet result, String rowIndexVar) {
+	static int getRowIndex(BindingSet result, String rowIndexVar) {
 		Value rowIndex = result.getValue(rowIndexVar);
 		// should never occur: in such case we would have to create the cross product (which
 		// is dealt with in another place)

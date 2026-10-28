@@ -55,6 +55,7 @@ public class IrBGP extends IrNode {
 	}
 
 	public void add(IrNode node) {
+		checkInterrupted();
 		if (node != null) {
 			lines.add(node);
 		}
@@ -76,10 +77,11 @@ public class IrBGP extends IrNode {
 
 	@Override
 	public IrNode transformChildren(UnaryOperator<IrNode> op) {
+		checkInterrupted();
 		IrBGP w = new IrBGP(this.isNewScope());
 		for (IrNode ln : this.lines) {
+			checkInterrupted();
 			IrNode t = op.apply(ln);
-			t = t.transformChildren(op);
 			w.add(t == null ? ln : t);
 		}
 		return w;

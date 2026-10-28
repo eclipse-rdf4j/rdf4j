@@ -13,12 +13,15 @@ package org.eclipse.rdf4j.repository.sparql.query;
 
 import java.util.regex.Matcher;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
 /**
@@ -56,27 +59,7 @@ public class QueryStringUtil {
 	 * @return the modified queryString
 	 */
 	public static String getTupleQueryString(String queryString, BindingSet bindings) {
-		if (bindings.isEmpty()) {
-			return queryString;
-		}
-
-		String qry = queryString;
-		int b = qry.indexOf('{');
-		String select = qry.substring(0, b);
-		String where = qry.substring(b);
-		for (String name : bindings.getBindingNames()) {
-			String replacement = valueToString(bindings.getValue(name));
-			if (replacement != null) {
-				String pattern = "[\\?\\$]" + name + "(?=\\W)";
-				select = select.replaceAll(pattern, "(" + Matcher.quoteReplacement(replacement) + " as ?" + name + ")");
-
-				// we use Matcher.quoteReplacement to make sure things like newlines
-				// in literal values
-				// are preserved
-				where = where.replaceAll(pattern, Matcher.quoteReplacement(replacement));
-			}
-		}
-		return select + where;
+		return withQueryBindings(queryString, bindings);
 	}
 
 	/**
@@ -87,7 +70,21 @@ public class QueryStringUtil {
 	 * @return the modified queryString
 	 */
 	public static String getUpdateString(String queryString, BindingSet bindings) {
-		return getGraphQueryString(queryString, bindings);
+		if (bindings.isEmpty()) {
+			return queryString;
+		}
+
+		String qry = queryString;
+		for (String name : bindings.getBindingNames()) {
+			String replacement = valueToString(bindings.getValue(name));
+			if (replacement != null) {
+				String pattern = "[\\?\\$]" + name + "(?=\\W)";
+				// we use Matcher.quoteReplacement to make sure things like newlines
+				// in literal values are preserved
+				qry = qry.replaceAll(pattern, Matcher.quoteReplacement(replacement));
+			}
+		}
+		return qry;
 	}
 
 	/**
@@ -109,21 +106,25 @@ public class QueryStringUtil {
 	 * @return the modified queryString
 	 */
 	public static String getGraphQueryString(String queryString, BindingSet bindings) {
-		if (bindings.isEmpty()) {
-			return queryString;
-		}
+		return withQueryBindings(queryString, bindings);
+	}
 
-		String qry = queryString;
-		for (String name : bindings.getBindingNames()) {
-			String replacement = valueToString(bindings.getValue(name));
-			if (replacement != null) {
-				String pattern = "[\\?\\$]" + name + "(?=\\W)";
-				// we use Matcher.quoteReplacement to make sure things like newlines
-				// in literal values are preserved
-				qry = qry.replaceAll(pattern, Matcher.quoteReplacement(replacement));
-			}
+	private static String withQueryBindings(String queryString, BindingSet bindings) {
+		for (var binding : bindings) {
+			rejectUnmappedIdentity(binding.getValue());
 		}
-		return qry;
+		return SPARQLQueries.withInitialBindings(queryString, bindings);
+	}
+
+	private static void rejectUnmappedIdentity(Value value) {
+		if (value instanceof BNode) {
+			throw new QueryEvaluationException(
+					"Unsupported blank-node identity: SPARQL bindings require a verified receiving scope");
+		}
+		if (value instanceof TripleTerm triple) {
+			rejectUnmappedIdentity(triple.getSubject());
+			rejectUnmappedIdentity(triple.getObject());
+		}
 	}
 
 	/**

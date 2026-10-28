@@ -12,9 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_stat;
 
@@ -26,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -45,6 +48,8 @@ public final class TripleStoreInitializationTest {
 
 	private static final long INITIAL_MAP_SIZE = 8L * 1024 * 1024;
 	private static final long AUTO_GROW_INITIAL_MAP_SIZE = INITIAL_MAP_SIZE / 256;
+	// Representable and aligned for every supported LMDB page size, while far beyond a usable JVM mapping.
+	private static final long OVERSIZED_NATIVE_MAP_SIZE = Long.MAX_VALUE - 65_535L;
 	private static final int PROBE_TIMEOUT_SECONDS = 30;
 	private static final int PROBE_CLEANUP_TIMEOUT_SECONDS = 5;
 	private static final String PROBE_PROPERTY = "rdf4j.lmdb.initializationProbe";
@@ -68,9 +73,33 @@ public final class TripleStoreInitializationTest {
 			assertTrue(stats.mapSize() > stats.minimumMapSize(), "The requested map must exceed native minimum usage");
 			assertEquals(alignedSize(requestedSize, stats.pageSize()), stats.mapSize(),
 					"An empty store should use the requested page-aligned map size");
+			assertTrue(stats.mapSize() >= requestedSize, "Page alignment must preserve the requested byte floor");
 			assertEquals(0, stats.mapSize() % stats.pageSize(),
 					"LMDB map size must remain page aligned after initialization");
 		}
+	}
+
+	@Test
+	void closesNativeEnvironmentWhenInitializationFailsAfterOpen(@TempDir Path directory) {
+		AtomicInteger closeCalls = new AtomicInteger();
+		TripleStore.EnvironmentLifecycle lifecycle = new TripleStore.EnvironmentLifecycle() {
+			@Override
+			public void afterOpen(long env) throws IOException {
+				throw new IOException("injected failure after environment open");
+			}
+
+			@Override
+			public void close(long env) {
+				mdb_env_close(env);
+				closeCalls.incrementAndGet();
+			}
+		};
+
+		IOException failure = assertThrows(IOException.class, () -> new TripleStore(directory.toFile(),
+				new StoreProperties(directory.toFile()), config(INITIAL_MAP_SIZE, false), null, lifecycle));
+		assertTrue(failure.getMessage().contains("injected failure"));
+		assertEquals(1, closeCalls.get(),
+				"Every created native environment must close on partial construction failure");
 	}
 
 	@Test
@@ -187,8 +216,9 @@ public final class TripleStoreInitializationTest {
 		boolean estimatorEnabled = Boolean.parseBoolean(args[1]);
 		boolean populated = Boolean.parseBoolean(args[2]);
 		try {
-			try (TripleStore ignored = openProbeStore(directory, estimatorEnabled, populated, Long.MAX_VALUE)) {
-				throw new AssertionError("Long.MAX_VALUE map initialization unexpectedly succeeded");
+			try (TripleStore ignored = openProbeStore(directory, estimatorEnabled, populated,
+					OVERSIZED_NATIVE_MAP_SIZE)) {
+				throw new AssertionError("Oversized page-aligned map initialization unexpectedly succeeded");
 			}
 		} catch (IOException expected) {
 			System.out.println(FAILURE_MARKER + " " + expected.getMessage());
@@ -241,7 +271,7 @@ public final class TripleStoreInitializationTest {
 	}
 
 	private static long alignedSize(long value, int pageSize) {
-		return (value / pageSize) * pageSize;
+		return Math.multiplyExact(Math.floorDiv(Math.addExact(value, pageSize - 1L), pageSize), pageSize);
 	}
 
 	private static EnvironmentStats environmentStats(TripleStore store) {

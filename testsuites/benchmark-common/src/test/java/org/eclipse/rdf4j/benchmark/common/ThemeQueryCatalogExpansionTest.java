@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 class ThemeQueryCatalogExpansionTest {
@@ -53,6 +55,28 @@ class ThemeQueryCatalogExpansionTest {
 				"?d social:follows ?e",
 				"?e social:follows ?a"),
 				"Missing 5-clique cycle query");
+	}
+
+	@Test
+	void explorationProfilesNamedGraphsAcrossCombinedDataset() {
+		Theme exploration = Theme.valueOf("EXPLORATION");
+		List<String> queries = ThemeQueryCatalog.queriesFor(exploration);
+
+		assertEquals(EXPANDED_QUERY_COUNT, queries.size());
+		assertTrue(queries.stream().allMatch(query -> query.contains("GRAPH ")),
+				"Every exploration query must explicitly profile named graphs");
+		assertTrue(queries.get(0).contains("(COUNT(*) AS ?quads)"));
+		assertTrue(queries.get(6).contains("AS ?coverage"));
+		assertTrue(queries.get(10).contains("GROUP_CONCAT(?feature; separator=\" | \")"));
+		assertTrue(queries.get(12).contains("\"outgoing\" AS ?direction"));
+		assertTrue(queries.get(12).contains("\"incoming\" AS ?direction"));
+	}
+
+	@Test
+	void explorationQueriesAreValidSparql() {
+		for (String query : ThemeQueryCatalog.queriesFor(Theme.EXPLORATION)) {
+			QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		}
 	}
 
 	private static boolean containsCycle(List<String> queries, String... fragments) {

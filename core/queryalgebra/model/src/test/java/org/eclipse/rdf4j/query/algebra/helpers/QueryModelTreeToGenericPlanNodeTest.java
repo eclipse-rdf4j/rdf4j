@@ -105,6 +105,59 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
+	public void copiesExecutionSummaryWithoutVerboseTelemetryAtExecutedLevel() {
+		TupleExpr tupleExpr = new Join(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")));
+		tupleExpr.setExecutionSummaryEnabled(true);
+		tupleExpr.setStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH, "chunkPipeline");
+		tupleExpr.setExecutionSummaryEnabled(false);
+		tupleExpr.setRuntimeTelemetryEnabled(true);
+		tupleExpr.setLongMetricActual("nativeChunkEngagedActual", 1L);
+		tupleExpr.setRuntimeTelemetryEnabled(false);
+
+		GenericPlanNode optimized = convert(tupleExpr, Explanation.Level.Optimized);
+		GenericPlanNode executed = convert(tupleExpr, Explanation.Level.Executed);
+		GenericPlanNode telemetry = convert(tupleExpr, Explanation.Level.Telemetry);
+
+		assertThat(optimized.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH)).isNull();
+		assertThat(executed.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH))
+				.isEqualTo("chunkPipeline");
+		assertThat(executed.getLongMetricActual("nativeChunkEngagedActual")).isNull();
+		assertThat(telemetry.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH))
+				.isEqualTo("chunkPipeline");
+		assertThat(telemetry.getLongMetricActual("nativeChunkEngagedActual")).isEqualTo(1L);
+	}
+
+	@Test
+	public void prependsPhysicalPlansCarriedByNestedExecutionNodes() {
+		StatementPattern nested = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		nested.setStringMetricPlanned(TelemetryMetricNames.PLANNED_PHYSICAL_PLAN, "nested planned plan");
+		nested.setRuntimeTelemetryEnabled(true);
+		nested.setStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN, "nested runtime plan");
+		Projection projection = new Projection(nested, new ProjectionElemList(new ProjectionElem("s")));
+
+		assertThat(convert(projection, Explanation.Level.Optimized).toString())
+				.startsWith("nested planned plan\n\nQuery explanation\nProjection");
+		assertThat(convert(projection, Explanation.Level.Telemetry).toString())
+				.startsWith("nested runtime plan\n\nQuery explanation\nProjection");
+	}
+
+	@Test
+	public void retainsEqualPhysicalPlansFromSeparateSiblingExecutions() {
+		StatementPattern left = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		StatementPattern right = new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2"));
+		for (StatementPattern child : List.of(left, right)) {
+			child.setRuntimeTelemetryEnabled(true);
+			child.setStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN, "same runtime plan");
+		}
+		Join join = new Join(left, right);
+
+		assertThat(convert(join, Explanation.Level.Telemetry).toString())
+				.startsWith("same runtime plan\n\nsame runtime plan\n\nQuery explanation\nJoin");
+	}
+
+	@Test
 	public void derivesVariableShapeMetricsFromTupleExprBindingNames() {
 		StatementPattern statementPattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		Extension extension = new Extension(statementPattern, new ExtensionElem(Var.of("o"), "derivedVar"));
@@ -238,20 +291,31 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 	@Test
 	public void preservesApiNamesButNotSiblingNamesAcrossSubqueryScope() {
-		Projection subquery = new Projection(
+		Projection hashSubquery = new Projection(
 				pattern("x", "p", "api"),
 				new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("api")),
 				true);
-		Join join = new Join(bindingSetAssignment(bindingSet("x")), subquery);
-		join.setAlgorithm("JoinIterator");
+		Join hashJoin = new Join(bindingSetAssignment(bindingSet("x")), hashSubquery);
+		hashJoin.setAlgorithm("HashJoinIteration");
 
-		GenericPlanNode plan = explain(join, Set.of("api"));
-		GenericPlanNode subqueryPlan = plan.getPlans().get(1);
-		GenericPlanNode childPattern = findFirstPlan(subqueryPlan,
+		Projection iteratorSubquery = new Projection(
+				pattern("x", "p", "api"),
+				new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("api")),
+				true);
+		Join iteratorJoin = new Join(bindingSetAssignment(bindingSet("x")), iteratorSubquery);
+		iteratorJoin.setAlgorithm("JoinIterator");
+
+		GenericPlanNode hashPlan = explain(hashJoin, Set.of("api"));
+		GenericPlanNode iteratorPlan = explain(iteratorJoin, Set.of("api"));
+		GenericPlanNode hashChildPattern = findFirstPlan(hashPlan.getPlans().get(1),
+				node -> node.getType().startsWith("StatementPattern"));
+		GenericPlanNode iteratorChildPattern = findFirstPlan(iteratorPlan.getPlans().get(1),
 				node -> node.getType().startsWith("StatementPattern"));
 
-		assertBindingState(childPattern, "x", "unbound");
-		assertBindingState(childPattern, "api", "bound");
+		assertBindingState(hashChildPattern, "x", "unbound");
+		assertBindingState(hashChildPattern, "api", "bound");
+		assertBindingState(iteratorChildPattern, "x", "bound");
+		assertBindingState(iteratorChildPattern, "api", "bound");
 	}
 
 	@Test
@@ -490,6 +554,12 @@ public class QueryModelTreeToGenericPlanNodeTest {
 
 	private static GenericPlanNode statementPattern(GenericPlanNode join, int index) {
 		return join.getPlans().get(index);
+	}
+
+	private static GenericPlanNode convert(TupleExpr tupleExpr, Explanation.Level level) {
+		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr, null, level);
+		tupleExpr.visit(converter);
+		return converter.getGenericPlanNode();
 	}
 
 	private static GenericPlanNode rightSubjectVar(GenericPlanNode join) {

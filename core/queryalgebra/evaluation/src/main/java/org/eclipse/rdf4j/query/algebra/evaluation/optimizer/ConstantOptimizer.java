@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.If;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -42,11 +43,13 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
@@ -66,9 +69,21 @@ public class ConstantOptimizer implements QueryOptimizer {
 	private static final Logger logger = LoggerFactory.getLogger(ConstantOptimizer.class);
 
 	private final EvaluationStrategy strategy;
+	private final BindingSet evaluationBindings;
 
 	public ConstantOptimizer(EvaluationStrategy strategy) {
+		this(strategy, null);
+	}
+
+	/**
+	 * Separates logical parameters used for projection recovery from the actual prepared-plan input used by proofs. A
+	 * null input preserves the direct optimizer contract, which uses the bindings passed to {@link #optimize}.
+	 */
+	public ConstantOptimizer(EvaluationStrategy strategy, BindingSet evaluationBindings) {
 		this.strategy = strategy;
+		this.evaluationBindings = evaluationBindings == null ? null
+				: evaluationBindings.isEmpty() ? EmptyBindingSet.getInstance()
+						: new QueryBindingSet(evaluationBindings);
 	}
 
 	/**
@@ -77,7 +92,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr,
-				bindings);
+				evaluationBindings == null ? bindings : evaluationBindings);
 		ConstantVisitor visitor = new ConstantVisitor(strategy, bindingAnalysis,
 				new QueryEvaluationContext.Minimal(new SimpleDataset()));
 		tupleExpr.visit(visitor);
@@ -159,6 +174,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		public void meet(Or or) {
 			or.visitChildren(this);
 
+			// Double negation preserves EBV conversion when an identity removes a logical operand.
 			try {
 				if (isConstant(or.getLeftArg()) && isConstant(or.getRightArg())) {
 					boolean value = isTrueWithKnownValues(or);
@@ -170,16 +186,16 @@ public class ConstantOptimizer implements QueryOptimizer {
 						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));
 						bindingAnalysis.invalidate();
 					} else {
-						or.replaceWith(or.getRightArg().clone());
+						or.replaceWith(new Not(new Not(or.getRightArg().clone())));
 						bindingAnalysis.invalidate();
 					}
 				} else if (isConstant(or.getRightArg())) {
 					boolean rightIsTrue = isTrueWithKnownValues(or.getRightArg());
-					if (rightIsTrue) {
+					if (rightIsTrue && canDiscardLogicalOperand(or.getLeftArg())) {
 						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));
 						bindingAnalysis.invalidate();
-					} else {
-						or.replaceWith(or.getLeftArg().clone());
+					} else if (!rightIsTrue) {
+						or.replaceWith(new Not(new Not(or.getLeftArg().clone())));
 						bindingAnalysis.invalidate();
 					}
 				}
@@ -204,7 +220,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 				} else if (isConstant(and.getLeftArg())) {
 					boolean leftIsTrue = isTrueWithKnownValues(and.getLeftArg());
 					if (leftIsTrue) {
-						and.replaceWith(and.getRightArg().clone());
+						and.replaceWith(new Not(new Not(and.getRightArg().clone())));
 						bindingAnalysis.invalidate();
 					} else {
 						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));
@@ -213,9 +229,9 @@ public class ConstantOptimizer implements QueryOptimizer {
 				} else if (isConstant(and.getRightArg())) {
 					boolean rightIsTrue = isTrueWithKnownValues(and.getRightArg());
 					if (rightIsTrue) {
-						and.replaceWith(and.getLeftArg().clone());
+						and.replaceWith(new Not(new Not(and.getLeftArg().clone())));
 						bindingAnalysis.invalidate();
-					} else {
+					} else if (canDiscardLogicalOperand(and.getLeftArg())) {
 						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));
 						bindingAnalysis.invalidate();
 					}
@@ -227,6 +243,11 @@ public class ConstantOptimizer implements QueryOptimizer {
 			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation exception caught", e);
 			}
+		}
+
+		private boolean canDiscardLogicalOperand(ValueExpr expression) {
+			return AlgebraEvaluationSafety.isRepeatable(expression)
+					&& QueryEvaluationUtility.canDiscardWithoutEvaluation(expression);
 		}
 
 		@Override
@@ -277,23 +298,18 @@ public class ConstantOptimizer implements QueryOptimizer {
 		public void meet(FunctionCall functionCall) {
 			super.meet(functionCall);
 
+			if (QueryEvaluationUtility.resolveFunction(functionCall)
+					.filter(function -> !QueryEvaluationUtility.isSafeForPlanConstantFolding(function,
+							strategy.getQueryExecutionPolicy()))
+					.isPresent()) {
+				return;
+			}
+
 			List<ValueExpr> args = functionCall.getArgs();
 
-			if (args.isEmpty()) {
-				/*
-				 * SPARQL has two types of zero-arg function. One are proper 'constant' functions like NOW() which
-				 * generate a single value for the entire query and which can be safely optimized to a constant. Other
-				 * functions, like RAND(), UUID() and STRUUID(), are a special case: they are expected to yield a new
-				 * value on every call, and can therefore not be replaced by a constant.
-				 */
-				if (!isConstantZeroArgFunction(functionCall)) {
+			for (ValueExpr arg : args) {
+				if (!isConstant(arg)) {
 					return;
-				}
-			} else {
-				for (ValueExpr arg : args) {
-					if (!isConstant(arg)) {
-						return;
-					}
 				}
 			}
 
@@ -303,7 +319,11 @@ public class ConstantOptimizer implements QueryOptimizer {
 			}
 
 			try {
-				Value value = evaluateWithKnownValues(functionCall);
+				QueryValueEvaluationStep prepared = strategy.precompile(resolveKnownValues(functionCall), context);
+				if (!prepared.isConstant()) {
+					return;
+				}
+				Value value = prepared.evaluate(EmptyBindingSet.getInstance());
 				functionCall.replaceWith(new ValueConstant(value));
 				bindingAnalysis.invalidate();
 			} catch (ValueExprEvaluationException e) {
@@ -313,26 +333,6 @@ public class ConstantOptimizer implements QueryOptimizer {
 			} catch (QueryEvaluationException e) {
 				logger.error("Query evaluation exception caught", e);
 			}
-		}
-
-		/**
-		 * Determines if the provided zero-arg function is a function that should return a constant value for the entire
-		 * query execution (e.g NOW()), or if it should generate a new value for every call (e.g. RAND()).
-		 *
-		 * @param functionCall a zero-arg function call.
-		 * @return <code>true<code> iff the provided function returns a constant value for the query execution, <code>false</code>
-		 *         otherwise.
-		 */
-		private boolean isConstantZeroArgFunction(FunctionCall functionCall) {
-			Function function = FunctionRegistry.getInstance()
-					.get(functionCall.getURI())
-					.orElseThrow(() -> new QueryEvaluationException(
-							"Unable to find function with the URI: " + functionCall.getURI()));
-
-			// we treat constant functions as the 'regular case' and make
-			// exceptions for specific SPARQL built-in functions that require
-			// different treatment.
-			return !function.mustReturnDifferentResult();
 		}
 
 		@Override
@@ -403,7 +403,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 			if (!canEvaluateWithKnownValues(expression)) {
 				throw new ValueExprEvaluationException("Cannot fold an expression with unknown evaluation effects");
 			}
-			return strategy.isTrue(resolveKnownValues(expression), EmptyBindingSet.getInstance());
+			return QueryEvaluationUtil.getEffectiveBooleanValue(evaluateWithKnownValues(expression));
 		}
 
 		private Value evaluateWithKnownValues(ValueExpr expression) throws ValueExprEvaluationException {

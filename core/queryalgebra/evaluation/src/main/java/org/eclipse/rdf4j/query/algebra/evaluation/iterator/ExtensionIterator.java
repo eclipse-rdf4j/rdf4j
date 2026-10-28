@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet> {
 
@@ -52,7 +53,15 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 		Consumer<MutableBindingSet> consumer = null;
 		for (ExtensionElem extElem : extension.getElements()) {
 			if (TupleExprs.isEvaluatedExtensionElement(extElem)) {
-				QueryValueEvaluationStep prepared = strategy.precompile(extElem.getExpr(), context);
+				QueryValueEvaluationStep preparedStep;
+				try {
+					preparedStep = strategy.precompile(extElem.getExpr(), context);
+				} catch (ValueExprEvaluationException e) {
+					// Defer type errors raised while preparing a constant expression until each input row is
+					// processed, so the existing row-local extension error handling can leave the binding unset.
+					preparedStep = new QueryValueEvaluationStep.Fail(e.getMessage());
+				}
+				final QueryValueEvaluationStep prepared = preparedStep;
 				BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(extElem.getName());
 				Consumer<MutableBindingSet> removeBinding = context.removeBinding(extElem.getName());
 				consumer = andThen(consumer,
@@ -109,7 +118,10 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 	@Override
 	public BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
 		MutableBindingSet targetBindings = context.createBindingSet(sourceBindings);
-		setter.accept(targetBindings);
-		return targetBindings;
+		try (BlankNodeAllocationScope.SolutionActivation ignored = context.getBlankNodeAllocationScope()
+				.beginSolutionOccurrence(targetBindings)) {
+			setter.accept(targetBindings);
+			return targetBindings;
+		}
 	}
 }

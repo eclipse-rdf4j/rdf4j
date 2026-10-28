@@ -1,0 +1,435 @@
+/// <reference path="template.ts" />
+/// <reference path="jquery.d.ts" />
+
+// WARNING: Do not edit the *.js version of this file. Instead, always edit the
+// corresponding *.ts source in the ts subfolder, and then invoke the
+// compileTypescript.sh bash script to generate new *.js and *.js.map files.
+
+namespace workbench {
+
+    export namespace paging {
+
+        var KT = 'know_total';
+
+        var RESULT_TOTAL_COUNT_ID = 'workbench-total-result-count';
+
+        var OFFSET = 'offset';
+
+        export var LIMIT = 'limit';
+
+        export var LIM_ID = '#' + LIMIT;
+
+        var AMP = decodeURIComponent('%26');
+
+        function createHiddenInput(name: string, value: string): HTMLInputElement {
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = name;
+            input.value = value;
+            return input;
+        }
+
+        function addCookieToFormIfPresent(form: HTMLFormElement, name: string) {
+            var value = workbench.getCookie(name);
+            if (value) {
+                form.appendChild(createHiddenInput(name, value));
+            }
+        }
+
+        function addElementValueToFormIfPresent(form: HTMLFormElement, name: string) {
+            var element = <HTMLInputElement | HTMLSelectElement>document.getElementById(name);
+            if (element && element.value) {
+                form.appendChild(createHiddenInput(name, element.value));
+            }
+        }
+
+        function appendParamToUrl(url: string, name: string, value: string) {
+            if (url.indexOf('?') + 1 || url.indexOf(';') + 1) {
+                return url + AMP + name + '=' + value;
+            }
+            return url + ';' + name + '=' + value;
+        }
+
+        function addElementValueToUrlIfPresent(url: string, name: string) {
+            var element = <HTMLInputElement | HTMLSelectElement>document.getElementById(name);
+            if (element && element.value) {
+                return appendParamToUrl(url, name, encodeURIComponent(element.value));
+            }
+            return url;
+        }
+
+        function getEmbeddedQueryText(): string {
+            var queryText = <HTMLTextAreaElement>document.getElementById('wb-query-text');
+            if (queryText && queryText.value) {
+                return queryText.value;
+            }
+            return '';
+        }
+
+        function addQueryReferenceToForm(form: HTMLFormElement) {
+            var queryText = getEmbeddedQueryText();
+            if (!queryText) {
+                var queryModule: any = (workbench as any).query;
+                if (queryModule && typeof queryModule.getPrimaryQueryDraftSessionValue === 'function') {
+                    queryText = queryModule.getPrimaryQueryDraftSessionValue();
+                }
+            }
+            if (queryText) {
+                form.appendChild(createHiddenInput('query', queryText));
+                form.appendChild(createHiddenInput('ref', 'text'));
+            }
+        }
+
+        function addQueryOptionsToForm(form: HTMLFormElement) {
+            addCookieToFormIfPresent(form, 'owner');
+            addCookieToFormIfPresent(form, 'queryLn');
+            addCookieToFormIfPresent(form, 'infer');
+            addCookieToFormIfPresent(form, 'limit_query');
+            addCookieToFormIfPresent(form, 'query-timeout');
+        }
+
+        function submitGraphParamRequest(name: string, value: string) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'query';
+            form.style.display = 'none';
+
+            form.appendChild(createHiddenInput('action', 'exec'));
+            addQueryReferenceToForm(form);
+            addQueryOptionsToForm(form);
+            if (name == 'Accept') {
+                addElementValueToFormIfPresent(form, 'download_limit');
+            }
+            form.appendChild(createHiddenInput(name, value));
+
+            document.body.appendChild(form);
+            workbench.protectSubmittedForm(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
+
+        function submitPagingParamRequest(name: string, value: string) {
+            var form = document.createElement('form');
+            form.method = 'POST';
+            form.action = 'query';
+            form.style.display = 'none';
+
+            form.appendChild(createHiddenInput('action', 'exec'));
+            addQueryReferenceToForm(form);
+            addQueryOptionsToForm(form);
+            if (!hasQueryParameter(KT) || 'false' == getQueryParameter(KT)) {
+                form.appendChild(createHiddenInput(KT, String(getTotalResultCount())));
+            }
+            form.appendChild(createHiddenInput(name, value));
+
+            document.body.appendChild(form);
+            workbench.protectSubmittedForm(form);
+            form.submit();
+            document.body.removeChild(form);
+        }
+
+        /**
+         * Invoked in the graph and tuple result views for download functionality. Takes a
+         * document element by name, and creates a request with it as a parameter.
+         */
+        export function addGraphParam(name: string) {
+            var value = <string>$('#' + name).val();
+            var url = document.location.href;
+            if (url.match(/query$/)) { // looking at POST query results?
+                submitGraphParamRequest(name, value);
+                return;
+            }
+            if (name == 'Accept') {
+                // A download: the browser saves the answer as a file.
+                url = addElementValueToUrlIfPresent(url, 'download_limit');
+                document.location.href = appendParamToUrl(url, name, encodeURIComponent(value));
+                return;
+            }
+            go(appendParamToUrl(url, name, encodeURIComponent(value)));
+        }
+
+        /** Show url: in the page when the router runs (M10.1), by a page load otherwise. */
+        function go(url: string) {
+            var router: any = (<any>workbench).router;
+            if (router && typeof router.isRunning === 'function' && router.isRunning()) {
+                router.navigate(url, { history: 'push' });
+            } else {
+                document.location.href = url;
+            }
+        }
+        
+        class StringMap {
+            [key: string]: string;
+        }
+
+        /**
+         * Scans the given URI for duplicate query parameter names, and removes
+         * all but the last occurrence for any duplicate case.
+         * 
+         * @param {String} href The URI to simplify.
+         * @returns {String} The URI with only the last occurrence of any
+         *          given parameter name remaining.
+         */
+        function simplifyParameters(href: string) {
+            var params:StringMap = {};
+            var rval = '';
+            var queryString = getQueryString(href);
+            var start = href.substring(0, href.indexOf(queryString));
+            var elements = queryString.split(decodeURIComponent('%26'));
+            for (var i = 0; elements.length - i; i++) {
+                var pair = elements[i].split('=');
+                params[pair[0]] = pair[1];
+                // Keep looping. We are interested in the last value.
+            }
+            for (var name in params) {
+                // use hasOwnProperty to filter out keys from the
+                // Object.prototype
+                if (params.hasOwnProperty(name)) {
+                    rval += name + '=' + params[name] + AMP;
+                }
+            }
+            rval = start + rval.substring(0, rval.length - 1);
+            return rval;
+        }
+
+        /**
+         * First, adds the given parameter to the URL query string. Second,
+         * adds a 'know_total' parameter if its current value is 'false' or
+         * non-existent. Third, simplifies the URL. Fourth, sends the browser
+         * to the modified URL.
+         * 
+         * @param {String} name The name of the query parameter.
+         * @param {number} value The value of the query parameter.
+         */
+        export function addPagingParam(name: string, value: number) {
+            if (document.location.pathname.match(/\/query$/)) {
+                submitPagingParamRequest(name, String(value));
+                return;
+            }
+            var url = document.location.href;
+            var hasParams = (url.indexOf('?') + 1 || url.indexOf(';') + 1);
+            var sep = hasParams ? AMP : ';';
+            url = url + sep + name + '=' + value;
+            // A total counted after the page was shown (Explore's has-more pages) replaces the unknown 0.
+            if (!hasQueryParameter(KT) || 'false' == getQueryParameter(KT)
+                    || ('0' == getQueryParameter(KT) && getTotalResultCount() > 0)) {
+                url += AMP + KT + '=' + getTotalResultCount();
+            }
+            if (!hasQueryParameter('query')) {
+                url += AMP + 'query=' + encodeURIComponent(workbench.getCookie('query'));
+                url += AMP + 'ref=' + encodeURIComponent(workbench.getCookie('ref'));
+            }
+            go(simplifyParameters(url));
+        }
+
+        /**
+         * Invoked in the tuple and explore views. Increments the offset query
+         * parameter, and navigates to the new URL.
+         */
+        export function nextOffset(page: string) {
+            addPagingParam(OFFSET, getOffset() + getLimit(page));
+        }
+
+        /**
+         * Invoked in the tuple and explore views. Decrements the offset query
+         * parameter and navigates to the new URL.
+         */
+        export function previousOffset(page: string) {
+            addPagingParam(OFFSET, Math.max(0, getOffset() - getLimit(page)));
+        }
+
+        /**
+         * @returns {number} The value of the offset query parameter.
+         */
+        export function getOffset() {
+            var offset = getQueryParameter(OFFSET);
+            return ('' == offset) ? 0 : parseInt(offset, 10);
+        }
+
+        /**
+         * @returns {number} The limit applied to the shown page: its limit URL parameter, else the limit the page was
+         *          rendered with. The limit select only applies when its form is submitted, so a value chosen in it
+         *          but not applied must not change how far Previous and Next step.
+         */
+        export function getLimit(page: string): number {
+            var name = LIMIT + '_' + page;
+            var applied = parseInt(getQueryParameter(name), 10);
+            if (!isNaN(applied)) {
+                return applied;
+            }
+            var select = <HTMLSelectElement>document.getElementById(name);
+            var options = select && select.options;
+            for (var i = 0; options && i < options.length; i++) {
+                if (options[i].defaultSelected) {
+                    return parseInt(options[i].value, 10);
+                }
+            }
+            return parseInt(<string>$(LIM_ID + '_' + page).val(), 10);
+        }
+
+        /**
+         * Retrieves the URL query parameter with the given name.
+         * 
+         * @param {String} name The name of the parameter to retrieve.
+         * @returns {String} The value of the given parameter, or an empty
+         *          string if it doesn't exist.
+         */
+        export function getQueryParameter(name: string): string {
+            var rval = '';
+            var elements = getQueryString(document.location.href).split(decodeURIComponent('%26'));
+            for (var i = 0; elements.length - i; i++) {
+                var pair = elements[i].split('=');
+                if (name != pair[0]) {
+                    continue;
+                }
+                rval = pair[1];
+                // Keep looping. We are interested in the last value.
+            }
+            return rval;
+        }
+
+        /**
+         * Gets whether a URL query parameter with the given name is present.
+         * 
+         * @param {String} name The name of the parameter to retrieve.
+         * @returns {Boolean} True, if a parameter with the given name is in
+         *                    the URL. Otherwise, false.
+         */
+        export function hasQueryParameter(name: string) {
+            var rval = false;
+            var elements = getQueryString(document.location.href).split(decodeURIComponent('%26'));
+            for (var i = 0; elements.length - i; i++) {
+                var pair = elements[i].split('=');
+                if (name == pair[0]) {
+                    rval = true;
+                    break;
+                }
+            }
+            return rval;
+        }
+
+        /**
+         * Convenience function for returning the tail of a string after a
+         * given character.
+         *   
+         * @param {String} value The string to get the tail of.
+         * @param split
+         *            character to give tail after
+         * @returns The substring after the 'split' character, or the original
+         *          string if 'split' is not found.
+         */
+        function tailAfter(value: string, split: string): string {
+            return value.substring(value.indexOf(split) + 1);
+        }
+
+        export function getQueryString(href: string) {
+            return tailAfter(tailAfter(href, '?'), ';');
+        }
+
+        /**
+         * Using the value of the 'limit' query parameter, correct the text of the
+         * Next and Previous buttons. Makes use of RegExp to preserve any
+         * localization.
+         */
+        export function correctButtons(page: string) {
+            var buttonWordPattern = /^[A-z]+\s+/;
+            var nextButton = $('#nextX');
+            var oldNext = <string>nextButton.val();
+            var count = parseInt(/\d+$/.exec(oldNext)[0], 10);
+            var limit = workbench.paging.getLimit(page);
+            nextButton.val(buttonWordPattern.exec(oldNext)[0] + limit);
+            var previousButton = $('#previousX');
+            previousButton
+                .val(buttonWordPattern.exec(<string>previousButton.val())[0] + limit);
+            var offset = workbench.paging.getOffset();
+            previousButton.prop('disabled', (offset <= 0 || limit <= 0));
+            // A page whose total is still being counted says whether a row follows it.
+            nextButton.prop('disabled',
+                (count < limit || limit <= 0 || (!resultHasMore() && (offset + count) >= getTotalResultCount())));
+        }
+
+        /**
+         * Whether the shown page said that rows follow it while its total is not known yet (Explore streams its
+         * pages and counts the total separately).
+         */
+        export function resultHasMore(): boolean {
+            var resultMetadata = document.getElementById(RESULT_TOTAL_COUNT_ID) as HTMLInputElement;
+            return Boolean(resultMetadata && !resultMetadata.value
+                && resultMetadata.getAttribute('data-has-more') === 'true');
+        }
+
+        /**
+         * Gets the total result count, preferably from the 'know_total' query
+         * parameter. If the parameter doesn't exist, get it from the
+         * 'total_result_count' cookie.
+         * 
+         * @returns {Number} The given total result count, or zero if it isn't
+         *          given.
+         */
+        export function getTotalResultCount() {
+            var total_result_count = 0;
+            var resultMetadata = document.getElementById(RESULT_TOTAL_COUNT_ID) as HTMLInputElement;
+            if (resultMetadata && resultMetadata.value) {
+                var resultMetadataCount = parseInt(resultMetadata.value, 10);
+                if (!isNaN(resultMetadataCount)) {
+                    return resultMetadataCount;
+                }
+            }
+            if (resultHasMore()) {
+                // The page said its total is not known yet: no older count stands in for it.
+                return 0;
+            }
+            var s_trc = workbench.paging.getQueryParameter(KT);
+            if (s_trc.length == 0) {
+                s_trc = workbench.getCookie('total_result_count');
+            }
+
+            if (s_trc.length > 0) {
+                total_result_count = parseInt(s_trc, 10);
+            }
+
+            return total_result_count;
+        }
+
+        namespace DataTypeVisibility {
+            function setCookie(c_name: string, value: boolean, exdays: number) {
+                var exdate = new Date();
+                exdate.setDate(exdate.getDate() + exdays);
+                document.cookie = c_name + "=" + value + 
+                    ((exdays == null) ? "" : 
+                    "; expires=" + exdate.toUTCString()) + "; SameSite=Lax";
+            }
+
+            /**
+             * Datatype tags (span.rdf-datatype) are hidden by a class on the page's own outlet (root), so no cell
+             * needs re-rendering and the pages shown later are not affected (the body only without a root).
+             */
+            export function apply(show: boolean, root?: HTMLElement) {
+                var target = root || document.body;
+                if (target && target.classList) {
+                    target.classList.toggle('workbench-hide-datatypes', !show);
+                }
+            }
+
+            export function setShow(show: boolean, root?: HTMLElement) {
+                setCookie('show-datatypes', show, 365);
+                apply(show, root);
+            }
+        }
+
+        /** Bind the "Show datatypes" checkbox (inside root when given) in the .wbRoute event namespace. */
+        export function setShowDataTypesCheckboxAndSetChangeEvent(root?: HTMLElement) {
+            var hideDataTypes = (workbench.getCookie('show-datatypes') == 'false');
+            var selector = "input[name='show-datatypes']";
+            var showDTcb = root ? $(root).find(selector) : $(selector);
+            if (hideDataTypes) {
+                showDTcb.prop('checked', false);
+            }
+            // Both ways: the next page may be rendered into the same outlet.
+            DataTypeVisibility.apply(!hideDataTypes, root);
+            showDTcb.on('change.wbRoute', function() {
+                DataTypeVisibility.setShow(showDTcb.prop('checked'), root);
+            });
+        }
+    }
+}

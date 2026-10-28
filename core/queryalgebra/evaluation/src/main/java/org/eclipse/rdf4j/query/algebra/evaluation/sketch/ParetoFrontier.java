@@ -149,7 +149,7 @@ final class ParetoFrontier<T> {
 		return (T) values[index];
 	}
 
-	record Entry<T> (T value, JoinCostVector costVector) {
+	record Entry<T>(T value, JoinCostVector costVector) {
 		Entry {
 			Objects.requireNonNull(costVector, "costVector");
 		}

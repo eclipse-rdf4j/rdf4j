@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -27,18 +26,14 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
-import java.util.zip.CRC32C;
 
 final class ValueStoreHashFile implements AutoCloseable {
 
 	static final String FILE_NAME = "hashes.dat";
 	static final String INTEGRITY_FILE_NAME = FILE_NAME + ".integrity";
 	private static final long SEGMENT_SIZE = 256L * 1024 * 1024;
-	private static final String INTEGRITY_VERSION = "1";
+	private static final String INTEGRITY_VERSION = "2";
 	private static final String VERSION_KEY = "version";
-	private static final String SIZE_KEY = "size";
-	private static final String CRC32C_KEY = "crc32c";
 	private static final ValueLayout.OfInt HASH_LAYOUT = ValueLayout.JAVA_INT_UNALIGNED.withOrder(ByteOrder.BIG_ENDIAN);
 
 	private final File file;
@@ -173,39 +168,10 @@ final class ValueStoreHashFile implements AutoCloseable {
 	}
 
 	private void prepareForOpen() throws IOException {
-		Path filePath = file.toPath();
-		Path integrityPath = integrityFile.toPath();
-		if (!Files.exists(filePath)) {
-			Files.deleteIfExists(integrityPath);
-			return;
-		}
-		if (!Files.exists(integrityPath)) {
-			discardExistingContents = true;
-			return;
-		}
-		if (!hasValidIntegrity(filePath, integrityPath)) {
-			discardExistingContents = true;
-		}
-		Files.deleteIfExists(integrityPath);
-	}
-
-	private boolean hasValidIntegrity(Path filePath, Path integrityPath) throws IOException {
-		Properties properties = new Properties();
-		try (InputStream inputStream = Files.newInputStream(integrityPath)) {
-			properties.load(inputStream);
-		}
-
-		if (!INTEGRITY_VERSION.equals(properties.getProperty(VERSION_KEY))) {
-			return false;
-		}
-
-		try {
-			long expectedSize = Long.parseLong(properties.getProperty(SIZE_KEY));
-			long expectedCrc32c = Long.parseLong(properties.getProperty(CRC32C_KEY));
-			return expectedSize == Files.size(filePath) && expectedCrc32c == computeCrc32c(filePath);
-		} catch (NumberFormatException e) {
-			return false;
-		}
+		// Hashes are derived. Verifying a previous process's entire file would make readiness depend on dictionary
+		// size; begin empty and populate individual entries from authoritative values on demand instead.
+		discardExistingContents = true;
+		Files.deleteIfExists(integrityFile.toPath());
 	}
 
 	private void close(boolean writeIntegrity) throws IOException {
@@ -275,9 +241,8 @@ final class ValueStoreHashFile implements AutoCloseable {
 			return;
 		}
 
-		String content = VERSION_KEY + "=" + INTEGRITY_VERSION + "\n"
-				+ SIZE_KEY + "=" + Files.size(filePath) + "\n"
-				+ CRC32C_KEY + "=" + computeCrc32c(filePath) + "\n";
+		// Version 2 explicitly invalidates cross-process payload reuse, including for older version-1 readers.
+		String content = VERSION_KEY + "=" + INTEGRITY_VERSION + "\n";
 		ByteBuffer encoded = StandardCharsets.UTF_8.encode(content);
 		try (FileChannel integrityChannel = FileChannel.open(integrityPath, StandardOpenOption.CREATE,
 				StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
@@ -286,18 +251,6 @@ final class ValueStoreHashFile implements AutoCloseable {
 			}
 			integrityChannel.force(true);
 		}
-	}
-
-	private long computeCrc32c(Path path) throws IOException {
-		CRC32C crc32c = new CRC32C();
-		byte[] buffer = new byte[8192];
-		try (InputStream inputStream = Files.newInputStream(path)) {
-			int read;
-			while ((read = inputStream.read(buffer)) != -1) {
-				crc32c.update(buffer, 0, read);
-			}
-		}
-		return crc32c.getValue();
 	}
 
 	private static void deleteCacheFiles(Path filePath, Path integrityPath) throws IOException {

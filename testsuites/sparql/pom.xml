@@ -60,6 +60,10 @@
 			<scope>runtime</scope>
 		</dependency>
 		<dependency>
+			<groupId>tools.jackson.core</groupId>
+			<artifactId>jackson-core</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-queryresultio-text</artifactId>
 			<version>${project.version}</version>

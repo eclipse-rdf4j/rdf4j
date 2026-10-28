@@ -56,6 +56,57 @@ import org.junit.jupiter.api.Test;
 public class ConstantOptimizerTest extends QueryOptimizerTest {
 
 	@Test
+	public void nowIsNotFoldedIntoReusablePlan() throws RDF4JException {
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT ?now WHERE { BIND(NOW() AS ?now) }", null);
+		EvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
+
+		TupleExpr optimized = optimize(query.getTupleExpr().clone(), new QueryBindingSet(), strategy);
+		AlgebraFinder finder = new AlgebraFinder();
+		optimized.visit(finder);
+
+		assertThat(finder.functionCallFound)
+				.as("NOW must remain query-scoped instead of becoming a reusable plan constant")
+				.isTrue();
+	}
+
+	@Test
+	public void invalidConstantIfConditionRetainsItsError() {
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		for (String condition : List.of("<urn:error>", "'text'@en", "'text'^^<urn:datatype>")) {
+			TupleExpr expression = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+					"SELECT ?x WHERE { BIND(IF(" + condition + ", 'yes', 'no') AS ?x) }", null).getTupleExpr();
+			new ConstantOptimizer(strategy).optimize(expression, null, EmptyBindingSet.getInstance());
+			List<If> retained = new ArrayList<>();
+			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(If node) {
+					retained.add(node);
+					super.meet(node);
+				}
+			});
+			assertThat(retained).as(condition).hasSize(1);
+			assertThat(evaluate(strategy, expression, EmptyBindingSet.getInstance())).singleElement()
+					.satisfies(row -> assertThat(row.hasBinding("x")).isFalse());
+		}
+	}
+
+	@Test
+	public void logicalIdentityFoldingPreservesBooleanDatatype() {
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		for (String operator : List.of("true && ?a", "?a && true", "false || ?a", "?a || false")) {
+			TupleExpr expression = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+					"SELECT ?x WHERE { BIND(" + operator + " AS ?x) }", null).getTupleExpr();
+			new ConstantOptimizer(strategy).optimize(expression, null, EmptyBindingSet.getInstance());
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("a", SimpleValueFactory.getInstance().createLiteral(7));
+			assertThat(evaluate(strategy, expression, bindings)).as(operator)
+					.singleElement()
+					.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(BooleanLiteral.TRUE));
+		}
+	}
+
+	@Test
 	public void foldsIfConditionFromContextualRootVariable() throws RDF4JException {
 		QueryBindingSet sourceBinding = new QueryBindingSet();
 		sourceBinding.addBinding("x", BooleanLiteral.TRUE);

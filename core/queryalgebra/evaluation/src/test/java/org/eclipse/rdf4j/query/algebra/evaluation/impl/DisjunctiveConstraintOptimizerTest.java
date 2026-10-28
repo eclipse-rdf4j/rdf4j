@@ -25,7 +25,11 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -49,6 +53,49 @@ import org.junit.jupiter.api.Test;
  * @author jeen
  */
 public class DisjunctiveConstraintOptimizerTest extends QueryOptimizerTest {
+
+	@Test
+	public void doesNotCloneNonRepeatableTupleForDeterministicDisjunction() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Extension volatileArg = new Extension(pattern, new ExtensionElem(new BNodeGenerator(), "generated"));
+		Or condition = new Or(
+				new SameTerm(Var.of("s"),
+						new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:test:left"))),
+				new SameTerm(Var.of("s"),
+						new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:test:right"))));
+		Filter filter = new Filter(volatileArg, condition);
+		QueryRoot root = new QueryRoot(filter);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(root.getArg()).isSameAs(filter);
+		assertThat(filter.getArg()).isSameAs(volatileArg);
+		assertThat(filter.getCondition()).isSameAs(condition);
+		assertThat(findUnion(root)).isNull();
+	}
+
+	/**
+	 * The disjunctive split is only algebra-preserving when the disjuncts are mutually exclusive: a solution satisfying
+	 * more than one disjunct must appear once in the filter result but would appear once per satisfied branch in the
+	 * rewritten union. The optimizer has no disjointness proof, so it must not split.
+	 */
+	@Test
+	public void doesNotSplitNonDisjointDisjunction() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Or condition = new Or(
+				new SameTerm(Var.of("o"),
+						new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:test:a"))),
+				new Bound(Var.of("o")));
+		Filter filter = new Filter(pattern, condition);
+		QueryRoot root = new QueryRoot(filter);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(root.getArg()).isSameAs(filter);
+		assertThat(filter.getArg()).isSameAs(pattern);
+		assertThat(filter.getCondition()).isSameAs(condition);
+		assertThat(findUnion(root)).isNull();
+	}
 
 	@Test
 	public void sameTermDisjunctionPreservesBagMultiplicityWhenBothBranchesMatch() throws Exception {
@@ -250,6 +297,19 @@ public class DisjunctiveConstraintOptimizerTest extends QueryOptimizerTest {
 	@Override
 	public DisjunctiveConstraintOptimizer getOptimizer() {
 		return new DisjunctiveConstraintOptimizer();
+	}
+
+	private static Union findUnion(QueryRoot root) {
+		if (root.getArg() instanceof Union union) {
+			return union;
+		}
+		if (root.getArg() instanceof Filter filter && filter.getArg() instanceof Union union) {
+			return union;
+		}
+		if (root.getArg() instanceof Extension extension && extension.getArg() instanceof Union union) {
+			return union;
+		}
+		return null;
 	}
 
 }
