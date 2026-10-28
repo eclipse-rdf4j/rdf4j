@@ -1527,7 +1527,7 @@ public class TurtleParser extends AbstractRDFParser {
 				if (skipWSC() == '~') {
 					reifier = parseReifier();
 				} else {
-					reifier = createImplicitReifier();
+					reifier = valueFactory.createBNode();
 				}
 
 				skipWSC();
@@ -1566,19 +1566,9 @@ public class TurtleParser extends AbstractRDFParser {
 				reportFatalError("Reifier must be a blank node or IRI");
 			}
 		} else {
-			return createImplicitReifier();
+			return valueFactory.createBNode();
 		}
 		return null;
-	}
-
-	/**
-	 * Creates the resource used as the implicit reifier/statement-identifier of a reified triple, annotation block, or
-	 * triple term when no explicit reifier ('~id') is given. Subclasses that forbid blank nodes in a given context
-	 * (e.g. DELETE DATA) should override this to reject the implicit case, since it otherwise bypasses
-	 * {@link #parseImplicitBlank()}/{@link #parseNodeID()}.
-	 */
-	protected Resource createImplicitReifier() throws RDFParseException {
-		return valueFactory.createBNode();
 	}
 
 	protected void parseAnnotationBlock() throws IOException {
@@ -1589,7 +1579,7 @@ public class TurtleParser extends AbstractRDFParser {
 		final TripleTerm oldTripleTerm = currTripleTerm;
 
 		if (currReifier == null) {
-			addReifyingTriple(createImplicitReifier());
+			addReifyingTriple(valueFactory.createBNode());
 		}
 
 		subject = currReifier;
