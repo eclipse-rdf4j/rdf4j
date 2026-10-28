@@ -79,8 +79,10 @@ public class LmdbStoreMultiRepoTest {
 		List<Callable<Void>> tasks = IntStream.range(0, repositoryCount)
 				.mapToObj(repositoryIndex -> (Callable<Void>) () -> {
 					File repositoryDir = new File(dataDir, "repo-" + repositoryIndex);
+					// Each triple contributes at most three distinct values to this repository's cache.
 					Repository repository = new SailRepository(
-							new LmdbStore(repositoryDir, new LmdbStoreConfig("spoc,posc")));
+							new LmdbStore(repositoryDir, new LmdbStoreConfig("spoc,posc")
+									.setValueCacheSize(triplesPerRepository * 3)));
 					repository.init();
 					synchronized (repositories) {
 						repositories.add(repository);
