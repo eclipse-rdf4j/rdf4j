@@ -1,0 +1,20 @@
+#
+# Test fixture: a downstream-style custom template that is loadable but never discovered.
+#
+# @workbench.template label="Workbench Test Custom" order=5 hidden=true
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
+
+[] a config:Repository ;
+   config:rep.id "{%Repository ID|workbench-test-custom%}" ;
+   # @workbench.field len=16
+   rdfs:label "{%Repository title|Workbench test custom store%}" ;
+   # @workbench.field len=48
+   config:rep.impl [
+      config:rep.type "openrdf:SailRepository" ;
+      config:sail.impl [
+         config:sail.type "openrdf:MemoryStore" ;
+         config:mem.persist {%Persist|true|false%} ;
+         config:mem.syncDelay {%Sync delay|0%}
+      ]
+   ].

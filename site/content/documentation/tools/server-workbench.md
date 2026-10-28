@@ -274,6 +274,29 @@ A query that runs longer than its timeout is reported as timed out (“Query tim
 Workbench stopped waiting for the RDF4J Server's answer just before the server reported the timeout itself; rows that
 were already received are kept.
 
+#### Repository types offered when creating a repository
+
+By default the “New repository” page offers every built-in repository type and Federation. A distribution can restrict
+and reorder that list, and add its own types, with `create.templates` in `workbench.properties`: a list of repository
+template types separated by commas and/or whitespace. The key is not part of the packaged defaults; when it is absent or
+blank nothing changes.
+
+```properties
+create.templates=native, memory, federate, acme-graph
+```
+
+When the key is set, the page offers exactly the listed types, in the order listed (they are not sorted), labelled with
+the label of each template. `federate` is a pseudo-type that stands for the Federation option; leave it out to remove
+Federation. The list may also name built-in templates that are normally hidden, such as `memory-rdfs-legacy`, and your
+own templates: a template is a Turtle file with the Workbench template annotations of the built-in ones, placed in
+`WEB-INF/classes/org/eclipse/rdf4j/repository/config/<type>.ttl` (or on the class path under the same package), and
+named in the list by its file name without `.ttl`.
+
+Types outside the list are refused: requesting the form of an unlisted type answers `404 Not Found`, and posting one
+answers `400 Bad Request` without creating a repository. The list is checked when the policy is loaded: an entry that
+contains characters other than letters, digits, `.`, `_` and `-`, a type listed twice, or a type whose template cannot be
+loaded makes the whole policy invalid, so every Workbench page answers `503 Service Unavailable` as described above.
+
 ### OpenTelemetry Tracing
 
 RDF4J Server can optionally be instrumented with [OpenTelemetry](https://opentelemetry.io/) tracing, recording one span per SPARQL query/update evaluated against a repository. This is entirely opt-in: with no configuration, RDF4J Server behaves exactly as before, with zero overhead. For general background on RDF4J's OpenTelemetry support (the underlying module, its configuration options, and programmatic use outside of Server/Workbench), see [Observability using OpenTelemetry](/documentation/programming/observability/).
@@ -625,6 +648,8 @@ Click on “New repository” in the sidebar menu. This brings up the “New Rep
 - 11 Remote RDF Store:	References a RDF4J repository external to the present server.
 - 12 SPARQL Endpoint Proxy: References a SPARQL Endpoint (See SPARQL 1.1 Protocol).
 - 1| Federation Store: Presents other stores referenced on the present server as a single federation store for querying purposes.
+
+Deployments can restrict this list, reorder it and add their own types with the `create.templates` policy key (see [Repository types offered when creating a repository](#repository-types-offered-when-creating-a-repository)).
 
 The “ID:” and “Title:” fields are optional in this form. Clicking “Next” brings up a form with more fields specific to the repository type selected. On that form, it will be necessary to enter something in the “ID:” field before the “Create” button may be clicked. If creation is successful, the new repository is also opened and its “Summary” page is presented.
 

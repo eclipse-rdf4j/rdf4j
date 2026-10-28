@@ -21,6 +21,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
@@ -45,6 +46,8 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
@@ -54,7 +57,8 @@ import jakarta.servlet.http.HttpServletResponse;
 
 public class CreateServlet extends TransformationServlet {
 
-	private static final String FEDERATE = "federate";
+	/** Pseudo-type standing for the Federation option. */
+	public static final String FEDERATE = "federate";
 
 	private static final String[] FEDERATE_RESULT_VARS = { "id", "description", "location" };
 
@@ -77,6 +81,11 @@ public class CreateServlet extends TransformationServlet {
 	@Override
 	protected void doPost(final WorkbenchRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
+		String requestedType = req.getTypeParameter();
+		if (!isTypeAllowed(requestedType)) {
+			rejectType(req, resp, HttpServletResponse.SC_BAD_REQUEST, requestedType);
+			return;
+		}
 		try {
 			resp.sendRedirect("../" + createRepositoryConfig(req) + "/summary");
 		} catch (Exception e) {
@@ -118,6 +127,10 @@ public class CreateServlet extends TransformationServlet {
 	@Override
 	protected void service(final WorkbenchRequest req, final HttpServletResponse resp)
 			throws IOException, RepositoryException, QueryResultHandlerException {
+		if (req.isParameterPresent("type") && !isTypeAllowed(req.getTypeParameter())) {
+			rejectType(req, resp, HttpServletResponse.SC_NOT_FOUND, req.getTypeParameter());
+			return;
+		}
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		boolean federate;
 		boolean typedTemplate;
@@ -227,6 +240,45 @@ public class CreateServlet extends TransformationServlet {
 		return visibleCreateTemplates(CreateTemplateConfig.loadBuiltin());
 	}
 
+	/**
+	 * Verifies that a template type named in the policy can be loaded and parsed.
+	 *
+	 * @throws IllegalArgumentException with a message naming the type and the {@code create.templates} key
+	 */
+	public static void requireCreateTemplate(String type) {
+		try {
+			CreateTemplateConfig.load(type);
+		} catch (IOException | RuntimeException e) {
+			throw new IllegalArgumentException("create.templates names template type '" + type
+					+ "' which cannot be loaded: " + failureMessage(e), e);
+		}
+	}
+
+	private WorkbenchPolicy getWorkbenchPolicy() {
+		if (config == null) {
+			return null;
+		}
+		try {
+			return WorkbenchPolicyLoader.getPolicy(config.getServletContext(), appConfig);
+		} catch (ServletException e) {
+			throw new IllegalStateException("Unable to load Workbench create policy", e);
+		}
+	}
+
+	/** Whether the policy offers a type; every type is offered when the policy has no allowlist. */
+	private boolean isTypeAllowed(String type) {
+		WorkbenchPolicy policy = getWorkbenchPolicy();
+		return policy == null || policy.getCreateTemplateAllowlist().map(list -> list.contains(type)).orElse(true);
+	}
+
+	private void rejectType(WorkbenchRequest req, HttpServletResponse resp, int status, String type)
+			throws IOException {
+		String message = "Repository type '" + type + "' is not available";
+		if (!writePageDataFailure(req, resp, status, message)) {
+			resp.sendError(status, message);
+		}
+	}
+
 	static CreateTemplateConfig getCreateTemplate(String type) throws IOException {
 		return CreateTemplateConfig.load(type);
 	}
@@ -238,6 +290,14 @@ public class CreateServlet extends TransformationServlet {
 	}
 
 	private void writeTemplateCatalog(TupleResultBuilder builder) throws IOException, QueryResultHandlerException {
+		Optional<List<String>> allowlist = Optional.ofNullable(getWorkbenchPolicy())
+				.flatMap(WorkbenchPolicy::getCreateTemplateAllowlist);
+		if (allowlist.isPresent()) {
+			for (String type : allowlist.get()) {
+				builder.result(type, FEDERATE.equals(type) ? "Federation" : getCreateTemplate(type).getLabel());
+			}
+			return;
+		}
 		List<TemplateOption> options = new java.util.ArrayList<>();
 		for (CreateTemplateConfig template : getCreateTemplates()) {
 			options.add(new TemplateOption(template.getType(), template.getLabel(), template.getOrder()));

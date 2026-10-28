@@ -232,6 +232,47 @@ class WorkbenchPolicyTest {
 	}
 
 	@Test
+	void createTemplatesAllowlistIsUnsetByDefault() {
+		assertThat(WorkbenchPolicy.fromProperties(new Properties(), Set.of()).getCreateTemplateAllowlist()).isEmpty();
+		Properties blank = new Properties();
+		blank.setProperty("create.templates", "  ");
+		assertThat(WorkbenchPolicy.fromProperties(blank, Set.of()).getCreateTemplateAllowlist()).isEmpty();
+	}
+
+	@Test
+	void createTemplatesAllowlistKeepsListOrderAndAcceptsFederate() {
+		Properties properties = new Properties();
+		properties.setProperty("create.templates", "native, federate memory");
+
+		assertThat(WorkbenchPolicy.fromProperties(properties, Set.of()).getCreateTemplateAllowlist())
+				.hasValue(List.of("native", "federate", "memory"));
+	}
+
+	@Test
+	void createTemplatesAllowlistRejectsUnknownTemplate() {
+		Properties properties = new Properties();
+		properties.setProperty("create.templates", "memory,no-such-template");
+
+		assertThatThrownBy(() -> WorkbenchPolicy.fromProperties(properties, Set.of()))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("create.templates")
+				.hasMessageContaining("no-such-template");
+	}
+
+	@Test
+	void createTemplatesAllowlistRejectsDuplicatesAndPathLikeTypes() {
+		for (String invalid : List.of("memory,memory", "../foo", "memory,a/b")) {
+			Properties properties = new Properties();
+			properties.setProperty("create.templates", invalid);
+
+			assertThatThrownBy(() -> WorkbenchPolicy.fromProperties(properties, Set.of()))
+					.as(invalid)
+					.isInstanceOf(IllegalArgumentException.class)
+					.hasMessageContaining("create.templates");
+		}
+	}
+
+	@Test
 	void queryDefaultTimeoutAcceptsZeroAndPositiveValues() {
 		Properties zero = new Properties();
 		zero.setProperty("query.default-timeout", "0");
