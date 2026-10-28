@@ -219,6 +219,84 @@ class WorkbenchPolicyTest {
 	}
 
 	@Test
+	void queryDefaultTimeoutIsAbsentUnlessConfigured() throws Exception {
+		Properties packagedDefaults = new Properties();
+		try (InputStream input = getClass().getResourceAsStream(
+				"/org/eclipse/rdf4j/common/app/config/defaults/workbench.properties")) {
+			assertThat(input).as("packaged Workbench defaults").isNotNull();
+			packagedDefaults.load(input);
+		}
+
+		assertThat(WorkbenchPolicy.fromProperties(packagedDefaults, Set.of()).getQueryDefaultTimeout()).isEmpty();
+		assertThat(WorkbenchPolicy.fromProperties(new Properties(), Set.of()).getQueryDefaultTimeout()).isEmpty();
+	}
+
+	@Test
+	void createTemplatesAllowlistIsUnsetByDefault() {
+		assertThat(WorkbenchPolicy.fromProperties(new Properties(), Set.of()).getCreateTemplateAllowlist()).isEmpty();
+		Properties blank = new Properties();
+		blank.setProperty("create.templates", "  ");
+		assertThat(WorkbenchPolicy.fromProperties(blank, Set.of()).getCreateTemplateAllowlist()).isEmpty();
+	}
+
+	@Test
+	void createTemplatesAllowlistKeepsListOrderAndAcceptsFederate() {
+		Properties properties = new Properties();
+		properties.setProperty("create.templates", "native, federate memory");
+
+		assertThat(WorkbenchPolicy.fromProperties(properties, Set.of()).getCreateTemplateAllowlist())
+				.hasValue(List.of("native", "federate", "memory"));
+	}
+
+	@Test
+	void createTemplatesAllowlistRejectsUnknownTemplate() {
+		Properties properties = new Properties();
+		properties.setProperty("create.templates", "memory,no-such-template");
+
+		assertThatThrownBy(() -> WorkbenchPolicy.fromProperties(properties, Set.of()))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessageContaining("create.templates")
+				.hasMessageContaining("no-such-template");
+	}
+
+	@Test
+	void createTemplatesAllowlistRejectsDuplicatesAndPathLikeTypes() {
+		for (String invalid : List.of("memory,memory", "../foo", "memory,a/b")) {
+			Properties properties = new Properties();
+			properties.setProperty("create.templates", invalid);
+
+			assertThatThrownBy(() -> WorkbenchPolicy.fromProperties(properties, Set.of()))
+					.as(invalid)
+					.isInstanceOf(IllegalArgumentException.class)
+					.hasMessageContaining("create.templates");
+		}
+	}
+
+	@Test
+	void queryDefaultTimeoutAcceptsZeroAndPositiveValues() {
+		Properties zero = new Properties();
+		zero.setProperty("query.default-timeout", "0");
+		Properties positive = new Properties();
+		positive.setProperty("query.default-timeout", " 15 ");
+
+		assertThat(WorkbenchPolicy.fromProperties(zero, Set.of()).getQueryDefaultTimeout()).hasValue(0);
+		assertThat(WorkbenchPolicy.fromProperties(positive, Set.of()).getQueryDefaultTimeout()).hasValue(15);
+	}
+
+	@Test
+	void queryDefaultTimeoutRejectsNegativeOrNonNumericValues() {
+		for (String invalid : List.of("-1", "soon", "")) {
+			Properties properties = new Properties();
+			properties.setProperty("query.default-timeout", invalid);
+
+			assertThatThrownBy(() -> WorkbenchPolicy.fromProperties(properties, Set.of()))
+					.as(invalid)
+					.isInstanceOf(IllegalArgumentException.class)
+					.hasMessageContaining("query.default-timeout");
+		}
+	}
+
+	@Test
 	void invalidDeploymentThemeFailsStartupValidation() {
 		Properties properties = new Properties();
 		properties.setProperty("theme.deployment-default", "orange");

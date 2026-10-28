@@ -37,7 +37,7 @@ final class WorkbenchTemplateDsl {
 			"default", "id");
 
 	private static final Set<String> FIELD_METADATA_KEYS = Set.of("name", "len", "rows", "cols", "placeholder",
-			"control", "unset");
+			"control", "unset", "readonly", "group");
 
 	private WorkbenchTemplateDsl() {
 	}
@@ -174,31 +174,42 @@ final class WorkbenchTemplateDsl {
 		private final String placeholder;
 		private final CreateTemplateConfig.FieldControl control;
 		private final boolean unsettable;
+		private final Boolean readonly;
+		private final String group;
 
 		private UiHints(Integer len, Integer rows, Integer cols, String placeholder,
-				CreateTemplateConfig.FieldControl control, boolean unsettable) {
+				CreateTemplateConfig.FieldControl control, boolean unsettable, Boolean readonly, String group) {
 			this.len = len;
 			this.rows = rows;
 			this.cols = cols;
 			this.placeholder = placeholder;
 			this.control = control;
 			this.unsettable = unsettable;
+			this.readonly = readonly;
+			this.group = group;
 		}
 
 		static UiHints parse(Map<String, String> attributes, int lineNumber) {
 			if (attributes.isEmpty()) {
 				return empty();
 			}
+			boolean unsettable = parseUnsettable(attributes.get("unset"), lineNumber);
+			Boolean readonly = parseReadonly(attributes.get("readonly"), lineNumber);
+			if (unsettable && Boolean.TRUE.equals(readonly)) {
+				throw new IllegalArgumentException(
+						"# @workbench.field readonly=true cannot be combined with unset=true (line " + lineNumber
+								+ ")");
+			}
 			return new UiHints(parseInteger(attributes.get("len")), parseInteger(attributes.get("rows")),
 					parseInteger(attributes.get("cols")), attributes.get("placeholder"),
 					attributes.containsKey("control")
 							? CreateTemplateConfig.FieldControl.parse(attributes.get("control"))
 							: null,
-					parseUnsettable(attributes.get("unset"), lineNumber));
+					unsettable, readonly, parseGroup(attributes.get("group"), lineNumber));
 		}
 
 		static UiHints empty() {
-			return new UiHints(null, null, null, null, null, false);
+			return new UiHints(null, null, null, null, null, false, null, null);
 		}
 
 		CreateTemplateConfig.FieldControl control() {
@@ -211,6 +222,14 @@ final class WorkbenchTemplateDsl {
 
 		boolean unsettable() {
 			return unsettable;
+		}
+
+		boolean readonly() {
+			return Boolean.TRUE.equals(readonly);
+		}
+
+		String group() {
+			return group == null ? "" : group;
 		}
 
 		int defaultSize(CreateTemplateConfig.FieldControl fallbackControl) {
@@ -231,7 +250,9 @@ final class WorkbenchTemplateDsl {
 					overridingHints.cols != null ? overridingHints.cols : cols,
 					overridingHints.placeholder != null ? overridingHints.placeholder : placeholder,
 					overridingHints.control != null ? overridingHints.control : control,
-					unsettable || overridingHints.unsettable);
+					unsettable || overridingHints.unsettable,
+					overridingHints.readonly != null ? overridingHints.readonly : readonly,
+					overridingHints.group != null ? overridingHints.group : group);
 		}
 	}
 
@@ -317,6 +338,30 @@ final class WorkbenchTemplateDsl {
 
 	private static Integer parseInteger(String value) {
 		return value == null || value.isEmpty() ? null : Integer.valueOf(value);
+	}
+
+	private static Boolean parseReadonly(String value, int lineNumber) {
+		if (value == null) {
+			return null;
+		}
+		if ("true".equalsIgnoreCase(value)) {
+			return Boolean.TRUE;
+		}
+		if ("false".equalsIgnoreCase(value)) {
+			return Boolean.FALSE;
+		}
+		throw new IllegalArgumentException(
+				"Unsupported # @workbench.field readonly value \"" + value + "\" on line " + lineNumber);
+	}
+
+	private static String parseGroup(String value, int lineNumber) {
+		if (value == null) {
+			return null;
+		}
+		if (value.isBlank()) {
+			throw new IllegalArgumentException("# @workbench.field group must not be blank (line " + lineNumber + ")");
+		}
+		return value.trim();
 	}
 
 	private static boolean parseUnsettable(String value, int lineNumber) {
