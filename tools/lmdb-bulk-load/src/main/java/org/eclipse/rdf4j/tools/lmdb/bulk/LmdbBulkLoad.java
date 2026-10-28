@@ -35,6 +35,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.StringJoiner;
 import java.util.TreeMap;
 import java.util.concurrent.CancellationException;
 
@@ -550,7 +551,8 @@ public final class LmdbBulkLoad {
 		if (!recorded.contains("statement-indexes")) {
 			output.println("Index fields: s=subject, p=predicate, o=object, c=context.");
 		}
-		promptOptionalValue(values, recorded, "statement-indexes", "Statement indexes", "spoc,posc", input, output);
+		promptOptionalValue(values, recorded, "statement-indexes", "Statement indexes", "spoc,posc,ospc", input,
+				output);
 		promptOptionalValue(values, recorded, "triple-term-indexes", "RDF-star term indexes", "spoc,cspo", input,
 				output);
 		promptOptionalValue(values, recorded, "memory", "Memory budget", "automatic", input, output);
@@ -1216,24 +1218,89 @@ public final class LmdbBulkLoad {
 
 	private static void printPlainProgress(PrintStream output, ProgressSnapshot snapshot) {
 		output.printf(Locale.ROOT,
-				"phase=%s phase-ops=%d total-ops=%d ops/s=%.1f avg-ops/s=%.1f MiB/s=%.2f "
-						+ "workers=%d queue-batches=%d resumed=%s complete=%s%n",
-				snapshot.phase(), snapshot.phaseOperations(), snapshot.totalOperations(),
+				"Phase %d/%d phase=%s phase-ops=%d total-ops=%d ops/s=%.1f avg-ops/s=%.1f MiB/s=%.2f "
+						+ "active-indexes=%s index-event=%s workers=%d queue-batches=%d resumed=%s complete=%s%n",
+				snapshot.phaseNumber(), snapshot.phaseCount(), snapshot.phase(), snapshot.phaseOperations(),
+				snapshot.totalOperations(),
 				snapshot.currentOperationsPerSecond(), snapshot.averageOperationsPerSecond(),
-				snapshot.currentBytesPerSecond() / (1024.0 * 1024.0), snapshot.workers(),
+				snapshot.currentBytesPerSecond() / (1024.0 * 1024.0), formatActiveIndexes(snapshot.activeIndexes()),
+				formatIndexProgress(snapshot.indexEvent()), snapshot.workers(),
 				snapshot.queueBatches(), snapshot.resumed(), snapshot.phaseComplete());
 	}
 
 	private static void printJsonProgress(PrintStream output, ProgressSnapshot snapshot) {
 		output.printf(Locale.ROOT,
-				"{\"phase\":\"%s\",\"phaseOperations\":%d,\"totalOperations\":%d,"
+				"{\"phase\":\"%s\",\"phaseNumber\":%d,\"phaseCount\":%d,"
+						+ "\"phaseOperations\":%d,\"totalOperations\":%d,\"activeIndexes\":%s,\"indexEvent\":%s,"
 						+ "\"currentOperationsPerSecond\":%.3f,\"averageOperationsPerSecond\":%.3f,"
 						+ "\"currentBytesPerSecond\":%.3f,\"elapsedMillis\":%d,\"workers\":%d,"
 						+ "\"queueBatches\":%d,\"resumed\":%s,\"phaseComplete\":%s}%n",
-				snapshot.phase(), snapshot.phaseOperations(), snapshot.totalOperations(),
+				snapshot.phase(), snapshot.phaseNumber(), snapshot.phaseCount(), snapshot.phaseOperations(),
+				snapshot.totalOperations(), formatJsonActiveIndexes(snapshot.activeIndexes()),
+				formatJsonIndexProgress(snapshot.indexEvent()),
 				snapshot.currentOperationsPerSecond(), snapshot.averageOperationsPerSecond(),
 				snapshot.currentBytesPerSecond(), snapshot.elapsedMillis(), snapshot.workers(),
 				snapshot.queueBatches(), snapshot.resumed(), snapshot.phaseComplete());
+	}
+
+	private static String formatActiveIndexes(List<ProgressSnapshot.IndexProgress> indexes) {
+		if (indexes.isEmpty()) {
+			return "none";
+		}
+		StringJoiner joiner = new StringJoiner(", ", "[", "]");
+		for (ProgressSnapshot.IndexProgress index : indexes) {
+			joiner.add(formatIndexProgress(index));
+		}
+		return joiner.toString();
+	}
+
+	private static String formatIndexProgress(ProgressSnapshot.IndexProgress index) {
+		if (index == null) {
+			return "none";
+		}
+		return String.format(Locale.ROOT, "%s %s %d/%d stage=%s complete=%s", index.family(), index.name(),
+				index.number(), index.count(), index.stage(), index.complete());
+	}
+
+	private static String formatJsonActiveIndexes(List<ProgressSnapshot.IndexProgress> indexes) {
+		StringJoiner joiner = new StringJoiner(",", "[", "]");
+		for (ProgressSnapshot.IndexProgress index : indexes) {
+			joiner.add(formatJsonIndexProgress(index));
+		}
+		return joiner.toString();
+	}
+
+	private static String formatJsonIndexProgress(ProgressSnapshot.IndexProgress index) {
+		if (index == null) {
+			return "null";
+		}
+		return "{\"family\":" + jsonString(index.family().name()) + ",\"name\":" + jsonString(index.name())
+				+ ",\"number\":" + index.number() + ",\"count\":" + index.count() + ",\"stage\":"
+				+ jsonString(index.stage().name()) + ",\"complete\":" + index.complete() + "}";
+	}
+
+	private static String jsonString(String value) {
+		StringBuilder escaped = new StringBuilder(value.length() + 2).append('"');
+		for (int index = 0; index < value.length(); index++) {
+			char character = value.charAt(index);
+			switch (character) {
+			case '"' -> escaped.append("\\\"");
+			case '\\' -> escaped.append("\\\\");
+			case '\b' -> escaped.append("\\b");
+			case '\f' -> escaped.append("\\f");
+			case '\n' -> escaped.append("\\n");
+			case '\r' -> escaped.append("\\r");
+			case '\t' -> escaped.append("\\t");
+			default -> {
+				if (character < 0x20) {
+					escaped.append(String.format(Locale.ROOT, "\\u%04x", (int) character));
+				} else {
+					escaped.append(character);
+				}
+			}
+			}
+		}
+		return escaped.append('"').toString();
 	}
 
 	private static class UsageException extends Exception {

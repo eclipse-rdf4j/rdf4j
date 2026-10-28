@@ -87,6 +87,12 @@ final class LmdbNativeKernelBindings {
 
 	/** One computed-BIND registration, index-aligned with the IR's {@code BindHook.bindId}. */
 	static final class BindHook {
+		private enum Builtin {
+			NONE,
+			NULL_PLACEHOLDER_TO_UNBOUND
+		}
+
+		private final Builtin builtin;
 		final LmdbNativeCompiledInlineId computed;
 		/**
 		 * Interned computed-value variant (completion plan M1.3b): the hook evaluates the decoded value and interns it
@@ -112,11 +118,26 @@ final class LmdbNativeKernelBindings {
 
 		private BindHook(LmdbNativeCompiledInlineId computed, LmdbNativeCompiledValue computedValue, CopyBinding copy,
 				int[] argSlots, boolean startsSolution) {
+			this(computed, computedValue, copy, argSlots, startsSolution, Builtin.NONE);
+		}
+
+		private BindHook(LmdbNativeCompiledInlineId computed, LmdbNativeCompiledValue computedValue, CopyBinding copy,
+				int[] argSlots, boolean startsSolution, Builtin builtin) {
 			this.computed = computed;
 			this.computedValue = computedValue;
 			this.copy = copy;
 			this.argSlots = argSlots;
 			this.startsSolution = startsSolution;
+			this.builtin = builtin;
+		}
+
+		/** An internal slot representation conversion, independent of RDF expressions, sources and query scope. */
+		static BindHook normalizeNullableInput(int slot) {
+			LmdbNativeCompiledInlineId value = new LmdbNativeCompiledInlineId(1L << slot, true, input -> {
+				long id = input.id(slot);
+				return id == LmdbNativeAggregateCompiler.NULL_CONTEXT_ID ? LmdbNativeAggregateCompiler.UNKNOWN : id;
+			});
+			return new BindHook(value, null, null, new int[] { slot }, false, Builtin.NULL_PLACEHOLDER_TO_UNBOUND);
 		}
 
 		BindHook withSolutionScope() {
@@ -141,6 +162,15 @@ final class LmdbNativeKernelBindings {
 		 * proved that replay preserves encounter-order semantics. Legacy CopyBinding evaluators have no such proof.
 		 */
 		boolean workerBindable() {
+			if (builtin != Builtin.NONE) {
+				return !startsSolution;
+			}
+			if (!startsSolution && copy != null && copy.computed == null && copy.computedValue == null
+					&& copy.semanticValue == null) {
+				// Alias/constant assignments contain no evaluator or worker-owned state, including nullable aliases
+				// that need a hook rather than a direct column copy at a lexical boundary.
+				return copy.encounterOrderReplaySafe;
+			}
 			NativeScalarPlan plan = scalarPlan();
 			if (plan == null || !plan.workerBindable() || startsSolution) {
 				return false;
@@ -156,6 +186,9 @@ final class LmdbNativeKernelBindings {
 			if (!workerBindable()) {
 				return null;
 			}
+			if (builtin != Builtin.NONE) {
+				return this;
+			}
 			if (copy != null) {
 				if (copy.computed != null) {
 					LmdbNativeCompiledInlineId rebound = copy.computed.bindForWorker(context);
@@ -167,7 +200,7 @@ final class LmdbNativeKernelBindings {
 							: new BindHook(copy.withComputedValue(rebound), argSlots,
 									startsSolution);
 				}
-				return null;
+				return new BindHook(copy, argSlots.clone(), startsSolution);
 			}
 			if (computed != null) {
 				LmdbNativeCompiledInlineId rebound = computed.bindForWorker(context);
@@ -633,6 +666,48 @@ final class LmdbNativeKernelBindings {
 				keyDomains, filterHooks, bindHooks, columnEngineSlots, residualFilters, scanSites, planRequests,
 				groupLayout, hooksRequired, distinctExpected, kernelResiduals, nodePredicateRequests, dynamicRequests,
 				wildcardRequests, kernelColumns);
+		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
+		copy.typeMatrixRequests = typeMatrixRequests;
+		return copy;
+	}
+
+	/** Construction safety is independent of whether the pipeline's root has an exact partition. */
+	boolean workerProducersBindable() {
+		for (PlanRequest request : planRequests) {
+			if (!request.batchSafe || !NativeWorkerPlanBinder.canBind(request.plan)) {
+				return false;
+			}
+		}
+		for (MaskedFilter residual : kernelResiduals) {
+			if (!residual.filter.parallelWorkerForkable()
+					|| residual.mask < 0L && !residual.filter.capabilities().replaySafe()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** The binder owns all copied filters until this worker's last kernel has closed. */
+	LmdbNativeKernelBindings bindWorkerProducers(NativeWorkerPlanBinder binder) throws java.io.IOException {
+		if (planRequests.length == 0 && kernelResiduals.length == 0) {
+			return this;
+		}
+		PlanRequest[] plans = new PlanRequest[planRequests.length];
+		for (int i = 0; i < plans.length; i++) {
+			PlanRequest request = planRequests[i];
+			plans[i] = new PlanRequest(binder.bind(request.plan), request.outputSlots, request.inputSlots,
+					request.factorProjection);
+		}
+		MaskedFilter[] residuals = new MaskedFilter[kernelResiduals.length];
+		for (int i = 0; i < residuals.length; i++) {
+			MaskedFilter residual = kernelResiduals[i];
+			residuals[i] = new MaskedFilter(binder.bindFilter(residual.filter), residual.mask, residual.adaptive,
+					residual.plannedDepth);
+		}
+		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds,
+				keyDomains, filterHooks, bindHooks, columnEngineSlots, residualFilters, scanSites, plans,
+				groupLayout, hooksRequired, distinctExpected, residuals, nodePredicateRequests, dynamicRequests,
+				wildcardRequests, kernelColumnEngineSlots);
 		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
 		copy.typeMatrixRequests = typeMatrixRequests;
 		return copy;

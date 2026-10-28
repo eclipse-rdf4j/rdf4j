@@ -206,6 +206,30 @@ final class LmdbNativeExplain {
 		}
 	}
 
+	static void initializeRuntimeMetric(TupleExpr expr, String metricName) {
+		expr = logicalOrigin(expr);
+		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
+			return;
+		}
+		initializeRuntimeMetricNode(expr, metricName);
+		if (expr instanceof QueryRoot root) {
+			initializeRuntimeMetricNode(root.getArg(), metricName);
+		}
+	}
+
+	static boolean runtimeTelemetryEnabled(TupleExpr expr) {
+		expr = logicalOrigin(expr);
+		return expr != null && expr.isRuntimeTelemetryEnabled();
+	}
+
+	private static void initializeRuntimeMetricNode(TupleExpr expr, String metricName) {
+		synchronized (expr) {
+			if (expr.getLongMetricActual(metricName) < 0L) {
+				expr.setLongMetricActual(metricName, 0L);
+			}
+		}
+	}
+
 	static void setRuntimeMetric(TupleExpr expr, String metricName, String value) {
 		expr = logicalOrigin(expr);
 		if (expr == null || value == null || !expr.isRuntimeTelemetryEnabled()) {

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.memoReadMask;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Factorized execution of the trailing join positions of a non-aggregate SELECT (steps 5–6 of the native-engine
@@ -149,10 +151,11 @@ final class LmdbNativeFactorizedRows {
 
 	/**
 	 * Plans the factorized shape over the ordered physical children, or returns null when a gate fails and the
-	 * enumerating cursor chain must run instead. Gates: tail branches are plain {@link PatternPlan}s without repeated
-	 * variables; at least one tail branch exists. The flat prefix may contain any {@link SlotPlan} (VALUES, BIND,
-	 * OPTIONAL, paths — the ordinary cursor chain drives it), but patterns whose fresh slots are consumed by a later
-	 * pattern's probe or by a filter of another depth stay in the flat prefix.
+	 * enumerating cursor chain must run instead. Tail branches are plain {@link PatternPlan}s without repeated
+	 * variables or repeatable lexical GRAPH producers with an exact read frame; at least one tail branch exists. The
+	 * flat prefix may contain any {@link SlotPlan} (VALUES, BIND, OPTIONAL, paths — the ordinary cursor chain drives
+	 * it), but patterns whose fresh slots are consumed by a later pattern's probe or by a filter of another depth stay
+	 * in the flat prefix.
 	 */
 	static LmdbNativeFactorizedRows tryCreate(MultiJoinPlan plan, MultiJoinPlan.OrderedPlan derived, RowState row,
 			long seedMask, int[] sourceSlots, boolean distinct) {
@@ -171,9 +174,85 @@ final class LmdbNativeFactorizedRows {
 			int minimumFlatCount) {
 		MultiJoinPlan.OrderedPlan selected = selectFactorizedOrderBase(plan, seedMask, requiredPrefixMask,
 				minimumFlatCount);
+		selected = selectOrderedComponentPrefix(plan, selected, seedMask, requiredPrefixMask, minimumFlatCount);
 		MultiJoinPlan.OrderedPlan improved = LmdbNativeFactorizedReorder.improveRows(plan, selected, seedMask,
 				requiredPrefixMask, minimumFlatCount);
 		return improved != null ? improved : selected;
+	}
+
+	/**
+	 * ORDER BY must bind all keys before the flat row can expand. The compiler may put an independent Cartesian
+	 * component first, in which case extending the prefix through the last key producer accidentally flattens that
+	 * entire component too. Move complete key-dependent components first within each reorderable bag run. Shared
+	 * variables and filters close the demand transitively, so the existing order inside a connected component remains
+	 * unchanged and no connecting probe is replaced by a Cartesian prefix. Lexical/nullable/effectful boundaries and
+	 * externally partitioned roots remain fixed. The ordinary split and filter-placement proofs decide whether this
+	 * permutation actually saves a flat depth; otherwise retain the incumbent order.
+	 */
+	private static MultiJoinPlan.OrderedPlan selectOrderedComponentPrefix(MultiJoinPlan plan,
+			MultiJoinPlan.OrderedPlan incumbent, long seedMask, long requiredPrefixMask, int minimumFlatCount) {
+		if ((requiredPrefixMask & ~seedMask) == 0L || !SlotPlan.encounterOrderReplaySafe(plan)) {
+			return incumbent;
+		}
+		for (MaskedFilter filter : plan.filters) {
+			if (filter.mask < 0L) {
+				return incumbent;
+			}
+		}
+		SlotPlan[] order = incumbent.order;
+		SlotPlan[] candidate = order.clone();
+		int start = minimumFlatCount;
+		while (start < order.length) {
+			if (!reorderableOrderComponent(order[start], seedMask)) {
+				start++;
+				continue;
+			}
+			int end = start + 1;
+			while (end < order.length && reorderableOrderComponent(order[end], seedMask)) {
+				end++;
+			}
+			long demanded = requiredPrefixMask & ~seedMask;
+			long previous;
+			do {
+				previous = demanded;
+				for (MaskedFilter filter : plan.filters) {
+					if ((filter.mask & demanded) != 0L) {
+						demanded |= filter.mask;
+					}
+				}
+				for (int depth = start; depth < end; depth++) {
+					if ((order[depth].producedMask() & demanded) != 0L) {
+						demanded |= order[depth].producedMask() | memoReadMask(order[depth]);
+					}
+				}
+			} while (demanded != previous);
+			int at = start;
+			for (int depth = start; depth < end; depth++) {
+				if ((order[depth].producedMask() & demanded) != 0L) {
+					candidate[at++] = order[depth];
+				}
+			}
+			for (int depth = start; depth < end; depth++) {
+				if ((order[depth].producedMask() & demanded) == 0L) {
+					candidate[at++] = order[depth];
+				}
+			}
+			start = end;
+		}
+		if (Arrays.equals(order, candidate)) {
+			return incumbent;
+		}
+		MultiJoinPlan.OrderedPlan derived = plan.deriveExplicit(seedMask, candidate);
+		return plannedFlatCountFor(plan, derived, seedMask, requiredPrefixMask,
+				minimumFlatCount) < plannedFlatCountFor(plan, incumbent, seedMask, requiredPrefixMask, minimumFlatCount)
+						? derived
+						: incumbent;
+	}
+
+	private static boolean reorderableOrderComponent(SlotPlan child, long seedMask) {
+		long reads = memoReadMask(child);
+		return SlotPlan.canFlatten(child) && SlotPlan.assuredMask(child) == child.producedMask()
+				&& reads >= 0L && (reads & ~(child.producedMask() | seedMask)) == 0L;
 	}
 
 	private static MultiJoinPlan.OrderedPlan selectFactorizedOrderBase(MultiJoinPlan plan, long seedMask,
@@ -273,7 +352,8 @@ final class LmdbNativeFactorizedRows {
 		TailBranch[] branches = new TailBranch[n - flatCount];
 		ArrayList<NativeBooleanFilter> prefixOnly = new ArrayList<>();
 		for (int d = flatCount; d < n; d++) {
-			PatternPlan pattern = (PatternPlan) order[d];
+			PatternPlan pattern = order[d] instanceof PatternPlan physical ? physical : null;
+			SlotPlan lexical = pattern == null ? order[d] : null;
 			ArrayList<NativeBooleanFilter> branchFilters = new ArrayList<>();
 			long filterReadMask = 0L;
 			for (int f = 0; f < filters.length; f++) {
@@ -293,16 +373,21 @@ final class LmdbNativeFactorizedRows {
 			int[] freshSlots = slotsOf(fresh[d]);
 			int[] freshQuadPos = new int[freshSlots.length];
 			for (int i = 0; i < freshSlots.length; i++) {
-				freshQuadPos[i] = pattern.quadPositionOfSlot(freshSlots[i]);
+				freshQuadPos[i] = pattern == null ? -1 : pattern.quadPositionOfSlot(freshSlots[i]);
 			}
 			int[] valueSlots = role == ROLE_ENUM ? slotsOf(fresh[d] & outputMask) : new int[0];
 			int[] valueQuadPos = new int[valueSlots.length];
 			for (int i = 0; i < valueSlots.length; i++) {
-				valueQuadPos[i] = pattern.quadPositionOfSlot(valueSlots[i]);
+				valueQuadPos[i] = pattern == null ? -1 : pattern.quadPositionOfSlot(valueSlots[i]);
 			}
 			branches[d - flatCount] = new TailBranch(pattern, role, keySlots, freshSlots, freshQuadPos, valueSlots,
 					valueQuadPos, branchFilters.toArray(new NativeBooleanFilter[0]),
-					pattern.rejectsNullContextAtBind());
+					pattern != null && pattern.rejectsNullContextAtBind());
+			if (lexical != null) {
+				branches[d - flatCount].lexical = lexical;
+				branches[d - flatCount].lexicalMemory = KernelRuntime.AggregateMemory.forLedger(
+						row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+			}
 		}
 		boolean allPrefixDepthsArePatterns = true;
 		for (int d = 0; d < flatCount; d++) {
@@ -561,6 +646,9 @@ final class LmdbNativeFactorizedRows {
 			if (child instanceof PatternPlan) {
 				fresh[d] = ((PatternPlan) child).freshProducedMask(boundBefore[d]);
 				reads[d] = producedMask & boundBefore[d];
+			} else if (child instanceof NativeGraphPlan graph && lexicalTailEligible(graph)) {
+				fresh[d] = producedMask & ~boundBefore[d];
+				reads[d] = graph.frameInputMask() | (producedMask & boundBefore[d]);
 			} else {
 				fresh[d] = producedMask & ~boundBefore[d];
 				// non-pattern children can read outside their produced mask (correlated left-join
@@ -585,9 +673,10 @@ final class LmdbNativeFactorizedRows {
 			laterNeeds[d] = laterNeeds[d + 1] | reads[d] | (filtersAtDepth & ~fresh[d]);
 		}
 		int flatCount = n;
-		while (flatCount > 0 && order[flatCount - 1] instanceof PatternPlan
-				&& (fresh[flatCount - 1] & laterNeeds[flatCount]) == 0L
-				&& !((PatternPlan) order[flatCount - 1]).hasRepeatedSlot()) {
+		while (flatCount > 0 && (order[flatCount - 1] instanceof PatternPlan pattern
+				? !pattern.hasRepeatedSlot()
+				: lexicalTailEligible(order[flatCount - 1]))
+				&& (fresh[flatCount - 1] & laterNeeds[flatCount]) == 0L) {
 			flatCount--;
 		}
 		if (flatCount == n) {
@@ -600,6 +689,12 @@ final class LmdbNativeFactorizedRows {
 			}
 		}
 		return new Split(fresh, reads, flatCount, laterNeeds[1], depth0FilterMask);
+	}
+
+	private static boolean lexicalTailEligible(SlotPlan plan) {
+		// GRAPH retains its own active graph and lexical evaluator. Only its immutable repeatability/read-frame
+		// capability permits per-key replay; typed summary lanes and opaque/effectful producers stay scalar.
+		return plan instanceof NativeGraphPlan graph && graph.workerBindable() && !SlotPlan.requiresPhysicalCells(plan);
 	}
 
 	private static long outputMask(int[] sourceSlots) {
@@ -1159,6 +1254,8 @@ final class LmdbNativeFactorizedRows {
 	static final class TailBranch {
 		static final int MAX_ENUM_REFUSED_KEYS = 4096;
 		final PatternPlan pattern;
+		SlotPlan lexical;
+		KernelRuntime.AggregateMemory lexicalMemory;
 		final int role;
 		final int[] keySlots;
 		final int[] freshSlots;
@@ -1213,7 +1310,7 @@ final class LmdbNativeFactorizedRows {
 				return result;
 			}
 			TailResult result = scanCountOrExists(row, owner.quadBuffer);
-			if (memoBudget.tryReserve(1, 0)) {
+			if (reserveRetention(1, 0)) {
 				boolean published = false;
 				try {
 					memo.put(probeKey.storedCopy(), result);
@@ -1221,7 +1318,7 @@ final class LmdbNativeFactorizedRows {
 					published = true;
 				} finally {
 					if (!published) {
-						memoBudget.release(1, 0);
+						releaseRetention(1, 0);
 					}
 				}
 			}
@@ -1244,6 +1341,10 @@ final class LmdbNativeFactorizedRows {
 
 		private void rememberEnumRefusal(long keyHash) {
 			if (enumRefusedKeyHashes == null) {
+				if (lexicalMemory != null && !lexicalMemory.tryReserve(MAX_ENUM_REFUSED_KEYS * 32L)) {
+					// Refusal is still exact without a memo; do not allocate a retry cache outside the shared ledger.
+					return;
+				}
 				enumRefusedKeyHashes = new LongHashSet(MAX_ENUM_REFUSED_KEYS);
 				enumRefusedClock = new long[MAX_ENUM_REFUSED_KEYS];
 			}
@@ -1263,6 +1364,17 @@ final class LmdbNativeFactorizedRows {
 		}
 
 		private TailResult collectEnum(RowState row, long[] buffer, boolean repeatedKey) throws IOException {
+			if (lexical != null) {
+				TailResult result = collectLexical(row);
+				if (result == TailResult.REFUSED) {
+					return result;
+				}
+				if (repeatedKey) {
+					return promoteRepeatedEnumResult(result);
+				}
+				publishFirstEnumResult(result);
+				return result;
+			}
 			int initialCapacity = Math.max(4, valueSlots.length) * 16;
 			if (!ensureEnumScratch(initialCapacity)) {
 				return TailResult.REFUSED;
@@ -1318,11 +1430,102 @@ final class LmdbNativeFactorizedRows {
 			return transientResult;
 		}
 
+		/** Captures only projected RDF ids while the lexical producer still owns its source/context lease. */
+		private TailResult collectLexical(RowState row) throws IOException {
+			if (role == ROLE_ENUM && !ensureEnumScratch(Math.max(4, valueSlots.length) * 16)) {
+				return TailResult.REFUSED;
+			}
+			int mark = row.mark();
+			RowCursor cursor = null;
+			Throwable failure = null;
+			TailResult result = null;
+			try {
+				cursor = lexical.open(row);
+				long count = 0L;
+				int tick = 0;
+				while (row.advance(cursor)) {
+					LmdbNativeProbeDeadline.poll(++tick);
+					boolean accepted = true;
+					for (NativeBooleanFilter filter : filters) {
+						if (!filter.accept(row)) {
+							accepted = false;
+							break;
+						}
+					}
+					if (!accepted) {
+						continue;
+					}
+					if (role == ROLE_EXISTS) {
+						result = TailResult.ONE;
+						break;
+					}
+					long copies = cursor instanceof FactorizedRowCursor weighted ? weighted.multiplicity() : 1L;
+					long nextCount = Math.addExact(count, copies);
+					if (role == ROLE_ENUM) {
+						long required = Math.multiplyExact(nextCount, valueSlots.length);
+						if (required > FactorizedTail.MAX_COLLECTED_VALUES
+								|| required > enumScratch.length && !growEnumScratch((int) required)) {
+							result = TailResult.REFUSED;
+							break;
+						}
+						for (long copy = count; copy < nextCount; copy++) {
+							row.cancellation.check();
+							int at = Math.toIntExact(copy * valueSlots.length);
+							for (int column = 0; column < valueSlots.length; column++) {
+								enumScratch[at + column] = row.slots[valueSlots[column]];
+							}
+						}
+					}
+					count = nextCount;
+				}
+				row.cancellation.check();
+				if (result == null) {
+					result = count == 0L ? TailResult.EMPTY
+							: role == ROLE_ENUM ? new TailResult(count, enumScratch)
+									: count == 1L ? TailResult.ONE : new TailResult(count, null);
+				}
+			} catch (Throwable problem) {
+				failure = problem;
+			} finally {
+				failure = KernelRuntime.closeResource(cursor, failure);
+				row.rollback(mark);
+			}
+			if (failure instanceof IOException io) {
+				throw io;
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+			return result;
+		}
+
+		private boolean reserveRetention(int entries, long values) {
+			long bytes = Math.addExact(Math.multiplyExact(values, 8L),
+					Math.multiplyExact(entries, 64L + keySlots.length * 8L));
+			if (lexicalMemory != null && !lexicalMemory.tryReserve(bytes)) {
+				return false;
+			}
+			if (!memoBudget.tryReserve(entries, values)) {
+				if (lexicalMemory != null) {
+					lexicalMemory.release(bytes);
+				}
+				return false;
+			}
+			return true;
+		}
+
+		private void releaseRetention(int entries, long values) {
+			memoBudget.release(entries, values);
+			if (lexicalMemory != null) {
+				lexicalMemory.release(values * 8L + entries * (64L + keySlots.length * 8L));
+			}
+		}
+
 		private boolean ensureEnumScratch(int initialCapacity) {
 			if (enumScratch != null) {
 				return true;
 			}
-			if (!memoBudget.tryReserve(0, initialCapacity)) {
+			if (!reserveRetention(0, initialCapacity)) {
 				return false;
 			}
 			try {
@@ -1330,7 +1533,7 @@ final class LmdbNativeFactorizedRows {
 				enumScratchReservedValues = initialCapacity;
 				return true;
 			} catch (RuntimeException | Error problem) {
-				memoBudget.release(0, initialCapacity);
+				releaseRetention(0, initialCapacity);
 				throw problem;
 			}
 		}
@@ -1339,7 +1542,7 @@ final class LmdbNativeFactorizedRows {
 			int current = enumScratch.length;
 			int grown = grownEnumCapacity(current, required);
 			int delta = grown - current;
-			if (!memoBudget.tryReserve(0, delta)) {
+			if (!reserveRetention(0, delta)) {
 				dropEnumScratch();
 				return false;
 			}
@@ -1348,13 +1551,13 @@ final class LmdbNativeFactorizedRows {
 				enumScratchReservedValues += delta;
 				return true;
 			} catch (RuntimeException | Error problem) {
-				memoBudget.release(0, delta);
+				releaseRetention(0, delta);
 				throw problem;
 			}
 		}
 
 		private void publishFirstEnumResult(TailResult result) {
-			if (!memoBudget.tryReserve(1, 0)) {
+			if (!reserveRetention(1, 0)) {
 				return;
 			}
 			boolean published = false;
@@ -1364,7 +1567,7 @@ final class LmdbNativeFactorizedRows {
 				published = true;
 			} finally {
 				if (!published) {
-					memoBudget.release(1, 0);
+					releaseRetention(1, 0);
 				}
 			}
 		}
@@ -1375,7 +1578,7 @@ final class LmdbNativeFactorizedRows {
 				return TailResult.EMPTY;
 			}
 			int capacity = enumScratch.length;
-			if (!memoBudget.tryReserve(0, capacity)) {
+			if (!reserveRetention(0, capacity)) {
 				return transientResult;
 			}
 			boolean published = false;
@@ -1389,7 +1592,7 @@ final class LmdbNativeFactorizedRows {
 				return durable;
 			} finally {
 				if (!published) {
-					memoBudget.release(0, capacity);
+					releaseRetention(0, capacity);
 				}
 			}
 		}
@@ -1401,6 +1604,9 @@ final class LmdbNativeFactorizedRows {
 		}
 
 		TailResult scanCountOrExists(RowState row, long[] buffer) throws IOException {
+			if (lexical != null) {
+				return collectLexical(row);
+			}
 			if (probe == null) {
 				probe = row.source.newProbe();
 			}
@@ -1460,7 +1666,7 @@ final class LmdbNativeFactorizedRows {
 			enumScratch = null;
 			enumScratchReservedValues = 0L;
 			if (reserved != 0L) {
-				memoBudget.release(0, reserved);
+				releaseRetention(0, reserved);
 			}
 		}
 
@@ -1505,6 +1711,7 @@ final class LmdbNativeFactorizedRows {
 			} catch (RuntimeException | Error problem) {
 				failure = addCloseFailure(failure, problem);
 			}
+			failure = KernelRuntime.closeResource(lexicalMemory, failure);
 			rethrowCloseFailure(failure);
 		}
 	}

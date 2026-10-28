@@ -15,21 +15,30 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.LockSupport;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.MockedStatic;
 
 /**
  * End-to-end probe-execution invariants at the arbiter level with scripted openers: one bounded probe of an uncertain
@@ -38,6 +47,88 @@ import org.junit.jupiter.params.provider.ValueSource;
  * probe outright.
  */
 class LmdbNativeProbeExecutionTest {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void declinedAttemptClosesItsUnfinishedLexicalProducerBeforeFallback(boolean cleanupFails) throws Exception {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(mock(NativeLmdbQuerySource.class));
+		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of(), null);
+		layout.freeze(List.of());
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		AtomicInteger evaluations = new AtomicInteger(), closes = new AtomicInteger(), rivalOpens = new AtomicInteger();
+		AtomicBoolean failClose = new AtomicBoolean();
+		IllegalStateException cleanup = new IllegalStateException("failed to close declined lexical producer");
+		QueryEvaluationStep step = bindings -> {
+			evaluations.incrementAndGet();
+			return new CloseableIteration<BindingSet>() {
+				private int emitted;
+
+				@Override
+				public boolean hasNext() {
+					return emitted < 3;
+				}
+
+				@Override
+				public BindingSet next() {
+					emitted++;
+					return EmptyBindingSet.getInstance();
+				}
+
+				@Override
+				public void remove() {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public void close() {
+					closes.incrementAndGet();
+					if (failClose.get()) {
+						throw cleanup;
+					}
+				}
+			};
+		};
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(step, new int[0], new String[0], new int[0],
+				new String[0]);
+		try {
+			// Warm actual initialization and prove ordinary and speculative occurrences retain independent producers.
+			try (RowCursor ordinary = subquery.open(row)) {
+				int rows = 0;
+				while (ordinary.next()) {
+					rows++;
+				}
+				assertEquals(3, rows);
+			}
+			assertEquals(1, closes.get());
+			failClose.set(cleanupFails);
+			Fixture fixture = fixture();
+			LmdbNativeStrategyProposal<String> rival = new LmdbNativeStrategyProposal<>(() -> {
+				rivalOpens.incrementAndGet();
+				assertNotNull(LmdbNativeProbeDeadline.currentOrNull(), "the rival must run as a real withheld trial");
+				try (RowCursor probe = subquery.open(row.fork())) {
+					assertTrue(probe.next(), "the trial must consume its actual first lexical row");
+				}
+				assertEquals(2, evaluations.get(), "the trial must own a producer separate from ordinary replay");
+				throw LmdbNativeProbeDeadline.capacityExhausted();
+			}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+			});
+			if (cleanupFails) {
+				assertSame(cleanup, assertThrows(IllegalStateException.class,
+						() -> dispatch(fixture, incumbentProposal(new AtomicInteger()), rival)));
+				assertEquals(1, cleanup.getSuppressed().length);
+				assertSame(LmdbNativeProbeDeadlineExceeded.INSTANCE, cleanup.getSuppressed()[0]);
+			} else {
+				assertEquals("incumbent", dispatch(fixture, incumbentProposal(new AtomicInteger()), rival));
+			}
+			assertEquals(1, rivalOpens.get());
+			assertEquals(2, closes.get(), "declined source ownership must be released inside dispatch");
+			assertFalse(row.cancellation.cancellationPublished());
+		} finally {
+			failClose.set(false);
+			source.executionContext().close();
+		}
+		assertTrue(source.executionContext().isClosed());
+	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
@@ -129,6 +220,361 @@ class LmdbNativeProbeExecutionTest {
 	}
 
 	@Test
+	void aCensoredMergeProbeRestoresEntryMappingForItsFallback() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("input", 0, "p", 1, "tail", 2), null);
+		layout.freeze(List.of("input", "p", "tail"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		assertTrue(row.bind(0, 11L));
+		row.enterLexicalScope(row.boundMask());
+		int entryMark = row.mark();
+		AtomicInteger trialOpens = new AtomicInteger();
+		AtomicInteger closes = new AtomicInteger();
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		Fixture fixture = fixture();
+		LmdbNativeStrategyProposal<String> trial = new LmdbNativeStrategyProposal<>(() -> {
+			trialOpens.incrementAndGet();
+			assertSame(deadline, LmdbNativeProbeDeadline.currentOrNull());
+			BatchCursor batch = new BatchCursor() {
+				@Override
+				public int fill(NativeBatch output) {
+					output.clear();
+					output.copyFromRow(new long[] { 11L, 42L, NativeLmdbQuerySource.UNKNOWN_ID }, 0);
+					output.finishRows(1);
+					return 1;
+				}
+
+				@Override
+				public void close() {
+					closes.incrementAndGet();
+					assertTrue(row.bind(2, 31L));
+				}
+			};
+			try (RowCursor cursor = new MergeOrderedRowCursor(batch, row)) {
+				assertTrue(cursor.next());
+				assertEquals(42L, row.slots[1]);
+				deadline.trip();
+				LmdbNativeProbeDeadline.poll(0);
+				return "trial";
+			}
+		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+		LmdbNativeStrategyProposal<String> fallback = new LmdbNativeStrategyProposal<>(() -> {
+			assertEquals(entryMark, row.mark());
+			assertEquals(1L, row.boundMask());
+			assertEquals(1, row.lexicalScopeDepth);
+			assertEquals(1L, row.lexicalInputMask);
+			assertEquals(List.of("input"), List.copyOf(row.view.getBindingNames()));
+			return row.slots[1] == NativeLmdbQuerySource.UNKNOWN_ID ? "unbound" : "bound to " + row.slots[1];
+		}, LmdbNativeWork.exact(1_000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+		});
+		String result;
+		try (MockedStatic<LmdbNativeProbeDeadline> ignored = mockStatic(LmdbNativeProbeDeadline.class, call -> {
+			if (call.getMethod().getName().equals("enter") && call.getArgument(0) instanceof Long) {
+				return LmdbNativeProbeDeadline.enter(deadline);
+			}
+			return call.callRealMethod();
+		});
+				LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter
+						.<String>forModel(null, -1D, fixture.model())
+						.probeHarness(LmdbNativeProbeHarness.blocking())
+						.sharedRow(row)) {
+			arbiter.offer(() -> fallback);
+			arbiter.offer(() -> trial);
+			result = arbiter.select();
+		}
+		assertEquals("unbound", result);
+		assertEquals(1, trialOpens.get());
+		assertEquals(1, closes.get());
+		assertTrue(deadline.tripped());
+		LmdbNativeCostPosteriorStore.ExactKey key = LmdbNativeCostPosteriorStore.ExactKey.of(
+				fixture.model().currentRegime(), LmdbNativeCostPosteriorStore.Lane.DIRECT,
+				trial.directTimingEstimate().variantKey());
+		assertEquals(1, fixture.store().posteriors().read(key, 0L, fixture.store().nowMillis()).exact().censoredCount);
+		row.rollback(0);
+		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.slots[0], "the caller still owns its trail prefix");
+	}
+
+	@Test
+	void aTimedOutProbeLeavesNoBindingsOnTheSharedRowForTheFallback() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0), null);
+		layout.freeze(List.of("p"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		AtomicInteger rivalOpens = new AtomicInteger();
+		// The trial stops mid-row with ?p bound, as a deadline poll inside a cursor loop does.
+		LmdbNativeStrategyProposal<String> rival = new LmdbNativeStrategyProposal<>(() -> {
+			rivalOpens.incrementAndGet();
+			assertTrue(row.bind(0, 42L));
+			int tick = 0;
+			while (true) {
+				LmdbNativeProbeDeadline.poll(++tick);
+			}
+		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+
+		String result;
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter
+				.<String>forModel(null, -1D, fixture().model())
+				.probeHarness(LmdbNativeProbeHarness.blocking())
+				.sharedRow(row)) {
+			arbiter.offer(() -> rowReadingIncumbent(row));
+			arbiter.offer(() -> rival);
+			result = arbiter.select();
+		}
+
+		assertEquals(1, rivalOpens.get(), "the rival must run as the trial");
+		assertEquals("unbound", result, "the fallback must not inherit the aborted trial's bindings");
+		assertEquals(0, row.mark());
+	}
+
+	@Test
+	void aDeclinedAttemptLeavesNoBindingsOnTheSharedRowForTheNextCandidate() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0), null);
+		layout.freeze(List.of("p"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		LmdbNativeStrategyProposal<String> declining = new LmdbNativeStrategyProposal<>(() -> {
+			assertTrue(row.bind(0, 42L));
+			return null;
+		}, LmdbNativeWork.exact(1D), LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+
+		String result;
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forExpr(null)
+				.sharedRow(row)) {
+			arbiter.offer(() -> declining);
+			arbiter.offer(() -> rowReadingIncumbent(row));
+			result = arbiter.select();
+		}
+
+		assertEquals("unbound", result, "the next candidate must not inherit the declined attempt's bindings");
+		assertEquals(0, row.mark());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "BOUND", "UNBOUND", "ERROR" })
+	void repeatedDeclinesRestoreNestedEntryBeforeTerminalProposal(String state) throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(
+				Map.of("input", 0, "summary", 1, "produced", 2, "newSummary", 3, "trailed", 4), null);
+		layout.freeze(List.of("input", "summary", "produced", "newSummary", "trailed"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		assertTrue(row.bind(0, 11L));
+		NativeResultCell entrySummary = switch (state) {
+		case "BOUND" -> NativeResultCell.lexicalLength(7L);
+		case "UNBOUND" -> NativeResultCell.unbound(NativeResultCell.Kind.LEXICAL_SUMMARY);
+		default -> NativeResultCell.error(NativeResultCell.Kind.LEXICAL_SUMMARY);
+		};
+		row.bindSummary(1, entrySummary);
+		int entryMark = row.mark();
+		long entryMask = row.boundMask();
+		row.enterLexicalScope(entryMask);
+		List<Integer> attempts = new ArrayList<>();
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forExpr(null)
+				.sharedRow(row)
+				.terminalFallback(() -> {
+					assertEntryMapping(row, entrySummary, entryMark, entryMask);
+					return new LmdbNativeStrategyProposal<>(() -> "terminal", 3D, "terminal");
+				})) {
+			for (int i = 0; i < 2; i++) {
+				int attempt = i;
+				arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+					assertEntryMapping(row, entrySummary, entryMark, entryMask);
+					attempts.add(attempt);
+					row.slots[0] = 99L;
+					row.slots[2] = 42L;
+					row.recomputeBoundMask();
+					row.bindSummary(3, NativeResultCell.error(NativeResultCell.Kind.LEXICAL_SUMMARY));
+					assertTrue(row.bind(4, 31L));
+					row.enterLexicalScope(0L);
+					return null;
+				}, attempt + 1D, "decline" + attempt));
+			}
+			assertEquals("terminal", arbiter.select());
+		}
+		assertEquals(List.of(0, 1), attempts);
+		assertEntryMapping(row, entrySummary, entryMark, entryMask);
+		row.restoreLexicalScope(0L);
+		row.rollback(0);
+		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.slots[0]);
+		assertNull(row.summaryCell(1));
+		assertEquals(0L, row.boundMask());
+	}
+
+	private static void assertEntryMapping(RowState row, NativeResultCell entrySummary, int entryMark, long entryMask) {
+		assertEquals(11L, row.slots[0]);
+		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.slots[2]);
+		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.slots[4]);
+		assertSame(entrySummary, row.summaryCell(1));
+		assertNull(row.summaryCell(3));
+		assertEquals(entryMark, row.mark());
+		assertEquals(entryMask, row.boundMask());
+		assertEquals(entryMask, row.lexicalInputMask);
+		assertEquals(1, row.lexicalScopeDepth);
+	}
+
+	@Test
+	void nestedArbitersRestoreTheirOwnLexicalEntries() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("input", 0, "outer", 1, "inner", 2), null);
+		layout.freeze(List.of("input", "outer", "inner"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		assertTrue(row.bind(0, 11L));
+		row.enterLexicalScope(row.boundMask());
+
+		try (LmdbNativeStrategyArbiter<String> outer = LmdbNativeStrategyArbiter.<String>forExpr(null)
+				.sharedRow(row)
+				.terminalFallback(() -> {
+					assertEquals(11L, row.slots[0]);
+					assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.slots[1]);
+					assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.slots[2]);
+					assertEquals(1, row.mark());
+					assertEquals(1L, row.boundMask());
+					assertEquals(1L, row.lexicalInputMask);
+					assertEquals(1, row.lexicalScopeDepth);
+					return new LmdbNativeStrategyProposal<>(() -> "outer fallback", 2D, "outer fallback");
+				})) {
+			outer.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+				assertTrue(row.bind(1, 22L));
+				row.enterLexicalScope(row.boundMask());
+				try (LmdbNativeStrategyArbiter<String> inner = LmdbNativeStrategyArbiter.<String>forExpr(null)
+						.sharedRow(row)
+						.terminalFallback(() -> {
+							assertEquals(11L, row.slots[0]);
+							assertEquals(22L, row.slots[1]);
+							assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.slots[2]);
+							assertEquals(2, row.mark());
+							assertEquals(3L, row.boundMask());
+							assertEquals(3L, row.lexicalInputMask);
+							assertEquals(2, row.lexicalScopeDepth);
+							return new LmdbNativeStrategyProposal<>(() -> "inner fallback", 2D, "inner fallback");
+						})) {
+					inner.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+						row.slots[0] = 99L;
+						row.slots[1] = 77L;
+						row.slots[2] = 44L;
+						row.recomputeBoundMask();
+						row.enterLexicalScope(0L);
+						return null;
+					}, 1D, "inner decline"));
+					assertEquals("inner fallback", inner.select());
+				}
+				row.slots[2] = 66L;
+				row.recomputeBoundMask();
+				return null;
+			}, 1D, "outer decline"));
+			assertEquals("outer fallback", outer.select());
+		}
+		row.restoreLexicalScope(0L);
+		row.rollback(0);
+		assertEquals(0L, row.boundMask());
+	}
+
+	@Test
+	void noSelectedCandidateRestoresRowForTheCallersFallback() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("input", 0, "produced", 1, "summary", 2), null);
+		layout.freeze(List.of("input", "produced", "summary"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		row.bind(0, 11L);
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.<String>forExpr(null)
+				.sharedRow(row)) {
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+				row.slots[1] = 42L;
+				row.recomputeBoundMask();
+				row.bindSummary(2, NativeResultCell.lexicalLength(3L));
+				return null;
+			}, 1D, "decline"));
+			assertNull(arbiter.select());
+		}
+		assertEquals(11L, row.slots[0]);
+		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.slots[1]);
+		assertNull(row.summaryCell(2));
+		assertEquals(1L, row.boundMask());
+		assertEquals(1, row.mark());
+		assertEquals(List.of("input"), List.copyOf(row.view.getBindingNames()));
+		row.rollback(0);
+		assertEquals(0L, row.boundMask());
+	}
+
+	@Test
+	void selectingAStreamingWinnerKeepsItsLiveRow() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0), null);
+		layout.freeze(List.of("p"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		row.recomputeBoundMask();
+		AtomicBoolean closed = new AtomicBoolean();
+		RowCursor cursor = new RowCursor() {
+			@Override
+			public boolean next() {
+				return !closed.get();
+			}
+
+			@Override
+			public void close() {
+				closed.set(true);
+			}
+		};
+		LmdbNativeStrategySelection<RowCursor> selected;
+		try (LmdbNativeStrategyArbiter<RowCursor> arbiter = LmdbNativeStrategyArbiter.<RowCursor>forExpr(null)
+				.sharedRow(row)) {
+			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+				row.slots[0] = 42L;
+				row.recomputeBoundMask();
+				return cursor;
+			}, 1D, "winner"));
+			selected = arbiter.selectWithObservation();
+		}
+		try (selected; cursor) {
+			assertSame(cursor, selected.value());
+			assertTrue(cursor.next());
+			assertEquals(42L, row.slots[0]);
+			assertEquals(1L, row.boundMask());
+		}
+		assertTrue(closed.get());
+	}
+
+	@Test
+	void queryCancellationIsNotRetriedAsAProbeTimeout() throws IOException {
+		Fixture fixture = fixture();
+		AtomicInteger fallbackOpens = new AtomicInteger();
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		LmdbNativeStrategyProposal<String> trial = new LmdbNativeStrategyProposal<>(() -> {
+			assertSame(deadline, LmdbNativeProbeDeadline.currentOrNull());
+			throw KernelQueryCancelledException.INSTANCE;
+		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+		try (MockedStatic<LmdbNativeProbeDeadline> ignored = mockStatic(LmdbNativeProbeDeadline.class, call -> {
+			if (call.getMethod().getName().equals("enter") && call.getArgument(0) instanceof Long) {
+				return LmdbNativeProbeDeadline.enter(deadline);
+			}
+			return call.callRealMethod();
+		});
+				LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter
+						.<String>forModel(null, -1D, fixture.model())
+						.probeHarness(LmdbNativeProbeHarness.blocking())) {
+			arbiter.offer(() -> incumbentProposal(fallbackOpens));
+			arbiter.offer(() -> trial);
+			assertSame(KernelQueryCancelledException.INSTANCE,
+					assertThrows(KernelQueryCancelledException.class, arbiter::select));
+		}
+		assertEquals(0, fallbackOpens.get());
+		assertFalse(deadline.tripped());
+	}
+
+	private static LmdbNativeStrategyProposal<String> rowReadingIncumbent(RowState row) {
+		return new LmdbNativeStrategyProposal<>(() -> row.boundMask() == 0L ? "unbound" : "bound to " + row.slots[0],
+				LmdbNativeWork.exact(1_000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+				});
+	}
+
+	@Test
 	void aTimedOutProbeCensorsCoolsDownFallsBackAndIsNotImmediatelyRetried() throws IOException {
 		Fixture fixture = fixture();
 		AtomicInteger incumbentOpens = new AtomicInteger();
@@ -188,7 +634,11 @@ class LmdbNativeProbeExecutionTest {
 		AtomicInteger rivalOpens = new AtomicInteger();
 		LmdbNativeStrategyProposal<String> rival = new LmdbNativeStrategyProposal<>(() -> {
 			rivalOpens.incrementAndGet();
-			LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(20L));
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull();
+			assertNotNull(deadline, "the rival must run under the dispatcher's actual probe deadline");
+			deadline.trip();
+			assertTrue(deadline.tripped(), "the returned value must already be beyond its probe deadline");
+			assertFalse(deadline.capacityTripped(), "this is deadline expiry, not private-buffer exhaustion");
 			return "late-rival";
 		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
 		});

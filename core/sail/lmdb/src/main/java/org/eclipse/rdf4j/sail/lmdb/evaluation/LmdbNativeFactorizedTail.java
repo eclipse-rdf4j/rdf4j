@@ -102,6 +102,7 @@ final class FactorizedTail {
 	/** Filters at tail depths that read no branch fresh slot: their verdict is constant per prefix row. */
 	final NativeBooleanFilter[] prefixOnlyTailFilters;
 	final BranchResult[] resultScratch;
+	final int[][] aggregateSelections, membershipSelections;
 	boolean engagementRecorded;
 	boolean closed;
 	String prefixStrategy = "chain";
@@ -132,6 +133,13 @@ final class FactorizedTail {
 		this.groupedMemoEnabled = groupedMemoEnabled;
 		this.prefixOnlyTailFilters = prefixOnlyTailFilters;
 		this.resultScratch = new BranchResult[branches.length];
+		this.aggregateSelections = new int[specs.length][];
+		this.membershipSelections = new int[specs.length][];
+		for (int index = 0; index < specs.length; index++) {
+			aggregateSelections[index] = new int[] { index };
+			int channel = hashDistinctChannels.specChannels[index];
+			membershipSelections[index] = channel < 0 ? NO_SLOTS : new int[] { channel };
+		}
 	}
 
 	int branchCount() {
@@ -303,20 +311,22 @@ final class FactorizedTail {
 			return null;
 		}
 		boolean allCounts = AggregateSpec.allCounts(aggregates);
+		if (!allCounts && !NativeCountGroupStore.enabled()) {
+			return null; // Value marginals require the exact bounded event consumer.
+		}
+		SlotPlan[] order = derived.order;
+		long assured = seedMask;
+		for (SlotPlan child : order) {
+			assured |= SlotPlan.assuredMask(child);
+		}
 		for (AggregateSpec spec : aggregates) {
-			if (spec.distinct && spec.kind != AggKind.COUNT) {
-				// SUM/AVG/MIN/MAX DISTINCT need multiplicity-free per-value aggregation at emission
-				// time, which this state does not represent yet — stay on the enumerating path
-				return null;
-			}
-			if (spec.kind == AggKind.SAMPLE || spec.kind == AggKind.GROUP_CONCAT || spec.kind == AggKind.CUSTOM
-					|| spec.distinct && spec.rowSlots != null) {
-				// M-F1/M-F3: samples, encounter-order concats and COUNT(DISTINCT *) have no weighted-combination
-				// rule — the factorized state would silently drop their inputs; stay on the enumerating path
+			boolean nonemptyMapping = spec.isWildcardCount() && !spec.distinct
+					&& (spec.rowSlots == null || spec.rowSlots.length != 0 && spec.rowInputMask(assured) == 0L);
+			if (!spec.reducer.supportsMarginal(nonemptyMapping)) {
+				// Full mappings, opaque collectors and ordered text have no independent marginal proof here.
 				return null;
 			}
 		}
-		SlotPlan[] order = derived.order;
 		int last = order.length - 1;
 		if (last < 1 || !(order[last] instanceof PatternPlan) || ((PatternPlan) order[last]).hasRepeatedSlot()) {
 			return null;
@@ -442,7 +452,7 @@ final class FactorizedTail {
 			AggregateSpec spec = aggregates[i];
 			specBranch[i] = -1;
 			specValueColumn[i] = -1;
-			if (!spec.distinct) {
+			if (spec.reducer.weightSensitive) {
 				anyNonDistinct = true;
 			}
 			if (spec.slot < 0) {
@@ -574,14 +584,12 @@ final class FactorizedTail {
 			}
 		}
 		BranchResult[] results = resultScratch;
-		long product = 1;
 		for (int b = 0; b < branches.length; b++) {
 			BranchResult result = branches[b].result(row);
 			if (result.count == 0) {
 				return false;
 			}
 			results[b] = result;
-			product = multiplyCounts(product, result.count);
 		}
 		for (int k = 0; k < specs.length; k++) {
 			AggregateSpec spec = specs[k];
@@ -589,14 +597,14 @@ final class FactorizedTail {
 				if (specBranch[k] >= 0) {
 					BranchResult branchResult = results[specBranch[k]];
 					long[] values = branchResult.values[specValueColumn[k]];
-					LongHashSet set = state.distinctSets[k];
 					for (int value = 0; value < branchResult.count; value++) {
-						set.add(values[value]);
+						row.cancellation.poll(value);
+						addDistinct(state, k, values[value]);
 					}
 				} else {
 					long value = spec.value(row);
 					if (value != UNKNOWN) {
-						state.distinctSets[k].add(value);
+						addDistinct(state, k, value);
 					}
 				}
 			} else if (spec.kind != AggKind.COUNT) {
@@ -605,28 +613,115 @@ final class FactorizedTail {
 					// branches' matches: weight = product of the other branches' counts
 					BranchResult branchResult = results[specBranch[k]];
 					long[] values = branchResult.values[specValueColumn[k]];
-					long weight = productExcluding(results, specBranch[k]);
 					for (int value = 0; value < branchResult.count; value++) {
+						row.cancellation.poll(value);
+						long weight = AggState.observesWeight(spec, state.ctx, values[value])
+								? productExcluding(results, specBranch[k])
+								: 1L;
 						state.addWeighted(k, values[value], weight);
 					}
 				} else {
 					long value = spec.value(row);
-					if (value != UNKNOWN) {
-						state.addWeighted(k, value, product);
+					if (spec.hasInput(row)) {
+						long weight = AggState.observesWeight(spec, state.ctx, value)
+								? productExcluding(results, -1)
+								: 1L;
+						state.addWeighted(k, value, weight);
 					}
 				}
 			} else if (specBranch[k] >= 0) {
 				// every solution binds the branch variable exactly once: multiplicity is the product
-				state.counts[k] = addCounts(state.counts[k], product);
+				state.counts[k] = addCounts(state.counts[k], productExcluding(results, -1));
 			} else {
-				long value = spec.value(row);
-				if (value != UNKNOWN) {
-					state.counts[k] = addCounts(state.counts[k], product);
+				if (spec.hasInput(row)) {
+					state.counts[k] = addCounts(state.counts[k], productExcluding(results, -1));
 				}
 			}
 		}
-		row.recordExactValuesMatched(product);
+		recordMatched(row, results);
 		return true;
+	}
+
+	private static void addDistinct(AggState state, int index, long value) {
+		if (value == UNKNOWN || value == LmdbNativeAggregateCompiler.NULL_CONTEXT_ID) {
+			return;
+		}
+		int channel = state.distinctChannels.specChannels[index];
+		LongHashSet membership = channel < 0 ? null : state.channelSets[channel];
+		if (membership == null || membership.add(value)) {
+			if (state.specs[index].kind != AggKind.COUNT
+					&& !state.deferredDistinctValueAggregate(index)) {
+				state.addWeighted(index, value, 1L);
+			}
+		}
+	}
+
+	/** Each independent marginal enters the same bounded membership/event store as ordinary input rows. */
+	boolean aggregateInto(RowState row, NativeGroupTable target) throws IOException {
+		for (NativeBooleanFilter filter : prefixOnlyTailFilters) {
+			if (!filter.accept(row)) {
+				return false;
+			}
+		}
+		BranchResult[] results = resultScratch;
+		for (int branch = 0; branch < branches.length; branch++) {
+			row.cancellation.check();
+			results[branch] = branches[branch].result(row);
+			if (results[branch].count == 0L) {
+				return false;
+			}
+		}
+		target.addProjected(row, 1L, NO_SLOTS, NO_SLOTS);
+		for (int index = 0; index < specs.length; index++) {
+			AggregateSpec spec = specs[index];
+			int branch = specBranch[index];
+			int[] selected = aggregateSelections[index];
+			int[] membership = membershipSelections[index];
+			if (branch >= 0 && spec.kind == AggKind.COUNT && !spec.distinct) {
+				target.addProvedCount(row, index, productExcluding(results, -1), selected);
+				continue;
+			}
+			if (branch < 0) {
+				if (!spec.hasInput(row)) {
+					continue;
+				}
+				long weight = target.observesFactorWeight(index, spec.value(row))
+						? productExcluding(results, -1)
+						: 1L;
+				target.addProjected(row, weight, selected, membership);
+				continue;
+			}
+			BranchResult result = results[branch];
+			long[] values = result.values[specValueColumn[index]];
+			for (int value = 0; value < result.count; value++) {
+				row.cancellation.poll(value);
+				int mark = row.mark();
+				try {
+					if (!row.bindOrCheckTerm(spec.slot, values[value])) {
+						throw new IllegalStateException("Independent factor changed a prefix binding");
+					}
+					long weight = target.observesFactorWeight(index, values[value])
+							? productExcluding(results, branch)
+							: 1L;
+					target.addProjected(row, weight, selected, membership);
+				} finally {
+					row.rollback(mark);
+				}
+			}
+		}
+		recordMatched(row, results);
+		return true;
+	}
+
+	private static void recordMatched(RowState row, BranchResult[] results) {
+		if (row.exactValuesMetrics == null) {
+			return;
+		}
+		long count = 1L;
+		for (BranchResult result : results) {
+			count = result.count > Long.MAX_VALUE / count ? Long.MAX_VALUE : count * result.count;
+		}
+		row.recordExactValuesMatched(count);
 	}
 
 	/** Product of every branch's match count except {@code exclude}'s (overflow-checked). */

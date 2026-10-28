@@ -389,7 +389,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 	}
 
 	@Test
-	void workerPartialRetainsNumericPayloadAfterSegmentHooksClose() {
+	void workerPartialRetainsNumericPayloadAfterSegmentHooksClose() throws Exception {
 		set("rdf4j.lmdb.parallel.threads", "2");
 		set("rdf4j.lmdb.parallel.maxTasks", "2");
 
@@ -455,38 +455,51 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 					LmdbNativeKernelBindings.VariablePredicateViews.NONE, null, null, domains, SlotPlan.singleton(),
 					row,
 					emitter, null, factory, workers);
+			try (AutoCloseable ownedResult = result instanceof AutoCloseable closeable ? closeable : null) {
+				assertThat(result).as("published worker rows retain their bounded replay owner")
+						.isInstanceOf(NativeReplayBindingList.class);
+				assertThat(manager.usedBytes())
+						.as("the returned bounded result remains charged until its owner closes")
+						.isPositive();
 
-			List<BindingSet> expected = new ArrayList<>(terms.size());
-			for (Value term : terms) {
-				MapBindingSet expectedRow = new MapBindingSet();
-				expectedRow.addBinding("g", term);
-				expectedRow.addBinding("sum", term);
-				expected.add(expectedRow);
-			}
-			assertThat(result).containsExactlyInAnyOrderElementsOf(expected);
-			int workersAtSecondSegment = 0;
-			for (AtomicInteger calls : factoryCalls.values()) {
-				if (calls.get() >= 2) {
-					workersAtSecondSegment++;
+				List<BindingSet> expected = new ArrayList<>(terms.size());
+				for (Value term : terms) {
+					MapBindingSet expectedRow = new MapBindingSet();
+					expectedRow.addBinding("g", term);
+					expectedRow.addBinding("sum", term);
+					expected.add(expectedRow);
 				}
+				assertThat(result).containsExactlyInAnyOrderElementsOf(expected);
+				int workersAtSecondSegment = 0;
+				for (AtomicInteger calls : factoryCalls.values()) {
+					if (calls.get() >= 2) {
+						workersAtSecondSegment++;
+					}
+				}
+				assertThat(workersAtSecondSegment)
+						.as("both source-bound workers must start a second segment")
+						.isEqualTo(2);
+				// Each worker has completed one non-empty root window before its second factory call. Charge only one
+				// UTF-16 lexical payload per worker here; this deliberately independent lower bound remains valid if
+				// the
+				// scheduler changes its window sizing.
+				long minimumRetainedPayload = terms.stream()
+						.mapToLong(value -> value.stringValue().length())
+						.min()
+						.orElseThrow() * 2L * Character.BYTES;
+				assertThat(retainedAtSecondSegment.get())
+						.as("worker Partial numeric values must remain budget-owned after first hooks close")
+						.isGreaterThan(minimumRetainedPayload);
 			}
-			assertThat(workersAtSecondSegment).as("both source-bound workers must start a second segment").isEqualTo(2);
-			// Each worker has completed one non-empty root window before its second factory call. Charge only one
-			// UTF-16 lexical payload per worker here; this deliberately independent lower bound remains valid if the
-			// scheduler changes its window sizing.
-			long minimumRetainedPayload = terms.stream()
-					.mapToLong(value -> value.stringValue().length())
-					.min()
-					.orElseThrow() * 2L * Character.BYTES;
-			assertThat(retainedAtSecondSegment.get())
-					.as("worker Partial numeric values must remain budget-owned after first hooks close")
-					.isGreaterThan(minimumRetainedPayload);
-			assertThat(manager.usedBytes()).isZero();
 		} finally {
 			workers.shutdownNow();
-			source.executionContext().close();
-			LmdbNativeHashJoin.queryMemoryOverride = null;
+			try {
+				source.executionContext().close();
+			} finally {
+				LmdbNativeHashJoin.queryMemoryOverride = null;
+			}
 		}
+		assertThat(manager.usedBytes()).isZero();
 	}
 
 	private void assertCount(String query) {

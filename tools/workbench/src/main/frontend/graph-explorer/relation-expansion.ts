@@ -15,6 +15,7 @@
  * the selected nodes) or per node.
  */
 import type { Direction } from "./explorer-types.ts";
+import { canvasGraph } from "./graph-canvas-scope.ts";
 import type { Graph } from "./graph-types.ts";
 import { isDocumentBlank, linkCountCap, loadedLinksOf } from "./link-counts.ts";
 import type { LoadedLinks } from "./rdf-vocabulary.ts";
@@ -147,4 +148,19 @@ export function relationChunks(ids: readonly string[], expected: ReadonlyMap<str
   }
   if (chunk.length) chunks.push(chunk);
   return chunks;
+}
+
+/**
+ * With Values off, the cards a relation expansion (`before` → `after`) needs Values on to show, when it brought any value
+ * that Values on draws (a literal, say): the user asked for that relation, so Values turns on. They are the new cards and
+ * every value Values off was hiding, for the layout to place beside the cards they link to. Null when the expansion
+ * brought no such value.
+ */
+export function valuesRevealedBy(before: Graph, after: Graph): Set<string> | null {
+  const previous = new Set(before.nodes.map((node) => node.id));
+  const drawnWithout = new Set(canvasGraph(after, false).nodes.map((node) => node.id));
+  const drawnWith = canvasGraph(after, true).nodes;
+  if (!drawnWith.some((node) => !previous.has(node.id) && !drawnWithout.has(node.id))) return null;
+  const drawnBefore = new Set(canvasGraph(before, false).nodes.map((node) => node.id));
+  return new Set(drawnWith.flatMap((node) => (drawnBefore.has(node.id) ? [] : [node.id])));
 }

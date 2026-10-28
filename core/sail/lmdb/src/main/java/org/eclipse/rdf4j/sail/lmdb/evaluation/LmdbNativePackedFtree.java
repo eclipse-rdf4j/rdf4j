@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,6 +39,10 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
@@ -454,9 +459,7 @@ final class LmdbNativePackedFtree {
 			if (aggregate.slot >= 0 && !slotAvailable(plan, row, aggregate.slot)) {
 				return null;
 			}
-			if (aggregate.kind == AggKind.SAMPLE || aggregate.kind == AggKind.GROUP_CONCAT
-					|| aggregate.kind == AggKind.CUSTOM || aggregate.distinct && aggregate.rowSlots != null) {
-				// M-F1/M-F3: serial-only aggregates — the packed weighted/popcount paths have no combination rule
+			if (aggregate.reducer.spillEncoding == NativeReducerCapabilities.SpillEncoding.OPAQUE) {
 				return null;
 			}
 		}
@@ -485,6 +488,14 @@ final class LmdbNativePackedFtree {
 		} catch (IOException | RuntimeException | Error problem) {
 			parallelLease.abort(problem);
 			throw problem;
+		}
+		for (AggregateSpec aggregate : aggregates) {
+			if (aggregate.reducer.rowState
+					|| aggregate.reducer.inputDomain == NativeReducerCapabilities.InputDomain.VISIBLE_MAPPING) {
+				// These channels use the bounded exact-event consumer above. The historical scalar popcount sink
+				// below has no full mapping/order representation and must not silently consume one of them.
+				return null;
+			}
 		}
 		try (Runtime runtime = Runtime.open(plan, row)) {
 			if (runtime == null) {
@@ -650,11 +661,12 @@ final class LmdbNativePackedFtree {
 						"interrupted while joining packed parallel aggregation workers"));
 			}
 			if (failure == null) {
-				HashMap<GroupKey, AggState> merged = null;
-				for (HashMap<GroupKey, AggState> map : maps) {
-					merged = mergeGroupMaps(merged, map);
-				}
 				try {
+					HashMap<GroupKey, AggState> merged = null;
+					for (HashMap<GroupKey, AggState> map : maps) {
+						row.cancellation.check();
+						merged = mergeGroupMaps(merged, map, row.cancellation);
+					}
 					finished = finisher.apply(merged == null ? new HashMap<>() : merged);
 				} catch (RuntimeException | Error e) {
 					failure = e;
@@ -702,6 +714,16 @@ final class LmdbNativePackedFtree {
 		if (next instanceof PackedParallelDecline && !(primary instanceof PackedParallelDecline)) {
 			return primary;
 		}
+		if (primary instanceof KernelQueryCancelledException) {
+			if (next instanceof EncounterOrderFallback || next instanceof KernelCancelledException
+					|| next instanceof LmdbNativeProbeDeadlineExceeded || next instanceof CancellationException) {
+				return primary;
+			}
+			// The terminal singleton deliberately cannot accumulate suppressed exceptions across evaluations.
+			// Retain a real cleanup failure on its own throwable; the outer deadline still owns the public timeout.
+			next.addSuppressed(primary);
+			return next;
+		}
 		primary.addSuppressed(next);
 		return primary;
 	}
@@ -730,7 +752,8 @@ final class LmdbNativePackedFtree {
 					&& failure.get() == null; index = nextPartition.getAndIncrement()) {
 				runtime.resetRoots(partitions[index].openFor(runtime));
 				collected = mergeGroupMaps(collected,
-						collectGroups(runtime, workerPlan, workerRow, groupSlots, aggregates, context));
+						collectGroups(runtime, workerPlan, workerRow, groupSlots, aggregates, context),
+						parentRow.cancellation);
 			}
 		}
 		return collected == null ? new HashMap<>() : collected;
@@ -743,7 +766,8 @@ final class LmdbNativePackedFtree {
 	 * never mixes a popcount count with a hash-channel set.
 	 */
 	private static HashMap<GroupKey, AggState> mergeGroupMaps(HashMap<GroupKey, AggState> left,
-			HashMap<GroupKey, AggState> right) {
+			HashMap<GroupKey, AggState> right, NativeCancellationToken cancellation) {
+		cancellation.check();
 		if (left == null || left.isEmpty()) {
 			return right;
 		}
@@ -752,12 +776,14 @@ final class LmdbNativePackedFtree {
 		}
 		HashMap<GroupKey, AggState> into = left.size() >= right.size() ? left : right;
 		HashMap<GroupKey, AggState> from = into == left ? right : left;
+		int tick = 0;
 		for (Map.Entry<GroupKey, AggState> entry : from.entrySet()) {
+			cancellation.poll(tick++);
 			AggState existing = into.putIfAbsent(entry.getKey(), entry.getValue());
 			if (existing != null) {
 				assert existing.distinctChannels.channelCount() == entry.getValue().distinctChannels.channelCount()
 						: "cross-mode group collision: popcount injectivity was violated";
-				existing.mergeFrom(entry.getValue());
+				existing.mergeFrom(entry.getValue(), cancellation);
 			}
 		}
 		return into;
@@ -3900,27 +3926,41 @@ final class LmdbNativePackedFtree {
 			}
 			long[] neighbors = runNeighborScratch;
 			long[] contexts = null;
-			if (contextSensitive) {
-				if (runContextScratch.length < window) {
-					runContextScratch = new long[window];
-				}
-				contexts = runContextScratch;
-			}
+			ContextSpan span = primary.scanSpan;
 			int accepted = 0;
 			boolean pendingPresent = false;
 			long pendingValue = UNKNOWN;
 			long pendingMultiplicity = 0L;
-			for (long base = 0; base < runSize; base += window) {
-				int count = (int) Math.min(window, runSize - base);
-				if (primary.copyNeighbors(base, count, neighbors, 0) != count) {
+			for (long base = 0; base < runSize;) {
+				long end = runSize;
+				boolean common = false;
+				if (contextSensitive) {
+					primary.contextSpan(base, runSize, span);
+					end = span.end();
+					common = span.hasCommonContext();
+					if (common && !contextAccepted(primary.pattern, span.commonContext())) {
+						base = end;
+						LmdbNativeProbeDeadline.poll(0);
+						continue;
+					}
+				}
+				int count = (int) Math.min(window, end - base);
+				if (contextSensitive && !common) {
+					if (runContextScratch.length < window) {
+						runContextScratch = new long[window];
+					}
+					contexts = runContextScratch;
+				}
+				int copied = contextSensitive
+						? primary.copyContextSpan(base, count, neighbors, 0, !common ? contexts : null, 0)
+						: primary.copyNeighbors(base, count, neighbors, 0);
+				if (copied != count) {
 					throw new IllegalStateException("native adjacency returned a short neighbour copy");
 				}
-				if (contextSensitive && primary.copyContexts(base, count, contexts, 0) != count) {
-					throw new IllegalStateException("native adjacency returned a short context copy");
-				}
+				base += count;
 				for (int i = 0; i < count; i++) {
 					long childId = neighbors[i];
-					boolean contextOk = !contextSensitive || contextAccepted(primary.pattern, contexts[i]);
+					boolean contextOk = !contextSensitive || common || contextAccepted(primary.pattern, contexts[i]);
 					if (!primary.ordered) {
 						if (contextOk) {
 							accepted += appendScannedValue(chunk, node, parentLane, constraints, unary, childId, 1L);
@@ -4323,6 +4363,8 @@ final class LmdbNativePackedFtree {
 		final PatternPlan pattern;
 		final boolean ordered;
 		final boolean contextSensitive;
+		final ContextSpan span = new ContextSpan();
+		long spanStart = -1L;
 		final long[] neighborWindow = new long[ROOT_BATCH_SIZE];
 		long[] contextWindow;
 		long windowBase = -1L;
@@ -4346,9 +4388,7 @@ final class LmdbNativePackedFtree {
 			this.ordered = adjacency.runsNeighborOrdered();
 			this.contextSensitive = !contextFree(pattern);
 			this.buffered = bulkRunsEnabled();
-			if (buffered && contextSensitive) {
-				contextWindow = new long[ROOT_BATCH_SIZE];
-			}
+
 		}
 
 		@Override
@@ -4362,9 +4402,31 @@ final class LmdbNativePackedFtree {
 			return pattern;
 		}
 
+		private void ensureSpan(long at) {
+			if (contextSensitive && (at < spanStart || at >= span.end())) {
+				adjacency.contextSpan(handle, at, span);
+				spanStart = at;
+			}
+		}
+
+		private boolean advanceAcceptedSpan() {
+			while (offset < limit) {
+				ensureSpan(offset);
+				if (!contextSensitive || !span.hasCommonContext()
+						|| contextAccepted(pattern, span.commonContext())) {
+					return true;
+				}
+				offset = Math.min(limit, span.end());
+				LmdbNativeProbeDeadline.poll(0);
+			}
+			return false;
+		}
+
 		private long neighborAtBuffered(long at) {
+			ensureSpan(at);
 			if (!buffered) {
-				return adjacency.neighborAt(handle, at);
+				return contextSensitive ? adjacency.neighborInContextSpan(handle, at)
+						: adjacency.neighborAt(handle, at);
 			}
 			if (at < windowBase || at >= windowBase + windowLength) {
 				fillWindow(at);
@@ -4373,8 +4435,12 @@ final class LmdbNativePackedFtree {
 		}
 
 		private long contextAtBuffered(long at) {
+			ensureSpan(at);
+			if (span.hasCommonContext()) {
+				return span.commonContext();
+			}
 			if (!buffered) {
-				return adjacency.contextAt(handle, at);
+				return adjacency.contextInContextSpan(handle, at);
 			}
 			if (at < windowBase || at >= windowBase + windowLength) {
 				fillWindow(at);
@@ -4383,12 +4449,17 @@ final class LmdbNativePackedFtree {
 		}
 
 		private void fillWindow(long at) {
-			int length = (int) Math.min(ROOT_BATCH_SIZE, size - at);
-			if (adjacency.copyNeighbors(handle, at, length, neighborWindow, 0) != length) {
-				throw new IllegalStateException("native adjacency returned a short neighbour copy");
+			ensureSpan(at);
+			int length = (int) Math.min(ROOT_BATCH_SIZE, (contextSensitive ? Math.min(limit, span.end()) : limit) - at);
+			if (contextSensitive && !span.hasCommonContext() && contextWindow == null) {
+				contextWindow = new long[ROOT_BATCH_SIZE];
 			}
-			if (contextSensitive && adjacency.copyContexts(handle, at, length, contextWindow, 0) != length) {
-				throw new IllegalStateException("native adjacency returned a short context copy");
+			int copied = contextSensitive
+					? adjacency.copyContextSpan(handle, at, length, neighborWindow, 0,
+							!span.hasCommonContext() ? contextWindow : null, 0)
+					: adjacency.copyNeighbors(handle, at, length, neighborWindow, 0);
+			if (copied != length) {
+				throw new IllegalStateException("native adjacency returned a short neighbour copy");
 			}
 			windowBase = at;
 			windowLength = length;
@@ -4397,7 +4468,7 @@ final class LmdbNativePackedFtree {
 		@Override
 		public int fill(NodeData target, int maximum) {
 			int n = 0;
-			while (n < maximum && offset < limit) {
+			while (n < maximum && advanceAcceptedSpan()) {
 				long neighbor = neighborAtBuffered(offset);
 				if (!ordered) {
 					boolean accepted = !contextSensitive || contextAccepted(pattern, contextAtBuffered(offset));
@@ -4410,7 +4481,7 @@ final class LmdbNativePackedFtree {
 				long multiplicity = 0L;
 				// A partition limit always sits on a neighbour boundary (the planner aligns ordered cuts), so
 				// stopping the collapse at the limit never splits one value's multiplicity across partitions.
-				while (offset < limit && neighborAtBuffered(offset) == neighbor) {
+				while (advanceAcceptedSpan() && neighborAtBuffered(offset) == neighbor) {
 					if (!contextSensitive || contextAccepted(pattern, contextAtBuffered(offset))) {
 						multiplicity = FactorizedTail.addCounts(multiplicity, 1L);
 					}
@@ -4584,6 +4655,9 @@ final class LmdbNativePackedFtree {
 
 	/** Dynamic root-domain claims shared by workers; all storage access remains worker-confined. */
 	static final class RootMorsels {
+		record Claim(long from, RootProducer producer) {
+		}
+
 		final RootPartition domain;
 		final LmdbNativeMorselRange ranges;
 		final boolean ordered;
@@ -4595,6 +4669,11 @@ final class LmdbNativePackedFtree {
 		}
 
 		RootProducer claim(Runtime worker) throws IOException {
+			Claim claim = claimWithOrdinal(worker);
+			return claim == null ? null : claim.producer();
+		}
+
+		Claim claimWithOrdinal(Runtime worker) throws IOException {
 			java.util.function.LongUnaryOperator boundary = null;
 			if (ordered) {
 				NativeLmdbQuerySource.NativeAdjacency a = worker.adjacency(domain.seed.pattern.p.constant,
@@ -4609,9 +4688,9 @@ final class LmdbNativePackedFtree {
 			}
 			LmdbNativeMorselRange.Range range = ranges.claim(boundary);
 			return range == null ? null
-					: new RootPartition(domain.kind, domain.seed, range.from(), range.to(),
+					: new Claim(range.from(), new RootPartition(domain.kind, domain.seed, range.from(), range.to(),
 							domain.expectedTotal, domain.values, domain.multiplicities, domain.coveredPattern)
-									.openFor(worker);
+									.openFor(worker));
 		}
 	}
 
@@ -4751,6 +4830,7 @@ final class LmdbNativePackedFtree {
 		final NativeLmdbQuerySource.NativeAdjacency adjacency;
 		final PatternPlan pattern;
 		final boolean bySubject;
+		final ContextSpan countSpan = new ContextSpan();
 
 		PatternRuntime(NativeLmdbQuerySource.NativeAdjacency adjacency, PatternPlan pattern, boolean bySubject) {
 			this.adjacency = adjacency;
@@ -4882,7 +4962,7 @@ final class LmdbNativePackedFtree {
 			if (adjacency != null) {
 				long handle = adjacency.find(variable);
 				if (handle != NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
-					return countNeighbor(adjacency, handle, plan.constantNeighbor, pattern);
+					return countNeighbor(adjacency, handle, plan.constantNeighbor, pattern, countSpan);
 				}
 			}
 			long previous = runtime.row.replaceSlot(plan.slot, variable);
@@ -4900,6 +4980,7 @@ final class LmdbNativePackedFtree {
 
 	static final class EdgeRuntime extends PatternRuntime {
 		final EdgePlan plan;
+		final ContextSpan scanSpan = new ContextSpan();
 		final NativeLmdbQuerySource.NativeAdjacency.BoundRunCursor cursor;
 		final boolean ordered;
 		BorrowedFactorBatch.Source borrowedSource;
@@ -4946,6 +5027,25 @@ final class LmdbNativePackedFtree {
 			return cursor == null ? NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED : cursor.bind(parent);
 		}
 
+		void contextSpan(long offset, long size, ContextSpan target) {
+			if (!cursor.contextSpan(offset, target)) {
+				target.set(size, -1L);
+			}
+		}
+
+		long neighborInContextSpan(long offset) {
+			return cursor.neighborInContextSpan(offset);
+		}
+
+		long contextInContextSpan(long offset) {
+			return cursor.contextInContextSpan(offset);
+		}
+
+		int copyContextSpan(long offset, int length, long[] neighbors, int neighborOffset, long[] contexts,
+				int contextOffset) {
+			return cursor.copyContextSpan(offset, length, neighbors, neighborOffset, contexts, contextOffset);
+		}
+
 		long neighborAt(long offset) {
 			return cursor.neighborAt(offset);
 		}
@@ -4970,7 +5070,7 @@ final class LmdbNativePackedFtree {
 			if (adjacency != null) {
 				long handle = adjacency.find(parent);
 				if (handle != NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
-					return countNeighbor(adjacency, handle, child, pattern);
+					return countNeighbor(adjacency, handle, child, pattern, countSpan);
 				}
 			}
 			long count = 0L;
@@ -5028,6 +5128,8 @@ final class LmdbNativePackedFtree {
 		final EdgeRuntime runtime;
 		final long size;
 		final boolean contextSensitive;
+		final ContextSpan span = new ContextSpan();
+		long spanStart = -1L;
 		/** Allocated on the first buffered fill so short-lived per-lane runs never pay for the staging arrays. */
 		long[] neighborWindow;
 		long[] contextWindow;
@@ -5047,9 +5149,30 @@ final class LmdbNativePackedFtree {
 			this.buffered = bulkRunsEnabled();
 		}
 
+		private void ensureSpan(long at) {
+			if (contextSensitive && (at < spanStart || at >= span.end())) {
+				runtime.contextSpan(at, size, span);
+				spanStart = at;
+			}
+		}
+
+		private boolean advanceAcceptedSpan() {
+			while (offset < size) {
+				ensureSpan(offset);
+				if (!contextSensitive || !span.hasCommonContext()
+						|| contextAccepted(runtime.pattern, span.commonContext())) {
+					return true;
+				}
+				offset = Math.min(size, span.end());
+				LmdbNativeProbeDeadline.poll(0);
+			}
+			return false;
+		}
+
 		private long neighborAtBuffered(long at) {
+			ensureSpan(at);
 			if (!buffered) {
-				return runtime.neighborAt(at);
+				return contextSensitive ? runtime.neighborInContextSpan(at) : runtime.neighborAt(at);
 			}
 			if (at < windowBase || at >= windowBase + windowLength) {
 				fillWindow(at);
@@ -5058,8 +5181,12 @@ final class LmdbNativePackedFtree {
 		}
 
 		private long contextAtBuffered(long at) {
+			ensureSpan(at);
+			if (span.hasCommonContext()) {
+				return span.commonContext();
+			}
 			if (!buffered) {
-				return runtime.contextAt(at);
+				return runtime.contextInContextSpan(at);
 			}
 			if (at < windowBase || at >= windowBase + windowLength) {
 				fillWindow(at);
@@ -5068,18 +5195,20 @@ final class LmdbNativePackedFtree {
 		}
 
 		private void fillWindow(long at) {
+			ensureSpan(at);
 			if (neighborWindow == null) {
 				neighborWindow = new long[WINDOW];
-				if (contextSensitive) {
-					contextWindow = new long[WINDOW];
-				}
 			}
-			int length = (int) Math.min(WINDOW, size - at);
-			if (runtime.copyNeighbors(at, length, neighborWindow, 0) != length) {
+			int length = (int) Math.min(WINDOW, (contextSensitive ? Math.min(size, span.end()) : size) - at);
+			if (contextSensitive && !span.hasCommonContext() && contextWindow == null) {
+				contextWindow = new long[WINDOW];
+			}
+			int copied = contextSensitive
+					? runtime.copyContextSpan(at, length, neighborWindow, 0,
+							!span.hasCommonContext() ? contextWindow : null, 0)
+					: runtime.copyNeighbors(at, length, neighborWindow, 0);
+			if (copied != length) {
 				throw new IllegalStateException("native adjacency returned a short neighbour copy");
-			}
-			if (contextSensitive && runtime.copyContexts(at, length, contextWindow, 0) != length) {
-				throw new IllegalStateException("native adjacency returned a short context copy");
 			}
 			windowBase = at;
 			windowLength = length;
@@ -5087,7 +5216,7 @@ final class LmdbNativePackedFtree {
 
 		boolean advance() {
 			valid = false;
-			while (offset < size) {
+			while (advanceAcceptedSpan()) {
 				long candidate = neighborAtBuffered(offset);
 				long count = 0L;
 				do {
@@ -5095,7 +5224,7 @@ final class LmdbNativePackedFtree {
 						count = FactorizedTail.addCounts(count, 1L);
 					}
 					offset++;
-				} while (offset < size && neighborAtBuffered(offset) == candidate);
+				} while (advanceAcceptedSpan() && neighborAtBuffered(offset) == candidate);
 				if (count != 0L) {
 					value = candidate;
 					multiplicity = count;
@@ -5122,6 +5251,27 @@ final class LmdbNativePackedFtree {
 				}
 				return false;
 			}
+			if (contextSensitive) {
+				while (advanceAcceptedSpan()) {
+					long end = Math.min(size, span.end());
+					long low = offset;
+					long high = end;
+					while (low < high) {
+						long mid = (low + high) >>> 1;
+						if (Long.compareUnsigned(runtime.neighborInContextSpan(mid), target) < 0) {
+							low = mid + 1L;
+						} else {
+							high = mid;
+						}
+					}
+					offset = low;
+					if (offset < end) {
+						return advance();
+					}
+				}
+				valid = false;
+				return false;
+			}
 			long sought = runtime.lowerBound(offset, target);
 			if (sought >= 0L) {
 				offset = sought;
@@ -5138,34 +5288,64 @@ final class LmdbNativePackedFtree {
 
 	static long countNeighbor(NativeLmdbQuerySource.NativeAdjacency adjacency, long handle, long neighbor,
 			PatternPlan pattern) {
+		return countNeighbor(adjacency, handle, neighbor, pattern, new ContextSpan());
+	}
+
+	private static long countNeighbor(NativeLmdbQuerySource.NativeAdjacency adjacency, long handle, long neighbor,
+			PatternPlan pattern, ContextSpan span) {
 		if (handle == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
 			throw new PackedDecline("adjacency key not covered");
 		}
-		if (handle <= 0) {
+		if (handle <= 0L) {
 			return 0L;
 		}
 		long size = adjacency.size(handle);
 		long count = 0L;
-		if (adjacency.runsNeighborOrdered()) {
-			long start = adjacency.lowerBound(handle, 0L, neighbor, 0L);
-			if (start >= 0L) {
-				for (long i = start; i < size; i++) {
-					long n = adjacency.neighborAt(handle, i);
-					int cmp = Long.compareUnsigned(n, neighbor);
-					if (cmp > 0) {
-						break;
-					}
-					if (cmp == 0 && contextAccepted(pattern, adjacency.contextAt(handle, i))) {
-						count = FactorizedTail.addCounts(count, 1L);
+		boolean restricted = !contextFree(pattern);
+		boolean ordered = adjacency.runsNeighborOrdered();
+		if (!restricted) {
+			long from = ordered ? adjacency.lowerBound(handle, 0L, neighbor, 0L) : -1L;
+			for (long at = Math.max(0L, from); at < size; at++) {
+				long value = adjacency.neighborAt(handle, at);
+				int comparison = Long.compareUnsigned(value, neighbor);
+				if (ordered && comparison > 0) {
+					break;
+				}
+				if (comparison == 0) {
+					count = FactorizedTail.addCounts(count, 1L);
+				}
+			}
+			return count;
+		}
+		for (long from = 0L; from < size; from = span.end()) {
+			adjacency.contextSpan(handle, from, span);
+			boolean common = span.hasCommonContext();
+			if (restricted && common && !contextAccepted(pattern, span.commonContext())) {
+				LmdbNativeProbeDeadline.poll(0);
+				continue;
+			}
+			long at = from;
+			if (ordered) {
+				long high = span.end();
+				while (at < high) {
+					long mid = (at + high) >>> 1;
+					if (Long.compareUnsigned(adjacency.neighborInContextSpan(handle, mid), neighbor) < 0) {
+						at = mid + 1L;
+					} else {
+						high = mid;
 					}
 				}
-				return count;
 			}
-		}
-		for (long i = 0; i < size; i++) {
-			if (adjacency.neighborAt(handle, i) == neighbor
-					&& contextAccepted(pattern, adjacency.contextAt(handle, i))) {
-				count = FactorizedTail.addCounts(count, 1L);
+			for (; at < span.end(); at++) {
+				long value = adjacency.neighborInContextSpan(handle, at);
+				int comparison = Long.compareUnsigned(value, neighbor);
+				if (ordered && comparison > 0) {
+					return count;
+				}
+				if (comparison == 0 && (!restricted || common
+						|| contextAccepted(pattern, adjacency.contextInContextSpan(handle, at)))) {
+					count = FactorizedTail.addCounts(count, 1L);
+				}
 			}
 		}
 		return count;
@@ -6990,6 +7170,9 @@ final class LmdbNativePackedFtree {
 		final RowState row;
 		final Runtime runtime;
 		final int baseMark;
+		final boolean ownsRuntime, orderedOccurrences;
+		final long[] nodeRepeats;
+		final LmdbQueryMemoryManager.Reservation replayMemory;
 		Chunk chunk;
 		int[] lanes;
 		long repeatRemaining;
@@ -7013,13 +7196,34 @@ final class LmdbNativePackedFtree {
 		}
 
 		PackedRowCursor(Plan plan, RowState row, Runtime runtime) {
+			this(plan, row, runtime, true, false);
+		}
+
+		PackedRowCursor(Plan plan, RowState row, Runtime runtime, boolean ownsRuntime, boolean orderedOccurrences) {
 			this.plan = plan;
 			this.row = row;
 			this.runtime = runtime;
 			this.baseMark = row.mark();
-			this.lanes = new int[plan.nodes.length];
-			this.borrowedReaders = new BorrowedFactorBatch.Cursor[plan.nodes.length];
-			Arrays.fill(lanes, -1);
+			this.ownsRuntime = ownsRuntime;
+			this.orderedOccurrences = orderedOccurrences;
+			this.replayMemory = orderedOccurrences
+					? row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+							.reserve(128L + 24L * plan.nodes.length, null)
+					: null;
+			if (orderedOccurrences && replayMemory == null) {
+				throw new QueryEvaluationException("Query memory limit cannot retain ordered packed cursor state");
+			}
+			try {
+				this.nodeRepeats = orderedOccurrences ? new long[plan.nodes.length] : null;
+				this.lanes = new int[plan.nodes.length];
+				this.borrowedReaders = new BorrowedFactorBatch.Cursor[plan.nodes.length];
+				Arrays.fill(lanes, -1);
+			} catch (RuntimeException | Error failure) {
+				if (replayMemory != null) {
+					replayMemory.close();
+				}
+				throw failure;
+			}
 		}
 
 		static PackedRowCursor open(Plan plan, RowState row) throws IOException {
@@ -7034,6 +7238,7 @@ final class LmdbNativePackedFtree {
 		@Override
 		public boolean next() throws IOException {
 			LmdbNativeProbeDeadline.poll(++cancellationTick);
+			row.cancellation.poll(cancellationTick);
 			if (closed) {
 				return false;
 			}
@@ -7064,7 +7269,7 @@ final class LmdbNativePackedFtree {
 					Arrays.fill(lanes, -1);
 					continue;
 				}
-				long multiplicity = tupleMultiplicity();
+				long multiplicity = orderedOccurrences ? 1L : tupleMultiplicity();
 				if (multiplicity == 0L) {
 					continue;
 				}
@@ -7082,6 +7287,9 @@ final class LmdbNativePackedFtree {
 					return false;
 				}
 				lanes[node.ordinal] = lane;
+				if (orderedOccurrences) {
+					nodeRepeats[node.ordinal] = nodeWeight(node) - 1L;
+				}
 			}
 			return true;
 		}
@@ -7089,11 +7297,15 @@ final class LmdbNativePackedFtree {
 		private boolean advanceTuple() {
 			for (int ordinal = plan.nodes.length - 1; ordinal >= 0; ordinal--) {
 				NodePlan node = plan.nodes[ordinal];
-				int next = nextLane(node, lanes[ordinal] + 1);
+				boolean repeat = orderedOccurrences && nodeRepeats[ordinal] > 0L;
+				int next = repeat ? lanes[ordinal] : nextLane(node, lanes[ordinal] + 1);
 				if (next < 0) {
 					continue;
 				}
 				lanes[ordinal] = next;
+				if (orderedOccurrences) {
+					nodeRepeats[ordinal] = repeat ? nodeRepeats[ordinal] - 1L : nodeWeight(node) - 1L;
+				}
 				boolean resetOk = true;
 				for (int later = ordinal + 1; later < plan.nodes.length; later++) {
 					NodePlan laterNode = plan.nodes[later];
@@ -7103,6 +7315,9 @@ final class LmdbNativePackedFtree {
 						break;
 					}
 					lanes[later] = first;
+					if (orderedOccurrences) {
+						nodeRepeats[later] = nodeWeight(laterNode) - 1L;
+					}
 				}
 				if (resetOk) {
 					return true;
@@ -7165,6 +7380,11 @@ final class LmdbNativePackedFtree {
 			return weight;
 		}
 
+		private long nodeWeight(NodePlan node) {
+			NodeData data = chunk.data[node.ordinal];
+			return data.borrowed == null ? data.weight(lanes[node.ordinal]) : borrowedReaders[node.ordinal].weight();
+		}
+
 		private void installCurrentRow() {
 			row.rollback(baseMark);
 			for (int i = 0; i < plan.fixedSlots.length; i++) {
@@ -7189,7 +7409,15 @@ final class LmdbNativePackedFtree {
 					if (reader != null)
 						reader.close();
 			} finally {
-				runtime.close();
+				try {
+					if (ownsRuntime) {
+						runtime.close();
+					}
+				} finally {
+					if (replayMemory != null) {
+						replayMemory.close();
+					}
+				}
 			}
 		}
 	}

@@ -16,10 +16,11 @@ package org.eclipse.rdf4j.repository.sail;
 import java.util.ArrayList;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -50,7 +51,7 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 
 	@Override
 	public TupleQueryResult evaluate() throws QueryEvaluationException {
-		QueryExecutionDeadline deadline = startQueryExecutionDeadline();
+		InterruptingTimeLimit timeLimit = startEvaluationTimeLimit();
 		CloseableIteration<? extends BindingSet> bindingsIter = null;
 
 		try {
@@ -59,8 +60,7 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
 					.set(getParsedQuery().getSourceString(), Query.QueryType.TUPLE, getForcedLmdbExecutionStrategy(),
 							isLmdbResultCacheRequested());
-			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline);
-					BlankNodeAllocationScope.Activation allocation = createBlankNodeAllocationScope().activate()) {
+			try (BlankNodeAllocationScope.Activation allocation = createBlankNodeAllocationScope().activate()) {
 				try {
 					bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 					bindingsIter = getConnection().exposeIteration(bindingsIter, SailResultValueExtractor.BINDING_SETS);
@@ -68,18 +68,21 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 					SlowQueryContextHolder.restore(previous);
 				}
 			}
-			bindingsIter = enforceMaxQueryTime(bindingsIter, deadline);
+			endEvaluationTimeLimit(timeLimit);
+			bindingsIter = enforceMaxQueryTime(bindingsIter, timeLimit);
 
 			return new IteratingTupleQueryResult(new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter);
 		} catch (Throwable e) {
+			QueryInterruptedException timeout;
 			try {
 				if (bindingsIter != null) {
 					bindingsIter.close();
 				}
 			} finally {
-				if (deadline != null) {
-					deadline.close();
-				}
+				timeout = evaluationTimeout(timeLimit, e);
+			}
+			if (timeout != null) {
+				throw timeout;
 			}
 			if (e instanceof SailException) {
 				throw new QueryEvaluationException(e.getMessage(), e);

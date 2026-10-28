@@ -61,7 +61,6 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private static final int COMPLETED_STATE = 1;
 
 	private final LmdbNativeCostEstimate estimate;
-	private final LmdbNativeCostVector.Feature dominantRowFeature;
 	private final LmdbNativeAdaptiveCostModel model;
 	private final LongSupplier clock;
 	private final TimeUnit clockUnit;
@@ -72,6 +71,12 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private final long startedTime;
 	private volatile long censorDeadlineNanos = -1L;
 	private final double[] counters = new double[FEATURE_COUNT];
+	private long adapterOutputRows;
+	private long reportedFeatures;
+	private long workerReportedFeatures;
+	private long anyWorkerReportedFeatures;
+	private boolean hasWorkerCounters;
+	private NativePhysicalWorkEvidence independentMeasuredWork;
 	/**
 	 * Publication fence for {@link #counters} (gap-analysis C12): writes are single-threaded (the drain thread), but
 	 * completion can run on a foreign thread (query cancellation), and the completion guard alone creates no
@@ -91,6 +96,13 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private volatile LmdbNativeAdaptiveCostModel.CensorResult censorResult;
 	private volatile LmdbNativeCostVector trainedFeatures;
 	private volatile Throwable failure;
+	private volatile boolean trainingEligible;
+	private volatile NativeStrategyDecisionEvent.Attempt diagnosticAttempt;
+
+	/** Installed before the opener runs; no counter, clock, model or completion state is changed. */
+	void diagnostics(NativeStrategyDecisionEvent.Attempt attempt) {
+		diagnosticAttempt = attempt;
+	}
 
 	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model) {
 		this(estimate, model, Role.NORMAL);
@@ -112,7 +124,6 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model,
 			LongSupplier clock, TimeUnit clockUnit, Role role) {
 		this.estimate = Objects.requireNonNull(estimate, "estimate");
-		this.dominantRowFeature = estimate.dominantRowFeature();
 		this.model = Objects.requireNonNull(model, "model");
 		this.clock = Objects.requireNonNull(clock, "clock");
 		this.clockUnit = clockUnit;
@@ -135,15 +146,11 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	}
 
 	/**
-	 * Counts one produced row against the estimate's dominant row feature (gap-analysis G4): the cheapest universal
-	 * runtime counter every streaming winner can report, replacing the estimate-substitution bridge for that feature
-	 * the moment real production diverges from the prediction.
+	 * A result mapping proves one output adapter, not how many input scans, kernel rows or group updates produced it.
 	 */
 	void addProducedRow() {
-		if (dominantRowFeature != null) {
-			counters[dominantRowFeature.ordinal()] += 1.0;
-			counterPublish++;
-		}
+		adapterOutputRows++;
+		counterPublish++;
 	}
 
 	/**
@@ -161,6 +168,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 			throw new IllegalArgumentException("counter increment must be non-negative");
 		}
 		counters[feature.ordinal()] += count;
+		reportedFeatures |= NativePhysicalWorkEvidence.bit(feature);
 		counterPublish++;
 	}
 
@@ -169,6 +177,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 			throw new IllegalArgumentException("counter increment must be finite and non-negative");
 		}
 		counters[feature.ordinal()] += count;
+		reportedFeatures |= NativePhysicalWorkEvidence.bit(feature);
 		counterPublish++;
 	}
 
@@ -182,7 +191,20 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 			for (int i = 0; i < FEATURE_COUNT; i++) {
 				counters[i] += buffer.counters[i];
 			}
+			workerReportedFeatures = hasWorkerCounters ? workerReportedFeatures & buffer.reportedFeatures
+					: buffer.reportedFeatures;
+			anyWorkerReportedFeatures |= buffer.reportedFeatures;
+			hasWorkerCounters = true;
+			counterPublish++;
 		}
+	}
+
+	/** Installed only by a collector which independently owns the complete measured execution's work schema. */
+	void measuredWorkEvidence(NativePhysicalWorkEvidence evidence) {
+		if (completionGuard.get() != OPEN_STATE || independentMeasuredWork != null) {
+			throw new IllegalStateException("Measured work belongs to one active execution");
+		}
+		independentMeasuredWork = Objects.requireNonNull(evidence);
 	}
 
 	/**
@@ -246,6 +268,17 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		if (!completionGuard.compareAndSet(OPEN_STATE, COMPLETED_STATE)) {
 			return;
 		}
+		try {
+			completeOwned(result, fraction, throwable);
+		} finally {
+			NativeStrategyDecisionEvent.Attempt attempt = diagnosticAttempt;
+			if (attempt != null) {
+				attempt.completed(this);
+			}
+		}
+	}
+
+	private void completeOwned(Completion result, double fraction, Throwable throwable) {
 		long finished = clock.getAsLong();
 		closedTime = finished;
 		closedTimeRecorded = true;
@@ -262,22 +295,34 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		long first = firstOutputTime;
 		boolean clockMovedBackwards = elapsed < 0L
 				|| producedOutput && (elapsedNanos(startedTime, first) < 0L || elapsedNanos(first, finished) < 0L);
-		if (eligible && !clockMovedBackwards) {
-			// Feature-wise compatibility bridge: measured counters replace the estimate per feature; features no
-			// counter reported yet keep the estimate so their shape ratios stay pinned at 1 instead of collapsing
-			// toward zero. The elapsed-time residual still trains the machine coefficients either way, and a family
-			// that wires more counters automatically upgrades feature by feature without another API.
+		trainingEligible = eligible && !clockMovedBackwards;
+		if (trainingEligible) {
+			// Presence is independent of value. Only measured counters or applicable owned facts fill a component;
+			// estimates remain estimates even when they are points or happen to match the final row count.
 			LmdbNativeCostVector.Builder bridged = LmdbNativeCostVector.builder();
-			LmdbNativeCostVector estimateTotal = consumedEstimate.total();
+			NativePhysicalWorkEvidence evidence = independentMeasuredWork == null ? consumedEstimate.workEvidence()
+					: independentMeasuredWork;
+			NativePhysicalWorkEvidence.ExactFacts facts = evidence.factsFor(result == Completion.EXHAUSTED);
+			boolean completeFeatures = evidence.isComplete();
+			long presence = hasWorkerCounters ? reportedFeatures & workerReportedFeatures : reportedFeatures;
+			long partialPresence = reportedFeatures | anyWorkerReportedFeatures
+					| (adapterOutputRows == 0L ? 0L
+							: NativePhysicalWorkEvidence.bit(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION));
 			for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
 				double measured = counters[feature.ordinal()];
-				if (measured != 0.0) {
+				double partial = measured + (feature == LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION
+						&& (reportedFeatures & NativePhysicalWorkEvidence.bit(feature)) == 0L ? adapterOutputRows : 0L);
+				if ((presence & NativePhysicalWorkEvidence.bit(feature)) != 0L) {
 					bridged.add(feature, measured);
+				} else if (facts.contains(feature) && facts.counts().expected(feature) >= partial) {
+					bridged.add(feature, facts.counts().expected(feature));
 				} else {
-					double expected = estimateTotal.expected(feature);
-					if (expected != 0.0) {
-						bridged.add(feature, estimateTotal.low(feature), expected, estimateTotal.high(feature));
+					if ((partialPresence & NativePhysicalWorkEvidence.bit(feature)) != 0L) {
+						bridged.add(feature, partial);
 					}
+					// Neither measured nor independently owned. An estimated upper bound of zero is still an
+					// estimate, so an unreported component never certifies its own absence.
+					completeFeatures = false;
 				}
 			}
 			actual = bridged.build();
@@ -287,8 +332,14 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 			// A run completed within one clock tick is still useful evidence. Price it at the timer's resolution
 			// rather than as a one-nanosecond run, but never mint safety credit for unmeasured time.
 			long measuredCost = Math.max(clockUnit.toNanos(1L), elapsed);
-			trainingResult = model.recordCompleted(consumedEstimate, actual, measuredCost, weight, regimeAtDispatch,
-					epochAtDispatch);
+			String missing = evidence.isComplete()
+					? "one or more physical operation totals were neither measured nor independently owned"
+					: evidence.missingProof();
+			LmdbNativeCostEstimate completedEstimate = completeFeatures ? consumedEstimate
+					: consumedEstimate.withWorkEvidence(consumedEstimate.workEvidence().withMissingProof(missing));
+			trainingResult = model.recordCompleted(completedEstimate, actual, measuredCost, weight, regimeAtDispatch,
+					epochAtDispatch, completeFeatures ? NativePhysicalWorkEvidence.complete()
+							: NativePhysicalWorkEvidence.incomplete(missing));
 			if (role != Role.PROBE) {
 				model.earnSafetyCredit(elapsed);
 				if (result == Completion.EXHAUSTED) {
@@ -298,7 +349,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 					// comparable. A HEDGE_BACKUP that got here did produce the user's rows,
 					// so it qualifies exactly as a normal dispatch does. Ordered after recordCompleted so the
 					// severe-miss check inside it still sees the pre-run price.
-					model.noteLatestObserved(consumedEstimate, measuredCost, regimeAtDispatch, epochAtDispatch);
+					model.noteLatestObserved(completedEstimate, measuredCost, regimeAtDispatch, epochAtDispatch);
 				}
 			}
 		} else if (result == Completion.BUDGET_CENSORED) {
@@ -319,7 +370,8 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		int acquire = counterPublish; // acquire the producer's counter stores (C12)
 		LmdbNativeCostVector.Builder builder = LmdbNativeCostVector.builder();
 		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
-			double count = counters[feature.ordinal()];
+			double count = counters[feature.ordinal()] + (feature == LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION
+					&& (reportedFeatures & NativePhysicalWorkEvidence.bit(feature)) == 0L ? adapterOutputRows : 0L);
 			if (count != 0.0) {
 				builder.add(feature, count);
 			}
@@ -358,14 +410,20 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		return role;
 	}
 
+	boolean trainingEligible() {
+		return trainingEligible;
+	}
+
 	static final class CounterBuffer {
 		private final double[] counters = new double[FEATURE_COUNT];
+		private long reportedFeatures;
 
 		void add(LmdbNativeCostVector.Feature feature, long count) {
 			if (count < 0L) {
 				throw new IllegalArgumentException("counter increment must be non-negative");
 			}
 			counters[feature.ordinal()] += count;
+			reportedFeatures |= NativePhysicalWorkEvidence.bit(feature);
 		}
 	}
 
