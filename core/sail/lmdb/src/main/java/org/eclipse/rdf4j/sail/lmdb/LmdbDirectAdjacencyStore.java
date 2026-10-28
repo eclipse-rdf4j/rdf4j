@@ -299,6 +299,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	/** Test/diagnostic projection of the current publication with the pending tables up to the log head. */
+	long workspaceRegionBytesForTest() {
+		return workspaceRegionBytes;
+	}
+
 	LmdbAdjacencyPublishedState publishedStateForTest() {
 		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
 		return project(state, pendingTablesAbove(state.appliedRevision(), log.headRevision()));
@@ -1018,24 +1022,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		@Override
 		public AdjacencyCompactionPlan select(LmdbInMemoryAdjacencyIndex base, LmdbAdjacencyOverlaySet overlays,
 				AdjacencyIndexOps<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet, PreparedApply> ops) {
-			int generations = overlays == null ? 0 : overlays.generationCount();
-			if (base == null || generations == 0) {
+			if (base == null || overlays == null) {
 				return AdjacencyCompactionPlan.none();
 			}
 			LmdbAdjacencyArenaCatalog catalog = base.arenaCatalog();
-			if (generations >= 2 && catalog.hasSourceCapacityFor(1)
-					&& LmdbAdjacencyTieredCompactionPolicy.select(overlays, options.maxDeltaGenerations(), candidate)) {
-				return AdjacencyCompactionPlan.range(candidate.fromInclusive(), candidate.toExclusive() - 1);
-			}
-			boolean capacityExhausted = !catalog.hasSourceCapacityFor(2);
-			boolean basePressure = LmdbAdjacencyTieredCompactionPolicy.shouldFoldBase(overlays.retainedBytes(),
-					workspaceRegionBytes, base.retainedBytes());
-			boolean retainedDebt = LmdbAdjacencyTieredCompactionPolicy.shouldPhysicallyFlatten(overlays.nativeBytes(),
-					overlays.liveLogicalBytes(), workspaceRegionBytes);
-			if (capacityExhausted || basePressure || retainedDebt) {
-				return AdjacencyCompactionPlan.fold(generations);
-			}
-			return AdjacencyCompactionPlan.none();
+			return LmdbAdjacencyTieredCompactionPolicy.plan(overlays, options.maxDeltaGenerations(), candidate,
+					catalog.hasSourceCapacityFor(1), !catalog.hasSourceCapacityFor(2), workspaceRegionBytes,
+					base.retainedBytes(), LmdbAdjacencyTieredCompactionPolicy.shouldFoldForShape(
+							overlays.liveLogicalBytes(), base.incidenceCount()));
 		}
 	}
 

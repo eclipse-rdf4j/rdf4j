@@ -95,6 +95,68 @@ class LmdbAdjacencyTieredCompactionPolicyTest {
 		assertThat(policy.invoke(null, Long.MAX_VALUE, Long.MAX_VALUE / 2 + 1, 1L)).isEqualTo(false);
 	}
 
+	@Test
+	void theShapeOfTheIndexFoldsASmallBaseAtTheFloorAndALargeOneAtAQuarter() {
+		long floor = 256L << 10; // 16,384 pairs of 16 bytes
+		long pairBytes = 16;
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shapeFoldThreshold(1_000)).isEqualTo(floor);
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shapeFoldThreshold(4 * 16_384)).isEqualTo(floor);
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shapeFoldThreshold(1_000_000)).isEqualTo(250_000 * pairBytes);
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shapeFoldThreshold(1_000_001)).isEqualTo(250_001 * pairBytes);
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shouldFoldForShape(floor, 1_000)).isTrue();
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shouldFoldForShape(floor - 1, 1_000)).isFalse();
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shouldFoldForShape(250_000 * pairBytes - 1, 1_000_000))
+				.isFalse();
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shouldFoldForShape(250_000 * pairBytes, 1_000_000)).isTrue();
+	}
+
+	@Test
+	void countPressureLeavesAnIncompleteNewestTierAlone() {
+		// Two fresh single-commit generations are the cheapest and least skewed window, but merging them on every
+		// other commit builds a staircase; count pressure merges something older while the newest tier fills.
+		Candidate candidate = select(4, 1_000, 100, 100, 10, 2, 2);
+
+		assertThat(candidate.fromInclusive()).isEqualTo(1);
+		assertThat(candidate.toExclusive()).isEqualTo(3);
+		assertThat(candidate.normal()).isFalse();
+	}
+
+	@Test
+	void countPressureFallsBackToTheNewestTierWhenNothingOlderCanMerge() {
+		Candidate candidate = select(2, 1_000, 2, 2, 2);
+
+		assertThat(candidate.selected()).isTrue();
+		assertThat(candidate.fromInclusive()).isEqualTo(1);
+		assertThat(candidate.toExclusive()).isEqualTo(3);
+	}
+
+	@Test
+	void theFoldOutranksARangeMergeOnceTheOverlaysOutweighTheBase() {
+		long weight = 300L << 10;
+		LmdbAdjacencyOverlaySet overlays = overlays(heavy(1, weight), heavy(2, weight), heavy(3, weight),
+				heavy(4, weight));
+		Candidate candidate = new Candidate();
+
+		// the shape rule holds: the fold outranks the band of four
+		AdjacencyCompactionPlan plan = LmdbAdjacencyTieredCompactionPolicy.plan(overlays, 8, candidate, true, false,
+				32L << 20, 1_000, true);
+		assertThat(plan.type()).isEqualTo(AdjacencyCompactionPlan.Type.FOLD);
+		assertThat(plan.prefixCount()).isEqualTo(4);
+
+		// against a base the overlays do not outweigh, the same band merges as a range
+		plan = LmdbAdjacencyTieredCompactionPolicy.plan(overlays, 8, candidate, true, false, 32L << 20, 100L << 20,
+				false);
+		assertThat(plan.type()).isEqualTo(AdjacencyCompactionPlan.Type.RANGE);
+		assertThat(plan.from()).isEqualTo(0);
+		assertThat(plan.toInclusive()).isEqualTo(3);
+	}
+
+	private static LmdbAdjacencyDeltaGeneration heavy(long revision, long bytes) {
+		LmdbAdjacencyDeltaGeneration generation = info(revision, bytes, bytes, 1);
+		when(generation.metadataBytes()).thenReturn(bytes);
+		return generation;
+	}
+
 	private static Candidate select(int targetGenerationCount, long... weights) {
 		LmdbAdjacencyDeltaGeneration[] infos = new LmdbAdjacencyDeltaGeneration[weights.length];
 		for (int i = 0; i < weights.length; i++) {

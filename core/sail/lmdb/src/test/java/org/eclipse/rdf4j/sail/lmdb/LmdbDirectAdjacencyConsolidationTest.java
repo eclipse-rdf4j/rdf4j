@@ -204,6 +204,41 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
+	void aSmallBaseFoldsOnceTheOverlaysReachTheFoldFloor() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
+
+		// Single-statement commits against a one-statement base: the overlays outweigh the base long before their
+		// retained bytes reach the workspace region, so the shape of the index, not memory pressure, must fold them.
+		int commits = 0;
+		long maxOverlayRetainedBytes = 0;
+		while (commits < 30_000 && store.snapshotMetrics().baseFolds == 0) {
+			commitAdd(uri(50_000 + commits), P1, uri(80_000 + commits));
+			commits++;
+			LmdbAdjacencyOverlaySet overlays = store.publishedStateForTest().overlays();
+			if (overlays != null) {
+				maxOverlayRetainedBytes = Math.max(maxOverlayRetainedBytes, overlays.retainedBytes());
+			}
+		}
+		store.awaitCompactionForTest();
+
+		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
+		assertThat(store.snapshotMetrics().baseFolds).as("folds after %d commits", commits).isPositive();
+		assertThat(maxOverlayRetainedBytes).as("the fold followed the shape of the index, not the workspace region")
+				.isLessThan(store.workspaceRegionBytesForTest());
+		assertThat(state.base()).isNotSameAs(originalBase);
+		assertThat(state.overlays().generationCount()).isLessThanOrEqualTo(store.options().maxDeltaGenerations());
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1)).hasSize(1);
+			assertThat(probe(view, uri(50_000), P1)).hasSize(1);
+			assertThat(probe(view, uri(50_000 + commits / 2), P1)).hasSize(1);
+			assertThat(probe(view, uri(50_000 + commits - 1), P1)).hasSize(1);
+		}
+	}
+
+	@Test
 	void generationCountAloneCompactsDeltasWithoutFoldingThePagedBase() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
