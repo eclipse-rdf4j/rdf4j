@@ -85,7 +85,10 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 		}
 		for (int from = 0; from + FANOUT <= generationCount; from++) {
 			if (withinNormalBand(generations, from, from + FANOUT)) {
-				result.set(from, from + FANOUT, true);
+				// Merges run one at a time, so a fan-out of four can never drain a backlog of small generations that
+				// grows at the commit rate: the run is extended over every following generation that keeps the band
+				// within its weight skew, and the whole run merges at once.
+				result.set(from, extendNormalBand(generations, from, from + FANOUT, generationCount), true);
 				return true;
 			}
 		}
@@ -152,6 +155,32 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 		long twiceLive = liveLogicalBytes * 2;
 		return retainedPhysicalBytes >= twiceLive
 				&& retainedPhysicalBytes - liveLogicalBytes >= workspaceRegionBytes;
+	}
+
+	/** The end of the longest run starting at {@code from} that stays within the weight band of {@code [from, to)}. */
+	private static int extendNormalBand(LmdbAdjacencyOverlaySet generations, int from, int to, int generationCount) {
+		long minimum = Long.MAX_VALUE;
+		long maximum = 0;
+		for (int i = from; i < to; i++) {
+			long weight = generations.generation(i).compactionWeightBytes();
+			minimum = Math.min(minimum, weight);
+			maximum = Math.max(maximum, weight);
+		}
+		int end = to;
+		while (end < generationCount) {
+			long weight = generations.generation(end).compactionWeightBytes();
+			long nextMinimum = Math.min(minimum, weight);
+			long nextMaximum = Math.max(maximum, weight);
+			long maximumAllowed = nextMinimum > Long.MAX_VALUE / MAX_WEIGHT_SKEW ? Long.MAX_VALUE
+					: nextMinimum * MAX_WEIGHT_SKEW;
+			if (nextMaximum > maximumAllowed) {
+				break;
+			}
+			minimum = nextMinimum;
+			maximum = nextMaximum;
+			end++;
+		}
+		return end;
 	}
 
 	private static boolean withinNormalBand(LmdbAdjacencyOverlaySet generations, int from, int to) {

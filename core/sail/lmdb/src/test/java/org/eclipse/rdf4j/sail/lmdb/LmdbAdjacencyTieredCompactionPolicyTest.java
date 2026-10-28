@@ -39,6 +39,19 @@ class LmdbAdjacencyTieredCompactionPolicyTest {
 	}
 
 	@Test
+	void aLongerRunWithinTheWeightBandIsMergedWhole() {
+		// one merge at a time cannot drain a backlog of single-row generations four at a time: the whole run of
+		// generations inside the band merges together, and the run stops where the weight leaves the band
+		Candidate candidate = select(8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64);
+		assertThat(candidate.fromInclusive()).isZero();
+		assertThat(candidate.toExclusive()).isEqualTo(12);
+		assertThat(candidate.normal()).isTrue();
+		candidate = select(8, 64, 1, 1, 1, 1, 2, 2, 1, 1, 3);
+		assertThat(candidate.fromInclusive()).isEqualTo(1);
+		assertThat(candidate.toExclusive()).as("3 against a minimum of 1 leaves the two-times band").isEqualTo(9);
+	}
+
+	@Test
 	void historicalWeightKeepsDeduplicatedOutputOutOfFreshTinyTier() {
 		Candidate candidate = select(8, 400, 20, 20, 20, 20);
 
