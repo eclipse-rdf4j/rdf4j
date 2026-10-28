@@ -78,6 +78,8 @@ class LmdbDirectAdjacencyCommitTest {
 			// the revision is visible as soon as LMDB committed; the committer is the one who waits
 			assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(previousRevision);
 			assertThat(commit.isDone()).isFalse();
+			// the record's seal completes on a worker after the revision became visible; exactness needs its keys
+			assertThat(store.awaitHeadSealedForTest(30, TimeUnit.SECONDS)).as("the committed record seals").isTrue();
 			try (LmdbAdjacencyReadView pending = store.acquire(revision)) {
 				assertThat(pending.isExact()).as("a sealed record serves with row-level pending evidence").isTrue();
 				assertThat(pending.state().pending()).isNotEmpty();

@@ -744,6 +744,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 	}
 
+	/**
+	 * Waits until every record up to the log head is sealed. A commit's revision becomes visible before its record's
+	 * seal completes on a worker, and an exact view over an unapplied record needs the sealed pending keys.
+	 */
+	boolean awaitHeadSealedForTest(long timeout, TimeUnit unit) {
+		return awaitHeadSealed(timeout, unit);
+	}
+
 	/** Waits until the log head is applied; returns at once when the applier cannot apply it. */
 	boolean awaitHeadAppliedForTest(long timeout, TimeUnit unit) {
 		if (closed) {
