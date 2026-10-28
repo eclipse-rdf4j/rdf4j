@@ -126,6 +126,22 @@ interface AdjacencyIndexOps<B, O, G> {
 	/** An identity-comparable token for the generation at {@code index}; equal tokens mean the same generation. */
 	Object generationIdentity(O overlays, int index);
 
+	/**
+	 * Whether the first {@code count} generations of both sets are the same generations. The default compares the
+	 * identity tokens one by one; an implementation whose generation access is not constant-time can do better.
+	 */
+	default boolean prefixIdentical(O premise, O current, int count) {
+		if (generationCount(premise) < count || generationCount(current) < count) {
+			return false;
+		}
+		for (int i = 0; i < count; i++) {
+			if (generationIdentity(premise, i) != generationIdentity(current, i)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	long generationRevisionAt(O overlays, int index);
 
 	/** Worker operation. Merges the generations in {@code [from, toInclusive]} into one. */

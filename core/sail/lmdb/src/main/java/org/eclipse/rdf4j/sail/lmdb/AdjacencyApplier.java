@@ -934,12 +934,7 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 		if (generationCount(current) < count || generationCount(premise) < count) {
 			return false;
 		}
-		for (int i = 0; i < count; i++) {
-			if (ops.generationIdentity(current.overlays(), i) != ops.generationIdentity(premise.overlays(), i)) {
-				return false;
-			}
-		}
-		return true;
+		return count == 0 || ops.prefixIdentical(premise.overlays(), current.overlays(), count);
 	}
 
 	private void onMerged(AdjacencyCompactionPlan plan, AdjacencyState<B, O> premise, Outcome<G> outcome) {

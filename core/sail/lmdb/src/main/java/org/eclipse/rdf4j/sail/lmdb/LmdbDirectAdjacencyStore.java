@@ -802,6 +802,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		coalescePrepares = coalesce;
 	}
 
+	/** Test seam: runs the merge worker operation for {@code [from, toInclusive]} of the current overlays. */
+	PreparedApply mergeForTest(int from, int toInclusive) throws Exception {
+		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+		return new IndexOps().merge(state.base(), state.overlays(), from, toInclusive);
+	}
+
 	/** Whether a generation preparation is on a worker or its outcome waits in the applier's inbox. */
 	boolean prepareInFlightForTest() {
 		return applier.prepareInFlight();
@@ -956,6 +962,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		final LmdbAdjacencyDeltaApplier.StructuralStats structuralStats;
 		/** Statistics of the base this generation was prepared against; the first append starts from them. */
 		final LmdbAdjacencyPlaneStatistics baseStatistics;
+		/**
+		 * For a range merge: the premise overlay set with the range already replaced and its latest-row index remapped,
+		 * built on the merge worker so the applier thread only appends the generations that landed meanwhile. Owns one
+		 * reference; null for a delta preparation.
+		 */
+		LmdbAdjacencyOverlaySet replacedOverlays;
+		/** For a range merge: how many generations the premise overlay set had. */
+		int premiseGenerationCount;
 		private boolean transferred;
 
 		PreparedApply(LmdbAdjacencyDeltaGeneration generation, LmdbAdjacencyContextCatalog contextCatalog,
@@ -976,6 +990,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		public void close() {
 			if (transferred) {
 				return;
+			}
+			if (replacedOverlays != null) {
+				replacedOverlays.release();
+				replacedOverlays = null;
 			}
 			if (generation != null) {
 				generation.release();
@@ -1149,49 +1167,95 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	/** Visits the newest version of every (key, plane, predicate) row across generations {@code [from, to)}. */
 	private static void forEachMergedRow(LmdbAdjacencyOverlaySet overlays, int from, int to,
 			MergedRowConsumer consumer) {
+		// A k-way merge over a heap of sources ordered by their current row, newest source first among equal rows:
+		// O(rows log k). The former scan of every source per emitted row was O(rows x k) and took seconds once a wide
+		// band held thousands of single-row generations.
 		int count = to - from;
+		LmdbAdjacencyDeltaGeneration[] all = overlays.generationsSnapshot();
+		LmdbAdjacencyDeltaGeneration[] sources = Arrays.copyOfRange(all, from, to);
 		int[] positions = new int[count];
-		while (true) {
-			int chosen = -1;
-			long chosenKey = 0;
-			int chosenPlane = 0;
-			long chosenPredicate = 0;
-			for (int local = 0; local < count; local++) {
-				LmdbAdjacencyDeltaGeneration generation = overlays.generation(from + local);
-				int position = positions[local];
-				if (position >= generation.rowCount()) {
-					continue;
-				}
-				long key = generation.rowKeyAt(position);
-				int plane = generation.rowPlaneAt(position);
-				long predicate = generation.rowPredicateAt(position);
-				if (chosen < 0 || compareRow(key, plane, predicate, chosenKey, chosenPlane, chosenPredicate) < 0) {
-					chosen = local;
-					chosenKey = key;
-					chosenPlane = plane;
-					chosenPredicate = predicate;
-				}
+		int[] heap = new int[count];
+		int size = 0;
+		for (int local = 0; local < count; local++) {
+			if (sources[local].rowCount() > 0) {
+				heap[size++] = local;
+				siftUp(heap, size - 1, sources, positions);
 			}
-			if (chosen < 0) {
-				return;
-			}
-			int newest = -1;
-			int newestRow = -1;
-			for (int local = count - 1; local >= 0; local--) {
-				LmdbAdjacencyDeltaGeneration generation = overlays.generation(from + local);
-				int position = positions[local];
-				if (position < generation.rowCount() && generation.rowKeyAt(position) == chosenKey
-						&& generation.rowPlaneAt(position) == chosenPlane
-						&& generation.rowPredicateAt(position) == chosenPredicate) {
-					if (newest < 0) {
-						newest = local;
-						newestRow = position;
-					}
-					positions[local]++;
+		}
+		while (size > 0) {
+			int newest = heap[0];
+			int newestRow = positions[newest];
+			long key = sources[newest].rowKeyAt(newestRow);
+			int plane = sources[newest].rowPlaneAt(newestRow);
+			long predicate = sources[newest].rowPredicateAt(newestRow);
+			// advance the newest source and every older source positioned on the same row
+			size = advanceTop(heap, size, sources, positions);
+			while (size > 0) {
+				int top = heap[0];
+				int position = positions[top];
+				if (sources[top].rowKeyAt(position) != key || sources[top].rowPlaneAt(position) != plane
+						|| sources[top].rowPredicateAt(position) != predicate) {
+					break;
 				}
+				size = advanceTop(heap, size, sources, positions);
 			}
 			consumer.accept(from + newest, newestRow);
 		}
+	}
+
+	/** Moves the top source past its current row, re-heaps it or drops it when exhausted; returns the new size. */
+	private static int advanceTop(int[] heap, int size, LmdbAdjacencyDeltaGeneration[] sources, int[] positions) {
+		int top = heap[0];
+		positions[top]++;
+		if (positions[top] >= sources[top].rowCount()) {
+			size--;
+			heap[0] = heap[size];
+		}
+		if (size > 0) {
+			siftDown(heap, 0, size, sources, positions);
+		}
+		return size;
+	}
+
+	/** Heap order: smaller current row first; among equal rows the newer (higher-indexed) source first. */
+	private static boolean heapBefore(int a, int b, LmdbAdjacencyDeltaGeneration[] sources, int[] positions) {
+		int pa = positions[a];
+		int pb = positions[b];
+		int cmp = compareRow(sources[a].rowKeyAt(pa), sources[a].rowPlaneAt(pa), sources[a].rowPredicateAt(pa),
+				sources[b].rowKeyAt(pb), sources[b].rowPlaneAt(pb), sources[b].rowPredicateAt(pb));
+		return cmp != 0 ? cmp < 0 : a > b;
+	}
+
+	private static void siftUp(int[] heap, int index, LmdbAdjacencyDeltaGeneration[] sources, int[] positions) {
+		int value = heap[index];
+		while (index > 0) {
+			int parent = (index - 1) >>> 1;
+			if (!heapBefore(value, heap[parent], sources, positions)) {
+				break;
+			}
+			heap[index] = heap[parent];
+			index = parent;
+		}
+		heap[index] = value;
+	}
+
+	private static void siftDown(int[] heap, int index, int size, LmdbAdjacencyDeltaGeneration[] sources,
+			int[] positions) {
+		int value = heap[index];
+		while (true) {
+			int left = 2 * index + 1;
+			if (left >= size) {
+				break;
+			}
+			int right = left + 1;
+			int child = right < size && heapBefore(heap[right], heap[left], sources, positions) ? right : left;
+			if (!heapBefore(heap[child], value, sources, positions)) {
+				break;
+			}
+			heap[index] = heap[child];
+			index = child;
+		}
+		heap[index] = value;
 	}
 
 	private static int compareRow(long aKey, int aPlane, long aPredicate, long bKey, int bPlane, long bPredicate) {
@@ -1367,6 +1431,24 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 
 		@Override
+		public boolean prefixIdentical(LmdbAdjacencyOverlaySet premise, LmdbAdjacencyOverlaySet current, int count) {
+			if (premise == current) {
+				return true;
+			}
+			LmdbAdjacencyDeltaGeneration[] a = premise.generationsSnapshot();
+			LmdbAdjacencyDeltaGeneration[] b = current.generationsSnapshot();
+			if (a.length < count || b.length < count) {
+				return false;
+			}
+			for (int i = 0; i < count; i++) {
+				if (a[i] != b[i]) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		@Override
 		public PreparedApply prepare(AdjacencyCommitLog.Record record, LmdbInMemoryAdjacencyIndex base,
 				LmdbAdjacencyOverlaySet overlays) {
 			AdjacencyDelta rows = record.rows();
@@ -1471,8 +1553,18 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			try {
 				LmdbAdjacencyDeltaGeneration merged = mergeGenerationRange(base, overlays, from, toInclusive + 1);
 				metrics.recordDeltaMerge(inputRetainedBytes, merged.retainedBytes());
-				return new PreparedApply(merged, overlays.contextCatalog(), false, overlays.extraSelectedSnapshot(),
-						null, null, null);
+				PreparedApply prepared = new PreparedApply(merged, overlays.contextCatalog(), false,
+						overlays.extraSelectedSnapshot(), null, null, null);
+				try {
+					// The latest-row remap along the merged rows is proportional to the band; doing it here keeps it
+					// off the applier thread, where every committer would wait behind it.
+					prepared.replacedOverlays = replacedRange(overlays, from, toInclusive, merged);
+					prepared.premiseGenerationCount = overlays.generationCount();
+				} catch (RuntimeException | Error failure) {
+					prepared.close();
+					throw failure;
+				}
+				return prepared;
 			} catch (RuntimeException | Error failure) {
 				if (!(failure instanceof LmdbAdjacencyMemoryRefusedException)) {
 					rememberUnexpectedMaintenanceFailure(failure);
@@ -1487,12 +1579,53 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		@Override
 		public LmdbAdjacencyOverlaySet replaceRange(LmdbAdjacencyOverlaySet overlays, int from, int toInclusive,
 				PreparedApply merged) {
+			LmdbAdjacencyOverlaySet result = merged.replacedOverlays;
+			if (result == null) {
+				try {
+					return replacedRange(overlays, from, toInclusive, merged.generation);
+				} finally {
+					merged.close(); // the set holds its own reference now
+				}
+			}
+			// The worker replaced the range in the premise set; the generations after the premise landed during the
+			// merge and are appended here, each a search-path insert of its own rows.
+			merged.replacedOverlays = null;
+			merged.close();
+			int count = overlays.generationCount();
+			try {
+				for (int index = merged.premiseGenerationCount; index < count; index++) {
+					LmdbAdjacencyDeltaGeneration appended = overlays.generation(index);
+					boolean last = index == count - 1;
+					LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
+					contexts.retain();
+					LmdbAdjacencyOverlaySet next;
+					try {
+						next = result.appendRetained(appended, contexts, overlays.extraSelectedSnapshot(),
+								last ? overlays.liveLogicalBytes() : result.liveLogicalBytesAfterAppend(appended),
+								last ? overlays.planeStatistics() : result.planeStatistics());
+					} catch (RuntimeException | Error failure) {
+						contexts.release();
+						throw failure;
+					}
+					result.release();
+					result = next;
+				}
+				return result;
+			} catch (RuntimeException | Error failure) {
+				result.release();
+				throw failure;
+			}
+		}
+
+		/** The overlay set with {@code [from, toInclusive]} replaced by {@code merged}; retains everything it holds. */
+		private LmdbAdjacencyOverlaySet replacedRange(LmdbAdjacencyOverlaySet overlays, int from, int toInclusive,
+				LmdbAdjacencyDeltaGeneration mergedGeneration) {
 			LmdbAdjacencyDeltaGeneration[] current = overlays.generationsSnapshot();
 			int removed = toInclusive - from + 1;
 			LmdbAdjacencyDeltaGeneration[] replacement = new LmdbAdjacencyDeltaGeneration[current.length - removed
 					+ 1];
 			System.arraycopy(current, 0, replacement, 0, from);
-			replacement[from] = merged.generation;
+			replacement[from] = mergedGeneration;
 			System.arraycopy(current, toInclusive + 1, replacement, from + 1, current.length - toInclusive - 1);
 			for (LmdbAdjacencyDeltaGeneration generation : replacement) {
 				generation.retain();
@@ -1509,8 +1642,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					generation.release();
 				}
 				throw failure;
-			} finally {
-				merged.close(); // the set holds its own reference now
 			}
 		}
 

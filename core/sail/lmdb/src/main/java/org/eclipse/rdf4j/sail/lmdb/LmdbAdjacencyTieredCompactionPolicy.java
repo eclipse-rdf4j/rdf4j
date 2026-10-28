@@ -79,16 +79,22 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 			throw new IllegalArgumentException("targetGenerationCount must be positive");
 		}
 		result.clear();
-		int generationCount = generations.generationCount();
+		// The applier consults this policy after every publish and the overlays can hold thousands of generations
+		// while one large merge runs: read every generation once through the sequence's linear copy instead of
+		// indexing the persistent sequence per visit.
+		LmdbAdjacencyDeltaGeneration[] snapshot = generations.generationsSnapshot();
+		int generationCount = snapshot.length;
+		long[] weights = new long[generationCount];
 		for (int i = 0; i < generationCount; i++) {
-			validate(generations.generation(i));
+			validate(snapshot[i]);
+			weights[i] = snapshot[i].compactionWeightBytes();
 		}
 		for (int from = 0; from + FANOUT <= generationCount; from++) {
-			if (withinNormalBand(generations, from, from + FANOUT)) {
+			if (withinNormalBand(weights, from, from + FANOUT)) {
 				// Merges run one at a time, so a fan-out of four can never drain a backlog of small generations that
 				// grows at the commit rate: the run is extended over every following generation that keeps the band
 				// within its weight skew, and the whole run merges at once.
-				result.set(from, extendNormalBand(generations, from, from + FANOUT, generationCount), true);
+				result.set(from, extendNormalBand(weights, from, from + FANOUT), true);
 				return true;
 			}
 		}
@@ -108,14 +114,14 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 				long maximumWeight = 0;
 				long retainedBytes = 0;
 				for (int i = from; i < to; i++) {
-					LmdbAdjacencyDeltaGeneration generation = generations.generation(i);
+					LmdbAdjacencyDeltaGeneration generation = snapshot[i];
 					reclaimable &= generation.referenceCount() == 1;
-					minimumWeight = Math.min(minimumWeight, generation.compactionWeightBytes());
-					maximumWeight = Math.max(maximumWeight, generation.compactionWeightBytes());
+					minimumWeight = Math.min(minimumWeight, weights[i]);
+					maximumWeight = Math.max(maximumWeight, weights[i]);
 					retainedBytes = saturatingAdd(retainedBytes, generation.retainedBytes());
 				}
 				double skew = (double) maximumWeight / minimumWeight;
-				long oldestRevision = generations.generation(from).revision();
+				long oldestRevision = snapshot[from].revision();
 				if (!result.selected() || betterScore(reclaimable, skew, retainedBytes, oldestRevision,
 						bestReclaimable, bestSkew, bestRetainedBytes, bestOldestRevision)) {
 					result.set(from, to, false);
@@ -158,19 +164,17 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 	}
 
 	/** The end of the longest run starting at {@code from} that stays within the weight band of {@code [from, to)}. */
-	private static int extendNormalBand(LmdbAdjacencyOverlaySet generations, int from, int to, int generationCount) {
+	private static int extendNormalBand(long[] weights, int from, int to) {
 		long minimum = Long.MAX_VALUE;
 		long maximum = 0;
 		for (int i = from; i < to; i++) {
-			long weight = generations.generation(i).compactionWeightBytes();
-			minimum = Math.min(minimum, weight);
-			maximum = Math.max(maximum, weight);
+			minimum = Math.min(minimum, weights[i]);
+			maximum = Math.max(maximum, weights[i]);
 		}
 		int end = to;
-		while (end < generationCount) {
-			long weight = generations.generation(end).compactionWeightBytes();
-			long nextMinimum = Math.min(minimum, weight);
-			long nextMaximum = Math.max(maximum, weight);
+		while (end < weights.length) {
+			long nextMinimum = Math.min(minimum, weights[end]);
+			long nextMaximum = Math.max(maximum, weights[end]);
 			long maximumAllowed = nextMinimum > Long.MAX_VALUE / MAX_WEIGHT_SKEW ? Long.MAX_VALUE
 					: nextMinimum * MAX_WEIGHT_SKEW;
 			if (nextMaximum > maximumAllowed) {
@@ -183,13 +187,12 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 		return end;
 	}
 
-	private static boolean withinNormalBand(LmdbAdjacencyOverlaySet generations, int from, int to) {
+	private static boolean withinNormalBand(long[] weights, int from, int to) {
 		long minimum = Long.MAX_VALUE;
 		long maximum = 0;
 		for (int i = from; i < to; i++) {
-			long weight = generations.generation(i).compactionWeightBytes();
-			minimum = Math.min(minimum, weight);
-			maximum = Math.max(maximum, weight);
+			minimum = Math.min(minimum, weights[i]);
+			maximum = Math.max(maximum, weights[i]);
 		}
 		long maximumAllowed = minimum > Long.MAX_VALUE / MAX_WEIGHT_SKEW ? Long.MAX_VALUE
 				: minimum * MAX_WEIGHT_SKEW;

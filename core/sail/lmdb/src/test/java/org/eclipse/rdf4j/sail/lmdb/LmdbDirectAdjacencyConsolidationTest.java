@@ -273,6 +273,41 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
+	void aMergeArrivesWithItsLatestRowIndexRemappedSoTheApplierOnlyAppendsLaterGenerations() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		store.coalescePreparesForTest(false);
+		store.pauseApplierForTest(true);
+		try {
+			for (int i = 1; i <= 4; i++) {
+				commitAdd(S1, P1, uri(40_000 + i));
+			}
+			assertThat(store.awaitHeadSealedForTest(30, TimeUnit.SECONDS)).isTrue();
+			ApplierStepping.stepUntil(store, () -> {
+				LmdbAdjacencyOverlaySet overlays = store.applierStateForTest().overlays();
+				return overlays != null && overlays.generationCount() == 4;
+			}, "four single-row generations");
+			LmdbAdjacencyOverlaySet before = store.applierStateForTest().overlays();
+			assertThat(before.generationCount()).isEqualTo(4);
+			// the merge worker hands back the overlay set with the range replaced and the latest-row index already
+			// remapped; the applier thread then only appends generations that landed while the merge ran
+			try (LmdbDirectAdjacencyStore.PreparedApply merged = store.mergeForTest(0, 3)) {
+				assertThat(merged.replacedOverlays).as("the worker remaps the latest-row index").isNotNull();
+				assertThat(merged.premiseGenerationCount).isEqualTo(4);
+				assertThat(merged.replacedOverlays.generationCount()).isEqualTo(1);
+				assertThat(merged.replacedOverlays.generation(0)).isSameAs(merged.generation);
+				LmdbAdjacencyOverlaySet.LatestRowLookup lookup = new LmdbAdjacencyOverlaySet.LatestRowLookup();
+				assertThat(merged.replacedOverlays.findLatest(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1,
+						lookup)).isTrue();
+				assertThat(lookup.generation()).isSameAs(merged.generation);
+				assertThat(lookup.generationIndex()).isZero();
+			}
+		} finally {
+			store.pauseApplierForTest(false);
+		}
+	}
+
+	@Test
 	void pagedConsolidationFoldsOverlaysIntoANewBaseRevision() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
