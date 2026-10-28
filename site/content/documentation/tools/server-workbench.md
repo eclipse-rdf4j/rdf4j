@@ -164,6 +164,9 @@ menu.group.explore.visible=true
 menu.item.query.order=10
 page.summary.enabled=false
 
+# Hide the Information page. Its route answers 404, like any other disabled page.
+page.information.enabled=false
+
 # Hide a whole navigation group or one item.
 menu.group.modify.visible=false
 menu.item.namespaces.visible=false
@@ -258,9 +261,41 @@ defaulted to `0`, which means no limit. Users can change the timeout for their q
 `query-timeout` feature is disabled, the default applies to every query. To restore unlimited queries by default, set
 `default-query-timeout` to `0` in `WEB-INF/web.xml`.
 
+The timeout can also be set in `workbench.properties` with `query.default-timeout`, a non-negative number of seconds
+(`0` means no limit). The key is not part of the packaged defaults: when it is absent the `default-query-timeout` init
+parameter keeps applying, and when it is present it takes precedence over that init parameter, for every page that uses
+the default. A negative or non-numeric value is a configuration error.
+
+```properties
+query.default-timeout=120
+```
+
 A query that runs longer than its timeout is reported as timed out (“Query timed out after 1 second”), also when the
 Workbench stopped waiting for the RDF4J Server's answer just before the server reported the timeout itself; rows that
 were already received are kept.
+
+#### Repository types offered when creating a repository
+
+By default the “New repository” page offers every built-in repository type and Federation. A distribution can restrict
+and reorder that list, and add its own types, with `create.templates` in `workbench.properties`: a list of repository
+template types separated by commas and/or whitespace. The key is not part of the packaged defaults; when it is absent or
+blank nothing changes.
+
+```properties
+create.templates=native, memory, federate, acme-graph
+```
+
+When the key is set, the page offers exactly the listed types, in the order listed (they are not sorted), labelled with
+the label of each template. `federate` is a pseudo-type that stands for the Federation option; leave it out to remove
+Federation. The list may also name built-in templates that are normally hidden, such as `memory-rdfs-legacy`, and your
+own templates: a template is a Turtle file with the Workbench template annotations of the built-in ones, placed in
+`WEB-INF/classes/org/eclipse/rdf4j/repository/config/<type>.ttl` (or on the class path under the same package), and
+named in the list by its file name without `.ttl`.
+
+Types outside the list are refused: requesting the form of an unlisted type answers `404 Not Found`, and posting one
+answers `400 Bad Request` without creating a repository. The list is checked when the policy is loaded: an entry that
+contains characters other than letters, digits, `.`, `_` and `-`, a type listed twice, or a type whose template cannot be
+loaded makes the whole policy invalid, so every Workbench page answers `503 Service Unavailable` as described above.
 
 ### OpenTelemetry Tracing
 
@@ -335,6 +370,44 @@ Both RDF4J Server and RDF4J Workbench use the Logback logging framework. In its 
 The default log level is INFO, indicating that only important status messages, warnings and errors are logged. The log level and -behaviour can be adjusted by modifying the `[RDF4J_DATA]/Server/conf/logback.xml` file. This file will be generated when the server is first run. Please consult the logback manual for configuration instructions.
 
 The built-in `/system/logging/overview.view` page is disabled by default and returns `403 Forbidden`. Server logs can include request URLs, query parameters, error details, and stack traces. To enable the page, start the Server JVM with `-Dorg.eclipse.rdf4j.server.logging.ui.enabled=true`. For the packaged Spring Boot distribution, add this option through `RDF4J_JAVA_OPTS`; for a standalone WAR, add it to the servlet container's JVM options. This setting only makes the page available. Protect `/system/logging/*` with servlet-container authentication and authorization or an authenticating reverse proxy before enabling it. For the packaged Boot server, protect both `/system/logging/*` and `/rdf4j-server/system/logging/*` when using a reverse proxy. The page must not be exposed anonymously on a publicly reachable listener.
+
+### Extending the RDF4J Server Spring configuration
+
+Downstream distributions can add or replace Spring beans in RDF4J Server without modifying the WAR's own configuration files. At the end of its `rdf4j-http-server-servlet.xml`, the server imports every Spring XML file that it finds on the classpath at `META-INF/rdf4j-server/*.xml`:
+
+- In the standard WAR, put the file at `META-INF/rdf4j-server/<name>.xml` inside a jar in `WEB-INF/lib`, or directly under `WEB-INF/classes/META-INF/rdf4j-server/`.
+- In the Spring Boot packaging (`rdf4j-server-boot`), put the jar (or directory) containing the file on the application classpath.
+
+Extension files are loaded after all stock bean definitions. A bean with the same id as a stock bean replaces it, so you can, for example, replace the `rdf4jRepositoryManager` bean that the server's controllers reference by name. The stock URL handler mappings use orders 0 to 3; give your own mappings an order that does not conflict with these. The `commonAppConfig` bean is available to extensions (for instance to look up the data directory). The order in which several extension files are loaded is not specified, so do not make one extension file depend on another. When packaging extensions in a jar, make sure the jar has directory entries (jars built by Maven do), as the classpath lookup relies on them.
+
+The following example replaces the repository manager with a custom `FactoryBean` and adds a URL mapping to a custom controller:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+	<!-- Replaces the stock repository manager. The class must produce a RepositoryManager. -->
+	<bean id="rdf4jRepositoryManager" class="com.example.CustomRepositoryManagerFactoryBean">
+		<constructor-arg>
+			<bean factory-bean="commonAppConfig" factory-method="getDataDir" />
+		</constructor-arg>
+	</bean>
+
+	<bean id="exampleController" class="com.example.ExampleController" />
+
+	<!-- Adds a new endpoint; the stock mappings use orders 0-3. -->
+	<bean id="exampleHandlerMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
+		<property name="order" value="10" />
+		<property name="urlMap">
+			<map>
+				<entry key="/example" value-ref="exampleController" />
+			</map>
+		</property>
+	</bean>
+</beans>
+```
 
 ## Access Rights and Security
 
@@ -575,6 +648,8 @@ Click on “New repository” in the sidebar menu. This brings up the “New Rep
 - 11 Remote RDF Store:	References a RDF4J repository external to the present server.
 - 12 SPARQL Endpoint Proxy: References a SPARQL Endpoint (See SPARQL 1.1 Protocol).
 - 1| Federation Store: Presents other stores referenced on the present server as a single federation store for querying purposes.
+
+Deployments can restrict this list, reorder it and add their own types with the `create.templates` policy key (see [Repository types offered when creating a repository](#repository-types-offered-when-creating-a-repository)).
 
 The “ID:” and “Title:” fields are optional in this form. Clicking “Next” brings up a form with more fields specific to the repository type selected. On that form, it will be necessary to enter something in the “ID:” field before the “Create” button may be clicked. If creation is successful, the new repository is also opened and its “Summary” page is presented.
 

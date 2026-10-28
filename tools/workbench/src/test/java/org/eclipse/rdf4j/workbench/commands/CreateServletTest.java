@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -29,6 +31,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
@@ -38,12 +42,16 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
+import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.springframework.mock.web.MockServletContext;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
@@ -597,6 +605,101 @@ public class CreateServletTest {
 		String xml = outputStream.asString();
 		assertThat(extractBindingValues(xml, "type")).containsExactlyElementsOf(expectedCatalogTypes());
 		assertThat(extractBindingValues(xml, "label")).containsExactlyElementsOf(expectedCatalogLabels());
+	}
+
+	@Test
+	public void catalogShowsOnlyAllowlistedTemplatesInListOrder() throws Exception {
+		CreateServlet restricted = servletWithAllowlist("native,federate,memory");
+
+		String xml = serviceCatalog(restricted);
+
+		assertThat(extractBindingValues(xml, "type")).containsExactly("native", FEDERATE, "memory");
+		assertThat(extractBindingValues(xml, "label")).containsExactly("Native Store", FEDERATE_LABEL,
+				"Memory Store");
+	}
+
+	@Test
+	public void catalogIncludesHiddenAndUndiscoveredTemplatesWhenAllowlisted() throws Exception {
+		CreateServlet restricted = servletWithAllowlist("memory-rdfs-legacy,workbench-test-custom");
+
+		String xml = serviceCatalog(restricted);
+
+		assertThat(extractBindingValues(xml, "type")).containsExactly("memory-rdfs-legacy", "workbench-test-custom");
+		assertThat(extractBindingValues(xml, "label")).contains("Workbench Test Custom").hasSize(2);
+	}
+
+	@Test
+	public void typedTemplateEmitsFieldReadonlyAndFieldGroupColumns() throws Exception {
+		CreateServlet restricted = servletWithAllowlist("workbench-test-custom");
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent("type")).thenReturn(true);
+		when(request.getTypeParameter()).thenReturn("workbench-test-custom");
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+		when(response.getOutputStream()).thenReturn(outputStream);
+
+		restricted.service(request, response);
+
+		String xml = outputStream.asString();
+		List<String> names = extractBindingValues(xml, "fieldName");
+		List<String> readonly = extractBindingValues(xml, "fieldReadonly");
+		List<String> groups = extractBindingValues(xml, "fieldGroup");
+		assertThat(readonly).hasSameSizeAs(names);
+		assertThat(groups).hasSameSizeAs(names);
+		for (int i = 0; i < names.size(); i++) {
+			assertThat(readonly.get(i)).as(names.get(i)).isEqualTo(String.valueOf("Persist".equals(names.get(i))));
+			assertThat(groups.get(i)).as(names.get(i)).isEqualTo("Sync delay".equals(names.get(i)) ? "Storage" : "");
+		}
+	}
+
+	@Test
+	public void typedTemplateRequestOutsideTheAllowlistIsNotFound() throws Exception {
+		CreateServlet restricted = servletWithAllowlist("native");
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent("type")).thenReturn(true);
+		when(request.getTypeParameter()).thenReturn("memory");
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
+
+		restricted.service(request, response);
+
+		verify(response).sendError(eq(HttpServletResponse.SC_NOT_FOUND), anyString());
+	}
+
+	@Test
+	public void federateRequestOutsideTheAllowlistIsNotFound() throws Exception {
+		CreateServlet restricted = servletWithAllowlist("native");
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent("type")).thenReturn(true);
+		when(request.getTypeParameter()).thenReturn(FEDERATE);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
+
+		restricted.service(request, response);
+
+		verify(response).sendError(eq(HttpServletResponse.SC_NOT_FOUND), anyString());
+	}
+
+	private static CreateServlet servletWithAllowlist(String allowlist) throws Exception {
+		Properties properties = new Properties();
+		properties.setProperty("create.templates", allowlist);
+		MockServletContext context = new MockServletContext();
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
+				WorkbenchPolicy.fromProperties(properties, Set.of()));
+		CreateServlet restricted = new CreateServlet();
+		restricted.setRepositoryManager(new LocalRepositoryManager(datadir));
+		restricted.init(new TestServletConfig("create", context, Map.of("transformations", "/transform")));
+		return restricted;
+	}
+
+	private static String serviceCatalog(CreateServlet target) throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent("type")).thenReturn(false);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
+		when(response.getOutputStream()).thenReturn(outputStream);
+		target.service(request, response);
+		return outputStream.asString();
 	}
 
 	private static List<String> sourceTemplateTypes() {

@@ -90,9 +90,18 @@ final class CreateTemplateConfig {
 		private final int cols;
 		private final String placeholder;
 		private final boolean unsettable;
+		private final boolean readonly;
+		private final String group;
 
 		Field(String name, String id, String property, String role, FieldControl control, List<String> values,
 				String defaultValue, int size, int rows, int cols, String placeholder, boolean unsettable) {
+			this(name, id, property, role, control, values, defaultValue, size, rows, cols, placeholder, unsettable,
+					false, null);
+		}
+
+		Field(String name, String id, String property, String role, FieldControl control, List<String> values,
+				String defaultValue, int size, int rows, int cols, String placeholder, boolean unsettable,
+				boolean readonly, String group) {
 			this.name = name;
 			this.id = id;
 			this.property = property == null ? "" : property;
@@ -105,6 +114,8 @@ final class CreateTemplateConfig {
 			this.cols = cols;
 			this.placeholder = placeholder == null ? "" : placeholder;
 			this.unsettable = unsettable;
+			this.readonly = readonly;
+			this.group = group == null ? "" : group;
 		}
 
 		String getName() {
@@ -153,6 +164,16 @@ final class CreateTemplateConfig {
 
 		boolean isUnsettable() {
 			return unsettable;
+		}
+
+		/** Whether the form shows the field but the server always uses the template default. */
+		boolean isReadonly() {
+			return readonly;
+		}
+
+		/** The named form section of the field, or an empty string when it has none. */
+		String getGroup() {
+			return group;
 		}
 	}
 
@@ -239,7 +260,7 @@ final class CreateTemplateConfig {
 					fieldSpec.property(), inferRole(fieldSpec.property()), control, values, defaultValue(values),
 					fieldSpec.uiHints().defaultSize(control), fieldSpec.uiHints().defaultRows(control),
 					fieldSpec.uiHints().defaultCols(control), fieldSpec.uiHints().placeholder(),
-					fieldSpec.uiHints().unsettable()));
+					fieldSpec.uiHints().unsettable(), fieldSpec.uiHints().readonly(), fieldSpec.uiHints().group()));
 		}
 
 		return new CreateTemplateConfig(type, metadata.label != null ? metadata.label : type,
