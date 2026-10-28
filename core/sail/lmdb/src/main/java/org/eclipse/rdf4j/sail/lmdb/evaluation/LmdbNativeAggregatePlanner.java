@@ -2497,13 +2497,20 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	/**
-	 * M-F1: standalone ZeroLengthPath (subject == object). Bound endpoints identity-bind without consulting the store;
+	 * M-F1: standalone ZeroLengthPath (subject == object). Preserve constant/substitution origin for bound identities;
 	 * both-free enumerates the scoped statement nodes (see {@link ZeroLengthPathPlan}). Declines (null) for an unbound
 	 * graph variable — the generic arm dedups by node with a first-statement graph binding, which the umbrella's
 	 * per-(graph, node) reading contradicts, so the native engine abstains — and for a store-absent langString
 	 * constant, whose term-equal spellings a synthetic id cannot probe.
 	 */
 	private SlotPlan compileZeroLengthPath(ZeroLengthPath zeroLength) {
+		Var subject = zeroLength.getSubjectVar();
+		Var object = zeroLength.getObjectVar();
+		// Generic membership probes retain API-input lookup provenance; do not erase it in this ID-only bridge.
+		if (subject.hasApiInputOrigin() || object.hasApiInputOrigin()
+				|| zeroLength.getContextVar() != null && zeroLength.getContextVar().hasApiInputOrigin()) {
+			return null;
+		}
 		long[] enumerationContexts = pathEnumerationContexts(zeroLength.getContextVar());
 		if (enumerationContexts == DECLINED_CONTEXTS) {
 			return null;
@@ -2516,7 +2523,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (obj == null) {
 			return null;
 		}
-		return new ZeroLengthPathPlan((int) subj[0], subj[1], (int) obj[0], obj[1], enumerationContexts);
+		return new ZeroLengthPathPlan((int) subj[0], subj[1], (int) obj[0], obj[1], enumerationContexts,
+				subject.isConstant() || object.isConstant(),
+				context.getSubstitutionBindingNames().contains(subject.getName()),
+				context.getSubstitutionBindingNames().contains(object.getName()));
 	}
 
 	/** Sentinel: an unbound graph variable declines the whole plan (never a valid context list). */
@@ -2579,6 +2589,20 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		Var contextVar = alp.getContextVar();
+		// Frontier renaming cannot preserve API lookup provenance in generic islands below the step.
+		if (alp.getSubjectVar().hasApiInputOrigin() || alp.getObjectVar().hasApiInputOrigin()
+				|| contextVar != null && contextVar.hasApiInputOrigin()) {
+			return null;
+		}
+		boolean termInput = alp.getSubjectVar().isConstant() || alp.getObjectVar().isConstant()
+				|| context.getSubstitutionBindingNames().contains(alp.getSubjectVar().getName())
+				|| context.getSubstitutionBindingNames().contains(alp.getObjectVar().getName());
+		// A nullable step can carry an absent constant through identity alone. The general frontier makes its
+		// far endpoint free, losing precisely that distinction. Retain the original algebra until the frontier
+		// has an explicit endpoint-origin contract; ordinary VALUES is not a term-input exemption.
+		if (termInput && pathStepMayBeNullable(alp.getPathExpression())) {
+			return null;
+		}
 		if (contextVar != null && contextVar.hasValue()
 				&& idOf(contextVar.getValue(), ValuePosition.CONTEXT) == UNKNOWN) {
 			return SlotPlan.empty();
@@ -2646,6 +2670,35 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		return new GeneralPathPlan(step, stepSubjSlot, stepObjSlot, (int) subj[0], subj[1], (int) obj[0], obj[1],
 				alp.getMinLength(), enumerationContexts, contextSlot, contextConst);
+	}
+
+	/** Conservative upper bound: false proves every successful path step must consume a statement. */
+	private static boolean pathStepMayBeNullable(TupleExpr expression) {
+		if (expression instanceof StatementPattern || expression instanceof EmptySet) {
+			return false;
+		}
+		if (expression instanceof ZeroLengthPath || expression instanceof SingletonSet) {
+			return true;
+		}
+		if (expression instanceof Join join) {
+			return pathStepMayBeNullable(join.getLeftArg()) && pathStepMayBeNullable(join.getRightArg());
+		}
+		if (expression instanceof Union union) {
+			return pathStepMayBeNullable(union.getLeftArg()) || pathStepMayBeNullable(union.getRightArg());
+		}
+		if (expression instanceof Projection projection) {
+			return pathStepMayBeNullable(projection.getArg());
+		}
+		if (expression instanceof Distinct distinct) {
+			return pathStepMayBeNullable(distinct.getArg());
+		}
+		if (expression instanceof Reduced reduced) {
+			return pathStepMayBeNullable(reduced.getArg());
+		}
+		if (expression instanceof ArbitraryLengthPath path) {
+			return path.getMinLength() == 0L || pathStepMayBeNullable(path.getPathExpression());
+		}
+		return true;
 	}
 
 	/**

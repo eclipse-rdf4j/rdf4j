@@ -24,9 +24,9 @@ import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 
 /**
- * M-F1: native standalone {@code ZeroLengthPath}. Mirrors the generic {@code ZeroLengthPathIteration} exactly: a bound
- * endpoint identity-binds the other side without consulting the store (the term need not occur in any statement); with
- * both endpoints bound, one empty row is emitted iff the two ids denote the same RDF term (id equality, else
+ * M-F1: native standalone {@code ZeroLengthPath}. A query-term constant or true substitution permits store-free
+ * identity; an ordinary runtime-bound variable must also occur as a subject or object in the active graph scope. With
+ * both endpoints bound, identity additionally requires that the two ids denote the same RDF term (id equality, else
  * materialized {@link Value#equals}); both-free enumerates the distinct nodes occurring as subject or object of a
  * statement in the active graph scope — never the whole dictionary — deduplicating by <em>term</em>. The
  * default-enabled native-ID producer uses exact retained node domains, or ID-only statement dedup, only when the stored
@@ -54,15 +54,26 @@ final class ZeroLengthPathPlan implements SlotPlan {
 	final int objSlot;
 	final long objConst;
 	/**
-	 * Graph-scope ids for the both-free enumeration (a constant GRAPH scope and/or the query dataset's FROM / FROM
-	 * NAMED graphs), or {@code null} for the unscoped default (every context). Empty means the enumeration finds
-	 * nothing — a graph absent from the store or outside the dataset — while identity binds are store-free and still
-	 * emit.
+	 * Graph-scope ids for variable identity membership and both-free enumeration (a constant GRAPH scope and/or the
+	 * query dataset's FROM / FROM NAMED graphs), or {@code null} for the unscoped default (every context). Empty means
+	 * the enumeration finds nothing — a graph absent from the store or outside the dataset. Only query-term constants
+	 * and true substitution may identity-bind without graph-node membership.
 	 */
 	final long[] ctxIds;
 	private final long producedMask;
+	private final boolean constantEndpoint;
+	private final boolean subjectSubstitution;
+	private final boolean objectSubstitution;
 
 	ZeroLengthPathPlan(int subjSlot, long subjConst, int objSlot, long objConst, long[] ctxIds) {
+		this(subjSlot, subjConst, objSlot, objConst, ctxIds, false, false, false);
+	}
+
+	ZeroLengthPathPlan(int subjSlot, long subjConst, int objSlot, long objConst, long[] ctxIds,
+			boolean constantEndpoint, boolean subjectSubstitution, boolean objectSubstitution) {
+		this.constantEndpoint = constantEndpoint;
+		this.subjectSubstitution = subjectSubstitution;
+		this.objectSubstitution = objectSubstitution;
 		this.subjSlot = subjSlot;
 		this.subjConst = subjConst;
 		this.objSlot = objSlot;
@@ -89,16 +100,20 @@ final class ZeroLengthPathPlan implements SlotPlan {
 		}
 		long subj = subjConst != UNKNOWN ? subjConst : rowSubj;
 		long obj = objConst != UNKNOWN ? objConst : rowObj;
-		if (subj != UNKNOWN && obj != UNKNOWN) {
-			return sameTerm(row, subj, row.positionMask(subjSlot), obj, row.positionMask(objSlot))
-					? new ZeroLengthIdentityCursor(row, subjSlot, subj, objSlot, obj)
-					: EmptyCursor.INSTANCE;
-		}
-		if (subj != UNKNOWN) {
-			return new ZeroLengthIdentityCursor(row, subjSlot, subj, objSlot, subj);
-		}
-		if (obj != UNKNOWN) {
-			return new ZeroLengthIdentityCursor(row, subjSlot, obj, objSlot, obj);
+		if (subj != UNKNOWN || obj != UNKNOWN) {
+			if (subj != UNKNOWN && obj != UNKNOWN
+					&& !sameTerm(row, subj, row.positionMask(subjSlot), obj, row.positionMask(objSlot))) {
+				return EmptyCursor.INSTANCE;
+			}
+			long identity = subj != UNKNOWN ? subj : obj;
+			boolean requiresMembership = !constantEndpoint
+					&& !(subj != UNKNOWN && subjectSubstitution)
+					&& !(obj != UNKNOWN && objectSubstitution);
+			if (requiresMembership && !isGraphNode(row, identity)) {
+				return EmptyCursor.INSTANCE;
+			}
+			return new ZeroLengthIdentityCursor(row, subjSlot, subj != UNKNOWN ? subj : identity,
+					objSlot, obj != UNKNOWN ? obj : identity);
 		}
 		if (ctxIds != null && ctxIds.length == 0) {
 			return EmptyCursor.INSTANCE;
@@ -115,6 +130,70 @@ final class ZeroLengthPathPlan implements SlotPlan {
 			CANONICAL_SCAN_OPENS.incrementAndGet();
 		}
 		return new ZeroLengthNodeCursor(row, this, canonicalNodes);
+	}
+
+	/** Ordinary Join bindings restrict a variable domain; they do not turn variables into query constants. */
+	private boolean isGraphNode(RowState row, long identity) throws IOException {
+		row.cancellation.check();
+		if (ctxIds != null && ctxIds.length == 0) {
+			return false;
+		}
+		NativeLmdbQuerySource stored = row.source;
+		boolean syntheticIdentity = false;
+		while (stored instanceof SyntheticValueSource synthetic) {
+			syntheticIdentity |= synthetic.synthetic(identity);
+			stored = synthetic.delegate;
+		}
+		int mask = row.positionMask(subjSlot) | row.positionMask(objSlot);
+		if (stored.hasCanonicalIds()) {
+			// Synthetic identity is not proof of term absence: remap through the canonical stored dictionary.
+			long storedId = syntheticIdentity ? stored.idOf(row.source.lazyValue(identity, mask), mask) : identity;
+			if (storedId == UNKNOWN) {
+				return false;
+			}
+			if (ctxIds == null) {
+				return hasNode(row.source, storedId, UNKNOWN);
+			}
+			int tick = 0;
+			for (long ctx : ctxIds) {
+				LmdbNativeProbeDeadline.poll(++tick);
+				row.cancellation.poll(tick);
+				if (hasNode(row.source, storedId, ctx)) {
+					return true;
+				}
+			}
+			return false;
+		}
+		// A legacy dictionary can hold equal terms under different IDs. A scoped miss on one ID is not enough.
+		Value term = row.source.lazyValue(identity, mask);
+		if (term == null) {
+			return false;
+		}
+		try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe()) {
+			int contexts = ctxIds == null ? 1 : ctxIds.length;
+			int tick = 0;
+			for (int context = 0; context < contexts; context++) {
+				LmdbNativeProbeDeadline.poll(++tick);
+				row.cancellation.poll(tick);
+				try (RecordIterator records = probe.open(UNKNOWN, UNKNOWN, UNKNOWN,
+						ctxIds == null ? UNKNOWN : ctxIds[context])) {
+					long[] record;
+					while ((record = records.next()) != null) {
+						LmdbNativeProbeDeadline.poll(++tick);
+						row.cancellation.poll(tick);
+						if (term.equals(row.source.lazyValue(record[TripleIndex.SUBJ_IDX], mask))
+								|| term.equals(row.source.lazyValue(record[TripleIndex.OBJ_IDX], mask))) {
+							return true;
+						}
+					}
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean hasNode(NativeLmdbQuerySource source, long id, long context) throws IOException {
+		return source.has(id, UNKNOWN, UNKNOWN, context) || source.has(UNKNOWN, UNKNOWN, id, context);
 	}
 
 	private static boolean canonicalStoredNodes(NativeLmdbQuerySource source) {

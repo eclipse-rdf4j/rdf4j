@@ -146,23 +146,20 @@ public class LmdbNativeZeroLengthNodeIdsTest {
 	}
 
 	@Test
-	public void duplicateValuesRetainNativeBaselineWithoutFixingKnownBindingOriginBug() throws Exception {
+	public void duplicateValuesPreserveMultiplicityWithoutAddingAbsentVariableIdentities() throws Exception {
 		openFixture(true, false);
 		String query = "SELECT ?s ?o WHERE { VALUES ?s { <" + EX + "a> <" + EX + "a> <" + EX
 				+ "missing> } " + PRESENT_BODY + " }";
 		ValueFactory vf = repository.getValueFactory();
 		IRI a = vf.createIRI(EX + "a");
 		IRI b = vf.createIRI(EX + "b");
-		IRI missing = vf.createIRI(EX + "missing");
 		BindingSet aa = new ListBindingSet(List.of("s", "o"), a, a);
 		BindingSet ab = new ListBindingSet(List.of("s", "o"), a, b);
-		BindingSet missingIdentity = new ListBindingSet(List.of("s", "o"), missing, missing);
 		List<BindingSet> baseline = rows(query, true, false, true);
-		assertThat(baseline).containsExactlyInAnyOrder(aa, ab, aa, ab, missingIdentity);
+		assertThat(baseline).containsExactlyInAnyOrder(aa, ab, aa, ab);
 		assertThat(rows(query, true, true, true)).containsExactlyInAnyOrderElementsOf(baseline);
 		assertThat(rows(query, true, null, true)).containsExactlyInAnyOrderElementsOf(baseline);
-		// Pre-existing native binding-origin bug: native evaluation adds an invalid dictionary-absent identity.
-		// Characterize it without endorsing it; the separate semantic fix is outside this producer change.
+		// Ordinary VALUES joins do not turn a variable endpoint into a query-term constant.
 		assertThat(rows(query, false, false, true)).containsExactlyInAnyOrder(aa, ab, aa, ab);
 	}
 

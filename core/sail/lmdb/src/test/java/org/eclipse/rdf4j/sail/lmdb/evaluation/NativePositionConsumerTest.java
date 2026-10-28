@@ -243,8 +243,9 @@ class NativePositionConsumerTest {
 		RowState row = new RowState(source, layout(masks), EmptyBindingSet.getInstance());
 		row.replaceSlot(0, integerId(7));
 		row.replaceSlot(1, integerId(8));
+		// A constant-origin control isolates equality materialization masks from graph membership.
 		ZeroLengthPathPlan plan = new ZeroLengthPathPlan(0, NativeLmdbQuerySource.UNKNOWN_ID,
-				1, NativeLmdbQuerySource.UNKNOWN_ID, null);
+				1, NativeLmdbQuerySource.UNKNOWN_ID, null, true, false, false);
 		try (RowCursor cursor = plan.open(row)) {
 			assertThat(cursor.next()).isTrue();
 			assertThat(source.masks).containsExactly(15, 6);
