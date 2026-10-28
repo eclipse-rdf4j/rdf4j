@@ -47,7 +47,8 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 		String previous = System.getProperty(property);
 		System.setProperty(property, "true");
 		LmdbStore sail = new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyEnabled(true));
+				new LmdbStoreConfig("spoc,posc,ospc").setDirectAdjacencyEnabled(true)
+						.setDirectAdjacencyBuildOnStart(false));
 		CountDownLatch releaseDrain = new CountDownLatch(1);
 		try {
 			sail.init();

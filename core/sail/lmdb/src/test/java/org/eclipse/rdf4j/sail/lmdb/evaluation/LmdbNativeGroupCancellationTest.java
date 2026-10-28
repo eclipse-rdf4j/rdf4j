@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -148,15 +149,29 @@ class LmdbNativeGroupCancellationTest {
 			assertThat(stage.getStartTime()).isAfterOrEqualTo(group.getStartTime());
 			assertThat(stage.getEndTime()).isBeforeOrEqualTo(group.getEndTime());
 		}
-		List<String> terminalOrder = query.stream()
-				.map(event -> event.getString("phase"))
-				.filter(phase -> List.of("cancellation-request", "cancellation-acknowledgement", "cleanup")
-						.contains(phase))
-				.toList();
-		assertThat(terminalOrder).containsSubsequence("cancellation-request", "cancellation-acknowledgement",
-				"cleanup");
+		assertTerminalPhaseTimes(query);
+		// Flight Recorder can flush events from different threads in either order.
+		assertTerminalPhaseTimes(query.reversed());
 		assertThat(events.stream().filter(event -> "scope-restored".equals(event.getString("phase"))))
 				.allSatisfy(event -> assertThat(event.getLong("evaluationId")).isNotEqualTo(evaluationId));
+	}
+
+	private static void assertTerminalPhaseTimes(List<RecordedEvent> events) {
+		Comparator<RecordedEvent> byStart = Comparator.comparing(RecordedEvent::getStartTime);
+		RecordedEvent request = events.stream()
+				.filter(event -> "cancellation-request".equals(event.getString("phase")))
+				.min(byStart)
+				.orElseThrow();
+		RecordedEvent acknowledgement = events.stream()
+				.filter(event -> "cancellation-acknowledgement".equals(event.getString("phase")))
+				.min(byStart)
+				.orElseThrow();
+		RecordedEvent cleanup = events.stream()
+				.filter(event -> "cleanup".equals(event.getString("phase")))
+				.max(byStart)
+				.orElseThrow();
+		assertThat(acknowledgement.getStartTime()).isAfterOrEqualTo(request.getEndTime());
+		assertThat(cleanup.getStartTime()).isAfterOrEqualTo(acknowledgement.getEndTime());
 	}
 
 	@Test
