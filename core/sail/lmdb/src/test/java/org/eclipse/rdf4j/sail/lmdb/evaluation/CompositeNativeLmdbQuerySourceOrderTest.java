@@ -19,6 +19,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.IdentityHashMap;
@@ -36,15 +37,177 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class CompositeNativeLmdbQuerySourceOrderTest {
+
+	@Test
+	void mergedPrefixRepresentativesStayLazyAndValidThroughSeekAndStop(@TempDir Path directory) throws Exception {
+		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(false));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			var vf = repository.getValueFactory();
+			try (var connection = repository.getConnection()) {
+				connection.add(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createIRI("urn:o"));
+			}
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource physical = (NativeLmdbQuerySource) dataset;
+				LmdbPrefixRunPlan plan = physical.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, -1, -1, -1, -1);
+				assertThat(plan).isNotNull();
+				for (boolean countRows : new boolean[] { false, true }) {
+					Object idSpace = new Object();
+					PrefixSource left = new PrefixSource(idSpace, plan, new long[][] {
+							{ 1, 10, 31, 41 }, { 2, 30, 32, 42 }, { 3, 50, 33, 43 } }, new long[] { 2, 4, 6 });
+					PrefixSource right = new PrefixSource(idSpace, plan, new long[][] {
+							{ 4, 10, 34, 44 }, { 5, 20, 35, 45 }, { 6, 40, 36, 46 } }, new long[] { 3, 5, 7 });
+					NativeLmdbQuerySource merged = CompositeNativeLmdbQuerySource.combine(List.of(left, right));
+					try (LmdbPrefixRunCursor cursor = merged.prefixRuns(plan, -1, -1, -1, -1, countRows)) {
+						assertThat(cursor.next()).isTrue();
+						assertThat(cursor.prefixValue(TripleIndex.PRED_IDX)).isEqualTo(10);
+						assertThat(left.cursor.quadReads + right.cursor.quadReads).isZero();
+						assertThat(cursor.runRowCount()).isEqualTo(countRows ? 5 : 1);
+						assertThat(cursor.quad()).containsExactly(1, 10, 31, 41);
+						assertThat(cursor.quad()).containsExactly(1, 10, 31, 41);
+						assertThat(left.cursor.quadReads).isOne();
+						assertThat(right.cursor.quadReads).isZero();
+						assertThat(cursor.next()).isTrue();
+						assertThat(cursor.quad()).containsExactly(5, 20, 35, 45);
+						assertThat(cursor.seekTo(30)).isTrue();
+						assertThat(cursor.next()).isTrue();
+						assertThat(cursor.quad()).containsExactly(2, 30, 32, 42);
+						assertThat(cursor.seekTo(new long[] { 40 })).isTrue();
+						cursor.stopBefore(new long[] { 50 });
+						assertThat(cursor.next()).isTrue();
+						assertThat(cursor.quad()).containsExactly(6, 40, 36, 46);
+						assertThat(cursor.runRowCount()).isEqualTo(countRows ? 7 : 1);
+						assertThat(cursor.next()).isFalse();
+					}
+					assertThat(left.cursor.closeCalls).isOne();
+					assertThat(right.cursor.closeCalls).isOne();
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest(name = "foreign {0} leaves owner progress intact")
+	@EnumSource(ForeignCursorOperation.class)
+	void foreignThreadUseCannotChangeOwnerProgress(ForeignCursorOperation operation, @TempDir Path directory)
+			throws Exception {
+		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(false));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			var vf = repository.getValueFactory();
+			var predicate = vf.createIRI("urn:ownership:p");
+			var explicitSubject = vf.createIRI("urn:ownership:explicit");
+			var inferredSubject = vf.createIRI("urn:ownership:inferred");
+			try (var connection = repository.getConnection()) {
+				connection.add(explicitSubject, predicate, vf.createIRI("urn:ownership:explicit:o1"));
+				connection.add(explicitSubject, predicate, vf.createIRI("urn:ownership:explicit:o2"));
+			}
+			try (InferencerConnection connection = (InferencerConnection) store.getConnection()) {
+				connection.begin();
+				connection.addInferredStatement(inferredSubject, predicate, vf.createIRI("urn:ownership:inferred:o1"));
+				connection.addInferredStatement(inferredSubject, predicate, vf.createIRI("urn:ownership:inferred:o2"));
+				connection.commit();
+			}
+
+			try (var explicitDataset = NativeQuerySourceAccess.openExplicitDataset(store);
+					var inferredDataset = NativeQuerySourceAccess.openInferredDataset(store)) {
+				NativeLmdbQuerySource explicit = (NativeLmdbQuerySource) explicitDataset;
+				NativeLmdbQuerySource inferred = (NativeLmdbQuerySource) inferredDataset;
+				List<TrackingPrefixRunCursor> childCursors = new ArrayList<>();
+				RetainingPrefixSource explicitOwner = new RetainingPrefixSource(explicit, childCursors);
+				RetainingPrefixSource inferredOwner = new RetainingPrefixSource(inferred, childCursors);
+				NativeLmdbQuerySource merged = CompositeNativeLmdbQuerySource.combine(
+						List.of(explicitOwner, inferredOwner));
+				LmdbPrefixRunPlan plan = merged.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX },
+						NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+						NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID);
+				assertThat(plan).isNotNull();
+
+				List<PrefixRunSnapshot> expected = new ArrayList<>();
+				expected.addAll(capturePrefixRuns(explicit, plan));
+				expected.addAll(capturePrefixRuns(inferred, plan));
+				expected.sort((left, right) -> Long.compareUnsigned(left.prefix(), right.prefix()));
+				assertThat(expected).hasSize(2);
+				assertThat(expected).extracting(PrefixRunSnapshot::rowCount).containsExactly(2L, 2L);
+
+				LmdbPrefixRunCursor cursor = merged.prefixRuns(plan, NativeLmdbQuerySource.UNKNOWN_ID,
+						NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+						NativeLmdbQuerySource.UNKNOWN_ID, true);
+				try {
+					assertThat(cursor.next()).isTrue();
+					PrefixRunSnapshot first = expected.get(0);
+					assertThat(cursor.prefixValue(TripleIndex.SUBJ_IDX)).isEqualTo(first.prefix());
+					assertThat(cursor.runRowCount()).isEqualTo(first.rowCount());
+
+					Throwable rejection = invokeFromForeignThread(operation, cursor, expected.get(1).prefix());
+					long currentPrefix = cursor.prefixValue(TripleIndex.SUBJ_IDX);
+					long currentRowCount = cursor.runRowCount();
+					long[] currentQuad = Arrays.copyOf(cursor.quad(), 4);
+
+					List<PrefixRunSnapshot> remaining = new ArrayList<>();
+					Throwable drainFailure = null;
+					try {
+						while (cursor.next()) {
+							remaining.add(new PrefixRunSnapshot(cursor.prefixValue(TripleIndex.SUBJ_IDX),
+									Arrays.copyOf(cursor.quad(), 4), cursor.runRowCount()));
+						}
+					} catch (Throwable failure) {
+						drainFailure = failure;
+					}
+					Throwable ownerCloseFailure = null;
+					try {
+						cursor.close();
+					} catch (Throwable failure) {
+						ownerCloseFailure = failure;
+					}
+					List<Integer> childCloseCalls = childCursors.stream()
+							.map(TrackingPrefixRunCursor::successfulCloseCalls)
+							.toList();
+
+					assertThat(rejection).as("foreign composite cursor operation must reject before changing state")
+							.isInstanceOf(IllegalStateException.class);
+					assertThat(currentPrefix).isEqualTo(first.prefix());
+					assertThat(currentRowCount).isEqualTo(first.rowCount());
+					assertThat(currentQuad).containsExactly(first.quad());
+					assertThat(drainFailure).isNull();
+					assertThat(describe(remaining))
+							.containsExactlyElementsOf(describe(expected.subList(1, expected.size())));
+					assertThat(ownerCloseFailure).isNull();
+					assertThat(childCloseCalls)
+							.as("owner drain or close must close both real child cursors before fallback cleanup")
+							.containsExactly(1, 1);
+				} finally {
+					closeOnOwnerThread(childCursors, cursor);
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@Test
 	void compositePredicateCountRequiresCompleteNonnegativeSumAndTreatsNoActiveChildrenAsEmpty() {
@@ -80,6 +243,29 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 				new PredicateCountSource(idSpace, OptionalLong.of(17L), false),
 				new PredicateCountSource(idSpace, OptionalLong.empty(), false)))
 				.exactPredicateCount(7L)).hasValue(0L);
+	}
+
+	@Test
+	void compositeKeyDomainMetadataNeverClaimsAnUnprovedUnionCardinality() {
+		Object idSpace = new Object();
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new DomainCountSource(idSpace, OptionalLong.of(3)),
+				new DomainCountSource(idSpace, OptionalLong.of(2))))
+				.adjacencyKeyDomainCardinality(7, true))
+						.as("individual sizes cannot prove whether the two term domains overlap")
+						.isEmpty();
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new DomainCountSource(idSpace, OptionalLong.of(0)),
+				new DomainCountSource(idSpace, OptionalLong.of(3))))
+				.adjacencyKeyDomainCardinality(7, false)).hasValue(3);
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new DomainCountSource(idSpace, OptionalLong.of(0)),
+				new DomainCountSource(idSpace, OptionalLong.of(0))))
+				.adjacencyKeyDomainCardinality(7, true)).hasValue(0);
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new DomainCountSource(idSpace, OptionalLong.empty()),
+				new DomainCountSource(idSpace, OptionalLong.of(3))))
+				.adjacencyKeyDomainCardinality(7, true)).isEmpty();
 	}
 
 	@Test
@@ -1475,6 +1661,326 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		@Override
 		public boolean hasStatementsInSource() {
 			return true;
+		}
+	}
+
+	private static final class PrefixSource extends StubSource {
+		private final LmdbPrefixRunPlan plan;
+		private final PrefixCursor cursor;
+
+		private PrefixSource(Object idSpace, LmdbPrefixRunPlan plan, long[][] rows, long[] counts) {
+			super(idSpace);
+			this.plan = plan;
+			this.cursor = new PrefixCursor(rows, counts);
+		}
+
+		@Override
+		public LmdbPrefixRunPlan prefixRunPlan(int[] fields, long subj, long pred, long obj, long context) {
+			return plan;
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan selected, long subj, long pred, long obj, long context,
+				boolean countRows) {
+			return cursor;
+		}
+	}
+
+	private static List<PrefixRunSnapshot> capturePrefixRuns(NativeLmdbQuerySource source, LmdbPrefixRunPlan plan)
+			throws IOException {
+		List<PrefixRunSnapshot> result = new ArrayList<>();
+		try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, NativeLmdbQuerySource.UNKNOWN_ID,
+				NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+				NativeLmdbQuerySource.UNKNOWN_ID, true)) {
+			while (cursor.next()) {
+				result.add(new PrefixRunSnapshot(cursor.prefixValue(TripleIndex.SUBJ_IDX),
+						Arrays.copyOf(cursor.quad(), 4), cursor.runRowCount()));
+			}
+		}
+		return result;
+	}
+
+	private static List<String> describe(List<PrefixRunSnapshot> runs) {
+		return runs.stream()
+				.map(run -> Long.toUnsignedString(run.prefix()) + " rows=" + run.rowCount() + " quad="
+						+ Arrays.toString(run.quad()))
+				.toList();
+	}
+
+	private static Throwable invokeFromForeignThread(ForeignCursorOperation operation, LmdbPrefixRunCursor cursor,
+			long target) throws InterruptedException {
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread foreign = new Thread(() -> {
+			try {
+				switch (operation) {
+				case NEXT -> cursor.next();
+				case SCALAR_SEEK -> cursor.seekTo(target);
+				case TUPLE_SEEK -> cursor.seekTo(new long[] { target });
+				case STOP_BEFORE -> cursor.stopBefore(new long[] { target });
+				case CLOSE -> cursor.close();
+				case QUAD -> cursor.quad();
+				case NON_PREFIX_VALUE -> cursor.prefixValue(TripleIndex.OBJ_IDX);
+				}
+			} catch (Throwable thrown) {
+				failure.set(thrown);
+			}
+		}, "foreign-composite-prefix-cursor");
+		foreign.start();
+		foreign.join();
+		return failure.get();
+	}
+
+	private static void closeOnOwnerThread(List<TrackingPrefixRunCursor> childCursors,
+			LmdbPrefixRunCursor composite) {
+		Throwable failure = null;
+		try {
+			composite.close();
+		} catch (Throwable closeFailure) {
+			failure = closeFailure;
+		}
+		for (TrackingPrefixRunCursor child : childCursors) {
+			try {
+				child.close();
+			} catch (Throwable closeFailure) {
+				if (failure == null) {
+					failure = closeFailure;
+				} else if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+		}
+		if (failure instanceof RuntimeException) {
+			throw (RuntimeException) failure;
+		}
+		if (failure instanceof Error) {
+			throw (Error) failure;
+		}
+		if (failure != null) {
+			throw new AssertionError(failure);
+		}
+	}
+
+	private enum ForeignCursorOperation {
+		NEXT,
+		SCALAR_SEEK,
+		TUPLE_SEEK,
+		STOP_BEFORE,
+		CLOSE,
+		QUAD,
+		NON_PREFIX_VALUE
+	}
+
+	private record PrefixRunSnapshot(long prefix, long[] quad, long rowCount) {
+	}
+
+	private static final class RetainingPrefixSource extends StubSource {
+		private final NativeLmdbQuerySource delegate;
+		private final List<TrackingPrefixRunCursor> cursors;
+
+		private RetainingPrefixSource(NativeLmdbQuerySource delegate, List<TrackingPrefixRunCursor> cursors) {
+			super(delegate.idSpace());
+			this.delegate = delegate;
+			this.cursors = cursors;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return delegate.hasStatementsInSource();
+		}
+
+		@Override
+		public LmdbPrefixRunPlan prefixRunPlan(int[] fields, long subj, long pred, long obj, long context) {
+			return delegate.prefixRunPlan(fields, subj, pred, obj, context);
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				boolean countRows) throws IOException {
+			return prefixRuns(plan, subj, pred, obj, context, countRows, null);
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				boolean countRows, NativeLmdbQuerySource.AdjacencyAccessObserver observer) throws IOException {
+			TrackingPrefixRunCursor cursor = new TrackingPrefixRunCursor(
+					delegate.prefixRuns(plan, subj, pred, obj, context, countRows, observer));
+			cursors.add(cursor);
+			return cursor;
+		}
+	}
+
+	private static final class TrackingPrefixRunCursor implements LmdbPrefixRunCursor {
+		private final LmdbPrefixRunCursor delegate;
+		private int successfulCloseCalls;
+		private boolean closed;
+
+		private TrackingPrefixRunCursor(LmdbPrefixRunCursor delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			return delegate.next();
+		}
+
+		@Override
+		public boolean seekTo(long value) throws IOException {
+			return delegate.seekTo(value);
+		}
+
+		@Override
+		public boolean seekTo(long[] prefixValues) throws IOException {
+			return delegate.seekTo(prefixValues);
+		}
+
+		@Override
+		public void stopBefore(long[] prefixValues) {
+			delegate.stopBefore(prefixValues);
+		}
+
+		@Override
+		public long[] quad() {
+			return delegate.quad();
+		}
+
+		@Override
+		public long prefixValue(int field) {
+			return delegate.prefixValue(field);
+		}
+
+		@Override
+		public long runRowCount() {
+			return delegate.runRowCount();
+		}
+
+		@Override
+		public long distinctNeighborCount() {
+			return delegate.distinctNeighborCount();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return delegate.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return delegate.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return delegate.getSourceRowsFilteredActual();
+		}
+
+		@Override
+		public String getIndexName() {
+			return delegate.getIndexName();
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			delegate.close();
+			closed = true;
+			successfulCloseCalls++;
+		}
+
+		private int successfulCloseCalls() {
+			return successfulCloseCalls;
+		}
+	}
+
+	private static final class PrefixCursor implements LmdbPrefixRunCursor {
+		private final long[][] rows;
+		private final long[] counts;
+		private int position = -1;
+		private int quadReads;
+		private int closeCalls;
+
+		private PrefixCursor(long[][] rows, long[] counts) {
+			this.rows = rows;
+			this.counts = counts;
+		}
+
+		@Override
+		public boolean next() {
+			return ++position < rows.length;
+		}
+
+		@Override
+		public boolean seekTo(long value) {
+			while (position + 1 < rows.length && rows[position + 1][TripleIndex.PRED_IDX] < value) {
+				position++;
+			}
+			return position + 1 < rows.length;
+		}
+
+		@Override
+		public boolean seekTo(long[] values) {
+			return seekTo(values[0]);
+		}
+
+		@Override
+		public void stopBefore(long[] values) {
+			// The composite owns the stop bound; this child deliberately offers no early-stop optimization.
+		}
+
+		@Override
+		public long[] quad() {
+			quadReads++;
+			return rows[position];
+		}
+
+		@Override
+		public long prefixValue(int field) {
+			return rows[position][field];
+		}
+
+		@Override
+		public long runRowCount() {
+			return counts[position];
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return 0;
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return 0;
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return 0;
+		}
+
+		@Override
+		public String getIndexName() {
+			return "posc";
+		}
+
+		@Override
+		public void close() {
+			closeCalls++;
+		}
+	}
+
+	private static final class DomainCountSource extends StubSource {
+		private final OptionalLong cardinality;
+
+		private DomainCountSource(Object idSpace, OptionalLong cardinality) {
+			super(idSpace);
+			this.cardinality = cardinality;
+		}
+
+		@Override
+		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean outgoing) {
+			return cardinality;
 		}
 	}
 

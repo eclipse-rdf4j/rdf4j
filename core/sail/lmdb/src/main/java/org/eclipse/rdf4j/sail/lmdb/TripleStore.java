@@ -108,6 +108,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.LongConsumer;
@@ -121,8 +122,10 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -136,6 +139,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -539,6 +543,8 @@ class TripleStore implements Closeable {
 	private final ThreadLocal<PreparedSortWorkspace> preparedSortWorkspace = ThreadLocal
 			.withInitial(PreparedSortWorkspace::new);
 	private final LmdbPageCardinalityEstimator pageEstimator;
+	/** Exact aggregate page access remains available independently of sampled cardinality estimation. */
+	private final LmdbPageCardinalityEstimator exactIndexReader;
 	private final AtomicLong dataRevision = new AtomicLong();
 	private final LmdbFanOutStats explicitFanOutStats = new LmdbFanOutStats();
 	private final LmdbFanOutStats inferredFanOutStats = new LmdbFanOutStats();
@@ -703,6 +709,10 @@ class TripleStore implements Closeable {
 			txnManager.setReaderRetirementListener(this::signalIndexRebuild);
 			pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env, mainDbi)
 					: null;
+			exactIndexReader = pageEstimator != null ? pageEstimator
+					: config.getNativeEvaluationEnabled()
+							? new LmdbPageCardinalityEstimator(dataMdbFile, env, mainDbi)
+							: null;
 		} catch (IOException | RuntimeException | Error failure) {
 			cleanupAfterInitializationFailure(failure);
 			throw failure;
@@ -2490,6 +2500,13 @@ class TripleStore implements Closeable {
 				failure.addSuppressed(cleanupFailure);
 			}
 		}
+		if (exactIndexReader != null && exactIndexReader != pageEstimator) {
+			try {
+				exactIndexReader.close();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
 		if (txnManager != null) {
 			try {
 				txnManager.close();
@@ -3264,6 +3281,14 @@ class TripleStore implements Closeable {
 					failure = appendCloseFailure(failure, closeFailure);
 				}
 			}
+			if (exactIndexReader != null && exactIndexReader != pageEstimator) {
+				try {
+					exactIndexReader.close();
+				} catch (Throwable closeFailure) {
+					logger.warn("Failed to close exact index reader", closeFailure);
+					failure = appendCloseFailure(failure, closeFailure);
+				}
+			}
 			for (TripleIndex index : new HashSet<>(indexHandles.isEmpty() ? indexes : indexHandles.values())) {
 				try {
 					index.close();
@@ -3414,6 +3439,47 @@ class TripleStore implements Closeable {
 		return selectGeneration(txn, generation -> orderedIndexName(generation, order, subj, pred, obj, context));
 	}
 
+	/** Snapshot-local index shapes and entry count, captured once during native plan compilation. */
+	NativeLmdbQuerySource.IndexAccessProfile indexAccessProfile(Txn txn, boolean explicit, boolean adjacencyPossible,
+			long adjacencyPredicateWork, long outgoingAdjacencyWork, long incomingAdjacencyWork) {
+		return selectGeneration(txn, generation -> {
+			int[][] prefixes = new int[StatementOrder.values().length + 1][16];
+			for (int orderIndex = 0; orderIndex < prefixes.length; orderIndex++) {
+				StatementOrder order = orderIndex == 0 ? null : StatementOrder.values()[orderIndex - 1];
+				for (int mask = 0; mask < 16; mask++) {
+					long subj = (mask & 1) != 0 ? 1L : -1L;
+					long pred = (mask & 2) != 0 ? 1L : -1L;
+					long obj = (mask & 4) != 0 ? 1L : -1L;
+					long context = (mask & 8) != 0 ? 1L : -1L;
+					TripleIndex index = order == null ? generation.best[mask]
+							: TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order, subj, pred, obj,
+									context);
+					if (index == null) {
+						prefixes[orderIndex][mask] = -1;
+						continue;
+					}
+					int prefix = 0;
+					for (char field : index.getFieldSeq()) {
+						int bit = switch (field) {
+						case 's' -> 1;
+						case 'p' -> 2;
+						case 'o' -> 4;
+						case 'c' -> 8;
+						default -> throw new IllegalStateException("Unknown index field " + field);
+						};
+						if ((mask & bit) == 0) {
+							break;
+						}
+						prefix |= bit;
+					}
+					prefixes[orderIndex][mask] = prefix;
+				}
+			}
+			return new NativeLmdbQuerySource.IndexAccessProfile(statTripleCount(txn, explicit), 1, prefixes,
+					adjacencyPossible, adjacencyPredicateWork, outgoingAdjacencyWork, incomingAdjacencyWork);
+		});
+	}
+
 	private static String orderedIndexName(IndexGeneration generation, StatementOrder order, long subj, long pred,
 			long obj, long context) {
 		TripleIndex index = TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order, subj, pred, obj,
@@ -3456,7 +3522,7 @@ class TripleStore implements Closeable {
 		return best == null ? null : new LmdbPrefixRunPlan(best, prefixFields, bestPrefixLength);
 	}
 
-	LmdbPrefixRunIterator getPrefixRuns(Txn txn, LmdbPrefixRunPlan plan, long subj, long pred, long obj,
+	LmdbPrefixRunCursor getPrefixRuns(Txn txn, LmdbPrefixRunPlan plan, long subj, long pred, long obj,
 			long context, boolean explicit, boolean countRunRows) throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
 			if (plan == null) {
@@ -3468,7 +3534,9 @@ class TripleStore implements Closeable {
 			if (!selectedGeneration.indexes.contains(plan.index())) {
 				throw new SailException("Statement index generation changed; retry the prefix-run query plan");
 			}
-			return new LmdbPrefixRunIterator(plan, txn, subj, pred, obj, context, explicit, countRunRows);
+			LmdbPrefixRunCursor exact = exactPrefixRuns(txn, plan, subj, pred, obj, context, explicit, countRunRows);
+			return exact != null ? exact
+					: new LmdbPrefixRunIterator(plan, txn, subj, pred, obj, context, explicit, countRunRows);
 
 		});
 	}
@@ -3532,12 +3600,22 @@ class TripleStore implements Closeable {
 			if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
 				return countAllTriples(txn, explicit);
 			}
+			if (subj < 0 && pred < 0 && obj < 0 && context >= 0) {
+				long count = countContextIfAuthoritative(txn, context, explicit);
+				if (count >= 0) {
+					return count;
+				}
+			}
 
 			int mask = boundMask(subj, pred, obj, context);
 			TripleIndex index = selectedGeneration.best[mask];
 
 			if (index.getRangePrefixLength(subj, pred, obj, context) == 4) {
 				return exactTripleExists(txn, index, subj, pred, obj, context, explicit) ? 1L : 0L;
+			}
+			long exact = countIndexPrefix(txn, index, subj, pred, obj, context, explicit);
+			if (exact >= 0L) {
+				return exact;
 			}
 
 			long count = 0;
@@ -3550,6 +3628,113 @@ class TripleStore implements Closeable {
 			return count;
 
 		});
+	}
+
+	/** Exact row count only when every constraint belongs to one contiguous physical key prefix. */
+	private long countIndexPrefix(Txn txn, TripleIndex index, long subj, long pred, long obj, long context,
+			boolean explicit) throws IOException {
+		if (exactIndexReader == null || !txn.isReadOnly()
+				|| index.getRangePrefixLength(subj, pred, obj, context) != Integer
+						.bitCount(boundMask(subj, pred, obj, context))) {
+			return -1L;
+		}
+		byte[] lower = exactBoundPrefix(index, subj, pred, obj, context);
+		byte[] upper = lower == null ? null : LmdbExactPrefixRunCursor.successor(lower);
+		try (LmdbPageCardinalityEstimator.ReadView view = exactReadView(txn)) {
+			if (view == null) {
+				return -1L;
+			}
+			LmdbPageCardinalityEstimator.ExactCount count = view.countEntriesExact(index.getName(explicit),
+					lower, LmdbExactPrefixRunCursor.length(lower), true,
+					upper, LmdbExactPrefixRunCursor.length(upper), false, exactIndexCancellation());
+			if (count == null) {
+				return -1L;
+			}
+			LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.incrementAndGet();
+			LmdbPrefixRunPlan.recordExactIndexWork(count.work());
+			return count.entries();
+		}
+	}
+
+	private LmdbPrefixRunCursor exactPrefixRuns(Txn txn, LmdbPrefixRunPlan plan, long subj, long pred, long obj,
+			long context, boolean explicit, boolean countRunRows) throws IOException {
+		TripleIndex index = plan.index();
+		// Distinct-only runs already successor-seek past their payload. Counting leaf headers there would replace
+		// one seek per identity with a walk over every leaf of a long run.
+		if (!countRunRows || exactIndexReader == null || !txn.isReadOnly()
+				|| index.getRangePrefixLength(subj, pred, obj, context) != Integer
+						.bitCount(boundMask(subj, pred, obj, context))) {
+			return null;
+		}
+		long stamp;
+		try {
+			stamp = txn.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while pinning exact prefix cursor", e);
+		}
+		LmdbPageCardinalityEstimator.ReadView view = null;
+		boolean transferred = false;
+		try {
+			view = exactReadView(txn);
+			if (view == null) {
+				return null;
+			}
+			byte[] lower = exactBoundPrefix(index, subj, pred, obj, context);
+			byte[] upper = lower == null ? null : LmdbExactPrefixRunCursor.successor(lower);
+			BooleanSupplier cancelled = exactIndexCancellation();
+			LmdbPageCardinalityEstimator.ExactPrefixCursor cursor = view.prefixRunsExact(index.getName(explicit),
+					lower, LmdbExactPrefixRunCursor.length(lower), true,
+					upper, LmdbExactPrefixRunCursor.length(upper), false, plan.prefixLength(), cancelled);
+			if (cursor == null) {
+				return null;
+			}
+			LmdbPrefixRunCursor result = new LmdbExactPrefixRunCursor(plan, txn, stamp, view,
+					index.getName(explicit), lower, upper, cancelled, cursor, countRunRows);
+			transferred = true;
+			return result;
+		} finally {
+			if (!transferred) {
+				if (view != null) {
+					view.close();
+				}
+				txn.lockManager().unlockRead(stamp);
+			}
+		}
+	}
+
+	/** An older pinned snapshot may outlive both committed meta pages; the ordinary cursor remains authoritative. */
+	private LmdbPageCardinalityEstimator.ReadView exactReadView(Txn txn) {
+		try {
+			return exactIndexReader.readTransaction(txn.get(), mappingGeneration.get());
+		} catch (IOException unavailable) {
+			logger.debug("Exact statement page mapping unavailable; using the pinned LMDB cursor", unavailable);
+			return null;
+		}
+	}
+
+	private static byte[] exactBoundPrefix(TripleIndex index, long subj, long pred, long obj, long context) {
+		int prefixLength = index.getRangePrefixLength(subj, pred, obj, context);
+		if (prefixLength == 0) {
+			return null;
+		}
+		long[] prefix = new long[prefixLength];
+		char[] fields = index.getFieldSeq();
+		for (int i = 0; i < prefixLength; i++) {
+			prefix[i] = boundValue(statementField(fields[i]), subj, pred, obj, context);
+		}
+		return LmdbExactPrefixRunCursor.encodePrefix(prefix);
+	}
+
+	private static BooleanSupplier exactIndexCancellation() {
+		return () -> {
+			QueryExecutionContext.checkpointReplaySafepoint();
+			NativeLmdbQuerySource.checkpointCancellation();
+			if (Thread.currentThread().isInterrupted()) {
+				throw new QueryInterruptedException("Query evaluation interrupted during exact index aggregation");
+			}
+			return false;
+		};
 	}
 
 	boolean hasTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
@@ -3588,6 +3773,41 @@ class TripleStore implements Closeable {
 
 	private long countAllTriples(Txn txnRef, boolean explicit) throws IOException {
 		return statTripleCount(txnRef, explicit);
+	}
+
+	/** A context count from existing metadata, or -1 when the statement planes must be counted separately. */
+	long countContextIfAuthoritative(Txn txnRef, long context, boolean explicit) throws IOException {
+		return withGeneration(txnRef, selectedGeneration -> {
+			long count = contextStatementCount(txnRef, context);
+			// The context catalog combines the two planes. It is also the exact count of this plane when the
+			// opposite plane is empty; an absent context is exact-empty independently of either plane.
+			return count == 0 || !hasAnyTriples(txnRef, !explicit) ? count : -1;
+		});
+	}
+
+	private long contextStatementCount(Txn txnRef, long context) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal value = MDBVal.malloc(stack);
+			ByteBuffer encoded = stack.malloc(1 + Long.BYTES);
+			Varint.writeUnsigned(encoded, context);
+			key.mv_data(encoded.flip());
+			int result = mdb_get(txnRef.get(), contextsDbi, key, value);
+			if (result == MDB_NOTFOUND) {
+				return 0;
+			}
+			E(result);
+			return Varint.readUnsigned(Objects.requireNonNull(value.mv_data()));
+		} finally {
+			txnRef.lockManager().unlockRead(readStamp);
+		}
 	}
 
 	private boolean hasAnyTriples(Txn txnRef, boolean explicit) throws IOException {

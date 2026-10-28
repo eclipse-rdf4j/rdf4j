@@ -13038,6 +13038,26 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private static RecordIterator observeLmdbStatements(RecordIterator iterator, AdjacencyAccessObserver observer,
+			StatementOrder order, long subj, long pred, long obj, long context, boolean ranged) {
+		if (observer == null) {
+			return iterator;
+		}
+		try {
+			int variant = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB,
+					subj, pred, obj, context, order, ranged, LmdbStatementAccessArbiter.TRAVERSAL_NATIVE_INDEX);
+			observeSelected(observer, LmdbStatementAccessArbiter.Source.LMDB, variant, order, subj, pred, obj, context);
+			return LmdbStatementAccessArbiter.observed(iterator, observer, false);
+		} catch (RuntimeException | Error failure) {
+			try {
+				iterator.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
+	}
+
 	private static void observeOutranked(AdjacencyAccessObserver observer, String source,
 			LmdbStatementAccessArbiter.Source winner, StatementOrder order, long subj, long pred, long obj,
 			long context) {
@@ -13387,8 +13407,9 @@ class LmdbSailStore implements SailStore {
 			if (direct != null) {
 				return direct;
 			}
-			return order == null ? tripleStore.getTriples(txn, subj, pred, obj, context, explicit)
+			RecordIterator iterator = order == null ? tripleStore.getTriples(txn, subj, pred, obj, context, explicit)
 					: tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
+			return observeLmdbStatements(iterator, observer, order, subj, pred, obj, context, false);
 		}
 
 		@Override
@@ -13404,7 +13425,8 @@ class LmdbSailStore implements SailStore {
 								+ tripleStore.getIndexName(txn, subj, pred, obj, context) + "]",
 						null, subj, pred, obj, context);
 			}
-			return tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
+			return LmdbStatementAccessArbiter.observed(tripleStore.getTriples(txn, subj, pred, obj, context, explicit),
+					observer, false);
 		}
 
 		@Override
@@ -13475,7 +13497,9 @@ class LmdbSailStore implements SailStore {
 					observer.ineligible("INELIGIBLE_ADJACENCY[rangeExactFullUnavailable]", null, subj, pred, obj,
 							context);
 				}
-				return tripleStore.getTriplesRangeUsingIndex(txn, subj, pred, obj, context, explicit, range);
+				return observeLmdbStatements(
+						tripleStore.getTriplesRangeUsingIndex(txn, subj, pred, obj, context, explicit, range),
+						observer, null, subj, pred, obj, context, true);
 			}
 			return statements(subj, pred, obj, context, observer);
 		}
@@ -13524,6 +13548,28 @@ class LmdbSailStore implements SailStore {
 						order, subj, pred, obj, context);
 			}
 			return tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
+		}
+
+		@Override
+		public IndexAccessProfile indexAccessProfile() {
+			checkOpen();
+			if (!hasStatementsInSource()) {
+				return null;
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(false);
+			LmdbAdjacencyReadView rowView = exactAdjacencyView(true);
+			boolean possible = view != null && directAdjacency.mayOfferStatementAccess(view);
+			long predicates = possible ? directAdjacency.predicateSweepWorkUpper(view) : -1L;
+			long outgoing = rowView == null ? -1L : directAdjacency.nodePredicateWorkUpper(rowView, true, explicit);
+			long incoming = rowView == null ? -1L : directAdjacency.nodePredicateWorkUpper(rowView, false, explicit);
+			return tripleStore.indexAccessProfile(txn, explicit, possible, predicates, outgoing, incoming);
+		}
+
+		@Override
+		public IndexAccessProfile pinnedLmdbSweepProfile() {
+			checkOpen();
+			txn.ensureSnapshotValid();
+			return txn.snapshotRevision() >= 0L && txn.version() == pinnedTxnVersion ? indexAccessProfile() : null;
 		}
 
 		@Override
@@ -13681,8 +13727,15 @@ class LmdbSailStore implements SailStore {
 						} else {
 							tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
 						}
-						currentSelection = retained;
-						return retained;
+						if (observer != null) {
+							int variant = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB,
+									subj, pred, obj, context, null, false,
+									LmdbStatementAccessArbiter.TRAVERSAL_NATIVE_INDEX);
+							observeSelected(observer, LmdbStatementAccessArbiter.Source.LMDB, variant, null,
+									subj, pred, obj, context);
+						}
+						currentSelection = lmdbMeasurement.observe(retained, observer, false);
+						return currentSelection;
 					} catch (RuntimeException | Error | IOException failure) {
 						close();
 						throw failure;
@@ -13946,6 +13999,12 @@ class LmdbSailStore implements SailStore {
 			checkOpen();
 			if (!hasStatementsInSource()) {
 				return 0;
+			}
+			if (subj < 0 && pred < 0 && obj < 0 && context >= 0) {
+				long count = tripleStore.countContextIfAuthoritative(txn, context, explicit);
+				if (count >= 0) {
+					return count;
+				}
 			}
 			LmdbAdjacencyReadView view = exactAdjacencyView(true);
 			if (view != null) {
@@ -14789,7 +14848,8 @@ class LmdbSailStore implements SailStore {
 						? tripleStore.getTriples(txn, subj, pred, obj, context, explicit)
 						: tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit);
 				releaseReadLock = false;
-				return new NativeSourceReadLockedRecordIterator(iterator, readStamp);
+				return observeLmdbStatements(new NativeSourceReadLockedRecordIterator(iterator, readStamp), observer,
+						order, subj, pred, obj, context, false);
 			} finally {
 				if (releaseReadLock) {
 					nativeSourceLock.unlockRead(readStamp);
@@ -14815,7 +14875,9 @@ class LmdbSailStore implements SailStore {
 				}
 				RecordIterator iterator = tripleStore.getTriples(txn, subj, pred, obj, context, explicit);
 				releaseReadLock = false;
-				return new NativeSourceReadLockedRecordIterator(iterator, readStamp);
+				return LmdbStatementAccessArbiter.observed(
+						new NativeSourceReadLockedRecordIterator(iterator, readStamp),
+						observer, false);
 			} finally {
 				if (releaseReadLock) {
 					nativeSourceLock.unlockRead(readStamp);
@@ -14902,7 +14964,8 @@ class LmdbSailStore implements SailStore {
 				RecordIterator lmdb = tripleStore.getTriplesRangeUsingIndex(txn, subj, pred, obj, context, explicit,
 						range);
 				releaseReadLock = false;
-				return new NativeSourceReadLockedRecordIterator(lmdb, readStamp);
+				return observeLmdbStatements(new NativeSourceReadLockedRecordIterator(lmdb, readStamp), observer,
+						null, subj, pred, obj, context, true);
 			} finally {
 				if (releaseReadLock) {
 					nativeSourceLock.unlockRead(readStamp);
@@ -14969,6 +15032,40 @@ class LmdbSailStore implements SailStore {
 		public RecordIterator statements(long subj, long pred, long obj, long context,
 				LmdbRootScanPartition partition) throws IOException {
 			return statements(subj, pred, obj, context, partition.range(), null);
+		}
+
+		@Override
+		public IndexAccessProfile indexAccessProfile() {
+			long readStamp = acquireNativeSourceReadLockUnchecked();
+			try {
+				assertNativeSourceOpen();
+				if (!hasStatementsInSource()) {
+					return null;
+				}
+				boolean possible = directEligible() && directAdjacency.mayOfferStatementAccess(adjacencyView);
+				long predicates = possible ? directAdjacency.predicateSweepWorkUpper(adjacencyView) : -1L;
+				long outgoing = possible ? directAdjacency.nodePredicateWorkUpper(adjacencyView, true, explicit) : -1L;
+				long incoming = possible ? directAdjacency.nodePredicateWorkUpper(adjacencyView, false, explicit) : -1L;
+				return tripleStore.indexAccessProfile(txn, explicit, possible, predicates, outgoing, incoming);
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
+			}
+		}
+
+		@Override
+		public IndexAccessProfile pinnedLmdbSweepProfile() {
+			long readStamp = acquireNativeSourceReadLockUnchecked();
+			try {
+				assertNativeSourceOpen();
+				txn.ensureSnapshotValid();
+				if (snapshotRevision < 0L || txn.version() != pinnedTxnVersion || !hasStatementsInSource()) {
+					return null;
+				}
+				// Only the physical index count and source count are needed by the bounded sweep.
+				return tripleStore.indexAccessProfile(txn, explicit, false, -1L, -1L, -1L);
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
+			}
 		}
 
 		@Override
@@ -15168,8 +15265,15 @@ class LmdbSailStore implements SailStore {
 					} else {
 						tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
 					}
-					currentSelection = retained;
-					return retained;
+					if (observer != null) {
+						int variant = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB,
+								subj, pred, obj, context, null, false,
+								LmdbStatementAccessArbiter.TRAVERSAL_NATIVE_INDEX);
+						observeSelected(observer, LmdbStatementAccessArbiter.Source.LMDB, variant, null,
+								subj, pred, obj, context);
+					}
+					currentSelection = lmdbMeasurement.observe(retained, observer, false);
+					return currentSelection;
 				} catch (RuntimeException | Error | IOException e) {
 					close();
 					throw e;
@@ -15465,6 +15569,12 @@ class LmdbSailStore implements SailStore {
 				assertNativeSourceOpen();
 				if (!hasStatementsInSource()) {
 					return 0;
+				}
+				if (subj < 0 && pred < 0 && obj < 0 && context >= 0) {
+					long count = tripleStore.countContextIfAuthoritative(txn, context, explicit);
+					if (count >= 0) {
+						return count;
+					}
 				}
 				if (directEligible()) {
 					long direct = directAdjacency.tryCount(adjacencyView, subj, pred, obj, context, explicit);
@@ -15857,6 +15967,7 @@ class LmdbSailStore implements SailStore {
 		private final class NativeSourceReadLockedPrefixRunCursor implements LmdbPrefixRunCursor {
 			private final LmdbPrefixRunCursor delegate;
 			private final long readStamp;
+			private final Thread owner = Thread.currentThread();
 			private boolean closed;
 
 			private NativeSourceReadLockedPrefixRunCursor(LmdbPrefixRunCursor delegate, long readStamp) {
@@ -15866,6 +15977,7 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public boolean next() throws IOException {
+				checkOwner();
 				if (closed) {
 					return false;
 				}
@@ -15884,6 +15996,7 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public boolean seekTo(long value) throws IOException {
+				checkOwner();
 				if (closed) {
 					return false;
 				}
@@ -15898,6 +16011,7 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public boolean seekTo(long[] prefixValues) throws IOException {
+				checkOwner();
 				if (closed) {
 					return false;
 				}
@@ -15912,6 +16026,7 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public void stopBefore(long[] prefixValues) {
+				checkOwner();
 				delegate.stopBefore(prefixValues);
 			}
 
@@ -15947,6 +16062,7 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public void close() {
+				checkOwner();
 				if (closed) {
 					return;
 				}
@@ -15955,6 +16071,13 @@ class LmdbSailStore implements SailStore {
 					delegate.close();
 				} finally {
 					nativeSourceLock.unlockRead(readStamp);
+				}
+			}
+
+			private void checkOwner() {
+				if (Thread.currentThread() != owner) {
+					throw new IllegalStateException(
+							"Native prefix cursor must be used and closed by its creating thread");
 				}
 			}
 		}
@@ -16111,6 +16234,21 @@ class LmdbSailStore implements SailStore {
 			@Override
 			public String getIndexName() {
 				return delegate.getIndexName();
+			}
+
+			@Override
+			public long getSourceRowsScannedActual() {
+				return delegate.getSourceRowsScannedActual();
+			}
+
+			@Override
+			public long getSourceRowsMatchedActual() {
+				return delegate.getSourceRowsMatchedActual();
+			}
+
+			@Override
+			public long getSourceRowsFilteredActual() {
+				return delegate.getSourceRowsFilteredActual();
 			}
 
 			@Override

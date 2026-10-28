@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.stubbing.Answer;
@@ -149,6 +151,55 @@ class NativeGroupResultCursorTest {
 			assertFalse(cursor.cancellation().isCancellationRequested());
 			assertFalse(source.executionContext().cancellation().isCancellationRequested());
 		} finally {
+			source.executionContext().close();
+		}
+	}
+
+	@Test
+	void opaqueTableInputRetainsCleanupFailureAfterSuppressionDisabledCancellation() {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(
+				mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS));
+		AtomicInteger closeCalls = new AtomicInteger();
+		IllegalStateException closeFailure = new IllegalStateException("opaque group input close failed");
+		SlotPlan input = new SlotPlan() {
+			@Override
+			public RowCursor open(RowState row) {
+				return new RowCursor() {
+					@Override
+					public boolean next() {
+						throw KernelQueryCancelledException.INSTANCE;
+					}
+
+					@Override
+					public void close() {
+						closeCalls.incrementAndGet();
+						throw closeFailure;
+					}
+				};
+			}
+
+			@Override
+			public long producedMask() {
+				return 0L;
+			}
+		};
+		NativeCustomAggregate custom = new NativeCustomAggregate(null, null, new NativeBindingSetValueEvaluator[0],
+				() -> () -> SimpleValueFactory.getInstance().createLiteral("unused"), false, false);
+		NativeGroupIteration iteration = new NativeGroupIteration(source, input, layout(), new int[0],
+				new AggregateSpec[] { AggregateSpec.custom("opaque", custom) }, false,
+				EmptyBindingSet.getInstance(), null, null, false, null);
+		assertFalse(NativeGroupResultCursor.allowsReorderedGrouping(iteration),
+				"the custom reducer must retain its encounter order");
+		NativeGroupResultCursor cursor = new NativeGroupResultCursor(iteration, source.executionContext(), false);
+		try {
+			Throwable observed = assertThrows(RuntimeException.class, cursor::next);
+			assertSame(closeFailure, observed,
+					"the physical table owner must retain the real close error after its pull control");
+			assertEquals(1, closeCalls.get(), "the source is closed exactly once");
+			assertEquals(0, KernelQueryCancelledException.INSTANCE.getSuppressed().length,
+					"the suppression-disabled control remains unmodified");
+		} finally {
+			cursor.close();
 			source.executionContext().close();
 		}
 	}

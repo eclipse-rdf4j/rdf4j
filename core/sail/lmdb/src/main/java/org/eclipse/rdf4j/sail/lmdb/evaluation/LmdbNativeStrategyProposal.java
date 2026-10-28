@@ -226,22 +226,30 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	/**
-	 * Work this strategy will actually consume when the consumer stops after {@code sliceRows} rows.
+	 * Bounds on work consumed when the consumer may stop after {@code sliceRows} rows.
 	 * <p>
-	 * The front-loaded part is paid whatever happens; the streaming remainder is prorated by how much of the result the
-	 * consumer is going to ask for. With no finite slice, or with an unknown row count, this is simply the total work —
-	 * the model declines to guess rather than inventing a discount.
+	 * A result-row estimate does not bound how much input is needed to produce a slice. Keep the front-loaded floor and
+	 * the complete-open ceiling; proportional consumption is only an expected value, not a proven bound.
 	 *
 	 * @param sliceRows rows the consumer can possibly consume, or a negative value when unbounded
 	 */
 	LmdbNativeWork effectiveWork(double sliceRows) {
-		if (!(sliceRows >= 0D) || Double.isNaN(estRows) || estRows <= 0D || sliceRows >= estRows || !work.known()) {
+		if (!Double.isFinite(sliceRows) || sliceRows < 0D) {
 			return work;
 		}
-		double fraction = sliceRows / estRows;
-		double low = startupWork.low() + fraction * Math.max(0D, work.low() - startupWork.low());
-		double high = startupWork.high() + fraction * Math.max(0D, work.high() - startupWork.high());
-		return LmdbNativeWork.between(Math.min(low, high), Math.max(low, high));
+		double lower = sliceRows == 0D ? 0D : Math.min(startupWork.low(), work.high());
+		return LmdbNativeWork.between(lower, work.high());
+	}
+
+	/** A proportional estimate is useful to the adaptive model, but must not narrow a proven interval. */
+	private double expectedWork(double sliceRows) {
+		double total = midpoint(work);
+		if (!Double.isFinite(sliceRows) || sliceRows < 0D || !Double.isFinite(estRows) || estRows <= 0D) {
+			return total;
+		}
+		double startup = startupWork.known() ? Math.min(midpoint(startupWork), total) : 0D;
+		double fraction = Math.min(1D, sliceRows / estRows);
+		return startup + fraction * (total - startup);
 	}
 
 	/**
@@ -274,10 +282,12 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	LmdbNativeCostEstimate adaptiveEstimate(double sliceRows) {
 		if (physicalEstimate != null) {
-			return sliceRows >= 0D && physicalEstimate.estimatedOutputRows() > 0D
-					&& sliceRows < physicalEstimate.estimatedOutputRows()
-							? physicalEstimate.forConsumption(sliceRows / physicalEstimate.estimatedOutputRows())
-							: physicalEstimate;
+			if (Double.isFinite(sliceRows) && sliceRows >= 0D) {
+				double rows = physicalEstimate.estimatedOutputRows();
+				double fraction = rows > 0D ? Math.min(1D, sliceRows / rows) : 1D;
+				return physicalEstimate.forConsumption(fraction);
+			}
+			return physicalEstimate;
 		}
 		LmdbNativeWork effective = effectiveWork(sliceRows);
 		if (!effective.known()) {
@@ -285,9 +295,11 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}
 		String family = baseTag(tag);
 		LmdbNativeCostVector.Feature rowFeature = rowFeature(family);
-		double totalExpected = midpoint(effective);
 		double startupLow = Math.min(startupWork.low(), effective.low());
 		double startupHigh = Math.min(startupWork.known() ? startupWork.high() : effective.high(), effective.high());
+		double startupExpected = startupLow + (startupHigh - startupLow) * 0.5D;
+		double totalExpected = Math.max(startupExpected,
+				Math.max(effective.low(), Math.min(effective.high(), expectedWork(sliceRows))));
 
 		LmdbNativeCostVector.Builder startup = LmdbNativeCostVector.builder()
 				.add(LmdbNativeCostVector.Feature.OPEN, 1D);
@@ -304,13 +316,15 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}
 		double startupRowLow = Math.max(0D, startupLow - workerStartIntercept);
 		double startupRowHigh = Math.max(0D, startupHigh - workerStartIntercept);
-		double startupRowExpected = startupRowLow + (startupRowHigh - startupRowLow) * 0.5D;
+		double startupRowExpected = Math.max(startupRowLow,
+				Math.min(startupRowHigh, startupExpected - workerStartIntercept));
 		if (startupRowHigh > 0D) {
 			startup.add(rowFeature, startupRowLow, startupRowExpected, startupRowHigh);
 		}
 		double totalRowLow = Math.max(0D, effective.low() - workerStartIntercept);
 		double totalRowHigh = Math.max(0D, effective.high() - workerStartIntercept);
-		double totalRowExpected = totalRowLow + (totalRowHigh - totalRowLow) * 0.5D;
+		double totalRowExpected = Math.max(totalRowLow,
+				Math.min(totalRowHigh, totalExpected - workerStartIntercept));
 		if (totalRowHigh > 0D) {
 			total.add(rowFeature, totalRowLow, totalRowExpected, totalRowHigh);
 		}

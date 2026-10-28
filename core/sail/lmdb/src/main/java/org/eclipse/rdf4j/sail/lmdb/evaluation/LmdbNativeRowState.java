@@ -56,6 +56,16 @@ final class RowState implements LmdbNativeSlotReader {
 	private NativeResultCell[] summaryCells;
 	private NativeResultCell[] trailOldCells;
 	LmdbNativeRuntimePlan.Invocation runtimePlan;
+	/** Enabled only for measured NativeRowsStep routes; aggregate and IR filters keep separate metrics. */
+	boolean scalarFilterTelemetryEnabled;
+	/** Private scalar-filter owner for the current selected or probed row attempt. */
+	NativeScalarFilterAttempt scalarFilterAttempt;
+	/** Owner-specific final gate before a selected input publishes its scalar-filter attempt. */
+	Runnable scalarFilterAcceptanceGuard;
+	/** Scoped observer for completed physical probes made by an adaptive operator. */
+	NativeLmdbQuerySource.AdjacencyAccessObserver probeWorkObserver;
+	/** Scratch-row-only mandate for a bounded, snapshot-pinned LMDB sweep. */
+	boolean directLmdbSweep;
 	PathResultMemo pathEstimateMemos;
 	/** Replay the ordinary generic source order without mandating adjacency or LMDB. */
 	boolean encounterOrderRequired;
@@ -387,6 +397,10 @@ final class RowState implements LmdbNativeSlotReader {
 		copy.recomputeBoundMask();
 		copy.memoryScope = memoryScope;
 		copy.runtimePlan = runtimePlan;
+		copy.scalarFilterTelemetryEnabled = scalarFilterTelemetryEnabled;
+		copy.scalarFilterAttempt = scalarFilterAttempt;
+		copy.probeWorkObserver = probeWorkObserver;
+		copy.directLmdbSweep = directLmdbSweep;
 		copy.lexicalInputMask = lexicalInputMask;
 		copy.lexicalScopeDepth = lexicalScopeDepth;
 		copy.lateralOccurrence = lateralOccurrence;
@@ -403,6 +417,8 @@ final class RowState implements LmdbNativeSlotReader {
 		RowState copy = new RowState(invocation, layout, input, telemetryTarget, exactValuesMetrics, cancellation);
 		copy.inheritDecodedInputAccounting(this);
 		copy.runtimePlan = runtimePlan;
+		copy.scalarFilterTelemetryEnabled = scalarFilterTelemetryEnabled;
+		copy.scalarFilterAttempt = scalarFilterAttempt;
 		copy.lexicalScopeDepth = lexicalScopeDepth;
 		copy.lateralOccurrence = lateralOccurrence;
 		copy.logicalSolutionIdentity = logicalSolutionIdentity;
@@ -448,6 +464,8 @@ final class RowState implements LmdbNativeSlotReader {
 		recomputeBoundMask();
 		memoryScope = parent.memoryScope;
 		runtimePlan = parent.runtimePlan;
+		scalarFilterTelemetryEnabled = parent.scalarFilterTelemetryEnabled;
+		scalarFilterAttempt = parent.scalarFilterAttempt;
 		lexicalInputMask = parent.lexicalInputMask & boundMask;
 		lexicalScopeDepth = parent.lexicalScopeDepth;
 		logicalSolutionIdentity = parent.logicalSolutionIdentity;
@@ -605,12 +623,12 @@ final class RowState implements LmdbNativeSlotReader {
 
 	/** Where an attempt on this row began: its bindings and the lexical scope it was entered in. */
 	record AttemptStart(int trailMark, long lexicalInputMask, int lexicalScopeDepth, long[] slots,
-			NativeResultCell[] summaryCells) {
+			NativeResultCell[] summaryCells, NativeScalarFilterAttempt scalarFilterAttempt) {
 	}
 
 	AttemptStart attemptStart() {
 		return new AttemptStart(trailSize, lexicalInputMask, lexicalScopeDepth, slots.clone(),
-				summaryCells == null ? null : summaryCells.clone());
+				summaryCells == null ? null : summaryCells.clone(), scalarFilterAttempt);
 	}
 
 	/** Undoes whatever an attempt that stopped part-way through left on this row. */
@@ -629,6 +647,33 @@ final class RowState implements LmdbNativeSlotReader {
 		recomputeBoundMask();
 		lexicalInputMask = start.lexicalInputMask();
 		lexicalScopeDepth = start.lexicalScopeDepth();
+		scalarFilterAttempt = start.scalarFilterAttempt();
+	}
+
+	void startScalarFilterAttempt() {
+		if (scalarFilterTelemetryEnabled) {
+			scalarFilterAttempt = new NativeScalarFilterAttempt(telemetryTarget, scalarFilterAttempt);
+		}
+	}
+
+	void enableScalarFilterTelemetry() {
+		scalarFilterTelemetryEnabled = telemetryTarget != null && telemetryTarget.isRuntimeTelemetryEnabled();
+	}
+
+	void acceptScalarFilterAttempt() {
+		if (scalarFilterAttempt != null) {
+			scalarFilterAttempt.accept();
+		}
+	}
+
+	void guardScalarFilterAcceptance(Runnable guard) {
+		scalarFilterAcceptanceGuard = Objects.requireNonNull(guard);
+	}
+
+	void failScalarFilterAttempt(Throwable failure, boolean propagate) {
+		if (scalarFilterAttempt != null) {
+			scalarFilterAttempt.fail(failure, propagate);
+		}
 	}
 
 	long enterLexicalScope(long inputMask) {
@@ -1335,6 +1380,78 @@ final class CopyBinding {
 			return computed.requiredMask();
 		}
 		return sourceSlot < 0 ? 0L : 1L << sourceSlot;
+	}
+}
+
+/**
+ * Private count for one NativeRowsStep strategy attempt. {@code nativeScalarFilterInvocationsActual} counts actual
+ * {@code NativeBooleanFilter.accept} calls owned by {@code FilterCursor}; generic, batch, IR, and aggregate filters
+ * retain separate accounting. Filter cursors add local totals on close, and selected inputs accept the carrier only
+ * after producer and selection cleanup succeed.
+ */
+@Experimental
+final class NativeScalarFilterAttempt {
+	static final String METRIC = "nativeScalarFilterInvocationsActual";
+
+	private final TupleExpr telemetryTarget;
+	private final NativeScalarFilterAttempt parent;
+	private long calls;
+	private boolean accepted;
+	private Throwable failure;
+
+	NativeScalarFilterAttempt(TupleExpr telemetryTarget, NativeScalarFilterAttempt parent) {
+		this.telemetryTarget = telemetryTarget;
+		this.parent = parent;
+	}
+
+	NativeScalarFilterAttempt parent() {
+		return parent;
+	}
+
+	synchronized void record(long additionalCalls) {
+		if (additionalCalls <= 0L) {
+			return;
+		}
+		if (failure != null) {
+			return;
+		}
+		if (accepted) {
+			throw new IllegalStateException("Scalar-filter calls arrived after their attempt was accepted");
+		}
+		calls = Math.addExact(calls, additionalCalls);
+	}
+
+	void fail(Throwable problem, boolean propagate) {
+		if (problem == null) {
+			return;
+		}
+		synchronized (this) {
+			if (failure == null) {
+				failure = problem;
+			}
+		}
+		if (propagate && parent != null) {
+			parent.fail(problem, true);
+		}
+	}
+
+	void accept() {
+		long acceptedCalls;
+		synchronized (this) {
+			if (accepted || failure != null) {
+				return;
+			}
+			accepted = true;
+			acceptedCalls = calls;
+		}
+		if (acceptedCalls == 0L) {
+			return;
+		}
+		if (parent != null) {
+			parent.record(acceptedCalls);
+		} else {
+			LmdbNativeExplain.addRuntimeMetric(telemetryTarget, METRIC, acceptedCalls);
+		}
 	}
 }
 

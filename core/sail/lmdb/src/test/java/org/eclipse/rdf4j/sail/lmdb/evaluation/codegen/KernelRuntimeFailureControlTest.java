@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
@@ -49,6 +50,22 @@ class KernelRuntimeFailureControlTest {
 				"a real cleanup failure must remain observable when the query cancellation is a singleton");
 		assertEquals(0, KernelQueryCancelledException.INSTANCE.getSuppressed().length,
 				"cleanup must not mutate the shared query cancellation singleton");
+	}
+
+	@Test
+	void closeResourcePromotesCleanupWhenProbeDeadlineCannotBeSuppressed() {
+		RuntimeException deadline = NativeCancellationTestAccess.probeDeadlineSignal();
+		IllegalStateException cleanup = new IllegalStateException("deadline close failed");
+
+		Throwable observed = KernelRuntime.closeResource(() -> {
+			throw cleanup;
+		}, deadline);
+
+		assertSame(cleanup, observed,
+				"a real cleanup failure must remain observable when the probe deadline is a suppression-disabled singleton");
+		assertEquals(1, cleanup.getSuppressed().length, "the cleanup failure retains the deadline as evidence");
+		assertSame(deadline, cleanup.getSuppressed()[0]);
+		assertEquals(0, deadline.getSuppressed().length, "cleanup must not mutate the shared deadline singleton");
 	}
 
 	@Test

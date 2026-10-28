@@ -44,6 +44,12 @@ public interface NativeLmdbQuerySource {
 
 	long UNKNOWN_ID = org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
 
+	/** Poll the current native evaluation and speculative probe from an LMDB source operation. */
+	static void checkpointCancellation() {
+		NativeCancellationToken.checkCurrent();
+		LmdbNativeProbeDeadline.poll(0);
+	}
+
 	long idOf(Value value) throws QueryEvaluationException;
 
 	/** Resolves a spelling with its destination role; the mask affects cache retention, never RDF identity. */
@@ -202,6 +208,12 @@ public interface NativeLmdbQuerySource {
 		default void measurement(boolean adjacency, long scannedRows, long matchedRows, long filteredRows,
 				boolean censored) {
 		}
+
+		/** Distinguishes physical iterator counters from the returned-row telemetry fallback. */
+		default void measurement(boolean adjacency, long scannedRows, long matchedRows, long filteredRows,
+				boolean censored, boolean physicalScanCount) {
+			measurement(adjacency, scannedRows, matchedRows, filteredRows, censored);
+		}
 	}
 
 	default RecordIterator statements(long subj, long pred, long obj, long context,
@@ -266,6 +278,56 @@ public interface NativeLmdbQuerySource {
 
 	default String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
 		return indexName(subj, pred, obj, context);
+	}
+
+	/**
+	 * Snapshot-local physical LMDB access information for work estimation. Unlike
+	 * {@link #indexName(long, long, long, long)}, this describes the actual LMDB indexes rather than an ordering shared
+	 * by arbitrated sources. A source which cannot supply the information without scanning declines with {@code null}.
+	 */
+	default IndexAccessProfile indexAccessProfile() {
+		return null;
+	}
+
+	/**
+	 * A hard upper bound for a direct LMDB sweep on this source's pinned snapshot. A non-null result also proves that
+	 * {@link #lmdbStatements(long, long, long, long, AdjacencyAccessObserver)} uses that same physical snapshot.
+	 * Sources unable to provide both guarantees must decline.
+	 */
+	default IndexAccessProfile pinnedLmdbSweepProfile() {
+		return null;
+	}
+
+	/**
+	 * One prefix-component mask for each statement order and hypothetical S/P/O/C binding mask. The predicate-sweep
+	 * work is -1 when no universal adjacency candidate exists, or -2 when it exists but its upper work is unknown.
+	 * Node-predicate work is -1 when the corresponding direction cannot be offered.
+	 */
+	@Experimental
+	record IndexAccessProfile(long entries, int sources, int[][] prefixes, boolean adjacencyPossible,
+			long adjacencyPredicateWork, long outgoingAdjacencyWork, long incomingAdjacencyWork) {
+		public IndexAccessProfile {
+			if (entries < 0 || sources < 1 || adjacencyPredicateWork < -2L || outgoingAdjacencyWork < -1L
+					|| incomingAdjacencyWork < -1L
+					|| prefixes.length != StatementOrder.values().length + 1) {
+				throw new IllegalArgumentException("Invalid physical index access profile");
+			}
+			prefixes = Arrays.stream(prefixes).map(int[]::clone).toArray(int[][]::new);
+			for (int[] row : prefixes) {
+				if (row.length != 16) {
+					throw new IllegalArgumentException("Invalid physical index binding masks");
+				}
+			}
+		}
+
+		@Override
+		public int[][] prefixes() {
+			return Arrays.stream(prefixes).map(int[]::clone).toArray(int[][]::new);
+		}
+
+		public int prefixMask(StatementOrder order, int bindingMask) {
+			return prefixes[order == null ? 0 : order.ordinal() + 1][bindingMask];
+		}
 	}
 
 	default LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {

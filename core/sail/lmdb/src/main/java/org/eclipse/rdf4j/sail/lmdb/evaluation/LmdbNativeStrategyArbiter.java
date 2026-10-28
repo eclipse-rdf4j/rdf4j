@@ -251,6 +251,7 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		} else {
 			restoreSharedRow();
 		}
+		sharedRow.startScalarFilterAttempt();
 	}
 
 	private void restoreSharedRow() {

@@ -398,6 +398,10 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	private static NativeSlotOrder currentOrder(SlotPlan input, RowState row) {
+		if (input instanceof NativeAliasJoinPlan) {
+			// The guarded alternative may drive the other operand, so the logical left order is not a proof.
+			return NativeSlotOrder.NONE;
+		}
 		if (input instanceof PatternPlan pattern) {
 			// Default index metadata may describe an LMDB fallback rather than the cursor actually opened.
 			// Encounter-order execution can also select that fallback after an adjacency order was described.
@@ -500,6 +504,12 @@ final class LmdbNativeOrderPlanner {
 	}
 
 	private static NativeOrderedPlan best(SlotPlan plan, int[] requested, RowState row) {
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			// Keep the proved alias memo available, but let only its original left producer establish encounter order.
+			NativeOrderedPlan left = best(alias.original.left, requested, row);
+			SlotPlan ordered = NativeAliasJoinPlan.originalDrivingForOrder(alias, left.plan, left.order);
+			return new NativeOrderedPlan(ordered, left.order.withBarrier());
+		}
 		if (plan instanceof PatternPlan) {
 			return bestPattern((PatternPlan) plan, requested, row);
 		}
@@ -1160,6 +1170,8 @@ final class OrderedUnionCursor implements RowCursor {
 					parent.cancellation);
 			this.row.memoryScope = parent.memoryScope;
 			this.row.runtimePlan = parent.runtimePlan;
+			this.row.scalarFilterTelemetryEnabled = parent.scalarFilterTelemetryEnabled;
+			this.row.scalarFilterAttempt = parent.scalarFilterAttempt;
 			System.arraycopy(parent.slots, 0, row.slots, 0, parent.slots.length);
 			row.recomputeBoundMask();
 			this.cursor = plan.open(row);

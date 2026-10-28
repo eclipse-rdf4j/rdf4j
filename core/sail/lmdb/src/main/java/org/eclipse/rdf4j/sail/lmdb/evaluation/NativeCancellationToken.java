@@ -109,6 +109,15 @@ final class NativeCancellationToken {
 		return cancellationRequested;
 	}
 
+	/**
+	 * Checks cancellation inherited from the query owner or a thread interrupt without consulting this token's local
+	 * stop bit. Owners use this to distinguish their own close request from a concurrent parent cancellation.
+	 */
+	boolean isUpstreamCancellationRequested() {
+		return parent != null && parent.isCancellationRequested()
+				|| evaluationThread.isInterrupted() || Thread.currentThread().isInterrupted();
+	}
+
 	long evaluationId() {
 		return evaluationId;
 	}
@@ -131,6 +140,13 @@ final class NativeCancellationToken {
 	void check() {
 		if (isCancellationRequested()) {
 			throw KernelQueryCancelledException.INSTANCE;
+		}
+	}
+
+	static void checkCurrent() {
+		NativeCancellationToken current = CURRENT.get();
+		if (current != null) {
+			current.check();
 		}
 	}
 

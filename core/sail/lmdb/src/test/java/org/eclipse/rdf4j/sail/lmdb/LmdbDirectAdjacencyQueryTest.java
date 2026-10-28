@@ -33,7 +33,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -41,6 +45,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -50,6 +55,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
@@ -58,6 +64,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JoinDispatchTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -65,6 +72,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
@@ -252,6 +261,189 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 	}
 
+	private void openSelectedStoreWithDeferredStartupMaintenance() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED)
+				.setDirectAdjacencyPredicates(List.of(P1))
+				.setDirectAdjacencyMaxBytes(1L << 30);
+		sail = new DeferredStartupLmdbStore(dataDir, config);
+		repo = new SailRepository(sail);
+		repo.init();
+		backing = sail.getBackingStore();
+		direct = backing.directAdjacencyStore();
+		assertThat(direct).isNotNull();
+	}
+
+	private CoverageBarrierLmdbStore openCoverageBarrierStore(List<IRI> selectedPredicates, boolean deferStartup,
+			boolean blockRefreshedCoverageRead) throws IOException {
+		return openCoverageBarrierStore(selectedPredicates, deferStartup, blockRefreshedCoverageRead, false);
+	}
+
+	private CoverageBarrierLmdbStore openCoverageBarrierStore(List<IRI> selectedPredicates, boolean deferStartup,
+			boolean blockRefreshedCoverageRead, boolean synchronousMaintenance) throws IOException {
+		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY,
+				Boolean.toString(synchronousMaintenance));
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED)
+				.setDirectAdjacencyPredicates(selectedPredicates)
+				.setDirectAdjacencyMaxBytes(1L << 30);
+		CoverageBarrierLmdbStore coverageSail = new CoverageBarrierLmdbStore(dataDir, config, deferStartup,
+				blockRefreshedCoverageRead);
+		sail = coverageSail;
+		repo = new SailRepository(sail);
+		repo.init();
+		backing = sail.getBackingStore();
+		direct = backing.directAdjacencyStore();
+		assertThat(direct).isNotNull();
+		return coverageSail;
+	}
+
+	private static final class DeferredStartupLmdbStore extends LmdbStore {
+		private DeferredStartupLmdbStore(File dataDir, LmdbStoreConfig config) {
+			super(dataDir, config);
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			return new DeferredStartupLmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled);
+		}
+	}
+
+	private static final class DeferredStartupLmdbSailStore extends LmdbSailStore {
+		private DeferredStartupLmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			super(dataDir, properties, config, sketchBasedJoinEstimatorEnabled);
+		}
+
+		@Override
+		void startBackgroundMaintenanceAfterInitialization() {
+			// The test installs the existing cutover barrier before starting the normal post-ready maintenance path.
+		}
+
+		void startBackgroundMaintenanceForTest() {
+			super.startBackgroundMaintenanceAfterInitialization();
+		}
+	}
+
+	private static final class CoverageBarrierLmdbStore extends LmdbStore {
+		private final boolean deferStartup;
+		private final boolean blockRefreshedCoverageRead;
+		private CoverageBarrierValueStore valueStore;
+		private CoverageBarrierLmdbSailStore backingStore;
+
+		private CoverageBarrierLmdbStore(File dataDir, LmdbStoreConfig config) {
+			this(dataDir, config, false, false);
+		}
+
+		private CoverageBarrierLmdbStore(File dataDir, LmdbStoreConfig config, boolean deferStartup,
+				boolean blockRefreshedCoverageRead) {
+			super(dataDir, config);
+			this.deferStartup = deferStartup;
+			this.blockRefreshedCoverageRead = blockRefreshedCoverageRead;
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			backingStore = new CoverageBarrierLmdbSailStore(dataDir, properties, config,
+					sketchBasedJoinEstimatorEnabled, deferStartup,
+					(valueDir, valueProperties, valueConfig) -> valueStore = new CoverageBarrierValueStore(valueDir,
+							valueProperties, valueConfig, blockRefreshedCoverageRead));
+			return backingStore;
+		}
+	}
+
+	private static final class CoverageBarrierLmdbSailStore extends LmdbSailStore {
+		private final boolean deferStartup;
+
+		private CoverageBarrierLmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled, boolean deferStartup, ValueStoreFactory valueStoreFactory)
+				throws IOException, SailException {
+			super(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, valueStoreFactory, TripleStore::new);
+			this.deferStartup = deferStartup;
+		}
+
+		@Override
+		void startBackgroundMaintenanceAfterInitialization() {
+			if (!deferStartup) {
+				super.startBackgroundMaintenanceAfterInitialization();
+			}
+		}
+
+		void startBackgroundMaintenanceForTest() {
+			super.startBackgroundMaintenanceAfterInitialization();
+		}
+	}
+
+	private static final class CoverageBarrierValueStore extends ValueStore {
+		private final CountDownLatch unresolvedSelectedPredicateRead = new CountDownLatch(1);
+		private final CountDownLatch releaseCoverageRead = new CountDownLatch(1);
+		private final CountDownLatch refreshedSelectedPredicateRead = new CountDownLatch(1);
+		private final CountDownLatch releaseRefreshedCoverageRead = new CountDownLatch(1);
+		private final CountDownLatch valueLookupStabilityWaitStarted = new CountDownLatch(1);
+		private final AtomicBoolean firstUnresolvedSelectedPredicateRead = new AtomicBoolean();
+		private final AtomicInteger selectedPredicateReadCount = new AtomicInteger();
+		private final boolean blockRefreshedCoverageRead;
+		private volatile long selectedPredicateReadResult = Long.MIN_VALUE;
+		private volatile Thread coverageThread;
+		private volatile Thread refreshedCoverageThread;
+		private volatile Thread valueLookupStabilityWaitThread;
+
+		private CoverageBarrierValueStore(File dir, StoreProperties properties, LmdbStoreConfig config,
+				boolean blockRefreshedCoverageRead) throws IOException {
+			super(dir, properties, config);
+			this.blockRefreshedCoverageRead = blockRefreshedCoverageRead;
+		}
+
+		@Override
+		public long getId(Value value) throws IOException {
+			long id = super.getId(value);
+			if (P1.equals(value) && id == LmdbValue.UNKNOWN_ID
+					&& firstUnresolvedSelectedPredicateRead.compareAndSet(false, true)) {
+				coverageThread = Thread.currentThread();
+				selectedPredicateReadCount.incrementAndGet();
+				selectedPredicateReadResult = id;
+				unresolvedSelectedPredicateRead.countDown();
+				awaitLatch(releaseCoverageRead, "selected-predicate coverage read release");
+			} else if (P1.equals(value) && Thread.currentThread() == coverageThread) {
+				int readCount = selectedPredicateReadCount.incrementAndGet();
+				if (readCount == 2 && blockRefreshedCoverageRead) {
+					refreshedCoverageThread = Thread.currentThread();
+					refreshedSelectedPredicateRead.countDown();
+					awaitRefreshedCoverageRead();
+				}
+			}
+			return id;
+		}
+
+		@Override
+		void awaitValueLookupStability(BooleanSupplier cancelled) throws InterruptedException {
+			valueLookupStabilityWaitThread = Thread.currentThread();
+			valueLookupStabilityWaitStarted.countDown();
+			super.awaitValueLookupStability(cancelled);
+		}
+
+		private void awaitRefreshedCoverageRead() {
+			try {
+				releaseRefreshedCoverageRead.await();
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
 	/**
 	 * The statement-lookup counterpart of {@link #awaitExactViewServesGraphCount()}: probes the generic dataset's
 	 * multi-context lookup until the exact view serves it rather than a recorded maintenance gap routing it to LMDB.
@@ -271,6 +463,35 @@ class LmdbDirectAdjacencyQueryTest {
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 				throw new AssertionError("interrupted while waiting for the exact view to serve statements", e);
+			}
+		}
+	}
+
+	private static final class CoverageBuildWait {
+		private final CoverageBarrierValueStore valueStore;
+		private final ExecutorService buildCaller;
+		private final Future<Boolean> buildResult;
+		private final int availableReadersBeforeBuild;
+
+		private CoverageBuildWait(CoverageBarrierValueStore valueStore, ExecutorService buildCaller,
+				Future<Boolean> buildResult, int availableReadersBeforeBuild) {
+			this.valueStore = valueStore;
+			this.buildCaller = buildCaller;
+			this.buildResult = buildResult;
+			this.availableReadersBeforeBuild = availableReadersBeforeBuild;
+		}
+
+		private void finish() throws Exception {
+			valueStore.releaseCoverageRead.countDown();
+			valueStore.releaseRefreshedCoverageRead.countDown();
+			try {
+				valueStore.rollback();
+			} finally {
+				try {
+					buildResult.get();
+				} finally {
+					buildCaller.shutdown();
+				}
 			}
 		}
 	}
@@ -303,6 +524,15 @@ class LmdbDirectAdjacencyQueryTest {
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new AssertionError("interrupted while holding queue admission", e);
+		}
+	}
+
+	private static void awaitLatch(CountDownLatch latch, String purpose) {
+		try {
+			latch.await();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("interrupted while waiting for " + purpose, e);
 		}
 	}
 
@@ -478,6 +708,759 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void genericSailDatasetKeepsDefaultRowAcrossQueuedCutoverCommit() throws Exception {
+		openSelectedStoreWithDeferredStartupMaintenance();
+		direct.pauseApplierForTest(true);
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.add(S1, P1, O1);
+		}
+		assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+		assertThat(direct.queuedCommitsForTest()).isEqualTo(1);
+
+		CountDownLatch onlineCatchUpReached = new CountDownLatch(1);
+		CountDownLatch releaseOnlineCatchUp = new CountDownLatch(1);
+		direct.beforeOnlineCatchUpForTest = () -> {
+			direct.beforeOnlineCatchUpForTest = null;
+			onlineCatchUpReached.countDown();
+			awaitLatch(releaseOnlineCatchUp, "online catch-up release");
+		};
+		((DeferredStartupLmdbSailStore) backing).startBackgroundMaintenanceForTest();
+		try {
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+			awaitLatch(onlineCatchUpReached, "the populated startup build's cutover barrier");
+			assertThat(direct.queuedCommitsForTest())
+					.as("the startup snapshot already includes its one queued revision-one commit")
+					.isEqualTo(1);
+		} finally {
+			releaseOnlineCatchUp.countDown();
+		}
+
+		awaitDirectAdjacencyReady();
+		direct.pauseApplierForTest(false);
+		assertThat(direct.publishedStateForTest().baseRevision()).isEqualTo(1L);
+		assertThat(direct.lastCutoverQueuedCommits()).isEqualTo(1);
+		assertThat(direct.lastCutoverRevisions()).isZero();
+		assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(1L);
+		try (RepositoryConnection connection = repo.getConnection()) {
+			for (Statement statement : List.of(
+					F.createStatement(S1, P1, O2, G1),
+					F.createStatement(S1, P2, O1),
+					F.createStatement(S2, P1, O1),
+					F.createStatement(S1, P3, F.createLiteral(42)))) {
+				connection.add(statement);
+			}
+		}
+		direct.pauseApplierForTest(false);
+		assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(5L);
+		assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(5L);
+		assertThat(sail.getDirectAdjacencyReadinessDescription())
+				.as("the final observation retains the original cutover target and reaches the fifth publication")
+				.contains("catchUpTargetRevision=1", "publicationRevision=5");
+
+		RoutingObservation observation = new RoutingObservation();
+		backing.nativeSourceObservationForTest = observation;
+		try {
+			try (CloseableDataset dataset = dataset()) {
+				List<Statement> pinnedLmdbRows = collectLmdbStatements(dataset, S1, P1);
+				List<Statement> actual = collectStatements(dataset.dataset.getStatements(S1, P1, null));
+				LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+				String diagnostics = "baseRevision=" + direct.publishedStateForTest().baseRevision()
+						+ ", appliedRevision=" + direct.publishedStateForTest().appliedRevision()
+						+ ", lastCutoverQueuedCommits=" + direct.lastCutoverQueuedCommits()
+						+ ", lookupHits=" + after.lookupHits + ", observation=" + observation;
+				assertThat(pinnedLmdbRows)
+						.as("the pinned physical LMDB snapshot contains both context rows; " + diagnostics)
+						.containsExactlyInAnyOrder(F.createStatement(S1, P1, O1),
+								F.createStatement(S1, P1, O2, G1));
+				assertThat(actual)
+						.as("generic SailDataset rows equal the same pinned LMDB snapshot after queued cutover; "
+								+ diagnostics)
+						.containsExactlyInAnyOrderElementsOf(pinnedLmdbRows);
+				assertThat(observation.events)
+						.as("the generic SailDataset access actually opened the exact selected adjacency row path; "
+								+ diagnostics)
+						.anyMatch(event -> event.startsWith("access(true:BOUND_ROW"));
+			}
+		} finally {
+			backing.nativeSourceObservationForTest = null;
+		}
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void unresolvedSelectedPredicateInternedBeforeBaseSnapshotKeepsDefaultRow() throws Exception {
+		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.SELECTED)
+				.setDirectAdjacencyPredicates(List.of(P1))
+				.setDirectAdjacencyMaxBytes(1L << 30);
+		CoverageBarrierLmdbStore coverageSail = new CoverageBarrierLmdbStore(dataDir, config);
+		sail = coverageSail;
+		repo = new SailRepository(sail);
+		repo.init();
+		backing = sail.getBackingStore();
+		direct = backing.directAdjacencyStore();
+		assertThat(direct).isNotNull();
+		CoverageBarrierValueStore valueStore = coverageSail.valueStore;
+		assertThat(valueStore).isNotNull();
+
+		try {
+			awaitLatch(valueStore.unresolvedSelectedPredicateRead, "selected predicate's initial dictionary lookup");
+			assertThat(valueStore.selectedPredicateReadResult)
+					.as("coverage must observe P1 as unresolved before its first statement commits")
+					.isEqualTo(LmdbValue.UNKNOWN_ID);
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(S1, P1, O1);
+			}
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+		} finally {
+			valueStore.releaseCoverageRead.countDown();
+		}
+
+		awaitDirectAdjacencyReady();
+		assertThat(direct.publishedStateForTest().baseRevision()).isEqualTo(1L);
+		assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(1L);
+		try (CloseableDataset baseSnapshot = dataset()) {
+			assertThat(collectLmdbStatements(baseSnapshot, S1, P1))
+					.as("the pinned revision-one base snapshot contains the default P1 row")
+					.containsExactly(F.createStatement(S1, P1, O1));
+		}
+
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.add(S1, P1, O2, G1);
+		}
+		direct.pauseApplierForTest(false);
+		assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(2L);
+		assertThat(direct.publishedStateForTest().baseRevision()).isEqualTo(1L);
+		assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(2L);
+		assertThat(sail.getDirectAdjacencyReadinessDescription())
+				.contains("state=ACTIVE", "baseRevision=1", "appliedRevision=2");
+
+		RoutingObservation observation = new RoutingObservation();
+		backing.nativeSourceObservationForTest = observation;
+		try {
+			try (CloseableDataset dataset = dataset()) {
+				List<Statement> pinnedLmdbRows = collectLmdbStatements(dataset, S1, P1);
+				List<Statement> actual = collectStatements(dataset.dataset.getStatements(S1, P1, null));
+				String diagnostics = "coverageLookup=" + valueStore.selectedPredicateReadResult
+						+ ", baseRevision=" + direct.publishedStateForTest().baseRevision()
+						+ ", appliedRevision=" + direct.publishedStateForTest().appliedRevision()
+						+ ", observation=" + observation;
+				assertThat(pinnedLmdbRows)
+						.as("the revision-two physical snapshot contains both P1 context rows; " + diagnostics)
+						.containsExactlyInAnyOrder(F.createStatement(S1, P1, O1),
+								F.createStatement(S1, P1, O2, G1));
+				assertThat(actual)
+						.as("selected adjacency must preserve the default row omitted from the unresolved base coverage; "
+								+ diagnostics)
+						.containsExactlyInAnyOrder(F.createStatement(S1, P1, O1),
+								F.createStatement(S1, P1, O2, G1));
+				assertThat(observation.states)
+						.as("the query observes an exact selected adjacency view for its revision; " + diagnostics)
+						.anySatisfy(state -> {
+							assertThat(state.adjacencyEligible()).isTrue();
+							assertThat(state.adjacencyExact()).isTrue();
+							assertThat(state.snapshotRevision()).isEqualTo(2L);
+						});
+				assertThat(observation.events)
+						.as("the generic SailDataset call actually uses selected adjacency; " + diagnostics)
+						.anyMatch(event -> event.startsWith("access(true:BOUND_ROW"));
+			}
+		} finally {
+			backing.nativeSourceObservationForTest = null;
+			valueStore.releaseCoverageRead.countDown();
+		}
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	private static Stream<Arguments> selectedCoverageFirstOccurrenceCases() {
+		return Stream.of(
+				Arguments.of("named explicit first", false, G1, null, false),
+				Arguments.of("inferred default first", true, null, G1, false),
+				Arguments.of("two selected predicates", false, null, G1, true));
+	}
+
+	@ParameterizedTest(name = "coverage race: {0}")
+	@MethodSource("selectedCoverageFirstOccurrenceCases")
+	void selectedCoverageRacePreservesFirstOccurrenceAcrossPlanes(String caseName, boolean inferred,
+			Resource firstContext, Resource laterContext, boolean multipleSelectedPredicates) throws Exception {
+		List<IRI> selectedPredicates = multipleSelectedPredicates ? List.of(P1, P2) : List.of(P1);
+		CoverageBarrierLmdbStore coverageSail = openCoverageBarrierStore(selectedPredicates, false, false);
+		CoverageBarrierValueStore valueStore = coverageSail.valueStore;
+
+		try {
+			awaitLatch(valueStore.unresolvedSelectedPredicateRead, "initial selected P1 lookup: " + caseName);
+			assertThat(valueStore.selectedPredicateReadResult).isEqualTo(LmdbValue.UNKNOWN_ID);
+			try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
+				connection.begin();
+				addCoverageTestStatement(connection, inferred, S1, P1, O1, firstContext);
+				connection.commit();
+			}
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+		} finally {
+			valueStore.releaseCoverageRead.countDown();
+		}
+
+		awaitDirectAdjacencyReady();
+		assertThat(direct.publishedStateForTest().baseRevision()).isEqualTo(1L);
+		assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(1L);
+		assertThat(valueStore.selectedPredicateReadCount.get())
+				.as("coverage must be re-resolved after the first P1 dictionary mutation")
+				.isEqualTo(2);
+
+		RoutingObservation observation = new RoutingObservation();
+		backing.nativeSourceObservationForTest = observation;
+		try (CloseableDataset baseSnapshot = inferred ? inferredDataset() : dataset()) {
+			List<Statement> firstRow = List.of(coverageStatement(S1, P1, O1, firstContext));
+			assertThat(collectLmdbStatements(baseSnapshot, S1, P1)).containsExactlyElementsOf(firstRow);
+			assertThat(collectStatements(baseSnapshot.dataset.getStatements(S1, P1, null)))
+					.as("the selected base includes the first row in its actual explicit/inferred plane")
+					.containsExactlyElementsOf(firstRow);
+		}
+
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
+			connection.begin();
+			addCoverageTestStatement(connection, inferred, S1, P1, O2, laterContext);
+			if (multipleSelectedPredicates) {
+				addCoverageTestStatement(connection, false, S2, P2, O1, null);
+			}
+			connection.commit();
+		}
+		direct.pauseApplierForTest(false);
+		assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(2L);
+		assertThat(direct.publishedStateForTest().baseRevision()).isEqualTo(1L);
+		assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(2L);
+
+		try (CloseableDataset current = inferred ? inferredDataset() : dataset()) {
+			List<Statement> expectedP1 = List.of(coverageStatement(S1, P1, O1, firstContext),
+					coverageStatement(S1, P1, O2, laterContext));
+			List<Statement> pinnedP1 = collectLmdbStatements(current, S1, P1);
+			List<Statement> actualP1 = collectStatements(current.dataset.getStatements(S1, P1, null));
+			assertThat(pinnedP1).containsExactlyInAnyOrderElementsOf(expectedP1);
+			assertThat(actualP1)
+					.as("the query matches the same pinned physical rows for " + caseName + "; observation="
+							+ observation)
+					.containsExactlyInAnyOrderElementsOf(pinnedP1);
+			if (multipleSelectedPredicates) {
+				List<Statement> expectedP2 = List.of(F.createStatement(S2, P2, O1));
+				assertThat(collectLmdbStatements(current, S2, P2)).containsExactlyElementsOf(expectedP2);
+				assertThat(collectStatements(current.dataset.getStatements(S2, P2, null)))
+						.containsExactlyElementsOf(expectedP2);
+			}
+			assertThat(observation.states)
+					.as("the generic access used exact selected adjacency at the pinned revision")
+					.anySatisfy(state -> {
+						assertThat(state.adjacencyEligible()).isTrue();
+						assertThat(state.adjacencyExact()).isTrue();
+						assertThat(state.snapshotRevision()).isEqualTo(2L);
+					});
+			assertThat(observation.events)
+					.as("the query actually opened selected adjacency for " + caseName)
+					.anyMatch(event -> event.startsWith("access(true:BOUND_ROW"));
+		} finally {
+			backing.nativeSourceObservationForTest = null;
+		}
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void rolledBackDictionaryMutationInvalidatesUnresolvedCoverage() throws Exception {
+		CoverageBarrierLmdbStore coverageSail = openCoverageBarrierStore(List.of(P1), false, false);
+		CoverageBarrierValueStore valueStore = coverageSail.valueStore;
+		try {
+			awaitLatch(valueStore.unresolvedSelectedPredicateRead, "initial selected P1 lookup before rollback");
+			assertThat(valueStore.selectedPredicateReadResult).isEqualTo(LmdbValue.UNKNOWN_ID);
+			try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
+				connection.begin();
+				connection.addStatement(S2, F.createIRI("http://example.org/rolled-back-predicate"), O1);
+				connection.rollback();
+			}
+			assertThat(backing.getTripleStore().getDataRevision()).isZero();
+			Object scopeBeforeDictionaryRollback = valueStore.valueLookupScope();
+
+			valueStore.startTransaction(true);
+			try {
+				assertThat(valueStore.storeValue(F.createIRI("http://example.org/rolled-back-dictionary-value")))
+						.isNotEqualTo(LmdbValue.UNKNOWN_ID);
+			} finally {
+				valueStore.rollback();
+			}
+			assertThat(backing.getTripleStore().getDataRevision()).isZero();
+			assertThat(valueStore.valueLookupScope())
+					.as("a dictionary writer mutation invalidates lookup identity even when its transaction rolls back")
+					.isNotSameAs(scopeBeforeDictionaryRollback);
+		} finally {
+			valueStore.releaseCoverageRead.countDown();
+		}
+
+		awaitDirectAdjacencyReady();
+		assertThat(direct.publishedStateForTest().baseRevision()).isZero();
+		assertThat(valueStore.selectedPredicateReadCount.get())
+				.as("coverage is re-read after rollback changes dictionary lookup identity without a data revision")
+				.isEqualTo(2);
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
+			connection.begin();
+			connection.addStatement(S1, P1, O1);
+			connection.commit();
+		}
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
+			connection.begin();
+			connection.addStatement(S1, P1, O2, G1);
+			connection.commit();
+		}
+		direct.pauseApplierForTest(false);
+		assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(2L);
+
+		RoutingObservation observation = new RoutingObservation();
+		backing.nativeSourceObservationForTest = observation;
+		try (CloseableDataset current = dataset()) {
+			List<Statement> physical = collectLmdbStatements(current, S1, P1);
+			assertThat(physical).containsExactlyInAnyOrder(F.createStatement(S1, P1, O1),
+					F.createStatement(S1, P1, O2, G1));
+			assertThat(collectStatements(current.dataset.getStatements(S1, P1, null)))
+					.containsExactlyInAnyOrderElementsOf(physical);
+			assertThat(observation.events).anyMatch(event -> event.startsWith("access(true:BOUND_ROW"));
+		} finally {
+			backing.nativeSourceObservationForTest = null;
+		}
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@Test
+	void coverageChangesAcrossBothLookupsRestartBuildAfterWritersQuiesce() throws Exception {
+		CoverageBarrierLmdbStore coverageSail = openCoverageBarrierStore(List.of(P1), true, true);
+		CoverageBarrierValueStore valueStore = coverageSail.valueStore;
+		ExecutorService buildCaller = Executors.newSingleThreadExecutor();
+		Future<Boolean> buildResult = null;
+		try {
+			buildResult = buildCaller.submit(direct::buildNowForTest);
+			awaitLatch(valueStore.unresolvedSelectedPredicateRead, "initial selected P1 lookup before first mutation");
+			assertThat(valueStore.selectedPredicateReadResult).isEqualTo(LmdbValue.UNKNOWN_ID);
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(S1, P1, O1);
+				connection.commit();
+			}
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+			valueStore.releaseCoverageRead.countDown();
+
+			awaitLatch(valueStore.refreshedSelectedPredicateRead,
+					"refreshed selected P1 lookup before second dictionary mutation");
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(S2, P2, O2);
+				connection.commit();
+			}
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(2L);
+			valueStore.releaseRefreshedCoverageRead.countDown();
+
+			assertThat(buildResult.get())
+					.as("once both dictionary mutations are complete, coverage must be retried without the delayed retry")
+					.isTrue();
+			assertThat(direct.publishedStateForTest().baseRevision()).isEqualTo(2L);
+			assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(2L);
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(2L);
+
+			RoutingObservation observation = new RoutingObservation();
+			backing.nativeSourceObservationForTest = observation;
+			try (CloseableDataset current = dataset()) {
+				List<Statement> pinnedRows = collectLmdbStatements(current, S1, P1);
+				assertThat(pinnedRows).containsExactly(F.createStatement(S1, P1, O1));
+				assertThat(collectStatements(current.dataset.getStatements(S1, P1, null)))
+						.as("the retried selected adjacency returns the pinned LMDB rows")
+						.containsExactlyElementsOf(pinnedRows);
+				assertThat(observation.events).anyMatch(event -> event.startsWith("access(true:BOUND_ROW"));
+				assertThat(observation.states).anySatisfy(state -> {
+					assertThat(state.adjacencyEligible()).isTrue();
+					assertThat(state.adjacencyExact()).isTrue();
+					assertThat(state.snapshotRevision()).isEqualTo(2L);
+				});
+			} finally {
+				backing.nativeSourceObservationForTest = null;
+			}
+		} finally {
+			valueStore.releaseCoverageRead.countDown();
+			valueStore.releaseRefreshedCoverageRead.countDown();
+			if (buildResult != null) {
+				buildResult.get();
+			}
+			buildCaller.shutdown();
+		}
+	}
+
+	private CoverageBuildWait startCoverageBuildWaitingOnDictionaryWriter(IRI writerValue) throws Exception {
+		CoverageBarrierLmdbStore coverageSail = openCoverageBarrierStore(List.of(P1), true, false);
+		CoverageBarrierValueStore valueStore = coverageSail.valueStore;
+		TxnManager txnManager = backing.getTripleStore().getTxnManager();
+		int availableReadersBeforeBuild = txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1);
+		ExecutorService buildCaller = Executors.newSingleThreadExecutor();
+		Future<Boolean> buildResult = null;
+		try {
+			direct.pauseApplierForTest(true);
+			buildResult = buildCaller.submit(direct::buildNowForTest);
+			awaitLatch(valueStore.unresolvedSelectedPredicateRead,
+					"initial selected P1 lookup before an in-flight dictionary writer");
+			assertThat(valueStore.selectedPredicateReadResult).isEqualTo(LmdbValue.UNKNOWN_ID);
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(S1, P1, O1);
+				connection.commit();
+			}
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+			assertThat(direct.queuedCommitsForTest())
+					.as("the committed row remains queued while the build validates selected coverage")
+					.isEqualTo(1);
+
+			valueStore.startTransaction(true);
+			assertThat(valueStore.storeValue(writerValue)).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+			assertThat(valueStore.valueLookupScope())
+					.as("an unfinished dictionary writer prevents a stable lookup proof")
+					.isNull();
+			valueStore.releaseCoverageRead.countDown();
+			awaitLatch(valueStore.valueLookupStabilityWaitStarted,
+					"the maintenance build waiting for dictionary mutation completion");
+
+			assertThat(direct.snapshotMetrics().activeViews)
+					.as("the rejected build closes its LMDB reader family before waiting for the writer")
+					.isZero();
+			assertThat(txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1))
+					.as("the rejected build releases every pinned read transaction before waiting")
+					.isEqualTo(availableReadersBeforeBuild);
+			assertThat(direct.queuedCommitsForTest())
+					.as("the queued row remains available throughout the dictionary stability wait")
+					.isEqualTo(1);
+			return new CoverageBuildWait(valueStore, buildCaller, buildResult, availableReadersBeforeBuild);
+		} catch (Exception | Error failure) {
+			valueStore.releaseCoverageRead.countDown();
+			valueStore.releaseRefreshedCoverageRead.countDown();
+			try {
+				valueStore.rollback();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			if (buildResult != null) {
+				try {
+					buildResult.get();
+				} catch (Throwable cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+			}
+			buildCaller.shutdown();
+			throw failure;
+		}
+	}
+
+	private void assertQueuedP1RowUsesPublishedAdjacency(RoutingObservation observation) throws IOException {
+		backing.nativeSourceObservationForTest = observation;
+		try (CloseableDataset current = dataset()) {
+			List<Statement> pinnedRows = collectLmdbStatements(current, S1, P1);
+			List<Statement> expected = List.of(F.createStatement(S1, P1, O1));
+			assertThat(pinnedRows).containsExactlyElementsOf(expected);
+			assertThat(collectStatements(current.dataset.getStatements(S1, P1, null)))
+					.as("the published selected index returns the same rows as the pinned LMDB snapshot")
+					.containsExactlyElementsOf(pinnedRows);
+			assertThat(observation.events)
+					.as("the generic SailDataset query actually opens the selected adjacency row path")
+					.anyMatch(event -> event.startsWith("access(true:BOUND_ROW"));
+			assertThat(observation.states).anySatisfy(state -> {
+				assertThat(state.adjacencyEligible()).isTrue();
+				assertThat(state.adjacencyExact()).isTrue();
+				assertThat(state.snapshotRevision()).isEqualTo(1L);
+			});
+		} finally {
+			backing.nativeSourceObservationForTest = null;
+		}
+		assertThat(direct.snapshotMetrics().activeViews).isZero();
+	}
+
+	@ParameterizedTest(name = "dictionary writer {0} wakes coverage retry")
+	@ValueSource(booleans = { true, false })
+	void dictionaryWriterCommitOrRollbackWakesCoverageRetryAndKeepsQueuedCommit(boolean commitWriter)
+			throws Exception {
+		CoverageBuildWait waiting = startCoverageBuildWaitingOnDictionaryWriter(
+				F.createIRI("http://example.org/in-flight-dictionary-writer"));
+		try {
+			if (commitWriter) {
+				waiting.valueStore.commit();
+			} else {
+				waiting.valueStore.rollback();
+			}
+			assertThat(waiting.valueStore.valueLookupScope())
+					.as("the settled dictionary writer publishes a stable lookup proof")
+					.isNotNull();
+			assertThat(waiting.buildResult.get())
+					.as("writer completion wakes the event-driven retry and publishes the exact base")
+					.isTrue();
+			assertThat(direct.publishedStateForTest().baseRevision()).isEqualTo(1L);
+			assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(1L);
+			assertThat(direct.lastCutoverQueuedCommits())
+					.as("the pre-existing queued row was incorporated by the retried base cutover")
+					.isEqualTo(1);
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+			assertQueuedP1RowUsesPublishedAdjacency(new RoutingObservation());
+		} finally {
+			waiting.finish();
+		}
+	}
+
+	@Test
+	void synchronousSailCommitCompletesWhileCoverageRetryWaitsForDictionaryWriter() throws Exception {
+		CoverageBarrierLmdbStore coverageSail = openCoverageBarrierStore(List.of(P1), true, false, true);
+		CoverageBarrierValueStore valueStore = coverageSail.valueStore;
+		ExecutorService queuedBuildCaller = Executors.newSingleThreadExecutor();
+		ExecutorService sailCommitCaller = Executors.newSingleThreadExecutor();
+		CountDownLatch queueAdmissionReached = new CountDownLatch(1);
+		CountDownLatch releaseQueueAdmission = new CountDownLatch(1);
+		CountDownLatch firstCatchUpReached = new CountDownLatch(1);
+		CountDownLatch releaseFirstCatchUp = new CountDownLatch(1);
+		CountDownLatch secondCatchUpReached = new CountDownLatch(1);
+		CountDownLatch releaseSecondCatchUp = new CountDownLatch(1);
+		AtomicInteger catchUpCount = new AtomicInteger();
+		Runnable previousAdmission = direct.beforeApplyQueueAdmissionForTest;
+		Runnable previousCatchUp = direct.beforeOnlineCatchUpForTest;
+		Future<?> sailCommit = null;
+		Future<Boolean> queuedBuild = null;
+		boolean dictionaryWriterOpen = false;
+		try {
+			direct.beforeApplyQueueAdmissionForTest = () -> {
+				queueAdmissionReached.countDown();
+				awaitLatch(releaseQueueAdmission, "synchronous Sail commit queue admission release");
+			};
+			direct.beforeOnlineCatchUpForTest = () -> {
+				int attempt = catchUpCount.incrementAndGet();
+				if (attempt == 1) {
+					firstCatchUpReached.countDown();
+					awaitLatch(releaseFirstCatchUp, "first selected-coverage retry cutover release");
+				} else if (attempt == 2) {
+					secondCatchUpReached.countDown();
+					awaitLatch(releaseSecondCatchUp, "queued verification build cutover release");
+				}
+			};
+
+			assertThat(direct.options().synchronousMaintenance()).isTrue();
+			direct.triggerBuild();
+			assertThat(direct.synchronousUpdatesActivatedForTest())
+					.as("empty-store startup activates synchronous maintenance before the initial build")
+					.isTrue();
+			awaitLatch(valueStore.unresolvedSelectedPredicateRead,
+					"initial selected P1 lookup on the synchronous maintenance executor");
+			assertThat(valueStore.coverageThread.getName()).isEqualTo("lmdb-direct-adjacency-maintenance");
+			assertThat(valueStore.selectedPredicateReadResult).isEqualTo(LmdbValue.UNKNOWN_ID);
+
+			sailCommit = sailCommitCaller.submit(() -> {
+				try (RepositoryConnection connection = repo.getConnection()) {
+					connection.add(S1, P1, O1);
+					connection.commit();
+				}
+			});
+			awaitLatch(queueAdmissionReached,
+					"admitted Sail commit after its physical commit and before delta enqueue");
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+			assertThat(direct.queuedCommitsForTest())
+					.as("the Sail delta is held exactly at its queue-admission boundary")
+					.isZero();
+
+			valueStore.startTransaction(true);
+			dictionaryWriterOpen = true;
+			assertThat(valueStore.storeValue(F.createIRI("http://example.org/synchronous-dictionary-writer")))
+					.isNotEqualTo(LmdbValue.UNKNOWN_ID);
+			assertThat(valueStore.valueLookupScope())
+					.as("an independent real dictionary transaction invalidates stable coverage")
+					.isNull();
+
+			valueStore.releaseCoverageRead.countDown();
+			awaitLatch(valueStore.valueLookupStabilityWaitStarted,
+					"the maintenance executor waiting for the independent dictionary writer");
+			assertThat(direct.snapshotMetrics().activeViews)
+					.as("the rejected coverage attempt releases its LMDB readers before waiting")
+					.isZero();
+			releaseQueueAdmission.countDown();
+			sailCommit.get();
+			assertThat(valueStore.valueLookupScope())
+					.as("the admitted Sail commit completes while the independent dictionary writer remains unfinished")
+					.isNull();
+			assertThat(direct.queuedCommitsForTest())
+					.as("the completed Sail publication remains queued while the maintenance retry waits")
+					.isEqualTo(1);
+
+			queuedBuild = queuedBuildCaller.submit(direct::buildNowForTest);
+			valueStore.commit();
+			dictionaryWriterOpen = false;
+			awaitLatch(firstCatchUpReached, "the first event-driven retry reaching exact cutover");
+			assertThat(direct.queuedCommitsForTest())
+					.as("the first retry sees the admitted Sail delta before applying it")
+					.isEqualTo(1);
+			releaseFirstCatchUp.countDown();
+			awaitLatch(secondCatchUpReached, "the queued build barrier after the event-driven retry published");
+			assertThat(direct.publishedStateForTest().baseRevision()).isEqualTo(1L);
+			assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(1L);
+			assertThat(direct.lastCutoverQueuedCommits())
+					.as("the first retried cutover retained the admitted Sail delta")
+					.isEqualTo(1);
+			releaseSecondCatchUp.countDown();
+			assertThat(queuedBuild.get()).isTrue();
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+			assertQueuedP1RowUsesPublishedAdjacency(new RoutingObservation());
+		} finally {
+			valueStore.releaseCoverageRead.countDown();
+			releaseQueueAdmission.countDown();
+			releaseFirstCatchUp.countDown();
+			releaseSecondCatchUp.countDown();
+			direct.beforeApplyQueueAdmissionForTest = previousAdmission;
+			direct.beforeOnlineCatchUpForTest = previousCatchUp;
+			if (dictionaryWriterOpen) {
+				valueStore.rollback();
+			}
+			if (sailCommit != null) {
+				sailCommit.get();
+			}
+			if (queuedBuild != null) {
+				queuedBuild.get();
+			}
+			sailCommitCaller.shutdown();
+			queuedBuildCaller.shutdown();
+		}
+	}
+
+	@Test
+	void interruptedValueLookupWaitReleasesReadersAndPreservesQueuedCommit() throws Exception {
+		CoverageBuildWait waiting = startCoverageBuildWaitingOnDictionaryWriter(
+				F.createIRI("http://example.org/interrupted-dictionary-writer"));
+		try {
+			Thread maintenanceThread = waiting.valueStore.valueLookupStabilityWaitThread;
+			assertThat(maintenanceThread).isNotNull();
+			maintenanceThread.interrupt();
+			assertThat(waiting.buildResult.get()).isFalse();
+			assertThat(waiting.valueStore.valueLookupScope()).isNull();
+			assertThat(direct.queuedCommitsForTest()).isEqualTo(1);
+			assertThat(direct.snapshotMetrics().activeViews).isZero();
+			assertThat(backing.getTripleStore()
+					.getTxnManager()
+					.availableReadTxnSlots(TripleStore.MAX_READERS, 1))
+							.as("interruption releases the rejected build's transaction family")
+							.isEqualTo(waiting.availableReadersBeforeBuild);
+
+			waiting.valueStore.commit();
+			assertThat(direct.buildNowForTest()).isTrue();
+			assertThat(direct.lastCutoverQueuedCommits()).isEqualTo(1);
+			assertQueuedP1RowUsesPublishedAdjacency(new RoutingObservation());
+		} finally {
+			waiting.finish();
+		}
+	}
+
+	@Test
+	void maintenanceDeferralCancelsValueLookupWaitWithoutHoldingWriter() throws Exception {
+		CoverageBuildWait waiting = startCoverageBuildWaitingOnDictionaryWriter(
+				F.createIRI("http://example.org/deferred-dictionary-writer"));
+		try {
+			direct.deferMaintenanceForInitialImport();
+			assertThat(waiting.buildResult.get()).isFalse();
+			assertThat(waiting.valueStore.valueLookupScope()).isNull();
+			assertThat(direct.queuedCommitsForTest()).isEqualTo(1);
+			assertThat(direct.snapshotMetrics().activeViews).isZero();
+			assertThat(backing.getTripleStore()
+					.getTxnManager()
+					.availableReadTxnSlots(TripleStore.MAX_READERS, 1))
+							.as("maintenance deferral drains the build while leaving the writer transaction open")
+							.isEqualTo(waiting.availableReadersBeforeBuild);
+
+			waiting.valueStore.commit();
+			direct.resumeMaintenanceAfterInitialImport();
+			assertThat(direct.buildNowForTest()).isTrue();
+			assertThat(direct.lastCutoverQueuedCommits()).isEqualTo(1);
+			assertQueuedP1RowUsesPublishedAdjacency(new RoutingObservation());
+		} finally {
+			waiting.finish();
+		}
+	}
+
+	@Test
+	void closeCancelsValueLookupWaitWhileWriterRemainsOpen() throws Exception {
+		CoverageBuildWait waiting = startCoverageBuildWaitingOnDictionaryWriter(
+				F.createIRI("http://example.org/closing-dictionary-writer"));
+		try {
+			direct.close();
+			assertThat(waiting.buildResult.get()).isFalse();
+			assertThat(waiting.valueStore.valueLookupScope()).isNull();
+			assertThat(direct.snapshotMetrics().activeViews).isZero();
+			assertThat(backing.getTripleStore()
+					.getTxnManager()
+					.availableReadTxnSlots(TripleStore.MAX_READERS, 1))
+							.as("close releases all readers before the still-open ValueStore transaction settles")
+							.isEqualTo(waiting.availableReadersBeforeBuild);
+			assertThat(direct.queuedCommitsForTest()).isZero();
+
+			waiting.valueStore.commit();
+			assertThat(waiting.valueStore.valueLookupScope()).isNotNull();
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+		} finally {
+			waiting.finish();
+		}
+	}
+
+	@Test
+	void interruptedCoverageRefreshReleasesPinnedBuildReaders() throws Exception {
+		CoverageBarrierLmdbStore coverageSail = openCoverageBarrierStore(List.of(P1), true, true);
+		CoverageBarrierValueStore valueStore = coverageSail.valueStore;
+		TxnManager txnManager = backing.getTripleStore().getTxnManager();
+		int availableReadersBeforeBuild = txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1);
+		ExecutorService buildCaller = Executors.newSingleThreadExecutor();
+		Future<Boolean> buildResult = null;
+		try {
+			buildResult = buildCaller.submit(direct::buildNowForTest);
+			awaitLatch(valueStore.unresolvedSelectedPredicateRead, "initial selected P1 lookup before cancellation");
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(S1, P1, O1);
+			}
+			assertThat(backing.getTripleStore().getDataRevision()).isEqualTo(1L);
+			valueStore.releaseCoverageRead.countDown();
+			awaitLatch(valueStore.refreshedSelectedPredicateRead, "refreshed P1 lookup with the base family pinned");
+			assertThat(txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1))
+					.as("the refresh barrier is inside coverage validation after the build family pins its readers")
+					.isLessThan(availableReadersBeforeBuild);
+			Thread maintenanceThread = valueStore.refreshedCoverageThread;
+			assertThat(maintenanceThread).isNotNull();
+			maintenanceThread.interrupt();
+			valueStore.releaseRefreshedCoverageRead.countDown();
+			assertThat(buildResult.get()).as("an interrupted coverage proof aborts this build").isFalse();
+			assertThat(txnManager.availableReadTxnSlots(TripleStore.MAX_READERS, 1))
+					.as("the aborted build closes every transaction in its pinned reader family")
+					.isEqualTo(availableReadersBeforeBuild);
+			assertThat(direct.snapshotMetrics().activeViews).isZero();
+		} finally {
+			valueStore.releaseCoverageRead.countDown();
+			valueStore.releaseRefreshedCoverageRead.countDown();
+			if (buildResult != null) {
+				buildResult.get();
+			}
+			buildCaller.shutdown();
+		}
+	}
+
+	private static Statement coverageStatement(Resource subject, IRI predicate, Value object, Resource context) {
+		return context == null ? F.createStatement(subject, predicate, object)
+				: F.createStatement(subject, predicate, object, context);
+	}
+
+	private static void addCoverageTestStatement(LmdbStoreConnection connection, boolean inferred, Resource subject,
+			IRI predicate, Value object, Resource context) throws Exception {
+		if (inferred) {
+			if (context == null) {
+				connection.addInferredStatement(subject, predicate, object);
+			} else {
+				connection.addInferredStatement(subject, predicate, object, context);
+			}
+		} else if (context == null) {
+			connection.addStatement(subject, predicate, object);
+		} else {
+			connection.addStatement(subject, predicate, object, context);
+		}
 	}
 
 	@Test
@@ -1164,6 +2147,28 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 	}
 
+	private static List<Statement> collectLmdbStatements(CloseableDataset dataset, Resource subject, IRI predicate)
+			throws IOException {
+		List<Statement> statements = new ArrayList<>();
+		try (RecordIterator rows = dataset.source.lmdbStatements(dataset.idOf(subject), dataset.idOf(predicate),
+				NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID, null)) {
+			long[] quad;
+			while ((quad = rows.next()) != null) {
+				Resource rowSubject = (Resource) dataset.source.lazyValue(quad[TripleIndex.SUBJ_IDX]);
+				IRI rowPredicate = (IRI) dataset.source.lazyValue(quad[TripleIndex.PRED_IDX]);
+				var rowObject = dataset.source.lazyValue(quad[TripleIndex.OBJ_IDX]);
+				long contextId = Math.max(0, quad[TripleIndex.CONTEXT_IDX]);
+				if (contextId == 0L) {
+					statements.add(F.createStatement(rowSubject, rowPredicate, rowObject));
+				} else {
+					Resource context = (Resource) dataset.source.lazyValue(contextId);
+					statements.add(F.createStatement(rowSubject, rowPredicate, rowObject, context));
+				}
+			}
+		}
+		return statements;
+	}
+
 	private List<String> queryRows(String query) {
 		try (RepositoryConnection connection = repo.getConnection();
 				TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
@@ -1805,17 +2810,24 @@ class LmdbDirectAdjacencyQueryTest {
 		awaitExactViewServesGraphCount();
 
 		try (CloseableDataset dataset = dataset()) {
-			long hitsBefore = direct.snapshotMetrics().lookupHits;
-			assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
-			assertThat(direct.snapshotMetrics().lookupHits)
-					.as("a named-graph count is served by the exact view instead of an LMDB index scan")
-					.isGreaterThan(hitsBefore);
+			try (LmdbStartupReadCounter reads = new LmdbStartupReadCounter()) {
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
+				Map<String, Long> work = reads.operations();
+				assertThat(work.getOrDefault("mdb_get", 0L))
+						.as("the context count uses the exact LMDB context catalog")
+						.isPositive();
+				assertThat(work.getOrDefault("mdb_cursor_get", 0L))
+						.as("the context catalog count does not scan statement records")
+						.isZero();
+				assertThat(direct.snapshotMetrics().lookupHits)
+						.as("context-only counts are served by the exact context catalog")
+						.isEqualTo(hitsBefore);
+			}
 
 			long hitsBeforeDefaultGraph = direct.snapshotMetrics().lookupHits;
 			assertThat(dataset.source.count(-1, -1, -1, 0)).isEqualTo(4);
-			assertThat(direct.snapshotMetrics().lookupHits)
-					.as("the default-graph count is served by the exact view")
-					.isGreaterThan(hitsBeforeDefaultGraph);
+			assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBeforeDefaultGraph);
 
 			long hitsBeforePredicate = direct.snapshotMetrics().lookupHits;
 			assertThat(dataset.source.count(-1, p1, -1, g1)).isEqualTo(1);
@@ -2039,11 +3051,18 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 
 		LmdbPrefixRunPlan.resetMetrics();
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		assertThat(queryRows("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }", "count"))
 				.containsExactly("3");
-		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).as("whole-plane physical candidate inventory:%n%s", plan)
-				.isGreaterThan(0);
-		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
+		assertThat(direct.snapshotMetrics().lookupHits)
+				.as("the scalar count is answered from exact predicate-plane metadata; optimized plan:%n%s", plan)
+				.isGreaterThan(hitsBefore);
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
+				.as("exact predicate-plane cardinality does not open a payload cursor")
+				.isZero();
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get())
+				.as("exact predicate-plane cardinality does not count scanned run rows")
+				.isZero();
 	}
 
 	@Test
@@ -2803,15 +3822,30 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 
 		LmdbPrefixRunPlan.resetMetrics();
-		assertThat(queryRows(fixedQuery, "count"))
-				.containsExactly("3");
-		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
-		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
+		long hitsBeforeScalar = direct.snapshotMetrics().lookupHits;
+		assertThat(queryRows(fixedQuery, "count")).containsExactly("3");
+		assertThat(direct.snapshotMetrics().lookupHits)
+				.as("AUTO serves the scalar count from exact plane metadata")
+				.isGreaterThan(hitsBeforeScalar);
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
+				.as("the exact scalar total does not open a payload cursor")
+				.isZero();
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isZero();
+
 		LmdbPrefixRunPlan.resetMetrics();
 		assertThat(queryRows(predicateQuery, "p", "count"))
 				.containsExactly(P1.stringValue() + "=3", P2.stringValue() + "=1", P3.stringValue() + "=1");
 		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
-		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(5);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get())
+				.as("the grouped query counts predicate-prefix rows")
+				.isEqualTo(5);
+
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRowsVia(fixedQuery, "adjacencyAggregate", "count")).containsExactly("3");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
+				.as("the forced adjacency capability remains available for the same exact result")
+				.isGreaterThan(0);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
 	}
 

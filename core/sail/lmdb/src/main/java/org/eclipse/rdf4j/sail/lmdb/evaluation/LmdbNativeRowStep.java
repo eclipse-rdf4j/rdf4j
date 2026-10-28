@@ -794,6 +794,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			return List.of();
 		}
 		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(originalExpr, arg, layout, row.boundMask());
+		row.enableScalarFilterTelemetry();
+		row.guardScalarFilterAcceptance(cancellation::check);
 		LmdbNativeExplain.addRuntimeMetric(originalExpr, "nativeInvocationsActual", 1L);
 		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		boolean ownsSession = inherited == null;
@@ -880,6 +882,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				offerOrderedStrategies(row, base, values, comparator, emitCap, arbiter);
 				List<BindingSet> ordered = arbiter.select();
 				if (ordered != null) {
+					row.acceptScalarFilterAttempt();
 					return ordered;
 				}
 			} catch (IOException e) {
@@ -1464,7 +1467,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					arg, row, retainedSlots, distinct, originalExpr)) {
 				if (proposal == null)
 					throw new IllegalStateException("Admitted packed bag algebra has no row proposal");
-				return proposal.open();
+				return openDirectScalarFilterAttempt(row, proposal);
 			}
 		}
 		if (forcedStrategy == null && !correlatedEntry
@@ -1474,7 +1477,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				try {
 					LmdbNativeStrategyArbiter.logDirect(originalExpr, "row/join dispatch", wildcardExists.tag,
 							"Wildcard existence owns the parallel round");
-					NativeUnorderedInput opened = wildcardExists.open();
+					NativeUnorderedInput opened = openDirectScalarFilterAttempt(row, wildcardExists);
 					if (opened != null) {
 						return opened;
 					}
@@ -1494,7 +1497,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				try {
 					LmdbNativeStrategyArbiter.logDirect(originalExpr, "row/join dispatch", wildcard.tag,
 							"Wildcard predicate owns the parallel round");
-					NativeUnorderedInput opened = wildcard.open();
+					NativeUnorderedInput opened = openDirectScalarFilterAttempt(row, wildcard);
 					if (opened != null) {
 						return opened;
 					}
@@ -1517,9 +1520,39 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				throw new IllegalStateException("native nested-loop fallback declined");
 			}
 			NativeUnorderedInput selected = selection.value();
+			String winningTag = arbiter.winningTag();
+			if (LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT.equals(winningTag)) {
+				if (distinctPlan == null) {
+					throw new IllegalStateException("ordered DISTINCT won without its selected input plan");
+				}
+				// Replay may reopen the winning rows as a fresh carrier and lose candidate-local dedup metadata.
+				selected.dedupMode = NativeUnorderedInput.DedupMode.ORDERED;
+				LmdbNativeExplain.recordExecutionPath(originalExpr, winningTag);
+				if (row.runtimePlan != null) {
+					row.runtimePlan.activate(winningTag, new SlotPlan[] { distinctPlan.arg });
+				}
+			}
 			selected.observeOnClose(selection);
-			selected.calibrateOnClose(arbiter.winningTag(), arbiter.winningPredictedWork(), startedNanos);
+			selected.calibrateOnClose(winningTag, arbiter.winningPredictedWork(), startedNanos);
 			return selected;
+		}
+	}
+
+	private static NativeUnorderedInput openDirectScalarFilterAttempt(RowState row,
+			LmdbNativeStrategyProposal<NativeUnorderedInput> proposal) throws IOException {
+		NativeScalarFilterAttempt previous = row.scalarFilterAttempt;
+		row.startScalarFilterAttempt();
+		try {
+			NativeUnorderedInput opened = proposal.open();
+			if (opened == null) {
+				row.scalarFilterAttempt = previous;
+			} else {
+				opened.acceptScalarFilterAttempt();
+			}
+			return opened;
+		} catch (IOException | RuntimeException | Error failure) {
+			row.scalarFilterAttempt = previous;
+			throw failure;
 		}
 	}
 
@@ -1889,7 +1922,6 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	}
 
 	private NativeUnorderedInput acceptOrderedDistinct(RowState row, RowCursor cursor) {
-		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT);
 		NativeUnorderedInput input = NativeUnorderedInput.rows(row, cursor);
 		input.dedupMode = NativeUnorderedInput.DedupMode.ORDERED;
 		return input;
@@ -2522,8 +2554,11 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 	final NativeLmdbQuerySource source;
 	BindingSet base;
 	volatile boolean closed;
+	volatile boolean ownerCloseRequested;
+	volatile boolean explicitCancellationRequested;
 	boolean initialized;
 	RowState row;
+	NativeScalarFilterAttempt scalarFilterAttempt;
 	RowCursor cursor;
 	BindingSet next;
 	LmdbFusedSipFactorizedRuntime.Session fusedSession;
@@ -2548,16 +2583,33 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 			return false;
 		}
 		if (next != null) {
+			if (cancellation.isCancellationRequested() && cancellationShouldFail()) {
+				failScalarFilterAttempt(KernelQueryCancelledException.INSTANCE);
+			}
 			return true;
 		}
 		try (NativeExecutionPhaseEvent.InputScope inputScope = inputPhases.enter()) {
 			if (!initialized && !initialize()) {
-				finish(true);
+				if (cancellation.isCancellationRequested() && cancellationShouldFail()) {
+					KernelQueryCancelledException control = KernelQueryCancelledException.INSTANCE;
+					failScalarFilterAttempt(control);
+					finish(false, control);
+				} else {
+					finish(!ownerCloseRequested && !cancellation.isCancellationRequested());
+				}
 				return false;
 			}
 			boolean advanced;
 			try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(fusedSession)) {
 				advanced = row.advance(cursor);
+			}
+			if (cancellation.isCancellationRequested()) {
+				Throwable cancelled = cancellationFailure();
+				if (cancelled != null) {
+					failScalarFilterAttempt(cancelled);
+				}
+				finish(false, cancelled);
+				return false;
 			}
 			if (advanced) {
 				emittedRows++;
@@ -2567,15 +2619,37 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 			finish(true);
 			return false;
 		} catch (KernelQueryCancelledException cancelled) {
-			finish(false);
+			Throwable primary = cancellationShouldFail() ? cancelled : null;
+			if (primary != null) {
+				failScalarFilterAttempt(primary);
+			}
+			finish(false, primary);
 			return false;
 		} catch (IOException e) {
-			finish(false);
+			failScalarFilterAttempt(e);
+			finish(false, e);
 			throw new QueryEvaluationException(e);
 		} catch (RuntimeException | Error e) {
-			finish(false);
+			failScalarFilterAttempt(e);
+			finish(false, e);
 			throw e;
 		}
+	}
+
+	private void failScalarFilterAttempt(Throwable failure) {
+		if (scalarFilterAttempt != null) {
+			scalarFilterAttempt.fail(failure, true);
+		}
+	}
+
+	private boolean cancellationShouldFail() {
+		return explicitCancellationRequested || cancellation.isUpstreamCancellationRequested() || !ownerCloseRequested;
+	}
+
+	private Throwable cancellationFailure() {
+		return cancellation.isCancellationRequested() && cancellationShouldFail()
+				? KernelQueryCancelledException.INSTANCE
+				: null;
 	}
 
 	private boolean initialize() throws IOException {
@@ -2594,6 +2668,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 		}
 		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout,
 				row.boundMask());
+		row.enableScalarFilterTelemetry();
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
 		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		ownsFusedSession = inherited == null;
@@ -2613,6 +2688,8 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 			startedNanos = System.nanoTime();
 			LmdbNativeStrategyArbiter.logDirect(step.originalExpr, "bound BGP dispatch",
 					LmdbNativeAttemptMetrics.PATH_BARE_DIRECT, "Direct cursor for a bound basic graph pattern");
+			row.startScalarFilterAttempt();
+			scalarFilterAttempt = row.scalarFilterAttempt;
 			cursor = step.arg.open(row);
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_DIRECT);
 			if (row.runtimePlan != null) {
@@ -2639,10 +2716,15 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 
 	@Override
 	public void close() {
+		ownerCloseRequested = true;
 		closed = true;
 		cancellation.requestCancellation();
 		synchronized (this) {
-			closeResources(false);
+			Throwable primary = cancellationFailure();
+			if (primary != null) {
+				failScalarFilterAttempt(primary);
+			}
+			finish(false, primary);
 		}
 	}
 
@@ -2651,16 +2733,24 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 		if (closed) {
 			return false;
 		}
+		explicitCancellationRequested = true;
 		cancellation.requestCancellation();
 		return true;
 	}
 
 	private void finish(boolean completed) {
-		closed = true;
-		closeResources(completed);
+		finish(completed, null);
 	}
 
-	private void closeResources(boolean completed) {
+	private void finish(boolean completed, Throwable primary) {
+		closed = true;
+		Throwable failure = closeResources(completed, primary);
+		if (failure != null && (primary == null || failure != primary)) {
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+	}
+
+	private Throwable closeResources(boolean completed, Throwable primary) {
 		if (!evidenceRecorded && startedNanos != 0L) {
 			evidenceRecorded = true;
 			LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeBareDirectNanosActual",
@@ -2670,42 +2760,78 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 		RowCursor activeCursor = cursor;
 		RowState activeRow = row;
 		LmdbFusedSipFactorizedRuntime.Session activeSession = fusedSession;
+		NativeScalarFilterAttempt activeScalarAttempt = scalarFilterAttempt;
 		cursor = null;
-		try {
-			if (activeSession != null) {
-				try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-						.attach(activeSession)) {
-					if (activeCursor != null) {
-						activeCursor.close();
-					}
-					activeSession.recordMaterializationBoundary(emittedRows);
-					if (activeRow != null && activeRow.runtimePlan != null) {
-						activeRow.runtimePlan.fusedTelemetry(activeSession.telemetry());
-					}
-				}
-			} else if (activeCursor != null) {
-				activeCursor.close();
+		Throwable failure = primary;
+		if (failure == null && cancellationFailure() != null) {
+			if (activeScalarAttempt != null) {
+				activeScalarAttempt.fail(KernelQueryCancelledException.INSTANCE, true);
 			}
-			if (completed && activeRow != null) {
-				activeRow.completeRuntimePlan();
-			}
-		} finally {
-			try {
-				if (ownsFusedSession && activeSession != null) {
-					activeSession.close();
-				}
-				if (completed) {
-					inputPhases.complete();
-				}
-			} finally {
-				inputPhases.close();
-			}
-			fusedSession = null;
-			step = null;
-			base = null;
-			row = null;
-			next = null;
 		}
+		LmdbFusedSipFactorizedRuntime.Scope sessionScope = null;
+		if (activeSession != null) {
+			try {
+				sessionScope = LmdbFusedSipFactorizedRuntime.attach(activeSession);
+			} catch (RuntimeException | Error problem) {
+				failure = KernelRuntime.closeResource(() -> {
+					throw problem;
+				}, failure);
+			}
+		}
+		failure = KernelRuntime.closeResource(activeCursor, failure);
+		if (activeSession != null && sessionScope != null) {
+			try {
+				activeSession.recordMaterializationBoundary(emittedRows);
+				if (activeRow != null && activeRow.runtimePlan != null) {
+					activeRow.runtimePlan.fusedTelemetry(activeSession.telemetry());
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = KernelRuntime.closeResource(() -> {
+					throw problem;
+				}, failure);
+			}
+			failure = KernelRuntime.closeResource(sessionScope, failure);
+		}
+		if (completed && failure == null && activeRow != null) {
+			try {
+				activeRow.completeRuntimePlan();
+			} catch (RuntimeException | Error problem) {
+				failure = KernelRuntime.closeResource(() -> {
+					throw problem;
+				}, failure);
+			}
+		}
+		if (ownsFusedSession) {
+			failure = KernelRuntime.closeResource(activeSession, failure);
+		}
+		if (completed && failure == null) {
+			try {
+				inputPhases.complete();
+			} catch (RuntimeException | Error problem) {
+				failure = KernelRuntime.closeResource(() -> {
+					throw problem;
+				}, failure);
+			}
+		}
+		failure = KernelRuntime.closeResource(inputPhases, failure);
+		if (failure == null && activeScalarAttempt != null && cancellationFailure() != null) {
+			activeScalarAttempt.fail(KernelQueryCancelledException.INSTANCE, true);
+		}
+		if (failure != null && activeScalarAttempt != null) {
+			activeScalarAttempt.fail(failure, true);
+		} else if (activeScalarAttempt != null) {
+			activeScalarAttempt.accept();
+		}
+		if (activeRow != null && activeRow.scalarFilterAttempt == activeScalarAttempt && activeScalarAttempt != null) {
+			activeRow.scalarFilterAttempt = activeScalarAttempt.parent();
+		}
+		scalarFilterAttempt = null;
+		fusedSession = null;
+		step = null;
+		base = null;
+		row = null;
+		next = null;
+		return failure;
 	}
 }
 
@@ -2718,9 +2844,13 @@ final class NativeUnorderedInput implements AutoCloseable {
 	NativeBatch batch;
 	LmdbNativeFactorizedRows factorizedAttempt;
 	LmdbNativeAttemptMetrics factorizedAttemptMetrics;
+	NativeScalarFilterAttempt scalarFilterAttempt;
+	boolean selectedInputAccepted;
 	boolean materializedRowsClaimed;
 	boolean closed;
 	boolean exhausted;
+	Runnable scalarFilterAcceptanceGuard;
+	double expectedEarlyCloseRows = Double.NaN;
 
 	/**
 	 * Who owes the DISTINCT dedup for this input. {@code HASH}: the caller runs its global hash tracker (any ordinary
@@ -2743,6 +2873,8 @@ final class NativeUnorderedInput implements AutoCloseable {
 
 	private NativeUnorderedInput(RowState row) {
 		this.row = row;
+		this.scalarFilterAttempt = row.scalarFilterAttempt;
+		this.scalarFilterAcceptanceGuard = row.scalarFilterAcceptanceGuard;
 	}
 
 	static NativeUnorderedInput rows(RowState row, RowCursor cursor) {
@@ -2791,6 +2923,42 @@ final class NativeUnorderedInput implements AutoCloseable {
 			throw new IllegalStateException("adaptive observation already attached");
 		}
 		adaptiveSelection = selection;
+		acceptScalarFilterAttempt();
+	}
+
+	/** Explicit accepted-winner handoff, including paths without scalar telemetry or a selection object. */
+	void acceptScalarFilterAttempt() {
+		selectedInputAccepted = true;
+	}
+
+	void guardScalarFilterAcceptance(Runnable guard) {
+		scalarFilterAcceptanceGuard = guard;
+	}
+
+	void failScalarFilterAttempt(Throwable failure, boolean propagate) {
+		if (scalarFilterAttempt != null) {
+			scalarFilterAttempt.fail(failure, propagate);
+		}
+	}
+
+	boolean advance() throws IOException {
+		try {
+			return row.advance(cursor);
+		} catch (IOException | RuntimeException | Error failure) {
+			// This input owns the attempt even if its row later restores or replaces the mutable carrier pointer.
+			// Keep a trial-private failure local until its arbiter decides whether it escapes.
+			failScalarFilterAttempt(failure, false);
+			throw failure;
+		}
+	}
+
+	int fill() throws IOException {
+		try {
+			return row.fill(batchCursor, batch);
+		} catch (IOException | RuntimeException | Error failure) {
+			failScalarFilterAttempt(failure, false);
+			throw failure;
+		}
 	}
 
 	void firstOutput() {
@@ -2806,10 +2974,8 @@ final class NativeUnorderedInput implements AutoCloseable {
 
 	/** Reports a LIMIT-satisfied close so the observation stays eligible for its consumed fraction (G5). */
 	void expectedEarlyCloseAfterRows(double rows) {
-		LmdbNativeStrategySelection<NativeUnorderedInput> selection = adaptiveSelection;
-		if (selection != null && selection.observation() != null) {
-			selection.observation().expectedEarlyCloseAfterRows(rows);
-		}
+		// Defer selection completion until producer cleanup and the owner's final acceptance guard both succeed.
+		expectedEarlyCloseRows = rows;
 	}
 
 	void markExhausted() {
@@ -2839,54 +3005,73 @@ final class NativeUnorderedInput implements AutoCloseable {
 		closed = true;
 		LmdbNativeStrategySelection<NativeUnorderedInput> selection = adaptiveSelection;
 		adaptiveSelection = null;
-		boolean cleanupSucceeded = false;
-		boolean producerCleanupSucceeded = false;
-		boolean selectionCloseSucceeded = selection == null;
-		try {
-			if (batchCursor != null) {
-				batchCursor.close();
-			}
-			cleanupSucceeded = true;
-		} catch (RuntimeException | Error failure) {
-			if (selection != null) {
-				selection.failed(failure);
-			}
-			throw failure;
-		} finally {
+		Throwable failure = KernelRuntime.closeResource(batchCursor, null);
+		batchCursor = null;
+		failure = KernelRuntime.closeResource(cursor, failure);
+		cursor = null;
+		boolean producerCleanupSucceeded = failure == null;
+		if (failure == null && selectedInputAccepted && scalarFilterAcceptanceGuard != null) {
 			try {
-				if (cursor != null) {
-					cursor.close();
-				}
-				commitFactorizedAttemptIfEngaged();
-				if (selection != null && cleanupSucceeded && completed) {
-					selection.exhausted();
-				}
-				producerCleanupSucceeded = cleanupSucceeded;
-			} catch (RuntimeException | Error failure) {
-				if (selection != null) {
-					selection.failed(failure);
-				}
-				throw failure;
-			} finally {
-				if (selection != null) {
-					selection.close();
-				}
-				selectionCloseSucceeded = true;
-				batchCursor = null;
-				cursor = null;
-				batch = null;
-				if (calibrationTag != null) {
-					// only a completed run is calibration evidence (gap-analysis C6): a LIMIT or early close
-					// spans a fraction of the predicted work, and charging the full prediction against the
-					// shorter elapsed time deflates nanos-per-unit for often-truncated strategies
-					if (completed && producerCleanupSucceeded && selectionCloseSucceeded) {
-						LmdbNativeCostCalibration.record(calibrationTag, calibrationWork,
-								System.nanoTime() - calibrationStartedNanos);
-					}
-					calibrationTag = null;
-				}
+				scalarFilterAcceptanceGuard.run();
+			} catch (RuntimeException | Error problem) {
+				failure = KernelRuntime.closeResource(() -> {
+					throw problem;
+				}, failure);
 			}
 		}
+		if (failure == null) {
+			try {
+				commitFactorizedAttemptIfEngaged();
+			} catch (RuntimeException | Error problem) {
+				failure = KernelRuntime.closeResource(() -> {
+					throw problem;
+				}, failure);
+			}
+		}
+		if (selection != null && failure == null && producerCleanupSucceeded && selectedInputAccepted) {
+			try {
+				if (!Double.isNaN(expectedEarlyCloseRows)) {
+					LmdbNativeCostObservation observation = selection.observation();
+					if (observation != null) {
+						observation.expectedEarlyCloseAfterRows(expectedEarlyCloseRows);
+					}
+				} else if (completed) {
+					selection.exhausted();
+				}
+			} catch (RuntimeException | Error problem) {
+				failure = KernelRuntime.closeResource(() -> {
+					throw problem;
+				}, failure);
+			}
+		}
+		if (selection != null && failure != null) {
+			selection.failed(failure);
+		}
+		failure = KernelRuntime.closeResource(selection, failure);
+		boolean selectionCloseSucceeded = failure == null;
+		if (selection != null && !selectionCloseSucceeded) {
+			selection.failed(failure);
+		}
+		batch = null;
+		if (failure != null) {
+			failScalarFilterAttempt(failure, true);
+		} else if (selectedInputAccepted && scalarFilterAttempt != null) {
+			scalarFilterAttempt.accept();
+		}
+		if (scalarFilterAttempt != null && row.scalarFilterAttempt == scalarFilterAttempt) {
+			row.scalarFilterAttempt = scalarFilterAttempt.parent();
+		}
+		if (calibrationTag != null) {
+			// only a completed run is calibration evidence (gap-analysis C6): a LIMIT or early close
+			// spans a fraction of the predicted work, and charging the full prediction against the
+			// shorter elapsed time deflates nanos-per-unit for often-truncated strategies
+			if (completed && failure == null && producerCleanupSucceeded && selectionCloseSucceeded) {
+				LmdbNativeCostCalibration.record(calibrationTag, calibrationWork,
+						System.nanoTime() - calibrationStartedNanos);
+			}
+			calibrationTag = null;
+		}
+		KernelRuntime.rethrowCloseFailure(failure);
 	}
 }
 
@@ -2907,38 +3092,60 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 		if (active == null || active.closed) {
 			return false;
 		}
-		if (active.batchCursor != null) {
-			while (batchIndex >= active.batch.selectedCount) {
-				int filled = active.row.fill(active.batchCursor, active.batch);
-				if (filled == 0) {
-					active.markExhausted();
-					return false;
-				}
-				batchIndex = 0;
-				if (active.batch.selectedCount == 0) {
-					continue;
-				}
-			}
-			int physicalRow = active.batch.selection[batchIndex++];
-			active.batch.copyToRow(physicalRow, active.row.slots);
-			active.row.recomputeBoundMask();
-			active.firstOutput();
-			return true;
-		}
-		if (repeatedFactorizedRows > 0L) {
-			repeatedFactorizedRows--;
-			return true;
-		}
-		boolean advanced = active.row.advance(active.cursor);
-		active.commitFactorizedAttemptIfEngaged();
-		if (!advanced) {
-			active.markExhausted();
+		if (cancellationRequested(active)) {
 			return false;
 		}
-		active.firstOutput();
-		if (active.cursor instanceof FactorizedRowCursor) {
-			repeatedFactorizedRows = ((FactorizedRowCursor) active.cursor).multiplicity() - 1L;
+		try {
+			if (active.batchCursor != null) {
+				while (batchIndex >= active.batch.selectedCount) {
+					int filled = active.fill();
+					if (cancellationRequested(active)) {
+						return false;
+					}
+					if (filled == 0) {
+						active.markExhausted();
+						return false;
+					}
+					batchIndex = 0;
+					if (active.batch.selectedCount == 0) {
+						continue;
+					}
+				}
+				int physicalRow = active.batch.selection[batchIndex++];
+				active.batch.copyToRow(physicalRow, active.row.slots);
+				active.row.recomputeBoundMask();
+				active.firstOutput();
+				return true;
+			}
+			if (repeatedFactorizedRows > 0L) {
+				repeatedFactorizedRows--;
+				return true;
+			}
+			boolean advanced = active.advance();
+			if (cancellationRequested(active)) {
+				return false;
+			}
+			active.commitFactorizedAttemptIfEngaged();
+			if (!advanced) {
+				active.markExhausted();
+				return false;
+			}
+			active.firstOutput();
+			if (active.cursor instanceof FactorizedRowCursor) {
+				repeatedFactorizedRows = ((FactorizedRowCursor) active.cursor).multiplicity() - 1L;
+			}
+			return true;
+		} catch (IOException | RuntimeException | Error failure) {
+			active.failScalarFilterAttempt(failure, failure != LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			throw failure;
 		}
+	}
+
+	private boolean cancellationRequested(NativeUnorderedInput active) {
+		if (!active.row.cancellation.isCancellationRequested()) {
+			return false;
+		}
+		active.failScalarFilterAttempt(KernelQueryCancelledException.INSTANCE, true);
 		return true;
 	}
 
@@ -2971,6 +3178,7 @@ final class NativeProbeBufferHarness implements LmdbNativeProbeHarness<NativeUno
 		int mark = row.mark();
 		long[] entrySnapshot = row.slots.clone();
 		RowCursor rows = input.materializedRows();
+		boolean closeAttempted = false;
 		try {
 			long[] arena = new long[Math.max(slotCount, Math.min(rowCap, 256) * slotCount)];
 			int buffered = 0;
@@ -3000,17 +3208,24 @@ final class NativeProbeBufferHarness implements LmdbNativeProbeHarness<NativeUno
 			}
 			// natural exhaustion: close the trial's native resources; the probe observation is not attached to the
 			// input, so this cannot double-record, and legacy calibration was never armed on a probe
+			closeAttempted = true;
 			rows.close();
-			return NativeUnorderedInput.rows(row, new NativeProbeReplayCursor(row, arena, buffered, slotCount));
+			NativeUnorderedInput replay = NativeUnorderedInput.rows(row,
+					new NativeProbeReplayCursor(row, arena, buffered, slotCount));
+			replay.scalarFilterAttempt = input.scalarFilterAttempt;
+			return replay;
 		} catch (IOException | RuntimeException | Error failure) {
-			try {
-				rows.close();
-			} catch (RuntimeException | Error cleanupFailure) {
-				if (cleanupFailure != failure) {
-					failure.addSuppressed(cleanupFailure);
-				}
+			Throwable retained = closeAttempted ? failure : KernelRuntime.closeResource(rows, failure);
+			if (retained instanceof IOException ioException) {
+				throw ioException;
 			}
-			throw failure;
+			if (retained instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (retained instanceof Error error) {
+				throw error;
+			}
+			throw new IOException("bounded native probe cleanup failed", retained);
 		} finally {
 			restore(row, mark, entrySnapshot);
 		}
@@ -3078,6 +3293,8 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 	long remainingLimit;
 	long remainingMultiplicity;
 	volatile boolean closed;
+	volatile boolean ownerCloseRequested;
+	volatile boolean explicitCancellationRequested;
 	boolean initialized;
 	boolean distinctHandledByCursor;
 	RowState row;
@@ -3111,6 +3328,10 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			return false;
 		}
 		if (next != null) {
+			Throwable cancellation = cancellationFailure();
+			if (cancellation != null) {
+				failScalarFilterAttempt(cancellation);
+			}
 			return true;
 		}
 		try (NativeExecutionPhaseEvent.InputScope inputScope = inputPhases.enter()) {
@@ -3119,19 +3340,55 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 				// A satisfied LIMIT returns null without asking the producer for another row. Likewise, a cooperative
 				// cancellation may stop a cursor loop before it observes EOF. Neither case is producer exhaustion, so
 				// close the selected input as a partial run and keep it out of completed calibration evidence.
-				finish(remainingLimit != 0L && !cancellation.isCancellationRequested());
+				Throwable cancellation = cancellationFailure();
+				if (cancellation != null) {
+					failScalarFilterAttempt(cancellation);
+				}
+				boolean completed = remainingLimit != 0L && cancellation == null && !ownerCloseRequested && !closed;
+				finish(completed, cancellation);
 			}
 			return next != null;
 		} catch (KernelQueryCancelledException cancelled) {
-			finish(false);
+			Throwable primary = cancellationShouldFail() ? cancelled : null;
+			if (primary != null) {
+				failScalarFilterAttempt(primary);
+			}
+			finish(false, primary);
 			return false;
 		} catch (IOException e) {
-			finish(false);
+			failScalarFilterAttempt(e);
+			finish(false, e);
 			throw new QueryEvaluationException(e);
 		} catch (RuntimeException | Error e) {
-			finish(false);
+			failScalarFilterAttempt(e);
+			finish(false, e);
 			throw e;
 		}
+	}
+
+	private void failScalarFilterAttempt(Throwable failure) {
+		boolean propagate = failure != LmdbNativeProbeDeadlineExceeded.INSTANCE;
+		NativeUnorderedInput activeInput = unorderedInput;
+		if (activeInput != null) {
+			activeInput.failScalarFilterAttempt(failure, propagate);
+		} else if (propagate) {
+			RowState activeRow = row;
+			if (activeRow != null) {
+				activeRow.failScalarFilterAttempt(failure, true);
+			}
+		}
+	}
+
+	private boolean cancellationShouldFail() {
+		return remainingLimit != 0L
+				&& (explicitCancellationRequested || cancellation.isUpstreamCancellationRequested()
+						|| !ownerCloseRequested);
+	}
+
+	private Throwable cancellationFailure() {
+		return cancellation.isCancellationRequested() && cancellationShouldFail()
+				? KernelQueryCancelledException.INSTANCE
+				: null;
 	}
 
 	private BindingSet getNextElement() throws IOException {
@@ -3142,6 +3399,13 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			return null;
 		}
 		if (closed) {
+			return null;
+		}
+		if (cancellation.isCancellationRequested()) {
+			Throwable cancellation = cancellationFailure();
+			if (cancellation != null) {
+				failScalarFilterAttempt(cancellation);
+			}
 			return null;
 		}
 		if (remainingMultiplicity > 0) {
@@ -3157,7 +3421,14 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		}
 
 		while (!closed && !cancellation.isCancellationRequested()) {
-			boolean advanced = row.advance(cursor);
+			boolean advanced = unorderedInput.advance();
+			if (cancellation.isCancellationRequested()) {
+				Throwable cancellation = cancellationFailure();
+				if (cancellation != null) {
+					failScalarFilterAttempt(cancellation);
+				}
+				return null;
+			}
 			if (unorderedInput != null) {
 				unorderedInput.commitFactorizedAttemptIfEngaged();
 			}
@@ -3199,7 +3470,14 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 	private BindingSet getNextBatchElement() throws IOException {
 		while (!closed && !cancellation.isCancellationRequested()) {
 			if (batchIndex >= batch.selectedCount) {
-				int filled = row.fill(batchCursor, batch);
+				int filled = unorderedInput.fill();
+				if (cancellation.isCancellationRequested()) {
+					Throwable cancellation = cancellationFailure();
+					if (cancellation != null) {
+						failScalarFilterAttempt(cancellation);
+					}
+					return null;
+				}
 				if (filled == 0) {
 					return null;
 				}
@@ -3259,6 +3537,13 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 				: NativeTupleDistinctPlan.global(step.arg, step.sourceSlots);
 		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, distinctPlan.arg, step.layout,
 				row.boundMask());
+		row.enableScalarFilterTelemetry();
+		row.guardScalarFilterAcceptance(() -> {
+			Throwable cancellation = cancellationFailure();
+			if (cancellation != null) {
+				row.failScalarFilterAttempt(cancellation, true);
+			}
+		});
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
 		if (step.entryPath != null) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, step.entryPath);
@@ -3307,10 +3592,15 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 
 	@Override
 	public void close() {
+		ownerCloseRequested = true;
 		closed = true;
 		cancellation.requestCancellation();
 		synchronized (this) {
-			closeResources(false);
+			Throwable primary = cancellationFailure();
+			if (primary != null) {
+				failScalarFilterAttempt(primary);
+			}
+			finish(false, primary);
 		}
 	}
 
@@ -3319,16 +3609,24 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		if (closed) {
 			return false;
 		}
+		explicitCancellationRequested = true;
 		cancellation.requestCancellation();
 		return true;
 	}
 
 	private void finish(boolean completed) {
-		closed = true;
-		closeResources(completed);
+		finish(completed, null);
 	}
 
-	private void closeResources(boolean completed) {
+	private void finish(boolean completed, Throwable primary) {
+		closed = true;
+		Throwable failure = closeResources(completed, primary);
+		if (failure != null && (primary == null || failure != primary)) {
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+	}
+
+	private Throwable closeResources(boolean completed, Throwable primary) {
 		NativeUnorderedInput activeInput = unorderedInput;
 		unorderedInput = null;
 		RowCursor activeCursor = cursor;
@@ -3336,43 +3634,66 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		BatchCursor activeBatchCursor = batchCursor;
 		RowState activeRow = row;
 		batchCursor = null;
-		boolean cleanupSucceeded = false;
-		try {
+		Throwable failure = primary;
+		if (failure == null && cancellationFailure() != null) {
 			if (activeInput != null) {
-				activeInput.close(completed);
-			} else if (activeBatchCursor != null) {
-				activeBatchCursor.close();
-			}
-		} finally {
-			try {
-				if (activeInput == null && activeCursor != null) {
-					activeCursor.close();
-				}
-				cleanupSucceeded = true;
-			} finally {
-				step = null;
-				base = null;
-				if (distinctRows != null) {
-					distinctRows.commitMetrics();
-				}
-				distinctRows = null;
-				distinctPlan = null;
-				next = null;
-				repeated = null;
-				values = null;
-				row = null;
-				batch = null;
-				batchIndex = 0;
-				remainingMultiplicity = 0;
-				if (completed && cleanupSucceeded && activeRow != null) {
-					activeRow.completeRuntimePlan();
-				}
-				if (completed && cleanupSucceeded) {
-					inputPhases.complete();
-				}
-				inputPhases.close();
+				activeInput.failScalarFilterAttempt(KernelQueryCancelledException.INSTANCE, true);
+			} else if (activeRow != null) {
+				activeRow.failScalarFilterAttempt(KernelQueryCancelledException.INSTANCE, true);
 			}
 		}
+		if (activeInput != null) {
+			failure = KernelRuntime.closeResource(activeInput, failure);
+		} else {
+			failure = KernelRuntime.closeResource(activeBatchCursor, failure);
+			failure = KernelRuntime.closeResource(activeCursor, failure);
+		}
+		if (failure != null && activeInput == null && activeRow != null) {
+			activeRow.failScalarFilterAttempt(failure, true);
+		}
+		if (distinctRows != null) {
+			try {
+				distinctRows.commitMetrics();
+			} catch (RuntimeException | Error problem) {
+				failure = KernelRuntime.closeResource(() -> {
+					throw problem;
+				}, failure);
+			}
+		}
+		if (completed && failure == null && activeRow != null) {
+			try {
+				activeRow.completeRuntimePlan();
+			} catch (RuntimeException | Error problem) {
+				failure = KernelRuntime.closeResource(() -> {
+					throw problem;
+				}, failure);
+			}
+		}
+		if (completed && failure == null) {
+			try {
+				inputPhases.complete();
+			} catch (RuntimeException | Error problem) {
+				failure = KernelRuntime.closeResource(() -> {
+					throw problem;
+				}, failure);
+			}
+		}
+		failure = KernelRuntime.closeResource(inputPhases, failure);
+		if (failure != null) {
+			failScalarFilterAttempt(failure);
+		}
+		step = null;
+		base = null;
+		distinctRows = null;
+		distinctPlan = null;
+		next = null;
+		repeated = null;
+		values = null;
+		row = null;
+		batch = null;
+		batchIndex = 0;
+		remainingMultiplicity = 0;
+		return failure;
 	}
 }
 

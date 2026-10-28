@@ -2694,6 +2694,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				build.cancel(true);
 			}
 		}
+		if (valueStore != null) {
+			valueStore.signalValueLookupWaiters();
+		}
 		synchronized (applyQueue) {
 			applyQueue.notifyAll();
 		}
@@ -3027,8 +3030,23 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private void buildOnce() {
+		while (buildAttempt()) {
+			// A rejected family is already closed and unpublished futures have been completed by the attempt's
+			// finally block. Writers may finish without this executor, so wait for dictionary mutation completion
+			// without retaining an LMDB reader or blocking later writes.
+			try {
+				valueStore.awaitValueLookupStability(() -> closed || maintenanceDeferred);
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				return;
+			}
+		}
+	}
+
+	/** @return true only when selected coverage must be reacquired after a concurrent mutation. */
+	private boolean buildAttempt() {
 		if (closed || maintenanceDeferred || options.memoryRefused()) {
-			return;
+			return false;
 		}
 		metrics.recordBuildStarted();
 		maintenanceUnavailable = false;
@@ -3037,9 +3055,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		try {
 			if (!suspendSynchronousPublicationForBuild()) {
 				metrics.recordBuildAborted();
-				return;
+				return false;
 			}
-			LmdbAdjacencyCoverage coverage;
+			long coverageRevision = tripleStore.getDataRevision();
+			Object coverageScope = selectedCoverageLookupScope();
+			LmdbAdjacencyCoverage coverage = resolveCoverage();
 			LmdbInMemoryAdjacencyIndex index;
 			long baseRevision;
 			GapMarker capturedGap;
@@ -3055,15 +3075,19 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore,
 					options.buildThreads())) {
 				baseRevision = sourceFamily.snapshotRevision();
+				coverage = coverageForSnapshot(coverage, coverageRevision, coverageScope, baseRevision);
+				if (coverage == null) {
+					// The selected dictionary changed around snapshot acquisition. Preserve queued deltas and
+					// retry after the mutation settles rather than publish a partial base.
+					metrics.recordBuildAborted();
+					lastBuildFailureDescription = "selected predicate coverage changed during snapshot acquisition";
+					maintenanceState = MaintenanceState.EMPTY;
+					return !closed && !maintenanceDeferred && !Thread.currentThread().isInterrupted();
+				}
 				Runnable afterSnapshot = afterBuildSnapshotForTest;
 				if (afterSnapshot != null) {
 					afterSnapshot.run();
 				}
-				// Resolve selected predicates only after pinning: a dictionary ID always commits before the triples
-				// that use it, so every selected predicate with rows in this snapshot resolves. Resolved earlier, a
-				// predicate first committed in between would leave its rows out of the base, and its next delta would
-				// then treat it as absent from the base and drop them.
-				coverage = resolveCoverage();
 				account.beginProgressLogging();
 				logger.info("Creating in-memory adjacency structures: format=paged-csf, snapshotRevision={}, {}",
 						baseRevision, account.memoryUsageSummary());
@@ -3118,7 +3142,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			if (maintenanceDeferred) {
 				metrics.recordBuildAborted();
 				maintenanceState = MaintenanceState.EMPTY;
-				return;
+				return false;
 			}
 			retryAfterFailure = !options.failOnMaintenanceError();
 			lastBuildFailureDescription = describeFailure(e);
@@ -3141,6 +3165,55 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				scheduleBuildRetry();
 			}
 			signalWriteAdmission();
+		}
+		return false;
+	}
+
+	/** Returns a dictionary generation proof only when selected coverage depends on dictionary IDs. */
+	private Object selectedCoverageLookupScope() throws IOException {
+		return options.coverage() == DirectAdjacencyCoverage.SELECTED && valueStore != null
+				? valueStore.valueLookupScope()
+				: null;
+	}
+
+	/**
+	 * Bind selected predicate resolution to the statement snapshot. A stable lookup scope proves that the dictionary
+	 * mapping (including absence) did not change while the family's revision was pinned. If acquisition crossed a
+	 * change, one fresh lookup may still certify the already pinned family while it remains current. Otherwise the
+	 * caller closes that family and a coalesced retry waits for dictionary mutation completion.
+	 */
+	private LmdbAdjacencyCoverage coverageForSnapshot(LmdbAdjacencyCoverage coverage, long coverageRevision,
+			Object coverageScope, long snapshotRevision) throws IOException {
+		if (options.coverage() != DirectAdjacencyCoverage.SELECTED || valueStore == null) {
+			return coverage;
+		}
+		if (coverageScope != null && coverageRevision == snapshotRevision
+				&& coverageScope == valueStore.valueLookupScope()) {
+			return coverage;
+		}
+		if (closed || maintenanceDeferred || Thread.currentThread().isInterrupted()) {
+			return null;
+		}
+		Object refreshedScope = valueStore.valueLookupScope();
+		if (refreshedScope == null) {
+			return null;
+		}
+		LmdbAdjacencyCoverage refreshed = resolveCoverage();
+		if (refreshedScope != valueStore.valueLookupScope()) {
+			return null;
+		}
+		var lockManager = tripleStore.getTxnManager().lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.readLock();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			return null;
+		}
+		try {
+			return tripleStore.getDataRevision() == snapshotRevision ? refreshed : null;
+		} finally {
+			lockManager.unlockRead(stamp);
 		}
 	}
 
@@ -3508,6 +3581,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		// that publication before the executor quiesces closes native arenas underneath the applier. Stop admission
 		// first, wait without holding publicationLock (applyOne needs it to finish), then release the publication.
 		completeUnavailablePublications();
+		if (valueStore != null) {
+			valueStore.signalValueLookupWaiters();
+		}
 		openWriteAdmission();
 		synchronized (applyQueue) {
 			// Admission barrier: an enqueuer that observed the pre-close state is now either visible in the queue or
@@ -4020,6 +4096,57 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	boolean offersUniversalCandidate(LmdbAdjacencyReadView view) {
 		return exactFullSnapshot(view);
+	}
+
+	boolean mayOfferStatementAccess(LmdbAdjacencyReadView view) {
+		return view != null && view.servesSnapshot() && !closed && options.mode() == DirectAdjacencyMode.PREFER
+				&& !writeTransactionBlocksAdjacency();
+	}
+
+	long predicateSweepWorkUpper(LmdbAdjacencyReadView view) {
+		if (!offersUniversalCandidate(view)) {
+			return -1L;
+		}
+		LmdbAdjacencyOverlaySet overlays = view.state().overlays();
+		if (overlays != null) {
+			for (int i = 0; i < overlays.generationCount(); i++) {
+				if (overlays.generation(i).revision() <= view.snapshotRevision()) {
+					// A predicate sweep may revisit obsolete overlay versions, for which the current row count
+					// is not an upper bound. Preserve the candidate with an unknown ceiling.
+					return -2L;
+				}
+			}
+		}
+		return view.state().planeStatistics().predicateDomain().size();
+	}
+
+	/** Upper bound for node-predicate directory work, or -1 when this view cannot offer that access. */
+	long nodePredicateWorkUpper(LmdbAdjacencyReadView view, boolean bySubject, boolean explicit) {
+		if (!mayOfferStatementAccess(view) || !nodePredicateServingEnabled()) {
+			return -1L;
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		int plane = plane(bySubject, explicit);
+		if (state.base() == null || !state.base().coverage().isFull()
+				|| !state.base().supportsPredicateEnumeration(plane)) {
+			return -1L;
+		}
+		long rows = state.base().nodePredicateIndex().incidenceCount(plane);
+		long sources = 1L;
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		if (overlays != null) {
+			for (int i = 0; i < overlays.generationCount(); i++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+				if (generation.revision() <= view.snapshotRevision()) {
+					rows = LmdbUtil.saturatedAdd(rows, generation.rowCount());
+					sources++;
+				}
+			}
+		}
+		// Each merge round consumes at least one directory row. It can examine every active head and then
+		// resolve every matching head, so at most two operations per source are charged per round.
+		long perRound = sources * 2L;
+		return rows > Long.MAX_VALUE / perRound ? Long.MAX_VALUE : rows * perRound;
 	}
 
 	RecordIterator tryOpenUniversal(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,

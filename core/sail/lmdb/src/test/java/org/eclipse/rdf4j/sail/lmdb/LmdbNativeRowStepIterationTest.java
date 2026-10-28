@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -27,8 +28,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -43,9 +46,13 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeRowStepIterationTest {
@@ -66,7 +73,9 @@ class LmdbNativeRowStepIterationTest {
 		LmdbNativeCostCalibration.reset();
 		try {
 			for (int i = 0; i < 8; i++) {
-				NativeUnorderedInput truncated = NativeUnorderedInput.rows(null, new LifecycleOnlyCursor());
+				NativeUnorderedInput truncated = NativeUnorderedInput.rows(
+						new RowState(null, NativeSlotLayout.empty(), EmptyBindingSet.getInstance()),
+						new LifecycleOnlyCursor());
 				truncated.calibrateOnClose("scratch-early-close-tag", 5_000D, System.nanoTime());
 				truncated.close(false);
 			}
@@ -76,7 +85,9 @@ class LmdbNativeRowStepIterationTest {
 							.isEqualTo(1_000D);
 
 			for (int i = 0; i < 8; i++) {
-				NativeUnorderedInput completed = NativeUnorderedInput.rows(null, new LifecycleOnlyCursor());
+				NativeUnorderedInput completed = NativeUnorderedInput.rows(
+						new RowState(null, NativeSlotLayout.empty(), EmptyBindingSet.getInstance()),
+						new LifecycleOnlyCursor());
 				completed.calibrateOnClose("scratch-completed-tag", 5_000D, System.nanoTime() - 1_000_000L);
 				completed.close(true);
 			}
@@ -100,7 +111,9 @@ class LmdbNativeRowStepIterationTest {
 		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
 		LmdbNativeCostCalibration.reset();
 		try {
-			NativeUnorderedInput completed = NativeUnorderedInput.rows(null, new LifecycleOnlyCursor());
+			NativeUnorderedInput completed = NativeUnorderedInput.rows(
+					new RowState(null, NativeSlotLayout.empty(), EmptyBindingSet.getInstance()),
+					new LifecycleOnlyCursor());
 			completed.calibrateOnClose("scratch-sub-millisecond-tag", 5_000D, System.nanoTime() - 1L);
 			completed.close(true);
 
@@ -156,7 +169,8 @@ class LmdbNativeRowStepIterationTest {
 		try {
 			RuntimeException failure = new IllegalStateException("synthetic cursor close failure");
 			CloseFailingCursor cursor = new CloseFailingCursor(failure);
-			NativeUnorderedInput input = NativeUnorderedInput.rows(null, cursor);
+			NativeUnorderedInput input = NativeUnorderedInput.rows(
+					new RowState(null, NativeSlotLayout.empty(), EmptyBindingSet.getInstance()), cursor);
 			input.calibrateOnClose("scratch-close-failure-tag", 5_000D, System.nanoTime() - 1_000_000L);
 
 			assertThatThrownBy(() -> input.close(true)).isSameAs(failure);
@@ -168,6 +182,557 @@ class LmdbNativeRowStepIterationTest {
 			LmdbNativeCostCalibration.reset();
 			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
 		}
+	}
+
+	@Test
+	void nativeRowsCancellationAfterOutputDoesNotAcceptScalarAttempt() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		AtomicInteger calls = new AtomicInteger();
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				calls.incrementAndGet();
+				attempt.set(row.scalarFilterAttempt);
+				return true;
+			}
+		};
+		NativeSlotLayout layout = oneSlotLayout("value");
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(),
+				new FilterPlan(new RecordingPlan(3), filter, 1L), layout, new int[] { 0 }, new String[] { "value" },
+				false, new int[0], new boolean[0], 0L, -1L, false, null, target, null, Set.of(), null, null);
+
+		CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance());
+		assertThat(iteration.hasNext()).isTrue();
+		iteration.next();
+		assertThat(((CooperativeCancellation) iteration).requestCancellation()).isTrue();
+		assertThat(iteration.hasNext()).isFalse();
+		attempt.get().accept();
+
+		assertThat(calls).hasValue(1);
+		assertThat(attempt.get()).isNotNull();
+		assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+				.as("a cancellation outcome cannot publish a partial accepted-attempt count")
+				.isEqualTo(-1L);
+	}
+
+	@Test
+	void nativeRowsLimitStillPublishesSuccessfulPartialAttempt() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicInteger calls = new AtomicInteger();
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		NativeBooleanFilter filter = row -> {
+			attempt.set(row.scalarFilterAttempt);
+			calls.incrementAndGet();
+			return true;
+		};
+		NativeSlotLayout layout = oneSlotLayout("value");
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(),
+				new FilterPlan(new RecordingPlan(3), filter, 1L), layout, new int[] { 0 }, new String[] { "value" },
+				false, new int[0], new boolean[0], 0L, 1L, false, null, target, null, Set.of(), null, null);
+
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+			assertThat(iteration.hasNext()).isFalse();
+		}
+
+		assertThat(calls).hasValue(1);
+		assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC)).isEqualTo(1L);
+	}
+
+	@Test
+	void orderedDrainCancellationDuringFilterDoesNotPublishScalarAttempt() {
+		String previousInterpreter = System.getProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY);
+		String previousJanino = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
+		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		try {
+			RecordingNativeSource source = new RecordingNativeSource();
+			RecordingPlan plan = new RecordingPlan(3);
+			NativeCancellationToken cancellation = new NativeCancellationToken();
+			AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+			AtomicInteger calls = new AtomicInteger();
+			NativeBooleanFilter filter = new NativeBooleanFilter() {
+				@Override
+				public boolean accept(RowState row) {
+					calls.incrementAndGet();
+					attempt.set(row.scalarFilterAttempt);
+					cancellation.requestCancellation();
+					return true;
+				}
+			};
+			NativeSlotLayout layout = oneSlotLayout("value");
+			SingletonSet target = new SingletonSet();
+			target.setRuntimeTelemetryEnabled(true);
+			NativeRowsStep step = new NativeRowsStep(source,
+					new FilterPlan(plan, filter, 1L), layout, new int[] { 0 },
+					new String[] { "value" }, false, new int[] { 0 }, new boolean[] { true },
+					0L, -1L, true, null, target, null, Set.of(), null, null);
+			Throwable observed = catchThrowable(
+					() -> step.evaluateAll(EmptyBindingSet.getInstance(), source, cancellation));
+			attempt.get().accept();
+
+			assertThat(observed).isSameAs(KernelQueryCancelledException.INSTANCE);
+			assertThat(calls.get()).isGreaterThan(0);
+			assertThat(plan.closeCalls).isOne();
+			assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+					.as("materialized false-after-pull cannot publish the unfinished scalar attempt")
+					.isEqualTo(-1L);
+		} finally {
+			restoreProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, previousInterpreter);
+			restoreProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousJanino);
+		}
+	}
+
+	@Test
+	void orderedDrainCancellationDuringFilterCloseDoesNotPublishScalarAttempt() {
+		String previousInterpreter = System.getProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY);
+		String previousJanino = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
+		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		try {
+			RecordingNativeSource source = new RecordingNativeSource();
+			RecordingPlan plan = new RecordingPlan(3);
+			NativeCancellationToken cancellation = new NativeCancellationToken();
+			AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+			AtomicInteger calls = new AtomicInteger();
+			AtomicInteger filterCloses = new AtomicInteger();
+			NativeBooleanFilter filter = new NativeBooleanFilter() {
+				@Override
+				public boolean accept(RowState row) {
+					calls.incrementAndGet();
+					attempt.set(row.scalarFilterAttempt);
+					return true;
+				}
+
+				@Override
+				public void close() {
+					filterCloses.incrementAndGet();
+					cancellation.requestCancellation();
+				}
+			};
+			NativeSlotLayout layout = oneSlotLayout("value");
+			SingletonSet target = new SingletonSet();
+			target.setRuntimeTelemetryEnabled(true);
+			NativeRowsStep step = new NativeRowsStep(source,
+					new FilterPlan(plan, filter, 1L), layout, new int[] { 0 }, new String[] { "value" }, false,
+					new int[] { 0 }, new boolean[] { true }, 0L, -1L, true, null, target, null, Set.of(), null, null);
+			Throwable observed = catchThrowable(
+					() -> step.evaluateAll(EmptyBindingSet.getInstance(), source, cancellation));
+			attempt.get().accept();
+
+			assertThat(observed).isSameAs(KernelQueryCancelledException.INSTANCE);
+			assertThat(calls.get()).isGreaterThan(0);
+			assertThat(attempt.get()).isNotNull();
+			assertThat(filterCloses).hasValue(1);
+			assertThat(plan.closeCalls).isOne();
+			assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+					.as("parent cancellation during materialized cleanup cannot publish the saved attempt")
+					.isEqualTo(-1L);
+		} finally {
+			restoreProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, previousInterpreter);
+			restoreProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousJanino);
+		}
+	}
+
+	@Test
+	void boundBareCancellationDuringSourcePullDoesNotAcceptScalarAttempt() {
+		Value subject = VF.createIRI("urn:test:id:41");
+		AtomicReference<CooperativeCancellation> owner = new AtomicReference<>();
+		RecordingNativeSource source = new RecordingNativeSource(subject);
+		source.afterStatementNext = () -> owner.get().requestCancellation();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
+		layout.freeze(List.of("subject", "object"));
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		AtomicInteger calls = new AtomicInteger();
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				calls.incrementAndGet();
+				attempt.set(row.scalarFilterAttempt);
+				return true;
+			}
+		};
+		NativeBareRowsStep step = NativeRowsStep.bareFragment(source,
+				new FilterPlan(pattern(0, P1, 1), filter, 1L << 1), layout, new int[] { 0, 1 },
+				new String[] { "subject", "object" }, true, null, target, null);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("subject", subject);
+		CloseableIteration<BindingSet> iteration = step.evaluate(bindings);
+		owner.set((CooperativeCancellation) iteration);
+
+		assertThat(iteration.hasNext()).as("post-pull cancellation is not a natural EOF").isFalse();
+		attempt.get().accept();
+
+		assertThat(calls).hasValue(1);
+		assertThat(attempt.get()).isNotNull();
+		assertThat(source.closedIterators).hasValue(1);
+		assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+				.as("the failed bare pull cannot be made publishable by cleanup")
+				.isEqualTo(-1L);
+	}
+
+	@Test
+	void boundBareRequestCancellationAfterOutputDoesNotAcceptScalarAttempt() {
+		Value subject = VF.createIRI("urn:test:id:41");
+		RecordingNativeSource source = new RecordingNativeSource(subject);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
+		layout.freeze(List.of("subject", "object"));
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				attempt.set(row.scalarFilterAttempt);
+				return true;
+			}
+		};
+		NativeBareRowsStep step = NativeRowsStep.bareFragment(source,
+				new FilterPlan(pattern(0, P1, 1), filter, 1L << 1), layout, new int[] { 0, 1 },
+				new String[] { "subject", "object" }, true, null, target, null);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("subject", subject);
+		CloseableIteration<BindingSet> iteration = step.evaluate(bindings);
+
+		assertThat(iteration.hasNext()).isTrue();
+		iteration.next();
+		assertThat(((CooperativeCancellation) iteration).requestCancellation()).isTrue();
+		assertThat(iteration.hasNext()).isFalse();
+		attempt.get().accept();
+
+		assertThat(source.closedIterators).hasValue(1);
+		assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+				.as("explicit cancellation is not successful early close")
+				.isEqualTo(-1L);
+	}
+
+	@Test
+	void boundBareEarlyCloseStillPublishesSuccessfulPartialAttempt() {
+		Value subject = VF.createIRI("urn:test:id:41");
+		RecordingNativeSource source = new RecordingNativeSource(subject);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
+		layout.freeze(List.of("subject", "object"));
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicInteger calls = new AtomicInteger();
+		NativeBooleanFilter filter = row -> {
+			calls.incrementAndGet();
+			return true;
+		};
+		NativeBareRowsStep step = NativeRowsStep.bareFragment(source,
+				new FilterPlan(pattern(0, P1, 1), filter, 1L << 1), layout, new int[] { 0, 1 },
+				new String[] { "subject", "object" }, true, null, target, null);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("subject", subject);
+		CloseableIteration<BindingSet> iteration = step.evaluate(bindings);
+
+		assertThat(iteration.hasNext()).isTrue();
+		iteration.next();
+		iteration.close();
+
+		assertThat(calls).hasValue(1);
+		assertThat(source.closedIterators).hasValue(1);
+		assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+				.as("a caller-requested early close remains an accepted partial attempt")
+				.isEqualTo(1L);
+	}
+
+	@Test
+	void nativeRowsLocalCloseDuringEnteredPullKeepsAcceptedPartialAttempt() throws Exception {
+		assertInFlightCloseOutcome(false, false);
+	}
+
+	@Test
+	void nativeRowsLocalCloseDoesNotMaskParentCancellationDuringEnteredPull() throws Exception {
+		assertInFlightCloseOutcome(false, true);
+	}
+
+	@Test
+	void boundBareLocalCloseDuringEnteredPullKeepsAcceptedPartialAttempt() throws Exception {
+		assertInFlightCloseOutcome(true, false);
+	}
+
+	@Test
+	void boundBareLocalCloseDoesNotMaskParentCancellationDuringEnteredPull() throws Exception {
+		assertInFlightCloseOutcome(true, true);
+	}
+
+	@Test
+	void nativeRowsLocalCloseDoesNotMaskParentCancellationDuringCleanup() throws Exception {
+		assertParentCancellationDuringCleanup(false);
+	}
+
+	@Test
+	void boundBareLocalCloseDoesNotMaskParentCancellationDuringCleanup() throws Exception {
+		assertParentCancellationDuringCleanup(true);
+	}
+
+	@Test
+	void nativeRowsExplicitCancellationBeforeAcceptingBufferedRowKeepsDeliveryButFailsAttempt() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = oneSlotLayout("value");
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicInteger calls = new AtomicInteger();
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		NativeBooleanFilter filter = row -> {
+			attempt.set(row.scalarFilterAttempt);
+			calls.incrementAndGet();
+			return true;
+		};
+		NativeRowsStep step = new NativeRowsStep(source,
+				new FilterPlan(new RecordingPlan(1), filter, -1L), layout, new int[] { 0 }, new String[] { "value" },
+				false, new int[0], new boolean[0], 0L, -1L, false, null, target, null, Set.of(), null, null);
+		NativeRowsIteration iteration = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+
+		assertThat(iteration.hasNext()).isTrue();
+		assertThat(iteration.requestCancellation()).isTrue();
+		boolean availableAfterCancellation = iteration.hasNext();
+		BindingSet returned = availableAfterCancellation ? iteration.next() : null;
+		iteration.close();
+		attempt.get().accept();
+
+		assertThat(availableAfterCancellation)
+				.as("the already buffered row remains deliverable at the cooperative poll boundary")
+				.isTrue();
+		assertThat(returned).isNotNull();
+		assertThat(calls).hasValue(1);
+		assertThat(attempt.get()).isNotNull();
+		assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC)).isEqualTo(-1L);
+	}
+
+	@Test
+	void boundBareExplicitCancellationBeforeAcceptingBufferedRowKeepsDeliveryButFailsAttempt() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = oneSlotLayout("value");
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicInteger calls = new AtomicInteger();
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		NativeBooleanFilter filter = row -> {
+			attempt.set(row.scalarFilterAttempt);
+			calls.incrementAndGet();
+			return true;
+		};
+		NativeBareRowsStep step = NativeRowsStep.bareFragment(source,
+				new FilterPlan(new RecordingPlan(1), filter, -1L), layout, new int[] { 0 }, new String[] { "value" },
+				false, null, target, null);
+		NativeBareRowsIteration iteration = new NativeBareRowsIteration(step, source,
+				EmptyBindingSet.getInstance());
+
+		assertThat(iteration.hasNext()).isTrue();
+		assertThat(iteration.requestCancellation()).isTrue();
+		boolean availableAfterCancellation = iteration.hasNext();
+		BindingSet returned = availableAfterCancellation ? iteration.next() : null;
+		iteration.close();
+		attempt.get().accept();
+
+		assertThat(availableAfterCancellation)
+				.as("the already buffered bare row remains deliverable at the cooperative poll boundary")
+				.isTrue();
+		assertThat(returned).isNotNull();
+		assertThat(calls).hasValue(1);
+		assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC)).isEqualTo(-1L);
+	}
+
+	@Test
+	void nativeRowsCancellationStopsCachedFactorizedMultiplicity() {
+		RecordingNativeSource source = new RecordingNativeSource();
+		NativeSlotLayout layout = oneSlotLayout("value");
+		FactorizedRecordingPlan plan = new FactorizedRecordingPlan(3L, LmdbNativeWork.UNKNOWN);
+		NativeRowsStep step = new NativeRowsStep(source, plan, layout, new int[] { 0 }, new String[] { "value" },
+				false, new int[0], new boolean[0], 0L, -1L, false, null, null, null, Set.of(), null, null);
+		NativeRowsIteration iteration = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+
+		assertThat(iteration.hasNext()).isTrue();
+		iteration.next();
+		assertThat(iteration.requestCancellation()).isTrue();
+
+		assertThat(iteration.hasNext()).isFalse();
+		assertThat(plan.nextCalls).as("cancellation is checked before cached factorized rows are replayed").isOne();
+		iteration.close();
+	}
+
+	@Test
+	void nativeRowsCancellationBeforeAcceptingBufferedBatchRowKeepsDeliveryButFailsAttempt() {
+		String previousBatch = System.getProperty(NativeBatch.ENABLED_PROPERTY);
+		String previousInterpreter = System.getProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY);
+		String previousJanino = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
+		System.setProperty(NativeBatch.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		try {
+			RecordingNativeSource source = new RecordingNativeSource();
+			NativeSlotLayout layout = oneSlotLayout("value");
+			SingletonSet target = new SingletonSet();
+			target.setRuntimeTelemetryEnabled(true);
+			AtomicInteger calls = new AtomicInteger();
+			AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+			NativeBooleanFilter filter = row -> {
+				attempt.set(row.scalarFilterAttempt);
+				calls.incrementAndGet();
+				return true;
+			};
+			BareRecordingPlan plan = new BareRecordingPlan();
+			NativeRowsStep step = new NativeRowsStep(source, new FilterPlan(plan, filter, 1L), layout,
+					new int[] { 0 }, new String[] { "value" }, false, new int[0], new boolean[0], 0L, -1L, true, null,
+					target, null, Set.of(), null, null);
+			NativeRowsIteration iteration = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(plan.openBatchCalls).as("the cached row comes from the batch producer").hasValue(1);
+			assertThat(iteration.requestCancellation()).isTrue();
+			boolean availableAfterCancellation = iteration.hasNext();
+			BindingSet returned = availableAfterCancellation ? iteration.next() : null;
+			iteration.close();
+			attempt.get().accept();
+
+			assertThat(availableAfterCancellation)
+					.as("the already buffered batch row remains deliverable at the cooperative poll boundary")
+					.isTrue();
+			assertThat(returned).isNotNull();
+			assertThat(calls).hasValue(1);
+			assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC)).isEqualTo(-1L);
+		} finally {
+			restoreProperty(NativeBatch.ENABLED_PROPERTY, previousBatch);
+			restoreProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, previousInterpreter);
+			restoreProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousJanino);
+			restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+		}
+	}
+
+	@Test
+	void boundBareCloseFailureKeepsSavedScalarAttemptFailed() {
+		Value subject = VF.createIRI("urn:test:id:41");
+		RecordingNativeSource source = new RecordingNativeSource(subject);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
+		layout.freeze(List.of("subject", "object"));
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		AtomicInteger calls = new AtomicInteger();
+		IllegalStateException closeFailure = new IllegalStateException("bare filter close failed");
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				calls.incrementAndGet();
+				attempt.set(row.scalarFilterAttempt);
+				return true;
+			}
+
+			@Override
+			public void close() {
+				throw closeFailure;
+			}
+		};
+		NativeBareRowsStep step = NativeRowsStep.bareFragment(source,
+				new FilterPlan(pattern(0, P1, 1), filter, 1L << 1), layout, new int[] { 0, 1 },
+				new String[] { "subject", "object" }, true, null, target, null);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("subject", subject);
+		CloseableIteration<BindingSet> iteration = step.evaluate(bindings);
+		Throwable observed = catchThrowable(() -> {
+			while (iteration.hasNext()) {
+				iteration.next();
+			}
+		});
+		attempt.get().accept();
+
+		assertThat(observed).isSameAs(closeFailure);
+		assertThat(calls).hasValue(3);
+		assertThat(source.closedIterators).hasValue(1);
+		assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+				.as("a cleanup failure keeps the saved carrier terminal")
+				.isEqualTo(-1L);
+	}
+
+	@Test
+	void nativeRowsKeepsOrdinaryPullFailureWhenFilterCleanupAlsoFails() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		IllegalArgumentException pullFailure = new IllegalArgumentException("native filter pull failed");
+		IllegalStateException closeFailure = new IllegalStateException("native filter cleanup failed");
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				attempt.set(row.scalarFilterAttempt);
+				throw pullFailure;
+			}
+
+			@Override
+			public void close() {
+				throw closeFailure;
+			}
+		};
+		NativeSlotLayout layout = oneSlotLayout("value");
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(),
+				new FilterPlan(new RecordingPlan(1), filter, 1L), layout, new int[] { 0 }, new String[] { "value" },
+				false, new int[0], new boolean[0], 0L, -1L, false, null, target, null, Set.of(), null, null);
+		CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance());
+
+		Throwable observed = catchThrowable(iteration::hasNext);
+		if (attempt.get() != null) {
+			attempt.get().accept();
+		}
+
+		assertThat(observed).isSameAs(pullFailure);
+		assertThat(pullFailure.getSuppressed()).containsExactly(closeFailure);
+		assertThat(closeFailure.getSuppressed()).isEmpty();
+		assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+				.as("a failed body cannot publish its filter calls")
+				.isEqualTo(-1L);
+	}
+
+	@Test
+	void boundBareRowsKeepsOrdinaryPullFailureWhenFilterCleanupAlsoFails() {
+		Value subject = VF.createIRI("urn:test:id:41");
+		RecordingNativeSource source = new RecordingNativeSource(subject);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
+		layout.freeze(List.of("subject", "object"));
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		IllegalArgumentException pullFailure = new IllegalArgumentException("bare filter pull failed");
+		IllegalStateException closeFailure = new IllegalStateException("bare filter cleanup failed");
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				attempt.set(row.scalarFilterAttempt);
+				throw pullFailure;
+			}
+
+			@Override
+			public void close() {
+				throw closeFailure;
+			}
+		};
+		NativeBareRowsStep step = NativeRowsStep.bareFragment(source,
+				new FilterPlan(pattern(0, P1, 1), filter, 1L << 1), layout, new int[] { 0, 1 },
+				new String[] { "subject", "object" }, true, null, target, null);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("subject", subject);
+		CloseableIteration<BindingSet> iteration = step.evaluate(bindings);
+
+		Throwable observed = catchThrowable(iteration::hasNext);
+		if (attempt.get() != null) {
+			attempt.get().accept();
+		}
+
+		assertThat(observed).isSameAs(pullFailure);
+		assertThat(pullFailure.getSuppressed()).containsExactly(closeFailure);
+		assertThat(closeFailure.getSuppressed()).isEmpty();
+		assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+				.as("a failed bare body cannot publish its filter calls")
+				.isEqualTo(-1L);
 	}
 
 	@Test
@@ -367,6 +932,296 @@ class LmdbNativeRowStepIterationTest {
 		} finally {
 			LmdbNativeCostCalibration.reset();
 			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
+		}
+	}
+
+	@ParameterizedTest(name = "cancellation during producer close, telemetry enabled={0}")
+	@ValueSource(booleans = { true, false })
+	void cancellationDuringAcceptedProducerCloseDoesNotRecordCalibration(boolean telemetryEnabled) {
+		String previousEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+		String previousRecording = System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
+		LmdbNativeCostCalibration.reset();
+		try {
+			NativeCancellationToken cancellation = new NativeCancellationToken();
+			SingletonSet target = new SingletonSet();
+			target.setRuntimeTelemetryEnabled(telemetryEnabled);
+			RowState row = new RowState(null, NativeSlotLayout.empty(), EmptyBindingSet.getInstance(), target,
+					cancellation);
+			row.enableScalarFilterTelemetry();
+			row.startScalarFilterAttempt();
+			row.guardScalarFilterAcceptance(cancellation::check);
+			NativeScalarFilterAttempt attempt = row.scalarFilterAttempt;
+			assertThat(attempt != null).isEqualTo(telemetryEnabled);
+			AtomicInteger closeCalls = new AtomicInteger();
+			RowCursor cursor = new RowCursor() {
+				@Override
+				public boolean next() {
+					return false;
+				}
+
+				@Override
+				public void close() {
+					closeCalls.incrementAndGet();
+					cancellation.requestCancellation();
+				}
+			};
+			NativeUnorderedInput input = NativeUnorderedInput.rows(row, cursor);
+			LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+			LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+					new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+			LmdbNativeCostEstimate estimate = new LmdbNativeStrategyProposal<>(() -> input, 5_000D,
+					"scratch-cancelled-close-tag").adaptiveEstimate(-1D);
+			LmdbNativeCostObservation observation = new LmdbNativeCostObservation(estimate, model);
+			input.observeOnClose(new LmdbNativeStrategySelection<>(input, observation));
+			input.calibrateOnClose("scratch-cancelled-close-tag", 5_000D, System.nanoTime() - 1_000_000L);
+
+			assertThatThrownBy(() -> input.close(true)).isSameAs(KernelQueryCancelledException.INSTANCE);
+			if (attempt != null) {
+				attempt.accept();
+			}
+
+			assertThat(closeCalls).as("the cancellation-producing owner closes once").hasValue(1);
+			assertThat(observation.snapshot().completion())
+					.as("the same adoption outcome rejects strategy completion")
+					.isEqualTo(LmdbNativeCostObservation.Completion.FAILED);
+			assertThat(observation.trainingEligible()).as("cancellation is not completed-run strategy evidence")
+					.isFalse();
+			assertThat(LmdbNativeCostCalibration.observations("scratch-cancelled-close-tag"))
+					.as("a failed final adoption guard cannot record completed-run calibration")
+					.isZero();
+			if (attempt != null) {
+				assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+						.as("the same failed acceptance outcome rejects later carrier acceptance")
+						.isEqualTo(-1L);
+			}
+		} finally {
+			LmdbNativeCostCalibration.reset();
+			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousEnabled);
+			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
+		}
+	}
+
+	@ParameterizedTest(name = "telemetry={0}, parent cancellation during LIMIT close={1}")
+	@CsvSource({ "true,true", "true,false", "false,true", "false,false" })
+	void limitObservationCompletesOnlyAfterProducerCleanup(boolean telemetryEnabled, boolean cancelParent) {
+		NativeCancellationToken cancellation = new NativeCancellationToken();
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(telemetryEnabled);
+		RowState row = new RowState(null, NativeSlotLayout.empty(), EmptyBindingSet.getInstance(), target,
+				cancellation);
+		row.enableScalarFilterTelemetry();
+		row.startScalarFilterAttempt();
+		row.guardScalarFilterAcceptance(cancellation::check);
+		AtomicInteger closeCalls = new AtomicInteger();
+		RowCursor cursor = new RowCursor() {
+			@Override
+			public boolean next() {
+				return false;
+			}
+
+			@Override
+			public void close() {
+				closeCalls.incrementAndGet();
+				if (cancelParent) {
+					cancellation.requestCancellation();
+				}
+			}
+		};
+		NativeUnorderedInput input = NativeUnorderedInput.rows(row, cursor);
+		NativeScalarFilterAttempt attempt = row.scalarFilterAttempt;
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeStrategyProposal<NativeUnorderedInput> proposal = new LmdbNativeStrategyProposal<>(() -> input,
+				LmdbNativeWork.exact(5_000D), LmdbNativeWork.ZERO, 10D, "scratch-limit-cancel-tag", () -> {
+				});
+		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(proposal.adaptiveEstimate(-1D), model);
+		input.observeOnClose(new LmdbNativeStrategySelection<>(input, observation));
+		input.expectedEarlyCloseAfterRows(1D);
+
+		if (cancelParent) {
+			assertThatThrownBy(() -> input.close(false)).isSameAs(KernelQueryCancelledException.INSTANCE);
+		} else {
+			assertThatCode(() -> input.close(false)).doesNotThrowAnyException();
+		}
+		if (attempt != null) {
+			attempt.accept();
+		}
+
+		assertThat(closeCalls).as("the producer closes once on either terminal outcome").hasValue(1);
+		assertThat(observation.snapshot().completion())
+				.as("LIMIT completion follows the same owner outcome as saved-carrier acceptance")
+				.isEqualTo(cancelParent ? LmdbNativeCostObservation.Completion.FAILED
+						: LmdbNativeCostObservation.Completion.EXPECTED_EARLY_CLOSE);
+		assertThat(observation.trainingEligible())
+				.as("only a normally adopted LIMIT outcome remains eligible partial evidence")
+				.isEqualTo(!cancelParent);
+		assertThat(observation.snapshot().failure())
+				.isSameAs(cancelParent ? KernelQueryCancelledException.INSTANCE : null);
+		if (attempt != null && cancelParent) {
+			assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+					.as("parent cancellation rejects the saved scalar carrier after LIMIT")
+					.isEqualTo(-1L);
+		}
+	}
+
+	@ParameterizedTest(name = "scalar telemetry={0}")
+	@ValueSource(booleans = { true, false })
+	void nativeRowsLimitCancellationDuringProducerCloseRejectsSelection(boolean telemetryEnabled) {
+		String previousCalibration = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+		String previousRecording = System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
+		String previousBatch = System.getProperty(NativeBatch.ENABLED_PROPERTY);
+		String previousInterpreter = System.getProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY);
+		String previousJanino = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
+		System.setProperty(NativeBatch.ENABLED_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		LmdbNativeCostCalibration.reset();
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new RecordingNativeSource());
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(telemetryEnabled);
+		AtomicInteger filterCalls = new AtomicInteger();
+		AtomicInteger filterCloses = new AtomicInteger();
+		AtomicReference<NativeScalarFilterAttempt> filterAttempt = new AtomicReference<>();
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				filterCalls.incrementAndGet();
+				filterAttempt.set(row.scalarFilterAttempt);
+				return true;
+			}
+
+			@Override
+			public void close() {
+				filterCloses.incrementAndGet();
+				source.executionContext().cancellation().requestCancellation();
+			}
+		};
+		RecordingPlan plan = new RecordingPlan(2, LmdbNativeWork.exact(5_000D));
+		NativeRowsStep step = new NativeRowsStep(source, new FilterPlan(plan, filter, 0L), NativeSlotLayout.empty(),
+				new int[0], new String[0], false, new int[0], new boolean[0], 0L, 1L, true, null, target, null,
+				Set.of(), null, null);
+		NativeRowsIteration iteration = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+		NativeUnorderedInput acceptedInput = null;
+		LmdbNativeCostObservation observation = null;
+		NativeScalarFilterAttempt acceptedAttempt = null;
+		try {
+			assertThat(iteration.hasNext()).isTrue();
+			acceptedInput = iteration.unorderedInput;
+			assertThat(acceptedInput).as("the real row owner retains its selected input").isNotNull();
+			assertThat(acceptedInput.adaptiveSelection).as("the selected observation follows the real owner")
+					.isNotNull();
+			observation = acceptedInput.adaptiveSelection.observation();
+			acceptedAttempt = acceptedInput.scalarFilterAttempt;
+			assertThat(iteration.next()).isNotNull();
+			assertThat(iteration.hasNext()).as("LIMIT closes after consuming its requested row").isFalse();
+			if (acceptedAttempt != null) {
+				acceptedAttempt.accept();
+			}
+
+			assertThat(filterCalls).hasValue(1);
+			assertThat(filterCloses).as("producer cleanup requests parent cancellation exactly once").hasValue(1);
+			assertThat(observation.snapshot().completion())
+					.as("the real owner must not adopt LIMIT after parent cancellation during producer cleanup")
+					.isEqualTo(LmdbNativeCostObservation.Completion.FAILED);
+			assertThat(observation.trainingEligible()).isFalse();
+			assertThat(observation.snapshot().failure()).isSameAs(KernelQueryCancelledException.INSTANCE);
+			assertThat(LmdbNativeCostCalibration.observations(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP))
+					.as("a failed owner outcome is not completed calibration evidence")
+					.isZero();
+			if (telemetryEnabled) {
+				assertThat(filterAttempt.get()).isNotNull();
+				assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+						.as("the retained carrier cannot publish after parent cancellation")
+						.isEqualTo(-1L);
+			} else {
+				assertThat(filterAttempt.get()).isNull();
+			}
+		} finally {
+			iteration.close();
+			source.executionContext().close();
+			LmdbNativeCostCalibration.reset();
+			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCalibration);
+			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
+			restoreProperty(NativeBatch.ENABLED_PROPERTY, previousBatch);
+			restoreProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, previousInterpreter);
+			restoreProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousJanino);
+			restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+		}
+	}
+
+	@ParameterizedTest(name = "batch={0}, scalar telemetry={1}")
+	@CsvSource({ "false,true", "false,false", "true,true", "true,false" })
+	void nativeRowsFullStreamingEofCompletesObservationAndCalibration(boolean batchEnabled,
+			boolean telemetryEnabled) {
+		String previousCalibration = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+		String previousRecording = System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
+		String previousBatch = System.getProperty(NativeBatch.ENABLED_PROPERTY);
+		String previousInterpreter = System.getProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY);
+		String previousJanino = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
+		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
+		System.setProperty(NativeBatch.ENABLED_PROPERTY, Boolean.toString(batchEnabled));
+		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		LmdbNativeCostCalibration.reset();
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new RecordingNativeSource());
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(telemetryEnabled);
+		RecordingPlan rowPlan = batchEnabled ? null : new RecordingPlan(2, LmdbNativeWork.exact(5_000D));
+		RecordingBatchPlan batchPlan = batchEnabled ? new RecordingBatchPlan(2, LmdbNativeWork.exact(5_000D)) : null;
+		SlotPlan plan = batchEnabled ? batchPlan : rowPlan;
+		NativeRowsStep step = new NativeRowsStep(source, plan, NativeSlotLayout.empty(), new int[0], new String[0],
+				false, new int[0], new boolean[0], 0L, -1L, true, null, target, null, Set.of(), null, null);
+		NativeRowsIteration iteration = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+		LmdbNativeCostObservation observation = null;
+		try {
+			assertThat(iteration.hasNext()).isTrue();
+			NativeUnorderedInput acceptedInput = iteration.unorderedInput;
+			assertThat(acceptedInput).isNotNull();
+			assertThat(acceptedInput.adaptiveSelection).as("the actual streaming owner retains its selection")
+					.isNotNull();
+			observation = acceptedInput.adaptiveSelection.observation();
+			assertThat(observation).isNotNull();
+			int emittedRows = 0;
+			do {
+				iteration.next();
+				emittedRows++;
+			} while (iteration.hasNext());
+
+			assertThat(emittedRows).as("the full unsliced stream emits both fixture rows").isEqualTo(2);
+			assertThat(observation.snapshot().completion())
+					.as("real EOF completes the selected row or batch observation")
+					.isEqualTo(LmdbNativeCostObservation.Completion.EXHAUSTED);
+			assertThat(observation.trainingEligible()).isTrue();
+			assertThat(LmdbNativeCostCalibration.observations(
+					batchEnabled ? LmdbNativeAttemptMetrics.PATH_BATCH : LmdbNativeAttemptMetrics.PATH_NESTED_LOOP))
+					.as("a full unsliced streaming EOF records one calibration sample")
+					.isOne();
+			if (batchEnabled) {
+				assertThat(batchPlan.batchCloseCalls).hasValue(1);
+				assertThat(batchPlan.rowCloseCalls).hasValue(0);
+			} else {
+				assertThat(rowPlan.closeCalls).isOne();
+			}
+		} finally {
+			iteration.close();
+			source.executionContext().close();
+			LmdbNativeCostCalibration.reset();
+			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCalibration);
+			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
+			restoreProperty(NativeBatch.ENABLED_PROPERTY, previousBatch);
+			restoreProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, previousInterpreter);
+			restoreProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousJanino);
+			restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
 		}
 	}
 
@@ -1250,6 +2105,178 @@ class LmdbNativeRowStepIterationTest {
 				ContextConstraint.UNRESTRICTED, false, 3);
 	}
 
+	private static void assertInFlightCloseOutcome(boolean bare, boolean cancelParent) throws Exception {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new RecordingNativeSource());
+		NativeSlotLayout layout = oneSlotLayout("value");
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicInteger calls = new AtomicInteger();
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		CountDownLatch filterEntered = new CountDownLatch(1);
+		CountDownLatch releaseFilter = new CountDownLatch(1);
+		NativeBooleanFilter filter = row -> {
+			int call = calls.incrementAndGet();
+			attempt.compareAndSet(null, row.scalarFilterAttempt);
+			if (!bare && call == 2) {
+				filterEntered.countDown();
+				try {
+					releaseFilter.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new QueryEvaluationException(e);
+				}
+			}
+			return true;
+		};
+		BlockingSecondPullPlan barePlan = bare ? new BlockingSecondPullPlan() : null;
+		RecordingPlan nativePlan = bare ? null : new RecordingPlan(3);
+		SlotPlan filtered = new FilterPlan(bare ? barePlan : nativePlan, filter, 1L);
+		CloseableIteration<BindingSet> iteration;
+		NativeCancellationToken cancellation;
+		if (bare) {
+			NativeBareRowsStep step = NativeRowsStep.bareFragment(source, filtered, layout, new int[] { 0 },
+					new String[] { "value" }, false, null, target, null);
+			NativeBareRowsIteration owner = new NativeBareRowsIteration(step, source, EmptyBindingSet.getInstance());
+			iteration = owner;
+			cancellation = owner.cancellation;
+		} else {
+			NativeRowsStep step = new NativeRowsStep(source, filtered, layout, new int[] { 0 },
+					new String[] { "value" }, false, new int[0], new boolean[0], 0L, -1L, false, null, target, null,
+					Set.of(), null, null);
+			NativeRowsIteration owner = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+			iteration = owner;
+			cancellation = owner.cancellation;
+		}
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(iteration.next()).isNotNull();
+			Future<Boolean> activePull = executor.submit(iteration::hasNext);
+			if (bare) {
+				barePlan.secondPullEntered.await();
+			} else {
+				filterEntered.await();
+			}
+
+			CountDownLatch closeStarted = new CountDownLatch(1);
+			Future<?> close = executor.submit(() -> {
+				closeStarted.countDown();
+				iteration.close();
+			});
+			closeStarted.await();
+			while (!cancellation.isCancellationRequested()) {
+				Thread.onSpinWait();
+			}
+			if (cancelParent) {
+				source.executionContext().cancellation().requestCancellation();
+			}
+			if (bare) {
+				barePlan.releaseSecondPull.countDown();
+			} else {
+				releaseFilter.countDown();
+			}
+
+			assertThat(activePull.get()).as("close during an entered pull does not publish another row").isFalse();
+			close.get();
+			int filterCalls = calls.get();
+			assertThat(filterCalls).as("the first result passed through the filter before the entered pull")
+					.isGreaterThan(0);
+			assertThat(attempt.get()).as("the active filter call is owned by the scalar attempt").isNotNull();
+			if (bare) {
+				assertThat(barePlan.closeCalls).as("the source cursor is closed exactly once").hasValue(1);
+			} else {
+				assertThat(nativePlan.closeCalls).as("the source cursor is closed exactly once").isOne();
+			}
+			long metricBeforeDirectAcceptance = target.getLongMetricActual(NativeScalarFilterAttempt.METRIC);
+			attempt.get().accept();
+			long metricAfterDirectAcceptance = target.getLongMetricActual(NativeScalarFilterAttempt.METRIC);
+			long expectedMetric = cancelParent ? -1L : filterCalls;
+			assertThat(metricBeforeDirectAcceptance)
+					.as(cancelParent ? "parent cancellation remains terminal after local close"
+							: "ordinary owner close retains accepted partial work")
+					.isEqualTo(expectedMetric);
+			assertThat(metricAfterDirectAcceptance)
+					.as("accepting the saved carrier after cleanup cannot change its outcome")
+					.isEqualTo(expectedMetric);
+		} finally {
+			if (bare) {
+				barePlan.releaseSecondPull.countDown();
+			} else {
+				releaseFilter.countDown();
+			}
+			executor.shutdownNow();
+			iteration.close();
+			source.executionContext().close();
+		}
+	}
+
+	private static void assertParentCancellationDuringCleanup(boolean bare) throws Exception {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new RecordingNativeSource());
+		NativeSlotLayout layout = oneSlotLayout("value");
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicInteger calls = new AtomicInteger();
+		AtomicInteger filterCloses = new AtomicInteger();
+		AtomicReference<NativeScalarFilterAttempt> attempt = new AtomicReference<>();
+		CountDownLatch filterCloseEntered = new CountDownLatch(1);
+		CountDownLatch releaseFilterClose = new CountDownLatch(1);
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				attempt.set(row.scalarFilterAttempt);
+				calls.incrementAndGet();
+				return true;
+			}
+
+			@Override
+			public void close() {
+				filterCloses.incrementAndGet();
+				filterCloseEntered.countDown();
+				try {
+					releaseFilterClose.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new QueryEvaluationException(e);
+				}
+			}
+		};
+		SlotPlan filtered = new FilterPlan(new RecordingPlan(3), filter, 1L);
+		CloseableIteration<BindingSet> iteration;
+		if (bare) {
+			NativeBareRowsStep step = NativeRowsStep.bareFragment(source, filtered, layout, new int[] { 0 },
+					new String[] { "value" }, false, null, target, null);
+			iteration = new NativeBareRowsIteration(step, source, EmptyBindingSet.getInstance());
+		} else {
+			NativeRowsStep step = new NativeRowsStep(source, filtered, layout, new int[] { 0 },
+					new String[] { "value" }, false, new int[0], new boolean[0], 0L, -1L, false, null, target, null,
+					Set.of(), null, null);
+			iteration = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+		}
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(iteration.next()).isNotNull();
+			Future<?> close = executor.submit(iteration::close);
+			filterCloseEntered.await();
+			source.executionContext().cancellation().requestCancellation();
+			releaseFilterClose.countDown();
+			close.get();
+			assertThat(attempt.get()).as("the filter call belongs to the owner carrier").isNotNull();
+			attempt.get().accept();
+
+			assertThat(calls).hasValue(1);
+			assertThat(filterCloses).as("filter cleanup runs exactly once").hasValue(1);
+			assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+					.as("parent cancellation during cleanup remains terminal before carrier acceptance")
+					.isEqualTo(-1L);
+		} finally {
+			releaseFilterClose.countDown();
+			executor.shutdownNow();
+			iteration.close();
+			source.executionContext().close();
+		}
+	}
+
 	private static NativeSlotLayout oneSlotLayout(String name) {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of(name, 0), null);
 		layout.freeze(List.of(name));
@@ -1320,6 +2347,52 @@ class LmdbNativeRowStepIterationTest {
 		}
 	}
 
+	private static final class BlockingSecondPullPlan implements SlotPlan {
+		private final CountDownLatch secondPullEntered = new CountDownLatch(1);
+		private final CountDownLatch releaseSecondPull = new CountDownLatch(1);
+		private final AtomicInteger nextCalls = new AtomicInteger();
+		private final AtomicInteger closeCalls = new AtomicInteger();
+
+		@Override
+		public RowCursor open(RowState row) {
+			return new RowCursor() {
+				private boolean closed;
+
+				@Override
+				public boolean next() throws IOException {
+					int call = nextCalls.incrementAndGet();
+					if (call == 2) {
+						secondPullEntered.countDown();
+						try {
+							releaseSecondPull.await();
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new IOException(e);
+						}
+					}
+					if (call > 2) {
+						return false;
+					}
+					row.replaceSlot(0, call == 1 ? 41L : 42L);
+					return true;
+				}
+
+				@Override
+				public void close() {
+					if (!closed) {
+						closed = true;
+						closeCalls.incrementAndGet();
+					}
+				}
+			};
+		}
+
+		@Override
+		public long producedMask() {
+			return 1L;
+		}
+	}
+
 	private static final class RecordingPlan implements SlotPlan {
 		private final int rows;
 		private final LmdbNativeWork work;
@@ -1358,6 +2431,77 @@ class LmdbNativeRowStepIterationTest {
 		@Override
 		public long producedMask() {
 			return 0;
+		}
+
+		@Override
+		public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+			return work;
+		}
+	}
+
+	private static final class RecordingBatchPlan implements SlotPlan {
+		private final int rows;
+		private final LmdbNativeWork work;
+		private final AtomicInteger rowCloseCalls = new AtomicInteger();
+		private final AtomicInteger batchCloseCalls = new AtomicInteger();
+
+		private RecordingBatchPlan(int rows, LmdbNativeWork work) {
+			this.rows = rows;
+			this.work = work;
+		}
+
+		@Override
+		public RowCursor open(RowState row) {
+			return new RowCursor() {
+				private int emitted;
+				private boolean closed;
+
+				@Override
+				public boolean next() {
+					return !closed && emitted++ < rows;
+				}
+
+				@Override
+				public void close() {
+					if (!closed) {
+						closed = true;
+					rowCloseCalls.incrementAndGet();
+					}
+				}
+			};
+		}
+
+		@Override
+		public BatchCursor openBatch(RowState row, int capacity) {
+			return new BatchCursor() {
+				private int emitted;
+				private boolean closed;
+
+				@Override
+				public int fill(NativeBatch batch) {
+					batch.clear();
+					if (closed || emitted == rows) {
+						return 0;
+					}
+					int count = Math.min(capacity, rows - emitted);
+					batch.finishRows(count);
+					emitted += count;
+					return count;
+				}
+
+				@Override
+				public void close() {
+					if (!closed) {
+						closed = true;
+					batchCloseCalls.incrementAndGet();
+					}
+				}
+			};
+		}
+
+		@Override
+		public long producedMask() {
+			return 0L;
 		}
 
 		@Override
@@ -1674,6 +2818,7 @@ class LmdbNativeRowStepIterationTest {
 		private final AtomicInteger hasCalls = new AtomicInteger();
 		private final AtomicInteger lazyValueCalls = new AtomicInteger();
 		private final AtomicInteger closedIterators = new AtomicInteger();
+		private Runnable afterStatementNext;
 
 		private RecordingNativeSource() {
 			this(null, null);
@@ -1732,6 +2877,9 @@ class LmdbNativeRowStepIterationTest {
 					long rowObj = obj == UNKNOWN_ID ? id + 10 : obj;
 					long rowContext = context == UNKNOWN_ID ? index : context;
 					index++;
+					if (afterStatementNext != null) {
+						afterStatementNext.run();
+					}
 					return new long[] { rowSubj, pred, rowObj, rowContext };
 				}
 

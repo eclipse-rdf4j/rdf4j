@@ -565,6 +565,16 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public IndexAccessProfile indexAccessProfile() {
+		return delegate.indexAccessProfile();
+	}
+
+	@Override
+	public IndexAccessProfile pinnedLmdbSweepProfile() {
+		return delegate.pinnedLmdbSweepProfile();
+	}
+
+	@Override
 	public String indexName(long subj, long pred, long obj, long context) {
 		return anySynthetic(subj, pred, obj, context) ? "" : delegate.indexName(subj, pred, obj, context);
 	}
