@@ -924,6 +924,8 @@ public class LmdbNativeParallelPipelinesTest {
 					awaitCloseOrdering(workersEntered);
 					if (outputBackpressure) {
 						awaitNativeOutputBackpressure(activeWorker.get());
+					} else {
+						awaitWorkerReturnedToPool(activeWorker.get());
 					}
 					closer.set(new Thread(() -> {
 						try {

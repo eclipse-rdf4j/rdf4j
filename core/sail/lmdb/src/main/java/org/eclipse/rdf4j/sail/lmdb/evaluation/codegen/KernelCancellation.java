@@ -84,8 +84,9 @@ public final class KernelCancellation {
 
 	/**
 	 * Creates an aggregate cancellation token with a peer-stop supplier kept distinct from probe cancellation. The
-	 * five-argument constructor remains the compatibility path for streaming rows, where a worker stop is deliberately
-	 * replayable probe control.
+	 * five-argument constructor remains the compatibility path for callers without a separate peer-stop supplier.
+	 * Streaming row workers use an owner-local child query token, so a worker-local stop is not replayed as probe
+	 * control.
 	 */
 	public KernelCancellation(long deadlineNanoTime, BooleanSupplier extra, BooleanSupplier queryCancellation,
 			int materializationRowLimit, Runnable capacityNotifier, BooleanSupplier peerCancellation) {

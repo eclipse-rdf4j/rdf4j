@@ -854,8 +854,9 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		boolean enclosingQueryCancelled = false;
 		try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
 			cursor = openParallelRowsWithKernel(lowered, plan, scenario, kernel -> {
-				boolean emitsPage = firstKernel.compareAndSet(false, true);
 				return new JaninoKernel() {
+					private boolean selectionDecided;
+					private boolean emitsPage;
 					private int fills;
 					private KernelContext context;
 
@@ -866,6 +867,10 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 
 					@Override
 					public int fill(long[] rowBuffer, int maxRows) {
+						if (!selectionDecided) {
+							selectionDecided = true;
+							emitsPage = firstKernel.compareAndSet(false, true);
+						}
 						if (!emitsPage) {
 							return 0;
 						}
@@ -970,8 +975,9 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 			}, () -> workerScope)) {
 				observed.set(catchThrowable(() -> {
 					try (RowCursor cursor = openParallelRowsWithKernel(lowered, plan, scenario, kernel -> {
-						boolean signals = firstKernel.compareAndSet(false, true);
 						return new JaninoKernel() {
+							private boolean selectionDecided;
+							private boolean signals;
 							private int fills;
 							private KernelContext context;
 
@@ -982,6 +988,10 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 
 							@Override
 							public int fill(long[] rowBuffer, int maxRows) {
+								if (!selectionDecided) {
+									selectionDecided = true;
+									signals = firstKernel.compareAndSet(false, true);
+								}
 								if (!signals) {
 									return 0;
 								}
@@ -1054,8 +1064,9 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		assertThat(lowered).isNotNull();
 		AtomicBoolean firstKernel = new AtomicBoolean();
 		RowCursor cursor = openParallelRowsWithKernel(lowered, plan, scenario, kernel -> {
-			boolean emitsPage = firstKernel.compareAndSet(false, true);
 			return new JaninoKernel() {
+				private boolean selectionDecided;
+				private boolean emitsPage;
 				private int fills;
 
 				@Override
@@ -1064,6 +1075,10 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 
 				@Override
 				public int fill(long[] rowBuffer, int maxRows) {
+					if (!selectionDecided) {
+						selectionDecided = true;
+						emitsPage = firstKernel.compareAndSet(false, true);
+					}
 					if (!emitsPage) {
 						return 0;
 					}
@@ -1130,8 +1145,9 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 				LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, row, null);
 				assertThat(lowered).isNotNull();
 				return openParallelRowsWithKernel(lowered, plan, row, kernel -> {
-					boolean emitsPage = firstKernel.compareAndSet(false, true);
 					return new JaninoKernel() {
+						private boolean selectionDecided;
+						private boolean emitsPage;
 						private int fills;
 
 						@Override
@@ -1140,6 +1156,10 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 
 						@Override
 						public int fill(long[] rowBuffer, int maxRows) {
+							if (!selectionDecided) {
+								selectionDecided = true;
+								emitsPage = firstKernel.compareAndSet(false, true);
+							}
 							if (!emitsPage) {
 								return 0;
 							}
