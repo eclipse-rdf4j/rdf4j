@@ -1,0 +1,117 @@
+name: LMDB bulk-load Windows launcher
+
+on:
+  pull_request:
+    paths:
+      - 'assembly/src/main/dist/lmdb-bulk-load.bat'
+      - 'core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/bulk/LmdbBulkLoadWindowsLauncherTest.java'
+      - '.github/workflows/lmdb-bulk-load-launcher-windows.yml'
+  push:
+    branches:
+      - optimize-lmdb
+    paths:
+      - 'assembly/src/main/dist/lmdb-bulk-load.bat'
+      - 'core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/bulk/LmdbBulkLoadWindowsLauncherTest.java'
+      - '.github/workflows/lmdb-bulk-load-launcher-windows.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  launcher:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Required root quick clean install
+        shell: pwsh
+        run: |
+          $offlineArgs = @(
+            '-B', '-ntp',
+            '-Dmaven.compiler.showWarnings=false',
+            '-T', '1C',
+            '-o',
+            '-Dmaven.repo.local=.m2_repo',
+            '-Pquick', 'clean', 'install', '--fail-at-end'
+          )
+          $offlineLog = 'maven-build.log'
+          & mvn @offlineArgs 2>&1 | Tee-Object -FilePath $offlineLog
+          $buildStatus = $LASTEXITCODE
+          $successfulLog = $offlineLog
+          $retryArgs = $offlineArgs
+          if ($buildStatus -ne 0) {
+            $buildOutput = Get-Content $offlineLog -Raw
+            $offlineResolutionFailure = '(?i)Cannot access .* in offline mode|has not been downloaded from it before'
+            if ($buildOutput -match $offlineResolutionFailure) {
+              $retryArgs = $offlineArgs | Where-Object { $_ -ne '-o' }
+              $successfulLog = 'maven-build-online-retry.log'
+              & mvn @retryArgs 2>&1 | Tee-Object -FilePath $successfulLog
+              $buildStatus = $LASTEXITCODE
+            }
+          }
+          if ($buildStatus -ne 0) {
+            $serialArgs = @()
+            for ($index = 0; $index -lt $retryArgs.Count; $index++) {
+              if ($retryArgs[$index] -eq '-T' -and $index + 1 -lt $retryArgs.Count) {
+                $index++
+                continue
+              }
+              $serialArgs += $retryArgs[$index]
+            }
+            $successfulLog = 'maven-build-serial-retry.log'
+            & mvn @serialArgs 2>&1 | Tee-Object -FilePath $successfulLog
+            $buildStatus = $LASTEXITCODE
+          }
+          if ($buildStatus -ne 0) {
+            exit $buildStatus
+          }
+          Copy-Item $successfulLog maven-build.initial-clean-install.log
+
+      - name: Run focused Windows launcher regression
+        shell: pwsh
+        run: |
+          $testArgs = @(
+            '-B', '-ntp',
+            '-o',
+            '-Dmaven.repo.local=.m2_repo',
+            '-pl', 'core/sail/lmdb',
+            '-DskipITs',
+            '-Dtest=LmdbBulkLoadWindowsLauncherTest',
+            'verify', '--fail-at-end'
+          )
+          & mvn @testArgs 2>&1 | Tee-Object -FilePath windows-launcher-verify.log
+          $testStatus = $LASTEXITCODE
+          if ($testStatus -ne 0) {
+            $testOutput = Get-Content 'windows-launcher-verify.log' -Raw
+            $offlineResolutionFailure = '(?i)Cannot access .* in offline mode|has not been downloaded from it before'
+            if ($testOutput -match $offlineResolutionFailure) {
+              $onlineArgs = $testArgs | Where-Object { $_ -ne '-o' }
+              & mvn @onlineArgs 2>&1 | Tee-Object -FilePath windows-launcher-verify-online-retry.log
+              $testStatus = $LASTEXITCODE
+              if ($testStatus -eq 0) {
+                & mvn @testArgs 2>&1 | Tee-Object -FilePath windows-launcher-verify-offline-confirmation.log
+                $testStatus = $LASTEXITCODE
+              }
+            }
+          }
+          if ($testStatus -ne 0) {
+            exit $testStatus
+          }
+
+      - name: Preserve Windows test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lmdb-bulk-load-windows-launcher-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            maven-build*.log
+            windows-launcher-verify*.log
+            core/sail/lmdb/target/surefire-reports/**

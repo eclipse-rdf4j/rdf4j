@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -42,13 +43,18 @@ public class MinusQueryEvaluationStep implements QueryEvaluationStep {
 	public MinusQueryEvaluationStep(QueryEvaluationStep leftQes, QueryEvaluationStep rightQes,
 			TupleExpr leftArg, TupleExpr rightArg) {
 		this.leftQes = leftQes;
+		this.comparisonBindingNames = comparisonBindingNames(leftArg, rightArg);
+		this.rightQes = bs -> new DelayedEvaluationIteration(rightQes, bs);
+	}
 
+	/** Shared operand-output domain for generic and native MINUS compatibility checks. */
+	@InternalUseOnly
+	public static Set<String> comparisonBindingNames(TupleExpr leftArg, TupleExpr rightArg) {
 		Set<String> leftOutputNames = actualOutputBindingNames(leftArg);
 		Set<String> rightOutputNames = actualOutputBindingNames(rightArg);
 		Set<String> shared = new HashSet<>(leftOutputNames);
 		shared.retainAll(rightOutputNames);
-		this.comparisonBindingNames = Set.copyOf(shared);
-		this.rightQes = bs -> new DelayedEvaluationIteration(rightQes, bs);
+		return Set.copyOf(shared);
 	}
 
 	@Override

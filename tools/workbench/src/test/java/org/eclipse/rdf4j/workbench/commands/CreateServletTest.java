@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
@@ -36,10 +37,13 @@ import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
@@ -215,10 +219,16 @@ public class CreateServletTest {
 				Map.entry("Value eviction interval", "1000"),
 				Map.entry("Force sync", "false"),
 				Map.entry("No readahead", "true"),
-				Map.entry("Query Evaluation Mode", "STRICT")));
+				Map.entry("Query Evaluation Mode", "STRICT"),
+				Map.entry("Native query evaluation enabled", "true"),
+				Map.entry("Direct adjacency index enabled", "true"),
+				Map.entry("Compressed value overlay enabled", "true")));
 
 		assertThat(rendered)
 				.contains("lmdb:bulkOperationSize 0")
+				.contains("lmdb:nativeEvaluationEnabled true")
+				.contains("lmdb:directAdjacencyEnabled true")
+				.contains("lmdb:valueOverlayEnabled true")
 				.contains("20971520")
 				.doesNotContain("Triple DB size[len=16]");
 	}
@@ -348,6 +358,61 @@ public class CreateServletTest {
 	}
 
 	@Test
+	public void testLmdbExperimentalQueryOptimizationsCanBeSubmittedAndPersisted() throws Exception {
+		assertLmdbExperimentalSettingsPersist("true", false, false, false,
+				Files.createTempDirectory(datadir.toPath(), "experimental"));
+	}
+
+	@ParameterizedTest
+	@CsvSource(value = {
+			"missing,false,false,false",
+			"false,false,false,false", "false,false,false,true",
+			"false,false,true,false", "false,false,true,true",
+			"false,true,false,false", "false,true,false,true",
+			"false,true,true,false", "false,true,true,true",
+			"true,false,false,true", "true,false,true,false", "true,false,true,true",
+			"true,true,false,false", "true,true,false,true", "true,true,true,false", "true,true,true,true"
+	}, nullValues = "missing")
+	public void testLmdbExperimentalQueryOptimizationsRemainIndependent(String experimental, boolean nativeEvaluation,
+			boolean directAdjacency, boolean valueOverlay, @TempDir Path repositoryDir) throws Exception {
+		assertLmdbExperimentalSettingsPersist(experimental, nativeEvaluation, directAdjacency, valueOverlay,
+				repositoryDir);
+	}
+
+	private void assertLmdbExperimentalSettingsPersist(String experimental, boolean nativeEvaluation,
+			boolean directAdjacency, boolean valueOverlay, Path repositoryDir) throws Exception {
+		LocalRepositoryManager manager = new LocalRepositoryManager(repositoryDir.toFile());
+		CreateServlet createServlet = new CreateServlet();
+		createServlet.setRepositoryManager(manager);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getTypeParameter()).thenReturn("lmdb");
+		when(request.getParameter("Repository ID")).thenReturn("lmdb-experimental");
+		when(request.getParameter("Repository title")).thenReturn("Experimental settings regression");
+		when(request.getParameter("Experimental Query Optimizations")).thenReturn(experimental);
+		when(request.getParameter("Native query evaluation enabled")).thenReturn(Boolean.toString(nativeEvaluation));
+		when(request.getParameter("Direct adjacency index enabled")).thenReturn(Boolean.toString(directAdjacency));
+		when(request.getParameter("Compressed value overlay enabled")).thenReturn(Boolean.toString(valueOverlay));
+		HttpServletResponse response = mock(HttpServletResponse.class);
+
+		createServlet.doPost(request, response);
+		verify(response).sendRedirect("../lmdb-experimental/summary");
+		manager.shutDown();
+
+		LocalRepositoryManager reopened = new LocalRepositoryManager(repositoryDir.toFile());
+		try {
+			RepositoryConfig config = reopened.getRepositoryConfig("lmdb-experimental");
+			SailRepositoryConfig repositoryConfig = (SailRepositoryConfig) config.getRepositoryImplConfig();
+			LmdbStoreConfig sail = (LmdbStoreConfig) repositoryConfig.getSailImplConfig();
+			assertThat(sail.isExperimentalQueryOptimizations()).isEqualTo(Boolean.parseBoolean(experimental));
+			assertThat(sail.getNativeEvaluationEnabled()).isEqualTo(nativeEvaluation);
+			assertThat(sail.getDirectAdjacencyEnabled()).isEqualTo(directAdjacency);
+			assertThat(sail.getValueOverlayEnabled()).isEqualTo(valueOverlay);
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
 	public void testLmdbTemplateShouldRenderConfiguredLmdbSettings() throws IOException {
 		String rendered = CreateServlet.getCreateTemplate("lmdb")
 				.render(Map.ofEntries(
@@ -460,13 +525,13 @@ public class CreateServletTest {
 		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
 		when(response.getOutputStream()).thenReturn(outputStream);
 
-		servlet.service(request, response, "transformations");
+		servlet.service(request, response);
 
 		String xml = outputStream.asString();
 		ConfigTemplate template = CreateServlet.getConfigTemplate("lmdb");
 
 		assertThat(xml)
-				.contains("create-template.xsl")
+				.doesNotContain("create-template.xsl", "<?xml-stylesheet")
 				.contains("fieldId")
 				.contains("fieldProperty")
 				.contains("fieldRole")
@@ -482,7 +547,10 @@ public class CreateServletTest {
 				.contains(templateDefault(template, "Value eviction interval"))
 				.doesNotContain("Append mode (experimental)")
 				.contains(templateDefault(template, "No readahead"))
-				.contains(templateDefault(template, "Query Evaluation Mode"));
+				.contains(templateDefault(template, "Query Evaluation Mode"))
+				.contains(templateDefault(template, "Native query evaluation enabled"))
+				.contains(templateDefault(template, "Direct adjacency index enabled"))
+				.contains(templateDefault(template, "Compressed value overlay enabled"));
 	}
 
 	@Test
@@ -495,13 +563,13 @@ public class CreateServletTest {
 		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
 		when(response.getOutputStream()).thenReturn(outputStream);
 
-		servlet.service(request, response, "transformations");
+		servlet.service(request, response);
 
 		String xml = outputStream.asString();
 		ConfigTemplate template = CreateServlet.getConfigTemplate("native");
 
 		assertThat(xml)
-				.contains("create-template.xsl")
+				.doesNotContain("create-template.xsl", "<?xml-stylesheet")
 				.contains("fieldId")
 				.contains("fieldProperty")
 				.contains("fieldRole")
@@ -524,7 +592,7 @@ public class CreateServletTest {
 		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
 		when(response.getOutputStream()).thenReturn(outputStream);
 
-		servlet.service(request, response, "transformations");
+		servlet.service(request, response);
 
 		String xml = outputStream.asString();
 		assertThat(extractBindingValues(xml, "type")).containsExactlyElementsOf(expectedCatalogTypes());

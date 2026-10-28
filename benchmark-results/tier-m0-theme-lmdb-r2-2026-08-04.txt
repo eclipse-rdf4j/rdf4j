@@ -1,0 +1,154 @@
+Maven packaging skipped by --no-build.
+Running benchmark with jar /Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms4G -Xmx16G -XX:+UseG1GC
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeAnalyticsQ5
+# Parameters: (regime = lmdb)
+# Run progress: 0.00% complete, ETA 00:01:00
+# Fork: 1 of 1
+# Warmup Iteration   1: 16:38:24,137 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+### three-tier engagement: cell=themeAnalyticsQ5 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+820.334 ms/op
+# Warmup Iteration   2: ### three-tier engagement: cell=themeAnalyticsQ5 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+841.833 ms/op
+832.129 ms/op
+828.439 ms/op
+806.733 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeAnalyticsQ5":
+  822.434 ±(99.9%) 250.332 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms4G -Xmx16G -XX:+UseG1GC
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeAnalyticsQ8
+# Parameters: (regime = lmdb)
+# Run progress: 16.67% complete, ETA 00:01:08
+# Fork: 1 of 1
+# Warmup Iteration   1: 16:38:37,852 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+### three-tier engagement: cell=themeAnalyticsQ8 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+290.483 ms/op
+# Warmup Iteration   2: ### three-tier engagement: cell=themeAnalyticsQ8 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+239.132 ms/op
+233.664 ms/op
+232.390 ms/op
+229.556 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeAnalyticsQ8":
+  231.870 ±(99.9%) 38.367 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms4G -Xmx16G -XX:+UseG1GC
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeAnalyticsQ9
+# Parameters: (regime = lmdb)
+# Run progress: 33.33% complete, ETA 00:00:50
+# Fork: 1 of 1
+# Warmup Iteration   1: 16:38:49,269 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+### three-tier engagement: cell=themeAnalyticsQ9 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+434.065 ms/op
+# Warmup Iteration   2: ### three-tier engagement: cell=themeAnalyticsQ9 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+483.099 ms/op
+415.480 ms/op
+388.235 ms/op
+429.560 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeAnalyticsQ9":
+  411.092 ±(99.9%) 383.282 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms4G -Xmx16G -XX:+UseG1GC
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeEngineeringQ1
+# Parameters: (regime = lmdb)
+# Run progress: 50.00% complete, ETA 00:00:37
+# Fork: 1 of 1
+# Warmup Iteration   1: 16:39:01,303 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+### three-tier engagement: cell=themeEngineeringQ1 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+133.548 ms/op
+# Warmup Iteration   2: ### three-tier engagement: cell=themeEngineeringQ1 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+131.389 ms/op
+130.031 ms/op
+122.525 ms/op
+118.076 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeEngineeringQ1":
+  123.544 ±(99.9%) 110.232 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms4G -Xmx16G -XX:+UseG1GC
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeHighlyConnectedQ1
+# Parameters: (regime = lmdb)
+# Run progress: 66.67% complete, ETA 00:00:24
+# Fork: 1 of 1
+# Warmup Iteration   1: 16:39:12,539 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+### three-tier engagement: cell=themeHighlyConnectedQ1 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+517.940 ms/op
+# Warmup Iteration   2: ### three-tier engagement: cell=themeHighlyConnectedQ1 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+497.456 ms/op
+486.908 ms/op
+487.940 ms/op
+489.623 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeHighlyConnectedQ1":
+  488.157 ±(99.9%) 25.001 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25, OpenJDK 64-Bit Server VM, 25+36-LTS
+# VM invoker: /Users/havardottestad/.sdkman/candidates/java/25-zulu/zulu-25.jdk/Contents/Home/bin/java
+# VM options: -Xms4G -Xmx16G -XX:+UseG1GC
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 2 iterations, 2 s each
+# Measurement: 3 iterations, 2 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeHighlyConnectedQ4
+# Parameters: (regime = lmdb)
+# Run progress: 83.33% complete, ETA 00:00:12
+# Fork: 1 of 1
+# Warmup Iteration   1: 16:39:25,395 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.37
+### three-tier engagement: cell=themeHighlyConnectedQ4 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+119.590 ms/op
+# Warmup Iteration   2: ### three-tier engagement: cell=themeHighlyConnectedQ4 regime=lmdb adjacencyState=ABSENT planes=0 kernelViews=0 kernelOpens=0 fallbacks=adjacency-absent
+108.242 ms/op
+105.632 ms/op
+106.164 ms/op
+106.222 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityBenchmark.themeHighlyConnectedQ4":
+  106.006 ±(99.9%) 5.939 ms/op [Average]
+# Run complete. Total time: 00:01:12
+Benchmark                                        (regime)  Mode  Cnt    Score     Error  Units
+ThreeTierParityBenchmark.themeAnalyticsQ5            lmdb  avgt    3  822.434 ± 250.332  ms/op
+ThreeTierParityBenchmark.themeAnalyticsQ8            lmdb  avgt    3  231.870 ±  38.367  ms/op
+ThreeTierParityBenchmark.themeAnalyticsQ9            lmdb  avgt    3  411.092 ± 383.282  ms/op
+ThreeTierParityBenchmark.themeEngineeringQ1          lmdb  avgt    3  123.544 ± 110.232  ms/op
+ThreeTierParityBenchmark.themeHighlyConnectedQ1      lmdb  avgt    3  488.157 ±  25.001  ms/op
+ThreeTierParityBenchmark.themeHighlyConnectedQ4      lmdb  avgt    3  106.006 ±   5.939  ms/op

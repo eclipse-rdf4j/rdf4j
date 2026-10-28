@@ -1,0 +1,886 @@
+/* The explanation keeps the editor's code theme in the output card below the form (M3.3). */
+.query-form,
+.query-output {
+    --query-code-surface: var(--workbench-editor-surface);
+    --query-code-surface-hover: var(--workbench-editor-gutter);
+    --query-code-selection: var(--workbench-editor-selection-focused);
+    --query-code-ink: var(--workbench-editor-ink);
+    --query-code-muted: var(--workbench-code-meta);
+    --query-code-connector: var(--workbench-code-meta);
+    --query-code-node: var(--workbench-code-keyword);
+    --query-code-annotation: var(--workbench-code-meta);
+    --query-code-variable-label: var(--workbench-code-atom);
+    --query-code-variable: var(--workbench-code-atom);
+    --query-code-value: var(--workbench-code-string);
+    --query-code-iri: var(--workbench-code-variable-3);
+    --query-code-literal: var(--workbench-code-string);
+    --query-code-bound: var(--workbench-code-variable-3);
+    --query-code-unbound: var(--workbench-code-error);
+    --query-code-metric: var(--workbench-code-number);
+    --query-code-border: var(--workbench-editor-gutter-border);
+    --query-code-focus: var(--workbench-focus);
+    --query-json-surface: var(--workbench-editor-surface);
+    --query-json-border: var(--workbench-editor-gutter-border);
+    --query-json-ink: var(--workbench-editor-ink);
+    --query-json-key: var(--workbench-code-meta);
+    --query-json-label: var(--workbench-code-meta);
+    --query-json-summary: var(--workbench-code-meta);
+    --query-json-percentage: var(--workbench-code-number);
+    --query-json-string: var(--workbench-code-string);
+    --query-json-number: var(--workbench-code-number);
+    --query-json-boolean: var(--workbench-code-atom);
+    --query-json-null: var(--workbench-code-meta);
+}
+
+html[data-theme="dark"] .query-form,
+html[data-theme="dark"] .query-output {
+    --query-code-surface: var(--workbench-surface);
+    --query-code-surface-hover: var(--workbench-inset);
+    --query-code-selection: var(--workbench-inset);
+    --query-code-ink: var(--workbench-ink);
+    --query-code-muted: var(--workbench-muted);
+    --query-code-connector: var(--workbench-muted);
+    --query-code-node: var(--workbench-teal);
+    --query-code-annotation: var(--workbench-nav);
+    --query-code-variable-label: var(--workbench-teal);
+    --query-code-variable: var(--workbench-teal-dark);
+    --query-code-value: var(--workbench-nav);
+    --query-code-iri: var(--query-code-value);
+    --query-code-literal: var(--query-code-value);
+    --query-code-bound: var(--workbench-teal-dark);
+    --query-code-unbound: var(--workbench-danger);
+    --query-code-metric: var(--workbench-nav);
+    --query-code-border: var(--workbench-rule);
+    --query-code-focus: var(--workbench-focus);
+    --query-json-surface: var(--workbench-surface);
+    --query-json-border: var(--workbench-soft-rule);
+    --query-json-ink: var(--workbench-ink);
+    --query-json-key: var(--workbench-nav);
+    --query-json-label: var(--workbench-muted);
+    --query-json-summary: var(--workbench-muted);
+    --query-json-percentage: var(--workbench-teal-dark);
+    --query-json-string: var(--workbench-ink);
+    --query-json-number: var(--workbench-nav);
+    --query-json-boolean: var(--workbench-teal-dark);
+    --query-json-null: var(--workbench-muted);
+}
+
+/* Explanation tab panel (M3.3): one toolbar, then one column per explained query. In compare mode the
+ * two columns share their rows so the headers, status lines and plans line up. */
+.query-explanation-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--workbench-space-subgroup, 16px);
+    align-items: start;
+}
+
+.query-explanation-column {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    min-width: 0;
+}
+
+.query-explanation-column[hidden] {
+    display: none;
+}
+
+.query-explanation-column__header {
+    grid-row: 1;
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--workbench-control-gap, 8px);
+    min-height: var(--workbench-control-height);
+    margin-bottom: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-column__label {
+    color: var(--workbench-ink);
+    font-weight: 600;
+}
+
+body:not(.query-compare-mode) .query-explanation-column__header {
+    display: none;
+}
+
+.query-explanation-column > .query-explanation-status {
+    grid-row: 2;
+    grid-column: 1;
+}
+
+.query-explanation-column > .query-explanation-surface {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+/*
+ * The running time, then the final time, of each plan sit at the end of one line above the toolbar; in compare mode
+ * each carries its query's name. The line keeps its height while a plan is shown, so the toolbar does not move when a
+ * stale plan drops its time (changing the toolbar's level or format makes the plan stale). It sits 14px up in the
+ * panel's top padding, so the times add little height above the toolbar.
+ */
+.query-explanation-timings {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 2px var(--workbench-space-subgroup, 16px);
+    min-height: 1.35em;
+    margin: -14px 0 var(--workbench-control-gap, 8px);
+    color: var(--workbench-muted);
+    font-family: var(--workbench-font);
+    font-size: var(--workbench-control-font-size);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.35;
+}
+
+.query-explanation-panel:has(> .query-explanation-panel__empty:not([hidden])) > .query-explanation-timings {
+    display: none;
+}
+
+.query-explanation-timings__entry {
+    display: inline-flex;
+    gap: 0.4em;
+    white-space: nowrap;
+}
+
+.query-explanation-timings__entry:has(> .query-explanation-timing:empty),
+body:not(.query-compare-mode) .query-explanation-timings__label {
+    display: none;
+}
+
+.query-explanation-timings__label {
+    color: var(--workbench-ink);
+    font-weight: 600;
+}
+
+body.query-compare-mode .query-explanation-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto auto;
+    row-gap: 0;
+}
+
+@supports (grid-template-rows: subgrid) {
+    body.query-compare-mode .query-explanation-column {
+        grid-row: 1 / span 3;
+        grid-template-rows: subgrid;
+    }
+}
+
+@media (max-width: 900px) {
+    body.query-compare-mode .query-explanation-columns {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: none;
+    }
+
+    body.query-compare-mode .query-explanation-column {
+        grid-row: auto;
+        grid-template-rows: none;
+    }
+}
+
+body.query-compare-mode #copy-explanation {
+    display: none;
+}
+
+.query-explanation-panel__empty {
+    margin-top: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-controls-row-class {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-controls-row-class .query-form__field--controls {
+    position: relative;
+    column-gap: 16px;
+}
+
+.query-explanation-status {
+    display: none;
+    margin: 0 0 0.55em 0;
+    padding: 0.45em 0.7em;
+    border-radius: var(--workbench-control-radius);
+    border: 1px solid transparent;
+    font-family: var(--workbench-font);
+    font-size: var(--workbench-control-font-size);
+    line-height: 1.35;
+}
+
+.query-explanation-status--visible {
+    display: block;
+}
+
+.query-explanation-status--loading {
+    background: var(--workbench-inset);
+    border-color: var(--workbench-soft-rule);
+    color: var(--workbench-nav);
+}
+
+.query-explanation-status--stale {
+    padding: 0;
+    background: var(--workbench-inset);
+    border-color: var(--workbench-soft-rule);
+    color: var(--workbench-muted);
+}
+
+/* The whole stale line is the refresh button, so the banner's padding moves onto it. */
+.query-explanation-status__refresh {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0.45em 0.7em;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    line-height: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.query-explanation-status__refresh:hover {
+    background: var(--workbench-selected);
+    color: var(--workbench-ink);
+}
+
+.query-explanation-status__refresh:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: 2px;
+}
+
+.query-explanation-status--warning {
+    background: var(--workbench-warning-surface);
+    border-color: var(--workbench-warning-rule);
+    color: var(--workbench-warning);
+}
+
+.query-explanation-status--error {
+    background: var(--workbench-surface);
+    border-color: var(--workbench-danger);
+    color: var(--workbench-danger);
+}
+
+.query-explanation-surface {
+    position: relative;
+}
+
+/* Top-aligned: an open Config panel makes its group taller and must not move the other controls. */
+.query-explanation-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--workbench-control-gap, 8px);
+    margin: 0 0 var(--workbench-space-subgroup, 16px);
+}
+
+.query-explanation-toolbar__settings,
+.query-explanation-toolbar #primary-explain-settings,
+.query-explanation-toolbar #primary-explain-settings > .query-form__field--controls-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--workbench-control-gap, 8px);
+}
+
+/* The actions (Compare with Swap and Diff, then Explain again) stay at the right end of every line they wrap onto. */
+.query-explanation-toolbar__actions {
+    margin-left: auto;
+}
+
+.query-explanation-toolbar #primary-explain-settings,
+.query-explanation-toolbar #primary-explain-settings > .query-form__field--controls-group {
+    justify-content: flex-end;
+}
+
+/* In compare mode Swap and Diff are items of Compare's group, so they wrap, and fill phone rows, like Compare. */
+.query-explanation-toolbar .query-compare-toolbar:not([hidden]) {
+    display: contents;
+}
+
+/* On phones the settings and actions fill each row they wrap onto; icon-only actions keep their square. */
+@media (max-width: 600px) {
+    .query-explanation-toolbar :is(.query-explanation-toolbar__settings, .query-explanation-toolbar__actions,
+            .query-form__field--controls-group, .workbench-select-control, .workbench-select-control > select,
+            .query-explanation-settings, .workbench-action:not(.workbench-action--icon)) {
+        flex: 1 1 auto;
+    }
+
+    body.workbench-body .query-explanation-toolbar .query-explanation-settings > .workbench-disclosure__toggle {
+        justify-self: stretch;
+        width: auto;
+    }
+}
+
+.query-explanation-toolbar .query-compare-toolbar {
+    width: auto;
+    margin: 0;
+}
+
+.query-explanation-copy {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.7rem;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.query-explanation-copy[disabled] {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+.query-explanation-copy__svg {
+    display: block;
+    width: 1rem;
+    height: 1rem;
+}
+
+.query-explanation-copy__stroke {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.query-explanation-overlay {
+    display: none;
+}
+
+/* A refresh keeps the previous plan in view while the panel's loading bar (.workbench-local-progress) runs, like a
+ * page that is being navigated away from; "Refreshing explanation..." only tells screen readers. */
+.query-explanation-overlay--visible {
+    display: block;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.query-explain-cancel {
+    display: none;
+}
+
+.query-explain-cancel--visible {
+    display: inline-block;
+}
+
+.workbench-action.query-explain-cancel {
+    display: none;
+}
+
+.workbench-action.query-explain-cancel.query-explain-cancel--visible {
+    display: inline-flex;
+}
+
+body.workbench-body .workbench-action.query-explain-cancel {
+    display: none;
+}
+
+body.workbench-body .workbench-action.query-explain-cancel.query-explain-cancel--visible,
+body.workbench-body .workbench-action.query-explain-cancel[aria-hidden='false'] {
+    display: inline-flex;
+}
+
+#query-explanation,
+#query-explanation-compare {
+    margin-top: 0;
+    margin-bottom: 0;
+    max-height: 75vh;
+    width: 100%;
+    max-width: 100%;
+    overflow: scroll;
+    white-space: pre;
+    word-break: normal;
+    overflow-wrap: normal;
+    background: var(--query-code-surface);
+    color: var(--query-code-ink);
+    border: 1px solid var(--query-code-border);
+    border-radius: var(--workbench-control-radius);
+    padding: 0.578125rem 0.59375rem 0.609375rem;
+    box-sizing: border-box;
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, .04);
+    font-family: var(--workbench-code-font);
+    font-size: var(--workbench-code-font-size);
+    font-variant-ligatures: none;
+    line-height: 1rem;
+    letter-spacing: 0;
+    tab-size: 4;
+}
+
+#query-explanation ::selection,
+#query-explanation-compare ::selection {
+    background: var(--query-code-selection);
+    color: var(--query-code-ink);
+}
+
+.query-explanation-settings {
+    position: relative;
+    z-index: 9;
+}
+
+.query-explanation-settings__panel {
+    max-width: calc(100vw - 2rem);
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
+    color: var(--query-code-ink);
+}
+
+body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__content {
+    gap: var(--workbench-space-subgroup, 16px);
+}
+
+.query-explanation-settings__header {
+    margin-bottom: var(--workbench-form-gap, 12px);
+}
+
+/* The explanation timeout: a short number field and its unit; empty falls back to the query timeout. */
+.query-explanation-timeout {
+    display: flex;
+    align-items: center;
+    gap: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-timeout input {
+    width: 7rem;
+}
+
+.query-explanation-settings__highlighting {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-highlight-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-highlight-mode input[type='radio'] {
+    margin: 0;
+    accent-color: var(--query-code-node);
+}
+
+/* WebKit does not treat arrow-key moves within a radio group as :focus-visible, so state the ring for :focus. */
+.query-explanation-highlight-mode input[type='radio']:focus {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: 2px;
+}
+
+.query-explanation-highlight-mode label {
+    margin-right: 0;
+    color: var(--workbench-nav);
+    font-size: var(--workbench-control-font-size);
+    cursor: pointer;
+}
+
+.query-explanation-hotspot-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    color: var(--workbench-muted);
+    font-size: 0.86em;
+    white-space: nowrap;
+}
+
+.query-explanation-hotspot-legend::before {
+    width: 2.6em;
+    height: 0.65em;
+    border: 1px solid var(--workbench-danger);
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--workbench-danger-surface), var(--workbench-danger));
+    content: '';
+}
+
+.query-explanation-property-config {
+    color: var(--query-code-ink);
+}
+
+.query-explanation-property-config__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--workbench-form-gap, 12px) var(--workbench-space-subgroup, 16px);
+}
+
+.query-explanation-property-config__title {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-property-config__count {
+    color: var(--query-code-annotation);
+    font-size: 0.82em;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+}
+
+.query-explanation-property-config__actions {
+    display: inline-flex;
+    gap: var(--workbench-control-gap, 8px);
+}
+
+.query-explanation-property-config__options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--workbench-control-gap, 8px) var(--workbench-space-subgroup, 16px);
+    max-height: 15rem;
+    margin: var(--workbench-form-gap, 12px) 0 0;
+    padding: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.query-explanation-property-option {
+    display: flex;
+    align-items: flex-start;
+    min-width: 0;
+    gap: var(--workbench-control-gap, 8px);
+    padding: var(--workbench-field-gap, 4px);
+    border-radius: 0.32rem;
+    cursor: pointer;
+    font-family: var(--workbench-font);
+    font-size: var(--workbench-control-font-size);
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.query-explanation-property-option:hover {
+    background: var(--query-code-surface-hover);
+}
+
+.query-explanation-property-option input {
+    flex: 0 0 auto;
+    margin: 0.12rem 0 0;
+    accent-color: var(--query-code-node);
+}
+
+.query-explanation-property-config__hint {
+    margin: var(--workbench-field-gap, 4px) 0 0;
+}
+
+@media (max-width: 48rem) {
+    .query-explanation-property-config__options {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    #query-explanation,
+    #query-explanation-compare,
+    #query-explanation-json-view,
+    #query-explanation-json-view-compare {
+        font-size: 13px;
+    }
+
+}
+
+.query-explanation--highlighted .query-explanation-line {
+    display: inline-block;
+    min-width: 100%;
+    box-sizing: border-box;
+    margin: 0 -0.55rem;
+    padding: 0 0.55rem;
+    border-left: 0;
+    border-radius: 0.22rem;
+    transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.query-explanation--highlighted .query-explanation-line:hover {
+    background: var(--query-code-surface-hover);
+    box-shadow: inset 2px 0 var(--query-code-border);
+}
+
+.query-explanation-token--connector {
+    color: var(--query-code-connector);
+    letter-spacing: -0.005rem;
+}
+
+.query-explanation-token--node-type {
+    color: var(--query-code-node);
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.query-explanation-token--annotation {
+    color: var(--query-code-annotation);
+    font-weight: 400;
+}
+
+.query-explanation-token--algorithm {
+    color: var(--query-code-ink);
+    font-weight: 400;
+}
+
+.query-explanation-token--node-detail {
+    color: var(--query-code-ink);
+    font-weight: 400;
+}
+
+.query-explanation-token--variable-flag {
+    color: var(--query-code-ink);
+    font-weight: 400;
+}
+
+.query-explanation-token--join-side {
+    color: var(--query-code-annotation);
+    font-style: italic;
+    font-weight: 400;
+}
+
+.query-explanation-token--operator {
+    color: var(--query-code-ink);
+    font-weight: 400;
+}
+
+.query-explanation-token--variable {
+    color: var(--query-code-variable);
+    font-weight: 700;
+}
+
+.query-explanation-token--variable-label {
+    color: var(--query-code-variable-label);
+    font-weight: 700;
+}
+
+.query-explanation-token--value {
+    color: var(--query-code-value);
+    font-weight: 700;
+}
+
+.query-explanation-token--value-iri {
+    color: var(--query-code-iri);
+}
+
+.query-explanation-token--value-literal {
+    color: var(--query-code-literal);
+}
+
+.query-explanation-token--metric-name {
+    color: var(--query-code-annotation);
+    font-weight: 400;
+}
+
+.query-explanation-token--metric-value {
+    color: var(--query-code-metric);
+    font-variant-numeric: tabular-nums;
+    font-weight: 400;
+}
+
+.query-explanation-token--binding-bound {
+    color: var(--query-code-bound);
+}
+
+.query-explanation-token--binding-unbound {
+    color: var(--query-code-unbound);
+}
+
+.query-explanation-token--punctuation {
+    color: var(--query-code-connector);
+}
+
+.query-explanation-line--hotspot {
+    border-radius: 0.2em;
+    color: var(--workbench-ink);
+}
+
+.query-explanation-line--hotspot .query-explanation-token {
+    color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .query-explanation-copy,
+    .query-explanation--highlighted .query-explanation-line {
+        transition: none;
+    }
+
+    .query-explanation-settings__panel {
+        animation: none;
+    }
+}
+
+#query-explanation-dot-view,
+#query-explanation-dot-view-compare {
+    display: none;
+    background: var(--workbench-surface);
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-control-radius);
+    padding: 0;
+    font-size: 1em;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: auto;
+    height: 75vh;
+}
+
+#query-explanation-json-view,
+#query-explanation-json-view-compare {
+    display: none;
+    background: var(--query-json-surface);
+    border: 1px solid var(--query-json-border);
+    border-radius: var(--workbench-control-radius);
+    padding: 0.75em;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: auto;
+    max-height: 75vh;
+    font-family: var(--workbench-code-font);
+    font-size: var(--workbench-code-font-size);
+    line-height: 1.45;
+}
+
+.query-json-view__raw {
+    margin: 0.6em 0 0 0;
+    padding: 0.6em;
+    background: var(--workbench-inset);
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-control-radius);
+    white-space: pre;
+    overflow: auto;
+}
+
+.query-json-tree {
+    font-size: var(--workbench-control-font-size);
+    color: var(--query-json-ink);
+}
+
+.query-json-node {
+    margin: 0.15em 0;
+}
+
+.query-json-node__line {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.35em;
+    white-space: nowrap;
+}
+
+.query-json-node__toggle {
+    box-sizing: border-box;
+    min-width: 24px;
+    min-height: 24px;
+    border: 1px solid var(--workbench-rule);
+    background: var(--workbench-inset);
+    color: var(--workbench-nav);
+    border-radius: var(--workbench-control-radius);
+    font-size: var(--workbench-label-font-size);
+    line-height: 1;
+    width: 1.5em;
+    height: 1.5em;
+    padding: 0;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+/* Branch buttons and leaf spacers share one compact indentation column. */
+body.workbench-body .workbench-page-surface .query-json-node__toggle {
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
+}
+
+.query-json-node__toggle:hover {
+    border-color: var(--workbench-teal);
+    background: var(--workbench-surface);
+}
+
+.query-json-node__toggle:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: 2px;
+}
+
+.query-json-node__toggle--spacer {
+    border: none;
+    background: transparent;
+    cursor: default;
+}
+
+.query-json-node__children {
+    margin-left: 1.15em;
+    padding-left: 0.75em;
+    border-left: 1px dotted var(--workbench-rule);
+}
+
+.query-json-node--collapsed > .query-json-node__children {
+    display: none;
+}
+
+.query-json-node__key {
+    color: var(--query-json-key);
+}
+
+.query-json-node__label {
+    color: var(--query-json-label);
+}
+
+.query-json-node__summary {
+    color: var(--query-json-summary);
+}
+
+.query-json-node__percentage {
+    color: var(--query-json-percentage);
+    font-weight: 600;
+}
+
+.query-json-node__value--string {
+    color: var(--query-json-string);
+}
+
+.query-json-node__value--number {
+    color: var(--query-json-number);
+}
+
+.query-json-node__value--boolean {
+    color: var(--query-json-boolean);
+}
+
+.query-json-node__value--null {
+    color: var(--query-json-null);
+    font-style: italic;
+}
+/* Strategy decisions belong to the explanation snapshot in either comparison pane. */
+.query-strategy-decisions {
+    width: 100%;
+    overflow-x: auto;
+    margin-top: 1rem;
+}
+.query-strategy-decisions section { margin-bottom: 1.5rem; }
+.query-strategy-decisions table { width: 100%; border-collapse: collapse; }
+.query-strategy-decisions th, .query-strategy-decisions td {
+    text-align: left;
+    vertical-align: top;
+    padding: 0.5rem;
+    border-bottom: 1px solid #ccd3da;
+    overflow-wrap: anywhere;
+}
+.query-strategy-decisions__selection { font-weight: 600; }
+.query-strategy-decisions__selected { background: #e8f4ed; }
+.query-strategy-decisions th { white-space: nowrap; }
+.query-strategy-decisions td:nth-child(3) { min-width: 5em; overflow-wrap: normal; }
+.query-strategy-decisions td:nth-child(4) { min-width: 6.5em; overflow-wrap: normal; }

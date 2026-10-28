@@ -1,0 +1,17 @@
+{
+  "//": "Preserves the historical global-script build explicitly: TypeScript 6 changed its defaults. ES5/module-none remain on the 6.x compatibility lane; namespaces use the current namespace keyword.",
+  "compilerOptions": {
+    "target": "ES5",
+    "module": "none",
+    "moduleResolution": "classic",
+    "strict": false,
+    "ignoreDeprecations": "6.0",
+    "noImplicitAny": true,
+    "sourceMap": true,
+    "sourceRoot": "/rdf4j-workbench/scripts/ts",
+    "outDir": "target/frontend/scripts",
+    "rootDir": "src/main/frontend/classic",
+    "types": []
+  },
+  "include": ["src/main/frontend/classic/*.ts"]
+}

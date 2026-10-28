@@ -78,7 +78,7 @@ final class PartialIndex {
 	private final long env;
 	private final int explicitDbi;
 	private final int inferredDbi;
-	private final TripleIndex supportIndex;
+	private volatile TripleIndex supportIndex;
 
 	PartialIndex(String fields, long env, long txn, TripleIndex supportIndex) throws IOException {
 		this.fields = fields;
@@ -96,6 +96,10 @@ final class PartialIndex {
 
 	String fields() {
 		return fields;
+	}
+
+	void setSupportIndex(TripleIndex supportIndex) {
+		this.supportIndex = supportIndex;
 	}
 
 	int db(boolean explicit) {

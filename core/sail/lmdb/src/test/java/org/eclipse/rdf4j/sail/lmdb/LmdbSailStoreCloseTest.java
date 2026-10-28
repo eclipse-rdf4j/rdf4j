@@ -38,8 +38,10 @@ class LmdbSailStoreCloseTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc")
 				.setSketchEstimatorEnabled(true)
 				.setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		config.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(dataDir, config);
 		store.init();
+		LmdbGcTestMaintenance.awaitPostReady(store);
 
 		LmdbSailStore backingStore = store.getBackingStore();
 		LmdbFilterSelectivityStats filterStats = (LmdbFilterSelectivityStats) getField(backingStore,

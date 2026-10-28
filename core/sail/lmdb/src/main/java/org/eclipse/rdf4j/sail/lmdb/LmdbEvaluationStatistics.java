@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -66,6 +67,13 @@ class LmdbEvaluationStatistics
 	private final LmdbStatementPatternCardinalitySource statementPatternCardinalitySource;
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
 	private final LmdbFilterSelectivityStats filterSelectivityStats;
+	/**
+	 * Sketch-free learned filter selectivity, owned by the store so it accumulates across queries — this class is
+	 * instantiated fresh per {@code getEvaluationStatistics()} call and could not learn anything on its own. Null when
+	 * no store supplied one, in which case filter estimates fall back to the inherited heuristic.
+	 */
+	private final LmdbLearnedFilterSelectivity learnedFilterSelectivity;
+	private final boolean experimental;
 	private volatile boolean statementPatternCardinalityFailureLogged;
 	private final ThreadLocal<OptimizationCostScope> optimizationCostScope = new ThreadLocal<>();
 
@@ -84,11 +92,29 @@ class LmdbEvaluationStatistics
 	public LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator sketchBasedJoinEstimator, LmdbFilterSelectivityStats filterSelectivityStats,
 			LmdbStatementPatternCardinalitySource statementPatternCardinalitySource) {
+		this(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
+				statementPatternCardinalitySource, null);
+	}
+
+	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator sketchBasedJoinEstimator, LmdbFilterSelectivityStats filterSelectivityStats,
+			LmdbStatementPatternCardinalitySource statementPatternCardinalitySource,
+			LmdbLearnedFilterSelectivity learnedFilterSelectivity) {
+		this(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
+				statementPatternCardinalitySource, learnedFilterSelectivity, QueryExecutionPolicy.EXPERIMENTAL);
+	}
+
+	LmdbEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
+			SketchBasedJoinEstimator sketchBasedJoinEstimator, LmdbFilterSelectivityStats filterSelectivityStats,
+			LmdbStatementPatternCardinalitySource statementPatternCardinalitySource,
+			LmdbLearnedFilterSelectivity learnedFilterSelectivity, QueryExecutionPolicy policy) {
 		this.valueStore = valueStore;
 		this.tripleStore = tripleStore;
 		this.statementPatternCardinalitySource = statementPatternCardinalitySource;
-		this.sketchBasedJoinEstimator = sketchBasedJoinEstimator;
-		this.filterSelectivityStats = filterSelectivityStats;
+		this.experimental = policy.experimentalQueryOptimizations();
+		this.sketchBasedJoinEstimator = experimental ? sketchBasedJoinEstimator : null;
+		this.filterSelectivityStats = experimental ? filterSelectivityStats : null;
+		this.learnedFilterSelectivity = experimental ? learnedFilterSelectivity : null;
 	}
 
 	@Override
@@ -102,6 +128,34 @@ class LmdbEvaluationStatistics
 	@Override
 	public boolean supportsFilterSelectivityCosting() {
 		return sketchBasedJoinEstimator != null;
+	}
+
+	int fallbackAccessPrefixLength(StatementPattern statementPattern, Set<String> boundVars) {
+		if (statementPattern == null) {
+			return 0;
+		}
+		int boundComponentMask = 0;
+		if (isFixedOrBound(statementPattern.getSubjectVar(), boundVars)) {
+			boundComponentMask |= 1 << Component.S.ordinal();
+		}
+		if (isFixedOrBound(statementPattern.getPredicateVar(), boundVars)) {
+			boundComponentMask |= 1 << Component.P.ordinal();
+		}
+		if (isFixedOrBound(statementPattern.getObjectVar(), boundVars)) {
+			boundComponentMask |= 1 << Component.O.ordinal();
+		}
+		if (isFixedOrBound(statementPattern.getContextVar(), boundVars)) {
+			boundComponentMask |= 1 << Component.C.ordinal();
+		}
+		return tripleStore.indexAccessPaths(boundComponentMask)
+				.stream()
+				.mapToInt(TripleStore.IndexAccessPath::prefixLength)
+				.max()
+				.orElse(0);
+	}
+
+	private static boolean isFixedOrBound(Var var, Set<String> boundVars) {
+		return var != null && (var.hasValue() || (var.getName() != null && boundVars.contains(var.getName())));
 	}
 
 	@Override
@@ -346,6 +400,9 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, Set<String> currentlyBoundVars) {
+		if (!experimental) {
+			return Optional.empty();
+		}
 		if (sketchBasedJoinEstimator == null) {
 			return estimatePageWalkingFactorCost(factor);
 		}
@@ -354,6 +411,9 @@ class LmdbEvaluationStatistics
 
 	@Override
 	public Optional<FactorCostEstimate> estimateFactorCost(TupleExpr factor, JoinFactorCostModel.CostContext context) {
+		if (!experimental) {
+			return Optional.empty();
+		}
 		if (sketchBasedJoinEstimator == null) {
 			return estimatePageWalkingFactorCost(factor);
 		}
@@ -765,6 +825,9 @@ class LmdbEvaluationStatistics
 			}
 		}
 		if (factor instanceof BindingSetAssignment assignment) {
+			if (!assignment.hasRepeatableBindingSets()) {
+				return Double.NaN;
+			}
 			double rows = 0.0d;
 			for (Object ignored : assignment.getBindingSets()) {
 				rows += 1.0d;
@@ -783,6 +846,9 @@ class LmdbEvaluationStatistics
 			}
 		}
 		if (factor instanceof BindingSetAssignment assignment) {
+			if (!assignment.hasRepeatableBindingSets()) {
+				return Double.NaN;
+			}
 			double rows = 0.0d;
 			for (Object ignored : assignment.getBindingSets()) {
 				rows += 1.0d;
@@ -1106,7 +1172,8 @@ class LmdbEvaluationStatistics
 	@Override
 	public double estimateFilterPassRatio(Filter filter) {
 		if (sketchBasedJoinEstimator == null) {
-			return -1.0d;
+			FilterPassEstimate learned = learnedEstimate(filter);
+			return learned == null ? -1.0d : learned.getPassRatio();
 		}
 		double ratio = sketchBasedJoinEstimator.estimateFilterPassRatio(filter);
 		return Double.isFinite(ratio) && ratio >= 0.0d && ratio <= 1.0d ? ratio : -1.0d;
@@ -1115,15 +1182,38 @@ class LmdbEvaluationStatistics
 	@Override
 	public FilterPassEstimate estimateFilterPass(Filter filter) {
 		if (sketchBasedJoinEstimator == null) {
-			return super.estimateFilterPass(filter);
+			FilterPassEstimate learned = learnedEstimate(filter);
+			return learned != null ? learned : super.estimateFilterPass(filter);
 		}
 		return sketchBasedJoinEstimator.estimateFilterPass(filter);
 	}
 
+	/** The sketch-free learned estimate for this filter, or null when nothing has been observed yet. */
+	private FilterPassEstimate learnedEstimate(Filter filter) {
+		if (learnedFilterSelectivity == null || filter == null || filter.getCondition() == null) {
+			return null;
+		}
+		StatementPattern pattern = basePatternForFilter(filter);
+		if (pattern == null) {
+			return null;
+		}
+		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);
+		if (patternKey == null) {
+			return null;
+		}
+		int localBoundComponentMask = localBoundComponentMask(filter, pattern);
+		return learnedFilterSelectivity.estimate(patternKey,
+				FilterSelectivityKeys.qualifyFilterKey(FilterSelectivityKeys.filterKeyFor(filter.getCondition()),
+						localBoundComponentMask),
+				FilterSelectivityKeys.qualifyFilterKey(
+						FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern),
+						localBoundComponentMask));
+	}
+
 	@Override
 	public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
-		if (filterSelectivityStats == null || filter == null || filter.getCondition() == null
-				|| (passedCount <= 0L && filteredCount <= 0L)) {
+		if ((filterSelectivityStats == null && learnedFilterSelectivity == null) || filter == null
+				|| filter.getCondition() == null || (passedCount <= 0L && filteredCount <= 0L)) {
 			return;
 		}
 
@@ -1136,13 +1226,19 @@ class LmdbEvaluationStatistics
 			return;
 		}
 		int localBoundComponentMask = localBoundComponentMask(filter, pattern);
-		filterSelectivityStats.recordFilterOutcome(patternKey,
-				FilterSelectivityKeys.qualifyFilterKey(FilterSelectivityKeys.filterKeyFor(filter.getCondition()),
-						localBoundComponentMask),
-				FilterSelectivityKeys.qualifyFilterKey(
-						FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern),
-						localBoundComponentMask),
-				passedCount, filteredCount, localBoundComponentMask == 0);
+		String filterKey = FilterSelectivityKeys.qualifyFilterKey(
+				FilterSelectivityKeys.filterKeyFor(filter.getCondition()), localBoundComponentMask);
+		String templateKey = FilterSelectivityKeys.qualifyFilterKey(
+				FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), pattern), localBoundComponentMask);
+		boolean unqualified = localBoundComponentMask == 0;
+		if (filterSelectivityStats != null) {
+			filterSelectivityStats.recordFilterOutcome(patternKey, filterKey, templateKey, passedCount, filteredCount,
+					unqualified);
+		}
+		if (learnedFilterSelectivity != null) {
+			learnedFilterSelectivity.recordFilterOutcome(patternKey, filterKey, templateKey, passedCount,
+					filteredCount, unqualified);
+		}
 	}
 
 	private StatementPattern basePatternForFilter(Filter filter) {

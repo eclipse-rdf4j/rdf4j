@@ -24,7 +24,9 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
@@ -34,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -44,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.queryrender.RenderUtils;
 import org.eclipse.rdf4j.queryrender.VarNameNormalizer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IRTextPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
@@ -172,6 +176,7 @@ public class TupleExprIRRenderer {
 	 * for clarity and testability.
 	 */
 	public IrSelect toIRSelect(final TupleExpr tupleExpr) {
+		IrNode.checkInterrupted();
 		// Build raw IR (no transforms) via the converter
 		IrSelect ir = new TupleExprToIrConverter(this).toIRSelect(tupleExpr);
 		if (cfg.debugIR) {
@@ -217,44 +222,37 @@ public class TupleExprIRRenderer {
 	// ---------------- Rendering helpers (prefix-aware) ----------------
 	public String render(final IrSelect ir,
 			final DatasetView dataset, final boolean subselect) {
+		IrNode.checkInterrupted();
 		final StringBuilder out = new StringBuilder(256);
 		if (!subselect) {
-			printPrologueAndDataset(out, dataset);
+			printPrologue(out);
 		}
 		IRTextPrinter printer = new IRTextPrinter(out, this::convertVarToString, cfg);
-		ir.print(printer);
+		ir.print(printer, subselect ? List.of() : datasetClauses(dataset));
 		return out.toString().trim();
 	}
 
 	// Recursively apply the transformer pipeline to a select and any nested subselects.
-	private IrSelect transformIrRecursively(final IrSelect select) {
+	IrSelect transformIrRecursively(final IrSelect select) {
 		if (select == null) {
 			return null;
 		}
-		// First, transform the WHERE using standard pipeline
-		IrSelect top = IrTransforms.transformUsingChildren(select, this);
-		// Then, transform nested subselects via a child-mapping pass
-		IrNode mapped = top.transformChildren(child -> {
-			if (child instanceof IrBGP) {
-				// descend into BGP lines to replace IrSubSelects
-				IrBGP bgp = (IrBGP) child;
-				IrBGP nb = new IrBGP(!bgp.getLines().isEmpty() && bgp.isNewScope());
-				nb.setNewScope(bgp.isNewScope());
-				for (IrNode ln : bgp.getLines()) {
-					if (ln instanceof IrSubSelect) {
-						IrSubSelect ss = (IrSubSelect) ln;
-						IrSelect subSel = ss.getSelect();
-						IrSelect subTx = transformIrRecursively(subSel);
-						nb.add(new IrSubSelect(subTx, ss.isNewScope()));
-					} else {
-						nb.add(ln);
-					}
-				}
-				return nb;
-			}
-			return child;
-		});
-		return (IrSelect) mapped;
+		// Each nested SELECT owns its pipeline, including projection-dependent passes. Normalize children first:
+		// parent path passes can then recognize synthetic subselects representing optional property-path steps.
+		IrSelect nested = (IrSelect) select.transformChildren(this::transformNestedSelects);
+		return IrTransforms.transformUsingChildren(nested, this);
+	}
+
+	private IrNode transformNestedSelects(IrNode node) {
+		IrNode.checkInterrupted();
+		if (node instanceof IrSubSelect) {
+			IrSubSelect sub = (IrSubSelect) node;
+			return new IrSubSelect(transformIrRecursively(sub.getSelect()), sub.isNewScope());
+		}
+		if (node instanceof IrSelect) {
+			return transformIrRecursively((IrSelect) node);
+		}
+		return node.transformChildren(this::transformNestedSelects);
 	}
 
 	/** Backward-compatible: render as SELECT query (no dataset). */
@@ -269,6 +267,7 @@ public class TupleExprIRRenderer {
 
 	/** ASK query (top-level). */
 	public String renderAsk(final TupleExpr tupleExpr, final DatasetView dataset) {
+		IrNode.checkInterrupted();
 		// Build IR (including transforms) and then print only the WHERE block using the IR printer.
 		reset();
 		BNodeValidator.validate(tupleExpr, cfg);
@@ -276,8 +275,9 @@ public class TupleExprIRRenderer {
 		final StringBuilder out = new StringBuilder(256);
 		final IrSelect ir = toIRSelect(tupleExpr);
 		// Prologue
-		printPrologueAndDataset(out, dataset);
+		printPrologue(out);
 		out.append("ASK");
+		printDataset(out, dataset);
 		// WHERE (from IR)
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
 		new IRTextPrinter(out, this::convertVarToString, cfg).printWhere(ir.getWhere());
@@ -288,13 +288,14 @@ public class TupleExprIRRenderer {
 
 	/** DESCRIBE query (top-level). */
 	public String renderDescribe(final TupleExpr tupleExpr, final DatasetView dataset) {
+		IrNode.checkInterrupted();
 		reset();
 		BNodeValidator.validate(tupleExpr, cfg);
 		rememberRepeatedAnonBNodes(tupleExpr);
 		TupleExpr describeArg = describeArg(tupleExpr);
 		final IrSelect ir = toIRSelect(describeArg);
 		final StringBuilder out = new StringBuilder(256);
-		printPrologueAndDataset(out, dataset);
+		printPrologue(out);
 		out.append("DESCRIBE");
 		if (ir.getProjection().isEmpty()) {
 			out.append(" *");
@@ -308,6 +309,7 @@ public class TupleExprIRRenderer {
 				}
 			}
 		}
+		printDataset(out, dataset);
 		if (ir.getWhere() != null && !ir.getWhere().getLines().isEmpty()) {
 			out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
 			new IRTextPrinter(out, this::convertVarToString, cfg).printWhere(ir.getWhere());
@@ -320,18 +322,20 @@ public class TupleExprIRRenderer {
 
 	/** CONSTRUCT query (top-level). */
 	public String renderConstruct(final TupleExpr tupleExpr, final DatasetView dataset) {
+		IrNode.checkInterrupted();
 		reset();
 		BNodeValidator.validate(tupleExpr, cfg);
 		rememberRepeatedAnonBNodes(tupleExpr);
 		ConstructParts construct = constructParts(tupleExpr);
 		final IrSelect where = toIRSelect(construct.whereArg);
 		final StringBuilder out = new StringBuilder(256);
-		printPrologueAndDataset(out, dataset);
+		printPrologue(out);
 		out.append("CONSTRUCT");
 		if (!construct.shortForm) {
 			out.append(' ');
 			appendConstructTemplate(out, construct);
 		}
+		printDataset(out, dataset);
 		out.append(cfg.canonicalWhitespace ? "\nWHERE " : " WHERE ");
 		new IRTextPrinter(out, this::convertVarToString, cfg).printWhere(where.getWhere());
 		appendDescribeModifiers(out, where);
@@ -483,6 +487,7 @@ public class TupleExprIRRenderer {
 	private String renderSelectInternal(final TupleExpr tupleExpr,
 			final RenderMode mode,
 			final DatasetView dataset) {
+		IrNode.checkInterrupted();
 		reset();
 		BNodeValidator.validate(tupleExpr, cfg);
 		rememberRepeatedAnonBNodes(tupleExpr);
@@ -499,9 +504,9 @@ public class TupleExprIRRenderer {
 		}
 
 		try {
-			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null);
-			String expected = VarNameNormalizer.normalizeVars(original.toString());
-			String actual = VarNameNormalizer.normalizeVars(parsed.getTupleExpr().toString());
+			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null, cfg.parseOptions);
+			String expected = VarNameNormalizer.normalizeModelVariables(original);
+			String actual = VarNameNormalizer.normalizeModelVariables(parsed.getTupleExpr());
 			if (!expected.equals(actual)) {
 				String message = "Rendered SPARQL does not round-trip to the original TupleExpr."
 						+ "\n# Rendered query\n" + rendered
@@ -510,7 +515,7 @@ public class TupleExprIRRenderer {
 						+ "\n# Diff (original -> round-tripped)\n" + diffText(expected, actual);
 				throw new IllegalStateException(message);
 			}
-		} catch (IllegalStateException e) {
+		} catch (QueryInterruptedException | IllegalStateException e) {
 			throw e;
 		} catch (Exception e) {
 			log.error("Unexpected error while round-tripping TupleExpr. original={}, rendered={}",
@@ -563,8 +568,14 @@ public class TupleExprIRRenderer {
 			this.cfg = cfg == null ? new Config() : cfg;
 		}
 
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			IrNode.checkInterrupted();
+			super.meetNode(node);
+		}
+
 		static void validate(TupleExpr expr, Config cfg) {
-			if (expr == null || cfg == null || !cfg.failOnIllegalBNodes) {
+			if (expr == null || cfg == null) {
 				return;
 			}
 			expr.visit(new BNodeValidator(cfg));
@@ -572,15 +583,15 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(BindingSetAssignment node) {
-			if (cfg.allowBNodesInValues) {
+			if (cfg.parseOptions.blankNodeReferences()) {
 				return;
 			}
 			for (BindingSet bs : node.getBindingSets()) {
+				IrNode.checkInterrupted();
 				for (String name : bs.getBindingNames()) {
 					Value v = bs.getValue(name);
-					if (v instanceof BNode) {
-						throw new IllegalArgumentException("Blank nodes in VALUES are not supported: binding '" + name
-								+ "' -> " + v);
+					if (v != null) {
+						RenderUtils.toSPARQL(v, new StringBuilder(), cfg.parseOptions);
 					}
 				}
 			}
@@ -588,13 +599,22 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(StatementPattern sp) {
-			// StatementPattern positions allow anonymous bnodes (subject/object). Predicate bnodes are illegal but
-			// should not occur after parsing; keep tolerant to avoid overblocking.
+			// Pattern placeholders retain ordinary syntax; validate only the fixed operands here.
+			for (Var var : new Var[] { sp.getSubjectVar(), sp.getPredicateVar(), sp.getObjectVar(),
+					sp.getContextVar() }) {
+				if (var != null && var.hasValue()) {
+					RenderUtils.toSPARQL(var.getValue(), new StringBuilder(), cfg.parseOptions);
+				}
+			}
 		}
 
 		@Override
 		public void meet(Var var) {
-			if (!var.isAnonymous()) {
+			if (var.hasValue()) {
+				RenderUtils.toSPARQL(var.getValue(), new StringBuilder(), cfg.parseOptions);
+				return;
+			}
+			if (!cfg.failOnIllegalBNodes || !var.isAnonymous()) {
 				return;
 			}
 			String name = var.getName();
@@ -611,16 +631,19 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(ValueConstant node) {
-			if (node.getValue() instanceof BNode) {
-				throw new IllegalArgumentException("Blank node literal in expression context is not supported: "
-						+ node.getValue());
-			}
+			RenderUtils.toSPARQL(node.getValue(), new StringBuilder(), cfg.parseOptions);
 		}
 	}
 
 	private void rememberRepeatedAnonBNodes(TupleExpr tupleExpr) {
 		Map<String, Integer> counts = new LinkedHashMap<>();
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				IrNode.checkInterrupted();
+				super.meetNode(node);
+			}
+
 			@Override
 			public void meet(Var node) {
 				if (node.isAnonymous() && node.getName() != null && node.getName().startsWith(ANON_BNODE_PREFIX)) {
@@ -635,19 +658,33 @@ public class TupleExprIRRenderer {
 		});
 	}
 
-	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
+	private void printPrologue(final StringBuilder out) {
 		if (cfg.printPrefixes && !cfg.prefixes.isEmpty()) {
-			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ").append(pfx).append(": <").append(ns).append(">\n"));
+			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ")
+					.append(pfx)
+					.append(": ")
+					.append(RenderUtils.toSPARQLIRI(ns))
+					.append('\n'));
 		}
-		// FROM / FROM NAMED (top-level only)
+	}
+
+	private void printDataset(StringBuilder out, DatasetView dataset) {
+		for (String clause : datasetClauses(dataset)) {
+			out.append('\n').append(clause);
+		}
+	}
+
+	private List<String> datasetClauses(DatasetView dataset) {
+		List<String> clauses = new ArrayList<>();
 		final List<IRI> dgs = dataset != null ? dataset.defaultGraphs : cfg.defaultGraphs;
 		final List<IRI> ngs = dataset != null ? dataset.namedGraphs : cfg.namedGraphs;
 		for (IRI iri : dgs) {
-			out.append("FROM ").append(convertIRIToString(iri)).append("\n");
+			clauses.add("FROM " + convertIRIToString(iri));
 		}
 		for (IRI iri : ngs) {
-			out.append("FROM NAMED ").append(convertIRIToString(iri)).append("\n");
+			clauses.add("FROM NAMED " + convertIRIToString(iri));
 		}
+		return clauses;
 	}
 
 	String convertVarToString(final Var v) {
@@ -694,7 +731,7 @@ public class TupleExprIRRenderer {
 	}
 
 	public String convertValueToString(final Value val) {
-		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction);
+		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction, cfg.parseOptions);
 	}
 
 	private static String deriveStableLabelFromName(String name) {
@@ -768,6 +805,7 @@ public class TupleExprIRRenderer {
 	}
 
 	public static final class Config {
+		public QueryParseOptions parseOptions = QueryParseOptions.DEFAULT;
 		public final String indent = "  ";
 		public final boolean printPrefixes = true;
 		public final boolean usePrefixCompaction = true;
@@ -784,7 +822,7 @@ public class TupleExprIRRenderer {
 		public boolean preserveUserBNodeLabels = false; // derive stable labels from parser placeholder
 		public boolean deterministicBNodeLabels = false; // stable mapping independent of traversal order
 		public boolean preserveAnonBNodeIdentity = false; // render repeated [] as the same _:label
-		public boolean failOnIllegalBNodes = true; // reject bnodes in VALUES or expression contexts
+		public boolean failOnIllegalBNodes = true; // reject allocating blank placeholders in expression contexts
 		public boolean allowBNodesInValues = false; // override to allow (non-standard) bnodes in VALUES
 	}
 

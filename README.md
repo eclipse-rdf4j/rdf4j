@@ -17,6 +17,8 @@ For installation and usage instructions of the RDF4J Java libaries, see [Program
 
 ### Building from source
 
+Building RDF4J from source requires JDK 25 or newer and Maven 3.9.16 or newer.
+
 RDF4J is a multi-module [maven](https://maven.apache.org/index.html) project. It can be compiled, tested, and installed with the [usual maven lifecycle phases](https://maven.apache.org/guides/introduction/introduction-to-the-lifecycle.html) from the command line, for example:
 
 - `mvn verify` - compiles and runs all tests

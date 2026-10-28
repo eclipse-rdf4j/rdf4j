@@ -17,8 +17,11 @@ import static jakarta.servlet.http.HttpServletResponse.SC_OK;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -62,64 +65,98 @@ public class GraphQueryResultView extends QueryResultView {
 	@Override
 	protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 			throws IOException {
-		RDFWriterFactory rdfWriterFactory = (RDFWriterFactory) model.get(FACTORY_KEY);
-		RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();
+		GraphQueryResult graphQueryResult = (GraphQueryResult) model.get(QUERY_RESULT_KEY);
+		boolean reportStarted = false;
+		Throwable renderingFailure = null;
+		try {
+			RDFWriterFactory rdfWriterFactory = (RDFWriterFactory) model.get(FACTORY_KEY);
+			RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();
+			UnaryOperator<Value> origin = bNodeOriginMapper(model, request, response, rdfFormat);
 
-		response.setStatus(SC_OK);
-		setContentType(response, rdfFormat);
-		setContentDisposition(model, response, rdfFormat);
+			response.setStatus(SC_OK);
+			setContentType(response, rdfFormat);
+			setContentDisposition(model, response, rdfFormat);
 
-		boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
+			boolean headersOnly = (Boolean) model.get(HEADERS_ONLY);
 
-		if (!headersOnly) {
-			QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
-			// Keep the legacy branch for callers that do not hand off a heartbeat, including transactional responses.
-			if (heartbeat == null) {
-				try (OutputStream out = response.getOutputStream()) {
-					// ensure we handle exceptions _before_ closing the stream
+			if (!headersOnly) {
+				QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+				// Keep the legacy branch for callers that do not hand off a heartbeat, including transactional
+				// responses.
+				if (heartbeat == null) {
+					try (OutputStream out = response.getOutputStream()) {
+						// ensure we handle exceptions _before_ closing the stream
+						try {
+							RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
+							GraphQueryResult reportedResult = origin == null ? graphQueryResult
+									: BNodeOriginTransport.map(graphQueryResult, origin);
+							reportStarted = true;
+							QueryResults.report(reportedResult, rdfWriter);
+						} catch (QueryInterruptedException e) {
+							if (isExplicitlyCancelled(model)) {
+								return;
+							}
+							logger.error("Query interrupted", e);
+							sendServiceUnavailable(response, e, "Query evaluation took too long");
+						} catch (QueryEvaluationException e) {
+							if (isExplicitlyCancelled(model)) {
+								return;
+							}
+							logger.error("Query evaluation error", e);
+							response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+						} catch (RDFHandlerException e) {
+							logger.error("Serialization error", e);
+							response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+						}
+					}
+				} else {
 					try {
-						RDFWriter rdfWriter = rdfWriterFactory.getWriter(out);
-						GraphQueryResult graphQueryResult = (GraphQueryResult) model.get(QUERY_RESULT_KEY);
-						QueryResults.report(graphQueryResult, rdfWriter);
+						try {
+							graphQueryResult = PrefetchedQueryResults.graph(graphQueryResult);
+						} catch (RuntimeException e) {
+							// PrefetchedQueryResults closes the delegate when prefetch fails.
+							graphQueryResult = null;
+							throw e;
+						}
+						model.put(QUERY_RESULT_KEY, graphQueryResult);
+						RDFWriter rdfWriter = (RDFWriter) model.get(RESPONSE_WRITER_KEY);
+						if (rdfWriter == null) {
+							rdfWriter = rdfWriterFactory.getWriter(heartbeat.getOutputStream());
+						}
+						GraphQueryResult reportedResult = origin == null ? graphQueryResult
+								: BNodeOriginTransport.map(graphQueryResult, origin);
+						reportStarted = true;
+						QueryResults.report(reportedResult, rdfWriter);
+						heartbeat.complete();
 					} catch (QueryInterruptedException e) {
-						if (isExplicitlyCancelled(model)) {
-							return;
-						}
-						logger.error("Query interrupted", e);
-						sendServiceUnavailable(response, e, "Query evaluation took too long");
+						handleHeartbeatFailure(model, response, e, "Query evaluation took too long");
 					} catch (QueryEvaluationException e) {
-						if (isExplicitlyCancelled(model)) {
-							return;
-						}
-						logger.error("Query evaluation error", e);
-						response.sendError(SC_INTERNAL_SERVER_ERROR, "Query evaluation error: " + e.getMessage());
+						handleHeartbeatFailure(model, response, e,
+								"Query evaluation error: " + e.getMessage());
 					} catch (RDFHandlerException e) {
-						logger.error("Serialization error", e);
-						response.sendError(SC_INTERNAL_SERVER_ERROR, "Serialization error: " + e.getMessage());
+						handleHeartbeatFailure(model, response, e, "Serialization error: " + e.getMessage());
 					}
 				}
-			} else {
+			}
+			logEndOfRequest(request);
+		} catch (IOException | RuntimeException | Error e) {
+			renderingFailure = e;
+			throw e;
+		} finally {
+			if (!reportStarted && graphQueryResult != null) {
 				try {
-					GraphQueryResult graphQueryResult = PrefetchedQueryResults
-							.graph((GraphQueryResult) model.get(QUERY_RESULT_KEY));
-					model.put(QUERY_RESULT_KEY, graphQueryResult);
-					RDFWriter rdfWriter = (RDFWriter) model.get(RESPONSE_WRITER_KEY);
-					if (rdfWriter == null) {
-						rdfWriter = rdfWriterFactory.getWriter(heartbeat.getOutputStream());
+					graphQueryResult.close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (renderingFailure != null) {
+						if (renderingFailure != closeFailure) {
+							renderingFailure.addSuppressed(closeFailure);
+						}
+					} else {
+						throw closeFailure;
 					}
-					QueryResults.report(graphQueryResult, rdfWriter);
-					heartbeat.complete();
-				} catch (QueryInterruptedException e) {
-					handleHeartbeatFailure(model, response, e, "Query evaluation took too long");
-				} catch (QueryEvaluationException e) {
-					handleHeartbeatFailure(model, response, e,
-							"Query evaluation error: " + e.getMessage());
-				} catch (RDFHandlerException e) {
-					handleHeartbeatFailure(model, response, e, "Serialization error: " + e.getMessage());
 				}
 			}
 		}
-		logEndOfRequest(request);
 	}
 
 	@SuppressWarnings("rawtypes")

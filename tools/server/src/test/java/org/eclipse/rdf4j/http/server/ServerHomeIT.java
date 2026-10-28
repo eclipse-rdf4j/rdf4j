@@ -59,6 +59,40 @@ public class ServerHomeIT {
 		assertThat(body).contains("<title>RDF4J Server - Home</title>");
 	}
 
+	@Test
+	public void loggingOverviewRequiresExplicitOptIn() throws Exception {
+		String property = "org.eclipse.rdf4j.server.logging.ui.enabled";
+		String previous = System.getProperty(property);
+		try {
+			System.clearProperty(property);
+			HttpURLConnection blocked = (HttpURLConnection) new URL(
+					TestServer.SERVER_URL + "/system/logging/overview.view").openConnection();
+			assertThat(blocked.getResponseCode()).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN);
+			blocked.disconnect();
+			HttpURLConnection blockedUnknown = (HttpURLConnection) new URL(
+					TestServer.SERVER_URL + "/system/logging/no-such-page.png").openConnection();
+			assertThat(blockedUnknown.getResponseCode()).isEqualTo(HttpURLConnection.HTTP_FORBIDDEN);
+			blockedUnknown.disconnect();
+
+			HttpURLConnection ordinary = (HttpURLConnection) new URL(TestServer.SERVER_URL + "/protocol")
+					.openConnection();
+			assertThat(ordinary.getResponseCode()).isEqualTo(HttpURLConnection.HTTP_OK);
+			ordinary.disconnect();
+
+			System.setProperty(property, "true");
+			HttpURLConnection enabled = (HttpURLConnection) new URL(
+					TestServer.SERVER_URL + "/system/logging/no-such-page.png").openConnection();
+			assertThat(enabled.getResponseCode()).isEqualTo(HttpURLConnection.HTTP_NOT_FOUND);
+			enabled.disconnect();
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
 	private static String readBody(HttpURLConnection connection) throws Exception {
 		try (InputStream bodyStream = decode(connection.getInputStream(), connection.getContentEncoding())) {
 			ByteArrayOutputStream body = new ByteArrayOutputStream();

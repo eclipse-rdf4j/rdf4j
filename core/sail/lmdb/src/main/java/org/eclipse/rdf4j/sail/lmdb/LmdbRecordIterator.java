@@ -16,6 +16,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_CURRENT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_KEY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
@@ -28,6 +29,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -36,48 +38,31 @@ import org.eclipse.rdf4j.sail.lmdb.util.ChunkInput;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkOutput;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.lmdb.MDBVal;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
- * A record iterator that wraps a native LMDB iterator.
+ * A record iterator over the tuples in the split key/value chunks of a native LMDB index.
  */
 class LmdbRecordIterator implements RecordIterator {
 
-	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
-
 	static class State {
-
 		private long cursor;
-
 		private Txn txnRef;
-
 		private long txnRefVersion;
-
 		private long txn;
-
 		private int dbi;
-
 		private final MDBVal keyData = MDBVal.malloc();
 		private final MDBVal valueData = MDBVal.malloc();
-
 		private final ChunkInput chunkInput = new ChunkInput();
-
 		private final ByteBuffer minKeyBuf = MemoryUtil.memAlloc((Long.BYTES + 1) * 4);
-
 		private final long[] minTuple = new long[4];
 		private final long[] maxTuple = new long[4];
-
 		private final long[] quad = new long[4];
 		private final long[] patternTuple = new long[4];
-
-		private StampedLongAdderLockManager txnLockManager;
-
 		private int indexScore;
-
 		private ChunkOutput chunkOutput;
 		private ChunkOutput chunkOutputCached;
-		private ByteBuffer chunkKeyBuffer, chunkValueBuffer;
+		private ByteBuffer chunkKeyBuffer;
+		private ByteBuffer chunkValueBuffer;
 		private boolean removeAnchor;
 
 		void close() {
@@ -91,347 +76,639 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
-	private final Thread ownerThread = Thread.currentThread();
-	final TripleIndex index;
-	private final boolean useIndex, matchValues;
+	TripleIndex index;
+	private boolean useIndex;
 	private final State state;
-	private volatile boolean closed = false;
-	private boolean fetchNext = false;
-
+	private final Txn txnRef;
+	private final StampedLongAdderLockManager txnLockManager;
+	private final long txnLease;
+	private final ValueStore.ReadSnapshot readSnapshot;
+	private final TripleStore.CursorPool cursorPool;
+	private TripleStore.CursorPool.PooledCursor pooledCursor;
+	private final boolean retainOnClose;
+	private volatile boolean closed;
+	private boolean disposed;
+	private boolean resourcesFreed;
+	private boolean positioned;
+	private boolean fetchNext;
+	private boolean remove;
+	private final long[] startTuple = new long[4];
+	private long[] resumeExclusive;
+	private LmdbKeyRange range;
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
 
 	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
-		this.state = txnRef.getValuePool().getState();
-		this.state.quad[0] = subj;
-		this.state.quad[1] = pred;
-		this.state.quad[2] = obj;
-		this.state.quad[3] = context;
+		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, null, false, null, null);
+	}
 
-		index.toEntry(this.state.patternTuple, subj, pred, obj, context);
+	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, ValueStore.ReadSnapshot readSnapshot) throws IOException {
+		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, null, false, null, readSnapshot);
+	}
 
-		this.index = index;
-		this.state.indexScore = indexScore;
+	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool) throws IOException {
+		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, cursorPool, false, null, null);
+	}
 
-		// prepare min and max keys if index can be used
-		// otherwise, leave as null to indicate full scan
-		this.useIndex = indexScore > 0;
-		if (useIndex) {
-			state.minKeyBuf.clear();
-			index.getMinEntry(state.minTuple, subj, pred, obj, context);
-			for (long v : state.minTuple) {
-				Varint.writeUnsigned(state.minKeyBuf, v);
-			}
-			state.minKeyBuf.flip();
+	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose)
+			throws IOException {
+		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, null, null);
+	}
 
-			index.getMaxEntry(state.maxTuple, subj, pred, obj, context);
-			if (context == 0) {
-				// TripleIndex's legacy estimator bounds treat zero as open-ended. Statement iteration must instead
-				// restrict the context component to the default graph, including when it belongs to the bound prefix.
-				int[] indexMap = index.getIndexMap();
-				for (int i = 0; i < indexMap.length; i++) {
-					if (indexMap[i] == TripleIndex.CONTEXT_IDX) {
-						state.maxTuple[i] = 0;
-						break;
-					}
+	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
+			LmdbKeyRange range) throws IOException {
+		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, range, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, false, null, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, false, null, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose)
+			throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, null, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, ValueStore.ReadSnapshot readSnapshot) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, false, null, readSnapshot);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
+			LmdbKeyRange range) throws IOException {
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, range, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
+			LmdbKeyRange range, ValueStore.ReadSnapshot readSnapshot) throws IOException {
+		this(index, rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0, subj, pred, obj,
+				context, explicit, txnRef, cursorPool, retainOnClose, range, readSnapshot);
+	}
+
+	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
+			LmdbKeyRange range, ValueStore.ReadSnapshot readSnapshot) throws IOException {
+		this.txnRef = txnRef;
+		this.txnLockManager = txnRef.lockManager();
+		this.readSnapshot = readSnapshot;
+		this.cursorPool = cursorPool != null && txnRef.isReadOnly() ? cursorPool : null;
+		this.retainOnClose = retainOnClose;
+		long stamp = readLock();
+		try {
+			synchronized (txnRef) {
+				txnRef.ensureSnapshotValid();
+				if (readSnapshot != null) {
+					readSnapshot.ensureValid();
+				}
+				this.txnLease = txnRef.lease();
+				this.state = txnRef.getValuePool().getState();
+				try {
+					initialize(index, indexScore, subj, pred, obj, context, explicit, range);
+					state.txn = txnRef.get();
+					state.txnRef = txnRef;
+					state.txnRefVersion = txnRef.version();
+					acquireCursor();
+				} catch (IOException | RuntimeException | Error failure) {
+					freeResources();
+					throw failure;
 				}
 			}
+		} finally {
+			txnLockManager.unlockRead(stamp);
+		}
+	}
 
-			boolean requiresValueMatch = false;
-			for (int i = indexScore + 1; i < 4; i++) {
-				if (state.patternTuple[i] >= 0) {
-					requiresValueMatch = true;
+	private long readLock() {
+		try {
+			return txnLockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new SailException("Interrupted while accessing a record cursor", e);
+		}
+	}
+
+	Txn transaction() {
+		return txnRef;
+	}
+
+	private void validateSnapshot() throws IOException {
+		txnRef.ensureSnapshotValid(txnLease);
+		if (readSnapshot != null) {
+			readSnapshot.ensureValid();
+		}
+	}
+
+	private void initialize(TripleIndex index, int indexScore, long subj, long pred, long obj, long context,
+			boolean explicit, LmdbKeyRange range) {
+		if (range != null && !index.toString().equals(range.indexFieldSeq())) {
+			throw new IllegalArgumentException("Key range belongs to a different index");
+		}
+		this.index = index;
+		this.useIndex = indexScore > 0;
+		this.range = range;
+		state.indexScore = indexScore;
+		state.dbi = index.getDB(explicit);
+		state.quad[0] = subj;
+		state.quad[1] = pred;
+		state.quad[2] = obj;
+		state.quad[3] = context;
+		index.toEntry(state.patternTuple, subj, pred, obj, context);
+		index.getMinEntry(state.minTuple, subj, pred, obj, context);
+		index.getMaxEntry(state.maxTuple, subj, pred, obj, context);
+		if (context == ValueIds.NULL_CONTEXT) {
+			int[] indexMap = index.getIndexMap();
+			for (int i = 0; i < indexMap.length; i++) {
+				if (indexMap[i] == TripleIndex.CONTEXT_IDX) {
+					state.maxTuple[i] = ValueIds.NULL_CONTEXT;
 					break;
 				}
 			}
-			matchValues = requiresValueMatch;
-		} else {
-			matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
 		}
+		System.arraycopy(state.minTuple, 0, startTuple, 0, 4);
+		positioned = false;
+		fetchNext = false;
+		remove = false;
+		resumeExclusive = null;
+		closed = false;
+	}
 
-		var dbi = index.getDB(explicit);
-
-		long readStamp;
-		try {
-			readStamp = txnRef.lockManager().readLock();
-		} catch (InterruptedException e) {
-			throw new SailException(e);
+	private void acquireCursor() throws IOException {
+		if (cursorPool != null) {
+			pooledCursor = cursorPool.acquire(state.dbi, txnRef, state.txn, state.txnRefVersion);
 		}
-		try {
-			state.dbi = dbi;
-			state.txnRef = txnRef;
-			state.txnLockManager = txnRef.lockManager();
-			state.txnRefVersion = txnRef.version();
-			state.txn = txnRef.get();
-			state.cursor = txnRef.getCursor(dbi);
-		} finally {
-			txnRef.lockManager().unlockRead(readStamp);
+		state.cursor = pooledCursor == null ? txnRef.getCursor(state.dbi) : pooledCursor.cursor;
+	}
+
+	private void releaseCursor() {
+		if (state.cursor != 0) {
+			if (txnRef.lease() != txnLease) {
+				mdb_cursor_close(state.cursor);
+			} else if (cursorPool != null) {
+				cursorPool.release(pooledCursor, state.cursor, state.dbi, txnRef, state.txn, state.txnRefVersion);
+			} else {
+				txnRef.returnCursor(state.dbi, state.cursor);
+			}
+			state.cursor = 0;
+			pooledCursor = null;
 		}
 	}
 
 	@Override
 	public long[] next() {
-		long readStamp;
+		long stamp = readLock();
 		try {
-			readStamp = state.txnLockManager.readLock();
-		} catch (InterruptedException e) {
-			throw new SailException(e);
-		}
-		try {
-			if (closed) {
-				log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
-				return null;
+			synchronized (txnRef) {
+				return nextUnderReadLock();
 			}
-
-			int lastResult;
-			if (state.txnRefVersion != state.txnRef.version()) {
-				// TODO: None of the tests in the LMDB Store cover this case!
-				// cursor must be renewed
-				E(mdb_cursor_renew(state.txn, state.cursor));
-				if (fetchNext) {
-					// cursor must be positioned on last item, reuse minKeyBuf if available
-					state.minKeyBuf.clear();
-					index.toEntry(state.minTuple, state.quad[0], state.quad[1], state.quad[2],
-							state.quad[3]);
-					for (long v : state.minTuple) {
-						Varint.writeUnsigned(state.minKeyBuf, v);
-					}
-					state.minKeyBuf.flip();
-					state.keyData.mv_data(state.minKeyBuf);
-					// use set range if entry was deleted
-					lastResult = E(mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_SET_KEY));
-					if (lastResult != MDB_SUCCESS) {
-						lastResult = E(mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_SET_RANGE));
-						E(mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_PREV));
-					}
-					if (lastResult != MDB_SUCCESS) {
-						closeInternal(false);
-						return null;
-					}
-				}
-				// update version of txn ref
-				state.txnRefVersion = state.txnRef.version();
-			}
-
-			boolean editChunk = state.chunkOutput != null;
-			long[] current = null;
-			if (fetchNext) {
-				if (editChunk) {
-					if (remove) {
-						remove = false;
-					} else {
-						state.chunkOutput.addTuple(state.chunkInput.current());
-					}
-				}
-				if ((current = state.chunkInput.next()) == null) {
-					if (editChunk) {
-						try {
-							if (flush()) {
-								editChunk = false;
-							}
-						} catch (IOException e) {
-							throw new SailException(e);
-						}
-					}
-					// no more values in chunk, move to next key
-					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT);
-					if (lastResult == MDB_SUCCESS) {
-						state.chunkInput.reset(state.keyData.mv_data(), state.valueData.mv_data(),
-								4, index.getIndexSplitPosition());
-					}
-				} else {
-					lastResult = MDB_SUCCESS;
-				}
-				fetchNext = false;
-			} else {
-				if (useIndex) {
-					// set cursor to min key
-					state.keyData.mv_data(state.minKeyBuf);
-
-					lastResult = E(mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_SET_KEY));
-					if (lastResult != MDB_SUCCESS) {
-						lastResult = E(mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_SET_RANGE));
-						if (lastResult == MDB_SUCCESS) {
-							E(mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_PREV));
-						} else {
-							lastResult = E(mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_LAST));
-						}
-					}
-				} else {
-					// set cursor to first item
-					lastResult = E(mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_FIRST));
-				}
-				if (lastResult == MDB_SUCCESS) {
-					state.chunkInput.reset(state.keyData.mv_data(), state.valueData.mv_data(),
-							4, index.getIndexSplitPosition());
-					if (useIndex) {
-						state.chunkInput.seek(state.minTuple);
-					}
-				}
-			}
-
-			while (lastResult == MDB_SUCCESS) {
-				sourceRowsScannedActual++;
-
-				// fetch next value if there are no more values in chunk
-				if (current == null && (current = state.chunkInput.next()) == null) {
-					if (editChunk) {
-						try {
-							if (flush()) {
-								editChunk = false;
-							}
-						} catch (IOException e) {
-							throw new SailException(e);
-						}
-					}
-					lastResult = mdb_cursor_get(state.cursor, state.keyData, state.valueData, MDB_NEXT);
-					if (lastResult == MDB_SUCCESS) {
-						state.chunkInput.reset(state.keyData.mv_data(), state.valueData.mv_data(),
-								4, index.getIndexSplitPosition());
-						current = state.chunkInput.next();
-					} else {
-						break;
-					}
-				}
-
-				if (useIndex) {
-					int valueDiff = Chunks.compareTuples(current, state.maxTuple);
-					if (valueDiff > 0) {
-						if (editChunk) {
-							state.chunkOutput.addTuple(current);
-						}
-						break;
-					}
-				}
-
-				if (matchValues && !Chunks.matches(state.indexScore, state.patternTuple, current)) {
-					if (editChunk) {
-						state.chunkOutput.addTuple(current);
-					}
-					current = null;
-					continue;
-				}
-
-				// Matching value found
-				index.entryToQuad(current, state.quad);
-
-				// fetch next value
-				fetchNext = true;
-				return state.quad;
-			}
-			closeInternal(false);
-			return null;
-		} catch (IOException e) {
-			closeInternal(false);
-			throw new SailException(e);
+		} catch (IOException | RuntimeException | Error failure) {
+			closeAfterFailure(failure);
+			throw propagate(failure);
 		} finally {
-			state.txnLockManager.unlockRead(readStamp);
+			txnLockManager.unlockRead(stamp);
 		}
 	}
 
-	private void closeInternal(boolean maybeCalledAsync) {
-		if (!closed) {
-			try {
+	@Override
+	public int fill(long[] buffer, int maxRows) {
+		long stamp = readLock();
+		try {
+			synchronized (txnRef) {
+				int rows = 0;
+				while (rows < maxRows) {
+					long[] quad = nextUnderReadLock();
+					if (quad == null) {
+						break;
+					}
+					System.arraycopy(quad, 0, buffer, rows * 4, 4);
+					rows++;
+				}
+				return rows;
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			closeAfterFailure(failure);
+			throw propagate(failure);
+		} finally {
+			txnLockManager.unlockRead(stamp);
+		}
+	}
+
+	private long[] nextUnderReadLock() throws IOException {
+		if (closed) {
+			return null;
+		}
+		validateSnapshot();
+		if (state.txnRefVersion != txnRef.version()) {
+			if (state.chunkOutput != null) {
+				throw new SailException("Cannot renew a record cursor with pending chunk edits");
+			}
+			// Chunk buffers point into the old map. Renew and reconstruct the decoder from the last delivered tuple,
+			// not from its anchor key: a chunk can contain both the checkpoint and its inclusive successor.
+			if (positioned) {
+				index.toEntry(startTuple, state.quad[0], state.quad[1], state.quad[2], state.quad[3]);
+				resumeExclusive = state.quad.clone();
+			}
+			state.txn = txnRef.get();
+			E(mdb_cursor_renew(state.txn, state.cursor));
+			state.txnRefVersion = txnRef.version();
+			positioned = false;
+			fetchNext = false;
+		}
+
+		finishCurrent();
+		int result = MDB_SUCCESS;
+		if (!positioned) {
+			result = position();
+			positioned = true;
+		}
+		while (result == MDB_SUCCESS) {
+			long[] current = state.chunkInput.next();
+			if (current == null) {
 				flush();
+				result = cursorGet(MDB_NEXT);
+				if (result == MDB_SUCCESS) {
+					resetChunk();
+				}
+				continue;
+			}
+			sourceRowsScannedActual++;
+			if (useIndex && Chunks.compareTuples(current, state.maxTuple) > 0) {
+				sourceRowsFilteredActual++;
+				preserveFiltered(current);
+				break;
+			}
+			if (!Chunks.matches(0, state.patternTuple, current)) {
+				sourceRowsFilteredActual++;
+				preserveFiltered(current);
+				continue;
+			}
+			index.entryToQuad(current, state.quad);
+			if (resumeExclusive != null && Arrays.equals(state.quad, resumeExclusive)) {
+				resumeExclusive = null;
+				preserveFiltered(current);
+				continue;
+			}
+			resumeExclusive = null;
+			// Bounds apply to decoded tuples, never just chunk anchors: a partition boundary can split a chunk.
+			if (range != null && !range.includes(state.quad)) {
+				sourceRowsFilteredActual++;
+				preserveFiltered(current);
+				if (range.highKeyExclusive() != null
+						&& compareEntryToKey(current, range.highKeyExclusive()) >= 0) {
+					break;
+				}
+				continue;
+			}
+			sourceRowsMatchedActual++;
+			fetchNext = true;
+			return state.quad;
+		}
+		closeUnderReadLock();
+		return null;
+	}
+
+	private int cursorGet(int operation) throws IOException {
+		int result = mdb_cursor_get(state.cursor, state.keyData, state.valueData, operation);
+		if (result != MDB_SUCCESS && result != MDB_NOTFOUND) {
+			E(result);
+		}
+		return result;
+	}
+
+	private int position() throws IOException {
+		int result;
+		boolean seek = useIndex || resumeExclusive != null || !Arrays.equals(startTuple, state.minTuple)
+				|| range != null && range.lowKey() != null;
+		if (seek) {
+			state.minKeyBuf.clear();
+			for (long value : startTuple) {
+				Varint.writeUnsigned(state.minKeyBuf, value);
+			}
+			state.minKeyBuf.flip();
+			if (range != null && range.lowKey() != null
+					&& compareKeyBuffer(range.lowKey()) < 0) {
+				state.minKeyBuf.clear();
+				state.minKeyBuf.put(range.lowKey()).flip();
+			}
+			state.keyData.mv_data(state.minKeyBuf);
+			result = cursorGet(MDB_SET_KEY);
+			if (result != MDB_SUCCESS) {
+				result = cursorGet(MDB_SET_RANGE);
+				if (result == MDB_SUCCESS) {
+					// The predecessor's value chunk can contain the requested tuple. If no predecessor exists,
+					// SET_RANGE's first key is already the inclusive successor and must not be skipped.
+					if (cursorGet(MDB_PREV) != MDB_SUCCESS) {
+						result = cursorGet(MDB_FIRST);
+					}
+				} else {
+					result = cursorGet(MDB_LAST);
+				}
+			}
+		} else {
+			// A pooled cursor may still point at an earlier iterator's last key.
+			result = cursorGet(MDB_FIRST);
+		}
+		if (result == MDB_SUCCESS) {
+			resetChunk();
+			if (seek) {
+				state.chunkInput.seek(startTuple);
+			}
+		}
+		return result;
+	}
+
+	private int compareEntryToKey(long[] entry, byte[] key) {
+		state.minKeyBuf.clear();
+		for (long value : entry) {
+			Varint.writeUnsigned(state.minKeyBuf, value);
+		}
+		state.minKeyBuf.flip();
+		return compareKeyBuffer(key);
+	}
+
+	private int compareKeyBuffer(byte[] key) {
+		int length = state.minKeyBuf.remaining();
+		for (int i = 0; i < Math.min(length, key.length); i++) {
+			int comparison = Integer.compare(state.minKeyBuf.get(i) & 0xFF, key[i] & 0xFF);
+			if (comparison != 0) {
+				return comparison;
+			}
+		}
+		return Integer.compare(length, key.length);
+	}
+
+	private void resetChunk() {
+		state.chunkInput.reset(state.keyData.mv_data(), state.valueData.mv_data(),
+				4, index.getIndexSplitPosition());
+	}
+
+	private void preserveFiltered(long[] tuple) {
+		if (state.chunkOutput != null) {
+			state.chunkOutput.addTuple(tuple);
+		}
+	}
+
+	private void finishCurrent() {
+		if (fetchNext) {
+			if (state.chunkOutput != null && !remove) {
+				state.chunkOutput.addTuple(state.chunkInput.current());
+			}
+			fetchNext = false;
+			remove = false;
+		}
+	}
+
+	void resumeAfter(long[] lastQuad) {
+		synchronized (txnRef) {
+			if (positioned || closed) {
+				throw new IllegalStateException("A bounded scan must set its continuation before reading");
+			}
+			try {
+				validateSnapshot();
 			} catch (IOException e) {
 				throw new SailException(e);
 			}
-			long writeStamp = 0L;
-			boolean writeLocked = false;
-			if (maybeCalledAsync && ownerThread != Thread.currentThread()) {
-				try {
-					writeStamp = state.txnLockManager.writeLock();
-					writeLocked = true;
-				} catch (InterruptedException e) {
-					throw new SailException(e);
+			index.toEntry(startTuple, lastQuad[0], lastQuad[1], lastQuad[2], lastQuad[3]);
+			resumeExclusive = lastQuad.clone();
+		}
+	}
+
+	@Override
+	public boolean seekForward(long subj, long pred, long obj, long context) {
+		long stamp = readLock();
+		try {
+			synchronized (txnRef) {
+				if (closed || state.chunkOutput != null) {
+					return false;
+				}
+				validateSnapshot();
+				index.toEntry(startTuple, subj, pred, obj, context);
+				if (Chunks.compareTuples(startTuple, state.minTuple) < 0) {
+					System.arraycopy(state.minTuple, 0, startTuple, 0, 4);
+				}
+				positioned = false;
+				fetchNext = false;
+				resumeExclusive = null;
+				return true;
+			}
+		} catch (IOException e) {
+			throw new SailException(e);
+		} finally {
+			txnLockManager.unlockRead(stamp);
+		}
+	}
+
+	void reset(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj, long context,
+			boolean explicit) throws IOException {
+		reset(index, rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0,
+				subj, pred, obj, context, explicit);
+	}
+
+	void reset(TripleIndex index, int indexScore, long subj, long pred, long obj, long context,
+			boolean explicit) throws IOException {
+		long stamp = readLock();
+		try {
+			synchronized (txnRef) {
+				validateSnapshot();
+				if (!retainOnClose || disposed) {
+					throw new SailException("Iterator cannot be reset");
+				}
+				finishCurrent();
+				flush();
+				if (state.dbi != index.getDB(explicit)) {
+					releaseCursor();
+				}
+				initialize(index, indexScore, subj, pred, obj, context, explicit, null);
+				if (state.cursor == 0) {
+					state.txn = txnRef.get();
+					state.txnRefVersion = txnRef.version();
+					acquireCursor();
 				}
 			}
+		} finally {
+			txnLockManager.unlockRead(stamp);
+		}
+	}
+
+	private void closeUnderReadLock() throws IOException {
+		if (!closed) {
 			try {
-				if (!closed) {
-					if (state.chunkKeyBuffer != null) {
-						MemoryUtil.memFree(state.chunkKeyBuffer);
-						state.chunkKeyBuffer = null;
-						MemoryUtil.memFree(state.chunkValueBuffer);
-						state.chunkValueBuffer = null;
-					}
-					state.txnRef.returnCursor(state.dbi, state.cursor);
-					state.cursor = 0;
-					state.txnRef.getValuePool().free(state);
-				}
+				finishCurrent();
+				flush();
 			} finally {
 				closed = true;
-				if (writeLocked) {
-					state.txnLockManager.unlockWrite(writeStamp);
+				if (!retainOnClose) {
+					freeResources();
 				}
 			}
+		}
+	}
+
+	private void closeAfterFailure(Throwable failure) {
+		synchronized (txnRef) {
+			// Do not flush chunk buffers after snapshot invalidation; they may reference an unmapped generation.
+			closed = true;
+			try {
+				freeResources();
+				disposed = true;
+			} catch (RuntimeException | Error cleanupFailure) {
+				if (failure != cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+			}
+		}
+	}
+
+	private static RuntimeException propagate(Throwable failure) {
+		if (failure instanceof IOException) {
+			return new SailException(failure);
+		}
+		if (failure instanceof RuntimeException runtime) {
+			return runtime;
+		}
+		throw (Error) failure;
+	}
+
+	private void freeResources() {
+		if (resourcesFreed) {
+			return;
+		}
+		resourcesFreed = true;
+		try {
+			releaseCursor();
+		} finally {
+			if (state.chunkKeyBuffer != null) {
+				MemoryUtil.memFree(state.chunkKeyBuffer);
+				state.chunkKeyBuffer = null;
+				MemoryUtil.memFree(state.chunkValueBuffer);
+				state.chunkValueBuffer = null;
+			}
+			state.chunkOutput = null;
+			state.removeAnchor = false;
+			state.txnRef = null;
+			txnRef.getValuePool().free(state);
+		}
+	}
+
+	void dispose() {
+		long stamp = readLock();
+		try {
+			synchronized (txnRef) {
+				if (!disposed) {
+					try {
+						if (state.chunkOutput != null) {
+							validateSnapshot();
+						}
+						closeUnderReadLock();
+					} finally {
+						disposed = true;
+						freeResources();
+					}
+				}
+			}
+		} catch (IOException e) {
+			throw new SailException(e);
+		} finally {
+			txnLockManager.unlockRead(stamp);
 		}
 	}
 
 	private boolean flush() throws IOException {
-		if (state.chunkOutput != null) {
-			long[] current;
-			while ((current = state.chunkInput.next()) != null) {
-				state.chunkOutput.addTuple(current);
-			}
-
-			if (state.chunkOutput.size() > 0) {
-				if (state.chunkKeyBuffer == null) {
-					state.chunkKeyBuffer = MemoryUtil.memAlloc(TripleIndex.MAX_KEY_LENGTH);
-					state.chunkValueBuffer = MemoryUtil.memAlloc(4096);
-				} else {
-					state.chunkKeyBuffer.clear();
-					state.chunkValueBuffer.clear();
-				}
-				state.chunkOutput.write(state.chunkKeyBuffer, state.chunkValueBuffer);
-				state.keyData.mv_data(state.chunkKeyBuffer.flip());
-				state.valueData.mv_data(state.chunkValueBuffer.flip());
-				if (state.removeAnchor) {
-					E(mdb_cursor_del(state.cursor, 0));
-					E(mdb_cursor_put(state.cursor, state.keyData, state.valueData, 0));
-				} else {
-					E(mdb_cursor_put(state.cursor, state.keyData, state.valueData, MDB_CURRENT));
-				}
-			} else {
-				E(mdb_cursor_del(state.cursor, 0));
-			}
-			state.chunkOutput = null;
-			state.removeAnchor = false;
-			return true;
+		if (state.chunkOutput == null) {
+			return false;
 		}
-		return false;
+		long[] current;
+		while ((current = state.chunkInput.next()) != null) {
+			state.chunkOutput.addTuple(current);
+		}
+		if (state.chunkOutput.size() > 0) {
+			if (state.chunkKeyBuffer == null) {
+				state.chunkKeyBuffer = MemoryUtil.memAlloc(TripleIndex.MAX_KEY_LENGTH);
+				state.chunkValueBuffer = MemoryUtil.memAlloc(4096);
+			} else {
+				state.chunkKeyBuffer.clear();
+				state.chunkValueBuffer.clear();
+			}
+			state.chunkOutput.write(state.chunkKeyBuffer, state.chunkValueBuffer);
+			state.keyData.mv_data(state.chunkKeyBuffer.flip());
+			state.valueData.mv_data(state.chunkValueBuffer.flip());
+			if (state.removeAnchor) {
+				E(mdb_cursor_del(state.cursor, 0));
+				E(mdb_cursor_put(state.cursor, state.keyData, state.valueData, 0));
+			} else {
+				E(mdb_cursor_put(state.cursor, state.keyData, state.valueData, MDB_CURRENT));
+			}
+		} else {
+			E(mdb_cursor_del(state.cursor, 0));
+		}
+		state.chunkOutput = null;
+		state.removeAnchor = false;
+		return true;
 	}
-
-	boolean remove = false;
 
 	@Override
 	public void remove() throws IOException {
-		if (state.chunkOutput == null) {
-			if (state.chunkOutputCached == null) {
-				state.chunkOutputCached = new ChunkOutput(Chunks.MAX_CHUNK_SIZE, 4, index.getIndexSplitPosition());
-			} else {
-				state.chunkOutputCached.reset(4, index.getIndexSplitPosition());
+		long stamp = readLock();
+		try {
+			synchronized (txnRef) {
+				if (closed || !fetchNext || remove) {
+					throw new IllegalStateException("No current record to remove");
+				}
+				validateSnapshot();
+				if (state.chunkOutput == null) {
+					if (state.chunkOutputCached == null) {
+						state.chunkOutputCached = new ChunkOutput(Chunks.MAX_CHUNK_SIZE, 4,
+								index.getIndexSplitPosition());
+					} else {
+						state.chunkOutputCached.reset(4, index.getIndexSplitPosition());
+					}
+					state.chunkOutput = state.chunkOutputCached;
+					state.chunkInput.rewind();
+					long[] entry = new long[4];
+					index.toEntry(entry, state.quad[0], state.quad[1], state.quad[2], state.quad[3]);
+					state.chunkInput.seek(entry, state.chunkOutput::addTuple);
+					state.chunkInput.next();
+					state.removeAnchor = state.chunkOutput.size() == 0;
+				}
+				remove = true;
 			}
-			state.chunkOutput = state.chunkOutputCached;
-
-			// add previous tuples to chunkOutput if they exist
-			state.chunkInput.rewind();
-			long[] entry = new long[4];
-			index.toEntry(entry, state.quad[0], state.quad[1], state.quad[2], state.quad[3]);
-			state.chunkInput.seek(entry, state.chunkOutput::addTuple);
-			// skip current tuple since it will be removed
-			state.chunkInput.next();
-			if (state.chunkOutput.size() == 0) {
-				state.removeAnchor = true;
-			}
+		} finally {
+			txnLockManager.unlockRead(stamp);
 		}
-		remove = true;
 	}
 
 	@Override
 	public void close() {
-		closeInternal(true);
+		long stamp = readLock();
+		try {
+			synchronized (txnRef) {
+				if (!closed) {
+					if (state.chunkOutput != null) {
+						validateSnapshot();
+					}
+					closeUnderReadLock();
+				}
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			closeAfterFailure(failure);
+			throw propagate(failure);
+		} finally {
+			txnLockManager.unlockRead(stamp);
+		}
 	}
 
 	@Override

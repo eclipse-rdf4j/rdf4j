@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -22,9 +23,13 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -42,29 +47,42 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -73,6 +91,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -95,7 +114,138 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				+ "  ex:s1 ex:pred ?v. {" + "   ?s ?p ?o. " + "   optional {"
 				+ "    values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "   }" + "  }" + " }" + "}";
 
-		testOptimizer(expectedQuery, query);
+		testOptimizerWithGeneratedConstantNameNormalization(expectedQuery, query);
+	}
+
+	private void testOptimizerWithGeneratedConstantNameNormalization(String expectedQuery, String actualQuery)
+			throws MalformedQueryException, UnsupportedQueryLanguageException {
+		ParsedQuery actual = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, actualQuery, null);
+		QueryRoot actualRoot = new QueryRoot(actual.getTupleExpr());
+		getOptimizer().optimize(actualRoot, null, null);
+
+		ParsedQuery expected = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery, null);
+		QueryRoot expectedRoot = new QueryRoot(expected.getTupleExpr());
+		QueryModelNode[] normalized = normalizeGeneratedConstantNames(expectedRoot, actualRoot);
+		assertQueryModelTrees(normalized[0], normalized[1]);
+	}
+
+	static QueryModelNode[] normalizeGeneratedConstantNames(QueryModelNode first, QueryModelNode second) {
+		Set<String> sourceVariableNames = new HashSet<>();
+		Set<String> existingVariableNames = new HashSet<>();
+		collectVariableNames(first, sourceVariableNames, existingVariableNames);
+		collectVariableNames(second, sourceVariableNames, existingVariableNames);
+
+		Map<String, Value> firstConstants = generatedConstantValues(first, sourceVariableNames);
+		Map<String, Value> secondConstants = generatedConstantValues(second, sourceVariableNames);
+		Set<Value> values = new LinkedHashSet<>(firstConstants.values());
+		values.addAll(secondConstants.values());
+		List<Value> sortedValues = new ArrayList<>(values);
+		sortedValues.sort(Comparator.comparing(NTriplesUtil::toNTriplesString));
+
+		Map<Value, String> canonicalNames = new LinkedHashMap<>();
+		for (int index = 0; index < sortedValues.size(); index++) {
+			String candidate = "__rdf4j_test_constant_" + index;
+			while (existingVariableNames.contains(candidate)) {
+				candidate = "_" + candidate;
+			}
+			canonicalNames.put(sortedValues.get(index), candidate);
+		}
+
+		return new QueryModelNode[] {
+				normalizeGeneratedConstantNames(first, firstConstants, canonicalNames),
+				normalizeGeneratedConstantNames(second, secondConstants, canonicalNames)
+		};
+	}
+
+	private static void collectVariableNames(QueryModelNode expression, Set<String> sourceVariableNames,
+			Set<String> existingVariableNames) {
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var node) {
+				existingVariableNames.add(node.getName());
+				if (!node.isAnonymous()) {
+					sourceVariableNames.add(node.getName());
+				}
+			}
+		});
+	}
+
+	private static Map<String, Value> generatedConstantValues(QueryModelNode expression,
+			Set<String> sourceVariableNames) {
+		Map<String, Value> constants = new LinkedHashMap<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var node) {
+				if (node.isAnonymous() && node.hasValue()) {
+					assertFalse(sourceVariableNames.contains(node.getName()),
+							"Generated constant name collides with a user variable: " + node.getName());
+					Value prior = constants.putIfAbsent(node.getName(), node.getValue());
+					assertTrue(prior == null || prior.equals(node.getValue()),
+							"Generated constant name maps to different values: " + node.getName());
+				}
+			}
+		});
+		return constants;
+	}
+
+	private static QueryModelNode normalizeGeneratedConstantNames(QueryModelNode expression,
+			Map<String, Value> constants, Map<Value, String> canonicalNames) {
+		QueryModelNode normalized = expression.clone();
+		normalized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var node) {
+				if (node.isAnonymous() && node.hasValue()) {
+					Value value = constants.get(node.getName());
+					if (value != null) {
+						assertEquals(value, node.getValue(),
+								"Generated constant value changed while normalizing: " + node.getName());
+						Var replacement = Var.of(canonicalNames.get(value), node.getValue(), node.isAnonymous(),
+								node.isConstant(), node.isBNode());
+						replacement.setVariableScopeChange(node.isVariableScopeChange());
+						node.replaceWith(replacement);
+					}
+				}
+			}
+		});
+		return normalized;
+	}
+
+	@Test
+	public void reorderSubselectsToleratesImmutableBindingNames() {
+		String query = "PREFIX ex: <http://ex/> SELECT * WHERE { FILTER NOT EXISTS { MINUS { "
+				+ "{ SELECT DISTINCT ?a ?c WHERE { } } OPTIONAL { ?a ex:r \"abc\" . ?d ex:r ?a . } } "
+				+ "{ SELECT ?d (COUNT(*) AS ?n0) WHERE { } GROUP BY ?d } } ?c ex:q ?c . }";
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+
+		new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource())
+				.optimize(parsed.getTupleExpr(), null, EmptyBindingSet.getInstance());
+	}
+
+	@Test
+	public void reorderSubselectsDoesNotMutateBindingNamesOfArguments() throws Exception {
+		Set<String> firstNames = new HashSet<>(Set.of("a", "shared"));
+		Set<String> secondNames = new HashSet<>(Set.of("b", "shared"));
+		TupleExpr first = new SingletonSet() {
+			@Override
+			public Set<String> getBindingNames() {
+				return firstNames;
+			}
+		};
+		TupleExpr second = new SingletonSet() {
+			@Override
+			public Set<String> getBindingNames() {
+				return secondNames;
+			}
+		};
+		Object joinVisitor = buildJoinVisitor(new QueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource()));
+		Method reorder = findDeclaredMethod(joinVisitor.getClass(), "reorderSubselects", List.class);
+		reorder.setAccessible(true);
+
+		reorder.invoke(joinVisitor, List.of(first, second));
+
+		assertThat(firstNames).containsExactlyInAnyOrder("a", "shared");
+		assertThat(secondNames).containsExactlyInAnyOrder("b", "shared");
 	}
 
 	@Test
@@ -103,6 +253,20 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertServiceEndpointProducerBeforeService(
 				"SELECT * WHERE { VALUES ?s { <urn:s> } VALUES ?endpoint { <urn:test-service> } "
 						+ "SERVICE ?endpoint { ?s <urn:p> ?o } }");
+	}
+
+	@Test
+	public void joinVisitorExtensionHooksDispatchInsideSubselectScope() throws Exception {
+		String query = "SELECT ?s WHERE { { SELECT ?s WHERE { ?s <urn:nested-one> ?x . "
+				+ "?x <urn:nested-two> ?y } } ?s <urn:outer> ?o }";
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		HookedQueryJoinOptimizer optimizer = new HookedQueryJoinOptimizer();
+
+		optimizer.optimizeWithHook(parsed.getTupleExpr());
+
+		assertThat(optimizer.nestedCostHookInvocations)
+				.as("the active visitor's protected cost hook applies in the isolated subselect pass and outer pass")
+				.isGreaterThan(1);
 	}
 
 	@Test
@@ -589,6 +753,27 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void serviceCollectorUsesGroupAndOrderExpressionInputFrames() throws Exception {
+		MapBindingSet endpointBinding = new MapBindingSet();
+		endpointBinding.addBinding("endpoint", VF.createIRI("urn:test-service"));
+		BindingSetAssignment rows = new BindingSetAssignment();
+		rows.setBindingSets(List.of(endpointBinding));
+
+		Service aggregateService = new Service(Var.of("endpoint"), new SingletonSet(), "", Map.of(), null, false);
+		Group group = new Group(rows.clone());
+		group.addGroupElement(new GroupElem("count", new Count(new Exists(aggregateService))));
+
+		Service orderService = new Service(Var.of("endpoint"), new SingletonSet(), "", Map.of(), null, false);
+		Order order = new Order(rows.clone(), new OrderElem(new Exists(orderService)));
+
+		Object joinVisitor = buildJoinVisitor(new QueryJoinOptimizer(new EvaluationStatistics(),
+				new EmptyTripleSource()));
+		assertThat(List.of(externalServiceVariables(joinVisitor, group), externalServiceVariables(joinVisitor, order)))
+				.as("aggregate arguments see pre-group rows and ORDER BY expressions see rows entering ORDER")
+				.containsExactly(Set.of(), Set.of());
+	}
+
+	@Test
 	public void serviceInsideFilterExistsAndNotExistsEvaluatesWithTripleProducedEndpoint() throws Exception {
 		String queryTemplate = "SELECT * WHERE { ?source <urn:data> ?data . ?source <urn:endpoint> ?endpoint . "
 				+ "FILTER %s { SERVICE ?endpoint { ?source <urn:p> ?o } } }";
@@ -634,10 +819,63 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	public void zeroCostValuesStayBeforeStatementPatternsInsideOptionalUnion() {
 		QueryRoot root = optimizeWithStandardPipeline(
 				"SELECT * WHERE { VALUES ?s { <urn:s> } OPTIONAL { "
-						+ "{ VALUES ?o { <urn:o1> } ?s <urn:p> ?o } "
-						+ "UNION { VALUES ?o { <urn:o2> } ?s <urn:p> ?o } } }");
+						+ "{ VALUES ?o { <urn:o1> <urn:o2> } ?s <urn:p> ?o } "
+						+ "UNION { VALUES ?o { <urn:o3> <urn:o4> } ?s <urn:p> ?o } } }");
 
 		assertOptionalValuesPrecedeStatements(findOptional(root));
+	}
+
+	@Test
+	public void singletonValuesCanFollowTheirFullyGroundedStatementPattern() throws Exception {
+		String query = "SELECT * WHERE { VALUES ?s { <urn:s> } OPTIONAL { "
+				+ "{ VALUES ?o { <urn:o1> } ?s <urn:p> ?o } "
+				+ "UNION { VALUES ?o { <urn:o2> } ?s <urn:p> ?o } } }";
+		List<Statement> statements = List.of(
+				VF.createStatement(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createIRI("urn:o1")),
+				VF.createStatement(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createIRI("urn:o2")));
+
+		ParsedTupleQuery rawQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		CountingTripleSource rawSource = new CountingTripleSource(statements);
+		DefaultEvaluationStrategy rawStrategy = new DefaultEvaluationStrategy(rawSource, null);
+		List<BindingSet> rawResults = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = rawStrategy.evaluate(rawQuery.getTupleExpr(),
+				EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				rawResults.add(iteration.next());
+			}
+		}
+		assertThat(rawResults).hasSize(2);
+		assertThat(rawResults).extracting(binding -> binding.getValue("o").stringValue())
+				.containsExactlyInAnyOrder("urn:o1", "urn:o2");
+
+		ParsedTupleQuery optimizedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		CountingTripleSource optimizedSource = new CountingTripleSource(statements);
+		DefaultEvaluationStrategy optimizedStrategy = new DefaultEvaluationStrategy(optimizedSource, null);
+		TupleExpr optimizedExpr = optimizedQuery.getTupleExpr();
+		optimizedStrategy.optimize(optimizedExpr, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		List<BindingSet> optimizedResults = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = optimizedStrategy.evaluate(optimizedExpr,
+				EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				optimizedResults.add(iteration.next());
+			}
+		}
+		assertThat(optimizedResults).containsExactlyInAnyOrderElementsOf(rawResults);
+		// A fully bound pattern may be answered by a statement count instead of a statement scan.
+		assertThat(rawSource.objectBoundStatementCalls + rawSource.objectBoundCountCalls).isEqualTo(2);
+		assertThat(rawSource.statementsYielded + rawSource.statementsCounted).isEqualTo(2);
+		assertThat(optimizedSource.objectBoundStatementCalls + optimizedSource.objectBoundCountCalls)
+				.isEqualTo(rawSource.objectBoundStatementCalls + rawSource.objectBoundCountCalls);
+		assertThat(optimizedSource.statementsYielded + optimizedSource.statementsCounted)
+				.isEqualTo(rawSource.statementsYielded + rawSource.statementsCounted);
+
+		OptionalFinder optionalFinder = new OptionalFinder();
+		optimizedExpr.visit(optionalFinder);
+		ValuesOrderVisitor valuesOrderVisitor = new ValuesOrderVisitor();
+		optionalFinder.leftJoin.getRightArg().visit(valuesOrderVisitor);
+		assertThat(valuesOrderVisitor.events).contains("statement", "values");
+		assertThat(valuesOrderVisitor.events.indexOf("statement"))
+				.isLessThan(valuesOrderVisitor.events.indexOf("values"));
 	}
 
 	@Test
@@ -876,6 +1114,80 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void keepsBNodeExtensionAtOriginalUnequalFanoutBoundary() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern fanout = new StatementPattern(Var.of("s"),
+				Var.of("p", vf.createIRI("ex:pFanout")), Var.of("o"));
+		Extension generatedPerInput = new Extension(new SingletonSet(),
+				new ExtensionElem(new BNodeGenerator(), "generated"));
+		Join original = new Join(fanout, generatedPerInput);
+		QueryRoot root = new QueryRoot(original);
+
+		getOptimizer().optimize(root, null, null);
+
+		assertThat(joinArgs(root.getArg())).containsExactly(fanout, generatedPerInput);
+	}
+
+	@Test
+	public void keepsUnknownFunctionFilterAtOriginalJoinPositionWhenCostWouldReorder() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern volatilePattern = new StatementPattern(Var.of("volatileS"),
+				Var.of("volatileP", vf.createIRI("ex:pVolatile")), Var.of("volatileO"));
+		Filter volatileFactor = new Filter(volatilePattern,
+				new FunctionCall("urn:test:volatile:join-factor"));
+		StatementPattern cheap = new StatementPattern(Var.of("cheapS"),
+				Var.of("cheapP", vf.createIRI("ex:pCheap")), Var.of("cheapO"));
+		Join original = new Join(volatileFactor, cheap);
+		QueryRoot root = new QueryRoot(original);
+		// Unspecified determinism is a reorder barrier only under the experimental query optimizations profile;
+		// UndeclaredFunctionPolicyTest covers the default policy, which keeps cost-based ordering.
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new VolatileBarrierStatistics(), false,
+				new EmptyTripleSource(), QueryExecutionPolicy.EXPERIMENTAL);
+
+		optimizer.optimize(root, null, null);
+
+		assertThat(joinArgs(root.getArg())).containsExactly(volatileFactor, cheap);
+	}
+
+	@Test
+	public void keepsUnknownTupleFunctionBarrierWhenSafeExtensionWouldAllowReorder() {
+		TupleFunctionCall unknown = new TupleFunctionCall();
+		unknown.setURI("urn:test:tuple-function");
+		unknown.addResultVar(Var.of("result"));
+		Extension safeExtension = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(VF.createIRI("urn:bound")), "bound"));
+		StatementPattern cheap = new StatementPattern(Var.of("cheapS"),
+				Var.of("cheapP", VF.createIRI("ex:pCheap")), Var.of("cheapO"));
+		QueryRoot root = new QueryRoot(new Join(new Join(unknown, safeExtension), cheap));
+
+		new QueryJoinOptimizer(new UnknownTupleBarrierStatistics(), new EmptyTripleSource()).optimize(root, null, null);
+
+		List<TupleExpr> args = joinArgs(root.getArg());
+		assertThat(args.indexOf(unknown))
+				.as("an unknown tuple expression must remain before a reorderable sibling")
+				.isLessThan(args.indexOf(cheap));
+	}
+
+	@Test
+	public void classifiesDeepNonRepeatableJoinTreeOnce() {
+		CountingFunctionCall condition = new CountingFunctionCall();
+		TupleExpr tree = new Filter(new SingletonSet(), condition);
+		for (int i = 0; i < 64; i++) {
+			tree = new Join(tree,
+					new StatementPattern(new Var("s" + i), new Var("p" + i), new Var("o" + i)));
+		}
+		QueryRoot root = new QueryRoot(tree);
+
+		getOptimizer().optimize(root, null, null);
+
+		// The safety snapshot, the binding analysis, the filter-cost pass and the ordinary traversal each walk the
+		// tree once; what must not happen is one walk per nested join level.
+		assertThat(condition.visits)
+				.as("repeatability classification plus the ordinary optimizer traversal")
+				.isLessThanOrEqualTo(8);
+	}
+
+	@Test
 	public void testValues() throws RDF4JException {
 		String query = String.join("\n", "",
 				"prefix ex: <ex:> ",
@@ -896,6 +1208,78 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		);
 
 		testOptimizer(expectedQuery, query);
+	}
+
+	@Test
+	public void unusedSingletonValuesStartJoinOrder() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  VALUES ?limit { 55 }",
+				"  ?patient a ex:Patient .",
+				"  ?patient ex:hasEncounter ?enc .",
+				"  ?enc ex:hasObservation ?obs .",
+				"  ?obs ex:value ?value .",
+				"}");
+
+		QueryRoot root = optimizeWithQueryJoinOptimizer(query);
+
+		assertThat(joinArgs(new JoinFinder().find(root)).getFirst()).isInstanceOf(BindingSetAssignment.class);
+	}
+
+	@Test
+	public void singletonValuesWithoutBindingsStartJoinOrder() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  VALUES () { () }",
+				"  ?patient a ex:Patient .",
+				"  ?patient ex:hasEncounter ?enc .",
+				"}");
+
+		QueryRoot root = optimizeWithQueryJoinOptimizer(query);
+
+		assertThat(joinArgs(new JoinFinder().find(root)).getFirst()).isInstanceOf(BindingSetAssignment.class);
+	}
+
+	@Test
+	public void singletonValuesWithMultipleVariablesStartJoinOrderWhenUnused() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  VALUES (?limit ?marker) { (55 ex:marker) }",
+				"  ?patient a ex:Patient .",
+				"  ?patient ex:hasEncounter ?enc .",
+				"}");
+
+		QueryRoot root = optimizeWithQueryJoinOptimizer(query);
+
+		List<TupleExpr> args = joinArgs(new JoinFinder().find(root));
+		assertThat(args.getFirst()).isInstanceOf(BindingSetAssignment.class);
+		assertThat(((BindingSetAssignment) args.getFirst()).getAssuredBindingNames())
+				.containsExactlyInAnyOrder("limit", "marker");
+	}
+
+	@Test
+	public void multiRowValuesMoveDirectlyBeforeFirstConsumer() {
+		String query = String.join("\n",
+				"PREFIX ex: <ex:>",
+				"SELECT * WHERE {",
+				"  VALUES ?target { ex:t1 ex:t2 }",
+				"  ?unrelated ex:pUnrelated ?u .",
+				"  ?entity ex:pConsumer ?target .",
+				"}");
+
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		new QueryJoinOptimizer(new BindingSetPlacementStatistics(), false, new EmptyTripleSource(),
+				QueryExecutionPolicy.EXPERIMENTAL).optimize(root, null, null);
+
+		List<String> order = joinArgs(new JoinFinder().find(root)).stream()
+				.map(QueryJoinOptimizerTest::joinArgKey)
+				.collect(Collectors.toList());
+
+		assertThat(order).containsExactly("values:target", "ex:pConsumer", "ex:pUnrelated");
 	}
 
 	@Test
@@ -1333,8 +1717,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	private void assertOptionalValuesPrecedeStatements(LeftJoin leftJoin) {
 		ValuesOrderVisitor valuesOrderVisitor = new ValuesOrderVisitor();
 		leftJoin.getRightArg().visit(valuesOrderVisitor);
-		assertThat(valuesOrderVisitor.events).as("VALUES and its connected statement pattern").isNotEmpty();
-		assertThat(valuesOrderVisitor.events.getFirst()).isEqualTo("values");
+		assertThat(valuesOrderVisitor.events)
+				.as("VALUES and its connected statement pattern; OPTIONAL RHS: " + leftJoin.getRightArg())
+				.isNotEmpty();
+		assertThat(valuesOrderVisitor.events.getFirst())
+				.as("VALUES and its connected statement pattern; OPTIONAL RHS: " + leftJoin.getRightArg())
+				.isEqualTo("values");
 	}
 
 	private List<String> optimizePriorityQuery(String query, EvaluationStatistics statistics) {
@@ -1400,6 +1788,11 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		public Join getJoin() {
 			return join;
 		}
+
+		public Join find(QueryModelNode node) {
+			node.visit(this);
+			return join;
+		}
 	}
 
 	class StatementFinder extends AbstractQueryModelVisitor<RuntimeException> {
@@ -1440,6 +1833,21 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		public Lateral getLateral() {
 			return lateral;
+		}
+	}
+
+	private static final class CountingFunctionCall extends FunctionCall {
+
+		private int visits;
+
+		private CountingFunctionCall() {
+			super("urn:test:volatile:repeatability-visit-count");
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visits++;
+			super.visit(visitor);
 		}
 	}
 
@@ -1560,7 +1968,18 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			throw new NoSuchFieldException("boundVars");
 		}
 		boundVarsField.setAccessible(true);
-		boundVarsField.set(joinVisitor, boundVars);
+		if (Set.class.isAssignableFrom(boundVarsField.getType())) {
+			boundVarsField.set(joinVisitor, boundVars);
+			return;
+		}
+
+		Object currentPrefix = boundVarsField.get(joinVisitor);
+		Field scopeIdentityField = currentPrefix.getClass().getDeclaredField("scopeIdentity");
+		scopeIdentityField.setAccessible(true);
+		Constructor<?> prefixConstructor = boundVarsField.getType().getDeclaredConstructor(long.class, Set.class);
+		prefixConstructor.setAccessible(true);
+		boundVarsField.set(joinVisitor,
+				prefixConstructor.newInstance(scopeIdentityField.getLong(currentPrefix), boundVars));
 	}
 
 	private static Method findDeclaredMethod(Class<?> type, String name, Class<?>... parameterTypes)
@@ -1590,6 +2009,39 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 	private static String getPredicateValue(TupleExpr expr) {
 		return ((StatementPattern) expr).getPredicateVar().getValue().stringValue();
+	}
+
+	private static String joinArgKey(TupleExpr expr) {
+		if (expr instanceof BindingSetAssignment assignment) {
+			return "values:" + assignment.getAssuredBindingNames()
+					.stream()
+					.sorted()
+					.collect(Collectors.joining(","));
+		}
+		return getPredicateValue(expr);
+	}
+
+	private QueryRoot optimizeWithQueryJoinOptimizer(String query) {
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
+		QueryRoot root = new QueryRoot(parsedQuery.getTupleExpr());
+		optimizer.optimize(root, null, null);
+		return root;
+	}
+
+	private static List<TupleExpr> joinArgs(TupleExpr tupleExpr) {
+		List<TupleExpr> args = new ArrayList<>();
+		collectJoinArgs(tupleExpr, args);
+		return args;
+	}
+
+	private static void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> args) {
+		if (tupleExpr instanceof Join join) {
+			collectJoinArgs(join.getLeftArg(), args);
+			collectJoinArgs(join.getRightArg(), args);
+		} else {
+			args.add(tupleExpr);
+		}
 	}
 
 	private static String predicate(TupleExpr expr) {
@@ -1690,6 +2142,53 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		private static boolean isCheapPair(String left, String right) {
 			return ("urn:inside-cheap".equals(left) && "urn:inside-cheap2".equals(right))
 					|| ("urn:inside-cheap2".equals(left) && "urn:inside-cheap".equals(right));
+		}
+	}
+
+	private static final class BindingSetPlacementStatistics extends EvaluationStatistics {
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof StatementPattern) {
+				String predicate = getPredicateValue(expr);
+				if ("ex:pUnrelated".equals(predicate)) {
+					return 1;
+				}
+				if ("ex:pConsumer".equals(predicate)) {
+					return 1_000_000;
+				}
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class VolatileBarrierStatistics extends EvaluationStatistics {
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof Filter) {
+				return 1_000_000;
+			}
+			if (expr instanceof StatementPattern pattern && pattern.getPredicateVar().hasValue()
+					&& "ex:pCheap".equals(pattern.getPredicateVar().getValue().stringValue())) {
+				return 1;
+			}
+			return super.getCardinality(expr);
+		}
+	}
+
+	private static final class UnknownTupleBarrierStatistics extends EvaluationStatistics {
+
+		@Override
+		public double getCardinality(TupleExpr expr) {
+			if (expr instanceof TupleFunctionCall) {
+				return 1_000_000;
+			}
+			if (expr instanceof StatementPattern pattern && pattern.getPredicateVar().hasValue()
+					&& "ex:pCheap".equals(pattern.getPredicateVar().getValue().stringValue())) {
+				return 1;
+			}
+			return super.getCardinality(expr);
 		}
 	}
 
@@ -2035,6 +2534,30 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 	}
 
+	private static final class HookedQueryJoinOptimizer extends QueryJoinOptimizer {
+		private int nestedCostHookInvocations;
+
+		private HookedQueryJoinOptimizer() {
+			super(new EvaluationStatistics(), new EmptyTripleSource());
+		}
+
+		private void optimizeWithHook(TupleExpr tupleExpr) {
+			tupleExpr.visit(new HookedJoinVisitor());
+		}
+
+		private class HookedJoinVisitor extends JoinVisitor {
+			@Override
+			protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
+					Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
+				if (tupleExpr instanceof StatementPattern pattern && pattern.getPredicateVar().hasValue()
+						&& "urn:nested-one".equals(pattern.getPredicateVar().getValue().stringValue())) {
+					nestedCostHookInvocations++;
+				}
+				return super.getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);
+			}
+		}
+	}
+
 	private static final class EqualCostStatementOptimizer extends QueryJoinOptimizer {
 		private EqualCostStatementOptimizer() {
 			super(new EvaluationStatistics(), new EmptyTripleSource());
@@ -2059,6 +2582,7 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		private int unboundObjectCalls;
 		private int objectBoundCountCalls;
 		private long statementsYielded;
+		private long statementsCounted;
 
 		private CountingTripleSource() {
 			IRI subject = VF.createIRI("urn:s");
@@ -2112,7 +2636,9 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			} else {
 				objectBoundCountCalls++;
 			}
-			return matching(subj, pred, obj).size();
+			long count = matching(subj, pred, obj).size();
+			statementsCounted += count;
+			return count;
 		}
 
 		@Override

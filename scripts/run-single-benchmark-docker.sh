@@ -6,15 +6,17 @@ usage() {
 Usage: $0 [existing run-single-benchmark.sh options]
        $0 <fullyQualifiedClass.method> [existing run-single-benchmark.sh options]
        $0 <fullyQualifiedClass.method> [flexible benchmark @Param values]
+       $0 --module <modulePath> --main-class <fullyQualifiedClass> [options]
 
 Runs the benchmark helper inside a Linux Java 26 container with JFR CPU time profiling enabled.
+Requires Python 3 for Maven reactor source discovery.
 Trailing benchmark parameter values are parsed flexibly. Examples:
   $0 org.example.Benchmark.test themeName:MEDICAL_RECORDS z_queryIndex:0
   $0 org.example.Benchmark.test themeName = MEDICAL_RECORDS, z_queryIndex = 0
   $0 org.example.Benchmark.test MEDICAL_RECORDS 0
 
 Environment:
-  RDF4J_JMH_DOCKER_IMAGE    Container image to use (default: maven:3.9.14-sapmachine-26)
+  RDF4J_JMH_DOCKER_IMAGE    Container image to use (default: maven:3.9.16-sapmachine-26)
   RDF4J_JMH_DOCKER_PLATFORM Optional docker platform override (for example linux/amd64)
   RDF4J_JMH_DOCKER_M2_REPO  Maven local repo inside the container (default: /workspace/.m2_repo_linux_j26)
   RDF4J_JMH_DOCKER_CONTAINER_NAME Optional reusable container name override
@@ -23,7 +25,7 @@ USAGE
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-DOCKER_IMAGE="${RDF4J_JMH_DOCKER_IMAGE:-maven:3.9.14-sapmachine-26}"
+DOCKER_IMAGE="${RDF4J_JMH_DOCKER_IMAGE:-maven:3.9.16-sapmachine-26}"
 DOCKER_PLATFORM="${RDF4J_JMH_DOCKER_PLATFORM:-}"
 DOCKER_WORKDIR="/workspace"
 INNER_HOME="/tmp/home"
@@ -37,6 +39,7 @@ has_explicit_module=false
 has_explicit_class=false
 has_explicit_method=false
 explicit_class=""
+explicit_module=""
 benchmark_class_name=""
 benchmark_method_name=""
 benchmark_source_path=""
@@ -67,23 +70,47 @@ strip_token_delimiters() {
 
 resolve_benchmark_class_source() {
         local benchmark_class="$1"
-        local class_path="${benchmark_class//./\/}.java"
-        local -a matches
+        python3 - "${REPO_ROOT}" "${benchmark_class}" "${explicit_module}" <<'PY'
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
 
-        mapfile -t matches < <(find "${REPO_ROOT}" -type f -path "*/src/*/java/${class_path}" | sort)
+repository = Path(sys.argv[1])
+benchmark_class = sys.argv[2]
+selected_module = sys.argv[3]
+class_path = benchmark_class.replace(".", "/") + ".java"
+pending = [repository / selected_module] if selected_module else [repository]
+visited = set()
+matches = set()
 
-        if [[ ${#matches[@]} -eq 0 ]]; then
-                echo "Error: Could not resolve benchmark class '${benchmark_class}' to a module." >&2
-                exit 1
-        fi
+while pending:
+    module = pending.pop().resolve()
+    if module in visited:
+        continue
+    visited.add(module)
+    pom = module / "pom.xml"
+    if not pom.is_file():
+        continue
+    matches.update(path.resolve() for path in module.glob("src/*/java/" + class_path) if path.is_file())
+    if not selected_module:
+        project = ET.parse(pom).getroot()
+        # Include profile modules without invoking Maven or scanning unrelated source archives.
+        declarations = project.findall("./{*}modules/{*}module")
+        declarations += project.findall("./{*}profiles/{*}profile/{*}modules/{*}module")
+        for declaration in declarations:
+            if declaration.text and declaration.text.strip():
+                pending.append(module / declaration.text.strip())
 
-        if [[ ${#matches[@]} -gt 1 ]]; then
-                echo "Error: Benchmark class '${benchmark_class}' resolves to multiple modules." >&2
-                printf '  %s\n' "${matches[@]}" >&2
-                exit 1
-        fi
-
-        printf '%s\n' "${matches[0]}"
+if not matches:
+    print(f"Error: Could not resolve benchmark class '{benchmark_class}' to a module.", file=sys.stderr)
+    sys.exit(1)
+if len(matches) > 1:
+    print(f"Error: Benchmark class '{benchmark_class}' resolves to multiple modules.", file=sys.stderr)
+    for match in sorted(matches):
+        print(f"  {match}", file=sys.stderr)
+    sys.exit(1)
+print(next(iter(matches)))
+PY
 }
 
 resolve_benchmark_id() {
@@ -436,6 +463,7 @@ while [[ $# -gt 0 ]]; do
                 ;;
         --module|-m)
                 has_explicit_module=true
+                explicit_module="$2"
                 passthrough_args+=("$1" "$2")
                 shift 2
                 ;;
@@ -449,6 +477,10 @@ while [[ $# -gt 0 ]]; do
         --method|-b|--benchmark)
                 has_explicit_method=true
                 benchmark_method_name="$2"
+                passthrough_args+=("$1" "$2")
+                shift 2
+                ;;
+        --main-class|--main-arg)
                 passthrough_args+=("$1" "$2")
                 shift 2
                 ;;

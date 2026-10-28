@@ -6,6 +6,12 @@ on:
       - ".github/workflows/hugo-test.yml"
       - ".github/workflows/hugo.yml"
       - ".gitmodules"
+      - "core/http/client/src/main/java/org/eclipse/rdf4j/http/client/RDF4JProtocolSession.java"
+      - "e2e/package-lock.json"
+      - "e2e/package.json"
+      - "e2e/playwright.config.js"
+      - "e2e/playwright.site.config.js"
+      - "e2e/site-tests/site-rest-api.spec.js"
       - "site/**"
       - "scripts/update-javadoc-indexes.sh"
   push:
@@ -14,6 +20,12 @@ on:
       - ".github/workflows/hugo-test.yml"
       - ".github/workflows/hugo.yml"
       - ".gitmodules"
+      - "core/http/client/src/main/java/org/eclipse/rdf4j/http/client/RDF4JProtocolSession.java"
+      - "e2e/package-lock.json"
+      - "e2e/package.json"
+      - "e2e/playwright.config.js"
+      - "e2e/playwright.site.config.js"
+      - "e2e/site-tests/site-rest-api.spec.js"
       - "site/**"
       - "scripts/update-javadoc-indexes.sh"
   workflow_dispatch:
@@ -30,10 +42,10 @@ jobs:
     name: Build Hugo site
     runs-on: ubuntu-latest
     env:
-      HUGO_VERSION: 0.128.0
+      HUGO_VERSION: 0.167.0
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
           submodules: recursive
 
@@ -59,3 +71,24 @@ jobs:
           HUGO_TEST_OUTPUT_DIR: ${{ runner.temp }}/hugo_site
           HUGO_TEST_BASE_URL: https://rdf4j.org/
         run: bash site/tests/site-build.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install Playwright dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Smoke test REST API rendering
+        working-directory: e2e
+        env:
+          HUGO_TEST_OUTPUT_DIR: ${{ runner.temp }}/hugo_site
+        run: npx playwright test --config=playwright.site.config.js --project=chromium

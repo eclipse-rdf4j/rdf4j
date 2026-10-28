@@ -12,19 +12,17 @@
 
 // @ts-check
 const fs = require('fs');
-const path = require('path');
 
 const { test, expect } = require('@playwright/test');
-
-const playwrightLibraryDirectory = path.join(path.dirname(require.resolve('playwright-core')), 'lib');
-const { PNG } = require(path.join(playwrightLibraryDirectory, 'utilsBundle'));
-const pixelmatch = require(path.join(playwrightLibraryDirectory, 'third_party/pixelmatch'));
+const { compareImageBuffers } = require('./query-explanation-visual-image.js');
 
 const SERVER_BASE_URL = process.env.RDF4J_SERVER_BASE_URL || 'http://127.0.0.1:8080/rdf4j-server';
 const WORKBENCH_BASE_URL = process.env.RDF4J_WORKBENCH_BASE_URL || 'http://127.0.0.1:8080/rdf4j-workbench';
 const REFERENCE_PATH = process.env.QUERY_EXPLANATION_REFERENCE;
-const ACTUAL_PATH = process.env.QUERY_EXPLANATION_ACTUAL || '/tmp/rdf4j-query-explanation-actual.png';
-const DIFF_PATH = process.env.QUERY_EXPLANATION_DIFF || '/tmp/rdf4j-query-explanation-diff.png';
+// The captured page and the pixel difference go where these name, otherwise to the test's output directory (not a
+// fixed temporary file that parallel runs would share).
+const ACTUAL_OVERRIDE = process.env.QUERY_EXPLANATION_ACTUAL || '';
+const DIFF_OVERRIDE = process.env.QUERY_EXPLANATION_DIFF || '';
 const REPOSITORY_ID = 'query-explanation-visual';
 const ORIGINAL_QUERY = `SELECT DISTINCT ?a WHERE {
   ?a a <http://example#Type> .
@@ -86,6 +84,8 @@ test('original query explanation matches the visual reference pixel-for-pixel', 
         };
     });
     await page.mouse.move(0, 0);
+    const ACTUAL_PATH = ACTUAL_OVERRIDE || test.info().outputPath('query-explanation-actual.png');
+    const DIFF_PATH = DIFF_OVERRIDE || test.info().outputPath('query-explanation-diff.png');
     await page.screenshot({ path: ACTUAL_PATH, clip, animations: 'disabled', caret: 'hide' });
 
     const surface = page.locator('#query-explanation-row .query-explanation-surface');
@@ -94,22 +94,12 @@ test('original query explanation matches the visual reference pixel-for-pixel', 
     await surface.hover();
     await expect.poll(() => copyButton.evaluate(element => getComputedStyle(element).opacity)).toBe('1');
 
-    const reference = PNG.sync.read(fs.readFileSync(REFERENCE_PATH));
-    const actual = PNG.sync.read(fs.readFileSync(ACTUAL_PATH));
-    expect({ width: actual.width, height: actual.height }).toEqual({ width: 1660, height: 708 });
-    expect({ width: actual.width, height: actual.height }).toEqual({
-        width: reference.width,
-        height: reference.height
-    });
+    const comparison = await compareImageBuffers(fs.readFileSync(REFERENCE_PATH), fs.readFileSync(ACTUAL_PATH));
+    expect(comparison.actualDimensions).toEqual({ width: 1660, height: 708 });
+    expect(comparison.actualDimensions).toEqual(comparison.referenceDimensions);
+    fs.writeFileSync(DIFF_PATH, comparison.diff);
 
-    const diff = new PNG({ width: actual.width, height: actual.height });
-    const differentPixels = pixelmatch(reference.data, actual.data, diff.data, actual.width, actual.height, {
-        includeAA: true,
-        threshold: 0
-    });
-    fs.writeFileSync(DIFF_PATH, PNG.sync.write(diff));
-
-    expect(differentPixels, `Pixel mismatch; inspect ${ACTUAL_PATH} and ${DIFF_PATH}`).toBe(0);
+    expect(comparison.differentPixels, `Pixel mismatch; inspect ${ACTUAL_PATH} and ${DIFF_PATH}`).toBe(0);
 });
 
 function nativeRepositoryConfig(repositoryId) {

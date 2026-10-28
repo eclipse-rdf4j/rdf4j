@@ -1,0 +1,419 @@
+SELECT ?selected ?links WHERE {
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/instance/resource-01> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/instance/resource-01> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/instance/resource-02> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/instance/resource-02> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/instance/resource-03> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/instance/resource-03> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/instance/resource-04> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/instance/resource-04> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/instance/resource-05> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/instance/resource-05> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/instance/resource-06> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/instance/resource-06> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/instance/resource-07> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/instance/resource-07> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/instance/resource-08> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/instance/resource-08> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/alias/alias-01> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/alias/alias-01> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/alias/alias-02> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/alias/alias-02> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/alias/alias-03> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/alias/alias-03> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/alias/alias-04> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/alias/alias-04> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/alias/alias-05> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/alias/alias-05> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/.well-known/genid/genid-01> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/.well-known/genid/genid-01> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/ontology/property-01> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/ontology/property-01> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/ontology/property-02> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/ontology/property-02> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/instance/resource-09> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/instance/resource-09> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+  UNION
+  {
+    SELECT ?selected (COUNT(*) AS ?links) WHERE {
+      {
+        SELECT DISTINCT ?selected ?direction ?predicate ?neighbor WHERE {
+          {
+            VALUES ?__anchor { <https://example.org/instance/resource-10> }
+            BIND(?__anchor AS ?selected)
+            ?selected ?predicate ?neighbor .
+            BIND("out" AS ?direction)
+          } UNION {
+            VALUES ?__anchor { <https://example.org/instance/resource-10> }
+            BIND(?__anchor AS ?selected)
+            ?neighbor ?predicate ?selected .
+            BIND("in" AS ?direction)
+          }
+          FILTER(?predicate != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+            && (isIRI(?neighbor) || isBlank(?neighbor)))
+        } LIMIT 1008
+      }
+    } GROUP BY ?selected
+  }
+}

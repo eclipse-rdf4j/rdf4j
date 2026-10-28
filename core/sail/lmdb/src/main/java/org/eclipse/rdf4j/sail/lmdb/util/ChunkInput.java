@@ -214,6 +214,9 @@ public final class ChunkInput {
 				return null;
 			}
 			long[] prev = tupleCache != null ? tupleCache[cacheIndex] : tuple;
+			if (tupleCache != null && splitPoint > 0) {
+				System.arraycopy(prev, 0, result, 0, splitPoint);
+			}
 			for (int element = 0; element < valueElements; element++) {
 				long prevValue = prev[splitPoint + element];
 
