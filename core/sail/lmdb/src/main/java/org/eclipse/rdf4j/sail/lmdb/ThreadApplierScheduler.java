@@ -16,6 +16,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BooleanSupplier;
 
 import org.slf4j.Logger;
@@ -38,6 +39,9 @@ final class ThreadApplierScheduler implements ApplierScheduler {
 	private final AtomicBoolean shutdown = new AtomicBoolean();
 	private final ScheduledThreadPoolExecutor timers;
 	private final Object pauseMonitor = new Object();
+	/** Every unit runs under this lock: the loop thread's, a paused test's step, or a waiting committer's. */
+	private final ReentrantLock unitLock = new ReentrantLock();
+	private volatile boolean parked;
 	private boolean paused;
 	private boolean pauseAcknowledged;
 	private volatile Thread thread;
@@ -74,12 +78,15 @@ final class ThreadApplierScheduler implements ApplierScheduler {
 			}
 			pending.set(false);
 			boolean worked;
+			unitLock.lock();
 			try {
 				worked = runOne.getAsBoolean();
 			} catch (RuntimeException | Error failure) {
 				// runOne handles its own failures; this is a last resort so the thread survives
 				logger.error("Adjacency applier loop threw; continuing", failure);
 				worked = true;
+			} finally {
+				unitLock.unlock();
 			}
 			if (worked) {
 				continue;
@@ -93,10 +100,36 @@ final class ThreadApplierScheduler implements ApplierScheduler {
 					Thread.yield();
 				}
 			}
-			while (!pending.get() && !shutdown.get() && !isPaused()) {
-				LockSupport.park(this);
+			parked = true;
+			try {
+				while (!pending.get() && !shutdown.get() && !isPaused()) {
+					LockSupport.park(this);
+				}
+			} finally {
+				parked = false;
 			}
 		}
+	}
+
+	@Override
+	public boolean helpOnce() {
+		BooleanSupplier runOne = body;
+		if (runOne == null || shutdown.get() || isPaused() || !unitLock.tryLock()) {
+			return false;
+		}
+		try {
+			if (isPaused()) {
+				return false;
+			}
+			return runOne.getAsBoolean();
+		} finally {
+			unitLock.unlock();
+		}
+	}
+
+	/** Test seam: whether the loop thread is spinning or running rather than parked. */
+	boolean loopThreadIsRunningForTest() {
+		return !parked;
 	}
 
 	@Override
@@ -205,6 +238,14 @@ final class ThreadApplierScheduler implements ApplierScheduler {
 			}
 		}
 		BooleanSupplier runOne = body;
-		return runOne != null && runOne.getAsBoolean();
+		if (runOne == null) {
+			return false;
+		}
+		unitLock.lock();
+		try {
+			return runOne.getAsBoolean();
+		} finally {
+			unitLock.unlock();
+		}
 	}
 }

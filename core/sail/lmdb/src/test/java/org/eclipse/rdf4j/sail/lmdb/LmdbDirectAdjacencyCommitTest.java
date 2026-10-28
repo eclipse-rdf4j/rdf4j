@@ -56,6 +56,24 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
+	void aSynchronousCommitterAppliesItsOwnRecordWhileTheApplierThreadIsIdle() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		assertThat(store.buildNowForTest()).isTrue();
+
+		// The record is sealed when the commit confirms it and the applier thread is parked between commits: the
+		// committer, which would otherwise wait for the applier's wake-up and publish, runs that unit itself.
+		for (int i = 1; i <= 1_000; i++) {
+			commitQuads(new long[][] { add(uri(50_000 + i), P1, O1, 0, true) });
+			assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(tripleStore.getDataRevision());
+		}
+		assertThat(store.helpedUnitsForTest()).as("units applied on committing threads").isPositive();
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, uri(50_500), P1, O1, 0, true)).hasSize(1);
+		}
+	}
+
+	@Test
 	void synchronousCommitReturnsOnlyAfterItsRevisionIsApplied() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		assertThat(store.buildNowForTest()).isTrue();

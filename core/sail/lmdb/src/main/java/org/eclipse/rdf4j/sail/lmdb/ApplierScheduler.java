@@ -30,4 +30,13 @@ interface ApplierScheduler {
 	void schedule(Runnable task, long delayMillis);
 
 	void shutdown();
+
+	/**
+	 * Runs the next unit on the calling thread when the loop thread has none in hand, so a committer waiting for its
+	 * record's publish applies it itself instead of waiting for the loop's wake-up. Returns whether a unit ran; false
+	 * when the loop is running a unit, is paused, or found nothing to do.
+	 */
+	default boolean helpOnce() {
+		return false;
+	}
 }

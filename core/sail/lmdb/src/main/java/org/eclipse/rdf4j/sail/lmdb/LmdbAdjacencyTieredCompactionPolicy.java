@@ -125,8 +125,11 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 		LmdbAdjacencyDeltaGeneration[] snapshot = generations.generationsSnapshot();
 		int generationCount = snapshot.length;
 		long[] weights = new long[generationCount];
+		// retained bytes sum two synchronized charges per generation: read them once, not once per candidate window
+		long[] retained = new long[generationCount];
 		for (int i = 0; i < generationCount; i++) {
-			validate(snapshot[i]);
+			retained[i] = snapshot[i].retainedBytes();
+			validate(snapshot[i], retained[i]);
 			weights[i] = snapshot[i].compactionWeightBytes();
 		}
 		for (int from = 0; from + FANOUT <= generationCount; from++) {
@@ -163,7 +166,7 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 					reclaimable &= generation.referenceCount() == 1;
 					minimumWeight = Math.min(minimumWeight, weights[i]);
 					maximumWeight = Math.max(maximumWeight, weights[i]);
-					retainedBytes = saturatingAdd(retainedBytes, generation.retainedBytes());
+					retainedBytes = saturatingAdd(retainedBytes, retained[i]);
 				}
 				double skew = (double) maximumWeight / minimumWeight;
 				long oldestRevision = snapshot[from].revision();
@@ -286,11 +289,11 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 		return maximum <= maximumAllowed;
 	}
 
-	private static void validate(LmdbAdjacencyDeltaGeneration generation) {
+	private static void validate(LmdbAdjacencyDeltaGeneration generation, long retainedBytes) {
 		if (generation == null) {
 			throw new NullPointerException("generation");
 		}
-		if (generation.retainedBytes() < 0 || generation.compactionWeightBytes() <= 0
+		if (retainedBytes < 0 || generation.compactionWeightBytes() <= 0
 				|| generation.referenceCount() < 1) {
 			throw new IllegalArgumentException("invalid generation compaction measurements at revision "
 					+ generation.revision());

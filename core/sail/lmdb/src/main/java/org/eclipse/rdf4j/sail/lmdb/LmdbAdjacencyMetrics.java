@@ -77,6 +77,7 @@ final class LmdbAdjacencyMetrics {
 	private final LongAdder selfContainedFlattenOperations = new LongAdder();
 	private final LongAdder preparationNanos = new LongAdder();
 	private final LongAdder coalescedPreparations = new LongAdder();
+	private final LongAdder helpedUnits = new LongAdder();
 	private final LongAdder coalescedRecords = new LongAdder();
 	private final LongAdder preparationCount = new LongAdder();
 	private final LongAdder publicationNanos = new LongAdder();
@@ -286,6 +287,15 @@ final class LmdbAdjacencyMetrics {
 
 	long coalescedPreparations() {
 		return coalescedPreparations.sum();
+	}
+
+	void recordHelpedUnit() {
+		helpedUnits.increment();
+	}
+
+	/** Applier units a waiting committer ran on its own thread. */
+	long helpedUnits() {
+		return helpedUnits.sum();
 	}
 
 	long coalescedRecords() {

@@ -299,6 +299,10 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	/** Test/diagnostic projection of the current publication with the pending tables up to the log head. */
+	long helpedUnitsForTest() {
+		return metrics.helpedUnits();
+	}
+
 	long workspaceRegionBytesForTest() {
 		return workspaceRegionBytes;
 	}
@@ -441,6 +445,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				if (state.status() == AdjacencyState.Status.SERVING) {
 					if (state.appliedRevision() >= revision || state.gapFromRevision() <= revision) {
 						break;
+					}
+					// The committer applies the next unit itself while the applier thread has none in hand: its own
+					// record is sealed and confirmed by now, so this saves the loop's wake-up and the hand-back.
+					if (scheduler.helpOnce()) {
+						metrics.recordHelpedUnit();
+						continue;
 					}
 					// wakes on the next publish: the revision applied, a gap at or below it, or a state no longer
 					// serving
@@ -1047,9 +1057,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		LmdbAdjacencyArenaSizingPlan sizingPlan = new LmdbAdjacencyArenaSizingPlan(workspaceRegionBytes);
 		int[] rowCount = { 0 };
 		List<LmdbAdjacencyRunCodec.SourceSlice> retainedSources = new ArrayList<>();
-		forEachMergedRow(overlays, from, to, (sourceIndex, rowIndex) -> {
+		forEachMergedRow(overlays, from, to, (source, sourceIndex, rowIndex) -> {
 			rowCount[0] = Math.incrementExact(rowCount[0]);
-			LmdbAdjacencyDeltaGeneration source = overlays.generation(sourceIndex);
 			if (!source.tombstoneAt(rowIndex)) {
 				LmdbAdjacencyRunCodec.SourceSlice retainedSource = LmdbAdjacencyRunCodec.wholePersistentSource(
 						source.catalog(), contexts, source.handleAt(rowIndex));
@@ -1095,9 +1104,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			int[] retained = { 0 };
 			LmdbAdjacencyArena outputArena = arena;
 			LmdbAdjacencyArenaCatalog outputCatalog = catalog;
-			forEachMergedRow(overlays, from, to, (sourceIndex, rowIndex) -> {
+			forEachMergedRow(overlays, from, to, (source, sourceIndex, rowIndex) -> {
 				int target = output[0]++;
-				LmdbAdjacencyDeltaGeneration source = overlays.generation(sourceIndex);
 				keys[target] = source.rowKeyAt(rowIndex);
 				planes[target] = (byte) source.rowPlaneAt(rowIndex);
 				predicates[target] = source.rowPredicateAt(rowIndex);
@@ -1112,10 +1120,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 							retainedSource.firstNeighbor, retainedSource.firstContext, retainedSource.count,
 							retainedSource.sourceOrdinal, retainedSource.sourceId, retainedSource.sourceRef,
 							retainedSource.kind);
-					int level = retainedSource.kind == LmdbAdjacencyRunCodec.PERSISTENT_CHILD_NODE
-							? LmdbAdjacencyRunCodec.persistentNode(retainedSource.registry,
-									retainedSource.sourceId, retainedSource.sourceRef).level() + 1
-							: 0;
+					// level and flags come from the slice's own resolution in the sizing pass
+					int level = LmdbAdjacencyRunCodec.persistentSingletonLevel(retainedSource);
 					runRefs[target] = LmdbAdjacencyRunCodec.writePersistentSingletonNode(outputArena,
 							outputCatalog.sourceRegistry(), level, child,
 							LmdbAdjacencyRunCodec.contextsPresent(retainedSource),
@@ -1155,7 +1161,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	@FunctionalInterface
 	private interface MergedRowConsumer {
-		void accept(int sourceGeneration, int sourceRow);
+		void accept(LmdbAdjacencyDeltaGeneration source, int sourceGeneration, int sourceRow);
 	}
 
 	/** Visits the newest version of every (key, plane, predicate) row across generations {@code [from, to)}. */
@@ -1193,7 +1199,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 				size = advanceTop(heap, size, sources, positions);
 			}
-			consumer.accept(from + newest, newestRow);
+			consumer.accept(sources[newest], from + newest, newestRow);
 		}
 	}
 
