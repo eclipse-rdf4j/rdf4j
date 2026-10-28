@@ -259,6 +259,9 @@ final class NativeOrderedRowsIteration extends DelayedIteration<BindingSet> impl
 		try {
 			return new CloseableIteratorIteration<>(step.evaluateAll(base, source, cancellation).iterator());
 		} catch (KernelQueryCancelledException cancelled) {
+			if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
+				KernelRuntime.rethrowCloseFailure(cancelled);
+			}
 			return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
 		} finally {
 			releasePreparationState();
@@ -2564,10 +2567,14 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 				next = step.snapshot(source, row.slots, base);
 				return true;
 			}
+			cancellation.check();
 			finish(true);
 			return false;
 		} catch (KernelQueryCancelledException cancelled) {
 			finish(false);
+			if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
+				KernelRuntime.rethrowCloseFailure(cancelled);
+			}
 			return false;
 		} catch (IOException e) {
 			finish(false);
@@ -3124,6 +3131,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			return next != null;
 		} catch (KernelQueryCancelledException cancelled) {
 			finish(false);
+			if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
+				KernelRuntime.rethrowCloseFailure(cancelled);
+			}
 			return false;
 		} catch (IOException e) {
 			finish(false);
@@ -3156,12 +3166,14 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			return getNextBatchElement();
 		}
 
-		while (!closed && !cancellation.isCancellationRequested()) {
+		while (!closed) {
+			cancellation.check();
 			boolean advanced = row.advance(cursor);
 			if (unorderedInput != null) {
 				unorderedInput.commitFactorizedAttemptIfEngaged();
 			}
 			if (!advanced) {
+				cancellation.check();
 				break;
 			}
 			if (unorderedInput != null) {
@@ -3197,10 +3209,12 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 	}
 
 	private BindingSet getNextBatchElement() throws IOException {
-		while (!closed && !cancellation.isCancellationRequested()) {
+		while (!closed) {
+			cancellation.check();
 			if (batchIndex >= batch.selectedCount) {
 				int filled = row.fill(batchCursor, batch);
 				if (filled == 0) {
+					cancellation.check();
 					return null;
 				}
 				if (unorderedInput != null) {

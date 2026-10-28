@@ -165,7 +165,15 @@ class NativeStructuralAggregateCancellationTest {
 			if (cleanupFails) {
 				assertThat(failure).isSameAs(cleanup);
 				assertThat(failure.getCause()).isNull();
-				assertThat(failure.getSuppressed()).containsExactly(KernelQueryCancelledException.INSTANCE);
+				assertThat(failure.getSuppressed()).hasSize(1);
+				assertThat(failure.getSuppressed()[0]).isInstanceOf(KernelQueryCancelledException.class);
+				KernelQueryCancelledException evidence = (KernelQueryCancelledException) failure.getSuppressed()[0];
+				assertThat(evidence.origin()).isSameAs(owner);
+				assertThat(evidence.observedBy(owner))
+						.as("the cursor's derived token observes the owning parent cancellation")
+						.isFalse();
+				assertThat(evidence.getSuppressed()).as("the cancellation evidence must not refer back to cleanup")
+						.isEmpty();
 			}
 			verify(blockedPages, never()).firstRow();
 			verify(blockedPages).close();

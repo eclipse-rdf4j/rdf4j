@@ -184,7 +184,7 @@ class NativeCensusOutputOwnershipTest {
 							.isZero(),
 					() -> assertThat(observedAdvanceFailure)
 							.as("the in-flight advance observes terminal query cancellation")
-							.isSameAs(KernelQueryCancelledException.INSTANCE),
+							.satisfies(NativeCensusOutputOwnershipTest::assertOwnedQueryCancellation),
 					() -> assertThat(observedHasNextResult).isFalse(),
 					() -> assertThat(observedCloseFailure).isNull(),
 					() -> assertThat(delegateCloseCalls).hasValue(1));
@@ -194,6 +194,15 @@ class NativeCensusOutputOwnershipTest {
 			assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
 		}
 		assertThat(closedDuringAdvance).isFalse();
+	}
+
+	private static void assertOwnedQueryCancellation(Throwable failure) {
+		assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
+		KernelQueryCancelledException signal = (KernelQueryCancelledException) failure;
+		assertThat(signal.origin()).isInstanceOf(NativeCancellationToken.class);
+		NativeCancellationToken owner = (NativeCancellationToken) signal.origin();
+		assertThat(signal.observedBy(owner)).as("the cancellation owner produced the observed signal").isTrue();
+		assertThat(owner.owns(signal)).as("the owner recognizes its cancellation signal").isTrue();
 	}
 
 	private static CloseDisposition awaitCloseDisposition(Future<?> close, AtomicReference<Thread> closeThread,
