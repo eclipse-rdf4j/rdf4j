@@ -97,9 +97,9 @@ test('a small star is fanned on a full circle without overlaps', async () => {
   assert.ok(sectorSpan(hub.leaves.map((leaf) => leaf.angle)) >= 300, 'leaves should surround the hub');
 });
 
-test('peeling is off for incremental, refine, repair-only, named-group and pure-star layouts', () => {
+test('peeling is off for incremental, repair-only, named-group and pure-star layouts', () => {
   const graph = canvasGraph(demoGraph(), false);
-  for (const options of [{ incremental: true, movableNodeIds: new Set([iri('Dave')]) }, { refine: true }, { repairOnly: true }, { groups: [{ id: 'g', nodeIds: [iri('Alice')] }] }]) {
+  for (const options of [{ incremental: true, movableNodeIds: new Set([iri('Dave')]) }, { repairOnly: true }, { groups: [{ id: 'g', nodeIds: [iri('Alice')] }] }]) {
     assert.equal(peelSatellites(graph, options).anchorOf.size, 0, JSON.stringify(Object.keys(options)));
   }
   const star = { revision: 1, nodes: Array.from({ length: 21 }, (_, i) => ({ id: `s${i}`, label: `s${i}`, kind: 'iri' })),

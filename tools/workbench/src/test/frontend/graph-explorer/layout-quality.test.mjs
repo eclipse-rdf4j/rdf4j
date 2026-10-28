@@ -108,6 +108,7 @@ test('disconnected components are packed without unrelated edges or overlaps', a
   const metrics = layoutMetrics(graph, result.positions);
   assert.equal(metrics.nodeOverlaps, 0);
   assert.equal(metrics.edgeCrossings, 0);
-  assert.ok(metrics.area < 6500000, `component packing area: ${metrics.area}`);
+  // Twelve components a component gap apart (9.65M; 6.48M when they were packed a card gap apart).
+  assert.ok(metrics.area < 10000000, `component packing area: ${metrics.area}`);
   assert.equal(result.positions.size, graph.nodes.length);
 });
