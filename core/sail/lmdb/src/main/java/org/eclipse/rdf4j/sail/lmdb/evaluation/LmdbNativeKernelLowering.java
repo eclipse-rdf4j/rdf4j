@@ -1708,6 +1708,9 @@ final class LmdbNativeKernelLowering {
 			}
 			PhysicalPattern physical = physicalPattern((PatternPlan) arm);
 			PatternPlan pattern = physical.pattern;
+			if (prefersPatternScan(pattern)) {
+				return lowerOptionalGroup(arm);
+			}
 			if (physical.constantSlots.length > 0) {
 				// A LeftProbe invokes its continuation for the null-extended row when the right run is empty. The
 				// compatibility check and constant alias must therefore stay inside the matched arm; otherwise a
@@ -2108,6 +2111,20 @@ final class LmdbNativeKernelLowering {
 		private int adjacency(long predicate, boolean bySubject, boolean needsKeyEnum) {
 			adjacencies.add(new LmdbNativeKernelBindings.AdjacencyRequest(predicate, bySubject, needsKeyEnum));
 			return adjacencies.size() - 1;
+		}
+
+		/** Whether this retry requires a fixed predicate to avoid an unavailable adjacency view. */
+		private boolean prefersPredicateScan(long predicate) {
+			return preferScans || scanPredicates != null && scanPredicates.contains(predicate);
+		}
+
+		private boolean prefersPatternScan(PatternPlan pattern) {
+			if (preferScans) {
+				return true;
+			}
+			return pattern.p.isConstant()
+					? !pattern.p.hasSlot() && prefersPredicateScan(pattern.p.constant)
+					: scanVariablePredicates;
 		}
 
 		/** One enumerator per direction, reused across every pattern in this kernel that enumerates that direction. */
@@ -3267,6 +3284,9 @@ final class LmdbNativeKernelLowering {
 				return false;
 			}
 			PathStep step = path.steps[0];
+			if (prefersPredicateScan(step.predicate)) {
+				return false;
+			}
 			if (step.subjPos != TripleIndex.SUBJ_IDX || step.objPos != TripleIndex.OBJ_IDX) {
 				reason = reasonPrefix + "path-orientation";
 				return false;
@@ -4484,7 +4504,7 @@ final class LmdbNativeKernelLowering {
 				return false;
 			}
 			LmdbNativeHashJoin.KernelHashPlan plan = LmdbNativeHashJoin.tryPlanKernel(multiJoin, first, second, row);
-			if (plan == null) {
+			if (plan == null || prefersPatternScan(plan.build)) {
 				return false;
 			}
 			// Commit: lower the probe side as the ordinary chain root, then join through the table. The guards above
@@ -4538,7 +4558,8 @@ final class LmdbNativeKernelLowering {
 					return false;
 				}
 				PatternPlan pattern = (PatternPlan) child;
-				if (!hashJoinablePattern(pattern) || !pattern.s.hasSlot() || !pattern.o.hasSlot()
+				if (prefersPatternScan(pattern) || !hashJoinablePattern(pattern)
+						|| !pattern.s.hasSlot() || !pattern.o.hasSlot()
 						|| pattern.hasRuntimeBoundSlot(row) || anyProducedSlotColumned(pattern)) {
 					return false;
 				}
@@ -4851,6 +4872,19 @@ final class LmdbNativeKernelLowering {
 		 * unrewritten.
 		 */
 		private boolean lowerExistentialComponent(List<PatternPlan> component) {
+			if (lowerWitnessWithRollback(() -> lowerExistentialWitness(component))) {
+				return true;
+			}
+			for (PatternPlan patternPlan : component) {
+				joinOperands++;
+				if (!lowerPattern(patternPlan)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean lowerExistentialWitness(List<PatternPlan> component) {
 			List<Node> sub = new ArrayList<>();
 			WitnessColumns witnessCols = new WitnessColumns();
 			List<PatternPlan> remaining = new ArrayList<>(component);
@@ -4874,17 +4908,7 @@ final class LmdbNativeKernelLowering {
 				}
 				witnessed = lowerWitnessPatternPlan(remaining.remove(Math.max(pick, 0)), witnessCols, sub);
 			}
-			if (witnessed && placeWitness(false, sub, witnessCols)) {
-				return true;
-			}
-			reason = null;
-			for (PatternPlan patternPlan : component) {
-				joinOperands++;
-				if (!lowerPattern(patternPlan)) {
-					return false;
-				}
-			}
-			return true;
+			return witnessed && placeWitness(false, sub, witnessCols);
 		}
 
 		/** Aggregate-side filter lowering, retaining exact native evaluation for residual predicates. */
@@ -5007,7 +5031,15 @@ final class LmdbNativeKernelLowering {
 				}
 				List<Node> pipeline = new ArrayList<>(1);
 				WitnessColumns witnessCols = new WitnessColumns();
-				if (!lowerWitnessPattern(exists.s, exists.p.constant, exists.o, witnessCols, pipeline)) {
+				boolean lowered;
+				if (prefersPredicateScan(exists.p.constant)) {
+					PatternPlan pattern = new PatternPlan(exists.s, exists.p, exists.o, exists.c, exists.contexts,
+							exists.namedContextScope, 1D);
+					lowered = lowerWitnessPatternPlan(pattern, witnessCols, pipeline);
+				} else {
+					lowered = lowerWitnessPattern(exists.s, exists.p.constant, exists.o, witnessCols, pipeline);
+				}
+				if (!lowered) {
 					return false;
 				}
 				return placeWitness(negated, pipeline, witnessCols);
@@ -5542,6 +5574,13 @@ final class LmdbNativeKernelLowering {
 				reason = "agg:witness-" + rangeDeclineReason(physicalPattern).substring(reasonPrefix.length());
 				return false;
 			}
+			if (prefersPatternScan(physicalPattern)) {
+				if (lowerWitnessPatternAsScan(physicalPattern, witnessCols, pipeline)) {
+					return appendWitnessBindings(physical, witnessCols, pipeline);
+				}
+				reason = "agg:witness-scan-unavailable";
+				return false;
+			}
 			if (physicalPattern.namedContextScope || !physicalPattern.p.isConstant() || physicalPattern.p.hasSlot()
 					|| physicalPattern.c.hasSlot() || physicalPattern.c.isConstant()
 					|| physicalPattern.contexts.isFixed()) {
@@ -5602,7 +5641,9 @@ final class LmdbNativeKernelLowering {
 				writes |= column >= 0;
 			}
 			if (!writes) {
-				return false;
+				// A fully bound witness still needs a producer for each matching quad. The result only needs
+				// existence, so a scratch context column supplies that producer without binding another slot.
+				outCols[LmdbNativeKernelIr.ScanQuad.CTX] = scratchColumn();
 			}
 			pipeline.add(new LmdbNativeKernelIr.ScanQuad(
 					scan(pattern.statementOrder, pattern.range, false), terms, outCols));
@@ -5750,6 +5791,9 @@ final class LmdbNativeKernelLowering {
 		 */
 		private boolean lowerWitnessPattern(Term s, long predicate, Term o, WitnessColumns witnessCols,
 				List<Node> pipeline) {
+			if (prefersPredicateScan(predicate)) {
+				return false;
+			}
 			Operand subject = witnessOperand(s, witnessCols);
 			Operand object = witnessOperand(o, witnessCols);
 			if (subject != null && object != null) {

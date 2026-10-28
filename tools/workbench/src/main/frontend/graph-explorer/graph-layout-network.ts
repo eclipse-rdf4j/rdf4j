@@ -41,7 +41,7 @@ export function computeNetworkLayout(graph: Graph, options: LayoutOptions = {}) 
       if (node === root) return;
       const angle = slot * Math.PI * (3 - Math.sqrt(5));
       const radius = Math.max(210, graphNodeSize(root).width / 2 + spacing * .8) + Math.max(90, spacing * .55) * Math.sqrt(slot++);
-      positions.set(node.id, options.refine && node.x !== undefined && node.y !== undefined ? {x: node.x, y: node.y}
+      positions.set(node.id, options.fromCurrent && node.x !== undefined && node.y !== undefined ? {x: node.x, y: node.y}
         : {x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius});
     });
     separateLayoutRectangles(graph, positions, options);
@@ -71,7 +71,7 @@ export function computeNetworkLayout(graph: Graph, options: LayoutOptions = {}) 
         ...springs.map((spring, i) => ({data: {id: 's' + i, source: 'n' + index.get(spring.source), target: 'n' + index.get(spring.target), ideal: spring.ideal, el: spring.elasticity}})),
       ],
     });
-    cy.layout({name: 'fcose', quality: 'proof', randomize: !options.incremental && !options.localNodeIds?.size && !options.refine,
+    cy.layout({name: 'fcose', quality: 'proof', randomize: !options.incremental && !options.localNodeIds?.size && !options.fromCurrent,
       animate: false, fit: false, packComponents: false, nodeDimensionsIncludeLabels: false,
       uniformNodeDimensions: false, sampleSize: Math.min(50, graph.nodes.length), nodeSeparation: 100,
       nodeRepulsion: 6500, numIter: 2500,

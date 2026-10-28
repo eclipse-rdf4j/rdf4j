@@ -607,9 +607,6 @@ final class LmdbNativeParallelKernelAggregate {
 			boolean interrupted = telemetry.releaseWorkers(futures.size(), peerStop);
 			ArrayList<HashMap<LongsKey, long[]>> workerResults = new ArrayList<>(futures.size());
 			WorkerFailures workerFailures = new WorkerFailures();
-			if (interrupted) {
-				workerFailures.add(KernelQueryCancelledException.INSTANCE);
-			}
 			// A worker publishes its initiating failure before a later submission can be rejected. Sample that marker
 			// first so future-list/submission order cannot replace the original query failure.
 			workerFailures.add(failure.get());
@@ -622,7 +619,6 @@ final class LmdbNativeParallelKernelAggregate {
 					} catch (InterruptedException problem) {
 						interrupted = true;
 						peerStop.set(true);
-						workerFailures.add(KernelQueryCancelledException.INSTANCE);
 					} catch (ExecutionException problem) {
 						// The initiating worker publishes the original failure before its Future becomes terminal.
 						// Sample
@@ -1111,9 +1107,6 @@ final class LmdbNativeParallelKernelAggregate {
 			// Every accepted future must be terminal before the caller closes the worker transactions.
 			ArrayList<HashMap<LongsKey, Partial>> workerResults = new ArrayList<>(futures.size());
 			WorkerFailures workerFailures = new WorkerFailures();
-			if (interrupted) {
-				workerFailures.add(KernelQueryCancelledException.INSTANCE);
-			}
 			// Preserve the first published worker failure ahead of a later submission rejection; accepted futures may
 			// have
 			// reached a real error before the executor reports that another task cannot be submitted.
@@ -1127,7 +1120,6 @@ final class LmdbNativeParallelKernelAggregate {
 					} catch (InterruptedException problem) {
 						interrupted = true;
 						peerStop.set(true);
-						workerFailures.add(KernelQueryCancelledException.INSTANCE);
 					} catch (ExecutionException problem) {
 						workerFailures.add(failure.get());
 						workerFailures.add(problem.getCause() == null ? problem : problem.getCause());
@@ -1807,7 +1799,7 @@ final class LmdbNativeParallelKernelAggregate {
 	}
 
 	private static boolean isSuppressionDisabledControl(Throwable problem) {
-		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
+		return problem instanceof KernelCancelledException || problem == KernelQueryCancelledException.INSTANCE
 				|| problem instanceof KernelPeerCancelledException || problem instanceof LmdbNativeProbeDeadlineExceeded
 				|| containsSuppressionDisabledControl(problem == null ? null : problem.getCause());
 	}
@@ -1815,7 +1807,7 @@ final class LmdbNativeParallelKernelAggregate {
 	private static boolean containsSuppressionDisabledControl(Throwable problem) {
 		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
 		while (problem != null && visited.add(problem)) {
-			if (problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
+			if (problem instanceof KernelCancelledException || problem == KernelQueryCancelledException.INSTANCE
 					|| problem instanceof KernelPeerCancelledException
 					|| problem instanceof LmdbNativeProbeDeadlineExceeded) {
 				return true;
@@ -1883,8 +1875,19 @@ final class LmdbNativeParallelKernelAggregate {
 
 	/** Samples cancellation owned by the query thread after every accepted worker has reached a terminal state. */
 	private static Throwable parentCancellation(RowState row, NativeGroupIteration emitter, boolean interrupted) {
-		if (interrupted || row != null && row.cancellation != null && row.cancellation.isCancellationRequested()
-				|| emitter != null && emitter.cancellation != null && emitter.cancellation.isCancellationRequested()) {
+		if (row != null && row.cancellation != null) {
+			KernelQueryCancelledException cancellation = row.cancellation.pollCancellation();
+			if (cancellation != null) {
+				return cancellation;
+			}
+		}
+		if (emitter != null && emitter.cancellation != null) {
+			KernelQueryCancelledException cancellation = emitter.cancellation.pollCancellation();
+			if (cancellation != null) {
+				return cancellation;
+			}
+		}
+		if (interrupted) {
 			return KernelQueryCancelledException.INSTANCE;
 		}
 		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull();

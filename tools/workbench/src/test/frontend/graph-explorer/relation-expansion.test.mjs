@@ -20,6 +20,7 @@ import {
   relationCountCap,
   relationLimits,
   relationPlan,
+  valuesRevealedBy,
 } from "../../../main/frontend/graph-explorer/relation-expansion.ts";
 import { neighborsQuery, relationCountQuery } from "../../../main/frontend/graph-explorer/rdf-vocabulary.ts";
 
@@ -141,4 +142,26 @@ test("loads are split so that no request asks for more rows than the server send
   const many = Array.from({ length: 100 }, (_, index) => `n${index}`);
   assert.deepEqual(relationChunks(many, new Map(many.map((id) => [id, 1])), 5000).map((chunk) => chunk.length), [64, 36]);
   assert.deepEqual(relationChunks(many, new Map(), undefined).map((chunk) => chunk.length), [64, 36], "no known cap");
+});
+
+test("a relation that brings values while Values is off reveals them and the values it was hiding", () => {
+  const film = { id: "urn:film:1", label: "A New Hope", kind: "iri" }, sequel = { id: "urn:film:5", label: "Empire", kind: "iri" };
+  const runtime = { id: '"124"', label: "124", kind: "literal" }, year = { id: '"1977"', label: "1977", kind: "literal" };
+  const before = { revision: 1, nodes: [film, sequel, runtime], edges: [
+    { id: "s", source: film.id, target: sequel.id, predicate: "urn:sequel", label: "sequel" },
+    { id: "r", source: film.id, target: runtime.id, predicate: "urn:runtime", label: "runtime" }] };
+  const after = { revision: 2, nodes: [...before.nodes, year],
+    edges: [...before.edges, { id: "y", source: film.id, target: year.id, predicate: "urn:year", label: "year" }] };
+  assert.deepEqual(valuesRevealedBy(before, after), new Set([year.id, runtime.id]), "the new value and the hidden one, not the drawn cards");
+});
+
+test("a relation that brings no value Values would show leaves Values as it is", () => {
+  const film = { id: "urn:film:1", label: "A New Hope", kind: "iri" }, sequel = { id: "urn:film:5", label: "Empire", kind: "iri" };
+  const before = { revision: 1, nodes: [film], edges: [] };
+  const resources = { revision: 2, nodes: [film, sequel], edges: [{ id: "s", source: film.id, target: sequel.id, predicate: "urn:sequel", label: "sequel" }] };
+  assert.equal(valuesRevealedBy(before, resources), null, "resources show without Values");
+  const title = { id: '"A New Hope"', label: "A New Hope", kind: "literal" };
+  const labels = { revision: 2, nodes: [film, title],
+    edges: [{ id: "l", source: film.id, target: title.id, predicate: "http://www.w3.org/2000/01/rdf-schema#label", label: "label" }] };
+  assert.equal(valuesRevealedBy(before, labels), null, "a label that repeats the card's title is not drawn with Values either");
 });

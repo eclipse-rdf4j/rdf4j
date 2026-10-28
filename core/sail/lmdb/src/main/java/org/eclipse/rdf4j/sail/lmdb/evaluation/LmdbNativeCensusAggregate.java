@@ -70,7 +70,6 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjace
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
@@ -1050,7 +1049,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 					if (exactDistinct[field] >= 0L) {
 						stores[field] = new NativeCountGroupStore(1, new boolean[0], id -> id,
 								LmdbNativeProbeDeadline.currentKernelCancellation(
-										cancellation::isCancellationRequested, null),
+										cancellation, null),
 								evaluation.executionContext().memoryLedger());
 					}
 				}
@@ -1113,9 +1112,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 	}
 
 	private static void checkCancelled(NativeCancellationToken cancellation) {
-		if (cancellation.isCancellationRequested()) {
-			throw KernelQueryCancelledException.INSTANCE;
-		}
+		cancellation.check();
 	}
 
 	private synchronized QueryEvaluationStep fallback() {
