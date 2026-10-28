@@ -863,6 +863,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					// per-row pending tables only add a count-based failure before a base can serve any row.
 					return;
 				}
+				if (nextRevision <= current.appliedRevision()) {
+					// A rebuild may already include this commit while asynchronous capture is still finishing.
+					// Its late pending table would never be removed: the applier skips already-applied deltas.
+					return;
+				}
 				PendingTable[] pending = current.pending();
 				if (pending.length >= MAX_PENDING_TABLES) {
 					// the maintenance executor has fallen too far behind: degrade instead of unbounded pending scans,
