@@ -708,6 +708,7 @@ final class LmdbNativeParallelPipelines {
 		final ArrayBlockingQueue<OutputPage> output;
 		final AtomicReference<Throwable> failure = new AtomicReference<>();
 		final AtomicReference<Throwable> ownerCancellation = new AtomicReference<>();
+		final AtomicBoolean failureCounted = new AtomicBoolean();
 		final ArrayList<Throwable> cleanupFailures = new ArrayList<>();
 		final AtomicBoolean cancelled = new AtomicBoolean();
 		final AtomicBoolean ownerStopped = new AtomicBoolean();
@@ -945,7 +946,7 @@ final class LmdbNativeParallelPipelines {
 					recorded = true;
 				}
 			}
-			if (recorded && !alreadyRecordedAsCleanup) {
+			if (recorded && !alreadyRecordedAsCleanup && failureCounted.compareAndSet(false, true)) {
 				WORKER_FAILURES.incrementAndGet();
 			}
 			cancelled.set(true);
@@ -963,7 +964,7 @@ final class LmdbNativeParallelPipelines {
 					cleanupFailures.add(closeFailure);
 				}
 			}
-			if (recorded) {
+			if (recorded && failureCounted.compareAndSet(false, true)) {
 				WORKER_FAILURES.incrementAndGet();
 				logger.debug("Native parallel pipeline worker cleanup failed", closeFailure);
 			}

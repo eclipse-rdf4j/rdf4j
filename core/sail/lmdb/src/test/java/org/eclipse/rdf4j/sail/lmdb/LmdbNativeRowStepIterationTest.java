@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -275,7 +276,7 @@ class LmdbNativeRowStepIterationTest {
 					() -> step.evaluateAll(EmptyBindingSet.getInstance(), source, cancellation));
 			attempt.get().accept();
 
-			assertThat(observed).isSameAs(KernelQueryCancelledException.INSTANCE);
+			assertQueryCancellation(observed, cancellation, cancellation);
 			assertThat(calls.get()).isGreaterThan(0);
 			assertThat(plan.closeCalls).isOne();
 			assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
@@ -324,7 +325,7 @@ class LmdbNativeRowStepIterationTest {
 					() -> step.evaluateAll(EmptyBindingSet.getInstance(), source, cancellation));
 			attempt.get().accept();
 
-			assertThat(observed).isSameAs(KernelQueryCancelledException.INSTANCE);
+			assertQueryCancellation(observed, cancellation, cancellation);
 			assertThat(calls.get()).isGreaterThan(0);
 			assertThat(attempt.get()).isNotNull();
 			assertThat(filterCloses).hasValue(1);
@@ -977,7 +978,8 @@ class LmdbNativeRowStepIterationTest {
 			input.observeOnClose(new LmdbNativeStrategySelection<>(input, observation));
 			input.calibrateOnClose("scratch-cancelled-close-tag", 5_000D, System.nanoTime() - 1_000_000L);
 
-			assertThatThrownBy(() -> input.close(true)).isSameAs(KernelQueryCancelledException.INSTANCE);
+			Throwable closeCancellation = catchThrowable(() -> input.close(true));
+			assertQueryCancellation(closeCancellation, cancellation, cancellation);
 			if (attempt != null) {
 				attempt.accept();
 			}
@@ -1041,8 +1043,14 @@ class LmdbNativeRowStepIterationTest {
 		input.observeOnClose(new LmdbNativeStrategySelection<>(input, observation));
 		input.expectedEarlyCloseAfterRows(1D);
 
+		KernelQueryCancelledException closeCancellation = null;
 		if (cancelParent) {
-			assertThatThrownBy(() -> input.close(false)).isSameAs(KernelQueryCancelledException.INSTANCE);
+			Throwable failure = catchThrowable(() -> input.close(false));
+			assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
+			closeCancellation = (KernelQueryCancelledException) failure;
+			assertThat(closeCancellation).isNotSameAs(KernelQueryCancelledException.INSTANCE);
+			assertThat(closeCancellation.origin()).isSameAs(cancellation);
+			assertThat(closeCancellation.observedBy(cancellation)).isTrue();
 		} else {
 			assertThatCode(() -> input.close(false)).doesNotThrowAnyException();
 		}
@@ -1058,8 +1066,15 @@ class LmdbNativeRowStepIterationTest {
 		assertThat(observation.trainingEligible())
 				.as("only a normally adopted LIMIT outcome remains eligible partial evidence")
 				.isEqualTo(!cancelParent);
-		assertThat(observation.snapshot().failure())
-				.isSameAs(cancelParent ? KernelQueryCancelledException.INSTANCE : null);
+		if (cancelParent) {
+			assertThat(observation.snapshot().failure()).isInstanceOf(KernelQueryCancelledException.class);
+			KernelQueryCancelledException retained = (KernelQueryCancelledException) observation.snapshot().failure();
+			assertThat(retained).isNotSameAs(KernelQueryCancelledException.INSTANCE);
+			assertThat(retained.origin()).isSameAs(cancellation);
+			assertThat(retained.observedBy(cancellation)).isTrue();
+		} else {
+			assertThat(observation.snapshot().failure()).isNull();
+		}
 		if (attempt != null && cancelParent) {
 			assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
 					.as("parent cancellation rejects the saved scalar carrier after LIMIT")
@@ -1131,7 +1146,12 @@ class LmdbNativeRowStepIterationTest {
 					.as("the real owner must not adopt LIMIT after parent cancellation during producer cleanup")
 					.isEqualTo(LmdbNativeCostObservation.Completion.FAILED);
 			assertThat(observation.trainingEligible()).isFalse();
-			assertThat(observation.snapshot().failure()).isSameAs(KernelQueryCancelledException.INSTANCE);
+			assertThat(observation.snapshot().failure()).isInstanceOf(KernelQueryCancelledException.class);
+			KernelQueryCancelledException cancellationFailure = (KernelQueryCancelledException) observation.snapshot()
+					.failure();
+			assertThat(cancellationFailure).isNotSameAs(KernelQueryCancelledException.INSTANCE);
+			assertThat(cancellationFailure.origin()).isSameAs(source.executionContext().cancellation());
+			assertThat(cancellationFailure.observedBy(iteration.cancellation)).isTrue();
 			assertThat(LmdbNativeCostCalibration.observations(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP))
 					.as("a failed owner outcome is not completed calibration evidence")
 					.isZero();
@@ -2253,8 +2273,29 @@ class LmdbNativeRowStepIterationTest {
 				releaseFilter.countDown();
 			}
 
-			assertThat(activePull.get()).as("close during an entered pull does not publish another row").isFalse();
-			close.get();
+			Boolean pullResult = null;
+			Throwable pullFailure = null;
+			try {
+				pullResult = activePull.get();
+			} catch (ExecutionException failure) {
+				pullFailure = failure.getCause();
+			}
+			Throwable closeFailure = futureFailure(close);
+			if (cancelParent) {
+				assertThat(pullResult == null || !pullResult)
+						.as("parent cancellation must not publish another row")
+						.isTrue();
+				if (pullFailure != null) {
+					assertQueryCancellation(pullFailure, cancellation, source.executionContext().cancellation());
+				}
+				if (closeFailure != null) {
+					assertQueryCancellation(closeFailure, cancellation, source.executionContext().cancellation());
+				}
+			} else {
+				assertThat(pullFailure).isNull();
+				assertThat(pullResult).as("close during an entered pull does not publish another row").isFalse();
+				assertThat(closeFailure).isNull();
+			}
 			int filterCalls = calls.get();
 			assertThat(filterCalls).as("the first result passed through the filter before the entered pull")
 					.isGreaterThan(0);
@@ -2319,15 +2360,20 @@ class LmdbNativeRowStepIterationTest {
 		};
 		SlotPlan filtered = new FilterPlan(new RecordingPlan(3), filter, 1L);
 		CloseableIteration<BindingSet> iteration;
+		NativeCancellationToken ownerCancellation;
 		if (bare) {
 			NativeBareRowsStep step = NativeRowsStep.bareFragment(source, filtered, layout, new int[] { 0 },
 					new String[] { "value" }, false, null, target, null);
-			iteration = new NativeBareRowsIteration(step, source, EmptyBindingSet.getInstance());
+			NativeBareRowsIteration owner = new NativeBareRowsIteration(step, source, EmptyBindingSet.getInstance());
+			iteration = owner;
+			ownerCancellation = owner.cancellation;
 		} else {
 			NativeRowsStep step = new NativeRowsStep(source, filtered, layout, new int[] { 0 },
 					new String[] { "value" }, false, new int[0], new boolean[0], 0L, -1L, false, null, target, null,
 					Set.of(), null, null);
-			iteration = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+			NativeRowsIteration owner = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+			iteration = owner;
+			ownerCancellation = owner.cancellation;
 		}
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		try {
@@ -2337,7 +2383,10 @@ class LmdbNativeRowStepIterationTest {
 			filterCloseEntered.await();
 			source.executionContext().cancellation().requestCancellation();
 			releaseFilterClose.countDown();
-			close.get();
+			Throwable closeFailure = futureFailure(close);
+			if (!bare || closeFailure != null) {
+				assertQueryCancellation(closeFailure, ownerCancellation, source.executionContext().cancellation());
+			}
 			assertThat(attempt.get()).as("the filter call belongs to the owner carrier").isNotNull();
 			attempt.get().accept();
 
@@ -2352,6 +2401,24 @@ class LmdbNativeRowStepIterationTest {
 			iteration.close();
 			source.executionContext().close();
 		}
+	}
+
+	private static Throwable futureFailure(Future<?> future) throws InterruptedException {
+		try {
+			future.get();
+			return null;
+		} catch (ExecutionException failure) {
+			return failure.getCause();
+		}
+	}
+
+	private static void assertQueryCancellation(Throwable actual, NativeCancellationToken observer,
+			NativeCancellationToken origin) {
+		assertThat(actual).isInstanceOf(KernelQueryCancelledException.class);
+		KernelQueryCancelledException occurrence = (KernelQueryCancelledException) actual;
+		assertThat(occurrence).isNotSameAs(KernelQueryCancelledException.INSTANCE);
+		assertThat(occurrence.origin()).isSameAs(origin);
+		assertThat(occurrence.observedBy(observer)).isTrue();
 	}
 
 	private static NativeSlotLayout oneSlotLayout(String name) {

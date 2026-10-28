@@ -202,7 +202,7 @@ class LmdbNativeKernelPollPointTest {
 			}
 		};
 		KernelCancellation cancellation = LmdbNativeProbeDeadline
-				.currentKernelCancellation(() -> false, workerCancellation);
+				.currentKernelCancellation(workerCancellation, () -> false);
 		QueryExecutionContext.ReplayContext replay;
 		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
 		}, () -> scope)) {

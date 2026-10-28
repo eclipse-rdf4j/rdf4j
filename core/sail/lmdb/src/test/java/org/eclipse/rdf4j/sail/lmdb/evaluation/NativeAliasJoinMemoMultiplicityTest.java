@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -226,10 +227,8 @@ class NativeAliasJoinMemoMultiplicityTest {
 			}
 		}
 
-		Throwable expected = deadlineSignal ? LmdbNativeProbeDeadlineExceeded.INSTANCE
-				: KernelQueryCancelledException.INSTANCE;
 		assertAll("polling while PatternRowCursor rejects raw quads",
-				() -> assertSame(expected, failure, "the signal is propagated as its singleton outcome"),
+				() -> assertCancellationOutcome(failure, deadlineSignal, row.cancellation),
 				() -> assertEquals(1, source.ordinarySignalAtPull, "the signal trips on the first raw quad"),
 				() -> assertTrue(source.ordinaryRawRows - 1 <= 1_024,
 						() -> "the cursor must stop within 1024 pulls after the first rejection; rawRows="
@@ -262,8 +261,7 @@ class NativeAliasJoinMemoMultiplicityTest {
 		}
 
 		assertAll("cancellation while PatternCursor filters a residual range",
-				() -> assertSame(KernelQueryCancelledException.INSTANCE, failure,
-						"the residual-range scan propagates the query cancellation singleton"),
+				() -> assertCancellationOutcome(failure, false, row.cancellation),
 				() -> assertEquals(1, source.ordinarySignalAtPull, "the signal trips on the first raw quad"),
 				() -> assertTrue(source.ordinaryRawRows - 1 <= 1_024,
 						() -> "residual filtering must stop within 1024 pulls; rawRows=" + source.ordinaryRawRows),
@@ -305,10 +303,8 @@ class NativeAliasJoinMemoMultiplicityTest {
 			}
 		}
 
-		Throwable expected = deadlineSignal ? LmdbNativeProbeDeadlineExceeded.INSTANCE
-				: KernelQueryCancelledException.INSTANCE;
 		assertAll("cancellation while PatternCursor.fill filters a residual range",
-				() -> assertSame(expected, failure, "the fill propagates the signal singleton"),
+				() -> assertCancellationOutcome(failure, deadlineSignal, row.cancellation),
 				() -> assertEquals(1, source.ordinarySignalAtPull, "the signal trips on the first raw quad"),
 				() -> assertTrue(source.ordinaryRawRows - 1 <= 1_024,
 						() -> "fill must stop within 1024 pulls after the first raw row; rawRows="
@@ -348,10 +344,8 @@ class NativeAliasJoinMemoMultiplicityTest {
 			}
 		}
 
-		Throwable expected = deadlineSignal ? LmdbNativeProbeDeadlineExceeded.INSTANCE
-				: KernelQueryCancelledException.INSTANCE;
 		assertAll("cancellation while PatternCursor.fill spans no-range fixed contexts",
-				() -> assertSame(expected, failure, "the fill propagates the signal singleton"),
+				() -> assertCancellationOutcome(failure, deadlineSignal, row.cancellation),
 				() -> assertEquals(1, source.ordinarySignalAtPull, "the signal trips on the first raw quad"),
 				() -> assertTrue(source.ordinaryRawRows - 1 <= 1_024,
 						() -> "fill must stop within 1024 pulls after the first raw row; rawRows="
@@ -480,11 +474,9 @@ class NativeAliasJoinMemoMultiplicityTest {
 			}
 		}
 
-		Throwable expected = deadlineSignal ? LmdbNativeProbeDeadlineExceeded.INSTANCE
-				: KernelQueryCancelledException.INSTANCE;
 		Throwable actualFailure = failure;
 		assertAll("successful row streaming must poll within 1024 pulls",
-				() -> assertSame(expected, actualFailure, "the stream propagates the signal singleton"),
+				() -> assertCancellationOutcome(actualFailure, deadlineSignal, row.cancellation),
 				() -> assertEquals(1, source.ordinarySignalAtPull, "the signal trips on the first raw quad"),
 				() -> assertTrue(source.ordinaryRawRows - 1 <= 1_024,
 						() -> "successful streaming must stop within 1024 additional pulls; rawRows="
@@ -509,7 +501,7 @@ class NativeAliasJoinMemoMultiplicityTest {
 		RowCursor cursor = new NativeAliasJoinMemoPlan(new JoinPlan(
 				new WeightedPlan(row, KEY_SLOT, keys, unitWeights(keys.length), null), sweepPattern())).open(row);
 		try {
-			assertSame(KernelQueryCancelledException.INSTANCE, nextFailure(cursor));
+			assertCancellationOutcome(nextFailure(cursor), false, row.cancellation);
 			assertTrue(source.sweeps > 0, "the cancellation occurs inside the admitted build");
 		} finally {
 			cursor.close();
@@ -568,10 +560,8 @@ class NativeAliasJoinMemoMultiplicityTest {
 			}
 		}
 
-		Throwable expected = deadlineSignal ? LmdbNativeProbeDeadlineExceeded.INSTANCE
-				: KernelQueryCancelledException.INSTANCE;
 		assertAll("the funded full sweep stops during its first rejected raw row batch",
-				() -> assertSame(expected, failure, "the signal is propagated as its singleton outcome"),
+				() -> assertCancellationOutcome(failure, deadlineSignal, row.cancellation),
 				() -> assertEquals(1, source.sweeps, "64 completed distinct misses fund exactly one sweep"),
 				() -> assertEquals(1, source.sweepCheckpointCalls,
 						"the real source cancellation checkpoint sees the owning sweep token"),
@@ -637,12 +627,24 @@ class NativeAliasJoinMemoMultiplicityTest {
 			}
 		}
 
-		Throwable expectedSignal = deadlineSignal ? LmdbNativeProbeDeadlineExceeded.INSTANCE
-				: KernelQueryCancelledException.INSTANCE;
-		assertAll("a real sweep iterator cleanup error survives a suppression-disabled pull control",
-				() -> assertSame(closeFailure, failure),
-				() -> assertArrayEquals(new Throwable[] { expectedSignal }, closeFailure.getSuppressed()),
-				() -> assertEquals(0, expectedSignal.getSuppressed().length),
+		assertAll("the sweep retains its control outcome and real cleanup",
+				() -> {
+					if (deadlineSignal) {
+						assertSame(closeFailure, failure);
+						assertArrayEquals(new Throwable[] { LmdbNativeProbeDeadlineExceeded.INSTANCE },
+								closeFailure.getSuppressed());
+						assertEquals(0, LmdbNativeProbeDeadlineExceeded.INSTANCE.getSuppressed().length);
+					} else {
+						assertTrue(failure instanceof KernelQueryCancelledException,
+								"the real query cancellation remains terminal");
+						KernelQueryCancelledException occurrence = (KernelQueryCancelledException) failure;
+						assertNotSame(KernelQueryCancelledException.INSTANCE, occurrence);
+						assertSame(row.cancellation, occurrence.origin());
+						assertTrue(occurrence.observedBy(row.cancellation));
+						assertArrayEquals(new Throwable[] { closeFailure }, occurrence.getSuppressed());
+						assertEquals(0, closeFailure.getSuppressed().length);
+					}
+				},
 				() -> assertEquals(1, source.sweeps),
 				() -> assertEquals(1, source.sweepCloseCalls),
 				() -> assertEquals(source.opens, source.closes),
@@ -1724,8 +1726,14 @@ class NativeAliasJoinMemoMultiplicityTest {
 				failure = stopped;
 			}
 			assertSame(closeFailure, failure, "the real close failure must remain primary over query cancellation");
-			assertTrue(contains(failure, KernelQueryCancelledException.INSTANCE),
-					"the query cancellation signal must remain reachable from the real cleanup failure");
+			assertEquals(1, failure.getSuppressed().length,
+					"the real cleanup failure retains its query-cancellation occurrence once");
+			assertTrue(failure.getSuppressed()[0] instanceof KernelQueryCancelledException,
+					"the retained cleanup evidence is the query-cancellation occurrence");
+			KernelQueryCancelledException retained = (KernelQueryCancelledException) failure.getSuppressed()[0];
+			assertNotSame(KernelQueryCancelledException.INSTANCE, retained);
+			assertSame(row.cancellation, retained.origin());
+			assertTrue(retained.observedBy(row.cancellation));
 			assertEquals(1, closes[0], "BoundCursor closes its owned plan cursor exactly once");
 			assertEquals(baseline, ledger.usedBytes(), "cancellation cleanup releases query-ledger memory");
 		} finally {
@@ -1929,6 +1937,21 @@ class NativeAliasJoinMemoMultiplicityTest {
 		long[] weights = new long[size];
 		Arrays.fill(weights, 1L);
 		return weights;
+	}
+
+	private static void assertCancellationOutcome(Throwable actual, boolean deadlineSignal,
+			NativeCancellationToken cancellation) {
+		if (deadlineSignal) {
+			assertSame(LmdbNativeProbeDeadlineExceeded.INSTANCE, actual,
+					"probe-deadline identity remains the legacy singleton control");
+			return;
+		}
+		assertTrue(actual instanceof KernelQueryCancelledException,
+				"query cancellation is propagated as an occurrence-local signal");
+		KernelQueryCancelledException occurrence = (KernelQueryCancelledException) actual;
+		assertNotSame(KernelQueryCancelledException.INSTANCE, occurrence);
+		assertSame(cancellation, occurrence.origin());
+		assertTrue(occurrence.observedBy(cancellation));
 	}
 
 	private static boolean contains(Throwable failure, Throwable expected) {

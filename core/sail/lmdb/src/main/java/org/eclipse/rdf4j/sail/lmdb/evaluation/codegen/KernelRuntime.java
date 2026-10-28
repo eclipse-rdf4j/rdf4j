@@ -177,7 +177,9 @@ public final class KernelRuntime {
 		return closeResource(resource, failure, null);
 	}
 
-	/** Closes a resource and reports its retained failure to an owner before returning or rethrowing it. */
+	/**
+	 * Closes a resource and reports its retained cleanup contribution to an owner before returning or rethrowing it.
+	 */
 	public static Throwable closeResource(AutoCloseable resource, Throwable failure,
 			Consumer<Throwable> closeFailureObserver) {
 		if (resource != null) {
@@ -186,7 +188,7 @@ public final class KernelRuntime {
 			} catch (Throwable cleanup) {
 				Throwable retained = retainCloseFailure(failure, cleanup);
 				if (closeFailureObserver != null) {
-					closeFailureObserver.accept(retained);
+					closeFailureObserver.accept(retained == failure ? cleanup : retained);
 				}
 				return retained;
 			}
@@ -409,6 +411,13 @@ public final class KernelRuntime {
 		throw new IllegalStateException("kernel resource close failed", failure);
 	}
 
+	/** Rethrows a changed close outcome or a real cleanup failure retained on the unchanged primary control. */
+	public static void rethrowCloseFailureIfNotPrimary(Throwable failure, Throwable primary) {
+		if (failure != null && (failure != primary || realFailureAttachedToControl(failure) != null)) {
+			rethrowCloseFailure(failure);
+		}
+	}
+
 	/** An exceptional fill cannot be resumed; drain owned cursors, preserving the evaluation failure. */
 	public static void closeAfterFailure(JaninoKernel kernel, Throwable primary) {
 		Throwable failure = primary;
@@ -419,9 +428,7 @@ public final class KernelRuntime {
 				failure = retainCloseFailure(failure, cleanup);
 			}
 		}
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/** Releases an activation-local owner without replacing a primary evaluation failure. */
@@ -433,25 +440,19 @@ public final class KernelRuntime {
 	public static void closeCursor(AutoCloseable cursor, Throwable primary,
 			Consumer<Throwable> closeFailureObserver) {
 		Throwable failure = closeResource(cursor, primary, closeFailureObserver);
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/** Close a scoped scan while preserving a primary evaluation failure. No per-row allocation or dispatch. */
 	public static void closeScanCursor(KernelQuadCursor cursor, Throwable primary) {
 		Throwable failure = closeResource(cursor, primary);
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/** The plan-cursor equivalent of {@link #closeScanCursor}. */
 	public static void closePlanCursor(KernelPlan.Cursor cursor, Throwable primary) {
 		Throwable failure = closeResource(cursor, primary);
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/**

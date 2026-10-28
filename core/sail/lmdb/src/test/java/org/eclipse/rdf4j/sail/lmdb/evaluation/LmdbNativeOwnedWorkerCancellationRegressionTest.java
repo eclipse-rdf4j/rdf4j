@@ -671,10 +671,10 @@ class LmdbNativeOwnedWorkerCancellationRegressionTest {
 			cursor.taskFinished();
 			closeFailure = catchThrowable(cursor::close);
 		}
-		assertThat(closeFailure).isSameAs(cursor.failure.get())
-				.isInstanceOf(QueryEvaluationException.class)
+		assertThat(closeFailure).isSameAs(cleanup);
+		assertThat(cursor.failure.get()).isInstanceOf(QueryEvaluationException.class)
 				.hasCause(KernelQueryCancelledException.INSTANCE);
-		assertThat(closeFailure.getSuppressed()).contains(cleanup);
+		assertThat(closeFailure.getSuppressed()).containsExactly(cursor.failure.get());
 	}
 
 	private static void invokeFactorizedTailPoll(RowState row, CountDownLatch workerAtPoll,

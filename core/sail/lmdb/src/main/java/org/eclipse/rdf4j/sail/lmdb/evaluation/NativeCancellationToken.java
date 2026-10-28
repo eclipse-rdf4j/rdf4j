@@ -207,6 +207,18 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 		return isCancellationRequested() ? new KernelQueryCancelledException(this, cancellationOrigin) : null;
 	}
 
+	/**
+	 * Returns this token's view of an already-published ancestor cancellation without attributing a worker's unrelated
+	 * interrupt to the ancestor. Owners use this after a local stop has won the token's first-origin race but an
+	 * enclosing query is cancelled before the owner's cleanup/adoption boundary.
+	 */
+	KernelQueryCancelledException pollUpstreamCancellation() {
+		NativeCancellationToken upstream = parent;
+		return upstream != null && upstream.isCancellationRequested(false)
+				? new KernelQueryCancelledException(this, upstream.cancellationOrigin)
+				: null;
+	}
+
 	/** Data-proportional loops poll at entry and at most every 1024 operations. */
 	void poll(int tick) {
 		if ((tick & 1023) == 0) {

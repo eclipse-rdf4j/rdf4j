@@ -863,7 +863,7 @@ class LmdbNativeParallelAggregationCleanupTest {
 			cursor.consumerRow.cancellation.requestCancellation();
 			assertThat(cursor.cancelled).isFalse();
 			Throwable ownerSignal = catchThrowable(cursor.consumerRow.cancellation::check);
-			assertThat(ownerSignal).isSameAs(KernelQueryCancelledException.INSTANCE);
+			assertOwnerQueryCancellation(ownerSignal, cursor.consumerRow.cancellation);
 			releaseWorkerProbe.countDown();
 			awaitTaskCount(cursor, 0L);
 
@@ -935,8 +935,8 @@ class LmdbNativeParallelAggregationCleanupTest {
 			// The consumer is already inside next(), not at RowState.advance's entry check. The real worker is
 			// held in its source pull until after that same owner's token is requested.
 			cursor.consumerRow.cancellation.requestCancellation();
-			assertThat(catchThrowable(cursor.consumerRow.cancellation::check))
-					.isSameAs(KernelQueryCancelledException.INSTANCE);
+			assertOwnerQueryCancellation(catchThrowable(cursor.consumerRow.cancellation::check),
+					cursor.consumerRow.cancellation);
 			releaseWorkerProbe.countDown();
 			awaitTaskCount(cursor, 0L);
 			try {
@@ -961,8 +961,7 @@ class LmdbNativeParallelAggregationCleanupTest {
 				() -> assertThat(returnedRow).isFalse(),
 				() -> {
 					if (observed != null) {
-						assertThat(observed).as("only the exact owning-query control may escape")
-								.isSameAs(KernelQueryCancelledException.INSTANCE);
+						assertOwnerQueryCancellation(observed, published.get().consumerRow.cancellation);
 					}
 				},
 				() -> assertThat(published.get().failure.get()).isNull(),
@@ -990,6 +989,14 @@ class LmdbNativeParallelAggregationCleanupTest {
 			Thread.onSpinWait();
 		}
 		throw new AssertionError("the native consumer must enter its actual empty output-queue wait");
+	}
+
+	private static void assertOwnerQueryCancellation(Throwable actual, NativeCancellationToken owner) {
+		assertThat(actual).isInstanceOf(KernelQueryCancelledException.class);
+		KernelQueryCancelledException occurrence = (KernelQueryCancelledException) actual;
+		assertThat(occurrence).isNotSameAs(KernelQueryCancelledException.INSTANCE);
+		assertThat(occurrence.origin()).isSameAs(owner);
+		assertThat(occurrence.observedBy(owner)).isTrue();
 	}
 
 	@Test
