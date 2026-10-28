@@ -40,6 +40,12 @@ final class LmdbDirectAdjacencyCommitDelta {
 	/** Conservative plan-worksheet seal-peak ceiling; the direct-row radix path remains below it. */
 	static final long PROJECTED_BYTES_PER_EVENT = 113;
 	private static final int INITIAL_CAPACITY = 1024;
+	/**
+	 * A transaction with at most this many events, none of them submitted yet, seals on the committing thread: sorting
+	 * a few events costs less than the two executor hand-offs (and capture-thread wake-ups) the asynchronous path
+	 * takes, and the commit log then stages an already sealed record.
+	 */
+	static final int INLINE_SEAL_MAX_EVENTS = 128;
 	private static final int INSERTION_SORT_THRESHOLD = 32;
 	private static final int MSD_RADIX_SORT_THRESHOLD = 1536;
 	private static final int MSD_RADIX_LEAF_THRESHOLD = 48;
@@ -331,6 +337,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 		private volatile Throwable failure;
 		private final Object batchMonitor = new Object();
 		private int submittedBatches;
+		private boolean anyBatchSubmitted;
 
 		AsyncCapture(long revision) {
 			accumulator.begin(revision);
@@ -371,6 +378,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 			batch = null;
 			operations = null;
 			used = 0;
+			anyBatchSubmitted = true;
 			synchronized (batchMonitor) {
 				submittedBatches++;
 			}
@@ -401,6 +409,12 @@ final class LmdbDirectAdjacencyCommitDelta {
 		}
 
 		CompletableFuture<SealedDirectDelta> seal(long revision, long[] coverage) {
+			if (!cancelled && !anyBatchSubmitted && used <= INLINE_SEAL_MAX_EVENTS && beforeCapture == null
+					&& afterSeal == null && !captureExecutor.isShutdown()) {
+				// A cancelled capture (a refused budget) or a shut-down executor keeps the executor path, whose
+				// rejection or failure the caller already handles by aborting the capture.
+				return sealInline(revision, coverage);
+			}
 			submitBatch(false);
 			// A CompletableFuture so the commit log can mirror the seal without a waiting thread; get() still reports
 			// the failure as an ExecutionException whose cause is the original throwable, as the FutureTask did.
@@ -422,6 +436,29 @@ final class LmdbDirectAdjacencyCommitDelta {
 				}
 			});
 			return sealed;
+		}
+
+		/** The whole transaction is still in the open batch: record and seal it here, on the committing thread. */
+		private CompletableFuture<SealedDirectDelta> sealInline(long revision, long[] coverage) {
+			long[][] events = batch;
+			byte[] eventOperations = operations;
+			int size = used;
+			batch = null;
+			operations = null;
+			used = 0;
+			try {
+				for (int i = 0; i < size; i++) {
+					accumulator.record(events[0][i], events[1][i], events[2][i], events[3][i],
+							(eventOperations[i] & 1) != 0, (eventOperations[i] & 2) != 0);
+				}
+				return CompletableFuture.completedFuture(sealNow(revision, coverage));
+			} catch (Throwable failure) {
+				return CompletableFuture.failedFuture(failure);
+			} finally {
+				if (events != null) {
+					budget.release(MemoryKind.PENDING, BATCH_BYTES);
+				}
+			}
 		}
 
 		private SealedDirectDelta sealNow(long revision, long[] coverage) {

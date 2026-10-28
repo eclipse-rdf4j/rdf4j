@@ -294,16 +294,21 @@ class LmdbDirectAdjacencyConsolidationTest {
 			store.pauseApplierForTest(false);
 		}
 		store.awaitCompactionForTest();
-
-		LmdbAdjacencyOverlaySet overlays = store.publishedStateForTest().overlays();
-		assertThat(overlays).isNotNull();
-		for (int i = 0; i < overlays.generationCount(); i++) {
-			LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
-			long root = generation.find(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1);
-			assertThat(root).isPositive();
-			assertThat(LmdbAdjacencyRunCodec.persistentNode(generation.catalog(), root).level())
-					.as("generation %d at revision %d", i, generation.revision())
-					.isZero();
+		// inspect under a paused applier: a merge landing meanwhile would release the generations being read
+		store.pauseApplierForTest(true);
+		try {
+			LmdbAdjacencyOverlaySet overlays = store.publishedStateForTest().overlays();
+			assertThat(overlays).isNotNull();
+			for (int i = 0; i < overlays.generationCount(); i++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+				long root = generation.find(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1);
+				assertThat(root).isPositive();
+				assertThat(LmdbAdjacencyRunCodec.persistentNode(generation.catalog(), root).level())
+						.as("generation %d at revision %d", i, generation.revision())
+						.isZero();
+			}
+		} finally {
+			store.pauseApplierForTest(false);
 		}
 	}
 
