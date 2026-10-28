@@ -925,7 +925,7 @@ public class LmdbNativeParallelPipelinesTest {
 					if (outputBackpressure) {
 						awaitNativeOutputBackpressure(activeWorker.get());
 					} else {
-						awaitWorkerReturnedToPool(activeWorker.get());
+						awaitActiveWorkerFinishedItsTask(activeWorker.get());
 					}
 					closer.set(new Thread(() -> {
 						try {
@@ -1159,6 +1159,30 @@ public class LmdbNativeParallelPipelinesTest {
 			Thread.onSpinWait();
 		}
 		throw new AssertionError("the denied sibling must finish before the genuine worker error");
+	}
+
+	/**
+	 * The first worker finished its task when its pool thread is back waiting for work, or when the pool handed that
+	 * same thread a later, gated activation of this query: on a small runner the pool is at its core size and queued
+	 * tasks go to whichever thread frees up first, so the thread that ran the first task may be the one parked at the
+	 * sibling gate.
+	 */
+	private static void awaitActiveWorkerFinishedItsTask(Thread worker) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (System.nanoTime() < deadline) {
+			StackTraceElement[] stack = worker.getStackTrace();
+			boolean returnedToPool = Arrays.stream(stack)
+					.anyMatch(frame -> frame.getClassName().equals("java.util.concurrent.ThreadPoolExecutor")
+							&& frame.getMethodName().equals("getTask"));
+			boolean parkedAtSiblingGate = Arrays.stream(stack)
+					.anyMatch(frame -> frame.getClassName().equals(LmdbNativeParallelPipelinesTest.class.getName())
+							&& frame.getMethodName().equals("awaitCloseOrdering"));
+			if (returnedToPool || parkedAtSiblingGate) {
+				return;
+			}
+			Thread.onSpinWait();
+		}
+		throw new AssertionError("the active worker must finish its task before the result is closed");
 	}
 
 	private static void awaitNativeOutputBackpressure(Thread worker) {

@@ -760,6 +760,10 @@ class LmdbDirectAdjacencyConsolidationTest {
 				commitAdd(S1, P1, uri(1000 + i));
 				store.pauseApplierForTest(false);
 			}
+			// the merge of those single-commit generations runs on a worker; the retained-snapshot charge below
+			// exists only once it has landed and deactivated the generations the pinned view still holds
+			store.awaitCompactionForTest();
+			assertThat(store.snapshotMetrics().deltaMerges).isPositive();
 
 			// the pinned view keeps serving its own snapshot exactly through its retained state
 			assertThat(probe(pinned, S1, P1)).hasSize(3);
