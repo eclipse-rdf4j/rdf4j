@@ -134,6 +134,28 @@ final class LmdbNativeParallelKernelAggregate {
 		return !"false".equals(System.getProperty(ENABLED_PROPERTY));
 	}
 
+	/** Prefer exact root windows if page windows cannot supply enough independent work. */
+	static LmdbNativeKernelPartitions.PartitionPlan preferRootPartitions(
+			LmdbNativeKernelPartitions.PartitionPlan preferred, long minimumUnits,
+			Supplier<LmdbNativeKernelPartitions.PartitionPlan> rootPlanner) {
+		if (!preferred.usesPages() || preferred.unitCount() >= minimumUnits) {
+			return preferred;
+		}
+		try {
+			LmdbNativeKernelPartitions.PartitionPlan roots = rootPlanner.get();
+			return roots != null && roots.unitCount() > preferred.unitCount() ? roots : preferred;
+		} catch (LmdbNativeKernelPartitions.ParallelKernelDecline unavailable) {
+			if (unavailable.getSuppressed().length != 0) {
+				Throwable realFailure = realFailureInControlGraph(unavailable);
+				if (realFailure != null) {
+					throwFailure(realFailure);
+				}
+				throw unavailable;
+			}
+			return preferred;
+		}
+	}
+
 	/**
 	 * Runs the compiled aggregate partitioned across workers, or returns null when any gate fails and the sequential
 	 * kernel drain must run instead. Never partially emits: a failure inside the parallel attempt declines cleanly. The
@@ -349,6 +371,30 @@ final class LmdbNativeParallelKernelAggregate {
 					throwFailure(realFailure);
 				}
 				partitionPlan = null;
+			}
+			if (partitionPlan != null && partitionPlan.usesPages()) {
+				if (rootAdjacency >= 0) {
+					int adjacencyIndex = rootAdjacency;
+					NativeLmdbQuerySource.NativeAdjacency adjacency = queryViews[adjacencyIndex];
+					partitionPlan = preferRootPartitions(partitionPlan, 2L * desiredWorkers,
+							() -> LmdbNativeKernelPartitions.planAdjacency(adjacencyIndex, adjacency, false,
+									requireContexts));
+				} else if (rootWildcard >= 0 && rootWildcardWindow) {
+					int wildcardIndex = rootWildcard;
+					NativeLmdbQuerySource.WildcardAdjacency wildcard = queryVariableViews.wildcards()[wildcardIndex];
+					LmdbNativeKernelIr.Operand predicate = LmdbNativeKernelPartitions
+							.rootWildcardPredicate(lowered.kernel.pipeline, wildcardIndex);
+					if (predicate == null) {
+						partitionPlan = preferRootPartitions(partitionPlan, desiredWorkers,
+								() -> LmdbNativeKernelPartitions.planWildcard(wildcardIndex, wildcard, false,
+										requireContexts));
+					} else if (predicate.kind != LmdbNativeKernelIr.Operand.COL) {
+						long predicateId = resolvePartitionOperand(predicate, bindings, row);
+						partitionPlan = preferRootPartitions(partitionPlan, desiredWorkers,
+								() -> LmdbNativeKernelPartitions.planWildcardPredicate(wildcardIndex, wildcard,
+										predicateId, false, requireContexts));
+					}
+				}
 			}
 			rootKeys = partitionPlan != null ? partitionPlan.unitCount()
 					: rootAdjacency >= 0 ? queryViews[rootAdjacency].keyCount()

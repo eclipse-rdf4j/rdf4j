@@ -31,6 +31,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -404,10 +405,22 @@ class LmdbMapGrowthReplayLifecycleTest {
 	@Timeout(value = 45, unit = TimeUnit.SECONDS)
 	void activePreResultAggregateCooperativelyStopsReadingAfterGrowthIsAccepted(@TempDir Path dataDirectory)
 			throws Exception {
+		assertAggregateStopsReadingAfterGrowth(dataDirectory, false);
+	}
+
+	@Test
+	@Timeout(value = 45, unit = TimeUnit.SECONDS)
+	void aggregateReplayDoesNotCountReplacementCallbacksAsOldReads(@TempDir Path dataDirectory) throws Exception {
+		assertAggregateStopsReadingAfterGrowth(dataDirectory, true);
+	}
+
+	private void assertAggregateStopsReadingAfterGrowth(Path dataDirectory, boolean delayWriterReturn)
+			throws Exception {
 		String functionIri = "urn:lmdb:replay-lifecycle:cooperative-aggregate:" + UUID.randomUUID();
 		AtomicBoolean growthStarted = new AtomicBoolean();
-		AtomicBoolean writerFinished = new AtomicBoolean();
-		CooperativeFilterFunction function = new CooperativeFilterFunction(functionIri, growthStarted, writerFinished);
+		CountDownLatch writerCommitted = new CountDownLatch(1);
+		CountDownLatch releaseWriter = new CountDownLatch(1);
+		CooperativeFilterFunction function = new CooperativeFilterFunction(functionIri, growthStarted);
 		FunctionRegistry functionRegistry = FunctionRegistry.getInstance();
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
@@ -459,7 +472,10 @@ class LmdbMapGrowthReplayLifecycleTest {
 					growthWriter.addStatement(VF.createIRI("urn:lmdb:replay-lifecycle:aggregate:after-growth"),
 							FIRST_PREDICATE, VF.createLiteral("after-growth"));
 					growthWriter.commit();
-					writerFinished.set(true);
+					writerCommitted.countDown();
+					if (delayWriterReturn && !releaseWriter.await(20, TimeUnit.SECONDS)) {
+						throw new IllegalStateException("Timed out waiting to release the committed writer");
+					}
 				}
 				return null;
 			});
@@ -471,8 +487,16 @@ class LmdbMapGrowthReplayLifecycleTest {
 			growthStarted.set(true);
 			function.releaseFirstInvocation();
 
-			writer.get(20, TimeUnit.SECONDS);
-			String count = query.get(20, TimeUnit.SECONDS);
+			String count;
+			if (delayWriterReturn) {
+				assertTrue(writerCommitted.await(20, TimeUnit.SECONDS), "the growth writer must commit");
+				count = query.get(20, TimeUnit.SECONDS);
+				releaseWriter.countDown();
+				writer.get(20, TimeUnit.SECONDS);
+			} else {
+				writer.get(20, TimeUnit.SECONDS);
+				count = query.get(20, TimeUnit.SECONDS);
+			}
 			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			MapGrowthMetrics.Snapshot after = backingStore.growthMetricsSnapshot();
 			assertTrue(mapSize(tripleStore) > initialMapSize, "the writer must complete real TripleStore map growth");
@@ -481,7 +505,11 @@ class LmdbMapGrowthReplayLifecycleTest {
 			assertEquals("2001", count, "the replacement aggregate must include the published row once");
 			assertTrue(function.nestedReadCompletedAfterGrowth(),
 					"the custom function's nested read must return naturally before replay is checked");
-			assertTrue(function.callbacksAfterGrowthStartedBeforeWriterFinished() <= 1,
+			if (delayWriterReturn) {
+				assertEquals(2_001, function.replacementCallbacks(),
+						"the replacement query must evaluate every row while the writer return is delayed");
+			}
+			assertTrue(function.originalCallbacksAfterGrowthStarted() <= 1,
 					"the old aggregate must stop its next input scan at a cooperative safepoint");
 			assertEquals(before.forcedInvalidationEpisodes(), after.forcedInvalidationEpisodes(),
 					"cooperative aggregate retirement must finish before bounded reader invalidation");
@@ -490,6 +518,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			assertEquals(before.replayAccepted() + 1, after.replayAccepted(),
 					"the aggregate must be accepted for exactly one whole-transaction replay");
 		} finally {
+			releaseWriter.countDown();
 			function.releaseFirstInvocation();
 			executor.shutdownNow();
 			try {
@@ -721,17 +750,16 @@ class LmdbMapGrowthReplayLifecycleTest {
 	private static final class CooperativeFilterFunction implements Function {
 		private final String functionIri;
 		private final AtomicBoolean growthStarted;
-		private final AtomicBoolean writerFinished;
+		private final AtomicReference<TripleSource> originalSource = new AtomicReference<>();
 		private final CountDownLatch firstInvocation = new CountDownLatch(1);
 		private final CountDownLatch releaseFirstInvocation = new CountDownLatch(1);
-		private final AtomicInteger callbacksAfterGrowthStarted = new AtomicInteger();
+		private final AtomicInteger originalCallbacksAfterGrowthStarted = new AtomicInteger();
+		private final AtomicInteger replacementCallbacks = new AtomicInteger();
 		private final AtomicBoolean nestedReadCompletedAfterGrowth = new AtomicBoolean();
 
-		private CooperativeFilterFunction(String functionIri, AtomicBoolean growthStarted,
-				AtomicBoolean writerFinished) {
+		private CooperativeFilterFunction(String functionIri, AtomicBoolean growthStarted) {
 			this.functionIri = functionIri;
 			this.growthStarted = growthStarted;
-			this.writerFinished = writerFinished;
 		}
 
 		@Override
@@ -748,6 +776,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 		public Value evaluate(TripleSource tripleSource, Value... args) throws ValueExprEvaluationException {
 			boolean releasedGrowthBarrier = false;
 			if (firstInvocation.getCount() > 0L) {
+				originalSource.set(tripleSource);
 				firstInvocation.countDown();
 				try {
 					if (!releaseFirstInvocation.await(20, TimeUnit.SECONDS)) {
@@ -759,8 +788,12 @@ class LmdbMapGrowthReplayLifecycleTest {
 					throw new ValueExprEvaluationException("Interrupted at the cooperative aggregate barrier", e);
 				}
 				releasedGrowthBarrier = growthStarted.get();
-			} else if (growthStarted.get() && !writerFinished.get()) {
-				callbacksAfterGrowthStarted.incrementAndGet();
+			} else if (growthStarted.get()) {
+				if (tripleSource == originalSource.get()) {
+					originalCallbacksAfterGrowthStarted.incrementAndGet();
+				} else {
+					replacementCallbacks.incrementAndGet();
+				}
 			}
 			if (releasedGrowthBarrier) {
 				try (CloseableIteration<? extends Statement> nestedRead = tripleSource.getStatements(null,
@@ -778,8 +811,12 @@ class LmdbMapGrowthReplayLifecycleTest {
 			return firstInvocation.await(10, TimeUnit.SECONDS);
 		}
 
-		private int callbacksAfterGrowthStartedBeforeWriterFinished() {
-			return callbacksAfterGrowthStarted.get();
+		private int originalCallbacksAfterGrowthStarted() {
+			return originalCallbacksAfterGrowthStarted.get();
+		}
+
+		private int replacementCallbacks() {
+			return replacementCallbacks.get();
 		}
 
 		private boolean nestedReadCompletedAfterGrowth() {
