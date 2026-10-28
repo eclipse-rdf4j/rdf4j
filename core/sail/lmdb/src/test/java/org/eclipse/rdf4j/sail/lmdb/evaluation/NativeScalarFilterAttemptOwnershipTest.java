@@ -339,8 +339,10 @@ class NativeScalarFilterAttemptOwnershipTest {
 		AtomicInteger closes = new AtomicInteger();
 		CountDownLatch closeEntered = new CountDownLatch(1);
 		CountDownLatch releaseClose = new CountDownLatch(1);
-		IllegalStateException bodyFailure = new IllegalStateException("worker filter body failed before owner shutdown");
-		IllegalArgumentException closeFailure = new IllegalArgumentException("worker filter cleanup failed after shutdown");
+		IllegalStateException bodyFailure = new IllegalStateException(
+				"worker filter body failed before owner shutdown");
+		IllegalArgumentException closeFailure = new IllegalArgumentException(
+				"worker filter cleanup failed after shutdown");
 		BlockingCloseWorkerFilter templateFilter = new BlockingCloseWorkerFilter(closeEntered, releaseClose,
 				bodyFailure, closeFailure, calls, closes, new AtomicReference<>());
 		PatternPlan root = new PatternPlan(Term.slot(0), Term.constant(7L), Term.constant(8L), Term.unbound(),
@@ -392,7 +394,7 @@ class NativeScalarFilterAttemptOwnershipTest {
 			assertThat(cursor.cancelled.get()).as("local owner shutdown starts while filter close is blocked")
 					.isTrue();
 			assertThat(cursor.ownerCancellation.get()).as("local shutdown remains distinct from query cancellation")
-				.isNull();
+					.isNull();
 			releaseClose.countDown();
 
 			Throwable workerFailure = workerResult.get(10L, TimeUnit.SECONDS);
@@ -1193,7 +1195,8 @@ class NativeScalarFilterAttemptOwnershipTest {
 		}
 
 		private BlockingCloseWorkerFilter(CountDownLatch closeEntered, CountDownLatch releaseClose,
-				RuntimeException acceptFailure, RuntimeException closeFailure, AtomicInteger calls, AtomicInteger closes,
+				RuntimeException acceptFailure, RuntimeException closeFailure, AtomicInteger calls,
+				AtomicInteger closes,
 				AtomicReference<BlockingCloseWorkerFilter> forked) {
 			this.closeEntered = closeEntered;
 			this.releaseClose = releaseClose;

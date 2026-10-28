@@ -1156,6 +1156,83 @@ class LmdbNativeRowStepIterationTest {
 		}
 	}
 
+	@ParameterizedTest(name = "bare owner={0}")
+	@ValueSource(booleans = { false, true })
+	void streamingOwnersRetainOccurrenceCancellationWithRealCloseFailure(boolean bare) {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new RecordingNativeSource());
+		NativeCancellationToken queryCancellation = source.executionContext().cancellation();
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		AtomicReference<NativeScalarFilterAttempt> filterAttempt = new AtomicReference<>();
+		AtomicReference<KernelQueryCancelledException> observedOccurrence = new AtomicReference<>();
+		AtomicInteger calls = new AtomicInteger();
+		AtomicInteger filterCloses = new AtomicInteger();
+		RuntimeException closeFailure = new IllegalStateException("streaming owner filter cleanup failed");
+		NativeBooleanFilter filter = new NativeBooleanFilter() {
+			@Override
+			public boolean accept(RowState row) {
+				calls.incrementAndGet();
+				filterAttempt.set(row.scalarFilterAttempt);
+				queryCancellation.requestCancellation();
+				observedOccurrence.set(row.cancellation.pollCancellation());
+				return true;
+			}
+
+			@Override
+			public void close() {
+				filterCloses.incrementAndGet();
+				throw closeFailure;
+			}
+		};
+		RecordingPlan plan = new RecordingPlan(3);
+		SlotPlan filtered = new FilterPlan(plan, filter, 1L);
+		CloseableIteration<BindingSet> iteration;
+		NativeCancellationToken ownerCancellation;
+		if (bare) {
+			NativeBareRowsStep step = NativeRowsStep.bareFragment(source, filtered, NativeSlotLayout.empty(),
+					new int[0], new String[0], false, null, target, null);
+			NativeBareRowsIteration owner = new NativeBareRowsIteration(step, source,
+					EmptyBindingSet.getInstance());
+			iteration = owner;
+			ownerCancellation = owner.cancellation;
+		} else {
+			NativeRowsStep step = new NativeRowsStep(source, filtered, NativeSlotLayout.empty(), new int[0],
+					new String[0], false, new int[0], new boolean[0], 0L, -1L, false, null, target, null,
+					Set.of(), null, null);
+			NativeRowsIteration owner = new NativeRowsIteration(step, source, EmptyBindingSet.getInstance());
+			iteration = owner;
+			ownerCancellation = owner.cancellation;
+		}
+
+		try {
+			Throwable failure = catchThrowable(iteration::hasNext);
+			assertThat(failure).as("the real cleanup error remains the throwable seen by the row owner")
+					.isSameAs(closeFailure);
+			assertThat(calls).hasValue(1);
+			assertThat(filterCloses).hasValue(1);
+			assertThat(plan.closeCalls).isEqualTo(1);
+			assertThat(filterAttempt.get()).isNotNull();
+			assertThat(target.getLongMetricActual(NativeScalarFilterAttempt.METRIC))
+					.as("same-occurrence cancellation and cleanup failure reject saved carrier publication")
+					.isEqualTo(-1L);
+			assertThat(closeFailure.getSuppressed()).hasSize(1);
+			KernelQueryCancelledException retained = (KernelQueryCancelledException) closeFailure.getSuppressed()[0];
+			KernelQueryCancelledException expected = observedOccurrence.get();
+			assertThat(expected).isNotNull();
+			assertThat(expected.origin()).isSameAs(queryCancellation);
+			assertThat(expected.observedBy(ownerCancellation)).isTrue();
+			assertThat(retained).isNotSameAs(KernelQueryCancelledException.INSTANCE);
+			assertThat(retained.origin()).isSameAs(queryCancellation);
+			assertThat(retained.observedBy(ownerCancellation)).isTrue();
+			assertThat(ownerCancellation.owns(retained)).isTrue();
+			assertThat(retained.getSuppressed()).isEmpty();
+			assertThat(closeFailure.getCause()).isNull();
+		} finally {
+			iteration.close();
+			source.executionContext().close();
+		}
+	}
+
 	@ParameterizedTest(name = "batch={0}, scalar telemetry={1}")
 	@CsvSource({ "false,true", "false,false", "true,true", "true,false" })
 	void nativeRowsFullStreamingEofCompletesObservationAndCalibration(boolean batchEnabled,
@@ -1204,8 +1281,8 @@ class LmdbNativeRowStepIterationTest {
 			assertThat(observation.trainingEligible()).isTrue();
 			assertThat(LmdbNativeCostCalibration.observations(
 					batchEnabled ? LmdbNativeAttemptMetrics.PATH_BATCH : LmdbNativeAttemptMetrics.PATH_NESTED_LOOP))
-					.as("a full unsliced streaming EOF records one calibration sample")
-					.isOne();
+							.as("a full unsliced streaming EOF records one calibration sample")
+							.isOne();
 			if (batchEnabled) {
 				assertThat(batchPlan.batchCloseCalls).hasValue(1);
 				assertThat(batchPlan.rowCloseCalls).hasValue(0);
@@ -2465,7 +2542,7 @@ class LmdbNativeRowStepIterationTest {
 				public void close() {
 					if (!closed) {
 						closed = true;
-					rowCloseCalls.incrementAndGet();
+						rowCloseCalls.incrementAndGet();
 					}
 				}
 			};
@@ -2493,7 +2570,7 @@ class LmdbNativeRowStepIterationTest {
 				public void close() {
 					if (!closed) {
 						closed = true;
-					batchCloseCalls.incrementAndGet();
+						batchCloseCalls.incrementAndGet();
 					}
 				}
 			};
