@@ -1,6 +1,6 @@
-# Opt-in borrowed adjacency root factors
+# Borrowed adjacency root factors
 
-Enable with `-Drdf4j.lmdb.packedFtree.rootFactor.enabled=true`. Default execution routing and the default-disabled switch are unchanged.
+Enabled by default for eligible regions within Packed F-trees. Opt out with `-Drdf4j.lmdb.packedFtree.rootFactor.enabled=false`. Default execution routing and IR selection are unchanged; this switch does not force Packed F-trees.
 
 A correlated single-pattern region with a fixed predicate/key and one unbound endpoint can retain the existing source-owned adjacency descriptor instead of constructing packed scalar root lanes. Logical singleton runs copy the value inline. Multi-value runs retain a codec-aware `BorrowedFactorBatch` until demanded by a consumer; a source lease protects the immutable snapshot. Context multiplicities are preserved. No raw unowned address or new storage format is introduced.
 
@@ -14,4 +14,4 @@ Focused tests cover exact bags, OPTIONAL absence, both directions, singleton han
 
 The original prototype was measured on `5c18f7534ee9f53af72aa8f47e04947f52fb139f`, not this rebased publication tree. It combined deferred payloads with avoiding planner/runtime/chunk setup. Forced Packed F-tree comparisons found lower allocation and latency for eligible single-pattern OPTIONAL and a ten-layer OPTIONAL/UNION workload. Default controls stayed on IR; deep fixed-predicate OPTIONAL did not show a consistent latency improvement. The original unsupported-adjacency fallback incurred extra allocation; this publication adds the conservative metadata guard above.
 
-The current-base guard and observability changes require their own performance measurements before any new speedup claim or cost-model promotion. Neither automatic admission nor broad cost-model changes are included here.
+The current-base guard and observability changes require their own performance measurements before any new speedup claim or cost-model promotion. Packed/IR routing and the cost model are unchanged; only eligible root-run borrowing within Packed is default-enabled.

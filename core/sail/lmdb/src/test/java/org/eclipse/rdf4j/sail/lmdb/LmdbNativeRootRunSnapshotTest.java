@@ -44,7 +44,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 
-/** Sequential two-connection snapshot/lease contract with the experimental root-run borrowing switch enabled. */
+/** Sequential two-connection snapshot/lease contract with root-run borrowing enabled by default. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeRootRunSnapshotTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
@@ -52,7 +52,7 @@ class LmdbNativeRootRunSnapshotTest {
 	private static final int LANES = 4096;
 	private static final String[] ON = { "rdf4j.lmdb.nativeQueryEngine.enabled", "rdf4j.lmdb.packedFtree.enabled",
 			"rdf4j.lmdb.packedFtree.algebra.enabled", "rdf4j.lmdb.factor.transport.enabled",
-			"rdf4j.lmdb.janinoCodegen.factorMarginals", "rdf4j.lmdb.packedFtree.rootFactor.enabled",
+			"rdf4j.lmdb.janinoCodegen.factorMarginals",
 			LmdbDirectAdjacencyStore.CLEAN_TXN_READS_PROPERTY };
 	private static final String[] OFF = { "rdf4j.lmdb.costCalibration.enabled", "rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.packedFtree.parallel.enabled", "rdf4j.lmdb.janinoCodegen.enabled" };
@@ -66,6 +66,9 @@ class LmdbNativeRootRunSnapshotTest {
 
 	@BeforeEach
 	void setUp() throws Exception {
+		String rootProperty = "rdf4j.lmdb.packedFtree.rootFactor.enabled";
+		previous.put(rootProperty, System.getProperty(rootProperty));
+		System.clearProperty(rootProperty);
 		for (String property : ON)
 			setProperty(property, "true");
 		for (String property : OFF)

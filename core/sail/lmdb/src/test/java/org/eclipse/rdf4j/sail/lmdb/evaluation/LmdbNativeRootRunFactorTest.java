@@ -37,15 +37,18 @@ import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeRootRunFactorTest {
 	private static final String PROPERTY = "rdf4j.lmdb.packedFtree.rootFactor.enabled";
 	private String previous;
 
 	@BeforeEach
-	void enable() {
+	void useDefault() {
 		previous = System.getProperty(PROPERTY);
-		System.setProperty(PROPERTY, "true");
+		System.clearProperty(PROPERTY);
 	}
 
 	@AfterEach
@@ -54,6 +57,18 @@ class LmdbNativeRootRunFactorTest {
 			System.clearProperty(PROPERTY);
 		else
 			System.setProperty(PROPERTY, previous);
+	}
+
+	@Test
+	void explicitOptOutDeclinesBeforeOpeningStorage() throws Exception {
+		System.setProperty(PROPERTY, "false");
+		Fixture f = new Fixture(20, 30);
+		RowState row = f.row();
+		assertTrue(row.bind(0, 7L));
+		MultiJoinPlan specialized = LmdbNativePackedFtree.specializeEntry(join(pattern(false)), row);
+		assertNull(LmdbNativePackedFtree.RootRunFactors.open(specialized, row));
+		assertEquals(0, f.opens);
+		assertEquals(0, f.reads);
 	}
 
 	@Test

@@ -341,7 +341,8 @@ final class LmdbNativePackedFtree {
 		}
 
 		static LmdbNativeFactorCursor open(MultiJoinPlan join, RowState row) throws IOException {
-			if (!Boolean.getBoolean("rdf4j.lmdb.packedFtree.rootFactor.enabled") || !borrowedFactorsEnabled()
+			if ("false".equals(System.getProperty("rdf4j.lmdb.packedFtree.rootFactor.enabled"))
+					|| !borrowedFactorsEnabled()
 					|| !LmdbNativeFactorRows.enabled() || row.slots.length > Long.SIZE
 					|| join.children.length != 1 || join.filters.length != 0
 					|| !(join.children[0] instanceof PatternPlan pattern) || !pattern.p.isConstant()
