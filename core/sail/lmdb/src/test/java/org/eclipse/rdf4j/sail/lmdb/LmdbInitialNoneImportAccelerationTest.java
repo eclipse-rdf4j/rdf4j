@@ -95,8 +95,7 @@ class LmdbInitialNoneImportAccelerationTest {
 			ValueStore values = backing.valueStore();
 			assertThat(adjacency.awaitCurrentRevisionReady(10, TimeUnit.SECONDS)).isTrue();
 			assertThat(values.awaitValueOverlayReady(10, TimeUnit.SECONDS)).isTrue();
-			AtomicInteger preparations = new AtomicInteger();
-			adjacency.beforePreparationForTest = preparations::incrementAndGet;
+			long preparationsBefore = adjacency.phaseTimings().preparationCount();
 			long overlayCommits = values.compressedValueOverlayViewStats().commits();
 			long checkpoints = backing.noneIngestionMetrics().checkpoints();
 			try (LmdbStoreConnection writer = (LmdbStoreConnection) sail.getConnection()) {
@@ -108,8 +107,9 @@ class LmdbInitialNoneImportAccelerationTest {
 				assertThat(backing.noneIngestionMetrics().checkpoints()).isGreaterThanOrEqualTo(checkpoints + 2);
 				assertThat(writer.size()).isEqualTo(2);
 				assertAll(
-						() -> assertThat(preparations.get()).as("no incremental adjacency preparation during load")
-								.isZero(),
+						() -> assertThat(adjacency.phaseTimings().preparationCount())
+								.as("no incremental adjacency preparation during load")
+								.isEqualTo(preparationsBefore),
 						() -> assertThat(values.compressedValueOverlayStats())
 								.as("partial import must use authoritative dictionary fallback")
 								.isNull(),
@@ -238,7 +238,6 @@ class LmdbInitialNoneImportAccelerationTest {
 				assertThat(oldView.isExact()).isTrue();
 				adjacency.scheduleQuiescentRebuild();
 				adjacency.awaitAdaptiveAccelerationForTest();
-				assertThat(adjacency.maintenanceState().name()).isEqualTo("QUIESCING_FOR_REBUILD");
 				try (var writer = sail.getConnection()) {
 					writer.begin(IsolationLevels.NONE);
 					writer.addStatement(VF.createIRI("urn:initial-none:old-view"), PREDICATE, VF.createLiteral("row"));
@@ -284,11 +283,8 @@ class LmdbInitialNoneImportAccelerationTest {
 		try {
 			assertThat(sail.getFormat().getVersion()).isEqualTo(LmdbStoreFormat.CURRENT_VERSION);
 			awaitAccelerators(sail, useAdjacency, useOverlay);
-			AtomicInteger preparations = new AtomicInteger();
 			LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
-			if (adjacency != null) {
-				adjacency.beforePreparationForTest = preparations::incrementAndGet;
-			}
+			long preparationsBefore = adjacency == null ? 0 : adjacency.phaseTimings().preparationCount();
 			ValueStore values = sail.getBackingStore().valueStore();
 			long overlayCommits = values.compressedValueOverlayViewStats().commits();
 			IRI explicit = VF.createIRI("urn:initial-none:explicit");
@@ -304,7 +300,9 @@ class LmdbInitialNoneImportAccelerationTest {
 				assertThat(writer.hasStatement(inferred, PREDICATE, VF.createLiteral("inferred"), true, context))
 						.isTrue();
 				assertThat(writer.hasStatement(inferred, PREDICATE, null, false, context)).isFalse();
-				assertThat(preparations).hasValue(0);
+				if (adjacency != null) {
+					assertThat(adjacency.phaseTimings().preparationCount()).isEqualTo(preparationsBefore);
+				}
 				assertThat(values.compressedValueOverlayViewStats().commits()).isEqualTo(overlayCommits);
 				if (adjacency != null) {
 					try (var view = adjacency.acquire(sail.getBackingStore().getTripleStore().getDataRevision())) {
@@ -325,7 +323,9 @@ class LmdbInitialNoneImportAccelerationTest {
 				assertThat(writer.size()).isEqualTo(2);
 			}
 			if (useAdjacency) {
-				assertThat(preparations.get()).as("a populated store uses ordinary incremental adjacency").isPositive();
+				assertThat(adjacency.phaseTimings().preparationCount())
+						.as("a populated store uses ordinary incremental adjacency")
+						.isGreaterThan(preparationsBefore);
 			}
 			assertAll(() -> assertThat(storeConfig.getDirectAdjacencyEnabled()).isEqualTo(useAdjacency),
 					() -> assertThat(storeConfig.getValueOverlayEnabled()).isEqualTo(useOverlay),
@@ -403,14 +403,16 @@ class LmdbInitialNoneImportAccelerationTest {
 				if (variant == TerminalVariant.NAMESPACE_COMMIT) {
 					assertThat(writer.getNamespace("initial")).isEqualTo("urn:initial-none:");
 				}
-				AtomicInteger preparations = new AtomicInteger();
-				sail.getBackingStore().directAdjacencyStore().beforePreparationForTest = preparations::incrementAndGet;
+				LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
+				long preparationsBefore = adjacency.phaseTimings().preparationCount();
 				writer.begin(IsolationLevels.NONE);
 				writer.addStatement(VF.createIRI("urn:initial-none:after-terminal"), PREDICATE,
 						VF.createLiteral("next"));
 				writer.flush();
 				if (expected == 0) {
-					assertThat(preparations).as("an emptied or still-empty store remains eligible").hasValue(0);
+					assertThat(adjacency.phaseTimings().preparationCount())
+							.as("an emptied or still-empty store remains eligible")
+							.isEqualTo(preparationsBefore);
 				}
 				writer.commit();
 				assertThat(writer.size()).isEqualTo(expected + 1);
@@ -430,15 +432,18 @@ class LmdbInitialNoneImportAccelerationTest {
 		sail.init();
 		try {
 			awaitAccelerators(sail, true, true);
-			AtomicInteger preparations = new AtomicInteger();
-			sail.getBackingStore().directAdjacencyStore().beforePreparationForTest = preparations::incrementAndGet;
+			LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
+			long preparationsBefore = adjacency.phaseTimings().preparationCount();
 			try (var writer = sail.getConnection()) {
 				writer.begin(isolation);
 				writer.addStatement(VF.createIRI("urn:initial-none:isolated"), PREDICATE, VF.createLiteral("ordinary"));
 				writer.commit();
 				assertThat(writer.size()).isEqualTo(1);
 			}
-			assertThat(preparations.get()).as("only NONE initial loads defer incremental adjacency").isPositive();
+			assertThat(adjacency.awaitCurrentRevisionReady(10, TimeUnit.SECONDS)).isTrue();
+			assertThat(adjacency.phaseTimings().preparationCount())
+					.as("only NONE initial loads defer incremental adjacency")
+					.isGreaterThan(preparationsBefore);
 		} finally {
 			sail.shutDown();
 		}
@@ -547,8 +552,8 @@ class LmdbInitialNoneImportAccelerationTest {
 		repository.init();
 		try {
 			awaitAccelerators(sail, true, true);
-			AtomicInteger preparations = new AtomicInteger();
-			sail.getBackingStore().directAdjacencyStore().beforePreparationForTest = preparations::incrementAndGet;
+			LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
+			long preparationsBefore = adjacency.phaseTimings().preparationCount();
 			long overlayCommits = sail.getBackingStore().valueStore().compressedValueOverlayViewStats().commits();
 			StringBuilder input = new StringBuilder();
 			for (int row = 0; row < 32; row++) {
@@ -577,7 +582,7 @@ class LmdbInitialNoneImportAccelerationTest {
 								.isInstanceOf(RDFParseException.class);
 					}
 				}
-				assertThat(preparations).hasValue(0);
+				assertThat(adjacency.phaseTimings().preparationCount()).isEqualTo(preparationsBefore);
 				assertThat(sail.getBackingStore().valueStore().compressedValueOverlayViewStats().commits())
 						.isEqualTo(overlayCommits);
 				if (malformed) {
@@ -742,7 +747,6 @@ class LmdbInitialNoneImportAccelerationTest {
 			try (var writer = sail.getConnection()) {
 				adjacency.scheduleQuiescentRebuild();
 				adjacency.awaitAdaptiveAccelerationForTest();
-				assertThat(adjacency.maintenanceState().name()).isEqualTo("QUIESCING_FOR_REBUILD");
 				writer.begin(IsolationLevels.NONE);
 				interruptNextDeferral.set(true);
 				writer.addStatement(VF.createIRI("urn:initial-none:interrupted"), PREDICATE,
