@@ -765,6 +765,7 @@ class LmdbSailStore implements SailStore {
 						waitStartNanos = System.nanoTime();
 						waited = true;
 						mapGrowthMetrics.admissionWaitStarted();
+						afterAttemptAdmissionWaitStarted();
 					}
 					try {
 						awaitChange(waitingOn.managed || waitingOn.growthStarted ? Long.MAX_VALUE
@@ -787,6 +788,7 @@ class LmdbSailStore implements SailStore {
 						mapGrowthMetrics.recordAdmissionWait(System.nanoTime() - waitStartNanos);
 					} finally {
 						mapGrowthMetrics.admissionWaitFinished();
+						afterAttemptAdmissionWaitFinished();
 					}
 				}
 			}
@@ -6297,6 +6299,14 @@ class LmdbSailStore implements SailStore {
 	}
 
 	void beforeGrowthAdmissionCheck() {
+	}
+
+	// Observational test seams run under the coordinator lock; overrides must not block.
+	// Start is inside the wait's try/finally; finish follows the balanced metric decrement.
+	void afterAttemptAdmissionWaitStarted() {
+	}
+
+	void afterAttemptAdmissionWaitFinished() {
 	}
 
 	private WriterLease acquireWriterLease(Object owner) throws SailException {
