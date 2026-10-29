@@ -1058,6 +1058,24 @@ class LmdbForegroundFilterSamplingEpochTest {
 	}
 
 	@Test
+	void samplingReservationCountsExcludeOtherThreads() throws Exception {
+		SamplingPause pause = new SamplingPause();
+		ExecutorService background = Executors.newSingleThreadExecutor();
+		try {
+			int before = pause.readSnapshotReservationCount();
+			background.submit(pause::valueSnapshotReserved).get(10, TimeUnit.SECONDS);
+			assertEquals(before, pause.readSnapshotReservationCount(),
+					"A background admission must not be counted as the calling sampler's admission");
+			pause.valueSnapshotReserved();
+			assertEquals(before + 1, pause.readSnapshotReservationCount(),
+					"The calling sampler's own admission must still be counted");
+		} finally {
+			background.shutdownNow();
+			assertTrue(background.awaitTermination(10, TimeUnit.SECONDS));
+		}
+	}
+
+	@Test
 	void foregroundSamplingAdmissionRespectsItsLocalBudgetAndLeavesNoInterrupt() throws Exception {
 		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-admission-budget");
 		SamplingPause pause = new SamplingPause();
@@ -1437,7 +1455,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		private final AtomicLong subjectId = new AtomicLong(Long.MIN_VALUE);
 		private final AtomicLong objectId = new AtomicLong(Long.MIN_VALUE);
 		private final AtomicInteger pairedLookupCount = new AtomicInteger();
-		private final AtomicInteger readSnapshotReservationCount = new AtomicInteger();
+		private final ThreadLocal<Integer> readSnapshotReservationCount = ThreadLocal.withInitial(() -> 0);
 		private final AtomicBoolean valueSnapshotReserved = new AtomicBoolean();
 		private final Map<Long, String> resolvedValues = new ConcurrentHashMap<>();
 		private final CountDownLatch rowRead = new CountDownLatch(1);
@@ -1452,7 +1470,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		}
 
 		private void valueSnapshotReserved() {
-			readSnapshotReservationCount.incrementAndGet();
+			readSnapshotReservationCount.set(readSnapshotReservationCount.get() + 1);
 			if (Thread.currentThread() == samplingThread.get()) {
 				valueSnapshotReserved.set(true);
 			}

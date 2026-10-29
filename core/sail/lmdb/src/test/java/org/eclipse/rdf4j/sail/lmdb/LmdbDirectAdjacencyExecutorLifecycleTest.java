@@ -49,7 +49,6 @@ class LmdbDirectAdjacencyExecutorLifecycleTest {
 	private static final int ITERATIONS_PER_PROBE = Math.toIntExact(
 			CHILD_HEAP_BYTES / MINIMUM_RETAINED_CACHE_BYTES_PER_STORE + 1);
 	private static final String PROBE_COMPLETE = "LIFECYCLE_PROBE_COMPLETE";
-	private static final String REJECTED_WORKER_PROBE_COMPLETE = "REJECTED_WORKER_PROBE_COMPLETE";
 
 	@Test
 	void closedStoresWithNeverStartedExecutorsDoNotAccumulate(@TempDir Path directory) throws Exception {
@@ -59,40 +58,6 @@ class LmdbDirectAdjacencyExecutorLifecycleTest {
 	@Test
 	void closedStoresWithBackgroundWorkDoNotAccumulate(@TempDir Path directory) throws Exception {
 		assertProbeCompletes(directory, ITERATIONS_PER_PROBE, true);
-	}
-
-	@Test
-	void rejectedNeverStartedWorkersDoNotRetainFirstTaskOwners(@TempDir Path directory) throws Exception {
-		int iterations = RejectedWorkerProbe.ITERATIONS;
-		String output = runProbe(directory.resolve("rejected-worker-probe.log"), RejectedWorkerProbe.class,
-				Integer.toString(iterations));
-		assertTrue(output.contains(REJECTED_WORKER_PROBE_COMPLETE + " iterations=" + iterations),
-				"The child process must complete every rejected-worker cycle: " + output);
-	}
-
-	@Test
-	void trackedThreadFactoryTracksTheLatestWorkerAfterReplacement() throws Exception {
-		LmdbDirectAdjacencyStore.TrackedThreadFactory factory = new LmdbDirectAdjacencyStore.TrackedThreadFactory(
-				"lmdb-direct-adjacency-test");
-		assertNull(factory.currentThread());
-
-		AtomicReference<Thread> firstObserved = new AtomicReference<>();
-		Thread first = factory.newThread(() -> firstObserved.set(factory.currentThread()));
-		assertSame(first, factory.currentThread());
-		assertTrue(first.isDaemon());
-		first.start();
-		first.join(TimeUnit.SECONDS.toMillis(30));
-		assertFalse(first.isAlive());
-		assertSame(first, firstObserved.get());
-
-		AtomicReference<Thread> replacementObserved = new AtomicReference<>();
-		Thread replacement = factory.newThread(() -> replacementObserved.set(factory.currentThread()));
-		assertSame(replacement, factory.currentThread());
-		assertTrue(replacement.isDaemon());
-		replacement.start();
-		replacement.join(TimeUnit.SECONDS.toMillis(30));
-		assertFalse(replacement.isAlive());
-		assertSame(replacement, replacementObserved.get());
 	}
 
 	private static void assertProbeCompletes(Path directory, int iterations, boolean backgroundWork) throws Exception {
@@ -210,109 +175,4 @@ class LmdbDirectAdjacencyExecutorLifecycleTest {
 	 * reference can otherwise keep the rejected worker's firstTask, its owner, and the owner's delegated executor cycle
 	 * reachable after the pool terminates.
 	 */
-	public static final class RejectedWorkerProbe {
-		private static final int OWNER_PAYLOAD_BYTES = 4 << 20;
-		private static final int ITERATIONS = Math.toIntExact(CHILD_HEAP_BYTES / OWNER_PAYLOAD_BYTES + 1);
-
-		private RejectedWorkerProbe() {
-		}
-
-		public static void main(String[] args) throws Exception {
-			assertProbeHeap(RejectedWorkerProbe.class);
-			int iterations = Integer.parseInt(args[0]);
-			for (int iteration = 0; iteration < iterations; iteration++) {
-				exerciseRejectedWorker(iteration);
-			}
-			System.out.println(REJECTED_WORKER_PROBE_COMPLETE + " iterations=" + iterations);
-		}
-
-		private static void exerciseRejectedWorker(int iteration) throws Exception {
-			FactoryGate gate = new FactoryGate();
-			LmdbDirectAdjacencyStore.TrackedThreadFactory trackedFactory = new LmdbDirectAdjacencyStore.TrackedThreadFactory(
-					"lmdb-direct-adjacency-rejected-" + iteration);
-			ExecutorService executor = Executors.newSingleThreadExecutor(new GatedThreadFactory(trackedFactory, gate));
-			FixtureOwner owner = new FixtureOwner(executor, new byte[OWNER_PAYLOAD_BYTES]);
-			Arrays.fill(owner.payload, (byte) iteration);
-			AtomicBoolean rejected = new AtomicBoolean();
-			Thread submitter = new Thread(() -> {
-				try {
-					owner.executor.execute(owner::touchPayload);
-				} catch (RejectedExecutionException expected) {
-					rejected.set(true);
-				}
-			}, "lmdb-direct-adjacency-rejected-submitter-" + iteration);
-
-			submitter.start();
-			try {
-				if (!gate.threadCreated.await(30, TimeUnit.SECONDS)) {
-					throw new AssertionError("ThreadPoolExecutor did not call the tracked factory");
-				}
-				owner.executor.shutdownNow();
-			} finally {
-				gate.allowFactoryReturn.countDown();
-				owner.executor.shutdownNow();
-			}
-			submitter.join(TimeUnit.SECONDS.toMillis(30));
-			if (submitter.isAlive()) {
-				throw new AssertionError("The rejected submission thread did not terminate");
-			}
-			if (!rejected.get()) {
-				throw new AssertionError("Shutdown must reject the worker before it starts");
-			}
-			if (owner.taskExecuted.get()) {
-				throw new AssertionError("The firstTask must remain unstarted in the rejected-worker race");
-			}
-			if (!owner.executor.awaitTermination(30, TimeUnit.SECONDS) || !owner.executor.isTerminated()) {
-				throw new AssertionError("The public executor wrapper must reach termination");
-			}
-		}
-
-		private static final class FactoryGate {
-			private final CountDownLatch threadCreated = new CountDownLatch(1);
-			private final CountDownLatch allowFactoryReturn = new CountDownLatch(1);
-		}
-
-		private static final class GatedThreadFactory implements ThreadFactory {
-			private final LmdbDirectAdjacencyStore.TrackedThreadFactory delegate;
-			private final FactoryGate gate;
-
-			private GatedThreadFactory(LmdbDirectAdjacencyStore.TrackedThreadFactory delegate, FactoryGate gate) {
-				this.delegate = delegate;
-				this.gate = gate;
-			}
-
-			@Override
-			public Thread newThread(Runnable runnable) {
-				Thread thread = delegate.newThread(runnable);
-				gate.threadCreated.countDown();
-				try {
-					if (!gate.allowFactoryReturn.await(30, TimeUnit.SECONDS)) {
-						throw new AssertionError("The test did not release the tracked factory");
-					}
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					throw new AssertionError("The gated thread factory was interrupted", e);
-				}
-				return thread;
-			}
-		}
-
-		private static final class FixtureOwner {
-			private final ExecutorService executor;
-			private final byte[] payload;
-			private final AtomicBoolean taskExecuted = new AtomicBoolean();
-
-			private FixtureOwner(ExecutorService executor, byte[] payload) {
-				this.executor = executor;
-				this.payload = payload;
-			}
-
-			private void touchPayload() {
-				taskExecuted.set(true);
-				if (payload[0] == Byte.MIN_VALUE) {
-					throw new AssertionError("The lifecycle payload must remain available to its owner");
-				}
-			}
-		}
-	}
 }

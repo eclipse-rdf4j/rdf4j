@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.IdentityHashMap;
 
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
@@ -303,15 +304,15 @@ final class LmdbAdjacencySourceRegistry {
 		}
 		int[] result = new int[values.length];
 		int count = 0;
+		// a merged band depends on thousands of retained sources; this runs under the registry monitor, which the
+		// applier thread needs for every preparation, so it must stay linear
+		BitSet seen = new BitSet();
 		for (int value : values) {
 			if (value <= 0) {
 				throw new IllegalArgumentException("invalid adjacency dependency source ID: " + value);
 			}
-			boolean seen = false;
-			for (int i = 0; i < count; i++) {
-				seen |= result[i] == value;
-			}
-			if (!seen) {
+			if (!seen.get(value)) {
+				seen.set(value);
 				result[count++] = value;
 			}
 		}

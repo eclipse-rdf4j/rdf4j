@@ -11811,24 +11811,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (writeTxn == 0 && writerPublication == null && writerStartsInFlight == 0 && env != 0 && !shuttingDown) {
 				// A delayed reader reset from an older commit cannot certify another writer's uncompleted publication.
 				valueLookupGeneration = new Object();
-				writerAdmission.notifyAll();
 			}
-		}
-	}
-
-	/** Wait for a real dictionary mutation to settle without holding a reader or native admission barrier. */
-	void awaitValueLookupStability(BooleanSupplier cancelled) throws InterruptedException {
-		synchronized (writerAdmission) {
-			while (valueLookupGeneration == null && env != 0 && !shuttingDown && !cancelled.getAsBoolean()) {
-				writerAdmission.wait();
-			}
-		}
-	}
-
-	/** Wake background lookup waiters when their owning maintenance task is cancelled or closed. */
-	void signalValueLookupWaiters() {
-		synchronized (writerAdmission) {
-			writerAdmission.notifyAll();
 		}
 	}
 

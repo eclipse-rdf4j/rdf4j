@@ -621,7 +621,12 @@ final class RowState implements LmdbNativeSlotReader {
 		return boundMask;
 	}
 
-	/** Where an attempt on this row began: its bindings and the lexical scope it was entered in. */
+	/**
+	 * Where an attempt on this row began: its bindings and the lexical scope it was entered in. The slot and summary
+	 * cell snapshot is what makes {@link #restore(AttemptStart)} complete: batched cursors (the wildcard-predicate
+	 * MINUS, packed pipelines, {@link #replaceSlot(int, long)} callers) write slots without a trail entry, so an
+	 * attempt that a probe deadline stops inside its consumer loop leaves bindings the trail mark alone cannot undo.
+	 */
 	record AttemptStart(int trailMark, long lexicalInputMask, int lexicalScopeDepth, long[] slots,
 			NativeResultCell[] summaryCells, NativeScalarFilterAttempt scalarFilterAttempt) {
 	}
@@ -631,23 +636,39 @@ final class RowState implements LmdbNativeSlotReader {
 				summaryCells == null ? null : summaryCells.clone(), scalarFilterAttempt);
 	}
 
-	/** Undoes whatever an attempt that stopped part-way through left on this row. */
+	/**
+	 * Undoes whatever an attempt that stopped part-way through left on this row: trail entries above the mark roll back
+	 * as usual, and every slot or summary cell that still differs from the snapshot is written back directly.
+	 */
 	void restore(AttemptStart start) {
 		rollback(start.trailMark());
-		// Some native cursors publish batches directly into slots without recording those writes on the trail.
-		// Restore the entry mapping after attempt cleanup, then refresh both the mask and the binding view.
-		System.arraycopy(start.slots(), 0, slots, 0, slots.length);
-		if (summaryCells != null) {
-			if (start.summaryCells() == null) {
-				Arrays.fill(summaryCells, null);
-			} else {
-				System.arraycopy(start.summaryCells(), 0, summaryCells, 0, summaryCells.length);
-			}
-		}
-		recomputeBoundMask();
 		lexicalInputMask = start.lexicalInputMask();
 		lexicalScopeDepth = start.lexicalScopeDepth();
 		scalarFilterAttempt = start.scalarFilterAttempt();
+		boolean changed = false;
+		long[] saved = start.slots();
+		for (int slot = 0; slot < slots.length; slot++) {
+			if (slots[slot] != saved[slot]) {
+				slots[slot] = saved[slot];
+				changed = true;
+			}
+		}
+		NativeResultCell[] savedCells = start.summaryCells();
+		if (savedCells != null || summaryCells != null) {
+			for (int slot = 0; slot < slots.length; slot++) {
+				NativeResultCell cell = savedCells == null ? null : savedCells[slot];
+				if (summaryCell(slot) != cell) {
+					if (summaryCells == null) {
+						summaryCells = new NativeResultCell[slots.length];
+					}
+					summaryCells[slot] = cell;
+					changed = true;
+				}
+			}
+		}
+		if (changed) {
+			recomputeBoundMask();
+		}
 	}
 
 	void startScalarFilterAttempt() {
