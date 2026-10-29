@@ -96,12 +96,14 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 				iterator.close();
 				iterator.reset(index, true, 1L, -1L, 2L, -1L, true);
 				index.resetFilteredKeyVisits();
+				AtomicReference<Object> cancellationToken = new AtomicReference<>();
 
 				Throwable failure = catchThrowable(
-						() -> NativeCancellationTestAccess.withCancelledNativeToken(iterator::next));
+						() -> NativeCancellationTestAccess.withCancelledNativeToken(cancellationToken::set,
+								iterator::next));
 
 				assertAll("a retained iterator reset begins a fresh bounded polling interval",
-						() -> assertThat(failure).isSameAs(KernelQueryCancelledException.INSTANCE),
+						() -> assertCancellationProvenance(failure, cancellationToken.get()),
 						() -> assertThat(index.filteredKeyVisits())
 								.as("the already-cancelled token is checked before another key visit")
 								.isZero(),
@@ -122,7 +124,8 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			LmdbRecordIterator iterator = openMismatchIterator(txn);
 			try {
-				Throwable failure = invokeWithSignal(iterator, pullMode, deadlineSignal);
+				AtomicReference<Object> cancellationToken = new AtomicReference<>();
+				Throwable failure = invokeWithSignal(iterator, pullMode, deadlineSignal, cancellationToken);
 				RuntimeException expected = deadlineSignal ? NativeCancellationTestAccess.probeDeadlineSignal()
 						: KernelQueryCancelledException.INSTANCE;
 				long scansAtFailure = iterator.getSourceRowsScannedActual();
@@ -137,7 +140,14 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 				Throwable freshReaderFailure = catchThrowable(() -> freshRows.set(freshReaderRowCount()));
 
 				assertAll("real LMDB filtered-key cancellation lifecycle",
-						() -> assertThat(failure).as("the iterator propagates the signal singleton").isSameAs(expected),
+						() -> {
+							if (deadlineSignal) {
+								assertThat(failure).as("probe deadline cancellation retains its singleton")
+										.isSameAs(expected);
+							} else {
+								assertCancellationProvenance(failure, cancellationToken.get());
+							}
+						},
 						() -> assertThat(index.filteredKeyVisits())
 								.as("physical mismatch matcher callbacks after the first signal")
 								.isLessThanOrEqualTo(MAX_FILTERED_VISITS_AFTER_SIGNAL),
@@ -155,7 +165,8 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 		}
 	}
 
-	private Throwable invokeWithSignal(LmdbRecordIterator iterator, PullMode pullMode, boolean deadlineSignal) {
+	private Throwable invokeWithSignal(LmdbRecordIterator iterator, PullMode pullMode, boolean deadlineSignal,
+			AtomicReference<Object> cancellationToken) {
 		if (deadlineSignal) {
 			AtomicReference<Runnable> trip = new AtomicReference<>();
 			index.onFirstFilteredKey = () -> trip.get().run();
@@ -171,10 +182,22 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 			firstFilteredKey.countDown();
 			await(continueScan);
 		};
-		return catchThrowable(() -> NativeCancellationTestAccess.cancelAfter(firstFilteredKey, continueScan, () -> {
-			pull(iterator, pullMode);
-			return null;
-		}));
+		return catchThrowable(() -> NativeCancellationTestAccess.cancelAfter(firstFilteredKey, continueScan,
+				cancellationToken::set, () -> {
+					pull(iterator, pullMode);
+					return null;
+				}));
+	}
+
+	private static void assertCancellationProvenance(Throwable failure, Object cancellationToken) {
+		assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
+		KernelQueryCancelledException signal = (KernelQueryCancelledException) failure;
+		assertThat(signal.observedBy(cancellationToken))
+				.as("the observer is the token that polled cancellation")
+				.isTrue();
+		assertThat(signal.origin())
+				.as("the cancellation originated from that same query token")
+				.isSameAs(cancellationToken);
 	}
 
 	private static void pull(LmdbRecordIterator iterator, PullMode pullMode) {

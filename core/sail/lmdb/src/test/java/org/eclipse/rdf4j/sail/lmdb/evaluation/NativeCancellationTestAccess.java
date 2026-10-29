@@ -28,11 +28,20 @@ public final class NativeCancellationTestAccess {
 	/** Runs a callback under a native token cancelled by another thread after the supplied barrier opens. */
 	public static <T> T cancelAfter(CountDownLatch walkStarted, CountDownLatch continueWalk, Callable<T> operation)
 			throws Exception {
+		return cancelAfter(walkStarted, continueWalk, ignored -> {
+		}, operation);
+	}
+
+	/** Runs a callback under a native token and exposes its identity to provenance assertions. */
+	public static <T> T cancelAfter(CountDownLatch walkStarted, CountDownLatch continueWalk,
+			Consumer<Object> observeToken, Callable<T> operation) throws Exception {
 		Objects.requireNonNull(walkStarted, "walkStarted");
 		Objects.requireNonNull(continueWalk, "continueWalk");
+		Objects.requireNonNull(observeToken, "observeToken");
 		Objects.requireNonNull(operation, "operation");
 
 		NativeCancellationToken cancellation = new NativeCancellationToken();
+		observeToken.accept(cancellation);
 		AtomicReference<Throwable> cancellationFailure = new AtomicReference<>();
 		CountDownLatch cancellationFinished = new CountDownLatch(1);
 		Thread requester = Thread.ofPlatform().name("native-cancellation-test-requester").daemon().start(() -> {
@@ -66,9 +75,18 @@ public final class NativeCancellationTestAccess {
 
 	/** Runs an operation under an already-cancelled native token. */
 	public static <T> T withCancelledNativeToken(Callable<T> operation) throws Exception {
+		return withCancelledNativeToken(ignored -> {
+		}, operation);
+	}
+
+	/** Runs an operation under an already-cancelled native token and exposes its identity to provenance assertions. */
+	public static <T> T withCancelledNativeToken(Consumer<Object> observeToken, Callable<T> operation)
+			throws Exception {
+		Objects.requireNonNull(observeToken, "observeToken");
 		Objects.requireNonNull(operation, "operation");
 		NativeCancellationToken cancellation = new NativeCancellationToken();
 		cancellation.requestCancellation();
+		observeToken.accept(cancellation);
 		try (NativeCancellationToken.Scope ignored = cancellation.enter()) {
 			return operation.call();
 		}

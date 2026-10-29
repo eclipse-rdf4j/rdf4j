@@ -15,7 +15,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mockStatic;
 
@@ -120,8 +119,16 @@ class LmdbNativeIndexedContextCancellationTest {
 					cancelled.memoryScope.close();
 				}
 				RuntimeException actualFailure = failure;
+				KernelQueryCancelledException cancellationSignal = actualFailure instanceof KernelQueryCancelledException signal
+						? signal
+						: null;
 				assertAll(
-						() -> assertSame(KernelQueryCancelledException.INSTANCE, actualFailure),
+						() -> assertNotNull(cancellationSignal,
+								"native cancellation is an occurrence-local query signal"),
+						() -> assertTrue(cancellationSignal != null && cancellationSignal.observedBy(cancellation),
+								"the row's query token must observe cancellation"),
+						() -> assertTrue(cancellationSignal != null && cancellationSignal.origin() == cancellation,
+								"the child query token must own its local cancellation"),
 						() -> assertTrue(observed.countCalls <= 1_025,
 								"the first completed count signals cancellation; at most 1024 more may run; actual="
 										+ observed.countCalls),
