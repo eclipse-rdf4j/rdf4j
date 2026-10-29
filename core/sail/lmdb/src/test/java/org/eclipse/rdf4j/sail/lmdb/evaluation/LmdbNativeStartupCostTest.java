@@ -13,7 +13,6 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.within;
 
 import java.util.List;
 
@@ -96,12 +95,15 @@ public class LmdbNativeStartupCostTest {
 	}
 
 	@Test
-	public void aSliceLargerThanTheResultChangesNothing() {
+	public void aSliceLargerThanTheResultKeepsTheCompleteHardCeiling() {
 		LmdbNativeStrategyProposal<String> plan = proposal("batch", 1_000D, 0D, 100D);
 
 		assertThat(plan.effectiveWork(500D))
-				.as("asking for more rows than exist is the same as asking for all of them")
-				.isEqualTo(plan.work);
+				.as("asking for more rows than exist cannot lower the proven full-open ceiling")
+				.isEqualTo(LmdbNativeWork.between(0D, 1_000D));
+		assertThat(plan.adaptiveEstimate(500D).total().expected(LmdbNativeCostVector.Feature.BATCH_ROW))
+				.as("the expected cost still reaches the whole result when the slice covers it")
+				.isEqualTo(1_000D);
 	}
 
 	@Test
@@ -109,23 +111,29 @@ public class LmdbNativeStartupCostTest {
 		LmdbNativeStrategyProposal<String> parallel = proposal(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES,
 				300_000D, 250_000D, 1_000_000D);
 
-		double oneRow = parallel.effectiveWork(1D).high();
+		LmdbNativeWork oneRow = parallel.effectiveWork(1D);
 
-		assertThat(oneRow)
-				.as("worker startup happens whether the consumer takes one row or a million")
-				.isGreaterThanOrEqualTo(250_000D);
-		assertThat(oneRow)
-				.as("but the streaming remainder is prorated, so it is not the full total either")
-				.isLessThan(300_000D);
+		assertThat(oneRow.low())
+				.as("the hard lower floor still includes the known worker startup")
+				.isEqualTo(250_000D);
+		assertThat(oneRow.high())
+				.as("a LIMIT cannot prove the input prefix needed for the requested rows")
+				.isEqualTo(300_000D);
+		assertThat(parallel.adaptiveEstimate(1D).total().expected(LmdbNativeCostVector.Feature.BATCH_ROW))
+				.as("expected row work keeps the startup charge and prorates only its streaming remainder")
+				.isEqualTo(237_500.05D);
 	}
 
 	@Test
 	public void aStreamingStrategyIsProratedAlmostEntirelyAway() {
 		LmdbNativeStrategyProposal<String> streaming = proposal("nestedLoop", 1_000_000D, 0D, 1_000_000D);
 
-		assertThat(streaming.effectiveWork(1D).high())
-				.as("with no startup cost, taking one row of a million costs about one row of work")
-				.isCloseTo(1D, within(0.001d));
+		assertThat(streaming.effectiveWork(1D))
+				.as("the hard work quote still permits consuming the full input before one output")
+				.isEqualTo(LmdbNativeWork.between(0D, 1_000_000D));
+		assertThat(streaming.adaptiveEstimate(1D).total().expected(LmdbNativeCostVector.Feature.INTERPRETED_ROW))
+				.as("the separate expected planning price reflects a one-row streaming prefix")
+				.isEqualTo(1D);
 	}
 
 	@Test
@@ -142,6 +150,33 @@ public class LmdbNativeStartupCostTest {
 		assertThat(candidates.get(LmdbNativeStrategyArbiter.rank(candidates, 5D)).tag)
 				.as("for five rows, paying 250k of worker startup to save streaming cost is the wrong trade")
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		assertThat(candidates.get(0).effectiveWork(5D).high())
+				.as("the expected LIMIT comparison must not lower the parallel hard ceiling")
+				.isEqualTo(300_000D);
+		assertThat(candidates.get(1).effectiveWork(5D).high())
+				.as("the expected LIMIT comparison must not lower the streaming hard ceiling")
+				.isEqualTo(1_000_000D);
+	}
+
+	@Test
+	public void adaptiveDispatchUsesExpectedSlicePricesWithoutChangingHardBounds() throws Exception {
+		LmdbNativeStrategyProposal<String> parallel = proposal(
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 300_000D, 250_000D, 1_000_000D);
+		LmdbNativeStrategyProposal<String> streaming = proposal(
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000_000D, 0D, 1_000_000D);
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+				new LmdbNativeStoreCostModel(), new LmdbNativeAdaptiveCostModel.Configuration(true, false));
+
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forModel(null, 5D, model)) {
+			arbiter.offer(() -> parallel);
+			arbiter.offer(() -> streaming);
+
+			assertThat(arbiter.select())
+					.as("the real adaptive dispatch uses the comparable cold expected price for a small LIMIT")
+					.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		}
+		assertThat(parallel.effectiveWork(5D).high()).isEqualTo(300_000D);
+		assertThat(streaming.effectiveWork(5D).high()).isEqualTo(1_000_000D);
 	}
 
 	@Test
@@ -162,7 +197,10 @@ public class LmdbNativeStartupCostTest {
 		assertThat(unknownRows.effectiveWork(1D))
 				.as("without knowing how many rows exist, the fraction consumed is unknowable; the model must "
 						+ "decline to guess rather than invent a discount")
-				.isEqualTo(unknownRows.work);
+				.isEqualTo(LmdbNativeWork.between(500D, 1_000D));
+		assertThat(unknownRows.adaptiveEstimate(1D).total().expected(LmdbNativeCostVector.Feature.BATCH_ROW))
+				.as("without output cardinality the expected estimate also declines to prorate")
+				.isEqualTo(1_000D);
 	}
 
 	@Test
@@ -174,6 +212,8 @@ public class LmdbNativeStartupCostTest {
 
 		assertThat(legacy.startupWork).isEqualTo(LmdbNativeWork.ZERO);
 		assertThat(legacy.estRows).isNaN();
-		assertThat(legacy.effectiveWork(1D)).isEqualTo(legacy.work);
+		assertThat(legacy.effectiveWork(1D)).isEqualTo(LmdbNativeWork.between(0D, 1_000D));
+		assertThat(legacy.adaptiveEstimate(1D).total().expected(LmdbNativeCostVector.Feature.BATCH_ROW))
+				.isEqualTo(1_000D);
 	}
 }

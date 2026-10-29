@@ -54,6 +54,21 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 					? new ExpectedPlanningPrior(expectedTotalWork, expectedTotalWork)
 					: null;
 		}
+
+		ExpectedPlanningPrior forSlice(double sliceRows, double estimatedRows) {
+			if (sliceRows == 0D) {
+				return blocking(0D);
+			}
+			if (!Double.isFinite(sliceRows) || sliceRows < 0D || expectedBeforeFirstOutputWork >= expectedTotalWork
+					|| !Double.isFinite(estimatedRows) || estimatedRows <= 0D) {
+				return this;
+			}
+			double fraction = Math.min(1D, sliceRows / estimatedRows);
+			double expected = expectedBeforeFirstOutputWork
+					+ fraction * (expectedTotalWork - expectedBeforeFirstOutputWork);
+			return Double.isFinite(expected) ? new ExpectedPlanningPrior(expected,
+					expectedBeforeFirstOutputWork) : null;
+		}
 	}
 
 	final Opener<T> opener;
@@ -134,6 +149,84 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	ExpectedPlanningPrior expectedPlanningPrior() {
 		return expectedPlanningPrior;
+	}
+
+	/**
+	 * A cold planning quote for a finite consumer slice. This value is separate from {@link #effectiveWork}: it may
+	 * guide expected-cost selection, but never establishes a work bound or a typed adaptive-model feature.
+	 */
+	ExpectedPlanningPrior expectedPlanningPriorForSlice(double sliceRows) {
+		if (!Double.isFinite(sliceRows) || sliceRows < 0D) {
+			return null;
+		}
+		if (sliceRows == 0D) {
+			return ExpectedPlanningPrior.blocking(0D);
+		}
+		ExpectedPlanningPrior prior = expectedPlanningPrior;
+		if (physicalEstimate != null) {
+			if (!physicalEstimate.workEvidence().isComplete()) {
+				if (prior == null || executionResourceWitness == null && coldAnchor == null) {
+					return null;
+				}
+			} else if (samePhysicalWork(physicalEstimate.startup(), physicalEstimate.total())) {
+				double total = prior == null
+						? work.known() ? midpoint(work) : Double.NaN
+						: prior.expectedTotalWork();
+				return preserveProvenWorkBounds(ExpectedPlanningPrior.blocking(total));
+			} else if (prior == null && !physicalEstimate.startup().isZero()) {
+				// Typed startup counts and compatibility work use different units. Without a producer-supplied scalar
+				// expected prior, a nonzero partial typed startup cannot justify slicing the compatibility scalar.
+				return null;
+			}
+		}
+		if (prior == null) {
+			if (!work.known()) {
+				return null;
+			}
+			double total = midpoint(work);
+			double beforeFirst = startupWork.known() ? Math.min(midpoint(startupWork), total) : 0D;
+			prior = new ExpectedPlanningPrior(total, beforeFirst);
+		} else if (!work.known()
+				&& (executionResourceWitness == null && coldAnchor == null
+						&& (physicalEstimate == null || !physicalEstimate.workEvidence().isComplete()))) {
+			return null;
+		}
+		prior = preserveProvenWorkBounds(prior);
+		return prior == null ? null : prior.forSlice(sliceRows, estRows);
+	}
+
+	private ExpectedPlanningPrior preserveProvenWorkBounds(ExpectedPlanningPrior prior) {
+		if (prior == null) {
+			return null;
+		}
+		// This is still the full-run quote. Validate it before forSlice can legitimately price below the full-run
+		// floor.
+		if (prior.expectedTotalWork() < work.low()
+				|| (work.known() && prior.expectedTotalWork() > work.high())) {
+			return null;
+		}
+		double startupFloor = startupWork.low();
+		if (prior.expectedTotalWork() < startupFloor) {
+			return null;
+		}
+		double expectedStartup = Math.max(prior.expectedBeforeFirstOutputWork(), startupFloor);
+		if (expectedStartup > prior.expectedTotalWork()) {
+			return null;
+		}
+		if (expectedStartup == prior.expectedBeforeFirstOutputWork()) {
+			return prior;
+		}
+		return new ExpectedPlanningPrior(prior.expectedTotalWork(), expectedStartup);
+	}
+
+	private static boolean samePhysicalWork(LmdbNativeCostVector first, LmdbNativeCostVector second) {
+		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+			if (first.low(feature) != second.low(feature) || first.expected(feature) != second.expected(feature)
+					|| first.high(feature) != second.high(feature)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	LmdbNativeStrategyProposal<T> withExecutionResourceWitness(
