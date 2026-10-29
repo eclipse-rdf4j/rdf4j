@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -216,8 +217,18 @@ class NativeTermDomainExecutionTest {
 						when(cursor.runRowCount()).thenReturn(64L);
 						return cursor;
 					});
+			int[][] profilePrefixes = new int[StatementOrder.values().length + 1][16];
+			profilePrefixes[0][10] = 10;
+			NativeLmdbQuerySource.IndexAccessProfile accessProfile = new NativeLmdbQuerySource.IndexAccessProfile(128L,
+					1, profilePrefixes, false, -1L, -1L, -1L);
+			when(fixture.delegate.indexAccessProfile()).thenReturn(accessProfile);
+			assertThat(accessProfile.entries()).as("the fixture profile reports its 128 physical statements")
+					.isEqualTo(128L);
+			assertThat(accessProfile.prefixMask(null, 10))
+					.as("the fixture index starts with the fixed predicate and context fields")
+					.isEqualTo(10);
 			PatternPlan input = new PatternPlan(Term.slot(0), Term.constant(9L), Term.slot(1), Term.constant(0L),
-					ContextConstraint.UNRESTRICTED, false, 128D);
+					ContextConstraint.UNRESTRICTED, false, null, "", null, 128D, accessProfile);
 			RowState admitted = new RowState(fixture.source, fixture.layout, EmptyBindingSet.getInstance());
 			assertTrue(LmdbNativeAggregateCompiler.initializeRow(admitted, admitted.base, admitted.source,
 					fixture.layout));
@@ -389,9 +400,54 @@ class NativeTermDomainExecutionTest {
 			BindingSet result = fixture.reduce(domain, new int[0], aggregates).getFirst();
 			assertThat(((Literal) result.getValue("sum")).longValue()).isEqualTo(2L);
 			assertThat(((Literal) result.getValue("bound")).longValue()).isEqualTo(2L);
-			assertThat(((Literal) result.getValue("rows")).longValue()).isEqualTo(4L);
+			assertThat(((Literal) result.getValue("rows")).longValue())
+					.as("COUNT(*) includes mappings with unbound inputs or a failed expression")
+					.isEqualTo(6L);
 			assertThat(fixture.evaluations.get()).isEqualTo(3);
 			assertThat(fixture.logicalRows).isEqualTo(6L);
+		}
+	}
+
+	@Test
+	void genericAndDomainWildcardCountsIncludeFailedAndUnboundMappings() throws Exception {
+		try (Fixture fixture = new Fixture("text", "result")) {
+			List<ValuesRow> rows = List.of(fixture.values("😀"), fixture.values((Object) null), fixture.values(7),
+					fixture.values("😀"), fixture.values((Object) null), fixture.values(7));
+			AggregateSpec[] aggregates = {
+					AggregateSpec.slot("sum", 1, false, AggKind.SUM),
+					AggregateSpec.slot("bound", 1, false, AggKind.COUNT),
+					AggregateSpec.slot("distinctBound", 1, true, AggKind.COUNT),
+					AggregateSpec.star("rows", new int[] { 0, 1 }),
+					AggregateSpec.starDistinct("distinctRows", new int[] { 0, 1 })
+			};
+			NativeTermDomainPlan domain = fixture.domain(rows, length(Var.of("text")), 1, new int[0], aggregates);
+			List<BindingSet> domainResults = fixture.reduce(domain, new int[0], aggregates);
+			assertThat(domainResults).hasSize(1);
+			BindingSet result = domainResults.getFirst();
+			Map<String, Value> domainValues = new HashMap<>();
+			for (String name : List.of("sum", "bound", "distinctBound", "rows", "distinctRows")) {
+				domainValues.put(name, result.getValue(name));
+			}
+			Map<String, Value> genericValues = new HashMap<>();
+			try (NativeGroupIteration generic = new NativeGroupIteration(fixture.source, domain.original,
+					fixture.layout, new int[0], aggregates, false, EmptyBindingSet.getInstance(), null, null, false,
+					false,
+					null, null, 0L, null, null, null, null, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)) {
+				List<BindingSet> genericResults = generic.evaluateAll();
+				assertThat(genericResults).hasSize(1);
+				BindingSet genericResult = genericResults.getFirst();
+				for (String name : domainValues.keySet()) {
+					genericValues.put(name, genericResult.getValue(name));
+				}
+			}
+
+			assertThat(genericValues).containsExactlyInAnyOrderEntriesOf(domainValues);
+			assertThat(((Literal) result.getValue("sum")).longValue()).isEqualTo(2L);
+			assertThat(((Literal) result.getValue("bound")).longValue()).isEqualTo(2L);
+			assertThat(((Literal) result.getValue("distinctBound")).longValue()).isEqualTo(1L);
+			assertThat(((Literal) result.getValue("rows")).longValue()).isEqualTo(6L);
+			assertThat(((Literal) result.getValue("distinctRows")).longValue()).isEqualTo(3L);
+			assertThat(fixture.logicalRows).as("the domain must retain all six solution mappings").isEqualTo(6L);
 		}
 	}
 

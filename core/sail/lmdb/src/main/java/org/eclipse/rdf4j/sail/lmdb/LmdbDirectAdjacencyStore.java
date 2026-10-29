@@ -2419,6 +2419,70 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return exactFullSnapshot(view);
 	}
 
+	boolean mayOfferStatementAccess(LmdbAdjacencyReadView view) {
+		return view != null && view.servesSnapshot() && !closed && options.mode() == DirectAdjacencyMode.PREFER
+				&& !writeTransactionBlocksAdjacency();
+	}
+
+	/**
+	 * Upper bound for the directory work of a universal predicate sweep beyond the statement rows it yields: one
+	 * catalog step per predicate plus, with visible overlay generations, the overlay rows each predicate slice has to
+	 * examine. Every predicate slice scans the visible generation rows for its candidates (once through the latest-row
+	 * tree and once more when it resolves replacements), so the overlay rows are charged per predicate. Obsolete
+	 * overlay versions can only be revisited through those rows, which keeps this ceiling finite.
+	 */
+	long predicateSweepWorkUpper(LmdbAdjacencyReadView view) {
+		if (!offersUniversalCandidate(view)) {
+			return -1L;
+		}
+		long predicates = view.state().planeStatistics().predicateDomain().size();
+		long overlayRows = 0L;
+		LmdbAdjacencyOverlaySet overlays = view.state().overlays();
+		if (overlays != null) {
+			for (int i = 0; i < overlays.generationCount(); i++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+				if (generation.revision() <= view.snapshotRevision()) {
+					overlayRows = LmdbUtil.saturatedAdd(overlayRows, generation.rowCount());
+				}
+			}
+		}
+		if (overlayRows == 0L) {
+			return predicates;
+		}
+		long perPredicate = LmdbUtil.saturatedAdd(1L, LmdbUtil.saturatedAdd(overlayRows, overlayRows));
+		long sliceWork = predicates > Long.MAX_VALUE / perPredicate ? Long.MAX_VALUE : predicates * perPredicate;
+		return LmdbUtil.saturatedAdd(sliceWork, overlayRows);
+	}
+
+	/** Upper bound for node-predicate directory work, or -1 when this view cannot offer that access. */
+	long nodePredicateWorkUpper(LmdbAdjacencyReadView view, boolean bySubject, boolean explicit) {
+		if (!mayOfferStatementAccess(view) || !nodePredicateServingEnabled()) {
+			return -1L;
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		int plane = plane(bySubject, explicit);
+		if (state.base() == null || !state.base().coverage().isFull()
+				|| !state.base().supportsPredicateEnumeration(plane)) {
+			return -1L;
+		}
+		long rows = state.base().nodePredicateIndex().incidenceCount(plane);
+		long sources = 1L;
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		if (overlays != null) {
+			for (int i = 0; i < overlays.generationCount(); i++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+				if (generation.revision() <= view.snapshotRevision()) {
+					rows = LmdbUtil.saturatedAdd(rows, generation.rowCount());
+					sources++;
+				}
+			}
+		}
+		// Each merge round consumes at least one directory row. It can examine every active head and then
+		// resolve every matching head, so at most two operations per source are charged per round.
+		long perRound = sources * 2L;
+		return rows > Long.MAX_VALUE / perRound ? Long.MAX_VALUE : rows * perRound;
+	}
+
 	RecordIterator tryOpenUniversal(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
 			long object, long context, boolean explicit) {
 		if (!exactFullSnapshot(view)) {
@@ -3705,6 +3769,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		long count = tryCountInternal(view, -1L, predicate, -1L, -1L, explicit, false);
 		return count < 0L ? OptionalLong.empty() : OptionalLong.of(count);
+	}
+
+	boolean canExactPredicateCount(LmdbAdjacencyReadView view, long predicate) {
+		return predicate > 0L && view != null && view.servesSnapshot() && !closed
+				&& options.mode() == DirectAdjacencyMode.PREFER && !writeTransactionBlocksAdjacency()
+				&& scanAggregatesEnabled() && view.snapshotRevision() == view.state().appliedRevision()
+				&& planeCovered(view, predicate);
 	}
 
 	private long tryCountInternal(LmdbAdjacencyReadView view, long subject, long predicate, long object, long context,

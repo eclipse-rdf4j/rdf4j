@@ -1036,8 +1036,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 				if (kind != AggKind.COUNT) {
 					return null;
 				}
-				// RDF4J's WildCardCountAggregate skips the empty solution mapping for both plain and DISTINCT
-				// wildcard counts. Keep the complete visible domain so the row tier can recognize that mapping.
+				// Keep the visible domain for full-row DISTINCT and the existing row execution paths. COUNT(*)
+				// includes every solution, even when none of these slots is bound.
 				java.util.TreeSet<String> visible = new java.util.TreeSet<>(group.getArg().getBindingNames());
 				int[] rowSlots = new int[visible.size()];
 				int slotIndex = 0;
@@ -1292,6 +1292,11 @@ abstract class LmdbNativeAggregatePlannerBase {
 		long[] ids = new long[graphs.size()];
 		int size = 0;
 		for (Resource graph : graphs) {
+			if (graph == null && scope == Scope.NAMED_CONTEXTS) {
+				// Null denotes the physical default context but cannot name a graph selected by GRAPH ?g.
+				// Default read datasets and explicit rdf4j:nil/sesame:nil aliases retain their extensions.
+				continue;
+			}
 			long id;
 			if (graph == null || RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph)) {
 				id = NULL_CONTEXT_ID;

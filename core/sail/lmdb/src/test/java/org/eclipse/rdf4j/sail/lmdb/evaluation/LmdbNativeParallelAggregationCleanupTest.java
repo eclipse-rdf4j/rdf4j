@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
@@ -30,6 +31,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -44,6 +46,8 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,6 +55,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 class LmdbNativeParallelAggregationCleanupTest {
+
 	private String previousParallelEnabled;
 
 	@BeforeEach
@@ -835,6 +840,163 @@ class LmdbNativeParallelAggregationCleanupTest {
 		assertThat(ParallelSelectAttemptCounters.snapshot())
 				.as("a cancelled parallel SELECT worker must discard its chunk, hash, memo, and SIP observations")
 				.isEqualTo(before);
+	}
+
+	@Test
+	void ownerCancellationBeforePipelineShutdownIsNotCountedAsWorkerFailure() throws Exception {
+		CountDownLatch workerProbeEntered = new CountDownLatch(1);
+		CountDownLatch releaseWorkerProbe = new CountDownLatch(1);
+		ParallelPipelineSource worker = new ParallelPipelineSource(new long[] { 1L, 9L, 10L, 0L }, null, null,
+				workerProbeEntered, releaseWorkerProbe, null);
+		ParallelPipelineSource producer = new ParallelPipelineSource(new long[] { 1L, 7L, 8L, 0L }, null, null,
+				null, null, null);
+		long workerFailuresBefore = LmdbNativeParallelPipelines.WORKER_FAILURES.get();
+		long cancellationsBefore = LmdbNativeParallelPipelines.CANCELLED_RUNS.get();
+		LmdbNativeParallelPipelines.ParallelRowCursor cursor = parallelTwoPatternRowCursor(worker, producer);
+
+		try {
+			cursor.pumpProducer();
+			await(workerProbeEntered);
+
+			// NativeRowsIteration.close requests the evaluation token before the parallel cursor marks its local
+			// cancellation flag. Release the real worker pull while it is in that same owner-cancelled window.
+			cursor.consumerRow.cancellation.requestCancellation();
+			assertThat(cursor.cancelled).isFalse();
+			Throwable ownerSignal = catchThrowable(cursor.consumerRow.cancellation::check);
+			assertOwnerQueryCancellation(ownerSignal, cursor.consumerRow.cancellation);
+			releaseWorkerProbe.countDown();
+			awaitTaskCount(cursor, 0L);
+
+			Throwable recordedWorkerFailure = cursor.failure.get();
+			if (recordedWorkerFailure != null) {
+				assertThat(recordedWorkerFailure)
+						.as("the worker sees the exact owner cancellation singleton")
+						.isSameAs(ownerSignal);
+			}
+			assertThat(recordedWorkerFailure)
+					.as("owner cancellation during the pre-shutdown window must not become a worker failure")
+					.isNull();
+		} finally {
+			releaseWorkerProbe.countDown();
+			cursor.close();
+		}
+
+		assertThat(worker.closeCalls).isOne();
+		assertThat(producer.closeCalls).isOne();
+		assertThat(LmdbNativeParallelPipelines.WORKER_FAILURES.get()).isEqualTo(workerFailuresBefore);
+		assertThat(LmdbNativeParallelPipelines.CANCELLED_RUNS.get()).isEqualTo(cancellationsBefore + 1L);
+	}
+
+	@Test
+	void ownerCancellationUnblocksConsumerAlreadyWaitingForWorkerOutput() throws Exception {
+		CountDownLatch workerProbeEntered = new CountDownLatch(1);
+		CountDownLatch releaseWorkerProbe = new CountDownLatch(1);
+		ParallelPipelineSource worker = new ParallelPipelineSource(new long[] { 1L, 9L, 10L, 0L }, null, null,
+				workerProbeEntered, releaseWorkerProbe, null);
+		ParallelPipelineSource producer = new ParallelPipelineSource(new long[] { 1L, 7L, 8L, 0L }, null, null,
+				null, null, null);
+		AtomicReference<LmdbNativeParallelPipelines.ParallelRowCursor> published = new AtomicReference<>();
+		CountDownLatch cursorReady = new CountDownLatch(1);
+		CompletableFuture<Throwable> completed = new CompletableFuture<>();
+		AtomicBoolean returnedRow = new AtomicBoolean();
+		long workerFailuresBefore = LmdbNativeParallelPipelines.WORKER_FAILURES.get();
+		long cancellationsBefore = LmdbNativeParallelPipelines.CANCELLED_RUNS.get();
+		Thread consumer = Thread.ofPlatform().name("native-owner-cancelled-consumer").unstarted(() -> {
+			LmdbNativeParallelPipelines.ParallelRowCursor cursor = null;
+			Throwable failure = null;
+			try {
+				// The consumer owns construction, source pulls, and final close on the same platform thread.
+				cursor = parallelTwoPatternRowCursor(worker, producer);
+				published.set(cursor);
+				cursorReady.countDown();
+				returnedRow.set(cursor.next());
+			} catch (Throwable problem) {
+				failure = problem;
+			} finally {
+				if (cursor != null) {
+					failure = KernelRuntime.closeResource(cursor, failure);
+					failure = KernelRuntime.closeResource(cursor.consumerRow.memoryScope::close, failure);
+				}
+				cursorReady.countDown();
+				completed.complete(failure);
+			}
+		});
+		boolean completedWithoutForcedCleanup = false;
+		Throwable consumerFailure = null;
+		consumer.start();
+		try {
+			await(cursorReady);
+			LmdbNativeParallelPipelines.ParallelRowCursor cursor = published.get();
+			assertThat(cursor).as("the consumer must construct the real parallel cursor").isNotNull();
+			await(workerProbeEntered);
+			awaitConsumerOutputPoll(consumer);
+			assertThat(cursor.cancelled).isFalse();
+
+			// The consumer is already inside next(), not at RowState.advance's entry check. The real worker is
+			// held in its source pull until after that same owner's token is requested.
+			cursor.consumerRow.cancellation.requestCancellation();
+			assertOwnerQueryCancellation(catchThrowable(cursor.consumerRow.cancellation::check),
+					cursor.consumerRow.cancellation);
+			releaseWorkerProbe.countDown();
+			awaitTaskCount(cursor, 0L);
+			try {
+				// Use the fixture's existing coordination budget as a liveness failure guard, never a success path.
+				consumerFailure = completed.get(10L, TimeUnit.SECONDS);
+				completedWithoutForcedCleanup = true;
+			} catch (TimeoutException stuckConsumer) {
+				consumerFailure = stuckConsumer;
+			}
+		} finally {
+			releaseWorkerProbe.countDown();
+			if (!completed.isDone() && consumer.isAlive()) {
+				// Only the failing test path needs this interrupt; join still waits for actual cursor/source cleanup.
+				consumer.interrupt();
+			}
+			consumer.join();
+		}
+		boolean completedCleanly = completedWithoutForcedCleanup;
+		Throwable observed = consumerFailure;
+		assertAll("owning-query cancellation unwinds an entered consumer and still settles all native resources",
+				() -> assertThat(completedCleanly).as("the consumer must unwind without a driver interrupt").isTrue(),
+				() -> assertThat(returnedRow).isFalse(),
+				() -> {
+					if (observed != null) {
+						assertOwnerQueryCancellation(observed, published.get().consumerRow.cancellation);
+					}
+				},
+				() -> assertThat(published.get().failure.get()).isNull(),
+				() -> assertThat(published.get().tasks.getCount()).isZero(),
+				() -> assertThat(worker.closeCalls).isOne(),
+				() -> assertThat(producer.closeCalls).isOne(),
+				() -> assertThat(LmdbNativeParallelPipelines.WORKER_FAILURES.get()).isEqualTo(workerFailuresBefore),
+				() -> assertThat(LmdbNativeParallelPipelines.CANCELLED_RUNS.get()).isEqualTo(cancellationsBefore + 1L));
+	}
+
+	private static void awaitConsumerOutputPoll(Thread consumer) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10L);
+		while (System.nanoTime() < deadline) {
+			StackTraceElement[] stack = consumer.getStackTrace();
+			boolean nativeNext = Arrays.stream(stack)
+					.anyMatch(frame -> frame.getClassName()
+							.equals(LmdbNativeParallelPipelines.ParallelRowCursor.class.getName())
+							&& frame.getMethodName().equals("next"));
+			boolean queuePoll = Arrays.stream(stack)
+					.anyMatch(frame -> frame.getClassName().equals(ArrayBlockingQueue.class.getName())
+							&& frame.getMethodName().equals("poll"));
+			if (nativeNext && queuePoll && consumer.getState() == Thread.State.TIMED_WAITING) {
+				return;
+			}
+			Thread.onSpinWait();
+		}
+		throw new AssertionError("the native consumer must enter its actual empty output-queue wait");
+	}
+
+	private static void assertOwnerQueryCancellation(Throwable actual, NativeCancellationToken owner) {
+		assertThat(actual).isInstanceOf(KernelQueryCancelledException.class);
+		KernelQueryCancelledException occurrence = (KernelQueryCancelledException) actual;
+		assertThat(occurrence).isNotSameAs(KernelQueryCancelledException.INSTANCE);
+		assertThat(occurrence.origin()).isSameAs(owner);
+		assertThat(occurrence.observedBy(owner)).isTrue();
 	}
 
 	@Test

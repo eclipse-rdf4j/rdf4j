@@ -65,6 +65,7 @@ class LmdbNativeKernelInterpreterWarmupTest {
 			"rdf4j.lmdb.packedFtree.enabled",
 			"rdf4j.lmdb.prefixRun.enabled",
 			"rdf4j.lmdb.directAdjacency.scanAggregates.enabled",
+			LmdbNativeIndexedCount.ENABLED_PROPERTY,
 			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.irAggregateParallel.enabled" };
@@ -98,6 +99,9 @@ class LmdbNativeKernelInterpreterWarmupTest {
 		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 		System.setProperty("rdf4j.lmdb.prefixRun.enabled", "false");
 		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "false");
+		// The exact index count answers the single-pattern COUNT without any kernel; these tests exercise the
+		// interpreter tier itself, so that specialist is switched off like the other rivals above.
+		System.setProperty(LmdbNativeIndexedCount.ENABLED_PROPERTY, "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "1");
 		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "false");

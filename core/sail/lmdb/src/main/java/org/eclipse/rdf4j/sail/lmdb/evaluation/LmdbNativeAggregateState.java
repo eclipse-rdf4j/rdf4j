@@ -224,8 +224,7 @@ final class AggregateSpec {
 	final String separator;
 	/**
 	 * COUNT([DISTINCT] *) (M-F3): slot indexes of every visible binding name of the group's argument, in a fixed order;
-	 * null for every other aggregate shape. Bound status is part of a DISTINCT hashed row (UNKNOWN = binding absent),
-	 * and both forms use the domain to identify RDF4J's non-countable empty solution mapping.
+	 * null for every other aggregate shape. Bound status is part of a DISTINCT hashed row (UNKNOWN = binding absent).
 	 */
 	final int[] rowSlots;
 	/** Custom aggregate description (M5); non-null exactly when {@link #kind} is {@link AggKind#CUSTOM}. */
@@ -316,16 +315,15 @@ final class AggregateSpec {
 	}
 
 	/**
-	 * COUNT(*): retain the visible binding domain so the collector can skip empty mappings. A failed BIND assignment
-	 * leaves an unbound placeholder in that domain and does not make a mapping countable. DISTINCT uses
-	 * {@link #starDistinct} instead.
+	 * COUNT(*): retain the visible binding domain for the existing row execution paths. Each input solution counts,
+	 * including an empty mapping. DISTINCT uses {@link #starDistinct} instead.
 	 */
 	static AggregateSpec star(String name, int[] rowSlots) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, false, AggKind.COUNT, null, rowSlots);
 	}
 
 	/**
-	 * Low-level aggregate-state form for callers that have already established that every supplied row is non-empty.
+	 * Low-level aggregate-state form for callers that need only the input row multiplicity.
 	 */
 	static AggregateSpec star(String name) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, false, AggKind.COUNT);
@@ -333,9 +331,8 @@ final class AggregateSpec {
 
 	/**
 	 * COUNT(DISTINCT *) (M-F3): counts distinct full visible solution mappings — names, bound status and term identity
-	 * over {@code rowSlots}. Empty mappings are skipped; a failed BIND assignment leaves an unbound placeholder that
-	 * does not make a mapping countable. Requires full logical mappings: composed packed algebra uses its serial
-	 * aggregate boundary.
+	 * over {@code rowSlots}. Empty mappings are valid and deduplicate to one mapping. Requires full logical mappings:
+	 * composed packed algebra uses its serial aggregate boundary.
 	 */
 	static AggregateSpec starDistinct(String name, int[] rowSlots) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, true, AggKind.COUNT, null, rowSlots);
@@ -347,8 +344,8 @@ final class AggregateSpec {
 	}
 
 	/**
-	 * Visible row slots needed after projection or folding. A non-distinct wildcard count can discard its domain only
-	 * when an assured binding proves every input mapping is non-empty. DISTINCT still needs the complete mapping.
+	 * Visible row slots retained after projection or folding. DISTINCT needs the complete mapping; the non-distinct row
+	 * paths conservatively retain their domain unless an assured slot permits it to be elided.
 	 */
 	long rowInputMask(long assuredMask) {
 		long visibleMask = 0L;
@@ -363,20 +360,7 @@ final class AggregateSpec {
 	/** Whether this aggregate has an input on the current solution row. */
 	boolean hasInput(RowState row) {
 		if (isWildcardCount()) {
-			if (rowSlots == null) {
-				return true;
-			}
-			for (int rowSlot : rowSlots) {
-				long value = row.slots[rowSlot];
-				// A failed BIND leaves a null placeholder in its slot (LmdbNativeRowPlans.bindCopies). The generic
-				// engine does not report such a placeholder as a binding (ArrayBindingSet.isEmpty() ignores
-				// null-valued entries), so WildCardCountAggregate skips a mapping whose only entries are failed
-				// assignments; the native domain check ignores the placeholder the same way.
-				if (value != UNKNOWN && value != NULL_CONTEXT_ID) {
-					return true;
-				}
-			}
-			return false;
+			return true;
 		}
 		long value = value(row);
 		return value != UNKNOWN && value != NULL_CONTEXT_ID;
@@ -1053,11 +1037,7 @@ final class AggState {
 
 	private void addOne(int i, RowState row) {
 		if (specs[i].rowSlots != null) {
-			// RDF4J's wildcard collector skips the empty solution mapping. DISTINCT keeps one copy of every
-			// remaining full visible mapping.
-			if (!specs[i].hasInput(row)) {
-				return;
-			}
+			// DISTINCT keeps one copy of every full visible mapping, including the empty mapping.
 			if (!specs[i].distinct || (boundedRows != null && boundedRows[i] != null
 					? boundedRows[i].add(row.slots)
 					: rowDistinct[i].add(row.slots))) {
@@ -1195,7 +1175,7 @@ final class AggState {
 				throw EncounterOrderFallback.customAggregateOrder();
 			}
 			if (specs[i].rowSlots != null) {
-				if (!specs[i].distinct && specs[i].hasInput(row)) {
+				if (!specs[i].distinct) {
 					counts[i] = FactorizedTail.addCounts(counts[i], extra);
 				}
 				continue;
