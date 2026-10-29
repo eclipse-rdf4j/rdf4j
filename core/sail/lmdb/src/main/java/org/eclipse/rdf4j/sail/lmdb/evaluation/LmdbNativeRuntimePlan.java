@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -22,6 +23,10 @@ import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedSipFactorizedRuntime.DomainTelemetry;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedSipFactorizedRuntime.FactorizationTelemetry;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedSipFactorizedRuntime.FilterTelemetry;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedSipFactorizedRuntime.Telemetry;
 
 /**
  * Query-local witness of the physical plan that actually crossed runtime activation points. This deliberately does not
@@ -39,6 +44,21 @@ final class LmdbNativeRuntimePlan {
 		if (target == null || !target.isRuntimeTelemetryEnabled()) {
 			return null;
 		}
+		return summary(target).begin(entryPlan, layout.slotNames(), initialBoundMask);
+	}
+
+	/** Collects a private attempt without exposing it until its result is selected. */
+	static Invocation deferred(SlotPlan entryPlan, NativeSlotLayout layout, long initialBoundMask) {
+		return new Summary(null).begin(entryPlan, layout.slotNames(), initialBoundMask);
+	}
+
+	static void adopt(TupleExpr target, Invocation completed) {
+		if (target != null && target.isRuntimeTelemetryEnabled() && completed != null) {
+			summary(target).merge(completed);
+		}
+	}
+
+	private static Summary summary(TupleExpr target) {
 		Summary summary;
 		synchronized (target) {
 			summary = target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN) == null
@@ -49,7 +69,73 @@ final class LmdbNativeRuntimePlan {
 				target.setQueryModelMetadata(SUMMARY_KEY, summary);
 			}
 		}
-		return summary.begin(entryPlan, layout.slotNames(), initialBoundMask);
+		return summary;
+	}
+
+	private static Telemetry mergeTelemetry(Telemetry left, Telemetry right) {
+		if (left == Telemetry.EMPTY) {
+			return right;
+		}
+		if (right == Telemetry.EMPTY) {
+			return left;
+		}
+		Map<List<?>, DomainTelemetry> domains = new LinkedHashMap<>();
+		for (List<DomainTelemetry> observations : List.of(left.domains(), right.domains())) {
+			for (DomainTelemetry domain : observations) {
+				domains.merge(
+						List.of(domain.id(), domain.label(), domain.producer(), domain.representation(),
+								domain.exact()),
+						domain,
+						(a, b) -> new DomainTelemetry(a.id(), a.label(), a.producer(), a.representation(), a.exact(),
+								Math.max(a.cardinalityUpperBound(), b.cardinalityUpperBound()),
+								a.claimedBytes() + b.claimedBytes(),
+								a.estimatedBytes() + b.estimatedBytes(), a.buildNanos() + b.buildNanos(),
+								union(a.consumers(), b.consumers()),
+								a.tests() + b.tests(), a.rejects() + b.rejects(), a.drivenRows() + b.drivenRows()));
+			}
+		}
+		Map<List<?>, FilterTelemetry> filters = new LinkedHashMap<>();
+		for (List<FilterTelemetry> observations : List.of(left.filters(), right.filters())) {
+			for (FilterTelemetry filter : observations) {
+				filters.merge(
+						List.of(filter.id(), filter.label(), filter.originalStage(), filter.selectedStage(),
+								filter.learned()),
+						filter,
+						(a, b) -> new FilterTelemetry(a.id(), a.label(), a.originalStage(), a.selectedStage(),
+								a.learned(),
+								a.placements() + b.placements(), a.moves() + b.moves(),
+								a.observations() + b.observations(),
+								a.tested() + b.tested(), a.accepted() + b.accepted(),
+								a.elapsedNanos() + b.elapsedNanos(),
+								a.downstreamRowsAvoided() + b.downstreamRowsAvoided()));
+			}
+		}
+		Map<String, Long> kernels = new LinkedHashMap<>(left.kernelBinds());
+		right.kernelBinds().forEach((kernel, count) -> kernels.merge(kernel, count, Long::sum));
+		FactorizationTelemetry a = left.factorization();
+		FactorizationTelemetry b = right.factorization();
+		FactorizationTelemetry factorization = new FactorizationTelemetry(union(a.modes(), b.modes()),
+				a.rootRows() + b.rootRows(), a.parentRows() + b.parentRows(), a.candidateRows() + b.candidateRows(),
+				a.storedLanes() + b.storedLanes(),
+				a.rejectedBeforeMaterialization() + b.rejectedBeforeMaterialization(),
+				a.optionalNullLanes() + b.optionalNullLanes(), a.flatEquivalentRows() + b.flatEquivalentRows(),
+				a.multiplicityExtra() + b.multiplicityExtra(),
+				a.materializationBoundaries() + b.materializationBoundaries(),
+				a.flattenedRows() + b.flattenedRows(), a.refusals() + b.refusals());
+		return new Telemetry(left.queryKey(), left.sipTests() + right.sipTests(),
+				left.sipRejects() + right.sipRejects(),
+				left.sipBypasses() + right.sipBypasses(), left.sipDrivenRows() + right.sipDrivenRows(),
+				left.retainedBytes() + right.retainedBytes(), left.memoryRefusals() + right.memoryRefusals(),
+				List.copyOf(domains.values()), factorization, List.copyOf(filters.values()),
+				left.relocatedFilterTests() + right.relocatedFilterTests(),
+				left.filtersRelocated() + right.filtersRelocated(),
+				Map.copyOf(kernels));
+	}
+
+	private static <T> List<T> union(List<T> left, List<T> right) {
+		LinkedHashSet<T> values = new LinkedHashSet<>(left);
+		values.addAll(right);
+		return List.copyOf(values);
 	}
 
 	static String planned(String kind, String plan) {
@@ -109,6 +195,9 @@ final class LmdbNativeRuntimePlan {
 		}
 
 		private synchronized void publish() {
+			if (target == null) {
+				return;
+			}
 			String rendered = render();
 			target.setStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN, rendered);
 			if (target instanceof QueryRoot) {
@@ -117,6 +206,21 @@ final class LmdbNativeRuntimePlan {
 					arg.setStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN, rendered);
 				}
 			}
+		}
+
+		private synchronized void merge(Invocation completed) {
+			InvocationShape shape = new InvocationShape(
+					LmdbNativeExplain.describe(completed.entryPlan, completed.slotNames, completed.initialBoundMask),
+					completed.initialBoundMask);
+			Invocation invocation = byShape.get(shape);
+			if (invocation == null) {
+				invocation = new Invocation(this, invocations.size(), completed.entryPlan, completed.slotNames,
+						completed.initialBoundMask);
+				invocations.add(invocation);
+				byShape.put(shape, invocation);
+			}
+			invocation.merge(completed);
+			publish();
 		}
 
 		private String render() {
@@ -185,8 +289,10 @@ final class LmdbNativeRuntimePlan {
 		private String adaptiveEpochs = "[]";
 		private Integer adaptiveFinalDepth;
 		private LmdbFusedSipFactorizedRuntime.Telemetry fusedTelemetry = LmdbFusedSipFactorizedRuntime.Telemetry.EMPTY;
+		private LmdbFusedSipFactorizedRuntime.Telemetry adoptedFusedTelemetry = LmdbFusedSipFactorizedRuntime.Telemetry.EMPTY;
 		private boolean completed;
 		private long opens = 1L;
+		private long adoptedOpens;
 		private SlotPlan[] lastRenderedOrder;
 
 		private Invocation(Summary owner, int index, SlotPlan entryPlan, String[] slotNames, long initialBoundMask) {
@@ -196,6 +302,45 @@ final class LmdbNativeRuntimePlan {
 			this.slotNames = slotNames.clone();
 			this.initialBoundMask = initialBoundMask;
 			this.adaptiveReason = initialAdaptiveReason(entryPlan);
+		}
+
+		/** Called after the producing arm has settled; the consumer now owns its immutable observations. */
+		private synchronized void merge(Invocation completed) {
+			adoptedOpens += completed.opens;
+			opens = Math.max(opens, adoptedOpens);
+			strategy = completed.strategy;
+			actualOrder = completed.actualOrder;
+			lastRenderedOrder = completed.lastRenderedOrder;
+			if (completed.janinoUsed) {
+				janinoUsed = true;
+				janinoReason = completed.janinoReason;
+				janinoRoute = completed.janinoRoute;
+				generatedOrder = completed.generatedOrder;
+			}
+			adjacencyAccessUsed |= completed.adjacencyAccessUsed;
+			completed.adjacencyAccesses.forEach((key, access) -> adjacencyAccesses.merge(key, access, (left, right) -> {
+				left.count += right.count;
+				return left;
+			}));
+			adjacencyMeasurement.merge(completed.adjacencyMeasurement);
+			lmdbMeasurement.merge(completed.lmdbMeasurement);
+			if (completed.adjacencyUsed) {
+				adjacencyUsed = true;
+				adjacencyState = completed.adjacencyState;
+				adjacencyReason = completed.adjacencyReason;
+				adjacencyWhere = completed.adjacencyWhere;
+			}
+			adjacencyMembershipChecks += completed.adjacencyMembershipChecks;
+			adjacencyRowsRejected += completed.adjacencyRowsRejected;
+			if (completed.adaptiveUsed) {
+				adaptiveUsed = true;
+				adaptiveReason = completed.adaptiveReason;
+				adaptiveEpochs = completed.adaptiveEpochs;
+				adaptiveFinalDepth = completed.adaptiveFinalDepth;
+			}
+			this.completed |= completed.completed;
+			adoptedFusedTelemetry = mergeTelemetry(adoptedFusedTelemetry,
+					mergeTelemetry(completed.fusedTelemetry, completed.adoptedFusedTelemetry));
 		}
 
 		private static String initialAdaptiveReason(SlotPlan plan) {
@@ -484,6 +629,7 @@ final class LmdbNativeRuntimePlan {
 		}
 
 		private synchronized void render(StringBuilder out) {
+			LmdbFusedSipFactorizedRuntime.Telemetry telemetry = mergeTelemetry(fusedTelemetry, adoptedFusedTelemetry);
 			out.append("\n  invocation[")
 					.append(index)
 					.append("]:")
@@ -561,10 +707,10 @@ final class LmdbNativeRuntimePlan {
 					.append(adaptiveEpochs)
 					.append("\n      finalDepth: ")
 					.append(adaptiveFinalDepth == null ? "<not applicable>" : adaptiveFinalDepth);
-			renderKernels(out, fusedTelemetry.kernelBinds());
-			renderRuntimeSip(out, fusedTelemetry);
-			renderFactorization(out, fusedTelemetry.factorization());
-			renderRuntimeFilters(out, fusedTelemetry);
+			renderKernels(out, telemetry.kernelBinds());
+			renderRuntimeSip(out, telemetry);
+			renderFactorization(out, telemetry.factorization());
+			renderRuntimeFilters(out, telemetry);
 		}
 
 		/**
@@ -857,6 +1003,14 @@ final class LmdbNativeRuntimePlan {
 				scannedRows = 0L;
 				matchedRows = 0L;
 				filteredRows = 0L;
+			}
+
+			private void merge(AdjacencyMeasurement completed) {
+				this.completed += completed.completed;
+				censored += completed.censored;
+				scannedRows += completed.scannedRows;
+				matchedRows += completed.matchedRows;
+				filteredRows += completed.filteredRows;
 			}
 
 			private void render(StringBuilder out) {

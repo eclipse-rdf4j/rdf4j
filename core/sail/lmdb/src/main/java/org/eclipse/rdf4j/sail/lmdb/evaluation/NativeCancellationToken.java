@@ -135,6 +135,15 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 		return cancellationRequested;
 	}
 
+	/**
+	 * Checks cancellation inherited from the query owner or a thread interrupt without consulting this token's local
+	 * stop bit. Owners use this to distinguish their own close request from a concurrent parent cancellation.
+	 */
+	boolean isUpstreamCancellationRequested() {
+		return parent != null && parent.isCancellationRequested(false)
+				|| evaluationThread.isInterrupted() || Thread.currentThread().isInterrupted();
+	}
+
 	long evaluationId() {
 		return evaluationId;
 	}
@@ -181,6 +190,13 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 		}
 	}
 
+	static void checkCurrent() {
+		NativeCancellationToken current = CURRENT.get();
+		if (current != null) {
+			current.check();
+		}
+	}
+
 	@Override
 	public boolean getAsBoolean() {
 		return isCancellationRequested();
@@ -189,6 +205,18 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 	@Override
 	public KernelQueryCancelledException pollCancellation() {
 		return isCancellationRequested() ? new KernelQueryCancelledException(this, cancellationOrigin) : null;
+	}
+
+	/**
+	 * Returns this token's view of an already-published ancestor cancellation without attributing a worker's unrelated
+	 * interrupt to the ancestor. Owners use this after a local stop has won the token's first-origin race but an
+	 * enclosing query is cancelled before the owner's cleanup/adoption boundary.
+	 */
+	KernelQueryCancelledException pollUpstreamCancellation() {
+		NativeCancellationToken upstream = parent;
+		return upstream != null && upstream.isCancellationRequested(false)
+				? new KernelQueryCancelledException(this, upstream.cancellationOrigin)
+				: null;
 	}
 
 	/** Data-proportional loops poll at entry and at most every 1024 operations. */

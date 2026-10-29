@@ -74,6 +74,23 @@ class LmdbNativeKernelLoweringTest {
 		return new PatternPlan(s, Term.constant(PRED), o, Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
 	}
 
+	private static PatternPlan patternWithProfile(Term s, Term p, Term o, double estimate,
+			NativeLmdbQuerySource.IndexAccessProfile profile) {
+		return new PatternPlan(s, p, o, Term.unbound(), ContextConstraint.UNRESTRICTED, false, null, "", null,
+				estimate, profile);
+	}
+
+	private static NativeLmdbQuerySource.IndexAccessProfile prefixAccessProfile(long entries) {
+		int[][] prefixes = new int[StatementOrder.values().length + 1][16];
+		// The null-order profile can select POSC for predicate-only/predicate-object prefixes and SPOC when
+		// a subject binding is also available. All reported prefix components are actual index-key fields.
+		prefixes[0][2] = 2;
+		prefixes[0][3] = 3;
+		prefixes[0][6] = 6;
+		prefixes[0][7] = 7;
+		return new NativeLmdbQuerySource.IndexAccessProfile(entries, 1, prefixes, false, -1L, -1L, -1L);
+	}
+
 	private static RowState freshRow() {
 		return freshRow(new StubSource());
 	}
@@ -1400,9 +1417,10 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	/**
-	 * M8 kernel hash join: a two-pattern join whose estimates pass the interpreted hash join's own cost gate (probe
-	 * side large, build side small, probe rows over the minimum) must lower to a HashBuild preamble plus an in-loop
-	 * HashProbe instead of the nested probe chain.
+	 * M8 kernel hash join: a two-pattern join whose static and measured fan-out estimates favor hashing (probe side
+	 * large, build side small, probe rows over the minimum) must lower to a HashBuild preamble plus an in-loop
+	 * HashProbe instead of the nested probe chain. The measured fan-out prices the expected chain only; it does not
+	 * narrow the conservative work interval.
 	 */
 	@Test
 	void twoPatternJoinWithHashFavoredCostsLowersToHashBuildProbe() {
@@ -1414,7 +1432,12 @@ class LmdbNativeKernelLoweringTest {
 		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
 		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
 		try {
-			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+			RowState row = freshRow(new FanOutStubSource(PRED + 2, true, 10D));
+			LmdbNativeWork.Chain chain = LmdbNativeWork.chain(plan.children, plan.children.length, row,
+					row.boundMask());
+			assertTrue(chain.estimatedPriceable());
+			assertFalse(chain.work().known(), "the sampled fan-out is not a hard work bound");
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, row, null);
 			assertNotNull(lowered, "the two-pattern join must still lower");
 			String key = lowered.kernel.shapeKey();
 			assertTrue(key.contains("hb0("), "expected a HashBuild preamble in the shape key: " + key);
@@ -1477,11 +1500,12 @@ class LmdbNativeKernelLoweringTest {
 
 	/**
 	 * True-cost hash admission (HC:4 regression): when the derived-order probe chain is priceable from measured
-	 * statistics AND dominates the hash plan, the hash sink must decline and keep the probe chain. The shape mirrors
-	 * HC:4: a selective constant-object pattern (the "type" scan, 40.3K) joined with a wide subject-keyed pattern (the
-	 * "weight" pattern, 222.8K) whose measured per-subject fan-out is small — so the chain probes cheaply per row while
-	 * the hash plan must enumerate the wide predicate's whole key domain and drain the build side once per parallel
-	 * work unit. The fan-out is chosen so the chain dominates even at a single build copy, keeping the assertion
+	 * statistics gives the probe chain a lower expected cost than the hash plan, the hash sink must decline and keep
+	 * the probe chain. The expected comparison must not be promoted to a hard work interval. The shape mirrors HC:4: a
+	 * selective constant-object pattern (the "type" scan, 40.3K) joined with a wide subject-keyed pattern (the `weight`
+	 * pattern, 222.8K) whose measured per-subject fan-out is small — so the chain probes cheaply per row while the hash
+	 * plan must enumerate the wide predicate's whole key domain and drain the build side once per parallel work unit.
+	 * The fan-out is chosen so the chain's estimate is lower even at a single build copy, keeping the route assertion
 	 * machine-independent.
 	 */
 	@Test
@@ -1505,10 +1529,69 @@ class LmdbNativeKernelLoweringTest {
 		}
 	}
 
+	@Test
+	void measuredFanOutStillPricesASelectiveProbeWithBroadPhysicalBounds() {
+		NativeLmdbQuerySource.IndexAccessProfile profile = prefixAccessProfile(1_000_000L);
+		PatternPlan type = patternWithProfile(Term.slot(0), Term.constant(PRED), Term.constant(PRED + 8), 40_300D,
+				profile);
+		PatternPlan weight = patternWithProfile(Term.slot(0), Term.constant(PRED + 2), Term.slot(1), 222_800D,
+				profile);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { type, weight }, new MaskedFilter[0]);
+		RowState row = freshRow(new FanOutStubSource(PRED + 2, true, 2.0D));
+
+		LmdbNativeWork typeQuote = type.estimateWork(row, row.boundMask());
+		LmdbNativeWork weightQuote = weight.estimateWork(row, type.producedMask());
+		assertTrue(typeQuote.known(), "the uncorrelated access has a finite physical ceiling");
+		assertTrue(weightQuote.known(), "the indexed bound-prefix probe has a finite physical ceiling");
+		assertTrue(weightQuote.high() > LmdbNativeWork.SEEK + 2D,
+				"the physical ceiling must retain the full-domain source bound");
+		assertEquals(LmdbNativeWork.SEEK + 40_300D, LmdbNativeWork.expectedWork(type, row, row.boundMask()), 0D,
+				"the static estimate is an expected cost, not the midpoint of the whole-index ceiling");
+		assertEquals(LmdbNativeWork.SEEK + 2D,
+				LmdbNativeWork.expectedWork(weight, row, type.producedMask()), 0D,
+				"measured low fan-out prices the fully index-prefixed probe independently of its hard ceiling");
+		assertFalse(LmdbNativeWork.chain(plan.children, plan.children.length, row, row.boundMask()).work().known(),
+				"sampled cardinalities must not narrow the hard interval");
+
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, row, null);
+			assertNotNull(lowered, "the two-pattern join must still lower");
+			String key = lowered.kernel.shapeKey();
+			assertFalse(key.contains("hb0("), "a low-fan-out chain must decline an over-priced hash plan: " + key);
+			assertFalse(key.contains("hp0("), "a low-fan-out chain must retain the probe route: " + key);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	@Test
+	void hashAdmissionDeclinesWhenTheBoundPrefixHasLowMeasuredFanOut() {
+		NativeLmdbQuerySource.IndexAccessProfile profile = prefixAccessProfile(1_000_000L);
+		PatternPlan type = patternWithProfile(Term.slot(0), Term.constant(PRED), Term.constant(PRED + 8), 40_300D,
+				profile);
+		PatternPlan weight = patternWithProfile(Term.slot(0), Term.constant(PRED + 2), Term.slot(1), 222_800D,
+				profile);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { type, weight }, new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan,
+					freshRow(new FanOutStubSource(PRED + 2, true, 2.0D)), null);
+			assertNotNull(lowered, "the two-pattern join must still lower");
+			String key = lowered.kernel.shapeKey();
+			assertFalse(key.contains("hb0("), "low measured fan-out must retain the cheaper probe chain: " + key);
+			assertFalse(key.contains("hp0("), "low measured fan-out must retain the probe route: " + key);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
 	/**
 	 * Companion pin for {@link #hashJoinDeclinesWhenDerivedChainDominates}: a genuinely hash-favored shape (tiny build
-	 * side, wide probe, measured fan-out so large that the chain interval sits far above the hash interval even after
-	 * the parallel build-replication charge) must still lower to the hash build/probe pair under the true-cost gate.
+	 * side, wide probe, measured fan-out so large that the chain estimate sits far above the hash estimate even after
+	 * the parallel build-replication charge) must still lower to the hash build/probe pair.
 	 */
 	@Test
 	void hashJoinStillEngagesWhenChainIsDominated() {

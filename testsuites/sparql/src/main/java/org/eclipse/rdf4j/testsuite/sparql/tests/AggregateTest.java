@@ -356,10 +356,21 @@ public class AggregateTest extends AbstractComplianceTest {
 	private void testSES2361UndefCountWildcard(RepositoryConnection conn) {
 		String query = "SELECT (COUNT(*) as ?c) WHERE { VALUES ?v { 1 2 undef 3 4 }}";
 		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			assertThat((Iterable<?>) result).isNotNull();
-			assertThat(result.hasNext()).isTrue();
-			assertThat(result.next().getValue("c").stringValue()).isEqualTo("4");
-			assertThat((Iterable<?>) result).isEmpty();
+			assertThat(QueryResults.asList(result)).singleElement()
+					.satisfies(row -> assertThat(getIntValue(row.getValue("c"), -1)).isEqualTo(5));
+		}
+
+		String duplicateMappingsQuery = "SELECT (COUNT(*) as ?all) (COUNT(?v) as ?bound) "
+				+ "(COUNT(DISTINCT *) as ?distinctMappings) (COUNT(DISTINCT ?v) as ?distinctValues) "
+				+ "WHERE { VALUES ?v { 1 1 2 undef undef 3 4 }}";
+		try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, duplicateMappingsQuery)
+				.evaluate()) {
+			assertThat(QueryResults.asList(result)).singleElement().satisfies(row -> {
+				assertThat(getIntValue(row.getValue("all"), -1)).isEqualTo(7);
+				assertThat(getIntValue(row.getValue("bound"), -1)).isEqualTo(5);
+				assertThat(getIntValue(row.getValue("distinctMappings"), -1)).isEqualTo(5);
+				assertThat(getIntValue(row.getValue("distinctValues"), -1)).isEqualTo(4);
+			});
 		}
 	}
 

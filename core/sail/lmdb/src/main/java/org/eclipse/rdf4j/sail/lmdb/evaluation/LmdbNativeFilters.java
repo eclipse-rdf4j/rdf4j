@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -462,6 +463,7 @@ final class NativeConstantFalseWhenUnboundFilter implements NativeBooleanFilter 
 final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 	private final NativeBooleanFilter delegate;
 	private boolean closed;
+	private Consumer<Throwable> closeFailureObserver;
 
 	CloseOnceNativeBooleanFilter(NativeBooleanFilter delegate) {
 		this.delegate = delegate;
@@ -525,7 +527,21 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 			return;
 		}
 		closed = true;
-		delegate.close();
+		try {
+			delegate.close();
+		} catch (RuntimeException | Error problem) {
+			if (closeFailureObserver != null) {
+				closeFailureObserver.accept(problem);
+			}
+			throw problem;
+		}
+	}
+
+	void observeCloseFailures(Consumer<Throwable> observer) {
+		closeFailureObserver = observer;
+		if (delegate instanceof CloseOnceNativeBooleanFilter nested) {
+			nested.observeCloseFailures(observer);
+		}
 	}
 }
 
