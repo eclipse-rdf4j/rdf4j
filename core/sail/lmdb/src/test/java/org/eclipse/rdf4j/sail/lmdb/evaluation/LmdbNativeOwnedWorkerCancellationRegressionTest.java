@@ -650,7 +650,7 @@ class LmdbNativeOwnedWorkerCancellationRegressionTest {
 		Throwable closeFailure;
 		try {
 			cursor.recordCleanupFailure(cleanup);
-			assertThat(cursor.cleanupFailure.get()).isSameAs(cleanup);
+			assertThat(cursor.cleanupFailures).containsExactly(cleanup);
 			assertThat(LmdbNativeParallelPipelines.WORKER_FAILURES.get()).isEqualTo(failuresBefore + 1);
 		} finally {
 			cursor.taskFinished();
@@ -671,10 +671,10 @@ class LmdbNativeOwnedWorkerCancellationRegressionTest {
 			cursor.taskFinished();
 			closeFailure = catchThrowable(cursor::close);
 		}
-		assertThat(closeFailure).isSameAs(cursor.failure.get())
-				.isInstanceOf(QueryEvaluationException.class)
+		assertThat(closeFailure).isSameAs(cleanup);
+		assertThat(cursor.failure.get()).isInstanceOf(QueryEvaluationException.class)
 				.hasCause(KernelQueryCancelledException.INSTANCE);
-		assertThat(closeFailure.getSuppressed()).contains(cleanup);
+		assertThat(closeFailure.getSuppressed()).containsExactly(cursor.failure.get());
 	}
 
 	private static void invokeFactorizedTailPoll(RowState row, CountDownLatch workerAtPoll,

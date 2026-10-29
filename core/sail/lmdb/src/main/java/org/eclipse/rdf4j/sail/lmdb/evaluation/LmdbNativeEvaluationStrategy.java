@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
@@ -78,6 +79,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private volatile LmdbNativeEvaluationStrategy genericOnlyView;
 	private volatile NativeValuePositionAnalysis valuePositions;
 	private ThreadLocal<NativeValuePositionAnalysis> scopedValuePositions = new ThreadLocal<>();
+	/** The enclosing generic join owns this temporary input hint only while its children are prepared. */
+	private final ThreadLocal<NativeUniformValuesJoin.Hint> scopedUniformValues = new ThreadLocal<>();
 
 	NativeValuePositionAnalysis valuePositionSnapshot() {
 		NativeValuePositionAnalysis scoped = scopedValuePositions.get();
@@ -395,7 +398,45 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep precompileTupleExpr(TupleExpr expr, QueryEvaluationContext context) {
 		NativeValuePositionAnalysis positions = selectValuePositions(expr);
-		return withValuePositions(positions, () -> precompileWithPreparedValues(expr, context));
+		return withValuePositions(positions, () -> {
+			NativeUniformValuesJoin.Hint hint = scopedUniformValues.get();
+			if (hint == null || hint.original() != expr) {
+				return precompileWithPreparedValues(expr, context);
+			}
+			// The hint is valid only for this exact child preparation. Suppress it while compiling either
+			// alternative, so a nested or standalone precompile never inherits its parent's sibling facts.
+			scopedUniformValues.remove();
+			try {
+				QueryEvaluationStep ordinary = precompileWithPreparedValues(expr, context);
+				QueryEvaluationStep restricted = withValuePositions(hint.positions(),
+						() -> LmdbNativeAggregateCompiler.tryCompile(hint.restricted(), context, this, nativeSource));
+				return restricted == null ? ordinary : NativeUniformValuesJoin.guard(hint, ordinary, restricted);
+			} finally {
+				scopedUniformValues.set(hint);
+			}
+		});
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(Join join, QueryEvaluationContext context) {
+		NativeUniformValuesJoin.Hint hint = nativeEnabled && nativeSource != null && !forceRootGeneric
+				&& !Boolean.TRUE.equals(KERNEL_SUBPLAN.get())
+						? NativeUniformValuesJoin.prepare(join, context, this, nativeSource)
+						: null;
+		if (hint == null) {
+			return super.prepare(join, context);
+		}
+		NativeUniformValuesJoin.Hint previous = scopedUniformValues.get();
+		scopedUniformValues.set(hint);
+		try {
+			return super.prepare(join, context);
+		} finally {
+			if (previous == null) {
+				scopedUniformValues.remove();
+			} else {
+				scopedUniformValues.set(previous);
+			}
+		}
 	}
 
 	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context) {

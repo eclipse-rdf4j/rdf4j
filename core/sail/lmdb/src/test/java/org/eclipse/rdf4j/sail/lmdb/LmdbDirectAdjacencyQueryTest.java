@@ -1760,17 +1760,24 @@ class LmdbDirectAdjacencyQueryTest {
 		awaitExactViewServesGraphCount();
 
 		try (CloseableDataset dataset = dataset()) {
-			long hitsBefore = direct.snapshotMetrics().lookupHits;
-			assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
-			assertThat(direct.snapshotMetrics().lookupHits)
-					.as("a named-graph count is served by the exact view instead of an LMDB index scan")
-					.isGreaterThan(hitsBefore);
+			try (LmdbStartupReadCounter reads = new LmdbStartupReadCounter()) {
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
+				Map<String, Long> work = reads.operations();
+				assertThat(work.getOrDefault("mdb_get", 0L))
+						.as("the context count uses the exact LMDB context catalog")
+						.isPositive();
+				assertThat(work.getOrDefault("mdb_cursor_get", 0L))
+						.as("the context catalog count does not scan statement records")
+						.isZero();
+				assertThat(direct.snapshotMetrics().lookupHits)
+						.as("context-only counts are served by the exact context catalog")
+						.isEqualTo(hitsBefore);
+			}
 
 			long hitsBeforeDefaultGraph = direct.snapshotMetrics().lookupHits;
 			assertThat(dataset.source.count(-1, -1, -1, 0)).isEqualTo(4);
-			assertThat(direct.snapshotMetrics().lookupHits)
-					.as("the default-graph count is served by the exact view")
-					.isGreaterThan(hitsBeforeDefaultGraph);
+			assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBeforeDefaultGraph);
 
 			long hitsBeforePredicate = direct.snapshotMetrics().lookupHits;
 			assertThat(dataset.source.count(-1, p1, -1, g1)).isEqualTo(1);
@@ -1982,19 +1989,45 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		openPreferStore();
+		String queryText = "SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }";
 		String plan;
 		try (RepositoryConnection connection = repo.getConnection()) {
-			plan = connection.prepareTupleQuery("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }")
+			plan = connection.prepareTupleQuery(queryText)
 					.explain(Explanation.Level.Optimized)
 					.toString();
 		}
 
 		LmdbPrefixRunPlan.resetMetrics();
-		assertThat(queryRows("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }", "count"))
-				.containsExactly("3");
-		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).as("whole-plane physical candidate inventory:%n%s", plan)
-				.isGreaterThan(0);
-		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		Explanation telemetry;
+		List<String> actual = new ArrayList<>();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(queryText);
+			telemetry = query.explain(Explanation.Level.Telemetry);
+			try (TupleQueryResult result = query.evaluate()) {
+				while (result.hasNext()) {
+					actual.add(result.next().getValue("count").stringValue());
+				}
+			}
+		}
+		assertThat(actual).containsExactly("3");
+		String proposalCosts = findMetric(telemetry.toGenericPlanNode(), "nativeStrategyProposalCosts");
+		assertThat(proposalCosts)
+				.as("indexed count has a finite quote from its exact metadata result:%n%s", telemetry)
+				.contains("indexedCount=")
+				.doesNotContain("indexedCount=Infinity");
+		assertThat(findMetric(telemetry.toGenericPlanNode(), "nativeExecutionPath"))
+				.as("exact predicate-plane COUNT(*) should use the indexed count route:%n%s", telemetry)
+				.isEqualTo("indexedCount");
+		assertThat(direct.snapshotMetrics().lookupHits)
+				.as("the scalar count is answered from exact predicate-plane metadata; optimized plan:%n%s", plan)
+				.isGreaterThan(hitsBefore);
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
+				.as("exact predicate-plane cardinality does not open a payload cursor")
+				.isZero();
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get())
+				.as("exact predicate-plane cardinality does not count scanned run rows")
+				.isZero();
 	}
 
 	@Test
@@ -2744,15 +2777,30 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 
 		LmdbPrefixRunPlan.resetMetrics();
-		assertThat(queryRows(fixedQuery, "count"))
-				.containsExactly("3");
-		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
-		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
+		long hitsBeforeScalar = direct.snapshotMetrics().lookupHits;
+		assertThat(queryRows(fixedQuery, "count")).containsExactly("3");
+		assertThat(direct.snapshotMetrics().lookupHits)
+				.as("AUTO serves the scalar count from exact plane metadata")
+				.isGreaterThan(hitsBeforeScalar);
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
+				.as("the exact scalar total does not open a payload cursor")
+				.isZero();
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isZero();
+
 		LmdbPrefixRunPlan.resetMetrics();
 		assertThat(queryRows(predicateQuery, "p", "count"))
 				.containsExactly(P1.stringValue() + "=3", P2.stringValue() + "=1", P3.stringValue() + "=1");
 		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
-		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(5);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get())
+				.as("the grouped query counts predicate-prefix rows")
+				.isEqualTo(5);
+
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRowsVia(fixedQuery, "adjacencyAggregate", "count")).containsExactly("3");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
+				.as("the forced adjacency capability remains available for the same exact result")
+				.isGreaterThan(0);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
 	}
 
