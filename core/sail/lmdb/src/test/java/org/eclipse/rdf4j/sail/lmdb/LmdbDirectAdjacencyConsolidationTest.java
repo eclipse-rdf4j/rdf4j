@@ -16,16 +16,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
@@ -111,6 +105,17 @@ class LmdbDirectAdjacencyConsolidationTest {
 		store.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
 	}
 
+	/**
+	 * Pauses the applier, asks it to fold every generation and lets the fold worker finish: the candidate waits in the
+	 * inbox until the applier is stepped or resumed, so a commit made now lands beside it.
+	 */
+	private void holdFoldCandidate() {
+		store.pauseApplierForTest(true);
+		store.requestFoldForTest();
+		ApplierStepping.stepUntil(store, store::compactionInFlightForTest, "the fold was submitted to a worker");
+		assertThat(store.awaitWorkersIdleForTest(30, TimeUnit.SECONDS)).as("the fold worker finished").isTrue();
+	}
+
 	private List<long[]> probe(LmdbAdjacencyReadView view, long s, long p) throws IOException {
 		return probe(view, s, p, true);
 	}
@@ -147,6 +152,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 			commitAdd(S1, P1, uri(1000 + i));
 			store.pauseApplierForTest(false); // apply each commit deterministically: consolidation is the subject
 		}
+		store.awaitCompactionForTest();
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.overlays()).isNotNull();
 		assertThat(state.overlays().generationCount())
@@ -173,36 +179,16 @@ class LmdbDirectAdjacencyConsolidationTest {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
 
-		CountDownLatch candidateReady = new CountDownLatch(1);
-		CountDownLatch allowPublication = new CountDownLatch(1);
-		store.beforeDeltaCompactionPublicationForTest = () -> {
-			store.beforeDeltaCompactionPublicationForTest = null;
-			candidateReady.countDown();
-			try {
-				if (!allowPublication.await(10, TimeUnit.SECONDS)) {
-					throw new AssertionError("test did not release delta-compaction publication");
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
-			}
-		};
 		try (LmdbAdjacencyReadView pinned = store.acquire(tripleStore.getDataRevision())) {
-			try {
-				// Synchronous publication must remain exact even when the background compactor cannot keep up.
-				// Generation count is a compaction trigger, not a commit-path backpressure limit.
-				for (int i = 1; i <= 1_000; i++) {
-					commitAdd(S1, P1, uri(100_000 + i));
-					assertThat(store.publishedStateForTest().appliedRevision())
-							.isEqualTo(tripleStore.getDataRevision());
-				}
-				assertThat(candidateReady.await(10, TimeUnit.SECONDS)).isTrue();
-				try (LmdbAdjacencyReadView latest = store.acquire(tripleStore.getDataRevision())) {
-					assertThat(latest.isExact()).isTrue();
-					assertThat(probe(latest, S1, P1)).hasSize(1_001);
-				}
-			} finally {
-				allowPublication.countDown();
+			// Synchronous publication must remain exact even when the background compactor cannot keep up.
+			// Generation count is a compaction trigger, not a commit-path backpressure limit.
+			for (int i = 1; i <= 1_000; i++) {
+				commitAdd(S1, P1, uri(100_000 + i));
+				assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(tripleStore.getDataRevision());
+			}
+			try (LmdbAdjacencyReadView latest = store.acquire(tripleStore.getDataRevision())) {
+				assertThat(latest.isExact()).isTrue();
+				assertThat(probe(latest, S1, P1)).hasSize(1_001);
 			}
 			store.awaitCompactionForTest();
 
@@ -218,6 +204,41 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
+	void aSmallBaseFoldsOnceTheOverlaysReachTheFoldFloor() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
+
+		// Single-statement commits against a one-statement base: the overlays outweigh the base long before their
+		// retained bytes reach the workspace region, so the shape of the index, not memory pressure, must fold them.
+		int commits = 0;
+		long maxOverlayRetainedBytes = 0;
+		while (commits < 30_000 && store.snapshotMetrics().baseFolds == 0) {
+			commitAdd(uri(50_000 + commits), P1, uri(80_000 + commits));
+			commits++;
+			LmdbAdjacencyOverlaySet overlays = store.publishedStateForTest().overlays();
+			if (overlays != null) {
+				maxOverlayRetainedBytes = Math.max(maxOverlayRetainedBytes, overlays.retainedBytes());
+			}
+		}
+		store.awaitCompactionForTest();
+
+		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
+		assertThat(store.snapshotMetrics().baseFolds).as("folds after %d commits", commits).isPositive();
+		assertThat(maxOverlayRetainedBytes).as("the fold followed the shape of the index, not the workspace region")
+				.isLessThan(store.workspaceRegionBytesForTest());
+		assertThat(state.base()).isNotSameAs(originalBase);
+		assertThat(state.overlays().generationCount()).isLessThanOrEqualTo(store.options().maxDeltaGenerations());
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1)).hasSize(1);
+			assertThat(probe(view, uri(50_000), P1)).hasSize(1);
+			assertThat(probe(view, uri(50_000 + commits / 2), P1)).hasSize(1);
+			assertThat(probe(view, uri(50_000 + commits - 1), P1)).hasSize(1);
+		}
+	}
+
+	@Test
 	void generationCountAloneCompactsDeltasWithoutFoldingThePagedBase() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
@@ -229,6 +250,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 			commitAdd(S1, P1, uri(10_000 + i));
 			store.pauseApplierForTest(false);
 		}
+		store.awaitCompactionForTest();
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.base()).isSameAs(originalBase);
@@ -272,16 +294,61 @@ class LmdbDirectAdjacencyConsolidationTest {
 			store.pauseApplierForTest(false);
 		}
 		store.awaitCompactionForTest();
+		// inspect under a paused applier: a merge landing meanwhile would release the generations being read
+		store.pauseApplierForTest(true);
+		try {
+			LmdbAdjacencyOverlaySet overlays = store.publishedStateForTest().overlays();
+			assertThat(overlays).isNotNull();
+			for (int i = 0; i < overlays.generationCount(); i++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+				long root = generation.find(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1);
+				assertThat(root).isPositive();
+				if (!LmdbAdjacencyRunCodec.persistentComposite(generation.catalog(), root)) {
+					// a prepared generation re-encodes a small row as an ordinary run; only merges write persistent
+					// nodes over their sources, and whether the newest commits were merged yet depends on timing
+					continue;
+				}
+				assertThat(LmdbAdjacencyRunCodec.persistentNode(generation.catalog(), root).level())
+						.as("generation %d at revision %d", i, generation.revision())
+						.isZero();
+			}
+		} finally {
+			store.pauseApplierForTest(false);
+		}
+	}
 
-		LmdbAdjacencyOverlaySet overlays = store.publishedStateForTest().overlays();
-		assertThat(overlays).isNotNull();
-		for (int i = 0; i < overlays.generationCount(); i++) {
-			LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
-			long root = generation.find(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1);
-			assertThat(root).isPositive();
-			assertThat(LmdbAdjacencyRunCodec.persistentNode(generation.catalog(), root).level())
-					.as("generation %d at revision %d", i, generation.revision())
-					.isZero();
+	@Test
+	void aMergeArrivesWithItsLatestRowIndexRemappedSoTheApplierOnlyAppendsLaterGenerations() throws Exception {
+		commitAdd(S1, P1, O_BASE);
+		assertThat(store.buildNowForTest()).isTrue();
+		store.coalescePreparesForTest(false);
+		store.pauseApplierForTest(true);
+		try {
+			for (int i = 1; i <= 4; i++) {
+				commitAdd(S1, P1, uri(40_000 + i));
+			}
+			assertThat(store.awaitHeadSealedForTest(30, TimeUnit.SECONDS)).isTrue();
+			ApplierStepping.stepUntil(store, () -> {
+				LmdbAdjacencyOverlaySet overlays = store.applierStateForTest().overlays();
+				return overlays != null && overlays.generationCount() == 4;
+			}, "four single-row generations");
+			LmdbAdjacencyOverlaySet before = store.applierStateForTest().overlays();
+			assertThat(before.generationCount()).isEqualTo(4);
+			// the merge worker hands back the overlay set with the range replaced and the latest-row index already
+			// remapped; the applier thread then only appends generations that landed while the merge ran
+			try (LmdbDirectAdjacencyStore.PreparedApply merged = store.mergeForTest(0, 3)) {
+				assertThat(merged.replacedOverlays).as("the worker remaps the latest-row index").isNotNull();
+				assertThat(merged.premiseGenerationCount).isEqualTo(4);
+				assertThat(merged.replacedOverlays.generationCount()).isEqualTo(1);
+				assertThat(merged.replacedOverlays.generation(0)).isSameAs(merged.generation);
+				LmdbAdjacencyOverlaySet.LatestRowLookup lookup = new LmdbAdjacencyOverlaySet.LatestRowLookup();
+				assertThat(merged.replacedOverlays.findLatest(S1, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, P1,
+						lookup)).isTrue();
+				assertThat(lookup.generation()).isSameAs(merged.generation);
+				assertThat(lookup.generationIndex()).isZero();
+			}
+		} finally {
+			store.pauseApplierForTest(false);
 		}
 	}
 
@@ -362,6 +429,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 			commitAdd(S1, uri(500 + i), uri(1000 + i));
 			store.pauseApplierForTest(false);
 		}
+		store.awaitCompactionForTest();
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.base()).as("the fold-down must not have published a replacement").isSameAs(baseBeforeFold);
@@ -437,35 +505,14 @@ class LmdbDirectAdjacencyConsolidationTest {
 			store.pauseApplierForTest(false);
 		}
 
-		CountDownLatch candidateReady = new CountDownLatch(1);
-		CountDownLatch allowPublication = new CountDownLatch(1);
-		store.beforeDeltaCompactionPublicationForTest = () -> {
-			store.beforeDeltaCompactionPublicationForTest = null;
-			candidateReady.countDown();
-			try {
-				if (!allowPublication.await(10, TimeUnit.SECONDS)) {
-					throw new AssertionError("test did not release delta-compaction publication");
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
-			}
-		};
-
+		// the fourth generation completes a fan-out; the merge candidate waits in the paused applier's inbox
+		store.pauseApplierForTest(true);
 		commitAdd(S1, P1, uri(2_004));
-		assertThat(candidateReady.await(10, TimeUnit.SECONDS)).isTrue();
-		CompletableFuture<Void> concurrentCommit = CompletableFuture.runAsync(() -> {
-			try {
-				commitAdd(S1, P1, uri(2_005));
-			} catch (IOException e) {
-				throw new UncheckedIOException(e);
-			}
-		});
-		try {
-			concurrentCommit.get(5, TimeUnit.SECONDS);
-		} finally {
-			allowPublication.countDown();
-		}
+		ApplierStepping.stepUntil(store, store::compactionInFlightForTest, "the policy submitted a range merge");
+		assertThat(store.awaitWorkersIdleForTest(30, TimeUnit.SECONDS)).isTrue();
+		// a commit beside the pending candidate neither waits for it nor is lost
+		commitAdd(S1, P1, uri(2_005));
+		store.pauseApplierForTest(false);
 		store.awaitCompactionForTest();
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
@@ -495,6 +542,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 		store.pauseApplierForTest(false);
 		commitRemove(S1, P1, O_KEEP, -1, true);
 		store.pauseApplierForTest(false);
+		store.awaitCompactionForTest();
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.base()).isSameAs(originalBase);
@@ -549,32 +597,12 @@ class LmdbDirectAdjacencyConsolidationTest {
 		store.pauseApplierForTest(false);
 		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
 
-		CountDownLatch candidateReady = new CountDownLatch(1);
-		CountDownLatch allowPublication = new CountDownLatch(1);
-		store.beforePagedCsfPublicationForTest = () -> {
-			candidateReady.countDown();
-			try {
-				if (!allowPublication.await(10, TimeUnit.SECONDS)) {
-					throw new AssertionError("test did not release candidate publication");
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
-			}
-		};
-
-		CompletableFuture<Void> consolidation = CompletableFuture.runAsync(store::consolidateNowForTest);
-		long chargedWithCandidateAndCommit;
-		try {
-			assertThat(candidateReady.await(10, TimeUnit.SECONDS)).isTrue();
-			commitAdd(S1, P1, uri(1_003));
-			store.pauseApplierForTest(false);
-			chargedWithCandidateAndCommit = store.memoryAccount().totalChargedBytes();
-		} finally {
-			allowPublication.countDown();
-		}
-		consolidation.get(10, TimeUnit.SECONDS);
-		store.beforePagedCsfPublicationForTest = null;
+		// the fold candidate waits in the paused applier's inbox while a commit lands beside it
+		holdFoldCandidate();
+		commitAdd(S1, P1, uri(1_003));
+		long chargedWithCandidateAndCommit = store.memoryAccount().totalChargedBytes();
+		store.pauseApplierForTest(false);
+		store.awaitCompactionForTest();
 
 		LmdbAdjacencyPublishedState state = store.publishedStateForTest();
 		assertThat(state.base()).isNotSameAs(originalBase);
@@ -601,33 +629,13 @@ class LmdbDirectAdjacencyConsolidationTest {
 		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
 		long pinnedRevision = tripleStore.getDataRevision();
 
-		CountDownLatch candidateReady = new CountDownLatch(1);
-		CountDownLatch allowPublication = new CountDownLatch(1);
-		store.beforePagedCsfPublicationForTest = () -> {
-			candidateReady.countDown();
-			try {
-				if (!allowPublication.await(10, TimeUnit.SECONDS)) {
-					throw new AssertionError("test did not release candidate publication");
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
-			}
-		};
-
 		try (LmdbAdjacencyReadView pinned = store.acquire(pinnedRevision)) {
 			assertThat(pinned.isExact()).isTrue();
 			List<Long> pinnedObjects = objectIds(probe(pinned, S1, P1));
-			CompletableFuture<Void> consolidation = CompletableFuture.runAsync(store::consolidateNowForTest);
-			try {
-				assertThat(candidateReady.await(10, TimeUnit.SECONDS)).isTrue();
-				commitAdd(S1, P1, uri(20_003));
-				store.pauseApplierForTest(false);
-			} finally {
-				allowPublication.countDown();
-			}
-			consolidation.get(10, TimeUnit.SECONDS);
-			store.beforePagedCsfPublicationForTest = null;
+			holdFoldCandidate();
+			commitAdd(S1, P1, uri(20_003));
+			store.pauseApplierForTest(false);
+			store.awaitCompactionForTest();
 
 			LmdbAdjacencyPublishedState folded = store.publishedStateForTest();
 			assertThat(folded.base()).isNotSameAs(originalBase);
@@ -668,36 +676,17 @@ class LmdbDirectAdjacencyConsolidationTest {
 		store.pauseApplierForTest(false);
 		commitAdd(S1, P1, uri(40_002));
 		store.pauseApplierForTest(false);
+		// the third generation is prepared against this base; folding only the first two leaves it as a suffix whose
+		// persistent runs point into the previous base's source registry
+		commitAdd(S1, P1, uri(40_003));
+		store.pauseApplierForTest(false);
 		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
 		long pinnedRevision = tripleStore.getDataRevision();
-
-		CountDownLatch candidateReady = new CountDownLatch(1);
-		CountDownLatch allowPublication = new CountDownLatch(1);
-		store.beforePagedCsfPublicationForTest = () -> {
-			candidateReady.countDown();
-			try {
-				if (!allowPublication.await(10, TimeUnit.SECONDS)) {
-					throw new AssertionError("test did not release candidate publication");
-				}
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
-			}
-		};
 
 		try (LmdbAdjacencyReadView pinned = store.acquire(pinnedRevision)) {
 			assertThat(pinned.isExact()).isTrue();
 			List<Long> pinnedObjects = objectIds(probe(pinned, S1, P1));
-			CompletableFuture<Void> consolidation = CompletableFuture.runAsync(store::consolidateNowForTest);
-			try {
-				assertThat(candidateReady.await(10, TimeUnit.SECONDS)).isTrue();
-				commitAdd(S1, P1, uri(40_003));
-				store.pauseApplierForTest(false);
-			} finally {
-				allowPublication.countDown();
-			}
-			consolidation.get(10, TimeUnit.SECONDS);
-			store.beforePagedCsfPublicationForTest = null;
+			store.consolidatePrefixNowForTest(2);
 
 			LmdbAdjacencyPublishedState folded = store.publishedStateForTest();
 			assertThat(folded.base()).isNotSameAs(originalBase);
@@ -709,6 +698,9 @@ class LmdbDirectAdjacencyConsolidationTest {
 			assertThat(LmdbAdjacencyRunCodec.edgeCount(suffix.catalog(), suffixRoot))
 					.isGreaterThan(supernodeEdges);
 			assertThat(LmdbAdjacencyRunCodec.persistentComposite(suffix.catalog(), suffixRoot)).isTrue();
+			assertThat(suffix.catalog().sourceRegistry())
+					.as("the suffix still points into the previous base's registry")
+					.isNotSameAs(folded.base().arenaCatalog().sourceRegistry());
 
 			// Keep the foreign suffix row alive while distinct rows force the delta-range merge to retain it.
 			for (int i = 4; i <= 6; i++) {
@@ -719,7 +711,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 
 			LmdbAdjacencyPublishedState merged = store.publishedStateForTest();
 			assertThat(merged.overlays()).isNotNull();
-			assertThat(merged.overlays().generationCount()).isEqualTo(1);
+			assertThat(merged.overlays().generationCount()).as(store.publicationDiagnostics()).isEqualTo(1);
 			assertThat(pinned.isExact()).isTrue();
 			assertThat(objectIds(probe(pinned, S1, P1))).containsExactlyElementsOf(pinnedObjects);
 			try (LmdbAdjacencyReadView latest = store.acquire(tripleStore.getDataRevision())) {
@@ -745,7 +737,9 @@ class LmdbDirectAdjacencyConsolidationTest {
 		try (LmdbAdjacencyMemoryAccount.Charge pressure = account.tryCharge(MemoryKind.BUILD_COUNTERS, uncharged)) {
 			assertThat(pressure).isNotNull();
 			store.consolidateNowForTest();
-			assertThat(store.publishedStateForTest()).isSameAs(before);
+			LmdbAdjacencyPublishedState refused = store.publishedStateForTest();
+			assertThat(refused.base()).as("a refused fold publishes nothing").isSameAs(before.base());
+			assertThat(refused.overlays()).isSameAs(before.overlays());
 			assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.ACTIVE);
 		}
 		assertThat(account.totalChargedBytes()).isEqualTo(baselineCharged);
@@ -776,6 +770,10 @@ class LmdbDirectAdjacencyConsolidationTest {
 				commitAdd(S1, P1, uri(1000 + i));
 				store.pauseApplierForTest(false);
 			}
+			// the merge of those single-commit generations runs on a worker; the retained-snapshot charge below
+			// exists only once it has landed and deactivated the generations the pinned view still holds
+			store.awaitCompactionForTest();
+			assertThat(store.snapshotMetrics().deltaMerges).isPositive();
 
 			// the pinned view keeps serving its own snapshot exactly through its retained state
 			assertThat(probe(pinned, S1, P1)).hasSize(3);
@@ -803,6 +801,7 @@ class LmdbDirectAdjacencyConsolidationTest {
 			commitAdd(S1, P1, uri(1000 + i));
 			store.pauseApplierForTest(false);
 		}
+		store.awaitCompactionForTest();
 		// consolidation squashed history: a late acquisition for the early snapshot must decline, never guess
 		try (LmdbAdjacencyReadView lateView = store.acquire(earlyRevision)) {
 			assertThat(lateView.isExact()).isFalse();
@@ -811,83 +810,35 @@ class LmdbDirectAdjacencyConsolidationTest {
 	}
 
 	@Test
-	void quiescentRebuildWaitsForTheLeaseAndServesAgain() throws Exception {
+	void aRebuildRunsBesideALiveLeaseAndBothStayExact() throws Exception {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
 		commitAdd(S1, P1, uri(1001));
 		store.pauseApplierForTest(false);
+		LmdbInMemoryAdjacencyIndex originalBase = store.publishedStateForTest().base();
 
 		LmdbAdjacencyReadView held = store.acquire(tripleStore.getDataRevision());
 		try {
 			assertThat(held.isExact()).isTrue();
 			store.scheduleQuiescentRebuild();
-			// wait until the UNAVAILABLE state is published, then prove both properties of the quiesce window
-			long deadline = System.nanoTime() + 10_000_000_000L;
-			while (store.publishedStateForTest()
-					.servingState() != LmdbAdjacencyPublishedState.AdjacencyServingState.UNAVAILABLE) {
-				if (System.nanoTime() > deadline) {
-					throw new AssertionError("quiescent rebuild never published the UNAVAILABLE state");
-				}
-				Thread.onSpinWait();
-			}
-			try (LmdbAdjacencyReadView duringQuiesce = store.acquire(tripleStore.getDataRevision())) {
-				assertThat(duringQuiesce.isExact()).isFalse();
-				assertThat(duringQuiesce.fallbackReason()).isEqualTo(FallbackReason.BUILDING);
-			}
-			// the existing lease keeps serving from its retained state while the rebuild waits
+			assertThat(store.awaitServingForTest(30, TimeUnit.SECONDS)).isTrue();
+			store.awaitCompactionForTest();
+			// the rebuild published a fresh base while the lease kept its own
+			assertThat(store.publishedStateForTest().base()).isNotSameAs(originalBase);
+			assertThat(held.state().base()).isSameAs(originalBase);
 			assertThat(probe(held, S1, P1)).hasSize(2);
+			try (LmdbAdjacencyReadView fresh = store.acquire(tripleStore.getDataRevision())) {
+				assertThat(fresh.isExact()).isTrue();
+				assertThat(probe(fresh, S1, P1)).hasSize(2);
+			}
 		} finally {
 			held.close();
 		}
-
-		long deadline = System.nanoTime() + 10_000_000_000L;
-		while (store.maintenanceState() != LmdbDirectAdjacencyStore.MaintenanceState.ACTIVE) {
-			if (System.nanoTime() > deadline) {
-				throw new AssertionError("quiescent rebuild never completed after the lease closed");
-			}
-			Thread.onSpinWait();
-		}
+		assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.ACTIVE);
 		try (LmdbAdjacencyReadView rebuilt = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(rebuilt.isExact()).isTrue();
 			assertThat(probe(rebuilt, S1, P1)).hasSize(2);
 		}
-	}
-
-	@Test
-	void quiescentRebuildWaitsForAnAcquisitionBeforeItReturnsTheView() throws Exception {
-		commitAdd(S1, P1, O_BASE);
-		assertThat(store.buildNowForTest()).isTrue();
-		long revision = tripleStore.getDataRevision();
-		CountDownLatch acquisitionValidated = new CountDownLatch(1);
-		CountDownLatch releaseAcquisition = new CountDownLatch(1);
-		CountDownLatch rebuildStarted = new CountDownLatch(1);
-		store.beforeExactViewReturnForTest = () -> {
-			store.beforeExactViewReturnForTest = null;
-			acquisitionValidated.countDown();
-			try {
-				releaseAcquisition.await();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
-			}
-		};
-		store.beforeQuiescentBuildForTest = rebuildStarted::countDown;
-
-		CompletableFuture<LmdbAdjacencyReadView> acquiring = CompletableFuture
-				.supplyAsync(() -> store.acquire(revision));
-		assertThat(acquisitionValidated.await(30, TimeUnit.SECONDS)).isTrue();
-		store.scheduleQuiescentRebuild();
-		try {
-			assertThat(rebuildStarted.await(1, TimeUnit.SECONDS))
-					.as("replacement construction must wait for an acquisition capable of returning the old state")
-					.isFalse();
-		} finally {
-			releaseAcquisition.countDown();
-			try (LmdbAdjacencyReadView acquired = acquiring.get(30, TimeUnit.SECONDS)) {
-				assertThat(acquired.isExact()).isTrue();
-			}
-		}
-		assertThat(rebuildStarted.await(30, TimeUnit.SECONDS)).isTrue();
 	}
 
 	@Test
@@ -915,35 +866,14 @@ class LmdbDirectAdjacencyConsolidationTest {
 		assertThat(store.buildNowForTest()).isTrue();
 		store.markGap(tripleStore.getDataRevision());
 
-		AtomicBoolean injectOnce = new AtomicBoolean(true);
-		CompletableFuture<Void> unexpectedWait = new CompletableFuture<>();
-		store.catchUpWaitForTest = () -> unexpectedWait.complete(null);
-		store.afterBuildScanForTest = () -> {
-			if (!injectOnce.compareAndSet(true, false)) {
-				return;
-			}
-			tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(),
-					new LmdbDirectAdjacencyCommitDelta(store.memoryAccount(), 1024));
-			try {
-				commitAdd(S1, P1, uri(1001));
-			} catch (IOException e) {
-				throw new UncheckedIOException(e);
-			}
-		};
-
-		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-			CompletableFuture<Boolean> build = CompletableFuture.supplyAsync(store::buildNowForTest, executor);
-			Object firstOutcome = CompletableFuture.anyOf(build, unexpectedWait).get(10, TimeUnit.SECONDS);
-			if (firstOutcome == null) {
-				// Unblock the former livelock without repairing its lost-capture error. Publishing this empty
-				// placeholder would expose the stale base as revision-exact and make the parity assertion fail.
-				store.applyCommitted(
-						LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.empty(tripleStore.getDataRevision()));
-			}
-			build.get(10, TimeUnit.SECONDS);
-		}
-
-		store.pauseApplierForTest(false);
+		// the gap's rebuild is held after its scan; an overflowing commit (tiny collector cap) lands meanwhile
+		ApplierStepping.holdBuildAfterScan(store);
+		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(),
+				new LmdbDirectAdjacencyCommitDelta(store.memoryAccount(), 1024));
+		commitAdd(S1, P1, uri(1001));
+		ApplierStepping.releaseBuild(store);
+		// the candidate pinned below the overflowed record: the applier gaps again and the next rebuild recovers
+		assertThat(store.awaitCurrentRevisionReady(30, TimeUnit.SECONDS)).as(store.publicationDiagnostics()).isTrue();
 		try (LmdbAdjacencyReadView rebuilt = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(rebuilt.isExact()).isTrue();
 			assertThat(probe(rebuilt, S1, P1)).hasSize(2);
@@ -955,25 +885,16 @@ class LmdbDirectAdjacencyConsolidationTest {
 		commitAdd(S1, P1, O_BASE);
 		assertThat(store.buildNowForTest()).isTrue();
 
-		AtomicInteger scans = new AtomicInteger();
-		store.afterBuildScanForTest = scans::incrementAndGet;
+		long buildsBefore = store.snapshotMetrics().buildsStarted;
 		try (LmdbAdjacencyReadView held = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(held.isExact()).isTrue();
-			store.scheduleQuiescentRebuild();
-			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-			while (store.publishedStateForTest()
-					.servingState() != LmdbAdjacencyPublishedState.AdjacencyServingState.UNAVAILABLE) {
-				if (System.nanoTime() > deadline) {
-					throw new AssertionError("quiescent rebuild never entered its lease-drain phase");
-				}
-				Thread.onSpinWait();
-			}
-			for (int i = 0; i < 20; i++) {
+			// a burst of requests while one rebuild runs collapses into at most one more rebuild
+			for (int i = 0; i < 21; i++) {
 				store.scheduleQuiescentRebuild();
 			}
 		}
 
-		store.pauseApplierForTest(false);
-		assertThat(scans).hasValueLessThanOrEqualTo(2);
+		store.awaitCompactionForTest();
+		assertThat(store.snapshotMetrics().buildsStarted - buildsBefore).isLessThanOrEqualTo(2);
 	}
 }

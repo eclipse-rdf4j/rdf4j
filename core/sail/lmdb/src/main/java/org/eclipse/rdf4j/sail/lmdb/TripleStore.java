@@ -545,6 +545,11 @@ class TripleStore implements Closeable {
 	private final AtomicLong mappingGeneration = new AtomicLong();
 
 	private TxnRecordCache recordCache = null;
+	/**
+	 * One record per committed data revision, appended inside the commit critical section whether or not an adjacency
+	 * collector is attached; the single channel from commits to the direct adjacency index.
+	 */
+	private final AdjacencyCommitLog adjacencyCommitLog = new AdjacencyCommitLog(0L);
 	private DirectAdjacencyCommitListener directAdjacencyCommitListener;
 	private LmdbDirectAdjacencyCommitDelta directAdjacencyCommitDelta;
 	private LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealedDirectAdjacencyDelta;
@@ -5962,10 +5967,15 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	/** The commit log mirroring {@link #getDataRevision()}; its head equals the data revision at every point. */
+	AdjacencyCommitLog adjacencyCommitLog() {
+		return adjacencyCommitLog;
+	}
+
 	void setDirectAdjacencyCommitHooks(DirectAdjacencyCommitListener listener,
 			LmdbDirectAdjacencyCommitDelta collector) {
 		this.directAdjacencyCommitListener = listener;
-		this.directAdjacencyCommitDelta = listener != null ? collector : null;
+		this.directAdjacencyCommitDelta = collector;
 	}
 
 	void captureDirectAdjacencyCoverage(long[] resolvedSelectedPredicates) {
@@ -6006,18 +6016,27 @@ class TripleStore implements Closeable {
 	}
 
 	private DerivedCommit prepareDerivedCommit(long nextRevision) {
-		if (directAdjacencyCommitListener == null || directAdjacencyCommitDelta == null
-				|| !directAdjacencyCommitDelta.begun()) {
+		if (directAdjacencyCommitDelta == null || !directAdjacencyCommitDelta.begun()) {
 			return null;
 		}
-		DirectAdjacencyCommitListener.PreparedCommit prepared;
+		DirectAdjacencyCommitListener.PreparedCommit prepared = null;
 		try {
-			prepared = directAdjacencyCommitListener.prepareAsync(directAdjacencyCommitDelta.sealAsync(nextRevision),
-					nextRevision);
+			CompletableFuture<LmdbDirectAdjacencyCommitDelta.SealedDirectDelta> sealing = directAdjacencyCommitDelta
+					.sealAsync(nextRevision);
+			// the commit log stages the seal; it becomes the log head only when the physical commit succeeds
+			adjacencyCommitLog.stage(nextRevision, sealing);
+			if (directAdjacencyCommitListener != null) {
+				prepared = directAdjacencyCommitListener.prepareAsync(sealing, nextRevision);
+			}
 		} catch (RuntimeException failedSeal) {
+			if (adjacencyCommitLog.hasStaged()) {
+				adjacencyCommitLog.retract();
+			}
 			directAdjacencyCommitDelta.reset();
-			prepared = directAdjacencyCommitListener.prepare(
-					LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.overflowed(nextRevision), nextRevision);
+			if (directAdjacencyCommitListener != null) {
+				prepared = directAdjacencyCommitListener.prepare(
+						LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.overflowed(nextRevision), nextRevision);
+			}
 		}
 		return new DerivedCommit(prepared, nextRevision);
 	}
@@ -6056,7 +6075,15 @@ class TripleStore implements Closeable {
 
 	private void publishDerivedCommit(DerivedCommit derived, long nextRevision) {
 		try {
-			if (derived != null && derived.prepared != null) {
+			// The log records every revision bump: the staged seal when one exists, otherwise a gap (no collector was
+			// attached, or the seal failed synchronously). This precedes dataRevision.set below, so no reader can pin a
+			// revision whose record does not exist.
+			if (adjacencyCommitLog.hasStaged()) {
+				adjacencyCommitLog.confirm();
+			} else {
+				adjacencyCommitLog.appendOverflowed(nextRevision);
+			}
+			if (derived != null && derived.prepared != null && directAdjacencyCommitListener != null) {
 				LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealed = directAdjacencyCommitListener
 						.finalizeCommit(derived.prepared);
 				derived.prepared = null;
@@ -6068,7 +6095,7 @@ class TripleStore implements Closeable {
 			fanOutStatsDirty = false;
 		} catch (RuntimeException | Error failure) {
 			postCommitDerivedFailure = failure;
-			if (derived != null && derived.prepared != null) {
+			if (derived != null && derived.prepared != null && directAdjacencyCommitListener != null) {
 				try {
 					directAdjacencyCommitListener.abort(derived.prepared);
 				} catch (RuntimeException | Error cleanup) {
@@ -6078,15 +6105,32 @@ class TripleStore implements Closeable {
 				}
 			}
 			clearFanOutStatsIfDirty();
+			if (directAdjacencyCommitListener != null) {
+				try {
+					directAdjacencyCommitListener.physicalCommitFailedBeforeRevisionBump(nextRevision);
+				} catch (RuntimeException | Error gapFailure) {
+					failure.addSuppressed(gapFailure);
+				}
+			}
 			try {
-				directAdjacencyCommitListener.physicalCommitFailedBeforeRevisionBump(nextRevision);
-			} catch (RuntimeException | Error gapFailure) {
-				failure.addSuppressed(gapFailure);
+				recordRevisionAsGapIfMissing(nextRevision);
+			} catch (RuntimeException | Error logFailure) {
+				failure.addSuppressed(logFailure);
 			}
 			throw failure;
 		} finally {
 			// The authoritative native commit has completed; publish the revision only after its derived fence.
 			dataRevision.set(nextRevision);
+		}
+	}
+
+	/** The physical commit advanced the database but its record was not confirmed: the revision is a gap. */
+	private void recordRevisionAsGapIfMissing(long nextRevision) {
+		if (adjacencyCommitLog.hasStaged()) {
+			adjacencyCommitLog.retract();
+		}
+		if (adjacencyCommitLog.headRevision() < nextRevision) {
+			adjacencyCommitLog.appendOverflowed(nextRevision);
 		}
 	}
 
@@ -7595,7 +7639,8 @@ class TripleStore implements Closeable {
 					mdb_txn_abort(writeTxn);
 				}
 				writeTxn = 0;
-				if (preparedDirect != null && preparedDirect.prepared != null) {
+				if (preparedDirect != null && preparedDirect.prepared != null
+						&& directAdjacencyCommitListener != null) {
 					try {
 						directAdjacencyCommitListener.abort(preparedDirect.prepared);
 					} catch (RuntimeException | Error cleanup) {
@@ -7605,6 +7650,10 @@ class TripleStore implements Closeable {
 							failure.addSuppressed(cleanup);
 						}
 					}
+				}
+				if (!committed && adjacencyCommitLog.hasStaged()) {
+					// the physical commit never happened for this revision: the staged record is simply dropped
+					adjacencyCommitLog.retract();
 				}
 				if (!committed) {
 					clearFanOutStatsIfDirty();

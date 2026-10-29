@@ -660,7 +660,7 @@ final class LmdbNativeKernelPartitions {
 		}
 
 		static PartitionPlan planAdjacency(int viewIndex, NativeLmdbQuerySource.NativeAdjacency adjacency,
-				boolean pageProducer, boolean requireContexts) {
+				boolean pageProducer, boolean requireContexts, long minimumUnits) {
 			Objects.requireNonNull(adjacency, "adjacency");
 			if (viewIndex < 0) {
 				throw new IllegalArgumentException("view index must be non-negative");
@@ -668,9 +668,14 @@ final class LmdbNativeKernelPartitions {
 			if (pageProducer) {
 				long pages = adjacency.pageCount();
 				if (pages >= 2L && pageCapability(adjacency, requireContexts)) {
-					return new PartitionPlan(new PlanePlan[] {
-							new PlanePlan(viewIndex, -1, UnitKind.PAGE, 0L, pages)
-					});
+					// Too few pages to occupy the workers: root ordinals take over when they reach the minimum, and
+					// pages keep their locality when neither kind does (the caller declines either way).
+					boolean rootsSuffice = pages < minimumUnits && adjacency.keyCount() >= minimumUnits;
+					if (!rootsSuffice) {
+						return new PartitionPlan(new PlanePlan[] {
+								new PlanePlan(viewIndex, -1, UnitKind.PAGE, 0L, pages)
+						});
+					}
 				}
 			}
 			long roots = adjacency.keyCount();
@@ -863,7 +868,18 @@ final class LmdbNativeKernelPartitions {
 
 	static PartitionPlan planAdjacency(int viewIndex, NativeLmdbQuerySource.NativeAdjacency adjacency,
 			boolean pageProducer, boolean requireContexts) {
-		return PartitionPlan.planAdjacency(viewIndex, adjacency, pageProducer, requireContexts);
+		return PartitionPlan.planAdjacency(viewIndex, adjacency, pageProducer, requireContexts, 0L);
+	}
+
+	/**
+	 * Like {@link #planAdjacency(int, NativeLmdbQuerySource.NativeAdjacency, boolean, boolean)}, but a page plan with
+	 * fewer than {@code minimumUnits} pages yields to root ordinals when the key domain does reach that minimum. A
+	 * small plane whose base was assembled from several scan ranges can hold only a handful of physical pages while
+	 * still enumerating enough roots to feed every worker.
+	 */
+	static PartitionPlan planAdjacency(int viewIndex, NativeLmdbQuerySource.NativeAdjacency adjacency,
+			boolean pageProducer, boolean requireContexts, long minimumUnits) {
+		return PartitionPlan.planAdjacency(viewIndex, adjacency, pageProducer, requireContexts, minimumUnits);
 	}
 
 	static PartitionPlan planWildcard(int viewIndex, NativeLmdbQuerySource.WildcardAdjacency wildcard,

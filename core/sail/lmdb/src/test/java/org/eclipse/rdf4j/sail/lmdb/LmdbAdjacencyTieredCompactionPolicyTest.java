@@ -39,6 +39,19 @@ class LmdbAdjacencyTieredCompactionPolicyTest {
 	}
 
 	@Test
+	void aLongerRunWithinTheWeightBandIsMergedWhole() {
+		// one merge at a time cannot drain a backlog of single-row generations four at a time: the whole run of
+		// generations inside the band merges together, and the run stops where the weight leaves the band
+		Candidate candidate = select(8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 64);
+		assertThat(candidate.fromInclusive()).isZero();
+		assertThat(candidate.toExclusive()).isEqualTo(12);
+		assertThat(candidate.normal()).isTrue();
+		candidate = select(8, 64, 1, 1, 1, 1, 2, 2, 1, 1, 3);
+		assertThat(candidate.fromInclusive()).isEqualTo(1);
+		assertThat(candidate.toExclusive()).as("3 against a minimum of 1 leaves the two-times band").isEqualTo(9);
+	}
+
+	@Test
 	void historicalWeightKeepsDeduplicatedOutputOutOfFreshTinyTier() {
 		Candidate candidate = select(8, 400, 20, 20, 20, 20);
 
@@ -80,6 +93,68 @@ class LmdbAdjacencyTieredCompactionPolicyTest {
 		assertThat(policy.invoke(null, 8_192L, 4_096L, 4_096L)).isEqualTo(true);
 		assertThat(policy.invoke(null, 8_192L, 4_097L, 4_096L)).isEqualTo(false);
 		assertThat(policy.invoke(null, Long.MAX_VALUE, Long.MAX_VALUE / 2 + 1, 1L)).isEqualTo(false);
+	}
+
+	@Test
+	void theShapeOfTheIndexFoldsASmallBaseAtTheFloorAndALargeOneAtAQuarter() {
+		long floor = 256L << 10; // 16,384 pairs of 16 bytes
+		long pairBytes = 16;
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shapeFoldThreshold(1_000)).isEqualTo(floor);
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shapeFoldThreshold(4 * 16_384)).isEqualTo(floor);
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shapeFoldThreshold(1_000_000)).isEqualTo(250_000 * pairBytes);
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shapeFoldThreshold(1_000_001)).isEqualTo(250_001 * pairBytes);
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shouldFoldForShape(floor, 1_000)).isTrue();
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shouldFoldForShape(floor - 1, 1_000)).isFalse();
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shouldFoldForShape(250_000 * pairBytes - 1, 1_000_000))
+				.isFalse();
+		assertThat(LmdbAdjacencyTieredCompactionPolicy.shouldFoldForShape(250_000 * pairBytes, 1_000_000)).isTrue();
+	}
+
+	@Test
+	void countPressureLeavesAnIncompleteNewestTierAlone() {
+		// Two fresh single-commit generations are the cheapest and least skewed window, but merging them on every
+		// other commit builds a staircase; count pressure merges something older while the newest tier fills.
+		Candidate candidate = select(4, 1_000, 100, 100, 10, 2, 2);
+
+		assertThat(candidate.fromInclusive()).isEqualTo(1);
+		assertThat(candidate.toExclusive()).isEqualTo(3);
+		assertThat(candidate.normal()).isFalse();
+	}
+
+	@Test
+	void countPressureFallsBackToTheNewestTierWhenNothingOlderCanMerge() {
+		Candidate candidate = select(2, 1_000, 2, 2, 2);
+
+		assertThat(candidate.selected()).isTrue();
+		assertThat(candidate.fromInclusive()).isEqualTo(1);
+		assertThat(candidate.toExclusive()).isEqualTo(3);
+	}
+
+	@Test
+	void theFoldOutranksARangeMergeOnceTheOverlaysOutweighTheBase() {
+		long weight = 300L << 10;
+		LmdbAdjacencyOverlaySet overlays = overlays(heavy(1, weight), heavy(2, weight), heavy(3, weight),
+				heavy(4, weight));
+		Candidate candidate = new Candidate();
+
+		// the shape rule holds: the fold outranks the band of four
+		AdjacencyCompactionPlan plan = LmdbAdjacencyTieredCompactionPolicy.plan(overlays, 8, candidate, true, false,
+				32L << 20, 1_000, true);
+		assertThat(plan.type()).isEqualTo(AdjacencyCompactionPlan.Type.FOLD);
+		assertThat(plan.prefixCount()).isEqualTo(4);
+
+		// against a base the overlays do not outweigh, the same band merges as a range
+		plan = LmdbAdjacencyTieredCompactionPolicy.plan(overlays, 8, candidate, true, false, 32L << 20, 100L << 20,
+				false);
+		assertThat(plan.type()).isEqualTo(AdjacencyCompactionPlan.Type.RANGE);
+		assertThat(plan.from()).isEqualTo(0);
+		assertThat(plan.toInclusive()).isEqualTo(3);
+	}
+
+	private static LmdbAdjacencyDeltaGeneration heavy(long revision, long bytes) {
+		LmdbAdjacencyDeltaGeneration generation = info(revision, bytes, bytes, 1);
+		when(generation.metadataBytes()).thenReturn(bytes);
+		return generation;
 	}
 
 	private static Candidate select(int targetGenerationCount, long... weights) {
