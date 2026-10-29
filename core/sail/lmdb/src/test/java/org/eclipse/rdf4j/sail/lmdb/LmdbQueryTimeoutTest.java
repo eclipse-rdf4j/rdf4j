@@ -299,6 +299,17 @@ class LmdbQueryTimeoutTest {
 	@Test
 	@Timeout(value = 10, unit = TimeUnit.SECONDS)
 	void resultReturningQueryTimesOutWhileWaitingForMapGrowthAdmission(@TempDir Path dataDirectory) throws Exception {
+		assertResultReturningQueryTimesOutWhileWaitingForMapGrowthAdmission(dataDirectory, false);
+	}
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void resultReturningQueryTimesOutWhileJoiningManagedGrowth(@TempDir Path dataDirectory) throws Exception {
+		assertResultReturningQueryTimesOutWhileWaitingForMapGrowthAdmission(dataDirectory, true);
+	}
+
+	private static void assertResultReturningQueryTimesOutWhileWaitingForMapGrowthAdmission(Path dataDirectory,
+			boolean managedGrowth) throws Exception {
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(4096 * 10));
 		SailRepository repository = new SailRepository(store);
@@ -306,7 +317,6 @@ class LmdbQueryTimeoutTest {
 		CountDownLatch queryPrepared = new CountDownLatch(1);
 		CountDownLatch startEvaluation = new CountDownLatch(1);
 		CountDownLatch evaluationStarted = new CountDownLatch(1);
-		LmdbSailStore.MapGrowthAttempt growthAttempt = null;
 		try {
 			repository.init();
 			try (RepositoryConnection seed = repository.getConnection()) {
@@ -333,20 +343,33 @@ class LmdbQueryTimeoutTest {
 			});
 
 			assertThat(queryPrepared.await(5, TimeUnit.SECONDS)).isTrue();
-			growthAttempt = store.getBackingStore().beginMapGrowthAttempt(new Object());
-			startEvaluation.countDown();
-			assertThat(evaluationStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			LmdbSailStore backingStore = store.getBackingStore();
+			Object owner = new Object();
+			// Keep a real writer registered so a managed growth driver cannot retire this attempt.
+			try (var writer = backingStore.getExplicitSailSource().beginPreparedWrite(owner);
+					var warning = managedGrowth ? backingStore.beginMapGrowthWarning(owner) : null;
+					var growthAttempt = backingStore.beginMapGrowthAttempt(owner)) {
+				var growthToken = growthAttempt.token();
+				if (managedGrowth) {
+					assertThat(warning).isNotNull();
+					assertThat(growthToken).isEqualTo(warning.token());
+				}
+				assertThat(backingStore.growthAdmissionClosed()).isTrue();
+				startEvaluation.countDown();
+				assertThat(evaluationStarted.await(5, TimeUnit.SECONDS)).isTrue();
 
-			long waitStartedAt = System.nanoTime();
-			assertThatThrownBy(() -> query.get(3, TimeUnit.SECONDS))
-					.isInstanceOf(ExecutionException.class)
-					.hasRootCauseInstanceOf(QueryInterruptedException.class);
-			assertThat(System.nanoTime() - waitStartedAt).isLessThan(TimeUnit.SECONDS.toNanos(3));
+				long waitStartedAt = System.nanoTime();
+				assertThatThrownBy(() -> {
+					query.get(3, TimeUnit.SECONDS);
+					throw new AssertionError("Query returned while growth attempt was held: tokenActive="
+							+ backingStore.isGrowthActive(growthToken) + "\n" + backingStore.growthDiagnosticForTest());
+				})
+						.isInstanceOf(ExecutionException.class)
+						.hasRootCauseInstanceOf(QueryInterruptedException.class);
+				assertThat(System.nanoTime() - waitStartedAt).isLessThan(TimeUnit.SECONDS.toNanos(3));
+			}
 		} finally {
 			startEvaluation.countDown();
-			if (growthAttempt != null) {
-				growthAttempt.close();
-			}
 			executor.shutdownNow();
 			try {
 				assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
