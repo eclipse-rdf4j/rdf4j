@@ -52,7 +52,9 @@ final class NativeAggregateCostQuotes {
 	private final List<SnapshotRow> snapshotRows;
 
 	private record SnapshotRow(String strategy, LmdbNativeCostEstimate physical,
-			LmdbNativeCostEstimate estimate, String dominance) {
+			LmdbNativeCostEstimate estimate, String dominance,
+			LmdbNativeStrategyProposal.ExpectedPlanningPrior expectedPlanningPrior,
+			LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness) {
 	}
 
 	/** Already-computed quote data only; it retains no row, producer callback, source or ranking machinery. */
@@ -64,7 +66,8 @@ final class NativeAggregateCostQuotes {
 		void publish(TupleExpr target) {
 			StringBuilder json = new StringBuilder("[");
 			for (SnapshotRow row : rows) {
-				appendQuote(json, row.strategy(), row.physical(), row.estimate(), row.dominance());
+				appendQuote(json, row.strategy(), row.physical(), row.estimate(), row.dominance(),
+						row.expectedPlanningPrior(), row.executionResourceWitness());
 			}
 			LmdbNativeExplain.setRuntimeMetric(target, METRIC, json.append(']').toString());
 		}
@@ -166,10 +169,12 @@ final class NativeAggregateCostQuotes {
 		if (telemetry != null || snapshotRows != null) {
 			String proof = proposal.physicalDominanceProof(offered);
 			if (snapshotRows != null) {
-				snapshotRows.add(new SnapshotRow(displayTag, physical, estimate, proof));
+				snapshotRows.add(new SnapshotRow(displayTag, physical, estimate, proof,
+						proposal.expectedPlanningPrior(), proposal.executionResourceWitness()));
 			}
 			if (telemetry != null) {
-				appendQuote(telemetry, displayTag, physical, estimate, proof);
+				appendQuote(telemetry, displayTag, physical, estimate, proof,
+						proposal.expectedPlanningPrior(), proposal.executionResourceWitness());
 				LmdbNativeExplain.setRuntimeMetric(target, METRIC, telemetry.toString() + ']');
 			}
 		}
@@ -177,7 +182,9 @@ final class NativeAggregateCostQuotes {
 	}
 
 	private static void appendQuote(StringBuilder json, String strategy, LmdbNativeCostEstimate physical,
-			LmdbNativeCostEstimate estimate, String proof) {
+			LmdbNativeCostEstimate estimate, String proof,
+			LmdbNativeStrategyProposal.ExpectedPlanningPrior expectedPlanningPrior,
+			LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness) {
 		if (json.length() > 1) {
 			json.append(',');
 		}
@@ -212,6 +219,28 @@ final class NativeAggregateCostQuotes {
 			json.append("null");
 		} else {
 			string(json, proof);
+		}
+		json.append(",\"expectedPlanningPrior\":");
+		if (expectedPlanningPrior == null) {
+			json.append("null");
+		} else {
+			json.append("{\"unit\":\"native-work\",\"expectedTotalWork\":")
+					.append(expectedPlanningPrior.expectedTotalWork())
+					.append(",\"expectedBeforeFirstOutputWork\":")
+					.append(expectedPlanningPrior.expectedBeforeFirstOutputWork())
+					.append('}');
+		}
+		json.append(",\"executionResourceWitness\":");
+		if (executionResourceWitness == null) {
+			json.append("null");
+		} else {
+			json.append("{\"queryLedgerBounded\":")
+					.append(executionResourceWitness.queryLedgerBounded())
+					.append(",\"workerSlotsReservedOnOpen\":")
+					.append(executionResourceWitness.workerSlotsReservedOnOpen())
+					.append(",\"configuredWorkerSlots\":")
+					.append(executionResourceWitness.configuredWorkerSlots())
+					.append('}');
 		}
 		json.append('}');
 	}

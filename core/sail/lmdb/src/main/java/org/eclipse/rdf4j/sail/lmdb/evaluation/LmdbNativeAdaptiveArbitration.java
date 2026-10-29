@@ -29,13 +29,20 @@ final class LmdbNativeAdaptiveArbitration {
 	}
 
 	record Candidate<T>(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable,
-			NativeAggregatePhysicalPlan.ColdAnchor coldAnchor) {
+			NativeAggregatePhysicalPlan.ColdAnchor coldAnchor,
+			LmdbNativeStrategyProposal.ExpectedPlanningPrior expectedPlanningPrior,
+			LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness) {
 		Candidate(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener) {
-			this(estimate, staticPreference, opener, true);
+			this(estimate, staticPreference, opener, true, null, null, null);
 		}
 
 		Candidate(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable) {
-			this(estimate, staticPreference, opener, probeable, null);
+			this(estimate, staticPreference, opener, probeable, null, null, null);
+		}
+
+		Candidate(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable,
+				NativeAggregatePhysicalPlan.ColdAnchor coldAnchor) {
+			this(estimate, staticPreference, opener, probeable, coldAnchor, null, null);
 		}
 
 		Candidate {
@@ -273,6 +280,7 @@ final class LmdbNativeAdaptiveArbitration {
 	private static boolean normalEligible(Priced<?> candidate) {
 		Candidate<?> arm = candidate.candidate;
 		return arm.estimate.workEvidence().isComplete() || arm.coldAnchor() != null
+				|| arm.executionResourceWitness() != null
 				|| candidate.prediction.exactCompletedCount() > 0L || structurallyAdmittedSpecialist(arm);
 	}
 

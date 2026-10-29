@@ -666,7 +666,8 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 					estimate, LmdbNativeStrategyPreference.rank(proposal.tag),
 					observation -> diagnostics == null ? proposal.open()
 							: diagnostics.openAttempt(proposal, observation),
-					proposal.probeable, proposal.coldAnchor());
+					proposal.probeable, proposal.coldAnchor(), proposal.expectedPlanningPrior(),
+					proposal.executionResourceWitness());
 			converted.add(new AdaptiveCandidate<>(i, candidate));
 			priced.add(new LmdbNativeAdaptiveArbitration.Priced<>(candidate, captured.predictions().get(i)));
 		}

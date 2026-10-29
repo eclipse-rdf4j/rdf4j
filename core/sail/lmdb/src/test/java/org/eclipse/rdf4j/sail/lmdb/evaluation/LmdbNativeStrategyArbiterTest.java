@@ -136,6 +136,108 @@ public class LmdbNativeStrategyArbiterTest {
 	}
 
 	@Test
+	void expectedPlanningPriorCannotAdmitAnAggregateWithoutAResourceWitness() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "false");
+		LmdbNativeStrategyProposal<String> unowned = proposal(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED, LmdbNativeWork.UNKNOWN)
+						.withExpectedPlanningPrior(LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(1D));
+		LmdbNativeStrategyProposal<String> fallback = proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D);
+
+		assertThat(unowned.adaptiveEstimate(-1D))
+				.as("an expected prior does not create a hard quote or an adaptive-model vector")
+				.isNull();
+		assertThat(adaptiveWinner(List.of(unowned, fallback)))
+				.as("an expected prior without ledger/task admission remains an ordinary fallback")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+	}
+
+	@Test
+	void ledgerWitnessAdmitsUnknownWorkWithoutTurningTheExpectedPriorIntoModelEvidence() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "false");
+		var prior = LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(1_000_000_000D);
+		LmdbNativeStrategyProposal<String> aggregate = proposal(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED, LmdbNativeWork.UNKNOWN)
+						.withExpectedPlanningPrior(prior)
+						.withExecutionResourceWitness(
+								new LmdbNativeKernelExecution.ExecutionResourceWitness(true, true, 2));
+		LmdbNativeStrategyProposal<String> fallback = proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D);
+
+		assertThat(aggregate.adaptiveEstimate(-1D))
+				.as("the witness admits execution but the expected scalar is still not a typed work estimate")
+				.isNull();
+		assertThat(adaptiveWinner(List.of(fallback, aggregate)))
+				.as("a ledger-backed recipe returns to stable structural preference without ranking its prior")
+				.isEqualTo(aggregate.tag);
+
+		LmdbNativeAdaptiveCostModel model = measuredModel();
+		assertThat(model.predict(aggregate.directTimingEstimate()).priceBasis())
+				.as("an expected planning prior must not create posterior or feature pricing")
+				.isEqualTo(LmdbNativeCostPrediction.PriceBasis.ORDINAL_ONLY);
+		assertThat(model.store().latestObserved().size()).isZero();
+	}
+
+	@Test
+	void equalAndIncomparableExpectedPriorEvidenceKeepsStablePreference() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "false");
+		var witness = new LmdbNativeKernelExecution.ExecutionResourceWitness(true, false, 1);
+		String parallel = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED;
+		String serial = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED;
+		var equalPrior = LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(10D);
+		LmdbNativeStrategyProposal<String> parallelProposal = proposal(parallel, LmdbNativeWork.UNKNOWN)
+				.withExpectedPlanningPrior(equalPrior)
+				.withExecutionResourceWitness(
+						new LmdbNativeKernelExecution.ExecutionResourceWitness(true, true, 2));
+		LmdbNativeStrategyProposal<String> serialProposal = proposal(serial, LmdbNativeWork.UNKNOWN)
+				.withExpectedPlanningPrior(equalPrior)
+				.withExecutionResourceWitness(witness);
+		String preferred = LmdbNativeStrategyPreference.prefers(parallel, serial) ? parallel : serial;
+		assertThat(adaptiveWinner(List.of(serialProposal, parallelProposal)))
+				.as("equal expected work remains a stable structural tie")
+				.isEqualTo(preferred);
+
+		LmdbNativeCostVector zero = LmdbNativeCostVector.zero();
+		LmdbNativeCostVector rows = LmdbNativeCostVector.builder()
+				.add(LmdbNativeCostVector.Feature.INTERPRETED_ROW, 0D, 1D, 10D)
+				.build();
+		LmdbNativeCostEstimate rowEstimate = new LmdbNativeCostEstimate(
+				LmdbNativePhysicalVariantKey.builder(serial).physicalOrderAndProperties(serial).build(),
+				zero, rows, 0D, 0.5D,
+				NativePhysicalWorkEvidence.incomplete("row-feature units do not prove native expected work"));
+		LmdbNativeStrategyProposal<String> vectorProposal = proposal(serial, LmdbNativeWork.UNKNOWN)
+				.withIncompletePhysicalWork(rowEstimate, "row-feature units do not prove native expected work")
+				.withExecutionResourceWitness(witness);
+		assertThat(adaptiveWinner(List.of(vectorProposal, parallelProposal)))
+				.as("a typed INTERPRETED_ROW vector is incomparable with a scalar native-work prior")
+				.isEqualTo(preferred);
+	}
+
+	@Test
+	void expectedPlanningPriorDeclinesUnknownOverflowAndInvalidBounds() {
+		assertThat(LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(0D))
+				.as("zero expected work is a valid estimate")
+				.isNotNull();
+		assertThat(LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(Double.NaN)).isNull();
+		assertThat(LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(Double.POSITIVE_INFINITY)).isNull();
+		assertThat(LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(-1D)).isNull();
+		assertThatThrownBy(() -> new LmdbNativeStrategyProposal.ExpectedPlanningPrior(1D, 2D))
+				.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void aggregateAdmissionWithoutQueryLedgerCannotCreateAResourceWitness() {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of(), null);
+		layout.freeze(List.of());
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		row.memoryScope = null;
+		LmdbNativeKernelExecution.AggregateAdmission admission = new LmdbNativeKernelExecution.AggregateAdmission(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED, null, true);
+
+		assertThat(admission.executionResourceWitness(row, true))
+				.as("a legacy or synthetic row without a query memory owner cannot be normally admitted")
+				.isNull();
+	}
+
+	@Test
 	void incomparableColdWitnessesKeepStableOrderAndExplicitForcing() throws Exception {
 		for (boolean reverse : List.of(false, true)) {
 			for (String forced : new String[] { null, "nestedLoop" }) {
@@ -1322,10 +1424,11 @@ public class LmdbNativeStrategyArbiterTest {
 
 	/**
 	 * Gap-analysis C1: slice proration divides {@code sliceRows} by {@code estRows}, so the proposal must declare its
-	 * expected <em>output rows</em> there — declaring its work units instead makes the consumed fraction vanishingly
-	 * small and prices a LIMIT slice at little more than startup, systematically underpricing front-loaded parallel
-	 * strategies under LIMIT. With 1M work units, 250k startup, 1000 expected rows and a LIMIT of 10, the correctly
-	 * typed proposal pays startup plus 1% of the scan; the work-typed one pays essentially startup alone.
+	 * expected <em>output rows</em> there — declaring its work units instead makes the expected consumed fraction
+	 * vanishingly small and prices a LIMIT slice at little more than startup. This expected value must not narrow the
+	 * hard interval: the source may need to consume the complete input before producing ten rows. With 1M work units,
+	 * 250k startup, 1000 expected rows and a LIMIT of 10, the correctly typed proposal expects startup plus 1% of the
+	 * scan; the work-typed one expects essentially startup alone.
 	 */
 	@Test
 	public void limitSliceProrationRequiresRowUnitsNotWorkUnits() {
@@ -1338,14 +1441,25 @@ public class LmdbNativeStrategyArbiterTest {
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
 				});
 
-		double rowsTypedSlice = rowsTyped.effectiveWork(10D).high();
-		double workTypedSlice = workTyped.effectiveWork(10D).high();
-		assertThat(rowsTypedSlice)
+		assertThat(rowsTyped.effectiveWork(10D).high())
+				.as("a LIMIT estimate cannot narrow the proven full-input work ceiling")
+				.isEqualTo(1_000_000D);
+		assertThat(workTyped.effectiveWork(10D).high())
+				.as("work units remain the full hard ceiling too")
+				.isEqualTo(1_000_000D);
+
+		double rowsTypedExpectedBatchWork = rowsTyped.adaptiveEstimate(10D)
+				.total()
+				.expected(LmdbNativeCostVector.Feature.BATCH_ROW);
+		double workTypedExpectedBatchWork = workTyped.adaptiveEstimate(10D)
+				.total()
+				.expected(LmdbNativeCostVector.Feature.BATCH_ROW);
+		assertThat(rowsTypedExpectedBatchWork)
 				.as("a 10-row slice of 1000 expected rows pays startup plus 1%% of the remaining scan")
-				.isEqualTo(250_000D + 0.01D * 750_000D);
-		assertThat(workTypedSlice)
-				.as("work-typed estRows collapses the fraction to 1e-5 — the C1 underpricing shape")
-				.isLessThan(250_100D);
+				.isEqualTo(245_000D);
+		assertThat(workTypedExpectedBatchWork)
+				.as("work-typed estRows collapses expected proration to 1e-5")
+				.isEqualTo(237_507.5D);
 	}
 
 	/**

@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -45,6 +46,8 @@ import org.junit.jupiter.api.io.TempDir;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Milestone 10B (three-tier parity ExecPlan): with {@code rdf4j.lmdb.irAggregateParallel.enabled=true}, an IR aggregate
@@ -291,6 +294,96 @@ class LmdbNativeIrAggregateParallelTest {
 				.isGreaterThan(parallelBefore);
 		// one more run with the parallel path known-active must still be exact
 		assertThat(rows(GROUPED_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void multiPatternAggregateQuoteKeepsExpectedPriceSeparateFromHardWorkAndForcedIrRuns() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(GROUPED_QUERY);
+		assertThat(expected).hasSize(600);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		List<String> forced = rows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
+		assertThat(forced).as("explicit IR selection must preserve the generic result bag")
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+				.as("an explicitly selected available IR candidate must execute its worker producer")
+				.isGreaterThan(parallelBefore);
+
+		GenericPlanNode plan = explainPlan(GROUPED_QUERY, null);
+		JsonNode inventory = parseQuotes(plan);
+		JsonNode parallelCandidate = candidate(inventory, LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION);
+		assertThat(parallelCandidate).as("the natural candidate inventory must retain parallel aggregation")
+				.isNotNull();
+		assertThat(parallelCandidate.path("physicalFeaturesKnown").asBoolean())
+				.as("the generic multi-stage producer has no complete physical quote")
+				.isFalse();
+		assertThat(parallelCandidate.path("total").isNull())
+				.as("the point-priced peer must not be mistaken for a proved physical total")
+				.isTrue();
+
+		JsonNode irCandidate = candidate(inventory,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
+		assertThat(irCandidate).as("the natural inventory must retain the available interpreted IR candidate: %s",
+				inventory).isNotNull();
+		assertThat(irCandidate.path("physicalFeaturesKnown").asBoolean())
+				.as("the multi-stage IR producer has no complete physical quote: %s", irCandidate)
+				.isFalse();
+		assertThat(irCandidate.path("total").isNull())
+				.as("the expected IR price must remain separate from a hard physical total: %s", irCandidate)
+				.isTrue();
+		boolean completeWorkEvidence = irCandidate.path("workEvidenceComplete").asBoolean();
+		JsonNode partialEstimate = irCandidate.path("partialEstimate");
+		JsonNode expectedPrior = irCandidate.path("expectedPlanningPrior");
+		assertThat(completeWorkEvidence)
+				.as("the multi-stage IR hard-work interval must remain incomplete: %s", irCandidate)
+				.isFalse();
+		assertThat(partialEstimate.isNull())
+				.as("expected work must not be smuggled into a model cost vector: %s", irCandidate)
+				.isTrue();
+		assertThat(expectedPrior.isObject())
+				.as("the IR candidate must retain a separate expected planning prior while hard work is incomplete; "
+						+ "candidate=%s inventory=%s", irCandidate, inventory)
+				.isTrue();
+		JsonNode expectedWork = expectedPrior.path("expectedTotalWork");
+		assertThat(expectedWork.isNumber())
+				.as("the expected planning prior must carry work units: %s", expectedPrior)
+				.isTrue();
+		assertThat(expectedWork.asDouble())
+				.as("the expected IR work must be finite and positive: %s", expectedPrior)
+				.isFinite()
+				.isPositive();
+		assertThat(expectedPrior.path("expectedBeforeFirstOutputWork").asDouble())
+				.as("aggregate output is materialized before its first row, so LIMIT cannot prorate this work")
+				.isEqualTo(expectedWork.asDouble());
+	}
+
+	@Test
+	void multiPatternAggregateProposalCarriesBudgetedExecutionResourceWitness() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+
+		JsonNode inventory = parseQuotes(explainPlan(GROUPED_QUERY, null));
+		JsonNode candidate = candidate(inventory,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
+		assertThat(candidate).as("the interpreted parallel aggregate must pass lowering admission: %s", inventory)
+				.isNotNull();
+		JsonNode witness = candidate.path("executionResourceWitness");
+		assertThat(witness.isObject())
+				.as("normal selection needs a separate resource witness from admitted kernel ownership: %s", candidate)
+				.isTrue();
+		assertThat(witness.path("queryLedgerBounded").asBoolean())
+				.as("aggregate retained state must be charged to the query ledger: %s", witness)
+				.isTrue();
+		assertThat(witness.path("workerSlotsReservedOnOpen").asBoolean())
+				.as("parallel task slots must be reserved by the selected opener: %s", witness)
+				.isTrue();
+		assertThat(witness.has("inputReductionProof"))
+				.as("the resource witness must not claim input reduction or a cold physical anchor: %s", witness)
+				.isFalse();
 	}
 
 	@Test
@@ -703,11 +796,48 @@ class LmdbNativeIrAggregateParallelTest {
 	}
 
 	private String explain(String query) {
+		return explainPlan(query, null).toString();
+	}
+
+	private GenericPlanNode explainPlan(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.explain(Explanation.Level.Telemetry)
-					.toString();
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return preparedQuery.explain(Explanation.Level.Telemetry).toGenericPlanNode();
 		}
+	}
+
+	private static JsonNode parseQuotes(GenericPlanNode plan) {
+		String inventory = metric(plan, NativeAggregateCostQuotes.METRIC);
+		assertThat(inventory).as("aggregate planning must expose its candidate inventory").isNotNull();
+		return JsonMapper.builder().build().readTree(inventory);
+	}
+
+	private static JsonNode candidate(JsonNode candidates, String strategy) {
+		for (JsonNode candidate : candidates) {
+			if (strategy.equals(candidate.path("strategy").asText())) {
+				return candidate;
+			}
+		}
+		return null;
+	}
+
+	private static String metric(GenericPlanNode node, String key) {
+		String value = node.getStringMetricActual(key);
+		if (value != null) {
+			return value;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String nested = metric(child, key);
+				if (nested != null) {
+					return nested;
+				}
+			}
+		}
+		return null;
 	}
 
 	private List<String> rows(String query, String forcedStrategy) {

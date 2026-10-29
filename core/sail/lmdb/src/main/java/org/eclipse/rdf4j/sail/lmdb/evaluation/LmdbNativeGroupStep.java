@@ -1505,6 +1505,22 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}
 			}
 			final LmdbNativeWork irAggregateWork = candidateWork;
+			LmdbNativeStrategyProposal.ExpectedPlanningPrior serialExpectedPrior = null;
+			LmdbNativeStrategyProposal.ExpectedPlanningPrior parallelExpectedPrior = null;
+			if (!irAggregateWork.known()) {
+				// Sampled cardinalities are useful only in this expected-only lane. Keep them out of the hard interval
+				// and
+				// the adaptive feature vector; this aggregate materializes its complete result before publishing rows.
+				double expectedSerialWork = LmdbNativeWork.expectedWork(arg, row, row.boundMask());
+				serialExpectedPrior = LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(expectedSerialWork);
+				int workers = LmdbNativeKernelExecution.parallelProposalWorkers();
+				if (workers >= 2) {
+					parallelExpectedPrior = LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(
+							LmdbNativeStrategyProposal.parallelCost(expectedSerialWork, workers));
+				}
+			}
+			final LmdbNativeStrategyProposal.ExpectedPlanningPrior irSerialExpectedPrior = serialExpectedPrior;
+			final LmdbNativeStrategyProposal.ExpectedPlanningPrior irParallelExpectedPrior = parallelExpectedPrior;
 			if (parallelIr) {
 				if (compiledIr) {
 					arbiter.offer(() -> estimatedProposal(
@@ -1513,6 +1529,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							compiledParallelTag,
 							LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
 							LmdbNativeKernelExecution.parallelStartupWork())
+									.withOptionalExpectedPlanningPrior(irParallelExpectedPrior)
+									.withOptionalExecutionResourceWitness(
+											compiledAdmission.executionResourceWitness(row, true))
 									.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, true)));
 				}
 				if (interpretedIr) {
@@ -1522,6 +1541,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							interpretedParallelTag,
 							LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
 							LmdbNativeKernelExecution.parallelStartupWork())
+									.withOptionalExpectedPlanningPrior(irParallelExpectedPrior)
+									.withOptionalExecutionResourceWitness(
+											interpretedAdmission.executionResourceWitness(row, true))
 									.withOptionalAggregatePhysicalPlan(
 											interpretedAdmission.physicalPlan(arg, row, true)));
 				}
@@ -1532,6 +1554,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							groupSlots, aggregates, this, explainTarget, havingCondition, false,
 							allowFixedContexts);
 				}, compiledSerialTag, irAggregateWork)
+						.withOptionalExpectedPlanningPrior(irSerialExpectedPrior)
+						.withOptionalExecutionResourceWitness(compiledAdmission.executionResourceWitness(row, false))
 						.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, false)));
 			}
 			if (interpretedIr) {
@@ -1540,6 +1564,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							groupSlots, aggregates, this, explainTarget, havingCondition, true,
 							allowFixedContexts);
 				}, interpretedSerialTag, irAggregateWork)
+						.withOptionalExpectedPlanningPrior(irSerialExpectedPrior)
+						.withOptionalExecutionResourceWitness(interpretedAdmission.executionResourceWitness(row, false))
 						.withOptionalAggregatePhysicalPlan(interpretedAdmission.physicalPlan(arg, row, false)));
 			}
 		}

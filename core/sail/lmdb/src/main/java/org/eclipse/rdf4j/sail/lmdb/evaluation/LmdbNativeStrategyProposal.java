@@ -39,6 +39,23 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		T open() throws IOException;
 	}
 
+	/** Expected planning work in native-work units; never a hard bound or an adaptive-model feature vector. */
+	record ExpectedPlanningPrior(double expectedTotalWork, double expectedBeforeFirstOutputWork) {
+		ExpectedPlanningPrior {
+			if (!Double.isFinite(expectedTotalWork) || expectedTotalWork < 0D
+					|| !Double.isFinite(expectedBeforeFirstOutputWork) || expectedBeforeFirstOutputWork < 0D
+					|| expectedBeforeFirstOutputWork > expectedTotalWork) {
+				throw new IllegalArgumentException("expected planning work must be finite, nonnegative, and ordered");
+			}
+		}
+
+		static ExpectedPlanningPrior blocking(double expectedTotalWork) {
+			return Double.isFinite(expectedTotalWork) && expectedTotalWork >= 0D
+					? new ExpectedPlanningPrior(expectedTotalWork, expectedTotalWork)
+					: null;
+		}
+	}
+
 	final Opener<T> opener;
 	/**
 	 * Work paid before the first row can be emitted — a parallel group's worker startup, a hash join's build sweep.
@@ -72,6 +89,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private LmdbNativeCostEstimate physicalEstimate;
 	private NativeAggregatePhysicalPlan aggregatePhysicalPlan;
 	private NativeAggregatePhysicalPlan.ColdAnchor coldAnchor;
+	private ExpectedPlanningPrior expectedPlanningPrior;
+	LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness;
 	private NativeAggregateExecutionEvent.Descriptor aggregateExecution;
 	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
 	private LmdbNativeStrategyProposal<?> mappedOrigin;
@@ -95,8 +114,44 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		result.physicalEstimate = physicalEstimate;
 		result.aggregatePhysicalPlan = aggregatePhysicalPlan;
 		result.coldAnchor = coldAnchor;
+		result.expectedPlanningPrior = expectedPlanningPrior;
+		result.executionResourceWitness = executionResourceWitness;
 		result.mappedOrigin = this;
 		return result;
+	}
+
+	LmdbNativeStrategyProposal<T> withExpectedPlanningPrior(ExpectedPlanningPrior prior) {
+		if (opened || closed || expectedPlanningPrior != null) {
+			throw new IllegalStateException("An expected planning prior belongs to one unopened proposal");
+		}
+		expectedPlanningPrior = Objects.requireNonNull(prior);
+		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withOptionalExpectedPlanningPrior(ExpectedPlanningPrior prior) {
+		return prior == null ? this : withExpectedPlanningPrior(prior);
+	}
+
+	ExpectedPlanningPrior expectedPlanningPrior() {
+		return expectedPlanningPrior;
+	}
+
+	LmdbNativeStrategyProposal<T> withExecutionResourceWitness(
+			LmdbNativeKernelExecution.ExecutionResourceWitness witness) {
+		if (opened || closed || executionResourceWitness != null) {
+			throw new IllegalStateException("An execution resource witness belongs to one unopened proposal");
+		}
+		executionResourceWitness = Objects.requireNonNull(witness);
+		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withOptionalExecutionResourceWitness(
+			LmdbNativeKernelExecution.ExecutionResourceWitness witness) {
+		return witness == null ? this : withExecutionResourceWitness(witness);
+	}
+
+	LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness() {
+		return executionResourceWitness;
 	}
 
 	/** A plan-owned shared-work proof, independent of scalar calibration and completed timing confidence. */
