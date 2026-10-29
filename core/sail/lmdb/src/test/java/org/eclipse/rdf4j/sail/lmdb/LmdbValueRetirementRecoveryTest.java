@@ -481,6 +481,8 @@ class LmdbValueRetirementRecoveryTest {
 		FailingTripleCommitStore store = new FailingTripleCommitStore(dataDir, config);
 		store.init();
 		try {
+			// This test needs the failed commit's intent to be recovered on the subsequent reopen.
+			LmdbGcTestMaintenance.awaitPostReady(store);
 			try (SailConnection connection = store.getConnection()) {
 				connection.begin(IsolationLevels.SNAPSHOT);
 				connection.addStatement(subject, PREDICATE, nestedQuoted);
