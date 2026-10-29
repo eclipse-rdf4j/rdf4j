@@ -1281,6 +1281,66 @@ class ImmutablePagedQuadCsfIndexTest {
 		}
 	}
 
+	@Test
+	void keyCursorSequentialNeighborsStayExactAcrossRowsAndExtents() {
+		int ordinaryCount = 1_024;
+		int extentCount = 70_000;
+		long[] ordinaryNeighbors = new long[ordinaryCount];
+		long[] sharedContexts = new long[ordinaryCount];
+		long[] namedContexts = new long[ordinaryCount];
+		long[] extentNeighbors = new long[extentCount];
+		long[] extentContexts = new long[extentCount];
+		long[] mixedNeighbors = new long[ordinaryCount * 2];
+		long[] mixedContexts = new long[ordinaryCount * 2];
+		for (int i = 0; i < ordinaryCount; i++) {
+			ordinaryNeighbors[i] = id(1, 100_000L + i * 3L);
+			namedContexts[i] = id(1, 200_000L + i);
+			mixedNeighbors[i * 2] = id(1, 500_000L + i * 3L);
+			mixedNeighbors[i * 2 + 1] = mixedNeighbors[i * 2];
+			mixedContexts[i * 2 + 1] = id(1, 300_000L + i);
+		}
+		for (int i = 0; i < extentCount; i++) {
+			extentNeighbors[i] = id(1, 1_000_000L + i * 3L);
+		}
+		List<Row> rows = List.of(
+				new Row(id(1, 10), ordinaryNeighbors, sharedContexts),
+				new Row(id(1, 50), ordinaryNeighbors, namedContexts),
+				new Row(id(1, 90), extentNeighbors, extentContexts),
+				new Row(id(1, 120), mixedNeighbors, mixedContexts));
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows)) {
+			assertThat(index.pageCount()).isGreaterThan(2);
+			ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+			for (Row expected : rows) {
+				assertThat(cursor.advance()).isTrue();
+				assertThat(cursor.key()).isEqualTo(expected.row);
+				assertThat(cursor.edgeCount()).isEqualTo(expected.neighbours.length);
+				for (int ordinal = 0; ordinal < expected.neighbours.length; ordinal++) {
+					assertThat(cursor.neighborAt(ordinal)).isEqualTo(expected.neighbours[ordinal]);
+					if (ordinal % 257 == 0) {
+						assertThat(cursor.contextAt(ordinal)).isEqualTo(expected.contexts[ordinal]);
+						long[] neighbors = new long[1];
+						long[] contexts = new long[1];
+						assertThat(cursor.copyPairs(expected.neighbours.length - 1L, 1, neighbors, 0, contexts, 0))
+								.isEqualTo(1);
+						assertThat(neighbors[0]).isEqualTo(expected.neighbours[expected.neighbours.length - 1]);
+						assertThat(contexts[0]).isEqualTo(expected.contexts[expected.contexts.length - 1]);
+						assertThat(cursor.neighborAt(ordinal)).isEqualTo(expected.neighbours[ordinal]);
+					}
+					if (ordinal > 2 && ordinal % 511 == 0) {
+						assertThat(cursor.neighborAt(ordinal - 2)).isEqualTo(expected.neighbours[ordinal - 2]);
+						assertThat(cursor.contextAt(ordinal - 2)).isEqualTo(expected.contexts[ordinal - 2]);
+						assertThat(cursor.neighborAt(ordinal)).isEqualTo(expected.neighbours[ordinal]);
+					}
+				}
+				assertThatThrownBy(() -> cursor.neighborAt(-1)).isInstanceOf(IllegalArgumentException.class);
+				assertThatThrownBy(() -> cursor.neighborAt(expected.neighbours.length))
+						.isInstanceOf(IllegalArgumentException.class);
+			}
+			assertThat(cursor.advance()).isFalse();
+			assertThatThrownBy(() -> cursor.neighborAt(0)).isInstanceOf(IllegalStateException.class);
+		}
+	}
+
 	private static ImmutablePagedQuadCsfIndex build(int predicates, long predicate, int plane, List<Row> rows) {
 		ImmutablePagedQuadCsfIndex.BuildPlan plan;
 		try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex.sizingBuilder(predicates)) {

@@ -4827,6 +4827,16 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			if (ordinal >= endOrdinal) {
 				return false;
 			}
+			// Keep the common same-page scan small enough to inline into native query kernels.
+			if (boundContext < 0 && shardIndex < shardEnd && loadedShard == shardIndex && loadedPage == localPage
+					&& localRow < rowCount() && !continuation()) {
+				position(rowAt(localRow), owner.shardFirstPageIds[shardIndex] + localPage, localRow);
+				return true;
+			}
+			return advanceSlow();
+		}
+
+		private boolean advanceSlow() {
 			while (shardIndex < shardEnd) {
 				CsfShard shard = owner.shards[shardIndex];
 				while (localPage < shard.pageCount()) {
