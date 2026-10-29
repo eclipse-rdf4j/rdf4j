@@ -205,6 +205,10 @@ record LmdbNativeWork(double low, double high) {
 		if (plan instanceof SingletonPlan) {
 			return 1D;
 		}
+		if (plan instanceof MultiJoinPlan multiJoin) {
+			MultiJoinPlan.OrderedPlan ordered = multiJoin.derivedPlan(boundMask);
+			return rowsOnlyChain(ordered.order, ordered.order.length, row, boundMask);
+		}
 		// The dedicated channel first: it uses NaN for unknown, so it can distinguish "no idea" from "very many".
 		double declared = plan.estimateRows(row, boundMask);
 		if (Double.isFinite(declared) && declared >= 0D) {
@@ -218,6 +222,181 @@ record LmdbNativeWork(double low, double high) {
 	}
 
 	/**
+	 * Expected work for planning and order selection. Unlike {@link SlotPlan#estimateWork}, this is allowed to use
+	 * sampled cardinalities and structural cost estimates; callers must not use it as an interval or a proof.
+	 */
+	static double expectedWork(SlotPlan plan, RowState row, long boundMask) {
+		return expectedEstimate(plan, row, boundMask).work();
+	}
+
+	private static ExpectedEstimate expectedEstimate(SlotPlan plan, RowState row, long boundMask) {
+		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan) {
+			return new ExpectedEstimate(plan instanceof EmptyPlan ? 0D : 1D, 0D);
+		}
+		if (plan instanceof PatternPlan pattern) {
+			return expectedPatternEstimate(pattern, row, boundMask);
+		}
+		if (plan instanceof UnionPlan union) {
+			ExpectedEstimate left = expectedEstimate(union.left, row, boundMask);
+			ExpectedEstimate right = expectedEstimate(union.right, row, boundMask);
+			return new ExpectedEstimate(addRows(left.rows(), right.rows()),
+					addExpected(left.work(), right.work()));
+		}
+		if (plan instanceof FilterPlan filter) {
+			ExpectedEstimate input = expectedEstimate(filter.arg, row, boundMask);
+			return new ExpectedEstimate(input.rows(), addExpected(input.work(), input.rows()));
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			ExpectedEstimate input = expectedEstimate(extension.arg, row, boundMask);
+			return new ExpectedEstimate(input.rows(),
+					addExpected(input.work(), multiplyExpected(input.rows(), extension.copies.length)));
+		}
+		if (plan instanceof JoinPlan join) {
+			return expectedJoinEstimate(join.left, join.right, row, boundMask, false);
+		}
+		if (plan instanceof LeftJoinPlan leftJoin) {
+			return expectedJoinEstimate(leftJoin.left, leftJoin.right, row, boundMask, true);
+		}
+		if (plan instanceof MultiJoinPlan multiJoin) {
+			return expectedMultiJoinEstimate(multiJoin, row, boundMask);
+		}
+		if (plan instanceof MinusPlan minus) {
+			ExpectedEstimate left = expectedEstimate(minus.left, row, boundMask);
+			if (left.rows() == 0D) {
+				return left;
+			}
+			if (minus.sharedMask == 0L) {
+				// A disjoint RHS is drained once after the first left row, then its verdict is reused.
+				ExpectedEstimate right = expectedEstimate(minus.right, row, boundMask);
+				return new ExpectedEstimate(left.rows(), addExpected(left.work(), right.work()));
+			}
+			ExpectedEstimate right = expectedEstimate(minus.right, row, boundMask | minus.left.producedMask());
+			return new ExpectedEstimate(left.rows(),
+					addExpected(left.work(), multiplyExpected(left.rows(), right.work())));
+		}
+		double rows = rowsOut(plan, row, boundMask);
+		LmdbNativeWork quote = plan.estimateWork(row, boundMask);
+		if (quote.known()) {
+			return new ExpectedEstimate(rows, midpoint(quote));
+		}
+		return new ExpectedEstimate(rows, Double.NaN);
+	}
+
+	private static ExpectedEstimate expectedPatternEstimate(PatternPlan pattern, RowState row, long boundMask) {
+		LmdbNativeWork quote = pattern.estimateWork(row, boundMask);
+		double rows = patternRowsOut(pattern, row, boundMask);
+		if (quote.equals(ZERO)) {
+			return new ExpectedEstimate(rows, 0D);
+		}
+		NativeLmdbQuerySource source = row == null ? null : row.source;
+		double work;
+		if (pattern.hasDirectEstimateForBoundMask(boundMask, source)
+				&& expectedRowsRepresentScannedRows(pattern, boundMask)) {
+			work = addExpected(SEEK, rows);
+		} else if (quote.known()) {
+			work = midpoint(quote);
+		} else {
+			work = Double.isFinite(rows) && rows >= 0D ? addExpected(SEEK, rows) : Double.NaN;
+		}
+		return new ExpectedEstimate(rows, work);
+	}
+
+	private static double patternRowsOut(PatternPlan pattern, RowState row, long boundMask) {
+		double rows = pattern.workRowsForBoundMask(boundMask, row == null ? null : row.source);
+		return Double.isFinite(rows) && rows >= 0D ? rows : Double.NaN;
+	}
+
+	private static boolean expectedRowsRepresentScannedRows(PatternPlan pattern, long boundMask) {
+		NativeLmdbQuerySource.IndexAccessProfile profile = pattern.accessProfile;
+		if (profile == null) {
+			return true;
+		}
+		if (profile.adjacencyPossible() || pattern.range != null || pattern.namedContextScope) {
+			return false;
+		}
+		int mask = (indexFieldKnown(pattern.s, boundMask) ? 1 : 0)
+				| (indexFieldKnown(pattern.p, boundMask) ? 2 : 0)
+				| (indexFieldKnown(pattern.o, boundMask) ? 4 : 0)
+				| (indexFieldKnown(pattern.c, boundMask) ? 8 : 0);
+		if (pattern.contexts.isFixed()) {
+			mask |= 8;
+		}
+		int prefix = profile.prefixMask(pattern.statementOrder, mask);
+		return prefix >= 0 && (mask & ~prefix) == 0;
+	}
+
+	private static boolean indexFieldKnown(Term term, long boundMask) {
+		return term.isConstant() || term.slot >= 0 && (boundMask & (1L << term.slot)) != 0L;
+	}
+
+	private static ExpectedEstimate expectedMultiJoinEstimate(MultiJoinPlan plan, RowState row, long boundMask) {
+		MultiJoinPlan.OrderedPlan ordered = plan.derivedPlan(boundMask);
+		ExpectedChain chain = expectedChain(ordered.order, ordered.order.length, row, boundMask);
+		double expected = chain.estimatedWork();
+		for (int filter = 0; filter < plan.filters.length; filter++) {
+			int prefixLength = Math.max(0, Math.min(ordered.order.length, ordered.filterDepth[filter] + 1));
+			double rowsAtFilter = prefixLength == 0 ? 1D : chain.rowsAtDepth()[prefixLength - 1];
+			expected = addExpected(expected, rowsAtFilter);
+		}
+		return new ExpectedEstimate(chain.rows(), expected);
+	}
+
+	private static ExpectedEstimate expectedJoinEstimate(SlotPlan left, SlotPlan right, RowState row, long boundMask,
+			boolean leftJoin) {
+		ExpectedEstimate leftEstimate = expectedEstimate(left, row, boundMask);
+		if (leftEstimate.rows() == 0D) {
+			return new ExpectedEstimate(0D, leftEstimate.work());
+		}
+		ExpectedEstimate rightEstimate = expectedEstimate(right, row, boundMask | left.producedMask());
+		double rightMultiplier = leftJoin ? Math.max(1D, rightEstimate.rows()) : rightEstimate.rows();
+		double rows = multiplyRows(leftEstimate.rows(), rightMultiplier);
+		double work = addExpected(leftEstimate.work(), multiplyExpected(leftEstimate.rows(), rightEstimate.work()));
+		return new ExpectedEstimate(rows, work);
+	}
+
+	private static double midpoint(LmdbNativeWork work) {
+		return work.low * 0.5D + work.high * 0.5D;
+	}
+
+	private static double addExpected(double left, double right) {
+		if (!Double.isFinite(left) || left < 0D || !Double.isFinite(right) || right < 0D) {
+			return Double.NaN;
+		}
+		double total = left + right;
+		return Double.isFinite(total) ? total : Double.NaN;
+	}
+
+	private static double addRows(double left, double right) {
+		if (!Double.isFinite(left) || left < 0D || !Double.isFinite(right) || right < 0D) {
+			return Double.NaN;
+		}
+		double total = left + right;
+		return Double.isFinite(total) ? total : Double.NaN;
+	}
+
+	private static double multiplyRows(double left, double right) {
+		if (!Double.isFinite(left) || left < 0D || !Double.isFinite(right) || right < 0D) {
+			return Double.NaN;
+		}
+		double total = left * right;
+		return Double.isFinite(total) ? total : Double.NaN;
+	}
+
+	private static double multiplyExpected(double left, double right) {
+		if (!Double.isFinite(left) || left < 0D) {
+			return Double.NaN;
+		}
+		if (left == 0D) {
+			return 0D;
+		}
+		if (!Double.isFinite(right) || right < 0D) {
+			return Double.NaN;
+		}
+		double total = left * right;
+		return Double.isFinite(total) ? total : Double.NaN;
+	}
+
+	/**
 	 * Conservative work of a two-sided plan. Runtime alternatives can replay a right side, build a hash table before
 	 * touching the left input, or attempt a sweep before falling back. Neither logical input is a guaranteed floor
 	 * across all those modes; specific committed implementations can offer a tighter model.
@@ -226,35 +405,73 @@ record LmdbNativeWork(double low, double high) {
 		return UNKNOWN;
 	}
 
+	/** Conservative work of a chain without evaluating its separate expected-work channel. */
+	static LmdbNativeWork chainHard(SlotPlan[] children, int length, RowState row, long boundMask) {
+		if (length <= 0) {
+			return ZERO;
+		}
+		return length == 1 ? children[0].estimateWork(row, boundMask) : UNKNOWN;
+	}
+
 	/**
 	 * Work and estimated emitted rows of a chain over {@code children}, with the bound mask widening at each child.
 	 * Later cursors can replay or build and fall back, so their complete-open cost cannot be scaled into a hard bound
 	 * without an execution-specific proof.
 	 */
 	static Chain chain(SlotPlan[] children, int length, RowState row, long boundMask) {
-		LmdbNativeWork work = length > 1 ? UNKNOWN : ZERO;
+		ExpectedChain expected = expectedChain(children, length, row, boundMask);
+		LmdbNativeWork work = chainHard(children, length, row, boundMask);
+		return new Chain(work, expected.rows(), expected.boundMask(), expected.estimatedWork());
+	}
+
+	private static double rowsOnlyChain(SlotPlan[] children, int length, RowState row, long boundMask) {
 		double rows = 1D;
-		RowBounds rowBounds = RowBounds.ONE;
+		long mask = boundMask;
+		for (int i = 0; i < length; i++) {
+			double childRows = rowsOut(children[i], row, mask);
+			rows = Double.isFinite(rows) && Double.isFinite(childRows) ? rows * childRows : Double.NaN;
+			mask |= children[i].producedMask();
+		}
+		return rows;
+	}
+
+	private static ExpectedChain expectedChain(SlotPlan[] children, int length, RowState row, long boundMask) {
+		double rows = 1D;
+		double estimatedWork = 0D;
+		double estimatedRows = 1D;
+		double[] rowsAtDepth = new double[length];
 		long mask = boundMask;
 		for (int i = 0; i < length; i++) {
 			SlotPlan child = children[i];
-			LmdbNativeWork childWork = length == 1 ? child.estimateWork(row, mask) : ZERO;
-			double childRows = rowsOut(child, row, mask);
-			work = work.plus(childWork.times(rowBounds));
-			rowBounds = rowBounds.times(rowBounds(child, row, mask));
+			ExpectedEstimate estimate = expectedEstimate(child, row, mask);
+			double childRows = estimate.rows();
+			double expectedChild = multiplyExpected(estimatedRows, estimate.work());
+			estimatedWork = addExpected(estimatedWork, expectedChild);
+			estimatedRows = multiplyExpected(estimatedRows, childRows);
 			rows = Double.isFinite(rows) && Double.isFinite(childRows) ? rows * childRows : Double.NaN;
+			rowsAtDepth[i] = rows;
 			mask |= child.producedMask();
 		}
-		return new Chain(work, rows, mask);
+		return new ExpectedChain(rows, mask, estimatedWork, rowsAtDepth);
 	}
 
-	/** The work, emitted rows and resulting bound mask of a {@linkplain #chain nested-loop chain}. */
-	record Chain(LmdbNativeWork work, double rows, long boundMask) {
+	private record ExpectedEstimate(double rows, double work) {
+	}
 
-		static final Chain UNKNOWN_CHAIN = new Chain(UNKNOWN, Double.NaN, 0L);
+	private record ExpectedChain(double rows, long boundMask, double estimatedWork, double[] rowsAtDepth) {
+	}
+
+	/** The conservative work quote, estimated rows and planning estimate of a {@linkplain #chain nested-loop chain}. */
+	record Chain(LmdbNativeWork work, double rows, long boundMask, double estimatedWork) {
+
+		static final Chain UNKNOWN_CHAIN = new Chain(UNKNOWN, Double.NaN, 0L, Double.NaN);
 
 		boolean known() {
 			return work.known() && !Double.isNaN(rows);
+		}
+
+		boolean estimatedPriceable() {
+			return Double.isFinite(estimatedWork) && !Double.isNaN(rows);
 		}
 	}
 }

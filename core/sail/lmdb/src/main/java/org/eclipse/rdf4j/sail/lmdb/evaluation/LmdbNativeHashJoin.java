@@ -267,7 +267,6 @@ final class LmdbNativeHashJoin {
 		}
 		double leftRows = left.estimateForBoundMask(row.boundMask(), row.source);
 		double rightRows = right.estimateForBoundMask(row.boundMask(), row.source);
-		double hashCost = LmdbNativeStrategyProposal.batchCost(leftRows, rightRows);
 		PatternPlan build;
 		PatternPlan probe;
 		double probeRows;
@@ -285,6 +284,7 @@ final class LmdbNativeHashJoin {
 			return reject(row, "below-min-rows");
 		}
 		double indexNestedLoopCost = leftRows * RuntimeBuildAdmission.SEEK_WORK_UNITS;
+		double hashCost = LmdbNativeStrategyProposal.batchCost(leftRows, rightRows);
 		if (!Double.isFinite(hashCost) || !(hashCost < indexNestedLoopCost)) {
 			return reject(row, "higher-cost");
 		}
@@ -328,7 +328,6 @@ final class LmdbNativeHashJoin {
 		}
 		double leftRows = left.estimateForBoundMask(row.boundMask(), row.source);
 		double rightRows = right.estimateForBoundMask(row.boundMask(), row.source);
-		double hashCost = LmdbNativeStrategyProposal.batchCost(leftRows, rightRows);
 		PatternPlan build;
 		PatternPlan probe;
 		double probeRows;
@@ -345,20 +344,13 @@ final class LmdbNativeHashJoin {
 			return null;
 		}
 		long boundMask = row.boundMask();
-		LmdbNativeWork chain = directChainWork(multiJoin, row, boundMask);
-		if (chain != null) {
-			LmdbNativeWork hash = build.estimateWork(row, boundMask)
-					.times(LmdbNativeParallelKernelRows.expectedBuildReplays())
-					.plus(probe.estimateWork(row, boundMask))
-					.plus(LmdbNativeWork.exact(probeRows));
-			if (!hash.beats(chain)) {
-				return null;
-			}
-		} else {
-			double indexNestedLoopCost = leftRows * RuntimeBuildAdmission.SEEK_WORK_UNITS;
-			if (!Double.isFinite(hashCost) || !(hashCost < indexNestedLoopCost)) {
-				return null;
-			}
+		double chainExpected = directChainExpectedWork(multiJoin, row, boundMask);
+		double buildExpected = LmdbNativeWork.expectedWork(build, row, boundMask);
+		double probeExpected = LmdbNativeWork.expectedWork(probe, row, boundMask);
+		double hashExpected = buildExpected * LmdbNativeParallelKernelRows.expectedBuildReplays()
+				+ probeExpected + probeRows;
+		if (!Double.isFinite(chainExpected) || !Double.isFinite(hashExpected) || !(hashExpected < chainExpected)) {
+			return null;
 		}
 		return new KernelHashPlan(probe, build, slotsOf(keyMask),
 				Integer.getInteger(MAX_BUILD_ROWS_PROPERTY, DEFAULT_MAX_BUILD_ROWS),
@@ -366,21 +358,23 @@ final class LmdbNativeHashJoin {
 	}
 
 	/**
-	 * The derived-order probe-chain work, or null unless every link is priceable from measured statistics (a finite
-	 * uncorrelated static estimate, or a sampled mean fan-out once earlier links bound its slots). The structural
-	 * pseudo-cardinality fallback is deliberately excluded: it prices a cheap bound probe at thousands of rows and
-	 * would hand the hash plan wins it has not earned.
+	 * The derived-order probe-chain expected work, or NaN unless every link is directly priceable from source
+	 * statistics (a finite uncorrelated static estimate or a sampled mean fan-out once earlier links bind its slots).
+	 * This is an expected-cost comparison only; it does not narrow the conservative work interval. Structural
+	 * pseudo-cardinality is deliberately excluded, and an unpriceable chain declines hash admission instead of falling
+	 * back to a separate coarse cross-product heuristic.
 	 */
-	private static LmdbNativeWork directChainWork(MultiJoinPlan multiJoin, RowState row, long boundMask) {
+	private static double directChainExpectedWork(MultiJoinPlan multiJoin, RowState row, long boundMask) {
+		MultiJoinPlan.OrderedPlan derived = multiJoin.derivedPlan(boundMask);
 		long mask = boundMask;
-		for (SlotPlan child : multiJoin.derivedPlan(boundMask).order) {
+		for (SlotPlan child : derived.order) {
 			if (!(child instanceof PatternPlan pattern) || !pattern.hasDirectEstimateForBoundMask(mask, row.source)) {
-				return null;
+				return Double.NaN;
 			}
 			mask |= child.producedMask();
 		}
-		LmdbNativeWork chain = multiJoin.estimateWork(row, boundMask);
-		return chain.known() ? chain : null;
+		LmdbNativeWork.Chain chain = LmdbNativeWork.chain(derived.order, derived.order.length, row, boundMask);
+		return chain.estimatedPriceable() ? chain.estimatedWork() : Double.NaN;
 	}
 
 	/** The kernel lowering's slice of a hash-favored two-pattern plan (M8). */

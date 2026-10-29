@@ -183,16 +183,17 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	/**
-	 * Improves the compiler order with a bounded local search. Each accepted adjacent swap strictly dominates the
-	 * current complete chain under the existing work model, so the lowering never follows an estimate-only ranking.
-	 * Filter placement is checked before a swap is accepted; a candidate that delays any filter is discarded. Unknown
-	 * intervals keep the compiler order, and the finite pass bound prevents planning cost from growing exponentially.
+	 * Improves the compiler order with a bounded local search over the separate expected-work estimates. These
+	 * estimates guide planning only; {@link LmdbNativeWork.Chain#work()} remains the conservative quote used for
+	 * arbitration. Filter placement is checked before a swap is accepted; a candidate that delays any filter is
+	 * discarded. Missing expected prices keep the compiler order, and the finite pass bound prevents planning cost from
+	 * growing exponentially.
 	 */
 	private SlotPlan[] costedLoweringOrder(RowState row, long initialBoundMask) {
 		OrderedPlan incumbent = derive(initialBoundMask, false);
 		SlotPlan[] order = incumbent.order.clone();
-		LmdbNativeWork currentWork = LmdbNativeWork.chain(order, order.length, row, initialBoundMask).work();
-		if (!currentWork.known()) {
+		LmdbNativeWork.Chain current = LmdbNativeWork.chain(order, order.length, row, initialBoundMask);
+		if (!current.estimatedPriceable()) {
 			return order;
 		}
 
@@ -206,11 +207,12 @@ final class MultiJoinPlan implements SlotPlan {
 				if (!preservesFilterPlacement(candidate, initialBoundMask, incumbent.filterDepth)) {
 					continue;
 				}
-				LmdbNativeWork candidateWork = LmdbNativeWork.chain(candidate, candidate.length, row,
-						initialBoundMask).work();
-				if (candidateWork.beats(currentWork)) {
+				LmdbNativeWork.Chain candidatePrice = LmdbNativeWork.chain(candidate, candidate.length, row,
+						initialBoundMask);
+				if (candidatePrice.estimatedPriceable()
+						&& candidatePrice.estimatedWork() < current.estimatedWork()) {
 					order = candidate;
-					currentWork = candidateWork;
+					current = candidatePrice;
 					improved = true;
 				}
 			}
@@ -673,7 +675,7 @@ final class MultiJoinPlan implements SlotPlan {
 	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
 		// Cost the order this plan will actually execute, not the compiler order.
 		MultiJoinPlan.OrderedPlan derived = derivedPlan(boundMask);
-		return LmdbNativeWork.chain(derived.order, derived.order.length, row, boundMask).work();
+		return LmdbNativeWork.chainHard(derived.order, derived.order.length, row, boundMask);
 	}
 
 	@Override
