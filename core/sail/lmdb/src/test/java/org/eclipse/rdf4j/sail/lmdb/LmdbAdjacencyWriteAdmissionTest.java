@@ -17,7 +17,6 @@ import java.io.File;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -108,26 +107,6 @@ class LmdbAdjacencyWriteAdmissionTest {
 			expected.add(queued);
 		}
 
-		AtomicBoolean first = new AtomicBoolean(true);
-		AtomicReference<Throwable> otherFailure = new AtomicReference<>();
-		direct.beforeWriteAdmissionWaitForTest = () -> {
-			if (!first.compareAndSet(true, false)) {
-				return;
-			}
-			// While this writer waits without the store lock, the other connection rolls back. Then the backlog
-			// drains and admits the waiting writer.
-			Thread other = new Thread(() -> {
-				// A NONE transaction with nothing written holds no writer lease, yet its rollback reaches the store.
-				try (RepositoryConnection rollingBack = repo.getConnection()) {
-					rollingBack.begin(IsolationLevels.NONE);
-					rollingBack.rollback();
-				} catch (Throwable failure) {
-					otherFailure.set(failure);
-				}
-				direct.pauseApplierForTest(false);
-			}, "admission-rolling-back-writer");
-			other.start();
-		};
 		Statement waited = F.createStatement(S, P, F.createIRI("http://example.org/admission/o2"));
 		AtomicReference<Throwable> waitedFailure = new AtomicReference<>();
 		Thread writer = new Thread(() -> {
@@ -140,11 +119,28 @@ class LmdbAdjacencyWriteAdmissionTest {
 			}
 		}, "admission-waiting-writer");
 		writer.start();
+		assertThat(ApplierStepping.awaitCondition(() -> direct.admissionWaitersForTest() == 1, 30, TimeUnit.SECONDS))
+				.as("the writer waited for admission%n%s", threadDump())
+				.isTrue();
+		// While the writer waits without the store lock, the other connection rolls back. Then the backlog drains
+		// and admits the waiting writer.
+		AtomicReference<Throwable> otherFailure = new AtomicReference<>();
+		Thread other = new Thread(() -> {
+			// A NONE transaction with nothing written holds no writer lease, yet its rollback reaches the store.
+			try (RepositoryConnection rollingBack = repo.getConnection()) {
+				rollingBack.begin(IsolationLevels.NONE);
+				rollingBack.rollback();
+			} catch (Throwable failure) {
+				otherFailure.set(failure);
+			}
+			direct.pauseApplierForTest(false);
+		}, "admission-rolling-back-writer");
+		other.start();
 		writer.join(TimeUnit.SECONDS.toMillis(30));
 		assertThat(writer.isAlive()).as("the waiting writer finished%n%s", threadDump()).isFalse();
 		assertThat(waitedFailure.get()).isNull();
 		expected.add(waited);
-		assertThat(first.get()).as("the writer waited for admission").isFalse();
+		other.join(TimeUnit.SECONDS.toMillis(30));
 		assertThat(otherFailure.get()).isNull();
 
 		try (RepositoryConnection connection = repo.getConnection()) {

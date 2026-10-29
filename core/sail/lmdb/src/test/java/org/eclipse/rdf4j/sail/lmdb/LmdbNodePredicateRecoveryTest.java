@@ -19,8 +19,6 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
@@ -115,19 +113,9 @@ class LmdbNodePredicateRecoveryTest {
 		assertThat(store.buildNowForTest()).isTrue();
 		assertThat(store.snapshotMetrics().nodePredicateInconsistencies).isZero();
 
-		// The detection schedules a rebuild on the maintenance thread. Park that rebuild before it can publish, so the
-		// degraded-window assertions below observe the degraded state deterministically instead of racing it.
-		CountDownLatch rebuildReached = new CountDownLatch(1);
-		CountDownLatch releaseRebuild = new CountDownLatch(1);
-		store.afterBuildScanForTest = () -> {
-			rebuildReached.countDown();
-			try {
-				assertThat(releaseRebuild.await(30, TimeUnit.SECONDS)).isTrue();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IllegalStateException(e);
-			}
-		};
+		// The detection reports corruption to the applier, which degrades the state and requests a rebuild. With the
+		// applier paused, the degraded window is observed deterministically: the gap unit runs, the rebuild does not.
+		store.pauseApplierForTest(true);
 
 		// 1. The offending query fails rather than under-reporting. It cannot fall back: rows were already emitted.
 		assertThatThrownBy(() -> enumerate(S1))
@@ -135,8 +123,10 @@ class LmdbNodePredicateRecoveryTest {
 				.hasMessageContaining("absent adjacency row");
 		assertThat(store.snapshotMetrics().nodePredicateInconsistencies).isEqualTo(1);
 
-		// 3. A rebuild really was scheduled: it is running right now, parked on the hook.
-		assertThat(rebuildReached.await(30, TimeUnit.SECONDS)).as("a rebuild must be scheduled").isTrue();
+		// 3. The report degraded the index and left a rebuild requested.
+		ApplierStepping.stepUntil(store, () -> store.applierStateForTest().gapFromRevision() != Long.MAX_VALUE,
+				"the corruption report degraded the index");
+		assertThat(store.hasPendingMaintenance()).as("a rebuild must be scheduled").isTrue();
 
 		// 2. Subsequent queries decline instead of throwing. The gate itself is checked as well as the outcome,
 		// because while the scheduled rebuild is parked the whole index is unavailable, so a null result on its own
@@ -150,8 +140,7 @@ class LmdbNodePredicateRecoveryTest {
 
 		// 4. The rebuild derives a fresh projection, and the shape serves again from it.
 		LmdbNodePredicateIndex.clearCorruptionForTest();
-		store.afterBuildScanForTest = null;
-		releaseRebuild.countDown();
+		store.pauseApplierForTest(false);
 		assertThat(store.rebuildNowForTest()).isTrue();
 		assertThat(store.publishedStateForTest().base().nodePredicateIndexOrNull()).isNotNull();
 		assertThat(enumerate(S1)).extracting(row -> row[1]).containsExactly(P1, P2);

@@ -19,8 +19,12 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.net.URL;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -68,6 +72,8 @@ import org.eclipse.rdf4j.sail.features.SailResultValueExposure;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
 import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * An implementation of the {@link RepositoryConnection} interface that wraps a {@link SailConnection}.
@@ -77,6 +83,13 @@ import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
  */
 public class SailRepositoryConnection extends AbstractRepositoryConnection implements FederatedServiceResolverClient,
 		RepositoryResolverClient, HttpClientDependent, SessionManagerDependent {
+
+	private static final Logger logger = LoggerFactory.getLogger(SailRepositoryConnection.class);
+
+	/**
+	 * Innermost sail connection classes for which a dropped federated service resolver has already been reported.
+	 */
+	private static final Set<Class<?>> DROPPED_RESOLVER_WARNED = ConcurrentHashMap.newKeySet();
 
 	/*-----------*
 	 * Variables *
@@ -111,10 +124,36 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		return sailConnection;
 	}
 
+	/**
+	 * Forwards the resolver to the underlying sail connection if it is a {@link FederatedServiceResolverClient}. If a
+	 * non-null resolver cannot reach the innermost (unwrapped) sail connection, a warning is logged once per connection
+	 * class.
+	 */
 	@Override
 	public void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		if (sailConnection instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) sailConnection).setFederatedServiceResolver(resolver);
+		}
+		if (resolver != null) {
+			warnIfResolverCannotReachInnermostConnection();
+		}
+	}
+
+	private void warnIfResolverCannotReachInnermostConnection() {
+		SailConnection innermost = sailConnection;
+		Set<SailConnection> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+		while (innermost instanceof SailConnectionWrapper && seen.add(innermost)) {
+			SailConnection wrapped = ((SailConnectionWrapper) innermost).getWrappedConnection();
+			if (wrapped == null) {
+				break;
+			}
+			innermost = wrapped;
+		}
+		if (innermost != null && !(innermost instanceof FederatedServiceResolverClient)
+				&& DROPPED_RESOLVER_WARNED.add(innermost.getClass())) {
+			logger.warn(
+					"Federated service resolver was not applied: sail connection {} does not implement FederatedServiceResolverClient; SERVICE clauses will use the sail's own resolver.",
+					innermost.getClass().getName());
 		}
 	}
 

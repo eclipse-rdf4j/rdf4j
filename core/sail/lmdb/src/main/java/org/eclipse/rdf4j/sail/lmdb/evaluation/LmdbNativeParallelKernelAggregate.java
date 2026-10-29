@@ -324,7 +324,7 @@ final class LmdbNativeParallelKernelAggregate {
 			try {
 				if (rootAdjacency >= 0) {
 					partitionPlan = LmdbNativeKernelPartitions.planAdjacency(rootAdjacency, queryViews[rootAdjacency],
-							pageProducer, requireContexts);
+							pageProducer, requireContexts, 2L * desiredWorkers);
 				} else if (rootWildcard >= 0 && rootWildcardWindow) {
 					NativeLmdbQuerySource.WildcardAdjacency wildcard = queryVariableViews.wildcards()[rootWildcard];
 					LmdbNativeKernelIr.Operand runtimePredicate = LmdbNativeKernelPartitions
