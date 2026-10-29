@@ -19,8 +19,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -43,25 +47,72 @@ class LmdbProjectedCaptureLifetimeTest {
 	@Test
 	void resultCloseDefersNativeSourceRetirementUntilCurrentRowCaptureCompletes(@TempDir Path directory)
 			throws Exception {
+		long started = System.nanoTime();
+		List<String> phases = new CopyOnWriteArrayList<>();
+		var watchdog = Executors.newSingleThreadScheduledExecutor(task -> {
+			Thread thread = new Thread(task, "lmdb-capture-fixture-watchdog");
+			thread.setDaemon(true);
+			return thread;
+		});
+		ScheduledFuture<?> stalled = null;
+		try {
+			stalled = watchdog.schedule(() -> dumpFixtureDiagnostics(phases, started), 20, TimeUnit.SECONDS);
+			runCaptureScenario(directory, started, phases);
+		} catch (Exception | Error failure) {
+			try {
+				failure.addSuppressed(new AssertionError("Capture fixture phases: " + phases
+						+ "; failure interrupted=" + Thread.currentThread().isInterrupted()));
+				dumpFixtureDiagnostics(phases, started);
+			} catch (Throwable diagnosticFailure) {
+				// Diagnostic allocation or output must never replace the original test failure.
+			}
+			throw failure;
+		} finally {
+			try {
+				if (stalled != null) {
+					stalled.cancel(false);
+				}
+			} catch (Throwable diagnosticFailure) {
+				// Best-effort diagnostic cleanup must not replace the test outcome.
+			} finally {
+				try {
+					watchdog.shutdownNow();
+				} catch (Throwable diagnosticFailure) {
+					// The diagnostic worker is a daemon and must not change the test outcome.
+				}
+			}
+		}
+	}
+
+	private static void runCaptureScenario(Path directory, long started, List<String> phases) throws Exception {
+		recordPhase(directory, started, phases, "seed creation");
 		var config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)
 				.setInlineLiterals(false);
 		var seed = new SailRepository(new LmdbStore(directory.toFile(), config));
 		var vf = SimpleValueFactory.getInstance();
+		recordPhase(directory, started, phases, "seed connection begins");
 		try (var connection = seed.getConnection()) {
+			recordPhase(directory, started, phases, "seed connection opened");
 			for (int i = 0; i < 8; i++) {
 				connection.add(vf.createIRI("urn:capture:s:" + i), vf.createIRI("urn:capture:p"),
 						vf.createLiteral("uninitialized payload " + i));
 			}
+			recordPhase(directory, started, phases, "seed writes complete; closing connection");
 		} finally {
+			recordPhase(directory, started, phases, "seed shutdown begins");
 			seed.shutDown();
+			recordPhase(directory, started, phases, "seed shutdown complete");
 		}
 		var store = new ObservedStore(directory.toFile(), config);
+		recordPhase(directory, started, phases, "observed store reopen begins");
 		store.init();
+		recordPhase(directory, started, phases, "observed store reopen complete");
 		try (var workers = Executors.newVirtualThreadPerTaskExecutor(); var connection = store.getConnection()) {
 			var query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 					"SELECT ?s ?value WHERE { ?s <urn:capture:p> ?value }", null);
 			try (var rows = connection.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
+				recordPhase(directory, started, phases, "query opened; arming row capture");
 				store.values.armed = true;
 				var reading = workers.submit(rows::next);
 				try {
@@ -88,7 +139,32 @@ class LmdbProjectedCaptureLifetimeTest {
 			}
 		} finally {
 			store.values.releaseCapture.countDown();
+			recordPhase(directory, started, phases, "observed store shutdown begins");
 			store.shutDown();
+			recordPhase(directory, started, phases, "observed store shutdown complete");
+		}
+	}
+
+	private static void dumpFixtureDiagnostics(List<String> phases, long started) {
+		try {
+			System.err.println("Capture fixture diagnostic elapsedMs="
+					+ TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) + " phases: " + phases);
+			Thread.getAllStackTraces().forEach((thread, stack) -> System.err.println(
+					"Capture fixture thread: " + thread.getName() + " id=" + thread.threadId()
+							+ " state=" + thread.getState() + " interrupted=" + thread.isInterrupted()
+							+ " stack=" + Arrays.toString(stack)));
+		} catch (Throwable diagnosticFailure) {
+			// Thread enumeration or output is best effort, including on an already failing VM.
+		}
+	}
+
+	private static void recordPhase(Path directory, long started, List<String> phases, String phase) {
+		try {
+			phases.add(phase + " elapsedMs=" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+					+ " interrupted=" + Thread.currentThread().isInterrupted()
+					+ " lockDirectoryExists=" + directory.resolve("lock").toFile().exists());
+		} catch (Throwable diagnosticFailure) {
+			// Observing a phase must not prevent fixture cleanup or change its outcome.
 		}
 	}
 
