@@ -736,8 +736,10 @@ class LmdbGrowthCapacityTest {
 			Thread thread = readerThread.get();
 			// The aggregate gauge can include background sketch refreshes, not just this reader.
 			if (thread != null && Arrays.stream(thread.getStackTrace())
-					.anyMatch(frame -> frame.getClassName().equals(LmdbSailStore.class.getName()
-							+ "$MapGrowthCoordinator") && frame.getMethodName().equals("awaitChange"))) {
+					.anyMatch(frame -> frame.getClassName()
+							.equals(LmdbSailStore.class.getName()
+									+ "$MapGrowthCoordinator")
+							&& frame.getMethodName().equals("awaitChange"))) {
 				return;
 			}
 			Thread.yield();
