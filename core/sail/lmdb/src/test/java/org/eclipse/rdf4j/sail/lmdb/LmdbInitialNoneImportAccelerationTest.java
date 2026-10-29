@@ -20,11 +20,15 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -364,13 +368,65 @@ class LmdbInitialNoneImportAccelerationTest {
 	@EnumSource(TerminalVariant.class)
 	@Timeout(30)
 	void terminalVariantsReleaseDeferralAndRebuildCommittedData(TerminalVariant variant) throws Exception {
+		long started = System.nanoTime();
+		Thread testThread = Thread.currentThread();
+		List<String> phases = new CopyOnWriteArrayList<>();
+		ScheduledExecutorService watchdog = null;
+		ScheduledFuture<?> stalled = null;
+		try {
+			try {
+				watchdog = Executors.newSingleThreadScheduledExecutor(task -> {
+					Thread thread = new Thread(task, "lmdb-terminal-import-watchdog-" + variant);
+					thread.setDaemon(true);
+					return thread;
+				});
+				stalled = watchdog.schedule(() -> dumpTerminalDiagnostics(variant, started, phases, testThread),
+						20, TimeUnit.SECONDS);
+			} catch (Throwable diagnosticFailure) {
+				// Best-effort watchdog setup must not prevent the actual scenario from running.
+			}
+			runTerminalVariant(variant, started, phases);
+		} catch (Exception | Error failure) {
+			try {
+				failure.addSuppressed(new AssertionError("Terminal import variant=" + variant + " phases=" + phases
+						+ "; failure interrupted=" + testThread.isInterrupted()));
+			} catch (Throwable diagnosticFailure) {
+				// Retain phase context without doing potentially blocking output on the test thread.
+			}
+			throw failure;
+		} finally {
+			try {
+				if (stalled != null) {
+					stalled.cancel(false);
+				}
+			} catch (Throwable diagnosticFailure) {
+				// Diagnostic cleanup must preserve the scenario's outcome.
+			} finally {
+				try {
+					if (watchdog != null) {
+						watchdog.shutdownNow();
+					}
+				} catch (Throwable diagnosticFailure) {
+					// The diagnostic worker is a daemon; do not wait for it during test cleanup.
+				}
+			}
+		}
+	}
+
+	private void runTerminalVariant(TerminalVariant variant, long started, List<String> phases) throws Exception {
+		recordTerminalPhase(started, phases, "store construction entered");
 		LmdbStore sail = new LmdbStore(directory, config(true, true));
+		recordTerminalPhase(started, phases, "store init entered");
 		sail.init();
+		recordTerminalPhase(started, phases, "store init exited");
 		IRI subject = VF.createIRI("urn:initial-none:terminal");
 		try {
-			awaitAccelerators(sail, true, true);
+			awaitTerminalAccelerators(sail, started, phases, "initial");
+			recordTerminalPhase(started, phases, "terminal connection entered");
 			try (var writer = sail.getConnection()) {
+				recordTerminalPhase(started, phases, "terminal transaction begin entered");
 				writer.begin(IsolationLevels.NONE);
+				recordTerminalPhase(started, phases, "terminal transaction begin exited; operation entered");
 				switch (variant) {
 				case EMPTY_COMMIT -> writer.flush();
 				case NAMESPACE_COMMIT -> writer.setNamespace("initial", "urn:initial-none:");
@@ -390,13 +446,17 @@ class LmdbInitialNoneImportAccelerationTest {
 				}
 				case ROLLBACK_UNFLUSHED -> writer.addStatement(subject, PREDICATE, VF.createLiteral("discard"));
 				}
+				recordTerminalPhase(started, phases, "terminal operation exited; commit or rollback entered");
 				if (variant == TerminalVariant.ROLLBACK_PREFIX || variant == TerminalVariant.ROLLBACK_UNFLUSHED) {
 					writer.rollback();
 				} else {
 					writer.commit();
 				}
+				recordTerminalPhase(started, phases, "terminal commit or rollback exited; connection close entered");
 			}
-			awaitAccelerators(sail, true, true);
+			recordTerminalPhase(started, phases, "terminal connection close exited");
+			awaitTerminalAccelerators(sail, started, phases, "after terminal");
+			recordTerminalPhase(started, phases, "follow-up connection and assertions entered");
 			long expected = variant == TerminalVariant.ROLLBACK_PREFIX ? 1 : 0;
 			try (var writer = sail.getConnection()) {
 				assertThat(writer.size()).isEqualTo(expected);
@@ -405,21 +465,65 @@ class LmdbInitialNoneImportAccelerationTest {
 				}
 				LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
 				long preparationsBefore = adjacency.phaseTimings().preparationCount();
+				recordTerminalPhase(started, phases, "follow-up begin and write entered");
 				writer.begin(IsolationLevels.NONE);
 				writer.addStatement(VF.createIRI("urn:initial-none:after-terminal"), PREDICATE,
 						VF.createLiteral("next"));
 				writer.flush();
+				recordTerminalPhase(started, phases, "follow-up write and flush exited");
 				if (expected == 0) {
 					assertThat(adjacency.phaseTimings().preparationCount())
 							.as("an emptied or still-empty store remains eligible")
 							.isEqualTo(preparationsBefore);
 				}
+				recordTerminalPhase(started, phases, "follow-up commit entered");
 				writer.commit();
+				recordTerminalPhase(started, phases, "follow-up commit exited; size assertion and close entered");
 				assertThat(writer.size()).isEqualTo(expected + 1);
 			}
-			awaitAccelerators(sail, true, true);
+			recordTerminalPhase(started, phases, "follow-up connection close exited");
+			awaitTerminalAccelerators(sail, started, phases, "after follow-up");
 		} finally {
+			recordTerminalPhase(started, phases, "shutdown entered");
 			sail.shutDown();
+			recordTerminalPhase(started, phases, "shutdown exited");
+		}
+	}
+
+	private static void awaitTerminalAccelerators(LmdbStore sail, long started, List<String> phases, String stage)
+			throws Exception {
+		recordTerminalPhase(started, phases, stage + " adjacency wait entered");
+		assertThat(sail.getBackingStore().directAdjacencyStore().awaitCurrentRevisionReady(10, TimeUnit.SECONDS))
+				.isTrue();
+		recordTerminalPhase(started, phases, stage + " adjacency wait exited; overlay wait entered");
+		assertThat(sail.getBackingStore().valueStore().awaitValueOverlayReady(10, TimeUnit.SECONDS)).isTrue();
+		recordTerminalPhase(started, phases, stage + " overlay wait exited");
+	}
+
+	private static void recordTerminalPhase(long started, List<String> phases, String phase) {
+		try {
+			phases.add(phase + " elapsedMs=" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+					+ " interrupted=" + Thread.currentThread().isInterrupted());
+		} catch (Throwable diagnosticFailure) {
+			// Phase observation must not change the scenario or interfere with its shutdown.
+		}
+	}
+
+	private static void dumpTerminalDiagnostics(TerminalVariant variant, long started, List<String> phases,
+			Thread testThread) {
+		try {
+			String prefix = "Terminal import diagnostic variant=" + variant;
+			System.err.println(prefix + " elapsedMs=" + TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)
+					+ " phases=" + phases);
+			System.err.println(prefix + " testThread=" + testThread.getName() + " state=" + testThread.getState()
+					+ " interrupted=" + testThread.isInterrupted() + " stack="
+					+ Arrays.toString(testThread.getStackTrace()));
+			Thread.getAllStackTraces()
+					.forEach((thread, stack) -> System.err.println(prefix + " thread="
+							+ thread.getName() + " id=" + thread.threadId() + " state=" + thread.getState()
+							+ " interrupted=" + thread.isInterrupted() + " stack=" + Arrays.toString(stack)));
+		} catch (Throwable diagnosticFailure) {
+			// Thread enumeration and output are best effort, including on an already failing VM.
 		}
 	}
 
