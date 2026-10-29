@@ -16,7 +16,7 @@ New LMDB stores must store an IRI (an RDF identifier) in exactly one representat
 - [x] (2026-10-29) Measure the initial implementation and validate 751 related regression cases.
 - [x] (2026-10-29) Apply the user clarification: support only formats 2 and 7, reject 6, and pass 864 regressions across 37 classes.
 - [x] (2026-10-29) Measure the final 2/7 implementation against the isolated original format-6 binary: 440 observations with all canonical alternative counters zero.
-- [ ] [in_progress] Publish complete reviewed branch, draft pull request and patch.
+- [x] (2026-10-29) Publish the reviewed branch and draft pull request #144; package complete changed source files and a binary-safe patch.
 
 ## Surprises & Discoveries
 
@@ -101,3 +101,11 @@ Revision note (2026-10-29): the user clarified that unreleased format 6 does not
 Revision note (2026-10-29): completed the 2/7-only implementation and 864-case regression run. Source and test changes are frozen; the active milestone measures the final binary in isolation before publication.
 
 Revision note (2026-10-29): the final isolated benchmark and all regression gates are complete. The active milestone publishes the reviewed implementation and its evidence; no further code or measurement changes are planned.
+
+## Published handoff
+
+The implementation is published in [draft pull request #144](https://github.com/HASMAC-AS/rdf4j/pull/144), from `GH-0000-canonical-iri-format-7` into HASMAC-AS/rdf4j `main` at `db572a45a401d9e7284b321efba0adbd6d577e6c`. The implementation commit is `75753ac89716dbd60fac6f45c244743028ac0697`; its remote Git tree exactly matches the reviewed local staged tree. A documentation-only publication record follows that commit. No issue number was supplied, so the repository's `GH-0000` convention is used.
+
+The handoff includes all 59 changed files and a binary-safe patch against the pinned main commit. Artifact checks verify each ZIP member against its staged Git blob and verify that applying the patch to a temporary index at the baseline reproduces the complete staged Git tree. The validation report, benchmark report, four raw result files, environment metadata, authentic fixtures and reproduction scripts are part of the branch and source package.
+
+Revision note (2026-10-29): publication and packaging are complete. There are no unfinished implementation or validation steps. The measured import regressions and benchmark limitations remain explicit in the report and PR.
