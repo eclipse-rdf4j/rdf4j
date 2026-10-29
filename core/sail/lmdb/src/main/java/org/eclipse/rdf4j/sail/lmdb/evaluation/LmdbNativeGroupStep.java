@@ -1525,6 +1525,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			}
 			final LmdbNativeStrategyProposal.ExpectedPlanningPrior irSerialExpectedPrior = serialExpectedPrior;
 			final LmdbNativeStrategyProposal.ExpectedPlanningPrior irParallelExpectedPrior = parallelExpectedPrior;
+			// A budgeted execution witness admits an IR tier to the cold normal frontier without a work quote. The
+			// IR kernels enumerate the same rows the interpreter would; when an algorithmic specialist (exact index
+			// runs, metadata counts, worst-case-optimal joins) owns this row, the row-enumerating tiers must compete
+			// on complete work evidence or learned timing only, never on that resource proof alone.
+			final boolean witnessIr = !algorithmicSpecialist;
 			if (parallelIr) {
 				if (compiledIr) {
 					arbiter.offer(() -> estimatedProposal(
@@ -1537,7 +1542,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 											LmdbNativeKernelExecution.parallelProposalWork(irAggregatePlanning))
 									.withOptionalExpectedPlanningPrior(irParallelExpectedPrior)
 									.withOptionalExecutionResourceWitness(
-											compiledAdmission.executionResourceWitness(row, true))
+											witnessIr ? compiledAdmission.executionResourceWitness(row, true) : null)
 									.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, true)));
 				}
 				if (interpretedIr) {
@@ -1551,7 +1556,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 											LmdbNativeKernelExecution.parallelProposalWork(irAggregatePlanning))
 									.withOptionalExpectedPlanningPrior(irParallelExpectedPrior)
 									.withOptionalExecutionResourceWitness(
-											interpretedAdmission.executionResourceWitness(row, true))
+											witnessIr ? interpretedAdmission.executionResourceWitness(row, true) : null)
 									.withOptionalAggregatePhysicalPlan(
 											interpretedAdmission.physicalPlan(arg, row, true)));
 				}
@@ -1564,7 +1569,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}, compiledSerialTag, irAggregateWork)
 						.withPlanningWork(irAggregatePlanning)
 						.withOptionalExpectedPlanningPrior(irSerialExpectedPrior)
-						.withOptionalExecutionResourceWitness(compiledAdmission.executionResourceWitness(row, false))
+						.withOptionalExecutionResourceWitness(
+								witnessIr ? compiledAdmission.executionResourceWitness(row, false) : null)
 						.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, false)));
 			}
 			if (interpretedIr) {
@@ -1575,7 +1581,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}, interpretedSerialTag, irAggregateWork)
 						.withPlanningWork(irAggregatePlanning)
 						.withOptionalExpectedPlanningPrior(irSerialExpectedPrior)
-						.withOptionalExecutionResourceWitness(interpretedAdmission.executionResourceWitness(row, false))
+						.withOptionalExecutionResourceWitness(
+								witnessIr ? interpretedAdmission.executionResourceWitness(row, false) : null)
 						.withOptionalAggregatePhysicalPlan(interpretedAdmission.physicalPlan(arg, row, false)));
 			}
 		}

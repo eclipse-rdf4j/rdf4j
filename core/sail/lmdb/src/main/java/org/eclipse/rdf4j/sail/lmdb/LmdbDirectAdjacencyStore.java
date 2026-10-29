@@ -2424,21 +2424,34 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				&& !writeTransactionBlocksAdjacency();
 	}
 
+	/**
+	 * Upper bound for the directory work of a universal predicate sweep beyond the statement rows it yields: one
+	 * catalog step per predicate plus, with visible overlay generations, the overlay rows each predicate slice has to
+	 * examine. Every predicate slice scans the visible generation rows for its candidates (once through the latest-row
+	 * tree and once more when it resolves replacements), so the overlay rows are charged per predicate. Obsolete
+	 * overlay versions can only be revisited through those rows, which keeps this ceiling finite.
+	 */
 	long predicateSweepWorkUpper(LmdbAdjacencyReadView view) {
 		if (!offersUniversalCandidate(view)) {
 			return -1L;
 		}
+		long predicates = view.state().planeStatistics().predicateDomain().size();
+		long overlayRows = 0L;
 		LmdbAdjacencyOverlaySet overlays = view.state().overlays();
 		if (overlays != null) {
 			for (int i = 0; i < overlays.generationCount(); i++) {
-				if (overlays.generation(i).revision() <= view.snapshotRevision()) {
-					// A predicate sweep may revisit obsolete overlay versions, for which the current row count
-					// is not an upper bound. Preserve the candidate with an unknown ceiling.
-					return -2L;
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+				if (generation.revision() <= view.snapshotRevision()) {
+					overlayRows = LmdbUtil.saturatedAdd(overlayRows, generation.rowCount());
 				}
 			}
 		}
-		return view.state().planeStatistics().predicateDomain().size();
+		if (overlayRows == 0L) {
+			return predicates;
+		}
+		long perPredicate = LmdbUtil.saturatedAdd(1L, LmdbUtil.saturatedAdd(overlayRows, overlayRows));
+		long sliceWork = predicates > Long.MAX_VALUE / perPredicate ? Long.MAX_VALUE : predicates * perPredicate;
+		return LmdbUtil.saturatedAdd(sliceWork, overlayRows);
 	}
 
 	/** Upper bound for node-predicate directory work, or -1 when this view cannot offer that access. */

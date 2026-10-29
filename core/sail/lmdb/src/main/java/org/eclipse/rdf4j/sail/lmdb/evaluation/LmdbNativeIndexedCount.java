@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.INDEX_SEEK;
 
 import java.io.IOException;
 import java.util.OptionalLong;
@@ -29,7 +30,9 @@ final class LmdbNativeIndexedCount {
 	record PreparedCount(NativeLmdbQuerySource.PreparedPredicateCount sourceCount, long subject, long predicate,
 			long object, long context) {
 		LmdbNativeWork work() {
-			return LmdbNativeWork.exact(sourceCount.workUnits());
+			double low = sourceCount.workUnitsLow();
+			double high = sourceCount.workUnitsHigh();
+			return low == high ? LmdbNativeWork.exact(high) : LmdbNativeWork.between(low, high);
 		}
 	}
 
@@ -102,23 +105,41 @@ final class LmdbNativeIndexedCount {
 			return null;
 		}
 		OptionalLong metadataLookups = prepared.sourceCount.metadataLookups();
-		if (metadataLookups.isEmpty() || metadataLookups.getAsLong() < 0L) {
-			return null;
+		final double low;
+		final double expected;
+		final double high;
+		final String properties;
+		if (metadataLookups.isPresent()) {
+			if (metadataLookups.getAsLong() < 0L) {
+				return null;
+			}
+			low = expected = high = metadataLookups.getAsLong();
+			properties = "INDEXED_COUNT[metadataLookups=" + metadataLookups.getAsLong() + "]";
+		} else {
+			// An ordinary-index count reads leaf cardinalities instead of rows. The page interval is the source's
+			// own ceiling for that walk; it is a typed metadata quote, not a row estimate.
+			low = prepared.sourceCount.workUnitsLow();
+			expected = prepared.sourceCount.workUnits();
+			high = prepared.sourceCount.workUnitsHigh();
+			if (!(low >= 0D) || !(expected >= low) || !(high >= expected) || !Double.isFinite(high)) {
+				return null;
+			}
+			properties = "INDEXED_COUNT[indexPageReads=" + low + ".." + high + "]";
 		}
-		long lookups = metadataLookups.getAsLong();
 		return new NativeAggregatePhysicalPlan(pattern, NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE,
 				new NativeAggregatePhysicalPlan.Producer() {
 					@Override
 					public NativeAggregatePhysicalPlan.Work quote(RowState row) {
 						row.cancellation.check();
-						NativeAggregateCostQuotes.Input operations = new NativeAggregateCostQuotes.Input(0D, 0D,
-								lookups, 0D, 0D);
+						NativeAggregateCostQuotes.Input operations = new NativeAggregateCostQuotes.Input(0D, 0D, 0D,
+								0D, 0D, 0D, 0D,
+								LmdbNativeCostVector.builder().add(INDEX_SEEK, low, expected, high).build());
 						return new NativeAggregatePhysicalPlan.Work(operations, LmdbNativeCostVector.zero());
 					}
 
 					@Override
 					public String properties() {
-						return "INDEXED_COUNT[metadataLookups=" + lookups + "]";
+						return properties;
 					}
 				});
 	}

@@ -93,6 +93,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalDouble;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -3658,6 +3659,82 @@ class TripleStore implements Closeable {
 			LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.incrementAndGet();
 			LmdbPrefixRunPlan.recordExactIndexWork(count.work());
 			return count.entries();
+		}
+	}
+
+	/**
+	 * A deferred exact count over one contiguous physical key prefix of the selected ordinary index, quoted in index
+	 * page reads before any index page is read. The quote is a ceiling taken from the index's B-tree shape: two
+	 * root-to-leaf descents plus, at most, every branch and leaf page of the index. Returns null when the bound fields
+	 * are not one contiguous prefix of the selected index or when exact page access is unavailable, so the caller keeps
+	 * its ordinary row-scan estimate.
+	 */
+	PreparedIndexCount prepareExactIndexCount(Txn txn, long subj, long pred, long obj, long context,
+			boolean explicit) {
+		int mask = boundMask(subj, pred, obj, context);
+		// Whole-store and context-only totals are served from catalogs; a fully bound key is an existence probe.
+		if (exactIndexReader == null || !txn.isReadOnly() || mask == 0 || mask == 8 || mask == 15) {
+			return null;
+		}
+		return selectGeneration(txn, selectedGeneration -> {
+			TripleIndex index = selectedGeneration.best[mask];
+			if (index == null || index.getRangePrefixLength(subj, pred, obj, context) != Integer.bitCount(mask)) {
+				return null;
+			}
+			try (MemoryStack stack = stackPush()) {
+				MDBStat stat = MDBStat.malloc(stack);
+				E(mdb_stat(txn.get(), index.getDB(explicit), stat));
+				return new PreparedIndexCount(txn, index, subj, pred, obj, context, explicit, stat.ms_depth(),
+						stat.ms_branch_pages(), stat.ms_leaf_pages());
+			}
+		});
+	}
+
+	/** An executable exact prefix count bound to one pinned snapshot and one statement index generation. */
+	final class PreparedIndexCount {
+		private final Txn txn;
+		private final TripleIndex index;
+		private final long subj;
+		private final long pred;
+		private final long obj;
+		private final long context;
+		private final boolean explicit;
+		private final double lowPageReads;
+		private final double highPageReads;
+
+		private PreparedIndexCount(Txn txn, TripleIndex index, long subj, long pred, long obj, long context,
+				boolean explicit, int depth, long branchPages, long leafPages) {
+			this.txn = txn;
+			this.index = index;
+			this.subj = subj;
+			this.pred = pred;
+			this.obj = obj;
+			this.context = context;
+			this.explicit = explicit;
+			// Both bounds can share one root-to-leaf path; at most both descents and every tree page are read.
+			this.lowPageReads = Math.max(1D, depth);
+			this.highPageReads = Math.max(lowPageReads, 2D * depth + (double) branchPages + (double) leafPages);
+		}
+
+		/** Pages read when both prefix bounds land on one leaf. */
+		double lowPageReads() {
+			return lowPageReads;
+		}
+
+		/** Pages read if the prefix spanned the whole index: two descents plus every branch and leaf page. */
+		double highPageReads() {
+			return highPageReads;
+		}
+
+		/** The exact prefix cardinality, or empty when the pinned snapshot can no longer certify the exact pages. */
+		OptionalLong execute() throws IOException {
+			return withGeneration(txn, selectedGeneration -> {
+				if (!selectedGeneration.indexes.contains(index)) {
+					return OptionalLong.empty();
+				}
+				long count = countIndexPrefix(txn, index, subj, pred, obj, context, explicit);
+				return count < 0L ? OptionalLong.empty() : OptionalLong.of(count);
+			});
 		}
 	}
 

@@ -582,16 +582,23 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	public PreparedPredicateCount prepareExactPredicateCount(long predicate) {
 		List<PreparedPredicateCount> plans = new ArrayList<>(activeSources.size());
 		double workUnits = 0D;
+		double workUnitsLow = 0D;
+		double workUnitsHigh = 0D;
 		long metadataLookups = 0L;
 		boolean metadataLookupsKnown = true;
 		for (NativeLmdbQuerySource source : activeSources) {
 			PreparedPredicateCount plan = source.prepareExactPredicateCount(predicate);
 			if (plan == null || !(plan.workUnits() >= 0D) || !Double.isFinite(plan.workUnits())
-					|| !Double.isFinite(workUnits + plan.workUnits())) {
+					|| !Double.isFinite(workUnits + plan.workUnits())
+					|| !(plan.workUnitsLow() >= 0D) || !(plan.workUnitsLow() <= plan.workUnits())
+					|| !(plan.workUnitsHigh() >= plan.workUnits()) || !Double.isFinite(plan.workUnitsHigh())
+					|| !Double.isFinite(workUnitsHigh + plan.workUnitsHigh())) {
 				return null;
 			}
 			plans.add(plan);
 			workUnits += plan.workUnits();
+			workUnitsLow += plan.workUnitsLow();
+			workUnitsHigh += plan.workUnitsHigh();
 			OptionalLong sourceLookups = plan.metadataLookups();
 			if (sourceLookups.isEmpty() || sourceLookups.getAsLong() < 0L) {
 				metadataLookupsKnown = false;
@@ -604,6 +611,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			}
 		}
 		double quotedWork = workUnits;
+		double quotedWorkLow = workUnitsLow;
+		double quotedWorkHigh = workUnitsHigh;
 		OptionalLong quotedMetadataLookups = metadataLookupsKnown
 				? OptionalLong.of(metadataLookups)
 				: OptionalLong.empty();
@@ -611,6 +620,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			@Override
 			public double workUnits() {
 				return quotedWork;
+			}
+
+			@Override
+			public double workUnitsLow() {
+				return quotedWorkLow;
+			}
+
+			@Override
+			public double workUnitsHigh() {
+				return quotedWorkHigh;
 			}
 
 			@Override

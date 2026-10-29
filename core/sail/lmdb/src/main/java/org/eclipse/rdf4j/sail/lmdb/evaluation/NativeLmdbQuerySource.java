@@ -2430,7 +2430,18 @@ public interface NativeLmdbQuerySource {
 
 	/** An executable, snapshot-bound predicate count with a finite physical-work quote. */
 	interface PreparedPredicateCount {
+		/** Expected physical work in index/metadata page operations; never more than {@link #workUnitsHigh()}. */
 		double workUnits();
+
+		/** Physical-work floor when the exact number of metadata operations is only known after execution. */
+		default double workUnitsLow() {
+			return workUnits();
+		}
+
+		/** Physical-work ceiling; finite whenever the plan is offered. */
+		default double workUnitsHigh() {
+			return workUnits();
+		}
 
 		/** Exact source-owned metadata lookup count when this plan can name that operation. */
 		default OptionalLong metadataLookups() {

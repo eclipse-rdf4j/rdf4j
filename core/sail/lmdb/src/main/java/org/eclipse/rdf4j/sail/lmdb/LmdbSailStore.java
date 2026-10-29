@@ -14176,28 +14176,56 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public NativeLmdbQuerySource.PreparedPredicateCount prepareExactPredicateCount(long predicate) {
 			checkOpen();
-			if (!hasStatementsInSource() || directAdjacency == null) {
+			if (!hasStatementsInSource()) {
 				return null;
 			}
-			LmdbAdjacencyReadView view = exactAdjacencyView(true);
-			if (!directAdjacency.canExactPredicateCount(view, predicate)) {
+			LmdbAdjacencyReadView view = directAdjacency == null ? null : exactAdjacencyView(true);
+			if (view != null && directAdjacency.canExactPredicateCount(view, predicate)) {
+				return new NativeLmdbQuerySource.PreparedPredicateCount() {
+					@Override
+					public double workUnits() {
+						return 1D;
+					}
+
+					@Override
+					public OptionalLong metadataLookups() {
+						return OptionalLong.of(1L);
+					}
+
+					@Override
+					public OptionalLong execute() {
+						checkOpen();
+						return directAdjacency.exactPredicateCount(view, predicate, explicit);
+					}
+				};
+			}
+			// Without exact adjacency metadata the ordinary predicate-leading index still answers the count from
+			// its leaf cardinalities; quote that page walk instead of leaving the count to a row enumeration.
+			TripleStore.PreparedIndexCount indexCount = tripleStore.prepareExactIndexCount(txn, -1L, predicate, -1L,
+					-1L, explicit);
+			if (indexCount == null) {
 				return null;
 			}
 			return new NativeLmdbQuerySource.PreparedPredicateCount() {
 				@Override
 				public double workUnits() {
-					return 1D;
+					return indexCount.highPageReads();
 				}
 
 				@Override
-				public OptionalLong metadataLookups() {
-					return OptionalLong.of(1L);
+				public double workUnitsLow() {
+					return indexCount.lowPageReads();
 				}
 
 				@Override
-				public OptionalLong execute() {
+				public double workUnitsHigh() {
+					return indexCount.highPageReads();
+				}
+
+				@Override
+				public OptionalLong execute() throws IOException {
 					checkOpen();
-					return directAdjacency.exactPredicateCount(view, predicate, explicit);
+					return indexCount.execute();
 				}
 			};
 		}
@@ -15815,28 +15843,63 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public NativeLmdbQuerySource.PreparedPredicateCount prepareExactPredicateCount(long predicate) {
 			return withNativeSourceRead(() -> {
-				if (!hasStatementsInSource() || !directEligible()
-						|| !directAdjacency.canExactPredicateCount(adjacencyView, predicate)) {
+				if (!hasStatementsInSource()) {
+					return null;
+				}
+				if (directEligible() && directAdjacency.canExactPredicateCount(adjacencyView, predicate)) {
+					return new NativeLmdbQuerySource.PreparedPredicateCount() {
+						@Override
+						public double workUnits() {
+							return 1D;
+						}
+
+						@Override
+						public OptionalLong metadataLookups() {
+							return OptionalLong.of(1L);
+						}
+
+						@Override
+						public OptionalLong execute() {
+							// Re-check direct eligibility at execution: the adjacency may have been retired or cut
+							// over since this count was prepared, exactly as the unprepared sibling checks per call.
+							return withNativeSourceRead(() -> !hasStatementsInSource() || !directEligible()
+									? OptionalLong.empty()
+									: directAdjacency.exactPredicateCount(adjacencyView, predicate, explicit));
+						}
+					};
+				}
+				// Without exact adjacency metadata the ordinary predicate-leading index still answers the count
+				// from its leaf cardinalities; quote that page walk instead of leaving the count to a row enumeration.
+				TripleStore.PreparedIndexCount indexCount = tripleStore.prepareExactIndexCount(txn, -1L, predicate,
+						-1L, -1L, explicit);
+				if (indexCount == null) {
 					return null;
 				}
 				return new NativeLmdbQuerySource.PreparedPredicateCount() {
 					@Override
 					public double workUnits() {
-						return 1D;
+						return indexCount.highPageReads();
 					}
 
 					@Override
-					public OptionalLong metadataLookups() {
-						return OptionalLong.of(1L);
+					public double workUnitsLow() {
+						return indexCount.lowPageReads();
 					}
 
 					@Override
-					public OptionalLong execute() {
-						// Re-check direct eligibility at execution: the adjacency may have been retired or cut over
-						// since this count was prepared, exactly as the unprepared sibling checks on every call.
-						return withNativeSourceRead(() -> !hasStatementsInSource() || !directEligible()
-								? OptionalLong.empty()
-								: directAdjacency.exactPredicateCount(adjacencyView, predicate, explicit));
+					public double workUnitsHigh() {
+						return indexCount.highPageReads();
+					}
+
+					@Override
+					public OptionalLong execute() throws IOException {
+						long readStamp = acquireNativeSourceReadLockUnchecked();
+						try {
+							assertNativeSourceOpen();
+							return hasStatementsInSource() ? indexCount.execute() : OptionalLong.empty();
+						} finally {
+							nativeSourceLock.unlockRead(readStamp);
+						}
 					}
 				};
 			});

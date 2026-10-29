@@ -124,7 +124,9 @@ class LmdbNativeIndexedAggregateTest {
 				connection.commit();
 				var query = connection.prepareTupleQuery("SELECT ?p (COUNT(*) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p");
 				((SailQuery) query).setLmdbResultCacheRequested(false);
-				assertThat(findStrategy(query.explain(Explanation.Level.Telemetry).toGenericPlanNode()))
+				Explanation telemetry = query.explain(Explanation.Level.Telemetry);
+				assertThat(findStrategy(telemetry.toGenericPlanNode()))
+						.as("grouped predicate counts over an unbound pattern consume exact index runs:%n%s", telemetry)
 						.isEqualTo("prefixRunGroups");
 				LmdbPrefixRunPlan.resetMetrics();
 				try (LmdbStartupReadCounter reads = new LmdbStartupReadCounter()) {
