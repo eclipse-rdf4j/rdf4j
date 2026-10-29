@@ -306,7 +306,7 @@ class ValueStoreIdCacheTest {
 
 	@Test
 	void ordinaryInsertSpoilsAnActiveFreshValueSession(@TempDir File directory) throws Exception {
-		try (CountingValueStore store = store(directory)) {
+		try (CountingValueStore store = canonicalStore(directory)) {
 			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
 			assertNotNull(session);
 			assertTrue(store.isFreshValueSessionUsable(session));
@@ -780,7 +780,7 @@ class ValueStoreIdCacheTest {
 
 	@Test
 	void collectingAValueSpoilsAnActiveFreshValueSession(@TempDir File directory) throws Exception {
-		try (CountingValueStore store = store(directory)) {
+		try (CountingValueStore store = canonicalStore(directory)) {
 			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
 			assertNotNull(session);
 			Value[] values = { store.createIRI("urn:fresh:collected") };
@@ -808,7 +808,7 @@ class ValueStoreIdCacheTest {
 	void bulkPublicationNeverExposesUncommittedIds(@TempDir File directory) throws Exception {
 		for (boolean prepared : new boolean[] { false, true }) {
 			for (boolean commit : new boolean[] { false, true }) {
-				try (CountingValueStore store = store(new File(directory, "bulk-" + prepared + "-" + commit));
+				try (CountingValueStore store = canonicalStore(new File(directory, "bulk-" + prepared + "-" + commit));
 						var reader = Executors.newSingleThreadExecutor()) {
 					Value[] values = { store.createIRI("urn:bulk:provisional"),
 							store.createIRI("http://www.w3.org/test/bulk-provisional") };
@@ -988,6 +988,10 @@ class ValueStoreIdCacheTest {
 		return new CountingValueStore(directory, config());
 	}
 
+	private static CountingValueStore canonicalStore(File directory) throws Exception {
+		return new CountingValueStore(directory, config(), LmdbStoreFormat.CANONICAL_IRI_VERSION);
+	}
+
 	private static LmdbStoreConfig config() {
 		return new LmdbStoreConfig().setValueOverlayEnabled(false).setInlineLiterals(false);
 	}
@@ -1015,7 +1019,14 @@ class ValueStoreIdCacheTest {
 		private CountDownLatch resumeProbe;
 
 		CountingValueStore(File directory, LmdbStoreConfig config) throws IOException {
-			super(directory, config);
+			// Exercise the released mixed-split compatibility cache; fresh sessions require a canonical store.
+			this(directory, config, LmdbStoreFormat.LEGACY_VERSION);
+		}
+
+		CountingValueStore(File directory, LmdbStoreConfig config, int version) throws IOException {
+			// These tests create empty stores with trusted counts and explicitly exercise reclamation invalidation.
+			super(directory, new StoreProperties().setVersion(Integer.toString(version)),
+					config.setLegacyReferenceCountRepairEnabled(true));
 		}
 
 		@Override

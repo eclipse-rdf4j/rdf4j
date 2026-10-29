@@ -21,17 +21,24 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
+import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_sync;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
@@ -212,6 +219,44 @@ final class RetiredValueIdStore {
 		E(mdb_put(txn, metaDbi, keyVal, dataVal, 0));
 	}
 
+	/** Reads a standalone dictionary's immutable fence without starting a native writer. Absence denotes format 2. */
+	static int readNativeFormatVersion(File directory) throws IOException {
+		long environment = 0L;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_env_create(handle));
+			environment = handle.get(0);
+			E(mdb_env_set_maxdbs(environment, 128));
+			E(mdb_env_open(environment, directory.getAbsolutePath(), MDB_RDONLY | MDB_NOTLS, 0664));
+			return LmdbUtil.readTransaction(environment, (lookup, transaction) -> {
+				IntBuffer database = lookup.mallocInt(1);
+				int result = mdb_dbi_open(transaction, "gc_meta", 0, database);
+				if (result == MDB_NOTFOUND) {
+					return LmdbStoreFormat.LEGACY_VERSION;
+				}
+				E(result);
+				MDBVal key = MDBVal.calloc(lookup).mv_data(lookup.bytes(new byte[] { FORMAT_KEY }));
+				MDBVal value = MDBVal.calloc(lookup);
+				result = mdb_get(transaction, database.get(0), key, value);
+				if (result == MDB_NOTFOUND) {
+					return LmdbStoreFormat.LEGACY_VERSION;
+				}
+				E(result);
+				ByteBuffer encoded = value.mv_data();
+				if (encoded.remaining() != 1
+						|| !LmdbStoreFormat
+								.isSupportedModernVersion(Byte.toUnsignedInt(encoded.get(encoded.position())))) {
+					throw new IOException("Unsupported ValueStore native format fence");
+				}
+				return Byte.toUnsignedInt(encoded.get(encoded.position()));
+			});
+		} finally {
+			if (environment != 0L) {
+				mdb_env_close(environment);
+			}
+		}
+	}
+
 	/** Checks only owned metadata; unrelated gc_meta keys remain untouched. Call before the startup writer. */
 	static void validateMetadataSchema(long txn, LmdbStoreFormat format, boolean newNativeGeneration)
 			throws IOException {
@@ -242,7 +287,7 @@ final class RetiredValueIdStore {
 			E(rc);
 			ByteBuffer encodedFormat = value.mv_data();
 			if (format.isLegacy() || encodedFormat.remaining() != 1
-					|| encodedFormat.get(encodedFormat.position()) != LmdbStoreFormat.CURRENT_VERSION) {
+					|| encodedFormat.get(encodedFormat.position()) != format.getVersion()) {
 				throw new IOException("ValueStore native format fence does not agree with LmdbStore format "
 						+ format.getVersion());
 			}
@@ -258,11 +303,14 @@ final class RetiredValueIdStore {
 	}
 
 	/** Authors the new-generation identity before dictionary writes; legacy generations never call this method. */
-	static void authorFormatFenceWithTransaction(long txn) throws IOException {
+	static void authorFormatFenceWithTransaction(long txn, LmdbStoreFormat format) throws IOException {
+		if (!LmdbStoreFormat.isSupportedModernVersion(format.getVersion())) {
+			throw new IOException("Cannot author a native format fence for LmdbStore format " + format.getVersion());
+		}
 		int metadata = openDatabaseWithTxn(txn, "gc_meta", MDB_CREATE);
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { FORMAT_KEY }));
-			MDBVal value = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { LmdbStoreFormat.CURRENT_VERSION }));
+			MDBVal value = MDBVal.calloc(stack).mv_data(stack.bytes(new byte[] { (byte) format.getVersion() }));
 			E(mdb_put(txn, metadata, key, value, MDB_NOOVERWRITE));
 		}
 	}

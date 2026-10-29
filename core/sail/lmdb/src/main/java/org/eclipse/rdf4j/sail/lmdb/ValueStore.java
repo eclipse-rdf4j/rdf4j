@@ -1245,7 +1245,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	@InternalUseOnly
 	public ValueStore(File dir, LmdbStoreConfig config) throws IOException {
-		this(dir, new StoreProperties(dir), config);
+		this(dir, StoreProperties.forDictionary(dir), config);
 	}
 
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config) throws IOException {
@@ -1264,7 +1264,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases,
 			Runnable duringValueOverlayWarmupScanForTest) throws IOException {
 		this(dir, properties, config, deferAuxiliaryDatabases, duringValueOverlayWarmupScanForTest,
-				LmdbStoreFormat.fromProperties(properties, config), false);
+				LmdbStoreFormat.resolveDictionary(dir, properties, config), false);
 	}
 
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases,
@@ -2960,7 +2960,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		startupExpectedLastTransactionId = -1L;
 		startupInitializationInProgress = false;
 		boolean nativeGenerationExists = new File(dir, "data.mdb").exists();
-		boolean newNativeGeneration = !nativeGenerationExists && (!properties.isLoaded() || replacingNativeGeneration);
+		boolean newNativeGeneration = !nativeGenerationExists
+				&& (!properties.isLoaded() || replacingNativeGeneration || properties.recreatesNativeGeneration());
 		if (!format.isLegacy() && !nativeGenerationExists && !newNativeGeneration) {
 			throw new IOException(
 					"Missing native ValueStore generation for existing LmdbStore format " + format.getVersion());
@@ -3082,7 +3083,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				throw new IOException(
 						"ValueStore detected an intervening native writer before authoring its format fence");
 			}
-			RetiredValueIdStore.authorFormatFenceWithTransaction(txn);
+			RetiredValueIdStore.authorFormatFenceWithTransaction(txn, format);
 			return mdb_txn_id(txn);
 		});
 		// Carry only the native identity consumed by our checked writer into startup. A later native writer must
@@ -7584,12 +7585,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void estimateFreshIri(PreparedValueFootprint footprint, Set<String> namespaces, IRI iri) {
-		String namespace = iri.getNamespace();
+		IriStorageEncoding.Split split = IriStorageEncoding.split(iri, format);
+		String namespace = split.namespace();
 		if (namespaces.add(namespace)) {
 			footprint.addStoredRecordUpperBound(add(1L, utf8LengthUpperBound(namespace)), pageSize);
 		}
 		footprint.addStoredRecordUpperBound(
-				add(1L, add(MAX_UNSIGNED_ID_BYTES, utf8LengthUpperBound(iri.getLocalName()))), pageSize);
+				add(1L, add(MAX_UNSIGNED_ID_BYTES, utf8LengthUpperBound(split.localName()))), pageSize);
 		footprint.addReference();
 	}
 
@@ -8463,7 +8465,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
 				return data2id(idVal.mv_data());
 			}
-			long alternativeId = findAlternativeIriId(data, stack, txn);
+			long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+					: findAlternativeIriId(data, stack, txn);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -8510,7 +8513,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			} else {
 				// no value for hash exists
-				long alternativeId = findAlternativeIriId(data, stack, txn);
+				long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+						: findAlternativeIriId(data, stack, txn);
 				if (alternativeId != LmdbValue.UNKNOWN_ID) {
 					return alternativeId;
 				}
@@ -8572,7 +8576,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 
-			long alternativeId = findAlternativeIriId(data, stack, txn);
+			long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+					: findAlternativeIriId(data, stack, txn);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -8627,6 +8632,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 */
 	private long findAlternativeIriId(byte[] data, MemoryStack stack, long txn, LongHashSet absentRecordHashes)
 			throws IOException {
+		assert !format.usesCanonicalIriEncoding() : "Canonical dictionary misses must not search alternative splits";
 		if (data[0] != URI_VALUE) {
 			return LmdbValue.UNKNOWN_ID;
 		}
@@ -8659,6 +8665,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private long findAlternativeIriId(IRI iri, ValueLookupContext lookup) throws IOException {
+		assert !format.usesCanonicalIriEncoding() : "Canonical namespace misses establish absence";
 		byte[] lexical = iri.stringValue().getBytes(StandardCharsets.UTF_8);
 		return readTransaction(env, (stack, txn) -> {
 			if (lookup != null) {
@@ -8676,6 +8683,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private long findAlternativeIriId(byte[] lexical, int excludedNamespaceLength, long excludedNamespaceId,
 			MemoryStack stack, long txn, LongHashSet absentRecordHashes)
 			throws IOException {
+		assert !format.usesCanonicalIriEncoding() : "Canonical stores have one representation per lexical IRI";
+		alternativeIriLookupStarted();
 		try (AlternativeIriLookup lookup = new AlternativeIriLookup(lexical, stack, txn, absentRecordHashes)) {
 			long result = lookup.find(excludedNamespaceLength, excludedNamespaceId);
 			lookup.publish();
@@ -9144,6 +9153,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return true;
 	}
 
+	/** Observation seam for regression tests and benchmarks; no observer allocation in normal operation. */
+	void alternativeIriLookupStarted() {
+	}
+
 	int probeIriAlternative(long txn, MDBVal key, MDBVal value) {
 		return mdb_get(txn, dbi, key, value);
 	}
@@ -9287,7 +9300,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		 * namespace and datatype IDs, so within one run the only hash-keyed inserts are this storer's own, and
 		 * {@link #storeFirstLargeId} removes each hash it inserts.
 		 */
-		private final LongHashSet absentRecordHashes = new LongHashSet();
+		private final LongHashSet absentRecordHashes = format.usesCanonicalIriEncoding() ? null : new LongHashSet();
 
 		private BatchIdStorer(MemoryStack stack, long txn) {
 			this.stack = stack;
@@ -9316,7 +9329,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
 				return data2id(idVal.mv_data());
 			}
-			long alternativeId = findAlternativeIriId(data, stack, txn, absentRecordHashes);
+			long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+					: findAlternativeIriId(data, stack, txn, absentRecordHashes);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -9384,7 +9398,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 
 		private long storeFirstLargeId(byte[] data, CoreDatatype coreDatatype, long dataHash) throws IOException {
-			long alternativeId = findAlternativeIriId(data, stack, txn, absentRecordHashes);
+			long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+					: findAlternativeIriId(data, stack, txn, absentRecordHashes);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -9394,7 +9409,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			dataVal.mv_size(data.length);
 			long activeWriteTxn = currentWriteTxn(txn);
 			E(mdb_put(activeWriteTxn, dbi, hashVal, idVal, 0));
-			absentRecordHashes.remove(dataHash);
+			if (absentRecordHashes != null) {
+				absentRecordHashes.remove(dataHash);
+			}
 			E(mdb_put(activeWriteTxn, dbi, idVal, dataVal, MDB_RESERVE));
 			dataVal.mv_data().put(data);
 			recordCompressedValueChange(newId);
@@ -9403,7 +9420,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 
 		private long storeHashCollisionId(byte[] data, int hashLength, CoreDatatype coreDatatype) throws IOException {
-			long alternativeId = findAlternativeIriId(data, stack, txn, absentRecordHashes);
+			long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+					: findAlternativeIriId(data, stack, txn, absentRecordHashes);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -9951,11 +9969,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return switch (value.getType()) {
 		case Value.Type.IRI -> {
 			IRI iri = (IRI) value;
-			byte[] namespaceBytes = iri.getNamespace().getBytes(StandardCharsets.UTF_8);
+			IriStorageEncoding.Split split = IriStorageEncoding.split(iri, format);
+			byte[] namespaceBytes = split.namespace().getBytes(StandardCharsets.UTF_8);
 			byte[] namespaceData = new byte[namespaceBytes.length + 1];
 			namespaceData[0] = NAMESPACE_VALUE;
 			System.arraycopy(namespaceBytes, 0, namespaceData, 1, namespaceBytes.length);
-			yield new SnapshotIRI(namespaceData, iri.getLocalName().getBytes(StandardCharsets.UTF_8));
+			yield new SnapshotIRI(namespaceData, split.localName().getBytes(StandardCharsets.UTF_8));
 		}
 		case Value.Type.BNode -> new SnapshotEncodedValue(bnode2data((BNode) value, false));
 		case Value.Type.Literal -> {
@@ -10118,7 +10137,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		case SnapshotIRI iri -> {
 			byte[] data = uri2data(snapshot, txn, iri);
 			long found = data == null ? LmdbValue.UNKNOWN_ID : findId(snapshot, txn, data);
-			if (found != LmdbValue.UNKNOWN_ID) {
+			if (found != LmdbValue.UNKNOWN_ID || format.usesCanonicalIriEncoding()) {
 				yield found;
 			}
 			byte[] lexical = new byte[iri.namespaceData().length - 1 + iri.localNameData().length];
@@ -11963,7 +11982,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 								? literal.getCoreDatatype()
 								: CoreDatatype.NONE;
 						id = findId(data, create, coreDatatype, lookup);
-					} else if (value instanceof IRI iri) {
+					} else if (!format.usesCanonicalIriEncoding() && value instanceof IRI iri) {
 						id = findAlternativeIriId(iri, lookup);
 					}
 				}
@@ -12382,7 +12401,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (existingId != LmdbValue.UNKNOWN_ID) {
 			return existingId;
 		}
-		long namespaceId = assignFreshNamespace(session, predicate.getNamespace());
+		long namespaceId = assignFreshNamespace(session, IriStorageEncoding.namespace(predicate, format));
 		long id = nextFreshPredicateId(session);
 		session.valueIds.put(predicate, id);
 		session.provisionalValues.add(predicate);
@@ -12424,7 +12443,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 		switch (value.getType()) {
 		case Value.Type.IRI:
-			referencedId = assignFreshNamespace(session, ((IRI) value).getNamespace());
+			referencedId = assignFreshNamespace(session, IriStorageEncoding.namespace((IRI) value, format));
 			id = nextFreshId(session, URI_VALUE);
 			break;
 		case Value.Type.BNode:
@@ -12487,7 +12506,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		switch (value.getType()) {
 		case Value.Type.IRI:
 			IRI iri = (IRI) value;
-			data = uri2data(iri, session.namespaceIds.getIfAbsent(iri.getNamespace(), LmdbValue.UNKNOWN_ID));
+			IriStorageEncoding.Split split = IriStorageEncoding.split(iri, format);
+			data = uri2data(split, session.namespaceIds.getIfAbsent(split.namespace(), LmdbValue.UNKNOWN_ID));
 			break;
 		case Value.Type.BNode:
 			data = bnode2data((BNode) value, true);
@@ -12547,8 +12567,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		switch (value.getType()) {
 		case Value.Type.IRI:
 			IRI iri = (IRI) value;
-			long namespaceId = prepareFreshNamespace(session, prepared, iri.getNamespace());
-			data = uri2data(iri, namespaceId);
+			IriStorageEncoding.Split split = IriStorageEncoding.split(iri, format);
+			long namespaceId = prepareFreshNamespace(session, prepared, split.namespace());
+			data = uri2data(split, namespaceId);
 			referencedId = namespaceId;
 			break;
 		case Value.Type.BNode:
@@ -12616,8 +12637,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private byte[] uri2data(IRI iri, long namespaceId) {
-		return ValueStoreRecordCodec.iriData(iri, namespaceId);
+	private byte[] uri2data(IriStorageEncoding.Split split, long namespaceId) {
+		return ValueStoreRecordCodec.iriData(split, namespaceId);
 	}
 
 	private byte[] literal2data(Literal literal, long datatypeId) {
@@ -15066,14 +15087,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private byte[] uri2data(IRI uri, boolean create, ValueLookupContext lookup) throws IOException {
-		long nsID = getNamespaceID(uri.getNamespace(), create, lookup);
+		IriStorageEncoding.Split split = IriStorageEncoding.split(uri, format);
+		long nsID = getNamespaceID(split.namespace(), create, lookup);
 
 		if (nsID == -1) {
 			// Unknown namespace means unknown URI
 			return null;
 		}
 
-		return ValueStoreRecordCodec.iriData(uri, nsID);
+		return ValueStoreRecordCodec.iriData(split, nsID);
 	}
 
 	private byte[] bnode2data(BNode bNode, boolean create) {

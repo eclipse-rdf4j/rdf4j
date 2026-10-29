@@ -196,10 +196,11 @@ class LmdbSailStoreOverlayStartupTest {
 		AtomicReference<ValueStore> openedValues = new AtomicReference<>();
 		LmdbStoreConfig config = config(true);
 		StoreProperties properties = new StoreProperties(directory);
+		LmdbStoreFormat format = LmdbStoreFormat.fromProperties(properties, config);
 		LmdbSailStore owner = null;
 		try {
 			owner = new LmdbSailStore(directory, properties, config, false,
-					LmdbStoreFormat.fromProperties(properties, config), QueryExecutionPolicy.of(false), null,
+					format, QueryExecutionPolicy.of(false), null,
 					values -> {
 						openedValues.set(values);
 						System.setProperties(failing);
@@ -223,7 +224,9 @@ class LmdbSailStoreOverlayStartupTest {
 				.isInstanceOf(IOException.class)
 				.hasMessage("Transaction manager is closed");
 
-		LmdbSailStore reopened = new LmdbSailStore(directory, new StoreProperties(directory), config);
+		// This deliberately metadata-free fixture owns its transient descriptor; reopening must supply it too.
+		LmdbSailStore reopened = new LmdbSailStore(directory, properties, config, false,
+				format, QueryExecutionPolicy.of(false));
 		try {
 			assertThat(lookupScope(reopened.valueStore())).isNotNull();
 		} finally {
