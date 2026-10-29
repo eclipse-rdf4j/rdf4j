@@ -1012,7 +1012,8 @@ class LmdbPreparedBulkStoreTest {
 		LmdbBulkLoader.builder(target, config)
 				.partitionCount(4)
 				.workers(1)
-				.memoryBudgetBytes(2L * 1024 * 1024)
+				// Constrained spill behavior has separate bulk-loader contract coverage.
+				.memoryBudgetBytes(64L * 1024 * 1024)
 				.maxOpenFiles(16)
 				.build()
 				.load(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)), "urn:test:", RDFFormat.NQUADS);
