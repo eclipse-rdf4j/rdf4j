@@ -2418,6 +2418,28 @@ public interface NativeLmdbQuerySource {
 		return OptionalLong.empty();
 	}
 
+	/**
+	 * A deferred exact predicate-count read from the same bounded snapshot metadata that its work quote describes.
+	 * Consumers must execute this plan instead of making a separate {@link #count(long, long, long, long)} call: that
+	 * call may select a different source path with different physical work. Preparation must not perform the count or
+	 * publish execution metrics. Generic sources decline by default.
+	 */
+	default PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+		return null;
+	}
+
+	/** An executable, snapshot-bound predicate count with a finite physical-work quote. */
+	interface PreparedPredicateCount {
+		double workUnits();
+
+		/** Exact source-owned metadata lookup count when this plan can name that operation. */
+		default OptionalLong metadataLookups() {
+			return OptionalLong.empty();
+		}
+
+		OptionalLong execute() throws IOException;
+	}
+
 	/** A revision-valid ordered-integer zone map together with the index whose varying field it describes. */
 	@Experimental
 	record OrderedIntegerDomain(String indexFieldSeq, long minValue, long maxValue) {

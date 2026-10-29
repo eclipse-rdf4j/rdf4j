@@ -1265,16 +1265,26 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			existsIntersection.prepare(source, row);
 		}
 		if (indexedCount != null) {
-			arbiter.offer(() -> estimatedProposal(() -> {
-				long count = indexedCount.count(row);
-				AggState state = new AggState(aggregates, 16, aggContext, sequentialDistinctChannels);
-				Arrays.fill(state.counts, count);
-				if (row.runtimePlan != null) {
-					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT, new SlotPlan[0]);
-				}
-				metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT);
-				return List.of(toBindingSet(null, state, count > 0L));
-			}, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT, indexedCount.estimateWork(row)));
+			LmdbNativeIndexedCount.PreparedCount preparedCount = indexedCount.prepare(row);
+			LmdbNativeWork indexedCountWork = indexedCount.estimateWork(row, preparedCount);
+			arbiter.offer(() -> {
+				LmdbNativeStrategyProposal<List<BindingSet>> proposal = estimatedProposal(() -> {
+					Long count = indexedCount.count(row, preparedCount);
+					if (count == null) {
+						return null;
+					}
+					AggState state = new AggState(aggregates, 16, aggContext, sequentialDistinctChannels);
+					Arrays.fill(state.counts, count);
+					if (row.runtimePlan != null) {
+						row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT, new SlotPlan[0]);
+					}
+					metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT);
+					return List.of(toBindingSet(null, state, count > 0L));
+				}, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT, indexedCountWork);
+				proposal = proposal.withOptionalAggregatePhysicalPlan(indexedCount.physicalPlan(preparedCount));
+				NativeAggregatePhysicalPlan.ColdAnchor coldAnchor = indexedCount.coldAnchor(preparedCount);
+				return coldAnchor == null ? proposal : proposal.withColdAnchor(coldAnchor);
+			});
 		}
 		for (NativeGroupStep.Alternative alternative : alternatives) {
 			if (base.isEmpty()) {

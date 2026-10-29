@@ -243,6 +243,69 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 				new PredicateCountSource(idSpace, OptionalLong.of(17L), false),
 				new PredicateCountSource(idSpace, OptionalLong.empty(), false)))
 				.exactPredicateCount(7L)).hasValue(0L);
+
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(
+				new PredicateCountSource(idSpace, OptionalLong.of(17L))))
+				.prepareExactPredicateCount(7L))
+						.as("an exact result alone does not prove a finite physical quote")
+						.isNull();
+	}
+
+	@Test
+	void preparedPredicateCountDefersMetadataReadsAndDeclinesIncompleteOrOverflowingComposites() throws Exception {
+		Object idSpace = new Object();
+		PreparedPredicateCountSource first = new PreparedPredicateCountSource(idSpace, OptionalLong.of(2L), true);
+		PreparedPredicateCountSource second = new PreparedPredicateCountSource(idSpace, OptionalLong.of(3L), true);
+		NativeLmdbQuerySource.PreparedPredicateCount plan = CompositeNativeLmdbQuerySource
+				.combine(List.of(first, second))
+				.prepareExactPredicateCount(7L);
+		assertThat(plan).isNotNull();
+		assertThat(plan.workUnits()).isEqualTo(2D);
+		assertThat(plan.metadataLookups()).hasValue(2L);
+		assertThat(first.executions.get()).as("quoting does not execute the metadata read").isZero();
+		assertThat(second.executions.get()).isZero();
+		assertThat(plan.execute()).hasValue(5L);
+		assertThat(first.executions.get()).isOne();
+		assertThat(second.executions.get()).isOne();
+
+		PreparedPredicateCountSource unnamedLookup = new PreparedPredicateCountSource(idSpace, OptionalLong.of(4L),
+				true,
+				true, false);
+		NativeLmdbQuerySource.PreparedPredicateCount untypedPlan = CompositeNativeLmdbQuerySource
+				.combine(List.of(unnamedLookup))
+				.prepareExactPredicateCount(7L);
+		assertThat(untypedPlan).isNotNull();
+		assertThat(untypedPlan.metadataLookups())
+				.as("an executable result does not prove a named physical operation")
+				.isEmpty();
+		assertThat(untypedPlan.execute()).hasValue(4L);
+
+		PreparedPredicateCountSource missing = new PreparedPredicateCountSource(idSpace, OptionalLong.of(4L), false);
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(first, missing))
+				.prepareExactPredicateCount(7L))
+						.as("a generic child without a bounded execution plan declines the composite quote")
+						.isNull();
+		assertThat(first.executions.get()).isOne();
+
+		PreparedPredicateCountSource maximum = new PreparedPredicateCountSource(idSpace,
+				OptionalLong.of(Long.MAX_VALUE), true);
+		PreparedPredicateCountSource overflow = new PreparedPredicateCountSource(idSpace, OptionalLong.of(1L), true);
+		NativeLmdbQuerySource.PreparedPredicateCount overflowingPlan = CompositeNativeLmdbQuerySource
+				.combine(List.of(maximum, overflow))
+				.prepareExactPredicateCount(7L);
+		assertThat(overflowingPlan).isNotNull();
+		assertThat(overflowingPlan.execute())
+				.as("overflow cannot be advertised as exact metadata; the indexed count arm can decline")
+				.isEmpty();
+		PreparedPredicateCountSource inactiveFirst = new PreparedPredicateCountSource(idSpace, OptionalLong.empty(),
+				false, false);
+		PreparedPredicateCountSource inactiveSecond = new PreparedPredicateCountSource(idSpace,
+				OptionalLong.empty(), false, false);
+		assertThat(CompositeNativeLmdbQuerySource.combine(List.of(inactiveFirst, inactiveSecond))
+				.prepareExactPredicateCount(7L)
+				.execute())
+						.as("an empty composite has exact zero work and count")
+						.hasValue(0L);
 	}
 
 	@Test
@@ -2009,6 +2072,60 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		@Override
 		public boolean hasStatementsInSource() {
 			return active;
+		}
+	}
+
+	private static final class PreparedPredicateCountSource extends StubSource {
+		private final OptionalLong count;
+		private final boolean supported;
+		private final boolean active;
+		private final boolean metadataLookupKnown;
+		private final AtomicInteger executions = new AtomicInteger();
+
+		private PreparedPredicateCountSource(Object idSpace, OptionalLong count, boolean supported) {
+			this(idSpace, count, supported, true);
+		}
+
+		private PreparedPredicateCountSource(Object idSpace, OptionalLong count, boolean supported, boolean active) {
+			this(idSpace, count, supported, active, true);
+		}
+
+		private PreparedPredicateCountSource(Object idSpace, OptionalLong count, boolean supported, boolean active,
+				boolean metadataLookupKnown) {
+			super(idSpace);
+			this.count = count;
+			this.supported = supported;
+			this.active = active;
+			this.metadataLookupKnown = metadataLookupKnown;
+		}
+
+		@Override
+		public boolean hasStatementsInSource() {
+			return active;
+		}
+
+		@Override
+		public PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+			if (!supported) {
+				return null;
+			}
+			return new PreparedPredicateCount() {
+				@Override
+				public double workUnits() {
+					return 1D;
+				}
+
+				@Override
+				public OptionalLong metadataLookups() {
+					return metadataLookupKnown ? OptionalLong.of(1L) : OptionalLong.empty();
+				}
+
+				@Override
+				public OptionalLong execute() {
+					executions.incrementAndGet();
+					return count;
+				}
+			};
 		}
 	}
 

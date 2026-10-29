@@ -579,6 +579,65 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+		List<PreparedPredicateCount> plans = new ArrayList<>(activeSources.size());
+		double workUnits = 0D;
+		long metadataLookups = 0L;
+		boolean metadataLookupsKnown = true;
+		for (NativeLmdbQuerySource source : activeSources) {
+			PreparedPredicateCount plan = source.prepareExactPredicateCount(predicate);
+			if (plan == null || !(plan.workUnits() >= 0D) || !Double.isFinite(plan.workUnits())
+					|| !Double.isFinite(workUnits + plan.workUnits())) {
+				return null;
+			}
+			plans.add(plan);
+			workUnits += plan.workUnits();
+			OptionalLong sourceLookups = plan.metadataLookups();
+			if (sourceLookups.isEmpty() || sourceLookups.getAsLong() < 0L) {
+				metadataLookupsKnown = false;
+			} else if (metadataLookupsKnown) {
+				try {
+					metadataLookups = Math.addExact(metadataLookups, sourceLookups.getAsLong());
+				} catch (ArithmeticException overflow) {
+					metadataLookupsKnown = false;
+				}
+			}
+		}
+		double quotedWork = workUnits;
+		OptionalLong quotedMetadataLookups = metadataLookupsKnown
+				? OptionalLong.of(metadataLookups)
+				: OptionalLong.empty();
+		return new PreparedPredicateCount() {
+			@Override
+			public double workUnits() {
+				return quotedWork;
+			}
+
+			@Override
+			public OptionalLong metadataLookups() {
+				return quotedMetadataLookups;
+			}
+
+			@Override
+			public OptionalLong execute() throws IOException {
+				long count = 0L;
+				for (PreparedPredicateCount plan : plans) {
+					OptionalLong sourceCount = plan.execute();
+					if (sourceCount.isEmpty()) {
+						return OptionalLong.empty();
+					}
+					long value = sourceCount.getAsLong();
+					if (value < 0L || Long.MAX_VALUE - count < value) {
+						return OptionalLong.empty();
+					}
+					count += value;
+				}
+				return OptionalLong.of(count);
+			}
+		};
+	}
+
+	@Override
 	public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
 			int varyingField) {
 		if (activeSources.isEmpty()) {
@@ -1302,6 +1361,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalLong exactPredicateCount(long predicate) {
 			return delegate.exactPredicateCount(predicate);
+		}
+
+		@Override
+		public PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+			return delegate.prepareExactPredicateCount(predicate);
 		}
 
 		@Override

@@ -5437,6 +5437,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return count < 0L ? OptionalLong.empty() : OptionalLong.of(count);
 	}
 
+	boolean canExactPredicateCount(LmdbAdjacencyReadView view, long predicate) {
+		return predicate > 0L && view != null && view.servesSnapshot() && !closed
+				&& options.mode() == DirectAdjacencyMode.PREFER && !writeTransactionBlocksAdjacency()
+				&& scanAggregatesEnabled() && view.snapshotRevision() == view.state().appliedRevision()
+				&& planeCovered(view, predicate);
+	}
+
 	private long tryCountInternal(LmdbAdjacencyReadView view, long subject, long predicate, long object, long context,
 			boolean explicit, boolean existenceOnly) {
 		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER

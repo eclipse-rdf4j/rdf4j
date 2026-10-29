@@ -351,6 +351,10 @@ final class NativeAggregateCostQuotes {
 		}
 		boolean dependency = NativeTermDomainPlan.PATH.equals(strategy) && domain != null;
 		boolean ordinary = LmdbNativeAttemptMetrics.PATH_NESTED_LOOP.equals(strategy) && ordinaryRows;
+		if (LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT.equals(strategy) && actual == null) {
+			return incomplete(legacy,
+					"The indexed-count proposal has no source-bound typed metadata-operation quote");
+		}
 		if (!dependency && !ordinary && actual == null) {
 			// The quoted input is not proof of a compressed/parallel candidate's actual physical grain.
 			return fullConcat

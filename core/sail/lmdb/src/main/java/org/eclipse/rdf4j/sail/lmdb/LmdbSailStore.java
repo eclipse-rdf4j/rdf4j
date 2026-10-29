@@ -14174,6 +14174,35 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public NativeLmdbQuerySource.PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+			checkOpen();
+			if (!hasStatementsInSource() || directAdjacency == null) {
+				return null;
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(true);
+			if (!directAdjacency.canExactPredicateCount(view, predicate)) {
+				return null;
+			}
+			return new NativeLmdbQuerySource.PreparedPredicateCount() {
+				@Override
+				public double workUnits() {
+					return 1D;
+				}
+
+				@Override
+				public OptionalLong metadataLookups() {
+					return OptionalLong.of(1L);
+				}
+
+				@Override
+				public OptionalLong execute() {
+					checkOpen();
+					return directAdjacency.exactPredicateCount(view, predicate, explicit);
+				}
+			};
+		}
+
+		@Override
 		public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
 				int varyingField) {
 			checkOpen();
@@ -15781,6 +15810,33 @@ class LmdbSailStore implements SailStore {
 		public OptionalLong exactPredicateCount(long predicate) {
 			return withNativeSourceRead(() -> !hasStatementsInSource() || !directEligible() ? OptionalLong.empty()
 					: directAdjacency.exactPredicateCount(adjacencyView, predicate, explicit));
+		}
+
+		@Override
+		public NativeLmdbQuerySource.PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()
+						|| !directAdjacency.canExactPredicateCount(adjacencyView, predicate)) {
+					return null;
+				}
+				return new NativeLmdbQuerySource.PreparedPredicateCount() {
+					@Override
+					public double workUnits() {
+						return 1D;
+					}
+
+					@Override
+					public OptionalLong metadataLookups() {
+						return OptionalLong.of(1L);
+					}
+
+					@Override
+					public OptionalLong execute() {
+						return withNativeSourceRead(() -> !hasStatementsInSource() ? OptionalLong.empty()
+								: directAdjacency.exactPredicateCount(adjacencyView, predicate, explicit));
+					}
+				};
+			});
 		}
 
 		@Override

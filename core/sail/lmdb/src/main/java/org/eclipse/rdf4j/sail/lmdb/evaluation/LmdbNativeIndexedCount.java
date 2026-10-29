@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.IOException;
+import java.util.OptionalLong;
 
 import org.eclipse.collections.impl.set.mutable.primitive.LongHashSet;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
@@ -24,6 +25,13 @@ final class LmdbNativeIndexedCount {
 
 	private final PatternPlan pattern;
 	private final long[] contexts;
+
+	record PreparedCount(NativeLmdbQuerySource.PreparedPredicateCount sourceCount, long subject, long predicate,
+			long object, long context) {
+		LmdbNativeWork work() {
+			return LmdbNativeWork.exact(sourceCount.workUnits());
+		}
+	}
 
 	private LmdbNativeIndexedCount(PatternPlan pattern) {
 		this.pattern = pattern;
@@ -85,7 +93,96 @@ final class LmdbNativeIndexedCount {
 		return pattern.estimateWork(row, row.boundMask());
 	}
 
+	LmdbNativeWork estimateWork(RowState row, PreparedCount prepared) {
+		return prepared == null ? estimateWork(row) : prepared.work();
+	}
+
+	NativeAggregatePhysicalPlan physicalPlan(PreparedCount prepared) {
+		if (prepared == null) {
+			return null;
+		}
+		OptionalLong metadataLookups = prepared.sourceCount.metadataLookups();
+		if (metadataLookups.isEmpty() || metadataLookups.getAsLong() < 0L) {
+			return null;
+		}
+		long lookups = metadataLookups.getAsLong();
+		return new NativeAggregatePhysicalPlan(pattern, NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE,
+				new NativeAggregatePhysicalPlan.Producer() {
+					@Override
+					public NativeAggregatePhysicalPlan.Work quote(RowState row) {
+						row.cancellation.check();
+						NativeAggregateCostQuotes.Input operations = new NativeAggregateCostQuotes.Input(0D, 0D,
+								lookups, 0D, 0D);
+						return new NativeAggregatePhysicalPlan.Work(operations, LmdbNativeCostVector.zero());
+					}
+
+					@Override
+					public String properties() {
+						return "INDEXED_COUNT[metadataLookups=" + lookups + "]";
+					}
+				});
+	}
+
+	NativeAggregatePhysicalPlan.ColdAnchor coldAnchor(PreparedCount prepared) {
+		return prepared == null ? null
+				: new NativeAggregatePhysicalPlan.ColdAnchor(
+						"the exact snapshot-valid predicate count answers the whole ungrouped count without enumerating solution rows",
+						"execution retains one scalar count and emits at most one global result mapping");
+	}
+
+	/**
+	 * Prepares a deferred exact metadata-only count and its work proof together. The source-bound plan is retained for
+	 * the selected proposal, so execution uses precisely the quoted metadata route instead of making an independent
+	 * count call that could choose a payload cursor or a generic-source fallback.
+	 */
+	PreparedCount prepare(RowState row) {
+		row.cancellation.check();
+		if (conflictingConstant(pattern.s, row) || conflictingConstant(pattern.p, row)
+				|| conflictingConstant(pattern.o, row) || conflictingConstant(pattern.c, row)
+				|| pattern.contexts.isEmpty() || pattern.contexts.isFixed() || pattern.namedContextScope) {
+			return null;
+		}
+		long subject = pattern.s.lookup(row.slots);
+		long predicate = pattern.p.lookup(row.slots);
+		long object = pattern.o.lookup(row.slots);
+		long context = pattern.c.lookup(row.slots);
+		if (subject != UNKNOWN || predicate <= 0L || object != UNKNOWN || context != UNKNOWN) {
+			return null;
+		}
+		NativeLmdbQuerySource.PreparedPredicateCount sourceCount = row.source.prepareExactPredicateCount(predicate);
+		row.cancellation.check();
+		return sourceCount == null ? null
+				: new PreparedCount(sourceCount, subject, predicate, object, context);
+	}
+
 	long count(RowState row) throws IOException {
+		return countFromSource(row);
+	}
+
+	/** Returns null when this row no longer matches a prepared source quote, so arbitration may try another arm. */
+	Long count(RowState row, PreparedCount prepared) throws IOException {
+		row.cancellation.check();
+		if (prepared != null) {
+			if (conflictingConstant(pattern.s, row) || conflictingConstant(pattern.p, row)
+					|| conflictingConstant(pattern.o, row) || conflictingConstant(pattern.c, row)
+					|| pattern.contexts.isEmpty()) {
+				return 0L;
+			}
+			if (pattern.s.lookup(row.slots) != prepared.subject
+					|| pattern.p.lookup(row.slots) != prepared.predicate
+					|| pattern.o.lookup(row.slots) != prepared.object
+					|| pattern.c.lookup(row.slots) != prepared.context) {
+				return null;
+			}
+			row.cancellation.check();
+			OptionalLong count = prepared.sourceCount.execute();
+			row.cancellation.check();
+			return count.isPresent() ? count.getAsLong() : null;
+		}
+		return countFromSource(row);
+	}
+
+	private long countFromSource(RowState row) throws IOException {
 		if (conflictingConstant(pattern.s, row) || conflictingConstant(pattern.p, row)
 				|| conflictingConstant(pattern.o, row) || conflictingConstant(pattern.c, row)
 				|| pattern.contexts.isEmpty()) {

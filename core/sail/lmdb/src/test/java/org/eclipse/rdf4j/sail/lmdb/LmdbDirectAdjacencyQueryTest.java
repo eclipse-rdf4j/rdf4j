@@ -3043,17 +3043,36 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		openPreferStore();
+		String queryText = "SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }";
 		String plan;
 		try (RepositoryConnection connection = repo.getConnection()) {
-			plan = connection.prepareTupleQuery("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }")
+			plan = connection.prepareTupleQuery(queryText)
 					.explain(Explanation.Level.Optimized)
 					.toString();
 		}
 
 		LmdbPrefixRunPlan.resetMetrics();
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
-		assertThat(queryRows("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }", "count"))
-				.containsExactly("3");
+		Explanation telemetry;
+		List<String> actual = new ArrayList<>();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(queryText);
+			telemetry = query.explain(Explanation.Level.Telemetry);
+			try (TupleQueryResult result = query.evaluate()) {
+				while (result.hasNext()) {
+					actual.add(result.next().getValue("count").stringValue());
+				}
+			}
+		}
+		assertThat(actual).containsExactly("3");
+		String proposalCosts = findMetric(telemetry.toGenericPlanNode(), "nativeStrategyProposalCosts");
+		assertThat(proposalCosts)
+				.as("indexed count has a finite quote from its exact metadata result:%n%s", telemetry)
+				.contains("indexedCount=")
+				.doesNotContain("indexedCount=Infinity");
+		assertThat(findMetric(telemetry.toGenericPlanNode(), "nativeExecutionPath"))
+				.as("exact predicate-plane COUNT(*) should use the indexed count route:%n%s", telemetry)
+				.isEqualTo("indexedCount");
 		assertThat(direct.snapshotMetrics().lookupHits)
 				.as("the scalar count is answered from exact predicate-plane metadata; optimized plan:%n%s", plan)
 				.isGreaterThan(hitsBefore);

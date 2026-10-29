@@ -766,6 +766,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+		return synthetic(predicate) ? null : delegate.prepareExactPredicateCount(predicate);
+	}
+
+	@Override
 	public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
 			int varyingField) {
 		return anySynthetic(subj, pred, obj, context) ? null
