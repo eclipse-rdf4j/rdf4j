@@ -79,6 +79,38 @@ class LmdbNativeKernelPartitionsPageTest {
 	}
 
 	@Test
+	void tooFewPagesForTheWorkersFallBackToRootOrdinalsWhenTheDomainIsLargeEnough() {
+		// a tiny plane whose base was built from several scan ranges: two physical pages, sixteen roots
+		PageAdjacency adjacency = new PageAdjacency(2, 16, true);
+		LmdbNativeKernelPartitions.PartitionPlan plan = LmdbNativeKernelPartitions.planAdjacency(0, adjacency, true,
+				false, 8L);
+
+		assertEquals(16L, plan.unitCount(), "root ordinals feed eight units where two pages cannot");
+		assertEquals(LmdbNativeKernelPartitions.UnitKind.ROOT_ORDINAL, plan.plane(0).kind());
+		assertFalse(plan.usesPages());
+	}
+
+	@Test
+	void tooFewPagesAndTooFewRootsKeepThePagePlan() {
+		PageAdjacency adjacency = new PageAdjacency(2, 4, true);
+		LmdbNativeKernelPartitions.PartitionPlan plan = LmdbNativeKernelPartitions.planAdjacency(0, adjacency, true,
+				false, 8L);
+
+		assertEquals(2L, plan.unitCount(), "neither unit kind reaches the minimum; pages keep their locality");
+		assertEquals(LmdbNativeKernelPartitions.UnitKind.PAGE, plan.plane(0).kind());
+	}
+
+	@Test
+	void enoughPagesForTheWorkersKeepThePagePlan() {
+		PageAdjacency adjacency = new PageAdjacency(8, 16, true);
+		LmdbNativeKernelPartitions.PartitionPlan plan = LmdbNativeKernelPartitions.planAdjacency(0, adjacency, true,
+				false, 8L);
+
+		assertEquals(8L, plan.unitCount());
+		assertEquals(LmdbNativeKernelPartitions.UnitKind.PAGE, plan.plane(0).kind());
+	}
+
+	@Test
 	void mergedOrUnavailableViewFallsBackToRootOrdinals() {
 		PageAdjacency overlay = new PageAdjacency(-1, 17, false);
 		LmdbNativeKernelPartitions.PartitionPlan plan = LmdbNativeKernelPartitions.planAdjacency(4, overlay, true,

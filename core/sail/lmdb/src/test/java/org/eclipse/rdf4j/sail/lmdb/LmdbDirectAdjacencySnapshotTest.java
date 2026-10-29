@@ -258,30 +258,11 @@ class LmdbDirectAdjacencySnapshotTest {
 	@Test
 	void pendingWindowFallsBackForTouchedRowsOnly() throws IOException {
 		openStoreWithSynchronousMaintenance(false);
+		// the paused applier leaves the sealed commit in the log: the pending window every reader below observes
 		direct.pauseApplierForTest(true);
-		CountDownLatch pendingPublished = new CountDownLatch(1);
-		CountDownLatch releaseQueueAdmission = new CountDownLatch(1);
-		Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
-		direct.beforeApplyQueueAdmissionForTest = () -> {
-			pendingPublished.countDown();
-			try {
-				releaseQueueAdmission.await();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
-			}
-		};
 		try {
 			try (RepositoryConnection conn = repo.getConnection()) {
 				conn.add(S1, P1, O3);
-			}
-			try {
-				assertThat(pendingPublished.await(30, TimeUnit.SECONDS))
-						.as("pending row publication should precede snapshot acquisition")
-						.isTrue();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
 			}
 			NativeLmdbQuerySource dataset = dataset();
 			try {
@@ -301,10 +282,7 @@ class LmdbDirectAdjacencySnapshotTest {
 				((org.eclipse.rdf4j.sail.base.SailDataset) dataset).close();
 			}
 		} finally {
-			releaseQueueAdmission.countDown();
-			direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 			direct.pauseApplierForTest(false);
-			// Preparation may still be awaiting queue admission after the commit returns.
 			direct.awaitCommitCleanupForTest();
 		}
 		NativeLmdbQuerySource dataset = dataset();

@@ -76,9 +76,31 @@ class ThemeQueryBenchmarkStoreReuseTest {
 		}
 		assertEquals(1, loads[0], "opening and closing a complete dataset must not regenerate it");
 		assertTrue(
-				Files.size(directory.resolve("values/data.mdb")) > Long
+				Files.size(directory.resolve("values/data.mdb")) >= Long
 						.parseLong(readMetadata(directory).getProperty("values.data.mdb.size.bytes")),
-				"the fixture must exercise legitimate value-file growth beyond the completed-load snapshot");
+				"reopening a complete dataset never shrinks its value file below the completed-load snapshot");
+	}
+
+	/**
+	 * Background value maintenance may extend {@code values/data.mdb} after the completed-load snapshot was recorded;
+	 * whether it does depends on the free pages LMDB has left, so the growth is forced here instead of waited for.
+	 */
+	@Test
+	void valueFileLargerThanCompletedLoadSnapshotIsStillComplete(@TempDir Path directory) throws Exception {
+		int[] loads = { 0 };
+		ThemeQueryBenchmark benchmark = fixtureBenchmark(directory, loads);
+		runTrial(benchmark);
+		Properties properties = readMetadata(directory);
+		long recorded = Long.parseLong(properties.getProperty("values.data.mdb.size.bytes"));
+		long current = Files.size(directory.resolve("values/data.mdb"));
+		assertTrue(current >= recorded);
+		properties.setProperty("values.data.mdb.size.bytes", Long.toString(Math.max(1L, recorded / 2)));
+		try (var output = Files.newOutputStream(directory.resolve(METADATA_FILE))) {
+			properties.store(output, "completed dataset whose value file grew after the snapshot");
+		}
+		runTrial(benchmark);
+		assertEquals(1, loads[0], "a value file larger than the completed-load snapshot is legitimate growth");
+		assertEquals(current, Files.size(directory.resolve("values/data.mdb")));
 	}
 
 	@Test

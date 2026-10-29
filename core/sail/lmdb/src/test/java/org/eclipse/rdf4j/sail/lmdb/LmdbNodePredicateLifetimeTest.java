@@ -336,16 +336,15 @@ class LmdbNodePredicateLifetimeTest {
 		store.pauseApplierForTest(false);
 	}
 
-	/** Folds every live overlay generation into a new base, adding a second generation if one is needed to merge. */
+	/** Folds every live overlay generation into a new base through the applier's fold task. */
 	private void foldDown() throws IOException {
 		if (store.publishedStateForTest().overlays() == null) {
 			return;
 		}
-		if (store.publishedStateForTest().overlays().generationCount() < 2) {
-			commit(() -> tripleStore.storeTriple(S2, P_B, O1, 0, true));
-		}
 		store.consolidateNowForTest();
-		assertThat(store.publishedStateForTest().overlays()).isNull();
+		assertThat(store.publishedStateForTest().overlays())
+				.as("the fold must have absorbed every generation: %s", store.publicationDiagnostics())
+				.isNull();
 	}
 
 	private List<long[]> rows(LmdbAdjacencyReadView view, long node) throws IOException {
