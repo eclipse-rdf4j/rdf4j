@@ -1563,13 +1563,14 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			PackedRowComparator comparator, long emitCap, LmdbNativeStrategyArbiter<List<BindingSet>> arbiter)
 			throws IOException {
 		LmdbNativeWork work = arg.estimateWork(row, row.boundMask());
+		LmdbNativeWork planning = LmdbNativeWork.planning(arg, row, row.boundMask());
 		String factorizedTag = emitCap == Long.MAX_VALUE
 				? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
 				: LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K;
 		arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
 				() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap), work,
 				factorizedTag, () -> {
-				}));
+				}).withPlanningWork(planning));
 		// Exactly ONE of the two IR-kernel tags (kernel-interpreter plan, D1/M4): compiled when janino is
 		// enabled, interpreted when only the interpreter tier is available, neither when both are off.
 		String orderedKernelTag = LmdbNativeJaninoCodegen.enabled()
@@ -1580,7 +1581,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		if (orderedKernelTag != null) {
 			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> tryEvaluateOrderedKernel(row, values),
 					work, orderedKernelTag, () -> {
-					}));
+					}).withPlanningWork(planning));
 		}
 	}
 
@@ -1595,9 +1596,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				&& distinctPlan.strategy != NativeDistinctStrategy.GLOBAL_HASH) {
 			// The ordered-distinct plan competes instead of short-circuiting the ladder; its accepter marks the
 			// input ORDERED so the caller builds the order-relying tracker only for this winner.
-			arbiter.offer(() -> inputProposal(() -> acceptOrderedDistinct(row, distinctPlan.arg.open(row)),
-					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,
-					distinctPlan.arg.estimateWork(row, row.boundMask()), estimatedRows(row)));
+			arbiter.offer(() -> planProposal(() -> acceptOrderedDistinct(row, distinctPlan.arg.open(row)),
+					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT, distinctPlan.arg, row));
 		}
 		if (LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask())) {
 			arbiter.offer(() -> inputProposal(
@@ -1647,13 +1647,11 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					this::acceptDistinctKernel));
 		}
 		arbiter.offer(() -> !LmdbNativeAdaptiveFilterPlacement.canAttempt(this, row) ? null
-				: inputProposal(
+				: planProposal(
 						() -> acceptAdaptive(row, LmdbNativeAdaptiveFilterPlacement.tryOpen(this, row), multiJoin),
-						LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT,
-						arg.estimateWork(row, row.boundMask()), estimatedRows(row)));
-		arbiter.offer(() -> inputProposal(() -> acceptNested(row, arg.open(row), multiJoin),
-				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, arg.estimateWork(row, row.boundMask()),
-				estimatedRows(row)));
+						LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT, arg, row));
+		arbiter.offer(() -> planProposal(() -> acceptNested(row, arg.open(row), multiJoin),
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, arg, row));
 		if (NativeExpressionDomainPolicy.hasCarrier(arg) && SlotPlan.encounterOrderReplaySafe(arg)) {
 			// Hash key construction, payload retention and possible spill I/O are not priced by the scalar
 			// compiler. Keep the complete alternative UNKNOWN; ordinary execution wins the static ladder.
@@ -1805,8 +1803,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				: LmdbWildcardPredicateBatch.propose(batchJoin,
 						row, capacity, distinct, sourceSlots, orderSlots);
 		if (proposal == null && multiJoin == null) {
-			return inputProposal(() -> openDirectBatch(row, capacity), LmdbNativeAttemptMetrics.PATH_BATCH,
-					arg.estimateWork(row, row.boundMask()), estimatedRows(row));
+			return planProposal(() -> openDirectBatch(row, capacity), LmdbNativeAttemptMetrics.PATH_BATCH, arg,
+					row);
 		}
 		if (proposal == null) {
 			proposal = multiJoin.proposeBatch(row, capacity);
@@ -1825,7 +1823,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				selectedProposal.close();
 			}
 		}, selectedProposal.work, selectedProposal.startupWork, selectedProposal.estRows, selectedProposal.tag,
-				selectedProposal::close);
+				selectedProposal::close).withOptionalPlanningWork(selectedProposal.planningWork());
 	}
 
 	private NativeUnorderedInput openDirectBatch(RowState row, int capacity) throws IOException {
@@ -1958,7 +1956,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			} finally {
 				proposal.close();
 			}
-		}, proposal.work, proposal.startupWork, proposal.estRows, proposal.tag, proposal::close);
+		}, proposal.work, proposal.startupWork, proposal.estRows, proposal.tag, proposal::close)
+				.withOptionalPlanningWork(proposal.planningWork());
 	}
 
 	private static LmdbNativeStrategyProposal<NativeUnorderedInput> inputProposal(
@@ -1966,6 +1965,15 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			double estimatedRows) {
 		return new LmdbNativeStrategyProposal<>(opener, work, LmdbNativeWork.ZERO, estimatedRows, tag, () -> {
 		});
+	}
+
+	/** A proposal that runs {@code plan} once: priced by its conservative quote, ranked by its planning quote. */
+	private static LmdbNativeStrategyProposal<NativeUnorderedInput> planProposal(
+			LmdbNativeStrategyProposal.Opener<NativeUnorderedInput> opener, String tag, SlotPlan plan, RowState row) {
+		long boundMask = row.boundMask();
+		return inputProposal(opener, tag, plan.estimateWork(row, boundMask),
+				LmdbNativeWork.rowsOut(plan, row, boundMask))
+						.withPlanningWork(LmdbNativeWork.planning(plan, row, boundMask));
 	}
 
 	private static LmdbNativeWork workEstimate(double estimate) {

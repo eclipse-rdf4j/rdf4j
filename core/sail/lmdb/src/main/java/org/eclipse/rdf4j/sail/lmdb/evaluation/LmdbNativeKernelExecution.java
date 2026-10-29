@@ -964,9 +964,13 @@ final class LmdbNativeKernelExecution {
 		}
 		long boundMask = row.boundMask();
 		LmdbNativeWork serialWork = arg.estimateWork(row, boundMask);
+		LmdbNativeWork serialPlanning = LmdbNativeWork.planning(arg, row, boundMask);
 		LmdbNativeWork work = parallelExecution == ParallelExecution.REQUIRE
 				? parallelProposalWork(serialWork)
 				: serialWork;
+		LmdbNativeWork planning = parallelExecution == ParallelExecution.REQUIRE
+				? parallelProposalWork(serialPlanning)
+				: serialPlanning;
 		LmdbNativeWork startup = parallelExecution == ParallelExecution.REQUIRE
 				? parallelStartupWork()
 				: LmdbNativeWork.ZERO;
@@ -976,7 +980,7 @@ final class LmdbNativeKernelExecution {
 						() -> tryOpenRows(arg, row, originalExpr, false, null, null, parallelExecution,
 								requestedTier)),
 				work, startup, rows, tag, () -> {
-				});
+				}).withPlanningWork(planning);
 	}
 
 	/** Kill switch for the DISTINCT-sinking kernel tiers (proposal and positional rung alike). */
@@ -1040,10 +1044,14 @@ final class LmdbNativeKernelExecution {
 				: interpretedTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED
 						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT;
 		long boundMask = row.boundMask();
-		LmdbNativeWork serialWork = estimateDistinctWork(arg, row, boundMask, distinctSlots);
+		LmdbNativeWork serialWork = estimateDistinctWork(arg, row, boundMask, distinctSlots, false);
+		LmdbNativeWork serialPlanning = estimateDistinctWork(arg, row, boundMask, distinctSlots, true);
 		LmdbNativeWork work = parallelExecution == ParallelExecution.REQUIRE
 				? parallelProposalWork(serialWork)
 				: serialWork;
+		LmdbNativeWork planning = parallelExecution == ParallelExecution.REQUIRE
+				? parallelProposalWork(serialPlanning)
+				: serialPlanning;
 		LmdbNativeWork startup = parallelExecution == ParallelExecution.REQUIRE
 				? parallelStartupWork()
 				: LmdbNativeWork.ZERO;
@@ -1053,7 +1061,7 @@ final class LmdbNativeKernelExecution {
 						() -> tryOpenRows(arg, row, originalExpr, false, distinctSlots, null, parallelExecution,
 								requestedTier)),
 				work, startup, rows, tag, () -> {
-				});
+				}).withPlanningWork(planning);
 	}
 
 	/**
@@ -1065,8 +1073,9 @@ final class LmdbNativeKernelExecution {
 	 * interval upward (never a wrong domination).
 	 */
 	private static LmdbNativeWork estimateDistinctWork(SlotPlan arg, RowState row, long boundMask,
-			int[] distinctSlots) {
-		LmdbNativeWork full = arg.estimateWork(row, boundMask);
+			int[] distinctSlots, boolean planning) {
+		LmdbNativeWork full = planning ? LmdbNativeWork.planning(arg, row, boundMask)
+				: arg.estimateWork(row, boundMask);
 		if (!(arg instanceof MultiJoinPlan)) {
 			return full;
 		}
@@ -1090,7 +1099,8 @@ final class LmdbNativeKernelExecution {
 			long introduced = produced & ~shared & ~boundMask;
 			boolean witnessOnly = introduced != 0L && (introduced & retained) == 0L
 					&& (produced & ~introduced & ~mask) == 0L;
-			LmdbNativeWork childWork = child.estimateWork(row, mask);
+			LmdbNativeWork childWork = planning ? LmdbNativeWork.planning(child, row, mask)
+					: child.estimateWork(row, mask);
 			double childRows = LmdbNativeWork.rowsOut(child, row, mask);
 			if (!childWork.known() || Double.isNaN(childRows)) {
 				return full;

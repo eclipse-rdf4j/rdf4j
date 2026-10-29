@@ -84,7 +84,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	final LmdbNativeWork startupWork;
 	/** Rows this strategy expects to emit, or NaN when unknown. Needed to prorate work against a finite slice. */
 	final double estRows;
-	final double estCost;
+	double estCost;
 	/**
 	 * The same cost as an interval. Scalar-costed proposals report a degenerate interval, so a scalar comparison and a
 	 * {@linkplain LmdbNativeWork#beats domination} test agree on them; proposals that know how uncertain they are can
@@ -105,6 +105,11 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private NativeAggregatePhysicalPlan aggregatePhysicalPlan;
 	private NativeAggregatePhysicalPlan.ColdAnchor coldAnchor;
 	private ExpectedPlanningPrior expectedPlanningPrior;
+	/**
+	 * The point-estimate planning quote the arbiter ranks with ({@link LmdbNativeWork#planning}); null when the
+	 * conservative {@link #work} interval is the only price. Never a bound, never a proof.
+	 */
+	private LmdbNativeWork planningWork;
 	LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness;
 	private NativeAggregateExecutionEvent.Descriptor aggregateExecution;
 	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
@@ -130,9 +135,59 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		result.aggregatePhysicalPlan = aggregatePhysicalPlan;
 		result.coldAnchor = coldAnchor;
 		result.expectedPlanningPrior = expectedPlanningPrior;
+		result.planningWork = planningWork;
+		result.estCost = estCost;
 		result.executionResourceWitness = executionResourceWitness;
 		result.mappedOrigin = this;
 		return result;
+	}
+
+	/**
+	 * Attaches the point-estimate planning quote this strategy is ranked with. The conservative {@link #work} interval
+	 * is unchanged: the planning quote orders candidates and feeds the cost telemetry, but it establishes neither a
+	 * work bound nor a typed adaptive-model feature. A quote no narrower than an already-known {@link #work} is
+	 * redundant and ignored.
+	 */
+	LmdbNativeStrategyProposal<T> withPlanningWork(LmdbNativeWork planning) {
+		if (opened || closed || planningWork != null) {
+			throw new IllegalStateException("A planning quote belongs to one unopened proposal");
+		}
+		Objects.requireNonNull(planning);
+		if (work.known() || !planning.known()) {
+			return this;
+		}
+		planningWork = planning;
+		estCost = planning.high();
+		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withOptionalPlanningWork(LmdbNativeWork planning) {
+		return planning == null ? this : withPlanningWork(planning);
+	}
+
+	LmdbNativeWork planningWork() {
+		return planningWork;
+	}
+
+	/**
+	 * The price the arbiter compares: the planning quote when one was attached, otherwise {@link #effectiveWork}. A
+	 * planning quote is prorated the way the arbiter has always prorated a point estimate: the front-loaded part is
+	 * paid whatever happens and the streaming remainder scales with the share of the result the consumer will ask for.
+	 */
+	LmdbNativeWork comparableWork(double sliceRows) {
+		LmdbNativeWork planning = planningWork;
+		if (planning == null) {
+			return effectiveWork(sliceRows);
+		}
+		if (!(sliceRows >= 0D) || Double.isNaN(estRows) || estRows <= 0D || sliceRows >= estRows) {
+			return planning;
+		}
+		double fraction = sliceRows / estRows;
+		double startupLow = Math.min(startupWork.low(), planning.low());
+		double startupHigh = Math.min(startupWork.known() ? startupWork.high() : planning.high(), planning.high());
+		double low = startupLow + fraction * Math.max(0D, planning.low() - startupLow);
+		double high = startupHigh + fraction * Math.max(0D, planning.high() - startupHigh);
+		return LmdbNativeWork.between(Math.min(low, high), Math.max(low, high));
 	}
 
 	LmdbNativeStrategyProposal<T> withExpectedPlanningPrior(ExpectedPlanningPrior prior) {
@@ -391,7 +446,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	/** A proportional estimate is useful to the adaptive model, but must not narrow a proven interval. */
 	private double expectedWork(double sliceRows) {
-		double total = midpoint(work);
+		double total = midpoint(planningWork != null ? planningWork : work);
 		if (!Double.isFinite(sliceRows) || sliceRows < 0D || !Double.isFinite(estRows) || estRows <= 0D) {
 			return total;
 		}
@@ -437,7 +492,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			}
 			return physicalEstimate;
 		}
-		LmdbNativeWork effective = effectiveWork(sliceRows);
+		LmdbNativeWork effective = comparableWork(sliceRows);
 		if (!effective.known()) {
 			return null;
 		}

@@ -288,7 +288,9 @@ final class LmdbNativeAdaptiveArbitration {
 	private static boolean normalEligible(Priced<?> candidate) {
 		Candidate<?> arm = candidate.candidate;
 		return arm.estimate.workEvidence().isComplete() || arm.coldAnchor() != null
-				|| arm.executionResourceWitness() != null
+		// A resource witness proves admission (ledger, worker slots), not a work bound: it admits an
+		// unpriced arm only where the expected-planning comparison can actually price it.
+				|| arm.executionResourceWitness() != null && arm.expectedPlanningPrior() != null
 				|| candidate.prediction.exactCompletedCount() > 0L || structurallyAdmittedSpecialist(arm);
 	}
 

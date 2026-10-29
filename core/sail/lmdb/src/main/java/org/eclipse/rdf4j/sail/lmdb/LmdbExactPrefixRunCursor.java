@@ -28,7 +28,6 @@ final class LmdbExactPrefixRunCursor implements LmdbPrefixRunCursor {
 	private final LmdbPrefixRunPlan plan;
 	private final TripleIndex index;
 	private final Txn txn;
-	private final long readStamp;
 	private final ReadView view;
 	private final String database;
 	private final BooleanSupplier cancelled;
@@ -47,13 +46,11 @@ final class LmdbExactPrefixRunCursor implements LmdbPrefixRunCursor {
 	private long emitted;
 	private long counted;
 
-	LmdbExactPrefixRunCursor(LmdbPrefixRunPlan plan, Txn txn, long readStamp, ReadView view,
-			String database, byte[] lower, byte[] upper, BooleanSupplier cancelled, ExactPrefixCursor cursor,
-			boolean countRunRows) {
+	LmdbExactPrefixRunCursor(LmdbPrefixRunPlan plan, Txn txn, ReadView view, String database, byte[] lower,
+			byte[] upper, BooleanSupplier cancelled, ExactPrefixCursor cursor, boolean countRunRows) {
 		this.plan = plan;
 		this.index = plan.index();
 		this.txn = txn;
-		this.readStamp = readStamp;
 		this.view = view;
 		this.database = database;
 		this.rangeLower = lower;
@@ -65,15 +62,52 @@ final class LmdbExactPrefixRunCursor implements LmdbPrefixRunCursor {
 		LmdbPrefixRunPlan.OPENED.incrementAndGet();
 	}
 
+	/**
+	 * Pins the store's transaction barrier for one cursor step. Like {@link LmdbRecordIterator}, the cursor holds the
+	 * shared barrier only while it reads, never across calls: a commit takes that barrier exclusively, so a cursor the
+	 * consumer pages slowly must not stall every writer for its whole lifetime. The pinned snapshot is validated under
+	 * the barrier, so a map resize between two steps surfaces as the usual snapshot conflict instead of a read from a
+	 * remapped file.
+	 */
+	private long pin() throws IOException {
+		long stamp;
+		try {
+			stamp = txn.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while pinning exact prefix cursor", e);
+		}
+		try {
+			txn.ensureSnapshotValid();
+		} catch (RuntimeException | Error failure) {
+			txn.lockManager().unlockRead(stamp);
+			throw failure;
+		}
+		return stamp;
+	}
+
+	private void unpin(long stamp) {
+		txn.lockManager().unlockRead(stamp);
+	}
+
 	@Override
 	public boolean next() throws IOException {
 		checkOwner();
 		if (closed || terminalPrefix) {
 			return false;
 		}
+		long stamp = pin();
+		try {
+			return advance();
+		} finally {
+			unpin(stamp);
+		}
+	}
+
+	private boolean advance() throws IOException {
 		PrefixRun run = cursor.next();
 		if (run == null) {
-			close();
+			closePinned();
 			return false;
 		}
 		index.keyToQuad(ByteBuffer.wrap(run.representativeKey()), quad);
@@ -113,7 +147,12 @@ final class LmdbExactPrefixRunCursor implements LmdbPrefixRunCursor {
 		target = maximum(target, maximum(rangeLower, afterCurrent));
 		if (lower == null || Arrays.compareUnsigned(target, lower) > 0) {
 			lower = target;
-			reopen();
+			long stamp = pin();
+			try {
+				reopen();
+			} finally {
+				unpin(stamp);
+			}
 		}
 		return !closed;
 	}
@@ -126,11 +165,20 @@ final class LmdbExactPrefixRunCursor implements LmdbPrefixRunCursor {
 		}
 		stop = prefixValues == null ? null : encodePrefix(prefixValues);
 		lower = maximum(lower, afterCurrent);
+		long stamp;
 		try {
-			reopen();
+			stamp = pin();
 		} catch (IOException e) {
 			close();
 			throw new SailException("Unable to constrain exact prefix cursor", e);
+		}
+		try {
+			reopen();
+		} catch (IOException e) {
+			closePinned();
+			throw new SailException("Unable to constrain exact prefix cursor", e);
+		} finally {
+			unpin(stamp);
 		}
 	}
 
@@ -185,6 +233,28 @@ final class LmdbExactPrefixRunCursor implements LmdbPrefixRunCursor {
 		if (closed) {
 			return;
 		}
+		// Release under the shared barrier so no resize can run while the mapped view is torn down, but without
+		// validating the snapshot: a cursor whose snapshot was invalidated must still release its view.
+		long stamp;
+		try {
+			stamp = txn.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			closePinned();
+			return;
+		}
+		try {
+			closePinned();
+		} finally {
+			unpin(stamp);
+		}
+	}
+
+	/** Releases the mapped view and the physical cursor; the caller already holds the barrier (or gave up on it). */
+	private void closePinned() {
+		if (closed) {
+			return;
+		}
 		closed = true;
 		try {
 			recordWork();
@@ -193,11 +263,7 @@ final class LmdbExactPrefixRunCursor implements LmdbPrefixRunCursor {
 			LmdbPrefixRunPlan.ROWS_SCANNED.addAndGet(emitted);
 			LmdbPrefixRunPlan.RUN_ROWS_COUNTED.addAndGet(counted);
 		} finally {
-			try {
-				view.close();
-			} finally {
-				txn.lockManager().unlockRead(readStamp);
-			}
+			view.close();
 		}
 	}
 

@@ -474,4 +474,118 @@ record LmdbNativeWork(double low, double high) {
 			return Double.isFinite(estimatedWork) && !Double.isNaN(rows);
 		}
 	}
+
+	/**
+	 * Planning quote of a plan: the point-estimate pricing model the strategy arbiter ranks candidates with. Unlike
+	 * {@link SlotPlan#estimateWork}, which only widens to what a complete open can prove, this treats sampled and
+	 * structural cardinality estimates as the expected scan length — one positioning plus one touch per matching quad,
+	 * probes repeated once per driving row. It is a ranking signal, never a bound: callers must not use it as a proof
+	 * of work, and it never narrows a conservative quote.
+	 */
+	static LmdbNativeWork planning(SlotPlan plan, RowState row, long boundMask) {
+		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan) {
+			return ZERO;
+		}
+		if (plan instanceof PatternPlan pattern) {
+			return planningPattern(pattern, row, boundMask);
+		}
+		if (plan instanceof ValuesPlan values) {
+			return exact(values.rows.length);
+		}
+		if (plan instanceof UnionPlan union) {
+			return planning(union.left, row, boundMask).plus(planning(union.right, row, boundMask));
+		}
+		if (plan instanceof FilterPlan filter) {
+			return planningPerRow(filter.arg, row, boundMask, 1D);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return planningPerRow(extension.arg, row, boundMask, extension.copies.length);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return planning(distinct.arg, row, boundMask);
+		}
+		if (plan instanceof JoinPlan join) {
+			return planningProbeChain(join.left, join.right, row, boundMask);
+		}
+		if (plan instanceof LeftJoinPlan leftJoin) {
+			return planningProbeChain(leftJoin.left, leftJoin.right, row, boundMask);
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return planningProbeChain(lateral.left, lateral.right, row, boundMask);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return planningProbeChain(minus.left, minus.right, row, boundMask);
+		}
+		if (plan instanceof MultiJoinPlan multiJoin) {
+			MultiJoinPlan.OrderedPlan ordered = multiJoin.derivedPlan(boundMask);
+			return planningChain(ordered.order, ordered.order.length, row, boundMask);
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return planning(alias.original, row, boundMask);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return planning(memo.original, row, boundMask);
+		}
+		return plan.estimateWork(row, boundMask);
+	}
+
+	private static LmdbNativeWork planningPattern(PatternPlan pattern, RowState row, long boundMask) {
+		LmdbNativeWork quote = pattern.estimateWork(row, boundMask);
+		if (quote.equals(ZERO)) {
+			return ZERO;
+		}
+		double rows = pattern.workRowsForBoundMask(boundMask, row == null ? null : row.source);
+		if (!Double.isFinite(rows) || rows < 0D) {
+			// The seek is paid whatever the scan turns out to be, so the floor is still measured.
+			return atLeast(SEEK);
+		}
+		return exact(SEEK + rows);
+	}
+
+	private static LmdbNativeWork planningPerRow(SlotPlan arg, RowState row, long boundMask, double perRow) {
+		LmdbNativeWork argWork = planning(arg, row, boundMask);
+		double argRows = rowsOut(arg, row, boundMask);
+		if (!argWork.known() || Double.isNaN(argRows)) {
+			return argWork;
+		}
+		return argWork.plus(exact(argRows * perRow));
+	}
+
+	/** Planning quote of a two-sided plan that drives the left side once and re-probes the right per left row. */
+	static LmdbNativeWork planningProbeChain(SlotPlan left, SlotPlan right, RowState row, long boundMask) {
+		LmdbNativeWork leftWork = planning(left, row, boundMask);
+		double leftRows = rowsOut(left, row, boundMask);
+		if (!leftWork.known() || Double.isNaN(leftRows)) {
+			// The left side still has to run, so keep whatever floor it established.
+			return leftWork.known() ? atLeast(leftWork.low()) : UNKNOWN;
+		}
+		LmdbNativeWork rightWork = planning(right, row, boundMask | left.producedMask());
+		return leftWork.plus(rightWork.times(leftRows));
+	}
+
+	/**
+	 * Planning quote of a nested-loop chain over {@code children}, evaluated left to right with the bound mask widening
+	 * as each child binds its slots. Unknown as soon as any link cannot be priced, because an unknown link makes every
+	 * downstream probe count unknown too.
+	 */
+	static LmdbNativeWork planningChain(SlotPlan[] children, int length, RowState row, long boundMask) {
+		LmdbNativeWork work = ZERO;
+		double rows = 1D;
+		long mask = boundMask;
+		for (int i = 0; i < length; i++) {
+			SlotPlan child = children[i];
+			LmdbNativeWork childWork = planning(child, row, mask);
+			double childRows = rowsOut(child, row, mask);
+			if (!childWork.known() || Double.isNaN(childRows)) {
+				return UNKNOWN;
+			}
+			work = work.plus(childWork.times(rows));
+			rows *= childRows;
+			if (!Double.isFinite(rows)) {
+				return UNKNOWN;
+			}
+			mask |= child.producedMask();
+		}
+		return work;
+	}
 }

@@ -166,8 +166,9 @@ public class LmdbNativeStrategyArbiterTest {
 				.as("the witness admits execution but the expected scalar is still not a typed work estimate")
 				.isNull();
 		assertThat(adaptiveWinner(List.of(fallback, aggregate)))
-				.as("a ledger-backed recipe returns to stable structural preference without ranking its prior")
-				.isEqualTo(aggregate.tag);
+				.as("a ledger witness proves admission, not work: without a comparable price at this slice the "
+						+ "unbounded recipe cannot displace the bounded fallback on static preference alone")
+				.isEqualTo(fallback.tag);
 
 		LmdbNativeAdaptiveCostModel model = measuredModel();
 		assertThat(model.predict(aggregate.directTimingEstimate()).priceBasis())
@@ -568,8 +569,9 @@ public class LmdbNativeStrategyArbiterTest {
 				.withExpectedPlanningPrior(LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(1D));
 
 		assertThat(LmdbNativeStrategyArbiter.rankAdaptive(List.of(priced, missing), 1D, model))
-				.as("one price cannot rank against a candidate whose expected work is missing")
-				.isEqualTo(1);
+				.as("a witness without any comparable price proves admission only; the bounded priced arm is the "
+						+ "sole normal candidate")
+				.isEqualTo(0);
 
 		LmdbNativeCostVector zero = LmdbNativeCostVector.zero();
 		LmdbNativeCostVector rows = LmdbNativeCostVector.builder()
@@ -583,8 +585,9 @@ public class LmdbNativeStrategyArbiterTest {
 				.withIncompletePhysicalWork(typedRows, "row-feature units do not prove native expected work")
 				.withExecutionResourceWitness(witness);
 		assertThat(LmdbNativeStrategyArbiter.rankAdaptive(List.of(priced, typed), 1D, model))
-				.as("an incomplete typed row vector is not comparable with a scalar native-work prior")
-				.isEqualTo(1);
+				.as("an incomplete typed row vector is not comparable with a scalar native-work prior and cannot "
+						+ "displace the bounded priced arm")
+				.isEqualTo(0);
 	}
 
 	@Test

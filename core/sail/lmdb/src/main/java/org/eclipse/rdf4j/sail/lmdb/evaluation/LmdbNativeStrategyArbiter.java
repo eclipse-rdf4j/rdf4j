@@ -761,7 +761,7 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		LmdbNativeWork[] work = new LmdbNativeWork[candidates.size()];
 		for (int i = 0; i < candidates.size(); i++) {
 			tags[i] = candidates.get(i).tag;
-			work[i] = candidates.get(i).effectiveWork(sliceRows);
+			work[i] = candidates.get(i).comparableWork(sliceRows);
 			for (int j = 0; j < i; j++) {
 				if (java.util.Objects.equals(tags[i], tags[j])) {
 					throw new IllegalArgumentException("duplicate physical proposal tag: " + tags[i]);

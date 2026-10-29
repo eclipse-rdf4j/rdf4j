@@ -15832,7 +15832,10 @@ class LmdbSailStore implements SailStore {
 
 					@Override
 					public OptionalLong execute() {
-						return withNativeSourceRead(() -> !hasStatementsInSource() ? OptionalLong.empty()
+						// Re-check direct eligibility at execution: the adjacency may have been retired or cut over
+						// since this count was prepared, exactly as the unprepared sibling checks on every call.
+						return withNativeSourceRead(() -> !hasStatementsInSource() || !directEligible()
+								? OptionalLong.empty()
 								: directAdjacency.exactPredicateCount(adjacencyView, predicate, explicit));
 					}
 				};

@@ -1334,7 +1334,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}
 				return result;
 			}, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
-					arg.estimateWork(row, row.boundMask())));
+					arg.estimateWork(row, row.boundMask()))
+							.withPlanningWork(LmdbNativeWork.planning(arg, row, row.boundMask())));
 		}
 		if (prefixRunHandlesRow(row)) {
 			arbiter.offer(() -> estimatedProposal(() -> {
@@ -1374,7 +1375,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 						LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS);
 				return result;
 			}, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
-					orderedDistinct.arg.estimateWork(row, row.boundMask())));
+					orderedDistinct.arg.estimateWork(row, row.boundMask()))
+							.withPlanningWork(LmdbNativeWork.planning(orderedDistinct.arg, row, row.boundMask())));
 		}
 		if (!typeMatrixOwned && LmdbWildcardPredicateBatch.weightedAggregateCandidate(arg, aggregates)) {
 			arbiter.offer(() -> estimatedProposal(
@@ -1505,6 +1507,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}
 			}
 			final LmdbNativeWork irAggregateWork = candidateWork;
+			final LmdbNativeWork irAggregatePlanning = irAggregateWork.known() ? irAggregateWork
+					: LmdbNativeWork.planning(arg, row, row.boundMask());
 			LmdbNativeStrategyProposal.ExpectedPlanningPrior serialExpectedPrior = null;
 			LmdbNativeStrategyProposal.ExpectedPlanningPrior parallelExpectedPrior = null;
 			if (!irAggregateWork.known()) {
@@ -1529,6 +1533,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							compiledParallelTag,
 							LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
 							LmdbNativeKernelExecution.parallelStartupWork())
+									.withPlanningWork(
+											LmdbNativeKernelExecution.parallelProposalWork(irAggregatePlanning))
 									.withOptionalExpectedPlanningPrior(irParallelExpectedPrior)
 									.withOptionalExecutionResourceWitness(
 											compiledAdmission.executionResourceWitness(row, true))
@@ -1541,6 +1547,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							interpretedParallelTag,
 							LmdbNativeKernelExecution.parallelProposalWork(irAggregateWork),
 							LmdbNativeKernelExecution.parallelStartupWork())
+									.withPlanningWork(
+											LmdbNativeKernelExecution.parallelProposalWork(irAggregatePlanning))
 									.withOptionalExpectedPlanningPrior(irParallelExpectedPrior)
 									.withOptionalExecutionResourceWitness(
 											interpretedAdmission.executionResourceWitness(row, true))
@@ -1554,6 +1562,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							groupSlots, aggregates, this, explainTarget, havingCondition, false,
 							allowFixedContexts);
 				}, compiledSerialTag, irAggregateWork)
+						.withPlanningWork(irAggregatePlanning)
 						.withOptionalExpectedPlanningPrior(irSerialExpectedPrior)
 						.withOptionalExecutionResourceWitness(compiledAdmission.executionResourceWitness(row, false))
 						.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, false)));
@@ -1564,6 +1573,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							groupSlots, aggregates, this, explainTarget, havingCondition, true,
 							allowFixedContexts);
 				}, interpretedSerialTag, irAggregateWork)
+						.withPlanningWork(irAggregatePlanning)
 						.withOptionalExpectedPlanningPrior(irSerialExpectedPrior)
 						.withOptionalExecutionResourceWitness(interpretedAdmission.executionResourceWitness(row, false))
 						.withOptionalAggregatePhysicalPlan(interpretedAdmission.physicalPlan(arg, row, false)));
@@ -1578,8 +1588,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}
 				return result;
 			}, LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS,
-					arg.estimateWork(row, row.boundMask())).withAggregatePhysicalPlan(
-							new NativeAggregatePhysicalPlan(arg, NativeAggregatePhysicalPlan.Retention.STREAMING)));
+					arg.estimateWork(row, row.boundMask()))
+							.withPlanningWork(LmdbNativeWork.planning(arg, row, row.boundMask()))
+							.withAggregatePhysicalPlan(
+									new NativeAggregatePhysicalPlan(arg,
+											NativeAggregatePhysicalPlan.Retention.STREAMING)));
 		}
 		AggContext sequentialContext = replaySafe ? new AggContext(source, strictCompare, true) : aggContext;
 		// A replay-safe input does not make an opaque reducer order-independent. The changing-context
@@ -1591,6 +1604,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			arbiter.offer(() -> estimatedProposal(
 					() -> evaluateSequential(row, sequentialContext, metrics, quotedInput),
 					LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, quotedInput.estimateWork(row, row.boundMask()))
+							.withPlanningWork(LmdbNativeWork.planning(quotedInput, row, row.boundMask()))
 							.withOptionalAggregatePhysicalPlan(quotedInput instanceof PatternPlan || quotedInput != arg
 									? new NativeAggregatePhysicalPlan(quotedInput,
 											NativeGroupTable.usesTypedEvents(groupSlots, aggregates)
@@ -1600,7 +1614,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			if (quotedInput != arg) {
 				arbiter.offer(() -> estimatedProposal(() -> evaluateSequential(row, sequentialContext, metrics),
 						LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(autoChild)",
-						arg.estimateWork(row, row.boundMask())));
+						arg.estimateWork(row, row.boundMask()))
+								.withPlanningWork(LmdbNativeWork.planning(arg, row, row.boundMask())));
 			}
 		} else if (typeMatrixOwned) {
 			/*

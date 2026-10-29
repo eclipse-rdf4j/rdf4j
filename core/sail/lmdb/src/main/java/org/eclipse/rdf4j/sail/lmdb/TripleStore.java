@@ -3694,17 +3694,17 @@ class TripleStore implements Closeable {
 			if (cursor == null) {
 				return null;
 			}
-			LmdbPrefixRunCursor result = new LmdbExactPrefixRunCursor(plan, txn, stamp, view,
-					index.getName(explicit), lower, upper, cancelled, cursor, countRunRows);
+			// The barrier is held only while the cursor is built; the cursor re-pins it for every step so an open
+			// cursor never stalls commits.
+			LmdbPrefixRunCursor result = new LmdbExactPrefixRunCursor(plan, txn, view, index.getName(explicit),
+					lower, upper, cancelled, cursor, countRunRows);
 			transferred = true;
 			return result;
 		} finally {
-			if (!transferred) {
-				if (view != null) {
-					view.close();
-				}
-				txn.lockManager().unlockRead(stamp);
+			if (!transferred && view != null) {
+				view.close();
 			}
+			txn.lockManager().unlockRead(stamp);
 		}
 	}
 
