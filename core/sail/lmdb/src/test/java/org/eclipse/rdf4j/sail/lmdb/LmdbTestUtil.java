@@ -50,6 +50,35 @@ public final class LmdbTestUtil {
 		}
 	}
 
+	/**
+	 * Waits until no startup background maintenance remains: post-ready initialization, both index rebuilds and the
+	 * optional overlay/adjacency work. Tests that arm or measure the shared reader pools need this quiescence, because
+	 * maintenance legitimately admits ordinary readers of both physical stores for short periods after {@code init()}.
+	 */
+	public static void awaitBackgroundMaintenance(LmdbStore store, long timeout, TimeUnit unit)
+			throws IOException, InterruptedException {
+		long started = System.nanoTime();
+		long budget = unit.toNanos(timeout);
+		awaitPostReadyInitialization(store, timeout, unit);
+		while (true) {
+			LmdbStore.StartupStatus status = store.getStartupStatus();
+			if (!status.backgroundWorkPending()) {
+				return;
+			}
+			if (status.statementIndexBuild().startsWith("FAILED") || status.tripleTermIndexBuild().startsWith("FAILED")
+					|| status.auxiliaryMaintenance().startsWith("FAILED")) {
+				throw new IOException("LMDB background maintenance failed: " + status);
+			}
+			if (Thread.interrupted()) {
+				throw new InterruptedException("Interrupted while waiting for LMDB background maintenance");
+			}
+			if (System.nanoTime() - started >= budget) {
+				throw new IOException("Timed out waiting for LMDB background maintenance: " + status);
+			}
+			Thread.yield();
+		}
+	}
+
 	public static void deleteDir(File dataDir) {
 		if (dataDir == null || !dataDir.exists()) {
 			return;

@@ -29,13 +29,20 @@ final class LmdbNativeAdaptiveArbitration {
 	}
 
 	record Candidate<T>(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable,
-			NativeAggregatePhysicalPlan.ColdAnchor coldAnchor) {
+			NativeAggregatePhysicalPlan.ColdAnchor coldAnchor,
+			LmdbNativeStrategyProposal.ExpectedPlanningPrior expectedPlanningPrior,
+			LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness) {
 		Candidate(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener) {
-			this(estimate, staticPreference, opener, true);
+			this(estimate, staticPreference, opener, true, null, null, null);
 		}
 
 		Candidate(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable) {
-			this(estimate, staticPreference, opener, probeable, null);
+			this(estimate, staticPreference, opener, probeable, null, null, null);
+		}
+
+		Candidate(LmdbNativeCostEstimate estimate, int staticPreference, Opener<T> opener, boolean probeable,
+				NativeAggregatePhysicalPlan.ColdAnchor coldAnchor) {
+			this(estimate, staticPreference, opener, probeable, coldAnchor, null, null);
 		}
 
 		Candidate {
@@ -226,6 +233,14 @@ final class LmdbNativeAdaptiveArbitration {
 			return new DispatchPlan.Normal<>(incumbent, incumbentPrediction,
 					"authoritative whole-query structural answer");
 		}
+		if (allWithoutLearnedEvidence(normal)) {
+			Priced<T> expected = expectedPlanningWinner(normal);
+			if (expected != null) {
+				return dispatchWithExploration(priced, expected,
+						"cold comparable expected work for finite consumer slice", model,
+						probeContext, hedgeContext, captured);
+			}
+		}
 		if (allUnpricedCandidates(normal)) {
 			for (Priced<T> candidate : normal) {
 				NativeAggregatePhysicalPlan.ColdAnchor anchor = candidate.candidate.coldAnchor();
@@ -273,6 +288,9 @@ final class LmdbNativeAdaptiveArbitration {
 	private static boolean normalEligible(Priced<?> candidate) {
 		Candidate<?> arm = candidate.candidate;
 		return arm.estimate.workEvidence().isComplete() || arm.coldAnchor() != null
+		// A resource witness proves admission (ledger, worker slots), not a work bound: it admits an
+		// unpriced arm only where the expected-planning comparison can actually price it.
+				|| arm.executionResourceWitness() != null && arm.expectedPlanningPrior() != null
 				|| candidate.prediction.exactCompletedCount() > 0L || structurallyAdmittedSpecialist(arm);
 	}
 
@@ -306,6 +324,44 @@ final class LmdbNativeAdaptiveArbitration {
 			}
 		}
 		return !candidates.isEmpty();
+	}
+
+	/**
+	 * A finite expected work prior can arbitrate only before any machine, posterior, or completed-runtime evidence has
+	 * become numerical authority. Feature priors alone do not represent observations and remain eligible for this
+	 * query-specific expected-cost comparison.
+	 */
+	private static <T> boolean allWithoutLearnedEvidence(List<Priced<T>> candidates) {
+		for (Priced<T> candidate : candidates) {
+			LmdbNativeCostPrediction prediction = candidate.prediction;
+			if (prediction.learnedDominanceAllowed() || prediction.nEff() > 0D
+					|| prediction.exactCompletedCount() != 0L || prediction.latestObservedNanos() != 0L
+					|| prediction.evidenceSource() == LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT
+					|| prediction.quarantined()) {
+				return false;
+			}
+		}
+		return !candidates.isEmpty();
+	}
+
+	/** Missing or incomparable expected work preserves the stable structural order. */
+	private static <T> Priced<T> expectedPlanningWinner(List<Priced<T>> candidates) {
+		if (candidates.size() < 2) {
+			return null;
+		}
+		Priced<T> best = null;
+		double bestExpectedWork = Double.POSITIVE_INFINITY;
+		for (Priced<T> candidate : candidates) {
+			LmdbNativeStrategyProposal.ExpectedPlanningPrior prior = candidate.candidate.expectedPlanningPrior();
+			if (prior == null || !Double.isFinite(prior.expectedTotalWork())) {
+				return null;
+			}
+			if (best == null || prior.expectedTotalWork() < bestExpectedWork) {
+				best = candidate;
+				bestExpectedWork = prior.expectedTotalWork();
+			}
+		}
+		return best;
 	}
 
 	/**
