@@ -1726,7 +1726,7 @@ class LmdbPhysicalWorkPricingRegressionTest {
 	}
 
 	@Test
-	void contextOnlyAdjacencyQuoteKeepsUnknownPredicateSweepCeiling() throws Exception {
+	void contextOnlyAdjacencyQuoteKeepsFinitePredicateSweepCeiling() throws Exception {
 		LmdbStore store = storeWithDirectAdjacency(directory.resolve("context-only-adjacency"), true);
 		try {
 			ValueFactory values = store.getValueFactory();
@@ -1772,8 +1772,9 @@ class LmdbPhysicalWorkPricingRegressionTest {
 				assertThat(profile.entries()).as("one target statement plus unrelated rows remain").isEqualTo(513L);
 				assertThat(profile.adjacencyPossible()).isTrue();
 				assertThat(profile.adjacencyPredicateWork())
-						.as("the visible delete overlays retain a predicate domain without a finite sweep ceiling")
-						.isEqualTo(-2L);
+						.as("the visible delete overlays keep a finite predicate sweep ceiling: every predicate slice "
+								+ "revisits at most the visible overlay rows, so the catalog work stays bounded")
+						.isGreaterThan(64L);
 
 				NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "g", 3), null);
 				layout.freeze(List.of("s", "p", "o", "g"));
@@ -1798,11 +1799,13 @@ class LmdbPhysicalWorkPricingRegressionTest {
 						.as("context-only access selected a physical source: %s", measurements)
 						.anySatisfy(access -> assertThat(access).contains("source: IN_MEMORY_ADJACENCY"));
 				assertThat(quote.high())
-						.as("mask-8 context-only patterns must retain an unknown ceiling when overlays make predicate "
-								+ "sweep work unknown; quote=%s, predicateWork=%s, entries=%s, selected=%s, candidates=%s",
+						.as("mask-8 context-only patterns keep a finite ceiling that charges the bounded predicate sweep "
+								+ "on top of the source rows; quote=%s, predicateWork=%s, entries=%s, selected=%s, "
+								+ "candidates=%s",
 								quote, profile.adjacencyPredicateWork(), profile.entries(), measurements.selected,
 								measurements.candidates)
-						.isInfinite();
+						.isFinite()
+						.isGreaterThan(profile.entries() + profile.adjacencyPredicateWork());
 			}
 		} finally {
 			store.shutDown();

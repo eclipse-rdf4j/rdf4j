@@ -41,8 +41,15 @@ final class LmdbNativeIndexedCount {
 		this.contexts = pattern.contexts.isFixed() ? LongHashSet.newSetWith(pattern.contexts.ids).toArray() : null;
 	}
 
+	/** Kill switch for the exact indexed-count strategy, mirroring the other native specialists. */
+	static final String ENABLED_PROPERTY = "rdf4j.lmdb.indexedCount.enabled";
+
+	static boolean enabled() {
+		return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"));
+	}
+
 	static LmdbNativeIndexedCount tryCreate(SlotPlan arg, int[] groups, AggregateSpec[] aggregates) {
-		if (groups.length != 0 || aggregates.length == 0 || !(arg instanceof PatternPlan pattern)
+		if (!enabled() || groups.length != 0 || aggregates.length == 0 || !(arg instanceof PatternPlan pattern)
 				|| pattern.range != null || pattern.hasRepeatedSlot()) {
 			return null;
 		}
