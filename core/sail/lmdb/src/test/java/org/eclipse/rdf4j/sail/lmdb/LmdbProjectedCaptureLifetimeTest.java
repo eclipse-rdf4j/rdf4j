@@ -149,10 +149,11 @@ class LmdbProjectedCaptureLifetimeTest {
 		try {
 			System.err.println("Capture fixture diagnostic elapsedMs="
 					+ TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) + " phases: " + phases);
-			Thread.getAllStackTraces().forEach((thread, stack) -> System.err.println(
-					"Capture fixture thread: " + thread.getName() + " id=" + thread.threadId()
-							+ " state=" + thread.getState() + " interrupted=" + thread.isInterrupted()
-							+ " stack=" + Arrays.toString(stack)));
+			Thread.getAllStackTraces()
+					.forEach((thread, stack) -> System.err.println(
+							"Capture fixture thread: " + thread.getName() + " id=" + thread.threadId()
+									+ " state=" + thread.getState() + " interrupted=" + thread.isInterrupted()
+									+ " stack=" + Arrays.toString(stack)));
 		} catch (Throwable diagnosticFailure) {
 			// Thread enumeration or output is best effort, including on an already failing VM.
 		}
