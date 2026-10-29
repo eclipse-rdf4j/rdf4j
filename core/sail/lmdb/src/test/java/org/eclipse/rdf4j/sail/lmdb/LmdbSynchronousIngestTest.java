@@ -596,6 +596,83 @@ class LmdbSynchronousIngestTest {
 		}
 	}
 
+	@ParameterizedTest
+	@CsvSource({ "1,false", "5,false", "8,false", "1,true", "5,true", "8,true" })
+	void rebuildSnapshotCountsPriorCommittedMutationsOnce(int count, boolean remove, @TempDir Path directory)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
+				.setForceSync(false)
+				.setSketchEstimatorEnabled(true)
+				.setBulkOperationSize(4);
+		config.setExperimentalQueryOptimizations(true);
+		try (Fixture fixture = new Fixture(directory, config);
+				ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+			SketchBasedJoinEstimator estimator = fixture.store.getBackingStore().getSketchBasedJoinEstimator();
+			Set<Statement> changed = sizingHintStatements(count);
+			try (SailSink seed = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				seed.approveAll(statements("rebuild-seed", 1), Set.of());
+				if (remove) {
+					seed.approveAll(changed, Set.of());
+				}
+				seed.flush();
+			}
+			assertEquals(remove ? count + 1L : 1L, estimator.rebuild());
+			CountDownLatch refreshEntered = new CountDownLatch(1);
+			CountDownLatch releaseRefresh = new CountDownLatch(1);
+			fixture.events.beforeRefreshRead = () -> {
+				refreshEntered.countDown();
+				try {
+					if (!releaseRefresh.await(30, TimeUnit.SECONDS)) {
+						throw new AssertionError("Rebuild snapshot barrier was not released");
+					}
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(interrupted);
+				}
+			};
+			Future<Long> refresh = executor.submit(() -> {
+				Thread.currentThread().setName(SketchBasedJoinEstimator.REFRESH_THREAD_NAME);
+				return estimator.rebuild();
+			});
+			try {
+				await(refreshEntered);
+				try (SailSink sink = fixture.store.getBackingStore()
+						.getExplicitSailSource()
+						.sink(IsolationLevels.NONE)) {
+					if (remove) {
+						for (Statement statement : changed) {
+							sink.deprecate(statement);
+						}
+					} else {
+						sink.approveAll(changed, Set.of());
+					}
+					sink.flush();
+				}
+				double expected = remove ? 0D : (double) ((count + 1) / 2);
+				assertEquals(expected,
+						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:0"));
+				releaseRefresh.countDown();
+				assertEquals(remove ? 1L : count + 1L, refresh.get(10, TimeUnit.SECONDS));
+				try (SailSink sink = fixture.store.getBackingStore()
+						.getExplicitSailSource()
+						.sink(IsolationLevels.NONE)) {
+					sink.approveAll(changed, Set.of());
+					sink.flush();
+				}
+				assertEquals((double) ((count + 1) / 2),
+						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:0"));
+				assertEquals((double) (count / 2),
+						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:1"));
+				try (RepositoryConnection observer = fixture.repository.getConnection()) {
+					assertVisible(observer, changed);
+					assertEquals(count + 1L, observer.size());
+				}
+			} finally {
+				releaseRefresh.countDown();
+			}
+		}
+	}
+
 	@Test
 	void emptyAndNamespaceOnlyCallsDoNotChooseAnRdfWriter(@TempDir Path directory) throws Exception {
 		try (Fixture fixture = new Fixture(directory, 4)) {
@@ -1886,6 +1963,7 @@ class LmdbSynchronousIngestTest {
 	}
 
 	private static final class Events {
+		private volatile Runnable beforeRefreshRead;
 		private final List<Thread> starts = Collections.synchronizedList(new ArrayList<>());
 		private final List<Thread> scalarWrites = Collections.synchronizedList(new ArrayList<>());
 		private final List<Thread> commits = Collections.synchronizedList(new ArrayList<>());
@@ -2041,7 +2119,15 @@ class LmdbSynchronousIngestTest {
 				boolean sketchEnabled) throws IOException {
 			return new LmdbSailStore(directory, properties, config, sketchEnabled,
 					(dir, props, cfg) -> new ObservedValues(dir, props, cfg, events),
-					(dir, props, cfg, values) -> triples = new ObservedTriples(dir, props, cfg, values, events));
+					(dir, props, cfg, values) -> triples = new ObservedTriples(dir, props, cfg, values, events)) {
+				@Override
+				void beforeSketchRefreshReadForTest() {
+					Runnable hook = events.beforeRefreshRead;
+					if (hook != null && Thread.currentThread().isVirtual()) {
+						hook.run();
+					}
+				}
+			};
 		}
 	}
 

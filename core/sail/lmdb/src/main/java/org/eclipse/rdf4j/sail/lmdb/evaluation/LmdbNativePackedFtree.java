@@ -325,7 +325,7 @@ final class LmdbNativePackedFtree {
 			children[i] = new PatternPlan(specialize(pattern.s, row), specialize(pattern.p, row),
 					specialize(pattern.o, row), specialize(pattern.c, row), pattern.contexts,
 					pattern.namedContextScope, pattern.statementOrder, pattern.indexName, pattern.range,
-					pattern.staticEstimate);
+					pattern.staticEstimate, pattern.accessProfile);
 		}
 		return new MultiJoinPlan(children, input.filters);
 	}

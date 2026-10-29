@@ -130,7 +130,7 @@ final class LmdbNativeCostVector {
 		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh, false);
 	}
 
-	/** Startup is retained while only the variable portion is sliced. */
+	/** Retain proven startup/full bounds; use the consumption fraction only for the expected value. */
 	static LmdbNativeCostVector consumed(LmdbNativeCostVector startup, LmdbNativeCostVector total,
 			double consumptionFraction) {
 		Objects.requireNonNull(startup, "startup");
@@ -142,9 +142,9 @@ final class LmdbNativeCostVector {
 		double[] resultExpected = new double[FEATURES.length];
 		double[] resultHigh = new double[FEATURES.length];
 		for (int i = 0; i < FEATURES.length; i++) {
-			resultLow[i] = interpolate(startup.low[i], total.low[i], consumptionFraction);
+			resultLow[i] = startup.low[i];
 			resultExpected[i] = interpolate(startup.expected[i], total.expected[i], consumptionFraction);
-			resultHigh[i] = interpolate(startup.high[i], total.high[i], consumptionFraction);
+			resultHigh[i] = total.high[i];
 		}
 		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh, false);
 	}

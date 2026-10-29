@@ -2,6 +2,7 @@
 """Run tiny Maven fixtures and prove the PR test partitions are disjoint."""
 
 import argparse
+import itertools
 import os
 import re
 import shlex
@@ -18,7 +19,8 @@ FIXTURE_DIRECTORY = ROOT / "logs/ci/pr-verify-partitions/fixture"
 FIXTURE_POM = "logs/ci/pr-verify-partitions/fixture/pom.xml"
 MODULES = ("standard", "native", "compliance")
 SELECTION_JOBS = (
-	("unit", "build"),
+	("unit", "unit-tests"),
+	("lmdb-unit", "lmdb-unit-tests"),
 	("integration", "integration-tests"),
 	("slow", "slow-tests"),
 )
@@ -36,6 +38,8 @@ EXPECTED = {
 	"unit": {
 		"standard:unitRegular",
 		"standard:unitRegularSubclassOfMethodSlowBase",
+	},
+	"lmdb-unit": {
 		"native:nativeUnitRegular",
 	},
 	"integration": {
@@ -90,7 +94,7 @@ def prepare_fixture():
 		pom_path.write_text(content, encoding="utf-8")
 
 
-def maven_test_selection(job_id):
+def workflow_job(job_id):
 	workflow = ROOT / ".github/workflows/pr-verify.yml"
 	lines = workflow.read_text(encoding="utf-8").splitlines()
 	start = next((i for i, line in enumerate(lines) if line == f"  {job_id}:"), None)
@@ -100,7 +104,19 @@ def maven_test_selection(job_id):
 		(i for i in range(start + 1, len(lines)) if re.match(r"^  [A-Za-z0-9_-]+:$", lines[i])),
 		len(lines),
 	)
-	commands = re.findall(r"^\s*run:\s*(.*)$", "\n".join(lines[start:end]), flags=re.MULTILINE)
+	return lines[start:end]
+
+
+def maven_test_selection(job_id):
+	commands = []
+	step_name = None
+	for line in workflow_job(job_id):
+		step = re.match(r"^\s*- name:\s*(.*)$", line)
+		if step:
+			step_name = step.group(1)
+		command = re.match(r"^\s*run:\s*(.*)$", line)
+		if command and step_name in ("Test", "Verify"):
+			commands.append(command.group(1))
 	selections = []
 	for command in commands:
 		tokens = shlex.split(command)
@@ -114,6 +130,7 @@ def maven_test_selection(job_id):
 			continue
 		profiles = []
 		system_properties = []
+		project_selection = []
 		index = 0
 		while index < len(arguments):
 			token = arguments[index]
@@ -127,8 +144,16 @@ def maven_test_selection(job_id):
 				index += 1
 			elif token.startswith("-D"):
 				system_properties.append(token)
+			elif token == "-pl" and index + 1 < len(arguments):
+				for project in arguments[index + 1].split(","):
+					excluded = project.startswith("!")
+					path = project[1:] if excluded else project
+					if path != "core/sail/lmdb":
+						raise RuntimeError(f"unmapped workflow project selection: {project}")
+					project_selection.append(("!" if excluded else "") + "native")
+				index += 1
 			index += 1
-		selections.append((goal, ",".join(profiles), system_properties))
+		selections.append((goal, ",".join(profiles), system_properties, project_selection))
 	if len(selections) != 1:
 		raise RuntimeError(
 			f"expected one Maven test command in workflow job {job_id}, found {selections}"
@@ -136,11 +161,45 @@ def maven_test_selection(job_id):
 	return selections[0]
 
 
+def verify_unit_gate():
+	lines = workflow_job("build")
+	job = "\n".join(lines)
+	for required in (
+		"needs: [unit-tests, lmdb-unit-tests]",
+		"if: ${{ always() }}",
+		"UNIT_RESULT: ${{ needs.unit-tests.result }}",
+		"LMDB_RESULT: ${{ needs.lmdb-unit-tests.result }}",
+	):
+		if required not in job:
+			raise AssertionError(f"build gate missing {required}")
+	lmdb_job = "\n".join(workflow_job("lmdb-unit-tests"))
+	if "-Dtest=LmdbSyncValidationProfileProbe" not in lmdb_job or "lmdb-sync-validation" not in lmdb_job:
+		raise AssertionError("LMDB job must run the synchronous-validation profile probe")
+	try:
+		start = next(i for i, line in enumerate(lines) if line.strip() == "run: |") + 1
+	except StopIteration as error:
+		raise AssertionError("build gate has no shell command") from error
+	command_lines = []
+	for line in lines[start:]:
+		if not line.startswith("          "):
+			break
+		command_lines.append(line[10:])
+	command = "\n".join(command_lines)
+	if not command:
+		raise AssertionError("build gate has an empty shell command")
+	for unit, lmdb in itertools.product(("success", "failure", "cancelled", "skipped"), repeat=2):
+		result = subprocess.run(["bash", "-c", command], env={**os.environ, "UNIT_RESULT": unit,
+				"LMDB_RESULT": lmdb}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+		if (result.returncode == 0) != (unit == lmdb == "success"):
+			raise AssertionError(f"build gate returned {result.returncode} for unit={unit}, LMDB={lmdb}")
+	print("build gate: both unit-test jobs must succeed")
+
+
 def property_name(argument):
 	return argument[2:].split("=", maxsplit=1)[0]
 
 
-def run_selection(name, goal, profiles, system_properties, offline):
+def run_selection(name, goal, profiles, system_properties, project_selection, offline):
 	if os.environ.get("MAVEN_REPO_LOCAL"):
 		maven_repository = os.environ["MAVEN_REPO_LOCAL"]
 	elif os.environ.get("GITHUB_ACTIONS") == "true":
@@ -166,6 +225,8 @@ def run_selection(name, goal, profiles, system_properties, offline):
 	)
 	if profiles:
 		command.append(f"-P{profiles}")
+	if project_selection:
+		command.extend(["-pl", ",".join(project_selection)])
 	command.extend(system_properties)
 	workflow_property_names = {property_name(argument) for argument in system_properties}
 	command.extend(
@@ -186,14 +247,29 @@ def run_selection(name, goal, profiles, system_properties, offline):
 			stderr=subprocess.STDOUT,
 			check=False,
 		)
+	for module in selected_modules(project_selection):
+		for report_directory in ("surefire-reports", "failsafe-reports"):
+			source = FIXTURE_DIRECTORY / module / "target" / report_directory
+			if source.is_dir():
+				shutil.copytree(source, log_directory / f"{name}-reports" / module / report_directory,
+								dirs_exist_ok=True)
 	if result.returncode:
 		raise RuntimeError(f"{name} Maven selection failed; see {log_file}")
-	return collect_cases()
+	return collect_cases(project_selection)
 
 
-def collect_cases():
+def selected_modules(project_selection):
+	included = {project for project in project_selection if not project.startswith("!")}
+	excluded = {project[1:] for project in project_selection if project.startswith("!")}
+	return (included or set(MODULES)) - excluded
+
+
+def collect_cases(project_selection):
 	cases = set()
+	selected = selected_modules(project_selection)
 	for module in MODULES:
+		if module not in selected:
+			continue
 		module_root = FIXTURE_DIRECTORY / module
 		for report_directory in ("surefire-reports", "failsafe-reports"):
 			report_root = module_root / "target" / report_directory
@@ -221,13 +297,14 @@ def main():
 		help="allow Maven to download dependencies (for cold-cache CI runs)",
 	)
 	arguments = parser.parse_args()
+	verify_unit_gate()
 	selections = (
 		(name, *maven_test_selection(job_id)) for name, job_id in SELECTION_JOBS
 	)
 	actual = {}
 	prepare_fixture()
-	for name, goal, profiles, system_properties in selections:
-		actual[name] = run_selection(name, goal, profiles, system_properties, arguments.offline)
+	for name, goal, profiles, system_properties, project_selection in selections:
+		actual[name] = run_selection(name, goal, profiles, system_properties, project_selection, arguments.offline)
 		if actual[name] != EXPECTED[name]:
 			missing = sorted(EXPECTED[name] - actual[name])
 			unexpected = sorted(actual[name] - EXPECTED[name])
@@ -236,7 +313,7 @@ def main():
 			)
 		print(f"{name}: {len(actual[name])} expected tests executed")
 
-	for left, right in (("unit", "integration"), ("unit", "slow"), ("integration", "slow")):
+	for left, right in itertools.combinations(actual, 2):
 		shared = actual[left] & actual[right]
 		if shared:
 			raise AssertionError(f"{left} and {right} overlap: {sorted(shared)}")

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,8 +28,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.codehaus.janino.SimpleCompiler;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
@@ -171,6 +174,71 @@ class LmdbNativeKernelPollPointTest {
 							+ "classify that signal as terminal query cancellation");
 		} finally {
 			Thread.interrupted();
+		}
+	}
+
+	@Test
+	void foreignWorkerCancellationRetainsItsOwnerThroughBooleanShortcut() throws Exception {
+		NativeCancellationToken queryCancellation = new NativeCancellationToken();
+		NativeCancellationToken workerCancellation = new NativeCancellationToken(queryCancellation);
+		Object foreignOwner = new Object();
+		ThreadLocal<Object> interruptionOwner = new ThreadLocal<>();
+		QueryExecutionContext.WorkerScope scope = new QueryExecutionContext.WorkerScope() {
+			@Override
+			public QueryExecutionContext.Activation activate() {
+				return () -> Thread.interrupted();
+			}
+
+			@Override
+			public Object consumeInterruptionOwner() {
+				Object owner = interruptionOwner.get();
+				interruptionOwner.remove();
+				return owner;
+			}
+
+			@Override
+			public boolean ownsCancellation(Object owner) {
+				return owner == foreignOwner;
+			}
+		};
+		KernelCancellation cancellation = LmdbNativeProbeDeadline
+				.currentKernelCancellation(workerCancellation, () -> false);
+		QueryExecutionContext.ReplayContext replay;
+		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+		}, () -> scope)) {
+			replay = QueryExecutionContext.captureReplayContext();
+		}
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try {
+			Throwable observed = executor.submit(() -> {
+				AtomicReference<Throwable> failure = new AtomicReference<>();
+				replay.run(() -> {
+					interruptionOwner.set(foreignOwner);
+					Thread.currentThread().interrupt();
+					try {
+						KernelRuntime.checkCancelled(cancellation);
+					} catch (Throwable cancelled) {
+						failure.set(cancelled);
+					} finally {
+						Thread.interrupted();
+					}
+				});
+				return failure.get();
+			}).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			assertTrue(observed instanceof KernelQueryCancelledException,
+					"a foreign worker interrupt cannot be collapsed into replayable probe cancellation");
+			KernelQueryCancelledException signal = (KernelQueryCancelledException) observed;
+			assertNotSame(KernelQueryCancelledException.INSTANCE, signal,
+					"the boolean worker-cancellation shortcut retains its occurrence");
+			assertSame(foreignOwner, signal.origin());
+			assertTrue(signal.observedBy(workerCancellation));
+			assertFalse(workerCancellation.owns(signal), "the foreign interruption remains unowned by this query");
+			assertFalse(queryCancellation.cancellationPublished(),
+					"the foreign interruption does not cancel its parent");
+			assertEquals(null, queryCancellation.pollCancellation());
+		} finally {
+			executor.shutdownNow();
+			assertTrue(executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS));
 		}
 	}
 
