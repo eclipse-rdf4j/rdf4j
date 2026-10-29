@@ -297,6 +297,9 @@ final class LmdbNativePackedFtree {
 		MultiJoinPlan join = specializeEntry(input, row);
 		if (join == null)
 			return null;
+		LmdbNativeFactorCursor rootFactor = RootRunFactors.open(join, row);
+		if (rootFactor != null)
+			return rootFactor;
 		Plan plan = Planner.plan(join, row, LmdbNativeAggregateCompiler.slotsOf(join.producedMask()));
 		if (plan == null)
 			return null;
@@ -312,6 +315,150 @@ final class LmdbNativePackedFtree {
 			if (runtime != null)
 				LmdbNativeFactorAlgebra.closeSuppressing(runtime, failure);
 			throw failure;
+		}
+	}
+
+	/** A single bound-key root remains a source-owned run until a consumer needs its members. */
+	static final class RootRunFactors implements LmdbNativeFactorCursor {
+		final RowState row;
+		final int slot;
+		final int mark;
+		final FactorEnvironment factors;
+		final NativeLmdbQuerySource.NativeProbe probe;
+		BorrowedFactorBatch.Source source;
+		BorrowedFactorBatch batch;
+		long singleton;
+		long count;
+		boolean emitted;
+		boolean closed;
+
+		private RootRunFactors(RowState row, int slot) throws IOException {
+			this.row = row;
+			this.slot = slot;
+			mark = row.mark();
+			factors = new FactorEnvironment(row.slots.length);
+			probe = row.source.newProbe();
+		}
+
+		static LmdbNativeFactorCursor open(MultiJoinPlan join, RowState row) throws IOException {
+			if (!Boolean.getBoolean("rdf4j.lmdb.packedFtree.rootFactor.enabled") || !borrowedFactorsEnabled()
+					|| !LmdbNativeFactorRows.enabled() || row.slots.length > Long.SIZE
+					|| join.children.length != 1 || join.filters.length != 0
+					|| !(join.children[0] instanceof PatternPlan pattern) || !pattern.p.isConstant()
+					|| pattern.c.hasSlot() || !contextFree(pattern) || pattern.range != null
+					|| pattern.statementOrder != null || pattern.contexts.isEmpty() || pattern.hasRepeatedSlot())
+				return null;
+			// Constant-slot terms not installed by the entry frame need the general planner's fixed bindings.
+			if (!entryConstantInstalled(pattern.s, row) || !entryConstantInstalled(pattern.p, row)
+					|| !entryConstantInstalled(pattern.o, row))
+				return null;
+			boolean bySubject = pattern.s.isConstant() && !pattern.o.isConstant() && pattern.o.hasSlot();
+			boolean byObject = pattern.o.isConstant() && !pattern.s.isConstant() && pattern.s.hasSlot();
+			if (!bySubject && !byObject)
+				return null;
+			int slot = bySubject ? pattern.o.slot : pattern.s.slot;
+			if (row.slots[slot] != UNKNOWN)
+				return null;
+			// Unknown metadata is capability decline, never a logical no-match. Avoid speculative probes.
+			if (row.source.adjacencyKeyDomainCardinality(pattern.p.constant, bySubject).isEmpty()) {
+				if (row.runtimePlan != null)
+					row.runtimePlan.rootFactorCapabilityDeclined();
+				return null;
+			}
+			RootRunFactors result = new RootRunFactors(row, slot);
+			try {
+				NativeLmdbQuerySource.NativeAdjacency adjacency = result.probe.adjacency(pattern.p.constant, bySubject);
+				long handle = adjacency == null ? NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED
+						: adjacency.find(bySubject ? pattern.s.constant : pattern.o.constant);
+				if (handle == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
+					if (row.runtimePlan != null)
+						row.runtimePlan.rootFactorCapabilityDeclined();
+					result.close();
+					return null;
+				}
+				if (handle <= 0L)
+					return result;
+				result.count = adjacency.size(handle);
+				if (result.count == 1L) {
+					result.singleton = adjacency.neighborAt(handle, 0L);
+					if (row.runtimePlan != null)
+						row.runtimePlan.rootFactorSingleton();
+					return result;
+				}
+				if (result.count == 0L)
+					return result;
+				result.source = adjacency.openFactorSource();
+				if (result.source != null) {
+					result.batch = new BorrowedFactorBatch(result.source, 1);
+					result.batch.reset(1);
+					if (adjacency.borrowRun(handle, result.batch, 0)) {
+						if (result.batch.count(0) != result.count)
+							throw new IllegalStateException("borrowed root cardinality mismatch");
+						if (row.runtimePlan != null)
+							row.runtimePlan.borrowedRootRun(result.batch.kind(0), result.count);
+						return result;
+					}
+				}
+				if (row.runtimePlan != null)
+					row.runtimePlan.rootFactorCapabilityDeclined();
+				result.close();
+				return null;
+			} catch (IOException | RuntimeException | Error failure) {
+				LmdbNativeFactorAlgebra.closeSuppressing(result, failure);
+				throw failure;
+			}
+		}
+
+		private static boolean entryConstantInstalled(Term term, RowState row) {
+			return !term.isConstant() || !term.hasSlot() || row.slots[term.slot] == term.constant;
+		}
+
+		@Override
+		public boolean next() {
+			if (closed)
+				return false;
+			try {
+				if (emitted || count == 0L || LmdbNativeFactorRows.cancelled(row, 1)) {
+					close();
+					return false;
+				}
+				emitted = true;
+				if (count == 1L)
+					row.bind(slot, singleton);
+				else
+					factors.bind(slot, batch, 0, 0L);
+				return true;
+			} catch (RuntimeException | Error failure) {
+				LmdbNativeFactorAlgebra.closeSuppressing(this, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public long multiplicity() {
+			return 1L;
+		}
+
+		@Override
+		public FactorEnvironment factors() {
+			return factors;
+		}
+
+		@Override
+		public void close() {
+			if (closed)
+				return;
+			closed = true;
+			factors.clear();
+			row.rollback(mark);
+			try {
+				if (source != null)
+					source.close();
+			} catch (RuntimeException | Error failure) {
+				LmdbNativeFactorAlgebra.closeSuppressing(probe, failure);
+				throw failure;
+			}
+			probe.close();
 		}
 	}
 

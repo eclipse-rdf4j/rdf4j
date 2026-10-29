@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedSipFactorizedRuntime.Doma
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedSipFactorizedRuntime.FactorizationTelemetry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedSipFactorizedRuntime.FilterTelemetry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbFusedSipFactorizedRuntime.Telemetry;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 
 /**
  * Query-local witness of the physical plan that actually crossed runtime activation points. This deliberately does not
@@ -284,6 +285,13 @@ final class LmdbNativeRuntimePlan {
 		private String adjacencyWhere;
 		private long adjacencyMembershipChecks;
 		private long adjacencyRowsRejected;
+		private long borrowedRootRuns;
+		private long borrowedRootLogicalRows;
+		private long borrowedRootCsfPageRuns;
+		private long borrowedRootEncodedRuns;
+		private long borrowedRootOtherRuns;
+		private long rootFactorSingletonRows;
+		private long rootFactorCapabilityDeclines;
 		private boolean adaptiveUsed;
 		private String adaptiveReason;
 		private String adaptiveEpochs = "[]";
@@ -332,6 +340,13 @@ final class LmdbNativeRuntimePlan {
 			}
 			adjacencyMembershipChecks += completed.adjacencyMembershipChecks;
 			adjacencyRowsRejected += completed.adjacencyRowsRejected;
+			borrowedRootRuns += completed.borrowedRootRuns;
+			borrowedRootLogicalRows += completed.borrowedRootLogicalRows;
+			borrowedRootCsfPageRuns += completed.borrowedRootCsfPageRuns;
+			borrowedRootEncodedRuns += completed.borrowedRootEncodedRuns;
+			borrowedRootOtherRuns += completed.borrowedRootOtherRuns;
+			rootFactorSingletonRows += completed.rootFactorSingletonRows;
+			rootFactorCapabilityDeclines += completed.rootFactorCapabilityDeclines;
 			if (completed.adaptiveUsed) {
 				adaptiveUsed = true;
 				adaptiveReason = completed.adaptiveReason;
@@ -430,6 +445,13 @@ final class LmdbNativeRuntimePlan {
 				adjacencyWhere = null;
 				adjacencyMembershipChecks = 0L;
 				adjacencyRowsRejected = 0L;
+				borrowedRootRuns = 0L;
+				borrowedRootLogicalRows = 0L;
+				borrowedRootCsfPageRuns = 0L;
+				borrowedRootEncodedRuns = 0L;
+				borrowedRootOtherRuns = 0L;
+				rootFactorSingletonRows = 0L;
+				rootFactorCapabilityDeclines = 0L;
 				adaptiveUsed = false;
 				adaptiveReason = renderedReason;
 				adaptiveEpochs = "[]";
@@ -604,6 +626,35 @@ final class LmdbNativeRuntimePlan {
 			publishIfAllowed();
 		}
 
+		/**
+		 * Counts actual root-run exports, not decoded or consumed rows. Accumulate only: rendering the whole plan after
+		 * each correlated RHS would turn optional telemetry into per-prefix string allocation. Existing
+		 * completion/publication points expose these counters, and deferred-attempt adoption merges them.
+		 */
+		synchronized void borrowedRootRun(byte kind, long logicalRows) {
+			borrowedRootRuns++;
+			borrowedRootLogicalRows += logicalRows;
+			switch (kind) {
+			case BorrowedFactorBatch.CSF_PAGE:
+				borrowedRootCsfPageRuns++;
+				break;
+			case BorrowedFactorBatch.ENCODED_RUN:
+				borrowedRootEncodedRuns++;
+				break;
+			default:
+				borrowedRootOtherRuns++;
+				break;
+			}
+		}
+
+		synchronized void rootFactorSingleton() {
+			rootFactorSingletonRows++;
+		}
+
+		synchronized void rootFactorCapabilityDeclined() {
+			rootFactorCapabilityDeclines++;
+		}
+
 		void fusedTelemetry(LmdbFusedSipFactorizedRuntime.Telemetry telemetry) {
 			if (telemetry == null) {
 				return;
@@ -707,6 +758,22 @@ final class LmdbNativeRuntimePlan {
 					.append(adaptiveEpochs)
 					.append("\n      finalDepth: ")
 					.append(adaptiveFinalDepth == null ? "<not applicable>" : adaptiveFinalDepth);
+			out.append("\n    borrowedRootFactors:")
+					.append("\n      scope: packed root-run descriptor exports")
+					.append("\n      borrowedRuns: ")
+					.append(borrowedRootRuns)
+					.append("\n      logicalRows: ")
+					.append(borrowedRootLogicalRows)
+					.append("\n      csfPageRuns: ")
+					.append(borrowedRootCsfPageRuns)
+					.append("\n      encodedRuns: ")
+					.append(borrowedRootEncodedRuns)
+					.append("\n      otherRuns: ")
+					.append(borrowedRootOtherRuns)
+					.append("\n      singletonRows: ")
+					.append(rootFactorSingletonRows)
+					.append("\n      capabilityDeclines: ")
+					.append(rootFactorCapabilityDeclines);
 			renderKernels(out, telemetry.kernelBinds());
 			renderRuntimeSip(out, telemetry);
 			renderFactorization(out, telemetry.factorization());

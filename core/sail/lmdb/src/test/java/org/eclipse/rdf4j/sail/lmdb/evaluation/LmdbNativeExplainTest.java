@@ -12,13 +12,24 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 class LmdbNativeExplainTest {
 
@@ -151,6 +162,77 @@ class LmdbNativeExplainTest {
 		assertThat(LmdbNativeExplain.describe(filter, layout()))
 				.contains("Filter(mask=sticky")
 				.doesNotContain("#63");
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void borrowedRootRunObservabilityReportsActualDescriptorWithoutPerRunPublication() throws Exception {
+		String property = "rdf4j.lmdb.packedFtree.rootFactor.enabled";
+		String previous = System.getProperty(property);
+		System.setProperty(property, "true");
+		try {
+			SingletonSet target = new SingletonSet();
+			target.setRuntimeTelemetryEnabled(true);
+			NativeSlotLayout layout = layout();
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+			NativeLmdbQuerySource.NativeProbe probe = mock(NativeLmdbQuerySource.NativeProbe.class);
+			NativeLmdbQuerySource.NativeAdjacency adjacency = mock(NativeLmdbQuerySource.NativeAdjacency.class);
+			when(source.idSpace()).thenReturn(source);
+			when(source.newProbe()).thenReturn(probe);
+			when(source.adjacencyKeyDomainCardinality(anyLong(), anyBoolean())).thenReturn(OptionalLong.of(1L));
+			when(probe.adjacency(anyLong(), anyBoolean())).thenReturn(adjacency);
+			when(adjacency.find(anyLong())).thenReturn(1L);
+			when(adjacency.size(anyLong())).thenReturn(3L);
+			BorrowedFactorBatch.Source owner = new BorrowedFactorBatch.Source(source) {
+				@Override
+				public BorrowedFactorBatch.Reader openReader() {
+					throw new AssertionError("export-only observability must not decode payload");
+				}
+			};
+			when(adjacency.openFactorSource()).thenReturn(owner);
+			when(adjacency.borrowRun(anyLong(), any(), anyInt())).thenAnswer(call -> {
+				BorrowedFactorBatch batch = call.getArgument(1);
+				// Sentinel descriptor is never dereferenced; verifies kind reporting, not native storage decoding.
+				batch.bindNative(call.getArgument(2), BorrowedFactorBatch.ENCODED_RUN, 8L, 1L, 0, 3L);
+				return true;
+			});
+			RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			assertThat(NativeRowSeeder.seed(row.slots, layout, EmptyBindingSet.getInstance(), source)).isTrue();
+			assertThat(row.bind(0, 7L)).isTrue();
+			PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(101L), Term.slot(1), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 3D);
+			MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
+			row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(target, plan, layout, row.boundMask());
+			String before = target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN);
+			try (LmdbNativeFactorCursor cursor = LmdbNativePackedFtree.openLeaf(plan, row)) {
+				assertThat(cursor).isNotNull();
+			}
+			assertThat(target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
+					.isEqualTo(before);
+			row.runtimePlan.complete();
+			assertThat(target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
+					.contains("borrowedRootFactors:")
+					.contains("scope: packed root-run descriptor exports")
+					.contains("borrowedRuns: 1")
+					.contains("logicalRows: 3")
+					.contains("encodedRuns: 1")
+					.contains("csfPageRuns: 0")
+					.contains("singletonRows: 0");
+			SingletonSet adopted = new SingletonSet();
+			adopted.setRuntimeTelemetryEnabled(true);
+			LmdbNativeRuntimePlan.adopt(adopted, row.runtimePlan);
+			assertThat(adopted.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
+					.contains("borrowedRootFactors:")
+					.contains("borrowedRuns: 1")
+					.contains("logicalRows: 3")
+					.contains("encodedRuns: 1");
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
 	}
 
 	private static NativeSlotLayout layout() {
