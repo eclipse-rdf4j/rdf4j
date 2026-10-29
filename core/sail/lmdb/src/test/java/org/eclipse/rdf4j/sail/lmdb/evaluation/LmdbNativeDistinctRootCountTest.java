@@ -65,6 +65,20 @@ class LmdbNativeDistinctRootCountTest {
 	}
 
 	@Test
+	void cancelledCountRetainsTheOwningToken() {
+		NativeCancellationToken token = new NativeCancellationToken();
+		token.requestCancellation();
+		Source source = new Source(new Domain[] { DistinctRootCountCandidates.generated(2, i -> i) });
+		assertThatThrownBy(() -> count(source, token))
+				.isInstanceOf(KernelQueryCancelledException.class)
+				.satisfies(problem -> {
+					KernelQueryCancelledException signal = (KernelQueryCancelledException) problem;
+					assertThat(signal.origin()).isSameAs(token);
+					assertThat(signal.observedBy(token)).isTrue();
+				});
+	}
+
+	@Test
 	void unsignedOracleIncludesEmptyDuplicateAndWindowBoundaryDomains() throws Exception {
 		Random random = new Random(20260905);
 		for (int trial = 0; trial < 60; trial++) {

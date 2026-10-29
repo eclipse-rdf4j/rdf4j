@@ -136,8 +136,9 @@ class NativeLexicalLeftJoinReplayTest {
 			Throwable failure = catchThrowable(() -> opened.set(
 					new LexicalLeftJoinCursor(leftPlan, right, new int[] { KEY }, fixture.row)));
 			try {
+				assertOwnedCancellation(failure, fixture.row.cancellation);
 				assertThat(failure).as("a prefix observed before cancellation is not a successful right relation")
-						.isSameAs(KernelQueryCancelledException.INSTANCE);
+						.isInstanceOf(KernelQueryCancelledException.class);
 				assertThat(rightCounts.opens).hasValue(1);
 				assertThat(rightCounts.advances).hasValue(1);
 				assertThat(rightCounts.closes).hasValue(1);
@@ -166,8 +167,9 @@ class NativeLexicalLeftJoinReplayTest {
 					fixture.row)) {
 				fixture.row.cancellation.requestCancellation();
 				Throwable failure = catchThrowable(cursor::next);
+				assertOwnedCancellation(failure, fixture.row.cancellation);
 				assertThat(failure).as("cancelled native work must not be published as ordinary EOF")
-						.isSameAs(KernelQueryCancelledException.INSTANCE);
+						.isInstanceOf(KernelQueryCancelledException.class);
 			} finally {
 				assertThat(rightCounts.closes).hasValue(1);
 				assertThat(leftCounts.closes).hasValue(1);
@@ -223,11 +225,14 @@ class NativeLexicalLeftJoinReplayTest {
 				fixture.row.cancellation.requestCancellation();
 
 				Throwable first = catchThrowable(cursor::next);
+				assertOwnedCancellation(first, fixture.row.cancellation);
 				assertThat(first).as("query cancellation remains the primary terminal outcome")
-						.isSameAs(KernelQueryCancelledException.INSTANCE);
+						.isInstanceOf(KernelQueryCancelledException.class);
 				Throwable repeated = catchThrowable(cursor::next);
 				assertThat(repeated).as("repeated next rethrows the original terminal cancellation")
 						.isSameAs(first);
+				assertThat(first.getSuppressed()).as("the actual left-close failure remains observable")
+						.containsExactly(cleanupFailure);
 				assertThat(leftCloseCalls).hasValue(1);
 				assertThat(leftCounts.closes).hasValue(1);
 				assertThat(rightCounts.closes).hasValue(1);
@@ -600,6 +605,13 @@ class NativeLexicalLeftJoinReplayTest {
 		} else {
 			System.setProperty(property, previous);
 		}
+	}
+
+	private static void assertOwnedCancellation(Throwable failure, NativeCancellationToken token) {
+		assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
+		KernelQueryCancelledException signal = (KernelQueryCancelledException) failure;
+		assertThat(signal.origin()).as("query cancellation must retain its exact token origin").isSameAs(token);
+		assertThat(signal.observedBy(token)).isTrue();
 	}
 
 	private static final class Counts {

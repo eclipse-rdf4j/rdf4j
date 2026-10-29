@@ -26,8 +26,36 @@ public final class KernelQueryCancelledException extends RuntimeException {
 	private static final long serialVersionUID = 1L;
 
 	public static final KernelQueryCancelledException INSTANCE = new KernelQueryCancelledException();
+	private final Object observer;
+	private final Object origin;
 
 	private KernelQueryCancelledException() {
 		super("kernel execution cancelled by query evaluation", null, false, false);
+		observer = null;
+		origin = null;
+	}
+
+	/** An occurrence-local signal retaining the token and owner observed at its cancellation point. */
+	public KernelQueryCancelledException(Object observer, Object origin) {
+		super("kernel execution cancelled by query evaluation", null, true, false);
+		this.observer = observer;
+		this.origin = origin;
+	}
+
+	public Object origin() {
+		return origin;
+	}
+
+	public boolean observedBy(Object token) {
+		return observer == token;
+	}
+
+	/** A latched kernel signal can be thrown by several workers without sharing suppressed cleanup failures. */
+	KernelQueryCancelledException copy() {
+		return this == INSTANCE ? this : new KernelQueryCancelledException(observer, origin);
+	}
+
+	boolean sameProvenance(KernelQueryCancelledException other) {
+		return observer == other.observer && origin == other.origin;
 	}
 }

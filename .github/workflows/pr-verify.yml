@@ -52,7 +52,7 @@ jobs:
         run: mvn -B clean install --fail-at-end -DskipTests -DskipITs
 
 
-  build:
+  lmdb-unit-tests:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     permissions:
@@ -77,9 +77,12 @@ jobs:
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Test
         id: test
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end -pl core/sail/lmdb test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+      - name: Verify synchronous validation profile
+        id: sync_validation
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end -pl core/sail/lmdb -Dtest=LmdbSyncValidationProfileProbe test -DskipITs -PskipSlowTests,lmdb-sync-validation,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Preserve LMDB JVM crash diagnostics
-        if: ${{ failure() && steps.test.outcome == 'failure' }}
+        if: ${{ failure() && (steps.test.outcome == 'failure' || steps.sync_validation.outcome == 'failure') }}
         shell: bash
         run: |
           set -euo pipefail
@@ -126,7 +129,7 @@ jobs:
             done
           } > "$diagnostics/core-metadata.txt" 2>&1
       - name: Upload LMDB JVM crash diagnostics
-        if: ${{ failure() && steps.test.outcome == 'failure' }}
+        if: ${{ failure() && (steps.test.outcome == 'failure' || steps.sync_validation.outcome == 'failure') }}
         uses: actions/upload-artifact@v4
         with:
           name: lmdb-jvm-diagnostics-${{ github.run_id }}-${{ matrix.jdk }}
@@ -137,10 +140,58 @@ jobs:
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
         with:
-          check_name: Test report - build - ${{ matrix.jdk }}
+          check_name: Test report - LMDB unit tests - ${{ matrix.jdk }}
           # Read-only fork and Dependabot tokens retain parsed failure details in the action log.
           skip_publishing: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
+  unit-tests:
+    needs: formatting-and-quick-compile
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+      checks: write
+    strategy:
+      fail-fast: true
+      matrix:
+        jdk: [ 25 ]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
+      - name: Set up JDK
+        uses: actions/setup-java@v6.0.1
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: 'temurin'
+          cache: maven
+      - name: Build
+        run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
+      - name: Test
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end -pl '!core/sail/lmdb' test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+      - name: Publish Test Report
+        if: failure()
+        uses: ScalableCapital/action-surefire-report@v2.0.5
+        with:
+          check_name: Test report - other unit tests - ${{ matrix.jdk }}
+          skip_publishing: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
 
+  build:
+    needs: [unit-tests, lmdb-unit-tests]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        jdk: [ 25 ]
+    steps:
+      - name: Require both unit-test jobs
+        env:
+          UNIT_RESULT: ${{ needs.unit-tests.result }}
+          LMDB_RESULT: ${{ needs.lmdb-unit-tests.result }}
+        run: |
+          if [[ "$UNIT_RESULT" != success || "$LMDB_RESULT" != success ]]; then
+            echo "Unit test results: other=$UNIT_RESULT LMDB=$LMDB_RESULT"
+            exit 1
+          fi
 
   integration-tests:
     needs: formatting-and-quick-compile

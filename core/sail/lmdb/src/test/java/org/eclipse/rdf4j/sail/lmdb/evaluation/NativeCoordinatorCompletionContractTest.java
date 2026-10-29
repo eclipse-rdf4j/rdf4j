@@ -115,7 +115,7 @@ class NativeCoordinatorCompletionContractTest {
 					assertThat(result.get().getFirst().getValue("count").stringValue())
 							.isEqualTo(family == Family.PACKED ? "8" : "4");
 				} else {
-					assertStop(failure, stop);
+					assertStop(failure, stop, token);
 					assertThat(result.get()).isNull();
 				}
 				NativeExecutionPhaseEvent.mark("fixture-family-finished", token, "FENCED");
@@ -278,7 +278,7 @@ class NativeCoordinatorCompletionContractTest {
 					group.complete();
 				}
 			}
-			assertStop(failure, stop);
+			assertStop(failure, stop, owner);
 			assertThat(comparisons.get()).isPositive();
 			if (stop == Stop.PROBE) {
 				assertThat(owner.isCancellationRequested()).isFalse();
@@ -472,7 +472,7 @@ class NativeCoordinatorCompletionContractTest {
 					assertThat(owner.dictionary.reads.get()).as("physical row rendering must remain lazy").isZero();
 					AtomicReference<NativeResultRow> first = new AtomicReference<>();
 					Throwable failure = catchThrowable(() -> first.set(cursor.next()));
-					assertStop(failure, stop);
+					assertStop(failure, stop, token);
 					assertThat(marked).isTrue();
 					if (stop == Stop.NONE) {
 						assertThat(first.get().cell("result").value().stringValue()).isEqualTo("1");
@@ -521,7 +521,7 @@ class NativeCoordinatorCompletionContractTest {
 		}
 		assertThat(chunks.get()).as("actual spill payload chunks must have been written before cancellation")
 				.isPositive();
-		assertStop(failure, stop);
+		assertStop(failure, stop, owner);
 		assertThat(chunks.get()).isLessThanOrEqualTo(2);
 		if (stop == Stop.PROBE) {
 			assertThat(owner.isCancellationRequested()).isFalse();
@@ -611,12 +611,16 @@ class NativeCoordinatorCompletionContractTest {
 		}
 	}
 
-	private static void assertStop(Throwable failure, Stop stop) {
+	private static void assertStop(Throwable failure, Stop stop, NativeCancellationToken queryOwner) {
 		if (stop == Stop.NONE) {
 			assertThat(failure).isNull();
+		} else if (stop == Stop.QUERY) {
+			assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
+			KernelQueryCancelledException cancellation = (KernelQueryCancelledException) failure;
+			assertThat(cancellation.origin()).isSameAs(queryOwner);
+			assertThat(cancellation.observedBy(queryOwner)).isTrue();
 		} else {
-			assertThat(failure).isSameAs(stop == Stop.QUERY ? KernelQueryCancelledException.INSTANCE
-					: LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			assertThat(failure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
 		}
 	}
 

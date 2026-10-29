@@ -145,6 +145,15 @@ final class LmdbAdjacencyRunCodec {
 		final long firstNeighbor;
 		final long firstContext;
 		final int kind;
+		/**
+		 * Facts about the whole source that a merge needs when it writes a singleton node over this slice, recorded by
+		 * {@link #wholePersistentSource} from the resolution it performs anyway so the merge resolves the source once
+		 * instead of four times per row; unknown (false) for slices built elsewhere.
+		 */
+		final boolean factsKnown;
+		final int singletonLevel;
+		final boolean contextsPresent;
+		final boolean orderedIntegerDomain;
 
 		SourceSlice(LmdbAdjacencyArenaCatalog catalog, long handle, long sourceOrdinal, long count,
 				long firstNeighbor, long firstContext, int kind) {
@@ -158,10 +167,21 @@ final class LmdbAdjacencyRunCodec {
 			this.firstNeighbor = firstNeighbor;
 			this.firstContext = firstContext;
 			this.kind = kind;
+			this.factsKnown = false;
+			this.singletonLevel = 0;
+			this.contextsPresent = false;
+			this.orderedIntegerDomain = false;
 		}
 
 		SourceSlice(LmdbAdjacencySourceRegistry registry, int sourceId, long sourceRef, long sourceOrdinal, long count,
 				long firstNeighbor, long firstContext, int kind) {
+			this(registry, sourceId, sourceRef, sourceOrdinal, count, firstNeighbor, firstContext, kind, false, 0,
+					false, false);
+		}
+
+		private SourceSlice(LmdbAdjacencySourceRegistry registry, int sourceId, long sourceRef, long sourceOrdinal,
+				long count, long firstNeighbor, long firstContext, int kind, boolean factsKnown, int singletonLevel,
+				boolean contextsPresent, boolean orderedIntegerDomain) {
 			this.catalog = null;
 			this.handle = 0;
 			this.registry = registry;
@@ -172,6 +192,10 @@ final class LmdbAdjacencyRunCodec {
 			this.firstNeighbor = firstNeighbor;
 			this.firstContext = firstContext;
 			this.kind = kind;
+			this.factsKnown = factsKnown;
+			this.singletonLevel = singletonLevel;
+			this.contextsPresent = contextsPresent;
+			this.orderedIntegerDomain = orderedIntegerDomain;
 		}
 
 		boolean persistentSource() {
@@ -1491,6 +1515,9 @@ final class LmdbAdjacencyRunCodec {
 	}
 
 	static boolean orderedIntegerDomain(SourceSlice slice) {
+		if (slice.factsKnown) {
+			return slice.orderedIntegerDomain;
+		}
 		if (!slice.persistentSource()) {
 			return orderedIntegerDomain(slice.catalog, slice.handle);
 		}
@@ -1501,6 +1528,9 @@ final class LmdbAdjacencyRunCodec {
 	}
 
 	static boolean contextsPresent(SourceSlice slice) {
+		if (slice.factsKnown) {
+			return slice.contextsPresent;
+		}
 		RunCursor cursor = new RunCursor();
 		if (slice.persistentSource()) {
 			resolvePersistentSource(slice.registry, slice.sourceId, slice.sourceRef, slice.kind, cursor);
@@ -1535,8 +1565,26 @@ final class LmdbAdjacencyRunCodec {
 			kind = only.kind;
 			cursor = resolvePersistentChild(cursor, only);
 		}
+		// The facts a merge asks of this slice when it writes a singleton node over it, from one resolution of the
+		// source as the merge would perform it (the cursor above may carry a bound context from its parent).
+		RunCursor whole = new RunCursor();
+		resolvePersistentSource(registry, sourceId, sourceRef, kind, whole);
+		int singletonLevel = kind == PERSISTENT_CHILD_NODE ? whole.persistentLevel + 1 : 0;
+		boolean orderedIntegerDomain = whole.codec == CODEC_PAGED_CSF ? whole.csf.orderedIntegerDomain()
+				: (whole.tag & TAG_ORDERED_INTEGER) != 0;
 		return new SourceSlice(registry, sourceId, sourceRef, sourceOrdinal, count,
-				neighborAt(cursor, sourceOrdinal), contextAt(contexts, cursor, sourceOrdinal), kind);
+				neighborAt(cursor, sourceOrdinal), contextAt(contexts, cursor, sourceOrdinal), kind, true,
+				singletonLevel, whole.contextsPresent, orderedIntegerDomain);
+	}
+
+	/** The level of a singleton node written over {@code slice}: one above a persistent node, zero over a leaf. */
+	static int persistentSingletonLevel(SourceSlice slice) {
+		if (slice.factsKnown) {
+			return slice.singletonLevel;
+		}
+		return slice.kind == PERSISTENT_CHILD_NODE
+				? persistentNode(slice.registry, slice.sourceId, slice.sourceRef).level() + 1
+				: 0;
 	}
 
 	static int copy(ContextCatalog contexts, RunCursor cursor, long fromOrdinal, int length, long[] neighborTarget,
