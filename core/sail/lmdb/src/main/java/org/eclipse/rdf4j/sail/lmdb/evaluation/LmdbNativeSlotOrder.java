@@ -1166,8 +1166,10 @@ final class OrderedUnionCursor implements RowCursor {
 		boolean initial = true;
 
 		Branch(SlotPlan plan, RowState parent) throws IOException {
-			this.row = new RowState(parent.source, parent.layout, parent.base, parent.exactValuesMetrics,
-					parent.cancellation);
+			// The arm is a private row, but its filters and expressions still belong to the parent's query: keep
+			// the telemetry target so their term-domain accounting is not silently dropped.
+			this.row = new RowState(parent.source, parent.layout, parent.base, parent.telemetryTarget,
+					parent.exactValuesMetrics, parent.cancellation);
 			this.row.memoryScope = parent.memoryScope;
 			this.row.runtimePlan = parent.runtimePlan;
 			this.row.scalarFilterTelemetryEnabled = parent.scalarFilterTelemetryEnabled;

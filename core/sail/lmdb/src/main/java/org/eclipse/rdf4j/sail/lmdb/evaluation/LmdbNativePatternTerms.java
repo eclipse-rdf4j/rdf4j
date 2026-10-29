@@ -70,6 +70,26 @@ final class Term {
 		}
 		return slot >= 0 ? slots[slot] : UNKNOWN;
 	}
+
+	/**
+	 * A bound-entry constant ({@link #constantSlot(int, long)}) always probes with its constant, never with whatever an
+	 * earlier producer (VALUES, another pattern) left in its slot. Row-at-a-time binding rejects such a quad through
+	 * {@code PatternPlan.bindTerm}; a batch tail that only copies fresh quad positions must ask this before probing,
+	 * otherwise a conflicting earlier binding survives into the emitted row. Equal ids agree directly; distinct ids
+	 * consult the evaluation's term authority (a plan-interned VALUES term versus the store id of the same term).
+	 */
+	boolean agreesWithBoundSlot(RowState row) {
+		if (!bindConstant || slot < 0 || row.slots[slot] == UNKNOWN) {
+			return true;
+		}
+		return row.bindOrCheckTerm(slot, constant);
+	}
+
+	/** Whether every bound-entry constant of {@code pattern} agrees with the slot the row already holds for it. */
+	static boolean boundConstantsAgree(PatternPlan pattern, RowState row) {
+		return pattern.s.agreesWithBoundSlot(row) && pattern.p.agreesWithBoundSlot(row)
+				&& pattern.o.agreesWithBoundSlot(row) && pattern.c.agreesWithBoundSlot(row);
+	}
 }
 
 @Experimental

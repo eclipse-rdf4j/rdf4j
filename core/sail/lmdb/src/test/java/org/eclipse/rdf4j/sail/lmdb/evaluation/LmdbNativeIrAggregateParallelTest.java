@@ -339,8 +339,9 @@ class LmdbNativeIrAggregateParallelTest {
 		JsonNode partialEstimate = irCandidate.path("partialEstimate");
 		JsonNode expectedPrior = irCandidate.path("expectedPlanningPrior");
 		assertThat(completeWorkEvidence)
-				.as("the multi-stage IR hard-work interval must remain incomplete: %s", irCandidate)
-				.isFalse();
+				.as("the multi-stage IR lane is compared on its point-estimate planning quote, so its comparable "
+						+ "work is complete even though no typed physical total is proved: %s", irCandidate)
+				.isTrue();
 		assertThat(partialEstimate.isNull())
 				.as("expected work must not be smuggled into a model cost vector: %s", irCandidate)
 				.isTrue();

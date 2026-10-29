@@ -1293,6 +1293,11 @@ final class LmdbNativeFactorizedRows {
 		}
 
 		TailResult result(RowState row, LmdbNativeFactorizedRows owner) throws IOException {
+			if (pattern != null && !Term.boundConstantsAgree(pattern, row)) {
+				// The prefix bound a slot this pattern probes through a bound-entry constant; the probe cannot
+				// observe that disagreement, so the row-at-a-time bind() rejection is reproduced here.
+				return TailResult.EMPTY;
+			}
 			probeKey.refill(row.slots, keySlots);
 			long enumKeyHash = role == ROLE_ENUM ? enumKeyHash() : 0L;
 			if (role == ROLE_ENUM && enumRefusedKeyHashes != null && enumRefusedKeyHashes.contains(enumKeyHash)) {

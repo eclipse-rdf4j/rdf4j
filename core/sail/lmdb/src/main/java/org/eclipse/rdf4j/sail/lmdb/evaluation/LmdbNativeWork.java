@@ -534,17 +534,30 @@ record LmdbNativeWork(double low, double high) {
 		if (quote.equals(ZERO)) {
 			return ZERO;
 		}
-		double rows = pattern.workRowsForBoundMask(boundMask, row == null ? null : row.source);
-		if (!Double.isFinite(rows) || rows < 0D) {
+		double rows = planningRows(pattern, row, boundMask);
+		if (Double.isNaN(rows)) {
 			// The seek is paid whatever the scan turns out to be, so the floor is still measured.
 			return atLeast(SEEK);
 		}
 		return exact(SEEK + rows);
 	}
 
+	/**
+	 * Rows a plan is expected to emit for planning purposes: the sampled or structural estimate itself, uncapped by the
+	 * static total the conservative channel uses as a work ceiling, because the planning model prices the scan it
+	 * expects rather than the scan it can prove.
+	 */
+	private static double planningRows(SlotPlan plan, RowState row, long boundMask) {
+		if (plan instanceof PatternPlan pattern) {
+			double rows = pattern.estimateForBoundMask(boundMask, row == null ? null : row.source);
+			return Double.isFinite(rows) && rows >= 0D ? rows : Double.NaN;
+		}
+		return rowsOut(plan, row, boundMask);
+	}
+
 	private static LmdbNativeWork planningPerRow(SlotPlan arg, RowState row, long boundMask, double perRow) {
 		LmdbNativeWork argWork = planning(arg, row, boundMask);
-		double argRows = rowsOut(arg, row, boundMask);
+		double argRows = planningRows(arg, row, boundMask);
 		if (!argWork.known() || Double.isNaN(argRows)) {
 			return argWork;
 		}
@@ -554,7 +567,7 @@ record LmdbNativeWork(double low, double high) {
 	/** Planning quote of a two-sided plan that drives the left side once and re-probes the right per left row. */
 	static LmdbNativeWork planningProbeChain(SlotPlan left, SlotPlan right, RowState row, long boundMask) {
 		LmdbNativeWork leftWork = planning(left, row, boundMask);
-		double leftRows = rowsOut(left, row, boundMask);
+		double leftRows = planningRows(left, row, boundMask);
 		if (!leftWork.known() || Double.isNaN(leftRows)) {
 			// The left side still has to run, so keep whatever floor it established.
 			return leftWork.known() ? atLeast(leftWork.low()) : UNKNOWN;
@@ -575,7 +588,7 @@ record LmdbNativeWork(double low, double high) {
 		for (int i = 0; i < length; i++) {
 			SlotPlan child = children[i];
 			LmdbNativeWork childWork = planning(child, row, mask);
-			double childRows = rowsOut(child, row, mask);
+			double childRows = planningRows(child, row, mask);
 			if (!childWork.known() || Double.isNaN(childRows)) {
 				return UNKNOWN;
 			}

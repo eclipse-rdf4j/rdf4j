@@ -666,9 +666,11 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		for (int index = 0; index < candidates.size(); index++) {
 			physicallyDominated[index] = candidates.get(index).physicalDominanceProof(candidates) != null;
 			LmdbNativeCostPrediction prediction = captured.predictions().get(index);
-			if (!estimates.get(index).workEvidence().isComplete() && prediction.exactCompletedCount() == 0L) {
+			if (!estimates.get(index).workEvidence().isComplete() && prediction.exactCompletedCount() == 0L
+					&& candidates.get(index).planningWork() == null) {
 				// The compatibility scalar remains diagnostic work. A refused producer's units cannot veto a
-				// different executable recipe's proved normal choice at the old static band.
+				// different executable recipe's proved normal choice at the old static band. A planning quote is
+				// the exception: it is the point-estimate price the cold static band has always compared.
 				authoritativeCosts[index] = LmdbNativeWork.UNKNOWN;
 			}
 			if (!physicallyDominated[index]

@@ -485,13 +485,16 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	LmdbNativeCostEstimate adaptiveEstimate(double sliceRows) {
 		if (physicalEstimate != null) {
-			if (Double.isFinite(sliceRows) && sliceRows >= 0D) {
-				double rows = physicalEstimate.estimatedOutputRows();
-				double fraction = rows > 0D ? Math.min(1D, sliceRows / rows) : 1D;
-				return physicalEstimate.forConsumption(fraction);
+			double rows = physicalEstimate.estimatedOutputRows();
+			if (Double.isFinite(sliceRows) && sliceRows >= 0D && rows > 0D && sliceRows < rows) {
+				return physicalEstimate.forConsumption(sliceRows / rows);
 			}
+			// A slice that covers the whole result drains the strategy completely: the full-run quote and its
+			// complete-drain work evidence stay intact instead of being re-labelled as a partial consumption.
 			return physicalEstimate;
 		}
+		// The planning quote is the price this strategy is compared on, exactly as the point estimate was before
+		// conservative intervals existed; the hard interval keeps backing proofs and bounds.
 		LmdbNativeWork effective = comparableWork(sliceRows);
 		if (!effective.known()) {
 			return null;
