@@ -101,9 +101,9 @@ class LmdbSailStoreOverlayStartupTest {
 			}
 		};
 		LmdbStoreConfig config = config(true);
-		StoreProperties properties = new StoreProperties(directory);
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory, config);
 		LmdbSailStore owner = new LmdbSailStore(directory, properties, config, false,
-				LmdbStoreFormat.fromProperties(properties, config), QueryExecutionPolicy.of(false), scanHook,
+				LmdbStoreFormat.resolve(directory, properties, config), QueryExecutionPolicy.of(false), scanHook,
 				values -> {
 					assertThat(values.hasRetiredIds()).as("fixture has legitimate pending owner startup writes")
 							.isTrue();
@@ -196,10 +196,11 @@ class LmdbSailStoreOverlayStartupTest {
 		AtomicReference<ValueStore> openedValues = new AtomicReference<>();
 		LmdbStoreConfig config = config(true);
 		StoreProperties properties = new StoreProperties(directory);
+		LmdbStoreFormat format = LmdbStoreFormat.fromProperties(properties, config);
 		LmdbSailStore owner = null;
 		try {
 			owner = new LmdbSailStore(directory, properties, config, false,
-					LmdbStoreFormat.fromProperties(properties, config), QueryExecutionPolicy.of(false), null,
+					format, QueryExecutionPolicy.of(false), null,
 					values -> {
 						openedValues.set(values);
 						System.setProperties(failing);
@@ -223,7 +224,9 @@ class LmdbSailStoreOverlayStartupTest {
 				.isInstanceOf(IOException.class)
 				.hasMessage("Transaction manager is closed");
 
-		LmdbSailStore reopened = new LmdbSailStore(directory, new StoreProperties(directory), config);
+		// This deliberately metadata-free fixture owns its transient descriptor; reopening must supply it too.
+		LmdbSailStore reopened = new LmdbSailStore(directory, properties, config, false,
+				format, QueryExecutionPolicy.of(false));
 		try {
 			assertThat(lookupScope(reopened.valueStore())).isNotNull();
 		} finally {
@@ -239,9 +242,9 @@ class LmdbSailStoreOverlayStartupTest {
 		CountDownLatch scanStarted = new CountDownLatch(1);
 		CountDownLatch releaseScan = new CountDownLatch(1);
 		LmdbStoreConfig config = config(true);
-		StoreProperties properties = new StoreProperties(directory);
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory, config);
 		LmdbSailStore owner = new LmdbSailStore(directory, properties, config, false,
-				LmdbStoreFormat.fromProperties(properties, config), QueryExecutionPolicy.of(false), () -> {
+				LmdbStoreFormat.resolve(directory, properties, config), QueryExecutionPolicy.of(false), () -> {
 					scanStarted.countDown();
 					await(releaseScan);
 				});
@@ -278,6 +281,9 @@ class LmdbSailStoreOverlayStartupTest {
 		LmdbStore store = new LmdbStore(directory, config(false));
 		store.init();
 		try {
+			// Finish the seed owner's startup recovery before creating the retirement this test preserves.
+			// Otherwise its post-ready worker can drain that new intent after the pinned reader releases it.
+			LmdbGcTestMaintenance.awaitPostReady(store);
 			try (NotifyingSailConnection writer = store.getConnection()) {
 				writer.begin();
 				writer.addStatement(KEEPER, PREDICATE, VF.createLiteral("kept"));

@@ -950,6 +950,51 @@ test('repository creation templates render each configured field control without
     assert.ok(output.includes('Cancel'));
 });
 
+function templateBindings(template, prefix, output = []) {
+    if (Array.isArray(template)) {
+        template.forEach((entry) => templateBindings(entry, prefix, output));
+    } else if (template && Array.isArray(template.strings)) {
+        template.strings.forEach((chunk, index) => {
+            if (index < template.values.length && chunk.endsWith(prefix + '=')) {
+                output.push(template.values[index]);
+            }
+        });
+        template.values.forEach((value) => templateBindings(value, prefix, output));
+    }
+    return output;
+}
+
+test('repository creation templates render readonly and group annotations from the page model', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
+    const columns = ['templateType', 'templateLabel', 'fieldId', 'fieldProperty', 'fieldRole', 'fieldName',
+        'fieldType', 'value', 'selected', 'size', 'rows', 'cols', 'placeholder', 'fieldReadonly', 'fieldGroup'];
+    function render(fieldType, options, readonly, group) {
+        const rows = options.map(([value, selected]) => ['memory', 'Memory', 'fid', 'urn:p', 'role', 'Field',
+            fieldType, value, selected, '32', '4', '60', '', readonly, group]);
+        return workbench.views.pageTemplate({ viewId: 'create', vars: columns, rows, metadata: {} }, context,
+            runtime);
+    }
+
+    const readonlyText = render('text', [['v', 'true']], 'true', 'Storage');
+    assert.deepEqual(templateBindings(readonlyText, '?readonly'), [true]);
+    assert.deepEqual(templateBindings(readonlyText, 'data-field-group'), ['Storage']);
+    assert.deepEqual(templateBindings(render('text', [['v', 'true']], 'false', ''), '?readonly'), [false]);
+    assert.deepEqual(templateBindings(render('text', [['v', 'true']], 'false', ''), 'data-field-group')
+        .filter((value) => value), [], 'rows without a group carry no data-field-group');
+
+    assert.deepEqual(templateBindings(render('textarea', [['v', 'true']], 'true', ''), '?readonly'), [true]);
+    assert.deepEqual(templateBindings(render('select', [['a', 'true'], ['b', 'false']], 'true', ''),
+        '?disabled'), [true]);
+    assert.deepEqual(templateBindings(render('select', [['a', 'true'], ['b', 'false']], 'false', ''),
+        '?disabled'), [false]);
+    assert.deepEqual(templateBindings(render('radio', [['true', 'true'], ['false', 'false']], 'true', ''),
+        '?disabled'), [true, true]);
+    assert.deepEqual(templateBindings(render('radio', [['true', 'true'], ['false', 'false']], 'false', ''),
+        '?disabled'), [false, false]);
+});
+
 test('saved-query execution has an explicit streamed result mount and native edit/delete forms', () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();

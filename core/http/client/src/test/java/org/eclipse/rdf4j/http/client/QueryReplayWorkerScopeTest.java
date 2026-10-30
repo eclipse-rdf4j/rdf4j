@@ -26,6 +26,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 
@@ -273,6 +274,102 @@ class QueryReplayWorkerScopeTest {
 				assertEquals(0, activations.get());
 			}
 		}
+	}
+
+	@Test
+	void nestedReplayScopesRetainTheirDistinctCancellationOwners() {
+		Object outerOwner = new Object();
+		Object innerOwner = new Object();
+		QueryExecutionContext.WorkerScope outerScope = ownerScope(outerOwner, new AtomicReference<>());
+		QueryExecutionContext.WorkerScope innerScope = ownerScope(innerOwner, new AtomicReference<>());
+		QueryExecutionContext.ReplayContext context;
+		try (QueryExecutionContext.Activation outer = QueryExecutionContext.activateReplaySafepoint(() -> {
+		}, () -> outerScope);
+				QueryExecutionContext.Activation inner = QueryExecutionContext.activateReplaySafepoint(() -> {
+				}, () -> innerScope)) {
+			context = QueryExecutionContext.captureReplayContext();
+		}
+
+		assertTrue(context.ownsCancellation(outerOwner));
+		assertTrue(context.ownsCancellation(innerOwner));
+		assertFalse(context.ownsCancellation(new Object()));
+	}
+
+	@Test
+	void interruptionOwnerIsConsumedOnceAndNestedContextRestoresItsParent() {
+		assertNull(QueryExecutionContext.consumeInterruptionOwner(),
+				"without an installed worker scope there is no interruption owner to consume");
+		Object outerOwner = new Object();
+		Object innerOwner = new Object();
+		AtomicReference<Object> outerPendingOwner = new AtomicReference<>();
+		AtomicReference<Object> innerPendingOwner = new AtomicReference<>();
+		AtomicInteger outerActivations = new AtomicInteger();
+		AtomicInteger outerDeactivations = new AtomicInteger();
+		AtomicInteger innerActivations = new AtomicInteger();
+		AtomicInteger innerDeactivations = new AtomicInteger();
+		QueryExecutionContext.WorkerScope outerScope = ownerScope(outerOwner, outerPendingOwner,
+				outerActivations, outerDeactivations);
+		QueryExecutionContext.WorkerScope innerScope = ownerScope(innerOwner, innerPendingOwner,
+				innerActivations, innerDeactivations);
+		QueryExecutionContext.ReplayContext outerContext;
+		QueryExecutionContext.ReplayContext nestedContext;
+		try (QueryExecutionContext.Activation outer = QueryExecutionContext.activateReplaySafepoint(() -> {
+		}, () -> outerScope)) {
+			outerContext = QueryExecutionContext.captureReplayContext();
+			try (QueryExecutionContext.Activation inner = QueryExecutionContext.activateReplaySafepoint(() -> {
+			}, () -> innerScope)) {
+				nestedContext = QueryExecutionContext.captureReplayContext();
+			}
+		}
+
+		outerContext.run(() -> {
+			assertTrue(QueryExecutionContext.currentOwnsCancellation(outerOwner));
+			assertFalse(QueryExecutionContext.currentOwnsCancellation(innerOwner));
+			nestedContext.run(() -> {
+				assertTrue(QueryExecutionContext.currentOwnsCancellation(outerOwner));
+				assertTrue(QueryExecutionContext.currentOwnsCancellation(innerOwner));
+				innerPendingOwner.set(innerOwner);
+				assertSame(innerOwner, QueryExecutionContext.consumeInterruptionOwner());
+				assertNull(QueryExecutionContext.consumeInterruptionOwner(),
+						"consuming the interruption stamp clears it for later unrelated interrupts");
+			});
+			assertTrue(QueryExecutionContext.currentOwnsCancellation(outerOwner),
+					"the previous installed context is restored after nested work");
+			assertFalse(QueryExecutionContext.currentOwnsCancellation(innerOwner));
+		});
+
+		assertNull(QueryExecutionContext.consumeInterruptionOwner(),
+				"closing the outer activation removes the installed context");
+		assertFalse(QueryExecutionContext.currentOwnsCancellation(outerOwner));
+		assertEquals(2, outerActivations.get());
+		assertEquals(2, outerDeactivations.get());
+		assertEquals(1, innerActivations.get());
+		assertEquals(1, innerDeactivations.get());
+	}
+
+	private static QueryExecutionContext.WorkerScope ownerScope(Object owner, AtomicReference<Object> pendingOwner) {
+		return ownerScope(owner, pendingOwner, new AtomicInteger(), new AtomicInteger());
+	}
+
+	private static QueryExecutionContext.WorkerScope ownerScope(Object owner, AtomicReference<Object> pendingOwner,
+			AtomicInteger activations, AtomicInteger deactivations) {
+		return new QueryExecutionContext.WorkerScope() {
+			@Override
+			public QueryExecutionContext.Activation activate() {
+				activations.incrementAndGet();
+				return deactivations::incrementAndGet;
+			}
+
+			@Override
+			public boolean ownsCancellation(Object candidate) {
+				return candidate == owner;
+			}
+
+			@Override
+			public Object consumeInterruptionOwner() {
+				return pendingOwner.getAndSet(null);
+			}
+		};
 	}
 
 	private static QueryExecutionContext.ReplayContext captureContext(String name) {

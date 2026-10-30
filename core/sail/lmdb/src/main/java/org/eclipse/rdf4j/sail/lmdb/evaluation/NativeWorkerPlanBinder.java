@@ -73,6 +73,12 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			}
 			return LmdbNativeParallelPipelines.parallelWorkerForkable(multi.filters);
 		}
+		if (input instanceof NativeAliasJoinPlan alias) {
+			return canBind(alias.original);
+		}
+		if (input instanceof NativeAliasJoinMemoPlan memo) {
+			return canBind(memo.original);
+		}
 		if (input instanceof JoinPlan join) {
 			return canBind(join.left) && canBind(join.right);
 		}
@@ -139,6 +145,12 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 		}
 		if (input instanceof EntryBindingCompatibilityPlan entry) {
 			return new EntryBindingCompatibilityPlan(bind(entry.arg), entry.slots, entry.ids, entry.restoredMask);
+		}
+		if (input instanceof NativeAliasJoinPlan alias) {
+			return alias.clonePlan(bind(alias.original.left), bind(alias.original.right));
+		}
+		if (input instanceof NativeAliasJoinMemoPlan memo) {
+			return new NativeAliasJoinMemoPlan(new JoinPlan(bind(memo.original.left), bind(memo.original.right)));
 		}
 		if (input instanceof JoinPlan join) {
 			return new JoinPlan(bind(join.left), bind(join.right));

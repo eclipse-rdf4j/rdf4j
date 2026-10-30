@@ -214,8 +214,7 @@ final class PreparedBulkStore {
 			SealedProbe probe) {
 		Path certificate = directory.resolve(FILE_NAME);
 		try {
-			if (!properties.isLoaded()
-					|| !Integer.toString(LmdbStoreFormat.CURRENT_VERSION).equals(properties.getVersion())
+			if (!supportsPreparedFormat(properties)
 					|| !Files.isRegularFile(certificate) || Files.size(certificate) > MAX_CERTIFICATE_BYTES) {
 				return null;
 			}
@@ -271,8 +270,7 @@ final class PreparedBulkStore {
 	 * require the paired triple binding; two absent UUIDs retain compatibility with historical ordinary stores.
 	 */
 	static Snapshot readCurrent(Path directory, StoreProperties properties, LmdbStoreConfig config) {
-		if (!properties.isLoaded()
-				|| !Integer.toString(LmdbStoreFormat.CURRENT_VERSION).equals(properties.getVersion())) {
+		if (!supportsPreparedFormat(properties)) {
 			return null;
 		}
 		try {
@@ -291,6 +289,13 @@ final class PreparedBulkStore {
 			properties.rdfTermDomainWitnessAtOpen = null;
 			return null;
 		}
+	}
+
+	private static boolean supportsPreparedFormat(StoreProperties properties) {
+		// Certificate and native fingerprints include the exact version. Unreleased format-6 generations are
+		// rejected before inspecting native storage, even if their derived certificate is intact.
+		return properties.isLoaded()
+				&& Integer.toString(LmdbStoreFormat.CANONICAL_IRI_VERSION).equals(properties.getVersion());
 	}
 
 	private static void admit(StoreProperties properties, Snapshot snapshot) {
@@ -370,6 +375,10 @@ final class PreparedBulkStore {
 
 	private static Captured capture(Path directory, StoreProperties properties, LmdbStoreConfig config)
 			throws IOException {
+		if (!supportsPreparedFormat(properties)) {
+			throw new IOException("Prepared LmdbStore generation requires a supported persisted modern format");
+		}
+		LmdbStoreFormat.resolve(directory.toFile(), properties, config);
 		long valuesEnv = 0L;
 		long triplesEnv = 0L;
 		long valuesTxn = 0L;

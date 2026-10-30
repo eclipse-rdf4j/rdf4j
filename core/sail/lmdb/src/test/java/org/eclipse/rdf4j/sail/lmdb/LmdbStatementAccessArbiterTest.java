@@ -13,11 +13,81 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
 import org.junit.jupiter.api.Test;
 
 class LmdbStatementAccessArbiterTest {
+
+	@Test
+	void observationPreservesBulkAccessPhysicalCountersAndSingleClose() {
+		AtomicInteger bulkCalls = new AtomicInteger();
+		AtomicInteger closes = new AtomicInteger();
+		List<long[]> measurements = new ArrayList<>();
+		RecordIterator source = new RecordIterator() {
+			@Override
+			public long[] next() {
+				throw new AssertionError("the bulk observation path must not materialize scalar rows");
+			}
+
+			@Override
+			public int fill(long[] buffer, int maxRows) {
+				return bulkCalls.getAndIncrement() == 0 ? 2 : 0;
+			}
+
+			@Override
+			public boolean seekForward(long subject, long predicate, long object, long context) {
+				return true;
+			}
+
+			@Override
+			public long getSourceRowsScannedActual() {
+				return 7;
+			}
+
+			@Override
+			public long getSourceRowsMatchedActual() {
+				return 2;
+			}
+
+			@Override
+			public long getSourceRowsFilteredActual() {
+				return 5;
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+			}
+		};
+		AdjacencyAccessObserver observer = new AdjacencyAccessObserver() {
+			@Override
+			public void access(boolean used, String reason, StatementOrder order, long subject, long predicate,
+					long object, long context) {
+			}
+
+			@Override
+			public void measurement(boolean adjacency, long scanned, long matched, long filtered, boolean censored) {
+				assertThat(adjacency).isFalse();
+				assertThat(censored).isFalse();
+				measurements.add(new long[] { scanned, matched, filtered });
+			}
+		};
+		assertThat(LmdbStatementAccessArbiter.observed(source, null, false)).isSameAs(source);
+		RecordIterator observed = LmdbStatementAccessArbiter.observed(source, observer, false);
+		assertThat(observed.fill(new long[8], 2)).isEqualTo(2);
+		assertThat(observed.seekForward(1, 2, 3, 4)).isTrue();
+		assertThat(observed.fill(new long[4], 1)).isZero();
+		observed.close();
+		observed.close();
+		assertThat(bulkCalls).hasValue(2);
+		assertThat(closes).hasValue(1);
+		assertThat(measurements).singleElement().satisfies(counts -> assertThat(counts).containsExactly(7L, 2L, 5L));
+	}
 
 	@Test
 	void adjacencyIsTheStructuralPreferenceUntilLmdbStrictlyDominates() {

@@ -585,7 +585,7 @@ class LmdbNativeVariablePredicateKernelTest {
 	/** The wildcard switch controls projection lowering, not Janino admission of an equivalent scan-backed IR. */
 	@Test
 	void wildcardCodegenSwitchOffKeepsProjectionFreeIrCompilable(@TempDir File ordinaryDir,
-			@TempDir File irDir) {
+			@TempDir File irDir) throws InterruptedException {
 		String query = truthTable().get("join-through-variable-predicate");
 
 		open(ordinaryDir, false);
@@ -603,6 +603,9 @@ class LmdbNativeVariablePredicateKernelTest {
 		long compiledBefore = JaninoPipelineTestAccess.openedAny();
 
 		assertThat(run(query)).containsExactlyElementsOf(expected);
+		assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS))
+				.as("the requested kernel must finish compiling before compiled dispatch is asserted")
+				.isTrue();
 		try (RepositoryConnection conn = repo.getConnection()) {
 			assertThat(conn.prepareTupleQuery(query).explain(Explanation.Level.Executed).toString())
 					.as("lowered requirements, not the projection switch, must classify the generated kernel")

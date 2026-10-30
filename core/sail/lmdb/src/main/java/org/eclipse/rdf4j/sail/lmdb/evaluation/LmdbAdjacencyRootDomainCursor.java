@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
@@ -345,6 +346,9 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 			retained = KernelRuntime.closeResource(probe, retained);
 			if (retained != failure) {
 				NativeContextClosingIteration.throwFailure(retained);
+			}
+			if (failure instanceof KernelQueryCancelledException && failure.getSuppressed().length != 0) {
+				KernelRuntime.rethrowCloseFailure(failure);
 			}
 			throw failure;
 		}

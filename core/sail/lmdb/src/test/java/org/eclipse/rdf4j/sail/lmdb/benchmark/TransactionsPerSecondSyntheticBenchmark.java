@@ -49,13 +49,13 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks insertion performance with synthetic data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 3)
+@Warmup(iterations = 3, time = 10, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
 @Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondSyntheticBenchmark {
-	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT" })
+	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT" })
 	public IsolationLevels isolationLevel;
 
 	SailRepositoryConnection connection;
@@ -146,6 +146,15 @@ public class TransactionsPerSecondSyntheticBenchmark {
 	}
 
 	@Benchmark
+	public void multipleSmallTransactions() {
+		for (int i = 0; i < 10000; i++) {
+			connection.begin(isolationLevel);
+			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			connection.commit();
+		}
+	}
+
+	@Benchmark
 	public void mediumTransactions() {
 		connection.begin(isolationLevel);
 		for (int k = 0; k < 10; k++) {
@@ -161,6 +170,17 @@ public class TransactionsPerSecondSyntheticBenchmark {
 			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		}
 		connection.commit();
+	}
+
+	@Benchmark
+	public void multipleLargerTransactions() {
+		for (int i = 0; i < 100; i++) {
+			connection.begin(isolationLevel);
+			for (int k = 0; k < 10000; k++) {
+				connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			}
+			connection.commit();
+		}
 	}
 
 	@Benchmark

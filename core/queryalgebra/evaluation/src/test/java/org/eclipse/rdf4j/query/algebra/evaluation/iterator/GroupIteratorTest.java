@@ -36,6 +36,7 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.assertj.core.api.SoftAssertions;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
@@ -209,6 +210,42 @@ public class GroupIteratorTest {
 	}
 
 	@Test
+	public void wildcardCountCountsOneRealEmptySolutionMapping() throws QueryEvaluationException {
+		assertEquals(1, wildcardCount(List.of(EmptyBindingSet.getInstance()), false));
+	}
+
+	@Test
+	public void wildcardCountPreservesDuplicateEmptySolutionMappings() throws QueryEvaluationException {
+		BindingSet emptyMapping = EmptyBindingSet.getInstance();
+		assertEquals(2, wildcardCount(List.of(emptyMapping, emptyMapping), false));
+	}
+
+	@Test
+	public void distinctWildcardCountDeduplicatesEmptySolutionMappings() throws QueryEvaluationException {
+		BindingSet emptyMapping = EmptyBindingSet.getInstance();
+		assertEquals(1, wildcardCount(List.of(emptyMapping, emptyMapping), true));
+	}
+
+	@Test
+	public void wildcardCountStillReturnsZeroForNoSolutionMappings() throws QueryEvaluationException {
+		assertEquals(0, wildcardCount(List.of(), false));
+		assertEquals(0, wildcardCount(List.of(), true));
+	}
+
+	private static int wildcardCount(List<BindingSet> solutions, boolean distinct) throws QueryEvaluationException {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(solutions);
+		Group group = new Group(assignment);
+		group.addGroupElement(new GroupElem("count", new Count(null, distinct)));
+		try (GroupIterator iterator = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			assertThat(iterator.hasNext()).isTrue();
+			BindingSet result = iterator.next();
+			assertThat(iterator.hasNext()).isFalse();
+			return ((Literal) result.getBinding("count").getValue()).intValue();
+		}
+	}
+
+	@Test
 	public void testMaxSet_DefaultGroup() throws QueryEvaluationException {
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("max", new Max(Var.of("a"))));
@@ -230,8 +267,110 @@ public class GroupIteratorTest {
 
 			assertThat(gi.hasNext()).isTrue();
 			BindingSet next = gi.next();
-			assertEquals(1, next.size());
-			assertEquals(one, next.getBinding("max").getValue());
+			assertThat(next.getBinding("max")).isNull();
+		}
+	}
+
+	@Test
+	public void zeroInputDoesNotEvaluateSumConstant() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("sum", new Sum(new ValueConstant(VF.createLiteral(1)))));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			assertThat(gi.next().getBinding("sum").getValue()).isEqualTo(VF.createLiteral("0", XSD.INTEGER));
+		}
+	}
+
+	@Test
+	public void zeroInputDoesNotEvaluateGroupConcatConstant() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("concat", new GroupConcat(new ValueConstant(VF.createLiteral("x")))));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			assertThat(gi.next().getBinding("concat").getValue()).isEqualTo(VF.createLiteral(""));
+		}
+	}
+
+	@Test
+	public void zeroInputDoesNotEvaluateAvgConstant() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("avg", new Avg(new ValueConstant(VF.createLiteral(1)))));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			assertThat(gi.next().getBinding("avg").getValue()).isEqualTo(VF.createLiteral("0", XSD.INTEGER));
+		}
+	}
+
+	@Test
+	public void zeroInputLeavesMinAndSampleConstantsUnbound() throws QueryEvaluationException {
+		Group group = new Group(EMPTY_ASSIGNMENT);
+		ValueConstant one = new ValueConstant(VF.createLiteral(1));
+		group.addGroupElement(new GroupElem("min", new Min(one.clone())));
+		group.addGroupElement(new GroupElem("sample", new Sample(one.clone())));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			BindingSet result = gi.next();
+			SoftAssertions softly = new SoftAssertions();
+			softly.assertThat(result.getBinding("min")).isNull();
+			softly.assertThat(result.getBinding("sample")).isNull();
+			softly.assertAll();
+		}
+	}
+
+	@Test
+	public void realEmptySolutionEvaluatesConstantAggregatesOnce() throws QueryEvaluationException {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		Group group = new Group(assignment);
+		ValueConstant one = new ValueConstant(VF.createLiteral(1));
+		group.addGroupElement(new GroupElem("star", new Count(null)));
+		group.addGroupElement(new GroupElem("distinctStar", new Count(null, true)));
+		group.addGroupElement(new GroupElem("count", new Count(one.clone())));
+		group.addGroupElement(new GroupElem("sum", new Sum(one.clone())));
+		group.addGroupElement(new GroupElem("avg", new Avg(one.clone())));
+		group.addGroupElement(new GroupElem("min", new Min(one.clone())));
+		group.addGroupElement(new GroupElem("max", new Max(one.clone())));
+		group.addGroupElement(new GroupElem("sample", new Sample(one.clone())));
+		group.addGroupElement(new GroupElem("concat", new GroupConcat(new ValueConstant(VF.createLiteral("x")))));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			BindingSet result = gi.next();
+			SoftAssertions softly = new SoftAssertions();
+			softly.assertThat(result.getValue("star")).isEqualTo(VF.createLiteral("1", XSD.INTEGER));
+			softly.assertThat(result.getValue("distinctStar")).isEqualTo(VF.createLiteral("1", XSD.INTEGER));
+			softly.assertThat(result.getValue("count")).isEqualTo(VF.createLiteral("1", XSD.INTEGER));
+			softly.assertThat(result.getValue("sum")).isEqualTo(VF.createLiteral("1", XSD.INTEGER));
+			softly.assertThat(result.getValue("avg")).isEqualTo(VF.createLiteral("1", XSD.DECIMAL));
+			softly.assertThat(result.getValue("min")).isEqualTo(VF.createLiteral(1));
+			softly.assertThat(result.getValue("max")).isEqualTo(VF.createLiteral(1));
+			softly.assertThat(result.getValue("sample")).isEqualTo(VF.createLiteral(1));
+			softly.assertThat(result.getValue("concat")).isEqualTo(VF.createLiteral("x"));
+			softly.assertAll();
+		}
+	}
+
+	@Test
+	public void customAggregateSeesOnlyRealSolutionRows() throws QueryEvaluationException {
+		CountingAggregateFunctionFactory factory = new CountingAggregateFunctionFactory();
+		CustomAggregateFunctionRegistry.getInstance().add(factory);
+		try {
+			SoftAssertions softly = new SoftAssertions();
+			softly.assertThat(customAggregateInvocations(List.of(), factory)).isZero();
+			softly.assertThat(customAggregateInvocations(List.of(EmptyBindingSet.getInstance()), factory)).isEqualTo(1);
+			softly.assertAll();
+		} finally {
+			CustomAggregateFunctionRegistry.getInstance().remove(factory);
+		}
+	}
+
+	private static int customAggregateInvocations(List<BindingSet> solutions,
+			CountingAggregateFunctionFactory factory) throws QueryEvaluationException {
+		factory.calls.set(0);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(solutions);
+		Group group = new Group(assignment);
+		group.addGroupElement(new GroupElem("calls", new AggregateFunctionCall(
+				List.of(new ValueConstant(VF.createLiteral("x"))), factory.getIri(), false)));
+		try (GroupIterator gi = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT)) {
+			assertThat(gi.hasNext()).isTrue();
+			gi.next();
+			assertThat(gi.hasNext()).isFalse();
+			return factory.calls.get();
 		}
 	}
 
@@ -769,6 +908,40 @@ public class GroupIteratorTest {
 		@Override
 		public SumCollector getCollector() {
 			return new SumCollector();
+		}
+	}
+
+	private static final class CountingAggregateFunctionFactory implements AggregateFunctionFactory {
+		private static final String IRI = "https://www.rdf4j.org/aggregate#invocationCount";
+		private final AtomicInteger calls = new AtomicInteger();
+
+		@Override
+		public String getIri() {
+			return IRI;
+		}
+
+		@Override
+		public AggregateFunction<InvocationCollector, Value> buildFunction(
+				Function<BindingSet, Value> evaluationStep) {
+			return new AggregateFunction<>(evaluationStep) {
+				@Override
+				public void processAggregate(BindingSet bindingSet, Predicate<Value> distinctValue,
+						InvocationCollector collector) {
+					calls.incrementAndGet();
+				}
+			};
+		}
+
+		@Override
+		public InvocationCollector getCollector() {
+			return new InvocationCollector();
+		}
+	}
+
+	private static final class InvocationCollector implements AggregateCollector {
+		@Override
+		public Value getFinalValue() {
+			return VF.createLiteral(0);
 		}
 	}
 

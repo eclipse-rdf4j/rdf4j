@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation.codegen;
 
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
@@ -36,6 +37,11 @@ public final class KernelCancellation {
 	/** A sibling worker stopped after publishing a failure or a clean aggregate decline. */
 	static final int PEER_CANCELLED = 3;
 
+	/** A query signal that can capture the owner at the same point its cancellation is observed. */
+	public interface QueryCancellation extends BooleanSupplier {
+		KernelQueryCancelledException pollCancellation();
+	}
+
 	private final long deadlineNanoTime;
 	private final BooleanSupplier extra;
 	private final BooleanSupplier queryCancellation;
@@ -52,6 +58,7 @@ public final class KernelCancellation {
 	 */
 	private final Runnable capacityNotifier;
 	private final AtomicInteger cancellationReason = new AtomicInteger();
+	private final AtomicReference<KernelQueryCancelledException> querySignal = new AtomicReference<>();
 
 	public KernelCancellation(long deadlineNanoTime) {
 		this(deadlineNanoTime, null);
@@ -77,8 +84,9 @@ public final class KernelCancellation {
 
 	/**
 	 * Creates an aggregate cancellation token with a peer-stop supplier kept distinct from probe cancellation. The
-	 * five-argument constructor remains the compatibility path for streaming rows, where a worker stop is deliberately
-	 * replayable probe control.
+	 * five-argument constructor remains the compatibility path for callers without a separate peer-stop supplier.
+	 * Streaming row workers use an owner-local child query token, so a worker-local stop is not replayed as probe
+	 * control.
 	 */
 	public KernelCancellation(long deadlineNanoTime, BooleanSupplier extra, BooleanSupplier queryCancellation,
 			int materializationRowLimit, Runnable capacityNotifier, BooleanSupplier peerCancellation) {
@@ -137,7 +145,7 @@ public final class KernelCancellation {
 			return observed;
 		}
 		// A simultaneous evaluation cancellation is terminal; it must not be classified as a probe decline.
-		if (queryCancellation != null && queryCancellation.getAsBoolean()) {
+		if (queryCancellationObserved()) {
 			return latch(QUERY_CANCELLED);
 		}
 		if ((deadlineEnabled && clock.getAsLong() - deadlineNanoTime >= 0L)
@@ -165,7 +173,7 @@ public final class KernelCancellation {
 			return observed;
 		}
 		// Recheck terminal cancellation at the point the capacity signal is latched, so it wins the race.
-		if (queryCancellation != null && queryCancellation.getAsBoolean()) {
+		if (queryCancellationObserved()) {
 			return latch(QUERY_CANCELLED);
 		}
 		// A peer may publish its stop between the regular poll and this capacity check. Preserve that distinct reason
@@ -179,13 +187,34 @@ public final class KernelCancellation {
 			// the dispatch layer would otherwise charge this arm a timeout it never incurred.
 			capacityNotifier.run();
 		}
-		if (queryCancellation != null && queryCancellation.getAsBoolean()) {
+		if (queryCancellationObserved()) {
 			return latch(QUERY_CANCELLED);
 		}
 		if (peerCancellation != null && peerCancellation.getAsBoolean()) {
 			return latch(PEER_CANCELLED);
 		}
 		return latch(PROBE_CANCELLED);
+	}
+
+	private boolean queryCancellationObserved() {
+		if (queryCancellation == null) {
+			return false;
+		}
+		KernelQueryCancelledException signal = queryCancellation instanceof QueryCancellation owned
+				? owned.pollCancellation()
+				: queryCancellation.getAsBoolean() ? KernelQueryCancelledException.INSTANCE : null;
+		if (signal == null) {
+			return false;
+		}
+		// Publish the captured signal before latching QUERY_CANCELLED, so another poll can never observe the
+		// terminal reason without its original provenance.
+		querySignal.compareAndSet(null, signal);
+		return true;
+	}
+
+	KernelQueryCancelledException queryCancellationException() {
+		KernelQueryCancelledException signal = querySignal.get();
+		return signal == null ? KernelQueryCancelledException.INSTANCE : signal.copy();
 	}
 
 	private int latch(int requested) {

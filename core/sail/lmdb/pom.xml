@@ -9,6 +9,11 @@
 	<artifactId>rdf4j-sail-lmdb</artifactId>
 	<name>RDF4J: LmdbStore</name>
 	<description>Sail implementation that stores data to disk using LMDB.</description>
+	<properties>
+		<forkCount>2</forkCount>
+		<rdf4j.lmdb.test.maxHeap>4G</rdf4j.lmdb.test.maxHeap>
+		<maven.test.skip>false</maven.test.skip>
+	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>org.apache.datasketches</groupId>
@@ -237,6 +242,11 @@
 		<dependency>
 			<groupId>org.awaitility</groupId>
 			<artifactId>awaitility</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.junit.platform</groupId>
+			<artifactId>junit-platform-launcher</artifactId>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
@@ -721,6 +731,10 @@
 			<plugin>
 				<artifactId>maven-surefire-plugin</artifactId>
 				<configuration>
+					<!-- Test classes change JVM-wide settings, so run them in separate reusable JVMs. -->
+					<forkCount>${forkCount}</forkCount>
+					<reuseForks>true</reuseForks>
+					<argLine>@{argLine} ${mockito.javaagent} -Xmx${rdf4j.lmdb.test.maxHeap} -Djava.awt.headless=true "-Djava.io.tmpdir=${rdf4j.test.tmpDirectory}/fork-${surefire.forkNumber}" "-Drdf4j.lmdb.test.forkTmpDirectory=${rdf4j.test.tmpDirectory}/fork-${surefire.forkNumber}" -Drdf4j.lmdb.test.forkNumber=${surefire.forkNumber}</argLine>
 					<systemPropertyVariables>
 						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.subjectBucketCount>4096</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.subjectBucketCount>
 						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.predicateBucketCount>64</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.predicateBucketCount>
@@ -730,6 +744,10 @@
 						<org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.nominalEntries>64</org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.nominalEntries>
 						<junit.jupiter.execution.timeout.default>10 m</junit.jupiter.execution.timeout.default>
 						<junit.jupiter.execution.timeout.mode.default>enabled</junit.jupiter.execution.timeout.mode.default>
+						<rdf4j.test.outputDirectory>${project.build.directory}</rdf4j.test.outputDirectory>
+						<rdf4j.test.tmpDirectory>${rdf4j.test.tmpDirectory}</rdf4j.test.tmpDirectory>
+						<rdf4j.lmdb.test.surefire>true</rdf4j.lmdb.test.surefire>
+						<rdf4j.lmdb.test.forkCount>${forkCount}</rdf4j.lmdb.test.forkCount>
 					</systemPropertyVariables>
 				</configuration>
 				<executions>
@@ -750,6 +768,49 @@
 								<rdf4j.frontier.vector.enabled>true</rdf4j.frontier.vector.enabled>
 								<rdf4j.frontier.vector.required>true</rdf4j.frontier.vector.required>
 							</systemPropertyVariables>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<artifactId>maven-antrun-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>prepare-test-fork-directories</id>
+						<phase>process-test-classes</phase>
+						<goals>
+							<goal>run</goal>
+						</goals>
+						<configuration>
+							<skip>${maven.test.skip}</skip>
+							<target>
+								<java classname="org.eclipse.rdf4j.sail.lmdb.LmdbTestForkDirectories" failonerror="true">
+									<classpath>
+										<pathelement location="${project.build.testOutputDirectory}" />
+									</classpath>
+									<arg value="${rdf4j.test.tmpDirectory}" />
+									<arg value="${forkCount}" />
+									<arg value="${basedir}" />
+								</java>
+							</target>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>properties-maven-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>capture-test-reactor-concurrency</id>
+						<phase>generate-test-resources</phase>
+						<goals>
+							<goal>set-system-properties</goal>
+						</goals>
+						<configuration>
+							<properties>
+								<rdf4j.lmdb.test.reactorConcurrency>${session.request.degreeOfConcurrency}</rdf4j.lmdb.test.reactorConcurrency>
+							</properties>
 						</configuration>
 					</execution>
 				</executions>

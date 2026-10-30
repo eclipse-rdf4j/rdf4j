@@ -28,6 +28,17 @@ public final class LmdbTestUtil {
 	private LmdbTestUtil() {
 	}
 
+	/** Adapts test-owned shutdown to try-with-resources, preserving failures through suppression. */
+	public static Cleanup onClose(Runnable cleanup) {
+		return cleanup::run;
+	}
+
+	@FunctionalInterface
+	public interface Cleanup extends AutoCloseable {
+		@Override
+		void close();
+	}
+
 	/** Waits for deferred owner initialization before tests explicitly replace or persist optional components. */
 	public static void awaitPostReadyInitialization(LmdbStore store, long timeout, TimeUnit unit)
 			throws IOException, InterruptedException {
@@ -44,6 +55,35 @@ public final class LmdbTestUtil {
 		String status = backingStore.postReadyMaintenanceStatus();
 		if (!status.equals("READY")) {
 			throw new IOException("LMDB post-ready initialization did not complete: " + status);
+		}
+	}
+
+	/**
+	 * Waits until no startup background maintenance remains: post-ready initialization, both index rebuilds and the
+	 * optional overlay/adjacency work. Tests that arm or measure the shared reader pools need this quiescence, because
+	 * maintenance legitimately admits ordinary readers of both physical stores for short periods after {@code init()}.
+	 */
+	public static void awaitBackgroundMaintenance(LmdbStore store, long timeout, TimeUnit unit)
+			throws IOException, InterruptedException {
+		long started = System.nanoTime();
+		long budget = unit.toNanos(timeout);
+		awaitPostReadyInitialization(store, timeout, unit);
+		while (true) {
+			LmdbStore.StartupStatus status = store.getStartupStatus();
+			if (!status.backgroundWorkPending()) {
+				return;
+			}
+			if (status.statementIndexBuild().startsWith("FAILED") || status.tripleTermIndexBuild().startsWith("FAILED")
+					|| status.auxiliaryMaintenance().startsWith("FAILED")) {
+				throw new IOException("LMDB background maintenance failed: " + status);
+			}
+			if (Thread.interrupted()) {
+				throw new InterruptedException("Interrupted while waiting for LMDB background maintenance");
+			}
+			if (System.nanoTime() - started >= budget) {
+				throw new IOException("Timed out waiting for LMDB background maintenance: " + status);
+			}
+			Thread.yield();
 		}
 	}
 

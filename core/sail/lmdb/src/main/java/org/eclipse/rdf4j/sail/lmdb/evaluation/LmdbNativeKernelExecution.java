@@ -77,6 +77,17 @@ final class LmdbNativeKernelExecution {
 		INTERPRETED
 	}
 
+	/** Resource admission owned by one lowered aggregate recipe, separate from its physical-work proof. */
+	record ExecutionResourceWitness(boolean queryLedgerBounded, boolean workerSlotsReservedOnOpen,
+			int configuredWorkerSlots) {
+		ExecutionResourceWitness {
+			if (!queryLedgerBounded || configuredWorkerSlots < 1
+					|| workerSlotsReservedOnOpen && configuredWorkerSlots < 2) {
+				throw new IllegalArgumentException("aggregate resource admission requires its bounded owner");
+			}
+		}
+	}
+
 	private LmdbNativeKernelExecution() {
 	}
 
@@ -256,6 +267,26 @@ final class LmdbNativeKernelExecution {
 
 	/** Route and physical proof come from the very same lowering, including a compiled scan retry. */
 	record AggregateAdmission(String route, LmdbNativeKernelLowering.Lowered lowered, boolean interpreted) {
+		/**
+		 * Proves the admitted opener uses a query memory ledger and, for parallel execution, will acquire its worker
+		 * reservation before opening sibling sources. Actual budget refusal remains an execution-time decline that the
+		 * arbiter retries through the next legal recipe.
+		 */
+		ExecutionResourceWitness executionResourceWitness(RowState row, boolean parallel) {
+			if (row == null || row.memoryScope == null || lowered.bindings == null
+					|| !(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Aggregate)) {
+				return null;
+			}
+			if (!parallel) {
+				return new ExecutionResourceWitness(true, false, 1);
+			}
+			int workers = parallelProposalWorkers();
+			if (!aggregateParallelProposalEnabled() || workers < 2) {
+				return null;
+			}
+			return new ExecutionResourceWitness(true, true, workers);
+		}
+
 		NativeAggregatePhysicalPlan physicalPlan(SlotPlan input, RowState row, boolean parallel) {
 			// The actual lowered producer, including its projection schedule, owns its physical grain. Mixed
 			// pipelines and independent PlanFactors still need a separate compositional proof.
@@ -947,9 +978,13 @@ final class LmdbNativeKernelExecution {
 		}
 		long boundMask = row.boundMask();
 		LmdbNativeWork serialWork = arg.estimateWork(row, boundMask);
+		LmdbNativeWork serialPlanning = LmdbNativeWork.planning(arg, row, boundMask);
 		LmdbNativeWork work = parallelExecution == ParallelExecution.REQUIRE
 				? parallelProposalWork(serialWork)
 				: serialWork;
+		LmdbNativeWork planning = parallelExecution == ParallelExecution.REQUIRE
+				? parallelProposalWork(serialPlanning)
+				: serialPlanning;
 		LmdbNativeWork startup = parallelExecution == ParallelExecution.REQUIRE
 				? parallelStartupWork()
 				: LmdbNativeWork.ZERO;
@@ -963,7 +998,7 @@ final class LmdbNativeKernelExecution {
 									consumerInput == null ? null : consumerInput.borrow(filters)));
 				},
 				work, startup, rows, tag, () -> {
-				});
+				}).withPlanningWork(planning);
 	}
 
 	/** Kill switch for the DISTINCT-sinking kernel tiers (proposal and positional rung alike). */
@@ -1027,10 +1062,14 @@ final class LmdbNativeKernelExecution {
 				: interpretedTier ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED
 						: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT;
 		long boundMask = row.boundMask();
-		LmdbNativeWork serialWork = estimateDistinctWork(arg, row, boundMask, distinctSlots);
+		LmdbNativeWork serialWork = estimateDistinctWork(arg, row, boundMask, distinctSlots, false);
+		LmdbNativeWork serialPlanning = estimateDistinctWork(arg, row, boundMask, distinctSlots, true);
 		LmdbNativeWork work = parallelExecution == ParallelExecution.REQUIRE
 				? parallelProposalWork(serialWork)
 				: serialWork;
+		LmdbNativeWork planning = parallelExecution == ParallelExecution.REQUIRE
+				? parallelProposalWork(serialPlanning)
+				: serialPlanning;
 		LmdbNativeWork startup = parallelExecution == ParallelExecution.REQUIRE
 				? parallelStartupWork()
 				: LmdbNativeWork.ZERO;
@@ -1044,7 +1083,7 @@ final class LmdbNativeKernelExecution {
 									requestedTier));
 				},
 				work, startup, rows, tag, () -> {
-				});
+				}).withPlanningWork(planning);
 	}
 
 	/**
@@ -1056,8 +1095,9 @@ final class LmdbNativeKernelExecution {
 	 * interval upward (never a wrong domination).
 	 */
 	private static LmdbNativeWork estimateDistinctWork(SlotPlan arg, RowState row, long boundMask,
-			int[] distinctSlots) {
-		LmdbNativeWork full = arg.estimateWork(row, boundMask);
+			int[] distinctSlots, boolean planning) {
+		LmdbNativeWork full = planning ? LmdbNativeWork.planning(arg, row, boundMask)
+				: arg.estimateWork(row, boundMask);
 		if (!(arg instanceof MultiJoinPlan)) {
 			return full;
 		}
@@ -1081,7 +1121,8 @@ final class LmdbNativeKernelExecution {
 			long introduced = produced & ~shared & ~boundMask;
 			boolean witnessOnly = introduced != 0L && (introduced & retained) == 0L
 					&& (produced & ~introduced & ~mask) == 0L;
-			LmdbNativeWork childWork = child.estimateWork(row, mask);
+			LmdbNativeWork childWork = planning ? LmdbNativeWork.planning(child, row, mask)
+					: child.estimateWork(row, mask);
 			double childRows = LmdbNativeWork.rowsOut(child, row, mask);
 			if (!childWork.known() || Double.isNaN(childRows)) {
 				return full;
@@ -1725,7 +1766,7 @@ final class LmdbNativeKernelExecution {
 	}
 
 	private static boolean isSuppressionDisabledControl(Throwable problem) {
-		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
+		return problem instanceof KernelCancelledException || problem == KernelQueryCancelledException.INSTANCE
 				|| problem instanceof KernelPeerCancelledException
 				|| problem instanceof LmdbNativeProbeDeadlineExceeded;
 	}

@@ -85,13 +85,20 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
  */
 public class LmdbStoreConnection extends SailSourceConnection implements SailResultValueExposure {
 
-	/** An owner explicitly closed its result before an already-dispatched worker could activate. */
+	/** The owning result or connection cancelled an already-dispatched worker's read capability. */
 	@InternalUseOnly
 	public static final class ReadOperationClosedException extends SailException {
 		private static final long serialVersionUID = 1L;
+		private final Object owner;
 
-		private ReadOperationClosedException() {
+		private ReadOperationClosedException(Object owner) {
 			super("The dispatched LMDB read operation has already finished");
+			this.owner = owner;
+		}
+
+		@InternalUseOnly
+		public Object owner() {
+			return owner;
 		}
 	}
 
@@ -178,6 +185,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private ReadThreadRegistration next;
 		private int depth;
 		private long cancellationGeneration;
+		private volatile boolean interruptedByConnection;
 	}
 
 	private int replayAttempts;
@@ -1713,6 +1721,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		ReadThreadRegistration registration = readThreadRegistration.get();
 		if (registration.depth == 0) {
 			registration.cancellationGeneration = readCancellationGeneration;
+			registration.interruptedByConnection = false;
 			registration.thread = Thread.currentThread();
 			registration.next = firstActiveReadThread;
 			if (firstActiveReadThread != null) {
@@ -1729,6 +1738,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		assert Thread.holdsLock(readAttemptLock);
 		ReadThreadRegistration registration = readThreadRegistration.get();
 		if (--registration.depth == 0) {
+			registration.interruptedByConnection = false;
 			if (registration.previous == null) {
 				firstActiveReadThread = registration.next;
 			} else {
@@ -1769,6 +1779,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			Thread thread = registration.thread;
 			if (thread != Thread.currentThread()) {
 				// Removal uses this same monitor: an exited activation's reused pool thread cannot be interrupted.
+				// Do not attribute an already pending unrelated interrupt to this connection.
+				if (!thread.isInterrupted()) {
+					registration.interruptedByConnection = true;
+				}
 				thread.interrupt();
 			}
 		}
@@ -3542,18 +3556,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 		@Override
 		public void checkActive() {
-			if (lifecycleCancellation.isCancelled()) {
-				throw new SailException("The dispatched LMDB read operation was cancelled");
+			Object owner = cancellationOwner();
+			if (owner != null) {
+				throw new ReadOperationClosedException(owner);
 			}
 			// These lifecycle fields are volatile or immutable. Revalidation must not take the shared
 			// read-attempt monitor for every comparator callback or be deferred with growth checkpoints.
-			if (cancellationGeneration != readCancellationGeneration) {
-				throw new SailException("The dispatched LMDB read operation was cancelled");
-			}
-			if (observationOwner != null && observationOwner.workerAdmissionClosed) {
-				throw new ReadOperationClosedException();
-			}
-			throwIfCancelled(observationOwner);
 			if (operationAttempt != null && operationAttempt.closed) {
 				throw new SailException("The dispatched LMDB read operation has already finished");
 			}
@@ -3566,9 +3574,36 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 		}
 
+		private Object cancellationOwner() {
+			if (observationOwner != null
+					&& (observationOwner.workerAdmissionClosed || observationOwner.cancellationRequested)) {
+				return observationOwner;
+			}
+			if (lifecycleCancellation.isCancelled()) {
+				return lifecycleCancellation;
+			}
+			return cancellationGeneration != readCancellationGeneration ? LmdbStoreConnection.this : null;
+		}
+
+		@Override
+		public boolean ownsCancellation(Object owner) {
+			return owner != null && (owner == observationOwner || owner == lifecycleCancellation
+					|| owner == LmdbStoreConnection.this);
+		}
+
+		@Override
+		public Object consumeInterruptionOwner() {
+			ReadThreadRegistration registration = readThreadRegistration.get();
+			if (registration.depth > 0 && registration.interruptedByConnection) {
+				registration.interruptedByConnection = false;
+				return LmdbStoreConnection.this;
+			}
+			return null;
+		}
+
 		@Override
 		public QueryExecutionContext.Activation activate() {
-			throwIfCancelled(observationOwner);
+			checkActive();
 			beginOperation();
 			try {
 				QueryExecutionContext.Activation nativeActivation = activateCaptured();
@@ -3591,7 +3626,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			try {
 				synchronized (readAttemptLock) {
 					if (observationOwner != null && observationOwner.isClosed()) {
-						throw new ReadOperationClosedException();
+						throw new ReadOperationClosedException(observationOwner);
 					}
 					if (operationAttempt != null && operationAttempt.closed) {
 						throw new SailException("The dispatched LMDB read operation has already finished");
@@ -4251,6 +4286,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				repositoryExposure = null;
 				replayableIterations.remove(this);
 				pendingResultReplays.remove(this);
+				// Keep the delegate alive while the close-time cancellation callback is admitted.
+				activeReadOperations++;
 				readAttemptLock.notifyAll();
 			}
 			closeWhenIdle(() -> closeResources(null, () -> {
@@ -4258,6 +4295,24 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					current.close();
 				}
 			}, () -> closeOperationReadAttempt(ownedReference)));
+			Throwable failure = null;
+			try {
+				CooperativeCancellation.forward(current);
+			} catch (RuntimeException | Error caught) {
+				failure = caught;
+			} finally {
+				List<Runnable> deferred;
+				synchronized (readAttemptLock) {
+					deferred = endReadOperationLocked(false);
+				}
+				failure = closeDeferredDelegates(deferred, failure);
+			}
+			if (failure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
 		}
 	}
 

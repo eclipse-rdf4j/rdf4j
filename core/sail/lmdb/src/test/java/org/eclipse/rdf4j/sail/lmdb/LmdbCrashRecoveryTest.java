@@ -601,7 +601,7 @@ class LmdbCrashRecoveryTest {
 		}
 		// Ensure this cut targets a persisted, pre-existing store even while the separate dirty-flag regression is red.
 		StoreProperties properties = new StoreProperties(storeDir.toFile());
-		assertTrue(properties.load(), "the initialized format-6 properties must remain the crash baseline");
+		assertTrue(properties.load(), "the initialized format-7 properties must remain the crash baseline");
 		properties.setVersion(String.valueOf(LmdbStore.VERSION))
 				.setTripleIndexes("spoc")
 				.setTripleTermIndexes("spoc,cspo")

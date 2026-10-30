@@ -364,6 +364,10 @@ class LmdbReadAttemptCancellationTest {
 		});
 		SailRepository repository = new SailRepository(store);
 		repository.init();
+		// Startup maintenance (unused-id reclamation, term-index maintenance) briefly holds ordinary dictionary
+		// readers. One released after the pool below is filled would admit the native read without blocking, so the
+		// contention this test arms must start from a quiescent pool.
+		LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
 		List<TxnManager.ReaderReservation> held = new ArrayList<>();
 		try (var executor = Executors.newFixedThreadPool(2);
 				RepositoryConnection connection = repository.getConnection()) {

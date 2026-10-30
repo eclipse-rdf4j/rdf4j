@@ -43,7 +43,7 @@ class LmdbIndexMetadataCompatibilityTest {
 	private boolean inlineLiterals;
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
+	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
 	void defaultIndexesSurviveCloseAndReopen(int version, boolean inline) throws Exception {
 		prepareFormat(version, inline);
 		writeAndClose(null, true);
@@ -53,7 +53,7 @@ class LmdbIndexMetadataCompatibilityTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
+	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
 	void customTermIndexesRemainAuthoritativeUntilExplicitReindex(int version, boolean inline) throws Exception {
 		prepareFormat(version, inline);
 		writeAndClose("posc", true);
@@ -67,7 +67,7 @@ class LmdbIndexMetadataCompatibilityTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
+	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
 	void mixedLengthAndNestedTermsSurviveMultipleIndexOrders(int version, boolean inline) throws Exception {
 		prepareFormat(version, inline);
 		var vf = SimpleValueFactory.getInstance();
@@ -109,7 +109,7 @@ class LmdbIndexMetadataCompatibilityTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
+	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
 	void statementIndexesRebuildExactExplicitAndInferredRows(int version, boolean inline) throws Exception {
 		prepareFormat(version, inline);
 		var vf = SimpleValueFactory.getInstance();
@@ -159,7 +159,7 @@ class LmdbIndexMetadataCompatibilityTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
+	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
 	void cspoFirstReindexDoesNotResurrectRetiredTripleTerms(int version, boolean inline) throws Exception {
 		prepareFormat(version, inline);
 		var factory = SimpleValueFactory.getInstance();

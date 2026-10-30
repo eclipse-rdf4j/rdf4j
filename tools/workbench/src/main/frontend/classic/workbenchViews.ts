@@ -1885,11 +1885,13 @@ namespace workbench {
             const selected = group.options.filter((option: any) => text(option.selected) === 'true')[0]
                 || group.options[0];
             const value = selected ? text(selected.value) : '';
+            const readonly = text(row.fieldReadonly) === 'true';
+            const groupName = text(row.fieldGroup);
             const common: any = {};
             if (property) { common['data-config-property'] = property; }
             if (role) { common['data-field-role'] = role; }
             if (type === 'select') {
-                return h`<tr><th><label for=${id}>${name}</label></th><td><select id=${id} name=${name}
+                return h`<tr data-field-group=${groupName || runtime.nothing}><th><label for=${id}>${name}</label></th><td><select id=${id} name=${name} ?disabled=${readonly}
                         data-config-property=${property || runtime.nothing} data-field-role=${role || runtime.nothing}>
                     ${group.options.map((option: any) => h`<option value=${text(option.value)} ?selected=${text(option.selected) === 'true'}>
                         ${optionLabel(text(option.value))}</option>`)}
@@ -1901,21 +1903,21 @@ namespace workbench {
                         && ordered.some((option: any) => text(option.value) === 'false')) {
                     ordered.sort((left: any) => text(left.value) === 'true' ? -1 : 1);
                 }
-                return h`<tr><th>${name}</th><td>${ordered.map((option: any, index: number) => h`<label class="workbench-choice">
-                    <input type="radio" id=${id + '-' + (index + 1)} name=${name} value=${text(option.value)}
+                return h`<tr data-field-group=${groupName || runtime.nothing}><th>${name}</th><td>${ordered.map((option: any, index: number) => h`<label class="workbench-choice">
+                    <input type="radio" id=${id + '-' + (index + 1)} name=${name} value=${text(option.value)} ?disabled=${readonly}
                         data-config-property=${property || runtime.nothing} data-field-role=${role || runtime.nothing}
                         ?checked=${text(option.selected) === 'true'} />
                     <span>${optionLabel(text(option.value))}</span></label>`)}
                 </td></tr>`;
             }
             if (type === 'textarea') {
-                return h`<tr><th><label for=${id}>${name}</label></th><td><textarea id=${id} name=${name}
+                return h`<tr data-field-group=${groupName || runtime.nothing}><th><label for=${id}>${name}</label></th><td><textarea id=${id} name=${name} ?readonly=${readonly}
                     rows=${Number(text(row.rows)) || 6} cols=${Number(text(row.cols)) || 70}
                     placeholder=${text(row.placeholder) || runtime.nothing}
                     data-config-property=${property || runtime.nothing} data-field-role=${role || runtime.nothing}>${value}</textarea>
                 </td></tr>`;
             }
-            return h`<tr><th><label for=${id}>${name}</label></th><td><input type="text" id=${id} name=${name}
+            return h`<tr data-field-group=${groupName || runtime.nothing}><th><label for=${id}>${name}</label></th><td><input type="text" id=${id} name=${name} ?readonly=${readonly}
                 size=${Number(text(row.size)) || 32} value=${value} placeholder=${text(row.placeholder) || runtime.nothing}
                 data-config-property=${property || runtime.nothing} data-field-role=${role || runtime.nothing} /></td></tr>`;
         }

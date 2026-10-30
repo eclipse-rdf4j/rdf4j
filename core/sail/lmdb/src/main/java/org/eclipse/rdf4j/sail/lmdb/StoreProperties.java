@@ -18,6 +18,8 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.Objects;
@@ -87,6 +89,8 @@ class StoreProperties {
 	private Object revision = new Object();
 	/** The last file contents known to have completed a load or atomic save; guarded by this monitor. */
 	private boolean savedSnapshotKnown;
+	/** Immutable contents of the last loaded or fully durable properties file. */
+	private Properties savedProperties;
 	private String savedRdfTermDomainsVersion;
 	private String savedStoreId;
 
@@ -162,6 +166,8 @@ class StoreProperties {
 
 	/** Both native environments were present during the locked, read-only startup preflight. */
 	private boolean nativeGenerationPresent;
+	/** Granted only by validated interrupted-import recovery, while the original format sidecars remain durable. */
+	private boolean recreatingNativeGeneration;
 	/** Validated only while the owning LmdbStore holds its directory lock; never serialized as a boolean. */
 	PreparedBulkStore.Snapshot preparedBulkStore;
 	long verifiedValueTransactionId = -1L;
@@ -189,12 +195,35 @@ class StoreProperties {
 		return propertiesFile == null;
 	}
 
+	/** A dictionary inside an owning Sail must use that Sail's identity and clean-close fingerprint. */
+	static StoreProperties forDictionary(File directory) {
+		File parent = directory.getAbsoluteFile().getParentFile();
+		if (directory.getName().equals("values") && parent != null
+				&& (Files.exists(new File(parent, FILE_NAME).toPath(), LinkOption.NOFOLLOW_LINKS)
+						|| Files.exists(new File(parent, LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE).toPath(),
+								LinkOption.NOFOLLOW_LINKS)
+						|| hasOwningSail(directory))) {
+			return new StoreProperties(parent);
+		}
+		return new StoreProperties(directory);
+	}
+
+	static boolean hasOwningSail(File directory) {
+		File parent = directory.getAbsoluteFile().getParentFile();
+		return directory.getName().equals("values") && parent != null
+				&& Files.exists(new File(parent, "triples").toPath(), LinkOption.NOFOLLOW_LINKS);
+	}
+
 	/**
 	 * Load from properties file.
 	 *
 	 * @return <code>true</code> if loaded from file, else <code>false</code>
 	 */
 	boolean load() {
+		if (propertiesFile != null && Files.exists(propertiesFile.toPath(), LinkOption.NOFOLLOW_LINKS)
+				&& !propertiesFile.isFile()) {
+			throw new IllegalStateException("LmdbStore properties must be a readable regular file: " + propertiesFile);
+		}
 		Optional.ofNullable(propertiesFile).filter(File::isFile).ifPresent(file -> {
 			Properties properties = new Properties();
 			try (InputStream in = new FileInputStream(file)) {
@@ -205,6 +234,7 @@ class StoreProperties {
 			synchronized (this) {
 				version = properties.getProperty(VERSION_KEY);
 				loadedProperties = properties;
+				savedProperties = properties;
 				tripleIndexes = properties.getProperty(INDEXES_KEY);
 				predicateObjectDomainsVersion = properties.getProperty(PREDICATE_OBJECT_DOMAINS_VERSION_KEY);
 				rdfTermDomainQualification = properties.getProperty(RDF_TERM_DOMAIN_QUALIFICATION_KEY);
@@ -248,12 +278,19 @@ class StoreProperties {
 			Path parent = target.getParent();
 			Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
 			try {
-				byte[] encoded = encodeProperties(snapshot);
+				Properties contents = snapshotProperties(snapshot);
+				if (snapshot.savedSnapshotKnown() && snapshot.savedProperties() != null && propertiesFile.isFile()
+						&& contents.equals(snapshot.savedProperties())) {
+					// Preserve the exact legacy sidecar when discovery has restored its original effective policy.
+					markSaved(snapshot, contents);
+					return;
+				}
+				byte[] encoded = encodeProperties(contents);
 				fileOps.createDirectories(parent);
 				fileOps.writeAndForce(temporary, encoded);
 				fileOps.moveAtomically(temporary, target);
 				fileOps.forceDirectory(parent);
-				markSaved(snapshot);
+				markSaved(snapshot, contents);
 			} catch (IOException e) {
 				try {
 					fileOps.deleteIfExists(temporary);
@@ -265,7 +302,8 @@ class StoreProperties {
 		}
 	}
 
-	private record SaveSnapshot(Properties loadedProperties, String version, String tripleIndexes,
+	private record SaveSnapshot(Properties loadedProperties, Properties savedProperties, boolean savedSnapshotKnown,
+			String version, String tripleIndexes,
 			String predicateObjectDomainsVersion, String rdfTermDomainQualification, String tripleTermIndexes,
 			String storeId, String languageTagKey, String refCountsVersion, String numericIdEncoding,
 			String literalReferenceEncoding, String inlineLiterals, String canonicalLanguageTags,
@@ -276,15 +314,16 @@ class StoreProperties {
 		if (!dirty) {
 			return null;
 		}
+		boolean known = savedSnapshotKnown;
 		// A failed force may follow a successful replacement, so no prior file receipt is certain while saving.
 		savedSnapshotKnown = false;
-		return new SaveSnapshot(loadedProperties, version, tripleIndexes, predicateObjectDomainsVersion,
+		return new SaveSnapshot(loadedProperties, savedProperties, known, version, tripleIndexes, predicateObjectDomainsVersion,
 				rdfTermDomainQualification, tripleTermIndexes, storeId, languageTagKey, refCountsVersion,
 				numericIdEncoding, literalReferenceEncoding, inlineLiterals, canonicalLanguageTags, dateTimeIdEncoding,
 				revision);
 	}
 
-	private static byte[] encodeProperties(SaveSnapshot snapshot) throws IOException {
+	private static Properties snapshotProperties(SaveSnapshot snapshot) {
 		Properties properties = new Properties();
 		properties.putAll(snapshot.loadedProperties());
 		for (String key : new String[] { VERSION_KEY, INDEXES_KEY, TRIPLE_TERM_INDEXES_KEY,
@@ -333,15 +372,20 @@ class StoreProperties {
 		if (snapshot.dateTimeIdEncoding() != null) {
 			properties.setProperty(DATE_TIME_ID_ENCODING_KEY, snapshot.dateTimeIdEncoding());
 		}
+		return properties;
+	}
+
+	private static byte[] encodeProperties(Properties properties) throws IOException {
 		try (ByteArrayOutputStream output = new ByteArrayOutputStream(256)) {
 			properties.store(output, "LmdbStore meta-data");
 			return output.toByteArray();
 		}
 	}
 
-	private synchronized void markSaved(SaveSnapshot snapshot) {
+	private synchronized void markSaved(SaveSnapshot snapshot, Properties contents) {
 		savedRdfTermDomainsVersion = snapshot.predicateObjectDomainsVersion();
 		savedStoreId = snapshot.storeId();
+		savedProperties = contents;
 		savedSnapshotKnown = true;
 		if (revision == snapshot.revision()) {
 			dirty = false;
@@ -378,6 +422,23 @@ class StoreProperties {
 
 	synchronized void setNativeGenerationPresent(boolean nativeGenerationPresent) {
 		this.nativeGenerationPresent = nativeGenerationPresent;
+	}
+
+	synchronized void recreateNativeGeneration() {
+		recreatingNativeGeneration = true;
+		nativeGenerationPresent = false;
+		preparedBulkStore = null;
+		verifiedValueTransactionId = 0L;
+		verifiedTripleTransactionId = 0L;
+		statementIndexCleanupPending = false;
+	}
+
+	synchronized boolean recreatesNativeGeneration() {
+		return recreatingNativeGeneration;
+	}
+
+	synchronized void completeNativeGenerationRecreation() {
+		recreatingNativeGeneration = false;
 	}
 
 	synchronized String getRawProperty(String key) {

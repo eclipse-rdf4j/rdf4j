@@ -44,10 +44,10 @@ class LmdbStoreFormatCompatibilityTest {
 	Path directory;
 
 	@Test
-	void newStoreAuthorsFormatSix() throws Exception {
+	void newStoreAuthorsFormatSeven() throws Exception {
 		openAndClose(true);
 		Properties properties = readProperties();
-		assertThat(properties.getProperty("version")).isEqualTo("6");
+		assertThat(properties.getProperty("version")).isEqualTo("7");
 		assertThat(properties.getProperty("literal-reference-encoding")).isEqualTo("core-v1");
 		assertThat(Files.readString(directory.resolve("lmdbrdf.ver")))
 				.isEqualTo(LmdbStore.CORE_LITERAL_REFERENCE_MARKER);
@@ -58,7 +58,7 @@ class LmdbStoreFormatCompatibilityTest {
 		Path config = directory.resolve("config.ttl");
 		Files.writeString(config, "repository manager configuration");
 		openAndClose(true);
-		assertThat(readProperties().getProperty("version")).isEqualTo("6");
+		assertThat(readProperties().getProperty("version")).isEqualTo("7");
 		assertThat(Files.readString(config)).isEqualTo("repository manager configuration");
 	}
 
@@ -201,7 +201,7 @@ class LmdbStoreFormatCompatibilityTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "1", "3", "4", "5", "7", "-1", "garbage" })
+	@ValueSource(strings = { "1", "3", "4", "5", "6", "8", "-1", "garbage" })
 	void unsupportedVersionRejectsBeforeCreatingEnvironments(String version) throws Exception {
 		Properties properties = legacyProperties();
 		properties.setProperty("version", version);

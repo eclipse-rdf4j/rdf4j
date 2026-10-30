@@ -53,6 +53,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.workbench.support.TestProcess;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -268,18 +269,21 @@ class GraphExplorerQueryTest {
 
 		Path output = tempDir.resolve("graph-export.ttl");
 		Path errors = tempDir.resolve("node-stderr.log");
-		Process process = new ProcessBuilder(node.toString(), "--experimental-strip-types", fixture.toString())
-				.redirectOutput(output.toFile())
-				.redirectError(errors.toFile())
-				.start();
-		boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-		if (!finished) {
-			process.destroyForcibly();
-			process.waitFor();
+		String turtle;
+		try (TestProcess child = TestProcess.start(
+				new ProcessBuilder(node.toString(), "--experimental-strip-types", fixture.toString())
+						.redirectOutput(output.toFile())
+						.redirectError(errors.toFile()))) {
+			Process process = child.process();
+			boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				process.waitFor();
+			}
+			assertThat(finished).as("the Node export fixture exits within 30 seconds").isTrue();
+			assertThat(process.exitValue()).as(Files.readString(errors, StandardCharsets.UTF_8)).isZero();
+			turtle = Files.readString(output, StandardCharsets.UTF_8);
 		}
-		assertThat(finished).as("the Node export fixture exits within 30 seconds").isTrue();
-		assertThat(process.exitValue()).as(Files.readString(errors, StandardCharsets.UTF_8)).isZero();
-		String turtle = Files.readString(output, StandardCharsets.UTF_8);
 		Model actual = Rio.parse(new StringReader(turtle), "", RDFFormat.TURTLE);
 
 		ValueFactory vf = SimpleValueFactory.getInstance();

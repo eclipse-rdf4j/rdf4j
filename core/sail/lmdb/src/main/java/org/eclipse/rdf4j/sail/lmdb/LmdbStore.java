@@ -420,14 +420,19 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		logger.debug("Data dir is " + dataDir);
 
 		try {
-			// An initial run import that never completed left value records without lookups; start empty instead.
-			LmdbInitialRunImport.resetInterruptedImport(dataDir.toPath());
 			StoreProperties properties = new StoreProperties(dataDir);
 			properties.load();
 			LmdbStoreFormat loadedFormat = properties.isLoaded()
 					? LmdbStoreFormat.resolve(dataDir, properties, config)
 					: null;
-			preparedBulkSnapshot = PreparedBulkStore.read(dataDir.toPath(), properties, config);
+			// Interrupted imports may discard their native data only after the persisted format has been admitted.
+			// Keep the original sidecars and recovery marker until the replacement generation is ready.
+			boolean resetInitialImport = LmdbInitialRunImport.resetInterruptedImport(dataDir.toPath(), loadedFormat);
+			if (resetInitialImport) {
+				properties.recreateNativeGeneration();
+			}
+			preparedBulkSnapshot = resetInitialImport ? null
+					: PreparedBulkStore.read(dataDir.toPath(), properties, config);
 			properties.preparedBulkStore = preparedBulkSnapshot;
 			if (preparedBulkSnapshot == null) {
 				LegacyStoreDiscovery.discover(dataDir, properties);
@@ -452,7 +457,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
+			properties.completeNativeGenerationRecreation();
 			properties.save();
+			if (resetInitialImport) {
+				LmdbInitialRunImport.completeReset(dataDir.toPath(), format);
+			}
 
 			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
 				@Override

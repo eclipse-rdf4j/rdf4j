@@ -86,8 +86,23 @@ public final class ValueStoreRecordCodec {
 		return data;
 	}
 
+	/** Encodes the historical caller-supplied split, for existing format 2 records. */
 	public static byte[] iriData(IRI iri, long namespaceId) {
-		byte[] localName = iri.getLocalName().getBytes(StandardCharsets.UTF_8);
+		return iriData(iri.getLocalName(), namespaceId);
+	}
+
+	/** The namespace ID must have been allocated using the same persisted format. */
+	public static byte[] iriData(IRI iri, long namespaceId, LmdbStoreFormat format) {
+		return iriData(IriStorageEncoding.localName(iri, format), namespaceId);
+	}
+
+	/** Reuses the exact decomposition used to allocate the namespace ID. */
+	public static byte[] iriData(IriStorageEncoding.Split split, long namespaceId) {
+		return iriData(split.localName(), namespaceId);
+	}
+
+	private static byte[] iriData(String localNameValue, long namespaceId) {
+		byte[] localName = localNameValue.getBytes(StandardCharsets.UTF_8);
 		int idLength = Varint.calcLengthUnsigned(namespaceId);
 		byte[] data = new byte[1 + idLength + localName.length];
 		data[0] = URI_VALUE;

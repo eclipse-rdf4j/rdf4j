@@ -536,6 +536,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	private static final class QueryDeadlineCloseTask implements AutoCloseable {
 		private final QueryOperationDeadline deadline;
+		private final Thread evaluationThread = Thread.currentThread();
+		private final boolean initiallyInterrupted = evaluationThread.isInterrupted();
+		private final Object interruptLock = new Object();
+		private boolean closed;
+		private boolean deliveredInterrupt;
 		private final AtomicReference<CloseableIteration<?>> iteration = new AtomicReference<>();
 		private final AtomicBoolean timedOut = new AtomicBoolean();
 		private final AtomicBoolean timeoutCloseStarted = new AtomicBoolean();
@@ -575,7 +580,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 
 		private void expire() {
-			timedOut.set(true);
+			synchronized (interruptLock) {
+				if (closed) { return; }
+				// Publish before interrupting: evaluation may throw and enter cleanup before interrupt() returns.
+				timedOut.set(true);
+				deliveredInterrupt = true;
+				evaluationThread.interrupt();
+			}
 			CloseableIteration<?> activeIteration = iteration.get();
 			if (activeIteration != null) {
 				requestDeadlineClose(activeIteration);
@@ -603,8 +614,16 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			if (thread == null) {
 				return;
 			}
+			// Interrupt delivery can invoke an overridden Thread.interrupt(). Release that delivery before waiting
+			// for its ownership lock, then prevent an expired watchdog from interrupting reused caller work.
 			thread.interrupt();
 			boolean restoreInterrupt = Thread.interrupted();
+			synchronized (interruptLock) {
+				closed = true;
+				if (deliveredInterrupt) {
+					restoreInterrupt = initiallyInterrupted;
+				}
+			}
 			long joinStarted = System.nanoTime();
 			long maximumJoinNanos = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(100);
 			while (thread.isAlive() && System.nanoTime() - joinStarted < maximumJoinNanos) {

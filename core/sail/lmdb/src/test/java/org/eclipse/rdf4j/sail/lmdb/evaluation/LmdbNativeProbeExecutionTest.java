@@ -330,6 +330,44 @@ class LmdbNativeProbeExecutionTest {
 	}
 
 	@Test
+	void aTimedOutProbeThatWroteSlotsDirectlyLeavesNoBindingsOnTheSharedRowForTheFallback() throws IOException {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0, "district", 1), null);
+		layout.freeze(List.of("p", "district"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		AtomicInteger rivalOpens = new AtomicInteger();
+		// Batched cursors (the wildcard-predicate MINUS, packed pipelines) write the row's slots directly instead of
+		// through the bind trail, so a deadline poll in the consumer's loop stops them with bindings the trail knows
+		// nothing about.
+		LmdbNativeStrategyProposal<String> rival = new LmdbNativeStrategyProposal<>(() -> {
+			rivalOpens.incrementAndGet();
+			row.replaceSlot(0, 42L);
+			row.replaceSlot(1, 7L);
+			int tick = 0;
+			while (true) {
+				LmdbNativeProbeDeadline.poll(++tick);
+			}
+		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+
+		String result;
+		try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter
+				.<String>forModel(null, -1D, fixture().model())
+				.probeHarness(LmdbNativeProbeHarness.blocking())
+				.sharedRow(row)) {
+			arbiter.offer(() -> rowReadingIncumbent(row));
+			arbiter.offer(() -> rival);
+			result = arbiter.select();
+		}
+
+		assertEquals(1, rivalOpens.get(), "the rival must run as the trial");
+		assertEquals("unbound", result, "the fallback must not inherit slots the aborted trial wrote directly");
+		assertEquals(0L, row.boundMask());
+		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.slots[0]);
+		assertEquals(NativeLmdbQuerySource.UNKNOWN_ID, row.slots[1]);
+	}
+
+	@Test
 	void aDeclinedAttemptLeavesNoBindingsOnTheSharedRowForTheNextCandidate() throws IOException {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0), null);
 		layout.freeze(List.of("p"));

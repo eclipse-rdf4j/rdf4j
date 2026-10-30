@@ -76,6 +76,9 @@ class ThemeQueryBenchmarkStoreReuseTest {
 			runTrial(benchmark);
 		}
 		assertEquals(1, loads[0], "opening and closing a complete dataset must not regenerate it");
+		assertTrue(Files.size(directory.resolve("values/data.mdb")) >= Long
+				.parseLong(readMetadata(directory).getProperty("values.data.mdb.size.bytes")),
+				"reopening must not shrink the value file below the completed-load snapshot");
 		assertFixtureBag(directory);
 	}
 

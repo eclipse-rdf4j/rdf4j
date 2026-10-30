@@ -292,9 +292,11 @@ class AdaptiveReplayIntegrationTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		config.setTripleDBSize(64L * 1024 * 1024);
 		config.setValueDBSize(64L * 1024 * 1024);
-		ValueStore values = new ValueStore(new File(directory, "values"), config);
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory, config);
+		ValueStore values = new ValueStore(new File(directory, "values"), properties, config);
 		File triplesDirectory = new File(directory, "triples");
-		try (TripleStore triples = new TripleStore(triplesDirectory, config, values)) {
+		try (TripleStore triples = new TripleStore(triplesDirectory, properties, config, values)) {
+			LmdbOwningTestStoreMetadata.completeInitialization(directory, properties);
 			for (int i = 0; i < 64; i++) {
 				values.startTransaction(true);
 				triples.startTransaction();
@@ -1508,10 +1510,32 @@ class AdaptiveReplayIntegrationTest {
 		private WriterTransaction transaction;
 
 		PairedStores(File directory, LmdbStoreConfig config) throws IOException {
-			values = new FaultyValueStore(new File(directory, "values"), config);
+			// These low-level stores are an owning Sail pair: preserve the same persisted format and
+			// capabilities a real LmdbStore creates before either native environment is opened.
+			StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory, config);
+			values = new FaultyValueStore(new File(directory, "values"), properties, config);
 			triplesDirectory = new File(directory, "triples");
-			triples = new FaultyTripleStore(triplesDirectory, new StoreProperties(triplesDirectory), config, values);
-			triples.initializeNamespaceSnapshot(Map.of());
+			FaultyTripleStore openedTriples = null;
+			try {
+				openedTriples = new FaultyTripleStore(triplesDirectory, properties, config, values);
+				openedTriples.initializeNamespaceSnapshot(Map.of());
+				LmdbOwningTestStoreMetadata.completeInitialization(directory, properties);
+				triples = openedTriples;
+			} catch (IOException | RuntimeException | Error failure) {
+				if (openedTriples != null) {
+					try {
+						openedTriples.close();
+					} catch (Throwable cleanupFailure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+				}
+				try {
+					values.close();
+				} catch (Throwable cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
+			}
 		}
 
 		void warm() throws IOException {

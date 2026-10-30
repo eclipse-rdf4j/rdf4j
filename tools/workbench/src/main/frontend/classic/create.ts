@@ -150,24 +150,116 @@ namespace workbench {
          */
         export function mount(outlet: HTMLElement): () => void {
             /**
+             * Moves the label and controls of one table row into a disclosure field (the controls are moved, not
+             * cloned, so names, values and submission stay unchanged). The caller removes the emptied row.
+             */
+            function convertRowToField(row: HTMLTableRowElement): { field: HTMLElement, label: string } {
+                var field = document.createElement('div');
+                field.className = 'workbench-disclosure__field workbench-advanced__field';
+                var fieldLabel = '';
+                var heading = row.querySelector('th');
+                if (heading) {
+                    var label = heading.querySelector('label');
+                    if (label) {
+                        fieldLabel = label.textContent ? label.textContent.trim() : '';
+                        field.appendChild(label);
+                    } else if (heading.textContent && heading.textContent.trim()) {
+                        fieldLabel = heading.textContent.trim();
+                        var fieldHeading = document.createElement('span');
+                        fieldHeading.textContent = fieldLabel;
+                        field.appendChild(fieldHeading);
+                    }
+                }
+
+                var controls = document.createElement('div');
+                controls.className = 'workbench-advanced__control';
+                var cells = row.querySelectorAll('td');
+                for (var cellIndex = 0; cellIndex < cells.length; cellIndex++) {
+                    while (cells[cellIndex].firstChild) {
+                        controls.appendChild(cells[cellIndex].firstChild);
+                    }
+                }
+                if (controls.childNodes.length) {
+                    field.appendChild(controls);
+                }
+                return { field: field, label: fieldLabel };
+            }
+
+            /**
+             * Annotation-driven grouping (a template field carries group="Name"): one disclosure per group, in
+             * first-appearance order, after the table. Rows without a group stay in the table.
+             */
+            function installGroupedFields(table: HTMLTableElement, body: HTMLTableSectionElement): HTMLElement[] {
+                var groupNames: string[] = [];
+                var groupRows: { [name: string]: HTMLTableRowElement[] } = {};
+                for (var i = 1; i < body.rows.length; i++) {
+                    var groupName = body.rows[i].getAttribute('data-field-group');
+                    if (!groupName) {
+                        continue;
+                    }
+                    if (!groupRows[groupName]) {
+                        groupRows[groupName] = [];
+                        groupNames.push(groupName);
+                    }
+                    groupRows[groupName].push(body.rows[i]);
+                }
+
+                var owners: HTMLElement[] = [];
+                var reference: any = table.nextSibling;
+                for (var g = 0; g < groupNames.length; g++) {
+                    var prefix = 'create-group-' + (g + 1);
+                    var disclosure = workbench.detailDisclosure.create(document, {
+                        id: prefix + '-disclosure', toggleId: prefix + '-toggle', panelId: prefix + '-panel',
+                        label: groupNames[g],
+                        ownerClass: 'workbench-advanced workbench-form-subgroup'
+                    });
+                    var groupFields = document.createElement('div');
+                    groupFields.className = 'workbench-disclosure__fields workbench-advanced-fields';
+                    disclosure.content.appendChild(groupFields);
+                    var rows = groupRows[groupNames[g]];
+                    for (var r = 0; r < rows.length; r++) {
+                        groupFields.appendChild(convertRowToField(rows[r]).field);
+                        if (rows[r].parentNode) {
+                            rows[r].parentNode.removeChild(rows[r]);
+                        }
+                    }
+                    table.parentNode.insertBefore(disclosure.owner, reference);
+                    owners.push(disclosure.owner);
+                }
+                return owners;
+            }
+
+            /**
              * Keep required identity, endpoint, and rule query fields visible while moving the
              * lower-frequency repository tuning fields into one shared disclosure. The
              * rows are moved rather than cloned so every existing input name, value and
              * form submission remains unchanged.
              */
-            function installAdvancedFields(): HTMLElement {
-                var existing = <HTMLElement>outlet.querySelector(
+            function installAdvancedFields(): HTMLElement[] {
+                var existing = outlet.querySelectorAll(
                     '[data-workbench-detail-disclosure="true"].workbench-advanced');
-                if (existing) {
-                    return existing;
+                if (existing.length) {
+                    var present: HTMLElement[] = [];
+                    for (var e = 0; e < existing.length; e++) {
+                        present.push(<HTMLElement>existing[e]);
+                    }
+                    return present;
                 }
                 var table = <HTMLTableElement>outlet.querySelector("form[action='create'] table.dataentry");
                 if (!table) {
-                    return null;
+                    return [];
                 }
                 var body = table.tBodies.length ? table.tBodies[0] : null;
-                if (!body || body.rows.length < 3) {
-                    return null;
+                if (!body) {
+                    return [];
+                }
+                for (var g = 1; g < body.rows.length; g++) {
+                    if (body.rows[g].getAttribute('data-field-group')) {
+                        return installGroupedFields(table, body);
+                    }
+                }
+                if (body.rows.length < 3) {
+                    return [];
                 }
 
                 var rowsToMove: HTMLTableRowElement[] = [];
@@ -190,7 +282,7 @@ namespace workbench {
                     }
                 }
                 if (!rowsToMove.length) {
-                    return null;
+                    return [];
                 }
 
                 var disclosure = workbench.detailDisclosure.create(document, {
@@ -205,36 +297,9 @@ namespace workbench {
 
                 var advancedItems: any[] = [];
                 for (var j = 0; j < rowsToMove.length; j++) {
+                    var converted = convertRowToField(rowsToMove[j]);
                     var row = rowsToMove[j];
-                    var field = document.createElement('div');
-                    field.className = 'workbench-disclosure__field workbench-advanced__field';
-                    var fieldLabel = '';
-                    var heading = row.querySelector('th');
-                    if (heading) {
-                        var label = heading.querySelector('label');
-                        if (label) {
-                            fieldLabel = label.textContent ? label.textContent.trim() : '';
-                            field.appendChild(label);
-                        } else if (heading.textContent && heading.textContent.trim()) {
-                            fieldLabel = heading.textContent.trim();
-                            var fieldHeading = document.createElement('span');
-                            fieldHeading.textContent = fieldLabel;
-                            field.appendChild(fieldHeading);
-                        }
-                    }
-
-                    var controls = document.createElement('div');
-                    controls.className = 'workbench-advanced__control';
-                    var cells = row.querySelectorAll('td');
-                    for (var cellIndex = 0; cellIndex < cells.length; cellIndex++) {
-                        while (cells[cellIndex].firstChild) {
-                            controls.appendChild(cells[cellIndex].firstChild);
-                        }
-                    }
-                    if (controls.childNodes.length) {
-                        field.appendChild(controls);
-                    }
-                    advancedItems.push({ field: field, label: fieldLabel, order: j });
+                    advancedItems.push({ field: converted.field, label: converted.label, order: j });
                     if (row.parentNode) {
                         row.parentNode.removeChild(row);
                     }
@@ -362,10 +427,15 @@ namespace workbench {
                 }
 
                 table.parentNode.insertBefore(disclosure.owner, table.nextSibling);
-                return disclosure.owner;
+                return [disclosure.owner];
             }
 
-            var releaseAdvanced = workbench.detailDisclosure.bindOwner(installAdvancedFields());
+            var releaseAdvanced = (function(owners: HTMLElement[]): () => void {
+                var releases = owners.map(function(owner) { return workbench.detailDisclosure.bindOwner(owner); });
+                return function() {
+                    releases.forEach(function(release) { release(); });
+                };
+            })(installAdvancedFields());
             id = findFieldByRole('repository-id', '#id', outlet);
             title = findFieldByRole('repository-title', '#title', outlet);
 

@@ -12,11 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -47,6 +49,38 @@ import org.junit.platform.launcher.core.LauncherFactory;
 class LmdbNativeWorkerLifecycleTest {
 	@TempDir
 	Path directory;
+
+	@Test
+	void reentrantActivationClosureBelongsOnlyToItsRetiredTask() {
+		AtomicInteger retired = new AtomicInteger();
+		NativeExecutionContext.WorkerTasks workers = new NativeExecutionContext.WorkerTasks(1);
+		NativeExecutionContext.WorkerTasks siblingWorkers = new NativeExecutionContext.WorkerTasks(1);
+		try (var task = workers.enter(retired::incrementAndGet, problem -> {
+			throw new AssertionError(problem);
+		}); var sibling = siblingWorkers.enter(() -> {
+		}, problem -> {
+			throw new AssertionError(problem);
+		})) {
+			Throwable owned = catchThrowable(() -> task.activate(() -> {
+				try {
+					workers.await();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(interrupted);
+				}
+				return () -> {
+				};
+			}));
+			assertThat(owned).isInstanceOf(CancellationException.class);
+			assertThat(retired).as("the reentrant owner drains the native task first").hasValue(1);
+			assertThat(task.ownsActivationClosure(owned)).isTrue();
+			assertThat(sibling.ownsActivationClosure(owned)).isFalse();
+			assertThat(task.ownsActivationClosure(new CancellationException(owned.getMessage())))
+					.as("a same-message foreign exception is not this task's close signal")
+					.isFalse();
+		}
+		assertThat(retired).hasValue(1);
+	}
 
 	enum Lifecycle {
 		DEFERRED_REPOSITORY_CLOSE,

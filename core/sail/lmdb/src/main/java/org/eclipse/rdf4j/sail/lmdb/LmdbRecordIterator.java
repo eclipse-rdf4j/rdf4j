@@ -32,6 +32,8 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -130,6 +132,7 @@ class LmdbRecordIterator implements RecordIterator {
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
+	private int cancellationPollTick;
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
@@ -378,8 +381,15 @@ class LmdbRecordIterator implements RecordIterator {
 					return null;
 				}
 				validateSnapshot();
+				pollCancellationAtEntry();
 				if (exactKeySearch) {
-					return nextExactKey();
+					long[] record = nextExactKey();
+					if (record == null) {
+						pollCancellationAtExhaustion();
+					} else {
+						pollCancellationCandidate();
+					}
+					return record;
 				}
 
 				int lastResult;
@@ -406,6 +416,7 @@ class LmdbRecordIterator implements RecordIterator {
 							}
 						}
 						if (lastResult != MDB_SUCCESS) {
+							pollCancellationAtExhaustion();
 							closeInternalUnderCurrentReadLock();
 							return null;
 						}
@@ -430,6 +441,7 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 
 				while (lastResult == MDB_SUCCESS) {
+					pollCancellationCandidate();
 					sourceRowsScannedActual++;
 					if (isOutOfRange()) {
 						sourceRowsFilteredActual++;
@@ -469,6 +481,7 @@ class LmdbRecordIterator implements RecordIterator {
 						}
 					}
 				}
+				pollCancellationAtExhaustion();
 				closeInternalUnderCurrentReadLock();
 				return null;
 			}
@@ -478,6 +491,9 @@ class LmdbRecordIterator implements RecordIterator {
 		} catch (IOException e) {
 			closeInternalUnderCurrentReadLock();
 			throw new SailException(e);
+		} catch (RuntimeException | Error failure) {
+			closePreservingFailure(failure);
+			throw failure;
 		}
 	}
 
@@ -499,11 +515,14 @@ class LmdbRecordIterator implements RecordIterator {
 					return 0;
 				}
 				validateSnapshot();
+				pollCancellationAtEntry();
 				if (exactKeySearch) {
 					long[] record = nextExactKey();
 					if (record == null) {
+						pollCancellationAtExhaustion();
 						return 0;
 					}
+					pollCancellationCandidate();
 					System.arraycopy(record, 0, buffer, 0, 4);
 					return 1;
 				}
@@ -532,6 +551,7 @@ class LmdbRecordIterator implements RecordIterator {
 							}
 						}
 						if (lastResult != MDB_SUCCESS) {
+							pollCancellationAtExhaustion();
 							closeInternalUnderCurrentReadLock();
 							return 0;
 						}
@@ -554,6 +574,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 				int rows = 0;
 				while (lastResult == MDB_SUCCESS) {
+					pollCancellationCandidate();
 					sourceRowsScannedActual++;
 					if (isOutOfRange()) {
 						sourceRowsFilteredActual++;
@@ -592,6 +613,7 @@ class LmdbRecordIterator implements RecordIterator {
 								: advancePastFiltered(keyAddress);
 					}
 				}
+				pollCancellationAtExhaustion();
 				closeInternalUnderCurrentReadLock();
 				return rows;
 			}
@@ -601,6 +623,9 @@ class LmdbRecordIterator implements RecordIterator {
 		} catch (IOException e) {
 			closeInternalUnderCurrentReadLock();
 			throw new SailException(e);
+		} catch (RuntimeException | Error failure) {
+			closePreservingFailure(failure);
+			throw failure;
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
@@ -785,6 +810,11 @@ class LmdbRecordIterator implements RecordIterator {
 				if (disposed) {
 					throw new SailException("Iterator has been disposed");
 				}
+				// The retained cursor is reused, but source work belongs to one logical probe open.
+				this.sourceRowsScannedActual = 0L;
+				this.sourceRowsMatchedActual = 0L;
+				this.sourceRowsFilteredActual = 0L;
+				this.cancellationPollTick = 0;
 				this.matchSubj = subj > 0 ? subj : -1;
 				this.matchPred = pred > 0 ? pred : -1;
 				this.matchObj = obj > 0 ? obj : -1;
@@ -892,6 +922,35 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private void closeInternalUnderCurrentReadLock() {
 		closeInternal(false, true);
+	}
+
+	private void closePreservingFailure(Throwable failure) {
+		Throwable retained = KernelRuntime.closeResource(this::closeInternalUnderCurrentReadLock, failure);
+		if (retained != failure) {
+			if (retained instanceof RuntimeException runtimeFailure) {
+				throw runtimeFailure;
+			}
+			if (retained instanceof Error errorFailure) {
+				throw errorFailure;
+			}
+			throw new SailException(retained);
+		}
+	}
+
+	private void pollCancellationAtEntry() {
+		if (cancellationPollTick == 0) {
+			NativeLmdbQuerySource.checkpointCancellation();
+		}
+	}
+
+	private void pollCancellationCandidate() {
+		if ((++cancellationPollTick & 1023) == 0) {
+			NativeLmdbQuerySource.checkpointCancellation();
+		}
+	}
+
+	private static void pollCancellationAtExhaustion() {
+		NativeLmdbQuerySource.checkpointCancellation();
 	}
 
 	private void closeInternal(boolean maybeCalledAsync, boolean currentThreadHasReadLock) {

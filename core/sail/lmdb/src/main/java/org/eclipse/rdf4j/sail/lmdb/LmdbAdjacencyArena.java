@@ -385,8 +385,9 @@ final class LmdbAdjacencyArena implements AutoCloseable {
 	}
 
 	/**
-	 * Releases one owner reference; the native memory is freed when the final owner releases. Releasing after the final
-	 * owner has already released is a no-op.
+	 * Releases one owner reference; the arena is closed to its users when the final owner releases, and its native
+	 * memory is freed right after on the {@link LmdbAdjacencyArenaReaper}, since closing a shared native arena
+	 * handshakes every Java thread. Releasing after the final owner has already released is a no-op.
 	 */
 	@Override
 	public void close() {
@@ -399,7 +400,7 @@ final class LmdbAdjacencyArena implements AutoCloseable {
 		} while (!owners.compareAndSet(current, current - 1));
 		if (current == 1) {
 			closed = true;
-			nativeArena.close();
+			LmdbAdjacencyArenaReaper.closeLater(nativeArena);
 		}
 	}
 

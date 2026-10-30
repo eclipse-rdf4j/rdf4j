@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -490,6 +491,7 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 	private final NativeBooleanFilter delegate;
 	private boolean closed;
 	private final boolean borrowedOpening;
+	private Consumer<Throwable> closeFailureObserver;
 
 	CloseOnceNativeBooleanFilter(NativeBooleanFilter delegate) {
 		this(delegate, false);
@@ -504,7 +506,11 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 	public NativeBooleanFilter open(RowState row) {
 		NativeBooleanFilter opened = delegate.open(row);
 		// A fresh invocation owns its terminal aggregate. A reusable semantic delegate remains worker-owned.
-		return new CloseOnceNativeBooleanFilter(opened, opened == delegate);
+		CloseOnceNativeBooleanFilter invocation = new CloseOnceNativeBooleanFilter(opened, opened == delegate);
+		if (closeFailureObserver != null) {
+			invocation.observeCloseFailures(closeFailureObserver);
+		}
+		return invocation;
 	}
 
 	@Override
@@ -581,7 +587,27 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 		}
 		closed = true;
 		if (!borrowedOpening) {
-			delegate.close();
+			try {
+				delegate.close();
+			} catch (RuntimeException | Error problem) {
+				if (closeFailureObserver != null) {
+					try {
+						closeFailureObserver.accept(problem);
+					} catch (RuntimeException | Error observerFailure) {
+						if (observerFailure != problem) {
+							problem.addSuppressed(observerFailure);
+						}
+					}
+				}
+				throw problem;
+			}
+		}
+	}
+
+	void observeCloseFailures(Consumer<Throwable> observer) {
+		closeFailureObserver = observer;
+		if (delegate instanceof CloseOnceNativeBooleanFilter nested) {
+			nested.observeCloseFailures(observer);
 		}
 	}
 }

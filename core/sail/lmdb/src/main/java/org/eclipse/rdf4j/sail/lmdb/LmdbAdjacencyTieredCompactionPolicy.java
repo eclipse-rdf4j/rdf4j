@@ -16,6 +16,14 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 
 	static final int FANOUT = 4;
 	static final long MAX_WEIGHT_SKEW = 2;
+	/** Live logical bytes of one adjacency pair in an overlay generation, the unit {@code liveLogicalBytes} counts. */
+	static final long LIVE_PAIR_BYTES = Long.BYTES * 2L;
+	/**
+	 * Live overlay bytes from which the shape of the index alone folds the overlays into the base: a base with fewer
+	 * than four times this many pairs folds once the overlays carry this much (16,384 pairs, about 8,000 single
+	 * statements), a larger base once they carry a quarter of its pairs.
+	 */
+	static final long SHAPE_FOLD_FLOOR_BYTES = 256L << 10;
 
 	static final class Candidate {
 		private int fromInclusive;
@@ -71,6 +79,38 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 	private LmdbAdjacencyTieredCompactionPolicy() {
 	}
 
+	/**
+	 * The compaction decision the applier takes after a publish: a fold of every generation when the overlays' live
+	 * pairs outweigh the base ({@code foldForShape}, see {@link #shouldFoldForShape}); otherwise a range merge when the
+	 * tiered selection finds one and the base's source registry has room for the merged source; otherwise a fold when
+	 * that registry is nearly exhausted, the overlays' retained bytes reach the workspace region
+	 * ({@link #shouldFoldBase}) or the retained physical bytes dwarf the live rows ({@link #shouldPhysicallyFlatten}).
+	 */
+	static AdjacencyCompactionPlan plan(LmdbAdjacencyOverlaySet overlays, int targetGenerationCount,
+			Candidate candidate, boolean sourceCapacityForMerge, boolean sourceCapacityExhausted,
+			long workspaceRegionBytes, long baseRetainedBytes, boolean foldForShape) {
+		int generations = overlays.generationCount();
+		if (generations == 0) {
+			return AdjacencyCompactionPlan.none();
+		}
+		if (foldForShape) {
+			// Overlays that carry a quarter of the base are folded whole, ahead of any range merge: a merge among
+			// them would rewrite rows the fold rewrites again, and the largest generation would otherwise keep
+			// absorbing every newer one at the cost of its full size each time.
+			return AdjacencyCompactionPlan.fold(generations);
+		}
+		if (generations >= 2 && sourceCapacityForMerge && select(overlays, targetGenerationCount, candidate)) {
+			return AdjacencyCompactionPlan.range(candidate.fromInclusive(), candidate.toExclusive() - 1);
+		}
+		boolean basePressure = shouldFoldBase(overlays.retainedBytes(), workspaceRegionBytes, baseRetainedBytes);
+		boolean retainedDebt = shouldPhysicallyFlatten(overlays.nativeBytes(), overlays.liveLogicalBytes(),
+				workspaceRegionBytes);
+		if (sourceCapacityExhausted || basePressure || retainedDebt) {
+			return AdjacencyCompactionPlan.fold(generations);
+		}
+		return AdjacencyCompactionPlan.none();
+	}
+
 	static boolean select(LmdbAdjacencyOverlaySet generations, int targetGenerationCount, Candidate result) {
 		if (generations == null || result == null) {
 			throw new NullPointerException(generations == null ? "generations" : "result");
@@ -79,13 +119,25 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 			throw new IllegalArgumentException("targetGenerationCount must be positive");
 		}
 		result.clear();
-		int generationCount = generations.generationCount();
+		// The applier consults this policy after every publish and the overlays can hold thousands of generations
+		// while one large merge runs: read every generation once through the sequence's linear copy instead of
+		// indexing the persistent sequence per visit.
+		LmdbAdjacencyDeltaGeneration[] snapshot = generations.generationsSnapshot();
+		int generationCount = snapshot.length;
+		long[] weights = new long[generationCount];
+		// retained bytes sum two synchronized charges per generation: read them once, not once per candidate window
+		long[] retained = new long[generationCount];
 		for (int i = 0; i < generationCount; i++) {
-			validate(generations.generation(i));
+			retained[i] = snapshot[i].retainedBytes();
+			validate(snapshot[i], retained[i]);
+			weights[i] = snapshot[i].compactionWeightBytes();
 		}
 		for (int from = 0; from + FANOUT <= generationCount; from++) {
-			if (withinNormalBand(generations, from, from + FANOUT)) {
-				result.set(from, from + FANOUT, true);
+			if (withinNormalBand(weights, from, from + FANOUT)) {
+				// Merges run one at a time, so a fan-out of four can never drain a backlog of small generations that
+				// grows at the commit rate: the run is extended over every following generation that keeps the band
+				// within its weight skew, and the whole run merges at once.
+				result.set(from, extendNormalBand(weights, from, from + FANOUT), true);
 				return true;
 			}
 		}
@@ -93,26 +145,31 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 			return false;
 		}
 
+		// Under count pressure the newest generations are left to fill their tier: merging the two freshest
+		// single-commit generations on every other commit would only build a staircase whose every step rewrites
+		// the step before. Nothing older than the newest tier means the fallback below merges within it anyway.
+		int newestTierStart = newestTierStart(weights);
+		int pressureLimit = newestTierStart >= 2 ? newestTierStart : generationCount;
 		boolean bestReclaimable = false;
 		double bestSkew = 0;
 		long bestRetainedBytes = 0;
 		long bestOldestRevision = 0;
-		for (int size = 2; size <= Math.min(FANOUT, generationCount); size++) {
-			for (int from = 0; from + size <= generationCount; from++) {
+		for (int size = 2; size <= Math.min(FANOUT, pressureLimit); size++) {
+			for (int from = 0; from + size <= pressureLimit; from++) {
 				int to = from + size;
 				boolean reclaimable = true;
 				long minimumWeight = Long.MAX_VALUE;
 				long maximumWeight = 0;
 				long retainedBytes = 0;
 				for (int i = from; i < to; i++) {
-					LmdbAdjacencyDeltaGeneration generation = generations.generation(i);
+					LmdbAdjacencyDeltaGeneration generation = snapshot[i];
 					reclaimable &= generation.referenceCount() == 1;
-					minimumWeight = Math.min(minimumWeight, generation.compactionWeightBytes());
-					maximumWeight = Math.max(maximumWeight, generation.compactionWeightBytes());
-					retainedBytes = saturatingAdd(retainedBytes, generation.retainedBytes());
+					minimumWeight = Math.min(minimumWeight, weights[i]);
+					maximumWeight = Math.max(maximumWeight, weights[i]);
+					retainedBytes = saturatingAdd(retainedBytes, retained[i]);
 				}
 				double skew = (double) maximumWeight / minimumWeight;
-				long oldestRevision = generations.generation(from).revision();
+				long oldestRevision = snapshot[from].revision();
 				if (!result.selected() || betterScore(reclaimable, skew, retainedBytes, oldestRevision,
 						bestReclaimable, bestSkew, bestRetainedBytes, bestOldestRevision)) {
 					result.set(from, to, false);
@@ -154,24 +211,89 @@ final class LmdbAdjacencyTieredCompactionPolicy {
 				&& retainedPhysicalBytes - liveLogicalBytes >= workspaceRegionBytes;
 	}
 
-	private static boolean withinNormalBand(LmdbAdjacencyOverlaySet generations, int from, int to) {
+	/** The end of the longest run starting at {@code from} that stays within the weight band of {@code [from, to)}. */
+	private static int extendNormalBand(long[] weights, int from, int to) {
 		long minimum = Long.MAX_VALUE;
 		long maximum = 0;
 		for (int i = from; i < to; i++) {
-			long weight = generations.generation(i).compactionWeightBytes();
-			minimum = Math.min(minimum, weight);
-			maximum = Math.max(maximum, weight);
+			minimum = Math.min(minimum, weights[i]);
+			maximum = Math.max(maximum, weights[i]);
+		}
+		int end = to;
+		while (end < weights.length) {
+			long nextMinimum = Math.min(minimum, weights[end]);
+			long nextMaximum = Math.max(maximum, weights[end]);
+			long maximumAllowed = nextMinimum > Long.MAX_VALUE / MAX_WEIGHT_SKEW ? Long.MAX_VALUE
+					: nextMinimum * MAX_WEIGHT_SKEW;
+			if (nextMaximum > maximumAllowed) {
+				break;
+			}
+			minimum = nextMinimum;
+			maximum = nextMaximum;
+			end++;
+		}
+		return end;
+	}
+
+	/** The first index of the run of newest generations whose weights stay within the normal band. */
+	private static int newestTierStart(long[] weights) {
+		int start = weights.length - 1;
+		long minimum = weights[start];
+		long maximum = weights[start];
+		while (start > 0) {
+			long nextMinimum = Math.min(minimum, weights[start - 1]);
+			long nextMaximum = Math.max(maximum, weights[start - 1]);
+			long maximumAllowed = nextMinimum > Long.MAX_VALUE / MAX_WEIGHT_SKEW ? Long.MAX_VALUE
+					: nextMinimum * MAX_WEIGHT_SKEW;
+			if (nextMaximum > maximumAllowed) {
+				break;
+			}
+			minimum = nextMinimum;
+			maximum = nextMaximum;
+			start--;
+		}
+		return start;
+	}
+
+	/**
+	 * Live overlay bytes at which the index's shape folds the overlays: a quarter of the base's pairs, at least the
+	 * floor. Overlay pairs cost {@link #LIVE_PAIR_BYTES} each in {@code liveLogicalBytes}; the base's own bytes are not
+	 * comparable, its compressed pairs take a fraction of that.
+	 */
+	static long shapeFoldThreshold(long baseIncidenceCount) {
+		if (baseIncidenceCount < 0) {
+			throw new IllegalArgumentException("baseIncidenceCount must not be negative");
+		}
+		long quarterPairs = baseIncidenceCount / 4 + (baseIncidenceCount % 4 == 0 ? 0 : 1);
+		long quarterBytes = quarterPairs > Long.MAX_VALUE / LIVE_PAIR_BYTES ? Long.MAX_VALUE
+				: quarterPairs * LIVE_PAIR_BYTES;
+		return Math.max(SHAPE_FOLD_FLOOR_BYTES, quarterBytes);
+	}
+
+	static boolean shouldFoldForShape(long overlayLiveLogicalBytes, long baseIncidenceCount) {
+		if (overlayLiveLogicalBytes < 0) {
+			throw new IllegalArgumentException("overlayLiveLogicalBytes must not be negative");
+		}
+		return overlayLiveLogicalBytes >= shapeFoldThreshold(baseIncidenceCount);
+	}
+
+	private static boolean withinNormalBand(long[] weights, int from, int to) {
+		long minimum = Long.MAX_VALUE;
+		long maximum = 0;
+		for (int i = from; i < to; i++) {
+			minimum = Math.min(minimum, weights[i]);
+			maximum = Math.max(maximum, weights[i]);
 		}
 		long maximumAllowed = minimum > Long.MAX_VALUE / MAX_WEIGHT_SKEW ? Long.MAX_VALUE
 				: minimum * MAX_WEIGHT_SKEW;
 		return maximum <= maximumAllowed;
 	}
 
-	private static void validate(LmdbAdjacencyDeltaGeneration generation) {
+	private static void validate(LmdbAdjacencyDeltaGeneration generation, long retainedBytes) {
 		if (generation == null) {
 			throw new NullPointerException("generation");
 		}
-		if (generation.retainedBytes() < 0 || generation.compactionWeightBytes() <= 0
+		if (retainedBytes < 0 || generation.compactionWeightBytes() <= 0
 				|| generation.referenceCount() < 1) {
 			throw new IllegalArgumentException("invalid generation compaction measurements at revision "
 					+ generation.revision());

@@ -31,6 +31,8 @@ import java.util.concurrent.locks.LockSupport;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Timeout(value = 10, unit = TimeUnit.SECONDS)
 class AsyncSignalTest {
@@ -43,7 +45,15 @@ class AsyncSignalTest {
 		int spins;
 		int yields;
 		int parks;
-		/** Each yield waits as long as a busy machine's scheduler slice. */
+		int timedParks;
+		int clockReads;
+		long now;
+		long nanosPerSpin;
+		long nanosPerYield;
+		long parkedNanos;
+		int interruptAfterSpins = -1;
+		int interruptAfterYields = -1;
+		/** Each yield advances the clock by a busy machine's scheduler slice. */
 		boolean slowYields;
 
 		RecordingWaiter(String signalAt, int signalAfter) {
@@ -54,18 +64,19 @@ class AsyncSignalTest {
 		@Override
 		public void spin() {
 			spins++;
+			now += nanosPerSpin;
+			if (spins == interruptAfterSpins) {
+				Thread.currentThread().interrupt();
+			}
 			maybeSignal("spin", spins);
 		}
 
 		@Override
 		public void yield() {
 			yields++;
-			if (slowYields) {
-				// Waits on the clock: a park could return early on a permit left by an earlier signal.
-				long end = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(1);
-				while (System.nanoTime() - end < 0L) {
-					Thread.onSpinWait();
-				}
+			now += slowYields ? TimeUnit.MILLISECONDS.toNanos(1) : nanosPerYield;
+			if (yields == interruptAfterYields) {
+				Thread.currentThread().interrupt();
 			}
 			maybeSignal("yield", yields);
 		}
@@ -78,7 +89,15 @@ class AsyncSignalTest {
 
 		@Override
 		public void parkNanos(Object blocker, long nanos) {
+			timedParks++;
+			parkedNanos = nanos;
 			park(blocker);
+		}
+
+		@Override
+		public long nanoTime() {
+			clockReads++;
+			return now;
 		}
 
 		private void maybeSignal(String step, int count) {
@@ -147,6 +166,119 @@ class AsyncSignalTest {
 		assertEquals(AsyncSignal.SPINS, waiter.spins);
 		assertEquals(1, waiter.yields, "a loaded machine must not keep a waiter yielding for seconds");
 		assertEquals(1, waiter.parks);
+	}
+
+	@Test
+	void anUntimedCheapSpinDoesNotReadTheClock() throws InterruptedException {
+		RecordingWaiter waiter = awaitWith(new RecordingWaiter("spin", 10));
+		assertEquals(0, waiter.clockReads, "the common untimed handoff must stay clock-free");
+	}
+
+	@Test
+	void timedCheapSpinStopsAtItsSampledDeadline() throws InterruptedException {
+		RecordingWaiter waiter = new RecordingWaiter("none", 0);
+		waiter.nanosPerSpin = 1L;
+		AsyncSignal signal = new AsyncSignal(waiter);
+		signal.await(signal.sequence(), 10L);
+		assertTrue(waiter.spins > 0 && waiter.spins <= 64, "deadline checks are bounded to 64 cheap spins");
+		assertEquals(0, waiter.yields);
+		assertEquals(0, waiter.parks);
+	}
+
+	@Test
+	void timedYieldStopsAtTheDeadlineBeforeItsTierBudget() throws InterruptedException {
+		RecordingWaiter waiter = new RecordingWaiter("none", 0);
+		waiter.nanosPerYield = 11L;
+		AsyncSignal signal = new AsyncSignal(waiter);
+		signal.await(signal.sequence(), 10L);
+		assertEquals(AsyncSignal.SPINS, waiter.spins);
+		assertEquals(1, waiter.yields);
+		assertEquals(0, waiter.parks, "an expired finite wait must not park");
+	}
+
+	@ParameterizedTest
+	@ValueSource(longs = { 0L, -1_000_000L, Long.MAX_VALUE - 10L })
+	void timedParkUsesOnlyTheRemainingBudgetAcrossClockWraparound(long start) throws InterruptedException {
+		RecordingWaiter waiter = new RecordingWaiter("none", 0);
+		waiter.now = start;
+		waiter.nanosPerSpin = 1L;
+		waiter.nanosPerYield = 1L;
+		AsyncSignal signal = new AsyncSignal(waiter);
+		signal.await(signal.sequence(), AsyncSignal.SPINS + AsyncSignal.YIELDS + 123L);
+		assertEquals(AsyncSignal.SPINS, waiter.spins);
+		assertEquals(AsyncSignal.YIELDS, waiter.yields);
+		assertEquals(1, waiter.timedParks);
+		assertEquals(123L, waiter.parkedNanos);
+		assertTrue(waiter.clockReads < AsyncSignal.SPINS / 16,
+				"the finite deadline must not read the clock on every cheap spin");
+	}
+
+	@Test
+	void aDeadlineOfZeroDoesNotBecomeAnUntimedPark() throws InterruptedException {
+		RecordingWaiter waiter = new RecordingWaiter("none", 0);
+		waiter.now = -25L;
+		AsyncSignal signal = new AsyncSignal(waiter, false);
+		signal.await(signal.sequence(), 25L);
+		assertEquals(1, waiter.timedParks);
+		assertEquals(25L, waiter.parkedNanos);
+	}
+
+	@Test
+	void slowYieldBudgetSurvivesClockWraparound() throws InterruptedException {
+		RecordingWaiter waiter = new RecordingWaiter("park", 1);
+		waiter.now = Long.MAX_VALUE - 10L;
+		waiter.slowYields = true;
+		awaitWith(waiter);
+		assertEquals(1, waiter.yields);
+		assertEquals(1, waiter.parks);
+	}
+
+	@Test
+	void aSignalAtTheYieldBudgetBoundaryAvoidsParking() throws InterruptedException {
+		RecordingWaiter waiter = new RecordingWaiter("yield", 1);
+		waiter.slowYields = true;
+		awaitWith(waiter);
+		assertEquals(1, waiter.yields);
+		assertEquals(0, waiter.parks);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void interruptionStopsSpinningAndReleasesTheRegistration(boolean duringYield) {
+		RecordingWaiter waiter = new RecordingWaiter("none", 0);
+		if (duringYield) {
+			waiter.interruptAfterYields = 1;
+		} else {
+			waiter.interruptAfterSpins = 1;
+		}
+		AsyncSignal signal = new AsyncSignal(waiter);
+		assertThrows(InterruptedException.class, () -> signal.await(signal.sequence(), Long.MAX_VALUE));
+		assertFalse(Thread.currentThread().isInterrupted());
+		assertEquals(0, waiter.parks);
+		if (duringYield) {
+			assertEquals(1, waiter.yields);
+		} else {
+			assertTrue(waiter.spins <= 64);
+			assertEquals(0, waiter.yields);
+		}
+		boolean primary = signal.register();
+		try {
+			assertTrue(primary, "interruption must release the primary registration slot");
+		} finally {
+			signal.unregister(primary);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(longs = { 0L, -1L, Long.MIN_VALUE })
+	void exhaustedBudgetsDoNotSpinYieldParkOrReadTheClock(long remaining) throws InterruptedException {
+		RecordingWaiter waiter = new RecordingWaiter("none", 0);
+		AsyncSignal signal = new AsyncSignal(waiter);
+		signal.await(signal.sequence(), remaining);
+		assertEquals(0, waiter.spins);
+		assertEquals(0, waiter.yields);
+		assertEquals(0, waiter.parks);
+		assertEquals(0, waiter.clockReads);
 	}
 
 	@Test

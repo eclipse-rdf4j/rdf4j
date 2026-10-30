@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.lmdb.IriStorageEncoding;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
@@ -601,7 +602,7 @@ final class ValueDependencyCollector implements AutoCloseable {
 			return;
 		}
 		switch (value) {
-		case IRI iri -> emitNamespace(iri.getNamespace());
+		case IRI iri -> emitNamespace(IriStorageEncoding.namespace(iri, config));
 		case Literal literal -> emitValue(literal.getDatatype());
 		case TripleTerm tripleTerm -> {
 			emitValue(tripleTerm.getSubject());

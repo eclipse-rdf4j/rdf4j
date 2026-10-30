@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -60,6 +61,7 @@ public class LmdbFallbackAdjacencyBenchmark {
 	private SailRepositoryConnection connection;
 	private SailTupleQuery query;
 	private LmdbStore store;
+	private Path directory;
 	private long hitsBefore;
 
 	@Setup(Level.Trial)
@@ -77,7 +79,8 @@ public class LmdbFallbackAdjacencyBenchmark {
 				.setDirectAdjacencyBuildOnStart(false)
 				.setDirectAdjacencyMode(
 						indexes.equals("lmdb") ? DirectAdjacencyMode.DISABLED : DirectAdjacencyMode.PREFER);
-		store = new LmdbStore(Files.createTempDirectory("rdf4j-fallback-adjacency-").toFile(), config);
+		directory = Files.createTempDirectory("rdf4j-fallback-adjacency-");
+		store = new LmdbStore(directory.toFile(), config);
 		repository = new SailRepository(store);
 		connection = repository.getConnection();
 		ValueFactory vf = connection.getValueFactory();
@@ -150,23 +153,33 @@ public class LmdbFallbackAdjacencyBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() {
-		if (store != null) {
-			System.out.println("FALLBACK indexes=" + indexes + " shape=" + shape + " adjacencyHits="
-					+ (AdjacencyEngagementTestAccess.lookupHits(store) - hitsBefore));
-		}
-		if (connection != null) {
-			connection.close();
-		}
-		if (repository != null) {
-			repository.shutDown();
-		}
-		previous.forEach((key, value) -> {
-			if (value == null) {
-				System.clearProperty(key);
-			} else {
-				System.setProperty(key, value);
+		try {
+			try (var repositoryCleanup = LmdbTestUtil.onClose(() -> {
+				if (repository != null) {
+					repository.shutDown();
+				}
+				// Delete only after successful shutdown, even if the test body failed.
+				LmdbTestUtil.deleteDir(directory);
+			});
+					var connectionCleanup = LmdbTestUtil.onClose(() -> {
+						if (connection != null) {
+							connection.close();
+						}
+					})) {
+				if (store != null) {
+					System.out.println("FALLBACK indexes=" + indexes + " shape=" + shape + " adjacencyHits="
+							+ (AdjacencyEngagementTestAccess.lookupHits(store) - hitsBefore));
+				}
 			}
-		});
+		} finally {
+			previous.forEach((key, value) -> {
+				if (value == null) {
+					System.clearProperty(key);
+				} else {
+					System.setProperty(key, value);
+				}
+			});
+		}
 	}
 
 	private void set(String key, String value) {

@@ -78,13 +78,10 @@ class LmdbSnapshotLifetimeTest {
 
 	private void open(int format, boolean inline, long tripleMapSize) throws Exception {
 		if (format == 2 && store == null) {
-			// Optimize creates v6 by default; retain the same v2 contract using an authentic empty 6.1.0 store.
+			// New stores use v7 by default; retain the same v2 contract using an authentic empty 6.1.0 store.
 			LmdbCompatibilityFixtures.extract("v2-empty-inline-" + inline + ".zip", directory);
 		}
-		if (format == 6 && store == null) {
-			LmdbCompatibilityFixtures.extract("v6-tiny-map-inline-" + inline + ".zip", directory);
-		}
-		// These cases explicitly exercise retirement and ID reuse for legacy-format stores.
+		// Legacy fixtures retain format 2; an empty directory creates format 7 with the requested map size.
 		store = new LmdbStore(directory.toFile(), config(inline, tripleMapSize));
 		store.init();
 		assertThat(values().getFormat().getVersion()).isEqualTo(format);
@@ -218,7 +215,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
+	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
 	void heldNamespaceLookupsAndEnumerationRetainTheirSnapshot(int format, boolean inline) throws Exception {
 		open(format, inline);
 		try (var writer = store.getConnection()) {
@@ -250,7 +247,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
+	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
 	void heldTermEnumerationDoesNotObserveLaterDictionaryCommits(int format, boolean inline) throws Exception {
 		open(format, inline);
 		add(doomedStatements());
@@ -273,7 +270,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
+	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
 	void ordinaryCommitsPreserveHeldRowsAndFreshBoundValueResolution(int format, boolean inline) throws Exception {
 		openWithTrustedRetirementCounts(format, inline);
 		List<Statement> doomed = doomedStatements();
@@ -300,7 +297,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
+	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
 	void nativeTermEnumerationRetainsTheDatasetSnapshot(int format, boolean inline) throws Exception {
 		open(format, inline);
 		try (var held = snapshot()) {
@@ -317,7 +314,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "2,true", "6,false", "6,true" })
+	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
 	void nativePartialTermReaderClosesWithItsDataset(int format, boolean inline) throws Exception {
 		open(format, inline);
 		add(doomedStatements());
@@ -341,7 +338,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "6,false" })
+	@CsvSource({ "2,false", "7,false" })
 	void reapprovalAndRollbackPreserveRetiredOwners(int format, boolean inline) throws Exception {
 		open(format, inline);
 		List<Statement> doomed = doomedStatements();
@@ -364,7 +361,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "6,false" })
+	@CsvSource({ "2,false", "7,false" })
 	void datasetCloseReleasesEveryPartiallyConsumedSpilledReader(int format, boolean inline) throws Exception {
 		open(format, inline);
 		List<Statement> statements = new ArrayList<>();
@@ -391,7 +388,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "6,false" })
+	@CsvSource({ "2,false", "7,false" })
 	void datasetCloseCompletesBeforePartiallyConsumedReadersAreClosed(int format, boolean inline) throws Exception {
 		open(format, inline);
 		List<Statement> statements = new ArrayList<>();
@@ -426,7 +423,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "6,false" })
+	@CsvSource({ "2,false", "7,false" })
 	void actualDictionaryMapGrowthInvalidatesTheWholeHeldDataset(int format, boolean inline) throws Exception {
 		open(format, inline, 64L * 1024 * 1024);
 		add(doomedStatements());
@@ -469,7 +466,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "6,false" })
+	@CsvSource({ "2,false", "7,false" })
 	void oldestReaderAndSupersedingHintsPreserveLaterSnapshots(int format, boolean inline) throws Exception {
 		openWithTrustedRetirementCounts(format, inline);
 		List<Statement> doomed = doomedStatements();
@@ -496,7 +493,7 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false", "6,false" })
+	@CsvSource({ "2,false", "7,false" })
 	void durableRetirementSurvivesCloseAndReopenThenAllowsIdReuse(int format, boolean inline) throws Exception {
 		openWithTrustedRetirementCounts(format, inline);
 		List<Statement> doomed = doomedStatements();
@@ -510,7 +507,7 @@ class LmdbSnapshotLifetimeTest {
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "retired_ids",
 				LmdbCompatibilityFixtures.unsigned(subjectId))).isNotNull();
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", new byte[] { 3 }))
-				.isEqualTo(format == 6 ? new byte[] { 6 } : null);
+				.isEqualTo(format == 7 ? new byte[] { 7 } : null);
 		open(format, inline);
 		LmdbGcTestMaintenance.awaitPostReady(store);
 		assertThat(store.awaitIndexRebuild(10, TimeUnit.SECONDS)).isTrue();
@@ -540,8 +537,8 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,false,statements", "2,true,statements", "6,false,statements", "6,true,statements",
-			"2,false,contexts", "6,false,contexts", "2,false,terms", "6,false,terms" })
+	@CsvSource({ "2,false,statements", "2,true,statements", "7,false,statements", "7,true,statements",
+			"2,false,contexts", "7,false,contexts", "2,false,terms", "7,false,terms" })
 	void actualConcurrentMapGrowthRejectsCachedRowsAndNewReads(int format, boolean inline, String path)
 			throws Exception {
 		open(format, inline, 64L * 1024);

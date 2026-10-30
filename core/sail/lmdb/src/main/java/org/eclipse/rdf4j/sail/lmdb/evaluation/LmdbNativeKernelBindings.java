@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixContext;
 
@@ -1111,10 +1112,10 @@ final class LmdbNativeKernelBindings {
 						.withMemoryLedgerSupplier(() -> row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()))
 						.withCancellation(peerCancellation == null
 								? LmdbNativeProbeDeadline.currentKernelCancellation(
-										row.cancellation::isCancellationRequested,
+										row.cancellation,
 										workerCancellation)
 								: LmdbNativeProbeDeadline.currentAggregateKernelCancellation(
-										row.cancellation::isCancellationRequested, peerCancellation));
+										row.cancellation, peerCancellation));
 	}
 
 	/** Runtime wrapper that isolates an interpreted producer from the row receiving generated-kernel output. */
@@ -1523,6 +1524,8 @@ final class LmdbNativeKernelBindings {
 		private final RowState row;
 		private final int[] outputSlots;
 		private final BoundPlan owner;
+		private long remainingLogicalRows;
+		private int pollTick;
 		private boolean closed;
 
 		private BoundCursor(RowCursor cursor, RowState row, int[] outputSlots, BoundPlan owner) {
@@ -1544,11 +1547,23 @@ final class LmdbNativeKernelBindings {
 			int rows = 0;
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
-				while (rows < maxRows && row.advance(cursor)) {
+				while (rows < maxRows && !row.cancellation.isCancellationRequested()) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (remainingLogicalRows == 0L) {
+						if (!row.advance(cursor)) {
+							break;
+						}
+						remainingLogicalRows = cursor instanceof FactorizedRowCursor factor ? factor.multiplicity()
+								: 1L;
+						if (remainingLogicalRows <= 0L) {
+							throw new IllegalStateException("nonpositive projected bag weight");
+						}
+					}
 					int base = rows * outputSlots.length;
 					for (int i = 0; i < outputSlots.length; i++) {
 						rowBuffer[base + i] = row.slots[outputSlots[i]];
 					}
+					remainingLogicalRows--;
 					rows++;
 				}
 				if (rows == 0)
@@ -1577,6 +1592,13 @@ final class LmdbNativeKernelBindings {
 			int rows = 0;
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
+				if (remainingLogicalRows > 0L && !row.cancellation.isCancellationRequested()) {
+					for (int i = 0; i < outputSlots.length; i++) {
+						rowBuffer[i] = row.slots[outputSlots[i]];
+					}
+					weights[rows++] = remainingLogicalRows;
+					remainingLogicalRows = 0L;
+				}
 				while (rows < maxRows && row.advance(cursor)) {
 					int base = rows * outputSlots.length;
 					for (int i = 0; i < outputSlots.length; i++)
@@ -1601,12 +1623,20 @@ final class LmdbNativeKernelBindings {
 		}
 
 		private void closeAfterFailure(Throwable original) {
-			try {
-				close();
-			} catch (Throwable cleanup) {
-				if (cleanup != original)
-					original.addSuppressed(cleanup);
+			if (original == LmdbNativeProbeDeadlineExceeded.INSTANCE) {
+				// KernelRuntime cannot attach close failures to this suppression-disabled signal. Collect the primary
+				// cleanup result first, then promote any real failure while retaining the probe signal as evidence.
+				Throwable cleanup = KernelRuntime.closeResource(this, null);
+				Throwable realCleanup = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(cleanup);
+				if (realCleanup != null) {
+					if (realCleanup != original) {
+						realCleanup.addSuppressed(original);
+					}
+					NativeContextClosingIteration.throwFailure(realCleanup);
+				}
+				return;
 			}
+			KernelRuntime.closeCursor(this, original);
 		}
 
 		@Override

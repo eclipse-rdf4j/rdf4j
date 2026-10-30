@@ -38,7 +38,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -1492,8 +1491,10 @@ class LmdbStoreFlushReproductionTest {
 		}
 	}
 
-	@Test
-	void pinnedTripleTermIteratorFailsAfterValueMapGrowth(@TempDir Path dataDir) throws Exception {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void pinnedTripleTermIteratorFailsAfterValueMapGrowth(boolean unrelatedValueReader, @TempDir Path dataDir)
+			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
 				.setValueDBSize(1024L * 1024L)
 				.setAutoGrow(true);
@@ -1501,6 +1502,9 @@ class LmdbStoreFlushReproductionTest {
 		store.init();
 		ValueStore valueStore = valueStoreOf(store);
 		TripleStore tripleStore = tripleStoreOf(store);
+		Thread readerThread = Thread.currentThread();
+		List<ObservedReaderLease> tripleAdmissions = new ArrayList<>();
+		List<ObservedReaderLease> valueAdmissions = new ArrayList<>();
 		long initialMapSize = mapSize(valueStore);
 		SailConnection seed = store.getConnection();
 		TripleTerm original = SimpleValueFactory.getInstance()
@@ -1517,17 +1521,40 @@ class LmdbStoreFlushReproductionTest {
 				seed.addStatement(SimpleValueFactory.getInstance().createIRI("urn:issue:6070:quoted:outer"), PREDICATE,
 						original);
 				seed.commit();
-				int tripleReaderPermits = availableReaderPermits(tripleStore.getTxnManager());
-				int valueReaderPermits = availableReaderPermits(valueStore.getTxnManager());
+				// Aggregate permit counts include independent post-ready maintenance readers. Observe only the
+				// foreground admission, retaining the lease identity because pooled Txn handles may be reused.
+				tripleStore.getTxnManager().setAdmissionObserverForTest(txn -> {
+					if (Thread.currentThread() == readerThread) {
+						tripleAdmissions.add(new ObservedReaderLease(txn, txn.lease()));
+					}
+				});
+				valueStore.getTxnManager().setAdmissionObserverForTest(txn -> {
+					if (Thread.currentThread() == readerThread) {
+						valueAdmissions.add(new ObservedReaderLease(txn, txn.lease()));
+					}
+				});
+				List<ObservedReaderLease> tripleLeases;
+				List<ObservedReaderLease> valueLeases;
 
 				try (SailDataset reader = store.getBackingStore()
 						.getExplicitSailSource()
 						.dataset(IsolationLevels.SNAPSHOT_READ);
 						CloseableIteration<? extends TripleTerm> triples = reader.getTriples(null, null, null)) {
-					assertEquals(tripleReaderPermits - 1, availableReaderPermits(tripleStore.getTxnManager()),
-							"the paired read view must retain its TripleStore reader lease");
-					assertEquals(valueReaderPermits - 1, availableReaderPermits(valueStore.getTxnManager()),
-							"the paired read view must retain its ValueStore reader lease");
+					tripleStore.getTxnManager().setAdmissionObserverForTest(null);
+					valueStore.getTxnManager().setAdmissionObserverForTest(null);
+					tripleLeases = tripleAdmissions.stream().filter(ObservedReaderLease::isRetained).toList();
+					valueLeases = valueAdmissions.stream().filter(ObservedReaderLease::isRetained).toList();
+					try (TxnManager.Txn unrelated = unrelatedValueReader
+							? valueStore.getTxnManager().createReadTxn()
+							: null) {
+						if (unrelated != null) {
+							assertTrue(unrelated.isNativeActive(), "an independent reader must actually hold a lease");
+						}
+						assertEquals(1, tripleLeases.size(), "the paired view owns exactly one TripleStore reader");
+						assertEquals(1, valueLeases.size(), "the paired view owns exactly one ValueStore reader");
+						assertTrue(tripleLeases.getFirst().isRetained(), "the paired TripleStore lease remains held");
+						assertTrue(valueLeases.getFirst().isRetained(), "the paired ValueStore lease remains held");
+					}
 					assertTrue(triples.hasNext(),
 							"the initial quoted term is present in the reader's dictionary snapshot");
 					TripleTerm escaped = triples.next();
@@ -1554,17 +1581,19 @@ class LmdbStoreFlushReproductionTest {
 						latestTriples.next();
 						assertTrue(latestTriples.hasNext(), "the direct sink commit must publish the new quoted term");
 					}
-					assertEquals(tripleReaderPermits, availableReaderPermits(tripleStore.getTxnManager()),
+					assertFalse(tripleLeases.getFirst().isRetained(),
 							"typed invalidation must retire the old paired TripleStore pin even while its handle remains open");
-					assertEquals(valueReaderPermits, availableReaderPermits(valueStore.getTxnManager()),
+					assertFalse(valueLeases.getFirst().isRetained(),
 							"typed invalidation must retire the old paired ValueStore pin even while its handle remains open");
 				}
-				assertEquals(tripleReaderPermits, availableReaderPermits(tripleStore.getTxnManager()),
+				assertFalse(tripleLeases.getFirst().isRetained(),
 						"closing an invalidated iterator and dataset must release the TripleStore reader lease");
-				assertEquals(valueReaderPermits, availableReaderPermits(valueStore.getTxnManager()),
+				assertFalse(valueLeases.getFirst().isRetained(),
 						"closing an invalidated iterator and dataset must release the ValueStore reader lease");
 			}
 		} finally {
+			tripleStore.getTxnManager().setAdmissionObserverForTest(null);
+			valueStore.getTxnManager().setAdmissionObserverForTest(null);
 			store.shutDown();
 		}
 	}
@@ -1993,10 +2022,12 @@ class LmdbStoreFlushReproductionTest {
 		return (TripleStore) tripleStoreField.get(store.getBackingStore());
 	}
 
-	private static int availableReaderPermits(TxnManager manager) throws ReflectiveOperationException {
-		Field readerSlotsField = TxnManager.class.getDeclaredField("readerSlots");
-		readerSlotsField.setAccessible(true);
-		return ((Semaphore) readerSlotsField.get(manager)).availablePermits();
+	private record ObservedReaderLease(TxnManager.Txn transaction, long lease) {
+		boolean isRetained() {
+			synchronized (transaction) {
+				return transaction.lease() == lease && !transaction.isClosed() && !transaction.isIdle();
+			}
+		}
 	}
 
 	private static long mapSize(ValueStore valueStore) throws ReflectiveOperationException {

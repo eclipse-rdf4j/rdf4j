@@ -316,6 +316,9 @@ class LmdbAdjacencyContextPagePruningTest {
 								.isEqualTo(1L);
 					}
 				}
+				// the view borrows the state's owners; this test assembled them, so it releases them
+				overlays.release();
+				base.close();
 			}
 			assertThat(account.totalChargedBytes()).isZero();
 		}

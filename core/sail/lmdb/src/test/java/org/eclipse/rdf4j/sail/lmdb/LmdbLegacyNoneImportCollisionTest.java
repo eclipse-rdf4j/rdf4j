@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -58,8 +57,7 @@ class LmdbLegacyNoneImportCollisionTest {
 					assertTrue(adjacency.awaitCurrentRevisionReady(10, TimeUnit.SECONDS));
 					assertTrue(values.awaitValueOverlayReady(10, TimeUnit.SECONDS));
 					assertNotNull(values.compressedValueOverlayStats(), "the pre-import overlay must exist");
-					AtomicInteger preparations = new AtomicInteger();
-					adjacency.beforePreparationForTest = preparations::incrementAndGet;
+					long preparations = adjacency.phaseTimings().preparationCount();
 					long overlayCommits = values.compressedValueOverlayViewStats().commits();
 					long checkpoints = backing.noneIngestionMetrics().checkpoints();
 					try (LmdbStoreConnection writer = (LmdbStoreConnection) store.getConnection()) {
@@ -74,7 +72,8 @@ class LmdbLegacyNoneImportCollisionTest {
 						}
 						assertTrue(backing.noneIngestionMetrics().checkpoints() >= checkpoints + 2,
 								"the NONE import crossed two real native checkpoints");
-						assertEquals(0, preparations.get(), "adjacency maintenance is deferred during the import");
+						assertEquals(preparations, adjacency.phaseTimings().preparationCount(),
+								"adjacency maintenance is deferred during the import");
 						assertNull(values.compressedValueOverlayStats(), "the partial import uses dictionary fallback");
 						assertEquals(overlayCommits, values.compressedValueOverlayViewStats().commits(),
 								"the partial import does not publish overlay commits");

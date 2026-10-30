@@ -168,6 +168,11 @@ final class Branch {
 	}
 
 	BranchResult result(RowState row) throws IOException {
+		if (!Term.boundConstantsAgree(pattern, row)) {
+			// A bound-entry constant probes with its constant regardless of what the prefix bound in its slot; the
+			// batch scan copies only fresh quad positions, so the row-at-a-time bind() rejection is reproduced here.
+			return ZERO_RESULT;
+		}
 		if (countTable != null) {
 			long count = countTable.get(row.slots[varyingSlot]);
 			return count == 0 ? ZERO_RESULT : new BranchResult(count, null);

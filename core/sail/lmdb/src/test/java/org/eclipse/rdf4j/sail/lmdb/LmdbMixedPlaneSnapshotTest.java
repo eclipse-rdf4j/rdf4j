@@ -380,6 +380,10 @@ class LmdbMixedPlaneSnapshotTest {
 		InterleavingGate gate = new InterleavingGate();
 		LmdbStore store = new InterleavingLmdbStore(directory, gate);
 		store.init();
+		// Startup maintenance (unused-id reclamation, term-index maintenance) briefly holds ordinary dictionary
+		// readers; the reader-slot comparison below needs a quiescent pool, otherwise a maintenance reader admitted
+		// between the two samples reads as a leak.
+		LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
 		try (SailConnection reader = store.getConnection()) {
 			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			TxnManager triples = store.getBackingStore().getTripleStore().getTxnManager();
