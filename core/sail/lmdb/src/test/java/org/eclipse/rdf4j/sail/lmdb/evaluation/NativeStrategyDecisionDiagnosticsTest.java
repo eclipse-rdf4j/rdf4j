@@ -24,16 +24,39 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class NativeStrategyDecisionDiagnosticsTest {
 
 	private static final String EVENT = "org.eclipse.rdf4j.lmdb.NativeStrategyDecision";
+	private String previousCalibrationEnabled;
+
+	@BeforeEach
+	void isolateLegacyCalibration() {
+		previousCalibrationEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+		// Fresh adaptive models do not isolate the arbiter's JVM-wide legacy calibration reader.
+		// These fixtures exercise diagnostics, not ranking against timings learned by earlier tests.
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
+	}
+
+	@AfterEach
+	void restoreLegacyCalibration() {
+		if (previousCalibrationEnabled == null) {
+			System.clearProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+		} else {
+			System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCalibrationEnabled);
+		}
+	}
 
 	@Test
 	void decisionQuotesRetainTheSingleRankedBatchAndCompleteLegalInventory(@TempDir Path directory) throws Exception {

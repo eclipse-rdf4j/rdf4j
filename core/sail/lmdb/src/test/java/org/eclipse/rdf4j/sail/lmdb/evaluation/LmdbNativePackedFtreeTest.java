@@ -41,8 +41,11 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeKernel;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
 import org.eclipse.rdf4j.sail.lmdb.factor.HeapFactorSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 class LmdbNativePackedFtreeTest {
 
@@ -720,6 +723,100 @@ class LmdbNativePackedFtreeTest {
 		assertEquals(30L, total, "UNION adds two 15-row paths; a rejected OPTIONAL emits each left mapping once");
 		for (long value : row.slots)
 			assertEquals(LmdbNativeAggregateCompiler.UNKNOWN, value);
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void boundRootFactorAvoidsEagerPayloadCopiesWithoutChangingBag() throws Exception {
+		String key = "rdf4j.lmdb.packedFtree.rootFactor.enabled";
+		String previous = System.getProperty(key);
+		TestGraph graph = new TestGraph();
+		graph.borrow = true;
+		graph.contextHeaders = true;
+		graph.add(P1, 7L, 20L, 0L);
+		graph.add(P1, 7L, 20L, 1L);
+		graph.add(P1, 7L, 30L, 0L);
+		long[] eagerReads = new long[2];
+		List<Map<Long, Long>> bags = new ArrayList<>();
+		try {
+			for (int mode = 0; mode < 2; mode++) {
+				System.setProperty(key, Boolean.toString(mode == 1));
+				RowState row = row(graph.source(), "s", "o");
+				assertTrue(row.bind(0, 7L));
+				graph.neighborPayloadReads = 0L;
+				try (LmdbNativeFactorCursor cursor = LmdbNativePackedFtree.openLeaf(join(pattern(0, P1, 1)), row)) {
+					assertNotNull(cursor);
+					assertTrue(cursor.next());
+					eagerReads[mode] = graph.neighborPayloadReads;
+					if (mode == 1) {
+						assertEquals(2L, cursor.factors().mask());
+						assertEquals(3L, cursor.factors().count(1));
+						assertEquals(LmdbNativeAggregateCompiler.UNKNOWN, row.slots[1]);
+					} else {
+						assertEquals(0L, cursor.factors().mask());
+					}
+				}
+				Map<Long, Long> bag = new LinkedHashMap<>();
+				try (RowCursor cursor = LmdbNativeFactorRows.asRows(
+						LmdbNativePackedFtree.openLeaf(join(pattern(0, P1, 1)), row), row)) {
+					while (cursor.next()) {
+						bag.merge(row.slots[1], ((FactorizedRowCursor) cursor).multiplicity(), Long::sum);
+					}
+				}
+				bags.add(bag);
+			}
+			assertTrue(eagerReads[0] > 0L, "baseline must actually decode/copy root payload before first prefix");
+			assertEquals(0L, eagerReads[1], "candidate must retain the run descriptor without payload reads");
+			assertEquals(Map.of(20L, 2L, 30L, 1L), bags.get(0));
+			assertEquals(bags.get(0), bags.get(1));
+			System.out.println("ROOT_FACTOR_EAGER_PAYLOAD baseline=" + eagerReads[0] + " candidate="
+					+ eagerReads[1] + " logicalRows=3 bagEqual=true scope=mock-adjacency-before-first-prefix");
+		} finally {
+			if (previous == null) {
+				System.clearProperty(key);
+			} else {
+				System.setProperty(key, previous);
+			}
+		}
+	}
+
+	@Test
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void boundRootRunDefersPayloadUntilConsumerExpansion() throws Exception {
+		String key = "rdf4j.lmdb.packedFtree.rootFactor.enabled";
+		String old = System.getProperty(key);
+		System.setProperty(key, "true");
+		try {
+			TestGraph graph = new TestGraph();
+			graph.borrow = true;
+			graph.contextHeaders = true;
+			graph.add(P1, 1, 11, 0);
+			graph.add(P1, 1, 11, 7);
+			graph.add(P1, 1, 12, 0);
+			RowState row = row(graph.source(), "s", "o");
+			assertTrue(row.bind(0, 1L));
+			try (LmdbNativeFactorCursor cursor = LmdbNativeFactorAlgebra.open(join(pattern(0, P1, 1)), row)) {
+				assertTrue(cursor.next());
+				assertEquals(2L, cursor.factors().mask(), "bound root run must remain a deferred factor");
+				assertEquals(3L, cursor.factors().count(1), "contexts preserve logical bag multiplicity");
+				assertEquals(LmdbNativeAggregateCompiler.UNKNOWN, row.slots[1]);
+				assertEquals(0L, graph.neighborPayloadReads, "export must not decode/copy the run");
+				try (var product = new FactorProductCursor(2, 256)) {
+					product.bind(cursor.factors(), 2L, cursor.multiplicity());
+					long total = 0L;
+					while (product.next())
+						total += product.multiplicity();
+					assertEquals(3L, total);
+				}
+			}
+			assertEquals(1L, row.slots[0]);
+			assertEquals(LmdbNativeAggregateCompiler.UNKNOWN, row.slots[1]);
+		} finally {
+			if (old == null)
+				System.clearProperty(key);
+			else
+				System.setProperty(key, old);
+		}
 	}
 
 	@Test
