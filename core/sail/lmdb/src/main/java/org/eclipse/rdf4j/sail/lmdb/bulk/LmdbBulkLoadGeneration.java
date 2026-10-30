@@ -47,13 +47,17 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
+
 final class LmdbBulkLoadGeneration implements AutoCloseable {
 
 	static final String MARKER_FILE_NAME = ".lmdb-bulk-load.incomplete";
 	static final String MANIFEST_FILE_NAME = ".lmdb-bulk-load.manifest";
 	static final String LOCK_FILE_NAME = ".lmdb-bulk-load.lock";
 	private static final String GENERATION_PREFIX = ".lmdb-bulk-generation-";
-	private static final String VERSION = "2";
+	// Schema 3 fences older loaders before their marker-only recovery branch can discard a partial canonical
+	// generation. Schema 2 belongs to the unsupported, unreleased format-6 writer and must never be recovered.
+	private static final String VERSION = "3";
 	private static final int DIGEST_BUFFER_BYTES = 64 * 1024;
 
 	private final Path target;
@@ -105,6 +109,48 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 		}
 	}
 
+	private static boolean supportedPublicationVersion(String version) {
+		return VERSION.equals(version);
+	}
+
+	/** Validates both staged and already promoted metadata before recovery may move or discard either. */
+	static void requireStoreFormat(Path target, int expectedVersion) throws IOException {
+		requireStoreFormatProperty(target.resolve("store.properties"), expectedVersion);
+		Path marker = target.resolve(MARKER_FILE_NAME);
+		Path manifest = target.resolve(MANIFEST_FILE_NAME);
+		Path metadata = exists(marker) ? marker : exists(manifest) ? manifest : null;
+		if (metadata == null) {
+			return;
+		}
+		Properties properties = load(metadata);
+		if (!supportedPublicationVersion(properties.getProperty("version"))) {
+			throw new IOException("Unsupported LMDB bulk-load publication version in " + metadata);
+		}
+		Path generation = ownedChild(target, properties.getProperty("generation"), GENERATION_PREFIX);
+		if (exists(generation) && !Files.isDirectory(generation, NOFOLLOW_LINKS)) {
+			throw new IOException("Invalid LMDB bulk-load generation: " + generation);
+		}
+		requireStoreFormatProperty(generation.resolve("store.properties"), expectedVersion);
+	}
+
+	private static void requireStoreFormatProperty(Path path, int expectedVersion) throws IOException {
+		if (!exists(path)) {
+			return;
+		}
+		String encoded = load(path).getProperty("version");
+		int version;
+		try {
+			version = Integer.parseInt(encoded);
+		} catch (NumberFormatException failure) {
+			throw new IOException("Invalid LMDB bulk-load store format in " + path + ": " + encoded, failure);
+		}
+		if (!Integer.toString(version).equals(encoded) || !LmdbStoreFormat.isSupportedModernVersion(version)
+				|| version != expectedVersion) {
+			throw new IOException("LMDB bulk-load store format " + encoded + " in " + path
+					+ " does not match workspace store format " + expectedVersion);
+		}
+	}
+
 	private static LmdbBulkLoadGeneration create(Path normalized, PromotionHook promotionHook,
 			TargetOwnership ownership, RecoveryCheck recoveryCheck) throws IOException {
 		boolean targetCreated = createTargetDirectory(normalized);
@@ -119,9 +165,9 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 			lock = acquireLock(normalized, lockChannel);
 			LmdbBulkLoadGeneration result = new LmdbBulkLoadGeneration(normalized, lockFile, lockChannel, lock,
 					ownership, targetCreated, promotionHook);
-			if (exists(result.manifest)) {
-				recoveryCheck.check(normalized);
-			}
+			// Check the persisted workspace policy even before a publication manifest exists: recovery of an
+			// interrupted native write can otherwise discard an unknown-format generation before it is rejected.
+			recoveryCheck.check(normalized);
 			result.openOrRecover();
 			return result;
 		} catch (IOException | RuntimeException | Error failure) {
@@ -352,7 +398,7 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 
 	private RecoveryData recover() throws IOException {
 		Properties markerProperties = load(marker);
-		if (!VERSION.equals(markerProperties.getProperty("version"))) {
+		if (!supportedPublicationVersion(markerProperties.getProperty("version"))) {
 			throw new IOException("Unsupported LMDB bulk-load marker version in " + marker);
 		}
 		String generationName = markerProperties.getProperty("generation");
@@ -483,7 +529,7 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 		Properties properties = load(manifest);
 		String recordedGeneration = required(properties, "generation", manifest);
 		ownedChild(target, recordedGeneration, GENERATION_PREFIX);
-		if (!VERSION.equals(properties.getProperty("version"))
+		if (!supportedPublicationVersion(properties.getProperty("version"))
 				|| generationName != null && !generationName.equals(recordedGeneration)) {
 			throw new IOException("LMDB bulk-load manifest does not match its marker: " + manifest);
 		}

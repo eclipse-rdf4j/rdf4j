@@ -74,7 +74,7 @@ final class LmdbBulkLoaderEngine {
 		// Own the target before opening resumable state, and retain it through failure and workspace cleanup.
 		// An existing workspace keeps the compression it recorded; this only chooses it for a new one.
 		try (LmdbBulkLoadGeneration generation = LmdbBulkLoadGeneration.create(loader.target(),
-				loader.publicationHook(), target -> BulkLoadWorkspace.requireCapacityPreparedPublication(target,
+				loader.publicationHook(), target -> BulkLoadWorkspace.requireCompatibleRecovery(target,
 						BulkLoadSettings.forInvocation(loader)));
 				BulkLoadWorkspace workspace = BulkLoadWorkspace.open(loader.target(), loader.temporaryDirectory(),
 						loader.progressListener(), loader.workers(), loader.queueBatches(),
@@ -131,7 +131,8 @@ final class LmdbBulkLoaderEngine {
 							workspace.startPhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
 							dependencies = ValueDependencyCollector.collect(staged, workspace.directory(),
 									loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
-									loader.format(), workspace.compression(), loader.cancellationSignal(),
+									workspace.format(loader.config()), workspace.compression(),
+									loader.cancellationSignal(),
 									scheduler, loader.newPartitionConcurrencyController());
 							workspace.progress(staged.statements(), 0L);
 							workspace.completePhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
@@ -157,7 +158,7 @@ final class LmdbBulkLoaderEngine {
 						workspace.startPhase(BulkLoadPhase.BUILD_MAPPED_DICTIONARY);
 						dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies,
 								workspace.directory(), loader.partitionCount(), loader.memoryBudgetBytes(),
-								loader.maxOpenFiles(), loader.format(), workspace.compression(),
+								loader.maxOpenFiles(), workspace.format(loader.config()), workspace.compression(),
 								loader.cancellationSignal(), predicateIdPlan, scheduler,
 								loader.newPartitionConcurrencyController());
 						workspace.recordDictionary(dictionary);
@@ -172,7 +173,7 @@ final class LmdbBulkLoaderEngine {
 							loader.maxOpenFiles(), loader.memoryBudgetBytes(), workspace.compression(),
 							loader.cancellationSignal(), scheduler, loader.newPartitionConcurrencyController());
 					resolvedValues = ResolvedValueRecords.build(dictionary, workspace.directory(),
-							loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.format(),
+							loader.maxOpenFiles(), loader.memoryBudgetBytes(), workspace.format(loader.config()),
 							workspace.compression(), loader.cancellationSignal(), scheduler,
 							loader.newPartitionConcurrencyController());
 					workspace.recordResolved(statements, resolvedValues);
@@ -193,7 +194,7 @@ final class LmdbBulkLoaderEngine {
 					}
 					nativeValueRecords = ValueStoreBulkRecords.build(resolvedValues, workspace.directory(),
 							loader.memoryBudgetBytes(), loader.maxOpenFiles(), workspace.compression(),
-							loader.cancellationSignal(), scheduler, loader.format());
+							loader.cancellationSignal(), scheduler, workspace.format(loader.config()));
 					workspace.recordNativeRecords(nativeValueRecords);
 					workspace.progress(nativeRecordCount(nativeValueRecords), 0L);
 					workspace.completePhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
@@ -206,7 +207,7 @@ final class LmdbBulkLoaderEngine {
 				BulkCapacityPolicy tripleCapacity = recorded == null ? loader.tripleCapacity()
 						: recorded.tripleCapacity();
 				NativeStoreWriter.WriteResult writeResult = NativeStoreWriter.write(generation.directory(),
-						loader.config(), loader.format(),
+						loader.config(), workspace.format(loader.config()),
 						nativeValueRecords, statements, staged, loader.memoryBudgetBytes(), loader.maxOpenFiles(),
 						loader.writeTransactionRecords(), loader.writeTransactionBytes(), workspace.compression(),
 						loader.cancellationSignal(), scheduler, () -> {
@@ -260,7 +261,8 @@ final class LmdbBulkLoaderEngine {
 			return ParallelStager.stage(loader, workspace, scheduler,
 					List.of(new ParallelStager.Input(() -> callerOwned, format, baseUri, null)));
 		}
-		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(), loader.format(),
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(),
+				workspace.format(loader.config()),
 				loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
 				workspace.compression())) {
 			parse(loader, workspace, stager, input, baseUri, format, null);
@@ -280,7 +282,8 @@ final class LmdbBulkLoaderEngine {
 			}
 			return ParallelStager.stage(loader, workspace, scheduler, parallelInputs);
 		}
-		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(), loader.format(),
+		try (CanonicalStatementStager stager = new CanonicalStatementStager(workspace.directory(),
+				workspace.format(loader.config()),
 				loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
 				workspace.compression())) {
 			for (int index = 0; index < inputs.size(); index++) {

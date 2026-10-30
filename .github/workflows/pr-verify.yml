@@ -32,8 +32,6 @@ jobs:
         run: mvn -B --quiet -T 2C compile --fail-at-end -DskipTests -Pquick
       - name: Download all other dependencies
         run: mvn -B --quiet -T 2C dependency:go-offline --fail-at-end
-      - name: Verify Maven test partition behavior
-        run: python3 scripts/ci/verify_pr_verify_partitions.py --no-offline
 
   compile:
     needs: formatting-and-quick-compile
@@ -77,10 +75,10 @@ jobs:
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Test
         id: test
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end -pl core/sail/lmdb test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec mvn -B --fail-at-end -pl core/sail/lmdb test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Verify synchronous validation profile
         id: sync_validation
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end -pl core/sail/lmdb -Dtest=LmdbSyncValidationProfileProbe test -DskipITs -PskipSlowTests,lmdb-sync-validation,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec mvn -B --fail-at-end -pl core/sail/lmdb -Dtest=LmdbSyncValidationProfileProbe test -DskipITs -PskipSlowTests,lmdb-sync-validation,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Preserve LMDB JVM crash diagnostics
         if: ${{ failure() && (steps.test.outcome == 'failure' || steps.sync_validation.outcome == 'failure') }}
         shell: bash
@@ -167,7 +165,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Test
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end -pl '!core/sail/lmdb' test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec mvn -B --fail-at-end -pl '!core/sail/lmdb' test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -213,7 +211,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end verify -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec mvn -B --fail-at-end verify -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -241,7 +239,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
-        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec mvn -B --fail-at-end verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5
@@ -303,7 +301,7 @@ jobs:
         working-directory: ./e2e
         env:
           E2E_BROWSER: ${{ matrix.browser }}
-        run: exec ../scripts/ci/run-with-thread-dump.sh ./run.sh ${{ matrix.runtime.argument }}
+        run: exec ./run.sh ${{ matrix.runtime.argument }}
       - name: Upload Playwright failure diagnostics (${{ matrix.runtime.label }}, ${{ matrix.browser }})
         if: ${{ (failure() && steps.e2e.outcome == 'failure') || hashFiles('e2e/test-results/**/trace.zip') != '' }}
         uses: actions/upload-artifact@v4

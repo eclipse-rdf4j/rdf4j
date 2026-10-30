@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.lmdb.IriStorageEncoding;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -131,7 +132,8 @@ final class ResolvedValueRecords {
 				}
 				Value value = CanonicalTermCodec.decode(entry.key());
 				switch (value) {
-				case IRI iri -> buckets.write(owner, 0, CanonicalTermCodec.encodeNamespace(iri.getNamespace()),
+				case IRI iri -> buckets.write(owner, 0,
+						CanonicalTermCodec.encodeNamespace(IriStorageEncoding.namespace(iri, config)),
 						sorter, config);
 				case Literal literal -> buckets.write(owner, 0, CanonicalTermCodec.encode(literal.getDatatype()),
 						sorter, config);
@@ -212,7 +214,8 @@ final class ResolvedValueRecords {
 				}
 				Value value = CanonicalTermCodec.decode(entry.key());
 				switch (value) {
-				case IRI iri -> buckets.write(owner, 0, CanonicalTermCodec.encodeNamespace(iri.getNamespace()), null,
+				case IRI iri -> buckets.write(owner, 0,
+						CanonicalTermCodec.encodeNamespace(IriStorageEncoding.namespace(iri, config)), null,
 						config);
 				case Literal literal -> buckets.write(owner, 0, CanonicalTermCodec.encode(literal.getDatatype()), null,
 						config);
@@ -1080,9 +1083,10 @@ final class ResolvedValueRecords {
 	}
 
 	long conversionMemoryEstimateBytes() {
-		// The canonical key remains live while decoding can materialize UTF-16 text and a value-store record. Four
-		// times the encoded key plus fixed arrays/objects conservatively covers those simultaneous payloads.
-		return Math.addExact(Math.multiplyExact((long) maximumCanonicalKeyBytes, 4L), 16L * 1024L);
+		// The canonical UTF-8 key, decoded UTF-16 lexical value, namespace/local-name substrings, temporary
+		// local-name UTF-8 bytes and final value-store record may overlap. Eight times the encoded key plus
+		// fixed arrays/objects conservatively covers those payloads, including non-Latin-1 text.
+		return Math.addExact(Math.multiplyExact((long) maximumCanonicalKeyBytes, 8L), 16L * 1024L);
 	}
 
 	private static int validateMaximumCanonicalKeyBytes(int maximumKeyBytes) throws IOException {

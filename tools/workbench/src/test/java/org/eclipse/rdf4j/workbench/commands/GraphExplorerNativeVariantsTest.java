@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.workbench.commands.WorkbenchNativeQueryAssertions.assertEfficientExecutedPlan;
 import static org.eclipse.rdf4j.workbench.commands.WorkbenchNativeQueryAssertions.bag;
 import static org.eclipse.rdf4j.workbench.commands.WorkbenchNativeQueryAssertions.writeEvidence;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -84,8 +85,10 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.workbench.support.TestProcess;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -100,6 +103,7 @@ import tools.jackson.databind.ObjectMapper;
  * Live generator coverage for facet composition, literal semantics, graph datasets, and fixed blank-node references.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Tag("slow")
 class GraphExplorerNativeVariantsTest {
 
 	private static final ObjectMapper JSON = new ObjectMapper();
@@ -166,14 +170,16 @@ class GraphExplorerNativeVariantsTest {
 
 	@AfterAll
 	void shutDown() {
-		backends.values().forEach(backend -> backend.repository.shutDown());
-		inferenceBackends.values().forEach(backend -> backend.repository.shutDown());
+		List<Backend> owned = new ArrayList<>(backends.values());
+		owned.addAll(inferenceBackends.values());
 		if (inferenceReference != null) {
-			inferenceReference.repository.shutDown();
+			owned.add(inferenceReference);
 		}
 		if (reference != null) {
-			reference.repository.shutDown();
+			owned.add(reference);
 		}
+		assertAll("shut down every backend",
+				owned.stream().map(backend -> () -> backend.close()));
 	}
 
 	Stream<Arguments> liveFacetQueries() throws Exception {
@@ -481,13 +487,12 @@ class GraphExplorerNativeVariantsTest {
 			String forcedStrategy) throws Exception {
 		Model fixture = fixedBlankPrefixFanoutData(fanout);
 		String runKind = forcedStrategy == null ? "automatic" : "forced-" + forcedStrategy;
-		Backend generic = backend("fixed-blank-prefix-generic-" + adjacency + "-" + runKind + "-" + fanout,
+		try (Backend generic = backend("fixed-blank-prefix-generic-" + adjacency + "-" + runKind + "-" + fanout,
 				false, false, fixture);
-		Backend nativeBackend = backend("fixed-blank-prefix-native-" + adjacency + "-" + runKind + "-" + fanout,
-				true, adjacency, fixture);
-		String queryText = blankQueries(BLANK_IDS.get(0), "all", List.of()).path("facets").asText();
-		List<BindingSet> expected = expectedFixedBlankAllFacetRows();
-		try {
+				Backend nativeBackend = backend("fixed-blank-prefix-native-" + adjacency + "-" + runKind + "-" + fanout,
+						true, adjacency, fixture)) {
+			String queryText = blankQueries(BLANK_IDS.get(0), "all", List.of()).path("facets").asText();
+			List<BindingSet> expected = expectedFixedBlankAllFacetRows();
 			List<BindingSet> genericRows = evaluate(generic.repository, queryText, null);
 			assertThat(bag(genericRows)).as("independent generic fixed-blank bag with %s decoy values", fanout)
 					.containsExactlyInAnyOrderEntriesOf(bag(expected));
@@ -604,9 +609,6 @@ class GraphExplorerNativeVariantsTest {
 						filtered, candidates, valueFilterEvaluations, neighborValuesCopied, pagesVisited, pagesSkipped,
 						route, forcedStrategy, selectedBoundShapes);
 			}
-		} finally {
-			nativeBackend.repository.shutDown();
-			generic.repository.shutDown();
 		}
 	}
 
@@ -695,12 +697,13 @@ class GraphExplorerNativeVariantsTest {
 	private FixedBlankWorkMeasurement measureFixedBlankAllFacetsWork(boolean adjacency, int decoyFanout)
 			throws Exception {
 		Model fixture = fixedBlankScaleData(decoyFanout);
-		Backend generic = backend("fixed-blank-scale-generic-" + adjacency + "-" + decoyFanout, false, false, fixture);
-		Backend nativeBackend = backend("fixed-blank-scale-native-" + adjacency + "-" + decoyFanout, true, adjacency,
+		try (Backend generic = backend("fixed-blank-scale-generic-" + adjacency + "-" + decoyFanout, false, false,
 				fixture);
-		String queryText = blankQueries(BLANK_IDS.get(0), "all", List.of()).path("facets").asText();
-		List<BindingSet> expected = expectedFixedBlankAllFacetRows();
-		try {
+				Backend nativeBackend = backend("fixed-blank-scale-native-" + adjacency + "-" + decoyFanout, true,
+						adjacency,
+						fixture)) {
+			String queryText = blankQueries(BLANK_IDS.get(0), "all", List.of()).path("facets").asText();
+			List<BindingSet> expected = expectedFixedBlankAllFacetRows();
 			assertThat(nativeBackend.store.getLmdbStats().tripleDatabases().keySet())
 					.as("the fixed blank regression uses default spoc,posc indexes")
 					.contains("spocspoc", "poscposc")
@@ -774,9 +777,6 @@ class GraphExplorerNativeVariantsTest {
 			assertEfficientExecutedPlan(explanation, "fixed-blank-all-facets / decoy fanout " + decoyFanout);
 			return new FixedBlankWorkMeasurement(decoyFanout, fixture.size(), actual.size(), scanned, matched, route,
 					selectedBoundShapes);
-		} finally {
-			nativeBackend.repository.shutDown();
-			generic.repository.shutDown();
 		}
 	}
 
@@ -888,11 +888,11 @@ class GraphExplorerNativeVariantsTest {
 				.asText()
 				.replace("VALUES ?facetValue0 { <_:other> }", "VALUES ?facetValue0 { " + valueTerm + " }");
 		Model fixtureData = fixedBlankFacetData(facetValue);
-		Backend referenceBackend = backend("fixed-blank-control-reference-" + backendName + "-" + valueKind
+		try (Backend referenceBackend = backend("fixed-blank-control-reference-" + backendName + "-" + valueKind
 				+ "-" + bindingName, false, false, fixtureData);
-		Backend nativeBackend = backend("fixed-blank-control-" + backendName + "-" + valueKind + "-" + bindingName,
-				true, backends.get(backendName).adjacency, fixtureData);
-		try {
+				Backend nativeBackend = backend(
+						"fixed-blank-control-" + backendName + "-" + valueKind + "-" + bindingName,
+						true, backends.get(backendName).adjacency, fixtureData)) {
 			List<BindingSet> expected = expectedFixedBlankFacetControlRows(facetValue, bindingName);
 			List<BindingSet> referenceRows;
 			try (RepositoryConnection connection = referenceBackend.repository.getConnection()) {
@@ -926,9 +926,6 @@ class GraphExplorerNativeVariantsTest {
 				assertEfficientExecutedPlan(explanation,
 						backendName + " / " + valueKind + " / incoming binding " + bindingName);
 			}
-		} finally {
-			nativeBackend.repository.shutDown();
-			referenceBackend.repository.shutDown();
 		}
 	}
 
@@ -974,11 +971,10 @@ class GraphExplorerNativeVariantsTest {
 		BNode facetValue = VF.createBNode("other");
 		String queryText = fixedBlankAliasIsolationQuery(shape);
 		Model fixtureData = fixedBlankFacetData(facetValue);
-		Backend referenceBackend = backend("fixed-blank-isolation-reference-" + backendName + "-" + shape,
+		try (Backend referenceBackend = backend("fixed-blank-isolation-reference-" + backendName + "-" + shape,
 				false, false, fixtureData);
-		Backend nativeBackend = backend("fixed-blank-isolation-native-" + backendName + "-" + shape,
-				true, backends.get(backendName).adjacency, fixtureData);
-		try {
+				Backend nativeBackend = backend("fixed-blank-isolation-native-" + backendName + "-" + shape,
+						true, backends.get(backendName).adjacency, fixtureData)) {
 			List<BindingSet> expected = List.of(
 					edgeRow(VF.createBNode("alice"), iri("urn:p"), facetValue),
 					edgeRow(VF.createBNode("alice"), RDFS.LABEL, VF.createLiteral("Blank resource", "en")),
@@ -1003,9 +999,6 @@ class GraphExplorerNativeVariantsTest {
 						.containsExactlyInAnyOrderEntriesOf(bag(expected));
 				assertEfficientExecutedPlan(explanation, backendName + " / fixed-blank-isolation / " + shape);
 			}
-		} finally {
-			nativeBackend.repository.shutDown();
-			referenceBackend.repository.shutDown();
 		}
 	}
 
@@ -1043,11 +1036,10 @@ class GraphExplorerNativeVariantsTest {
 		BNode facetValue = VF.createBNode("other");
 		String queryText = fixedBlankGraphUnionIsolationQuery(graphScopes);
 		Model fixtureData = fixedBlankFacetData(facetValue);
-		Backend referenceBackend = backend("fixed-blank-graph-reference-" + backendName + "-" + graphScopes,
+		try (Backend referenceBackend = backend("fixed-blank-graph-reference-" + backendName + "-" + graphScopes,
 				false, false, fixtureData);
-		Backend nativeBackend = backend("fixed-blank-graph-native-" + backendName + "-" + graphScopes,
-				true, backends.get(backendName).adjacency, fixtureData);
-		try {
+				Backend nativeBackend = backend("fixed-blank-graph-native-" + backendName + "-" + graphScopes,
+						true, backends.get(backendName).adjacency, fixtureData)) {
 			List<BindingSet> expected = List.of(
 					edgeRow(VF.createBNode("alice"), iri("urn:p"), facetValue),
 					edgeRow(VF.createBNode("alice"), RDFS.LABEL, VF.createLiteral("Blank resource", "en")),
@@ -1072,9 +1064,6 @@ class GraphExplorerNativeVariantsTest {
 						.containsExactlyInAnyOrderEntriesOf(bag(expected));
 				assertEfficientExecutedPlan(explanation, backendName + " / fixed-blank-graph-union / " + graphScopes);
 			}
-		} finally {
-			nativeBackend.repository.shutDown();
-			referenceBackend.repository.shutDown();
 		}
 	}
 
@@ -1100,9 +1089,8 @@ class GraphExplorerNativeVariantsTest {
 	@ValueSource(booleans = { false, true })
 	void deferredValuesTermGuardsPreserveIndependentBags(boolean adjacency) throws Exception {
 		Model fixture = deferredValuesControlData();
-		Backend generic = backend("deferred-values-generic-" + adjacency, false, false, fixture);
-		Backend nativeBackend = backend("deferred-values-native-" + adjacency, true, adjacency, fixture);
-		try {
+		try (Backend generic = backend("deferred-values-generic-" + adjacency, false, false, fixture);
+				Backend nativeBackend = backend("deferred-values-native-" + adjacency, true, adjacency, fixture)) {
 			for (DeferredValuesControl control : deferredValuesControls()) {
 				List<BindingSet> expected = control.expectedRows();
 				List<BindingSet> referenceRows;
@@ -1150,9 +1138,6 @@ class GraphExplorerNativeVariantsTest {
 							.containsExactlyInAnyOrderEntriesOf(bag(expected));
 				}
 			}
-		} finally {
-			nativeBackend.repository.shutDown();
-			generic.repository.shutDown();
 		}
 	}
 
@@ -1296,136 +1281,139 @@ class GraphExplorerNativeVariantsTest {
 	void uniformValuesPrefixIsSelectedBesideGenericMandatoryJoin(boolean adjacency) throws Exception {
 		Model fixture = uniformValuesPrefixData();
 		String suffix = adjacency ? "-adjacency-on" : "-adjacency-off";
-		Backend generic = backend("uniform-values-generic-component" + suffix, false, adjacency, fixture);
-		Backend nativeBackend = backend("uniform-values-native-component" + suffix, true, adjacency, fixture);
-		AtomicInteger effectCalls = new AtomicInteger();
-		EffectSequenceFunction effectFunction = new EffectSequenceFunction(effectCalls);
-		FunctionRegistry.getInstance().add(effectFunction);
 		SoftAssertions softly = new SoftAssertions();
-		try {
-			String query = uniformValuesPrefixQuery();
-			List<BindingSet> expected = uniformValuesPrefixExpectedRows(true);
-			List<BindingSet> referenceRows = evaluate(generic.repository, query, null);
-			assertThat(bag(referenceRows)).as("independent multi-column duplicate VALUES bag")
-					.containsExactlyInAnyOrderEntriesOf(bag(expected));
+		try (Backend generic = backend("uniform-values-generic-component" + suffix, false, adjacency, fixture);
+				Backend nativeBackend = backend("uniform-values-native-component" + suffix, true, adjacency, fixture)) {
+			AtomicInteger effectCalls = new AtomicInteger();
+			EffectSequenceFunction effectFunction = new EffectSequenceFunction(effectCalls);
+			FunctionRegistry.getInstance().add(effectFunction);
+			try {
+				String query = uniformValuesPrefixQuery();
+				List<BindingSet> expected = uniformValuesPrefixExpectedRows(true);
+				List<BindingSet> referenceRows = evaluate(generic.repository, query, null);
+				assertThat(bag(referenceRows)).as("independent multi-column duplicate VALUES bag")
+						.containsExactlyInAnyOrderEntriesOf(bag(expected));
 
-			try (RepositoryConnection connection = nativeBackend.repository.getConnection()) {
-				TupleQuery nativeQuery = prepare(connection, query, null);
-				Explanation explanation = nativeQuery.explain(Explanation.Level.Telemetry);
-				List<BindingSet> actual = evaluate(nativeQuery);
-				String execution = explanation.toString();
-				Matcher routeMatcher = NATIVE_EXECUTION_PATH.matcher(execution);
-				String route = routeMatcher.find() ? routeMatcher.group(1) : "missing";
-				Map<String, Long> selectedShapes = selectedSourceBoundShapes(execution);
-				Map<String, Object> metadata = new LinkedHashMap<>();
-				metadata.put("fixture", "uniform-term-safe-values-with-generic-language-sibling");
-				metadata.put("adjacency", adjacency);
-				metadata.put("expectedRows", expected.stream().map(Object::toString).toList());
-				metadata.put("genericRows", referenceRows.stream().map(Object::toString).toList());
-				metadata.put("actualRows", actual.stream().map(Object::toString).toList());
-				metadata.put("nativeExecutionPath", route);
-				metadata.put("sourceRowsScannedActual", sourceRowsScanned(execution));
-				metadata.put("sourceRowsMatchedActual", sourceRowsMatched(execution));
-				metadata.put("sourceRowsFilteredActual", sourceRowsFiltered(execution));
-				metadata.put("candidateRowsActual", candidateRows(execution));
-				metadata.put("selectedSourceBoundShapes", selectedShapes);
-				metadata.put("genericEvalPlanSelected", execution.contains("GenericEvalPlan"));
+				try (RepositoryConnection connection = nativeBackend.repository.getConnection()) {
+					TupleQuery nativeQuery = prepare(connection, query, null);
+					Explanation explanation = nativeQuery.explain(Explanation.Level.Telemetry);
+					List<BindingSet> actual = evaluate(nativeQuery);
+					String execution = explanation.toString();
+					Matcher routeMatcher = NATIVE_EXECUTION_PATH.matcher(execution);
+					String route = routeMatcher.find() ? routeMatcher.group(1) : "missing";
+					Map<String, Long> selectedShapes = selectedSourceBoundShapes(execution);
+					Map<String, Object> metadata = new LinkedHashMap<>();
+					metadata.put("fixture", "uniform-term-safe-values-with-generic-language-sibling");
+					metadata.put("adjacency", adjacency);
+					metadata.put("expectedRows", expected.stream().map(Object::toString).toList());
+					metadata.put("genericRows", referenceRows.stream().map(Object::toString).toList());
+					metadata.put("actualRows", actual.stream().map(Object::toString).toList());
+					metadata.put("nativeExecutionPath", route);
+					metadata.put("sourceRowsScannedActual", sourceRowsScanned(execution));
+					metadata.put("sourceRowsMatchedActual", sourceRowsMatched(execution));
+					metadata.put("sourceRowsFilteredActual", sourceRowsFiltered(execution));
+					metadata.put("candidateRowsActual", candidateRows(execution));
+					metadata.put("selectedSourceBoundShapes", selectedShapes);
+					metadata.put("genericEvalPlanSelected", execution.contains("GenericEvalPlan"));
+					writeEvidence(repositoryRoot().resolve(
+							"logs/workbench-native-fast-paths/fixed-blank-prefix-fanout-red-20261027/generic-hosted-prefix-red"),
+							"uniform-multicolumn-duplicate" + suffix, query, metadata, explanation);
+
+					softly.assertThat(bag(actual))
+							.as("native generic-hosted exact result bag")
+							.containsExactlyInAnyOrderEntriesOf(bag(expected));
+					softly.assertThat(execution)
+							.as("language VALUES sibling is prepared as a generic component")
+							.contains("GenericEvalPlan");
+					softly.assertThat(route)
+							.as("native source component executed")
+							.isNotBlank()
+							.isNotEqualTo("missing");
+					if (!adjacency) {
+						softly.assertThat(sourceRowsScanned(execution))
+								.as("completed selected POSC source work")
+								.isPositive();
+						softly.assertThat(selectedShapes.keySet())
+								.as("the uniform VALUES term must select a POSC source with predicate and object bound\n%s",
+										execution)
+								.anyMatch(shape -> shape.startsWith(
+										"LMDB|subject=UNBOUND,predicate=BOUND,object=BOUND"));
+					} else {
+						softly.assertThat(selectedShapes.keySet())
+								.as("the adjacency-enabled source is selected and recorded\n%s", execution)
+								.anyMatch(shape -> shape.startsWith("IN_MEMORY_ADJACENCY|"));
+					}
+				}
+
+				// A fixed column in a multi-column table remains usable as a probe hint even when other columns vary or
+				// the fixed row is duplicated. These controls also pin down UNDEF and empty-table behavior.
+				String undefQuery = "SELECT ?focus ?facetValue ?choice WHERE { ?focus <urn:prefix:p> ?facetValue . "
+						+ "VALUES (?facetValue ?choice) { (<_:generic-hosted-match> \"fixed\") (UNDEF \"open\") } }";
+				List<BindingSet> undefExpected = uniformValuesUndefExpectedRows();
+				assertUniformValuesControl(softly, generic, nativeBackend, "undef-column" + suffix, undefQuery,
+						Map.of(),
+						undefExpected);
+				String emptyQuery = "SELECT ?focus ?facetValue WHERE { ?focus <urn:prefix:p> ?facetValue . "
+						+ "VALUES ?facetValue { } }";
+				assertUniformValuesControl(softly, generic, nativeBackend, "empty-values" + suffix, emptyQuery,
+						Map.of(),
+						List.of());
+
+				String primaryQuery = uniformValuesPrefixQuery();
+				assertUniformValuesControl(softly, generic, nativeBackend, "equal-entry-value" + suffix, primaryQuery,
+						Map.of("facetValue", VF.createBNode("generic-hosted-match")),
+						uniformValuesPrefixExpectedRows(true));
+				assertUniformValuesControl(softly, generic, nativeBackend, "conflicting-entry-value" + suffix,
+						primaryQuery,
+						Map.of("facetValue", VF.createBNode("generic-hosted-other")), List.of());
+
+				String bindTarget = "SELECT ?focus ?raw ?facetValue WHERE { ?focus <urn:prefix:p> ?raw . "
+						+ "BIND(<urn:prefix:fixed-target> AS ?facetValue) "
+						+ "VALUES ?facetValue { <urn:prefix:fixed-target> } FILTER(BOUND(?facetValue)) }";
+				assertUniformValuesControl(softly, generic, nativeBackend, "bind-target-bound-filter" + suffix,
+						bindTarget,
+						Map.of(),
+						uniformValuesBindTargetExpectedRows());
+
+				String effectQuery = uniformValuesEffectQuery();
+				effectCalls.set(0);
+				List<BindingSet> genericEffectRows = evaluate(generic.repository, effectQuery, null);
+				int genericCalls = effectCalls.get();
+				effectCalls.set(0);
+				List<BindingSet> nativeEffectRows;
+				int nativeCalls;
+				Explanation effectExplanation;
+				try (RepositoryConnection connection = nativeBackend.repository.getConnection()) {
+					TupleQuery effectQueryPlan = prepare(connection, effectQuery, null);
+					nativeEffectRows = evaluate(effectQueryPlan);
+					nativeCalls = effectCalls.get();
+					effectExplanation = effectQueryPlan.explain(Explanation.Level.Telemetry);
+				}
+				Map<String, Object> effectMetadata = Map.of("genericCalls", genericCalls, "nativeCalls", nativeCalls,
+						"genericRows", genericEffectRows.stream().map(Object::toString).toList(), "nativeRows",
+						nativeEffectRows.stream().map(Object::toString).toList());
 				writeEvidence(repositoryRoot().resolve(
 						"logs/workbench-native-fast-paths/fixed-blank-prefix-fanout-red-20261027/generic-hosted-prefix-red"),
-						"uniform-multicolumn-duplicate" + suffix, query, metadata, explanation);
+						"volatile-effect-observer" + suffix, effectQuery, effectMetadata, effectExplanation);
+				List<BindingSet> effectExpected = uniformValuesPrefixExpectedRows(false);
+				softly.assertThat(bag(withoutBinding(genericEffectRows, "effect")))
+						.as("generic volatile-query base bag")
+						.containsExactlyInAnyOrderEntriesOf(bag(effectExpected));
+				softly.assertThat(bag(withoutBinding(nativeEffectRows, "effect")))
+						.as("native volatile-query base bag")
+						.containsExactlyInAnyOrderEntriesOf(bag(effectExpected));
+				softly.assertThat(genericCalls)
+						.as("generic volatile function ran")
+						.isPositive();
+				softly.assertThat(nativeCalls)
+						.as("native generic-hosted volatile invocation count matches generic")
+						.isEqualTo(genericCalls);
 
-				softly.assertThat(bag(actual))
-						.as("native generic-hosted exact result bag")
-						.containsExactlyInAnyOrderEntriesOf(bag(expected));
-				softly.assertThat(execution)
-						.as("language VALUES sibling is prepared as a generic component")
-						.contains("GenericEvalPlan");
-				softly.assertThat(route)
-						.as("native source component executed")
-						.isNotBlank()
-						.isNotEqualTo("missing");
-				if (!adjacency) {
-					softly.assertThat(sourceRowsScanned(execution))
-							.as("completed selected POSC source work")
-							.isPositive();
-					softly.assertThat(selectedShapes.keySet())
-							.as("the uniform VALUES term must select a POSC source with predicate and object bound\n%s",
-									execution)
-							.anyMatch(shape -> shape.startsWith(
-									"LMDB|subject=UNBOUND,predicate=BOUND,object=BOUND"));
-				} else {
-					softly.assertThat(selectedShapes.keySet())
-							.as("the adjacency-enabled source is selected and recorded\n%s", execution)
-							.anyMatch(shape -> shape.startsWith("IN_MEMORY_ADJACENCY|"));
-				}
+				assertUniformValuesGraphControls(softly, adjacency);
+				assertUniformValuesOrderedControl(softly, generic, nativeBackend, suffix);
+			} finally {
+				FunctionRegistry.getInstance().remove(effectFunction);
 			}
-
-			// A fixed column in a multi-column table remains usable as a probe hint even when other columns vary or
-			// the fixed row is duplicated. These controls also pin down UNDEF and empty-table behavior.
-			String undefQuery = "SELECT ?focus ?facetValue ?choice WHERE { ?focus <urn:prefix:p> ?facetValue . "
-					+ "VALUES (?facetValue ?choice) { (<_:generic-hosted-match> \"fixed\") (UNDEF \"open\") } }";
-			List<BindingSet> undefExpected = uniformValuesUndefExpectedRows();
-			assertUniformValuesControl(softly, generic, nativeBackend, "undef-column" + suffix, undefQuery, Map.of(),
-					undefExpected);
-			String emptyQuery = "SELECT ?focus ?facetValue WHERE { ?focus <urn:prefix:p> ?facetValue . "
-					+ "VALUES ?facetValue { } }";
-			assertUniformValuesControl(softly, generic, nativeBackend, "empty-values" + suffix, emptyQuery, Map.of(),
-					List.of());
-
-			String primaryQuery = uniformValuesPrefixQuery();
-			assertUniformValuesControl(softly, generic, nativeBackend, "equal-entry-value" + suffix, primaryQuery,
-					Map.of("facetValue", VF.createBNode("generic-hosted-match")),
-					uniformValuesPrefixExpectedRows(true));
-			assertUniformValuesControl(softly, generic, nativeBackend, "conflicting-entry-value" + suffix, primaryQuery,
-					Map.of("facetValue", VF.createBNode("generic-hosted-other")), List.of());
-
-			String bindTarget = "SELECT ?focus ?raw ?facetValue WHERE { ?focus <urn:prefix:p> ?raw . "
-					+ "BIND(<urn:prefix:fixed-target> AS ?facetValue) "
-					+ "VALUES ?facetValue { <urn:prefix:fixed-target> } FILTER(BOUND(?facetValue)) }";
-			assertUniformValuesControl(softly, generic, nativeBackend, "bind-target-bound-filter" + suffix, bindTarget,
-					Map.of(),
-					uniformValuesBindTargetExpectedRows());
-
-			String effectQuery = uniformValuesEffectQuery();
-			effectCalls.set(0);
-			List<BindingSet> genericEffectRows = evaluate(generic.repository, effectQuery, null);
-			int genericCalls = effectCalls.get();
-			effectCalls.set(0);
-			List<BindingSet> nativeEffectRows;
-			int nativeCalls;
-			Explanation effectExplanation;
-			try (RepositoryConnection connection = nativeBackend.repository.getConnection()) {
-				TupleQuery effectQueryPlan = prepare(connection, effectQuery, null);
-				nativeEffectRows = evaluate(effectQueryPlan);
-				nativeCalls = effectCalls.get();
-				effectExplanation = effectQueryPlan.explain(Explanation.Level.Telemetry);
-			}
-			Map<String, Object> effectMetadata = Map.of("genericCalls", genericCalls, "nativeCalls", nativeCalls,
-					"genericRows", genericEffectRows.stream().map(Object::toString).toList(), "nativeRows",
-					nativeEffectRows.stream().map(Object::toString).toList());
-			writeEvidence(repositoryRoot().resolve(
-					"logs/workbench-native-fast-paths/fixed-blank-prefix-fanout-red-20261027/generic-hosted-prefix-red"),
-					"volatile-effect-observer" + suffix, effectQuery, effectMetadata, effectExplanation);
-			List<BindingSet> effectExpected = uniformValuesPrefixExpectedRows(false);
-			softly.assertThat(bag(withoutBinding(genericEffectRows, "effect")))
-					.as("generic volatile-query base bag")
-					.containsExactlyInAnyOrderEntriesOf(bag(effectExpected));
-			softly.assertThat(bag(withoutBinding(nativeEffectRows, "effect")))
-					.as("native volatile-query base bag")
-					.containsExactlyInAnyOrderEntriesOf(bag(effectExpected));
-			softly.assertThat(genericCalls)
-					.as("generic volatile function ran")
-					.isPositive();
-			softly.assertThat(nativeCalls)
-					.as("native generic-hosted volatile invocation count matches generic")
-					.isEqualTo(genericCalls);
-
-			assertUniformValuesGraphControls(softly, adjacency);
-			assertUniformValuesOrderedControl(softly, generic, nativeBackend, suffix);
-		} finally {
-			FunctionRegistry.getInstance().remove(effectFunction);
-			nativeBackend.repository.shutDown();
-			generic.repository.shutDown();
 		}
 		softly.assertAll();
 	}
@@ -1482,9 +1470,8 @@ class GraphExplorerNativeVariantsTest {
 		data.add(namedFocus, p, match, named);
 		data.add(blankFocus, p, match, blankGraph);
 		String suffix = adjacency ? "-adjacency-on" : "-adjacency-off";
-		Backend generic = backend("uniform-values-graph-generic" + suffix, false, adjacency, data);
-		Backend nativeBackend = backend("uniform-values-graph-native" + suffix, true, adjacency, data);
-		try {
+		try (Backend generic = backend("uniform-values-graph-generic" + suffix, false, adjacency, data);
+				Backend nativeBackend = backend("uniform-values-graph-native" + suffix, true, adjacency, data)) {
 			String query = "SELECT ?focus ?g WHERE { GRAPH ?g { ?focus <urn:prefix:p> ?facetValue } "
 					+ "VALUES ?facetValue { <_:generic-hosted-match> } }";
 			List<BindingSet> expected = List.of(solutionRow("focus", namedFocus, "g", named),
@@ -1554,9 +1541,6 @@ class GraphExplorerNativeVariantsTest {
 						.as("native Sesame default alias bag")
 						.containsExactlyInAnyOrderEntriesOf(bag(defaultExpected));
 			}
-		} finally {
-			nativeBackend.repository.shutDown();
-			generic.repository.shutDown();
 		}
 	}
 
@@ -1816,12 +1800,11 @@ class GraphExplorerNativeVariantsTest {
 	private SkewedMeasurement measureSkewedAliasRange(boolean adjacency, int hubFanout, String shape)
 			throws Exception {
 		Model data = skewedAliasRangeData(hubFanout);
-		Backend generic = backend("skewed-alias-generic-" + adjacency + "-" + hubFanout + "-" + shape,
+		try (Backend generic = backend("skewed-alias-generic-" + adjacency + "-" + hubFanout + "-" + shape,
 				false, false, data);
-		Backend nativeBackend = backend("skewed-alias-native-" + adjacency + "-" + hubFanout + "-" + shape,
-				true, adjacency, data);
-		String queryText = skewedAliasRangeQuery(shape);
-		try {
+				Backend nativeBackend = backend("skewed-alias-native-" + adjacency + "-" + hubFanout + "-" + shape,
+						true, adjacency, data)) {
+			String queryText = skewedAliasRangeQuery(shape);
 			assertThat(nativeBackend.store.getLmdbStats().tripleDatabases().keySet())
 					.as("the skewed regression uses the ordinary default spoc,posc indexes")
 					.contains("spocspoc", "poscposc")
@@ -1898,9 +1881,6 @@ class GraphExplorerNativeVariantsTest {
 				assertThat(filterEvaluations).as("native facet filter telemetry\n%s", explanation).isPositive();
 				return measured;
 			}
-		} finally {
-			nativeBackend.repository.shutDown();
-			generic.repository.shutDown();
 		}
 	}
 
@@ -2285,12 +2265,13 @@ class GraphExplorerNativeVariantsTest {
 		Path errors = Files.createTempFile(temporary, "producer-", ".log");
 		List<String> command = new ArrayList<>(List.of(node.toString(), "--experimental-strip-types", script));
 		command.addAll(arguments);
-		Process process = new ProcessBuilder(command).redirectOutput(output.toFile())
-				.redirectError(errors.toFile())
-				.start();
-		assertThat(process.waitFor(30, TimeUnit.SECONDS)).as("query producer finished: %s", script).isTrue();
-		assertThat(process.exitValue()).as(Files.readString(errors)).isZero();
-		return Files.readString(output);
+		try (TestProcess child = TestProcess.start(new ProcessBuilder(command).redirectOutput(output.toFile())
+				.redirectError(errors.toFile()))) {
+			Process process = child.process();
+			assertThat(process.waitFor(30, TimeUnit.SECONDS)).as("query producer finished: %s", script).isTrue();
+			assertThat(process.exitValue()).as(Files.readString(errors)).isZero();
+			return Files.readString(output);
+		}
 	}
 
 	private Backend backend(String name, boolean nativeEvaluation, boolean adjacency, Model data) throws Exception {
@@ -2300,18 +2281,27 @@ class GraphExplorerNativeVariantsTest {
 				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL);
 		LmdbStore store = new LmdbStore(Files.createDirectories(temporary.resolve(name)).toFile(), config);
 		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try (RepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.add(data);
-			connection.commit();
+		try {
+			repository.init();
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(data);
+				connection.commit();
+			}
+			if (adjacency) {
+				assertThat(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
+						.as(store.getDirectAdjacencyReadinessDescription())
+						.isTrue();
+			}
+			return new Backend(repository, store, adjacency);
+		} catch (Exception | Error failure) {
+			try {
+				repository.shutDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		if (adjacency) {
-			assertThat(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
-					.as(store.getDirectAdjacencyReadinessDescription())
-					.isTrue();
-		}
-		return new Backend(repository, store, adjacency);
 	}
 
 	private static Model data() {
@@ -2465,7 +2455,11 @@ class GraphExplorerNativeVariantsTest {
 		return path;
 	}
 
-	private record Backend(SailRepository repository, LmdbStore store, boolean adjacency) {
+	private record Backend(SailRepository repository, LmdbStore store, boolean adjacency) implements AutoCloseable {
+		@Override
+		public void close() {
+			repository.shutDown();
+		}
 	}
 
 	private record DeferredValuesControl(String name, String query, Map<String, Value> entryBindings,

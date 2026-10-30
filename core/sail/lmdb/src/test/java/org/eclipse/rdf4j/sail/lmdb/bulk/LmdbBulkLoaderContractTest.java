@@ -238,12 +238,12 @@ class LmdbBulkLoaderContractTest {
 		Files.write(artifact, artifactBytes);
 
 		Properties marker = new Properties();
-		marker.setProperty("version", "2");
+		marker.setProperty("version", "3");
 		marker.setProperty("generation", generationName);
 		storeProperties(target.resolve(LmdbBulkLoadGeneration.MARKER_FILE_NAME), marker);
 
 		Properties manifest = new Properties();
-		manifest.setProperty("version", "2");
+		manifest.setProperty("version", "3");
 		manifest.setProperty("generation", generationName);
 		manifest.setProperty("artifact.count", "1");
 		manifest.setProperty("artifact.0", "values");

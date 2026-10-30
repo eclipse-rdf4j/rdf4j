@@ -162,9 +162,11 @@ class SnapshotPositiveLookupLifecycleTest {
 
 	@Test
 	void warmedPairedMemoDetachesAcrossGrowthAndPreservesRetirementHorizon(@TempDir Path directory) throws Exception {
+		// Bounded retirement needs leading indexes for every statement component to prove absence.
 		InspectingStore store = new InspectingStore(directory.toFile(), "spoc,posc,ospc");
 		store.init();
 		try {
+			assertEquals(LmdbStoreFormat.CANONICAL_IRI_VERSION, store.getFormat().getVersion());
 			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
 			commitStatement(store, SUBJECT, OBJECT);
 			long originalTripleMap = store.triples.mapSizeBytes();
@@ -181,8 +183,7 @@ class SnapshotPositiveLookupLifecycleTest {
 				originalId = assertInstanceOf(LmdbValue.class, escaped.getObject()).getInternalIdentity().id();
 				assertNotEquals(LmdbValue.UNKNOWN_ID, originalId);
 				TrackedIRI input = new TrackedIRI(OBJECT, snapshot);
-				assertWarm(store.values, snapshot, input, originalId);
-				int capturesBeforeGrowth = input.captureCalls.get();
+				assertCanonicalWarm(store.values, snapshot, input, originalId);
 
 				removeStatement(store);
 				assertTrue(store.getBackingStore().hasRetiredValueIds(),
@@ -192,12 +193,13 @@ class SnapshotPositiveLookupLifecycleTest {
 				assertTrue(store.values.mapSizeBytes() > originalValueMap, "The dictionary must really be remapped");
 				assertTrue(snapshot.dictionaryDetached(), "The actual paired dictionary reader must detach");
 				assertEquals(0L, store.getBackingStore().growthMetricsSnapshot().forcedInvalidatedViews());
+				long readsBeforeDetachedLookup = store.values.snapshotIdLookups().dictionaryReads();
 				assertEquals(originalId, store.values.getId(snapshot, input));
-				assertTrue(input.captureCalls.get() > capturesBeforeGrowth,
-						"A detached view must discard its old memo and recapture through the current reader");
-				int firstDetachedCapture = input.captureCalls.get();
+				long firstDetachedReads = store.values.snapshotIdLookups().dictionaryReads();
+				assertTrue(firstDetachedReads > readsBeforeDetachedLookup,
+						"A detached view must discard its old memo and query through the current reader");
 				assertEquals(originalId, store.values.getId(snapshot, input));
-				assertTrue(input.captureCalls.get() > firstDetachedCapture,
+				assertTrue(store.values.snapshotIdLookups().dictionaryReads() > firstDetachedReads,
 						"The detached view must not learn a new memo from its advancing fallback reader");
 				assertOldStatement(reader, input, originalId);
 
@@ -233,14 +235,15 @@ class SnapshotPositiveLookupLifecycleTest {
 		InspectingStore store = new InspectingStore(directory.toFile());
 		store.init();
 		try {
+			assertEquals(LmdbStoreFormat.CANONICAL_IRI_VERSION, store.getFormat().getVersion());
 			commitStatement(store, SUBJECT, OBJECT);
 			long originalMap = store.values.mapSizeBytes();
 			try (DirectView view = new DirectView(store.values)) {
 				assertFalse(view.snapshot.hasStableIds());
 				TrackedIRI input = new TrackedIRI(OBJECT, view.snapshot);
-				long id = store.values.getId(view.snapshot, input);
+				long id = store.values.getId(OBJECT);
 				assertNotEquals(LmdbValue.UNKNOWN_ID, id);
-				assertWarm(store.values, view.snapshot, input, id);
+				assertCanonicalWarm(store.values, view.snapshot, input, id);
 				growDictionary(store, originalMap);
 				assertTrue(store.values.mapSizeBytes() > originalMap);
 				LmdbSailStore.MapResizeConflictException conflict = assertThrows(
@@ -476,6 +479,19 @@ class SnapshotPositiveLookupLifecycleTest {
 		assertEquals(captures, input.captureCalls.get(), "The control must prove a warmed memo before lifecycle work");
 	}
 
+	private static void assertCanonicalWarm(ValueStore values, ValueStore.ReadSnapshot snapshot, TrackedIRI input,
+			long id)
+			throws IOException {
+		long beforeLookup = values.snapshotIdLookups().dictionaryReads();
+		assertEquals(id, values.getId(snapshot, input));
+		long dictionaryReads = values.snapshotIdLookups().dictionaryReads();
+		assertTrue(dictionaryReads > beforeLookup, "The first successful lookup must really query the dictionary");
+		assertEquals(id, values.getId(snapshot, input));
+		assertEquals(dictionaryReads, values.snapshotIdLookups().dictionaryReads(),
+				"The control must prove a warmed memo before lifecycle work");
+		assertEquals(0, input.captureCalls.get(), "Canonical lookup must ignore caller-supplied splits");
+	}
+
 	private static void assertOldStatement(SailDataset reader, IRI object, long id) {
 		Statement statement = onlyStatement(reader, SUBJECT, object);
 		assertEquals(id, assertInstanceOf(LmdbValue.class, statement.getObject()).getInternalIdentity().id());
@@ -607,10 +623,13 @@ class SnapshotPositiveLookupLifecycleTest {
 		private final ValueStore values;
 
 		private Fixture(Path directory, int capacity) throws IOException {
-			values = new ValueStore(directory.resolve("values").toFile(), new LmdbStoreConfig()
-					.setValueDBSize(64L * 1024L * 1024L)
-					.setInlineLiterals(false)
-					.setValueIDCacheSize(capacity));
+			// Preserve the split-getter/lexical-validation distinction exercised by this compatibility fixture.
+			values = new ValueStore(directory.resolve("values").toFile(),
+					new StoreProperties().setVersion(Integer.toString(LmdbStoreFormat.LEGACY_VERSION)),
+					new LmdbStoreConfig()
+							.setValueDBSize(64L * 1024L * 1024L)
+							.setInlineLiterals(false)
+							.setValueIDCacheSize(capacity));
 		}
 
 		private long store(Value value) throws IOException {

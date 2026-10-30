@@ -1014,8 +1014,13 @@ class SnapshotPositiveLookupCacheTest {
 		private final TripleStore triples;
 
 		private Fixture(Path directory, boolean inline, int capacity) throws IOException {
-			LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(inline).setValueIDCacheSize(capacity);
-			values = new ValueStore(directory.resolve("values").toFile(), config);
+			LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(inline)
+					.setValueIDCacheSize(capacity)
+					.setLegacyReferenceCountRepairEnabled(true);
+			// These capture counters distinguish legacy split getters from lexical fingerprint validation.
+			// Format 7 only reads stringValue(); its cache contract is covered by ValueStoreCanonicalIriTest.
+			values = new ValueStore(directory.resolve("values").toFile(),
+					new StoreProperties().setVersion(Integer.toString(LmdbStoreFormat.LEGACY_VERSION)), config);
 			try {
 				triples = new TripleStore(directory.resolve("triples").toFile(), config, values);
 			} catch (IOException | RuntimeException | Error failure) {

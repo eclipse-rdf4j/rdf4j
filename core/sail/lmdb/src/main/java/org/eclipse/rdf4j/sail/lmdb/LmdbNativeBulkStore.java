@@ -62,8 +62,8 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 	public LmdbNativeBulkStore(Path directory, LmdbStoreConfig config, LmdbStoreFormat format) throws IOException {
 		this.config = config;
 		this.format = format;
-		if (format.getVersion() != LmdbStoreFormat.CURRENT_VERSION) {
-			throw new IllegalArgumentException("Bulk generations require LmdbStore format 6");
+		if (format.getVersion() != LmdbStoreFormat.CANONICAL_IRI_VERSION) {
+			throw new IllegalArgumentException("Bulk generations require LmdbStore format 7");
 		}
 		if (config.getTripleIndexes() == null || config.getTripleIndexes().isBlank()) {
 			config.setTripleIndexes(DEFAULT_TRIPLE_INDEXES);

@@ -23,53 +23,61 @@ public class LmdbStoreTmpDatadirTest {
 	@Test
 	public void testNoTmpDatadir(@TempDir File dataDir) {
 		LmdbStore store = new LmdbStore(dataDir);
+		try (var cleanup = LmdbTestUtil.onClose(store::shutDown)) {
 
-		store.init();
-		assertTrue("Data dir not set correctly", dataDir.equals(store.getDataDir()));
+			store.init();
+			assertTrue("Data dir not set correctly", dataDir.equals(store.getDataDir()));
 
-		store.shutDown();
-		assertTrue("Data dir does not exist anymore", dataDir.exists());
-		LmdbTestUtil.deleteDir(dataDir);
+			store.shutDown();
+			assertTrue("Data dir does not exist anymore", dataDir.exists());
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 
 	@Test
 	public void testTmpDatadir() {
 		LmdbStore store = new LmdbStore();
-		store.init();
-		File dataDir = store.getDataDir();
-		assertTrue("Temp data dir not created", dataDir != null && dataDir.exists());
+		try (var cleanup = LmdbTestUtil.onClose(store::shutDown)) {
+			store.init();
+			File dataDir = store.getDataDir();
+			assertTrue("Temp data dir not created", dataDir != null && dataDir.exists());
 
-		store.shutDown();
-		assertFalse("Temp data dir still exists", dataDir.exists());
+			store.shutDown();
+			assertFalse("Temp data dir still exists", dataDir.exists());
+		}
 	}
 
 	@Test
 	public void testTmpDatadirReinit() {
 		LmdbStore store = new LmdbStore();
-		store.init();
-		File dataDir1 = store.getDataDir();
-		store.shutDown();
+		try (var cleanup = LmdbTestUtil.onClose(store::shutDown)) {
+			store.init();
+			File dataDir1 = store.getDataDir();
+			store.shutDown();
 
-		store.init();
-		File dataDir2 = store.getDataDir();
-		store.shutDown();
-		assertFalse("Temp data dirs are the same", dataDir1.equals(dataDir2));
+			store.init();
+			File dataDir2 = store.getDataDir();
+			store.shutDown();
+			assertFalse("Temp data dirs are the same", dataDir1.equals(dataDir2));
+		}
 	}
 
 	@Test
 	public void testDatadirMix(@TempDir File dataDir) {
 		LmdbStore store = new LmdbStore(dataDir);
+		try (var cleanup = LmdbTestUtil.onClose(store::shutDown)) {
 
-		store.init();
-		store.shutDown();
+			store.init();
+			store.shutDown();
 
-		store.setDataDir(null);
-		store.init();
-		File tmpDataDir = store.getDataDir();
-		store.shutDown();
+			store.setDataDir(null);
+			store.init();
+			File tmpDataDir = store.getDataDir();
+			store.shutDown();
 
-		assertFalse("Temp data dir still exists", tmpDataDir.exists());
-		assertTrue("Data dir does not exist anymore", dataDir.exists());
-		LmdbTestUtil.deleteDir(dataDir);
+			assertFalse("Temp data dir still exists", tmpDataDir.exists());
+			assertTrue("Data dir does not exist anymore", dataDir.exists());
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 }

@@ -1,0 +1,53 @@
+{
+  "date_utc": "2026-10-29T21:03:02Z",
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "cpu_model": "INTEL(R) XEON(R) PLATINUM 8573C",
+  "memory_limit_bytes": "8589934592",
+  "cpu_quota": "800000 100000",
+  "java": "openjdk version \"25.0.5\" 2026-10-20 LTS\nOpenJDK Runtime Environment Temurin-25.0.5+8 (build 25.0.5+8-LTS)\nOpenJDK 64-Bit Server VM Temurin-25.0.5+8 (build 25.0.5+8-LTS, mixed mode, sharing)",
+  "jvm_args": [
+    "-Xms512m",
+    "-Xmx1g",
+    "-XX:ActiveProcessorCount=2",
+    "-XX:+UseG1GC",
+    "--enable-native-access=ALL-UNNAMED",
+    "-ea"
+  ],
+  "values_per_invocation": 4096,
+  "warmup_rounds": 2,
+  "measurement_rounds": 5,
+  "case_order_seed": "0x43414e4f4e + iteration",
+  "force_sync": false,
+  "inline_literals": false,
+  "value_overlay": false,
+  "prechange_source_commit": "db572a45a401d9e7284b321efba0adbd6d577e6c",
+  "supported_current_formats": [
+    2,
+    7
+  ],
+  "unsupported_prechange_format": 6,
+  "matrix_order": [
+    "current dictionary",
+    "format6 dictionary",
+    "format6 imports",
+    "current imports"
+  ],
+  "producer_source_verification": "prebuilt classpaths supplied; producer source commit must be verified independently",
+  "benchmark_source_sha256": "efb0110ce84889bf9f52b70683bd0503837cb29b9c6f70e2f371c8eef4fa650a",
+  "allocation_scope": "calling Java thread only; worker threads excluded",
+  "cache_scope": "Java dictionary caches warm or cleared; OS cache not evicted",
+  "unavailable_metric_value": -1,
+  "native_probe_scope": "alternative IRI fallback native probes/seeks; dictionary_lookup_calls counts logical calls",
+  "producer_jars": {
+    "current": {
+      "jar_sha256": "a213a0ab9a8c94d7619df40d3018206df5e53c436f151904001d3dfefddac8fd",
+      "value_store_class_sha256": "13bc23debc6b37eb2262ee9e6a068c88d0790974e8fda23979e6cf4bec278975",
+      "input_classpath_file": "/workspace/scratch/ad14de109faf/baselines/current-final/input-classpath.txt"
+    },
+    "format6": {
+      "jar_sha256": "002977d189b596a543fe081ae65aa2d1e91d3953aa5e3d8b5f68446e0ed73863",
+      "value_store_class_sha256": "f89b0ae5eb7030262be0a2d8790ce9f17d5ce0499cf8970750eded25d74856c4",
+      "input_classpath_file": "/workspace/scratch/ad14de109faf/baselines/format6/classpath.txt"
+    }
+  }
+}

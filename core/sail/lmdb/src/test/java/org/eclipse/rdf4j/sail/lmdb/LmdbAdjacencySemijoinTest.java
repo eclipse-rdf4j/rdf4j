@@ -106,19 +106,24 @@ public class LmdbAdjacencySemijoinTest {
 
 	@AfterEach
 	public void tearDown() {
-		repository.shutDown();
-		System.clearProperty(NATIVE_FLAG);
-		System.clearProperty(SEMIJOIN_FLAG);
-		System.clearProperty(LEFTJOIN_MIN_PROBES);
-		if (previousJanino == null) {
-			System.clearProperty(JANINO_FLAG);
-		} else {
-			System.setProperty(JANINO_FLAG, previousJanino);
-		}
-		if (previousKernelInterpreter == null) {
-			System.clearProperty(KERNEL_INTERPRETER_FLAG);
-		} else {
-			System.setProperty(KERNEL_INTERPRETER_FLAG, previousKernelInterpreter);
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			System.clearProperty(NATIVE_FLAG);
+			System.clearProperty(SEMIJOIN_FLAG);
+			System.clearProperty(LEFTJOIN_MIN_PROBES);
+			if (previousJanino == null) {
+				System.clearProperty(JANINO_FLAG);
+			} else {
+				System.setProperty(JANINO_FLAG, previousJanino);
+			}
+			if (previousKernelInterpreter == null) {
+				System.clearProperty(KERNEL_INTERPRETER_FLAG);
+			} else {
+				System.setProperty(KERNEL_INTERPRETER_FLAG, previousKernelInterpreter);
+			}
 		}
 	}
 

@@ -29,13 +29,15 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * Immutable persisted value identity and writer capabilities, resolved before either native environment is opened.
- * Version 2 retains the develop writer's exact representation; version 6 is authored only for a new native generation.
+ * Version 2 retains the 6.1.0-compatible representation. Version 7 uses a single lexical IRI split. Unreleased
+ * intermediate formats are unsupported. Opening or clearing an existing generation never changes its format.
  */
 @InternalUseOnly
 public final class LmdbStoreFormat {
 
 	public static final int LEGACY_VERSION = 2;
-	public static final int CURRENT_VERSION = 6;
+	public static final int CANONICAL_IRI_VERSION = 7;
+	public static final int CURRENT_VERSION = CANONICAL_IRI_VERSION;
 
 	// LocalRepositoryManager commits this Turtle configuration before assigning the same directory to a Sail.
 	// Its .part file is uncommitted metadata and is deliberately not accepted as a fresh generation.
@@ -58,10 +60,26 @@ public final class LmdbStoreFormat {
 		this.zeroFractionDateTimeIds = zeroFractionDateTimeIds;
 	}
 
-	/** Captures the encoding of a new format 6 generation before its first ID is assigned. */
+	/** Captures the encoding of a genuinely new generation before its first ID is assigned. */
 	public static LmdbStoreFormat forNewStore(LmdbStoreConfig config) {
-		return new LmdbStoreFormat(CURRENT_VERSION, config.getInlineLiterals(), config.getOrderedNumericIds(),
+		return forBulkGeneration(CURRENT_VERSION, config);
+	}
+
+	/** Resumes the exact format recorded by a bulk workspace; new workspaces always use {@link #forNewStore}. */
+	public static LmdbStoreFormat forBulkGeneration(int version, LmdbStoreConfig config) {
+		if (!isSupportedModernVersion(version)) {
+			throw new SailException("Unsupported bulk LmdbStore format: " + version);
+		}
+		return new LmdbStoreFormat(version, config.getInlineLiterals(), config.getOrderedNumericIds(),
 				true, true, true);
+	}
+
+	public static boolean isSupportedVersion(int version) {
+		return version == LEGACY_VERSION || isSupportedModernVersion(version);
+	}
+
+	public static boolean isSupportedModernVersion(int version) {
+		return version == CANONICAL_IRI_VERSION;
 	}
 
 	static LmdbStoreFormat resolve(File directory, StoreProperties properties, LmdbStoreConfig config) {
@@ -73,17 +91,40 @@ public final class LmdbStoreFormat {
 			requireEmptyDirectory(directory);
 			return forNewStore(config);
 		}
-		String encodedVersion = properties.getVersion();
+		LmdbStoreFormat format = fromProperties(properties, config);
+		File marker = new File(directory, LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE);
+		if (format.isLegacy()) {
+			if (marker.exists()) {
+				throw new SailException("Compatibility marker is inconsistent with LmdbStore format 2");
+			}
+			return format;
+		}
+		try {
+			if (!marker.isFile()
+					|| !LmdbStore.CORE_LITERAL_REFERENCE_MARKER.equals(Files.readString(marker.toPath()))) {
+				throw new SailException("Writer capabilities and LmdbStore compatibility marker do not agree");
+			}
+		} catch (IOException exception) {
+			throw new SailException("Unable to read LmdbStore compatibility marker", exception);
+		}
+		return format;
+	}
+
+	private static int supportedVersion(String encodedVersion) {
 		int version;
 		try {
 			version = Integer.parseInt(encodedVersion);
 		} catch (NumberFormatException exception) {
 			throw new SailException("Unsupported LmdbStore version: " + encodedVersion, exception);
 		}
-		if (version != LEGACY_VERSION && version != CURRENT_VERSION) {
+		if (!isSupportedVersion(version) || !Integer.toString(version).equals(encodedVersion)) {
 			throw new SailException("Unsupported LmdbStore version: " + encodedVersion
-					+ "; supported persisted formats are 2 and 6. Rebuild experimental stores.");
+					+ "; supported persisted formats are 2 and 7. Rebuild experimental stores.");
 		}
+		return version;
+	}
+
+	private static void validateCapabilities(StoreProperties properties, LmdbStoreConfig config, int version) {
 		validateCapability(properties, StoreProperties.NUMERIC_ID_ENCODING_KEY,
 				StoreProperties.NUMERIC_ID_ENCODING_ORDERED_V1);
 		validateCapability(properties, StoreProperties.LITERAL_REFERENCE_ENCODING_KEY,
@@ -100,7 +141,6 @@ public final class LmdbStoreFormat {
 			throw new SailException("This store was created with literal inlining " + inline
 					+ " and must be opened with its original setting.");
 		}
-		File marker = new File(directory, LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE);
 		if (version == LEGACY_VERSION) {
 			for (String key : new String[] { StoreProperties.NUMERIC_ID_ENCODING_KEY,
 					StoreProperties.LITERAL_REFERENCE_ENCODING_KEY, StoreProperties.CANONICAL_LANGUAGE_TAGS_KEY,
@@ -109,26 +149,11 @@ public final class LmdbStoreFormat {
 					throw new SailException("Capability " + key + " is inconsistent with LmdbStore format 2");
 				}
 			}
-			if (marker.exists()) {
-				throw new SailException("Compatibility marker is inconsistent with LmdbStore format 2");
-			}
-			// Historical writers did not record this setting. The caller supplies its original configuration;
-			// persisting an assumption would mislabel stores created with inlining disabled.
-			return new LmdbStoreFormat(LEGACY_VERSION, config.getInlineLiterals(), false, false, false, false);
+		} else if (properties.isLoaded()
+				&& (inline == null || !properties.usesCoreDatatypeLiteralReferences()
+						|| !properties.usesCanonicalLanguageTags() || !properties.usesZeroFractionDateTimeIds())) {
+			throw new SailException("Incomplete writer capabilities for LmdbStore format " + version);
 		}
-		if (inline == null || !properties.usesCoreDatatypeLiteralReferences()
-				|| !properties.usesCanonicalLanguageTags() || !properties.usesZeroFractionDateTimeIds()) {
-			throw new SailException("Incomplete writer capabilities for LmdbStore format 6");
-		}
-		try {
-			if (!marker.isFile()
-					|| !LmdbStore.CORE_LITERAL_REFERENCE_MARKER.equals(Files.readString(marker.toPath()))) {
-				throw new SailException("Writer capabilities and LmdbStore compatibility marker do not agree");
-			}
-		} catch (IOException exception) {
-			throw new SailException("Unable to read LmdbStore compatibility marker", exception);
-		}
-		return fromProperties(properties, config);
 	}
 
 	private static void validateCapability(StoreProperties properties, String key, String supported) {
@@ -154,15 +179,63 @@ public final class LmdbStoreFormat {
 
 	/** Low-level dictionary constructors also support transient, explicitly supplied codec test seams. */
 	static LmdbStoreFormat fromProperties(StoreProperties properties, LmdbStoreConfig config) {
-		int version = properties.getVersion() == null ? CURRENT_VERSION : Integer.parseInt(properties.getVersion());
+		int version = properties.getVersion() == null && !properties.isLoaded()
+				? CURRENT_VERSION
+				: supportedVersion(properties.getVersion());
+		validateCapabilities(properties, config, version);
 		return new LmdbStoreFormat(version, config.getInlineLiterals(), properties.usesOrderedNumericIds(),
 				properties.usesCoreDatatypeLiteralReferences(), properties.usesCanonicalLanguageTags(),
 				properties.usesZeroFractionDateTimeIds());
 	}
 
+	/**
+	 * Resolves standalone dictionaries without interpreting an existing native generation as new output. Full Sail
+	 * stores resolve their authoritative metadata before invoking the explicit-format dictionary constructor.
+	 */
+	static LmdbStoreFormat resolveDictionary(File directory, StoreProperties properties, LmdbStoreConfig config)
+			throws IOException {
+		if (!properties.isLoaded()) {
+			properties.load();
+		}
+		if (properties.isLoaded()) {
+			File metadataDirectory = properties.propertiesFile == null ? directory
+					: properties.propertiesFile.getParentFile();
+			return resolve(metadataDirectory, properties, config);
+		}
+		if (properties.getVersion() == null) {
+			File metadataDirectory = properties.propertiesFile == null ? directory
+					: properties.propertiesFile.getParentFile();
+			if (Files.exists(new File(metadataDirectory, LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE).toPath(),
+					LinkOption.NOFOLLOW_LINKS)) {
+				throw new SailException("Missing store.properties for a fenced LmdbStore: " + metadataDirectory);
+			}
+			File nativeData = new File(directory, "data.mdb");
+			if (nativeData.isFile()) {
+				int version = RetiredValueIdStore.readNativeFormatVersion(directory);
+				if (isSupportedModernVersion(version) && StoreProperties.hasOwningSail(directory)) {
+					// The native fence identifies IRI policy, but cannot reconstruct the owner's independently
+					// persisted literal capabilities. Missing both sidecars must not disable those capabilities.
+					throw new SailException("Missing store.properties for an owning LmdbStore format " + version);
+				}
+				properties.setVersion(Integer.toString(version));
+			} else if (directory.exists()) {
+				requireEmptyDirectory(directory);
+			}
+		}
+		return fromProperties(properties, config);
+	}
+
 	void initializeProperties(StoreProperties properties) {
 		if (isLegacy()) {
 			throw new IllegalStateException("Existing format 2 capabilities cannot be rewritten");
+		}
+		if (properties.isLoaded() || properties.getVersion() != null
+				&& !Integer.toString(version).equals(properties.getVersion())) {
+			throw new IllegalStateException("Existing LmdbStore format properties cannot be rewritten");
+		}
+		if (!coreDatatypeLiteralReferences || !canonicalLanguageTags || !zeroFractionDateTimeIds) {
+			throw new IllegalStateException(
+					"Incomplete capabilities cannot be persisted as LmdbStore format " + version);
 		}
 		properties.setVersion(Integer.toString(version))
 				.setInlineLiterals(inlineLiterals)
@@ -180,6 +253,11 @@ public final class LmdbStoreFormat {
 
 	public boolean isLegacy() {
 		return version == LEGACY_VERSION;
+	}
+
+	/** IRI identity is determined by the persisted format, never by the runtime configuration. */
+	public boolean usesCanonicalIriEncoding() {
+		return version == CANONICAL_IRI_VERSION;
 	}
 
 	public boolean inlinesLiterals() {
