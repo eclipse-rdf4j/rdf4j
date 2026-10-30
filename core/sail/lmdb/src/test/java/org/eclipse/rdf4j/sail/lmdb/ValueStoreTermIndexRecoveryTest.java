@@ -408,6 +408,10 @@ class ValueStoreTermIndexRecoveryTest {
 		StoreProperties properties = new StoreProperties(valueDirectory.toFile());
 		LmdbStoreFormat format = LmdbStoreFormat.forNewStore(config);
 		format.initializeProperties(properties);
+		// The retained profile belongs to this fixture's owner. Fence its native writes now; publish capabilities
+		// only after the complete retry, just as the owning store keeps failed initialization unpublished.
+		Files.createDirectories(valueDirectory);
+		LmdbStore.writeCoreLiteralReferenceMarker(valueDirectory);
 		FailingInitializationValueStore.environmentCloseCount.set(0);
 		IOException failure = assertThrows(IOException.class,
 				() -> new FailingInitializationValueStore(valueDirectory.toFile(), properties,

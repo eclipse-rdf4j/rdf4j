@@ -375,6 +375,18 @@ class StoreProperties {
 		return properties;
 	}
 
+	/** Whether this object represents a persisted sidecar, even if its current values have since become dirty. */
+	boolean hasPersistedProperties() {
+		File file = propertiesFile;
+		boolean fileExists = file != null && Files.exists(file.toPath(), LinkOption.NOFOLLOW_LINKS);
+		if (fileExists) {
+			return true;
+		}
+		synchronized (this) {
+			return savedSnapshotKnown && savedProperties != null;
+		}
+	}
+
 	private static byte[] encodeProperties(Properties properties) throws IOException {
 		try (ByteArrayOutputStream output = new ByteArrayOutputStream(256)) {
 			properties.store(output, "LmdbStore meta-data");

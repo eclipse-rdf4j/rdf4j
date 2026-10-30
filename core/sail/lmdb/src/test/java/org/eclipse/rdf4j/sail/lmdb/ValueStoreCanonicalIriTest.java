@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractIRI;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -89,6 +91,41 @@ class ValueStoreCanonicalIriTest {
 					store.getId(VALUES.createIRI("https://example.org/long/namespace/missing")));
 			assertNoAlternativeSearch(store);
 		}
+	}
+
+	@Test
+	void standaloneFormatSevenFenceIsDurableBeforeFirstWriteAndReopens(@TempDir File directory) throws Exception {
+		IRI iri = VALUES.createIRI("urn:standalone:", "canonical/nested#iri");
+		Literal literal = VALUES.createLiteral("core literal", CoreDatatype.XSD.STRING.getIri());
+		long iriId;
+		long literalId;
+		try (ObservedValueStore store = new ObservedValueStore(directory)) {
+			var marker = directory.toPath().resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE);
+			assertTrue(Files.isRegularFile(marker));
+			assertEquals(LmdbStore.CORE_LITERAL_REFERENCE_MARKER, Files.readString(marker));
+			assertTrue(Files.isRegularFile(directory.toPath().resolve(StoreProperties.FILE_NAME)));
+			iriId = persist(store, iri);
+			literalId = persist(store, literal);
+			assertEquals(ValueIds.T_CORE_LITERAL, ValueIds.getIdType(literalId));
+		}
+		try (ObservedValueStore reopened = new ObservedValueStore(directory)) {
+			assertEquals(iriId, reopened.getId(reopened.createIRI("urn:", "standalone:canonical/nested#iri")));
+			assertEquals(literalId, reopened.getId(literal));
+			assertEquals(literal, reopened.getValue(literalId));
+			assertNoAlternativeSearch(reopened);
+		}
+	}
+
+	@Test
+	void standaloneConstructorRejectsForeignMarkerBeforeOpeningNativeEnvironment(@TempDir File directory)
+			throws Exception {
+		var marker = directory.toPath().resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE);
+		Files.writeString(marker, "foreign marker bytes");
+
+		assertThrows(IOException.class, () -> new ObservedValueStore(directory));
+		assertEquals("foreign marker bytes", Files.readString(marker));
+		assertFalse(Files.exists(directory.toPath().resolve("data.mdb")));
+		assertFalse(Files.exists(directory.toPath().resolve(StoreProperties.FILE_NAME)));
 	}
 
 	@ParameterizedTest

@@ -1257,11 +1257,11 @@ class TripleStore implements Closeable {
 	}
 
 	/**
-	 * Revision of the committed statement data. It is the LMDB transaction id of the last write transaction that
-	 * committed statements, seeded at open from the environment's current snapshot id, so it is durable across restarts
-	 * and strictly increases with every commit: a plan or probe cache keyed on it can never mistake a post-restart
-	 * state for the pre-restart one. The value is published only after the committed data is readable (readers reset),
-	 * so a revision is never observed before the data it names.
+	 * Logical revision of the committed statement data. It is seeded at open from the environment's current native
+	 * snapshot id, then advances once per committed statement transaction. Metadata-only transactions can advance the
+	 * native snapshot id without changing this coordinate. Each logical advance has a corresponding native commit, so
+	 * the seed on reopening cannot be older than the previous logical revision. The value is published only after the
+	 * committed data is readable, so a revision is never observed before the data it names.
 	 */
 	long getDataRevision() {
 		return dataRevision.get();
@@ -1279,15 +1279,6 @@ class TripleStore implements Closeable {
 		try (Txn txn = txnManager.createReadTxn()) {
 			return mdb_txn_id(txn.get());
 		}
-	}
-
-	/**
-	 * Publishes the revision of the durable batch that just became readable. The committed transaction id is taken
-	 * before {@code mdb_txn_commit} frees the handle; it normally exceeds the previous revision on its own, and the
-	 * revision advances by at least one per commit regardless.
-	 */
-	private void publishDataRevision(long committedTxnId) {
-		dataRevision.updateAndGet(current -> Math.max(current + 1L, committedTxnId));
 	}
 
 	long instanceId() {
@@ -9571,7 +9562,7 @@ class TripleStore implements Closeable {
 		if (previous.revision == nextRevision) {
 			return previous;
 		}
-		// A native commit retry owns another transaction ID. The old sealed delta cannot be relabeled.
+		// A changed logical revision cannot reuse a sealed delta; native transaction IDs are a separate coordinate.
 		DirectAdjacencyCommitListener.PreparedCommit owned = previous.prepared;
 		previous.prepared = null;
 		if (adjacencyCommitLog.hasStaged()) {
@@ -11411,7 +11402,7 @@ class TripleStore implements Closeable {
 									applyPendingRdfTermDomainCacheUpdates();
 								}
 								if (advanceDataRevision && tripleMutation) {
-									commitRevision = Math.max(dataRevision.get() + 1L, mdb_txn_id(writeTxn));
+									commitRevision = dataRevision.get() + 1L;
 									preparedDirect = prepareDerivedCommitForRevision(preparedDirect, commitRevision);
 								}
 								Runnable beforePhysicalCommit = beforePhysicalCommitForTest;

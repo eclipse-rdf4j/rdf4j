@@ -1424,6 +1424,101 @@ class LmdbQuadSynopsisServiceTest {
 		}
 	}
 
+	@ParameterizedTest
+	@CsvSource({ "false,add", "false,delete", "false,replace", "true,add", "true,delete", "true,replace" })
+	void completedUpdatesBeforeSnapshotRejectTheScanAndRebuildWithoutDuplicates(boolean alreadyBuilt, String change)
+			throws Exception {
+		MutableStatementSource source = new MutableStatementSource();
+		Statement base = VF.createStatement(VF.createIRI("urn:before-snapshot:base"), P, VF.createLiteral(1));
+		Statement removed = VF.createStatement(VF.createIRI("urn:before-snapshot:removed"), P, VF.createLiteral(2));
+		Statement added = VF.createStatement(VF.createIRI("urn:before-snapshot:added"), P, VF.createLiteral(3));
+		source.statements.addAll(List.of(base, removed));
+		CountDownLatch snapshotEntered = new CountDownLatch(1);
+		CountDownLatch releaseSnapshot = new CountDownLatch(1);
+		AtomicBoolean pauseBeforeSnapshot = new AtomicBoolean();
+		AtomicInteger scans = new AtomicInteger();
+		AtomicReference<List<Statement>> capturedSnapshot = new AtomicReference<>();
+		SketchStatementSource blockingSource = (subject, predicate, object, contexts) -> {
+			scans.incrementAndGet();
+			if (pauseBeforeSnapshot.compareAndSet(true, false)) {
+				snapshotEntered.countDown();
+				try {
+					assertTrue(releaseSnapshot.await(10, TimeUnit.SECONDS), "the test must release source admission");
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(interrupted);
+				}
+			}
+			List<Statement> snapshot = List.copyOf(source.statements);
+			capturedSnapshot.set(snapshot);
+			return new CloseableIteratorIteration<>(snapshot.iterator());
+		};
+		try (LmdbQuadSynopsisService service = service(blockingSource);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			if (alreadyBuilt) {
+				service.requestRebuild();
+				assertTrue(service.forceFlush());
+				assertExactPublishedRows(service, 2L);
+			}
+			long previousVersion = service.snapshotVersion();
+			QuadSnapshotIdentity previousIdentity = service.snapshotIdentity();
+			long previousRows = service.publishedRows();
+			int previousScans = scans.get();
+			service.requestRebuild();
+			pauseBeforeSnapshot.set(true);
+			Future<Boolean> first = executor.submit(service::forceFlush);
+			try {
+				assertTrue(snapshotEntered.await(10, TimeUnit.SECONDS), "the rebuild must stop before copying source rows");
+				boolean deletion = !"add".equals(change);
+				boolean addition = !"delete".equals(change);
+				if (deletion) {
+					assertTrue(source.statements.remove(removed));
+					service.deleteStatement(removed);
+				}
+				if (addition) {
+					source.statements.add(added);
+					service.addStatement(added);
+				}
+				List<Statement> expectedSource = List.copyOf(source.statements);
+				releaseSnapshot.countDown();
+				assertFalse(first.get(10, TimeUnit.SECONDS), "completed updates overlapping the scan must leave a retry pending");
+				assertEquals(expectedSource, capturedSnapshot.get(), "the rejected source snapshot already includes the updates");
+				assertEquals(previousScans + 1, scans.get());
+				assertEquals(previousVersion, service.snapshotVersion(), "a rejected scan must not publish a new version");
+				assertEquals(previousIdentity, service.snapshotIdentity());
+				assertEquals(previousRows, service.publishedRows());
+				assertFalse(service.isReadyNonBlocking());
+				QuadProbe unavailable = new QuadProbe(0, QuadProbe.ALL, 0L, 0L, 0L, 0L, service.snapshotIdentity());
+				assertFalse(service.probe(unavailable).usable());
+				assertTrue(service.probePublishedCurrent(unavailable).isEmpty());
+
+				assertTrue(service.forceFlush(), "a later safe rebuild must consume the existing retry request");
+				assertEquals(previousScans + 2, scans.get());
+				assertEquals(previousVersion + 1, service.snapshotVersion());
+				assertExactPublishedRows(service, expectedSource.size());
+				assertStatementRows(service, base, 1.0d);
+				assertStatementRows(service, removed, deletion ? 0.0d : 1.0d);
+				assertStatementRows(service, added, addition ? 1.0d : 0.0d);
+				assertTrue(service.forceFlush());
+				assertEquals(previousScans + 2, scans.get(), "the safe rebuild must settle its incremental updates");
+
+				if (deletion) {
+					source.statements.add(removed);
+					service.addStatement(removed);
+					assertTrue(service.isReadyNonBlocking());
+					assertEquals(expectedSource.size() + 1.0d, predicateRows(service),
+							"re-adding a deleted row must not retain an old decrement or duplicate the new increment");
+					assertStatementRows(service, removed, 1.0d);
+					assertTrue(service.forceFlush());
+					assertExactPublishedRows(service, expectedSource.size() + 1L);
+					assertStatementRows(service, removed, 1.0d);
+				}
+			} finally {
+				releaseSnapshot.countDown();
+			}
+		}
+	}
+
 	@Test
 	void rebuildRequestDuringAnOlderScanRemainsPending() throws Exception {
 		CountDownLatch firstScanEntered = new CountDownLatch(1);
@@ -1645,6 +1740,26 @@ class LmdbQuadSynopsisServiceTest {
 		QuadProbe probe = new QuadProbe(QuadProbe.PREDICATE, QuadProbe.OBJECT, 0L, QuadValueHash.hash(P), 0L, 0L,
 				service.snapshotIdentity());
 		return service.probe(probe).rows().estimate();
+	}
+
+	private static void assertExactPublishedRows(LmdbQuadSynopsisService service, long expected) {
+		QuadProbe probe = new QuadProbe(0, QuadProbe.ALL, 0L, 0L, 0L, 0L, service.snapshotIdentity());
+		QuadEvidence evidence = service.probePublishedCurrent(probe).orElseThrow();
+		assertTrue(evidence.usable());
+		assertTrue(evidence.rows().complete());
+		assertEquals((double) expected, evidence.rows().estimate());
+		assertEquals((double) expected, evidence.rows().lowerBound());
+		assertEquals((double) expected, evidence.rows().upperBound());
+		assertEquals(expected, service.publishedRows());
+	}
+
+	private static void assertStatementRows(LmdbQuadSynopsisService service, Statement statement, double expected) {
+		QuadProbe probe = new QuadProbe(QuadProbe.ALL, 0, QuadValueHash.hash(statement.getSubject()),
+				QuadValueHash.hash(statement.getPredicate()), QuadValueHash.hash(statement.getObject()),
+				QuadValueHash.hash(statement.getContext()), service.snapshotIdentity());
+		QuadEvidence evidence = service.probe(probe);
+		assertTrue(evidence.usable());
+		assertEquals(expected, evidence.rows().estimate());
 	}
 
 	private static final class MutableStatementSource implements SketchStatementSource {

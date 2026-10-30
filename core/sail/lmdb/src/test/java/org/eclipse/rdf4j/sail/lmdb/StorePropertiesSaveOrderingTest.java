@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -29,16 +30,109 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Ordering and retry controls for concurrent store-properties publications. */
 @Timeout(60)
 class StorePropertiesSaveOrderingTest {
+
+	@Test
+	void restoringLoadedContentsReplacesTheLastSavedContents(
+			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
+		GateFileOps files = new GateFileOps();
+		StoreProperties initial = new StoreProperties(directory.toFile(), files)
+				.setVersion("6").setTripleTermIndexes("spoc").setRdfTermDomainsVersion("domain-A");
+		UUID identity = initial.getOrCreateStoreId();
+		initial.save();
+		assertFalse(initial.isLoaded(), "saving a fresh owner must not change load semantics");
+		StoreProperties properties = new StoreProperties(directory.toFile(), files);
+		assertTrue(properties.load());
+		assertEquals(identity, properties.savedStoreId());
+		assertTrue(properties.hasAvailableRdfTermDomainsVersion("domain-A"));
+
+		properties.setRdfTermDomainsVersion("domain-B").save();
+		assertReopened(directory, "domain-B", "spoc");
+		assertFilePublications(files, 2, 2, 2, 2);
+
+		properties.setRdfTermDomainsVersion("domain-A").save();
+		assertReopened(directory, "domain-A", "spoc");
+		assertFilePublications(files, 3, 3, 3, 3);
+		assertEquals(identity, properties.savedStoreId());
+		assertTrue(properties.hasAvailableRdfTermDomainsVersion("domain-A"));
+		assertFalse(properties.dirty, "the restored contents must have their own completed save receipt");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void directoryForceFailureRequiresDurableRetry(boolean restoreOriginal,
+			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
+		GateFileOps files = new GateFileOps();
+		StoreProperties properties = new StoreProperties(directory.toFile(), files)
+				.setVersion("6").setTripleTermIndexes("spoc").setRdfTermDomainsVersion("domain-A");
+		UUID identity = properties.getOrCreateStoreId();
+		properties.save();
+		assertEquals(identity, properties.savedStoreId());
+		assertTrue(properties.hasAvailableRdfTermDomainsVersion("domain-A"));
+
+		IOException failure = new IOException("controlled directory force failure after replacement");
+		files.directoryForceFailure.set(failure);
+		properties.setRdfTermDomainsVersion("domain-B");
+		assertSame(failure, assertThrows(IllegalStateException.class, properties::save).getCause());
+		assertReopened(directory, "domain-B", "spoc");
+		assertFilePublications(files, 2, 2, 2, 1);
+		assertNull(properties.savedStoreId(), "replacement alone cannot establish a durable file receipt");
+		assertFalse(properties.hasAvailableRdfTermDomainsVersion("domain-B"));
+		assertTrue(properties.dirty, "the failed directory force must leave a retry pending");
+
+		String expected = restoreOriginal ? "domain-A" : "domain-B";
+		if (restoreOriginal) {
+			properties.setRdfTermDomainsVersion(expected);
+		}
+		assertFalse(properties.hasAvailableRdfTermDomainsVersion(expected));
+		properties.save();
+		assertFilePublications(files, 3, 3, 3, 2);
+		assertReopened(directory, expected, "spoc");
+		assertEquals(identity, properties.savedStoreId());
+		assertTrue(properties.hasAvailableRdfTermDomainsVersion(expected));
+		assertFalse(properties.dirty);
+		properties.save();
+		assertFilePublications(files, 3, 3, 3, 2);
+	}
+
+	@Test
+	void inFlightSaveRetainsAConcurrentMutationRestoredToItsCapturedValue(
+			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
+		GateFileOps files = new GateFileOps();
+		StoreProperties properties = initialProperties(directory, files);
+		properties.setRdfTermDomainsVersion("domain-B");
+		files.armed.set(true);
+		try (var worker = Executors.newSingleThreadExecutor()) {
+			var save = worker.submit(properties::save);
+			try {
+				assertTrue(files.forced.await(15, TimeUnit.SECONDS));
+				properties.setRdfTermDomainsVersion("domain-C");
+				properties.setRdfTermDomainsVersion("domain-B");
+			} finally {
+				files.release.countDown();
+			}
+			save.get(15, TimeUnit.SECONDS);
+		}
+		assertTrue(properties.dirty, "equal contents must not erase a concurrent mutation's revision identity");
+		assertTrue(properties.hasAvailableRdfTermDomainsVersion("domain-B"));
+		assertFilePublications(files, 2, 2, 2, 2);
+		properties.save();
+		assertFalse(properties.dirty);
+		assertFilePublications(files, 2, 2, 2, 2);
+		assertReopened(directory, "domain-B", "spoc");
+	}
 
 	@Test
 	void concurrentSavesKeepTheLaterState(@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
@@ -217,11 +311,24 @@ class StorePropertiesSaveOrderingTest {
 		assertEquals(termIndexes, reopened.getTripleTermIndexes());
 	}
 
+	private static void assertFilePublications(GateFileOps files, int writes, int moves, int forceAttempts,
+			int completedForces) {
+		assertEquals(writes, files.writes.get(), "completed temporary-file writes and forces");
+		assertEquals(moves, files.moves.get(), "completed atomic replacements");
+		assertEquals(forceAttempts, files.directoryForceAttempts.get(), "directory-force attempts");
+		assertEquals(completedForces, files.directoryForces.get(), "completed directory forces");
+	}
+
 	private static final class GateFileOps implements StorePropertiesFileOps {
 		private final AtomicBoolean armed = new AtomicBoolean();
 		private final AtomicReference<IOException> moveFailure = new AtomicReference<>();
+		private final AtomicReference<IOException> directoryForceFailure = new AtomicReference<>();
 		private final AtomicReference<IOException> cleanupFailure = new AtomicReference<>();
 		private final AtomicReference<AssertionError> fatalMoveFailure = new AtomicReference<>();
+		private final AtomicInteger writes = new AtomicInteger();
+		private final AtomicInteger moves = new AtomicInteger();
+		private final AtomicInteger directoryForceAttempts = new AtomicInteger();
+		private final AtomicInteger directoryForces = new AtomicInteger();
 		private final CountDownLatch forced = new CountDownLatch(1);
 		private final CountDownLatch release = new CountDownLatch(1);
 
@@ -233,6 +340,7 @@ class StorePropertiesSaveOrderingTest {
 		@Override
 		public void writeAndForce(Path path, byte[] bytes) throws IOException {
 			NioStorePropertiesFileOps.INSTANCE.writeAndForce(path, bytes);
+			writes.incrementAndGet();
 			if (armed.compareAndSet(true, false)) {
 				forced.countDown();
 				try {
@@ -257,11 +365,18 @@ class StorePropertiesSaveOrderingTest {
 				throw failure;
 			}
 			NioStorePropertiesFileOps.INSTANCE.moveAtomically(source, target);
+			moves.incrementAndGet();
 		}
 
 		@Override
 		public void forceDirectory(Path path) throws IOException {
+			directoryForceAttempts.incrementAndGet();
+			IOException failure = directoryForceFailure.getAndSet(null);
+			if (failure != null) {
+				throw failure;
+			}
 			NioStorePropertiesFileOps.INSTANCE.forceDirectory(path);
+			directoryForces.incrementAndGet();
 		}
 
 		@Override

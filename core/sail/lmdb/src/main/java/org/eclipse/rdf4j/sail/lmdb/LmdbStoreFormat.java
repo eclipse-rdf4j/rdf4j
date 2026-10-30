@@ -194,6 +194,7 @@ public final class LmdbStoreFormat {
 	/** Low-level dictionary constructors also support transient, explicitly supplied codec test seams. */
 	static LmdbStoreFormat fromProperties(StoreProperties properties, LmdbStoreConfig config) {
 		int version = properties.getVersion() == null && !properties.isLoaded()
+				&& !properties.hasPersistedProperties()
 				? CURRENT_VERSION
 				: supportedVersion(properties.getVersion());
 		validateCapabilities(properties, config, version);
@@ -208,7 +209,10 @@ public final class LmdbStoreFormat {
 	 */
 	static LmdbStoreFormat resolveDictionary(File directory, StoreProperties properties, LmdbStoreConfig config)
 			throws IOException {
-		if (!properties.isLoaded()) {
+		// A supplied owner profile can already authorize a fresh generation or carry one-use paired observations.
+		// Loading it again would turn its newly authored sidecar into a persisted reopen and discard those observations.
+		// Public standalone construction has independently loaded its sidecar before reaching this resolver.
+		if (!properties.isLoaded() && properties.getVersion() == null && !properties.hasNativeGeneration()) {
 			properties.load();
 		}
 		if (properties.isLoaded()) {
@@ -223,15 +227,27 @@ public final class LmdbStoreFormat {
 					LinkOption.NOFOLLOW_LINKS)) {
 				throw new SailException("Missing store.properties for a fenced LmdbStore: " + metadataDirectory);
 			}
+			if (StoreProperties.hasOwningSail(directory) && properties.propertiesFile != null
+					&& metadataDirectory.getAbsoluteFile().equals(directory.getAbsoluteFile().getParentFile())) {
+				try {
+					// Only a validated native pair can recover a missing legacy owner sidecar. The discovery and fence
+					// checks reject incomplete, unknown, and modern generations without authoring replacement metadata.
+					if (!properties.hasNativeGeneration()) {
+						LegacyStoreDiscovery.discover(metadataDirectory, properties);
+					}
+					if (properties.hasNativeGeneration()) {
+						LmdbStoreFormat legacy = resolve(metadataDirectory, properties, config);
+						LegacyStoreDiscovery.validateNativeFormatFence(metadataDirectory, legacy);
+						return legacy;
+					}
+				} catch (IOException invalidNativeOwner) {
+					throw new SailException("Unable to validate metadata-free legacy LmdbStore owner: "
+							+ metadataDirectory, invalidNativeOwner);
+				}
+			}
 			File nativeData = new File(directory, "data.mdb");
 			if (nativeData.isFile()) {
-				int version = RetiredValueIdStore.readNativeFormatVersion(directory);
-				if (isSupportedModernVersion(version) && StoreProperties.hasOwningSail(directory)) {
-					// The native fence identifies IRI policy, but cannot reconstruct the owner's independently
-					// persisted literal capabilities. Missing both sidecars must not disable those capabilities.
-					throw new SailException("Missing store.properties for an owning LmdbStore format " + version);
-				}
-				properties.setVersion(Integer.toString(version));
+				throw new SailException("Missing store.properties for an existing ValueStore dictionary: " + directory);
 			} else if (directory.exists()) {
 				requireEmptyDirectory(directory);
 			}

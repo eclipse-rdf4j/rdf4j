@@ -12,14 +12,18 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -52,8 +56,9 @@ class ValueStoreConstructorFormatTest {
 		StoreProperties properties = new StoreProperties(valuesDirectory.toFile());
 		LmdbStoreFormat format = LmdbStoreFormat.forNewStore(config);
 		format.initializeProperties(properties);
-		// Mirror the owning TripleStore's primary-index sidecar before the direct ValueStore is reopened.
-		properties.setTripleIndexes(config.getTripleIndexes());
+		// This fixture owns durable standalone publication; the explicit codec constructor does not publish its fence.
+		Files.createDirectories(valuesDirectory);
+		LmdbStore.writeCoreLiteralReferenceMarker(valuesDirectory);
 		properties.save();
 		var vf = SimpleValueFactory.getInstance();
 		Value[] terms = {
@@ -84,6 +89,7 @@ class ValueStoreConstructorFormatTest {
 		}
 		// ValueStore initializes the term-index manifest and its sidecar; persist those owned settings before cold
 		// reopen.
+		assertThat(properties.getTripleIndexes()).as("standalone publication owns no statement index layout").isNull();
 		properties.save();
 		ValueStore reopened = new ValueStore(valuesDirectory.toFile(), config);
 		try {
@@ -98,6 +104,38 @@ class ValueStoreConstructorFormatTest {
 		} finally {
 			reopened.close();
 		}
+	}
+
+	@Test
+	void explicitCurrentCodecDoesNotPublishDurableOwnerMetadata() throws Exception {
+		LmdbStoreConfig config = config(false, true);
+		Path valuesDirectory = directory.resolve("values");
+		StoreProperties properties = new StoreProperties(valuesDirectory.toFile());
+		LmdbStoreFormat format = LmdbStoreFormat.forNewStore(config);
+		format.initializeProperties(properties);
+		ValueStore values = new ValueStore(valuesDirectory.toFile(), properties, config, false, null, format, false);
+		try {
+			assertFormat(values.getFormat(), format);
+			values.startTransaction(true);
+			values.storeValue(SimpleValueFactory.getInstance().createLiteral("explicit codec owner"));
+			values.commit();
+		} finally {
+			values.close();
+		}
+		assertThat(valuesDirectory.resolve(StoreProperties.FILE_NAME)).doesNotExist();
+		assertThat(valuesDirectory.resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE)).doesNotExist();
+		// Publishing only capabilities is incomplete ownership, even when an explicit codec wrote valid native bytes.
+		properties.save();
+		byte[] dataBefore = Files.readAllBytes(valuesDirectory.resolve("data.mdb"));
+		byte[] propertiesBefore = Files.readAllBytes(valuesDirectory.resolve(StoreProperties.FILE_NAME));
+		assertThatThrownBy(() -> {
+			ValueStore rejected = new ValueStore(valuesDirectory.toFile(), config);
+			rejected.close();
+		}).isInstanceOf(SailException.class)
+				.hasMessage("Writer capabilities and LmdbStore compatibility marker do not agree");
+		assertThat(Files.readAllBytes(valuesDirectory.resolve("data.mdb"))).isEqualTo(dataBefore);
+		assertThat(Files.readAllBytes(valuesDirectory.resolve(StoreProperties.FILE_NAME))).isEqualTo(propertiesBefore);
+		assertThat(valuesDirectory.resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE)).doesNotExist();
 	}
 
 	private static LmdbStoreConfig config(boolean inline, boolean ordered) {

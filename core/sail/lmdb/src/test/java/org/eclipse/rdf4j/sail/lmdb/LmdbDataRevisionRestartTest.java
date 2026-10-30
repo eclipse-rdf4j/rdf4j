@@ -13,13 +13,18 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -33,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
@@ -40,9 +46,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The data revision that keys every plan and probe cache must survive a restart: it is derived from the durable LMDB
- * transaction id, never from an in-memory counter that restarts at zero and is then masked by the persisted synopsis
- * version.
+ * The data revision that keys every plan and probe cache must survive a restart: its in-memory logical coordinate is
+ * seeded from the durable LMDB transaction id, never from zero or from the persisted synopsis version.
  */
 class LmdbDataRevisionRestartTest {
 
@@ -82,6 +87,114 @@ class LmdbDataRevisionRestartTest {
 
 			assertTrue(reopened.getDataRevision() > afterReopen,
 					"the first post-restart commit must be distinguishable from the pre-restart state");
+		}
+	}
+
+	@Test
+	void metadataRollbackAndFailedCommitPreserveRevisionAcrossReopen(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		Map<String, String> namespaces = Map.of("ex", "urn:example:", "other", "urn:other:");
+		long beforeClose;
+		try (TripleStore store = new TripleStore(dataDir, config, null)) {
+			long generationBeforeFirst = store.getNativeCommitGeneration();
+			store.startTransaction();
+			store.storeTriple(1, 2, 3, 1, true);
+			store.commit();
+			long first = store.getDataRevision();
+			long[] firstCoordinates = store.snapshotCoordinates();
+			TripleStore.StatementCommitReceipt firstReceipt = store.statementCommitReceiptAfter(generationBeforeFirst);
+			assertNotNull(firstReceipt);
+			assertEquals(first, firstReceipt.revision());
+			assertEquals(firstCoordinates[0], firstReceipt.epoch());
+			assertEquals(firstCoordinates[1], firstReceipt.sequence());
+
+			try (Txn pinned = store.getTxnManager().createReadTxnPinned(store::getDataRevision)) {
+				assertEquals(first, pinned.snapshotRevision());
+				assertEquals(firstReceipt.epoch(), pinned.nativeTransactionId());
+				assertEquals(1L, store.exactStatementCount(pinned, 1, 2, 3, 1, true));
+				long generationBeforeMetadata = store.getNativeCommitGeneration();
+				store.commitNamespaceSnapshot(Map.of("ex", "urn:example:"));
+				long metadataEpoch = store.snapshotCoordinates()[0];
+				assertTrue(metadataEpoch > firstReceipt.epoch(), "metadata must commit in the native environment");
+				assertEquals(first, store.getDataRevision(), "metadata alone must not change the statement revision");
+				store.commitNamespaceSnapshot(namespaces);
+				assertTrue(store.snapshotCoordinates()[0] > metadataEpoch,
+						"each changed metadata snapshot must have its own native commit");
+				assertEquals(first, store.getDataRevision(), "multiple metadata commits must keep one statement identity");
+				assertEquals(generationBeforeMetadata + 2, store.getNativeCommitGeneration());
+				assertNull(store.statementCommitReceiptAfter(generationBeforeMetadata),
+						"native metadata commits must not issue a statement receipt");
+				assertSame(firstReceipt, store.statementCommitReceiptAfter(generationBeforeFirst));
+
+				long generationBeforeAborts = store.getNativeCommitGeneration();
+				store.startTransaction();
+				store.storeTriple(1, 2, 4, 1, true);
+				store.rollback();
+				assertEquals(first, store.getDataRevision(), "an aborted statement transaction must not advance it");
+				assertEquals(first, store.adjacencyCommitLog().headRevision());
+				assertEquals(generationBeforeAborts, store.getNativeCommitGeneration());
+				assertNull(store.statementCommitReceiptAfter(generationBeforeAborts));
+
+				IllegalStateException failure = new IllegalStateException("before physical commit");
+				store.beforePhysicalCommitForTest = () -> {
+					throw failure;
+				};
+				try {
+					store.startTransaction();
+					store.storeTriple(1, 2, 5, 1, true);
+					assertSame(failure, assertThrows(IllegalStateException.class, store::commit));
+				} finally {
+					store.beforePhysicalCommitForTest = null;
+				}
+				assertEquals(first, store.getDataRevision(), "a failed physical commit must not advance it");
+				assertEquals(first, store.adjacencyCommitLog().headRevision());
+				assertFalse(store.adjacencyCommitLog().hasStaged(), "a failed commit must retract its staged record");
+				assertEquals(generationBeforeAborts, store.getNativeCommitGeneration());
+				assertNull(store.statementCommitReceiptAfter(generationBeforeAborts));
+
+				store.startTransaction();
+				store.storeTriple(1, 2, 6, 1, true);
+				store.commit();
+				beforeClose = store.getDataRevision();
+				assertEquals(first + 1, beforeClose, "the next statement commit occupies exactly one revision");
+				assertEquals(beforeClose, store.adjacencyCommitLog().headRevision());
+				TripleStore.StatementCommitReceipt receipt = store.statementCommitReceiptAfter(generationBeforeAborts);
+				assertNotNull(receipt);
+				long[] coordinates = store.snapshotCoordinates();
+				assertEquals(beforeClose, receipt.revision());
+				assertEquals(coordinates[0], receipt.epoch());
+				assertEquals(coordinates[1], receipt.sequence());
+				assertTrue(receipt.epoch() > receipt.revision(), "native and logical coordinates must remain separate");
+				assertTrue(store.isCurrentStatementSnapshot(receipt.revision(), receipt.epoch()));
+				assertFalse(store.isCurrentStatementSnapshot(receipt.revision(), pinned.nativeTransactionId()),
+						"the new logical revision cannot authorize a reader predating its native receipt");
+				assertFalse(store.isCurrentStatementSnapshot(first, receipt.epoch()),
+						"a current native epoch cannot authorize an old logical revision");
+				assertEquals(first, pinned.snapshotRevision());
+				assertEquals(firstReceipt.epoch(), pinned.nativeTransactionId());
+				assertEquals(1L, store.exactStatementCount(pinned, 1, 2, 3, 1, true));
+				assertEquals(0L, store.exactStatementCount(pinned, 1, 2, 6, 1, true),
+						"the original pinned reader must not acquire rows from the later statement commit");
+				try (Txn current = store.getTxnManager().createReadTxnPinned(store::getDataRevision)) {
+					assertEquals(beforeClose, current.snapshotRevision());
+					assertEquals(receipt.epoch(), current.nativeTransactionId());
+					assertEquals(1L, store.exactStatementCount(current, 1, 2, 3, 1, true));
+					assertEquals(1L, store.exactStatementCount(current, 1, 2, 6, 1, true));
+					assertEquals(0L, store.exactStatementCount(current, 1, 2, 4, 1, true));
+					assertEquals(0L, store.exactStatementCount(current, 1, 2, 5, 1, true));
+				}
+			}
+		}
+		try (TripleStore reopened = new TripleStore(dataDir, config, null)) {
+			long afterReopen = reopened.getDataRevision();
+			assertTrue(afterReopen >= beforeClose, "reopening must not move the revision backward");
+			assertEquals(namespaces, reopened.readNamespaceSnapshot());
+			assertEquals(afterReopen, reopened.adjacencyCommitLog().headRevision());
+			reopened.startTransaction();
+			reopened.storeTriple(1, 2, 7, 1, true);
+			reopened.commit();
+			assertEquals(afterReopen + 1, reopened.getDataRevision());
+			assertEquals(reopened.getDataRevision(), reopened.adjacencyCommitLog().headRevision());
 		}
 	}
 

@@ -73,6 +73,7 @@ import java.nio.IntBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -918,6 +919,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private volatile boolean domainQualificationSyncSucceeded;
 	private final LmdbStoreFormat format;
 	private final boolean deferPersistedUnusedRecovery;
+	/** One-use authority granted only when this standalone owner created a new empty dictionary sidecar. */
+	private boolean freshStandaloneGenerationAdmission;
 
 	@FunctionalInterface
 	interface ValueIdLivenessChecker {
@@ -1341,11 +1344,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		this(dir, config, standaloneProperties(dir, config));
 	}
 
+	private record StandaloneSetup(StoreProperties properties, boolean newNativeGenerationAdmission) {
+	}
+
 	/** The public dictionary entry owns its local capability file; explicitly supplied codec seams do not. */
-	private ValueStore(File dir, LmdbStoreConfig config, StoreProperties properties) throws IOException {
-		this(dir, properties, config, false, null,
-				LmdbStoreFormat.resolveDictionary(dir, properties, config), false);
+	private ValueStore(File dir, LmdbStoreConfig config, StandaloneSetup setup) throws IOException {
+		this(dir, setup.properties(), config, false, null,
+				LmdbStoreFormat.resolveDictionary(dir, setup.properties(), config), false, null,
+				setup.newNativeGenerationAdmission());
 		try {
+			StoreProperties properties = setup.properties();
 			if (properties.propertiesFile != null
 					&& properties.propertiesFile.toPath().toAbsolutePath().normalize().getParent()
 							.equals(dir.toPath().toAbsolutePath().normalize())) {
@@ -1363,16 +1371,19 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private static StoreProperties standaloneProperties(File directory, LmdbStoreConfig config) throws IOException {
+	private static StandaloneSetup standaloneProperties(File directory, LmdbStoreConfig config) throws IOException {
 		StoreProperties properties = StoreProperties.forDictionary(directory);
 		if (properties.load()) {
-			return properties;
+			return new StandaloneSetup(properties, false);
 		}
 		if (properties.propertiesFile != null
 				&& !properties.propertiesFile.toPath().toAbsolutePath().normalize().getParent()
 						.equals(directory.toPath().toAbsolutePath().normalize())) {
 			// The owning Sail's sidecars and native fence decide whether this dictionary may be opened.
-			return properties;
+			return new StandaloneSetup(properties, false);
+		}
+		if (!directory.exists()) {
+			Files.createDirectories(directory.toPath());
 		}
 		if (directory.exists()) {
 			File[] entries = directory.listFiles();
@@ -1389,7 +1400,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 		}
 		LmdbStoreFormat.forNewStore(config).initializeProperties(properties);
-		return properties;
+		// This owner creates dictionary indexes only. Record their layout before native bootstrap so a failed
+		// first initialization can retry without inferring a statement store or a different dictionary layout.
+		properties.setTripleTermIndexes(
+				String.join(",", TripleIndex.orderIndexSpecs(configuredTermIndexSpecs(config))));
+		// Format 7 writes core-datatype literal references. Persist the same old-reader fence as an owning Sail before
+		// any native environment or ID is created, then make the matching capabilities durable.
+		LmdbStore.writeCoreLiteralReferenceMarker(directory.toPath());
+		properties.save();
+		return new StandaloneSetup(properties, true);
 	}
 
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config) throws IOException {
@@ -1422,11 +1441,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			Runnable duringValueOverlayWarmupScanForTest, LmdbStoreFormat format,
 			boolean deferPersistedUnusedRecovery, Supplier<? extends CollectionFactory> legacyCollections)
 			throws IOException {
+		this(dir, properties, config, deferAuxiliaryDatabases, duringValueOverlayWarmupScanForTest, format,
+				deferPersistedUnusedRecovery, legacyCollections, false);
+	}
+
+	private ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases,
+			Runnable duringValueOverlayWarmupScanForTest, LmdbStoreFormat format,
+			boolean deferPersistedUnusedRecovery, Supplier<? extends CollectionFactory> legacyCollections,
+			boolean freshStandaloneGenerationAdmission) throws IOException {
 		this.legacyCollections = legacyCollections;
 		this.duringValueOverlayWarmupScanForTest = duringValueOverlayWarmupScanForTest;
 		this.dir = dir;
 		this.properties = properties;
 		this.format = Objects.requireNonNull(format);
+		this.freshStandaloneGenerationAdmission = freshStandaloneGenerationAdmission;
 		this.refCountRepairEnabled = !format.isLegacy() || config.getLegacyReferenceCountRepairEnabled();
 		this.deferPersistedUnusedRecovery = deferPersistedUnusedRecovery;
 		this.storeConfig = config;
@@ -1757,8 +1785,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			int refCountsHandle = -1;
 			int metadataHandle = -1;
 			List<String> databaseNames = List.of("unused_ids", "free_ids", "ref_counts", "retired_ids",
-					"retired_ids_seq",
-					"gc_meta");
+					"retired_ids_seq", "gc_meta", TERM_INDEX_MANIFEST_DATABASE);
 			for (String name : databaseNames) {
 				IntBuffer handle = stack.mallocInt(1);
 				int rc = mdb_dbi_open(txn, name, 0, handle);
@@ -1776,8 +1803,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 
-			for (String fieldSeq : startupTermIndexSpecs(config)) {
-				String name = "term-" + fieldSeq;
+			for (String fieldSeq : startupTermIndexSpecs(config, stack, txn)) {
+				String name = TripleIndex.nativeDatabaseName("term-" + fieldSeq, true);
 				IntBuffer handle = stack.mallocInt(1);
 				int rc = mdb_dbi_open(txn, name, 0, handle);
 				if (rc == MDB_NOTFOUND) {
@@ -1833,17 +1860,54 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private Set<String> startupTermIndexSpecs(LmdbStoreConfig config) throws IOException {
+	private Set<String> startupTermIndexSpecs(LmdbStoreConfig config, MemoryStack stack, long transaction)
+			throws IOException {
 		try {
-			Set<String> specs = new HashSet<>(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-			specs.addAll(TripleIndex.parseIndexSpecList(config.getTripleTermIndexes()));
-			if (properties.isLoaded()) {
-				specs.addAll(getTripleTermIndexSpecs());
+			IntBuffer manifest = stack.mallocInt(1);
+			int rc = mdb_dbi_open(transaction, TERM_INDEX_MANIFEST_DATABASE, 0, manifest);
+			Set<String> nativeSpecs = null;
+			if (rc != MDB_NOTFOUND) {
+				E(rc);
+				nativeSpecs = readTermIndexManifest(stack, transaction, manifest.get(0));
 			}
+			Set<String> specs = new HashSet<>(initialTermIndexSpecs(config, nativeSpecs, false));
+			specs.addAll(configuredTermIndexSpecs(config));
 			return specs;
 		} catch (SailException invalidSpec) {
 			throw new IOException("Cannot reserve ValueStore startup term-index capacity", invalidSpec);
 		}
+	}
+
+	private static Set<String> configuredTermIndexSpecs(LmdbStoreConfig config) throws IOException {
+		Set<String> specs = TripleIndex.parseIndexSpecList(config.getTripleTermIndexes());
+		specs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
+		if (specs.size() > MAX_TERM_INDEXES) {
+			throw new IOException("At most " + MAX_TERM_INDEXES + " triple-term indexes can be active");
+		}
+		return specs;
+	}
+
+	/** The capacity probe and startup writer must reserve and open the same committed dictionary layout. */
+	private Set<String> initialTermIndexSpecs(LmdbStoreConfig config, Set<String> nativeSpecs, boolean freshBulkGeneration)
+			throws IOException {
+		Set<String> specs;
+		if (nativeSpecs != null) {
+			// The native manifest commits with the DBIs and wins over a missing or stale derived sidecar.
+			specs = nativeSpecs;
+		} else if ((properties.isLoaded() || properties.hasNativeGeneration()) && !freshBulkGeneration
+				&& !startupMainDatabaseEmpty) {
+			// A populated pre-manifest generation still needs its original descriptor; never infer it from config.
+			specs = getTripleTermIndexSpecs();
+		} else {
+			specs = configuredTermIndexSpecs(config);
+		}
+		if (specs.size() > MAX_TERM_INDEXES) {
+			throw new IOException("At most " + MAX_TERM_INDEXES + " triple-term indexes can be active");
+		}
+		if (!specs.containsAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES))) {
+			throw new IOException("Committed triple-term index layout requires spoc and cspo indexes");
+		}
+		return specs;
 	}
 
 	void completeBulkInitialization(LmdbStoreConfig config) throws IOException {
@@ -3140,8 +3204,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		startupExpectedLastTransactionId = -1L;
 		startupInitializationInProgress = false;
 		boolean nativeGenerationExists = new File(dir, "data.mdb").exists();
+		boolean freshStandaloneAdmission = freshStandaloneGenerationAdmission;
+		freshStandaloneGenerationAdmission = false;
 		boolean newNativeGeneration = !nativeGenerationExists
-				&& (!properties.isLoaded() || replacingNativeGeneration || properties.recreatesNativeGeneration());
+				&& (freshStandaloneAdmission || !properties.isLoaded() || replacingNativeGeneration
+						|| properties.recreatesNativeGeneration());
 		if (!format.isLegacy() && !nativeGenerationExists && !newNativeGeneration) {
 			throw new IOException(
 					"Missing native ValueStore generation for existing LmdbStore format " + format.getVersion());
@@ -3636,27 +3703,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			String requestedSpecsText = config.getTripleTermIndexes();
 			Set<String> nativeTermIndexSpecs = readTermIndexManifest();
 			boolean hasNativeManifest = nativeTermIndexSpecs != null;
-			Set<String> effectiveTermIndexSpecs;
-			if (hasNativeManifest) {
-				// The native record shares a transaction with the index DBIs and remains authoritative if the sidecar
-				// is
-				// stale, missing, or was lost after a rename.
-				effectiveTermIndexSpecs = nativeTermIndexSpecs;
-			} else if ((properties.isLoaded() || properties.hasNativeGeneration()) && !freshBulkGeneration
-					&& !startupMainDatabaseEmpty) {
-				// Import the legacy sidecar on first native-manifest migration.
-				effectiveTermIndexSpecs = getTripleTermIndexSpecs();
-			} else {
-				// Newly created store (or a store whose sidecar was lost before native metadata existed).
-				effectiveTermIndexSpecs = TripleIndex.parseIndexSpecList(requestedSpecsText);
-				effectiveTermIndexSpecs.addAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES));
-			}
-			if (effectiveTermIndexSpecs.size() > MAX_TERM_INDEXES) {
-				throw new IOException("At most " + MAX_TERM_INDEXES + " triple-term indexes can be active");
-			}
-			if (!effectiveTermIndexSpecs.containsAll(TripleIndex.parseIndexSpecList(DEFAULT_TRIPLE_TERM_INDEXES))) {
-				throw new IOException("Committed triple-term index layout requires spoc and cspo indexes");
-			}
+			Set<String> effectiveTermIndexSpecs = initialTermIndexSpecs(config, nativeTermIndexSpecs,
+					freshBulkGeneration);
 
 			initTripleTermIndexes(effectiveTermIndexSpecs);
 			termWriteIndexes = tripleTermIndexes;
@@ -3729,16 +3777,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private Set<String> readTermIndexManifest() throws IOException, SailException {
 		try (MemoryStack stack = stackPush()) {
-			MDBVal key = MDBVal.calloc(stack);
-			key.mv_data(stack.bytes(TERM_INDEX_MANIFEST_KEY));
-			MDBVal value = MDBVal.calloc(stack);
-			int rc = mdb_get(writeTxn, termIndexManifestDbi, key, value);
-			if (rc == MDB_NOTFOUND) {
-				return null;
-			}
-			E(rc);
-			return decodeTermIndexManifest(value.mv_data().duplicate());
+			return readTermIndexManifest(stack, writeTxn, termIndexManifestDbi);
 		}
+	}
+
+	private static Set<String> readTermIndexManifest(MemoryStack stack, long transaction, int manifestDatabase)
+			throws IOException {
+		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(TERM_INDEX_MANIFEST_KEY));
+		MDBVal value = MDBVal.calloc(stack);
+		int rc = mdb_get(transaction, manifestDatabase, key, value);
+		if (rc == MDB_NOTFOUND) {
+			return null;
+		}
+		E(rc);
+		return decodeTermIndexManifest(value.mv_data().duplicate());
 	}
 
 	static Set<String> decodeTermIndexManifest(ByteBuffer data) throws IOException {
@@ -9890,7 +9942,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						continue;
 					}
 					resizeForAllocation(txn, 2L * encoded.length + 2L * (2L + Long.BYTES));
-					long alternativeId = findAlternativeIriId(encoded, stack, txn);
+					long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+							: findAlternativeIriId(encoded, stack, txn);
 					if (alternativeId != LmdbValue.UNKNOWN_ID) {
 						ids[indexes[index]] = alternativeId;
 						continue;
@@ -13773,7 +13826,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				System.arraycopy(iri.localNameData(), 0, data, prefix, iri.localNameData().length);
 				result = findCapturedId(txn, data);
 			}
-			if (result == LmdbValue.UNKNOWN_ID) {
+			if (result == LmdbValue.UNKNOWN_ID && !format.usesCanonicalIriEncoding()) {
 				byte[] lexical = new byte[iri.namespaceData().length - 1 + iri.localNameData().length];
 				System.arraycopy(iri.namespaceData(), 1, lexical, 0, iri.namespaceData().length - 1);
 				System.arraycopy(iri.localNameData(), 0, lexical, iri.namespaceData().length - 1,

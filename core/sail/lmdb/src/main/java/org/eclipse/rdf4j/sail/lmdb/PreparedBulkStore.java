@@ -46,6 +46,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.Objects;
 import java.util.Set;
 import java.util.zip.CRC32;
 
@@ -375,10 +376,11 @@ final class PreparedBulkStore {
 
 	private static Captured capture(Path directory, StoreProperties properties, LmdbStoreConfig config)
 			throws IOException {
-		if (!supportsPreparedFormat(properties)) {
+		StoreProperties persisted = persistedPreparedProperties(directory, properties);
+		if (!supportsPreparedFormat(persisted)) {
 			throw new IOException("Prepared LmdbStore generation requires a supported persisted modern format");
 		}
-		LmdbStoreFormat.resolve(directory.toFile(), properties, config);
+		LmdbStoreFormat.resolve(directory.toFile(), persisted, config);
 		long valuesEnv = 0L;
 		long triplesEnv = 0L;
 		long valuesTxn = 0L;
@@ -400,7 +402,7 @@ final class PreparedBulkStore {
 					ValueStore.REFCOUNT_MARKER_BYTES)), valueTransaction)) {
 				throw new IOException("Current LMDB reference counts are not clean");
 			}
-			validateCleanProperties(stack, valuesTxn, properties);
+			validateCleanProperties(stack, valuesTxn, persisted);
 			byte[] binding = getOptional(stack, valuesTxn, metadata, CLEAN_TRIPLE_TRANSACTION_KEY, Long.BYTES);
 			if (binding != null && ByteBuffer.wrap(binding).getLong() != tripleTransaction) {
 				throw new IOException("Native triple transaction changed after clean ValueStore completion");
@@ -418,7 +420,7 @@ final class PreparedBulkStore {
 			// decodes degradation rows using the real rebuild traversal and never opens a writer or scans statements.
 			TripleStore.RdfTermDomainStartup domainStartup = TripleStore.rdfTermDomainStartup(properties,
 					config.getPredicateGuaranteeIndexEnabled(), config.getPredicateGuaranteeIndexAutoRebuild(),
-					LmdbStoreFormat.resolveDictionaryCapabilities(properties, config).isLegacy(),
+					LmdbStoreFormat.resolveDictionaryCapabilities(persisted, config).isLegacy(),
 					config.getPredicateGuaranteeExcludedPredicateSet(),
 					RdfTermDomainQualification.matches(properties, snapshot));
 			boolean pendingDomainMaintenance = domainStartup == TripleStore.RdfTermDomainStartup.REBUILD_ALL
@@ -440,6 +442,45 @@ final class PreparedBulkStore {
 				mdb_env_close(valuesEnv);
 			}
 		}
+	}
+
+	/**
+	 * Reopens the exact owner sidecar and validates its immutable writer capabilities. Mutable index and RDF-domain
+	 * descriptors can legitimately be newer in the live owner while a prepared generation is being published.
+	 */
+	private static StoreProperties persistedPreparedProperties(Path directory, StoreProperties properties)
+			throws IOException {
+		Path expected = directory.toAbsolutePath().normalize().resolve(StoreProperties.FILE_NAME);
+		if (properties.propertiesFile == null
+				|| !properties.propertiesFile.toPath().toAbsolutePath().normalize().equals(expected)) {
+			throw new IOException("Prepared LmdbStore generation requires its owning properties sidecar");
+		}
+		StoreProperties persisted = new StoreProperties(directory.toFile());
+		try {
+			if (!persisted.load()) {
+				throw new IOException("Prepared LmdbStore generation properties sidecar is missing");
+			}
+		} catch (IllegalStateException unreadable) {
+			throw new IOException("Unable to reload prepared LmdbStore generation properties", unreadable);
+		}
+		if (!sameImmutableWriterCapabilities(properties, persisted)) {
+			throw new IOException("Prepared LmdbStore generation writer capabilities changed from their persisted values");
+		}
+		// The owner established this fact under its directory lock during native preflight. Reloading its sidecar must
+		// not erase that separate authority before the native transaction and generation checks below run.
+		persisted.setNativeGenerationPresent(properties.hasNativeGeneration());
+		return persisted;
+	}
+
+	private static boolean sameImmutableWriterCapabilities(StoreProperties left, StoreProperties right) {
+		for (String key : new String[] { StoreProperties.VERSION_KEY, StoreProperties.INLINE_LITERALS_KEY,
+				StoreProperties.NUMERIC_ID_ENCODING_KEY, StoreProperties.LITERAL_REFERENCE_ENCODING_KEY,
+				StoreProperties.CANONICAL_LANGUAGE_TAGS_KEY, StoreProperties.DATE_TIME_ID_ENCODING_KEY }) {
+			if (!Objects.equals(left.getRawProperty(key), right.getRawProperty(key))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static long openEnvironment(MemoryStack stack, Path directory) throws IOException {

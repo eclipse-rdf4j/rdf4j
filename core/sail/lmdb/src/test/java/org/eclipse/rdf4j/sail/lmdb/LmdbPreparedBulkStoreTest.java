@@ -51,6 +51,7 @@ import java.util.Properties;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -96,11 +97,23 @@ class LmdbPreparedBulkStoreTest {
 			}
 			ValueStore dictionary = (ValueStore) store.getBackingStore().getValueFactory();
 			long predicateId = dictionary.getId(values.createIRI("urn:p"));
-			RdfTermDomain domain = triples.getKnownRdfTermDomain(predicateId).orElseThrow();
-			assertFalse(domain.has(RdfTermDomain.Fact.CANONICAL_INTEGER),
-					"a canonical integer appended later must not exclude the bulk-loaded IRI object");
-			assertTrue(domain.has(RdfTermDomain.Fact.IRI),
-					"predicate guarantees must retain the possible kind of the bulk-loaded IRI object");
+			assertTrue(triples.getKnownRdfTermDomain(predicateId).isEmpty(),
+					"an unpinned observation cannot borrow domain authority from unrelated current native readers");
+			LmdbSailStore backing = store.getBackingStore();
+			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getSailStore()
+					.getEvaluationStatistics()).estimatorRuntime();
+			try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+					null)) {
+				admission.view().requireDictionaryTermSnapshot();
+				try (TripleStore.PlanningReadPin ignored = runtime.pinPlanningReads(admission.view().tripleTxn(),
+						admission.view().valueSnapshot())) {
+					RdfTermDomain domain = triples.getKnownRdfTermDomain(predicateId).orElseThrow();
+					assertFalse(domain.has(RdfTermDomain.Fact.CANONICAL_INTEGER),
+							"a canonical integer appended later must not exclude the bulk-loaded IRI object");
+					assertTrue(domain.has(RdfTermDomain.Fact.IRI),
+							"predicate guarantees must retain the possible kind of the bulk-loaded IRI object");
+				}
+			}
 			long beforeAcknowledgement = triples.trustedTransactionId();
 			assertTrue(beforeAcknowledgement > openedTransaction);
 			long sequence = triples.frontierMutationJournalState().latestSequence();
