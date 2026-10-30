@@ -15478,7 +15478,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** Keeps only namespace mappings observed or written by this native writer for possible commit publication. */
 	private void rememberWriterNamespace(WriterPublication publication, String namespace, long id) {
-		if (publication == null || id == LmdbValue.UNKNOWN_ID || namespace.length() > MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS) {
+		if (publication == null || id == LmdbValue.UNKNOWN_ID
+				|| namespace.length() > MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS) {
 			return;
 		}
 		synchronized (publication) {
