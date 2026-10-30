@@ -15478,51 +15478,57 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** Keeps only namespace mappings observed or written by this native writer for possible commit publication. */
 	private void rememberWriterNamespace(WriterPublication publication, String namespace, long id) {
-		if (publication == null || publication != writerPublication || !isWriteTransactionOwner()
-				|| id == LmdbValue.UNKNOWN_ID || namespace.length() > MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS) {
+		if (publication == null || id == LmdbValue.UNKNOWN_ID || namespace.length() > MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS) {
 			return;
 		}
-		ReverseIdCache.State<NamespaceKey> state = writerNamespaceIDCache.state();
-		ValueStoreRevision currentRevision = revision;
-		if (publication.namespaceCandidateState != state
-				|| !sameRevision(publication.namespaceCandidateRevision, currentRevision)
-				|| publication.namespaceCandidateEnvironment != environmentGeneration) {
-			if (publication.namespaceCandidates != null) {
-				publication.namespaceCandidates.clear();
+		synchronized (publication) {
+			if (publication != writerPublication || !isWriteTransactionOwner()) {
+				return;
 			}
-			publication.namespaceCandidateState = state;
-			publication.namespaceCandidateRevision = currentRevision;
-			publication.namespaceCandidateEnvironment = environmentGeneration;
+			ReverseIdCache.State<NamespaceKey> state = writerNamespaceIDCache.state();
+			ValueStoreRevision currentRevision = revision;
+			if (publication.namespaceCandidateState != state
+					|| !sameRevision(publication.namespaceCandidateRevision, currentRevision)
+					|| publication.namespaceCandidateEnvironment != environmentGeneration) {
+				if (publication.namespaceCandidates != null) {
+					publication.namespaceCandidates.clear();
+				}
+				publication.namespaceCandidateState = state;
+				publication.namespaceCandidateRevision = currentRevision;
+				publication.namespaceCandidateEnvironment = environmentGeneration;
+			}
+			Map<String, Long> candidates = publication.namespaceCandidates;
+			if (candidates == null) {
+				candidates = new LinkedHashMap<>(16, 0.75f, true);
+				publication.namespaceCandidates = candidates;
+			}
+			Long previous = candidates.get(namespace);
+			if (previous != null && previous.longValue() == id) {
+				return;
+			}
+			if (previous == null && !writerNamespaceIDCache.isUnbounded()
+					&& candidates.size() >= writerNamespaceIDCache.capacity()) {
+				Iterator<String> oldest = candidates.keySet().iterator();
+				oldest.next();
+				oldest.remove();
+			}
+			candidates.put(namespace, id);
 		}
-		Map<String, Long> candidates = publication.namespaceCandidates;
-		if (candidates == null) {
-			candidates = new LinkedHashMap<>(16, 0.75f, true);
-			publication.namespaceCandidates = candidates;
-		}
-		Long previous = candidates.get(namespace);
-		if (previous != null && previous.longValue() == id) {
-			return;
-		}
-		if (previous == null && !writerNamespaceIDCache.isUnbounded()
-				&& candidates.size() >= writerNamespaceIDCache.capacity()) {
-			Iterator<String> oldest = candidates.keySet().iterator();
-			oldest.next();
-			oldest.remove();
-		}
-		candidates.put(namespace, id);
 	}
 
 	/** Called with writer admission held, after native commit and revision handling have both succeeded. */
 	private void publishWriterNamespaces(WriterPublication publication) {
-		ReverseIdCache.State<NamespaceKey> state = publication.namespaceCandidateState;
-		if (state == null || !writerNamespaceIDCache.isCurrent(state)
-				|| !sameRevision(publication.namespaceCandidateRevision, revision)
-				|| publication.namespaceCandidateEnvironment != environmentGeneration) {
-			return;
-		}
-		for (Map.Entry<String, Long> candidate : publication.namespaceCandidates.entrySet()) {
-			writerNamespaceIDCache.put(state, NamespaceKey.of(candidate.getKey()), candidate.getValue(), revision, null,
-					ValuePosition.NONE);
+		synchronized (publication) {
+			ReverseIdCache.State<NamespaceKey> state = publication.namespaceCandidateState;
+			if (state == null || publication.namespaceCandidates == null || !writerNamespaceIDCache.isCurrent(state)
+					|| !sameRevision(publication.namespaceCandidateRevision, revision)
+					|| publication.namespaceCandidateEnvironment != environmentGeneration) {
+				return;
+			}
+			for (Map.Entry<String, Long> candidate : publication.namespaceCandidates.entrySet()) {
+				writerNamespaceIDCache.put(state, NamespaceKey.of(candidate.getKey()), candidate.getValue(), revision,
+						null, ValuePosition.NONE);
+			}
 		}
 	}
 
