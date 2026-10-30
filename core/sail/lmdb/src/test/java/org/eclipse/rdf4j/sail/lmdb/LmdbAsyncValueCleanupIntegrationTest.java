@@ -67,6 +67,88 @@ class LmdbAsyncValueCleanupIntegrationTest {
 	private static final Literal OBJECT = VF.createLiteral("persistent dictionary value for asynchronous reclamation");
 
 	@Test
+	void defaultCleanupPreservesTransactionsAcrossReopenAndExplicitDurableMode(@TempDir File directory)
+			throws Exception {
+		LmdbStoreConfig defaults = new LmdbStoreConfig().setSketchEstimatorEnabled(false)
+				.setBackgroundRawSamplingEnabled(false)
+				.setInitialRunImportEnabled(false);
+		ObservedStore store = new ObservedStore(directory, defaults);
+		store.init();
+		boolean deferred;
+		try {
+			assertTrue(store.getAsyncValueCleanup(), "omitted configuration must enable the background worker");
+			AsyncValueRetirementCoordinator coordinator = store.getBackingStore().asyncValueCleanupCoordinator();
+			ValueStore values = LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+			add(store);
+			IRI keeper = VF.createIRI("urn:async-cleanup:default-index-keeper");
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin();
+				writer.addStatement(keeper, PREDICATE, OBJECT);
+				writer.commit();
+			}
+			assertNotEquals(LmdbValue.UNKNOWN_ID, values.getId(SUBJECT));
+			remove(store);
+			assertTrue(coordinator.awaitEmpty(10, TimeUnit.SECONDS));
+			assertFalse(contains(store));
+			deferred = values.getId(SUBJECT) != LmdbValue.UNKNOWN_ID;
+			if (deferred) {
+				assertTrue(values.hasRetiredIds(),
+						"default inline/raw value protections preserve pending cleanup rather than force reclamation");
+			}
+			assertNotEquals(LmdbValue.UNKNOWN_ID, values.getId(OBJECT),
+					"an object still referenced through the default POSC index must remain live");
+			try (SailConnection reader = store.getConnection()) {
+				assertTrue(reader.hasStatement(keeper, PREDICATE, OBJECT, false));
+			}
+		} finally {
+			store.shutDown();
+		}
+		ObservedStore resumed = new ObservedStore(directory, defaults);
+		resumed.init();
+		try {
+			ValueStore values = LmdbGcTestMaintenance.awaitTrustedReclamationSetup(resumed);
+			if (deferred) {
+				assertTrue(resumed.workerGcCommitted.await(10, TimeUnit.SECONDS),
+						"reopen releases old lazy protections so the default-index worker can reclaim deferred roots");
+			}
+			assertEquals(LmdbValue.UNKNOWN_ID, values.getId(SUBJECT),
+					"default POSC predicate/object probes prove the unused subject safe to reclaim");
+			assertNotEquals(LmdbValue.UNKNOWN_ID, values.getId(OBJECT));
+			try (SailConnection reader = resumed.getConnection()) {
+				assertTrue(reader.hasStatement(VF.createIRI("urn:async-cleanup:default-index-keeper"),
+						PREDICATE, OBJECT, false));
+			}
+		} finally {
+			resumed.shutDown();
+		}
+		ObservedStore durable = new ObservedStore(directory, new LmdbStoreConfig().setAsyncValueCleanup(false)
+				.setSketchEstimatorEnabled(false)
+				.setBackgroundRawSamplingEnabled(false));
+		durable.init();
+		try {
+			assertFalse(durable.getAsyncValueCleanup());
+			assertFalse(contains(durable));
+			add(durable);
+		} finally {
+			durable.shutDown();
+		}
+		ObservedStore reopened = new ObservedStore(directory, defaults);
+		reopened.init();
+		try {
+			assertTrue(reopened.getAsyncValueCleanup());
+			assertTrue(contains(reopened), "mode changes do not change committed RDF data");
+			try (SailConnection writer = reopened.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT);
+				writer.removeStatements(SUBJECT, PREDICATE, OBJECT);
+				writer.rollback();
+			}
+			assertTrue(contains(reopened), "default-on cleanup must not publish rolled-back removals");
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
 	void disabledStartupRemovesCrashLeftoversWithoutStartingCleanup(@TempDir Path directory) throws Exception {
 		ObservedStore seed = new ObservedStore(directory.toFile(), configuration(false));
 		seed.init();
@@ -309,7 +391,7 @@ class LmdbAsyncValueCleanupIntegrationTest {
 	}
 
 	@Test
-	void defaultModeKeepsDurableRetirementForPinnedValues(@TempDir File directory) throws Exception {
+	void explicitDurableModeKeepsRetirementForPinnedValues(@TempDir File directory) throws Exception {
 		ObservedStore store = new ObservedStore(directory, configuration(false));
 		store.init();
 		try {
@@ -319,7 +401,7 @@ class LmdbAsyncValueCleanupIntegrationTest {
 			long originalId = values.getId(SUBJECT);
 			try (SailDataset pinned = pin(store)) {
 				remove(store);
-				assertTrue(values.hasRetiredIds(), "default mode retains recoverable retirement work");
+				assertTrue(values.hasRetiredIds(), "explicit durable mode retains recoverable retirement work");
 				assertEquals(originalId, values.getId(SUBJECT));
 				assertPinnedStatement(pinned);
 			}
@@ -518,7 +600,9 @@ class LmdbAsyncValueCleanupIntegrationTest {
 
 	@Test
 	void waitingProducerCannotAcquireANewSnapshotFromItsOwnConnection(@TempDir File directory) throws Exception {
-		LmdbStoreConfig config = configuration(true).setAsyncValueCleanupMaxPendingProducers(1);
+		// Keep admission pending throughout the deliberate one-second snapshot-exclusion observation.
+		LmdbStoreConfig config = configuration(true).setAsyncValueCleanupMaxPendingProducers(1)
+				.setAsyncValueCleanupAdmissionTimeoutMillis(10_000);
 		AtomicBoolean observeRead = new AtomicBoolean();
 		CountDownLatch readAcquisitionStarted = new CountDownLatch(1);
 		CountDownLatch nativeReadAcquired = new CountDownLatch(1);

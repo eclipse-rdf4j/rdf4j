@@ -64,8 +64,8 @@ The corresponding RDF configuration property is
 `<http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled> true`.
 
 While repair is disabled, RDF additions, removals, commits, and rollbacks retain their normal semantics. Dictionary
-reclamation is deferred because historical counts are unverified. With the default `asyncValueCleanup=false`, removed-value
-candidates remain in the durable retirement queue. With asynchronous cleanup enabled, newly collected candidates retain
+reclamation is deferred because historical counts are unverified. With explicit `asyncValueCleanup=false`, removed-value
+candidates remain in the durable retirement queue. With the default asynchronous cleanup enabled, newly collected candidates retain
 its best-effort policy, and bounded producer capacity can fill while reclamation is disabled. Enabling repair reconstructs
 counts from live dictionary owners before checking statement liveness and reclaiming candidates. Deferred dictionary
 records can consume additional disk space.
@@ -216,9 +216,11 @@ applies because they are separate LMDB environments.
 an acknowledged commit has weaker power-loss durability. Set `forceSync=true` when the application requires LMDB's
 synchronous commit behavior, and ensure the filesystem and storage stack honor flushes. Even with `forceSync=true`,
 the ValueStore and TripleStore are separate environments: dictionary additions are committed before the authoritative
-triple/namespace transaction. With the default `asyncValueCleanup=false`, durable retirement intents are committed in
-that dictionary transaction too. Opting into [asynchronous value cleanup](/documentation/programming/lmdb-store/#dictionary-value-cleanup)
+triple/namespace transaction. With explicit `asyncValueCleanup=false`, durable retirement intents are committed in
+that dictionary transaction too. The default [asynchronous value cleanup](/documentation/programming/lmdb-store/#dictionary-value-cleanup)
 instead releases bounded cleanup work to its worker after successful publication and permits losing that work in a crash.
+Older configurations omitting `asyncValueCleanup` also select this new default; set it explicitly to false to retain the
+durable-retirement policy.
 An interrupted write can therefore leave unreferenced
 dictionary entries for later cleanup. Retirement and recovery recheck committed triple liveness before an ID can be
 reused.

@@ -75,7 +75,7 @@ class LmdbSailStoreOverlayStartupTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	@Timeout(30)
-	void ownerWarmupPublishesAfterDurableRetirementRecovery(boolean unusedValues) throws Exception {
+	void defaultOwnerWarmupRemainsCorrectAcrossAsyncRetirement(boolean unusedValues) throws Exception {
 		seedRetirement();
 		if (unusedValues) {
 			seedPersistedUnusedValue();
@@ -123,19 +123,24 @@ class LmdbSailStoreOverlayStartupTest {
 			assertThat(values.isValueOverlayWarmupInProgress()).as("the readiness gate is still closed").isFalse();
 			owner.startBackgroundMaintenanceAfterInitialization();
 			assertThat(scanStarted.await(10, TimeUnit.SECONDS)).isTrue();
+			releaseScan.countDown();
+			joinPostReadyInitializer();
+			assertThat(owner.asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS)).isTrue();
 			assertThat(values.hasRetiredIds()).isFalse();
 			assertThat(values.getId(RETIRED)).isEqualTo(LmdbValue.UNKNOWN_ID);
-			releaseScan.countDown();
-			assertThat(values.awaitValueOverlayReady(10, TimeUnit.SECONDS))
-					.as("owner startup writes must finish before automatic overlay snapshot capture")
-					.isTrue();
-			assertThat(values.compressedValueOverlayStats().records()).isPositive();
+			boolean overlayReady = values.awaitValueOverlayReady(10, TimeUnit.SECONDS);
 			long id = values.getId(KEEPER);
 			assertThat(id).isNotEqualTo(LmdbValue.UNKNOWN_ID);
-			Boolean overlayHit = values.withData(id, (address, length) -> {
-				throw new AssertionError("eligible keeper record must use the populated overlay");
-			}, record -> Boolean.TRUE);
-			assertThat(overlayHit).isTrue();
+			assertThat(values.getValue(id)).isEqualTo(KEEPER);
+			if (overlayReady) {
+				assertThat(values.compressedValueOverlayStats().records()).isPositive();
+			} else {
+				// Default async retirement can invalidate a concurrently built optional overlay. The
+				// authoritative keeper remains resolvable and new reads must safely fall back to LMDB.
+				assertThat(values.compressedValueOverlayStats()).isNull();
+				Boolean overlayHit = values.withData(id, (address, length) -> Boolean.FALSE, record -> Boolean.TRUE);
+				assertThat(overlayHit).isFalse();
+			}
 		} finally {
 			releaseScan.countDown();
 			owner.close();
@@ -144,7 +149,7 @@ class LmdbSailStoreOverlayStartupTest {
 
 	@Test
 	@Timeout(30)
-	void postReadyCacheCaptureFollowsTheBoundedRetirementBatch() throws Exception {
+	void durablePostReadyCacheCaptureFollowsTheBoundedRetirementBatch() throws Exception {
 		seedRetirement();
 		AtomicBoolean capturedPendingRetirements = new AtomicBoolean();
 		AtomicBoolean captureStarted = new AtomicBoolean();
@@ -157,8 +162,8 @@ class LmdbSailStoreOverlayStartupTest {
 				super.startValueOverlayWarmupAfterStoreInitialization();
 			}
 		};
-		try (LmdbSailStore owner = new LmdbSailStore(directory, new StoreProperties(directory), config(true), false,
-				values, TripleStore::new)) {
+		try (LmdbSailStore owner = new LmdbSailStore(directory, new StoreProperties(directory),
+				config(true).setAsyncValueCleanup(false), false, values, TripleStore::new)) {
 			owner.startBackgroundMaintenanceAfterInitialization();
 			joinPostReadyInitializer();
 			assertThat(captureStarted.get()).isTrue();
@@ -278,7 +283,8 @@ class LmdbSailStoreOverlayStartupTest {
 	}
 
 	private void seedRetirement() throws Exception {
-		LmdbStore store = new LmdbStore(directory, config(false));
+		// Only the seed requires a persisted durable intent; reopened owners exercise the default mode.
+		LmdbStore store = new LmdbStore(directory, config(false).setAsyncValueCleanup(false));
 		store.init();
 		try {
 			// Finish the seed owner's startup recovery before creating the retirement this test preserves.

@@ -114,6 +114,8 @@ public class LmdbStoreSchema {
 
 	public final static IRI ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS;
 
+	public final static IRI ASYNC_VALUE_CLEANUP_PRESSURE_TIMEOUT_MILLIS;
+
 	public final static IRI ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS;
 
 	public final static IRI ASYNC_VALUE_CLEANUP_SHUTDOWN_TIMEOUT_MILLIS;
@@ -245,6 +247,8 @@ public class LmdbStoreSchema {
 		ASYNC_VALUE_CLEANUP_BATCH_SIZE = factory.createIRI(NAMESPACE, "asyncValueCleanupBatchSize");
 		ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS = factory.createIRI(NAMESPACE,
 				"asyncValueCleanupMaxPendingProducers");
+		ASYNC_VALUE_CLEANUP_PRESSURE_TIMEOUT_MILLIS = factory.createIRI(NAMESPACE,
+				"asyncValueCleanupPressureTimeoutMillis");
 		ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS = factory.createIRI(NAMESPACE,
 				"asyncValueCleanupAdmissionTimeoutMillis");
 		ASYNC_VALUE_CLEANUP_SHUTDOWN_TIMEOUT_MILLIS = factory.createIRI(NAMESPACE,

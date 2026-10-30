@@ -31,9 +31,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Value-dictionary GC must be deferred per retired ID, not all-or-nothing: a pinned SNAPSHOT reader only protects IDs
- * whose removal it predates. IDs retired before the oldest pinned snapshot must still be reclaimed while newer
- * retirements stay resolvable for the readers that need them.
+ * In explicit durable mode, value-dictionary GC is deferred per retired ID, not all-or-nothing: a pinned SNAPSHOT
+ * reader only protects IDs whose removal it predates. IDs retired before the oldest pinned snapshot must still be
+ * reclaimed while newer retirements stay resolvable for the readers that need them.
  */
 public class LmdbValueGcRetirementTest {
 
@@ -42,7 +42,8 @@ public class LmdbValueGcRetirementTest {
 
 	@Test
 	public void pinnedReaderDoesNotBlockOlderRetirements() throws Exception {
-		LmdbStore store = new LmdbStore(new File(dataDir, "store"), new LmdbStoreConfig("spoc,posc,ospc"));
+		LmdbStore store = new LmdbStore(new File(dataDir, "store"),
+				new LmdbStoreConfig("spoc,posc,ospc").setAsyncValueCleanup(false));
 		store.init();
 		try {
 			ValueFactory vf = SimpleValueFactory.getInstance();
@@ -108,7 +109,8 @@ public class LmdbValueGcRetirementTest {
 	 */
 	@Test
 	public void supersededRetirementDoesNotTearNewerReader() throws Exception {
-		LmdbStore store = new LmdbStore(new File(dataDir, "store"), new LmdbStoreConfig("spoc,posc,ospc"));
+		LmdbStore store = new LmdbStore(new File(dataDir, "store"),
+				new LmdbStoreConfig("spoc,posc,ospc").setAsyncValueCleanup(false));
 		store.init();
 		try {
 			ValueFactory vf = SimpleValueFactory.getInstance();
@@ -203,7 +205,8 @@ public class LmdbValueGcRetirementTest {
 		String previous = System.getProperty("rdf4j.lmdb.valueGc.deferForPinnedReaders");
 		System.setProperty("rdf4j.lmdb.valueGc.deferForPinnedReaders", "false");
 		try {
-			LmdbStore store = new LmdbStore(new File(dataDir, "store"), new LmdbStoreConfig("spoc,posc,ospc"));
+			LmdbStore store = new LmdbStore(new File(dataDir, "store"),
+					new LmdbStoreConfig("spoc,posc,ospc").setAsyncValueCleanup(false));
 			store.init();
 			try {
 				ValueFactory vf = SimpleValueFactory.getInstance();

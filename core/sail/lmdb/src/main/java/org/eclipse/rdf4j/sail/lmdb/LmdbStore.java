@@ -349,6 +349,16 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		configureValueCleanup(() -> config.setAsyncValueCleanupMaxPendingProducers(maxPendingProducers));
 	}
 
+	/** Returns the bounded optional cleanup-pressure pause for safe new writers. */
+	public long getAsyncValueCleanupPressureTimeoutMillis() {
+		return config.getAsyncValueCleanupPressureTimeoutMillis();
+	}
+
+	/** Configures the cleanup-pressure pause before initialization; zero disables this optional pause. */
+	public void setAsyncValueCleanupPressureTimeoutMillis(long timeoutMillis) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupPressureTimeoutMillis(timeoutMillis));
+	}
+
 	/** Returns the configured asyncValueCleanupAdmissionTimeoutMillis setting. */
 	public long getAsyncValueCleanupAdmissionTimeoutMillis() {
 		return config.getAsyncValueCleanupAdmissionTimeoutMillis();

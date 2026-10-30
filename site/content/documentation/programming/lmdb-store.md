@@ -181,20 +181,21 @@ with both `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` and
 
 ## Dictionary value cleanup
 
-`asyncValueCleanup` is disabled by default. The default retains durable retirement recording: after removing
-statements, cleanup candidates can survive a restart. This is recoverable cleanup work, not a guarantee that a value
-can be reclaimed immediately. Readers and unresolved values may still pin dictionary records.
+`asyncValueCleanup` is enabled by default, including when an older configuration omits the property. The default uses
+bounded best-effort background dictionary cleanup to keep candidate processing off the application commit path. Pending
+cleanup hints may be lost on a crash; this does not change committed RDF data.
 
-Enable best-effort background cleanup before starting the repository:
+To retain durable retirement recording, explicitly set `new LmdbStoreConfig().setAsyncValueCleanup(false)` before
+startup. This preserves recoverable cleanup work after removing statements, not a guarantee of immediate reclamation.
+Readers, unresolved values and unknown bounded liveness may still prevent dictionary records from being reclaimed.
+
+Configure the background cleanup bounds before starting the repository:
 
 ```java
 LmdbStoreConfig config = new LmdbStoreConfig()
-        .setAsyncValueCleanup(true)
-        .setAsyncValueCleanupMaxCandidates(65_536)
         .setAsyncValueCleanupMaxBytes(8L * 1024 * 1024)
         .setAsyncValueCleanupBatchSize(256)
-        .setAsyncValueCleanupMaxPendingProducers(8)
-        .setAsyncValueCleanupAdmissionTimeoutMillis(30_000)
+        .setAsyncValueCleanupAdmissionTimeoutMillis(250)
         .setAsyncValueCleanupShutdownTimeoutMillis(3_500);
 ```
 
@@ -211,38 +212,47 @@ initialization do not reconfigure the running cleanup worker.
 
 | Setting | Default | Constraint and meaning |
 | --- | ---: | --- |
-| `asyncValueCleanup` | `false` | Enables one background cleanup worker when `true`. |
-| `asyncValueCleanupMaxCandidates` | `65536` | At least 16; bounds retained candidate slots, including producer reservations and worker workspace. |
-| `asyncValueCleanupMaxBytes` | `8388608` | At least 4096; bounds estimated cleanup memory, including producer reservations and worker workspace. |
+| `asyncValueCleanup` | `true` | Enables one background cleanup worker; explicit `false` selects durable retirement recording. |
+| `asyncValueCleanupMaxCandidates` | Derived from the cleanup byte budget | At least 16; an explicit value additionally bounds retained candidate slots, including producer reservations and worker workspace. |
+| `asyncValueCleanupMaxBytes` | 1% of JVM maximum heap, capped at 64 MiB | At least 4096; bounds estimated cleanup memory, including producer reservations and worker workspace. Explicit values override the dynamic default. |
 | `asyncValueCleanupBatchSize` | `256` | Positive and no larger than the candidate limit; the worker may use a smaller batch to meet the memory bounds. |
-| `asyncValueCleanupMaxPendingProducers` | `8` | Positive upper bound on admitted or queued producer streams; memory limits may reduce effective concurrency. |
-| `asyncValueCleanupAdmissionTimeoutMillis` | `30000` | Positive interruptible timeout for waiting on cleanup producer capacity before publication; not a bound on complete transaction duration. |
+| `asyncValueCleanupMaxPendingProducers` | Byte budget / 1024, at least 1 | Positive upper bound on total active and queued producer streams. A separate small active-staging limit and the charged byte budget may constrain admission sooner. Explicit values override this derived total cap. |
+| `asyncValueCleanupPressureTimeoutMillis` | `250` | Nonnegative maximum brief pause for safe new-writer admission under cleanup pressure; zero disables this optional pause. |
+| `asyncValueCleanupAdmissionTimeoutMillis` | `250` | Positive interruptible total admission wait before publication, including any pressure pause; not a bound on complete transaction duration. Explicit longer values remain supported. |
 | `asyncValueCleanupShutdownTimeoutMillis` | `3500` | Positive best-effort budget for finishing cleanup and saving pending work; active native calls must still finish safely. |
 
-For RDF configuration, use the same LMDB predicates with either the current or legacy Sail configuration vocabulary:
+For an explicit 8 MiB byte ceiling, use the same LMDB predicates with either the current or legacy Sail configuration vocabulary:
 
 ```turtle
 @prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
 
 [] lmdb:asyncValueCleanup true ;
-   lmdb:asyncValueCleanupMaxCandidates 65536 ;
    lmdb:asyncValueCleanupMaxBytes 8388608 ;
    lmdb:asyncValueCleanupBatchSize 256 ;
-   lmdb:asyncValueCleanupMaxPendingProducers 8 ;
-   lmdb:asyncValueCleanupAdmissionTimeoutMillis 30000 ;
+   lmdb:asyncValueCleanupAdmissionTimeoutMillis 250 ;
    lmdb:asyncValueCleanupShutdownTimeoutMillis 3500 .
 ```
 
-Omitted properties preserve the defaults. Exports omit default-valued cleanup properties, so existing configurations
-with unchanged cleanup defaults retain their serialized form. A transaction larger than the queue uses bounded chunks
-and a temporary, non-durable candidate stream; it does not reserve its entire candidate count in memory. Spill-file disk
+Omitting `asyncValueCleanup` now enables it intentionally, even in configurations written before this option existed
+or when it previously defaulted to false. To keep durable retirement recording, add `lmdb:asyncValueCleanup false`.
+This applies to both current and legacy Sail configuration vocabularies. Exports omit the default `true` value but
+retain explicit `false`, so an explicit durable choice survives export and parsing.
+
+Candidate buffers grow on demand within the configured byte budget; the default candidate and producer limits derive
+from that budget, while worker processing stays in bounded batches. A transaction larger than the available queue
+memory spills into a temporary, non-durable candidate stream; it does not reserve its entire candidate count in memory.
+Runtime spills are best effort and are not forced to disk. Before consuming a queued spilled stream, cleanup validates
+the completed stream prefix against its recorded checksum. A corrupt stream is discarded rather than used for
+reclamation; this loses optional cleanup hints, not committed RDF data. This check is not a promise against changes
+occurring after validation. Shutdown persistence uses the stronger forced, native-fenced protocol described below. Spill-file disk
 usage can grow with the transaction's candidate count; the configured candidate and byte limits govern retained cleanup
 memory. Admission can fail or be interrupted before publication if capacity remains unavailable. A successful publication
 is not reported as rolled back because cleanup handoff later encounters backpressure.
 
-Waiting callers are bounded separately from admitted or queued producer streams. At most the effective producer limit
-may wait for admission; further callers fail before publication. Both limits can shrink to fit the candidate and byte
-bounds, and the estimated memory budget includes waiting-call bookkeeping.
+Waiting callers are bounded separately from admitted or queued producer streams. Their limit follows the effective
+active-staging limit (normally at most eight), not the larger total queued-stream cap; further callers fail before
+publication. These limits can shrink to fit the candidate and byte bounds, and the estimated memory budget includes
+waiting-call bookkeeping.
 
 Transaction change sets that overflow memory use disposable LMDB stores. In async mode, these temporary stores keep
 their dictionary records until the entire temporary directory is closed and deleted. They do not create additional
@@ -253,11 +263,38 @@ after a successful transaction. Metadata-only durable continuations do not requi
 views remain valid; subsequent lookups use LMDB until the overlay is explicitly rebuilt. This avoids copying large
 lexical values into overlay updates during bounded cleanup, but can change query lookup performance.
 
+Under pressure, eligible new writers briefly yield to cleanup before acquiring writer ownership or native read pins.
+The pause targets acknowledgement of at least 10% of the queued work measured at the beginning of that pressure cycle;
+concurrent arrivals do not move that target. It ends at the target or the pressure timeout (250 ms by default), because
+readers may prevent progress. Acknowledged work is not necessarily physical dictionary reclamation: protections and
+unknown liveness can defer records. The pressure pause uses the same admission wait budget, rather than adding another full timeout. If capacity is
+still unavailable after that budget and best-effort spill handling, admission fails before publication; already
+committed RDF work is not relabelled as failed. Blocking filesystem/native operations must finish safely and are not
+forcibly cancelled at the wait deadline, so this is not a hard wall-clock bound. Explicit admission timeouts, including
+the former 30-second default, remain supported. Existing observed/pinned
+transactions do not wait on this optional pressure gate.
+
 A long-lived reader can indefinitely delay reclamation. Bounded memory therefore does not imply that writers always
 make progress: once producer capacity is exhausted, admission is subject to the configured timeout. Close read results
 and transactions promptly when sustained deletion pressure matters. The worker continues existing durable retirement
 work. Recursive dependency candidates are saved through the existing durable retirement mechanism inside the worker's
 maintenance transaction, atomically with the dependency-count updates, instead of waiting to enter its own cleanup queue.
+
+The default statement indexes, `spoc,posc`, do not include an object-leading index. Cleanup uses an object-leading
+index when available; otherwise a predicate/object-leading index such as `posc` supports bounded exact probes across
+distinct predicates, without scanning all statements. This permits reclamation with the default indexes when the
+bounded proof completes. If the seek budget is exhausted or a necessary index is unavailable, the result remains
+`UNKNOWN`: cleanup persists or defers the candidate rather than guessing that it is unused. Unused records may still
+remain indefinitely under sustained deferral. This setting does not add or change indexes. Context liveness uses the
+dedicated context-count table and does not require a context-first index. Reclamation measurements made with an
+object-leading index should not be extrapolated to the default index set.
+
+The cleanup byte default is computed from `Runtime.maxMemory()` (normally `-Xmx`), with a 4 KiB minimum.
+It is a cleanup-memory ceiling, not a whole-JVM memory budget or an eager allocation. Candidate buffers grow on demand
+within that ceiling; worker batches remain bounded independently. An explicitly configured candidate cap may reduce
+the usable queue capacity, and producer streams can spill to disk. Omitted configuration stays omitted
+on export so a different JVM recomputes its own defaults; explicitly configured byte, candidate and producer limits
+are retained even when they equal the current JVM defaults.
 
 Lazy values retained outside a tracked read result also remain protected. If their pinned dictionary revisions would
 make cleanup accumulate revision history, the worker saves the affected root candidates through the existing durable

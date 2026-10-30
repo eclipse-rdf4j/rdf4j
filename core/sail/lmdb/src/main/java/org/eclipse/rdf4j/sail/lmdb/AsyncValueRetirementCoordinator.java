@@ -23,17 +23,19 @@ import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.AbstractCollection;
 import java.util.AbstractSet;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -52,10 +54,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * One worker and a bounded number of producer streams. Only a fixed primitive buffer is retained per producer;
- * arbitrarily large transactions spill to non-durable files. Reserving a stream never reserves its eventual size. The
- * worker owns one bounded batch and its full reclamation workspace. Recursive work goes to the existing durable
- * retirement indexes in the maintenance transaction, never back into this queue.
+ * One worker and a bounded number of producer streams. Demand-allocated primitive segments share a byte/candidate
+ * budget; arbitrarily large transactions spill to non-durable files. Reserving a stream never reserves its eventual
+ * size. The worker owns one bounded batch and its full reclamation workspace. Recursive work goes to the existing
+ * durable retirement indexes in the maintenance transaction, never back into this queue.
  * <p>
  * A producer's identity guard prevents physical dictionary recycling, without a native snapshot or an expanding epoch
  * history. Statement liveness and reader quiescence are independently checked by {@link Processor}. No queue wait is
@@ -77,6 +79,8 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	private static final int PRODUCER_OVERHEAD = 1024;
 	/** Preallocated map/deque arrays remain retained even while no producer is admitted. */
 	private static final int PRODUCER_CONTAINER_BYTES = 64;
+	/** Segment node, byte-array header and heap ByteBuffer wrapper, including uncompressed-reference headroom. */
+	private static final int SEGMENT_OVERHEAD = 160;
 	private static final int MANIFEST_BUFFER_BYTES = 256;
 	private static final int MANIFEST_HEADER_BYTES = 44;
 	private static final int MANIFEST_ENTRY_BYTES = 54;
@@ -95,7 +99,10 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	record Metrics(long pendingCandidates, long retainedBytes, int queuedBatches, int activeProducers,
 			int inFlightCandidates, long highWaterCandidates, long highWaterBytes, long admissionWaitNanos,
 			long admissionTimeouts, long acknowledgedCandidates, long failedBatches, long spilledCandidates,
-			int batchSize, int producerLimit, long unacknowledgedCandidates, int waitingProducers) {
+			int batchSize, int producerLimit, long unacknowledgedCandidates, int waitingProducers,
+			long effectiveMemoryCandidateCapacity, long queuedCandidates, long pressureTargetAcknowledged,
+			int pressureWaiters, long pressureTimeouts, int activeProducerLimit, int liveProducers,
+			int admissionSpillers) {
 	}
 
 	private final ValueStore values;
@@ -104,14 +111,33 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	private final byte[] storeIdentity;
 	private final int batchSize;
 	private final int producerLimit;
+	private final int activeProducerLimit;
+	private final long maxCandidates;
+	private int baseBuffers;
+	private int admissionSpillers;
 	private final long admissionTimeoutNanos;
 	private final long shutdownTimeoutNanos;
 	private final long workerBytes;
 	private final long producerBytes;
+	private final long maxBytes;
+	private final int segmentSize;
+	private final long segmentBytes;
+
+	private final long effectiveMemoryCandidateCapacity;
+	private final long pressureTimeoutNanos;
+	private long extraSegments;
+	private long queueGeneration;
+	private long gatedGeneration = -1;
+	private long pressureTargetAcknowledged;
+	private long pressureDeadline;
+	private boolean pressureGateActive;
+	private int pressureWaiters;
+	private long pressureTimeouts;
+	private long pressureSequence;
 	private final ReentrantLock lock = new ReentrantLock();
 	private final Condition changed = lock.newCondition();
 	private final Map<Object, Candidates> producers;
-	private final ArrayDeque<Candidates> queue;
+	private final CandidateQueue queue;
 	private int reservations;
 	private int waitingProducers;
 	private int spooledReservations;
@@ -130,6 +156,10 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	private volatile Runnable afterBatchCommit = () -> {
 	};
 	private volatile Runnable admissionWaitStarted = () -> {
+	};
+	private volatile Runnable beforeAdmissionSpill = () -> {
+	};
+	private volatile Runnable shutdownSpillWaitStarted = () -> {
 	};
 	private volatile Runnable retryWaitStarted = () -> {
 	};
@@ -170,8 +200,12 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		this.directory = dataDirectory.resolve(DIRECTORY);
 		this.storeIdentity = values.cleanupStoreIdentity();
 		admissionTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(config.getAsyncValueCleanupAdmissionTimeoutMillis());
+		pressureTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(config.getAsyncValueCleanupPressureTimeoutMillis());
+		maxBytes = config.getAsyncValueCleanupMaxBytes();
 		shutdownTimeoutNanos = TimeUnit.MILLISECONDS.toNanos(config.getAsyncValueCleanupShutdownTimeoutMillis());
-		int producers = Math.min(config.getAsyncValueCleanupMaxPendingProducers(),
+		maxCandidates = config.getAsyncValueCleanupMaxCandidates();
+		boolean explicitStreamLimit = config.isAsyncValueCleanupMaxPendingProducersConfigured();
+		int producers = Math.min(explicitStreamLimit ? config.getAsyncValueCleanupMaxPendingProducers() : 8,
 				config.getAsyncValueCleanupMaxCandidates() - WORKER_CANDIDATE_SLOTS);
 		long available = config.getAsyncValueCleanupMaxBytes() - FIXED_BYTES;
 		producers = Math.min(producers, (int) Math.min(Integer.MAX_VALUE,
@@ -179,9 +213,9 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		if (producers < 1) {
 			throw new IllegalArgumentException("Async value cleanup bounds cannot fit a producer and worker");
 		}
-		producerLimit = producers;
-		this.producers = new IdentityHashMap<>(producerLimit);
-		queue = new ArrayDeque<>(producerLimit);
+		activeProducerLimit = producers;
+		this.producers = new IdentityHashMap<>(activeProducerLimit);
+		queue = new CandidateQueue();
 		long countBound = config.getAsyncValueCleanupMaxCandidates() / (producers + WORKER_CANDIDATE_SLOTS);
 		long byteBound = (available - (long) producers * PRODUCER_OVERHEAD)
 				/ (WORKER_BYTES_PER_CANDIDATE + (long) producers * Long.BYTES);
@@ -189,9 +223,18 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		if (batchSize < 1) {
 			throw new IllegalArgumentException("Async value cleanup bounds cannot fit one candidate batch");
 		}
-		workerBytes = FIXED_BYTES + (long) producerLimit * PRODUCER_CONTAINER_BYTES
+		workerBytes = FIXED_BYTES + (long) activeProducerLimit * PRODUCER_CONTAINER_BYTES
 				+ (long) batchSize * WORKER_BYTES_PER_CANDIDATE;
 		producerBytes = PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES + (long) batchSize * Long.BYTES;
+		producerLimit = (int) Math.min(config.getAsyncValueCleanupMaxPendingProducers(),
+				(maxBytes - workerBytes) / (PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES));
+		long extraSlots = maxCandidates - (long) batchSize * (activeProducerLimit + WORKER_CANDIDATE_SLOTS);
+		long extraBytes = maxBytes - workerBytes - (long) activeProducerLimit * producerBytes;
+		segmentSize = (int) Math.max(0,
+				Math.min(4096, Math.min(extraSlots, (extraBytes - SEGMENT_OVERHEAD) / Long.BYTES)));
+		segmentBytes = SEGMENT_OVERHEAD + (long) segmentSize * Long.BYTES;
+		long extraSegmentLimit = segmentSize == 0 ? 0 : Math.min(extraSlots / segmentSize, extraBytes / segmentBytes);
+		effectiveMemoryCandidateCapacity = (long) activeProducerLimit * batchSize + extraSegmentLimit * segmentSize;
 		recover();
 	}
 
@@ -216,6 +259,8 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		Candidates initializer = null;
 		boolean reserved = false;
 		boolean waiting = false;
+		boolean pressureChecked = false;
+		boolean postDeadlineSpillAttempted = false;
 		try {
 			lock.lockInterruptibly();
 			try {
@@ -228,12 +273,30 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 					if (stopping) {
 						throw new SailException("Async value cleanup is shutting down; new writers are not admitted");
 					}
-					if (existing == null && reservations < producerLimit) {
+					if (!pressureChecked && existing == null && mayWait) {
+						awaitPressureRelief(started + admissionTimeoutNanos);
+						pressureChecked = true;
+						remaining = Math.max(0, admissionTimeoutNanos - (System.nanoTime() - started));
+						continue;
+					}
+					boolean producerSlot = existing == null && reservations < producerLimit
+							&& producers.size() < activeProducerLimit;
+					remaining = Math.max(0, admissionTimeoutNanos - (System.nanoTime() - started));
+					if (producerSlot && !fitsProducerBuffer() && mayWait
+							&& (remaining > 0 || !postDeadlineSpillAttempted)) {
+						if (remaining <= 0) {
+							postDeadlineSpillAttempted = true;
+						}
+						if (spillQueuedForAdmission(waiting)) {
+							continue;
+						}
+					}
+					if (producerSlot && fitsProducerBuffer()) {
 						reservations++;
 						reserved = true;
 						// The existing bounded stream object is also its initialization token. Concurrent sinks
 						// sharing an owner cannot reserve twice while native identity admission is outside this lock.
-						initializer = new Candidates(null, false);
+						initializer = new Candidates(null, true);
 						producers.put(owner, initializer);
 						updateHighWater();
 						break;
@@ -245,7 +308,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 										+ "release pinned readers and retry the transaction");
 					}
 					if (!waiting) {
-						if (waitingProducers >= producerLimit) {
+						if (waitingProducers + pressureWaiters + admissionSpillers >= activeProducerLimit) {
 							admissionTimeouts++;
 							throw new SailException(
 									"Async value cleanup admission waiter limit reached before publication; "
@@ -265,7 +328,6 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				lock.unlock();
 			}
 			initializer.guard = values.reserveCleanupIdentity(mayWait);
-			initializer.buffer = ByteBuffer.allocate(batchSize * Long.BYTES);
 			lock.lock();
 			try {
 				if (stopping || producers.get(owner) != initializer) {
@@ -281,7 +343,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 			Thread.currentThread().interrupt();
 			throw new InterruptedSailException("Interrupted before async value cleanup admission", interrupted);
 		} catch (IOException failure) {
-			throw new SailException("Unable to reserve dictionary identity for cleanup", failure);
+			throw new SailException("Unable to prepare dictionary cleanup admission", failure);
 		} finally {
 			if (reserved) {
 				try {
@@ -303,6 +365,86 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				}
 			}
 		}
+	}
+
+	private long additionalProducerBytes() {
+		// A waiting producer's existing bookkeeping credit transfers into its admitted stream.
+		long waiters = waitingProducers + pressureWaiters + admissionSpillers;
+		long metadata = Math.max(reservations + spooledReservations + 1L, waiters)
+				- Math.max(reservations + spooledReservations, waiters);
+		return metadata * (PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES) + (long) batchSize * Long.BYTES;
+	}
+
+	private boolean fitsProducerBuffer() {
+		return retainedBytes() + additionalProducerBytes() <= maxBytes
+				&& retainedCandidateSlots() + batchSize <= maxCandidates;
+	}
+
+	/** Select under queue ownership; perform unforced I/O without queue/native/publication ownership. */
+	private boolean spillQueuedForAdmission(boolean ownsWaiterCredit) throws IOException {
+		if (stopping || waitingProducers + pressureWaiters + admissionSpillers
+				- (ownsWaiterCredit ? 1 : 0) >= activeProducerLimit) {
+			return false;
+		}
+		Candidates selected = null;
+		Candidates largest = null;
+		long smallestFitBytes = Long.MAX_VALUE;
+		long largestBytes = -1;
+		long neededBytes = Math.max(0, retainedBytes() + additionalProducerBytes() - maxBytes);
+		long neededSlots = Math.max(0, retainedCandidateSlots() + batchSize - maxCandidates);
+		for (Candidates candidates : queue) {
+			if (candidates.file == null && !candidates.workerOwned && !candidates.admissionSpilling) {
+				long bytes = (candidates.baselineBuffer ? (long) batchSize * Long.BYTES : 0)
+						+ candidates.segments * segmentBytes;
+				long slots = (candidates.baselineBuffer ? batchSize : 0) + candidates.segments * segmentSize;
+				if (bytes > largestBytes) {
+					largest = candidates;
+					largestBytes = bytes;
+				}
+				if (bytes >= neededBytes && slots >= neededSlots && bytes < smallestFitBytes) {
+					selected = candidates;
+					smallestFitBytes = bytes;
+				}
+			}
+		}
+		if (selected == null) {
+			selected = largest;
+		}
+		if (selected == null) {
+			return false;
+		}
+		selected.admissionSpilling = true;
+		// The caller transfers its existing bounded waiter credit; it never needs a second slot.
+		if (ownsWaiterCredit) {
+			waitingProducers--;
+		}
+		admissionSpillers++;
+		lock.unlock();
+		try {
+			beforeAdmissionSpill.run();
+			if (!stopping) {
+				selected.materializeCommittedPrefix();
+				selected.closeOutput();
+				selected.discardBuffers();
+			}
+		} finally {
+			lock.lock();
+			selected.admissionSpilling = false;
+			admissionSpillers--;
+			if (ownsWaiterCredit) {
+				waitingProducers++;
+			}
+			changed.signalAll();
+		}
+		return true;
+	}
+
+	void beforeAdmissionSpillForTest(Runnable hook) {
+		beforeAdmissionSpill = hook;
+	}
+
+	void shutdownSpillWaitStartedForTest(Runnable hook) {
+		shutdownSpillWaitStarted = hook;
 	}
 
 	boolean hasProducer(Object owner) {
@@ -381,10 +523,11 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 			}
 			producers.remove(owner);
 			if (candidates.file != null) {
-				candidates.buffer = null;
+				candidates.discardBuffers();
 			}
 			if (candidates.committedCount != 0L) {
 				queue.addLast(candidates);
+				queueGeneration++;
 				changed.signalAll();
 				return null;
 			}
@@ -437,14 +580,23 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		ByteBuffer input = ByteBuffer.allocate(batchSize * Long.BYTES);
 		long backoffMillis = 10;
 		int rootBatchesSinceLegacy = 0;
+		long observedPressureSequence = 0;
 		while (!stopping) {
 			boolean progress = false;
 			boolean idlePass = false;
+			Candidates claimed = null;
 			try {
 				Candidates candidates;
 				lock.lock();
 				try {
 					candidates = queue.peekFirst();
+					if (candidates != null && candidates.admissionSpilling) {
+						candidates = null;
+					}
+					if (candidates != null) {
+						candidates.workerOwned = true;
+						claimed = candidates;
+					}
 				} finally {
 					lock.unlock();
 				}
@@ -470,7 +622,26 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 					// Spilled publication already flushed its exact committed prefix. Closing the handle here keeps
 					// filesystem I/O out of the application handoff; small streams stay in their reserved buffers.
 					candidates.closeOutput();
-					int count = candidates.read(ids, input);
+					int count;
+					try {
+						if (!candidates.validateCommittedPrefix(input)) {
+							continue;
+						}
+						count = candidates.read(ids, input);
+					} catch (InvalidCandidateStreamException invalid) {
+						lock.lock();
+						try {
+							queue.removeFirst();
+							failedBatches++;
+							changed.signalAll();
+						} finally {
+							lock.unlock();
+						}
+						logger.warn("Discarding corrupt best-effort LMDB cleanup hints: {}", invalid.getMessage());
+						release(candidates);
+						progress = true;
+						continue;
+					}
 					lock.lock();
 					try {
 						inFlight = count;
@@ -484,6 +655,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 						lock.lock();
 						try {
 							candidates.readCount += count;
+							candidates.releaseAcknowledgedSegments();
 							acknowledgedCandidates += count;
 							if (candidates.readCount == candidates.committedCount) {
 								queue.removeFirst();
@@ -517,6 +689,9 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				lock.lock();
 				try {
 					inFlight = 0;
+					if (claimed != null) {
+						claimed.workerOwned = false;
+					}
 					changed.signalAll();
 				} finally {
 					lock.unlock();
@@ -527,7 +702,11 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				try {
 					long remaining = TimeUnit.MILLISECONDS.toNanos(backoffMillis);
 					while (!stopping && remaining > 0L) {
-						if (idlePass && !queue.isEmpty()) {
+						if (observedPressureSequence != pressureSequence) {
+							observedPressureSequence = pressureSequence;
+							break;
+						}
+						if (idlePass && !queue.isEmpty() && !queue.peekFirst().admissionSpilling) {
 							break;
 						}
 						retryWaitStarted.run();
@@ -558,17 +737,28 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		} finally {
 			lock.unlock();
 		}
-		if (current == null) {
-			return;
-		}
 		if (current == Thread.currentThread()) {
 			markShutdownJoinFailed();
 			throw new SailException("The value cleanup worker cannot close its own LMDB store");
 		}
 		try {
 			long remaining = shutdownDeadline - System.nanoTime();
-			if (remaining > 0) {
+			if (remaining > 0 && current != null) {
 				TimeUnit.NANOSECONDS.timedJoin(current, remaining);
+			}
+			lock.lockInterruptibly();
+			try {
+				while (admissionSpillers != 0 && (remaining = shutdownDeadline - System.nanoTime()) > 0) {
+					shutdownSpillWaitStarted.run();
+					changed.awaitNanos(remaining);
+				}
+				if (admissionSpillers != 0) {
+					shutdownJoinFailed = true;
+					throw new SailException(
+							"Async cleanup admission spill did not quiesce; LMDB remains open and owned");
+				}
+			} finally {
+				lock.unlock();
 			}
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
@@ -576,7 +766,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 			throw new InterruptedSailException("Interrupted while stopping value cleanup; LMDB remains owned",
 					interrupted);
 		}
-		if (current.isAlive()) {
+		if (current != null && current.isAlive()) {
 			markShutdownJoinFailed();
 			throw new SailException("Async value cleanup did not quiesce within its shutdown budget; "
 					+ "LMDB remains open and owned. Retry shutdown after the worker finishes");
@@ -597,6 +787,9 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		List<Candidates> pending;
 		lock.lock();
 		try {
+			if (admissionSpillers != 0) {
+				throw new SailException("Cleanup spool still has an admission owner");
+			}
 			shutdownSpool = new ArrayList<>();
 			pending = new ArrayList<>(queue);
 			for (Candidates candidates : producers.values()) {
@@ -617,7 +810,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 					shutdownSpool.add(new SpoolEntry(candidates.file.getFileName().toString(),
 							candidates.committedCount, candidates.committedChecksum));
 					candidates.guard.close();
-					candidates.buffer = null;
+					candidates.discardBuffers();
 				} catch (IOException failure) {
 					logger.warn("Unable to spool a best-effort cleanup batch; dictionary records remain reusable",
 							failure);
@@ -928,14 +1121,123 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		return table;
 	}
 
+	/** Intrusive nodes preserve the allocation-free publication/completion ownership transfer. */
+	private final class CandidateQueue extends AbstractCollection<Candidates> {
+		private Candidates first;
+		private Candidates last;
+		private int size;
+
+		void addLast(Candidates candidates) {
+			candidates.queuePrevious = last;
+			candidates.queueNext = null;
+			if (last == null) {
+				first = candidates;
+			} else {
+				last.queueNext = candidates;
+			}
+			last = candidates;
+			size++;
+		}
+
+		Candidates peekFirst() {
+			return first;
+		}
+
+		Candidates removeFirst() {
+			if (first == null) {
+				throw new NoSuchElementException();
+			}
+			Candidates removed = first;
+			first = removed.queueNext;
+			if (first == null) {
+				last = null;
+			} else {
+				first.queuePrevious = null;
+			}
+			removed.queueNext = removed.queuePrevious = null;
+			size--;
+			return removed;
+		}
+
+		@Override
+		public int size() {
+			return size;
+		}
+
+		@Override
+		public void clear() {
+			while (first != null) {
+				removeFirst();
+			}
+		}
+
+		@Override
+		public Iterator<Candidates> iterator() {
+			return new Iterator<>() {
+				private Candidates next = first;
+
+				@Override
+				public boolean hasNext() {
+					return next != null;
+				}
+
+				@Override
+				public Candidates next() {
+					if (next == null) {
+						throw new NoSuchElementException();
+					}
+					Candidates current = next;
+					next = current.queueNext;
+					return current;
+				}
+			};
+		}
+	}
+
+	private static final class Segment {
+		final ByteBuffer data;
+		final boolean extra;
+		Segment next;
+
+		Segment(int size) {
+			this(size, false);
+		}
+
+		Segment(int size, boolean extra) {
+			data = ByteBuffer.allocate(size * Long.BYTES);
+			this.extra = extra;
+		}
+	}
+
+	private static final class InvalidCandidateStreamException extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		InvalidCandidateStreamException(String message) {
+			super(message);
+		}
+	}
+
 	/** Append-only hints: cancelling re-additions is unnecessary because the worker revalidates statement usage. */
 	private final class Candidates extends AbstractSet<Long> implements SailClosable {
 		private ValueStore.CleanupReservation guard;
 		private boolean ready;
 		private boolean completionReleased;
+		private boolean baselineBuffer;
+		private Candidates queueNext;
+		private Candidates queuePrevious;
+		private boolean workerOwned;
+		private boolean admissionSpilling;
 		private ByteBuffer buffer;
+		private Segment head;
+		private Segment tail;
+		private Segment readSegment;
+		private long readSegmentStart;
+		private long memoryOffset;
+		private long segments;
 		private Path file;
 		private FileChannel output;
+		private FileChannel inputChannel;
+		private boolean validated;
 		private long count;
 		private long committedCount;
 		private long readCount;
@@ -945,7 +1247,39 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		private Candidates(ValueStore.CleanupReservation guard, boolean producer) {
 			this.guard = guard;
 			this.ready = guard != null;
-			this.buffer = producer ? ByteBuffer.allocate(batchSize * Long.BYTES) : null;
+			if (producer) {
+				initializeBuffer();
+			}
+		}
+
+		private void initializeBuffer() {
+			head = tail = new Segment(batchSize);
+			buffer = head.data;
+			baselineBuffer = true;
+			baseBuffers++;
+		}
+
+		/** Reserve before allocation, under the same lock used by metrics and producer admission. */
+		private boolean grow() {
+			lock.lock();
+			try {
+				long futureActive = Math.min(activeProducerLimit - producers.size(), producerLimit - reservations);
+				if (file != null || segmentSize == 0
+						|| retainedBytes() + segmentBytes + futureActive * producerBytes > maxBytes
+						|| retainedCandidateSlots() + segmentSize + futureActive * batchSize > maxCandidates) {
+					return false;
+				}
+				Segment next = new Segment(segmentSize, true);
+				tail.next = next;
+				tail = next;
+				buffer = next.data;
+				segments++;
+				extraSegments++;
+				updateHighWater();
+				return true;
+			} finally {
+				lock.unlock();
+			}
 		}
 
 		@Override
@@ -954,7 +1288,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				return false;
 			}
 			try {
-				if (!buffer.hasRemaining()) {
+				if (!buffer.hasRemaining() && !grow()) {
 					flush();
 				}
 				buffer.putLong(id);
@@ -987,18 +1321,44 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		}
 
 		private void prepare() throws IOException {
-			// A small transaction already fits its pre-admitted primitive buffer. Only an overflow stream needs
-			// its committed prefix flushed before publication; ordinary small commits perform no filesystem I/O.
 			if (file != null) {
 				flush();
 			}
 		}
 
-		private void spoolCommittedPrefix() throws IOException {
+		private void materializeCommittedPrefix() throws IOException {
 			if (file == null) {
-				buffer.position(Math.toIntExact(committedCount * Long.BYTES));
+				// Fully acknowledged segments have already returned their global memory credits. Rebase only
+				// the retained suffix at shutdown, before creating a new independently checksummed spool stream.
+				if (memoryOffset != 0) {
+					lock.lock();
+					try {
+						count -= memoryOffset;
+						committedCount -= memoryOffset;
+						readCount -= memoryOffset;
+						memoryOffset = 0;
+					} finally {
+						lock.unlock();
+					}
+					int crc = -1;
+					long remaining = committedCount;
+					for (Segment segment = head; segment != null && remaining > 0; segment = segment.next) {
+						int size = (int) Math.min(remaining, segment.data.position() / Long.BYTES);
+						for (int i = 0; i < size; i++) {
+							crc = crc(crc, segment.data.getLong(i * Long.BYTES));
+						}
+						remaining -= size;
+					}
+					committedChecksum = crc;
+				}
+				// A producer may still have an unpublished suffix at shutdown.
+				clear();
 				flush();
 			}
+		}
+
+		private void spoolCommittedPrefix() throws IOException {
+			materializeCommittedPrefix();
 			if (output == null) {
 				output = FileChannel.open(file, StandardOpenOption.WRITE);
 			}
@@ -1006,34 +1366,66 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 			spoolObserver.observe(SpoolEvent.DATA_FORCE, file);
 			output.force(true);
 			spoolObserver.observe(SpoolEvent.DATA_FORCED, file);
-			// Unlike disposal's warning-only close, failure here excludes this stream from publication.
 			output.close();
 			output = null;
+			closeInput();
 		}
 
 		private void flush() throws IOException {
-			if (buffer.position() == 0) {
+			if (buffer.position() == 0 && (head == null || head == tail)) {
 				return;
 			}
-			if (output == null) {
-				Files.createDirectories(directory);
-				if (file == null) {
-					file = directory.resolve(UUID.randomUUID() + ".ids");
-					output = FileChannel.open(file, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-				} else {
-					output = FileChannel.open(file, StandardOpenOption.WRITE);
-					output.position((count - buffer.position() / Long.BYTES) * Long.BYTES);
+			boolean firstSpill = file == null;
+			long size = 0;
+			for (Segment segment = head; segment != null; segment = segment.next) {
+				size += segment.data.position() / Long.BYTES;
+			}
+			try {
+				if (output == null) {
+					Files.createDirectories(directory);
+					if (file == null) {
+						file = directory.resolve(UUID.randomUUID() + ".ids");
+						output = FileChannel.open(file, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+					} else {
+						output = FileChannel.open(file, StandardOpenOption.WRITE);
+					}
 				}
+				output.position((count - size) * Long.BYTES);
+				for (Segment segment = head; segment != null; segment = segment.next) {
+					// Do not mutate committed in-memory prefixes until every write succeeds. Rollback must still
+					// be able to retain an earlier checkpoint after a partially written first spill.
+					ByteBuffer data = segment.data.duplicate();
+					data.flip();
+					while (data.hasRemaining()) {
+						output.write(data);
+					}
+				}
+			} catch (IOException failure) {
+				if (firstSpill) {
+					closeOutput();
+					if (file != null) {
+						deleteObsoleteFile(file);
+						file = null;
+					}
+				}
+				throw failure;
 			}
-			int size = buffer.position() / Long.BYTES;
-			buffer.flip();
-			while (buffer.hasRemaining()) {
-				output.write(buffer);
-			}
-			buffer.clear();
 			lock.lock();
 			try {
 				spilledCandidates += size;
+				extraSegments -= segments;
+				segments = 0;
+				if (head.extra) {
+					head = tail = null;
+					buffer = null;
+				} else {
+					head.next = null;
+					tail = head;
+					buffer = head.data;
+					buffer.clear();
+				}
+				readSegment = null;
+				changed.signalAll();
 			} finally {
 				lock.unlock();
 			}
@@ -1047,7 +1439,26 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 					output.position(committedCount * Long.BYTES);
 				}
 				if (file == null) {
-					buffer.position(Math.toIntExact(committedCount * Long.BYTES));
+					long remaining = committedCount - memoryOffset;
+					Segment segment = head;
+					long retained = segment.extra ? 1 : 0;
+					while (remaining > segment.data.capacity() / Long.BYTES) {
+						remaining -= segment.data.capacity() / Long.BYTES;
+						segment = segment.next;
+						retained++;
+					}
+					segment.data.position(Math.toIntExact(remaining * Long.BYTES));
+					lock.lock();
+					try {
+						extraSegments -= segments - retained;
+						segments = retained;
+						segment.next = null;
+						tail = segment;
+						buffer = segment.data;
+						readSegment = null;
+					} finally {
+						lock.unlock();
+					}
 				} else {
 					buffer.clear();
 				}
@@ -1058,23 +1469,96 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 			}
 		}
 
+		/**
+		 * Immutable queued spill files are preflight-checked in full, before any ID is sent to the processor. Keep the
+		 * same open channel for subsequent reads. This is whole-stream validation, not protection against an external
+		 * actor changing the file after validation. Runtime spilling never calls force.
+		 */
+		private boolean validateCommittedPrefix(ByteBuffer input) throws IOException {
+			if (file == null || validated) {
+				return true;
+			}
+			if (inputChannel == null) {
+				try {
+					inputChannel = FileChannel.open(file, StandardOpenOption.READ);
+				} catch (NoSuchFileException missing) {
+					throw new InvalidCandidateStreamException("Missing cleanup stream");
+				}
+			}
+			if (inputChannel.size() < committedCount * Long.BYTES) {
+				throw new InvalidCandidateStreamException("Partial cleanup stream");
+			}
+			int crc = -1;
+			long offset = 0;
+			while (offset < committedCount) {
+				if (stopping) {
+					return false;
+				}
+				int size = (int) Math.min(batchSize, committedCount - offset);
+				input.clear().limit(size * Long.BYTES);
+				try {
+					readFully(inputChannel, input, offset * Long.BYTES);
+				} catch (IOException failure) {
+					throw new InvalidCandidateStreamException("Incomplete cleanup stream");
+				}
+				input.flip();
+				while (input.hasRemaining()) {
+					crc = crc(crc, input.getLong());
+				}
+				offset += size;
+			}
+			if (crc != committedChecksum) {
+				throw new InvalidCandidateStreamException("Cleanup stream checksum mismatch");
+			}
+			validated = true;
+			return true;
+		}
+
 		private int read(long[] ids, ByteBuffer input) throws IOException {
 			int size = (int) Math.min(batchSize, committedCount - readCount);
 			if (file == null) {
+				if (readSegment == null || readCount < readSegmentStart) {
+					readSegment = head;
+					readSegmentStart = memoryOffset;
+				}
 				for (int i = 0; i < size; i++) {
-					ids[i] = buffer.getLong(Math.toIntExact((readCount + i) * Long.BYTES));
+					long index = readCount + i;
+					while (index - readSegmentStart >= readSegment.data.capacity() / Long.BYTES) {
+						readSegmentStart += readSegment.data.capacity() / Long.BYTES;
+						readSegment = readSegment.next;
+					}
+					ids[i] = readSegment.data.getLong(Math.toIntExact((index - readSegmentStart) * Long.BYTES));
 				}
 				return size;
 			}
 			input.clear().limit(size * Long.BYTES);
-			try (FileChannel channel = FileChannel.open(file, StandardOpenOption.READ)) {
-				readFully(channel, input, readCount * Long.BYTES);
-			}
+			readFully(inputChannel, input, readCount * Long.BYTES);
 			input.flip();
 			for (int i = 0; i < size; i++) {
 				ids[i] = input.getLong();
 			}
 			return size;
+		}
+
+		/** Called only under the queue lock, after the processor's successful transaction was acknowledged. */
+		private void releaseAcknowledgedSegments() {
+			if (file != null) {
+				return;
+			}
+			while (head != null && head != tail && readCount - memoryOffset >= head.data.capacity() / Long.BYTES) {
+				Segment released = head;
+				memoryOffset += released.data.capacity() / Long.BYTES;
+				head = released.next;
+				released.next = null;
+				if (released.extra) {
+					segments--;
+					extraSegments--;
+				} else if (baselineBuffer) {
+					baselineBuffer = false;
+					baseBuffers--;
+				}
+			}
+			readSegment = null;
 		}
 
 		private void closeOutput() {
@@ -1097,12 +1581,44 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 			}
 		}
 
+		private void discardBuffers() {
+			lock.lock();
+			try {
+				extraSegments -= segments;
+				segments = 0;
+				if (baselineBuffer) {
+					baselineBuffer = false;
+					baseBuffers--;
+				}
+				buffer = null;
+				head = tail = readSegment = null;
+				changed.signalAll();
+			} finally {
+				lock.unlock();
+			}
+		}
+
+		private void closeInput() {
+			if (inputChannel != null) {
+				try {
+					inputChannel.close();
+				} catch (IOException failure) {
+					logger.warn("Unable to close a cleanup input stream", failure);
+				}
+				inputChannel = null;
+			}
+		}
+
 		private void dispose() {
 			closeOutput();
-			if (guard != null) {
-				guard.close();
+			closeInput();
+			try {
+				if (guard != null) {
+					guard.close();
+				}
+			} finally {
+				discardBuffers();
 			}
-			buffer = null;
 			if (file != null) {
 				try {
 					Files.deleteIfExists(file);
@@ -1113,30 +1629,92 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		}
 	}
 
+	/** Only called with the queue lock, before acquiring any native/read/publication ownership. */
+	private void awaitPressureRelief(long admissionDeadline) throws InterruptedException {
+		if (pressureTimeoutNanos == 0 || Thread.currentThread() == worker) {
+			return;
+		}
+		long queued = queuedCandidates();
+		boolean highPressure = queued >= Math.max(1,
+				effectiveMemoryCandidateCapacity - effectiveMemoryCandidateCapacity / 10)
+				|| (queued != 0 && (retainedBytes() >= maxBytes - maxBytes / 10 || reservations >= producerLimit));
+		if (!pressureGateActive && (!highPressure || gatedGeneration == queueGeneration)) {
+			return;
+		}
+		// Waiter metadata is bounded as well. Bypass the optional pause if its waiter budget is full.
+		if (waitingProducers + pressureWaiters + admissionSpillers >= activeProducerLimit) {
+			return;
+		}
+		if (!pressureGateActive) {
+			pressureGateActive = true;
+			pressureTargetAcknowledged = LmdbUtil.saturatedAdd(acknowledgedCandidates,
+					queued / 10 + (queued % 10 == 0 ? 0 : 1));
+			pressureDeadline = Math.min(System.nanoTime() + pressureTimeoutNanos, admissionDeadline);
+			pressureSequence++;
+			changed.signalAll();
+		}
+		long cycle = pressureSequence;
+		pressureWaiters++;
+		try {
+			while (!stopping && pressureGateActive && pressureSequence == cycle) {
+				long remaining = pressureDeadline - System.nanoTime();
+				if (acknowledgedCandidates >= pressureTargetAcknowledged || remaining <= 0 || queue.isEmpty()) {
+					if (remaining <= 0 && acknowledgedCandidates < pressureTargetAcknowledged) {
+						pressureTimeouts++;
+					}
+					pressureGateActive = false;
+					// A whole waiting cohort shares one fixed target and deadline, including arrivals during the pause.
+					gatedGeneration = queueGeneration;
+					changed.signalAll();
+					break;
+				}
+				admissionWaitStarted.run();
+				changed.awaitNanos(remaining);
+			}
+		} finally {
+			pressureWaiters--;
+		}
+	}
+
+	private long queuedCandidates() {
+		long queued = 0;
+		for (Candidates candidates : queue) {
+			queued = LmdbUtil.saturatedAdd(queued, candidates.committedCount - candidates.readCount);
+		}
+		return queued;
+	}
+
+	private long retainedBytes() {
+		return workerBytes
+				+ (long) Math.max(reservations + spooledReservations,
+						waitingProducers + pressureWaiters + admissionSpillers)
+						* (PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES)
+				+ (long) baseBuffers * batchSize * Long.BYTES + extraSegments * segmentBytes;
+	}
+
+	private long retainedCandidateSlots() {
+		return (long) batchSize * (baseBuffers + WORKER_CANDIDATE_SLOTS) + extraSegments * segmentSize;
+	}
+
 	private void updateHighWater() {
-		highWaterCandidates = Math.max(highWaterCandidates, (long) batchSize * (reservations + WORKER_CANDIDATE_SLOTS));
-		highWaterBytes = Math.max(highWaterBytes, workerBytes + reservations * producerBytes);
+		highWaterCandidates = Math.max(highWaterCandidates, retainedCandidateSlots());
+		highWaterBytes = Math.max(highWaterBytes, retainedBytes());
 	}
 
 	Metrics metrics() {
 		lock.lock();
 		try {
-			long unacknowledged = 0L;
-			for (Candidates candidates : queue) {
-				unacknowledged = LmdbUtil.saturatedAdd(unacknowledged,
-						candidates.committedCount - candidates.readCount);
-			}
+			long queued = queuedCandidates();
+			long unacknowledged = queued;
 			for (Candidates candidates : producers.values()) {
 				unacknowledged = LmdbUtil.saturatedAdd(unacknowledged, candidates.count);
 			}
-			return new Metrics((long) batchSize * (reservations + WORKER_CANDIDATE_SLOTS),
-					workerBytes + (long) Math.max(reservations + spooledReservations, waitingProducers)
-							* (PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES)
-							+ (long) reservations * batchSize * Long.BYTES,
-					queue.size(), reservations, inFlight,
+			return new Metrics(retainedCandidateSlots(), retainedBytes(), queue.size(), reservations, inFlight,
 					highWaterCandidates, highWaterBytes, admissionWaitNanos, admissionTimeouts,
 					acknowledgedCandidates, failedBatches, spilledCandidates, batchSize, producerLimit, unacknowledged,
-					waitingProducers);
+					waitingProducers, effectiveMemoryCandidateCapacity, queued, pressureTargetAcknowledged,
+					pressureWaiters,
+					pressureTimeouts, activeProducerLimit, producers.size(), admissionSpillers);
 		} finally {
 			lock.unlock();
 		}

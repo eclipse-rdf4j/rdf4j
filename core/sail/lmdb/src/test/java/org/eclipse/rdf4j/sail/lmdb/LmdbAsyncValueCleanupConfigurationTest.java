@@ -33,6 +33,7 @@ class LmdbAsyncValueCleanupConfigurationTest {
 		store.setAsyncValueCleanupBatchSize(32);
 		store.setAsyncValueCleanupMaxPendingProducers(2);
 		store.setAsyncValueCleanupAdmissionTimeoutMillis(500);
+		store.setAsyncValueCleanupPressureTimeoutMillis(125);
 		store.setAsyncValueCleanupShutdownTimeoutMillis(3000);
 		try {
 			store.init();
@@ -42,6 +43,7 @@ class LmdbAsyncValueCleanupConfigurationTest {
 			assertThat(store.getAsyncValueCleanupBatchSize()).isEqualTo(32);
 			assertThat(store.getAsyncValueCleanupMaxPendingProducers()).isEqualTo(2);
 			assertThat(store.getAsyncValueCleanupAdmissionTimeoutMillis()).isEqualTo(500);
+			assertThat(store.getAsyncValueCleanupPressureTimeoutMillis()).isEqualTo(125);
 			assertThat(store.getAsyncValueCleanupShutdownTimeoutMillis()).isEqualTo(3000);
 			assertThatIllegalStateException().isThrownBy(() -> store.setAsyncValueCleanup(true));
 			assertThatIllegalStateException().isThrownBy(() -> store.setAsyncValueCleanupMaxCandidates(2048));
@@ -49,6 +51,7 @@ class LmdbAsyncValueCleanupConfigurationTest {
 			assertThatIllegalStateException().isThrownBy(() -> store.setAsyncValueCleanupBatchSize(64));
 			assertThatIllegalStateException().isThrownBy(() -> store.setAsyncValueCleanupMaxPendingProducers(4));
 			assertThatIllegalStateException().isThrownBy(() -> store.setAsyncValueCleanupAdmissionTimeoutMillis(1000));
+			assertThatIllegalStateException().isThrownBy(() -> store.setAsyncValueCleanupPressureTimeoutMillis(0));
 			assertThatIllegalStateException().isThrownBy(() -> store.setAsyncValueCleanupShutdownTimeoutMillis(4000));
 		} finally {
 			store.shutDown();

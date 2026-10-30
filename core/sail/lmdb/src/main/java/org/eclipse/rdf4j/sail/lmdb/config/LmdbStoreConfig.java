@@ -29,6 +29,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.common.annotation.ConfigProperty;
 import org.eclipse.rdf4j.common.annotation.Configurable;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -111,16 +112,16 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 						"\"60000\"^^<http://www.w3.org/2001/XMLSchema#long>" }
 )
 @ConfigProperty(
-		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanup", description = "Use bounded best-effort background dictionary reclamation. Off by default; pending cleanup may be lost on a crash "
-				+ "without changing committed RDF data. Startup-only; this does not change the dictionary format.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
+		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanup", description = "Use bounded best-effort background dictionary reclamation. On by default; false selects durable retirement recording. "
+				+ "Pending cleanup may be lost on a crash without changing committed RDF data. Startup-only; this does not change the dictionary format.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
 						"\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
 @ConfigProperty(
-		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanupMaxCandidates", description = "Maximum retained cleanup candidate slots, including producers and worker workspace; at least 16. Defaults to 65536.", datatype = "http://www.w3.org/2001/XMLSchema#int", examples = {
+		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanupMaxCandidates", description = "Maximum retained cleanup candidate slots, including producers and worker workspace; at least 16. Defaults to the byte budget divided by eight.", datatype = "http://www.w3.org/2001/XMLSchema#int", examples = {
 				"\"65536\"^^<http://www.w3.org/2001/XMLSchema#int>" }
 )
 @ConfigProperty(
-		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanupMaxBytes", description = "Maximum estimated cleanup memory in bytes, including producer reservations and worker workspace; at least 4096. Defaults to 8388608.", datatype = "http://www.w3.org/2001/XMLSchema#long", examples = {
+		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanupMaxBytes", description = "Maximum estimated cleanup memory in bytes, including producer reservations and worker workspace; at least 4096. Defaults to 1% of JVM maximum heap, capped at 64 MiB.", datatype = "http://www.w3.org/2001/XMLSchema#long", examples = {
 				"\"8388608\"^^<http://www.w3.org/2001/XMLSchema#long>" }
 )
 @ConfigProperty(
@@ -128,11 +129,15 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 				"\"256\"^^<http://www.w3.org/2001/XMLSchema#int>" }
 )
 @ConfigProperty(
-		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanupMaxPendingProducers", description = "Maximum admitted or queued cleanup producer streams; positive. At most the same effective number of callers may wait for admission. Memory limits may reduce both limits. Defaults to 8.", datatype = "http://www.w3.org/2001/XMLSchema#int", examples = {
+		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanupMaxPendingProducers", description = "Maximum admitted or queued cleanup producer streams; positive. At most the same effective number of callers may wait for admission. Memory limits may reduce both limits. Defaults to the byte budget divided by 1024, with a minimum of one; this is a total active-plus-queued cap, not an active staging reservation.", datatype = "http://www.w3.org/2001/XMLSchema#int", examples = {
 				"\"8\"^^<http://www.w3.org/2001/XMLSchema#int>" }
 )
 @ConfigProperty(
-		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanupAdmissionTimeoutMillis", description = "Positive interruptible cleanup admission timeout in milliseconds, applied before publication and conflicting ownership. Defaults to 30000.", datatype = "http://www.w3.org/2001/XMLSchema#long", examples = {
+		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanupPressureTimeoutMillis", description = "Maximum brief pause for safe new-writer admission under cleanup pressure, in milliseconds. Defaults to 250; zero disables the pause. Separate from hard-cap admission timeout.", datatype = "http://www.w3.org/2001/XMLSchema#long", examples = {
+				"\"250\"^^<http://www.w3.org/2001/XMLSchema#long>" }
+)
+@ConfigProperty(
+		predicate = "http://rdf4j.org/config/sail/lmdb#asyncValueCleanupAdmissionTimeoutMillis", description = "Positive interruptible cleanup admission timeout in milliseconds, applied before publication and conflicting ownership, including the pressure pause. Defaults to 250.", datatype = "http://www.w3.org/2001/XMLSchema#long", examples = {
 				"\"30000\"^^<http://www.w3.org/2001/XMLSchema#long>" }
 )
 @ConfigProperty(
@@ -326,15 +331,32 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	 */
 	public static final int NAMESPACE_ID_CACHE_SIZE = 32;
 
-	public static final int ASYNC_VALUE_CLEANUP_MAX_CANDIDATES = 65_536;
+	public static final long ASYNC_VALUE_CLEANUP_MAX_BYTES = defaultAsyncValueCleanupMaxBytes(
+			Runtime.getRuntime().maxMemory());
 
-	public static final long ASYNC_VALUE_CLEANUP_MAX_BYTES = 8L * 1024 * 1024;
+	public static final int ASYNC_VALUE_CLEANUP_MAX_CANDIDATES = defaultAsyncValueCleanupMaxCandidates(
+			ASYNC_VALUE_CLEANUP_MAX_BYTES);
+
+	static int defaultAsyncValueCleanupMaxCandidates(long maxBytes) {
+		return (int) Math.max(16, Math.min(Integer.MAX_VALUE, maxBytes / Long.BYTES));
+	}
+
+	static int defaultAsyncValueCleanupMaxPendingProducers(long maxBytes) {
+		return (int) Math.max(1, Math.min(Integer.MAX_VALUE, maxBytes / 1024));
+	}
+
+	static long defaultAsyncValueCleanupMaxBytes(long maxHeapBytes) {
+		return Math.max(4096L, Math.min(maxHeapBytes / 100, 64L * 1024 * 1024));
+	}
 
 	public static final int ASYNC_VALUE_CLEANUP_BATCH_SIZE = 256;
 
-	public static final int ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS = 8;
+	public static final int ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS = defaultAsyncValueCleanupMaxPendingProducers(
+			ASYNC_VALUE_CLEANUP_MAX_BYTES);
 
-	public static final long ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS = 30_000L;
+	public static final long ASYNC_VALUE_CLEANUP_PRESSURE_TIMEOUT_MILLIS = 250L;
+
+	public static final long ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS = 250L;
 
 	public static final long ASYNC_VALUE_CLEANUP_SHUTDOWN_TIMEOUT_MILLIS = 3_500L;
 
@@ -376,15 +398,23 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private long valueEvictionInterval = Duration.ofSeconds(60).toMillis();
 
-	private boolean asyncValueCleanup;
+	private boolean asyncValueCleanup = true;
 
 	private int asyncValueCleanupMaxCandidates = ASYNC_VALUE_CLEANUP_MAX_CANDIDATES;
 
+	private boolean asyncValueCleanupMaxCandidatesConfigured;
+
 	private long asyncValueCleanupMaxBytes = ASYNC_VALUE_CLEANUP_MAX_BYTES;
+
+	private boolean asyncValueCleanupMaxBytesConfigured;
 
 	private int asyncValueCleanupBatchSize = ASYNC_VALUE_CLEANUP_BATCH_SIZE;
 
 	private int asyncValueCleanupMaxPendingProducers = ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS;
+
+	private boolean asyncValueCleanupMaxPendingProducersConfigured;
+
+	private long asyncValueCleanupPressureTimeoutMillis = ASYNC_VALUE_CLEANUP_PRESSURE_TIMEOUT_MILLIS;
 
 	private long asyncValueCleanupAdmissionTimeoutMillis = ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS;
 
@@ -647,8 +677,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	}
 
 	/**
-	 * Returns whether dictionary reclamation uses the bounded best-effort background worker. The default is false,
-	 * retaining durable retirement recording. Neither mode promises immediate reclamation of reader-pinned values.
+	 * Returns whether dictionary reclamation uses the bounded best-effort background worker. The default is true,
+	 * including configurations that omit this setting. Explicit false retains durable retirement recording. Neither
+	 * mode promises immediate reclamation of reader-pinned values or candidates whose bounded liveness is unknown.
 	 */
 	public boolean getAsyncValueCleanup() {
 		return asyncValueCleanup;
@@ -665,7 +696,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	}
 
 	public int getAsyncValueCleanupMaxCandidates() {
-		return asyncValueCleanupMaxCandidates;
+		return asyncValueCleanupMaxCandidatesConfigured ? asyncValueCleanupMaxCandidates
+				: defaultAsyncValueCleanupMaxCandidates(asyncValueCleanupMaxBytes);
 	}
 
 	/** Sets the total retained candidate-slot bound, including producer reservations and worker workspace. */
@@ -674,6 +706,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			throw new IllegalArgumentException("asyncValueCleanupMaxCandidates must be at least 16");
 		}
 		asyncValueCleanupMaxCandidates = maxCandidates;
+		asyncValueCleanupMaxCandidatesConfigured = true;
 		return this;
 	}
 
@@ -687,6 +720,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			throw new IllegalArgumentException("asyncValueCleanupMaxBytes must be at least 4096");
 		}
 		asyncValueCleanupMaxBytes = maxBytes;
+		asyncValueCleanupMaxBytesConfigured = true;
 		return this;
 	}
 
@@ -703,8 +737,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	/** Whether the caller explicitly selected the total stream cap rather than deriving it from the byte budget. */
+	@InternalUseOnly
+	public boolean isAsyncValueCleanupMaxPendingProducersConfigured() {
+		return asyncValueCleanupMaxPendingProducersConfigured;
+	}
+
 	public int getAsyncValueCleanupMaxPendingProducers() {
-		return asyncValueCleanupMaxPendingProducers;
+		return asyncValueCleanupMaxPendingProducersConfigured ? asyncValueCleanupMaxPendingProducers
+				: defaultAsyncValueCleanupMaxPendingProducers(asyncValueCleanupMaxBytes);
 	}
 
 	/**
@@ -716,6 +757,20 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			throw new IllegalArgumentException("asyncValueCleanupMaxPendingProducers must be positive");
 		}
 		asyncValueCleanupMaxPendingProducers = maxPendingProducers;
+		asyncValueCleanupMaxPendingProducersConfigured = true;
+		return this;
+	}
+
+	public long getAsyncValueCleanupPressureTimeoutMillis() {
+		return asyncValueCleanupPressureTimeoutMillis;
+	}
+
+	/** Sets the brief pressure pause before safe new-writer admission; zero disables this optional pause. */
+	public LmdbStoreConfig setAsyncValueCleanupPressureTimeoutMillis(long timeoutMillis) {
+		if (timeoutMillis < 0) {
+			throw new IllegalArgumentException("asyncValueCleanupPressureTimeoutMillis must be nonnegative");
+		}
+		asyncValueCleanupPressureTimeoutMillis = timeoutMillis;
 		return this;
 	}
 
@@ -1091,7 +1146,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	@Override
 	public void validate() throws SailConfigException {
 		super.validate();
-		if (asyncValueCleanupBatchSize > asyncValueCleanupMaxCandidates) {
+		if (asyncValueCleanupBatchSize > getAsyncValueCleanupMaxCandidates()) {
 			throw new SailConfigException("asyncValueCleanupBatchSize must not exceed asyncValueCleanupMaxCandidates");
 		}
 		if (getDirectAdjacencyCoverage() == DirectAdjacencyCoverage.FULL && !directAdjacencyPredicates.isEmpty()) {
@@ -1176,14 +1231,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (valueEvictionInterval != Duration.ofSeconds(60).toMillis()) {
 			m.add(implNode, LmdbStoreSchema.VALUE_EVICTION_INTERVAL, vf.createLiteral(valueEvictionInterval));
 		}
-		if (asyncValueCleanup) {
-			m.add(implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP, vf.createLiteral(true));
+		if (!asyncValueCleanup) {
+			m.add(implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP, vf.createLiteral(false));
 		}
-		if (asyncValueCleanupMaxCandidates != ASYNC_VALUE_CLEANUP_MAX_CANDIDATES) {
+		if (asyncValueCleanupMaxCandidatesConfigured) {
 			m.add(implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_MAX_CANDIDATES,
 					vf.createLiteral(asyncValueCleanupMaxCandidates));
 		}
-		if (asyncValueCleanupMaxBytes != ASYNC_VALUE_CLEANUP_MAX_BYTES) {
+		if (asyncValueCleanupMaxBytesConfigured) {
 			m.add(implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_MAX_BYTES,
 					vf.createLiteral(asyncValueCleanupMaxBytes));
 		}
@@ -1191,9 +1246,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			m.add(implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_BATCH_SIZE,
 					vf.createLiteral(asyncValueCleanupBatchSize));
 		}
-		if (asyncValueCleanupMaxPendingProducers != ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS) {
+		if (asyncValueCleanupMaxPendingProducersConfigured) {
 			m.add(implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS,
 					vf.createLiteral(asyncValueCleanupMaxPendingProducers));
+		}
+		if (asyncValueCleanupPressureTimeoutMillis != ASYNC_VALUE_CLEANUP_PRESSURE_TIMEOUT_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_PRESSURE_TIMEOUT_MILLIS,
+					vf.createLiteral(asyncValueCleanupPressureTimeoutMillis));
 		}
 		if (asyncValueCleanupAdmissionTimeoutMillis != ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS) {
 			m.add(implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS,
@@ -1332,6 +1391,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					this::setAsyncValueCleanupBatchSize);
 			parseCleanupInt(m, implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS,
 					this::setAsyncValueCleanupMaxPendingProducers);
+			parseCleanupLong(m, implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_PRESSURE_TIMEOUT_MILLIS,
+					this::setAsyncValueCleanupPressureTimeoutMillis);
 			parseCleanupLong(m, implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS,
 					this::setAsyncValueCleanupAdmissionTimeoutMillis);
 			parseCleanupLong(m, implNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_SHUTDOWN_TIMEOUT_MILLIS,
