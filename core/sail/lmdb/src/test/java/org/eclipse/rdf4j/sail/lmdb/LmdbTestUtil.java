@@ -26,6 +26,17 @@ public final class LmdbTestUtil {
 	private LmdbTestUtil() {
 	}
 
+	/** Adapts test-owned shutdown to try-with-resources, preserving failures through suppression. */
+	public static Cleanup onClose(Runnable cleanup) {
+		return cleanup::run;
+	}
+
+	@FunctionalInterface
+	public interface Cleanup extends AutoCloseable {
+		@Override
+		void close();
+	}
+
 	/** Waits for deferred owner initialization before tests explicitly replace or persist optional components. */
 	public static void awaitPostReadyInitialization(LmdbStore store, long timeout, TimeUnit unit)
 			throws IOException, InterruptedException {

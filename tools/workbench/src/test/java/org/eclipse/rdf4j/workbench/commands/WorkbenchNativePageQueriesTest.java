@@ -60,6 +60,7 @@ import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
+import org.eclipse.rdf4j.workbench.support.TestProcess;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.PagedQuery;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
@@ -92,7 +93,8 @@ class WorkbenchNativePageQueriesTest {
 		SailRepository reference = new SailRepository(new LmdbStore(directory.resolve("reference").toFile(),
 				new LmdbStoreConfig().setNativeEvaluationEnabled(false)
 						.setDirectAdjacencyEnabled(false)));
-		try {
+		try (AutoCloseable closeNative = nativeRepository::shutDown;
+				AutoCloseable closeReference = reference::shutDown) {
 			load(nativeRepository);
 			load(reference);
 			if (adjacency) {
@@ -162,9 +164,6 @@ class WorkbenchNativePageQueriesTest {
 							.writeValueAsString(Map.of("pageQueries", queryCases, "classicQueries", classicCases,
 									"nativeEvaluation", true, "directAdjacency", adjacency, "resultCacheRequested",
 									false)));
-		} finally {
-			nativeRepository.shutDown();
-			reference.shutDown();
 		}
 	}
 
@@ -191,13 +190,16 @@ class WorkbenchNativePageQueriesTest {
 		Path output = artifacts(adjacency).resolve("classic-bridge.stderr.log");
 		List<String> cases = new ArrayList<>();
 		for (String resource : List.of("<" + NS + "focus>", "<_:focus>", "<" + NS + "unknown>")) {
-			Process bridge = new ProcessBuilder(Path.of("target", "node", "node").toAbsolutePath().toString(),
-					"src/test/frontend/classic/fixtures/native-generated-query-bridge.cjs",
-					JSON.writeValueAsString(Map.of("graph", NS + "graph", "resource", resource)))
-							.redirectError(ProcessBuilder.Redirect.appendTo(output.toFile()))
-							.start();
-			JsonNode generated = JSON.readTree(bridge.getInputStream());
-			assertThat(bridge.waitFor()).as("render the actual classic producer queries").isZero();
+			JsonNode generated;
+			try (TestProcess child = TestProcess.start(
+					new ProcessBuilder(Path.of("target", "node", "node").toAbsolutePath().toString(),
+							"src/test/frontend/classic/fixtures/native-generated-query-bridge.cjs",
+							JSON.writeValueAsString(Map.of("graph", NS + "graph", "resource", resource)))
+									.redirectError(ProcessBuilder.Redirect.appendTo(output.toFile())))) {
+				Process bridge = child.process();
+				generated = JSON.readTree(bridge.getInputStream());
+				assertThat(bridge.waitFor()).as("render the actual classic producer queries").isZero();
+			}
 			for (String name : List.of("resource", "graph", "editor")) {
 				String query = generated.path(name).asText();
 				List<String> variants = "resource".equals(name)

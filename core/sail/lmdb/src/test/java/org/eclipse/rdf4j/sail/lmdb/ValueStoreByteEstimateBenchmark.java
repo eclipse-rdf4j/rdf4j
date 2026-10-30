@@ -40,6 +40,7 @@ public class ValueStoreByteEstimateBenchmark {
 	@Param({ "single", "distinct", "repeated", "unicode", "shared", "deep" })
 	public String shape;
 	private ValueStore store;
+	private File directory;
 	private List<Statement> statements;
 
 	@Setup(Level.Trial)
@@ -47,7 +48,7 @@ public class ValueStoreByteEstimateBenchmark {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI predicate = vf.createIRI("urn:estimate-benchmark:p");
 		IRI termSubject = vf.createIRI("urn:estimate-benchmark:term");
-		File directory = Files.createTempDirectory("value-byte-estimate-").toFile();
+		directory = Files.createTempDirectory("value-byte-estimate-").toFile();
 		store = new ValueStore(directory, new LmdbStoreConfig());
 		String label = shape.equals("unicode") ? "雪😀é".repeat(4096) : "x".repeat(16384);
 		Value repeated = vf.createLiteral(label);
@@ -95,6 +96,10 @@ public class ValueStoreByteEstimateBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws Exception {
-		store.close();
+		if (store != null) {
+			store.close();
+		}
+		// Do not delete files when a failed shutdown may still own native handles.
+		LmdbTestUtil.deleteDir(directory);
 	}
 }
