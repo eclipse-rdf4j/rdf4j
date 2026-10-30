@@ -139,7 +139,7 @@ class LmdbDirectDomainStatisticsAdmissionTest {
                 writer.completeTransaction();
                 writer.close();
             }
-            backing.awaitGrowthEnd(growthToken, null);
+            backing.awaitGrowthEnd(growthToken);
             assertFalse(backing.growthAdmissionClosed(), "the captured growth episode must finish");
             assertEquals(Optional.of(RdfTermDomain.IRI), fixture.source.getKnownRdfTermDomain(P),
                     "a later direct observation recovers after growth admission reopens");

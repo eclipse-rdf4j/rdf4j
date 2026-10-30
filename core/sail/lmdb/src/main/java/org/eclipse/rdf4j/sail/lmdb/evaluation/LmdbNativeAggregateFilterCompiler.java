@@ -17,7 +17,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.isNullContextValue;
-import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.memoReadMask;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.safeResourceId;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.validValueForField;
 
@@ -482,7 +481,9 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			NativeBooleanFilter comparison = compileCompare((Compare) expr, assuredMask);
 			if (comparison != null) {
 				LmdbNativeExpressionCompiler.recordCompiledFilter();
-				return comparison;
+				NativeScalarPlan recipe = NativeScalarPlan.create(expr, this::existingSlot,
+						NativeScalarPlan.ResultKind.BOOLEAN, strictCompare(), assuredMask, false, false);
+				return comparison.plannedBy(recipe);
 			}
 		}
 		if (expr instanceof And) {
@@ -527,6 +528,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				SlotPlan subPlan = compileTuple(exists.getSubQuery(), false);
 				if (subPlan == null && Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 					System.err.println("[exists-compile] decline: sub-plan " + exists.getSubQuery().getSignature());
+				}
+				if (subPlan != null && Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+					System.err.println("[exists-compile] replay=" + SlotPlan.encounterOrderReplaySafe(subPlan)
+							+ " worker=" + NativeWorkerPlanBinder.canBind(subPlan) + " plan="
+							+ LmdbNativeExplain.describe(subPlan, slotNames.toArray(String[]::new), 0L));
 				}
 				return subPlan == null ? null : new ExistsFilter(subPlan);
 			} finally {
@@ -741,72 +747,13 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		return null;
 	}
 
-	/** Only row-local native plans may borrow a projected row without a separate query-entry frame. */
+	/**
+	 * The condition row owns its projected entry frame as well as its slots. Lexical producers therefore use the same
+	 * replay/effect and worker-construction proofs as ordinary native predicates; unknown or effectful recipes retain
+	 * the semantic fallback. Root partitionability is a separate aggregate admission gate.
+	 */
 	private static boolean projectedNativeFrameSupported(SlotPlan plan) {
-		if (memoReadMask(plan) < 0L || plan instanceof PathPlan) {
-			// Independent subqueries, GRAPH, generic islands, lexical OPTIONALs and computed copies decline through
-			// memoReadMask. A path's dynamic context is not part of its produced mask, so that proof is incomplete.
-			return false;
-		}
-		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf) {
-			return projectedNativeFrameSupported(leaf.template);
-		}
-		if (plan instanceof MultiJoinPlan join) {
-			for (SlotPlan child : join.children) {
-				if (!projectedNativeFrameSupported(child)) {
-					return false;
-				}
-			}
-			for (MaskedFilter filter : join.filters) {
-				if (!projectedNativeBooleanSupported(filter.filter)) {
-					return false;
-				}
-			}
-			return true;
-		}
-		if (plan instanceof JoinPlan join) {
-			return projectedNativeFrameSupported(join.left) && projectedNativeFrameSupported(join.right);
-		}
-		if (plan instanceof LeftJoinPlan join) {
-			return projectedNativeFrameSupported(join.left) && projectedNativeFrameSupported(join.right);
-		}
-		if (plan instanceof UnionPlan union) {
-			return projectedNativeFrameSupported(union.left) && projectedNativeFrameSupported(union.right);
-		}
-		if (plan instanceof MinusPlan minus) {
-			return projectedNativeFrameSupported(minus.left) && projectedNativeFrameSupported(minus.right);
-		}
-		if (plan instanceof FilterPlan filter) {
-			return projectedNativeFrameSupported(filter.arg) && projectedNativeBooleanSupported(filter.filter);
-		}
-		if (plan instanceof ExtensionPlan extension) {
-			return projectedNativeFrameSupported(extension.arg);
-		}
-		return plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan;
-	}
-
-	private static boolean projectedNativeBooleanSupported(NativeBooleanFilter filter) {
-		filter = NativeFilterLease.inspect(filter);
-		if (filter instanceof RecordingNativeBooleanFilter recording) {
-			return projectedNativeBooleanSupported(recording.delegate);
-		}
-		if (filter instanceof ExistsFilter exists) {
-			return projectedNativeFrameSupported(exists.subPlan);
-		}
-		if (filter instanceof NegatedNativeBooleanFilter negated) {
-			return projectedNativeBooleanSupported(negated.delegate);
-		}
-		if (filter instanceof BooleanCombinationFilter combination) {
-			return projectedNativeBooleanSupported(combination.left)
-					&& projectedNativeBooleanSupported(combination.right);
-		}
-		if (filter instanceof NativeConstantFalseWhenUnboundFilter guarded) {
-			return projectedNativeBooleanSupported(guarded.fallback);
-		}
-		// Semantic callbacks may enter an independent subquery. Their projection must use the explicit entry-frame
-		// owner, rather than borrowing only the row-local slot view.
-		return filter instanceof StatementPatternExistsFilter || filter instanceof ValueSetFilter
-				|| filter instanceof CachedCompareFilter || filter instanceof OrderedSlotCompareFilter;
+		return NativeWorkerPlanBinder.canBind(plan) && SlotPlan.encounterOrderReplaySafe(plan);
 	}
 
 	long projectedFilterMask(Filter filter, NativeBooleanFilter compiled) {

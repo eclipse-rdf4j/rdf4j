@@ -53,7 +53,7 @@ import { expansionMovableIds } from "./graph-layout-expansion.ts";
 import { LINK_COUNT_CAP, RdfExplorer, clearMetadataCache } from "./rdf-explorer.ts";
 import { bringsNewLinks, linkCountCap, linkTotalStale, loadedLinkCounts, loadedLinksOf, moreLinks, type LinkTotal } from "./link-counts.ts";
 import { EXPAND_PAGE_LIMIT } from "./explorer-config.ts";
-import { RELATION_CONFIRM_LINKS, loadedRelationLinks, relationCountCap, relationLimits, relationPlan, type RelationAmount } from "./relation-expansion.ts";
+import { RELATION_CONFIRM_LINKS, loadedRelationLinks, relationCountCap, relationLimits, relationPlan, valuesRevealedBy, type RelationAmount } from "./relation-expansion.ts";
 import { cssColorResolver, downloadFile, graphSvg, graphTurtle, svgToPng } from "./graph-export.ts";
 import { curveMidpoint, nearestEdge } from "./edge-hit.ts";
 import { StatementDetailsCard } from "./statement-details-card.tsx";
@@ -225,7 +225,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   const drawnGraphRef = useRef(drawnGraph);
   const showValuesRef = useRef(showValues);
   const layoutJobRef = useRef<ReturnType<typeof startGraphLayout> | null>(null);
-  const requestedLayoutRef = useRef<{mode: 'network' | 'hierarchy' | 'square'; refine?: boolean; repairOnly?: boolean} | null>(null);
+  const requestedLayoutRef = useRef<{mode: 'network' | 'hierarchy' | 'square'; repairOnly?: boolean} | null>(null);
   const layoutSizeSnapshotRef = useRef<{revision: number; nodes: GraphNode[]} | null>(null);
   const namedGroupsRef = useRef(namedGroups);
   const provenanceBatchesRef = useRef(provenanceBatches);
@@ -1046,6 +1046,13 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   rangeDraftsRef.current = filters.rangeDrafts;
   restoreRangeDraftsRef.current = filters.restoreRangeDrafts;
   const selectedNodeIds = filters.hasActive ? filters.matches : manualSelectedNodeIds;
+  const selectAllDrawnNodes = useCallback(() => {
+    filters.clear();
+    const nodeIds = new Set(drawnGraphRef.current.nodes.map((node) => node.id));
+    setManualSelectedNodeIds((current) =>
+      current.size === nodeIds.size && [...nodeIds].every((nodeId) => current.has(nodeId)) ? current : nodeIds,
+    );
+  }, [filters.clear]);
   const selectedNodeIdList = useMemo(
     () => [...selectedNodeIds],
     [selectedNodeIds],
@@ -1477,9 +1484,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         setEdgeRoutes(result.routes ?? new Map());
         // "Organizing the network…" becomes "Organized the network." once the positions are in; other messages stay.
         setStatus((current) =>
-          /^(Organizing|Arranging|Tidying|Refining) .*…$/.test(current)
+          /^(Organizing|Arranging) .*…$/.test(current)
             ? current
-                .replace(/^(Organizing|Arranging|Tidying|Refining)/, (verb) => ({ Organizing: "Organized", Arranging: "Arranged", Tidying: "Tidied", Refining: "Refined" })[verb] ?? verb)
+                .replace(/^(Organizing|Arranging)/, (verb) => ({ Organizing: "Organized", Arranging: "Arranged" })[verb] ?? verb)
                 .replace(/…$/, ".")
             : current,
         );
@@ -1521,10 +1528,14 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
             keepView(targetTransform),
             {
               duration: INCREMENTAL_LAYOUT_DURATION,
-              onComplete: finishLayoutIntent,
+              onComplete: () => {
+                finishLayoutIntent();
+                // A relation expansion that turned Values on also placed the values it showed.
+                if (isLocalLayout) localLayoutNodeIdsRef.current = null;
+              },
             },
           );
-        } else if (isLocalLayout || requestedLayout?.refine) {
+        } else if (isLocalLayout || requestedLayout?.repairOnly) {
           animationRunId = animateProgrammaticGraph(
             targetGraph,
             transformRef.current,
@@ -1649,7 +1660,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       // The canvas renderer draws nodes as dots, whatever their labels: a repair would only move them about.
       if (current.nodes.length >= LARGE_GRAPH_NODES) return;
       if (!layoutDimensionsChanged(measured.nodes, current.nodes)) return;
-      requestedLayoutRef.current = {mode: 'network', refine: true, repairOnly: true};
+      requestedLayoutRef.current = {mode: 'network', repairOnly: true};
       localLayoutNodeIdsRef.current = null;
       setLayoutNonce(value => value + 1);
     }, 180);
@@ -1792,7 +1803,15 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       }
       // Undo in a text field undoes the typing, not the graph.
       if (typing || !(event.metaKey || event.ctrlKey)) return;
-      if (event.key.toLocaleLowerCase() === "z") {
+      const key = event.key.toLocaleLowerCase();
+      if (key === "a" && !event.shiftKey && !event.altKey && viewMode === "graph") {
+        if (drawnGraphRef.current.nodes.length) {
+          event.preventDefault();
+          selectAllDrawnNodes();
+        }
+        return;
+      }
+      if (key === "z") {
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
@@ -1800,7 +1819,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [redo, undo]);
+  }, [redo, selectAllDrawnNodes, undo, viewMode]);
 
   useEffect(() => {
     setPathHighlight(null);
@@ -2420,6 +2439,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         }
         // Links already in the graph can come back (when not all of them fit into the query): count the new ones.
         let added = 0;
+        let valuesShown = false;
         if (triples.length || relationLinks.length) {
           const batch = createBatch(
             `Expanded ${option.label}`,
@@ -2442,6 +2462,18 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
           if (added) {
             pushHistory();
             setProvenanceBatches((current) => [...current, batch]);
+            // Values the relation brought would stay hidden with Values off. The user asked for them, so Values turns
+            // on, and they (with the values Values off was hiding) are placed beside their cards, as the Values button
+            // places them.
+            const revealed = showValuesRef.current ? null : valuesRevealedBy(currentGraph, merged);
+            if (revealed) {
+              valuesShown = true;
+              localLayoutNodeIdsRef.current = revealed;
+              try {
+                localStorage.setItem(SHOW_VALUES_STORAGE_KEY, "true");
+              } catch {}
+              setShowValues(true);
+            }
             layoutIntentRef.current = {
               mode: "incremental",
               revision: merged.revision,
@@ -2458,6 +2490,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
             : triples.length
               ? `The ${option.label} links that came back are all in the graph already.`
               : `No ${option.label} links found for the selection.`) +
+            (valuesShown ? " Values are shown." : "") +
             (saturated
               ? ` The server sends at most ${limits!.maxResultRows!.toLocaleString()} rows per request: expand ${option.label} again for the rest.`
               : ""),
@@ -3673,12 +3706,12 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setGraph(next);
   };
 
-  const refineLayout = (mode: 'network' | 'hierarchy' | 'square' = 'network', refine = true) => {
+  const arrangeLayout = (mode: 'network' | 'hierarchy' | 'square') => {
     if (!graph.nodes.length) return;
     setViewMode("graph");
     invalidateAsyncRequests();
     pushHistory();
-    requestedLayoutRef.current = {mode, refine};
+    requestedLayoutRef.current = {mode};
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = layoutSelection;
     setIsLayoutAnimating(false);
@@ -3691,13 +3724,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setLayoutNonce((value) => value + 1);
     const what = layoutSelection ? `the ${layoutSelection.size} selected nodes` : null;
     setStatus(
-      refine
-        ? what ? `Tidying ${what}…` : "Tidying the layout…"
-        : mode === 'hierarchy'
-          ? what ? `Arranging ${what} as a hierarchy…` : "Arranging as a hierarchy…"
-          : mode === 'square'
-            ? what ? `Arranging ${what} in a square…` : "Arranging in a square…"
-            : what ? `Organizing ${what}…` : "Organizing the network…",
+      mode === 'hierarchy'
+        ? what ? `Arranging ${what} as a hierarchy…` : "Arranging as a hierarchy…"
+        : mode === 'square'
+          ? what ? `Arranging ${what} in a square…` : "Arranging in a square…"
+          : what ? `Organizing ${what}…` : "Organizing the network…",
     );
   };
 
@@ -3944,7 +3975,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 label: "Organize network",
                 description: "Start over: hubs in the middle, related nodes together",
                 disabled: !drawnGraph.nodes.length,
-                onSelect: () => refineLayout("network", false),
+                onSelect: () => arrangeLayout("network"),
               },
               {
                 label: "Hierarchy",
@@ -3954,19 +3985,13 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   ? [...layoutSelection].filter((id) => !drawnNodeById.get(id)?.pinned).length < 2
                   : !drawnGraph.nodes.length || drawnGraph.nodes.length > 1500 || drawnGraph.nodes.some((node) => node.pinned),
                 title: !layoutSelection && drawnGraph.nodes.some((node) => node.pinned) ? "Unpin nodes to arrange a hierarchy" : undefined,
-                onSelect: () => refineLayout("hierarchy", false),
+                onSelect: () => arrangeLayout("hierarchy"),
               },
               {
                 label: "Square",
                 description: "A grid, in the order the nodes stand now",
                 disabled: !drawnGraph.nodes.length,
-                onSelect: () => refineLayout("square", false),
-              },
-              {
-                label: "Tidy current layout",
-                description: "Improve the current arrangement without starting over",
-                disabled: !drawnGraph.nodes.length,
-                onSelect: () => refineLayout(),
+                onSelect: () => arrangeLayout("square"),
               },
               {
                 label: "Zoom to selected node",
@@ -4274,7 +4299,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               }`}
               viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
               role="img"
-              aria-label={`Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan and a node to move it; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(applePlatform)}click or drag to select nodes; dragging a selected node moves the whole selection. ${zoomOnScroll ? "Scroll" : "Pinch"}, double-click the background, or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions. Tab reaches one node; arrow keys move to the next node in that direction; Enter shows its details; Delete hides the selection or the shown node. Escape closes the details, then clears the selection; / finds a node.`}
+              aria-label={`Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan and a node to move it; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(applePlatform)}click or drag to select nodes; dragging a selected node moves the whole selection. ${zoomOnScroll ? "Scroll" : "Pinch"}, double-click the background, or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions. Tab reaches one node; arrow keys move to the next node in that direction; Enter shows its details; Delete hides the selection or the shown node. Escape closes the details, then clears the selection; ${applePlatform ? "⌘A" : "Ctrl+A"} selects all drawn nodes; / finds a node.`}
               onDoubleClick={(event) => {
                 const onHoverBridge = event.target instanceof Element
                   && Boolean(event.target.closest("[data-graph-hover-bridge]"));

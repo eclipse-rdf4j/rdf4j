@@ -33,6 +33,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.LongPredicate;
 import java.util.function.LongUnaryOperator;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
@@ -589,8 +591,8 @@ class LmdbNativeKernelIrEmitterTest {
 						null, OutputMods.none()));
 		String source = LmdbNativeKernelEmitter.emit(ir);
 		assertTrue(source.contains("KernelRuntime.unsignedNondecreasing(dom0, domO0, domL0)"), source);
-		assertTrue(source.contains("new KernelRuntime.LongHashSet(distinctExpected, keyHooks, aggregateMemory)"),
-				source);
+		assertTrue(source.contains("new KernelRuntime.LongHashSet(distinctExpected, keyHooks, aggregateMemory, "
+				+ "KernelRuntime.cancellationPoll(cancel))"), source);
 
 		assertRows(run(ir, context().domains(new long[] { 5, 5, 7, 9 }).distinctExpected(64)),
 				new long[][] { { 3 } });
@@ -1258,6 +1260,54 @@ class LmdbNativeKernelIrEmitterTest {
 	}
 
 	@Test
+	void vectorTailOptionalNullArmRunsResidualPipelineInOrder() throws Exception {
+		for (boolean vector : List.of(false, true)) {
+			for (boolean residualFirst : List.of(false, true)) {
+				List<String> calls = new ArrayList<>();
+				TestHooks hooks = new TestHooks() {
+					private long parent, child;
+
+					@Override
+					public void residualSlot(int engineSlot, long id) {
+						if (engineSlot == 3) {
+							parent = id;
+						} else {
+							child = id;
+						}
+					}
+
+					@Override
+					public boolean testResidual(int residualId) {
+						calls.add("residual:" + parent + ":" + child);
+						return child == -1L || child % 2 == 1;
+					}
+
+					@Override
+					public boolean testFilter(int filterId, long a0, long a1, long a2) {
+						calls.add("value:" + a0);
+						return a0 != 4L;
+					}
+				};
+				Node residual = new FilterResidual(0, new Operand[] { Operand.col(0), Operand.col(1) },
+						new int[] { 3, 4 });
+				Node value = new FilterValue(7, new Operand[] { Operand.col(1) });
+				List<Node> nodes = List.of(new EnumerateDomain(0, 0), new LeftProbe(0, Operand.col(0), 1),
+						residualFirst ? residual : value, residualFirst ? value : residual);
+				Kernel ir = withVectorTail(vector, () -> new Kernel(2, nodes,
+						new Aggregate(new int[] { 0 }, new AggregateOutput[] { AggregateOutput.countStar() }, null,
+								OutputMods.none())));
+				assertEquals(vector ? 1 : -1, ir.vectorTailIndex);
+				assertRows(run(ir, context().adjacencies(new FixtureAdjacency(new long[][] { { 1, 4, 5 } }))
+						.domains(new long[] { 1, 2 })
+						.hooks(hooks)), new long[][] { { 1, 1 }, { 2, 1 } });
+				assertEquals(residualFirst
+						? List.of("residual:1:4", "residual:1:5", "value:5", "residual:2:-1", "value:-1")
+						: List.of("value:4", "value:5", "residual:1:5", "value:-1", "residual:2:-1"), calls);
+			}
+		}
+	}
+
+	@Test
 	void vectorTailClaimsTheInnermostProbeAndDeclinesWhenAContainerFollows() {
 		// Two probes: the innermost one carries the row multiplication, so it is the one worth vectorizing.
 		Kernel chained = withVectorTail(true,
@@ -1386,8 +1436,23 @@ class LmdbNativeKernelIrEmitterTest {
 		Kernel vectorized = withVectorTail(true, shape);
 		String source = LmdbNativeKernelEmitter.emit(vectorized);
 		assertTrue(source.contains("KernelRuntime.selectNe(tvec, rn,"), "the matched arm filters vectorized");
-		assertTrue(source.indexOf("v1 != c0") > source.indexOf("if (!matched) {"),
-				"the null arm must re-apply the same filter as a scalar guard; source:\n" + source);
+		int nullArmStart = source.indexOf("if (!matched) {");
+		assertTrue(nullArmStart >= 0, "the left-probe null arm must be emitted; source:\n" + source);
+		int nullArmEnd = source.indexOf('}', nullArmStart);
+		assertTrue(nullArmEnd > nullArmStart, "the left-probe null arm must be closed; source:\n" + source);
+		String nullArm = source.substring(nullArmStart, nullArmEnd);
+		Matcher helperCall = Pattern.compile("\\b(m\\d+_\\d+)\\(\\);").matcher(nullArm);
+		assertTrue(helperCall.find(), "the null arm must invoke its trailing-filter helper; source:\n" + source);
+		String helperName = helperCall.group(1);
+		int helperStart = source.indexOf("private void " + helperName + "()");
+		assertTrue(helperStart >= 0, "the called trailing-filter helper must be emitted; source:\n" + source);
+		int helperBodyStart = source.indexOf('{', helperStart) + 1;
+		int nextHelper = source.indexOf("\n    private ", helperBodyStart);
+		String helperBody = source.substring(helperBodyStart, nextHelper < 0 ? source.length() : nextHelper);
+		int scalarFilter = helperBody.indexOf("if (v1 != c0)");
+		int emitRow = helperBody.indexOf("emitRow()");
+		assertTrue(scalarFilter >= 0 && emitRow > scalarFilter,
+				"the null-arm helper must filter before emitting; helper:\n" + helperBody);
 
 		// Reject -1 itself: the null-extended row for key 9 must disappear, matched rows must survive.
 		long[][] rejectNull = { { 1, 2 }, { 1, 3 }, { 4, 5 } };

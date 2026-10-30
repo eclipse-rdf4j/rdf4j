@@ -29,7 +29,12 @@ final class LmdbNativeStrategyPreview {
 	}
 
 	static void inspect(QueryEvaluationStep step) {
-		if (step instanceof LmdbNativePhysicalPlan physical && QueryExplanationContext.inspectOnce(step)) {
+		if (step instanceof NativeSelectedResultPreview selected) {
+			if (QueryExplanationContext.inspectOnce(selected.previewIdentity())) {
+				selected.explainSelected();
+			}
+		} else if (step instanceof LmdbNativePhysicalPlan physical && QueryExplanationContext.inspectOnce(
+				step instanceof NativeGroupStep group ? group.previewIdentity() : step)) {
 			physical.explainStrategies();
 		}
 	}
@@ -89,6 +94,8 @@ final class LmdbNativeStrategyPreview {
 			LmdbNativeInteriorPlans.preview(plan);
 		} else if (plan instanceof NativeGraphPlan graph) {
 			graph.explainStrategies();
+		} else if (plan instanceof NativeLogicalResultTransferPlan transfer) {
+			inspect(transfer.input);
 		} else if (plan instanceof NativeSubqueryPlan subquery) {
 			subquery.explainStrategies();
 		} else if (plan instanceof MultiJoinPlan join) {

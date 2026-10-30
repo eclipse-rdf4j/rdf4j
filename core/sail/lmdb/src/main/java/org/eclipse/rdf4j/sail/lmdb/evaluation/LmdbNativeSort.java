@@ -61,6 +61,9 @@ final class NativeSortBuffer {
 	private long reservedValues;
 	private long retainedOrderValues;
 	private boolean closed;
+	final NativeCancellationToken diagnosticCancellation = new NativeCancellationToken();
+	private Runnable cancellationPoll = diagnosticCancellation::check;
+	private int cancellationTick;
 
 	NativeSortBuffer(int slotCount, int expectedRows) {
 		this(slotCount, expectedRows, LmdbNativeAttemptMetrics.direct());
@@ -125,6 +128,17 @@ final class NativeSortBuffer {
 	}
 
 	int[] sortedOrder(PackedRowComparator comparator) {
+		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.startNested("sort",
+				diagnosticCancellation)) {
+			int[] order = sortedOrderUnmeasured(comparator);
+			cancellationPoll.run();
+			phase.complete();
+			return order;
+		}
+	}
+
+	private int[] sortedOrderUnmeasured(PackedRowComparator comparator) {
+		pollCancellation();
 		if (budget != null) {
 			int[] order = trySortedOrder(comparator);
 			if (order == null) {
@@ -144,6 +158,7 @@ final class NativeSortBuffer {
 	}
 
 	int[] trySortedOrder(PackedRowComparator comparator) {
+		pollCancellation();
 		ensureOpen();
 		if (budget == null) {
 			return sortedOrder(comparator);
@@ -180,11 +195,13 @@ final class NativeSortBuffer {
 
 	/** Zero means general sorting; nonzero means an already ordered complete run. */
 	private int orderedRun(PackedRowComparator comparator) {
+		pollCancellation();
 		if (size < 2) {
 			return 1;
 		}
 		if (compareRows(0, 1, comparator) <= 0) {
 			for (int i = 2; i < size; i++) {
+				pollCancellation();
 				if (compareRows(i - 1, i, comparator) > 0) {
 					return 0;
 				}
@@ -193,6 +210,7 @@ final class NativeSortBuffer {
 		}
 		// Reversal is stable only for a strictly descending run, including stability ordinals.
 		for (int i = 2; i < size; i++) {
+			pollCancellation();
 			if (compareRows(i - 1, i, comparator) <= 0) {
 				return 0;
 			}
@@ -206,10 +224,12 @@ final class NativeSortBuffer {
 		int[] order = new int[size];
 		if (direction > 0) {
 			for (int i = 0; i < size; i++) {
+				pollCancellation();
 				order[i] = i;
 			}
 		} else {
 			for (int i = 0; i < size; i++) {
+				pollCancellation();
 				order[i] = size - 1 - i;
 			}
 		}
@@ -218,6 +238,7 @@ final class NativeSortBuffer {
 
 	private int[] sort(int[] order, int[] scratch, PackedRowComparator comparator) {
 		for (int i = 0; i < size; i++) {
+			pollCancellation();
 			order[i] = i;
 		}
 		for (int width = 1; width < size;) {
@@ -251,6 +272,7 @@ final class NativeSortBuffer {
 		int right = middle;
 		int out = from;
 		while (left < middle && right < to) {
+			pollCancellation();
 			if (compareRows(source[left], source[right], comparator) <= 0) {
 				target[out++] = source[left++];
 			} else {
@@ -258,10 +280,25 @@ final class NativeSortBuffer {
 			}
 		}
 		while (left < middle) {
+			pollCancellation();
 			target[out++] = source[left++];
 		}
 		while (right < to) {
+			pollCancellation();
 			target[out++] = source[right++];
+		}
+	}
+
+	/** Installed before input is accepted; the callback also carries a kernel's private probe deadline. */
+	void cancellationPoll(Runnable poll) {
+		if (poll != null) {
+			cancellationPoll = poll;
+		}
+	}
+
+	private void pollCancellation() {
+		if ((cancellationTick++ & 1023) == 0) {
+			cancellationPoll.run();
 		}
 	}
 
@@ -756,7 +793,7 @@ final class NativeSpillSort implements AutoCloseable {
 	final List<Path> runs = new ArrayList<>();
 	private final List<Integer> runLevels = new ArrayList<>();
 	private final List<Long> runCounts = new ArrayList<>();
-	private final Runnable cancellationPoll;
+	private Runnable cancellationPoll;
 	private boolean closed;
 	long spilledRows;
 	int peakRunCount;
@@ -808,7 +845,7 @@ final class NativeSpillSort implements AutoCloseable {
 		if (ioBufferBytes < 512 || ioBufferBytes > 64 * 1024)
 			throw new IllegalArgumentException("Invalid spill I/O buffer");
 		this.ioBufferBytes = ioBufferBytes;
-		this.cancellationPoll = cancellationPoll;
+		this.cancellationPoll = cancellationPoll == null ? new NativeCancellationToken()::check : cancellationPoll;
 		if (slotCount < 0 || configured < 1 || retainRows < -1) {
 			throw new IllegalArgumentException("Invalid native sort dimensions or budget");
 		}
@@ -829,6 +866,7 @@ final class NativeSpillSort implements AutoCloseable {
 				: Math.max(MIN_REDUCE_ROWS, Math.min(Integer.MAX_VALUE, 2L * retainRows));
 		this.maxRows = (int) Math.min(configuredRows, reduceRows);
 		this.buffer = new NativeSortBuffer(slotCount, Math.min(1024, maxRows), metrics, maxRows);
+		this.buffer.cancellationPoll(this.cancellationPoll);
 	}
 
 	void add(long[] row, long ordinal) throws IOException {
@@ -848,6 +886,14 @@ final class NativeSpillSort implements AutoCloseable {
 		buffer.append(row, ordinal);
 	}
 
+	/** Bind the evaluation owner before any input, including subsequently created spill arenas. */
+	void cancellationPoll(Runnable poll) {
+		if (poll != null) {
+			cancellationPoll = poll;
+			buffer.cancellationPoll(poll);
+		}
+	}
+
 	NativeSortedRows sortedRows() throws IOException {
 		if (closed || finished) {
 			throw new IllegalStateException("Native sort already finished or closed");
@@ -863,10 +909,21 @@ final class NativeSpillSort implements AutoCloseable {
 		while (runs.size() > MERGE_FAN_IN)
 			mergeRuns(runs.size() - MERGE_FAN_IN, MERGE_FAN_IN, 64);
 		buffer.close();
-		return new MergedRunRows(slotCount, keyCount, comparator, List.copyOf(runs), ioBufferBytes);
+		return new MergedRunRows(slotCount, keyCount, comparator, List.copyOf(runs), ioBufferBytes, cancellationPoll);
 	}
 
 	private void spillRun() throws IOException {
+		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.startNested("spill",
+				buffer.diagnosticCancellation)) {
+			spillRunUnmeasured();
+			if (cancellationPoll != null) {
+				cancellationPoll.run();
+			}
+			phase.complete();
+		}
+	}
+
+	private void spillRunUnmeasured() throws IOException {
 		if (buffer.size == 0) {
 			return;
 		}
@@ -914,6 +971,7 @@ final class NativeSpillSort implements AutoCloseable {
 		metrics.recordNativeSpill(writtenRows);
 		buffer.close();
 		buffer = new NativeSortBuffer(slotCount, Math.min(1024, maxRows), metrics, maxRows);
+		buffer.cancellationPoll(cancellationPoll);
 		while (runs.size() >= MERGE_FAN_IN) {
 			int end = runs.size();
 			int level = runLevels.get(end - 1);
@@ -941,7 +999,8 @@ final class NativeSpillSort implements AutoCloseable {
 		Path output = Files.createTempFile("rdf4j-lmdb-native-sort-", ".run");
 		boolean complete = false;
 		try {
-			try (MergedRunRows merge = new MergedRunRows(slotCount, keyCount, comparator, inputs, ioBufferBytes);
+			try (MergedRunRows merge = new MergedRunRows(slotCount, keyCount, comparator, inputs, ioBufferBytes,
+					cancellationPoll);
 					DataOutputStream out = new DataOutputStream(
 							new BufferedOutputStream(Files.newOutputStream(output), ioBufferBytes))) {
 				out.writeInt(RunReader.ROW_MAJOR_MAGIC);
@@ -957,6 +1016,8 @@ final class NativeSpillSort implements AutoCloseable {
 					for (int column = 0; column < slotCount; column++)
 						out.writeLong(row[column]);
 				}
+				// A bounded top-K compaction completes its admitted demand before abandoning remaining heads.
+				merge.complete();
 			}
 			complete = true;
 		} finally {
@@ -1040,6 +1101,9 @@ final class MergedRunRows implements NativeSortedRows {
 	final List<RunReader> readers = new ArrayList<>();
 	final PriorityQueue<RunReader> queue;
 	long lastOrdinal;
+	private final NativeExecutionPhaseEvent.Span mergePhase, sortPhase;
+	private final Runnable cancellationPoll;
+	private int ticks;
 
 	MergedRunRows(int slotCount, int keyCount, PackedRowComparator comparator, List<Path> paths) throws IOException {
 		this(slotCount, keyCount, comparator, paths, 64 * 1024);
@@ -1047,21 +1111,32 @@ final class MergedRunRows implements NativeSortedRows {
 
 	MergedRunRows(int slotCount, int keyCount, PackedRowComparator comparator, List<Path> paths,
 			int ioBufferBytes) throws IOException {
+		this(slotCount, keyCount, comparator, paths, ioBufferBytes, null);
+	}
+
+	MergedRunRows(int slotCount, int keyCount, PackedRowComparator comparator, List<Path> paths,
+			int ioBufferBytes, Runnable cancellationPoll) throws IOException {
 		this.slotCount = slotCount;
 		this.keyCount = keyCount;
 		this.comparator = comparator;
+		this.cancellationPoll = cancellationPoll;
+		// Multiway selection compares sorted run heads throughout this lazy inclusive lifetime.
+		mergePhase = NativeExecutionPhaseEvent.startNestedDetached("merge");
+		sortPhase = NativeExecutionPhaseEvent.startNestedDetached("sort");
 		this.queue = new PriorityQueue<>((left, right) -> {
 			int compared = comparator.compare(left.keys, 0, right.keys, 0);
 			return compared != 0 ? compared : Long.compare(left.ordinal, right.ordinal);
 		});
 		try {
 			for (Path path : paths) {
+				checkCancellation();
 				RunReader reader = new RunReader(path, slotCount, keyCount, ioBufferBytes);
 				readers.add(reader);
 				if (reader.advance()) {
 					queue.add(reader);
 				}
 			}
+			checkCancellation();
 		} catch (IOException | RuntimeException | Error e) {
 			close();
 			throw e;
@@ -1070,8 +1145,12 @@ final class MergedRunRows implements NativeSortedRows {
 
 	@Override
 	public boolean next(long[] target) throws IOException {
+		if ((ticks++ & 1023) == 0) {
+			checkCancellation();
+		}
 		RunReader reader = queue.poll();
 		if (reader == null) {
+			complete();
 			return false;
 		}
 		lastOrdinal = reader.ordinal;
@@ -1079,7 +1158,22 @@ final class MergedRunRows implements NativeSortedRows {
 		if (reader.advance()) {
 			queue.add(reader);
 		}
+		if (queue.isEmpty()) {
+			complete();
+		}
 		return true;
+	}
+
+	void complete() {
+		checkCancellation();
+		mergePhase.complete();
+		sortPhase.complete();
+	}
+
+	private void checkCancellation() {
+		if (cancellationPoll != null) {
+			cancellationPoll.run();
+		}
 	}
 
 	@Override
@@ -1089,6 +1183,8 @@ final class MergedRunRows implements NativeSortedRows {
 			reader.close();
 		}
 		readers.clear();
+		mergePhase.close();
+		sortPhase.close();
 	}
 }
 

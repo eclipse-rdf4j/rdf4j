@@ -25,6 +25,7 @@ import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -429,6 +430,11 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 		private CloseableIteration<? extends Statement> current;
 		private int source;
 
+		@Override
+		public boolean requestCancellation() {
+			return !isClosed() && CooperativeCancellation.forwardAll(base, current);
+		}
+
 		private StatementCursor(CloseableIteration<? extends Statement> base, int first, int limit, Resource subj,
 				IRI pred, Value obj, Resource[] contexts) {
 			this.base = base;
@@ -626,10 +632,17 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 	}
 
 	private abstract static class ReportingCursor<T> extends Cursor<T> implements IndexReportingIterator {
+		private final CloseableIteration<?> base;
 		private final IndexReportingIterator reporter;
 
 		private ReportingCursor(CloseableIteration<?> base) {
+			this.base = base;
 			reporter = base instanceof IndexReportingIterator index ? index : null;
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			return !isClosed() && CooperativeCancellation.forward(base);
 		}
 
 		@Override
@@ -654,10 +667,15 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 	}
 
 	/** One lookahead value, iterative advancement, and exact cursor cleanup on all exits. */
-	private abstract static class Cursor<T> extends AbstractCloseableIteration<T> {
+	private abstract static class Cursor<T> extends AbstractCloseableIteration<T> implements CooperativeCancellation {
 		private T next;
 
 		abstract T advance();
+
+		@Override
+		public boolean requestCancellation() {
+			return false;
+		}
 
 		@Override
 		public boolean hasNext() {

@@ -66,6 +66,15 @@ Peak disk demand is input-dependent and can include staged statements and value 
 
 The control workspace is a sibling named `.<target-name>.lmdb-bulk-load`. It stores `state.properties`, a previous valid state copy, live `progress.properties`, and phase artifacts. State records have a version, monotonically advanced revision, and SHA-256 checksum; the newest valid current/previous revision wins on reopen. Progress is sampled separately once per second, while phase transitions persist durable state. This separation lets a stale or torn progress snapshot remain telemetry rather than authoritative phase state.
 
+Progress snapshots also include the one-based phase position and total number of
+named phases. While index work is underway, they report the active statement
+and RDF-star term indexes, each with its configured position, family, and stage
+(`SCAN`, `MERGE`, or `APPEND`). Multiple indexes may be active together during
+shared scans or concurrent merges. `progress.properties` stores these active
+indexes and the most recent start, stage-change, or completion event; phase
+transitions clear the active set. This telemetry does not change resume
+eligibility or phase state.
+
 At a failure, cancellation, or process interruption before completion, the workspace is retained. `UnfinishedBulkLoad.find(target)` reads that workspace without locking it; `discover(root, maxDepth)` scans shallowly, does not follow symbolic links, and skips directories it cannot list. Discovery does not make the state exclusive or resume it. `resume()` opens the workspace and the target lock before continuing. If staging is complete, it reuses staged records without asking for inputs; if staging is incomplete, a path load can replay its recorded ordered file list, but a caller-owned stream cannot be reopened. A workspace produced by an older loader may not have recorded input paths or `BulkLoadSettings`; the `UnfinishedBulkLoad` API reports these absences instead of inventing a replay source.
 
 Structural settings are triple indexes, triple-term indexes, inline literals, ordered numeric IDs, value-hash-cache setting and partition count. A recorded configuration with a mismatch is rejected because the files and ID assignments already depend on it. Memory, maximum open files, worker/queue sizes and transaction thresholds are resource controls and may change on resume. Compression is read separately and the recorded value wins; old two-tier workspace metadata forces the historically raw predicate-count and predicate-plan artifacts to `NONE` during restore. See [`BulkLoadSettings`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/bulk/BulkLoadSettings.java), [`BulkLoadWorkspace`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/bulk/BulkLoadWorkspace.java), and [`UnfinishedBulkLoad`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/bulk/UnfinishedBulkLoad.java).

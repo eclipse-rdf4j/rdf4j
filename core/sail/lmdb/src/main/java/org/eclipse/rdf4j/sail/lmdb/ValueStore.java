@@ -37,7 +37,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
-import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
@@ -119,6 +118,7 @@ import java.util.zip.CRC32;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
+import org.eclipse.collections.impl.set.mutable.primitive.LongHashSet;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -126,7 +126,6 @@ import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
@@ -142,7 +141,6 @@ import org.eclipse.rdf4j.model.base.InternedIRI;
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -584,8 +582,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			return null;
 		}
 		FreshValueSession session = new FreshValueSession();
+		freshValueSessionSpoiled = false;
 		activeFreshValueSession = session;
 		return session;
+	}
+
+	/**
+	 * Reports whether {@code session} still knows every dictionary value. Any ordinary insert while a session is active
+	 * (another writer, or a non-fresh path of this one) allocates through {@link #nextId(byte, CoreDatatype)}, which
+	 * spoils the session: assigning fresh IDs afterwards could duplicate the inserted value.
+	 */
+	boolean isFreshValueSessionUsable(FreshValueSession session) {
+		return session != null && activeFreshValueSession == session && !freshValueSessionSpoiled;
+	}
+
+	int freshValueSessionSize(FreshValueSession session) {
+		return session.valueIds.size();
 	}
 
 	/** Tests the same fresh-dictionary eligibility without claiming a session or mutating dictionary state. */
@@ -618,12 +630,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	void commitFreshValueTransaction(FreshValueSession session) {
 		if (session != null) {
 			clearFreshValueTransaction(session);
+			LmdbDeferredValueLookups lookups = deferredLookups;
+			if (lookups != null) {
+				lookups.commit();
+			}
 		}
 	}
 
 	void rollbackFreshValueTransaction(FreshValueSession session) {
 		if (session == null) {
 			return;
+		}
+		LmdbDeferredValueLookups lookups = deferredLookups;
+		if (lookups != null) {
+			lookups.rollback();
 		}
 		for (int i = session.provisionalValues.size() - 1; i >= 0; i--) {
 			session.valueIds.removeKey(session.provisionalValues.get(i));
@@ -691,6 +711,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * Maximum size of keys before hashing is used (size of two long values)
 	 */
 	private static final int MAX_KEY_SIZE = ValueStoreRecordCodec.MAX_INLINE_KEY_BYTES;
+	/** Bounds one batch's absent alternative-IRI hashes (8 bytes each); a full set is cleared and rebuilt. */
+	private static final int MAX_ABSENT_RECORD_HASHES = 1 << 20;
 	private static final int MAX_UNSIGNED_ID_BYTES = 9;
 	private static final int MAX_ID_KEY_BYTES = 1 + MAX_UNSIGNED_ID_BYTES;
 	private static final int MAX_HASH_ID_KEY_BYTES = 1 + MAX_UNSIGNED_ID_BYTES + MAX_ID_KEY_BYTES;
@@ -956,6 +978,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private final ObjectLongHashMap<RdfTermKey> transactionValueIds = new ObjectLongHashMap<>();
 	private final ObjectLongHashMap<String> transactionNamespaceIds = new ObjectLongHashMap<>();
 	private FreshValueSession activeFreshValueSession;
+
+	/**
+	 * While an initial run import is active, the data-keyed and hash-keyed records of fresh values go here instead of
+	 * into the main database; {@link #writeDeferredLookups} writes them when the import completes.
+	 */
+	private volatile LmdbDeferredValueLookups deferredLookups;
+	private volatile boolean freshValueSessionSpoiled;
 	private final int transactionValueCacheLimit = calculateTransactionValueCacheLimit(
 			Runtime.getRuntime().maxMemory());
 	private final Long2LongOpenHashMap refCountsTxCache = newRefCountsTxCache();
@@ -4795,6 +4824,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private long nextId(byte valueType, CoreDatatype coreDatatype) throws IOException {
+		if (activeFreshValueSession != null) {
+			freshValueSessionSpoiled = true;
+		}
 		int idType = valueIdType(valueType);
 		if (freeIdsAvailable && isValueReclamationEnabled()) {
 			// next id from store
@@ -5117,9 +5149,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private ValueResolutionScope openValueResolutionScope(boolean oldestProtected) {
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		try {
-			acquireAssociationGate(deadline);
+			acquireAssociationGate();
 		} catch (IOException failure) {
 			throw new SailException(failure);
 		}
@@ -5131,7 +5162,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					throw new SailException("Cannot open a value resolution scope while the store is closing");
 				}
 				while (true) {
-					checkValueScopeDeadline(deadline);
 					if (Thread.currentThread().isInterrupted()) {
 						throw new SailException("Interrupted while capturing dictionary identity");
 					}
@@ -5170,35 +5200,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return reservation;
 	}
 
-	private static void checkValueScopeDeadline(QueryExecutionDeadline deadline) {
-		if (deadline != null && deadline.isExpired()) {
-			throw new QueryInterruptedException("Query evaluation took too long");
-		}
-	}
-
-	private void acquireAssociationGate(QueryExecutionDeadline deadline) throws IOException {
-		checkValueScopeDeadline(deadline);
-		// Expiry interrupts this wait, so nothing here reads a clock to size a timeout.
-		QueryExecutionDeadline.ExpiryInterruption interruption = deadline == null ? null
-				: deadline.interruptOnExpiry();
+	/** A query time limit or cancellation ends the wait by interrupting it. */
+	private void acquireAssociationGate() throws IOException {
 		try {
 			associationGate.lockInterruptibly();
 		} catch (InterruptedException failure) {
-			if (interruption != null && interruption.disarm()) {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while capturing dictionary identity", failure);
-		}
-		if (interruption != null && interruption.disarm()) {
-			// Expiry landed after acquisition: clear its interrupt; the check below releases the gate.
-			Thread.interrupted();
-		}
-		try {
-			checkValueScopeDeadline(deadline);
-		} catch (RuntimeException | Error failure) {
-			associationGate.unlock();
-			throw failure;
 		}
 	}
 
@@ -5217,7 +5225,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** Waits only after a failed admission has released native barriers, snapshot handles and reader permits. */
 	void awaitValueReaderAdmission() throws IOException {
-		acquireAssociationGate(QueryExecutionDeadline.current());
+		acquireAssociationGate();
 		try {
 			synchronized (writerAdmission) {
 				if (shuttingDown || env == 0) {
@@ -5229,22 +5237,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private boolean tryAcquireAssociationGate(QueryExecutionDeadline deadline) throws IOException {
-		checkValueScopeDeadline(deadline);
+	private boolean tryAcquireAssociationGate() throws IOException {
 		try {
-			if (!associationGate.tryLock(0L, TimeUnit.NANOSECONDS)) {
-				return false;
-			}
+			return associationGate.tryLock(0L, TimeUnit.NANOSECONDS);
 		} catch (InterruptedException failure) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while capturing dictionary identity", failure);
-		}
-		try {
-			checkValueScopeDeadline(deadline);
-			return true;
-		} catch (RuntimeException | Error failure) {
-			associationGate.unlock();
-			throw failure;
 		}
 	}
 
@@ -5361,15 +5359,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					}
 				}
 			}
-			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			if (!tryAcquireAssociationGate(deadline)) {
+			if (!tryAcquireAssociationGate()) {
 				throw new ValueReadAdmissionException();
 			}
 			gateHeld = true;
 			boolean capturedIdentity = false;
 			try {
 				while (true) {
-					checkValueScopeDeadline(deadline);
 					captured = requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested;
 					reservation = lazyRevisions.reserve(captured);
 					if (reservation != null || captured.idEpoch() == null) {
@@ -5427,7 +5423,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (isWriteTransactionOwner()) {
 			// The native writer can be consumed by commit, rollback, clear or close on another thread. Keep its
 			// association ownership through the complete borrowed read, and recheck after acquiring that ownership.
-			acquireAssociationGate(QueryExecutionDeadline.current());
+			acquireAssociationGate();
 			try {
 				synchronized (writerAdmission) {
 					if (shuttingDown) {
@@ -7442,7 +7438,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			resizeMap(txn, requiredSize, activeWriteTxnCommitted);
 		} finally {
-			safeAllocationResize.remove();
+			safeAllocationResize.set(null);
 		}
 	}
 
@@ -8575,7 +8571,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return saturatedEstimateAdd(bytes, estimatedRetainedBytes(statement.getContext()));
 	}
 
-	private static long estimatedRetainedBytes(Value value) {
+	static long estimatedRetainedBytes(Value value) {
 		long bytes = 0L;
 		Value checkpoint = value;
 		long power = 1L;
@@ -8966,6 +8962,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private long findId(byte[] data, boolean create, CoreDatatype coreDatatype, ValueLookupContext lookup)
 			throws IOException {
+		if (create) {
+			checkLookupRecordsAvailable();
+		}
 		boolean admitted = create && enterStandaloneValueWriter();
 		try {
 			return findIdAdmitted(data, create, coreDatatype, lookup);
@@ -9167,6 +9166,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** Resolve the same lexical IRI even when its writer preserved a different namespace/local-name boundary. */
 	private long findAlternativeIriId(byte[] data, MemoryStack stack, long txn) throws IOException {
+		return findAlternativeIriId(data, stack, txn, null);
+	}
+
+	/**
+	 * @param absentRecordHashes record hashes whose {@code HASH_KEY} is known to be missing from {@code txn}, or
+	 *                           {@code null}. A missing hash key rules out every record with that hash, so the set
+	 *                           stays exact for as long as its owner removes each hash it inserts.
+	 */
+	private long findAlternativeIriId(byte[] data, MemoryStack stack, long txn, LongHashSet absentRecordHashes)
+			throws IOException {
 		if (data[0] != URI_VALUE) {
 			return LmdbValue.UNKNOWN_ID;
 		}
@@ -9192,7 +9201,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			namespaceData.position(namespaceData.position() + 1);
 			namespaceData.get(lexical, 0, namespaceLength);
 			encoded.get(lexical, namespaceLength, encoded.remaining());
-			return findAlternativeIriId(lexical, namespaceLength, namespaceId, stack, txn);
+			return findAlternativeIriId(lexical, namespaceLength, namespaceId, stack, txn, absentRecordHashes);
 		} finally {
 			stack.pop();
 		}
@@ -9204,7 +9213,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (lookup != null) {
 				lookup.captureScope(txn);
 			}
-			return findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn);
+			return findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn, null);
 		});
 	}
 
@@ -9214,9 +9223,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * Long namespace keys are hash indexed. Compute their prefix hashes once, without copying or reencoding prefixes.
 	 */
 	private long findAlternativeIriId(byte[] lexical, int excludedNamespaceLength, long excludedNamespaceId,
-			MemoryStack stack, long txn)
+			MemoryStack stack, long txn, LongHashSet absentRecordHashes)
 			throws IOException {
-		try (AlternativeIriLookup lookup = new AlternativeIriLookup(lexical, stack, txn)) {
+		try (AlternativeIriLookup lookup = new AlternativeIriLookup(lexical, stack, txn, absentRecordHashes)) {
 			long result = lookup.find(excludedNamespaceLength, excludedNamespaceId);
 			lookup.publish();
 			return result;
@@ -9232,6 +9241,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private final byte[] lexical;
 		private final long txn;
 		private final MemoryStack stack;
+		private final LongHashSet absentRecordHashes;
 		private final MDBVal key;
 		private final MDBVal value;
 		private MDBVal id;
@@ -9259,10 +9269,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private long namespaceCursor;
 		private long hashCursor;
 
-		private AlternativeIriLookup(byte[] lexical, MemoryStack stack, long txn) {
+		private AlternativeIriLookup(byte[] lexical, MemoryStack stack, long txn, LongHashSet absentRecordHashes) {
 			this.lexical = lexical;
 			this.txn = txn;
 			this.stack = stack;
+			this.absentRecordHashes = absentRecordHashes;
 			key = MDBVal.malloc(stack);
 			value = MDBVal.malloc(stack);
 			scope = valueLookupScope(generation, txn);
@@ -9574,6 +9585,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				E(rc);
 				return data2id(value.mv_data());
 			}
+			if (absentRecordHashes != null && absentRecordHashes.contains(hash)) {
+				return LmdbValue.UNKNOWN_ID;
+			}
 			if (hashKey == null) {
 				hashKey = stack.malloc(2 + 2 * Long.BYTES + 2);
 			}
@@ -9584,6 +9598,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			key.mv_data(hashKey);
 			int rc = probeIriAlternative(txn, key, value);
 			if (rc == MDB_NOTFOUND) {
+				if (absentRecordHashes != null) {
+					if (absentRecordHashes.size() >= MAX_ABSENT_RECORD_HASHES) {
+						absentRecordHashes.clear();
+					}
+					absentRecordHashes.add(hash);
+				}
 				return LmdbValue.UNKNOWN_ID;
 			}
 			E(rc);
@@ -9725,10 +9745,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			primaryStoreKeys[i] = primaryStoreSortKey(data[i]);
 			secondaryStoreKeys[i] = secondaryStoreSortKey(data[i]);
 		}
-		int[] scratchOrder = new int[count];
-		long[] scratchKeys = new long[count];
-		int[] counts = new int[256];
-		int[] offsets = new int[256];
+		// Small batches, such as one statement's values, sort by insertion and never touch the radix scratch.
+		boolean radix = count > LeadingFieldSorters.LSD_RADIX_THRESHOLD;
+		int[] scratchOrder = radix ? new int[count] : null;
+		long[] scratchKeys = radix ? new long[count] : null;
+		int[] counts = radix ? new int[256] : null;
+		int[] offsets = radix ? new int[256] : null;
 		LeadingFieldSorters.lsdRadixSort(order, secondaryStoreKeys, count, scratchOrder, scratchKeys, counts,
 				offsets);
 		for (int i = 0; i < count; i++) {
@@ -10493,7 +10515,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			System.arraycopy(iri.localNameData(), 0, lexical, iri.namespaceData().length - 1,
 					iri.localNameData().length);
 			try (MemoryStack stack = stackPush()) {
-				yield findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn);
+				yield findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn, null);
 			}
 		}
 		case SnapshotLiteral literal -> {
@@ -11422,10 +11444,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				throw new IOException("Interrupted while looking up a ValueStore snapshot value",
 						new InterruptedException());
 			}
-			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			if (deadline != null && deadline.isExpired()) {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
 		}
 
 		private void cacheLookup(Value value, SnapshotLookupKey key, long id) {
@@ -11840,17 +11858,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (readLocked) {
 			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 		}
-		long stamp = 0;
+		long stamp = writeLockAfterCommit(lockManager);
 		try {
-			stamp = lockManager.writeLock();
 			txnManager.reset();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException(e);
 		} finally {
-			if (stamp != 0) {
-				lockManager.unlockWrite(stamp);
-			}
+			lockManager.unlockWrite(stamp);
 			if (readLocked) {
 				boolean interrupted = Thread.interrupted();
 				for (;;) {
@@ -13735,7 +13747,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				System.arraycopy(iri.localNameData(), 0, lexical, iri.namespaceData().length - 1,
 						iri.localNameData().length);
 				try (MemoryStack stack = stackPush()) {
-					result = findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn);
+					result = findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn, null);
 				}
 			}
 			yield result;
@@ -14559,6 +14571,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	void persistPreparedValues(PreparedValueBatch prepared) throws IOException {
+		// These records go straight into the writer; per-type fresh ordinals need not move nextId.
+		nativeMutation = true;
 		try (MemoryStack stack = stackPush()) {
 			invalidateUntrustedCountMetadata(stack, writeTxn);
 			PointerBuffer cursorHandle = stack.mallocPointer(1);
@@ -14570,9 +14584,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			MDBVal emptyVal = MDBVal.calloc(stack);
 			ByteBuffer idBytes = idBuffer(stack);
 			ByteBuffer hashBytes = stack.malloc(2 + 2 * Long.BYTES + 2);
+			LmdbDeferredValueLookups deferred = activeFreshValueSession != null ? deferredLookups : null;
 			try {
 				for (PreparedValueRecord record : prepared.records) {
 					if (record.data.length > MAX_KEY_SIZE) {
+						continue;
+					}
+					if (deferred != null) {
+						deferred.add(record.data, record.data.length, record.id);
 						continue;
 					}
 					stack.push();
@@ -14616,6 +14635,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						hashBytes.put(idVal.mv_data().duplicate());
 					}
 					keyVal.mv_data(hashBytes.flip());
+					if (deferred != null) {
+						deferred.add(hashBytes, record.id);
+						continue;
+					}
 					E(mdb_cursor_put(cursor, keyVal, record.firstForHash ? idVal : emptyVal, 0));
 				}
 			} finally {
@@ -14649,6 +14672,69 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 		}
+	}
+
+	/** Starts deferring the lookup records of fresh values; only an initial run import calls this. */
+	void deferLookupRecords(LmdbDeferredValueLookups lookups) {
+		deferredLookups = lookups;
+	}
+
+	void stopDeferringLookupRecords() {
+		deferredLookups = null;
+	}
+
+	boolean lookupRecordsDeferred() {
+		return deferredLookups != null;
+	}
+
+	private void checkLookupRecordsAvailable() {
+		if (deferredLookups != null) {
+			throw new IllegalStateException(
+					"Values cannot be created outside the initial import's fresh session while its lookup records are deferred");
+		}
+	}
+
+	/**
+	 * Writes the merged lookup records of an initial run import into the open write transaction, in key order. The main
+	 * database also holds the records of every named sub-database, which sort above all value keys, so these are sorted
+	 * plain puts rather than appends.
+	 *
+	 * @return the number of records written
+	 */
+	long writeDeferredLookups(LmdbDeferredValueLookups.Source source) throws IOException {
+		return writeTransaction((stack, txn) -> {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, handle));
+			long cursor = handle.get(0);
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.malloc(stack);
+			MDBVal emptyVal = MDBVal.calloc(stack);
+			ByteBuffer key = stack.malloc(LmdbDeferredValueLookups.MAX_KEY_BYTES);
+			ByteBuffer idBytes = idBuffer(stack);
+			long written = 0;
+			try {
+				long id;
+				while ((id = source.next(key)) >= 0) {
+					keyVal.mv_data(key);
+					if (key.get(0) == HASHID_KEY) {
+						E(mdb_cursor_put(cursor, keyVal, emptyVal, 0));
+					} else {
+						idBytes.clear();
+						dataVal.mv_data(id2data(idBytes, id).flip());
+						E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+					}
+					written++;
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+			return written;
+		});
+	}
+
+	/** Flushes committed pages to disk; the environment runs without per-commit sync. */
+	void syncEnvironment() throws IOException {
+		E(mdb_env_sync(env, true));
 	}
 
 	void publishPreparedValues(PreparedValueBatch prepared) {
@@ -14807,6 +14893,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					Varint.writeUnsigned(revIdBb, revision.getRevisionId());
 					int revLength = revIdBb.position();
 					Set<Long> retiredIds = deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
+					if (!retiredIds.isEmpty() && activeFreshValueSession != null) {
+						// The session maps every value it assigned; a collected one would be handed its stale ID.
+						freshValueSessionSpoiled = true;
+					}
 					for (long id : retiredIds) {
 						revIdBb.position(revLength).limit(revIdBb.capacity());
 						revIdVal.mv_data(id2data(revIdBb, id).flip());
@@ -16031,6 +16121,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			associationGate.unlock();
 		}
 		if (writeTxn != 0) {
+			if (commit && publication.transaction.skipsUnchanged() && writerChangedNothing()) {
+				abortUnchangedWriter(publication);
+				return true;
+			}
 			if (commit) {
 				// Checkpoints publish dictionary mappings too: their component counts must be in the same commit.
 				try (MemoryStack stack = stackPush()) {
@@ -16082,6 +16176,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 				rethrowFailure(completionFailure);
 			} else {
+				// A writer that assigned, reused or retired nothing could not have exposed an uncommitted ID, so its
+				// abort leaves the caches as valid as a skipped commit does.
+				boolean invalidatesCaches = !writerChangedNothing();
 				refCountsTxCache.clear();
 				Throwable rollbackFailure = null;
 				boolean nativeRollbackConfirmed = false;
@@ -16148,21 +16245,56 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				// IDs assigned during the aborted transaction may have been cached on input values and in valueIDCache.
 				// Reusing either cache would let a later transaction publish triples that point at dictionary IDs which
 				// were never committed.
-				try {
-					setNewRevision();
-				} catch (Throwable failure) {
-					rollbackFailure = appendFailure(rollbackFailure, failure);
-				}
-				try {
-					clearCaches();
-				} catch (Throwable failure) {
-					rollbackFailure = appendFailure(rollbackFailure, failure);
+				if (invalidatesCaches) {
+					try {
+						setNewRevision();
+					} catch (Throwable failure) {
+						rollbackFailure = appendFailure(rollbackFailure, failure);
+					}
+					try {
+						clearCaches();
+					} catch (Throwable failure) {
+						rollbackFailure = appendFailure(rollbackFailure, failure);
+					}
 				}
 				rethrowFailure(rollbackFailure);
 			}
 			releaseWriteTransactionState();
 		}
 		return true;
+	}
+
+	/**
+	 * True when the open writer assigned, reused, retired or recounted nothing and wrote nothing outside those paths.
+	 * Startup writers are never treated as unchanged: they create sub-databases, which an abort would discard. Nor is a
+	 * writer while a fresh value session is active: it assigns per-type ordinals that need not move nextId.
+	 */
+	private boolean writerChangedNothing() {
+		if (!valueStoreInitializationComplete || startupInitializationInProgress || nativeMutation
+				|| activeFreshValueSession != null
+				|| invalidateRevisionOnCommit || nextId != writerFirstAppendedId || !writerReusedIds.isEmpty()
+				|| !refCountsTxCache.isEmpty() || pendingValueAssociation != null || !reclaimedRevisionIds.isEmpty()
+				|| !droppedTermIndexDbis.isEmpty() || retiredIdStore.hasTransactionChanges()) {
+			return false;
+		}
+		synchronized (pendingHashUpdates) {
+			return pendingHashUpdates.isEmpty();
+		}
+	}
+
+	/** Releases an unchanged writer as if it had committed: the callers' dictionary state is already durable. */
+	private void abortUnchangedWriter(WriterPublication publication) throws IOException {
+		lastNativeCommitSucceeded = true;
+		publication.transaction.commitSkipped();
+		associationGate.lock();
+		try {
+			abortWriteTransaction(nativeWriteTransaction(publication));
+		} finally {
+			releaseNativeWriteTransactionOwnership(publication);
+			associationGate.unlock();
+		}
+		discardCompressedValueMutation();
+		releaseWriteTransactionState();
 	}
 
 	private long nativeWriteTransaction(WriterPublication publication) throws IOException {
@@ -16445,6 +16577,30 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		mdb_env_close(environment);
 	}
 
+	/**
+	 * Commits the dictionary writer, or aborts it when it changed nothing. A NONE transaction that only reuses existing
+	 * values then costs no dictionary commit at all; aborting such a writer publishes exactly what its commit would
+	 * have, because the next-ID record, reference counts and reference-count proof only change together with the
+	 * dictionary.
+	 */
+	void commitIfChanged() throws IOException {
+		WriterTransaction requested = WriterTransaction.current();
+		WriterTransaction transaction = requested == null ? currentWriterTransaction() : requested;
+		if (transaction == null) {
+			commit();
+			return;
+		}
+		// The request belongs to this thread and its writer, not to the store: other writers, such as term index
+		// maintenance, are admitted as soon as this one is released, while commit() still refreshes readers. A
+		// store-wide flag let them abort writers whose new sub-databases and staging rows no change counter records.
+		transaction.requestSkipIfUnchanged();
+		try {
+			commit();
+		} finally {
+			transaction.endSkipRequest();
+		}
+	}
+
 	public void commit() throws IOException {
 		long generationBefore = nativeCommitGeneration;
 		DeferredRetirementReset deferred = deferredRetirementReset.get();
@@ -16477,6 +16633,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			throw failure;
 		}
+		boolean pendingReset;
+		synchronized (writerAdmission) {
+			pendingReset = pendingRetirementReset != null;
+		}
+		if (transaction.commitWasSkipped() && nativeCommitGeneration == generationBefore && !pendingReset) {
+			// No new reader snapshot is needed. A deferred retirement still owns its own eventual cleanup.
+			endValueLookupMutation();
+			return;
+		}
 		if (deferred == null) {
 			resetReadTransactionsAfterCommit();
 		} else {
@@ -16491,25 +16656,40 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		synchronized (writerAdmission) {
 			covered = pendingRetirementReset;
 		}
-		long stamp = 0;
+		// The caller has already ended its publication. A later writer may now own the environment;
+		// resetting committed readers must never consume that writer's native transaction.
+		long stamp = writeLockAfterCommit(lockManager);
 		try {
-			// The caller has already ended its publication. A later writer may now own the environment;
-			// resetting committed readers must never consume that writer's native transaction.
-			stamp = lockManager.writeLock();
 			txnManager.reset();
 			synchronized (writerAdmission) {
 				if (pendingRetirementReset == covered) {
 					pendingRetirementReset = null;
 				}
 			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException(e);
 		} finally {
-			if (stamp != 0) {
-				lockManager.unlockWrite(stamp);
-			}
+			lockManager.unlockWrite(stamp);
 			endValueLookupMutation();
+		}
+	}
+
+	/**
+	 * The native commit is durable, so its reader reset is not optional: an interrupt must not leave pooled readers on
+	 * the old dictionary. Waits uninterruptibly and restores the caller's interrupt afterwards.
+	 */
+	private static long writeLockAfterCommit(StampedLongAdderLockManager lockManager) {
+		boolean interrupted = Thread.interrupted();
+		try {
+			while (true) {
+				try {
+					return lockManager.writeLock();
+				} catch (InterruptedException e) {
+					interrupted = true;
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 

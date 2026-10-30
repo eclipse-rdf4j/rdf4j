@@ -133,6 +133,14 @@ final class LmdbNativeFactorRows {
 		return new Scalar(input, slots);
 	}
 
+	/** Only scalar transport and order-preserving restriction retain the actual producer's facts. */
+	static RowCursor expressionProducer(LmdbNativeFactorCursor input) {
+		if (input instanceof Scalar scalar) {
+			return scalar.input;
+		}
+		return input instanceof Filter filter ? expressionProducer(filter.input) : null;
+	}
+
 	/** A query cancellation is exhaustion, not a probe decline or a recoverable plan failure. */
 	static boolean cancelled(RowState row, int tick) {
 		LmdbNativeProbeDeadline.poll(tick);
@@ -602,8 +610,15 @@ final class LmdbNativeFactorRows {
 							}
 						}
 					}
-					if (filter.accept(row))
-						return true;
+					RowCursor previous = row.expressionProducer;
+					row.expressionProducer = expressionProducer(input);
+					try {
+						if (filter.accept(row)) {
+							return true;
+						}
+					} finally {
+						row.expressionProducer = previous;
+					}
 				}
 				if (!row.cancellation.isCancellationRequested()) {
 					filter.inputExhausted();

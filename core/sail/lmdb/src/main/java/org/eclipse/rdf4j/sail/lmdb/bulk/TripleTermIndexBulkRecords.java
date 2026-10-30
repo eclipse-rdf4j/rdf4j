@@ -64,6 +64,14 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 			String configuredIndexes, long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
 			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, Runnable spillOutputObserver,
 			Runnable spillSubmittedObserver) throws IOException {
+		return build(source, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
+				cancellationSignal, scheduler, spillOutputObserver, spillSubmittedObserver, null);
+	}
+
+	static TripleTermIndexBulkRecords build(ExternalLongTupleSorter.SortedTupleFile source, Path workspace,
+			String configuredIndexes, long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, Runnable spillOutputObserver,
+			Runnable spillSubmittedObserver, BulkLoadProgress progress) throws IOException {
 		List<String> specifications = specifications(configuredIndexes);
 		if (specifications.isEmpty()) {
 			// Triple-term indexing disabled ("none"): skip reading the source and build no runs.
@@ -95,6 +103,13 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 							source.scanReaderFileDescriptorEstimate(), source.rows() == 0L ? 0L : 1024L,
 							source.rows() == 0L ? 0L : synchronousSpillBytes,
 							source.rows() == 0L ? 0 : 1)) {
+				if (progress != null) {
+					for (int index = 0; index < specifications.size(); index++) {
+						progress.startIndex(ProgressSnapshot.IndexFamily.TRIPLE_TERM, specifications.get(index),
+								index + 1,
+								specifications.size(), ProgressSnapshot.IndexStage.SCAN);
+					}
+				}
 				source.forEach(tuple -> {
 					checkCancelled(cancellationSignal);
 					for (int i = 0; i < specifications.size(); i++) {
@@ -109,8 +124,9 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 				}, scheduler);
 			}
 			List<IndexRun> runs = scheduler == null
-					? finishSerially(specifications, sortedOutputs, sorters, cancellationSignal)
-					: finishConcurrently(specifications, sortedOutputs, sorters, cancellationSignal, scheduler);
+					? finishSerially(specifications, sortedOutputs, sorters, cancellationSignal, progress)
+					: finishConcurrently(specifications, sortedOutputs, sorters, cancellationSignal, scheduler,
+							progress);
 			return new TripleTermIndexBulkRecords(runs);
 		} catch (IOException | RuntimeException | Error failure) {
 			for (ExternalLongTupleSorter sorter : sorters) {
@@ -132,18 +148,27 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 	}
 
 	private static List<IndexRun> finishSerially(List<String> specifications, List<Path> outputs,
-			List<ExternalLongTupleSorter> sorters, BooleanSupplier cancellationSignal) throws IOException {
+			List<ExternalLongTupleSorter> sorters, BooleanSupplier cancellationSignal, BulkLoadProgress progress)
+			throws IOException {
 		List<IndexRun> runs = new ArrayList<>(specifications.size());
 		for (int i = 0; i < specifications.size(); i++) {
 			checkCancelled(cancellationSignal);
-			runs.add(new IndexRun(specifications.get(i), sorters.get(i).finish(outputs.get(i))));
+			String specification = specifications.get(i);
+			if (progress != null) {
+				progress.indexStage(ProgressSnapshot.IndexFamily.TRIPLE_TERM, specification,
+						ProgressSnapshot.IndexStage.MERGE);
+			}
+			runs.add(new IndexRun(specification, sorters.get(i).finish(outputs.get(i))));
+			if (progress != null) {
+				progress.completeIndex(ProgressSnapshot.IndexFamily.TRIPLE_TERM, specification);
+			}
 		}
 		return runs;
 	}
 
 	private static List<IndexRun> finishConcurrently(List<String> specifications, List<Path> outputs,
 			List<ExternalLongTupleSorter> sorters, BooleanSupplier cancellationSignal,
-			BulkTaskScheduler scheduler) throws IOException {
+			BulkTaskScheduler scheduler, BulkLoadProgress progress) throws IOException {
 		for (ExternalLongTupleSorter sorter : sorters) {
 			sorter.prepareFinish();
 		}
@@ -154,7 +179,16 @@ final class TripleTermIndexBulkRecords implements AutoCloseable {
 			long memoryBytes = sorter.mergeMemoryEstimateBytes();
 			work.add(new BulkTaskScheduler.Work<>(memoryBytes, sorter.mergeFileDescriptorCount(), () -> {
 				checkCancelled(cancellationSignal);
-				return new IndexRun(specifications.get(index), sorter.finish(outputs.get(index)));
+				String specification = specifications.get(index);
+				if (progress != null) {
+					progress.indexStage(ProgressSnapshot.IndexFamily.TRIPLE_TERM, specification,
+							ProgressSnapshot.IndexStage.MERGE);
+				}
+				IndexRun run = new IndexRun(specification, sorter.finish(outputs.get(index)));
+				if (progress != null) {
+					progress.completeIndex(ProgressSnapshot.IndexFamily.TRIPLE_TERM, specification);
+				}
+				return run;
 			}, sorter.requiresSerialMemoryFloor()));
 		}
 		return scheduler.runOrdered(work);

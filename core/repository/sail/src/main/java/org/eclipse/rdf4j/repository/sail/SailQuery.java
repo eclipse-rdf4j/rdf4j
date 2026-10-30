@@ -15,7 +15,7 @@ package org.eclipse.rdf4j.repository.sail;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryOperationContext;
 import org.eclipse.rdf4j.query.QueryOperationDeadline;
@@ -102,8 +102,8 @@ public abstract class SailQuery extends AbstractParserQuery {
 			timeout = getMaxExecutionTime();
 		}
 
-		try (QueryExecutionDeadline executionDeadline = startQueryExecutionDeadline(timeout);
-				QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(executionDeadline);
+		try (QueryOperationContext.Scope ignored = openQueryOperation(timeout);
+				InterruptingTimeLimit timeLimit = startEvaluationTimeLimit(timeout);
 				BlankNodeAllocationScope.Activation allocation = createBlankNodeAllocationScope().activate()) {
 			QueryOperationContext.throwIfDeadlineExpired();
 			TupleExpr tupleExpr = getParsedQuery().getTupleExpr().clone();

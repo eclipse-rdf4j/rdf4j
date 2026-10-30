@@ -295,6 +295,64 @@ test('a legend chip adds its type to the selection, and pressing it again takes 
     await expect(person).toHaveAttribute('aria-pressed', 'false');
 });
 
+test('Control+A and Command+A select every drawn node without taking over native text selection', async ({ page }) => {
+    const explorer = await openGraph(page);
+    await expect(canvas(page)).toHaveAttribute('aria-label', /⌘A selects all drawn nodes|Ctrl\+A selects all drawn nodes/);
+    const nodes = explorer.locator('.graph-node');
+    const resourceCount = await nodes.count();
+
+    await page.keyboard.press('Control+Alt+a');
+    await expect(summary(page)).toHaveCount(0);
+
+    const person = explorer.locator('.legend button', { hasText: 'Person' });
+    await person.click();
+    await expect(summary(page)).toHaveText('6 nodes match the filters');
+    await page.keyboard.press('Control+a');
+    await expect(summary(page)).toHaveText(`${resourceCount} nodes selected`);
+    await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(resourceCount);
+    await expect(person).toHaveAttribute('aria-pressed', 'false');
+
+    // Selecting all again is idempotent, and includes newly drawn values when they are enabled.
+    await page.keyboard.press('Meta+a');
+    await expect(summary(page)).toHaveText(`${resourceCount} nodes selected`);
+    const values = explorer.getByRole('button', { name: 'Show values and types as nodes' });
+    await values.click();
+    await expect(values).toHaveAttribute('aria-pressed', 'true');
+    await expect(nodes).not.toHaveCount(resourceCount);
+    const drawnCount = await nodes.count();
+    expect(drawnCount).toBeGreaterThan(resourceCount);
+    await page.keyboard.press('Meta+a');
+    await expect(summary(page)).toHaveText(`${drawnCount} nodes selected`);
+    await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(drawnCount);
+
+    // Inputs and textareas retain their native select-all behavior and the graph selection stays intact.
+    const find = explorer.getByRole('combobox', { name: 'Find a node, or search the repository' });
+    await find.fill('Alice');
+    await find.press('ControlOrMeta+a');
+    expect(await find.evaluate((input) => [input.selectionStart, input.selectionEnd, input.value.length]))
+        .toEqual([0, 5, 5]);
+
+    await explorer.getByRole('button', { name: 'Query editor' }).click();
+    const query = explorer.locator('#sparql');
+    const queryText = 'SELECT * WHERE { ?s ?p ?o }';
+    await query.fill(queryText);
+    await query.press('ControlOrMeta+a');
+    expect(await query.evaluate((textarea) => [textarea.selectionStart, textarea.selectionEnd, textarea.value.length]))
+        .toEqual([0, queryText.length, queryText.length]);
+    await expect(summary(page)).toHaveText(`${drawnCount} nodes selected`);
+
+    // A selected graph node is left alone when another data view owns the keyboard.
+    await explorer.getByRole('tab', { name: 'Graph' }).click();
+    await explorer.locator('.selection-summary').getByRole('button', { name: /^Clear the selection/ }).click();
+    await node(page, 'Alice').click({ modifiers: ['Shift'] });
+    await expect(summary(page)).toHaveText('1 node selected');
+    await explorer.getByRole('tab', { name: 'Triples' }).click();
+    await page.keyboard.press('Control+a');
+    await explorer.getByRole('tab', { name: 'Graph' }).click();
+    await expect(summary(page)).toHaveText('1 node selected');
+    await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(1);
+});
+
 test('Undo brings back the filters as they were before the change it undoes', async ({ page }) => {
     const explorer = await openGraph(page);
     await explorer.locator('.legend button', { hasText: 'Person' }).click();
@@ -394,6 +452,17 @@ test.describe('the large renderer', () => {
         await page.keyboard.press('Enter');
         await expect(nodeCard(page).locator('h3')).toHaveText(text);
     }
+
+    test('Command+A selects every drawn node in the WebGL canvas', async ({ page }) => {
+        const explorer = await openLarge(page);
+        const interactive = explorer.locator('canvas.large-graph-interactive');
+        const nodeCount = Number((await explorer.locator('.graph-stats').textContent()).match(/^\d+/)[0]);
+        await expect(interactive).toHaveAttribute('data-renderer', 'webgl');
+        await interactive.focus();
+        await page.keyboard.press('Meta+a');
+        await expect(summary(page)).toHaveText(`${nodeCount} nodes selected`);
+        await expect(interactive).toHaveAttribute('aria-label', /⌘A selects all drawn nodes|Ctrl\+A selects all drawn nodes/);
+    });
 
     test('Enter on the canvas shows the details of its node, as on the small canvas', async ({ page }) => {
         const explorer = await openLarge(page);

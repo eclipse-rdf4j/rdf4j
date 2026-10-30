@@ -16,12 +16,20 @@ import java.util.Objects;
 
 /** A typed physical estimate. {@code total} includes {@code startup}. */
 record LmdbNativeCostEstimate(LmdbNativePhysicalVariantKey variantKey, LmdbNativeCostVector startup,
-		LmdbNativeCostVector total, double estimatedOutputRows, double structuralUncertainty) {
+		LmdbNativeCostVector total, double estimatedOutputRows, double structuralUncertainty,
+		NativePhysicalWorkEvidence workEvidence) {
+
+	LmdbNativeCostEstimate(LmdbNativePhysicalVariantKey variantKey, LmdbNativeCostVector startup,
+			LmdbNativeCostVector total, double estimatedOutputRows, double structuralUncertainty) {
+		this(variantKey, startup, total, estimatedOutputRows, structuralUncertainty,
+				NativePhysicalWorkEvidence.complete());
+	}
 
 	LmdbNativeCostEstimate {
 		Objects.requireNonNull(variantKey, "variantKey");
 		Objects.requireNonNull(startup, "startup");
 		Objects.requireNonNull(total, "total");
+		Objects.requireNonNull(workEvidence, "workEvidence");
 		if (!Double.isFinite(estimatedOutputRows) || estimatedOutputRows < 0.0) {
 			throw new IllegalArgumentException("estimatedOutputRows must be finite and non-negative: "
 					+ estimatedOutputRows);
@@ -41,7 +49,20 @@ record LmdbNativeCostEstimate(LmdbNativePhysicalVariantKey variantKey, LmdbNativ
 	LmdbNativeCostEstimate forConsumption(double fraction) {
 		return new LmdbNativeCostEstimate(variantKey.withConsumptionFraction(fraction), startup,
 				LmdbNativeCostVector.consumed(startup, total, fraction), estimatedOutputRows * fraction,
-				structuralUncertainty);
+				structuralUncertainty, workEvidence.forConsumption());
+	}
+
+	LmdbNativeCostEstimate withWorkEvidence(NativePhysicalWorkEvidence evidence) {
+		Objects.requireNonNull(evidence);
+		NativePhysicalWorkEvidence conserved = workEvidence.isComplete() ? evidence
+				: evidence.withMissingProof(workEvidence.missingProof());
+		return new LmdbNativeCostEstimate(variantKey, startup, total, estimatedOutputRows, structuralUncertainty,
+				conserved);
+	}
+
+	LmdbNativeCostEstimate withVariantKey(LmdbNativePhysicalVariantKey key) {
+		return new LmdbNativeCostEstimate(key, startup, total, estimatedOutputRows, structuralUncertainty,
+				workEvidence);
 	}
 
 	/**

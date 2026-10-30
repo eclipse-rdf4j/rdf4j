@@ -18,7 +18,7 @@ import {LAYOUT_SPACING as gap} from './graph-layout-spacing.ts';
 
 /** Bounded-memory breadth-first packing for graphs too large for dense stress matrices. */
 export function computeSparseLayout(graph: Graph, options: LayoutOptions = {}) {
-  if (options.incremental || options.localNodeIds?.size || options.refine || options.repairOnly) {
+  if (options.incremental || options.localNodeIds?.size || options.repairOnly) {
     const positions = new Map(graph.nodes.map(node => [node.id, {x: node.x ?? 0, y: node.y ?? 0}]));
     separateLayoutRectangles(graph, positions, {...options, repairOnly: true});
     return {positions, bends: new Map<string, number>()};

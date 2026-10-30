@@ -36,7 +36,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
@@ -228,21 +228,32 @@ class LmdbEstimatorReadResourceContextTest {
 	}
 
 	@Test
-	void freshGuardWaitHonorsDeadlineAndReturnsNativeReservations(@TempDir Path directory) throws Exception {
+	void freshGuardWaitHonorsTimeLimitAndReturnsNativeReservations(@TempDir Path directory) throws Exception {
 		try (Fixture fixture = Fixture.create(directory);
 				GuardHolder holder = new GuardHolder(fixture.backing)) {
 			ExecutorService executor = Executors.newSingleThreadExecutor();
 			int permits = fixture.values.getTxnManager().availableOrdinaryPermits();
 			try {
+				AtomicBoolean timeLimitFired = new AtomicBoolean();
+				AtomicBoolean interruptedAtReturn = new AtomicBoolean();
 				Future<?> read = executor.submit(() -> {
-					try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(100);
-							QueryExecutionDeadline.Scope scope = deadline.enter()) {
-						fixture.backing.new GuardedEstimatorStatementSource().getStatements(null, null, null).close();
+					try (InterruptingTimeLimit timeLimit = InterruptingTimeLimit.start(100)) {
+						try {
+							fixture.backing.new GuardedEstimatorStatementSource().getStatements(null, null, null).close();
+						} finally {
+							timeLimitFired.set(timeLimit.fired());
+						}
+					} finally {
+						interruptedAtReturn.set(Thread.currentThread().isInterrupted());
 					}
 				});
 				ExecutionException failure = assertThrows(ExecutionException.class,
 						() -> read.get(5, TimeUnit.SECONDS));
-				assertInstanceOf(QueryInterruptedException.class, failure.getCause());
+				SketchStatementSourceException sourceFailure = assertInstanceOf(SketchStatementSourceException.class,
+						failure.getCause());
+				assertInstanceOf(InterruptedException.class, sourceFailure.getCause().getCause());
+				assertTrue(timeLimitFired.get(), "the real time limit must interrupt the blocked guard wait");
+				assertFalse(interruptedAtReturn.get(), "the time limit must clear its own delivered interrupt");
 				assertEquals(permits, fixture.values.getTxnManager().availableOrdinaryPermits());
 			} finally {
 				holder.release();

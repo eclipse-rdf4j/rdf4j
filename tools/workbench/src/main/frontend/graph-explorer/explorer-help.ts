@@ -53,6 +53,7 @@ export function graphGuide(apple: boolean): GuideSection[] {
         { keys: "Arrow keys", text: "Go to the nearest node in that direction" },
         { keys: "Enter", text: "Show the node's details" },
         { keys: "Delete", text: "Hide the selection, or the node whose details are shown" },
+        { keys: apple ? "⌘A" : "Ctrl+A", text: "Select all drawn nodes" },
         { keys: `${undo}, ${redo}`, text: "Undo or redo a change to the graph" },
         { keys: "Escape", text: "Close the details, then clear the selection" },
       ],

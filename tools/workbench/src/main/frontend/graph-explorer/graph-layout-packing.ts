@@ -96,7 +96,7 @@ function polyomino(item: PackItem, cell: number, clearance: number) {
 }
 
 /** Components in rows, tallest first, the rows as wide as a box of the wanted aspect ratio holding them all. */
-function packShelves(items: PackItem[], aspectRatio: number, clearance: number) {
+export function packShelves(items: PackItem[], aspectRatio: number, clearance: number) {
   const boxes = items.map((item, index) => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const b of item.boxes) { minX = Math.min(minX, b.minX); minY = Math.min(minY, b.minY); maxX = Math.max(maxX, b.maxX); maxY = Math.max(maxY, b.maxY); }

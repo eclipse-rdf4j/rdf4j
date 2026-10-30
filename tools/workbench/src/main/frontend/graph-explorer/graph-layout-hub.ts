@@ -21,7 +21,7 @@ import {LAYOUT_SPACING as gap} from './graph-layout-spacing.ts';
  */
 export function computeHubNeighborhoodLayout(graph: Graph, options: LayoutOptions,
   solveCore: (graph: Graph) => LayoutResult): LayoutResult | undefined {
-  if (options.incremental || options.refine || options.repairOnly || options.localNodeIds?.size ||
+  if (options.incremental || options.repairOnly || options.localNodeIds?.size ||
       options.groups?.length || options.nodeSizes || graph.nodes.some(n => n.pinned) || graph.nodes.length > 350) return;
   const topology = layoutTopology(graph);
   const candidates = topology.nodes().map(id => ({id, leaves: topology.neighbors(id).filter(n => topology.degree(n) === 1)}))

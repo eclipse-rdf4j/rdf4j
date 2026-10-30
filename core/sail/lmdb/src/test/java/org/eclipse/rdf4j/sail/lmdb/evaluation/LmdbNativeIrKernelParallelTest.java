@@ -103,10 +103,8 @@ class LmdbNativeIrKernelParallelTest {
 			+ "q> ?v . FILTER EXISTS { ?m <" + EX + "r> ?x } }";
 
 	/**
-	 * An EXISTS disjunction cannot become an in-kernel witness (the IR has no OR-of-witnesses node), so it stays an
-	 * engine-side residual whose memoized probe state cannot fork — the parallel rung must keep declining it. The plain
-	 * {@link #EXISTS_QUERY} stopped being such a shape in M10: its filter lowers to a stateless in-kernel witness,
-	 * which partitions safely.
+	 * An EXISTS disjunction remains a composed engine-side predicate. Every worker receives independent memo and probe
+	 * state; the plain {@link #EXISTS_QUERY} can instead lower to a stateless in-kernel witness.
 	 */
 	private static final String EXISTS_DISJUNCTION_QUERY = "SELECT ?s ?v WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
 			+ "q> ?v . FILTER (EXISTS { ?m <" + EX + "r> ?x } || EXISTS { ?m <" + EX + "q2> ?x }) }";
@@ -390,24 +388,41 @@ class LmdbNativeIrKernelParallelTest {
 	}
 
 	@Test
-	void filterHookKernelDeclinesParallelButKeepsTheSequentialKernel() {
-		// Assert the eligibility decline independently of machine-wide timing learned by earlier queries.
+	void composedExistsPredicatesUseIndependentParallelWorkers() {
 		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(EXISTS_DISJUNCTION_QUERY);
 		assertThat(expected).isNotEmpty();
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 
-		String telemetry = telemetry(EXISTS_DISJUNCTION_QUERY);
-		assertThat(telemetry).contains("irKernelParallel:filter-not-forkable");
-		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
-		KernelExecutionTestAccess.resetMetrics();
-		assertThat(rows(EXISTS_DISJUNCTION_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL))
-				.containsExactlyInAnyOrderElementsOf(expected);
-		assertThat(KernelExecutionTestAccess.opened()).as("sequential kernel still serves").isPositive();
-		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get())
-				.as("shared residual state would race across workers; parallel must decline")
-				.isEqualTo(parallelBefore);
+		assertParallelKernelMatchesGeneric(EXISTS_DISJUNCTION_QUERY, expected);
+	}
+
+	@Test
+	void correlatedLexicalPredicatesBindWorkerLocalRowState() {
+		for (String predicate : List.of(
+				"EXISTS { { SELECT ?m ?probe WHERE { ?m <" + EX
+						+ "q2> ?probe } } FILTER(?probe != ?v) }",
+				"NOT EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe = ?v) }")) {
+			String query = "SELECT ?s ?v WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+					+ "q> ?v . FILTER(" + predicate + ") }";
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			List<String> expected = rows(query);
+			assertThat(expected).isNotEmpty();
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+			assertParallelKernelMatchesGeneric(query, expected);
+		}
+	}
+
+	@Test
+	void recursiveScalarBindsUseWorkerLocalRowCodecs() {
+		String query = "SELECT ?s ?length WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+				+ "q> ?v . BIND(STRLEN(STRBEFORE(CONCAT(STR(?v), \"|tail\"), \"|\")) AS ?length) }";
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(query);
+		assertThat(expected).isNotEmpty();
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		assertParallelKernelMatchesGeneric(query, expected);
 	}
 
 	/** M10B: the triangle's Intersect levels carry no cross-row state, so the root edge enumeration partitions. */

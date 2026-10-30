@@ -298,7 +298,7 @@ class TimeLimitIterationTransientRecoveryTest {
 
 	private static TimeLimitIteration<String> timed(Source source, TimeLimitIteration.AsyncLauncher launcher,
 			RuntimeException timeout) {
-		return new TimeLimitIteration<>(source, 60_000, launcher) {
+		return new TimeLimitIteration<>(source, 60_000, 25, 25, launcher) {
 			@Override
 			protected void throwInterruptedException() {
 				throw timeout;

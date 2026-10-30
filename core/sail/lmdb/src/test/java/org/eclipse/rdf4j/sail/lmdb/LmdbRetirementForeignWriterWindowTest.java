@@ -3452,8 +3452,7 @@ class LmdbRetirementForeignWriterWindowTest {
 				}
 
 				@Override
-				void beforeGrowthAdmissionDeadlineCheck(
-						org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline deadline) {
+				void beforeGrowthAdmissionCheck() {
 					if (Thread.currentThread() == coordinatorOwner) {
 						coordinatorHeld.countDown();
 						try {

@@ -39,7 +39,7 @@ test('a large terminal fan balances routed clarity with a bounded footprint', as
 test('hub specialization does not override constrained or incremental layouts', () => {
   const graph = hubNeighborhood();
   const forbidden = () => {throw new Error('must not solve core');};
-  for (const options of [{incremental:true},{refine:true},{repairOnly:true},{localNodeIds:new Set(['award'])},
+  for (const options of [{incremental:true},{repairOnly:true},{localNodeIds:new Set(['award'])},
     {groups:[{id:'group',name:'Keep together',nodeIds:['award','c0']}]}, {nodeSizes:new Map()}]) {
     assert.equal(computeHubNeighborhoodLayout(graph,options,forbidden),undefined);
   }

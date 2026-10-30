@@ -51,6 +51,9 @@ public class ASTPropertyListPath extends SimpleNode {
 
 	public Object getReifier() {
 		List<ASTAnnotationSuffix> suffixes = jjtGetChildren(ASTAnnotationSuffix.class);
+		if (suffixes.isEmpty()) {
+			suffixes = getObjectList().jjtGetChildren(ASTAnnotationSuffix.class);
+		}
 		if (!suffixes.isEmpty()) {
 			return suffixes.get(0).getReifier();
 		}
@@ -65,6 +68,9 @@ public class ASTPropertyListPath extends SimpleNode {
 
 	public ASTPropertyListPath getAnnotation() {
 		List<ASTAnnotationSuffix> suffixes = jjtGetChildren(ASTAnnotationSuffix.class);
+		if (suffixes.isEmpty()) {
+			suffixes = getObjectList().jjtGetChildren(ASTAnnotationSuffix.class);
+		}
 		if (!suffixes.isEmpty()) {
 			return (ASTPropertyListPath) suffixes.get(0).getAnnotation();
 		}

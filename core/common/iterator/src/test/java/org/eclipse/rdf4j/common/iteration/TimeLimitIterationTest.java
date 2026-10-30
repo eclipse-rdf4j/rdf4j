@@ -118,7 +118,7 @@ class TimeLimitIterationTest {
 
 	private static TimeLimitIteration<Object> timedIteration(CloseableIteration<Object> delegate,
 			long timeLimitMillis) {
-		return new TimeLimitIteration<>(delegate, timeLimitMillis) {
+		return new TimeLimitIteration<>(delegate, timeLimitMillis, 10, 10) {
 
 			@Override
 			protected void throwInterruptedException() {
@@ -132,7 +132,7 @@ class TimeLimitIterationTest {
 				.keySet()
 				.stream()
 				.filter(Thread::isAlive)
-				.filter(thread -> thread.getName().equals("TimeLimitIteration"))
+				.filter(thread -> thread.getName().equals("TimeLimitIteration scheduler"))
 				.findFirst()
 				.orElse(null);
 	}
@@ -186,7 +186,7 @@ class TimeLimitIterationTest {
 		CountDownLatch cancellationRequested = new CountDownLatch(1);
 		CooperativeBlockingIteration delegate = CooperativeBlockingIteration.closeOnly(closeEntered, releaseClose,
 				cancellationRequested, true);
-		TestTimeLimitIteration iteration = new TestTimeLimitIteration(delegate, LONG_TIME_LIMIT_MILLIS);
+		TestTimeLimitIteration iteration = new TestTimeLimitIteration(delegate, LONG_TIME_LIMIT_MILLIS, 50, 50);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		AtomicReference<Thread> signalThread = new AtomicReference<>();
 		Future<?> signal = executor.submit(() -> {
@@ -219,7 +219,7 @@ class TimeLimitIterationTest {
 		CountDownLatch closeEntered = new CountDownLatch(1);
 		CountDownLatch releaseClose = new CountDownLatch(1);
 		BlockingIteration delegate = BlockingIteration.closeOnly(closeEntered, releaseClose);
-		TestTimeLimitIteration iteration = new TestTimeLimitIteration(delegate, LONG_TIME_LIMIT_MILLIS);
+		TestTimeLimitIteration iteration = new TestTimeLimitIteration(delegate, LONG_TIME_LIMIT_MILLIS, 50, 50);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		AtomicReference<Thread> signalThread = new AtomicReference<>();
 		Future<?> signal = executor.submit(() -> {
@@ -249,7 +249,7 @@ class TimeLimitIterationTest {
 		CountDownLatch nextEntered = new CountDownLatch(1);
 		CountDownLatch releaseNext = new CountDownLatch(1);
 		BlockingNextIteration delegate = new BlockingNextIteration(nextEntered, releaseNext);
-		TestTimeLimitIteration iteration = new TestTimeLimitIteration(delegate, LONG_TIME_LIMIT_MILLIS);
+		TestTimeLimitIteration iteration = new TestTimeLimitIteration(delegate, LONG_TIME_LIMIT_MILLIS, 50, 50);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		Future<String> worker = executor.submit(iteration::next);
 		Future<?> signal = null;
@@ -431,6 +431,11 @@ class TimeLimitIterationTest {
 
 		private TestTimeLimitIteration(CloseableIteration<? extends String> iter, long timeLimit) {
 			super(iter, timeLimit);
+		}
+
+		private TestTimeLimitIteration(CloseableIteration<? extends String> iter, long timeLimit,
+				long interruptGrace, long closeGrace) {
+			super(iter, timeLimit, interruptGrace, closeGrace);
 		}
 
 		@Override
@@ -727,6 +732,43 @@ class TimeLimitIterationTest {
 			}
 		}
 		assertEquals(1, closeCalls.get(), "subsequent explicit close must not close the source again");
+	}
+
+	@Test
+	void anObservedTimeLimitClosesTheWrappedIteration() throws Exception {
+		AbstractCloseableIteration<String> source = new AbstractCloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+
+			@Override
+			public String next() {
+				return "element";
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			protected void handleClose() {
+				// nothing to release
+			}
+		};
+		TimeLimitIteration<String> limited = new ClosingTestTimeLimitIteration(source);
+
+		limited.interrupt();
+
+		assertThat(source.isClosed()).as("the time limit only requests cancellation of an idle iteration").isFalse();
+		assertThatThrownBy(limited::hasNext).isInstanceOf(TimeLimitReached.class);
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(FUTURE_TIMEOUT_SECONDS);
+		while (!source.isClosed() && System.nanoTime() < deadline) {
+			Thread.sleep(5);
+		}
+		assertThat(source.isClosed()).as("a caller observing the time limit closes the wrapped iteration").isTrue();
+		limited.close();
 	}
 
 	/** The time limit's own exception. */

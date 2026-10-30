@@ -22,6 +22,57 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 interface SlotPlan {
 	RowCursor open(RowState row) throws IOException;
 
+	/** Whether a native physical cell must remain in its typed lane until a scalar consumer has run. */
+	static boolean requiresPhysicalCells(SlotPlan plan) {
+		if (plan instanceof NativeLogicalResultTransferPlan) {
+			return false;
+		}
+		if (plan instanceof NativeSubqueryPlan subquery) {
+			return subquery.requiresPhysicalResults();
+		}
+		if (plan instanceof FilterPlan filter) {
+			return requiresPhysicalCells(filter.arg);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return requiresPhysicalCells(extension.arg);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return requiresPhysicalCells(entry.arg);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return requiresPhysicalCells(distinct.arg);
+		}
+		if (plan instanceof MultiJoinPlan join) {
+			for (SlotPlan child : join.children) {
+				if (requiresPhysicalCells(child)) {
+					return true;
+				}
+			}
+		}
+		if (plan instanceof JoinPlan join) {
+			return requiresPhysicalCells(join.left) || requiresPhysicalCells(join.right);
+		}
+		if (plan instanceof LeftJoinPlan join) {
+			return requiresPhysicalCells(join.left) || requiresPhysicalCells(join.right);
+		}
+		if (plan instanceof UnionPlan union) {
+			return requiresPhysicalCells(union.left) || requiresPhysicalCells(union.right);
+		}
+		if (plan instanceof OrderedUnionPlan union) {
+			return requiresPhysicalCells(union.left) || requiresPhysicalCells(union.right);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return requiresPhysicalCells(minus.left) || requiresPhysicalCells(minus.right);
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return requiresPhysicalCells(lateral.left) || requiresPhysicalCells(lateral.right);
+		}
+		if (plan instanceof DrainGuardPlan guard) {
+			return requiresPhysicalCells(guard.delegate) || requiresPhysicalCells(guard.drained);
+		}
+		return false;
+	}
+
 	/** Returns a direct batch implementation, or {@code null} when this plan must use its row cursor. */
 	default BatchCursor openBatch(RowState row, int capacity) throws IOException {
 		return null;
@@ -190,6 +241,12 @@ interface SlotPlan {
 	 * its ownership and expression-repeatability rules are reviewed.
 	 */
 	static boolean encounterOrderReplaySafe(SlotPlan plan) {
+		if (plan instanceof NativeSubqueryPlan subquery) {
+			return subquery.workerBindable();
+		}
+		if (plan instanceof NativeGraphPlan graph) {
+			return graph.workerBindable();
+		}
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
 			return encounterOrderReplaySafe(leaf.template);
 		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof PatternPlan
@@ -197,7 +254,9 @@ interface SlotPlan {
 			return true;
 		}
 		if (plan instanceof FilterPlan filter) {
-			return filter.filterMask >= 0L && encounterOrderReplaySafe(filter.arg);
+			return (filter.filterMask >= 0L
+					|| filter.filter.capabilities().atPlacement(filter.filterMask).replaySafe())
+					&& encounterOrderReplaySafe(filter.arg);
 		}
 		if (plan instanceof EntryBindingCompatibilityPlan entry) {
 			return encounterOrderReplaySafe(entry.arg);
@@ -223,14 +282,15 @@ interface SlotPlan {
 				}
 			}
 			for (MaskedFilter filter : multiJoin.filters) {
-				if (filter.mask < 0L) {
+				if (filter.mask < 0L && !filter.filter.capabilities().atPlacement(filter.mask).replaySafe()) {
 					return false;
 				}
 			}
 			return true;
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
-			if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null) {
+			if ((leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null)
+					&& !NativeWorkerPlanBinder.canBind(plan)) {
 				return false;
 			}
 			return encounterOrderReplaySafe(leftJoin.left) && encounterOrderReplaySafe(leftJoin.right);
@@ -243,6 +303,15 @@ interface SlotPlan {
 		}
 		if (plan instanceof MinusPlan minus) {
 			return encounterOrderReplaySafe(minus.left) && encounterOrderReplaySafe(minus.right);
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return encounterOrderReplaySafe(lateral.left) && encounterOrderReplaySafe(lateral.right);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return encounterOrderReplaySafe(distinct.arg);
+		}
+		if (plan instanceof DrainGuardPlan guard) {
+			return encounterOrderReplaySafe(guard.delegate) && encounterOrderReplaySafe(guard.drained);
 		}
 		return false;
 	}
@@ -366,6 +435,11 @@ interface SlotPlan {
 @Experimental
 interface RowCursor extends AutoCloseable {
 	boolean next() throws IOException;
+
+	/** Facts belong to this actual producer, not to a logical plan that another strategy may lower differently. */
+	default NativeExpressionDomainPolicy.Input expressionInput() {
+		return null;
+	}
 
 	@Override
 	void close();

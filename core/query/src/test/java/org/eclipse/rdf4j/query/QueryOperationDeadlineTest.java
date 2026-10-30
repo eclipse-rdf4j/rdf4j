@@ -18,68 +18,56 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
 import org.junit.jupiter.api.Test;
 
 class QueryOperationDeadlineTest {
 
 	@Test
-	void executionDeadlineBudgetViewDoesNotOwnItsTimer() {
-		QueryExecutionDeadline execution = QueryExecutionDeadline.start(60_000L);
-		try {
-			QueryOperationDeadline budget = QueryOperationDeadline.from(execution);
-			assertThat(budget.isBackedBy(execution)).isTrue();
+	void operationBudgetDoesNotOwnTheSynchronousInterruptGuard() {
+		QueryOperationDeadline budget = QueryOperationDeadline.after(60_000L, TimeUnit.MILLISECONDS);
+		try (InterruptingTimeLimit guard = InterruptingTimeLimit.start(budget.remainingMillis())) {
 			assertThat(budget.remainingNanos()).isPositive().isLessThanOrEqualTo(TimeUnit.MINUTES.toNanos(1));
-			execution.close();
-			assertThat(budget.remainingNanos()).isEqualTo(Long.MAX_VALUE);
-			assertThat(budget.remainingMillis()).isEqualTo(Long.MAX_VALUE);
-			assertThat(budget.remainingSeconds()).isEqualTo(Integer.MAX_VALUE);
-		} finally {
-			execution.close();
+			guard.close();
+			assertThat(budget.remainingNanos()).isPositive();
+			assertThat(guard.fired()).isFalse();
 		}
 	}
 
 	@Test
-	void borrowedExecutionBudgetPreservesMillisecondRangeAndEarliestSelection() {
+	void extremeOperationBudgetSaturatesAndKeepsEarliestSelection() {
 		AtomicLong nanoTime = new AtomicLong(100L);
-		QueryOperationDeadline owned = QueryOperationDeadline.after(Long.MAX_VALUE, TimeUnit.NANOSECONDS,
-				nanoTime::get);
-		try (QueryExecutionDeadline execution = QueryExecutionDeadline.start(Long.MAX_VALUE)) {
-			QueryOperationDeadline borrowed = QueryOperationDeadline.from(execution);
-			assertThat(borrowed.remainingMillis()).isGreaterThan(TimeUnit.NANOSECONDS.toMillis(Long.MAX_VALUE));
-			assertThat(borrowed.remainingNanos()).isEqualTo(Long.MAX_VALUE);
-			assertThat(borrowed.remainingSeconds()).isEqualTo(Integer.MAX_VALUE);
-			assertThat(owned.earliest(borrowed)).isSameAs(owned);
-			assertThat(borrowed.earliest(owned)).isSameAs(owned);
-		}
+		QueryOperationDeadline owned = QueryOperationDeadline.after(100, TimeUnit.NANOSECONDS, nanoTime::get);
+		QueryOperationDeadline maximum = QueryOperationDeadline.after(Long.MAX_VALUE, TimeUnit.MILLISECONDS, nanoTime::get);
+		assertThat(maximum.remainingNanos()).isEqualTo(Long.MAX_VALUE);
+		assertThat(maximum.remainingSeconds()).isEqualTo(Integer.MAX_VALUE);
+		assertThat(owned.earliest(maximum)).isSameAs(owned);
+		assertThat(maximum.earliest(owned)).isSameAs(owned);
 	}
 
 	@Test
-	void executionDeadlineIsVisibleWithoutAnOperationScope() {
-		try (QueryExecutionDeadline execution = QueryExecutionDeadline.start(60_000L);
-				QueryExecutionDeadline.Scope ignored = execution.enter()) {
-			assertThat(QueryOperationContext.getDeadline()).isPresent();
-			assertThat(QueryOperationContext.getDeadline().orElseThrow().isBackedBy(execution)).isTrue();
+	void operationDeadlineIsVisibleForItsLexicalScope() {
+		QueryOperationDeadline deadline = QueryOperationDeadline.after(60_000L, TimeUnit.MILLISECONDS);
+		try (QueryOperationContext.Scope ignored = QueryOperationContext.open(deadline)) {
+			assertThat(QueryOperationContext.getDeadline()).containsSame(deadline);
 			QueryOperationContext.throwIfDeadlineExpired();
 		}
 		assertThat(QueryOperationContext.getDeadline()).isEmpty();
 	}
 
 	@Test
-	void earlierOperationBudgetWinsAndScopesRestoreAcrossExecutionDeadline() {
+	void earlierOperationBudgetWinsAndScopesRestoreAcrossGuard() {
 		AtomicLong nanoTime = new AtomicLong(100L);
 		QueryOperationDeadline earlier = QueryOperationDeadline.after(10L, TimeUnit.NANOSECONDS, nanoTime::get);
 		try (QueryOperationContext.Scope outer = QueryOperationContext.open(earlier)) {
-			try (QueryExecutionDeadline execution = QueryExecutionDeadline.start(60_000L);
-					QueryExecutionDeadline.Scope ignored = execution.enter()) {
+			try (InterruptingTimeLimit ignored = InterruptingTimeLimit.start(60_000L)) {
 				assertThat(QueryOperationContext.getDeadline()).containsSame(earlier);
 				try (QueryOperationContext.Scope nested = QueryOperationContext.open(
 						QueryOperationDeadline.after(120L, TimeUnit.SECONDS))) {
 					assertThat(nested.getDeadline()).isSameAs(earlier);
 				}
 				nanoTime.set(110L);
-				assertThatThrownBy(QueryOperationContext::throwIfDeadlineExpired)
-						.isInstanceOf(QueryInterruptedException.class);
+				assertThatThrownBy(QueryOperationContext::throwIfDeadlineExpired).isInstanceOf(QueryInterruptedException.class);
 			}
 			assertThat(QueryOperationContext.getDeadline()).containsSame(earlier);
 		}

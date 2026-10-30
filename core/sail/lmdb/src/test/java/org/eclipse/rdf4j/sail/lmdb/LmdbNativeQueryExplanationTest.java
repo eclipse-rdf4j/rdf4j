@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -39,6 +40,7 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
@@ -826,13 +828,36 @@ public class LmdbNativeQueryExplanationTest {
 				+ "FILTER EXISTS { ?s ex:price ?price } }";
 
 		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+		List<BindingSet> automatic;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			automatic = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			assertThat(KernelExecutionTestAccess.eligibleStrategies(connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode()))
+							.contains("orderedDistinctGroups", "nestedLoop");
+		}
+		String previous = System.setProperty(NATIVE_FLAG, "false");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(QueryResults.asList(connection.prepareTupleQuery(query).evaluate()))
+					.containsExactlyElementsOf(automatic);
+		} finally {
+			restoreProperty(previous);
+		}
 
 		assertThat(rendered)
 				.doesNotContain("    status: ACTIVE_OR_PARTIAL\n")
 				.contains("    status: COMPLETED\n")
 				.contains("nativePhysicalPlan=NativeProjection(arg=NativeGroup(")
 				.contains("LexicalFrameLeftJoin(")
-				.contains("nativeExecutionPath=aggState");
+				.contains("nativeExecutionPath=");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery forced = (SailTupleQuery) connection.prepareTupleQuery(query);
+			forced.setForcedLmdbExecutionStrategy("nestedLoop");
+			assertThat(QueryResults.asList(forced.evaluate())).containsExactlyElementsOf(automatic);
+			assertThat(forced.explain(Explanation.Level.Telemetry).toString())
+					.contains("    status: COMPLETED\n")
+					.contains("nativeExecutionPath=aggState");
+		}
 	}
 
 	@Test

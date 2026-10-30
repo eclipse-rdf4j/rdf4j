@@ -80,48 +80,22 @@ class TimeLimitIterationAsyncDispatchTest {
 	}
 
 	@Test
-	void registeringAnAlreadyExpiredDeadlineDoesNotRunCancellationInline() throws Exception {
-		AtomicReference<Runnable> expiry = new AtomicReference<>();
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.start(60_000, (task, at) -> {
-			expiry.set(task);
-			return () -> {
-			};
-		});
-		expiry.get().run();
+	void constructingAnAlreadyExpiredLimitDoesNotRunCancellationInline() throws Exception {
 		GatedSource source = new GatedSource(true);
-		Timed limited = new Timed(source, deadline);
 		ExecutorService caller = Executors.newSingleThreadExecutor();
-		Future<?> registration = caller.submit(limited::registerDeadline);
-		Throwable primary = null;
+		Future<Timed> construction = caller.submit(() -> new Timed(source, 0));
+		Timed limited = null;
 		try {
 			assertTrue(source.entered.await(10, TimeUnit.SECONDS), "the expiration must reach cancellation");
-			registration.get(3, TimeUnit.SECONDS);
-			assertEquals(1, source.release.getCount(), "the callback is still blocked when registration returns");
-		} catch (Exception | Error failure) {
-			primary = failure;
-			throw failure;
+			limited = construction.get(3, TimeUnit.SECONDS);
+			assertEquals(1, source.release.getCount(), "the callback is blocked when construction returns");
 		} finally {
 			source.release.countDown();
-			Throwable cleanup = null;
-			try {
-				registration.get(10, TimeUnit.SECONDS);
-			} catch (Exception | Error failure) {
-				cleanup = merge(cleanup, failure);
-			}
-			try {
-				limited.close();
-			} catch (RuntimeException | Error failure) {
-				cleanup = merge(cleanup, failure);
-			}
-			try {
-				deadline.close();
-			} catch (RuntimeException | Error failure) {
-				cleanup = merge(cleanup, failure);
-			}
+			if (limited == null) { limited = construction.get(10, TimeUnit.SECONDS); }
+			limited.close();
 			caller.shutdown();
-			finishCleanup(primary, cleanup);
 		}
-		assertTrue(source.closeFinished.await(10, TimeUnit.SECONDS), "the admitted callback's cleanup finishes");
+		assertTrue(source.closeFinished.await(10, TimeUnit.SECONDS));
 		assertEquals(1, source.requests.get());
 		assertEquals(1, source.closes.get());
 	}
@@ -207,10 +181,16 @@ class TimeLimitIterationAsyncDispatchTest {
 	@Test
 	void failedDeadlineSchedulingPreservesTheOriginalFailure() {
 		RejectedExecutionException rejection = new RejectedExecutionException("deadline scheduler rejected");
-		assertSame(rejection, assertThrows(RejectedExecutionException.class,
-				() -> QueryExecutionDeadline.start(60_000, (task, at) -> {
-					throw rejection;
-				})));
+		try (var scheduler = new java.util.concurrent.ScheduledThreadPoolExecutor(1) {
+			@Override
+			public java.util.concurrent.ScheduledFuture<?> schedule(Runnable task, long delay, TimeUnit unit) {
+				throw rejection;
+			}
+		}) {
+			TimeLimitScheduler.Task task = new TimeLimitScheduler.Task(() -> {}, scheduler, Runnable::run);
+			assertSame(rejection, assertThrows(RejectedExecutionException.class,
+					() -> task.schedule(new TimeLimitScheduler.Deadline(60_000, System.nanoTime()))));
+		}
 	}
 
 	private static Throwable merge(Throwable primary, Throwable cleanup) {
@@ -236,10 +216,6 @@ class TimeLimitIterationAsyncDispatchTest {
 	private static final class Timed extends TimeLimitIteration<String> {
 		private Timed(GatedSource source, long millis) {
 			super(source, millis);
-		}
-
-		private Timed(GatedSource source, QueryExecutionDeadline deadline) {
-			super(source, deadline);
 		}
 
 		@Override

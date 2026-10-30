@@ -202,7 +202,7 @@ class TimeLimitIterationPendingLaunchCloseTest {
 					return null;
 				});
 			};
-			limited = new TimeLimitIteration<>(source, 60_000, launcher) {
+			limited = new TimeLimitIteration<>(source, 60_000, 25, 25, launcher) {
 				@Override
 				protected void throwInterruptedException() {
 					throw timeout;
@@ -361,8 +361,20 @@ class TimeLimitIterationPendingLaunchCloseTest {
 		@Override
 		public boolean hasNext() {
 			pullEntered.countDown();
-			awaitObserved(releasePull, "pull release");
-			return true;
+			// Keep consumption owned through both escalation stages; this fixture tests launch admission and retirement.
+			boolean interrupted = false;
+			try {
+				while (true) {
+					try {
+						releasePull.await();
+						return true;
+					} catch (InterruptedException expected) {
+						interrupted = true;
+					}
+				}
+			} finally {
+				if (interrupted) { Thread.currentThread().interrupt(); }
+			}
 		}
 
 		@Override

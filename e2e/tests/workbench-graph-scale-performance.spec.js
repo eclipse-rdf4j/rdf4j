@@ -33,8 +33,10 @@ const BUNDLE = path.join(FRONTEND, 'scripts', 'graph-explorer', 'graph-explorer.
 const DEFAULT_QUERY = 'SELECT ?source ?predicate ?target WHERE { ?source ?predicate ?target } LIMIT 100';
 const IDENTITY = 'sha256:graph-scale-performance';
 const EMPTY_ANSWER = JSON.stringify({ head: { vars: [] }, results: { bindings: [] } });
-// A CI runner draws 5,000 nodes in 650-750 ms where a developer machine takes under 500: it gets twice the budget.
-const SLOWDOWN = Number(process.env.GRAPH_PERFORMANCE_SLOWDOWN || (process.env.CI ? 2 : 1)) || 1;
+// A developer machine draws 5,000 nodes in under 500 ms. GitHub runners differ by more than 2x: the same build drew
+// them in 400-960 ms, and 50,000 nodes in 5.5-10.3 s (always about 12 times the 5,000-node time on that runner, so the
+// spread is the runner's speed, not noise in the layout). CI gets two and a half times the budget.
+const SLOWDOWN = Number(process.env.GRAPH_PERFORMANCE_SLOWDOWN || (process.env.CI ? 2.5 : 1)) || 1;
 const SIZES = [{ nodes: 5000, budgetMs: 500 }, { nodes: 50000, budgetMs: 5000 }];
 
 const PAGE = `<!doctype html>

@@ -12,13 +12,15 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.when;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -31,11 +33,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.util.Bytes;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -44,7 +47,8 @@ import org.mockito.MockedStatic;
 
 class TripleStoreStratifiedSamplingTest {
 
-	private static final long PREDICATE = 10L;
+	// A multi-byte predicate exercises the real GroupMatcher comparison callback during census scans.
+	private static final long PREDICATE = 1_000L;
 	private static final long FIRST_SUBJECT = 100L;
 	private static final int POPULATION = 1_024;
 	private static final int STRATA = 4;
@@ -161,27 +165,28 @@ class TripleStoreStratifiedSamplingTest {
 	}
 
 	@Test
-	void expiredDeadlineStopsNativeCollectionAndCensusWithoutCallbacks(@TempDir Path directory) throws Exception {
+	void expiredTimeLimitStopsNativeCollectionAndCensusWithoutCallbacks(@TempDir Path directory) throws Exception {
 		try (TripleStore store = open(directory);
-				Txn snapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0];
-				QueryExecutionDeadline deadline = QueryExecutionDeadline.start(20L)) {
-			CountDownLatch expired = new CountDownLatch(1);
-			try (QueryExecutionDeadline.Registration registration = deadline.onExpiration(expired::countDown)) {
-				assertTrue(expired.await(3L, TimeUnit.SECONDS), "the real query deadline must publish expiration");
-				AtomicInteger callbacks = new AtomicInteger();
-				try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
-					assertThrows(QueryInterruptedException.class,
-							() -> store.boundedExactCardinality(snapshot, -1L, PREDICATE, -1L, -1L, POPULATION));
-					assertThrows(QueryInterruptedException.class,
-							() -> store.sampleTriplesStratified(snapshot, -1L, PREDICATE, -1L, -1L, true, STRATA,
-									ROWS_PER_STRATUM, row -> {
-										callbacks.incrementAndGet();
-										return true;
-									}));
-				}
-				assertEquals(0, callbacks.get());
-				writeOne(store);
+				Txn snapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+			AtomicInteger callbacks = new AtomicInteger();
+			try (InterruptingTimeLimit timeLimit = InterruptingTimeLimit.start(0)) {
+				assertTrue(timeLimit.fired(), "a non-positive real time limit interrupts its owner at once");
+				assertThrows(QueryInterruptedException.class,
+						() -> store.boundedExactCardinality(snapshot, -1L, PREDICATE, -1L, -1L, POPULATION));
+				assertThrows(QueryInterruptedException.class,
+						() -> store.sampleTriplesStratified(snapshot, -1L, PREDICATE, -1L, -1L, true, STRATA,
+								ROWS_PER_STRATUM, row -> {
+									callbacks.incrementAndGet();
+									return true;
+								}));
+				assertTrue(Thread.currentThread().isInterrupted(), "native interruption checks must preserve the flag");
 			}
+			assertFalse(Thread.currentThread().isInterrupted(), "the time limit must clear its own interrupt");
+			assertEquals(0, callbacks.get());
+			assertEquals(POPULATION,
+					store.boundedExactCardinality(snapshot, -1L, PREDICATE, -1L, -1L, POPULATION).orElseThrow(),
+					"rejected collection must retain the caller's admitted native reader");
+			writeOne(store);
 		}
 	}
 
@@ -210,24 +215,36 @@ class TripleStoreStratifiedSamplingTest {
 
 	@ParameterizedTest
 	@ValueSource(ints = { 3, 64, 512 })
-	void deadlineDuringCensusClosesCursorAndPreservesAdmittedReader(int expirationCheckpoint,
+	void interruptionDuringCensusClosesCursorAndPreservesAdmittedReader(int interruptionCheckpoint,
 			@TempDir Path directory) throws Exception {
 		try (TripleStore store = open(directory);
 				Txn snapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
-			// The real published-deadline test above covers timer ownership. This clock control deterministically
-			// expires after native work has begun, at early, middle, and late points in a bounded census.
 			AtomicInteger checkpoints = new AtomicInteger();
-			QueryExecutionDeadline deadline = mock(QueryExecutionDeadline.class);
-			when(deadline.isExpired()).thenAnswer(ignored -> checkpoints.incrementAndGet() >= expirationCheckpoint);
-			try (MockedStatic<QueryExecutionDeadline> installed = mockStatic(QueryExecutionDeadline.class)) {
-				installed.when(QueryExecutionDeadline::current).thenReturn(deadline);
+			// Keep the real GroupMatcher and native cursor. The comparator callback performs its real comparison,
+			// then delivers an actual interrupt after an exact number of matching native rows, rather than faking time.
+			try (MockedStatic<Bytes> comparators = mockStatic(Bytes.class, CALLS_REAL_METHODS)) {
+				comparators.when(() -> Bytes.capturedComparator(any(byte[].class), anyInt(), anyInt()))
+						.thenAnswer(invocation -> {
+							Bytes.RegionComparator actual = (Bytes.RegionComparator) invocation.callRealMethod();
+							return (Bytes.RegionComparator) (firstByte, remaining) -> {
+								boolean matched = actual.equals(firstByte, remaining);
+								if (checkpoints.incrementAndGet() == interruptionCheckpoint) {
+									Thread.currentThread().interrupt();
+								}
+								return matched;
+							};
+						});
 				assertThrows(QueryInterruptedException.class,
 						() -> store.boundedExactCardinality(snapshot, -1L, PREDICATE, -1L, -1L, POPULATION));
+				assertTrue(Thread.currentThread().isInterrupted(), "the census must preserve its cancellation interrupt");
+			} finally {
+				Thread.interrupted();
 			}
-			assertTrue(checkpoints.get() >= expirationCheckpoint, "the native census must observe its active deadline");
+			assertEquals(interruptionCheckpoint, checkpoints.get(),
+					"the census must stop at the next boundary after real native row matching delivered interruption");
 			assertEquals(POPULATION,
 					store.boundedExactCardinality(snapshot, -1L, PREDICATE, -1L, -1L, POPULATION).orElseThrow(),
-					"expiration must close its cursor without closing the caller's admitted native reader");
+					"interruption must close its cursor without closing the caller's admitted native reader");
 			writeOne(store);
 		}
 	}

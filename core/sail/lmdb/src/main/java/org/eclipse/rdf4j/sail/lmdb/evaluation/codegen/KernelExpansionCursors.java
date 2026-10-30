@@ -122,7 +122,8 @@ public final class KernelExpansionCursors {
 				if (cursor == null) {
 					KernelRuntime.checkCancelled(cancellation);
 					cursor = scanner.open(scan, -1L, -1L, -1L, -1L);
-					seen = new KernelRuntime.LongHashSet();
+					seen = new KernelRuntime.LongHashSet(16, null, null,
+							KernelRuntime.cancellationPoll(cancellation));
 					buffer = new long[KernelRuntime.SCAN_BATCH_ROWS * 4];
 				}
 				while (true) {
@@ -173,8 +174,8 @@ public final class KernelExpansionCursors {
 	@Experimental
 	public static final class Path extends Values {
 		private NativeAdjacency adjacency;
-		private KernelRuntime.LongHashSet emitted = new KernelRuntime.LongHashSet();
-		private KernelRuntime.LongHashSet queued = new KernelRuntime.LongHashSet();
+		private KernelRuntime.LongHashSet emitted;
+		private KernelRuntime.LongHashSet queued;
 		private long[] stack = new long[16];
 		private long[] contexts;
 		private final ContextSpan contextSpan = new ContextSpan();
@@ -190,6 +191,9 @@ public final class KernelExpansionCursors {
 				throw new IllegalArgumentException("only p* / p+ is supported");
 			this.adjacency = Objects.requireNonNull(adjacency);
 			this.contexts = Objects.requireNonNull(contexts).clone();
+			Runnable cancellationPoll = KernelRuntime.cancellationPoll(cancellation);
+			emitted = new KernelRuntime.LongHashSet(16, null, null, cancellationPoll);
+			queued = new KernelRuntime.LongHashSet(16, null, null, cancellationPoll);
 			if (start == -1L) {
 				done = true;
 				return;

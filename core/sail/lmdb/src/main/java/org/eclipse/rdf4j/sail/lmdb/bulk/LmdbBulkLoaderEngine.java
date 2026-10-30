@@ -212,7 +212,8 @@ final class LmdbBulkLoaderEngine {
 						loader.cancellationSignal(), scheduler, () -> {
 							workspace.completePhase(BulkLoadPhase.WRITE_GENERATION);
 							workspace.startPhase(BulkLoadPhase.VALIDATE_GENERATION);
-						}, valueCapacity, tripleCapacity, workspace.maximumCanonicalValueBytes());
+						}, valueCapacity, tripleCapacity, workspace.maximumCanonicalValueBytes(),
+						workspace.progressReporter());
 				checkCancelled(loader);
 				loader.preparedGenerationWriter().write(generation.directory(), writeResult.preparedConfig());
 				checkCancelled(loader);

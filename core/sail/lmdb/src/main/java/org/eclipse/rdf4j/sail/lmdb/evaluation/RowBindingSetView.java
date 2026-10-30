@@ -45,6 +45,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	private final boolean baseEmpty;
 	private final long[] slots;
 	private final boolean stable;
+	private final transient RowState row;
 	private final transient long[] memoIds;
 	private final transient Value[] memoValues;
 	private transient Set<String> bindingNamesCache;
@@ -59,12 +60,18 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	RowBindingSetView(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base, long[] slots,
 			boolean stable) {
+		this(source, layout, base, slots, stable, null);
+	}
+
+	RowBindingSetView(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base, long[] slots,
+			boolean stable, RowState row) {
 		this.source = source;
 		this.layout = layout;
 		this.base = base;
 		this.baseEmpty = base == null || base.isEmpty();
 		this.slots = slots;
 		this.stable = stable;
+		this.row = row;
 		if (stable) {
 			this.memoIds = null;
 			this.memoValues = null;
@@ -79,6 +86,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	@Override
 	public Iterator<Binding> iterator() {
+		requireRdfTerms();
 		ArrayDeque<Binding> bindings = new ArrayDeque<>(size());
 		if (base != null) {
 			for (String name : base.getBindingNames()) {
@@ -103,6 +111,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	@Override
 	public Set<String> getBindingNames() {
+		requireRdfTerms();
 		if (stable && bindingNamesCache != null) {
 			return bindingNamesCache;
 		}
@@ -132,6 +141,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	@Override
 	public boolean hasBinding(String bindingName) {
 		int slot = slot(bindingName);
+		requireRdfTerm(slot);
 		if (slot >= 0 && isBoundValueId(slots[slot])) {
 			return true;
 		}
@@ -141,6 +151,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	@Override
 	public Value getValue(String bindingName) {
 		int slot = slot(bindingName);
+		requireRdfTerm(slot);
 		if (slot >= 0 && isBoundValueId(slots[slot])) {
 			return value(slot);
 		}
@@ -149,6 +160,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	@Override
 	public boolean hasBindingBySlot(int slot) {
+		requireRdfTerm(slot);
 		if (isBoundValueId(slots[slot])) {
 			return true;
 		}
@@ -157,6 +169,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	@Override
 	public Value valueBySlot(int slot) {
+		requireRdfTerm(slot);
 		if (isBoundValueId(slots[slot])) {
 			return value(slot);
 		}
@@ -205,6 +218,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 		}
 		String name = queryLayout.nameOf(queryIndex);
 		int slot = layout.slotForQueryIndex(queryIndex);
+		requireRdfTerm(slot);
 		if (slot >= 0 && isBoundValueId(slots[slot])) {
 			Value value = value(slot);
 			return value == null ? null : new SimpleBinding(name, value);
@@ -218,6 +232,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	@Override
 	public long nativeIdByQueryIndex(int queryIndex) {
 		int slot = layout.slotForQueryIndex(queryIndex);
+		requireRdfTerm(slot);
 		if (slot >= 0 && slots[slot] != UNKNOWN) {
 			return slots[slot];
 		}
@@ -236,11 +251,13 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	@Override
 	public boolean isEmpty() {
+		requireRdfTerms();
 		return empty;
 	}
 
 	@Override
 	public int size() {
+		requireRdfTerms();
 		if (sizeCache >= 0) {
 			return sizeCache;
 		}
@@ -261,6 +278,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	boolean hasNativeId(String name) {
 		int slot = slot(name);
+		requireRdfTerm(slot);
 		return slot >= 0 && slots[slot] != UNKNOWN;
 	}
 
@@ -274,6 +292,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	long nativeId(String name) {
 		int slot = slot(name);
+		requireRdfTerm(slot);
 		return slot >= 0 ? slots[slot] : UNKNOWN;
 	}
 
@@ -313,8 +332,9 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 
 	private int countBoundSlots() {
 		int count = 0;
-		for (long slot : slots) {
-			if (isBoundValueId(slot)) {
+		for (int slot = 0; slot < slots.length; slot++) {
+			if (isBoundValueId(slots[slot]) || (row != null && row.summaryCell(slot) != null
+					&& row.summaryCell(slot).state() == NativeResultCell.State.BOUND)) {
 				count++;
 			}
 		}
@@ -358,6 +378,7 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	}
 
 	private Value value(int slot) {
+		requireRdfTerm(slot);
 		long id = slots[slot];
 		if (id == NULL_CONTEXT_ID || id == UNKNOWN) {
 			return null;
@@ -372,5 +393,17 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 			return value;
 		}
 		return source.lazyValue(id, layout.positionMask(slot));
+	}
+
+	private void requireRdfTerm(int slot) {
+		if (row != null && slot >= 0) {
+			row.requireRdfTerm(slot);
+		}
+	}
+
+	private void requireRdfTerms() {
+		if (row != null) {
+			row.requireRdfTerms();
+		}
 	}
 }

@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.AggregateOutput;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.BindAlias;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.BindHook;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateAdjKeys;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumeratePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildcard;
@@ -39,6 +40,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeVariable;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Terminal;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Union;
 
 /**
@@ -148,40 +150,40 @@ final class LmdbNativeProducerSchedule {
 		Index result = new Index();
 		Aggregate terminal = kernel.terminal instanceof Aggregate aggregate
 				&& kernel.aggregateStateMode == Kernel.AggregateStateMode.HASHED ? aggregate : null;
-		visit(result, kernel.pipeline, terminal, kernel.columnCount);
+		visit(result, kernel.pipeline, terminal, kernel.terminal, kernel.columnCount);
 		return result;
 	}
 
-	private static void visit(Index index, List<Node> nodes, Aggregate terminal, int columns) {
+	private static void visit(Index index, List<Node> nodes, Aggregate terminal, Terminal consumer, int columns) {
 		for (int position = 0; position < nodes.size(); position++) {
 			Node node = nodes.get(position);
 			Layout layout = Layout.of(node);
 			if (layout != null) {
-				LmdbNativeProducerSchedule schedule = build(nodes, position, layout, terminal, columns);
+				LmdbNativeProducerSchedule schedule = build(nodes, position, layout, terminal, consumer, columns);
 				if (schedule != null) {
 					index.pipelines.computeIfAbsent(nodes, ignored -> new IdentityHashMap<>()).put(node, schedule);
 					index.ordered.add(schedule);
 				}
 			}
 			if (node instanceof Exists exists) {
-				visit(index, exists.pipeline, null, columns);
+				visit(index, exists.pipeline, null, consumer, columns);
 			} else if (node instanceof Union union) {
 				for (List<Node> branch : union.branches) {
-					visit(index, branch, position + 1 == nodes.size() ? terminal : null, columns);
+					visit(index, branch, position + 1 == nodes.size() ? terminal : null, consumer, columns);
 				}
 			} else if (node instanceof LeftGroup optional) {
-				visit(index, optional.arm, null, columns);
+				visit(index, optional.arm, null, consumer, columns);
 			} else if (node instanceof LexicalFrameLeftJoin optional) {
-				visit(index, optional.left, null, columns);
-				visit(index, optional.right, null, columns);
+				visit(index, optional.left, null, consumer, columns);
+				visit(index, optional.right, null, consumer, columns);
 			} else if (node instanceof HashBuild hash) {
-				visit(index, hash.pipeline, null, columns);
+				visit(index, hash.pipeline, null, consumer, columns);
 			}
 		}
 	}
 
 	private static LmdbNativeProducerSchedule build(List<Node> nodes, int position, Layout layout,
-			Aggregate terminal, int columns) {
+			Aggregate terminal, Terminal consumer, int columns) {
 		int[] grain = new int[columns];
 		int[] readGrain = new int[columns];
 		int[] writeGrain = new int[columns];
@@ -195,10 +197,17 @@ final class LmdbNativeProducerSchedule {
 		setGrain(grain, saved, layout.rootCol, ROOT);
 		setGrain(grain, saved, layout.neighborCol, FIBER);
 		setGrain(grain, saved, layout.contextCol, QUAD);
+		BitSet unavailable = layout.unavailable(nodes.get(position));
+		for (int col = unavailable.nextSetBit(0); col >= 0 && col < columns; col = unavailable.nextSetBit(col + 1)) {
+			grain[col] = GRAINS;
+		}
 		BitSet physical = new BitSet(columns);
 		nodes.get(position).produced(physical);
 		BitSet carried = loopCarriedColumns(nodes, position + 1, columns, physical);
 		for (int col = carried.nextSetBit(0); col >= 0; col = carried.nextSetBit(col + 1)) {
+			if (unavailable.get(col)) {
+				continue;
+			}
 			// Purity permits reuse only when the operands are invariant. A scratch value read before its next
 			// definition belongs to the next physical mapping, even when every function using it is pure.
 			grain[col] = QUAD;
@@ -208,6 +217,7 @@ final class LmdbNativeProducerSchedule {
 		int end = position + 1;
 		List<Integer> instructionGrains = new ArrayList<>();
 		boolean useful = false;
+		int controlGrain = INPUT;
 		for (; end < nodes.size(); end++) {
 			Node node = nodes.get(end);
 			if (!reusable(node)) {
@@ -219,13 +229,16 @@ final class LmdbNativeProducerSchedule {
 			if (writes.intersects(physical)) {
 				break; // coordinate rewrites belong to their original row continuation
 			}
-			int level = INPUT;
+			int level = controlGrain;
 			for (int col = reads.nextSetBit(0); col >= 0; col = reads.nextSetBit(col + 1)) {
 				level = Math.max(level, grain[col]);
 			}
 			// Preserve write-after-read and write-after-write order when a non-SSA pipeline reuses scratch columns.
 			for (int col = writes.nextSetBit(0); col >= 0; col = writes.nextSetBit(col + 1)) {
 				level = Math.max(level, Math.max(readGrain[col], writeGrain[col]));
+			}
+			if (level >= GRAINS) {
+				break;
 			}
 			programs.get(level).add(node);
 			instructionGrains.add(level);
@@ -238,6 +251,11 @@ final class LmdbNativeProducerSchedule {
 				saved[level].set(col);
 			}
 			useful |= level < QUAD;
+			// A later scalar callback is reachable only after earlier filters and possibly throwing callbacks.
+			// Data independence does not authorize moving it ahead of their control/exception boundary.
+			if (LmdbNativeKernelIr.isFilter(node) || node instanceof BindHook) {
+				controlGrain = Math.max(controlGrain, level);
+			}
 		}
 		boolean fold = terminal != null && end == nodes.size() && terminal.outputs.length > 0;
 		boolean weightedNumeric = false;
@@ -246,7 +264,7 @@ final class LmdbNativeProducerSchedule {
 			owned.add(new ArrayList<>());
 		}
 		if (fold) {
-			int groupGrain = ROOT;
+			int groupGrain = layout.deliveryGrain == QUAD ? ROOT : layout.deliveryGrain;
 			for (int col : terminal.groupCols) {
 				groupGrain = Math.max(groupGrain, grain[col]);
 			}
@@ -256,7 +274,11 @@ final class LmdbNativeProducerSchedule {
 					fold = false;
 					break;
 				}
-				int level = Math.max(groupGrain, output.col < 0 ? ROOT : grain[output.col]);
+				int level = Math.max(groupGrain, output.col < 0 ? groupGrain : grain[output.col]);
+				if (level >= GRAINS) {
+					fold = false;
+					break;
+				}
 				owned.get(level).add(channel);
 				weightedNumeric |= output.kind == LmdbNativeKernelIr.AGG_SUM
 						|| output.kind == LmdbNativeKernelIr.AGG_AVG;
@@ -268,7 +290,7 @@ final class LmdbNativeProducerSchedule {
 			}
 			weightedNumeric = false;
 		}
-		int outputMask = fold ? 0 : 1 << QUAD;
+		int outputMask = fold ? 0 : 1 << layout.deliveryGrain;
 		int[][] channels = new int[GRAINS][];
 		for (int g = 0; g < GRAINS; g++) {
 			channels[g] = owned.get(g).stream().mapToInt(Integer::intValue).toArray();
@@ -284,6 +306,28 @@ final class LmdbNativeProducerSchedule {
 		BitSet observed = new BitSet(columns);
 		for (int i = position; i < nodes.size(); i++) {
 			observed.or(reads(nodes.get(i), columns));
+		}
+		if (consumer instanceof Emit emit) {
+			for (int column : emit.cols) {
+				observed.set(column);
+			}
+		} else if (consumer instanceof Aggregate aggregate) {
+			for (int column : aggregate.groupCols) {
+				observed.set(column);
+			}
+			for (AggregateOutput output : aggregate.outputs) {
+				if (output.col >= 0) {
+					observed.set(output.col);
+				}
+				for (int column : output.rowCols) {
+					observed.set(column);
+				}
+			}
+		}
+		for (int col = observed.nextSetBit(0); col >= 0; col = observed.nextSetBit(col + 1)) {
+			if (grain[col] >= GRAINS) {
+				return null;
+			}
 		}
 		if (terminal != null) {
 			for (int col : terminal.groupCols) {
@@ -563,16 +607,59 @@ final class LmdbNativeProducerSchedule {
 	}
 
 	record Layout(int rootCol, int predicateCol, int neighborCol, int contextCol,
-			Operand boundRoot, Operand boundPredicate, Operand contextMatch, boolean excludeDefault) {
+			Operand boundRoot, Operand boundPredicate, Operand contextMatch, boolean excludeDefault,
+			int deliveryGrain, boolean additivePageWeights) {
+		Layout(int rootCol, int predicateCol, int neighborCol, int contextCol,
+				Operand boundRoot, Operand boundPredicate, Operand contextMatch, boolean excludeDefault) {
+			this(rootCol, predicateCol, neighborCol, contextCol, boundRoot, boundPredicate, contextMatch,
+					excludeDefault, QUAD, true);
+		}
+
+		private static Layout wildcard(LmdbWildcardPhysicalDemand.Demand demand, int root, int predicate,
+				int neighbor, int context, Operand boundRoot, Operand match, boolean excludeDefault) {
+			return switch (demand) {
+			case PAYLOAD -> new Layout(root, predicate, neighbor, context, boundRoot, null, match, excludeDefault);
+			case PAIR_MULTIPLICITY -> new Layout(root, predicate, -1, context, boundRoot, null, match,
+					excludeDefault, QUAD, true);
+			case PAIR_PRESENCE -> new Layout(root, predicate, -1, -1, boundRoot, null, match,
+					excludeDefault, ROOT, false);
+			case PREDICATE_ANY -> new Layout(-1, predicate, -1, -1, boundRoot, null, match,
+					excludeDefault, PLANE, false);
+			case NODE_ANY -> new Layout(-1, -1, -1, -1, boundRoot, null, match,
+					excludeDefault, INPUT, false);
+			};
+		}
+
+		BitSet unavailable(Node producer) {
+			BitSet columns = new BitSet();
+			if (producer instanceof EnumerateWildcard wildcard) {
+				markUnavailable(columns, wildcard.keyCol);
+				markUnavailable(columns, wildcard.predicateCol);
+				markUnavailable(columns, wildcard.valueCol);
+				markUnavailable(columns, wildcard.ctxCol);
+			} else if (producer instanceof EnumeratePredicates predicates) {
+				markUnavailable(columns, predicates.predicateCol);
+				markUnavailable(columns, predicates.valueCol);
+				markUnavailable(columns, predicates.ctxCol);
+			}
+			return columns;
+		}
+
+		private void markUnavailable(BitSet columns, int column) {
+			if (column >= 0 && column != rootCol && column != predicateCol && column != neighborCol
+					&& column != contextCol) {
+				columns.set(column);
+			}
+		}
+
 		static Layout of(Node node) {
 			if (node instanceof EnumerateAdjKeys keys && keys.valueCol >= 0) {
 				return new Layout(keys.keyCol, -1, keys.valueCol, keys.ctxCol, null, keys.runtimePredicate,
 						keys.ctxMatch, keys.ctxExcludeDefault);
 			}
-			if (node instanceof EnumerateWildcard wildcard
-					&& wildcard.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
-				return new Layout(wildcard.keyCol, wildcard.predicateCol, wildcard.valueCol, wildcard.ctxCol,
-						null, null, wildcard.ctxMatch, wildcard.ctxExcludeDefault);
+			if (node instanceof EnumerateWildcard wildcard) {
+				return wildcard(wildcard.demand, wildcard.keyCol, wildcard.predicateCol, wildcard.valueCol,
+						wildcard.ctxCol, null, wildcard.ctxMatch, wildcard.ctxExcludeDefault);
 			}
 			if (node instanceof Probe probe) {
 				return new Layout(-1, -1, probe.valueCol, probe.ctxCol, probe.key, null,
@@ -582,10 +669,9 @@ final class LmdbNativeProducerSchedule {
 				return new Layout(-1, -1, probe.valueCol, probe.ctxCol, probe.key, probe.predicate,
 						probe.ctxMatch, probe.ctxExcludeDefault);
 			}
-			if (node instanceof EnumeratePredicates predicates && predicates.target == null
-					&& predicates.demand == LmdbWildcardPhysicalDemand.Demand.PAYLOAD) {
-				return new Layout(-1, predicates.predicateCol, predicates.valueCol, predicates.ctxCol,
-						predicates.key, null, predicates.ctxMatch, predicates.ctxExcludeDefault);
+			if (node instanceof EnumeratePredicates predicates && predicates.target == null) {
+				return wildcard(predicates.demand, -1, predicates.predicateCol, predicates.valueCol,
+						predicates.ctxCol, predicates.key, predicates.ctxMatch, predicates.ctxExcludeDefault);
 			}
 			return null;
 		}

@@ -21,6 +21,7 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
@@ -380,35 +382,111 @@ class LmdbAdjacencyUsageCensusTest {
 
 			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 			System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
-			long hitsBefore = direct.snapshotMetrics().lookupHits;
-			List<String> parallel = personCityRows(query);
-			long hitsAfter = direct.snapshotMetrics().lookupHits;
+			assertEquals(generic, personCityRows(query), "AUTO native multiset parity");
+			long workersBefore = KernelExecutionTestAccess.parallelRowRuns();
+			List<String> parallel = personCityRows(query, "parallelPipelines");
 
 			String telemetry;
 			try (RepositoryConnection connection = repository.getConnection()) {
-				telemetry = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+				assertTrue(KernelExecutionTestAccess.eligibleStrategies(connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toGenericPlanNode())
+						.containsAll(List.of("parallelPipelines", "nestedLoop")));
+				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+				prepared.setForcedLmdbExecutionStrategy("parallelPipelines");
+				telemetry = prepared.explain(Explanation.Level.Telemetry).toString();
 			}
 			assertEquals(generic, sequential, "sequential native parity");
 			assertEquals(generic, parallel, "forced-parallel multiset parity");
 			assertTrue(telemetry.contains("parallelPipelines"), telemetry);
-			// Retained worker probes record one hit when they acquire an adjacency-backed source, then re-aim the same
-			// cursor for every company key. The hit counter therefore measures worker-source engagement, not lookup-key
-			// cardinality.
-			assertTrue(hitsAfter > hitsBefore,
-					"bound worker probes should acquire adjacency-backed sources: before=" + hitsBefore
-							+ ", after=" + hitsAfter);
+			assertTrue(KernelExecutionTestAccess.parallelRowRuns() > workersBefore,
+					"the explicit route must commit actual parallel workers");
+			// This route has its own statement-source arbiter. Require an actual selected, measured worker access with
+			// the join's company key bound, but leave the adjacency-versus-LMDB choice to its learned costs. The
+			// interpreted IR kernel test below separately proves that parallel workers can bind adjacency views.
+			assertTrue(Pattern.compile("source: (?:IN_MEMORY_ADJACENCY|LMDB)\\n +outcome: SELECTED\\n +reason: [^\\n]+"
+					+ "\\n +where: Pattern\\([^\\n]*(?:s=\\?company#|o=\\?company#)[^\\n]*\\)\\n +requestedOrder: [^\\n]+"
+					+ "\\n +subject: (?:BOUND\\[|UNBOUND\\n +predicate: BOUND\\[[^\\n]+\\n +object: BOUND\\[)")
+					.matcher(telemetry)
+					.find(), telemetry);
+			assertTrue(Pattern.compile("rowsScannedActual: [1-9][0-9]*").matcher(telemetry).find(), telemetry);
+			assertTrue(Pattern.compile("rowsMatchedActual: [1-9][0-9]*").matcher(telemetry).find(), telemetry);
+		} finally {
+			restoreProperties(previous);
+		}
+	}
+
+	@Test
+	void forcedInterpretedParallelKernelBindsWorkerAdjacencies() {
+		String query = PREFIX
+				+ "SELECT ?person ?city WHERE { ?person ex:worksAt ?company . ?company ex:locatedIn ?city }";
+		Map<String, String> requested = Map.ofEntries(
+				Map.entry("rdf4j.lmdb.nativeQueryEngine.enabled", "true"),
+				Map.entry("rdf4j.lmdb.wcoj.enabled", "false"),
+				Map.entry("rdf4j.lmdb.janinoCodegen.enabled", "false"),
+				Map.entry("rdf4j.lmdb.factorizedRows.enabled", "false"),
+				Map.entry("rdf4j.lmdb.factorizedTail.enabled", "false"),
+				Map.entry("rdf4j.lmdb.orderedFactorizedRows.enabled", "false"),
+				Map.entry("rdf4j.lmdb.nativeBatch.enabled", "false"),
+				Map.entry("rdf4j.lmdb.chunkPipeline.enabled", "false"),
+				Map.entry("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false"),
+				Map.entry("rdf4j.lmdb.kernelInterpreter.enabled", "true"),
+				Map.entry("rdf4j.lmdb.irKernelParallel.enabled", "true"),
+				Map.entry("rdf4j.lmdb.parallel.enabled", "true"),
+				Map.entry("rdf4j.lmdb.parallel.minWorkEstimate", "1"),
+				Map.entry("rdf4j.lmdb.parallel.startupWork", "0"),
+				Map.entry("rdf4j.lmdb.parallel.threads", "4"),
+				Map.entry("rdf4j.lmdb.parallel.maxTasks", "5"),
+				Map.entry("rdf4j.lmdb.adaptiveProbe.enabled", "false"),
+				Map.entry("rdf4j.lmdb.adaptiveHedge.enabled", "false"),
+				Map.entry(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY, "true"));
+		Map<String, String> previous = replaceProperties(requested);
+		try {
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			List<String> generic = personCityRows(query);
+			assertEquals(PEOPLE, generic.size(), "generic reference result count");
+
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+			LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+			long openedBefore = KernelExecutionTestAccess.opened();
+			long kernelRowsBefore = KernelExecutionTestAccess.kernelRows();
+			long parallelKernelRunsBefore = KernelExecutionTestAccess.parallelKernelRowRuns();
+			List<String> parallelKernel = personCityRows(query, "irKernelParallelInterpreted");
+			LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+
+			assertEquals(generic, parallelKernel, "forced interpreted parallel-kernel multiset parity");
+			assertEquals(PEOPLE, parallelKernel.size(), "forced parallel-kernel result count");
+			assertTrue(KernelExecutionTestAccess.opened() > openedBefore,
+					"the forced interpreted parallel IR kernel must open");
+			assertTrue(KernelExecutionTestAccess.kernelRows() > kernelRowsBefore,
+					"the forced parallel IR kernel must emit rows");
+			assertTrue(KernelExecutionTestAccess.parallelKernelRowRuns() > parallelKernelRunsBefore,
+					"the forced interpreted parallel IR kernel must commit its parallel worker cursor");
+			// The query-thread probe binds the two predicate views before partitioning. Every actual worker owns a
+			// separate probe and rebinds both views; a hit increase beyond those two coordinator bindings therefore
+			// proves adjacency access from worker-owned sources, not just an eligible candidate or root lookup.
+			assertTrue(after.lookupHits - before.lookupHits > 2,
+					"forced interpreted parallel workers must bind their own adjacency views; hits before="
+							+ before.lookupHits + ", after=" + after.lookupHits);
 		} finally {
 			restoreProperties(previous);
 		}
 	}
 
 	private List<String> personCityRows(String query) {
+		return personCityRows(query, null);
+	}
+
+	private List<String> personCityRows(String query, String strategy) {
 		List<String> rows = new ArrayList<>();
-		try (RepositoryConnection connection = repository.getConnection();
-				var result = connection.prepareTupleQuery(query).evaluate()) {
-			while (result.hasNext()) {
-				var row = result.next();
-				rows.add(row.getValue("person").stringValue() + '|' + row.getValue("city").stringValue());
+		try (RepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(strategy);
+			try (var result = prepared.evaluate()) {
+				while (result.hasNext()) {
+					var row = result.next();
+					rows.add(row.getValue("person").stringValue() + '|' + row.getValue("city").stringValue());
+				}
 			}
 		}
 		rows.sort(String::compareTo);

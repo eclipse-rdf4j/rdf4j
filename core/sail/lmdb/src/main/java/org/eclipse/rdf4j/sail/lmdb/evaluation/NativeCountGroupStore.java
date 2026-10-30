@@ -67,6 +67,7 @@ public final class NativeCountGroupStore implements AutoCloseable {
 	private long rowsSeen, partialRecords;
 	private NativeSpillSort partials, ordered;
 	private NativeSortedRows result, mergedInput;
+	private NativeExecutionPhaseEvent.Span mergePhase;
 	private boolean unorderedOutput, pendingPartial, mergedEof;
 	private long currentOrdinal;
 	private boolean finished, closed, emittedEmpty;
@@ -461,6 +462,11 @@ public final class NativeCountGroupStore implements AutoCloseable {
 		if (finished)
 			return;
 		try {
+			if (partials != null) {
+				// Spilled record finalization can continue lazily through nextMergedGroup; no ambient scope crosses
+				// yields.
+				mergePhase = NativeExecutionPhaseEvent.startNestedDetached("merge");
+			}
 			checkCancelled();
 			if (partials != null) {
 				flushArena();
@@ -482,6 +488,7 @@ public final class NativeCountGroupStore implements AutoCloseable {
 					result = ordered.sortedRows();
 				}
 			}
+			checkCancelled();
 			finished = true;
 		} catch (IOException failure) {
 			fail(new UncheckedIOException(failure));
@@ -496,6 +503,9 @@ public final class NativeCountGroupStore implements AutoCloseable {
 			return false;
 		if (!pendingPartial && !mergedInput.next(readRow)) {
 			mergedEof = true;
+			checkCancelled();
+			mergePhase.complete();
+			mergePhase.close();
 			return false;
 		}
 		pendingPartial = false;
@@ -530,6 +540,9 @@ public final class NativeCountGroupStore implements AutoCloseable {
 			}
 			if (!mergedInput.next(readRow)) {
 				mergedEof = true;
+				checkCancelled();
+				mergePhase.complete();
+				mergePhase.close();
 				return true;
 			}
 			if (!sameKey(scratch, 0, readRow, 0, groups)) {
@@ -633,6 +646,7 @@ public final class NativeCountGroupStore implements AutoCloseable {
 			return;
 		closed = true;
 		Throwable failure = KernelRuntime.closeResource(result, null);
+		failure = KernelRuntime.closeResource(mergePhase, failure);
 		result = null;
 		failure = KernelRuntime.closeResource(mergedInput, failure);
 		mergedInput = null;

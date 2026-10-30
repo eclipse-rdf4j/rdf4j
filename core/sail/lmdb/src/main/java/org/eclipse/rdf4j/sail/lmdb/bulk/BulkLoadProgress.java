@@ -16,6 +16,10 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.concurrent.Executors;
@@ -36,8 +40,10 @@ final class BulkLoadProgress implements AutoCloseable {
 	private final boolean resumed;
 	private final long startedNanos;
 	private final ScheduledExecutorService sampler;
+	private final Map<IndexKey, ProgressSnapshot.IndexProgress> activeIndexes = new LinkedHashMap<>();
 
 	private BulkLoadPhase phase = BulkLoadPhase.PREFLIGHT;
+	private ProgressSnapshot.IndexProgress indexEvent;
 	private long phaseOperations;
 	private long totalOperations;
 	private long bytesProcessed;
@@ -73,6 +79,8 @@ final class BulkLoadProgress implements AutoCloseable {
 			return;
 		}
 		this.phase = phase;
+		activeIndexes.clear();
+		indexEvent = null;
 		phaseOperations = 0L;
 		lastListenerPhaseOperations = 0L;
 		phaseComplete = false;
@@ -98,7 +106,52 @@ final class BulkLoadProgress implements AutoCloseable {
 		}
 		this.phase = phase;
 		phaseComplete = true;
+		activeIndexes.clear();
+		indexEvent = null;
 		report(true, true);
+	}
+
+	synchronized void startIndex(ProgressSnapshot.IndexFamily family, String name, int number, int count,
+			ProgressSnapshot.IndexStage stage) {
+		if (closed) {
+			return;
+		}
+		ProgressSnapshot.IndexProgress index = new ProgressSnapshot.IndexProgress(family,
+				name.toUpperCase(Locale.ROOT), number, count, stage, false);
+		activeIndexes.put(new IndexKey(family, index.name()), index);
+		indexEvent = index;
+		report(false, true);
+	}
+
+	synchronized void indexStage(ProgressSnapshot.IndexFamily family, String name,
+			ProgressSnapshot.IndexStage stage) {
+		if (closed) {
+			return;
+		}
+		IndexKey key = new IndexKey(family, name.toUpperCase(Locale.ROOT));
+		ProgressSnapshot.IndexProgress current = activeIndexes.get(key);
+		if (current == null) {
+			return;
+		}
+		ProgressSnapshot.IndexProgress updated = new ProgressSnapshot.IndexProgress(family, current.name(),
+				current.number(), current.count(), stage, false);
+		activeIndexes.put(key, updated);
+		indexEvent = updated;
+		report(false, true);
+	}
+
+	synchronized void completeIndex(ProgressSnapshot.IndexFamily family, String name) {
+		if (closed) {
+			return;
+		}
+		ProgressSnapshot.IndexProgress current = activeIndexes.remove(
+				new IndexKey(family, name.toUpperCase(Locale.ROOT)));
+		if (current == null) {
+			return;
+		}
+		indexEvent = new ProgressSnapshot.IndexProgress(family, current.name(), current.number(), current.count(),
+				current.stage(), true);
+		report(false, true);
 	}
 
 	private void sampleSafely() {
@@ -152,12 +205,15 @@ final class BulkLoadProgress implements AutoCloseable {
 				currentOperationsPerSecond,
 				totalOperations / elapsedSeconds,
 				currentBytesPerSecond,
-				(now - startedNanos) / 1_000_000L, workers, queueBatches, resumed, phaseComplete);
+				(now - startedNanos) / 1_000_000L, workers, queueBatches, resumed, phaseComplete,
+				phase.ordinal() + 1, BulkLoadPhase.values().length, List.copyOf(activeIndexes.values()), indexEvent);
 	}
 
 	private void persist(ProgressSnapshot snapshot) {
 		Properties properties = new Properties();
 		properties.setProperty("phase", snapshot.phase().name());
+		properties.setProperty("phase.number", Integer.toString(snapshot.phaseNumber()));
+		properties.setProperty("phase.count", Integer.toString(snapshot.phaseCount()));
 		properties.setProperty("phase.operations", Long.toString(snapshot.phaseOperations()));
 		properties.setProperty("total.operations", Long.toString(snapshot.totalOperations()));
 		properties.setProperty("bytes.processed", Long.toString(snapshot.bytesProcessed()));
@@ -171,6 +227,14 @@ final class BulkLoadProgress implements AutoCloseable {
 		properties.setProperty("queue.batches", Integer.toString(snapshot.queueBatches()));
 		properties.setProperty("resumed", Boolean.toString(snapshot.resumed()));
 		properties.setProperty("phase.complete", Boolean.toString(snapshot.phaseComplete()));
+		properties.setProperty("active.indexes.count", Integer.toString(snapshot.activeIndexes().size()));
+		for (int index = 0; index < snapshot.activeIndexes().size(); index++) {
+			storeIndexProgress(properties, "active.indexes." + index, snapshot.activeIndexes().get(index));
+		}
+		properties.setProperty("index.event.present", Boolean.toString(snapshot.indexEvent() != null));
+		if (snapshot.indexEvent() != null) {
+			storeIndexProgress(properties, "index.event", snapshot.indexEvent());
+		}
 		try (OutputStream output = Files.newOutputStream(progressFile, StandardOpenOption.CREATE,
 				StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE)) {
 			properties.store(output, "LMDB bulk-load live progress");
@@ -178,6 +242,19 @@ final class BulkLoadProgress implements AutoCloseable {
 			System.getLogger(BulkLoadProgress.class.getName())
 					.log(System.Logger.Level.WARNING, "Could not persist LMDB bulk-load progress", telemetryFailure);
 		}
+	}
+
+	private static void storeIndexProgress(Properties properties, String prefix,
+			ProgressSnapshot.IndexProgress index) {
+		properties.setProperty(prefix + ".family", index.family().name());
+		properties.setProperty(prefix + ".name", index.name());
+		properties.setProperty(prefix + ".number", Integer.toString(index.number()));
+		properties.setProperty(prefix + ".count", Integer.toString(index.count()));
+		properties.setProperty(prefix + ".stage", index.stage().name());
+		properties.setProperty(prefix + ".complete", Boolean.toString(index.complete()));
+	}
+
+	private record IndexKey(ProgressSnapshot.IndexFamily family, String name) {
 	}
 
 	@Override

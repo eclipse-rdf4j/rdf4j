@@ -12,8 +12,12 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,24 +32,481 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordingFile;
 
 class LmdbNativeRowCancellationTest {
 
 	private static final long FUTURE_TIMEOUT_SECONDS = 5L;
+
+	@Test
+	void streamingRowOwnersCoalesceCorrelatedScansAcrossYields(@TempDir Path directory) throws Exception {
+		String eventName = "org.eclipse.rdf4j.lmdb.NativeExecutionPhase";
+		for (boolean bare : List.of(false, true)) {
+			Path path = directory.resolve("streaming-input-" + bare + ".jfr");
+			AtomicInteger opens = new AtomicInteger(), closes = new AtomicInteger();
+			NativeLmdbQuerySource dictionary = new StubSource() {
+				@Override
+				public boolean hasStatementsInSource() {
+					return true;
+				}
+
+				@Override
+				public RecordIterator statements(long subject, long predicate, long object, long context) {
+					long id = opens.incrementAndGet();
+					return new RecordIterator() {
+						private boolean pending = true;
+
+						@Override
+						public long[] next() {
+							if (!pending) {
+								return null;
+							}
+							pending = false;
+							return new long[] { id, 7L, 9L, 0L };
+						}
+
+						@Override
+						public void close() {
+							closes.incrementAndGet();
+						}
+					};
+				}
+			};
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(dictionary);
+			PatternPlan scan = new PatternPlan(Term.slot(0), Term.constant(7L), Term.unbound(), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 1D);
+			SlotPlan probes = new SlotPlan() {
+				@Override
+				public RowCursor open(RowState row) {
+					return new RowCursor() {
+						private int emitted;
+						private final int mark = row.mark();
+
+						@Override
+						public boolean next() throws IOException {
+							row.rollback(mark);
+							if (emitted++ == 3) {
+								return false;
+							}
+							try (PatternCursor cursor = scan.openRaw(row)) {
+								long[] record = cursor.next();
+								assertThat(record).isNotNull();
+								assertThat(row.bind(0, record[0])).isTrue();
+								return true;
+							}
+						}
+
+						@Override
+						public void close() {
+							row.rollback(mark);
+						}
+					};
+				}
+
+				@Override
+				public long producedMask() {
+					return 1L;
+				}
+			};
+			try (Recording recording = new Recording()) {
+				recording.enable(eventName).withThreshold(Duration.ZERO);
+				recording.start();
+				LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+				when(strategy.forcedExecutionStrategyName()).thenReturn(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+				NativeRowsStep step = new NativeRowsStep(source, probes, layout(), new int[] { 0 },
+						new String[] { "value" }, false, new int[0], new boolean[0], 0L, -1L, false, strategy,
+						null, null, Set.of(), null, null);
+				QueryBindingSet correlated = new QueryBindingSet();
+				correlated.addBinding("outer", SimpleValueFactory.getInstance().createIRI("urn:phase:outer"));
+				try (CloseableIteration<BindingSet> iteration = bare
+						? NativeRowsStep.bareFragment(source, probes, layout(), new int[] { 0 },
+								new String[] { "value" }, false, null, null, null)
+								.evaluate(correlated)
+						: new NativeRowsIteration(step, source, EmptyBindingSet.getInstance())) {
+					for (int index = 1; index <= 3; index++) {
+						assertThat(iteration.hasNext()).isTrue();
+						assertThat(iteration.next().getValue("value")).isNotNull();
+						if (bare) {
+							assertThat(opens).as("a bare fragment must remain demand-driven across next() yields")
+									.hasValue(index);
+						} else {
+							// Ordinary rows may privately prefetch this small input with NativeProbeBufferHarness.
+							assertThat(opens.get()).isBetween(index, 3);
+						}
+					}
+					assertThat(iteration.hasNext()).isFalse();
+				}
+				assertThat(opens).hasValue(3);
+				assertThat(closes).hasValue(3);
+				recording.stop();
+				recording.dump(path);
+			} finally {
+				source.executionContext().close();
+			}
+			var scans = RecordingFile.readAllEvents(path)
+					.stream()
+					.filter(event -> eventName.equals(event.getEventType().getName())
+							&& "scan".equals(event.getString("phase")))
+					.toList();
+			assertThat(scans).as("one %s input owner must span all correlated probes", bare ? "bare" : "ordinary")
+					.hasSize(1);
+			assertThat(scans.getFirst().getString("outcome")).isEqualTo("COMPLETED");
+		}
+	}
+
+	@Test
+	void rejectedFilterPollsEvaluationCancellationWithoutReturningToParent() throws Exception {
+		RowState row = new RowState(new StubSource(), layout(), EmptyBindingSet.getInstance());
+		assertThat(NativeRowSeeder.seed(row.slots, row.layout, row.base, row.source)).isTrue();
+		AtomicInteger rows = new AtomicInteger();
+		RowCursor input = new RowCursor() {
+			@Override
+			public boolean next() {
+				if (rows.incrementAndGet() > 4096) {
+					throw new AssertionError("a rejecting in-memory filter ignored evaluation cancellation");
+				}
+				assertThat(row.bind(0, 1L)).isTrue();
+				return true;
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+		try (RowCursor cursor = new FilterCursor(input, ignored -> {
+			row.cancellation.requestCancellation();
+			return false;
+		}, row)) {
+			Assertions.assertThrows(KernelQueryCancelledException.class, cursor::next,
+					"the inner filter must poll even when it never emits a row to its parent");
+			assertThat(rows.get()).isLessThan(4096);
+		}
+	}
+
+	@Test
+	void lexicalReplayStreamsFirstConsumerAndPreservesIndependentReaders() throws Exception {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new StubSource());
+		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+		AtomicInteger evaluations = new AtomicInteger(), advances = new AtomicInteger(), closes = new AtomicInteger();
+		QueryEvaluationStep step = bindings -> {
+			evaluations.incrementAndGet();
+			return new CloseableIteration<>() {
+				private int emitted;
+
+				@Override
+				public boolean hasNext() {
+					return emitted < 4;
+				}
+
+				@Override
+				public BindingSet next() {
+					emitted++;
+					advances.incrementAndGet();
+					return EmptyBindingSet.getInstance();
+				}
+
+				@Override
+				public void remove() {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public void close() {
+					closes.incrementAndGet();
+				}
+			};
+		};
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(step, new int[0], new String[0], new int[0],
+				new String[0]);
+		try {
+			RowState first = new RowState(source, layout(), EmptyBindingSet.getInstance());
+			assertThat(NativeRowSeeder.seed(first.slots, first.layout, first.base, source)).isTrue();
+			first.recomputeBoundMask();
+			RowState second = first.fork();
+			try (RowCursor a = subquery.open(first); RowCursor b = subquery.open(second)) {
+				assertThat(advances).as("opening a lexical boundary must not materialize all completed groups")
+						.hasValue(1);
+				assertThat(a.next()).isTrue();
+				assertThat(b.next()).isTrue();
+				assertThat(advances).hasValue(1);
+				assertThat(a.next()).isTrue();
+				assertThat(advances).hasValue(2);
+			}
+			try (RowCursor replay = subquery.open(first)) {
+				int rows = 0;
+				while (replay.next()) {
+					rows++;
+				}
+				assertThat(rows).isEqualTo(4);
+			}
+			assertThat(evaluations).hasValue(1);
+			assertThat(advances).hasValue(4);
+			assertThat(closes).hasValue(1);
+		} finally {
+			source.executionContext().close();
+		}
+		assertThat(source.executionContext().isClosed()).isTrue();
+	}
+
+	@Test
+	void rejectedProbeCannotPoisonTheSharedLexicalReplayForOrdinaryFallback() throws Exception {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new StubSource());
+		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+		AtomicInteger evaluations = new AtomicInteger(), closes = new AtomicInteger();
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(bindings -> {
+			evaluations.incrementAndGet();
+			return new CloseableIteration<>() {
+				private int emitted;
+
+				@Override
+				public boolean hasNext() {
+					return emitted < 3;
+				}
+
+				@Override
+				public BindingSet next() {
+					emitted++;
+					return EmptyBindingSet.getInstance();
+				}
+
+				@Override
+				public void remove() {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public void close() {
+					closes.incrementAndGet();
+				}
+			};
+		}, new int[0], new String[0], new int[0], new String[0]);
+		RowState row = new RowState(source, layout(), EmptyBindingSet.getInstance());
+		assertThat(NativeRowSeeder.seed(row.slots, row.layout, row.base, source)).isTrue();
+		row.recomputeBoundMask();
+		try {
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			try (var scope = LmdbNativeProbeDeadline.enter(deadline); RowCursor probe = subquery.open(row)) {
+				assertThat(probe.next())
+						.as("the speculative lexical producer must actually publish its private first row")
+						.isTrue();
+				assertThat(evaluations).hasValue(1);
+				deadline.trip();
+				Assertions.assertThrows(LmdbNativeProbeDeadlineExceeded.class, probe::next);
+			}
+			assertThat(LmdbNativeProbeDeadline.currentOrNull()).as("the aborted probe scope must already be restored")
+					.isNull();
+			assertThat(row.cancellation.cancellationPublished()).isFalse();
+			assertThat(closes).as("the declined attempt must have closed its own active producer").hasValue(1);
+			try (RowCursor fallback = Assertions.assertDoesNotThrow(() -> subquery.open(row.fork()),
+					"opening ordinary fallback after scope restoration must not rethrow the declined probe")) {
+				int rows = 0;
+				while (fallback.next()) {
+					rows++;
+				}
+				assertThat(rows).as("ordinary fallback must restart the declined attempt and emit the complete bag")
+						.isEqualTo(3);
+			}
+			assertThat(evaluations).hasValue(2);
+			assertThat(closes).hasValue(2);
+		} finally {
+			source.executionContext().close();
+		}
+		assertThat(source.executionContext().isClosed()).isTrue();
+	}
+
+	@Test
+	void lexicalProducerFailureCannotReplaySuccessfulPrefixToLaterReaders() throws Exception {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new StubSource());
+		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+		AtomicInteger closes = new AtomicInteger();
+		IllegalStateException failure = new IllegalStateException("controlled lexical producer failure");
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(bindings -> new CloseableIteration<>() {
+			private int emitted;
+
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+
+			@Override
+			public BindingSet next() {
+				if (emitted++ != 0) {
+					throw failure;
+				}
+				return EmptyBindingSet.getInstance();
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+			}
+		}, new int[0], new String[0], new int[0], new String[0]);
+		RowState row = new RowState(source, layout(), EmptyBindingSet.getInstance());
+		assertThat(NativeRowSeeder.seed(row.slots, row.layout, row.base, source)).isTrue();
+		row.recomputeBoundMask();
+		try {
+			try (RowCursor first = subquery.open(row); RowCursor second = subquery.open(row.fork())) {
+				assertThat(first.next()).isTrue();
+				assertThat(second.next()).isTrue();
+				assertThat(Assertions.assertThrows(IllegalStateException.class, first::next)).isSameAs(failure);
+				assertThat(Assertions.assertThrows(IllegalStateException.class, second::next)).isSameAs(failure);
+			}
+			Assertions.assertThrows(IllegalStateException.class, () -> {
+				try (RowCursor later = subquery.open(row.fork())) {
+					later.next();
+				}
+			});
+			assertThat(closes).hasValue(1);
+		} finally {
+			source.executionContext().close();
+		}
+		assertThat(source.executionContext().isClosed()).isTrue();
+	}
+
+	@Test
+	void cancelledSubqueryCannotMemoizePartialSolutions() throws Exception {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new StubSource());
+		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+		AtomicInteger evaluations = new AtomicInteger();
+		AtomicInteger closes = new AtomicInteger();
+		AtomicReference<RowState> activeRow = new AtomicReference<>();
+		QueryEvaluationStep step = bindings -> {
+			evaluations.incrementAndGet();
+			return new CloseableIteration<>() {
+				private boolean emitted;
+
+				@Override
+				public boolean hasNext() {
+					return !emitted;
+				}
+
+				@Override
+				public BindingSet next() {
+					emitted = true;
+					activeRow.get().cancellation.requestCancellation();
+					return EmptyBindingSet.getInstance();
+				}
+
+				@Override
+				public void remove() {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public void close() {
+					closes.incrementAndGet();
+				}
+			};
+		};
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(step, new int[0], new String[0], new int[0],
+				new String[0]);
+		try {
+			for (int attempt = 1; attempt <= 2; attempt++) {
+				RowState row = new RowState(source, layout(), EmptyBindingSet.getInstance());
+				activeRow.set(row);
+				Assertions.assertThrows(KernelQueryCancelledException.class, () -> subquery.open(row),
+						"a cancelled lexical boundary cannot publish a partial memo as a successful subquery");
+				assertThat(evaluations).hasValue(attempt);
+				assertThat(closes).hasValue(attempt);
+			}
+		} finally {
+			source.executionContext().close();
+		}
+	}
+
+	@Test
+	void cancelledSubqueryReplayIsTerminalRatherThanExhausted() throws Exception {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new StubSource());
+		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(
+				bindings -> new CloseableIteratorIteration<>(
+						List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator()),
+				new int[0], new String[0], new int[0], new String[0]);
+		RowState row = new RowState(source, layout(), EmptyBindingSet.getInstance());
+		try (RowCursor cursor = subquery.open(row)) {
+			row.cancellation.requestCancellation();
+			Assertions.assertThrows(KernelQueryCancelledException.class, cursor::next,
+					"cancellation while replaying a materialized lexical boundary is terminal");
+		} finally {
+			source.executionContext().close();
+		}
+	}
+
+	@Test
+	void nestedNativeCancellationIsScopedToItsEvaluationAndRestoredAfterFailure() {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new StubSource());
+		SyntheticValueSource independent = SyntheticValueSource.forEvaluation(new StubSource());
+		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+		RowState parent = new RowState(source, layout(), EmptyBindingSet.getInstance());
+		AtomicReference<RowState> nested = new AtomicReference<>();
+		AtomicReference<RowState> foreign = new AtomicReference<>();
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(bindings -> {
+			nested.set(new RowState(source, layout(), EmptyBindingSet.getInstance()));
+			foreign.set(new RowState(independent, layout(), EmptyBindingSet.getInstance()));
+			parent.cancellation.requestCancellation();
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		}, new int[0], new String[0], new int[0], new String[0]);
+		try {
+			Assertions.assertThrows(KernelQueryCancelledException.class, () -> subquery.open(parent));
+			assertThat(nested.get().cancellation.isCancellationRequested())
+					.as("nested roots must observe their active parent's local cancellation")
+					.isTrue();
+			assertThat(foreign.get().cancellation.isCancellationRequested())
+					.as("an unrelated evaluation cannot inherit an ambient local cancellation")
+					.isFalse();
+			assertThat(new RowState(source, layout(), EmptyBindingSet.getInstance()).cancellation
+					.isCancellationRequested())
+							.as("failure must restore the previous scope without cancelling the shared query context")
+							.isFalse();
+		} finally {
+			source.executionContext().close();
+			independent.executionContext().close();
+		}
+	}
+
+	@Test
+	void nestedNativeCancellationScopeIsRestoredAfterExhaustion() throws Exception {
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(new StubSource());
+		source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+		RowState parent = new RowState(source, layout(), EmptyBindingSet.getInstance());
+		NativeSubqueryPlan subquery = new NativeSubqueryPlan(bindings -> QueryEvaluationStep.EMPTY_ITERATION,
+				new int[0], new String[0], new int[0], new String[0]);
+		try (RowCursor cursor = subquery.open(parent)) {
+			assertThat(cursor.next()).isFalse();
+			parent.cancellation.requestCancellation();
+			assertThat(new RowState(source, layout(), EmptyBindingSet.getInstance()).cancellation
+					.isCancellationRequested())
+							.as("normal exhaustion must restore the previous cancellation scope")
+							.isFalse();
+		} finally {
+			source.executionContext().close();
+		}
+	}
 
 	@Test
 	void requestCancellationStopsInFlightBareRowBeforeEmission() throws Exception {

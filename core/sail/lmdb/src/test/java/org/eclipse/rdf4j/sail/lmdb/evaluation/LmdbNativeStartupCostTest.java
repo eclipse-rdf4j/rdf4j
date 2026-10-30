@@ -32,6 +32,20 @@ import org.junit.jupiter.api.Test;
  * in one static method, consulted by two rungs and ignored by the hash join, which is the worst offender.
  */
 public class LmdbNativeStartupCostTest {
+	@Test
+	void knownAggregateOutputsRetainMaterializationCostWhenInputWorkIsComposite() {
+		for (String route : List.of(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED)) {
+			LmdbNativeStrategyProposal<String> aggregate = proposal(route, 100D, 0D, 7D);
+			LmdbNativeCostEstimate estimate = aggregate.adaptiveEstimate(-1D);
+			assertThat(estimate.total().expected(LmdbNativeCostVector.Feature.SCANNED_ROW))
+					.as("composite input work does not establish a physical scan cardinality")
+					.isZero();
+			assertThat(estimate.total().expected(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION))
+					.as("seven aggregate results are materialized regardless of the input cardinality")
+					.isEqualTo(7D);
+		}
+	}
 
 	/** Same reason as {@link LmdbNativeStrategyArbiterTest}: these pin the rule, not the learned behaviour. */
 	@org.junit.jupiter.api.BeforeEach

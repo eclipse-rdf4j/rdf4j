@@ -12,18 +12,24 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
@@ -37,18 +43,22 @@ import org.eclipse.rdf4j.query.algebra.Namespace;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.MockedStatic;
 
 class LmdbNativeLegacyScalarExpressionTest {
 
@@ -96,26 +106,18 @@ class LmdbNativeLegacyScalarExpressionTest {
 	@Test
 	void repeatedScalarComparisonsPreserveUnforcedNativeSemantics() {
 		for (int round = 0; round < 128; round++) {
-			compareSubqueryOperatorsUseNativeScalarPlan();
+			compareSubqueryOperators(false);
 		}
 	}
 
 	@Test
 	void compareSubqueryOperatorsUseNativeScalarPlan() {
+		compareSubqueryOperators(true);
+	}
+
+	private void compareSubqueryOperators(boolean forceNestedLoop) {
 		long evaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
-		ValueFactory vf = repository.getValueFactory();
-		BindingSetAssignment outer = values("left", vf.createLiteral(2));
-		Extension extension = new Extension(outer);
-		extension.addElement(new ExtensionElem(
-				new CompareAny(new Var("left"), values("right", vf.createLiteral(1), vf.createLiteral(3)),
-						CompareOp.GT),
-				"any"));
-		extension.addElement(new ExtensionElem(
-				new CompareAll(new Var("left"), values("right", vf.createLiteral(1), vf.createLiteral(3)),
-						CompareOp.LT),
-				"all"));
-		extension.addElement(new ExtensionElem(
-				new In(new Var("left"), values("right", vf.createLiteral(1), vf.createLiteral(2))), "in"));
+		Extension extension = scalarSubqueryExtension();
 
 		TupleExpr genericExpression = new QueryRoot(extension.clone());
 		genericExpression.setRuntimeTelemetryEnabled(true);
@@ -126,7 +128,23 @@ class LmdbNativeLegacyScalarExpressionTest {
 
 		TupleExpr nativeExpression = new QueryRoot(extension.clone());
 		nativeExpression.setRuntimeTelemetryEnabled(true);
-		List<String> nativeRows = evaluate(nativeExpression, true);
+		long nativeEvaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
+		List<ScalarInvocation> scalarInvocations = new ArrayList<>();
+		List<String> nativeRows;
+		try (MockedStatic<NativeScalarSubqueryValueEvaluator> ignored = mockStatic(
+				NativeScalarSubqueryValueEvaluator.class, call -> {
+					NativeBindingSetValueEvaluator actual = (NativeBindingSetValueEvaluator) call.callRealMethod();
+					return actual == null ? null
+							: traceScalarEvaluator(call.getArgument(0, ValueExpr.class)
+									.getSignature(), actual, scalarInvocations);
+				})) {
+			nativeRows = evaluate(nativeExpression, true,
+					forceNestedLoop ? LmdbNativeAttemptMetrics.PATH_NESTED_LOOP : null);
+		}
+		long nativeEvaluations = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - nativeEvaluationsBefore;
+		long totalEvaluations = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore;
+		String nativeExecutionPath = nativeExpression.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+		System.out.println("Native scalar invocation trace: " + scalarInvocations);
 		assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
 		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get())
 				.as("legacy scalar expressions must execute on the semantic native row tier")
@@ -135,6 +153,403 @@ class LmdbNativeLegacyScalarExpressionTest {
 				.as("legacy scalar expressions must not force a generic root host")
 				.isEqualTo(hostedBefore);
 		assertThat(genericEvaluations).as("the generic oracle must not use native scalar evaluators").isZero();
+		if (forceNestedLoop) {
+			assertThat(totalEvaluations)
+					.as(() -> "forced direct native execution must evaluate each scalar once: " + scalarInvocations)
+					.isEqualTo(3L);
+			assertThat(nativeEvaluations).isEqualTo(3L);
+			assertThat(scalarInvocations).extracting(invocation -> invocation.operator)
+					.containsExactly("CompareAny (>)", "CompareAll (<)", "In");
+			assertThat(scalarInvocations).allSatisfy(invocation -> assertThat(invocation.probe).isNull());
+			if (nativeExecutionPath != null) {
+				assertThat(nativeExecutionPath)
+						.as("reported execution path for forced native evaluation")
+						.contains(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+			}
+		} else {
+			assertThat(nativeEvaluations)
+					.as(() -> "native evaluator metric must match captured invocation count: " + scalarInvocations)
+					.isEqualTo((long) scalarInvocations.size());
+			assertThat(totalEvaluations)
+					.as(() -> "unforced AUTO total must match captured invocation count: " + scalarInvocations)
+					.isEqualTo((long) scalarInvocations.size());
+			assertAutoScalarInvocationSequences(scalarInvocations);
+		}
+	}
+
+	private static void assertAutoScalarInvocationSequences(List<ScalarInvocation> invocations) {
+		List<String> expectedOperators = List.of("CompareAny (>)", "CompareAll (<)", "In");
+		List<List<ScalarInvocation>> owners = new ArrayList<>();
+		for (ScalarInvocation invocation : invocations) {
+			List<ScalarInvocation> owner = null;
+			for (List<ScalarInvocation> candidate : owners) {
+				ScalarInvocation first = candidate.get(0);
+				if (first.probe == invocation.probe && first.executionContext == invocation.executionContext) {
+					owner = candidate;
+					break;
+				}
+			}
+			if (owner == null) {
+				owner = new ArrayList<>();
+				owners.add(owner);
+			}
+			owner.add(invocation);
+		}
+
+		assertThat(owners).as("AUTO execution must have captured native scalar owners").isNotEmpty();
+		boolean successfulCompleteOwner = false;
+		for (List<ScalarInvocation> owner : owners) {
+			ScalarInvocation first = owner.get(0);
+			assertThat(owner)
+					.as(() -> "one ordered scalar prefix per probe/context owner: " + owner)
+					.hasSizeBetween(1, expectedOperators.size());
+			for (int index = 0; index < owner.size(); index++) {
+				ScalarInvocation invocation = owner.get(index);
+				assertThat(invocation.operator).isEqualTo(expectedOperators.get(index));
+				assertThat(invocation.trippedBefore)
+						.as("a scalar must not continue under an already-tripped probe: " + owner)
+						.isFalse();
+				if (invocation.failure != null) {
+					assertThat(invocation.probe)
+							.as("only a probe-owned cancellation may stop a scalar call: " + owner)
+							.isNotNull();
+					assertThat(invocation.failure)
+							.as("an AUTO probe may stop only through its cancellation/deadline control: " + owner)
+							.isInstanceOfAny(KernelCancelledException.class, LmdbNativeProbeDeadlineExceeded.class);
+				}
+				boolean terminal = invocation.failure != null || invocation.trippedAfter
+						|| invocation.clockExpiredAfter;
+				if (terminal) {
+					assertThat(index)
+							.as("a partial native attempt must be the final call for its probe/context owner: " + owner)
+							.isEqualTo(owner.size() - 1);
+				}
+			}
+			if (owner.size() == expectedOperators.size()
+					&& owner.stream()
+							.allMatch(invocation -> invocation.failure == null
+									&& !invocation.trippedAfter && !invocation.clockExpiredAfter
+									&& "returned".equals(invocation.termination))) {
+				successfulCompleteOwner = true;
+			}
+			if (owner.size() < expectedOperators.size()) {
+				ScalarInvocation last = owner.get(owner.size() - 1);
+				assertThat(first.probe)
+						.as("only a deadline-owned probe may stop before the complete scalar sequence: " + owner)
+						.isNotNull();
+				// The trip that ended the trial can land after its last scalar call has already returned (the
+				// fallback or hedge winner cancels the losing arm between two extension elements), so the probe's
+				// current state is part of the evidence: it must have been tripped or its deadline must have passed.
+				assertThat(last.failure != null || last.trippedAfter || last.clockExpiredAfter
+						|| first.probe.tripped()
+						|| ScalarInvocation.clockExpired(System.nanoTime(), first.deadlineNanoTime))
+								.as("a partial probe must terminate through its cancellation/deadline control: " + owner
+										+ " probeTrippedNow=" + first.probe.tripped())
+								.isTrue();
+			}
+		}
+		assertThat(successfulCompleteOwner)
+				.as("AUTO must include at least one complete successful scalar owner")
+				.isTrue();
+	}
+
+	@Test
+	void aControlledPartialProbeCountsItsScalarCallBeforeTheCompleteFallback() throws IOException {
+		Extension extension = scalarSubqueryExtension();
+		List<String> genericRows = evaluate(new QueryRoot(extension.clone()), false);
+		long evaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+		List<ScalarInvocation> invocations = new ArrayList<>();
+		AtomicInteger incumbentOpens = new AtomicInteger(), rivalOpens = new AtomicInteger();
+		AtomicBoolean firstProbeEvaluation = new AtomicBoolean();
+		LmdbNativeProbeDeadline controlledDeadline = LmdbNativeProbeDeadline.trippableOnly();
+		LmdbNativeStoreCostModel costs = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), costs,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		// These are scripted arbiter openers for the same query, not claims about its actual physical row route.
+		LmdbNativeStrategyProposal<List<String>> incumbent = new LmdbNativeStrategyProposal<>(() -> {
+			incumbentOpens.incrementAndGet();
+			return evaluate(new QueryRoot(extension.clone()), true);
+		}, LmdbNativeWork.exact(1_000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+		});
+		LmdbNativeStrategyProposal<List<String>> rival = new LmdbNativeStrategyProposal<>(() -> {
+			rivalOpens.incrementAndGet();
+			return evaluate(new QueryRoot(extension.clone()), true);
+		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+		LmdbNativeCostEstimate incumbentEstimate = incumbent.adaptiveEstimate(-1D);
+		LmdbNativeCostEstimate rivalEstimate = rival.directTimingEstimate();
+		for (int sample = 0; sample < 30; sample++) {
+			model.recordCompleted(incumbentEstimate, incumbentEstimate.total(), 5_000_000D, 1.0,
+					model.currentRegime());
+		}
+		costs.safetyLedger().earn(1_000_000_000_000L);
+		List<String> result;
+		try (MockedStatic<LmdbNativeProbeDeadline> deadlines = mockStatic(LmdbNativeProbeDeadline.class, call -> {
+			// Retain real scope attachment and expiry handling while making this fixture independent of wall time.
+			if (call.getMethod().getName().equals("enter") && call.getArgument(0) instanceof Long) {
+				return LmdbNativeProbeDeadline.enter(controlledDeadline);
+			}
+			return call.callRealMethod();
+		});
+				MockedStatic<NativeScalarSubqueryValueEvaluator> evaluators = mockStatic(
+						NativeScalarSubqueryValueEvaluator.class, call -> {
+							NativeBindingSetValueEvaluator actual = (NativeBindingSetValueEvaluator) call
+									.callRealMethod();
+							return actual == null ? null
+									: traceScalarEvaluator(call.getArgument(0, ValueExpr.class).getSignature(), actual,
+											invocations, () -> {
+												if (LmdbNativeProbeDeadline.currentOrNull() == controlledDeadline
+														&& firstProbeEvaluation.compareAndSet(false, true)) {
+													controlledDeadline.trip();
+													LmdbNativeProbeDeadline.poll(1024);
+												}
+											});
+						});
+				LmdbNativeStrategyArbiter<List<String>> arbiter = LmdbNativeStrategyArbiter
+						.<List<String>>forModel(null, -1D, model)
+						.probeHarness(LmdbNativeProbeHarness.blocking())) {
+			arbiter.offer(() -> incumbent);
+			arbiter.offer(() -> rival);
+			result = arbiter.select();
+		}
+		System.out.println("Controlled partial-probe scalar invocation trace: " + invocations);
+		assertThat(result).containsExactlyInAnyOrderElementsOf(genericRows);
+		assertThat(result).singleElement()
+				.asString()
+				.contains("all=\"false\"", "any=\"true\"", "in=\"true\"", "left=\"2\"");
+		assertThat(incumbentOpens).hasValue(1);
+		assertThat(rivalOpens).hasValue(1);
+		assertThat(firstProbeEvaluation).isTrue();
+		assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore).isEqualTo(4L);
+		assertThat(invocations).extracting(invocation -> invocation.operator)
+				.containsExactly("CompareAny (>)", "CompareAny (>)", "CompareAll (<)", "In");
+		assertThat(invocations.get(0).probe).isSameAs(controlledDeadline);
+		assertThat(invocations.get(0).outcome).startsWith("BOUND:");
+		assertThat(invocations.get(0).termination).isEqualTo(LmdbNativeProbeDeadlineExceeded.class.getName());
+		assertThat(invocations.get(0).trippedAfter).isTrue();
+		assertThat(invocations.subList(1, 4)).allSatisfy(invocation -> {
+			assertThat(invocation.probe).isNull();
+			assertThat(invocation.executionContext).isSameAs(invocations.get(1).executionContext);
+			assertThat(invocation.termination).isEqualTo("returned");
+			assertThat(invocation.executionContext.cancellation().cancellationPublished()).isFalse();
+		});
+		assertThat(invocations.get(0).executionContext).isNotSameAs(invocations.get(1).executionContext);
+		assertThat(invocations.get(0).executionContext.cancellation().cancellationPublished()).isFalse();
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get()).isEqualTo(islandsBefore);
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostedBefore);
+		LmdbNativeCostPosteriorStore.ExactKey key = LmdbNativeCostPosteriorStore.ExactKey.of(model.currentRegime(),
+				LmdbNativeCostPosteriorStore.Lane.DIRECT, rivalEstimate.variantKey());
+		LmdbNativeCostPosteriorStore.Reading reading = costs.posteriors().read(key, 0L, costs.nowMillis());
+		assertThat(reading.exact().censoredCount).isEqualTo(1L);
+		assertThat(reading.exact().completedCount).isZero();
+	}
+
+	@Test
+	void aReturnedScalarCannotAdmitAnotherCallbackAfterItsProbeTrips() throws IOException {
+		Extension extension = scalarSubqueryExtension();
+		List<String> genericRows = evaluate(new QueryRoot(extension.clone()), false);
+		long evaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+		List<ScalarInvocation> invocations = new ArrayList<>();
+		AtomicInteger incumbentOpens = new AtomicInteger(), rivalOpens = new AtomicInteger();
+		AtomicBoolean tripAfterCompareAny = new AtomicBoolean();
+		LmdbNativeProbeDeadline controlledDeadline = LmdbNativeProbeDeadline.trippableOnly();
+		LmdbNativeStoreCostModel costs = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), costs,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		// These are scripted arbiter openers for the same query, not claims about its actual physical row route.
+		LmdbNativeStrategyProposal<List<String>> incumbent = new LmdbNativeStrategyProposal<>(() -> {
+			incumbentOpens.incrementAndGet();
+			return evaluate(new QueryRoot(extension.clone()), true);
+		}, LmdbNativeWork.exact(1_000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+		});
+		LmdbNativeStrategyProposal<List<String>> rival = new LmdbNativeStrategyProposal<>(() -> {
+			rivalOpens.incrementAndGet();
+			return evaluate(new QueryRoot(extension.clone()), true);
+		}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+		});
+		LmdbNativeCostEstimate incumbentEstimate = incumbent.adaptiveEstimate(-1D);
+		LmdbNativeCostEstimate rivalEstimate = rival.directTimingEstimate();
+		for (int sample = 0; sample < 30; sample++) {
+			model.recordCompleted(incumbentEstimate, incumbentEstimate.total(), 5_000_000D, 1.0,
+					model.currentRegime());
+		}
+		costs.safetyLedger().earn(1_000_000_000_000L);
+		List<String> result;
+		try (MockedStatic<LmdbNativeProbeDeadline> deadlines = mockStatic(LmdbNativeProbeDeadline.class, call -> {
+			// Attach the deterministic probe to the arbiter scope without introducing elapsed-time races.
+			if (call.getMethod().getName().equals("enter") && call.getArgument(0) instanceof Long) {
+				return LmdbNativeProbeDeadline.enter(controlledDeadline);
+			}
+			return call.callRealMethod();
+		});
+				MockedStatic<NativeScalarSubqueryValueEvaluator> evaluators = mockStatic(
+						NativeScalarSubqueryValueEvaluator.class, call -> {
+							NativeBindingSetValueEvaluator actual = (NativeBindingSetValueEvaluator) call
+									.callRealMethod();
+							if (actual == null) {
+								return null;
+							}
+							String operator = call.getArgument(0, ValueExpr.class).getSignature();
+							return traceScalarEvaluator(operator, actual, invocations, () -> {
+								if (operator.equals("CompareAny (>)")
+										&& LmdbNativeProbeDeadline.currentOrNull() == controlledDeadline
+										&& tripAfterCompareAny.compareAndSet(false, true)) {
+									// The semantic call has returned successfully. Trip, but do not poll or throw here.
+									controlledDeadline.trip();
+								}
+							});
+						});
+				LmdbNativeStrategyArbiter<List<String>> arbiter = LmdbNativeStrategyArbiter
+						.<List<String>>forModel(null, -1D, model)
+						.probeHarness(LmdbNativeProbeHarness.blocking())) {
+			arbiter.offer(() -> incumbent);
+			arbiter.offer(() -> rival);
+			result = arbiter.select();
+		}
+		List<ScalarInvocation> fallback = invocations.subList(1, invocations.size());
+		LmdbNativeCostPosteriorStore.ExactKey key = LmdbNativeCostPosteriorStore.ExactKey.of(model.currentRegime(),
+				LmdbNativeCostPosteriorStore.Lane.DIRECT, rivalEstimate.variantKey());
+		LmdbNativeCostPosteriorStore.Reading reading = costs.posteriors().read(key, 0L, costs.nowMillis());
+		assertAll(
+				() -> assertThat(result).containsExactlyInAnyOrderElementsOf(genericRows),
+				() -> assertThat(result).singleElement()
+						.asString()
+						.contains("all=\"false\"", "any=\"true\"", "in=\"true\"", "left=\"2\""),
+				() -> assertThat(incumbentOpens).hasValue(1),
+				() -> assertThat(rivalOpens).hasValue(1),
+				() -> assertThat(tripAfterCompareAny).isTrue(),
+				() -> assertThat(controlledDeadline.tripped()).isTrue(),
+				() -> assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore)
+						.isEqualTo(4L),
+				() -> assertThat(invocations).extracting(invocation -> invocation.operator)
+						.containsExactly("CompareAny (>)", "CompareAny (>)", "CompareAll (<)", "In"),
+				() -> assertThat(
+						invocations.stream().filter(invocation -> invocation.probe == controlledDeadline).toList())
+								.as("the expired attempt must stop before another semantic scalar callback")
+								.hasSize(1),
+				() -> assertThat(invocations.get(0).operator).isEqualTo("CompareAny (>)"),
+				() -> assertThat(invocations.get(0).outcome).startsWith("BOUND:"),
+				() -> assertThat(invocations.get(0).termination).isEqualTo("returned"),
+				() -> assertThat(invocations.get(0).failure).isNull(),
+				() -> assertThat(invocations.get(0).trippedAfter).isTrue(),
+				() -> assertThat(invocations.get(0).probe).isSameAs(controlledDeadline),
+				() -> assertThat(fallback).hasSize(3),
+				() -> assertThat(fallback).allSatisfy(invocation -> {
+					assertThat(invocation.probe).isNull();
+					assertThat(invocation.executionContext).isSameAs(fallback.get(0).executionContext);
+					assertThat(invocation.termination).isEqualTo("returned");
+					assertThat(invocation.failure).isNull();
+				}),
+				() -> assertThat(invocations.get(0).executionContext).isNotSameAs(fallback.get(0).executionContext),
+				() -> assertThat(invocations.get(0).executionContext.cancellation().cancellationPublished()).isFalse(),
+				() -> assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get()).isEqualTo(islandsBefore),
+				() -> assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostedBefore),
+				() -> assertThat(reading.exact().censoredCount).isEqualTo(1L),
+				() -> assertThat(reading.exact().completedCount).isZero());
+	}
+
+	private Extension scalarSubqueryExtension() {
+		ValueFactory vf = repository.getValueFactory();
+		Extension extension = new Extension(values("left", vf.createLiteral(2)));
+		extension.addElement(new ExtensionElem(
+				new CompareAny(new Var("left"), values("right", vf.createLiteral(1), vf.createLiteral(3)),
+						CompareOp.GT),
+				"any"));
+		extension.addElement(new ExtensionElem(
+				new CompareAll(new Var("left"), values("right", vf.createLiteral(1), vf.createLiteral(3)),
+						CompareOp.LT),
+				"all"));
+		extension.addElement(new ExtensionElem(
+				new In(new Var("left"), values("right", vf.createLiteral(1), vf.createLiteral(2))), "in"));
+		return extension;
+	}
+
+	private static NativeBindingSetValueEvaluator traceScalarEvaluator(String operator,
+			NativeBindingSetValueEvaluator actual, List<ScalarInvocation> invocations) {
+		return traceScalarEvaluator(operator, actual, invocations, () -> {
+		});
+	}
+
+	private static NativeBindingSetValueEvaluator traceScalarEvaluator(String operator,
+			NativeBindingSetValueEvaluator actual, List<ScalarInvocation> invocations, Runnable afterEvaluation) {
+		return new NativeBindingSetValueEvaluator() {
+			@Override
+			public NativeValueOutcome evaluate(BindingSet bindings) {
+				return evaluateActual(bindings, null, false);
+			}
+
+			@Override
+			public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
+				return evaluateActual(bindings, executionContext, true);
+			}
+
+			private NativeValueOutcome evaluateActual(BindingSet bindings, NativeExecutionContext executionContext,
+					boolean scoped) {
+				ScalarInvocation invocation = new ScalarInvocation(operator, executionContext);
+				invocations.add(invocation);
+				try {
+					NativeValueOutcome outcome = scoped ? actual.evaluate(bindings, executionContext)
+							: actual.evaluate(bindings);
+					invocation.outcome = outcome.kind() + ":" + outcome.value();
+					afterEvaluation.run();
+					return outcome;
+				} catch (RuntimeException | Error failure) {
+					invocation.termination = failure.getClass().getName();
+					invocation.failure = failure;
+					throw failure;
+				} finally {
+					invocation.exitNanoTime = System.nanoTime();
+					invocation.clockExpiredAfter = invocation.probe != null
+							&& ScalarInvocation.clockExpired(invocation.exitNanoTime, invocation.deadlineNanoTime);
+					invocation.trippedAfter = invocation.probe != null && invocation.probe.tripped();
+				}
+			}
+		};
+	}
+
+	private static final class ScalarInvocation {
+		private final String operator;
+		private final LmdbNativeProbeDeadline probe = LmdbNativeProbeDeadline.currentOrNull();
+		private final long deadlineNanoTime = probe == null ? 0L : probe.deadlineNanoTime();
+		private final NativeExecutionContext executionContext;
+		private final String thread = Thread.currentThread().getName() + ":" + Thread.currentThread().threadId();
+		private final boolean trippedBefore = probe != null && probe.tripped();
+		private final long entryNanoTime;
+		private final boolean clockExpiredBefore;
+		private long exitNanoTime;
+		private boolean clockExpiredAfter;
+		private String outcome = "entered";
+		private String termination = "returned";
+		private Throwable failure;
+		private boolean trippedAfter;
+
+		private ScalarInvocation(String operator, NativeExecutionContext executionContext) {
+			this.operator = operator;
+			this.executionContext = executionContext;
+			entryNanoTime = System.nanoTime();
+			clockExpiredBefore = probe != null && clockExpired(entryNanoTime, deadlineNanoTime);
+		}
+
+		@Override
+		public String toString() {
+			return "{operator=" + operator + ", probe=" + identity(probe) + ", deadline=" + deadlineNanoTime
+					+ ", clock=" + entryNanoTime + ".." + exitNanoTime + ", clockExpired=" + clockExpiredBefore + "->"
+					+ clockExpiredAfter + ", exception=" + identity(failure) + ":" + failure
+					+ ", context=" + identity(executionContext) + ", thread=" + thread + ", tripped=" + trippedBefore
+					+ "->" + trippedAfter + ", outcome=" + outcome + ", termination=" + termination + "}";
+		}
+
+		private static boolean clockExpired(long now, long deadline) {
+			return now - deadline >= 0L;
+		}
+
+		private static String identity(Object value) {
+			return value == null ? "none" : Integer.toHexString(System.identityHashCode(value));
+		}
 	}
 
 	private BindingSetAssignment values(String name, org.eclipse.rdf4j.model.Value... values) {
@@ -173,7 +588,13 @@ class LmdbNativeLegacyScalarExpressionTest {
 	}
 
 	private List<String> evaluate(TupleExpr expression, boolean nativeEnabled) {
+		return evaluate(expression, nativeEnabled, null);
+	}
+
+	private List<String> evaluate(TupleExpr expression, boolean nativeEnabled, String forcedStrategy) {
 		String previous = System.getProperty(NATIVE_FLAG);
+		SlowQueryContextHolder.SlowQueryContext previousContext = SlowQueryContextHolder.set(
+				expression.getSignature(), Query.QueryType.TUPLE, forcedStrategy);
 		System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
 		try (NotifyingSailConnection connection = store.getConnection();
 				CloseableIteration<? extends BindingSet> rows = connection.evaluate(expression, null,
@@ -193,6 +614,7 @@ class LmdbNativeLegacyScalarExpressionTest {
 			} else {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
+			SlowQueryContextHolder.restore(previousContext);
 		}
 	}
 }

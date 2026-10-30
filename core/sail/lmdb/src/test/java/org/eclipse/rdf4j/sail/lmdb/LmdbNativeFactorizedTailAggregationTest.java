@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.util.List;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -429,6 +431,98 @@ public class LmdbNativeFactorizedTailAggregationTest {
 		assertThat(strategy(query, "factorizedTail"))
 				.as("value-typed aggregates over branch slots should ride the factorized tail")
 				.startsWith("factorizedTail");
+	}
+
+	@Test
+	public void sampleOverEligiblePrefixValueUsesTheFactorizedTail() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s (SAMPLE(?n0) AS ?sample) WHERE { ?s ex:pn0 ?n0 . "
+				+ "?s ex:p1 ?a . ?s ex:p2 ?b . } GROUP BY ?s";
+		assertSameAsGeneric(query, "factorizedTail");
+		assertThat(strategy(query, "factorizedTail")).startsWith("factorizedTail");
+	}
+
+	@Test
+	public void distinctNumericBranchValuesUseGlobalMembershipBeforeFactorWeights() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (SUM(DISTINCT ?n) AS ?sum) (AVG(DISTINCT ?n) AS ?average) "
+				+ "WHERE { ?s ex:p1 ?a . ?s ex:pn ?n . }";
+		assertSameAsGeneric(query, "factorizedTail");
+		assertThat(strategy(query, "factorizedTail")).startsWith("factorizedTail");
+	}
+
+	@Test
+	public void assuredWildcardCountsRetainTheirFactorizedTailEligibility() {
+		String query = star("(COUNT(*) AS ?count)", "");
+		assertSameAsGeneric(query, "factorizedTail");
+		assertThat(strategy(query, "factorizedTail")).startsWith("factorizedTail");
+	}
+
+	@Test
+	public void presenceOnlyReducersDoNotDemandAnOverflowingSiblingProduct() {
+		addHugeProduct();
+		String selected = "(SUM(DISTINCT ?input) AS ?sum) (AVG(DISTINCT ?input) AS ?average) "
+				+ "(MIN(?input) AS ?minimum) (MAX(?input) AS ?maximum) (SAMPLE(?input) AS ?sample)";
+		String query = hugeProductQuery(selected, "largeNumber", true);
+		assertThat(rows(query, "factorizedTail"))
+				.isEqualTo(genericRows(hugeProductQuery(selected, "largeNumber", false)));
+		assertThat(strategy(query, "factorizedTail")).startsWith("factorizedTail");
+	}
+
+	@Test
+	public void errorOnlyNumericReducersDoNotDemandAnOverflowingSiblingProduct() {
+		addHugeProduct();
+		String selected = "(SUM(?input) AS ?sum) (AVG(?input) AS ?average) (SAMPLE(?input) AS ?sample)";
+		String query = hugeProductQuery(selected, "largeError", true);
+		assertThat(rows(query, "factorizedTail"))
+				.isEqualTo(genericRows(hugeProductQuery(selected, "largeError", false)));
+		assertThat(strategy(query, "factorizedTail")).startsWith("factorizedTail");
+	}
+
+	@Test
+	public void anObservedCountStillRejectsAnOverflowingSiblingProduct() {
+		addHugeProduct();
+		String query = hugeProductQuery("(COUNT(?s) AS ?count)", "largeNumber", true);
+		assertThatThrownBy(() -> rows(query, "factorizedTail"))
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("factorized aggregation");
+	}
+
+	private void addHugeProduct() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory values = connection.getValueFactory();
+			IRI subject = values.createIRI(EX, "largeProduct");
+			connection.begin();
+			connection.add(subject, values.createIRI(EX, "largeNumber"), values.createLiteral(7));
+			connection.add(subject, values.createIRI(EX, "largeError"), values.createLiteral("type-error"));
+			for (int leg = 0; leg < 11; leg++) {
+				for (int value = 0; value < 64; value++) {
+					connection.add(subject, values.createIRI(EX, "hugeLeg" + leg),
+							values.createIRI(EX, "hugeValue" + value));
+				}
+			}
+			connection.commit();
+		}
+	}
+
+	private List<String> genericRows(String query) {
+		String previous = System.setProperty(NATIVE_FLAG, "false");
+		try {
+			return rows(query);
+		} finally {
+			restoreProperty(NATIVE_FLAG, previous);
+		}
+	}
+
+	private static String hugeProductQuery(String selected, String prefix, boolean includeProduct) {
+		StringBuilder query = new StringBuilder("PREFIX ex: <" + EX + "> SELECT " + selected
+				+ " WHERE { ?s ex:" + prefix + " ?input . ");
+		if (includeProduct) {
+			for (int leg = 0; leg < 11; leg++) {
+				query.append("?s ex:hugeLeg").append(leg).append(" ?v").append(leg).append(" . ");
+			}
+		}
+		return query.append('}').toString();
 	}
 
 	@Test

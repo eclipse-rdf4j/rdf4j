@@ -126,7 +126,7 @@ final class PatternPlan implements SlotPlan {
 	/** Reopens the pattern into a caller-owned cursor, eliminating two wrapper allocations per join probe. */
 	PatternCursor openRaw(RowState row, NativeLmdbQuerySource.NativeProbe probe, PatternCursor reusable)
 			throws IOException {
-		return openRaw(row, probe, false, reusable).withResidualRange(range);
+		return openRawTraced(row, probe, false, reusable);
 	}
 
 	/**
@@ -135,7 +135,18 @@ final class PatternPlan implements SlotPlan {
 	 * that multiplicity.
 	 */
 	PatternCursor openRawForExistence(RowState row) throws IOException {
-		return openRaw(row, null, true, null).withResidualRange(range);
+		return openRawTraced(row, null, true, null);
+	}
+
+	private PatternCursor openRawTraced(RowState row, NativeLmdbQuerySource.NativeProbe probe, boolean existenceOnly,
+			PatternCursor reusable) throws IOException {
+		NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.inputStage("scan", row.cancellation);
+		try {
+			return openRaw(row, probe, existenceOnly, reusable).withResidualRange(range).withExecutionPhase(phase);
+		} catch (IOException | RuntimeException | Error failure) {
+			phase.close();
+			throw failure;
+		}
 	}
 
 	private PatternCursor openRaw(RowState row, NativeLmdbQuerySource.NativeProbe probe, boolean existenceOnly,
@@ -211,7 +222,13 @@ final class PatternPlan implements SlotPlan {
 	 */
 	PatternCursor openRawUnbinding(RowState row, long unboundMask, NativeLmdbQuerySource.NativeProbe probe)
 			throws IOException {
-		return openRawUnbindingInternal(row, unboundMask, probe).withResidualRange(range);
+		NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.inputStage("scan", row.cancellation);
+		try {
+			return openRawUnbindingInternal(row, unboundMask, probe).withResidualRange(range).withExecutionPhase(phase);
+		} catch (IOException | RuntimeException | Error failure) {
+			phase.close();
+			throw failure;
+		}
 	}
 
 	private PatternCursor openRawUnbindingInternal(RowState row, long unboundMask,

@@ -23,7 +23,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
@@ -36,7 +35,6 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -74,7 +72,6 @@ import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.base.SailStore;
-import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.base.TemporaryFlushingException;
 import org.eclipse.rdf4j.sail.features.SailResultValueExposure;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
@@ -160,6 +157,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	private final Set<ReplayPlanIteration<?>> pendingPlanReplays = Collections
 			.newSetFromMap(new IdentityHashMap<>());
 	private final ThreadLocal<Integer> internalReadScopeDepth = ThreadLocal.withInitial(() -> 0);
+	/** Namespace reads never touch the statements an initial run import still holds in its runs. */
+	private final ThreadLocal<Integer> namespaceReadDepth = ThreadLocal.withInitial(() -> 0);
 	private final ThreadLocal<ReadExposureScope> activeReadExposureScope = new ThreadLocal<>();
 	private final ThreadLocal<ReplayPlan<?>> pendingEvaluationReplayPlan = new ThreadLocal<>();
 	private final ThreadLocal<ExplainTupleExprCapture> explainTupleExprCapture = new ThreadLocal<>();
@@ -229,7 +228,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	private final List<Runnable> pendingDelegateCloses = new ArrayList<>();
 	private LmdbSailStore.MapResizeKind pendingGrowthKind = LmdbSailStore.MapResizeKind.TRIPLE_STORE;
 	private LmdbSailStore.MapGrowthToken pendingGrowthToken;
-	private QueryExecutionDeadline pendingQueryDeadline;
 	private volatile Throwable replayFailure;
 	private long readAttemptGeneration;
 	// Deterministic seam for a read attempt that fails while its result is being registered; tests only.
@@ -272,7 +270,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		try {
 			exposure = new RepositoryValueIteration<>(source, extractor,
 					(ValueStore) lmdbStore.getBackingStore().getValueFactory(), valueResolutionScope,
-					QueryExecutionDeadline.current(), this::repositoryIterationClosed);
+					this::repositoryIterationClosed);
 			bindRepositorySource(source, exposure);
 		} catch (RuntimeException | Error failure) {
 			closeResources(failure, source::close);
@@ -596,7 +594,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				}
 			}, () -> {
 				if (releaseCommittedView) {
-					lmdbStore.getBackingStore().finishInitialNoneImport(this, completedWriteAttempt);
+					lmdbStore.getBackingStore().finishInitialNoneImport(this, completedWriteAttempt, true);
 				}
 			}, () -> {
 				if (txnLock != null && txnLock.isActive()) {
@@ -645,6 +643,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					batch.close();
 				}
 			},
+					() -> lmdbStore.getBackingStore().rollbackInitialRunImport(this),
 					() -> lmdbStore.getBackingStore().discardNonePending(this),
 					() -> lmdbStore.getBackingStore().rollback(this), super::rollbackInternal,
 					() -> lmdbStore.getBackingStore().completeWriterRollback(this),
@@ -693,7 +692,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			verifyMutationAdmission();
 		}
 		if (isActive() && IsolationLevels.NONE.isCompatibleWith(getTransactionIsolation())) {
-			lmdbStore.getBackingStore().flushNonePending(this);
+			lmdbStore.getBackingStore().flushNonePending(this, true);
+			// Commit, an explicit flush and a read flush all need an initial run import written to the store.
+			lmdbStore.getBackingStore().completeInitialRunImportBeforeRead(this);
 			try (SailClosable publication = lmdbStore.getBackingStore().beginPublication(this)) {
 				super.endUpdateInternal(op);
 			}
@@ -713,6 +714,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	protected SailClosable beginDatasetAcquisition(IsolationLevel level) throws SailException {
+		// An initial run import holds the store: its owner completes it before reading, everyone else waits.
+		LmdbSailStore backing = lmdbStore.getBackingStore();
+		if (namespaceReadDepth.get() == 0) {
+			try (SailClosable importOwner = backing.enterWriterOwner(this)) {
+				backing.completeInitialRunImportBeforeRead(this);
+			}
+		}
+		backing.awaitInitialRunImport(this);
 		// Associate any synchronously-created serializable observation sinks with this connection. The admission can
 		// live
 		// until a lazy result is closed on another worker, so the thread-local writer scope must not escape this call.
@@ -766,7 +775,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (checkpointNamespaces != null && checkpointNamespaces.available()) {
 			return checkpointNamespaces.namespaces().get(prefix);
 		}
-		return super.getNamespaceInternal(prefix);
+		namespaceReadDepth.set(namespaceReadDepth.get() + 1);
+		try {
+			return super.getNamespaceInternal(prefix);
+		} finally {
+			namespaceReadDepth.set(namespaceReadDepth.get() - 1);
+		}
 	}
 
 	@Override
@@ -783,7 +797,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		ReplayFactory<T> replayFactory = null;
 		long generation = currentReadAttemptGeneration();
 		List<LmdbSailStore.ReadViewLease> readViews = List.of();
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		OperationReadAttempt operationAttempt = null;
 		ReplayPlanIteration<?> sourcePlan = null;
 		if (iteration instanceof ReplayPlanIteration<?> replayPlan) {
@@ -791,7 +804,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			replayFactory = (ReplayFactory<T>) replayPlan.factory;
 			generation = replayPlan.generation;
 			readViews = replayPlan.readViews;
-			deadline = replayPlan.deadline;
 		}
 		ReplayPlan<?> evaluationPlan = pendingEvaluationReplayPlan.get();
 		if (evaluationPlan != null) {
@@ -803,7 +815,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			replayFactory = (ReplayFactory<T>) evaluationPlan.factory;
 			generation = evaluationPlan.generation;
 			readViews = evaluationPlan.readViews;
-			deadline = evaluationPlan.deadline;
 			sourcePlan = (ReplayPlanIteration<T>) evaluationPlan.iteration;
 		}
 		OperationReadAttemptReference ownedReference = null;
@@ -814,7 +825,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				ownedReference = sourcePlan.transferOperationAttempt();
 			}
 			replayable = new ReplayableIteration<>(iteration, replayFactory, generation, readViews,
-					deadline, operationAttempt, ownedReference,
+					operationAttempt, ownedReference,
 					sourcePlan == null ? readAttemptLease : sourcePlan.admissionAttempt,
 					sourcePlan == null ? valueResolutionScope : sourcePlan.valueScope,
 					sourcePlan == null ? null : (SailResultValueExtractor<T>) sourcePlan.rawExtractor,
@@ -849,7 +860,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 			retirePendingReplayIfIdle();
 			if (operationAttempt == null && generation != currentReadAttemptGeneration() && replayFactory != null) {
-				ReplayPlanIteration<T> replacement = openReplayPlan(replayFactory, deadline);
+				ReplayPlanIteration<T> replacement = openReplayPlan(replayFactory);
 				replayable.replaceDelegate(replacement, replacement.generation, replacement.readViews,
 						replacement.admissionAttempt);
 				retirePendingReplayIfIdle();
@@ -897,7 +908,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					.forEach((prefix, name) -> namespaces.add(new SimpleNamespace(prefix, name)));
 			return new CloseableIteratorIteration<>(namespaces.iterator());
 		}
-		return super.getNamespacesInternal();
+		namespaceReadDepth.set(namespaceReadDepth.get() + 1);
+		try {
+			return super.getNamespacesInternal();
+		} finally {
+			namespaceReadDepth.set(namespaceReadDepth.get() - 1);
+		}
 	}
 
 	private LmdbSailStore.CheckpointNamespaceSnapshot checkpointNamespaceSnapshot() {
@@ -961,8 +977,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	@Override
 	protected long addStatementsInternal(Iterable<? extends Statement> statements, Resource... contexts)
 			throws SailException {
-		// Optimized bulk insertion constructs its base source before the per-row callback can check admission.
-		verifyMutationAdmission();
+		// Optimized bulk insertion constructs its base source before the per-row callback can check admission. Like
+		// every statement write, it marks the attempt as writing, so its commit runs post-commit maintenance.
+		markStatementWriteAttempted();
 		return super.addStatementsInternal(statements, contexts);
 	}
 
@@ -981,7 +998,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	public boolean addInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		boolean ret = super.addInferredStatement(subj, pred, obj, contexts);
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
@@ -1040,8 +1057,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		ReplayPlanIteration<BindingSet> iteration = openReplayPlan(factory);
 		// Raw Sail iterations retain SailException so the repository boundary can perform its own conversion.
 		iteration.queryResult = true;
-		pendingEvaluationReplayPlan.set(new ReplayPlan<>(factory, iteration.generation, iteration.readViews,
-				iteration.deadline, iteration));
+		pendingEvaluationReplayPlan
+				.set(new ReplayPlan<>(factory, iteration.generation, iteration.readViews, iteration));
 		CloseableIteration<? extends BindingSet> result = withRawValues(iteration,
 				SailResultValueExtractor.BINDING_SETS);
 		return cacheOwner == null ? result
@@ -1373,16 +1390,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private <T> ReplayPlanIteration<T> openReplayPlan(ReplayFactory<T> factory) throws SailException {
-		return openReplayPlan(factory, QueryExecutionDeadline.current());
+		return openReplayPlan(factory, null);
 	}
 
-	private <T> ReplayPlanIteration<T> openReplayPlan(ReplayFactory<T> factory,
-			QueryExecutionDeadline deadline) throws SailException {
-		return openReplayPlan(factory, deadline, null);
-	}
-
-	private <T> ReplayPlanIteration<T> openReplayPlan(ReplayFactory<T> factory,
-			QueryExecutionDeadline deadline, OperationReadAttempt requestedAttempt) throws SailException {
+	private <T> ReplayPlanIteration<T> openReplayPlan(ReplayFactory<T> factory, OperationReadAttempt requestedAttempt)
+			throws SailException {
 		OperationReadAttempt operationAttempt = requestedAttempt;
 		OperationReadAttemptReference ownedReference = null;
 		if (operationAttempt == null) {
@@ -1397,16 +1409,15 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				}
 			} else if (!isActive() || !isTransactionSnapshot()) {
 				operationAttempt = createOperationReadAttempt(isActive() ? getTransactionIsolation()
-						: lmdbStore.getDefaultIsolationLevel(), deadline);
+						: lmdbStore.getDefaultIsolationLevel());
 				ownedReference = operationAttempt == null ? null : operationAttempt.initialReference;
 			}
 		}
 		Throwable primary = null;
 		try {
-			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
 				int attempts = 0;
 				while (true) {
-					throwIfDeadlineExpired(deadline);
+					throwIfCancelled(null);
 					prepareForReadAttempt();
 					long generation = beginReadCreation();
 					if (generation < 0) {
@@ -1420,7 +1431,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					}
 					ReadExposureScope exposure;
 					try {
-						exposure = beginReadExposureScope(null, deadline, operationAttempt);
+						exposure = beginReadExposureScope(null, operationAttempt);
 					} catch (RuntimeException | Error failure) {
 						endReadCreation();
 						throw failure;
@@ -1462,7 +1473,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 								pendingGrowthViews.addAll(readViews);
 								pendingGrowthKind = resizeKind(failure);
 								pendingGrowthToken = growthToken;
-								pendingQueryDeadline = deadline;
 								growthKind = pendingGrowthKind;
 								transactionReplay = true;
 								retry = true;
@@ -1475,7 +1485,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 								if (operationAttempt == null) {
 									pendingGrowthToken = growthToken;
 									pendingGrowthKind = growthKind;
-									pendingQueryDeadline = deadline;
 								} else {
 									operationAttempt.growthToken = growthToken;
 									operationAttempt.growthKind = growthKind;
@@ -1493,7 +1502,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 								pendingGrowthViews.addAll(readViews);
 								pendingGrowthToken = growthToken;
 								pendingGrowthKind = growthKind;
-								pendingQueryDeadline = deadline;
 								replayRequested = true;
 								transactionReplay = true;
 								retry = true;
@@ -1505,7 +1513,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 								if (operationAttempt == null) {
 									pendingGrowthToken = growthToken;
 									pendingGrowthKind = growthKind;
-									pendingQueryDeadline = deadline;
 								} else {
 									operationAttempt.growthToken = growthToken;
 									operationAttempt.growthKind = growthKind;
@@ -1525,7 +1532,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 							}
 							ReplayPlanIteration<T> plan = null;
 							try {
-								plan = new ReplayPlanIteration<>(delegate, factory, generation, readViews, deadline,
+								plan = new ReplayPlanIteration<>(delegate, factory, generation, readViews,
 										operationAttempt, ownedReference, exposure.admissionAttempt, exposure.valueScope);
 								openReplayPlans.add(plan);
 							} catch (RuntimeException | Error caught) {
@@ -1595,7 +1602,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 									.retireReservedEpoch(
 											operationAttempt == null ? readAttemptLease : operationAttempt.lease,
 											newIdentitySet(readViews));
-							awaitGrowthEnd(growthToken, deadline);
+							awaitGrowthEnd(growthToken);
 							clearCompletedGrowth(growthToken);
 							if (operationAttempt != null) {
 								operationAttempt.clearGrowth(growthToken);
@@ -1618,7 +1625,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					}
 					throw new SailException("Unable to open an LMDB read result", failure);
 				}
-			}
 		} catch (RuntimeException | Error failure) {
 			primary = failure;
 			throw failure;
@@ -1859,16 +1865,16 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private ReadExposureScope beginReadExposureScope(ReplayableIteration<?> observationOwner,
-			QueryExecutionDeadline deadline, OperationReadAttempt operationAttempt) {
+			OperationReadAttempt operationAttempt) {
 		ReadExposureScope parent = activeReadExposureScope.get();
 		ValueResolutionScope captured = observationOwner != null ? observationOwner.valueScope
 				: operationAttempt != null ? operationAttempt.valueScope
 						: parent != null ? parent.valueScope : valueResolutionScope;
-		return beginReadExposureScope(observationOwner, deadline, operationAttempt, captured, false);
+		return beginReadExposureScope(observationOwner, operationAttempt, captured, false);
 	}
 
 	private ReadExposureScope beginReadExposureScope(ReplayableIteration<?> observationOwner,
-			QueryExecutionDeadline deadline, OperationReadAttempt operationAttempt, ValueResolutionScope valueScope,
+			OperationReadAttempt operationAttempt, ValueResolutionScope valueScope,
 			boolean workerTask) {
 		ReadExposureScope parent = activeReadExposureScope.get();
 		if (observationOwner == null && operationAttempt == null && parent != null) {
@@ -1877,7 +1883,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		LmdbSailStore.ReadAttemptLease admission = observationOwner != null ? observationOwner.admissionAttempt
 				: operationAttempt != null ? operationAttempt.lease
 						: parent != null ? parent.admissionAttempt : readAttemptLease;
-		ReadExposureScope scope = new ReadExposureScope(parent, observationOwner, deadline, operationAttempt,
+		ReadExposureScope scope = new ReadExposureScope(parent, observationOwner, operationAttempt,
 				admission);
 		scope.valueScope = valueScope;
 		try {
@@ -1926,36 +1932,33 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 	}
 
-	private OperationReadAttempt createOperationReadAttempt(IsolationLevel isolationLevel,
-			QueryExecutionDeadline deadline) throws SailException {
+	private OperationReadAttempt createOperationReadAttempt(IsolationLevel isolationLevel) throws SailException {
 		if (isolationLevel == null) {
 			return null;
 		}
-		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
-			OperationReadAttempt attempt = new OperationReadAttempt(isolationLevel);
-			try {
-				attempt.lease = lmdbStore.getBackingStore()
-						.registerOperationReadAttempt(attempt, attempt.observer,
-								isActive() ? transactionAdmissionLease : null);
-			} catch (RuntimeException | Error failure) {
-				if (attempt.ownsValueScope) {
-					closeResources(failure, attempt.valueScope::close);
-				}
-				throw failure;
+		OperationReadAttempt attempt = new OperationReadAttempt(isolationLevel);
+		try {
+			attempt.lease = lmdbStore.getBackingStore()
+					.registerOperationReadAttempt(attempt, attempt.observer,
+							isActive() ? transactionAdmissionLease : null);
+		} catch (RuntimeException | Error failure) {
+			if (attempt.ownsValueScope) {
+				closeResources(failure, attempt.valueScope::close);
 			}
-			try {
-				synchronized (readAttemptLock) {
-					operationReadAttempts.add(attempt);
-				}
-			} catch (RuntimeException | Error failure) {
-				closeResources(failure, () -> closeOperationReadAttempt(attempt.initialReference));
-				throw failure;
-			}
-			return attempt;
+			throw failure;
 		}
+		try {
+			synchronized (readAttemptLock) {
+				operationReadAttempts.add(attempt);
+			}
+		} catch (RuntimeException | Error failure) {
+			closeResources(failure, () -> closeOperationReadAttempt(attempt.initialReference));
+			throw failure;
+		}
+		return attempt;
 	}
 
-	private OperationReadAttempt currentOrNewOperationReadAttempt(QueryExecutionDeadline deadline)
+	private OperationReadAttempt currentOrNewOperationReadAttempt()
 			throws SailException {
 		ReadExposureScope parent = activeReadExposureScope.get();
 		if (parent != null) {
@@ -1965,7 +1968,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			return null;
 		}
 		return createOperationReadAttempt(isActive() ? getTransactionIsolation()
-				: lmdbStore.getDefaultIsolationLevel(), deadline);
+				: lmdbStore.getDefaultIsolationLevel());
 	}
 
 	private OperationReadAttemptReference retainOperationReadAttempt(OperationReadAttempt attempt) {
@@ -2076,43 +2079,25 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (internalReadScopeDepth.get() > 0) {
 			return;
 		}
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-		QueryExecutionDeadline.Registration registration = deadline == null ? null
-				: deadline.onExpiration(() -> {
-					synchronized (readAttemptLock) {
-						readAttemptLock.notifyAll();
-					}
-				});
-		try {
-			while (true) {
-				throwIfDeadlineExpired(deadline);
-				retirePendingReplayIfIdle();
-				throwReplayFailureIfPresent();
-				synchronized (readAttemptLock) {
-					if (transactionFinished && isActive()) {
-						if (isDetachedAttemptResultLocked(existingResult)) {
-							return;
-						}
-						throw new SailException("The LMDB connection is closed");
-					}
-					if (!replayRequested && !replayInProgress) {
+		while (true) {
+			retirePendingReplayIfIdle();
+			throwReplayFailureIfPresent();
+			synchronized (readAttemptLock) {
+				if (transactionFinished && isActive()) {
+					if (isDetachedAttemptResultLocked(existingResult)) {
 						return;
 					}
-					try {
-						// The expiry listener registered above wakes this wait; nothing here reads a clock.
-						if (deadline != null && deadline.isExpired()) {
-							throw new QueryInterruptedException("Query evaluation took too long");
-						}
-						readAttemptLock.wait();
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						throw new SailException("Interrupted while waiting to restart an LMDB read attempt", e);
-					}
+					throw new SailException("The LMDB connection is closed");
 				}
-			}
-		} finally {
-			if (registration != null) {
-				registration.close();
+				if (!replayRequested && !replayInProgress) {
+					return;
+				}
+				try {
+					readAttemptLock.wait();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new SailException("Interrupted while waiting to restart an LMDB read attempt", e);
+				}
 			}
 		}
 	}
@@ -2227,7 +2212,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 			pendingGrowthToken = token;
 			pendingGrowthKind = kind;
-			pendingQueryDeadline = queryDeadlineForViews(affectedViews, attempt);
 			if (transactionSnapshot) {
 				pendingGrowthViews.addAll(affectedViews);
 				replayRequested = true;
@@ -2276,7 +2260,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				if (!accepted) {
 					if (pendingGrowthToken == token) {
 						pendingGrowthToken = null;
-						pendingQueryDeadline = null;
 					}
 					return false;
 				}
@@ -2364,26 +2347,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 	}
 
-	private QueryExecutionDeadline queryDeadlineForViews(Set<LmdbSailStore.ReadViewLease> affectedViews,
-			LmdbSailStore.ReadAttemptLease attempt) {
-		for (ReadExposureScope scope : activeReadExposureScopes) {
-			if (scope.deadline != null && !intersecting(scope.readViews(), affectedViews).isEmpty()) {
-				return scope.deadline;
-			}
-		}
-		for (ReplayableIteration<?> iteration : replayableIterations) {
-			if (iteration.deadline != null && !intersecting(iteration.readViews(), affectedViews).isEmpty()) {
-				return iteration.deadline;
-			}
-		}
-		for (ReplayPlanIteration<?> plan : openReplayPlans) {
-			if (plan.deadline != null && !intersecting(plan.readViews, affectedViews).isEmpty()) {
-				return plan.deadline;
-			}
-		}
-		return attempt.deadlineOwner();
-	}
-
 	private Set<LmdbSailStore.ReadViewLease> intersecting(List<LmdbSailStore.ReadViewLease> readViews,
 			Set<LmdbSailStore.ReadViewLease> affectedViews) {
 		Set<LmdbSailStore.ReadViewLease> result = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -2402,30 +2365,28 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		return result;
 	}
 
-	private void awaitGrowthEnd(LmdbSailStore.MapGrowthToken token, QueryExecutionDeadline deadline)
+	private void awaitGrowthEnd(LmdbSailStore.MapGrowthToken token)
 			throws SailException {
 		if (token == null) {
 			throw new SailException("A retried LMDB read has no map-growth generation to await");
 		}
-		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
-			lmdbStore.getBackingStore().awaitGrowthEnd(token, deadline);
-		}
+		lmdbStore.getBackingStore().awaitGrowthEnd(token);
 	}
 
 	private void clearCompletedGrowth(LmdbSailStore.MapGrowthToken token) {
 		synchronized (readAttemptLock) {
 			if (pendingGrowthToken == token) {
 				pendingGrowthToken = null;
-				pendingQueryDeadline = null;
 				pendingGrowthViews.clear();
 			}
 			readAttemptLock.notifyAll();
 		}
 	}
 
-	private void throwIfDeadlineExpired(QueryExecutionDeadline deadline) {
-		if (deadline != null && deadline.isExpired()) {
-			throw new QueryInterruptedException("Query evaluation took too long");
+	/** A read on behalf of a cancelled result stops at its next attempt boundary. */
+	private static void throwIfCancelled(ReplayableIteration<?> owner) {
+		if (Thread.currentThread().isInterrupted() || owner != null && owner.cancellationRequested) {
+			throw new QueryInterruptedException("Query evaluation was cancelled");
 		}
 	}
 
@@ -2501,20 +2462,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		List<ReplayableIteration<?>> openIterations = List.of();
 		List<ReplayableIteration<?>> resultReplays = List.of();
 		LmdbSailStore.MapGrowthToken growthToken = null;
-		QueryExecutionDeadline deadline = null;
 		boolean transactionReplay;
 		synchronized (readAttemptLock) {
 			while (replayInProgress) {
-				QueryExecutionDeadline waitDeadline = QueryExecutionDeadline.current();
-				if (waitDeadline == null) {
-					waitDeadline = pendingQueryDeadline;
-				}
-				throwIfDeadlineExpired(waitDeadline);
-				// Expiry wakes this wait through a listener; nothing here reads a clock. Registering under this monitor
-				// is safe: listeners never run under the expiring deadline's locks, and an inline run re-enters it.
-				try (QueryExecutionDeadline.Registration wake = waitDeadline == null ? null
-						: waitDeadline.onExpiration(this::wakeReadAttemptWaiters)) {
-					throwIfDeadlineExpired(waitDeadline);
+				try {
 					readAttemptLock.wait();
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
@@ -2563,7 +2514,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						.filter(iteration -> !iteration.isClosed() && !iteration.attemptFinished)
 						.toList();
 				growthToken = pendingGrowthToken;
-				deadline = pendingQueryDeadline;
 			}
 		}
 
@@ -2584,7 +2534,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			return;
 		}
 
-		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+		try {
 			Set<LmdbSailStore.ReadViewLease> attemptViews = newIdentitySet(growthViews);
 			for (ReplayableIteration<?> iteration : openIterations) {
 				attemptViews.addAll(iteration.readViews());
@@ -2604,7 +2554,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			retireBranchesForReadReplay();
 			retireSharedSnapshotsAfterReplay();
 			lmdbStore.getBackingStore().retireReservedEpoch(readAttemptLease, attemptViews);
-			awaitGrowthEnd(growthToken, deadline);
+			awaitGrowthEnd(growthToken);
 			clearCompletedGrowth(growthToken);
 			replayTransactionStart = true;
 			try {
@@ -2644,14 +2594,13 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	private void retireResultReplays(List<ReplayableIteration<?>> resultReplays) {
 		for (ReplayableIteration<?> iteration : resultReplays) {
 			LmdbSailStore.MapGrowthToken token;
-			QueryExecutionDeadline deadline = iteration.deadline;
 			Set<LmdbSailStore.ReadViewLease> views;
 			synchronized (readAttemptLock) {
 				token = iteration.growthToken;
 				views = newIdentitySet(iteration.growthViews);
 				views.addAll(iteration.readViews());
 			}
-			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			try {
 				for (LmdbSailStore.ReadViewLease view : views) {
 					view.abandonUnobserved();
 				}
@@ -2666,7 +2615,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 								iteration.operationAttempt == null ? readAttemptLease
 										: iteration.operationAttempt.lease,
 								views);
-				awaitGrowthEnd(token, deadline);
+				awaitGrowthEnd(token);
 				clearCompletedGrowth(token);
 			} catch (RuntimeException failure) {
 				iteration.replayFailure = failure;
@@ -2764,22 +2713,21 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private <T> T executeTrackedRead(ReadOperation<T> operation) throws SailException {
-		return executeTrackedRead(operation, null, QueryExecutionDeadline.current());
+		return executeTrackedRead(operation, null);
 	}
 
-	private <T> T executeTrackedRead(ReadOperation<T> operation, ReplayableIteration<?> observationOwner,
-			QueryExecutionDeadline deadline) throws SailException {
+	private <T> T executeTrackedRead(ReadOperation<T> operation, ReplayableIteration<?> observationOwner)
+			throws SailException {
 		if (internalReadScopeDepth.get() > 0) {
 			throwIfReadScopeRequestedReplay();
 			return operation.execute();
 		}
 		if (observationOwner != null && observationOwner.observed && activeReadExposureScope.get() == null) {
-			return executeObservedRead(operation, observationOwner, deadline);
+			return executeObservedRead(operation, observationOwner);
 		}
-		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
 			ReadExposureScope parent = activeReadExposureScope.get();
 			OperationReadAttempt operationAttempt = observationOwner == null
-					? currentOrNewOperationReadAttempt(deadline)
+					? currentOrNewOperationReadAttempt()
 					: observationOwner.operationAttempt;
 			boolean ownsOperationAttempt = observationOwner == null && parent == null
 					&& operationAttempt != null;
@@ -2788,11 +2736,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			try {
 				int retries = 0;
 				while (true) {
-					throwIfDeadlineExpired(deadline);
+					throwIfCancelled(observationOwner);
 					boolean detachedResult = isDetachedAttemptResult(observationOwner);
 					prepareForReadAttempt(observationOwner);
 					if (!detachedResult) {
-						awaitResultReplayIfNeeded(observationOwner, deadline);
+						awaitResultReplayIfNeeded(observationOwner);
 					}
 					synchronized (readAttemptLock) {
 						detachedResult = isDetachedAttemptResultLocked(observationOwner);
@@ -2809,7 +2757,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					}
 					ReadExposureScope exposure;
 					try {
-						exposure = beginReadExposureScope(observationOwner, deadline, operationAttempt);
+						exposure = beginReadExposureScope(observationOwner, operationAttempt);
 					} catch (RuntimeException | Error failure) {
 						closeResources(failure, endReadOperation().toArray(Runnable[]::new));
 						throw failure;
@@ -2869,7 +2817,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 							pendingGrowthViews.addAll(readViews);
 							pendingGrowthKind = growthKind;
 							pendingGrowthToken = growthToken;
-							pendingQueryDeadline = deadline;
 							retry = true;
 							transactionReplay = true;
 						} else if (!detachedResult && retryableOutcome && (conflict || growthToken != null)
@@ -2899,7 +2846,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 							if (operationAttempt == null) {
 								pendingGrowthToken = growthToken;
 								pendingGrowthKind = growthKind;
-								pendingQueryDeadline = deadline;
 							}
 							retry = true;
 						} else if (!detachedResult && operationAttempt == null && failure == null && replayRequested
@@ -2950,7 +2896,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						if (transactionReplay || observationOwner != null) {
 							retirePendingReplayIfIdle();
 							if (observationOwner != null && !transactionReplay) {
-								awaitResultReplayIfNeeded(observationOwner, deadline);
+								awaitResultReplayIfNeeded(observationOwner);
 							}
 						} else {
 							for (LmdbSailStore.ReadViewLease readView : readViews) {
@@ -2961,7 +2907,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 									.retireReservedEpoch(
 											operationAttempt == null ? readAttemptLease : operationAttempt.lease,
 											newIdentitySet(readViews));
-							awaitGrowthEnd(growthToken, deadline);
+							awaitGrowthEnd(growthToken);
 							clearCompletedGrowth(growthToken);
 							if (operationAttempt != null) {
 								operationAttempt.clearGrowth(growthToken);
@@ -3006,7 +2952,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					closeResources(primary, () -> closeOperationReadAttempt(ownedReference));
 				}
 			}
-		}
 	}
 
 	private static final Runnable NO_REPLAY_CHECKPOINT = () -> {
@@ -3015,16 +2960,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	/**
 	 * A result that has already handed out rows can never be replayed, so its later calls need none of the
 	 * exposure-scope bookkeeping: no growth request targets an observed result, and a view invalidated underneath
-	 * surfaces from the native read or from the validity check after the call. What remains is the deadline and
-	 * cancellation check, the read-operation accounting that close and retirement wait for, the value exposure scope,
-	 * the external-value initializer for extension code running inside the call, and the captured admission for work
-	 * the call dispatches to worker threads.
+	 * surfaces from the native read or from the validity check after the call. What remains is the cancellation check,
+	 * the read-operation accounting that close and retirement wait for, the value exposure scope, the external-value
+	 * initializer for extension code running inside the call, and the captured admission for work the call dispatches
+	 * to worker threads.
 	 */
-	private <T> T executeObservedRead(ReadOperation<T> operation, ReplayableIteration<?> owner,
-			QueryExecutionDeadline deadline) throws SailException {
+	private <T> T executeObservedRead(ReadOperation<T> operation, ReplayableIteration<?> owner) throws SailException {
 		CancellationSignal lifecycleCancellation = CancellationSignal.current();
-		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
-			throwIfDeadlineExpired(deadline);
+			throwIfCancelled(owner);
 			synchronized (readAttemptLock) {
 				if (transactionFinished && isActive() && !isDetachedAttemptResultLocked(owner)
 						&& (owner.operationAttempt == null || !owner.operationAttempt.sealed)) {
@@ -3047,7 +2990,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						.activateExternalValueInitializer(LmdbStoreConnection::protectValueTree);
 				readResourceBinding = lmdbStore.getBackingStore().enterReadResourceContext(() -> owner.readViews);
 				workerAdmission = QueryExecutionContext.activateReplaySafepoint(NO_REPLAY_CHECKPOINT,
-						() -> observedWorkerScope(owner, deadline));
+						() -> observedWorkerScope(owner));
 				internalReadScopeDepth.set(oldDepth + 1);
 				result = operation.execute();
 				if (lifecycleCancellation.isCancelled()) {
@@ -3123,12 +3066,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				throw new SailException("LMDB read failed", failure);
 			}
 			return result;
-		}
 	}
 
 	/** The admission an observed result lends to worker threads; see {@link ReadExposureScope#get()}. */
-	private QueryExecutionContext.WorkerScope observedWorkerScope(ReplayableIteration<?> owner,
-			QueryExecutionDeadline deadline) {
+	private QueryExecutionContext.WorkerScope observedWorkerScope(ReplayableIteration<?> owner) {
 		LmdbSailStore.ReadAttemptLease admission = owner.admissionAttempt;
 		if (admission == null) {
 			return null;
@@ -3138,47 +3079,24 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (preferred == null && views.size() == 1) {
 			preferred = views.get(0);
 		}
-		return new CapturedReadContext(owner, owner.operationAttempt, admission, admission.generation(), deadline,
+		return new CapturedReadContext(owner, owner.operationAttempt, admission, admission.generation(),
 				views, preferred, owner.valueScope, readThreadRegistration.get().cancellationGeneration);
 	}
 
-	private void wakeReadAttemptWaiters() {
-		synchronized (readAttemptLock) {
-			readAttemptLock.notifyAll();
-		}
-	}
-
-	private void awaitResultReplayIfNeeded(ReplayableIteration<?> iteration, QueryExecutionDeadline deadline)
+	private void awaitResultReplayIfNeeded(ReplayableIteration<?> iteration)
 			throws SailException {
 		if (iteration == null || iteration.operationAttempt != null && iteration.operationAttempt.sealed) {
 			return;
 		}
-		QueryExecutionDeadline.Registration registration = deadline == null ? null
-				: deadline.onExpiration(() -> {
-					synchronized (readAttemptLock) {
-						readAttemptLock.notifyAll();
-					}
-				});
-		try {
-			synchronized (readAttemptLock) {
-				while (!isDetachedAttemptResultLocked(iteration)
-						&& (iteration.replayInProgress || iteration.growthToken != null)) {
-					throwIfDeadlineExpired(deadline);
-					try {
-						// The expiry listener registered above wakes this wait; nothing here reads a clock.
-						if (deadline != null && deadline.isExpired()) {
-							throw new QueryInterruptedException("Query evaluation took too long");
-						}
-						readAttemptLock.wait();
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						throw new SailException("Interrupted while waiting for LMDB result replay", e);
-					}
+		synchronized (readAttemptLock) {
+			while (!isDetachedAttemptResultLocked(iteration)
+					&& (iteration.replayInProgress || iteration.growthToken != null)) {
+				try {
+					readAttemptLock.wait();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new SailException("Interrupted while waiting for LMDB result replay", e);
 				}
-			}
-		} finally {
-			if (registration != null) {
-				registration.close();
 			}
 		}
 	}
@@ -3252,6 +3170,20 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	private void verifyMutationAdmission() {
 		lmdbStore.getBackingStore().checkWriterTransaction(this);
 		verifyNotPrepared();
+	}
+
+	/**
+	 * Listener probes read the pending batch and the open write transaction directly, so they cannot see rows an
+	 * initial run import holds in its runs. A connection with listeners therefore never claims one.
+	 */
+	boolean notifiesStatementListeners() {
+		return hasConnectionListeners();
+	}
+
+	/** A statement write; any first statement writer other than an explicit NONE import forfeits the run import. */
+	private void markStatementWriteAttempted() {
+		markTransactionWriteAttempted();
+		lmdbStore.getBackingStore().noteStatementWriteAttempt(isActive() ? getTransactionIsolation() : null);
 	}
 
 	private void markTransactionWriteAttempted() {
@@ -3421,7 +3353,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private final long cancellationGeneration;
 		private final ReadExposureScope parent;
 		private final ReplayableIteration<?> observationOwner;
-		private final QueryExecutionDeadline deadline;
 		private final OperationReadAttempt operationAttempt;
 		private LmdbSailStore.ReadAttemptLease admissionAttempt;
 		private final Set<LmdbSailStore.ReadViewLease> readViews = Collections
@@ -3437,11 +3368,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private boolean exposed;
 
 		private ReadExposureScope(ReadExposureScope parent, ReplayableIteration<?> observationOwner,
-				QueryExecutionDeadline deadline, OperationReadAttempt operationAttempt,
+				OperationReadAttempt operationAttempt,
 				LmdbSailStore.ReadAttemptLease admissionAttempt) {
 			this.parent = parent;
 			this.observationOwner = observationOwner;
-			this.deadline = deadline;
 			this.operationAttempt = operationAttempt;
 			this.admissionAttempt = admissionAttempt;
 			// Preserve the admission's generation even when cancellation happens during scope setup.
@@ -3467,7 +3397,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				return null;
 			}
 			return new CapturedReadContext(observationOwner, operationAttempt, admissionAttempt,
-					admissionAttempt.generation(), deadline, captured, preferred, valueScope, cancellationGeneration);
+					admissionAttempt.generation(), captured, preferred, valueScope, cancellationGeneration);
 		}
 
 		private void capture(LmdbSailStore.ReadViewLease readView) {
@@ -3592,12 +3522,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private final LmdbSailStore.ReadAttemptLease admission;
 		private final long generation;
 		private final long observationGeneration;
-		private final QueryExecutionDeadline deadline;
 		private final List<LmdbSailStore.ReadViewLease> views;
 		private final LmdbSailStore.ReadViewLease preferred;
 
 		private CapturedReadContext(ReplayableIteration<?> observationOwner, OperationReadAttempt operationAttempt,
-				LmdbSailStore.ReadAttemptLease admission, long generation, QueryExecutionDeadline deadline,
+				LmdbSailStore.ReadAttemptLease admission, long generation,
 				List<LmdbSailStore.ReadViewLease> views, LmdbSailStore.ReadViewLease preferred,
 				ValueResolutionScope valueScope, long cancellationGeneration) {
 			this.cancellationGeneration = cancellationGeneration;
@@ -3607,7 +3536,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			this.admission = admission;
 			this.generation = generation;
 			this.observationGeneration = observationOwner == null ? -1 : observationOwner.generation;
-			this.deadline = deadline;
 			this.views = views;
 			this.preferred = preferred;
 		}
@@ -3625,6 +3553,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			if (observationOwner != null && observationOwner.workerAdmissionClosed) {
 				throw new ReadOperationClosedException();
 			}
+			throwIfCancelled(observationOwner);
 			if (operationAttempt != null && operationAttempt.closed) {
 				throw new SailException("The dispatched LMDB read operation has already finished");
 			}
@@ -3639,7 +3568,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 		@Override
 		public QueryExecutionContext.Activation activate() {
-			throwIfDeadlineExpired(deadline);
+			throwIfCancelled(observationOwner);
 			beginOperation();
 			try {
 				QueryExecutionContext.Activation nativeActivation = activateCaptured();
@@ -3708,7 +3637,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			int oldDepth = internalReadScopeDepth.get();
 			try {
 				binding = lmdbStore.getBackingStore().enterCapturedReadViews(admission, generation, views, preferred);
-				exposure = beginReadExposureScope(observationOwner, deadline, operationAttempt, valueScope, true);
+				exposure = beginReadExposureScope(observationOwner, operationAttempt, valueScope, true);
 				exposure.admissionAttempt = admission;
 				exposure.captureAll(views);
 				internalReadScopeDepth.set(oldDepth + 1);
@@ -3850,7 +3779,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private record ReplayPlan<T>(ReplayFactory<T> factory, long generation,
-			List<LmdbSailStore.ReadViewLease> readViews, QueryExecutionDeadline deadline,
+			List<LmdbSailStore.ReadViewLease> readViews,
 			ReplayPlanIteration<T> iteration) {
 	}
 
@@ -3861,7 +3790,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private final ReplayFactory<T> factory;
 		private final long generation;
 		private final List<LmdbSailStore.ReadViewLease> readViews;
-		private final QueryExecutionDeadline deadline;
 		private final OperationReadAttempt operationAttempt;
 		private final LmdbSailStore.ReadAttemptLease admissionAttempt;
 		private OperationReadAttemptReference ownedReference;
@@ -3872,7 +3800,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private int replayAttempts;
 
 		private ReplayPlanIteration(CloseableIteration<? extends T> delegate, ReplayFactory<T> factory,
-				long generation, List<LmdbSailStore.ReadViewLease> readViews, QueryExecutionDeadline deadline,
+				long generation, List<LmdbSailStore.ReadViewLease> readViews,
 				OperationReadAttempt operationAttempt, OperationReadAttemptReference ownedReference,
 				LmdbSailStore.ReadAttemptLease admissionAttempt, ValueResolutionScope valueScope) {
 			super(delegate);
@@ -3880,7 +3808,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			this.factory = factory;
 			this.generation = generation;
 			this.readViews = List.copyOf(readViews);
-			this.deadline = deadline;
 			this.operationAttempt = operationAttempt;
 			this.ownedReference = ownedReference;
 			this.admissionAttempt = admissionAttempt;
@@ -3950,7 +3877,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private volatile boolean observed;
 		// An immutable list, replaced under readAttemptLock; observed-result calls read it without the lock.
 		private volatile List<LmdbSailStore.ReadViewLease> readViews;
-		private final QueryExecutionDeadline deadline;
 		private final OperationReadAttempt operationAttempt;
 		private final OperationReadAttemptReference ownedReference;
 		private volatile LmdbSailStore.ReadAttemptLease admissionAttempt;
@@ -3962,10 +3888,15 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private boolean replayInProgress;
 		private boolean closeClaimed;
 		private volatile Throwable replayFailure;
+		private volatile boolean cancellationRequested;
+		private final Object callLock = new Object();
+		/** The thread inside hasNext, next or remove, and whether cancellation interrupted it. */
+		private Thread activeThread;
+		private int activeCalls;
+		private boolean interruptDelivered;
 
 		private ReplayableIteration(CloseableIteration<? extends T> delegate, ReplayFactory<T> factory,
-				long generation, List<LmdbSailStore.ReadViewLease> readViews,
-				QueryExecutionDeadline deadline, OperationReadAttempt operationAttempt,
+				long generation, List<LmdbSailStore.ReadViewLease> readViews, OperationReadAttempt operationAttempt,
 				OperationReadAttemptReference ownedReference,
 				LmdbSailStore.ReadAttemptLease admissionAttempt, ValueResolutionScope valueScope,
 				SailResultValueExtractor<T> rawExtractor, boolean queryResult) {
@@ -3977,7 +3908,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			this.generation = generation;
 			this.attemptGeneration = generation;
 			this.readViews = List.copyOf(readViews);
-			this.deadline = deadline;
 			this.operationAttempt = operationAttempt;
 			this.ownedReference = ownedReference;
 			this.admissionAttempt = admissionAttempt;
@@ -4002,7 +3932,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				return false;
 			}
 			try {
-				boolean hasNext = executeTrackedRead(() -> currentDelegate().hasNext(), this, deadline);
+				boolean hasNext = trackedCall(() -> currentDelegate().hasNext());
 				if (!hasNext) {
 					close();
 				}
@@ -4020,7 +3950,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				throw new NoSuchElementException("The iteration has been closed.");
 			}
 			try {
-				return executeTrackedRead(() -> {
+				return trackedCall(() -> {
 					T row = currentDelegate().next();
 					WeakReference<RepositoryValueIteration<?>> owner = repositoryExposure;
 					RepositoryValueIteration<?> exposure = owner == null ? null : owner.get();
@@ -4028,7 +3958,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						rawExtractor.extract(row, LmdbStoreConnection::protectValueTree);
 					}
 					return row;
-				}, this, deadline);
+				});
 			} catch (NoSuchElementException failure) {
 				close();
 				throw failure;
@@ -4045,10 +3975,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				throw new IllegalStateException("The iteration has been closed.");
 			}
 			try {
-				executeTrackedRead(() -> {
+				trackedCall(() -> {
 					currentDelegate().remove();
 					return null;
-				}, this, deadline);
+				});
 			} catch (SailException failure) {
 				closeResources(failure, this::close);
 				throw queryResult ? new QueryEvaluationException("Unable to update an LMDB iteration", failure)
@@ -4056,37 +3986,79 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 		}
 
+		private <R> R trackedCall(ReadOperation<R> operation) throws SailException {
+			synchronized (callLock) {
+				activeCalls++;
+				activeThread = Thread.currentThread();
+			}
+			try {
+				return executeTrackedRead(operation, this);
+			} finally {
+				synchronized (callLock) {
+					if (--activeCalls == 0) {
+						activeThread = null;
+						if (interruptDelivered) {
+							// Interrupts are only delivered to the active thread under this lock, so this clears ours.
+							interruptDelivered = false;
+							Thread.interrupted();
+						}
+					}
+				}
+			}
+		}
+
+		/**
+		 * Stops this result at its next read attempt, forwards the request to the current native delegate, and
+		 * interrupts the thread inside the result so that blocked admission waits return. An operation-scoped read
+		 * attempt is marked cancelled so that map growth stops replaying it. The interrupt is cleared again before the
+		 * interrupted call returns.
+		 */
 		@Override
 		public boolean requestCancellation() {
 			if (!beginCancellationCallback()) {
 				return false;
 			}
 			boolean admitted = false;
-			boolean accepted = false;
+			boolean accepted = true;
 			OperationReadAttemptReference callbackReference = null;
 			Throwable failure = null;
 			try {
-				CooperativeCancellation cancellation;
+				CooperativeCancellation cancellation = null;
 				synchronized (readAttemptLock) {
+					if (closeClaimed || isClosed()) {
+						return false;
+					}
+					cancellationRequested = true;
+					LmdbSailStore.ReadAttemptLease admission = admissionAttempt;
+					if (admission != null && operationAttempt != null && admission == operationAttempt.lease) {
+						admission.cancel();
+					}
 					CloseableIteration<? extends T> current = delegate;
 					// A replay that has claimed an old generation can retire its delegates outside this monitor.
 					// Do not start a callback on a still-attached sibling after either replay claim has won.
-					if (closeClaimed || LmdbStoreConnection.this.replayInProgress || replayInProgress
-							|| !(current instanceof CooperativeCancellation downstream)) {
-						return false;
-					}
-					if (operationAttempt != null) {
-						callbackReference = retainOperationReadAttempt(operationAttempt);
-						if (callbackReference == null) {
-							return false;
+					if (!LmdbStoreConnection.this.replayInProgress && !replayInProgress
+							&& current instanceof CooperativeCancellation downstream) {
+						if (operationAttempt != null) {
+							callbackReference = retainOperationReadAttempt(operationAttempt);
+						}
+						if (operationAttempt == null || callbackReference != null) {
+							cancellation = downstream;
+							activeReadOperations++;
+							admitted = true;
 						}
 					}
-					cancellation = downstream;
-					activeReadOperations++;
-					admitted = true;
+				}
+				synchronized (callLock) {
+					Thread thread = activeThread;
+					if (thread != null && thread != Thread.currentThread() && !interruptDelivered) {
+						interruptDelivered = true;
+						thread.interrupt();
+					}
 				}
 				try {
-					accepted = cancellation.requestCancellation();
+					if (cancellation != null) {
+						cancellation.requestCancellation();
+					}
 				} catch (RuntimeException | Error caught) {
 					failure = caught;
 				}
@@ -4169,7 +4141,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				if (factory == null) {
 					throw new SailException("The LMDB read result cannot be replayed");
 				}
-				ReplayPlanIteration<T> replacement = openReplayPlan(factory, deadline, operationAttempt);
+				ReplayPlanIteration<T> replacement = openReplayPlan(factory, operationAttempt);
 				synchronized (readAttemptLock) {
 					openReplayPlans.remove(replacement);
 					pendingPlanReplays.remove(replacement);
@@ -4298,7 +4270,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	@Override
 	public boolean removeInferredStatement(Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		boolean ret = super.removeInferredStatement(subj, pred, obj, contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 		return ret;
@@ -4306,14 +4278,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	protected void clearInternal(Resource... contexts) throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		super.clearInternal(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 	}
 
 	@Override
 	public void clearInferred(Resource... contexts) throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		super.clearInferred(contexts);
 		sailChangedEvent.setStatementsRemoved(true);
 	}
@@ -4321,14 +4293,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	@Override
 	public void addStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		super.addStatement(op, subj, pred, obj, contexts);
 	}
 
 	@Override
 	public void removeStatement(UpdateContext op, Resource subj, IRI pred, Value obj, Resource... contexts)
 			throws SailException {
-		markTransactionWriteAttempted();
+		markStatementWriteAttempted();
 		super.removeStatement(op, subj, pred, obj, contexts);
 	}
 

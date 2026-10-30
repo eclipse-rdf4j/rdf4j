@@ -19,10 +19,12 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -33,10 +35,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * M-F1: VALUES langString/numeric probe rules — value-guarded fallback. Unsafe VALUES cells (one term ↔ many ids:
- * langString tag spellings; value-collapsible numerics) no longer decline the native root or probe with a synthetic id:
- * the cell becomes a root-level term-checked constant bind, patterns enumerate freely, and the guard keeps rows whose
- * term is value-equal per the term authority. Every test is differential against the generic arm.
+ * M-F1: VALUES term probes and language-tag fallbacks. A raw id may be guarded when distinct stored spellings are one
+ * RDF term (language-tag case variants); numeric VALUES still use exact RDF-term identity even though numeric FILTER
+ * comparisons use value equality. Every new result-bag case is checked against both an explicit term-level expectation
+ * and the generic evaluator.
  */
 public class LmdbNativeValuesGuardTest {
 
@@ -47,6 +49,7 @@ public class LmdbNativeValuesGuardTest {
 	File dataDir;
 
 	private SailRepository repository;
+	private ValueFactory vf;
 
 	@BeforeEach
 	public void setUp() {
@@ -55,12 +58,16 @@ public class LmdbNativeValuesGuardTest {
 		repository.init();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			conn.begin();
-			ValueFactory vf = conn.getValueFactory();
+			vf = conn.getValueFactory();
 			IRI p = vf.createIRI(EX, "p");
 			conn.add(vf.createIRI(EX, "s1"), p, vf.createLiteral("x", "EN"));
 			conn.add(vf.createIRI(EX, "s2"), p, vf.createLiteral("hello"));
-			conn.add(vf.createIRI(EX, "s3"), p, vf.createLiteral(1));
+			conn.add(vf.createIRI(EX, "s3"), p, vf.createLiteral("1", XSD.INT));
 			conn.add(vf.createIRI(EX, "s4"), p, vf.createLiteral("01", XSD.INTEGER));
+			conn.add(vf.createIRI(EX, "s5"), p, vf.createLiteral("1", XSD.LONG));
+			conn.add(vf.createIRI(EX, "s6"), p, vf.createLiteral("1.0", XSD.DECIMAL));
+			conn.add(vf.createIRI(EX, "s7"), p, vf.createLiteral("1", XSD.INTEGER));
+			conn.add(vf.createIRI(EX, "s8"), p, vf.createLiteral("y", "FR"));
 			conn.commit();
 		}
 	}
@@ -106,6 +113,54 @@ public class LmdbNativeValuesGuardTest {
 				.isGreaterThanOrEqualTo(1);
 	}
 
+	private void assertExplicitTermBagAndGenericParity(String query, List<BindingSet> expected,
+			boolean nativeCompilationRequired) {
+		List<BindingSet> generic = genericRows(query);
+		assertThat(generic).as("generic evaluation matches the explicit RDF-term bag for:\n" + query)
+				.containsExactlyInAnyOrderElementsOf(expected);
+		long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
+		List<BindingSet> actual = rows(query);
+		assertThat(actual).as("LMDB and generic results for:\n" + query)
+				.containsExactlyInAnyOrderElementsOf(generic)
+				.containsExactlyInAnyOrderElementsOf(expected);
+		if (nativeCompilationRequired) {
+			assertThat(LmdbNativeAggregateCompiler.COMPILED.get() - compiledBefore)
+					.as("the native compiler is exercised for:\n" + query)
+					.isGreaterThanOrEqualTo(1);
+		}
+	}
+
+	private BindingSet valueBinding(String name, Value value) {
+		MapBindingSet bindings = new MapBindingSet(1);
+		bindings.addBinding(name, value);
+		return bindings;
+	}
+
+	private BindingSet emptyBinding() {
+		return new MapBindingSet();
+	}
+
+	private Value integerOne() {
+		return vf.createLiteral("1", XSD.INTEGER);
+	}
+
+	private BindingSet subjectValue(String subject, Value value) {
+		MapBindingSet bindings = new MapBindingSet(2);
+		bindings.addBinding("s", vf.createIRI(EX, subject));
+		bindings.addBinding("v", value);
+		return bindings;
+	}
+
+	private BindingSet subjectValueAndMatch(String subject, Value value, Value matched) {
+		MapBindingSet bindings = new MapBindingSet(matched == null ? 2 : 3);
+		bindings.addBinding("s", vf.createIRI(EX, subject));
+		bindings.addBinding("v", value);
+		if (matched != null) {
+			bindings.addBinding("matched", matched);
+		}
+		return bindings;
+	}
+
 	/** Cross-spelling langString join: VALUES "x"@en must match the stored "x"@EN — one term, two ids. */
 	@Test
 	public void valuesLangStringMatchesCaseVariantSpelling() {
@@ -123,16 +178,143 @@ public class LmdbNativeValuesGuardTest {
 	/** Numeric VALUES joins by term: 1 matches the stored 1, not the non-canonical "01"^^xsd:integer. */
 	@Test
 	public void valuesNumericJoinsByTerm() {
-		assertSameAsGenericAndNative(
-				"SELECT ?s ?v WHERE { VALUES ?v { 1 } ?s <" + EX + "p> ?v }");
+		String query = "SELECT ?s ?v WHERE { VALUES ?v { 1 } ?s <" + EX + "p> ?v }";
+		assertExplicitTermBagAndGenericParity(query, List.of(subjectValue("s7", integerOne())), true);
+	}
+
+	@Test
+	public void valuesExplicitIntDatatypeMatchesOnlyItsStoredTerm() {
+		String query = "SELECT ?s ?v WHERE { VALUES ?v { \"1\"^^<" + XSD.INT + "> }"
+				+ " ?s <" + EX + "p> ?v }";
+		assertExplicitTermBagAndGenericParity(query,
+				List.of(subjectValue("s3", vf.createLiteral("1", XSD.INT))), true);
 	}
 
 	/** Non-canonical numeric VALUES: differential against the generic arm decides the exact term semantics. */
 	@Test
 	public void valuesNonCanonicalNumericMatchesGenericArm() {
-		assertSameAsGenericAndNative(
-				"SELECT ?s ?v WHERE { VALUES ?v { \"01\"^^<http://www.w3.org/2001/XMLSchema#integer> }"
-						+ " ?s <" + EX + "p> ?v }");
+		String query = "SELECT ?s ?v WHERE { VALUES ?v { \"01\"^^<" + XSD.INTEGER + "> }"
+				+ " ?s <" + EX + "p> ?v }";
+		assertExplicitTermBagAndGenericParity(query,
+				List.of(subjectValue("s4", vf.createLiteral("01", XSD.INTEGER))), true);
+	}
+
+	@Test
+	public void valuesWithDifferentNumericDatatypeKeepTheirTermIdentity() {
+		String query = "SELECT ?s ?v WHERE { VALUES ?v { \"1\"^^<" + XSD.LONG + "> }"
+				+ " ?s <" + EX + "p> ?v }";
+		assertExplicitTermBagAndGenericParity(query,
+				List.of(subjectValue("s5", vf.createLiteral("1", XSD.LONG))), true);
+	}
+
+	@Test
+	public void duplicateNumericValuesAndUndefPreserveTheResultBag() {
+		String query = "SELECT ?s ?v WHERE { VALUES ?v { 1 1 UNDEF } ?s <" + EX + "p> ?v }";
+		Value integer = integerOne();
+		List<BindingSet> expected = List.of(
+				subjectValue("s7", integer), subjectValue("s7", integer),
+				subjectValue("s1", vf.createLiteral("x", "EN")),
+				subjectValue("s2", vf.createLiteral("hello")),
+				subjectValue("s3", vf.createLiteral("1", XSD.INT)),
+				subjectValue("s4", vf.createLiteral("01", XSD.INTEGER)),
+				subjectValue("s5", vf.createLiteral("1", XSD.LONG)),
+				subjectValue("s6", vf.createLiteral("1.0", XSD.DECIMAL)),
+				subjectValue("s8", vf.createLiteral("y", "FR")),
+				subjectValue("s7", integer));
+		assertExplicitTermBagAndGenericParity(query, expected, false);
+	}
+
+	@Test
+	public void valuesInEitherUnionArmKeepTheirRdfTermsDistinct() {
+		String query = "SELECT ?s ?v WHERE { { VALUES ?v { 1 } ?s <" + EX + "p> ?v } UNION "
+				+ "{ VALUES ?v { \"01\"^^<" + XSD.INTEGER + "> } ?s <" + EX + "p> ?v } }";
+		List<BindingSet> expected = List.of(
+				subjectValue("s7", integerOne()),
+				subjectValue("s4", vf.createLiteral("01", XSD.INTEGER)));
+		assertExplicitTermBagAndGenericParity(query, expected, false);
+	}
+
+	@Test
+	public void valuesRemainTermExactInsideNestedUnionArms() {
+		String query = "SELECT ?s ?v WHERE { { { VALUES ?v { 1 } ?s <" + EX + "p> ?v } UNION "
+				+ "{ VALUES ?v { \"01\"^^<" + XSD.INTEGER + "> } ?s <" + EX + "p> ?v } } UNION "
+				+ "{ VALUES ?v { \"1\"^^<" + XSD.LONG + "> } ?s <" + EX + "p> ?v } }";
+		List<BindingSet> expected = List.of(
+				subjectValue("s7", integerOne()),
+				subjectValue("s4", vf.createLiteral("01", XSD.INTEGER)),
+				subjectValue("s5", vf.createLiteral("1", XSD.LONG)));
+		assertExplicitTermBagAndGenericParity(query, expected, false);
+	}
+
+	@Test
+	public void languageValuesInNestedUnionDoNotConjoinAcrossSiblingPatternBranch() {
+		String query = "SELECT ?s ?v WHERE { { { VALUES ?v { \"x\"@en } ?s <" + EX + "p> ?v } UNION "
+				+ "{ VALUES ?v { \"y\"@fr } ?s <" + EX + "p> ?v } } UNION { ?s <" + EX + "p> ?v } }";
+		Value x = vf.createLiteral("x", "EN");
+		Value y = vf.createLiteral("y", "FR");
+		List<BindingSet> expected = List.of(
+				subjectValue("s1", x), subjectValue("s8", y),
+				subjectValue("s1", x),
+				subjectValue("s2", vf.createLiteral("hello")),
+				subjectValue("s3", vf.createLiteral("1", XSD.INT)),
+				subjectValue("s4", vf.createLiteral("01", XSD.INTEGER)),
+				subjectValue("s5", vf.createLiteral("1", XSD.LONG)),
+				subjectValue("s6", vf.createLiteral("1.0", XSD.DECIMAL)),
+				subjectValue("s7", integerOne()),
+				subjectValue("s8", y));
+		assertExplicitTermBagAndGenericParity(query, expected, false);
+	}
+
+	@Test
+	public void valuesOnlyUnionAliasesPreserveUndefAndIndependentBranch() {
+		String query = "SELECT (?raw AS ?projected) WHERE { "
+				+ "{ VALUES ?raw { \"x\"@en } } UNION "
+				+ "{ VALUES ?raw { \"y\"@fr } } UNION "
+				+ "{ VALUES ?raw { UNDEF } } UNION "
+				+ "{ BIND(\"kept\"@de AS ?raw) } }";
+		List<BindingSet> expected = List.of(
+				valueBinding("projected", vf.createLiteral("x", "EN")),
+				valueBinding("projected", vf.createLiteral("y", "FR")),
+				emptyBinding(),
+				valueBinding("projected", vf.createLiteral("kept", "de")));
+		assertExplicitTermBagAndGenericParity(query, expected, false);
+	}
+
+	@Test
+	public void optionalValuesOnlyExtendTheTermCompatibleOuterRow() {
+		String query = "SELECT ?s ?v ?matched WHERE { ?s <" + EX + "p> ?v OPTIONAL { "
+				+ "VALUES ?matched { 1 } ?s <" + EX + "p> ?matched } }";
+		List<BindingSet> expected = List.of(
+				subjectValueAndMatch("s1", vf.createLiteral("x", "EN"), null),
+				subjectValueAndMatch("s2", vf.createLiteral("hello"), null),
+				subjectValueAndMatch("s3", vf.createLiteral("1", XSD.INT), null),
+				subjectValueAndMatch("s4", vf.createLiteral("01", XSD.INTEGER), null),
+				subjectValueAndMatch("s5", vf.createLiteral("1", XSD.LONG), null),
+				subjectValueAndMatch("s6", vf.createLiteral("1.0", XSD.DECIMAL), null),
+				subjectValueAndMatch("s8", vf.createLiteral("y", "FR"), null),
+				subjectValueAndMatch("s7", integerOne(), integerOne()));
+		assertExplicitTermBagAndGenericParity(query, expected, false);
+	}
+
+	@Test
+	public void minusUsesTermCompatibilityForNumericValues() {
+		String query = "SELECT ?v WHERE { VALUES ?v { 1 \"01\"^^<" + XSD.INTEGER + "> } "
+				+ "MINUS { VALUES ?v { \"01\"^^<" + XSD.INTEGER + "> } } }";
+		assertExplicitTermBagAndGenericParity(query, List.of(valueBinding("v", integerOne())), false);
+	}
+
+	@Test
+	public void existsValuesUseTermCompatibilityForNumericBindings() {
+		String query = "SELECT ?v WHERE { VALUES ?v { 1 \"01\"^^<" + XSD.INTEGER + "> } "
+				+ "FILTER EXISTS { VALUES ?v { \"01\"^^<" + XSD.INTEGER + "> } } }";
+		assertExplicitTermBagAndGenericParity(query,
+				List.of(valueBinding("v", vf.createLiteral("01", XSD.INTEGER))), false);
+	}
+
+	@Test
+	public void numericValueEqualityFilterRemainsWiderThanValuesTermMatching() {
+		String query = "SELECT ?v WHERE { VALUES ?v { 1 } FILTER(?v = \"01\"^^<" + XSD.INTEGER + ">) }";
+		assertExplicitTermBagAndGenericParity(query, List.of(valueBinding("v", integerOne())), false);
 	}
 
 	/**

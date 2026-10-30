@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -51,7 +52,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterato
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -308,6 +308,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		return new LookAheadIteration<>() {
 
 			@Override
+			protected boolean forwardCancellation() {
+				return CooperativeCancellation.forward(inner);
+			}
+
+			@Override
 			protected BindingSet getNextElement() {
 				if (inner.hasNext()) {
 					return inner.next();
@@ -438,29 +443,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	 * correlated; an injected binding of a projected name is equivalent to the compatible-mapping join afterwards.
 	 */
 	static boolean subqueryObservesInjectedBindings(TupleExpr subtree, Set<String> injectedNames) {
-		if (injectedNames.isEmpty()) {
-			return false;
-		}
-		boolean[] observes = { false };
-		subtree.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
-			@Override
-			public void meet(Projection projection) {
-				if (observes[0]) {
-					return;
-				}
-				if (projection.isSubquery()) {
-					Set<String> projected = projection.getBindingNames();
-					for (String name : VarNameCollector.process(projection.getArg())) {
-						if (injectedNames.contains(name) && !projected.contains(name)) {
-							observes[0] = true;
-							return;
-						}
-					}
-				}
-				super.meet(projection);
-			}
-		});
-		return observes[0];
+		return TupleExprs.subqueryObservesInjectedBindings(subtree, injectedNames);
 	}
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr,

@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueOverlayRegistry;
 
 /**
  * Test-scope bridge that opens a read dataset over an {@link LmdbStore}'s explicit source. The backing store is
@@ -28,5 +29,10 @@ public final class NativeQuerySourceAccess {
 	/** Opens a dataset the caller must close; it also implements {@code NativeLmdbQuerySource}. */
 	public static SailDataset openExplicitDataset(LmdbStore sail) {
 		return sail.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.NONE);
+	}
+
+	/** The store's value-overlay warm-up state: scheduled/active flags, refusal counts and the last failure text. */
+	public static ValueOverlayRegistry.MaintenanceStats valueOverlayMaintenanceStats(LmdbStore sail) {
+		return sail.getBackingStore().valueStore().compressedValueOverlayMaintenanceStats();
 	}
 }

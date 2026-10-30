@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationStrategy;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -174,6 +175,89 @@ public class LmdbNativeRootPipelineTest {
 			if (previous != null) {
 				System.setProperty(NativeRootPipeline.ENABLED_FLAG, previous);
 			}
+		}
+	}
+
+	/**
+	 * An aggregate root under {@code ORDER BY ... LIMIT k} must not stage and sort every group: a bounded top-K keeps
+	 * only the {@code offset + limit} best rows and yields exactly the rows the stable full sort followed by the slice
+	 * would.
+	 */
+	@Test
+	public void aggregateOrderLimitRunsAsBoundedTopK() {
+		withProperty(NativeRootPipeline.ENABLED_FLAG, "true", () -> {
+			String query = "SELECT ?o (COUNT(?s) AS ?n) WHERE { ?s <" + EX + "p> ?o } GROUP BY ?o "
+					+ "ORDER BY DESC(?o) LIMIT 2";
+			long topKBefore = LmdbNativeAggregateCompiler.TOP_K_ROOTS.get();
+			List<String> nativeRows = values(query, "o");
+			assertThat(LmdbNativeAggregateCompiler.TOP_K_ROOTS.get() - topKBefore).isEqualTo(1L);
+			assertThat(explain(query)).contains("TopK(offset=0, limit=2, keys=1)")
+					.doesNotContain("Slice(offset=0, limit=2)")
+					.doesNotContain("Order(keys=1)");
+			assertThat(nativeRows).isEqualTo(List.of("delta", "charlie"));
+			assertThat(nativeRows).isEqualTo(withNativeOff(() -> values(query, "o")));
+		});
+	}
+
+	/**
+	 * Equal keys keep the stable full sort's choice (the earliest produced rows), OFFSET is honoured, integer COUNT
+	 * keys order numerically, and a slice without LIMIT still runs the complete sort.
+	 */
+	@Test
+	public void topKKeepsStableTiesHonoursOffsetAndLeavesUnboundedSlicesToTheFullSort() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			IRI p = vf.createIRI(EX, "p");
+			conn.begin();
+			conn.add(vf.createIRI(EX, "s5"), p, vf.createLiteral("alpha"));
+			conn.add(vf.createIRI(EX, "s6"), p, vf.createLiteral("alpha"));
+			conn.add(vf.createIRI(EX, "s7"), p, vf.createLiteral("bravo"));
+			for (int i = 0; i < 12; i++) {
+				conn.add(vf.createIRI(EX, "t" + i), p, vf.createLiteral("echo"));
+			}
+			conn.commit();
+		}
+		withProperty(NativeRootPipeline.ENABLED_FLAG, "true", () -> {
+			String query = "SELECT ?o (COUNT(?s) AS ?n) WHERE { ?s <" + EX + "p> ?o } GROUP BY ?o "
+					+ "ORDER BY DESC(?n) OFFSET 1 LIMIT 3";
+			long topKBefore = LmdbNativeAggregateCompiler.TOP_K_ROOTS.get();
+			List<String> topK = values(query, "o");
+			List<String> topKCounts = values(query, "n");
+			assertThat(LmdbNativeAggregateCompiler.TOP_K_ROOTS.get() - topKBefore).isEqualTo(2L);
+			// echo(12) is skipped by OFFSET 1; alpha(3) and bravo(2) follow; charlie and delta tie at 1
+			assertThat(topKCounts).isEqualTo(List.of("3", "2", "1"));
+			assertThat(topK).startsWith("alpha", "bravo");
+			List<String> fullSort = new ArrayList<>();
+			withProperty(NativeRootPipeline.ENABLED_FLAG, "false", () -> fullSort.addAll(values(query, "o")));
+			assertThat(topK).as("ties resolve exactly as the stable complete sort does").isEqualTo(fullSort);
+			assertThat(topKCounts).isEqualTo(withNativeOff(() -> values(query, "n")));
+
+			String offsetOnly = "SELECT ?o (COUNT(?s) AS ?n) WHERE { ?s <" + EX + "p> ?o } GROUP BY ?o "
+					+ "ORDER BY DESC(?n) OFFSET 2";
+			long before = LmdbNativeAggregateCompiler.TOP_K_ROOTS.get();
+			List<String> offsetRows = values(offsetOnly, "n");
+			assertThat(LmdbNativeAggregateCompiler.TOP_K_ROOTS.get() - before).isZero();
+			assertThat(explain(offsetOnly)).contains("Slice(offset=2, limit=-1) -> Order(keys=1)");
+			assertThat(offsetRows).isEqualTo(withNativeOff(() -> values(offsetOnly, "n")));
+		});
+	}
+
+	private List<String> values(String query, String name) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			List<String> result = new ArrayList<>();
+			try (var iteration = conn.prepareTupleQuery(query).evaluate()) {
+				while (iteration.hasNext()) {
+					BindingSet bs = iteration.next();
+					result.add(bs.getValue(name) == null ? "unbound" : bs.getValue(name).stringValue());
+				}
+			}
+			return result;
+		}
+	}
+
+	private String explain(String query) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			return conn.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
 		}
 	}
 

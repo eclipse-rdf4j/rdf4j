@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -2677,6 +2678,7 @@ class LmdbOptimizerPipelineTest {
 		assertSketchFixtureProfile(store);
 		try {
 			addMedicalQueryShape(store);
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			estimator.rebuild();

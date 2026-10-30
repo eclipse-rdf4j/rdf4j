@@ -132,13 +132,13 @@ function fanGeometries(graph: Graph, anchorOf: Map<string, string>, satellitesOf
 
 /**
  * Splits a component into satellites and skeleton. Fixed nodes are never satellites. Nothing is peeled while a map is
- * being extended or repaired (`incremental`, `refine`, `repairOnly`), inside named groups, for coarse group graphs
+ * being extended or repaired (`incremental`, `repairOnly`), inside named groups, for coarse group graphs
  * (`nodeSizes`) or for a pure star, which has its own layout.
  */
 export function peelSatellites(graph: Graph, options: LayoutOptions): PeeledGraph {
   const classHubs = classHubsOf(graph);
   const none = (): PeeledGraph => ({skeleton: graph, anchorOf: new Map(), satellitesOf: new Map(), halos: new Map(), fans: new Map(), classHubs});
-  if (options.incremental || options.refine || options.repairOnly || options.groups?.length || options.nodeSizes ||
+  if (options.incremental || options.repairOnly || options.groups?.length || options.nodeSizes ||
       graph.nodes.length < 2 || isPureStar(graph)) return none();
   // A type link to a class hub says what a node is, not where it belongs: it neither keeps the node in the skeleton
   // nor makes the class a satellite.

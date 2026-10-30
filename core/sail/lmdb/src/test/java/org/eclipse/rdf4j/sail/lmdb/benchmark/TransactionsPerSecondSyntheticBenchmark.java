@@ -49,13 +49,12 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks insertion performance with synthetic data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 6)
+@Warmup(iterations = 3)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 5)
+@Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondSyntheticBenchmark {
-
 	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT" })
 	public IsolationLevels isolationLevel;
 

@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -107,6 +108,39 @@ public class TupleExprs {
 		return !(expression instanceof Service)
 				&& (isVariableScopeChange(expression) || containsSubquery(expression)
 						|| containsGraphBoundary(expression));
+	}
+
+	/**
+	 * Whether a bind join would expose a sibling's binding to a non-projected local variable of a nested SELECT. Unlike
+	 * {@link #containsSubquery(TupleExpr)}, this proof inspects projections inside joins as well. Projected names
+	 * remain compatible join keys; an unprojected name must not constrain the SELECT body through sibling-row
+	 * injection.
+	 */
+	@InternalUseOnly
+	public static boolean subqueryObservesInjectedBindings(TupleExpr subtree, Set<String> injectedNames) {
+		if (injectedNames.isEmpty()) {
+			return false;
+		}
+		boolean[] observes = { false };
+		subtree.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+			@Override
+			public void meet(Projection projection) {
+				if (observes[0]) {
+					return;
+				}
+				if (projection.isSubquery()) {
+					Set<String> projected = projection.getBindingNames();
+					for (String name : VarNameCollector.process(projection.getArg())) {
+						if (injectedNames.contains(name) && !projected.contains(name)) {
+							observes[0] = true;
+							return;
+						}
+					}
+				}
+				super.meet(projection);
+			}
+		});
+		return observes[0];
 	}
 
 	/**

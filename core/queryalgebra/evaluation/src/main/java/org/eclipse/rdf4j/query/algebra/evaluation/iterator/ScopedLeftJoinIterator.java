@@ -24,6 +24,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -191,6 +192,7 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 					}
 				}
 
+				CancellationPoints.check(isCancellationRequested());
 				if (!leftIter.hasNext()) {
 					close();
 					return null;
@@ -224,6 +226,7 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 		rightIter = iter;
 		try {
 			while (!isClosed() && iter.hasNext()) {
+				CancellationPoints.check(isCancellationRequested());
 				BindingSet row = iter.next();
 				MutableBindingSet exported = null;
 				for (String parameter : privateParameters) {
@@ -303,5 +306,10 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 			currentLeft = null;
 			currentLeftMatched = false;
 		}
+	}
+
+	@Override
+	protected boolean forwardCancellation() {
+		return CooperativeCancellation.forwardAll(leftIter, rightIter) | true;
 	}
 }

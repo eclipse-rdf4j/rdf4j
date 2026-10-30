@@ -12,13 +12,27 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.mockito.AdditionalAnswers.delegatesTo;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -29,30 +43,40 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /** Exact census channels must reduce existing adjacency at its physical grain in every native execution mode. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -157,6 +181,254 @@ class LmdbNativeCensusAggregateTest {
 			assertThat(telemetry).as(mode).contains("nativeExecutionPath=adjacencyCensus");
 			assertThat(telemetry).as(mode).doesNotContain("ENCOUNTER_ORDER_REQUIRES_LMDB");
 		}
+	}
+
+	@ParameterizedTest
+	@MethodSource("finiteKindCountQueries")
+	void finiteKindCountChannelsAdmitTheExistingExactCensusAlgorithm(String query) {
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		Group group = group(root);
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			DefaultEvaluationStrategy generic = new DefaultEvaluationStrategy(triples, null);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			List<BindingSet> expected = evaluate(generic.precompile(group.clone(), context));
+			assertThat(expected).as("the actual admitted fixture has complete aggregate mappings").isNotEmpty();
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false);
+			LmdbNativeAggregateCompiler.CompileOutcome compiled = LmdbNativeAggregateCompiler.compileRoot(group,
+					context, strategy, (NativeLmdbQuerySource) dataset);
+			assertThat(compiled.isSupported()).as("the prepared root must compile through the common native inventory: "
+					+ query).isTrue();
+			assertThat(compiled.step()).isInstanceOf(LmdbNativePhysicalPlan.class);
+			assertThat(((LmdbNativePhysicalPlan) compiled.step()).nativePhysicalPlan())
+					.contains("LmdbNativeCensusAggregate");
+			assertThat(evaluate(compiled.step()))
+					.as("the raw group compiler must preserve the generic result bag: " + query)
+					.containsExactlyInAnyOrderElementsOf(expected);
+
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context.getDataset(), strategy);
+			Group physicalGroup = group(physical.expression());
+			QueryEvaluationStep census = strategy.withValuePositions(physical.positions(),
+					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, (NativeLmdbQuerySource) dataset, strategy,
+							context, physical.expression(), pattern -> ContextConstraint.UNRESTRICTED));
+			assertThat(census).as("closed finite-kind COUNT filters use the existing census capability: " + query)
+					.isInstanceOf(LmdbNativeCensusAggregate.class);
+			assertThat(evaluate(census))
+					.as("the prepared direct factory must preserve the generic result bag: " + query)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	static Stream<String> finiteKindCountQueries() {
+		return Stream.of(
+				"SELECT (COUNT(?s) AS ?n) WHERE { ?s ?p ?o FILTER(isBlank(?s)) }",
+				"SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o FILTER(!isIRI(?o)) }",
+				"SELECT ?p (COUNT(?o) AS ?n) WHERE { ?s ?p ?o FILTER(isLiteral(?o) || isBlank(?s)) } GROUP BY ?p",
+				"SELECT (COUNT(?alias) AS ?n) WHERE { ?s ?p ?o BIND(?s AS ?alias) FILTER(isBlank(?alias)) }",
+				"SELECT (COUNT(?o) AS ?n) WHERE { ?s ?p ?o FILTER(isLiteral(?o) || isBlank(?s)) }",
+				"SELECT (COUNT(DISTINCT ?s) AS ?n) WHERE { GRAPH ?g { ?s ?p ?o } FILTER(isIRI(?o)) }",
+				"SELECT (COUNT(1) AS ?n) WHERE { ?s ?p ?o FILTER(isIRI(?o) && !isBlank(?s)) }",
+				"SELECT (COUNT(DISTINCT ?n) AS ?terms) WHERE { ?s ?p ?o FILTER(isIRI(?s)) "
+						+ "BIND(IF(isIRI(?o), \"01\"^^<http://www.w3.org/2001/XMLSchema#integer>, "
+						+ "\"1\"^^<http://www.w3.org/2001/XMLSchema#long>) AS ?n) }");
+	}
+
+	@Test
+	void ownerCancellationDuringCensusRenderingIsTerminalInsteadOfSuccessfulExhaustion() {
+		String query = "SELECT ?p (COUNT(*) AS ?n) (SUM(IF(isIRI(?o), 1, 0)) AS ?sum) "
+				+ "WHERE { ?s ?p ?o } GROUP BY ?p";
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		Group group = group(root);
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+			NativeCancellationToken owner = new NativeCancellationToken();
+			AtomicBoolean armed = new AtomicBoolean();
+			AtomicBoolean cancelled = new AtomicBoolean();
+			doAnswer(invocation -> {
+				long id = invocation.getArgument(0);
+				int positions = invocation.getArgument(1);
+				var value = actual.lazyValue(id, positions);
+				if (armed.get() && cancelled.compareAndSet(false, true)) {
+					owner.requestCancellation();
+				}
+				return value;
+			}).when(source).lazyValue(anyLong(), anyInt());
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			DefaultEvaluationStrategy generic = new DefaultEvaluationStrategy(triples, null);
+			List<BindingSet> expected = evaluate(generic.precompile(group.clone(), context));
+			assertThat(expected).as("two admitted predicate groups are needed to cancel between render steps")
+					.hasSize(2);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false);
+			QueryEvaluationStep candidate = LmdbNativeCensusAggregate.tryCreate(group, source, strategy, context,
+					root, pattern -> ContextConstraint.UNRESTRICTED);
+			assertThat(candidate).isInstanceOf(LmdbNativeCensusAggregate.class);
+			NativeAggregateAlternative census = (NativeAggregateAlternative) candidate;
+			try (var rows = census.evaluate(EmptyBindingSet.getInstance(), owner)) {
+				assertThat(QueryResults.asList(rows)).containsExactlyInAnyOrderElementsOf(expected);
+			}
+			assertThat(owner.isCancellationRequested()).isFalse();
+			armed.set(true);
+			try (var rows = census.evaluate(EmptyBindingSet.getInstance(), owner)) {
+				assertThatThrownBy(() -> QueryResults.asList(rows)).isInstanceOf(KernelQueryCancelledException.class);
+			}
+			assertThat(cancelled.get()).isTrue();
+		}
+	}
+
+	@Test
+	void groupedCensusRetainsBoundedOutputOwnershipBeforeItsFirstConsumer() throws Exception {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.begin();
+			for (int group = 0; group < 48; group++) {
+				connection.add(vf.createIRI(EX + "long-group-" + group + "x".repeat(2048)),
+						vf.createIRI(EX + "p1"), vf.createIRI(EX + "o1"));
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		String query = "SELECT ?s (COUNT(*) AS ?n) (SUM(IF(isIRI(?o), 1, 0)) AS ?sum) "
+				+ "WHERE { ?s ?p ?o } GROUP BY ?s";
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		Group group = group(root);
+		String previousLimit = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+		LmdbQueryMemoryManager previousManager = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(2L << 20, 2L << 20);
+		System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "16384");
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		Set<Path> initialSpills = censusSpills();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			DefaultEvaluationStrategy generic = new DefaultEvaluationStrategy(triples, null);
+			List<BindingSet> expected = evaluate(generic.precompile(group.clone(), context));
+			assertThat(expected).as("the real input must contain the retained long-valued groups")
+					.hasSizeGreaterThan(48);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false);
+			QueryEvaluationStep census = LmdbNativeCensusAggregate.tryCreate(group, source, strategy, context, root,
+					pattern -> ContextConstraint.UNRESTRICTED);
+			assertThat(census).as("the existing SUM channel independently admits this resource fixture")
+					.isInstanceOf(LmdbNativeCensusAggregate.class);
+			assertThat(evaluate(census)).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(memory.usedBytes()).as("the complete preflight releases its owners").isZero();
+			long retained;
+			Set<Path> liveSpills;
+			try (var rows = census.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(rows.hasNext()).as("the admitted census must produce its first complete group").isTrue();
+				retained = memory.usedBytes();
+				liveSpills = censusSpills();
+				assertThat(expected).contains(rows.next());
+			}
+			assertAll("bounded group output remains owned until consumption or early close",
+					() -> assertThat(retained).as("live aggregate output has a query-ledger owner").isPositive(),
+					() -> assertThat(retained).isLessThanOrEqualTo(memory.perQueryMaxBytes()),
+					() -> assertThat(liveSpills).as("long retained keys spill under the existing local byte bound")
+							.isNotEqualTo(initialSpills),
+					() -> assertThat(memory.usedBytes()).as("early close releases every result claim").isZero(),
+					() -> assertThat(censusSpills()).as("early close removes its spill files")
+							.isEqualTo(initialSpills));
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = previousManager;
+			if (previousLimit == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousLimit);
+			}
+		}
+		assertThat(memory.usedBytes()).isZero();
+	}
+
+	private static Set<Path> censusSpills() throws Exception {
+		try (Stream<Path> files = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
+			return files.filter(path -> path.getFileName().toString().startsWith("rdf4j-lmdb-"))
+					.collect(Collectors.toSet());
+		}
+	}
+
+	@Test
+	void censusCatalogAndPageWorkspaceAreChargedWhileTheActualSourceIsOpen() throws Exception {
+		String query = "SELECT (COUNT(*) AS ?n) (SUM(IF(isIRI(?o), 1, 0)) AS ?sum) WHERE { ?s ?p ?o }";
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		Group group = group(root);
+		LmdbQueryMemoryManager previousManager = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(2L << 20, 2L << 20);
+		LmdbNativeHashJoin.queryMemoryOverride = memory;
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+			AtomicLong firstCatalogBytes = new AtomicLong(-1L);
+			AtomicLong maximumPageBytes = new AtomicLong(-1L);
+			doAnswer(open -> {
+				NativeProbe realProbe = actual.newProbe();
+				NativeProbe probe = mock(NativeProbe.class, delegatesTo(realProbe));
+				doAnswer(wildcardOpen -> {
+					WildcardAdjacency realWildcard = realProbe.wildcardAdjacency(true);
+					assertThat(realWildcard).as("the actual source must expose its complete visible catalog")
+							.isNotNull();
+					WildcardAdjacency wildcard = mock(WildcardAdjacency.class, delegatesTo(realWildcard));
+					doAnswer(read -> {
+						firstCatalogBytes.compareAndSet(-1L, memory.usedBytes());
+						return realWildcard.predicateAt(read.getArgument(0));
+					}).when(wildcard).predicateAt(anyInt());
+					return wildcard;
+				}).when(probe).wildcardAdjacency(true);
+				doAnswer(adjacencyOpen -> {
+					long predicate = adjacencyOpen.getArgument(0);
+					boolean outgoing = adjacencyOpen.getArgument(1);
+					NativeAdjacency realView = realProbe.adjacency(predicate, outgoing);
+					assertThat(realView).as("the fixture admits actual page-backed predicate adjacency").isNotNull();
+					NativeAdjacency view = mock(NativeAdjacency.class, delegatesTo(realView));
+					doAnswer(pageOpen -> {
+						maximumPageBytes.accumulateAndGet(memory.usedBytes(), Math::max);
+						return realView.openPageCursor();
+					}).when(view).openPageCursor();
+					return view;
+				}).when(probe).adjacency(anyLong(), anyBoolean());
+				return probe;
+			}).when(source).newProbe();
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			DefaultEvaluationStrategy generic = new DefaultEvaluationStrategy(triples, null);
+			List<BindingSet> expected = evaluate(generic.precompile(group.clone(), context));
+			assertThat(expected).hasSize(1);
+			assertThat(((Literal) expected.getFirst().getValue("n")).longValue()).isEqualTo(8L);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false);
+			QueryEvaluationStep census = LmdbNativeCensusAggregate.tryCreate(group, source, strategy, context, root,
+					pattern -> ContextConstraint.UNRESTRICTED);
+			assertThat(census).as("the existing SUM channel independently admits the workspace fixture")
+					.isInstanceOf(LmdbNativeCensusAggregate.class);
+			assertThat(evaluate(census)).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(firstCatalogBytes.get()).as("the actual catalog must be observed before accounting assertions")
+					.isNotNegative();
+			assertThat(maximumPageBytes.get()).as("the actual page cursor must have opened").isNotNegative();
+			assertAll("source-owned scratch participates in the same query budget as reducers and output",
+					() -> assertThat(firstCatalogBytes.get()).as("catalog retention precedes predicate reads")
+							.isGreaterThanOrEqualTo(2L * Long.BYTES),
+					() -> assertThat(maximumPageBytes.get())
+							.as("the three actual 1024-element page buffers are charged during source traversal")
+							.isGreaterThanOrEqualTo(3L * 1024L * Long.BYTES),
+					() -> assertThat(memory.usedBytes()).as("full exhaustion releases workspace ownership").isZero());
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = previousManager;
+		}
+		assertThat(memory.usedBytes()).isZero();
+	}
+
+	private static Group group(TupleExpr root) {
+		TupleExpr node = root;
+		while (node instanceof UnaryTupleOperator unary && !(node instanceof Group)) {
+			node = unary.getArg();
+		}
+		assertThat(node).as("the fixture must contain an actual outer aggregate").isInstanceOf(Group.class);
+		return (Group) node;
 	}
 
 	@Test

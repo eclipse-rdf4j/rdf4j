@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -27,34 +28,46 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
+import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * A single-pattern {@code COUNT(DISTINCT ?o)} over a bound predicate (e.g. {@code ?i a ?type}) is the prefix-run
  * engine's fast path: it counts distinct object values by seek-skipping runs in an ordered index, touching roughly one
  * index position per distinct value. The IR/Janino aggregate kernel, by contrast, enumerates the whole predicate CSR
- * and hash-dedups every matching row. When both are viable the kernel must yield to the prefix-run path, so it must not
- * even be <em>attempted</em> for such a shape (else ANALYTICS q0 regresses ~0.16ms -&gt; ~10ms once the kernel is
- * admitted).
+ * and hash-dedups every matching row. The fixture proves the long-run scan reduction separately from AUTO dispatch,
+ * retains the actual forced prefix-run route, and requires legal IR alternatives to remain visible in the common
+ * inventory. Disk seek work and resident adjacency visits are distinct operations; smaller scan counts alone do not
+ * establish an unconditional AUTO latency ordering between them.
  */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeKernelPrefixRunGuardTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String JANINO_CODEGEN_PROPERTY = "rdf4j.lmdb.janinoCodegen.enabled";
+	private static final int ROWS_PER_TYPE = 512;
+	private static final String DISTINCT_QUERY = "SELECT (COUNT(DISTINCT ?type) AS ?c) WHERE { ?i a ?type }";
 
 	@TempDir
 	File dataDir;
 
 	private SailRepository repository;
+	private LmdbStore store;
 	private String previousJaninoCodegen;
 	private String previousScanAggregates;
 
@@ -67,21 +80,29 @@ public class LmdbNativeKernelPrefixRunGuardTest {
 		System.setProperty(JANINO_CODEGEN_PROPERTY, "true");
 		System.setProperty(AdjacencyEngagementTestAccess.SCAN_AGGREGATES_PROPERTY, "false");
 		LmdbNativeKernelExecution.resetMetrics();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+	}
+
+	private void openRepository(boolean residentAdjacency) {
+		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
 				.setNativeEvaluationEnabled(true)
-				.setDirectAdjacencyEnabled(true)));
+				.setDirectAdjacencyEnabled(residentAdjacency));
+		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI person = vf.createIRI(EX, "Person");
 			IRI place = vf.createIRI(EX, "Place");
 			IRI org = vf.createIRI(EX, "Org");
-			// three distinct types, several instances each (runs the prefix-run cursor can skip over)
-			connection.add(vf.createIRI(EX, "a"), RDF.TYPE, person);
-			connection.add(vf.createIRI(EX, "b"), RDF.TYPE, person);
-			connection.add(vf.createIRI(EX, "c"), RDF.TYPE, person);
-			connection.add(vf.createIRI(EX, "d"), RDF.TYPE, place);
-			connection.add(vf.createIRI(EX, "e"), RDF.TYPE, place);
-			connection.add(vf.createIRI(EX, "f"), RDF.TYPE, org);
+			// Each duplicate run exceeds a bulk read, so the fixture exercises actual skip-seeking.
+			connection.begin();
+			for (int index = 0; index < ROWS_PER_TYPE; index++) {
+				connection.add(vf.createIRI(EX, "person-" + index), RDF.TYPE, person);
+				connection.add(vf.createIRI(EX, "place-" + index), RDF.TYPE, place);
+				connection.add(vf.createIRI(EX, "org-" + index), RDF.TYPE, org);
+			}
+			connection.commit();
+		}
+		if (residentAdjacency) {
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
 		}
 	}
 
@@ -105,40 +126,134 @@ public class LmdbNativeKernelPrefixRunGuardTest {
 		}
 	}
 
-	@Test
-	public void prefixRunEligibleCountDistinctDoesNotAttemptIrAggregate() {
-		String query = "SELECT (COUNT(DISTINCT ?type) AS ?c) WHERE { ?i a ?type }";
-
-		// Sanity: this shape really is the prefix-run engine's fast path (guards the fixture, not the fix).
-		assertThat(executionPath(query)).isEqualTo(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
-
-		// Isolate the kernel-attempt counter to a single clean execution (explain above also executes).
-		LmdbNativeKernelExecution.resetMetrics();
-
-		long count;
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
-			assertThat(rows).hasSize(1);
-			count = ((Literal) rows.get(0).getValue("c")).longValue();
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void forcedPrefixRunsActuallySkipLongDuplicateRuns(boolean residentAdjacency) throws Exception {
+		openRepository(residentAdjacency);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			long predicate = source.idOf(RDF.TYPE);
+			LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.OBJ_IDX },
+					NativeLmdbQuerySource.UNKNOWN_ID, predicate, NativeLmdbQuerySource.UNKNOWN_ID,
+					NativeLmdbQuerySource.UNKNOWN_ID);
+			assertThat(plan).as("the real source must admit an object-prefix scan").isNotNull();
+			assertThat(plan.usesAdjacency()).as("the fixture isolates the seekable LMDB prefix path").isFalse();
+			assertThat(plan.fieldSequence()).containsExactly('p', 'o', 's', 'c');
+			assertThat(plan.indexName()).as("the physical database must retain the same POSC order")
+					.contains("posc");
+			assertThat(plan.prefixFields()).containsExactly(TripleIndex.OBJ_IDX);
+			long prefixScans;
+			try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, NativeLmdbQuerySource.UNKNOWN_ID, predicate,
+					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID, false)) {
+				assertThat(cursor).as("the admitted physical prefix cursor must open").isNotNull();
+				List<Long> types = new ArrayList<>();
+				while (cursor.next()) {
+					types.add(cursor.prefixValue(TripleIndex.OBJ_IDX));
+				}
+				assertThat(types).hasSize(3).doesNotHaveDuplicates();
+				prefixScans = cursor.getSourceRowsScannedActual();
+				assertThat(prefixScans)
+						.as("actual cursor work must skip rows, rather than just emit fewer representatives")
+						.isPositive()
+						.isLessThan(3L * ROWS_PER_TYPE);
+			}
+			try (RecordIterator raw = source.lmdbStatements(NativeLmdbQuerySource.UNKNOWN_ID, predicate,
+					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID, null)) {
+				long rows = 0L;
+				while (raw.next() != null) {
+					rows++;
+				}
+				assertThat(rows).as("the comparison must consume the complete real LMDB relation")
+						.isEqualTo(3L * ROWS_PER_TYPE);
+				assertThat(rows)
+						.as("every returned raw row requires a visit, even when raw scan telemetry is unavailable")
+						.isGreaterThan(prefixScans);
+				long measured = raw.getSourceRowsScannedActual();
+				if (measured >= 0L) {
+					assertThat(measured).isGreaterThanOrEqualTo(rows);
+				} else {
+					assertThat(measured).as("unknown scan telemetry must retain its explicit sentinel").isEqualTo(-1L);
+				}
+			}
 		}
+		assertThat(executionPath(DISTINCT_QUERY, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS))
+				.as("the complete query must actually admit its forced prefix-run strategy")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
+		assertThat(count(DISTINCT_QUERY, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS)).isEqualTo(3L);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void prefixRunEligibleCountDistinctKeepsLegalInventoryAndExactResults(boolean residentAdjacency) {
+		openRepository(residentAdjacency);
+		String query = DISTINCT_QUERY;
+
+		long count = count(query, null);
 		assertThat(count).as("three distinct rdf:type values").isEqualTo(3L);
 
-		// The regression guard: the IR/Janino aggregate kernel must not intercept a prefix-run-eligible
-		// COUNT(DISTINCT). AGG_PLANNED counts every aggregate lowering the kernel front door accepts, so it is
-		// incremented even below the codegen admission threshold. It must stay zero here.
-		assertThat(LmdbNativeKernelExecution.AGG_PLANNED.get())
-				.as("IR aggregate kernel must not be attempted when the prefix-run path handles the shape")
-				.isZero();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			GenericPlanNode optimized = connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode();
+			List<String> candidates = eligibleStrategies(optimized);
+			assertThat(candidates)
+					.as("the common strategy inventory must retain all legal serial aggregate tiers: %s", optimized)
+					.contains(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+							LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+							LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+							LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+			assertThat(executionPath(query)).as("AUTO must select an independently legal native candidate")
+					.isIn(candidates);
+		}
 	}
 
 	private String executionPath(String query) {
+		return executionPath(query, null);
+	}
+
+	private String executionPath(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			String path = findStrategy(connection.prepareTupleQuery(query)
-					.explain(Explanation.Level.Telemetry)
-					.toGenericPlanNode());
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			String path = findStrategy(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode());
 			assertThat(path).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
 			return path;
 		}
+	}
+
+	private long count(String query, String forcedStrategy) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			List<BindingSet> rows = QueryResults.asList(prepared.evaluate());
+			assertThat(rows).hasSize(1);
+			return ((Literal) rows.getFirst().getValue("c")).longValue();
+		}
+	}
+
+	private static List<String> eligibleStrategies(GenericPlanNode node) {
+		List<String> strategies = new ArrayList<>();
+		if (node.getStrategyDecisions() != null) {
+			for (var decision : node.getStrategyDecisions()) {
+				if (decision.decisionPoint().contains("GROUP BY")) {
+					for (var candidate : decision.candidates()) {
+						if (!Boolean.FALSE.equals(candidate.canAttempt())) {
+							strategies.add(candidate.strategy());
+						}
+					}
+				}
+			}
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				strategies.addAll(eligibleStrategies(child));
+			}
+		}
+		return strategies;
 	}
 
 	private static String findStrategy(GenericPlanNode node) {

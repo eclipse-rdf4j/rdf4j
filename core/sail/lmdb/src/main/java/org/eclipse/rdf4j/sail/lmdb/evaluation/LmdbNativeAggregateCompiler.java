@@ -115,6 +115,8 @@ final class LmdbNativeAggregateCompiler {
 	static final AtomicLong ISLAND_HOISTS = new AtomicLong();
 	/** Test observability: roots compiled as ordered stage pipelines over a native inner source (M-A2). */
 	static final AtomicLong PIPELINE_ROOTS = new AtomicLong();
+	/** Test observability: pipeline roots whose ORDER BY + LIMIT ran as one bounded top-K stage. */
+	static final AtomicLong TOP_K_ROOTS = new AtomicLong();
 	/** Test observability: slot-starved roots rescued by internal-variable island demotion (M-A4). */
 	static final AtomicLong WIDE_QUERY_DEMOTIONS = new AtomicLong();
 	/**

@@ -45,7 +45,6 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -1233,8 +1232,8 @@ public class SnapshotSailStoreTest {
 		try (SailConnection connection = sail.getConnection()) {
 			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
 			Future<Explanation> future = executor.submit(() -> {
-				try (QueryExecutionDeadline execution = QueryExecutionDeadline.start(60_000L);
-						QueryExecutionDeadline.Scope shared = execution.enter();
+				try (QueryOperationContext.Scope shared = QueryOperationContext.open(
+						QueryOperationDeadline.after(60_000L, TimeUnit.MILLISECONDS));
 						QueryOperationContext.Scope earlier = explicitOperationDeadline
 								? QueryOperationContext.open(QueryOperationDeadline.after(1L, TimeUnit.SECONDS))
 								: null) {
