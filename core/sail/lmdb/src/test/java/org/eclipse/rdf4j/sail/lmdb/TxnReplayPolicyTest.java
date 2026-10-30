@@ -171,8 +171,9 @@ class TxnReplayPolicyTest {
 
 	private static void seedPairedStore(File directory) throws Exception {
 		LmdbStoreConfig config = storeConfig(0.90d);
-		ValueStore values = new ValueStore(new File(directory, "values"), config);
-		try (TripleStore triples = new TripleStore(new File(directory, "triples"), config, values)) {
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory, config);
+		ValueStore values = new ValueStore(new File(directory, "values"), properties, config);
+		try (TripleStore triples = new TripleStore(new File(directory, "triples"), properties, config, values)) {
 			triples.startTransaction();
 			values.startTransaction(true);
 			long largeValue = values.storeValue(Values.literal("seed-" + "x".repeat(4 * (int) MIB)));
@@ -187,8 +188,9 @@ class TxnReplayPolicyTest {
 
 	private static boolean nextStoreTransactionTracksReplay(File directory, double threshold) throws Exception {
 		LmdbStoreConfig config = storeConfig(threshold);
-		ValueStore values = new ValueStore(new File(directory, "values"), config);
-		try (TripleStore triples = new TripleStore(new File(directory, "triples"), config, values)) {
+		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory, config);
+		ValueStore values = new ValueStore(new File(directory, "values"), properties, config);
+		try (TripleStore triples = new TripleStore(new File(directory, "triples"), properties, config, values)) {
 			for (int i = 0; i < TxnReplayPolicy.HISTORY_LENGTH; i++) {
 				triples.startTransaction();
 				values.startTransaction(true);
