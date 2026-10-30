@@ -44,8 +44,12 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class QueryPlanSnapshotCliTest {
+
+	@TempDir
+	Path temporary;
 
 	private static final int TEST_EXECUTION_REPEAT_MIN_RUNS = 1;
 	private static final int TEST_EXECUTION_REPEAT_MAX_RUNS = 1;
@@ -436,7 +440,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void lmdbRunRecordsLoadedSizeAndSkipsReloadWhenSizeMatches() throws Exception {
-		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-reuse-");
+		Path lmdbDataDirectory = Files.createTempDirectory(temporary, "rdf4j-cli-lmdb-reuse-");
 		try {
 			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
 					"--no-interactive",
@@ -496,7 +500,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void directAdjacencyWaitInitializesReusedLmdbStore() throws Exception {
-		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-adjacency-ready-");
+		Path lmdbDataDirectory = Files.createTempDirectory(temporary, "rdf4j-cli-lmdb-adjacency-ready-");
 		try {
 			LmdbStore seedStore = new LmdbStore(lmdbDataDirectory.toFile(),
 					new LmdbStoreConfig("spoc,ospc,psoc,posc").setDirectAdjacencyMaxBytes(1L << 30));
@@ -533,8 +537,8 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void lmdbRunPersistsPageCardinalityEstimatorFeatureFlag() throws Exception {
-		Path lmdbDataDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-flags-");
-		Path outputDirectory = Files.createTempDirectory("rdf4j-cli-lmdb-flags-output-");
+		Path lmdbDataDirectory = Files.createTempDirectory(temporary, "rdf4j-cli-lmdb-flags-");
+		Path outputDirectory = Files.createTempDirectory(temporary, "rdf4j-cli-lmdb-flags-output-");
 		try {
 			QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
 					"--no-interactive",
@@ -595,7 +599,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void runModePersistsRunNameAsMetadataAndPrintsIt() throws Exception {
-		Path outputDirectory = Files.createTempDirectory("rdf4j-cli-run-name-");
+		Path outputDirectory = Files.createTempDirectory(temporary, "rdf4j-cli-run-name-");
 		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
 		QueryPlanSnapshotCli cli = newCli("", outputBuffer);
 
@@ -625,7 +629,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void runModePersistsExecutionVerificationMetricsAsSnapshotMetadata() throws Exception {
-		Path outputDirectory = Files.createTempDirectory("rdf4j-cli-execution-metadata-");
+		Path outputDirectory = Files.createTempDirectory(temporary, "rdf4j-cli-execution-metadata-");
 		ByteArrayOutputStream outputBuffer = new ByteArrayOutputStream();
 		QueryPlanSnapshotCli cli = newCli("", outputBuffer);
 
@@ -739,7 +743,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void interactiveRunSupportsQueryFileSourceSelection() throws Exception {
-		Path queryFile = Files.createTempFile("rdf4j-cli-query-", ".rq");
+		Path queryFile = Files.createTempFile(temporary, "rdf4j-cli-query-", ".rq");
 		Files.writeString(queryFile, "SELECT * WHERE { ?s ?p ?o } LIMIT 3", StandardCharsets.UTF_8);
 		String interactiveInput = String.join("\n",
 				"memory",
@@ -762,7 +766,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void interactiveNoArgsCanSelectCompareExistingModeAndCompare() throws Exception {
-		Path outputDir = Files.createTempDirectory("rdf4j-cli-mode-compare-");
+		Path outputDir = Files.createTempDirectory(temporary, "rdf4j-cli-mode-compare-");
 		writeSnapshot(outputDir, "q-mode", "fingerprint-mode", "2026-02-17T10:00:00Z");
 		writeSnapshot(outputDir, "q-mode", "fingerprint-mode", "2026-02-17T10:05:00Z");
 
@@ -788,7 +792,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void interactiveNoArgsCanRenameAllRunsForSelectedCommit() throws Exception {
-		Path outputDir = Files.createTempDirectory("rdf4j-cli-rename-commit-");
+		Path outputDir = Files.createTempDirectory(temporary, "rdf4j-cli-rename-commit-");
 		writeSnapshot(outputDir, "q-alpha-1", "fingerprint-a1", "2026-02-17T12:05:00Z",
 				Map.of("store", "memory", "gitCommit", "commit-a", "gitBranch", "feature/a", "runName", "old-a"));
 		writeSnapshot(outputDir, "q-alpha-2", "fingerprint-a2", "2026-02-17T12:00:00Z",
@@ -836,7 +840,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void interactiveCompareExistingListsAllAvailableQueryIds() throws Exception {
-		Path outputDir = Files.createTempDirectory("rdf4j-cli-query-list-");
+		Path outputDir = Files.createTempDirectory(temporary, "rdf4j-cli-query-list-");
 		writeSnapshot(outputDir, "q-alpha", "fingerprint-alpha", "2026-02-17T10:00:00Z");
 		writeSnapshot(outputDir, "q-alpha", "fingerprint-alpha", "2026-02-17T10:05:00Z");
 		writeSnapshot(outputDir, "q-beta", "fingerprint-beta", "2026-02-17T10:10:00Z");
@@ -863,7 +867,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void interactiveCompareQueryIdPromptsOutputDirectoryOnceWhenBlank() throws Exception {
-		Path outputDir = Files.createTempDirectory("rdf4j-cli-query-list-default-");
+		Path outputDir = Files.createTempDirectory(temporary, "rdf4j-cli-query-list-default-");
 		writeSnapshot(outputDir, "q-alpha", "fingerprint-alpha", "2026-02-17T10:00:00Z");
 		writeSnapshot(outputDir, "q-alpha", "fingerprint-alpha", "2026-02-17T10:05:00Z");
 		String previousOutputDirectory = System.getProperty(QueryPlanCaptureContext.OUTPUT_DIRECTORY_PROPERTY);
@@ -898,7 +902,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void compareExistingInteractiveModeCanBrowseAndViewRun() throws Exception {
-		Path outputDir = Files.createTempDirectory("rdf4j-cli-runs-");
+		Path outputDir = Files.createTempDirectory(temporary, "rdf4j-cli-runs-");
 		writeSnapshot(outputDir, "q1", "fingerprint-a", "2026-02-17T10:00:00Z");
 		writeSnapshot(outputDir, "q1", "fingerprint-a", "2026-02-17T10:05:00Z");
 
@@ -927,7 +931,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void compareExistingCanFilterByRunName() throws Exception {
-		Path outputDir = Files.createTempDirectory("rdf4j-cli-run-name-filter-");
+		Path outputDir = Files.createTempDirectory(temporary, "rdf4j-cli-run-name-filter-");
 		writeSnapshot(outputDir, "q-alpha", "fingerprint-a", "2026-02-17T10:00:00Z",
 				Map.of("store", "memory", "runName", "baseline"));
 		writeSnapshot(outputDir, "q-beta", "fingerprint-b", "2026-02-17T10:05:00Z",
@@ -951,7 +955,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void compareExistingCanBatchCompareRunNamePairAndWriteCsv() throws Exception {
-		Path outputDir = Files.createTempDirectory("rdf4j-cli-run-name-pair-");
+		Path outputDir = Files.createTempDirectory(temporary, "rdf4j-cli-run-name-pair-");
 		Path csvOutput = outputDir.resolve("run-name-pair.csv");
 		writeSnapshot(outputDir, "q-alpha", "fingerprint-a", "2026-02-17T10:00:00Z",
 				Map.of("store", "memory", "runName", "baseline"));
@@ -1007,7 +1011,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void compareExistingBatchCsvIncludesExecutedModeledWorkValues() throws Exception {
-		Path outputDir = Files.createTempDirectory("rdf4j-cli-run-name-pair-modeled-work-");
+		Path outputDir = Files.createTempDirectory(temporary, "rdf4j-cli-run-name-pair-modeled-work-");
 		Path csvOutput = outputDir.resolve("run-name-pair-modeled-work.csv");
 
 		Map<String, String> baselineExecutedMetrics = new LinkedHashMap<>();
@@ -1128,7 +1132,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void compareExistingBatchCsvFallsBackToLegacyExecutedExplanationMetrics() throws Exception {
-		Path outputDir = Files.createTempDirectory("rdf4j-cli-run-name-pair-legacy-executed-");
+		Path outputDir = Files.createTempDirectory(temporary, "rdf4j-cli-run-name-pair-legacy-executed-");
 		Path csvOutput = outputDir.resolve("run-name-pair-legacy-executed.csv");
 
 		Map<String, String> baselineMetadata = new LinkedHashMap<>();
@@ -1171,7 +1175,7 @@ class QueryPlanSnapshotCliTest {
 
 	@Test
 	void compareExistingRunNamePairPrefersLatestSuccessfulExecutionPerQuery() throws Exception {
-		Path outputDir = Files.createTempDirectory("rdf4j-cli-run-name-pair-ranking-");
+		Path outputDir = Files.createTempDirectory(temporary, "rdf4j-cli-run-name-pair-ranking-");
 		Path csvOutput = outputDir.resolve("run-name-pair-ranking.csv");
 
 		Map<String, String> baselineSuccessful = new LinkedHashMap<>();

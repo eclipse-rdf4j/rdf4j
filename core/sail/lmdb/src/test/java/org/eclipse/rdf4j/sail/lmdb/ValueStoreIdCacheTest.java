@@ -18,10 +18,13 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.lwjgl.util.lmdb.LMDB.MDB_BAD_TXN;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -306,7 +309,7 @@ class ValueStoreIdCacheTest {
 
 	@Test
 	void ordinaryInsertSpoilsAnActiveFreshValueSession(@TempDir File directory) throws Exception {
-		try (CountingValueStore store = store(directory)) {
+		try (CountingValueStore store = canonicalStore(directory)) {
 			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
 			assertNotNull(session);
 			assertTrue(store.isFreshValueSessionUsable(session));
@@ -491,6 +494,352 @@ class ValueStoreIdCacheTest {
 					"the ancestor namespace ID survives additions but its native prefix proof must expire");
 			store.clearCaches();
 			assertEquals(id, store.getId(VALUES.createIRI("urn:scope:shared/record1/category")));
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { LmdbStoreFormat.LEGACY_VERSION, LmdbStoreFormat.CANONICAL_IRI_VERSION })
+	void committedNamespaceIdIsReusedAcrossWriterTransactions(int version, @TempDir File directory) throws Exception {
+		String namespace = "urn:transaction:shared-namespace:";
+		try (CountingValueStore store = new CountingValueStore(directory, config(), version)) {
+			store.startTransaction(true);
+			long firstId = store.storeValue(VALUES.createIRI(namespace + "first"));
+			assertNotEquals(LmdbValue.UNKNOWN_ID, firstId);
+			assertTrue(store.namespaceProbes > 0, "the first writer must create the shared namespace");
+			store.commit();
+
+			store.resetCounts();
+			store.startTransaction(true);
+			long secondId = store.storeValue(VALUES.createIRI(namespace + "second"));
+			assertNotEquals(firstId, secondId);
+			assertEquals(0, store.namespaceProbes, "the committed namespace ID must be reused by the second writer");
+			store.commit();
+
+			store.resetCounts();
+			store.startTransaction(true);
+			long thirdId = store.storeValue(VALUES.createIRI(namespace + "third"));
+			assertNotEquals(secondId, thirdId);
+			assertEquals(0, store.namespaceProbes, "the committed namespace ID must be reused by the third writer");
+			store.commit();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { LmdbStoreFormat.LEGACY_VERSION, LmdbStoreFormat.CANONICAL_IRI_VERSION })
+	void committedNamespacesAreReusedForBulkAndNestedValues(int version, @TempDir File directory) throws Exception {
+		String namespace = "urn:writer:nested:";
+		for (boolean bulk : new boolean[] { false, true }) {
+			try (CountingValueStore store = new CountingValueStore(new File(directory, "bulk-" + bulk), config(),
+					version)) {
+				store.startTransaction(true);
+				store.storeValue(VALUES.createIRI(namespace + "seed"));
+				store.commit();
+
+				Literal literal = VALUES.createLiteral("payload", VALUES.createIRI(namespace + "datatype"));
+				TripleTerm nested = VALUES.createTripleTerm(VALUES.createIRI(namespace + "subject"),
+						VALUES.createIRI(namespace + "predicate"), literal);
+				Value[] values = { VALUES.createIRI(namespace + "another"), literal, nested };
+				long[] ids = new long[values.length];
+				store.resetCounts();
+				store.startTransaction(true);
+				if (bulk) {
+					store.storeValues(values, ids, values.length);
+				} else {
+					for (int i = 0; i < values.length; i++) {
+						ids[i] = store.storeValue(values[i]);
+					}
+				}
+				assertEquals(0, store.namespaceProbes);
+				store.commit();
+				for (int i = 0; i < values.length; i++) {
+					assertEquals(values[i], store.getValue(ids[i]));
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void writtenFreshNamespacesAreReusedAfterCommit(boolean assigned, @TempDir File directory) throws Exception {
+		String namespace = "urn:fresh:writer-cache:";
+		try (CountingValueStore store = canonicalStore(directory)) {
+			store.startTransaction(true);
+			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
+			assertNotNull(session);
+			Value[] values = { VALUES.createIRI(namespace + "first") };
+			if (assigned) {
+				ValueStore.FreshValueAssignment assignment = store.assignFreshValues(session, values);
+				ValueStore.FreshValueEncoder encoder = store.freshValueEncoder(session, assignment);
+				ValueStore.PreparedValueBatch batch;
+				while ((batch = encoder.next(1)) != null) {
+					store.persistPreparedValues(batch);
+				}
+			} else {
+				store.persistPreparedValues(store.prepareFreshValues(session, values));
+			}
+			store.commit();
+			store.commitFreshValueTransaction(session);
+			store.discardFreshValueSession(session);
+
+			store.resetCounts();
+			store.startTransaction(true);
+			Value next = VALUES.createIRI(namespace + "second");
+			long id = store.storeValue(next);
+			assertEquals(0, store.namespaceProbes, "a written fresh namespace is committed");
+			store.commit();
+			assertEquals(next, store.getValue(id));
+		}
+	}
+
+	@Test
+	void assignedButUnwrittenFreshNamespaceIsNotPublished(@TempDir File directory) throws Exception {
+		String namespace = "urn:fresh:unwritten:";
+		try (CountingValueStore store = canonicalStore(directory)) {
+			store.startTransaction(true);
+			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
+			assertNotNull(session);
+			store.assignFreshValues(session, new Value[] { VALUES.createIRI(namespace + "assigned") });
+			store.commit();
+			store.commitFreshValueTransaction(session);
+			store.discardFreshValueSession(session);
+
+			store.resetCounts();
+			store.startTransaction(true);
+			Value written = VALUES.createIRI(namespace + "written");
+			long id = store.storeValue(written);
+			assertEquals(1, store.namespaceProbes, "an assigned namespace is not an actual dictionary mapping");
+			store.commit();
+			assertEquals(written, store.getValue(id));
+		}
+	}
+
+	@Test
+	void writerNamespaceHitCanBeRepublishedAfterCacheClear(@TempDir File directory) throws Exception {
+		String namespace = "urn:writer:clear:";
+		try (CountingValueStore store = canonicalStore(directory)) {
+			store.startTransaction(true);
+			store.storeValue(VALUES.createIRI(namespace + "first"));
+			store.commit();
+
+			store.startTransaction(true);
+			store.storeValue(VALUES.createIRI(namespace + "second"));
+			store.clearCaches();
+			store.resetCounts();
+			store.storeValue(VALUES.createIRI(namespace + "third"));
+			assertEquals(0, store.namespaceProbes, "the current writer retains its namespace after cache eviction");
+			store.commit();
+
+			store.resetCounts();
+			store.startTransaction(true);
+			store.storeValue(VALUES.createIRI(namespace + "fourth"));
+			assertEquals(0, store.namespaceProbes, "the current writer republishes its confirmed namespace");
+			store.commit();
+		}
+	}
+
+	@Test
+	void namespaceCreationAcrossGrowthCheckpointWarmsNextWriter(@TempDir File directory) throws Exception {
+		int namespaceBytes = 256 * 1024;
+		String prefix = "urn:checkpoint:" + "x".repeat(namespaceBytes);
+		try (CountingValueStore store = new CountingValueStore(directory,
+				config().setAutoGrow(true).setValueDBSize(256L * 1024), LmdbStoreFormat.CANONICAL_IRI_VERSION)) {
+			store.startTransaction(true);
+			long mapBefore = store.mapSizeBytes();
+			long growthBefore = store.getBulkMapGrowthCount();
+			// Startup reserves native bootstrap space, so the effective map can exceed the requested size.
+			// Fill that actual map with distinct, cache-eligible namespaces until namespace allocation checkpoints.
+			int limit = Math.toIntExact(mapBefore / namespaceBytes + 2L);
+			String namespace = null;
+			for (int i = 0; i < limit && store.namespaceCheckpoints == 0; i++) {
+				namespace = prefix + i + ":";
+				store.storeValue(VALUES.createIRI(namespace + "first"));
+			}
+			assertTrue(store.namespaceCheckpoints > 0,
+					"namespace allocation itself must commit and replace the native writer across map growth");
+			assertTrue(store.mapSizeBytes() > mapBefore);
+			assertTrue(store.getBulkMapGrowthCount() > growthBefore);
+			store.commit();
+
+			store.resetCounts();
+			store.startTransaction(true);
+			Value next = VALUES.createIRI(namespace + "second");
+			long id = store.storeValue(next);
+			assertEquals(0, store.namespaceProbes, "the replacement writer must publish the created namespace");
+			store.commit();
+			assertEquals(next, store.getValue(id));
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void abortedNamespaceCandidatesAreNeverPublished(boolean failedCommit, @TempDir File directory) throws Exception {
+		String namespace = "urn:writer:aborted:";
+		try (CountingValueStore store = canonicalStore(directory)) {
+			store.startTransaction(true);
+			Value aborted = VALUES.createIRI(namespace + "first");
+			store.storeValue(aborted);
+			if (failedCommit) {
+				store.failNextCommit = true;
+				assertThrows(IOException.class, store::commit);
+			} else {
+				store.rollback();
+			}
+
+			store.resetCounts();
+			store.startTransaction(true);
+			Value replacement = VALUES.createIRI(namespace + "second");
+			long replacementId = store.storeValue(replacement);
+			assertEquals(1, store.namespaceProbes, "the aborted namespace requires a new native lookup");
+			store.commit();
+			assertEquals(replacement, store.getValue(replacementId));
+			assertEquals(LmdbValue.UNKNOWN_ID, store.getId(aborted));
+		}
+	}
+
+	@Test
+	void writerNamespaceMemoDoesNotExposeNewIriToConcurrentReaders(@TempDir File directory) throws Exception {
+		String namespace = "urn:writer:reader:";
+		try (CountingValueStore store = canonicalStore(directory); var reader = Executors.newSingleThreadExecutor()) {
+			store.startTransaction(true);
+			store.storeValue(VALUES.createIRI(namespace + "committed"));
+			store.commit();
+
+			store.resetCounts();
+			store.startTransaction(true);
+			Value pending = VALUES.createIRI(namespace + "pending");
+			long id = store.storeValue(pending);
+			assertEquals(0, store.namespaceProbes, "the writer must actually use the committed memo");
+			assertEquals(LmdbValue.UNKNOWN_ID, reader.submit(() -> store.getId(pending)).get());
+			store.commit();
+			assertEquals(id, reader.submit(() -> store.getId(pending)).get());
+		}
+	}
+
+	@Test
+	void unchangedWriterAbortRetainsCommittedNamespaceMemo(@TempDir File directory) throws Exception {
+		String namespace = "urn:writer:unchanged:";
+		try (CountingValueStore store = canonicalStore(directory)) {
+			store.startTransaction(true);
+			store.storeValue(VALUES.createIRI(namespace + "first"));
+			store.commit();
+			int aborts = store.abortedWriters;
+
+			store.startTransaction(true);
+			assertEquals(LmdbValue.UNKNOWN_ID, store.getId(VALUES.createIRI(namespace + "missing")));
+			store.commitIfChanged();
+			assertEquals(aborts + 1, store.abortedWriters, "the unchanged writer must use native abort");
+
+			store.resetCounts();
+			store.startTransaction(true);
+			store.storeValue(VALUES.createIRI(namespace + "second"));
+			assertEquals(0, store.namespaceProbes);
+			store.commit();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { LmdbStoreFormat.LEGACY_VERSION, LmdbStoreFormat.CANONICAL_IRI_VERSION })
+	void retiringNamespaceInvalidatesCurrentAndCommittedWriterCaches(int version, @TempDir File directory)
+			throws Exception {
+		String namespace = "urn:writer:retired:";
+		try (CountingValueStore store = new CountingValueStore(directory, config(), version)) {
+			store.startTransaction(true);
+			long oldIri = store.storeValue(VALUES.createIRI(namespace + "old"));
+			store.commit();
+			long oldNamespace = namespaceId(store, oldIri);
+
+			store.startTransaction(true);
+			assertEquals(LmdbValue.UNKNOWN_ID, store.getId(VALUES.createIRI(namespace + "missing")));
+			List<Long> next = new ArrayList<>();
+			store.gcIds(Set.of(oldIri), next);
+			assertTrue(next.contains(oldNamespace));
+			store.gcIds(next, new ArrayList<>());
+			store.resetCounts();
+			Value replacement = VALUES.createIRI(namespace + "replacement");
+			long replacementId = store.storeValue(replacement);
+			assertEquals(1, store.namespaceProbes, "a retired namespace must be looked up again");
+			store.commit();
+			long newNamespace = namespaceId(store, replacementId);
+			assertNotEquals(oldNamespace, newNamespace);
+			byte[] data = store.getData(newNamespace);
+			assertEquals(namespace, new String(data, 1, data.length - 1, StandardCharsets.UTF_8));
+			assertEquals(replacement, store.getValue(replacementId));
+		}
+	}
+
+	@Test
+	void spoiledFreshSessionCannotSupplyRetiredNamespace(@TempDir File directory) throws Exception {
+		String namespace = "urn:fresh:retired:";
+		try (CountingValueStore store = canonicalStore(directory)) {
+			store.startTransaction(true);
+			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
+			assertNotNull(session);
+			ValueStore.PreparedValueBatch batch = store.prepareFreshValues(session,
+					new Value[] { VALUES.createIRI(namespace + "old") });
+			store.persistPreparedValues(batch);
+			long oldIri = batch.ids()[0];
+			store.commit();
+			store.commitFreshValueTransaction(session);
+			long oldNamespace = namespaceId(store, oldIri);
+
+			store.startTransaction(true);
+			List<Long> next = new ArrayList<>();
+			store.gcIds(Set.of(oldIri), next);
+			assertFalse(store.isFreshValueSessionUsable(session));
+			assertTrue(next.contains(oldNamespace));
+			store.gcIds(next, new ArrayList<>());
+			store.resetCounts();
+			Value replacement = VALUES.createIRI(namespace + "replacement");
+			long replacementId = store.storeValue(replacement);
+			assertEquals(1, store.namespaceProbes);
+			store.commit();
+			long newNamespace = namespaceId(store, replacementId);
+			assertNotEquals(oldNamespace, newNamespace);
+			store.discardFreshValueSession(session);
+			assertEquals(replacement, store.getValue(replacementId));
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 4, 32 })
+	void writerNamespaceCachePressurePreservesEveryMapping(int capacity, @TempDir File directory) throws Exception {
+		try (CountingValueStore store = new CountingValueStore(directory,
+				config().setNamespaceIDCacheSize(capacity), LmdbStoreFormat.CANONICAL_IRI_VERSION)) {
+			long[][] ids = new long[3][40];
+			for (int round = 0; round < ids.length; round++) {
+				store.startTransaction(true);
+				for (int i = 0; i < ids[round].length; i++) {
+					ids[round][i] = store.storeValue(VALUES.createIRI("urn:pressure:" + i + ":item" + round));
+				}
+				store.commit();
+			}
+			store.clearCaches();
+			for (int round = 0; round < ids.length; round++) {
+				for (int i = 0; i < ids[round].length; i++) {
+					assertEquals(VALUES.createIRI("urn:pressure:" + i + ":item" + round),
+							store.getValue(ids[round][i]));
+				}
+			}
+		}
+	}
+
+	@Test
+	void storeClearRetiresCommittedWriterNamespaceMemo(@TempDir File directory) throws Exception {
+		String namespace = "urn:writer:cleared:";
+		try (CountingValueStore store = canonicalStore(directory)) {
+			store.startTransaction(true);
+			store.storeValue(VALUES.createIRI(namespace + "old"));
+			store.commit();
+			store.clear();
+
+			store.resetCounts();
+			store.startTransaction(true);
+			Value replacement = VALUES.createIRI(namespace + "replacement");
+			long id = store.storeValue(replacement);
+			assertEquals(1, store.namespaceProbes, "clearing the dictionary must retire the writer memo");
+			store.commit();
+			assertEquals(replacement, store.getValue(id));
+			assertEquals(LmdbValue.UNKNOWN_ID, store.getId(VALUES.createIRI(namespace + "old")));
 		}
 	}
 
@@ -780,7 +1129,7 @@ class ValueStoreIdCacheTest {
 
 	@Test
 	void collectingAValueSpoilsAnActiveFreshValueSession(@TempDir File directory) throws Exception {
-		try (CountingValueStore store = store(directory)) {
+		try (CountingValueStore store = canonicalStore(directory)) {
 			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
 			assertNotNull(session);
 			Value[] values = { store.createIRI("urn:fresh:collected") };
@@ -808,7 +1157,7 @@ class ValueStoreIdCacheTest {
 	void bulkPublicationNeverExposesUncommittedIds(@TempDir File directory) throws Exception {
 		for (boolean prepared : new boolean[] { false, true }) {
 			for (boolean commit : new boolean[] { false, true }) {
-				try (CountingValueStore store = store(new File(directory, "bulk-" + prepared + "-" + commit));
+				try (CountingValueStore store = canonicalStore(new File(directory, "bulk-" + prepared + "-" + commit));
 						var reader = Executors.newSingleThreadExecutor()) {
 					Value[] values = { store.createIRI("urn:bulk:provisional"),
 							store.createIRI("http://www.w3.org/test/bulk-provisional") };
@@ -988,6 +1337,10 @@ class ValueStoreIdCacheTest {
 		return new CountingValueStore(directory, config());
 	}
 
+	private static CountingValueStore canonicalStore(File directory) throws Exception {
+		return new CountingValueStore(directory, config(), LmdbStoreFormat.CANONICAL_IRI_VERSION);
+	}
+
 	private static LmdbStoreConfig config() {
 		return new LmdbStoreConfig().setValueOverlayEnabled(false).setInlineLiterals(false);
 	}
@@ -1000,22 +1353,54 @@ class ValueStoreIdCacheTest {
 		return id;
 	}
 
+	private static long namespaceId(CountingValueStore store, long iriId) throws IOException {
+		byte[] data = store.getData(iriId);
+		assertEquals(ValueStoreRecordCodec.URI_VALUE, data[0]);
+		return Varint.readUnsigned(ByteBuffer.wrap(data, 1, data.length - 1));
+	}
+
 	private static final class CountingValueStore extends ValueStore implements AutoCloseable {
 
 		private int valueProbes;
 		private int namespaceProbes;
+		private int namespaceCheckpoints;
 		private int readTransactions;
 		private int alternativeProbes;
 		private int alternativeSeeks;
 		private Set<Long> watchedNamespaceHashes = Set.of();
 		private int watchedNamespaceProbes;
 		private int failAfterProbeType = -1;
+		private boolean failNextCommit;
+		private int abortedWriters;
 		private volatile boolean pauseAfterProbe;
 		private CountDownLatch probeCompleted;
 		private CountDownLatch resumeProbe;
 
 		CountingValueStore(File directory, LmdbStoreConfig config) throws IOException {
-			super(directory, config);
+			// Exercise the released mixed-split compatibility cache; fresh sessions require a canonical store.
+			this(directory, config, LmdbStoreFormat.LEGACY_VERSION);
+		}
+
+		CountingValueStore(File directory, LmdbStoreConfig config, int version) throws IOException {
+			// These tests create empty stores with trusted counts and explicitly exercise reclamation invalidation.
+			super(directory, new StoreProperties().setVersion(Integer.toString(version)),
+					config.setLegacyReferenceCountRepairEnabled(true));
+		}
+
+		@Override
+		int commitWriteTransaction(long transaction) {
+			if (failNextCommit) {
+				failNextCommit = false;
+				mdb_txn_abort(transaction);
+				return MDB_BAD_TXN;
+			}
+			return super.commitWriteTransaction(transaction);
+		}
+
+		@Override
+		void abortWriteTransaction(long transaction) {
+			abortedWriters++;
+			super.abortWriteTransaction(transaction);
 		}
 
 		@Override
@@ -1026,7 +1411,13 @@ class ValueStoreIdCacheTest {
 			} else {
 				valueProbes++;
 			}
+			long mapBefore = nativeMapGeneration();
+			long commitsBefore = nativeCommitGeneration();
 			Long result = super.findIdInTransaction(data, create, coreDatatype, stack, txn);
+			if (create && data[0] == ValueStoreRecordCodec.NAMESPACE_VALUE
+					&& nativeMapGeneration() > mapBefore && nativeCommitGeneration() > commitsBefore) {
+				namespaceCheckpoints++;
+			}
 			if (data[0] == failAfterProbeType) {
 				failAfterProbeType = -1;
 				throw new IOException("dictionary probe failed after reading its result");

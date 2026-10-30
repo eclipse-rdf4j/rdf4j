@@ -6696,7 +6696,7 @@ class LmdbSailStore implements SailStore {
 			boolean sketchBasedJoinEstimatorEnabled)
 			throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
-				LmdbStoreFormat.fromProperties(properties, config),
+				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
 				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()));
 	}
 
@@ -6742,7 +6742,7 @@ class LmdbSailStore implements SailStore {
 			boolean sketchBasedJoinEstimatorEnabled, ValueStoreFactory valueStoreFactory,
 			TripleStoreFactory tripleStoreFactory, int asyncQueueCapacity) throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
-				LmdbStoreFormat.fromProperties(properties, config),
+				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
 				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()), null, null,
 				valueStoreFactory, tripleStoreFactory, PersistentSetFactory::new, LmdbFilterSelectivityStats::new,
 				asyncQueueCapacity);
@@ -6753,7 +6753,7 @@ class LmdbSailStore implements SailStore {
 			TripleStoreFactory tripleStoreFactory, PersistentSetFactoryFactory setFactoryFactory,
 			FilterSelectivityStatsFactory statsFactory) throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
-				LmdbStoreFormat.fromProperties(properties, config),
+				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
 				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()), null, null,
 				valueStoreFactory, tripleStoreFactory, setFactoryFactory, statsFactory);
 	}
@@ -11640,7 +11640,7 @@ class LmdbSailStore implements SailStore {
 			}
 			try {
 				LmdbInitialRunImport runImport = LmdbInitialRunImport.begin(owner, dataDir.toPath(),
-						tripleStore.initialImportFieldOrders(), forceSyncInitialRunImport);
+						tripleStore.initialImportFieldOrders(), forceSyncInitialRunImport, valueStore.getFormat());
 				valueStore.deferLookupRecords(runImport.valueLookups());
 				initialRunImportThread = Thread.currentThread();
 				initialRunImport = runImport;

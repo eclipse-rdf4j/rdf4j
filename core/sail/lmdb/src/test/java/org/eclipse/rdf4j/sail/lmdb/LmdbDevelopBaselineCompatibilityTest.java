@@ -197,11 +197,11 @@ class LmdbDevelopBaselineCompatibilityTest {
 
 	@Test
 	@EnabledIfSystemProperty(named = BASELINE_CLASSPATH_PROPERTY, matches = ".+")
-	void actualDevelopEmptyVersionTwoAndCurrentFormatSixReaderChecks() throws Exception {
+	void actualDevelopEmptyVersionTwoAndCurrentFormatSevenReaderChecks() throws Exception {
 		Path fixtureRoot = Path.of(System.getProperty(FIXTURE_ROOT_PROPERTY));
 		Files.createDirectories(fixtureRoot);
 		assertPinnedBaselineEmptyVersionTwoCanBeWrittenAndReopened(fixtureRoot);
-		assertPinnedBaselineReaderRejectsCurrentFormatSix(fixtureRoot);
+		assertPinnedBaselineReaderRejectsCurrentFormatSeven(fixtureRoot);
 	}
 
 	@Test
@@ -282,28 +282,28 @@ class LmdbDevelopBaselineCompatibilityTest {
 		assertBaselinePropertiesSnapshot(storeDirectory, metadata);
 	}
 
-	private static void assertPinnedBaselineReaderRejectsCurrentFormatSix(Path fixtureRoot) throws Exception {
-		Path storeDirectory = fixtureRoot.resolve("current-format-six");
+	private static void assertPinnedBaselineReaderRejectsCurrentFormatSeven(Path fixtureRoot) throws Exception {
+		Path storeDirectory = fixtureRoot.resolve("current-format-seven");
 		Files.createDirectories(storeDirectory);
 		SailRepository repository = openRepository(storeDirectory, true);
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
-			connection.add(VF.createIRI("urn:compat:new-six-subject"), CURRENT_PREDICATE,
-					VF.createLiteral("current format six"));
+			connection.add(VF.createIRI("urn:compat:new-seven-subject"), CURRENT_PREDICATE,
+					VF.createLiteral("current format seven"));
 			connection.commit();
 		} finally {
 			repository.shutDown();
 		}
 		Properties properties = loadProperties(storeDirectory.resolve("store.properties"));
-		assertEquals("6", properties.getProperty("version"));
+		assertEquals("7", properties.getProperty("version"));
 		assertEquals("core-v1", properties.getProperty("literal-reference-encoding"));
 		assertTrue(Files.exists(storeDirectory.resolve("lmdbrdf.ver")));
 		Map<String, String> before = snapshotStoreBytes(storeDirectory);
-		runBaselineProcessExpectingFailure("reject-current-format-six", storeDirectory,
-				fixtureRoot.resolve("current-format-six.properties"), true,
+		runBaselineProcessExpectingFailure("reject-current-format-seven", storeDirectory,
+				fixtureRoot.resolve("current-format-seven.properties"), true,
 				"Directory contains data from an older unsupported version of LmdbStore");
 		assertEquals(before, snapshotStoreBytes(storeDirectory),
-				"The pinned reader must reject format 6 without changing its metadata or LMDB bytes");
+				"The pinned reader must reject format 7 without changing its metadata or LMDB bytes");
 	}
 
 	private static SailRepository openRepository(Path directory, boolean inlineLiterals) {
@@ -374,7 +374,7 @@ class LmdbDevelopBaselineCompatibilityTest {
 		assertTrue(exited, "Pinned baseline rejection probe did not exit: phase=" + phase
 				+ ", inlineLiterals=" + inlineLiterals);
 		assertTrue(process.exitValue() != 0,
-				"Pinned baseline reader unexpectedly accepted current format 6: phase=" + phase
+				"Pinned baseline reader unexpectedly accepted current format 7: phase=" + phase
 						+ ", inlineLiterals=" + inlineLiterals);
 		assertTrue(processOutput.contains(expectedError), "Unexpected pinned-reader rejection: phase=" + phase
 				+ ", inlineLiterals=" + inlineLiterals + ":\n" + processOutput);
@@ -598,10 +598,10 @@ class LmdbDevelopBaselineCompatibilityTest {
 				rewriteAfterClear(storeDirectory, metadataFile, inlineLiterals);
 			} else if ("verify-empty-versioned".equals(phase)) {
 				verifyAndWriteEmptyVersioned(storeDirectory, inlineLiterals);
-			} else if ("reject-current-format-six".equals(phase)) {
+			} else if ("reject-current-format-seven".equals(phase)) {
 				SailRepository repository = openRepository(storeDirectory, inlineLiterals);
 				repository.shutDown();
-				throw new AssertionError("Pinned v2 reader unexpectedly opened current format 6");
+				throw new AssertionError("Pinned v2 reader unexpectedly opened current format 7");
 			} else {
 				throw new IllegalArgumentException("Unknown baseline process phase: " + phase);
 			}
