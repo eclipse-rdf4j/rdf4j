@@ -96,9 +96,8 @@ final class AsyncSignal {
 	 * A signal that arrives during the spins leaves an unused unpark permit, so a later park on this thread may return
 	 * early. That is allowed: every caller re-checks its condition after await returns.
 	 */
-	static final int SPINS = 1 << 12;
-	static final int YIELDS = 1 << 8;
-	static final long YIELD_NANOS = 100_000L;
+	static final int SPINS = 4096;
+	static final int YIELDS = 256;
 
 	private final Waiter waiter;
 	private final boolean spinBeforePark;
@@ -192,17 +191,9 @@ final class AsyncSignal {
 			}
 			waiter.spin();
 		}
-		long yieldEnd = System.nanoTime() + YIELD_NANOS;
 		for (int i = 0; i < YIELDS; i++) {
 			if (sequence.get() != observed) {
 				return true;
-			}
-			long now = System.nanoTime();
-			if (deadline != 0L && now - deadline >= 0L) {
-				return false;
-			}
-			if (now - yieldEnd >= 0L) {
-				break;
 			}
 			waiter.yield();
 		}
