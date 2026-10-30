@@ -2747,13 +2747,14 @@ class LmdbDirectAdjacencyQueryTest {
 
 	@Test
 	void pagedBaseServesExactCountAndPredicateAnalytics() throws IOException {
+		// This is a cold AUTO physical-route assertion, not a latency contest after earlier tests or forced
+		// capability probes have trained the process-wide cost model.
+		KernelExecutionTestAccess.resetCostCalibration();
 		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		openPreferStore();
 		String fixedQuery = "SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }";
 		String predicateQuery = "SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p";
-		assertAdjacencyCapability(fixedQuery, "count");
-		assertAdjacencyCapability(predicateQuery, "p", "count");
 		try (var pinnedDataset = dataset();
 				var unpinnedDataset = new CloseableDataset(
 						backing.getExplicitSailSource().dataset(IsolationLevels.NONE))) {
@@ -2801,6 +2802,8 @@ class LmdbDirectAdjacencyQueryTest {
 				.as("the forced adjacency capability remains available for the same exact result")
 				.isGreaterThan(0);
 		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
+		assertAdjacencyCapability(fixedQuery, "count");
+		assertAdjacencyCapability(predicateQuery, "p", "count");
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
 	}
 

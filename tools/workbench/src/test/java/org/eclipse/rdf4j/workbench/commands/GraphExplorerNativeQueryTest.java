@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.workbench.commands.WorkbenchNativeQueryAssertions.assertEfficientExecutedPlan;
 import static org.eclipse.rdf4j.workbench.commands.WorkbenchNativeQueryAssertions.bag;
 import static org.eclipse.rdf4j.workbench.commands.WorkbenchNativeQueryAssertions.writeEvidence;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -102,10 +103,12 @@ class GraphExplorerNativeQueryTest {
 
 	@AfterAll
 	void shutDown() {
-		backends.values().forEach(backend -> backend.repository.shutDown());
+		List<Backend> owned = new ArrayList<>(backends.values());
 		if (reference != null) {
-			reference.repository.shutDown();
+			owned.add(reference);
 		}
+		assertAll("shut down every backend",
+				owned.stream().map(backend -> () -> backend.close()));
 	}
 
 	Stream<Arguments> generatedQueries() throws IOException {
@@ -250,18 +253,27 @@ class GraphExplorerNativeQueryTest {
 				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL);
 		LmdbStore store = new LmdbStore(Files.createDirectories(temporary.resolve(name)).toFile(), config);
 		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try (RepositoryConnection connection = repository.getConnection()) {
-			connection.begin();
-			connection.add(data);
-			connection.commit();
+		try {
+			repository.init();
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin();
+				connection.add(data);
+				connection.commit();
+			}
+			if (adjacency) {
+				assertThat(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
+						.as(store.getDirectAdjacencyReadinessDescription())
+						.isTrue();
+			}
+			return new Backend(repository, store, adjacency);
+		} catch (Exception | Error failure) {
+			try {
+				repository.shutDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		if (adjacency) {
-			assertThat(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
-					.as(store.getDirectAdjacencyReadinessDescription())
-					.isTrue();
-		}
-		return new Backend(repository, store, adjacency);
 	}
 
 	private static Model fixtureModel() throws IOException {
@@ -314,6 +326,10 @@ class GraphExplorerNativeQueryTest {
 		return path;
 	}
 
-	private record Backend(SailRepository repository, LmdbStore store, boolean adjacency) {
+	private record Backend(SailRepository repository, LmdbStore store, boolean adjacency) implements AutoCloseable {
+		@Override
+		public void close() {
+			repository.shutDown();
+		}
 	}
 }

@@ -331,7 +331,7 @@ public class LmdbDatatypeHistogramTest {
 				expected.merge(literal.getDatatype().stringValue(), 1L, Long::sum);
 			}
 			conn.commit();
-			assertThat(store.getFormat().getVersion()).isEqualTo(legacy ? 2 : 6);
+			assertThat(store.getFormat().getVersion()).isEqualTo(legacy ? 2 : 7);
 			assertThat(store.getFormat().usesCanonicalLanguageTags()).isEqualTo(!legacy);
 			Map<Long, IRI> datatypesById = new TreeMap<>(Long::compareUnsigned);
 			try (var statements = conn.getStatements(null, null, null, false)) {

@@ -149,7 +149,7 @@ public class LmdbOrderedNumericIdsTest {
 		}
 		StoreProperties properties = new StoreProperties(dataDir);
 		properties.load();
-		assertThat(properties.getVersion()).isEqualTo("6");
+		assertThat(properties.getVersion()).isEqualTo("7");
 		assertThat(properties.usesOrderedNumericIds()).isTrue();
 	}
 
