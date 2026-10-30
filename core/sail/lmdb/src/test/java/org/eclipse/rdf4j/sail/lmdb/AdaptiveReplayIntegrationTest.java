@@ -296,6 +296,7 @@ class AdaptiveReplayIntegrationTest {
 		ValueStore values = new ValueStore(new File(directory, "values"), properties, config);
 		File triplesDirectory = new File(directory, "triples");
 		try (TripleStore triples = new TripleStore(triplesDirectory, properties, config, values)) {
+			LmdbOwningTestStoreMetadata.completeInitialization(directory, properties);
 			for (int i = 0; i < 64; i++) {
 				values.startTransaction(true);
 				triples.startTransaction();
@@ -1516,6 +1517,7 @@ class AdaptiveReplayIntegrationTest {
 			triplesDirectory = new File(directory, "triples");
 			triples = new FaultyTripleStore(triplesDirectory, properties, config, values);
 			triples.initializeNamespaceSnapshot(Map.of());
+			LmdbOwningTestStoreMetadata.completeInitialization(directory, properties);
 		}
 
 		void warm() throws IOException {

@@ -19,7 +19,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
  * Creates the persisted owning-Sail metadata for tests that assemble a ValueStore and TripleStore directly. In
- * particular, a reopened format-7 dictionary must not be mistaken for a metadata-free standalone dictionary.
+ * particular, a reopened format-7 dictionary must not be mistaken for a metadata-free standalone dictionary. New
+ * metadata remains unpublished until both native stores have initialized successfully.
  */
 final class LmdbOwningTestStoreMetadata {
 
@@ -36,10 +37,19 @@ final class LmdbOwningTestStoreMetadata {
 			String indexes = config.getTripleIndexes();
 			properties.setTripleIndexes(indexes == null || indexes.isBlank() ? "spoc,posc" : indexes);
 			LmdbStore.writeCoreLiteralReferenceMarker(directory.toPath());
-			properties.save();
+			// Saving here would mark the descriptor as loaded before its native generation exists.
+		} else {
+			// Check the exact persisted policy and capability marker on every reopening.
+			LmdbStoreFormat.resolve(directory, properties, config);
 		}
-		// Check the exact persisted policy and capability marker on every reopening.
-		LmdbStoreFormat.resolve(directory, properties, config);
 		return properties;
+	}
+
+	static void completeInitialization(File directory, StoreProperties properties) throws IOException {
+		if (!Files.isRegularFile(directory.toPath().resolve("values/data.mdb"))
+				|| !Files.isRegularFile(directory.toPath().resolve("triples/data.mdb"))) {
+			throw new IOException("Both native test-store generations must exist before publishing owner metadata");
+		}
+		properties.save();
 	}
 }

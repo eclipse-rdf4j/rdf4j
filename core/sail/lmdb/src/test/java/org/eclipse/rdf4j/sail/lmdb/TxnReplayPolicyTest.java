@@ -174,6 +174,7 @@ class TxnReplayPolicyTest {
 		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory, config);
 		ValueStore values = new ValueStore(new File(directory, "values"), properties, config);
 		try (TripleStore triples = new TripleStore(new File(directory, "triples"), properties, config, values)) {
+			LmdbOwningTestStoreMetadata.completeInitialization(directory, properties);
 			triples.startTransaction();
 			values.startTransaction(true);
 			long largeValue = values.storeValue(Values.literal("seed-" + "x".repeat(4 * (int) MIB)));
@@ -191,6 +192,7 @@ class TxnReplayPolicyTest {
 		StoreProperties properties = LmdbOwningTestStoreMetadata.open(directory, config);
 		ValueStore values = new ValueStore(new File(directory, "values"), properties, config);
 		try (TripleStore triples = new TripleStore(new File(directory, "triples"), properties, config, values)) {
+			LmdbOwningTestStoreMetadata.completeInitialization(directory, properties);
 			for (int i = 0; i < TxnReplayPolicy.HISTORY_LENGTH; i++) {
 				triples.startTransaction();
 				values.startTransaction(true);
