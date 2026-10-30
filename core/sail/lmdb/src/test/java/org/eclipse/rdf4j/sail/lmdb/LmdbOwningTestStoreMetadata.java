@@ -18,8 +18,8 @@ import java.nio.file.Files;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /**
- * Creates the persisted owning-Sail metadata for tests that assemble a ValueStore and TripleStore directly.
- * In particular, a reopened format-7 dictionary must not be mistaken for a metadata-free standalone dictionary.
+ * Creates the persisted owning-Sail metadata for tests that assemble a ValueStore and TripleStore directly. In
+ * particular, a reopened format-7 dictionary must not be mistaken for a metadata-free standalone dictionary.
  */
 final class LmdbOwningTestStoreMetadata {
 
