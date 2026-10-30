@@ -621,6 +621,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			synchronized (interruptLock) {
 				closed = true;
 				if (deliveredInterrupt) {
+					// Delivery may have finished while close waited for this lock. No watchdog can deliver again.
+					Thread.interrupted();
 					restoreInterrupt = initiallyInterrupted;
 				}
 			}
