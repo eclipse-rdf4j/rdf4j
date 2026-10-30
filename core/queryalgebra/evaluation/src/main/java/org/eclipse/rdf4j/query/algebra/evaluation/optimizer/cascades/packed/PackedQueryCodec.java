@@ -118,6 +118,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /** Lossless TupleExpr boundary encoder for the packed Cascades representation. */
@@ -816,9 +817,6 @@ final class PackedQueryCodec {
 				return binaryRelation(PackedRelOp.JOIN, 0, join.getLeftArg(), join.getRightArg(), path, nodeFlags);
 			}
 			if (expression instanceof Filter filter) {
-				if (!filter.getConditionBindingScope().isAuto()) {
-					throw new UnsupportedCascadesOperatorException(filter.getClass(), path + ".conditionBindingScope");
-				}
 				if (!filter.getRequiredInputBindingNames().isEmpty()) {
 					// This packed format has no parameter-frame payload. Never intern, cache, or materialize a
 					// logically equal unparameterized filter in its place; the standard correlated path retains it.
@@ -826,7 +824,10 @@ final class PackedQueryCodec {
 				}
 				int input = relation(filter.getArg(), path + ".arg");
 				int condition = scalar(filter.getCondition(), path + ".condition");
-				return unaryRelation(PackedRelOp.FILTER, condition, input, nodeFlags);
+				int declared = conditionScopePayload(filter.getConditionBindingScope());
+				int resolved = conditionScopePayload(FilterBindingScope.resolve(filter));
+				return unaryRelation(PackedRelOp.FILTER,
+						PackedFilterPayloads.create(payloads, condition, declared, resolved), input, nodeFlags);
 			}
 			if (expression instanceof EmptySet) {
 				return internRelation(PackedRelOp.EMPTY_SET, 0, nodeFlags, 0, NO_CHILDREN, 0, 0);
@@ -1261,6 +1262,22 @@ final class PackedQueryCodec {
 
 		private int nameSetPayload(Iterable<String> names) {
 			return stringSetPayload(names, true);
+		}
+
+		private int conditionScopePayload(Filter.ConditionBindingScope scope) {
+			// Names can be absent from both the condition and tuple outputs. Introduce new symbols in a stable order.
+			String[] names = scope.bindingNames().toArray(String[]::new);
+			Arrays.sort(names);
+			int start = reserveScratch(names.length);
+			for (int ordinal = 0; ordinal < names.length; ordinal++) {
+				scratch[start + ordinal] = bindingName(names[ordinal]);
+			}
+			Arrays.sort(scratch, start, start + names.length);
+			int mode = scope.isAuto() ? PackedFilterPayloads.AUTO
+					: scope.retainsAllBindings() ? PackedFilterPayloads.ALL : PackedFilterPayloads.RETAINED;
+			int payload = PackedFilterPayloads.scope(payloads, mode, scratch, start, names.length);
+			releaseScratch(start);
+			return payload;
 		}
 
 		private int stringSetPayload(Iterable<String> names, boolean bindingNames) {

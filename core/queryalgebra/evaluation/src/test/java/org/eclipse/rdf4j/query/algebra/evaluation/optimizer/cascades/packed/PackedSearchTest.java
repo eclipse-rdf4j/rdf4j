@@ -314,7 +314,7 @@ class PackedSearchTest {
 		scalarMask.setAccessible(true);
 		cardinality.setAccessible(true);
 		int rootId = query.rootRelId();
-		int conditionId = query.relPayload(rootId);
+		int conditionId = query.filterCondition(rootId);
 
 		assertEquals(3, cardinality.invoke(query, relationMask.invoke(query, rootId)));
 		assertEquals(1, cardinality.invoke(query, scalarMask.invoke(query, conditionId)));

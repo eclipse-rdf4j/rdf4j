@@ -432,7 +432,8 @@ final class PackedQuery {
 	private boolean relationPayloadHasObservableEvaluationEffects(int relationId, int operator) {
 		int payloadId = relPayload(relationId);
 		return switch (operator) {
-		case PackedRelOp.FILTER, PackedRelOp.LEFT_JOIN -> scalarHasObservableEvaluationEffects(payloadId);
+		case PackedRelOp.FILTER -> scalarHasObservableEvaluationEffects(filterConditionFromPayload(payloadId));
+		case PackedRelOp.LEFT_JOIN -> scalarHasObservableEvaluationEffects(payloadId);
 		case PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN -> scalarHasObservableEvaluationEffects(
 				payloadPrimary(payloadId));
 		case PackedRelOp.EXTENSION -> extensionPayloadHasObservableEvaluationEffects(payloadId);
@@ -666,10 +667,12 @@ final class PackedQuery {
 		 * scope boundaries retain child-specific algebra even when their packed payload happens to be equal.
 		 * Canonicalizing those nodes would make an immutable costing event invoke the provider with a different
 		 * operator's expression.
+		 * The source's declared AUTO mode and a relocated fixed mode share a cost identity only when their entire
+		 * captured condition and visibility descriptor agree; equal scalar conditions alone do not prove that.
 		 */
 		return relOperator(first) == PackedRelOp.FILTER
 				&& relOperator(second) == PackedRelOp.FILTER
-				&& relPayload(first) == relPayload(second)
+				&& relocatedFilterPayload(relPayload(first)) == relocatedFilterPayload(relPayload(second))
 				&& relSemanticScope(first) == relSemanticScope(second)
 				&& relExecutionDomain(first) == relExecutionDomain(second)
 				&& relOccurrence(first) == relOccurrence(second)
@@ -797,6 +800,18 @@ final class PackedQuery {
 
 	int payloadPrimary(int payloadId) {
 		return payloads.payloadId(payloadId);
+	}
+
+	int filterCondition(int relationId) {
+		return filterConditionFromPayload(relPayload(relationId));
+	}
+
+	int filterConditionFromPayload(int payloadId) {
+		return PackedFilterPayloads.condition(payloads, payloadId);
+	}
+
+	int relocatedFilterPayload(int payloadId) {
+		return PackedFilterPayloads.relocated(payloads, payloadId);
 	}
 
 	int payloadSecondary(int payloadId) {

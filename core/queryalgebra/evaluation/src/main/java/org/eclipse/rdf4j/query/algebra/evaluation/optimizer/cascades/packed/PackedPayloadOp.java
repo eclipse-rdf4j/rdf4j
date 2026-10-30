@@ -49,6 +49,8 @@ final class PackedPayloadOp {
 	static final int GRAPH = 33;
 	static final int STATEMENT_PATTERN_OPTIONS = 34;
 	static final int SERVICE_REFERENCE_METADATA = 35;
+	static final int FILTER = 36;
+	static final int CONDITION_BINDING_SCOPE = 37;
 
 	private PackedPayloadOp() {
 	}

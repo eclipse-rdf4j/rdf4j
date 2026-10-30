@@ -59,7 +59,7 @@ final class PackedFilterRules {
 				& PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
 			return 1;
 		}
-		int conditionId = query.relPayload(filterExpressionId);
+		int conditionId = query.filterCondition(filterExpressionId);
 		int dependencyMaskId = query.scalarDependencyMaskId(conditionId);
 		boolean freelyRelocatable = query.scalarSafeToRelocate(conditionId);
 		int embeddedReferenceMaskId = query.scalarEmbeddedReferenceMaskId(conditionId);
@@ -121,9 +121,10 @@ final class PackedFilterRules {
 		}
 
 		unaryGroup[0] = filteredGroupId;
-		int helperLogicalId = memo.addCanonicalLogical(PackedRelOp.FILTER, conditionId, 0, 0, unaryGroup, 0, 1);
+		int filterPayload = query.relocatedFilterPayload(query.relPayload(filterExpressionId));
+		int helperLogicalId = memo.addCanonicalLogical(PackedRelOp.FILTER, filterPayload, 0, 0, unaryGroup, 0, 1);
 		int helperGroupId = memo.logicalGroupId(helperLogicalId);
-		int helperPhysicalId = memo.addPhysicalAlternative(helperGroupId, PackedRelOp.FILTER, conditionId,
+		int helperPhysicalId = memo.addPhysicalAlternative(helperGroupId, PackedRelOp.FILTER, filterPayload,
 				anyPropertyId, FILTER_IMPLEMENTATION, helperLogicalId, unaryGroup, 0, 1);
 		double filteredInputRows = memo.winnerOutputRows(filteredInputWinnerId);
 		/* Predicate output is bounded by its input; provider evidence below may tighten this event-time bound. */

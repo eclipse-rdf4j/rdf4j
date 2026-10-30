@@ -223,6 +223,8 @@ This is the closed-world production manifest. Runtime guards, proof lineage, del
 | PAYLOAD_OPERATOR | payload:SEMI_ANTI_JOIN | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode SEMI_ANTI_JOIN |
 | PAYLOAD_OPERATOR | payload:GRAPH | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode GRAPH |
 | PAYLOAD_OPERATOR | payload:UNSUPPORTED | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode UNSUPPORTED |
+| PAYLOAD_OPERATOR | payload:FILTER | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode FILTER |
+| PAYLOAD_OPERATOR | payload:CONDITION_BINDING_SCOPE | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode CONDITION_BINDING_SCOPE |
 | LOGICAL_RULE_REGISTRATION | rules:packed-logical-program | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedLogicalRuleProgram | all packed logical alternatives |
 | PHYSICAL_IMPLEMENTATION | physical:dependent-index-join | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedJoinEnumerator | parameterized dependent join |
 | PHYSICAL_IMPLEMENTATION | physical:independent-hash-join | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedJoinEnumerator | independent hash join |

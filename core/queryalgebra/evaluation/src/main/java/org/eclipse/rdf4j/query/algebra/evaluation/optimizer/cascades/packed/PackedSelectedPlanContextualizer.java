@@ -140,7 +140,8 @@ final class PackedSelectedPlanContextualizer {
 
 	private int physicalFilterConditionId(int physicalExpressionId, int physicalOperator) {
 		int payloadId = memo.physicalPayloadId(physicalExpressionId);
-		return physicalOperator == PackedRelOp.FILTER ? payloadId : query.payloadPrimary(payloadId);
+		return physicalOperator == PackedRelOp.FILTER ? query.filterConditionFromPayload(payloadId)
+				: query.payloadPrimary(payloadId);
 	}
 
 	private static boolean isFilterOperator(int operator) {
@@ -179,10 +180,10 @@ final class PackedSelectedPlanContextualizer {
 			}
 		}
 		if (memo.physicalOperatorTag(physicalExpressionId) == PackedRelOp.FILTER) {
-			int conditionId = memo.physicalPayloadId(physicalExpressionId);
+			int filterPayload = query.relocatedFilterPayload(memo.physicalPayloadId(physicalExpressionId));
 			for (int candidate = 1; candidate <= query.relationCount(); candidate++) {
 				if (query.relOperator(candidate) == PackedRelOp.FILTER
-						&& query.relPayload(candidate) == conditionId) {
+						&& query.relocatedFilterPayload(query.relPayload(candidate)) == filterPayload) {
 					return candidate;
 				}
 			}

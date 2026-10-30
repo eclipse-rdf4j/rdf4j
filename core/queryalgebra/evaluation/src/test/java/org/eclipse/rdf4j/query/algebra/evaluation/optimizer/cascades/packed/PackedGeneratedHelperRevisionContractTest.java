@@ -142,10 +142,8 @@ class PackedGeneratedHelperRevisionContractTest {
 	void aRealLateValuesFactReconsidersAPreviouslyAppliedFilter() {
 		Fixture fixture = new Fixture();
 		int values = fixture.values("late", List.of(iri("Z")));
-		int root = fixture.relation(PackedRelOp.FILTER,
-				fixture.compare(fixture.variable("late"), fixture.constant(iri("A")),
-						Compare.CompareOp.EQ),
-				values);
+		int root = fixture.filter(
+				fixture.compare(fixture.variable("late"), fixture.constant(iri("A")), Compare.CompareOp.EQ), values);
 		assertGeneric(model(), "SELECT ?late WHERE { VALUES ?late { :Z } FILTER(?late = :A) }", List.of());
 		fixture.rules.setRootExpression(root);
 		fixture.rules.apply(root, fixture.facts.revision());
@@ -500,10 +498,10 @@ class PackedGeneratedHelperRevisionContractTest {
 			int condition = scalar(PackedScalarOp.OR, 0,
 					compare(variable(code), variable(target), Compare.CompareOp.EQ),
 					compare(variable(code), constant(VF.createLiteral("C")), Compare.CompareOp.EQ));
-			int first = relation(PackedRelOp.FILTER, condition,
+			int first = filter(condition,
 					relation(PackedRelOp.JOIN, 0, values,
 							relation(PackedRelOp.JOIN, 0, statement(entity, RDF.TYPE, null, firstType), codes)));
-			int second = relation(PackedRelOp.FILTER, condition,
+			int second = filter(condition,
 					relation(PackedRelOp.JOIN, 0, values,
 							relation(PackedRelOp.JOIN, 0, statement(entity, RDF.TYPE, null, secondType), codes)));
 			int root = count(relation(PackedRelOp.UNION, 0, first, second), new int[0], output, variable(entity), true);
@@ -530,7 +528,7 @@ class PackedGeneratedHelperRevisionContractTest {
 					payload(PackedPayloadOp.EXTENSION, 0, 0, 0,
 							payload(PackedPayloadOp.EXTENSION_ELEMENT, havingName, aggregate, 0)),
 					group);
-			int filter = relation(PackedRelOp.FILTER,
+			int filter = filter(
 					compare(variable("having"), constant(VF.createLiteral(0)), Compare.CompareOp.GT), extension);
 			int projection = payload(PackedPayloadOp.PROJECTION_ELEMENT, name("e"), 0, 0);
 			int list = payload(PackedPayloadOp.PROJECTION_LIST, 0, 0, 0, projection);
@@ -548,12 +546,12 @@ class PackedGeneratedHelperRevisionContractTest {
 					statement(entity, iri(left), "local", null), statement("local", iri("tag"), "extra", null));
 			int rightBody = relation(PackedRelOp.JOIN, 0,
 					statement(entity, iri(right), "local", null), statement("local", iri("tag"), "extra", null));
-			int leftFilter = relation(PackedRelOp.FILTER,
+			int leftFilter = filter(
 					scalar(PackedScalarOp.AND, 0,
 							compare(variable("local"), constant(iri("w0")), Compare.CompareOp.EQ),
 							compare(variable("extra"), constant(iri("tag0")), Compare.CompareOp.EQ)),
 					leftBody);
-			int rightFilter = relation(PackedRelOp.FILTER,
+			int rightFilter = filter(
 					scalar(PackedScalarOp.AND, 0,
 							compare(variable("local"), constant(iri("w1")), Compare.CompareOp.EQ),
 							compare(variable("extra"), constant(iri("tag1")), Compare.CompareOp.EQ)),
@@ -569,9 +567,17 @@ class PackedGeneratedHelperRevisionContractTest {
 					payload(PackedPayloadOp.EXTENSION, 0, 0, 0,
 							payload(PackedPayloadOp.EXTENSION_ELEMENT, havingName, aggregate, 0)),
 					group);
-			int filter = relation(PackedRelOp.FILTER,
+			int filter = filter(
 					compare(variable(having), constant(VF.createLiteral(0)), Compare.CompareOp.GT), extension);
 			return capturedSubqueryProjection(filter, entity, source);
+		}
+
+		int filter(int condition, int input) {
+			// These exact source filters use AUTO; every condition variable is in the complete input frame.
+			int declaredAuto = PackedFilterPayloads.scope(payloads, PackedFilterPayloads.AUTO, new int[0], 0, 0);
+			int resolvedAll = PackedFilterPayloads.scope(payloads, PackedFilterPayloads.ALL, new int[0], 0, 0);
+			return relation(PackedRelOp.FILTER,
+					PackedFilterPayloads.create(payloads, condition, declaredAuto, resolvedAll), input);
 		}
 
 		/** Capture the nested SELECT contract from the same complete independent query used by the bag oracle. */

@@ -2531,7 +2531,7 @@ final class PackedJoinEnumerator {
 		if (query.relOperator(relationId) != PackedRelOp.FILTER || query.relChildCount(relationId) != 1) {
 			return false;
 		}
-		int conditionId = query.relPayload(relationId);
+		int conditionId = query.filterCondition(relationId);
 		int inputRelationId = query.relChild(relationId, 0);
 		return (query.scalarMetadataFlags(conditionId) & PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) != 0
 				&& query.scalarSafeToRelocate(conditionId)
@@ -2561,7 +2561,7 @@ final class PackedJoinEnumerator {
 					.relationHasObservableEvaluationEffects(relationId)
 					&& recursivelySafeContextualProbe(query.relChild(relationId, 0));
 		case PackedRelOp.FILTER -> {
-			int conditionId = query.relPayload(relationId);
+			int conditionId = query.filterCondition(relationId);
 			int inputRelationId = query.relChild(relationId, 0);
 			yield (query.scalarMetadataFlags(conditionId)
 					& PackedNodeMetadataArena.SCALAR_REORDERING_SAFE) != 0
@@ -2916,7 +2916,7 @@ final class PackedJoinEnumerator {
 			observations = query.unionMasks(observations, query.relOutputMaskId(relation));
 			observations = query.unionMasks(observations, relationFrameMask(query, relation));
 			if (member < 0) {
-				int condition = query.relOperator(relation) == PackedRelOp.FILTER ? query.relPayload(relation)
+				int condition = query.relOperator(relation) == PackedRelOp.FILTER ? query.filterCondition(relation)
 						: query.payloadPrimary(query.relPayload(relation));
 				observations = query.unionMasks(observations, query.scalarDependencyMaskId(condition));
 				observations = query.unionMasks(observations, query.scalarEmbeddedReferenceMaskId(condition));
@@ -3697,7 +3697,10 @@ final class PackedJoinEnumerator {
 			return 0;
 		}
 		long workBefore = budget.workUnits();
+		// This candidate implements the predicate at its canonical position. Freezing AUTO visibility changes the
+		// descriptor identity, so canonical helper interning cannot be relied on to rediscover the source group.
 		int winnerId = offerScheduledFilter(filterRelationId, inputWinnerId, prefixRelations, null, prefixCount,
+				memo.logicalGroupId(filterRelationId), memo.logicalRuleMask(filterRelationId), 0, Double.NaN,
 				retainExactContinuation);
 		contextualFactorWorkUnits = saturatedInt(budget.workUnits() - workBefore) + 1;
 		return winnerId;
@@ -3758,6 +3761,7 @@ final class PackedJoinEnumerator {
 				return workUnits;
 			}
 			offerScheduledFilter(filterRelationId, inputWinnerId, childGroups, null, 1,
+					memo.logicalGroupId(filterRelationId), memo.logicalRuleMask(filterRelationId), 0, Double.NaN,
 					inputWinnerId != scalarInputWinnerId);
 			workUnits++;
 			inputWinnerId = nextInputWinnerId;
@@ -7875,13 +7879,14 @@ final class PackedJoinEnumerator {
 				int implementationRelationId = scheduledFilterCostingRelationIdFromMetadata(filterRelationId,
 						metadataId);
 				int operator = query.relOperator(implementationRelationId);
+				int implementationPayload = relocatedPredicatePayload(implementationRelationId);
 				boolean rootTransition = targetState == terminalState;
 				int logicalExpressionId = rootTransition
 						? memo.addLogicalAlternative(rootGroupId, operator,
-								query.relPayload(implementationRelationId),
+								implementationPayload,
 								query.relSemanticScope(rootFilterRelationId),
 								query.relExecutionDomain(rootFilterRelationId), childGroups, 0, 1)
-						: memo.addCanonicalLogical(operator, query.relPayload(implementationRelationId),
+						: memo.addCanonicalLogical(operator, implementationPayload,
 								query.relSemanticScope(implementationRelationId),
 								query.relExecutionDomain(implementationRelationId),
 								query.relOccurrence(implementationRelationId),
@@ -7894,7 +7899,7 @@ final class PackedJoinEnumerator {
 				}
 				int targetGroupId = rootTransition ? rootGroupId : memo.logicalGroupId(logicalExpressionId);
 				int physicalExpressionId = memo.addPhysicalAlternative(targetGroupId, operator,
-						query.relPayload(implementationRelationId), anyPropertyId, CONTEXTUAL_FILTER_IMPLEMENTATION,
+						implementationPayload, anyPropertyId, CONTEXTUAL_FILTER_IMPLEMENTATION,
 						logicalExpressionId, childGroups, 0, 1);
 				childWinners[0] = currentWinnerId;
 				int winnerContextId = rootTransition ? 0 : inputContextId;
@@ -8278,12 +8283,6 @@ final class PackedJoinEnumerator {
 	}
 
 	private int offerScheduledFilter(int filterRelationId, int inputWinnerId, int[] prefixRelations,
-			double[] prefixContributionRows, int prefixCount, boolean retainExactContinuation) {
-		return offerScheduledFilter(filterRelationId, inputWinnerId, prefixRelations, prefixContributionRows,
-				prefixCount, 0, 0L, 0, Double.NaN, retainExactContinuation);
-	}
-
-	private int offerScheduledFilter(int filterRelationId, int inputWinnerId, int[] prefixRelations,
 			double[] prefixContributionRows, int prefixCount, int rootGroupId, long rootRuleMask,
 			int inputContextId, double pricedInvocations) {
 		return offerScheduledFilter(filterRelationId, inputWinnerId, prefixRelations, prefixContributionRows,
@@ -8309,27 +8308,33 @@ final class PackedJoinEnumerator {
 			memo.addWinnerPhysicalCost(inputWinnerId, costEstimate, inputContextId,
 					inputContextId == 0 ? 1.0d : pricedInvocations);
 		}
+		int metadataId = memo.addPhysicalMetadata(costEstimate, costEstimate.outputRows(), totalWork);
+		if (metadataId == 0 && budget.resourceLimitReached()) {
+			// Stop optional search before publishing a partial recipe. The planner's resource-limit path retains
+			// the complete root incumbent, including this predicate's previously settled source-group winner.
+			throw PackedCostSessionFailure.resourceLimit("scheduled predicate exceeded retained-state capacity", null);
+		}
 		childGroups[0] = inputGroupId;
 		int implementationRelationId = scheduledFilterCostingRelationId(filterRelationId, costEstimate);
 		int operator = query.relOperator(implementationRelationId);
+		int implementationPayload = relocatedPredicatePayload(implementationRelationId);
 		boolean rootTransition = rootGroupId != 0;
 		int helperLogicalId = rootTransition
-				? memo.addLogicalAlternative(rootGroupId, operator, query.relPayload(implementationRelationId),
+				? memo.addLogicalAlternative(rootGroupId, operator, implementationPayload,
 						query.relSemanticScope(implementationRelationId),
 						query.relExecutionDomain(implementationRelationId),
 						childGroups, 0, 1)
-				: memo.addCanonicalLogical(operator, query.relPayload(implementationRelationId),
+				: memo.addCanonicalLogical(operator, implementationPayload,
 						query.relSemanticScope(implementationRelationId),
 						query.relExecutionDomain(implementationRelationId),
 						query.relOccurrence(implementationRelationId), childGroups, 0, 1);
 		int helperGroupId = rootTransition ? rootGroupId : memo.logicalGroupId(helperLogicalId);
 		int anyPropertyId = memo.anyPropertyId();
 		int physicalExpressionId = memo.addPhysicalAlternative(helperGroupId, operator,
-				query.relPayload(implementationRelationId), anyPropertyId, CONTEXTUAL_FILTER_IMPLEMENTATION,
+				implementationPayload, anyPropertyId, CONTEXTUAL_FILTER_IMPLEMENTATION,
 				helperLogicalId,
 				childGroups, 0, 1);
 		childWinners[0] = inputWinnerId;
-		int metadataId = memo.addPhysicalMetadata(costEstimate, costEstimate.outputRows(), totalWork);
 		if (rootTransition) {
 			memo.addPhysicalMetadataRuleProofMask(metadataId,
 					rootRuleMask | memo.logicalRuleMask(implementationRelationId));
@@ -8443,7 +8448,7 @@ final class PackedJoinEnumerator {
 		if (query.relOperator(filterRelationId) != PackedRelOp.FILTER) {
 			throw new PackedMemoInvariantException("scheduled semi/anti predicate is not a FILTER");
 		}
-		int conditionId = query.relPayload(filterRelationId);
+		int conditionId = query.filterCondition(filterRelationId);
 		if (query.scalarOperator(conditionId) == PackedScalarOp.EXISTS) {
 			return PackedQueryView.SEMI_ANTI_EXISTS;
 		}
@@ -8502,8 +8507,13 @@ final class PackedJoinEnumerator {
 
 	private int predicateConditionId(int relationId) {
 		return query.relOperator(relationId) == PackedRelOp.FILTER
-				? query.relPayload(relationId)
+				? query.filterCondition(relationId)
 				: query.payloadPrimary(query.relPayload(relationId));
+	}
+
+	private int relocatedPredicatePayload(int relationId) {
+		int payload = query.relPayload(relationId);
+		return query.relOperator(relationId) == PackedRelOp.FILTER ? query.relocatedFilterPayload(payload) : payload;
 	}
 
 	private int optimizeSparseLong(int rootRelationId, int[] factors) {
@@ -11026,7 +11036,7 @@ final class PackedJoinEnumerator {
 		if (query.relChildCount(filterRelationId) != 1) {
 			return defaultWinnerId;
 		}
-		if (!query.scalarSafeToRelocate(query.relPayload(filterRelationId))) {
+		if (!query.scalarSafeToRelocate(query.filterCondition(filterRelationId))) {
 			return !hasScheduledSemiAntiImplementation(filterRelationId)
 					? defaultWinnerId
 					: offerContextualSemiAntiFilter(filterRelationId, defaultWinnerId, prefixRelations,
@@ -11191,7 +11201,8 @@ final class PackedJoinEnumerator {
 		childGroups[0] = inputGroupId;
 		int filterGroupId = memo.logicalGroupId(filterRelationId);
 		int physicalExpressionId = memo.addPhysicalAlternative(filterGroupId, PackedRelOp.FILTER,
-				query.relPayload(filterRelationId), anyPropertyId, CONTEXTUAL_FILTER_IMPLEMENTATION, filterRelationId,
+				query.relocatedFilterPayload(query.relPayload(filterRelationId)), anyPropertyId,
+				CONTEXTUAL_FILTER_IMPLEMENTATION, filterRelationId,
 				childGroups, 0, 1);
 		childWinners[0] = inputWinnerId;
 		int metadataId = memo.addPhysicalMetadata(costEstimate, outputRows, totalWork);

@@ -699,7 +699,7 @@ public final class PackedQueryView {
 		int operator = query.relOperator(relationId);
 		int condition;
 		if (operator == PackedRelOp.FILTER) {
-			condition = query.relPayload(relationId);
+			condition = query.filterCondition(relationId);
 		} else if (operator == PackedRelOp.SEMI_JOIN || operator == PackedRelOp.ANTI_JOIN) {
 			condition = query.payloadPrimary(semiAntiPayload(relationId));
 		} else {
@@ -727,7 +727,7 @@ public final class PackedQueryView {
 			throw new IllegalArgumentException("EXISTS occurrence ordinal must be non-negative");
 		}
 		int[] remaining = { existsOrdinal };
-		return filterExistsRightRelationId(query.relPayload(relationId), remaining);
+		return filterExistsRightRelationId(query.filterCondition(relationId), remaining);
 	}
 
 	private int filterExistsRightRelationId(int scalarId, int[] remaining) {
@@ -1073,19 +1073,23 @@ public final class PackedQueryView {
 		if (query.payloadOperator(payload) != PackedPayloadOp.SEMI_ANTI_JOIN) {
 			throw new IllegalStateException("packed semi/anti relation has an invalid payload");
 		}
-		return payload;
-	}
-
-	private int semiAntiCorrelationNames(int relationId) {
-		int payload = semiAntiPayload(relationId);
-		if (query.payloadChildCount(payload) != 1) {
-			throw new IllegalStateException("packed semi/anti payload must contain one correlation name set");
+		if (query.payloadChildCount(payload) != 2) {
+			throw new IllegalStateException(
+					"packed semi/anti payload must contain a correlation name set and a condition binding scope");
 		}
 		int names = query.payloadChild(payload, 0);
 		if (query.payloadOperator(names) != PackedPayloadOp.NAME_SET) {
 			throw new IllegalStateException("packed semi/anti correlation payload is not a name set");
 		}
-		return names;
+		int scope = query.payloadChild(payload, 1);
+		if (query.payloadOperator(scope) != PackedPayloadOp.CONDITION_BINDING_SCOPE) {
+			throw new IllegalStateException("packed semi/anti scope payload is not a condition binding scope");
+		}
+		return payload;
+	}
+
+	private int semiAntiCorrelationNames(int relationId) {
+		return query.payloadChild(semiAntiPayload(relationId), 0);
 	}
 
 	public int bindingAssignmentRowCount(int relationId) {

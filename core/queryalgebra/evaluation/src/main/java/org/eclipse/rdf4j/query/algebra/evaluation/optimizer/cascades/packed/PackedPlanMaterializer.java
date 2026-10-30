@@ -186,8 +186,7 @@ final class PackedPlanMaterializer {
 		case PackedRelOp.STATEMENT_PATTERN -> statementPattern(query, payloadId);
 		case PackedRelOp.JOIN -> new Join(relation(query, recipe, relChild(query, recipe, nodeId, 0)),
 				relation(query, recipe, relChild(query, recipe, nodeId, 1)));
-		case PackedRelOp.FILTER -> new Filter(relation(query, recipe, relChild(query, recipe, nodeId, 0)),
-				scalar(query, recipe, nodeId, payloadId));
+		case PackedRelOp.FILTER -> filter(query, recipe, nodeId, payloadId);
 		case PackedRelOp.QUERY_ROOT -> new QueryRoot(
 				relation(query, recipe, relChild(query, recipe, nodeId, 0)));
 		case PackedRelOp.GRAPH -> new Graph(term(query, query.payloadChild(payloadId, 0)),
@@ -239,6 +238,12 @@ final class PackedPlanMaterializer {
 		if (recipe != null) {
 			int sourceFlags = recipe.continuationSeed().logicalSemanticScopeId(nodeId);
 			result.setIndependentInputScope((sourceFlags & PackedNodeMetadataArena.INDEPENDENT_INPUT_SCOPE) != 0);
+			if (result instanceof VariableScopeChange scopeChange) {
+				scopeChange.setVariableScopeChange((sourceFlags & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0);
+			}
+			if (result instanceof Graph graph) {
+				graph.setVariableScopeChange((sourceFlags & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0);
+			}
 			if (result instanceof StatementPattern statement) {
 				statement.setContextBindingOriginInherited(
 						(sourceFlags & PackedNodeMetadataArena.CONTEXT_BINDING_ORIGIN_INHERITED) != 0);
@@ -293,6 +298,7 @@ final class PackedPlanMaterializer {
 		Filter filter = new Filter(
 				relation(query, recipe, relChild(query, recipe, nodeId, 0)),
 				scalar(query, recipe, nodeId, query.payloadPrimary(payloadId)));
+		setConditionScope(filter, query, query.payloadChild(payloadId, 1));
 		String algorithm = switch (query.payloadFlags(payloadId)) {
 		case PackedQueryView.SEMI_ANTI_STREAMING -> "streaming-correlated";
 		case PackedQueryView.SEMI_ANTI_MEMOIZED -> "memoized-correlated";
@@ -433,8 +439,32 @@ final class PackedPlanMaterializer {
 		return element;
 	}
 
+	private static Filter filter(PackedQuery query, PackedPlanRecipe recipe, int nodeId, int payloadId) {
+		Filter filter = new Filter(relation(query, recipe, relChild(query, recipe, nodeId, 0)),
+				scalar(query, recipe, nodeId, query.filterConditionFromPayload(payloadId)));
+		// A selected recipe may have changed the argument's structural position. Its original visible frame stays fixed.
+		int scope = query.payloadSecondary(recipe == null ? payloadId : query.relocatedFilterPayload(payloadId));
+		setConditionScope(filter, query, scope);
+		return filter;
+	}
+
+	private static void setConditionScope(Filter filter, PackedQuery query, int scope) {
+		requirePayload(query, scope, PackedPayloadOp.CONDITION_BINDING_SCOPE);
+		filter.setConditionBindingScope(switch (query.payloadPrimary(scope)) {
+		case PackedFilterPayloads.AUTO -> Filter.ConditionBindingScope.AUTO;
+		case PackedFilterPayloads.ALL -> Filter.ConditionBindingScope.ALL;
+		case PackedFilterPayloads.RETAINED -> Filter.ConditionBindingScope.retain(
+				nameSet(query, scope, PackedPayloadOp.CONDITION_BINDING_SCOPE));
+		default -> throw new PackedMemoInvariantException("unknown packed condition binding scope");
+		});
+	}
+
 	private static Set<String> nameSet(PackedQuery query, int payloadId) {
-		requirePayload(query, payloadId, PackedPayloadOp.NAME_SET);
+		return nameSet(query, payloadId, PackedPayloadOp.NAME_SET);
+	}
+
+	private static Set<String> nameSet(PackedQuery query, int payloadId, int operator) {
+		requirePayload(query, payloadId, operator);
 		Set<String> names = new LinkedHashSet<>(query.payloadChildCount(payloadId));
 		for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
 			names.add((String) query.objectValue(query.payloadChild(payloadId, ordinal)));

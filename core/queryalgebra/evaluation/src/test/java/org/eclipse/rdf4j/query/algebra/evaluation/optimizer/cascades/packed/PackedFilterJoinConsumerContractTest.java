@@ -204,7 +204,10 @@ class PackedFilterJoinConsumerContractTest {
 			// Both conditions are true, so these are honest alternatives of the singleton seed. Scalar
 			// reordering is conservatively unproved: delivering the notification cannot create extra rewrites
 			// that would obscure the exact existing-API observation of one subscription per JOIN slot.
-			int id = relations.internLogicalIfSameGroup(group, PackedRelOp.FILTER, condition, 0, 0,
+			int declaredAuto = PackedFilterPayloads.scope(payloads, PackedFilterPayloads.AUTO, new int[0], 0, 0);
+			int resolvedAll = PackedFilterPayloads.scope(payloads, PackedFilterPayloads.ALL, new int[0], 0, 0);
+			int filterPayload = PackedFilterPayloads.create(payloads, condition, declaredAuto, resolvedAll);
+			int id = relations.internLogicalIfSameGroup(group, PackedRelOp.FILTER, filterPayload, 0, 0,
 					new int[] { singleton }, 0, 1);
 			metadata.attachRelation(id, 0, 0, Double.NaN, Double.NaN, 0);
 			return id;

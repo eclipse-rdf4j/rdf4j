@@ -128,9 +128,12 @@ class PackedQueryCodecTest {
 				Filter.ConditionBindingScope.retain(Set.of("input")))) {
 			Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("input")));
 			filter.setConditionBindingScope(scope);
-			UnsupportedCascadesOperatorException failure = assertThrows(UnsupportedCascadesOperatorException.class,
-					() -> PackedQueryCodec.encode(filter));
-			assertTrue(failure.getMessage().contains("conditionBindingScope"));
+			PackedQuery packed = assertDoesNotThrow(() -> PackedQueryCodec.encode(filter));
+			Filter restored = (Filter) PackedPlanMaterializer.materialize(packed, packed.rootRelId());
+			assertEquals(scope, restored.getConditionBindingScope());
+			assertEquals(filter, restored);
+			assertFalse(restored.getConditionBindingScope().isAuto(), "an explicit projection cannot become AUTO");
+			assertTrue(restored.getRequiredInputBindingNames().isEmpty(), "visibility is not a physical parameter");
 		}
 	}
 
@@ -503,7 +506,7 @@ class PackedQueryCodecTest {
 		FunctionCall contains = new FunctionCall(FN.CONTAINS.stringValue(), new Str(Var.of("value")),
 				new ValueConstant(VF.createLiteral("needle")));
 		PackedQuery safeQuery = PackedQueryCodec.encode(new Filter(new SingletonSet(), contains));
-		int safeScalarId = safeQuery.relPayload(safeQuery.rootRelId());
+		int safeScalarId = safeQuery.filterCondition(safeQuery.rootRelId());
 
 		assertEquals(PackedScalarOp.FUNCTION_CALL, safeQuery.scalarOperator(safeScalarId));
 		assertTrue((safeQuery.scalarMetadataFlags(safeScalarId)
@@ -513,7 +516,7 @@ class PackedQueryCodecTest {
 		for (String unsafeFunction : List.of("RAND", "UUID", "urn:test:unknown-function")) {
 			PackedQuery unsafeQuery = PackedQueryCodec
 					.encode(new Filter(new SingletonSet(), new FunctionCall(unsafeFunction)));
-			int unsafeScalarId = unsafeQuery.relPayload(unsafeQuery.rootRelId());
+			int unsafeScalarId = unsafeQuery.filterCondition(unsafeQuery.rootRelId());
 
 			assertEquals(PackedScalarOp.FUNCTION_CALL, unsafeQuery.scalarOperator(unsafeScalarId));
 			assertEquals(0, unsafeQuery.scalarMetadataFlags(unsafeScalarId)

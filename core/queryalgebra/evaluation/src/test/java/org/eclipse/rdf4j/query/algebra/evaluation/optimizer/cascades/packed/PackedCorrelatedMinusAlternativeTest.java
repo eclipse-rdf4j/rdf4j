@@ -323,7 +323,7 @@ class PackedCorrelatedMinusAlternativeTest {
 		int derivedFilterId = derivedCorrelatedMinusFilter(query);
 
 		assertTrue(derivedFilterId != 0, "The theorem-safe scoped MINUS probe must produce a NOT EXISTS alternative");
-		int conditionId = query.relPayload(derivedFilterId);
+		int conditionId = query.filterCondition(derivedFilterId);
 		assertEquals(PackedRelOp.JOIN, query.relOperator(query.relChild(derivedFilterId, 0)),
 				"The derived anti-probe must retain the outer JOIN that assures its correlation binding");
 		assertTrue(query.scalarEmbeddedReferenceMaskId(conditionId) != 0,
@@ -475,18 +475,18 @@ class PackedCorrelatedMinusAlternativeTest {
 			return 0;
 		}
 		int rootGroupId = query.relGroup(originalRootId);
-		int outerConditionId = query.relPayload(originalRootId);
-		int innerConditionId = query.relPayload(originalInnerId);
+		int outerConditionId = query.filterCondition(originalRootId);
+		int innerConditionId = query.filterCondition(originalInnerId);
 		int commonBaseGroupId = query.relGroup(query.relChild(originalInnerId, 0));
 		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
 			if (relationId == originalRootId || query.relGroup(relationId) != rootGroupId
 					|| query.relOperator(relationId) != PackedRelOp.FILTER
-					|| query.relPayload(relationId) != innerConditionId) {
+					|| query.filterCondition(relationId) != innerConditionId) {
 				continue;
 			}
 			int helperId = query.relChild(relationId, 0);
 			if (query.relOperator(helperId) == PackedRelOp.FILTER
-					&& query.relPayload(helperId) == outerConditionId
+					&& query.filterCondition(helperId) == outerConditionId
 					&& query.relGroup(query.relChild(helperId, 0)) == commonBaseGroupId) {
 				return relationId;
 			}
@@ -498,7 +498,7 @@ class PackedCorrelatedMinusAlternativeTest {
 		for (int relationId = 1; relationId <= query.relationCount(); relationId++) {
 			if (query.relOperator(relationId) == PackedRelOp.FILTER
 					&& (query.relRuleMask(relationId) & PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS) != 0L
-					&& query.scalarOperator(query.relPayload(relationId)) == PackedScalarOp.NOT) {
+					&& query.scalarOperator(query.filterCondition(relationId)) == PackedScalarOp.NOT) {
 				return relationId;
 			}
 		}

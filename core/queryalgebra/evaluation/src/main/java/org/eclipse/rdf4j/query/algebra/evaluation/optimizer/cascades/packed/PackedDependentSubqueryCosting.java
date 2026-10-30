@@ -66,7 +66,7 @@ final class PackedDependentSubqueryCosting {
 
 	private static int conditionId(PackedQuery query, int relationId) {
 		return switch (query.relOperator(relationId)) {
-		case PackedRelOp.FILTER -> query.relPayload(relationId);
+		case PackedRelOp.FILTER -> query.filterCondition(relationId);
 		case PackedRelOp.SEMI_JOIN, PackedRelOp.ANTI_JOIN -> query.payloadPrimary(query.relPayload(relationId));
 		default -> 0;
 		};

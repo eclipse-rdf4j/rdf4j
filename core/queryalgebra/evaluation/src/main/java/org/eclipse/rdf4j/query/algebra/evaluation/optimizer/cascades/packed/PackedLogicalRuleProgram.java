@@ -181,7 +181,7 @@ final class PackedLogicalRuleProgram {
 		if (!plainInnerJoinRegion(filterInputId)) {
 			return;
 		}
-		int conditionId = relations.payloadId(filterExpressionId);
+		int conditionId = filterCondition(filterExpressionId);
 		int scalarFlags = metadata.scalarFlags(conditionId);
 		if ((scalarFlags & (PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE
 				| PackedNodeMetadataArena.SCALAR_REORDERING_SAFE)) != PackedNodeMetadataArena.SCALAR_REORDERING_SAFE
@@ -251,9 +251,14 @@ final class PackedLogicalRuleProgram {
 				|| !commutableFilterCondition(rewrittenConditionId, rewrittenInputId)) {
 			return;
 		}
+		int rewrittenPayload = renamedFilterPayload(filterExpressionId, rewrittenConditionId, aliasNameId, sourceNameId);
+		if (rewrittenPayload == 0) {
+			return;
+		}
 		unary[0] = relations.groupId(rewrittenInputId);
 		int before = relations.size();
-		int rewrittenFilterId = relations.internCanonical(PackedRelOp.FILTER, rewrittenConditionId,
+		int rewrittenFilterId = relations.internCanonical(PackedRelOp.FILTER,
+				rewrittenPayload,
 				relations.semanticScopeId(filterExpressionId), relations.executionDomainId(filterExpressionId),
 				relations.occurrenceId(filterExpressionId), relations.graphDomainId(filterExpressionId), unary,
 				0, 1);
@@ -339,7 +344,7 @@ final class PackedLogicalRuleProgram {
 				|| !safeCorrelatedMinusProbe(siblingExpressionId)) {
 			return;
 		}
-		int conditionId = relations.payloadId(filterExpressionId);
+		int conditionId = filterCondition(filterExpressionId);
 		int filterInputId = relations.childGroupId(filterExpressionId, 0);
 		if (!metadata.relationReplayIsSafe(relations, filterInputId)
 				|| !metadata.relationReplayIsSafe(relations, siblingExpressionId)
@@ -353,7 +358,8 @@ final class PackedLogicalRuleProgram {
 		binary[1 - filteredOrdinal] = relations.groupId(siblingExpressionId);
 		int joinedInputId = canonicalRelation(PackedRelOp.JOIN, 0, binary, 2, joinExpressionId);
 		unary[0] = relations.groupId(joinedInputId);
-		int alternativeId = addAlternative(joinExpressionId, PackedRelOp.FILTER, conditionId, unary, 1);
+		int alternativeId = addAlternative(joinExpressionId, PackedRelOp.FILTER,
+				filterPayloadWithCondition(filterExpressionId, conditionId), unary, 1);
 		if (alternativeId != 0) {
 			addAlternativeRuleMask(alternativeId,
 					metadata.relationRuleMask(filterExpressionId) | PackedRuleProofs.FILTER_COMMUTATION);
@@ -412,7 +418,8 @@ final class PackedLogicalRuleProgram {
 			return;
 		}
 		resetFiniteDomain();
-		if (!collectFiniteDomain(relations.payloadId(filterExpressionId)) || finiteValueCount == 0) {
+		if (!filterSeesAllReads(filterExpressionId)
+				|| !collectFiniteDomain(filterCondition(filterExpressionId)) || finiteValueCount == 0) {
 			return;
 		}
 		if (filterFactRange == null) {
@@ -450,7 +457,7 @@ final class PackedLogicalRuleProgram {
 	private void markFilterMinusLeftPushdown(int differenceExpressionId) {
 		int leftExpressionId = relations.childGroupId(differenceExpressionId, 0);
 		if (relations.operatorTag(leftExpressionId) == PackedRelOp.FILTER
-				&& scalarContainsExists(relations.payloadId(leftExpressionId))) {
+				&& scalarContainsExists(filterCondition(leftExpressionId))) {
 			addAlternativeRuleMask(differenceExpressionId, PackedRuleProofs.FILTER_MINUS_LEFT_PUSHDOWN);
 		}
 	}
@@ -485,7 +492,8 @@ final class PackedLogicalRuleProgram {
 		}
 
 		unary[0] = leftExpressionId;
-		int alternativeId = addAlternative(differenceExpressionId, PackedRelOp.FILTER, notExistsId, unary, 1);
+		int alternativeId = addAlternative(differenceExpressionId, PackedRelOp.FILTER,
+				PackedFilterPayloads.unrestricted(payloads, notExistsId), unary, 1);
 		if (alternativeId == 0) {
 			// Also reached when a user-written FILTER NOT EXISTS over the same input and body (same referenced
 			// names, so the same interned EXISTS) already lives in another group: cross-group interning is refused,
@@ -505,6 +513,7 @@ final class PackedLogicalRuleProgram {
 				notExistsId,
 				PackedQueryView.SEMI_ANTI_MINUS_ASSURED_SHARED,
 				nameSetPayload(sharedNames),
+				PackedFilterPayloads.resolvedScope(payloads, relations.payloadId(alternativeId)),
 				leftExpressionId,
 				PackedRuleProofs.MINUS_CORRELATED_NOT_EXISTS);
 		int commutedAlternativeId = addAdjacentFilterCommutationAlternative(alternativeId);
@@ -517,7 +526,7 @@ final class PackedLogicalRuleProgram {
 		if ((metadata.relationFlags(filterExpressionId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
 			return;
 		}
-		int conditionId = relations.payloadId(filterExpressionId);
+		int conditionId = filterCondition(filterExpressionId);
 		int existsId = conditionId;
 		int operator = PackedRelOp.SEMI_JOIN;
 		int semanticKind = PackedQueryView.SEMI_ANTI_EXISTS;
@@ -550,21 +559,24 @@ final class PackedLogicalRuleProgram {
 		// outputs), so the cost model sees the true key set; the executor recomputes the keys from the body itself.
 		long[] correlatedNames = relationOutputs(leftExpressionId);
 		andInto(correlatedNames, relationReferencedNames(rightExpressionId));
+		retainVisibleFilterNames(filterExpressionId, correlatedNames);
 		addTypedSemiAntiAlternatives(
 				filterExpressionId,
 				operator,
 				conditionId,
 				semanticKind,
 				nameSetPayload(correlatedNames),
+				PackedFilterPayloads.resolvedScope(payloads, relations.payloadId(filterExpressionId)),
 				leftExpressionId,
 				ruleMask);
 	}
 
 	private void addTypedSemiAntiAlternatives(int sourceExpressionId, int operator, int conditionId,
-			int semanticKind, int correlationNamesId, int leftExpressionId, long ruleMask) {
+			int semanticKind, int correlationNamesId, int conditionScopeId, int leftExpressionId, long ruleMask) {
 		unary[0] = relations.groupId(leftExpressionId);
 		for (int algorithm = PackedQueryView.SEMI_ANTI_STREAMING; algorithm <= PackedQueryView.SEMI_ANTI_MATERIALIZED; algorithm++) {
 			bindingPair[0] = correlationNamesId;
+			bindingPair[1] = conditionScopeId;
 			int payloadId = payloads.internCanonical(
 					PackedPayloadOp.SEMI_ANTI_JOIN,
 					conditionId,
@@ -572,7 +584,7 @@ final class PackedLogicalRuleProgram {
 					algorithm,
 					bindingPair,
 					0,
-					1);
+					2);
 			int alternativeId = addAlternative(sourceExpressionId, operator, payloadId, unary, 1);
 			addAlternativeRuleMask(alternativeId, ruleMask);
 		}
@@ -592,8 +604,8 @@ final class PackedLogicalRuleProgram {
 						.executionDomainId(innerFilterExpressionId)) {
 			return 0;
 		}
-		int outerConditionId = relations.payloadId(outerFilterExpressionId);
-		int innerConditionId = relations.payloadId(innerFilterExpressionId);
+		int outerConditionId = filterCondition(outerFilterExpressionId);
+		int innerConditionId = filterCondition(innerFilterExpressionId);
 		int commonBaseExpressionId = relations.childGroupId(innerFilterExpressionId, 0);
 		if (!commutableFilterCondition(outerConditionId, commonBaseExpressionId)
 				|| !commutableFilterCondition(innerConditionId, commonBaseExpressionId)) {
@@ -602,7 +614,8 @@ final class PackedLogicalRuleProgram {
 
 		unary[0] = relations.groupId(commonBaseExpressionId);
 		int before = relations.size();
-		int commutedInnerId = relations.internCanonical(PackedRelOp.FILTER, outerConditionId, 0,
+		int commutedInnerId = relations.internCanonical(PackedRelOp.FILTER,
+				filterPayloadWithCondition(outerFilterExpressionId, outerConditionId), 0,
 				relations.executionDomainId(outerFilterExpressionId), relations.occurrenceId(outerFilterExpressionId),
 				relations.graphDomainId(outerFilterExpressionId), unary, 0, 1);
 		if (commutedInnerId > before) {
@@ -620,7 +633,7 @@ final class PackedLogicalRuleProgram {
 		int targetGroupId = relations.groupId(outerFilterExpressionId);
 		before = relations.size();
 		int commutedOuterId = relations.internLogicalIfSameGroup(targetGroupId,
-				PackedRelOp.FILTER, innerConditionId, 0,
+				PackedRelOp.FILTER, filterPayloadWithCondition(innerFilterExpressionId, innerConditionId), 0,
 				relations.executionDomainId(innerFilterExpressionId), relations.occurrenceId(innerFilterExpressionId),
 				relations.graphDomainId(innerFilterExpressionId), unary, 0, 1);
 		if (commutedOuterId == 0) {
@@ -716,7 +729,7 @@ final class PackedLogicalRuleProgram {
 		case PackedRelOp.QUERY_ROOT, PackedRelOp.DISTINCT, PackedRelOp.REDUCED, PackedRelOp.ORDER ->
 			executorProbesMinusBodyBySelection(
 					relations.childGroupId(expressionId, 0), sharedNames);
-		case PackedRelOp.FILTER -> !scalarContainsSubqueryValue(relations.payloadId(expressionId))
+		case PackedRelOp.FILTER -> !scalarContainsSubqueryValue(filterCondition(expressionId))
 				&& executorProbesMinusBodyBySelection(relations.childGroupId(expressionId, 0), sharedNames);
 		case PackedRelOp.EXTENSION -> extensionIsProbeSelection(relations.payloadId(expressionId), sharedNames)
 				&& executorProbesMinusBodyBySelection(relations.childGroupId(expressionId, 0), sharedNames);
@@ -783,7 +796,7 @@ final class PackedLogicalRuleProgram {
 				|| safeRepeatedScalar(relations.payloadId(expressionId)))
 				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0))
 				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 1));
-		case PackedRelOp.FILTER -> safeRepeatedScalar(relations.payloadId(expressionId))
+		case PackedRelOp.FILTER -> safeRepeatedScalar(filterCondition(expressionId))
 				&& safeCorrelatedMinusProbe(relations.childGroupId(expressionId, 0));
 		case PackedRelOp.QUERY_ROOT, PackedRelOp.DESCRIBE, PackedRelOp.SLICE, PackedRelOp.REDUCED, PackedRelOp.DISTINCT,
 				PackedRelOp.MATERIALIZE, PackedRelOp.PROJECTION, PackedRelOp.MULTI_PROJECTION ->
@@ -867,7 +880,9 @@ final class PackedLogicalRuleProgram {
 			}
 		}
 		case PackedRelOp.FILTER, PackedRelOp.LEFT_JOIN -> {
-			if (!scalarBodiesStructurallySubstitutable(payloadId, sharedNames)) {
+			int condition = relations.operatorTag(expressionId) == PackedRelOp.FILTER
+					? filterCondition(expressionId) : payloadId;
+			if (!scalarBodiesStructurallySubstitutable(condition, sharedNames)) {
 				return false;
 			}
 		}
@@ -1070,7 +1085,7 @@ final class PackedLogicalRuleProgram {
 
 	private boolean analyzeCodeTypeBranch(int expressionId, int entityNameId, int branch) {
 		if (relations.operatorTag(expressionId) != PackedRelOp.FILTER
-				|| !codeFilterDomain(relations.payloadId(expressionId), branch)) {
+				|| !filterSeesAllReads(expressionId) || !codeFilterDomain(filterCondition(expressionId), branch)) {
 			return false;
 		}
 		factorCount = 0;
@@ -1322,6 +1337,9 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private int canonicalRelation(int operator, int payloadId, int[] children, int childCount, int metadataSourceId) {
+		if (operator == PackedRelOp.FILTER) {
+			payloadId = PackedFilterPayloads.relocated(payloads, payloadId);
+		}
 		int before = relations.size();
 		int result = relations.internCanonical(operator, payloadId, relations.semanticScopeId(metadataSourceId),
 				relations.executionDomainId(metadataSourceId), relations.occurrenceId(metadataSourceId),
@@ -1406,7 +1424,7 @@ final class PackedLogicalRuleProgram {
 		int havingNameId = 0;
 		for (int wrapper : wrapperIds) {
 			if (relations.operatorTag(wrapper) == PackedRelOp.FILTER) {
-				int name = positiveCountName(relations.payloadId(wrapper));
+				int name = positiveCountName(filterCondition(wrapper));
 				if (name != 0 && groupAggregate(relations.payloadId(childId), name) != 0) {
 					if (filterId != 0) {
 						return;
@@ -1469,7 +1487,7 @@ final class PackedLogicalRuleProgram {
 		int havingNameId = 0;
 		for (int wrapper : wrappers) {
 			if (relations.operatorTag(wrapper) == PackedRelOp.FILTER) {
-				int name = positiveCountName(relations.payloadId(wrapper));
+				int name = positiveCountName(filterCondition(wrapper));
 				if (name != 0 && groupAggregate(relations.payloadId(groupId), name) != 0) {
 					if (havingFilterId != 0) {
 						return;
@@ -1540,13 +1558,15 @@ final class PackedLogicalRuleProgram {
 		int rewrittenInputId = baseId;
 		if (!liftAboveGroup) {
 			unary[0] = relations.groupId(rewrittenInputId);
-			rewrittenInputId = canonicalRelation(PackedRelOp.FILTER, existsId, unary, 1, havingFilterId);
+			rewrittenInputId = canonicalRelation(PackedRelOp.FILTER,
+					PackedFilterPayloads.unrestricted(payloads, existsId), unary, 1, havingFilterId);
 		}
 		unary[0] = relations.groupId(rewrittenInputId);
 		int rewrittenId = canonicalRelation(PackedRelOp.GROUP, effectiveGroupPayloadId, unary, 1, groupId);
 		if (liftAboveGroup) {
 			unary[0] = relations.groupId(rewrittenId);
-			rewrittenId = canonicalRelation(PackedRelOp.FILTER, existsId, unary, 1, havingFilterId);
+			rewrittenId = canonicalRelation(PackedRelOp.FILTER,
+					PackedFilterPayloads.unrestricted(payloads, existsId), unary, 1, havingFilterId);
 		}
 		for (int ordinal = wrappers.length - 1; ordinal >= 0; ordinal--) {
 			int wrapper = wrappers[ordinal];
@@ -1586,8 +1606,9 @@ final class PackedLogicalRuleProgram {
 		for (int wrapper : surface.wrappers()) {
 			int payload = relations.payloadId(wrapper);
 			if (relations.operatorTag(wrapper) == PackedRelOp.FILTER) {
-				if (!safeRepeatedScalar(payload)
-						|| wrapper != havingFilterId && scalarContainsName(payload, havingNameId)) {
+				int condition = filterCondition(wrapper);
+				if (!filterSeesAllReads(wrapper) || !safeRepeatedScalar(condition)
+						|| wrapper != havingFilterId && scalarContainsName(condition, havingNameId)) {
 					return false;
 				}
 			} else {
@@ -1611,7 +1632,7 @@ final class PackedLogicalRuleProgram {
 		for (int wrapper : wrappers) {
 			if (relations.operatorTag(wrapper) == PackedRelOp.EXTENSION
 					? extensionUsesName(relations.payloadId(wrapper), nameId)
-					: scalarContainsName(relations.payloadId(wrapper), nameId)) {
+					: scalarContainsName(filterCondition(wrapper), nameId)) {
 				return true;
 			}
 		}
@@ -1734,7 +1755,7 @@ final class PackedLogicalRuleProgram {
 		int sourceSymbolId = sourceNameId == 0 ? 0 : symbols.symbolId(sourceNameId);
 		int extensionInputId = relations.childGroupId(extensionId, 0);
 		if (aliasNameId == 0 || sourceSymbolId == 0
-				|| !scalarContainsName(relations.payloadId(expressionId), aliasNameId)
+				|| !scalarContainsName(filterCondition(expressionId), aliasNameId)
 				|| relationOutputContains(extensionInputId, symbols.symbolId(aliasNameId))
 				|| !relationAssuresSymbol(extensionInputId, sourceSymbolId)
 				|| projectionUsesName(projectionPayloadId, aliasNameId)
@@ -1744,12 +1765,17 @@ final class PackedLogicalRuleProgram {
 				|| relationUsesName(rightEligibilityId, aliasNameId)) {
 			return expressionId;
 		}
-		int conditionId = replaceScalarVariable(relations.payloadId(expressionId), aliasNameId, sourceScalarId);
-		if (conditionId == relations.payloadId(expressionId)) {
+		int conditionId = replaceScalarVariable(filterCondition(expressionId), aliasNameId, sourceScalarId);
+		if (conditionId == filterCondition(expressionId)) {
+			return expressionId;
+		}
+		int rewrittenPayload = renamedFilterPayload(expressionId, conditionId, aliasNameId, sourceNameId);
+		if (rewrittenPayload == 0) {
 			return expressionId;
 		}
 		unary[0] = relations.groupId(extensionInputId);
-		int result = canonicalRelation(PackedRelOp.FILTER, conditionId, unary, 1, expressionId);
+		int result = canonicalRelation(PackedRelOp.FILTER, rewrittenPayload,
+				unary, 1, expressionId);
 		aliasRewritten = true;
 		return result;
 	}
@@ -1817,7 +1843,8 @@ final class PackedLogicalRuleProgram {
 		int operator = relations.operatorTag(expressionId);
 		if ((operator == PackedRelOp.FILTER || operator == PackedRelOp.LEFT_JOIN)
 				&& relations.payloadId(expressionId) != 0
-				&& scalarContainsName(relations.payloadId(expressionId), nameId)) {
+				&& scalarContainsName(operator == PackedRelOp.FILTER ? filterCondition(expressionId)
+						: relations.payloadId(expressionId), nameId)) {
 			return true;
 		}
 		for (int ordinal = 0; ordinal < relations.childCount(expressionId); ordinal++) {
@@ -1904,10 +1931,10 @@ final class PackedLogicalRuleProgram {
 		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.SINGLETON_SET -> true;
 		case PackedRelOp.JOIN, PackedRelOp.UNION -> eligibilitySafe(relations.childGroupId(expressionId, 0))
 				&& eligibilitySafe(relations.childGroupId(expressionId, 1));
-		case PackedRelOp.FILTER -> safeRepeatedScalar(relations.payloadId(expressionId))
-				&& !scalarHasEmbeddedRelationOrTerm(relations.payloadId(expressionId))
+		case PackedRelOp.FILTER -> filterSeesAllReads(expressionId) && safeRepeatedScalar(filterCondition(expressionId))
+				&& !scalarHasEmbeddedRelationOrTerm(filterCondition(expressionId))
 				&& relationAssuresScalarDependencies(relations.childGroupId(expressionId, 0),
-						relations.payloadId(expressionId))
+						filterCondition(expressionId))
 				&& eligibilitySafe(relations.childGroupId(expressionId, 0));
 		default -> false;
 		};
@@ -1959,9 +1986,11 @@ final class PackedLogicalRuleProgram {
 		if (operator == PackedRelOp.FILTER) {
 			int childId = anonymizeEligibility(producerExpressionId, relations.childGroupId(expressionId, 0),
 					preservedNames);
-			int conditionId = anonymizeScalar(producerExpressionId, relations.payloadId(expressionId), preservedNames);
+			int conditionId = anonymizeScalar(producerExpressionId, filterCondition(expressionId), preservedNames);
 			unary[0] = relations.groupId(childId);
-			return canonicalRelation(PackedRelOp.FILTER, conditionId, unary, 1, expressionId);
+			return canonicalRelation(PackedRelOp.FILTER,
+					anonymizedFilterPayload(producerExpressionId, expressionId, conditionId, preservedNames),
+					unary, 1, expressionId);
 		}
 		int leftId = anonymizeEligibility(producerExpressionId, relations.childGroupId(expressionId, 0),
 				preservedNames);
@@ -2304,9 +2333,10 @@ final class PackedLogicalRuleProgram {
 	}
 
 	private boolean canReplaceFilterWithFiniteAnchor(int filterExpressionId) {
-		int conditionId = relations.payloadId(filterExpressionId);
+		int conditionId = filterCondition(filterExpressionId);
 		resetFiniteDomain();
-		if (!collectFiniteDomain(conditionId) || finiteValueCount == 0 || !finiteDomainTermIdentitySafe()) {
+		if (!filterSeesAllReads(filterExpressionId) || !collectFiniteDomain(conditionId)
+				|| finiteValueCount == 0 || !finiteDomainTermIdentitySafe()) {
 			return false;
 		}
 		int inputGroupId = relations.childGroupId(filterExpressionId, 0);
@@ -2327,7 +2357,10 @@ final class PackedLogicalRuleProgram {
 		if (domainFacts == null) {
 			return;
 		}
-		int conditionId = relations.payloadId(filterExpressionId);
+		int conditionId = filterCondition(filterExpressionId);
+		if (!filterSeesAllReads(filterExpressionId)) {
+			return;
+		}
 		int inputGroupId = relations.childGroupId(filterExpressionId, 0);
 		int verdict = rangeVerdict(conditionId, inputGroupId);
 		if (verdict == VERDICT_ALWAYS_FALSE || verdict == VERDICT_ALWAYS_DROPPED) {
@@ -2482,11 +2515,12 @@ final class PackedLogicalRuleProgram {
 		if (trueConstantId > scalarCountBefore) {
 			metadata.attachScalar(trueConstantId, 0, 0, -1.0d, -1.0d);
 		}
-		if (trueConstantId == relations.payloadId(filterExpressionId)) {
+		if (trueConstantId == filterCondition(filterExpressionId)) {
 			return;
 		}
 		unary[0] = inputGroupId;
-		int alternativeId = addAlternative(filterExpressionId, PackedRelOp.FILTER, trueConstantId, unary, 1);
+		int alternativeId = addAlternative(filterExpressionId, PackedRelOp.FILTER,
+				filterPayloadWithCondition(filterExpressionId, trueConstantId), unary, 1);
 		addAlternativeRuleMask(alternativeId, PackedRuleProofs.PREDICATE_RANGE_TAUTOLOGY);
 	}
 
@@ -3462,14 +3496,14 @@ final class PackedLogicalRuleProgram {
 		}
 		int childId = rewriteFiniteFilters(relations.childGroupId(expressionId, 0));
 		resetFiniteDomain();
-		if (collectFiniteDomain(relations.payloadId(expressionId)) && finiteValueCount != 0
+		if (filterSeesAllReads(expressionId) && collectFiniteDomain(filterCondition(expressionId)) && finiteValueCount != 0
 				&& finiteDomainTermIdentitySafe()
 				&& relationAssuresSymbol(childId, finiteSymbolId)
 				&& !containsBindingAssignmentFor(childId, finiteSymbolId)) {
 			int anchorId = finiteBindingAssignment();
 			int rewrittenId;
 			if (relations.operatorTag(childId) == PackedRelOp.FILTER
-					&& scalarContainsExists(relations.payloadId(childId))) {
+					&& scalarContainsExists(filterCondition(childId))) {
 				binary[0] = relations.groupId(anchorId);
 				binary[1] = relations.childGroupId(childId, 0);
 				int joinedInputId = canonicalRelation(PackedRelOp.JOIN, 0, binary, 2, expressionId);
@@ -3500,7 +3534,7 @@ final class PackedLogicalRuleProgram {
 
 	private boolean containsExistsPredicateUncached(int expressionId) {
 		if (relations.operatorTag(expressionId) == PackedRelOp.FILTER
-				&& scalarContainsExists(relations.payloadId(expressionId))) {
+				&& scalarContainsExists(filterCondition(expressionId))) {
 			return true;
 		}
 		for (int ordinal = 0; ordinal < relations.childCount(expressionId); ordinal++) {
@@ -3579,7 +3613,7 @@ final class PackedLogicalRuleProgram {
 		int operator = relations.operatorTag(expressionId);
 		if (operator == PackedRelOp.FILTER) {
 			long[] childLive = copyMask(live);
-			addScalarDependencies(relations.payloadId(expressionId), childLive);
+			addScalarDependencies(filterCondition(expressionId), childLive);
 			return rebuildUnaryIfChanged(expressionId,
 					pruneUnusedOptionals(relations.childGroupId(expressionId, 0), childLive));
 		}
@@ -3680,8 +3714,12 @@ final class PackedLogicalRuleProgram {
 
 	private int addCanonical(int sourceExpressionId, int[] childGroupIds, int childCount) {
 		int before = relations.size();
+		int payload = relations.payloadId(sourceExpressionId);
+		if (relations.operatorTag(sourceExpressionId) == PackedRelOp.FILTER) {
+			payload = PackedFilterPayloads.relocated(payloads, payload);
+		}
 		int result = relations.internCanonical(relations.operatorTag(sourceExpressionId),
-				relations.payloadId(sourceExpressionId), relations.semanticScopeId(sourceExpressionId),
+				payload, relations.semanticScopeId(sourceExpressionId),
 				relations.executionDomainId(sourceExpressionId), relations.occurrenceId(sourceExpressionId),
 				relations.graphDomainId(sourceExpressionId),
 				childGroupIds, 0, childCount);
@@ -3698,6 +3736,9 @@ final class PackedLogicalRuleProgram {
 
 	private int addAlternative(int sourceExpressionId, int operator, int payloadId, int[] childGroupIds,
 			int childOffset, int childCount) {
+		if (operator == PackedRelOp.FILTER) {
+			payloadId = PackedFilterPayloads.relocated(payloads, payloadId);
+		}
 		int targetGroupId = relations.groupId(sourceExpressionId);
 		int before = relations.size();
 		int result = relations.internLogicalIfSameGroup(targetGroupId, operator, payloadId,
@@ -4323,7 +4364,8 @@ final class PackedLogicalRuleProgram {
 					payloadId, output);
 		case PackedRelOp.GRAPH -> addPayloadTerms(payloadId, output);
 		case PackedRelOp.BINDING_SET_ASSIGNMENT -> addNameSet(payloads.payloadId(payloadId), output);
-		case PackedRelOp.FILTER, PackedRelOp.LEFT_JOIN -> addScalarDependencies(payloadId, output);
+		case PackedRelOp.FILTER -> addScalarDependencies(filterCondition(expressionId), output);
+		case PackedRelOp.LEFT_JOIN -> addScalarDependencies(payloadId, output);
 		case PackedRelOp.EXTENSION -> {
 			for (int ordinal = 0; ordinal < payloads.childCount(payloadId); ordinal++) {
 				int elementId = payloads.childGroupId(payloadId, ordinal);
@@ -4400,6 +4442,97 @@ final class PackedLogicalRuleProgram {
 				addScalarDependencies(payloads.semanticScopeId(payloads.childGroupId(elementId, 0)), output);
 			}
 		}
+	}
+
+	private int filterCondition(int expressionId) {
+		return PackedFilterPayloads.condition(payloads, relations.payloadId(expressionId));
+	}
+
+	private int filterPayloadWithCondition(int expressionId, int condition) {
+		return PackedFilterPayloads.withCondition(payloads,
+				PackedFilterPayloads.relocated(payloads, relations.payloadId(expressionId)), condition);
+	}
+
+	private boolean filterSeesAllReads(int expressionId) {
+		int scope = PackedFilterPayloads.resolvedScope(payloads, relations.payloadId(expressionId));
+		if (payloads.payloadId(scope) == PackedFilterPayloads.ALL) {
+			return true;
+		}
+		long[] reads = new long[maskWordCount()];
+		addScalarDependencies(filterCondition(expressionId), reads);
+		for (int symbol = 1; symbol <= symbols.size(); symbol++) {
+			int name = symbols.objectId(symbol);
+			if (containsObject(reads, name) && !PackedFilterPayloads.allows(payloads, scope, name)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void retainVisibleFilterNames(int expressionId, long[] names) {
+		int scope = PackedFilterPayloads.resolvedScope(payloads, relations.payloadId(expressionId));
+		if (payloads.payloadId(scope) != PackedFilterPayloads.ALL) {
+			for (int symbol = 1; symbol <= symbols.size(); symbol++) {
+				int name = symbols.objectId(symbol);
+				if (!PackedFilterPayloads.allows(payloads, scope, name)) {
+					removeObject(names, name);
+				}
+			}
+		}
+	}
+
+	private int renamedFilterPayload(int expressionId, int condition, int from, int to) {
+		int originalCondition = filterCondition(expressionId);
+		if (scalarHasEmbeddedRelationOrTerm(originalCondition)) {
+			return 0;
+		}
+		int scope = PackedFilterPayloads.resolvedScope(payloads, relations.payloadId(expressionId));
+		boolean fromVisible = PackedFilterPayloads.allows(payloads, scope, from);
+		boolean toVisible = PackedFilterPayloads.allows(payloads, scope, to);
+		if (fromVisible != toVisible && scalarContainsName(originalCondition, to)) {
+			// Two differently projected observations cannot be represented by one renamed variable.
+			return 0;
+		}
+		if (payloads.payloadId(scope) == PackedFilterPayloads.RETAINED) {
+			int count = payloads.childCount(scope);
+			int start = reserveRewriteScratch(count);
+			int used = 0;
+			for (int ordinal = 0; ordinal < count; ordinal++) {
+				int name = payloads.childGroupId(scope, ordinal);
+				if (name == to && !fromVisible) {
+					continue;
+				}
+				rewriteScratch[start + used++] = name == from ? to : name;
+			}
+			Arrays.sort(rewriteScratch, start, start + used);
+			int distinct = 0;
+			for (int ordinal = 0; ordinal < used; ordinal++) {
+				int name = rewriteScratch[start + ordinal];
+				if (distinct == 0 || rewriteScratch[start + distinct - 1] != name) {
+					rewriteScratch[start + distinct++] = name;
+				}
+			}
+			scope = PackedFilterPayloads.scope(payloads, PackedFilterPayloads.RETAINED, rewriteScratch, start, distinct);
+			releaseRewriteScratch(start);
+		}
+		return PackedFilterPayloads.create(payloads, condition, scope, scope);
+	}
+
+	private int anonymizedFilterPayload(int producer, int expressionId, int condition, long[] preservedNames) {
+		int scope = PackedFilterPayloads.resolvedScope(payloads, relations.payloadId(expressionId));
+		if (payloads.payloadId(scope) == PackedFilterPayloads.RETAINED) {
+			int count = payloads.childCount(scope);
+			int start = reserveRewriteScratch(count);
+			for (int ordinal = 0; ordinal < count; ordinal++) {
+				int name = payloads.childGroupId(scope, ordinal);
+				rewriteScratch[start + ordinal] = containsObject(preservedNames, name) ? name
+						: generatedHelperNameId(producer, GeneratedHelperRole.ELIGIBILITY_LOCAL_ALIAS, name);
+			}
+			Arrays.sort(rewriteScratch, start, start + count);
+			scope = PackedFilterPayloads.scope(payloads, PackedFilterPayloads.RETAINED, rewriteScratch, start, count);
+			releaseRewriteScratch(start);
+		}
+		return PackedFilterPayloads.create(payloads, condition, scope, scope);
 	}
 
 	private int maskWordCount() {

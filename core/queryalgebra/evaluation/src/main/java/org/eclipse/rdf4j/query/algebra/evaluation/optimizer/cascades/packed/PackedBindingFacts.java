@@ -279,7 +279,7 @@ final class PackedBindingFacts {
 			true;
 		case PackedRelOp.JOIN -> safeEmbeddedSubquery(query, query.relChild(relationId, 0))
 				&& safeEmbeddedSubquery(query, query.relChild(relationId, 1));
-		case PackedRelOp.FILTER -> scalarSafeToRelocate(query.relPayload(relationId))
+		case PackedRelOp.FILTER -> scalarSafeToRelocate(query.filterCondition(relationId))
 				&& safeEmbeddedSubquery(query, query.relChild(relationId, 0));
 		case PackedRelOp.QUERY_ROOT -> safeEmbeddedSubquery(query, query.relChild(relationId, 0));
 		default -> false;
