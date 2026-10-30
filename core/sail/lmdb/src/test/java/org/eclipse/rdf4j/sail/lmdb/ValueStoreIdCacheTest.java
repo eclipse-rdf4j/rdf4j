@@ -639,14 +639,25 @@ class ValueStoreIdCacheTest {
 
 	@Test
 	void namespaceCreationAcrossGrowthCheckpointWarmsNextWriter(@TempDir File directory) throws Exception {
-		String namespace = "urn:checkpoint:" + "x".repeat(256 * 1024) + ":";
+		int namespaceBytes = 256 * 1024;
+		String prefix = "urn:checkpoint:" + "x".repeat(namespaceBytes);
 		try (CountingValueStore store = new CountingValueStore(directory,
 				config().setAutoGrow(true).setValueDBSize(256L * 1024), LmdbStoreFormat.CANONICAL_IRI_VERSION)) {
-			long growthBefore = store.getBulkMapGrowthCount();
 			store.startTransaction(true);
-			store.storeValue(VALUES.createIRI(namespace + "first"));
-			assertTrue(store.getBulkMapGrowthCount() > growthBefore,
-					"the namespace must force a map growth checkpoint");
+			long mapBefore = store.mapSizeBytes();
+			long growthBefore = store.getBulkMapGrowthCount();
+			// Startup reserves native bootstrap space, so the effective map can exceed the requested size.
+			// Fill that actual map with distinct, cache-eligible namespaces until namespace allocation checkpoints.
+			int limit = Math.toIntExact(mapBefore / namespaceBytes + 2L);
+			String namespace = null;
+			for (int i = 0; i < limit && store.namespaceCheckpoints == 0; i++) {
+				namespace = prefix + i + ":";
+				store.storeValue(VALUES.createIRI(namespace + "first"));
+			}
+			assertTrue(store.namespaceCheckpoints > 0,
+					"namespace allocation itself must commit and replace the native writer across map growth");
+			assertTrue(store.mapSizeBytes() > mapBefore);
+			assertTrue(store.getBulkMapGrowthCount() > growthBefore);
 			store.commit();
 
 			store.resetCounts();
@@ -1352,6 +1363,7 @@ class ValueStoreIdCacheTest {
 
 		private int valueProbes;
 		private int namespaceProbes;
+		private int namespaceCheckpoints;
 		private int readTransactions;
 		private int alternativeProbes;
 		private int alternativeSeeks;
@@ -1399,7 +1411,13 @@ class ValueStoreIdCacheTest {
 			} else {
 				valueProbes++;
 			}
+			long mapBefore = nativeMapGeneration();
+			long commitsBefore = nativeCommitGeneration();
 			Long result = super.findIdInTransaction(data, create, coreDatatype, stack, txn);
+			if (create && data[0] == ValueStoreRecordCodec.NAMESPACE_VALUE
+					&& nativeMapGeneration() > mapBefore && nativeCommitGeneration() > commitsBefore) {
+				namespaceCheckpoints++;
+			}
 			if (data[0] == failAfterProbeType) {
 				failAfterProbeType = -1;
 				throw new IOException("dictionary probe failed after reading its result");
