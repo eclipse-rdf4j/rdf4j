@@ -110,17 +110,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		CLOSED
 	}
 
-	record GapMarker(long fromRevision, long sequence) {
-	}
-
-	private enum ReadinessProbe {
-		READY,
-		PROGRESS_PENDING,
-		UNAVAILABLE
-	}
-
-	private static final GapMarker INITIAL_GAP_MARKER = new GapMarker(Long.MAX_VALUE, 0);
-
 	private final TripleStore tripleStore;
 	private final ValueStore valueStore;
 	private final AtomicBoolean storeTxnStarted;
@@ -131,118 +120,50 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final long baseArenaRegionBytes;
 	private final long workspaceRegionBytes;
 
-	private final AtomicReference<LmdbAdjacencyPublishedState> published;
-	private final AtomicReference<GapMarker> emergencyGap = new AtomicReference<>(INITIAL_GAP_MARKER);
-	private final AtomicReference<RuntimeException> unexpectedMaintenanceFailure = new AtomicReference<>();
-	private final AtomicLong epochs = new AtomicLong();
-	private final AtomicLong activeAcquisitionsAndViews = new AtomicLong();
+	/** The single channel from commits to this index; owned and appended by the TripleStore. */
+	private final AdjacencyCommitLog log;
+	/** Runs the applier loop on one daemon thread; tests pause it and step units themselves. */
+	private final ThreadApplierScheduler scheduler;
+	/** Runs base scans and generation preparation off the applier thread. */
+	private final ExecutorAdjacencyWorkerPool workers;
+	private final ExecutorService workerExecutor;
+	/** Seals commit deltas; single-threaded because the collector relies on batch-then-seal ordering. */
+	private final ExecutorService captureExecutor;
+	/** Best-effort adaptive accelerations requested by read kernels; never touches the published state. */
+	private final ExecutorService accelerationExecutor;
+	/** The single owner of the published state. */
+	private final AdjacencyApplier<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet, PreparedApply> applier;
+
 	private final AtomicLong shadowProbes = new AtomicLong();
-
-	/** Protects writer-side state transitions and ownership transfer; readers never take it. */
-	private final ReentrantLock publicationLock = new ReentrantLock(true);
-	private final Condition noPreparationsInFlight = publicationLock.newCondition();
-
-	private final TrackedThreadFactory maintenanceThreadFactory;
-	private final TrackedThreadFactory preparationThreadFactory;
-	private final TrackedThreadFactory compactionThreadFactory;
-	private final ScheduledThreadPoolExecutor maintenanceExecutor;
-	private volatile Future<?> buildRetryFuture;
-	private final ExecutorService preparationExecutor;
-	private final ExecutorService compactionExecutor;
-	private final AtomicInteger preparationsInFlight = new AtomicInteger();
-	private final AtomicBoolean compactionRequested = new AtomicBoolean();
-	private final AtomicBoolean compactionTaskScheduled = new AtomicBoolean();
-	private final LmdbAdjacencyTieredCompactionPolicy.Candidate compactionCandidate = new LmdbAdjacencyTieredCompactionPolicy.Candidate();
-	/**
-	 * Publication waiting activates under the transaction fence for empty startup and exact cutover. Unavailable
-	 * maintenance releases waiters and disables this barrier until a successful rebuild.
-	 */
-	private final AtomicBoolean synchronousUpdatesActivated = new AtomicBoolean();
-	private final Object admissionMonitor = new Object();
-	private volatile boolean connectionWriteAdmitted;
-	private volatile LmdbAdjacencyMemoryAccount connectionCaptureBudget;
-	private volatile CompletableFuture<Void> lastCommittedPublication;
-	private long lastPublicationRevision = -1;
-	private final AtomicLong asyncPublicationRevision = new AtomicLong(-1);
-	private final ConcurrentHashMap<Long, CompletableFuture<Void>> unpublishedRevisions = new ConcurrentHashMap<>();
-	private boolean cutoverAdmissionClosed;
-	private int admittedWrites;
-	private volatile long catchUpTargetRevision = -1;
-	private volatile boolean maintenanceUnavailable;
-	/** Suppression spans the public initial import, including committed NONE checkpoints. */
-	private volatile boolean maintenanceDeferred;
-	private volatile long lastCutoverNanos;
-	private volatile long lastCutoverRevisions;
-	private volatile int lastCutoverQueuedCommits;
-	private final Object rebuildSubmissionLock = new Object();
-	private final AtomicBoolean rebuildPending = new AtomicBoolean();
-	private volatile Future<?> rebuildFuture;
-	private volatile CompletableFuture<Void> startupScheduling;
-	private final AtomicBoolean quiescentRebuildPending = new AtomicBoolean();
-	private final AtomicBoolean quiescentRebuildTaskScheduled = new AtomicBoolean();
-	/**
-	 * Set while a pending quiescent rebuild has yielded to live views; the release that drops the count to zero resumes
-	 * it. This must not depend on {@link #maintenanceState}: a gap recorded meanwhile sets DEGRADED_GAP, and a release
-	 * that then skipped the resume left the rebuild pending forever, so every later request was ignored.
-	 */
-	private final AtomicBoolean quiescentRebuildAwaitingViews = new AtomicBoolean();
-	private volatile boolean quiescentRebuildRetryAllowed;
-	/** {@link #GAP_RECOVERY_NEVER_ATTEMPTED} until the read path has requested one gap recovery. */
-	private final AtomicLong lastGapRecoveryNanos = new AtomicLong(GAP_RECOVERY_NEVER_ATTEMPTED);
-	/**
-	 * Set once the projection has been proven inconsistent with the authoritative rows. It gates serving rather than
-	 * destroying the structure, and it clears on the next successful publication, so a fault degrades this one
-	 * capability temporarily instead of permanently.
-	 */
 	private final AtomicBoolean nodePredicateInconsistent = new AtomicBoolean();
-
-	/** Sealed commits awaiting apply, strictly revision ascending; drained on the maintenance executor. */
-	private final ArrayDeque<SealedDirectDelta> applyQueue = new ArrayDeque<>();
-	/** Connection-owned nesting depth for inferred/explicit branch flushes in one logical commit. */
-	private final ThreadLocal<Integer> logicalCommitBatchDepth = ThreadLocal.withInitial(() -> 0);
-	private final ThreadLocal<CompletableFuture<Void>> commitPublication = new ThreadLocal<>();
-	private final AtomicLong publicationWaitNanos = new AtomicLong();
-
-	private volatile boolean applierPausedForTest;
-	/** Test-only interleaving hook: runs once a build has started, before it pins its source snapshot. */
-	volatile Runnable beforeBuildSnapshotForTest;
-	/** Test-only interleaving hook: runs right after a build pins its source snapshot. */
-	volatile Runnable afterBuildSnapshotForTest;
-	/** Test-only interleaving hook: runs after the base scan completes and before online catch-up begins. */
-	volatile Runnable afterBuildScanForTest;
-	/** Test-only observation hook: runs before catch-up waits for a commit delta that has not arrived. */
-	volatile Runnable catchUpWaitForTest;
-	/** Runs after the online target is captured, before its deltas are consumed. */
-	volatile Runnable beforeOnlineCatchUpForTest;
-	/** Runs after final admission closes, before admitted writers are drained. */
-	volatile Runnable afterWriteAdmissionClosedForTest;
-	volatile Runnable beforeWriteAdmissionWaitForTest;
-	/** Test-only interleaving hook: runs after a candidate paged rewrite and before publication validation. */
-	volatile Runnable beforePagedCsfPublicationForTest;
-	/** Test-only interleaving hook: runs after a delta merge is built and before publication validation. */
-	volatile Runnable beforeDeltaCompactionPublicationForTest;
-	/** Test-only interleaving hook: runs after commit admission checks and before queue ownership transfer. */
-	volatile Runnable beforeApplyQueueAdmissionForTest;
-	/** Test-only interleaving hook: runs after a queued commit is observed and before it is applied. */
-	volatile Runnable beforeApplyDrainForTest;
-	/** Test-only interleaving hook: runs on the preparation executor before any prepared output is built. */
-	volatile Runnable beforePreparationForTest;
-	/** Test-only interleaving hook: runs after prepared output is complete but before its future becomes visible. */
-	volatile Runnable afterPreparationForTest;
-	/** Test-only observation hook: runs after LMDB commit succeeds and before the caller waits for preparation. */
-	volatile Runnable beforePreparedFinalizeWaitForTest;
-	/** Test-only interleaving hook: runs after an exact state is validated and before the view is returned. */
-	volatile Runnable beforeExactViewReturnForTest;
-	/** Test-only observation hook: runs after view quiescence and before replacement construction starts. */
-	volatile Runnable beforeQuiescentBuildForTest;
+	private final AtomicLong activeViews = new AtomicLong();
+	/** Strict mode remembers the first unexpected build or prepare failure; gaps and refusals are not failures. */
+	private volatile Throwable unexpectedMaintenanceFailure;
 	/**
-	 * Test-only interleaving hook: runs at the head of one quiescent-rebuild step, before the retiring publication is
-	 * replaced. A commit that records a gap now schedules its own recovery, so a test asserting the degraded window has
-	 * to pin that window open rather than out-run the maintenance thread.
+	 * True from opening over an empty store until its startup build publishes a base, fails, or is deferred for an
+	 * initial import. Committers of a new store wait for that build (it is trivial and makes their first commits exact
+	 * at once); a populated store's build never blocks them. Decided when this store opens, not when the build worker
+	 * pins: the first commit may land before the pin, and the worker would then find a populated store.
 	 */
-	volatile Runnable beforeQuiescentRebuildStepForTest;
-	private volatile MaintenanceState maintenanceState = MaintenanceState.EMPTY;
-	private volatile String lastBuildFailureDescription = "<none>";
+	private volatile boolean awaitStartupBuild;
+	/** Test seam: false forces every preparation onto a worker so a test can observe the hand-off. */
+	private volatile boolean inlineSmallPrepares = true;
+	private static final long INLINE_PREPARE_MAX_BYTES = 16 * 1024;
+	/** Test seam: false prepares every record as its own generation. */
+	private volatile boolean coalescePrepares = true;
+	private static final long COALESCE_MAX_BYTES = 1024 * 1024;
+	/** Whether a rebuild has been requested; before the startup build starts it tells committers one is coming. */
+	private volatile boolean startupBuildRequested;
+	private final ThreadLocal<Integer> logicalCommitBatchDepth = ThreadLocal.withInitial(() -> 0);
+	// Test seams that are not interleaving hooks: fault injection consumed by the worker, an observable count of
+	// writers waiting for admission, and the switch that lets a committer wait behind a paused (stepped) applier.
+	private final AtomicReference<RuntimeException> injectedBuildFailure = new AtomicReference<>();
+	private final AtomicInteger injectedBuildFailuresLeft = new AtomicInteger();
+	private final AtomicReference<RuntimeException> injectedAcquireFailure = new AtomicReference<>();
+	private final AtomicReference<RuntimeException> injectedPrepareFailure = new AtomicReference<>();
+	private final AtomicInteger admissionWaiters = new AtomicInteger();
+	private volatile boolean committersWaitWhilePaused;
+	private volatile CompletableFuture<Void> startupScheduling;
 	private volatile boolean closed;
 
 	LmdbDirectAdjacencyStore(TripleStore tripleStore, ValueStore valueStore, AtomicBoolean storeTxnStarted,
@@ -264,61 +185,100 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		this.baseArenaRegionBytes = region;
 		this.workspaceRegionBytes = Math.max(1L << 16, region >>> 3);
-		this.published = new AtomicReference<>(
-				new LmdbAdjacencyPublishedState(0, null, -1, Long.MAX_VALUE, AdjacencyServingState.UNAVAILABLE));
-		this.maintenanceThreadFactory = new TrackedThreadFactory("lmdb-direct-adjacency-maintenance");
-		this.preparationThreadFactory = new TrackedThreadFactory("lmdb-direct-adjacency-preparation");
-		this.compactionThreadFactory = new TrackedThreadFactory("lmdb-direct-adjacency-compaction");
-		this.maintenanceExecutor = new ScheduledThreadPoolExecutor(1, maintenanceThreadFactory);
-		maintenanceExecutor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
-		maintenanceExecutor.setRemoveOnCancelPolicy(true);
-		this.preparationExecutor = Executors.newSingleThreadExecutor(preparationThreadFactory);
-		this.compactionExecutor = Executors.newSingleThreadExecutor(compactionThreadFactory);
+		this.log = tripleStore.adjacencyCommitLog();
+		this.scheduler = new ThreadApplierScheduler("lmdb-direct-adjacency-applier");
+		this.workerExecutor = Executors.newFixedThreadPool(2, daemonThreads("lmdb-direct-adjacency-worker"));
+		this.workers = new ExecutorAdjacencyWorkerPool(workerExecutor);
+		this.captureExecutor = Executors.newSingleThreadExecutor(daemonThreads("lmdb-direct-adjacency-capture"));
+		this.accelerationExecutor = Executors.newSingleThreadExecutor(
+				daemonThreads("lmdb-direct-adjacency-acceleration"));
+		this.applier = new AdjacencyApplier<>(log, new IndexOps(), new CompactionPolicy(), workers, scheduler,
+				options.backlogMaxBytes(), options.buildRetryMillis());
+		// In synchronous mode a committer outside a logical batch would wait for its record anyway: it applies the
+		// record itself while confirming it, and the loop thread is only woken when it cannot.
+		applier.confirmedRecordHandledOnCommitter(() -> {
+			if (!options.synchronousMaintenance() || options.memoryRefused() || closed
+					|| logicalCommitBatchDepth.get() != 0 || scheduler.isPaused()
+					|| applierState().status() != AdjacencyState.Status.SERVING || !scheduler.helpOnce()) {
+				return false;
+			}
+			metrics.recordHelpedUnit();
+			return true;
+		});
 		if (options.memoryRefused()) {
-			maintenanceState = MaintenanceState.MEMORY_REFUSED;
 			logger.warn("Direct adjacency stays unavailable: the effective memory cap {} bytes is below the {}-byte "
 					+ "minimum; the store remains fully usable through LMDB", options.effectiveMaxBytes(),
 					LmdbDirectAdjacencyOptions.MIN_EXPLICIT_BYTES);
 		}
+		this.awaitStartupBuild = !options.memoryRefused() && openedEmpty(tripleStore);
+		applier.start();
 	}
 
-	/**
-	 * Tracks the latest worker weakly without retaining its enclosing store. Single-thread executor cleaners retain
-	 * their thread factory while they are registered, and a not-yet-started worker can still retain its first task.
-	 */
-	static final class TrackedThreadFactory implements ThreadFactory {
-		private final String threadName;
-		private volatile WeakReference<Thread> currentThread = new WeakReference<>(null);
-
-		TrackedThreadFactory(String threadName) {
-			this.threadName = threadName;
+	private static boolean openedEmpty(TripleStore tripleStore) {
+		try {
+			return tripleStore.isEmpty();
+		} catch (IOException e) {
+			logger.warn("Could not tell whether the store is empty; its committers will not wait for the startup "
+					+ "adjacency build", e);
+			return false;
 		}
+	}
 
-		@Override
-		public Thread newThread(Runnable runnable) {
-			Thread thread = new Thread(runnable, threadName);
+	private static ThreadFactory daemonThreads(String name) {
+		AtomicInteger counter = new AtomicInteger();
+		return runnable -> {
+			Thread thread = new Thread(runnable, name + "-" + counter.incrementAndGet());
 			thread.setDaemon(true);
-			currentThread = new WeakReference<>(thread);
 			return thread;
-		}
-
-		Thread currentThread() {
-			return currentThread.get();
-		}
+		};
 	}
 
 	LmdbDirectAdjacencyOptions options() {
 		return options;
 	}
 
+	private AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> applierState() {
+		return applier.state();
+	}
+
+	/** The retired lifecycle enum, derived from the applier's phase for metrics and diagnostics. */
 	MaintenanceState maintenanceState() {
-		return maintenanceState;
+		if (options.memoryRefused()) {
+			return MaintenanceState.MEMORY_REFUSED;
+		}
+		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+		switch (state.phase()) {
+		case BUILDING:
+			return MaintenanceState.BUILDING;
+		case ACTIVE:
+			return applier.compactionInFlight() ? MaintenanceState.CONSOLIDATING : MaintenanceState.ACTIVE;
+		case CONSOLIDATING:
+			return MaintenanceState.CONSOLIDATING;
+		case DEGRADED_GAP:
+			return MaintenanceState.DEGRADED_GAP;
+		case MEMORY_REFUSED:
+			return MaintenanceState.MEMORY_REFUSED;
+		case CLOSED:
+			return MaintenanceState.CLOSED;
+		default:
+			return MaintenanceState.EMPTY;
+		}
 	}
 
 	/** Factual in-memory work state; querying it never starts a build or opens a native reader. */
 	boolean hasPendingMaintenance() {
 		CompletableFuture<Void> scheduling = startupScheduling;
-		return scheduling != null && !scheduling.isDone() || maintenanceCanReachReadiness();
+		if (scheduling != null && !scheduling.isDone()) {
+			return true;
+		}
+		if (closed || options.memoryRefused()) {
+			return false;
+		}
+		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+		if (state.status() == AdjacencyState.Status.SERVING) {
+			return state.appliedRevision() < log.headRevision() || applier.hasWork();
+		}
+		return state.status() != AdjacencyState.Status.CLOSED;
 	}
 
 	void setStartupScheduling(CompletableFuture<Void> scheduling) {
@@ -327,11 +287,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	/** Monotone publish counter; a component of the adaptive cost model's regime key. */
 	long epochCount() {
-		return epochs.get();
+		return applierState().epoch();
 	}
 
 	String lastBuildFailureDescription() {
-		return lastBuildFailureDescription;
+		String reason = applierState().reason();
+		return reason == null ? "<none>" : reason;
 	}
 
 	LmdbAdjacencyMemoryAccount memoryAccount() {
@@ -348,9 +309,56 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return storeTxnDirty;
 	}
 
-	/** Test/diagnostic accessor for the current publication (not retained; do not read rows through it). */
+	/** Test/diagnostic projection of the current publication with the pending tables up to the log head. */
+	long helpedUnitsForTest() {
+		return metrics.helpedUnits();
+	}
+
+	long workspaceRegionBytesForTest() {
+		return workspaceRegionBytes;
+	}
+
 	LmdbAdjacencyPublishedState publishedStateForTest() {
-		return published.get();
+		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+		return project(state, pendingTablesAbove(state.appliedRevision(), log.headRevision()));
+	}
+
+	/** Test seam: the applier's current published state. */
+	AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> applierStateForTest() {
+		return applierState();
+	}
+
+	private PendingTable[] pendingTablesAbove(long appliedRevision, long toInclusive) {
+		List<PendingTable> pending = new ArrayList<>();
+		log.forEachAfter(appliedRevision, toInclusive, record -> {
+			if (record.kind() == AdjacencyCommitLog.Kind.DELTA && record.pending() instanceof PendingTable table) {
+				pending.add(table);
+			}
+		});
+		return pending.toArray(new PendingTable[0]);
+	}
+
+	private static LmdbAdjacencyPublishedState project(
+			AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state, PendingTable[] pending) {
+		LmdbInMemoryAdjacencyIndex base = state.base();
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		LmdbAdjacencyPlaneStatistics statistics = overlays != null && overlays.planeStatistics() != null
+				? overlays.planeStatistics()
+				: base != null ? base.planeStatistics() : LmdbAdjacencyPlaneStatistics.empty();
+		AdjacencyServingState serving;
+		switch (state.status()) {
+		case SERVING:
+			serving = AdjacencyServingState.ROW_EXACT;
+			break;
+		case CLOSED:
+			serving = AdjacencyServingState.CLOSED;
+			break;
+		default:
+			serving = AdjacencyServingState.UNAVAILABLE;
+			break;
+		}
+		return new LmdbAdjacencyPublishedState(state.epoch(), base, overlays, pending, state.appliedRevision(),
+				state.gapFromRevision(), serving, state.minSnapshotRevision(), statistics);
 	}
 
 	// ------------------------------------------------------------------
@@ -359,695 +367,601 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	/**
 	 * The event collector installed into {@link TripleStore}; created once so capture is complete before any build
-	 * snapshot is acquired (online catch-up requirement).
+	 * snapshot is acquired. Its sealed deltas reach this index only through the TripleStore's commit log.
 	 */
 	LmdbDirectAdjacencyCommitDelta newCommitDelta() {
-		return new LmdbDirectAdjacencyCommitDelta(account, options.commitMaxBytes(), storeTxnDirty,
-				preparationExecutor, () -> {
-					Runnable hook = beforePreparationForTest;
-					if (hook != null) {
-						hook.run();
-					}
-				}, () -> {
-					LmdbAdjacencyMemoryAccount budget = connectionCaptureBudget;
-					return budget == null ? account : budget;
-				});
+		return new LmdbDirectAdjacencyCommitDelta(account, options.commitMaxBytes(), storeTxnDirty, captureExecutor,
+				null, null, () -> account);
 	}
 
 	/**
-	 * The listener invoked under the TxnManager write lock, after the authoritative LMDB commit and before
-	 * {@code dataRevision} becomes visible: publishes the pending marker (or the gap) for the committed revision.
+	 * No listener is needed any more: the TripleStore appends every sealed delta to the commit log itself. Returns null
+	 * so existing wiring code keeps compiling.
 	 */
 	TripleStore.DirectAdjacencyCommitListener commitListener() {
-		return new TripleStore.DirectAdjacencyCommitListener() {
-			@Override
-			public void beforeRevisionBump(SealedDirectDelta sealed, long nextRevision) {
-				LmdbDirectAdjacencyStore.this.beforeRevisionBump(sealed, nextRevision);
-			}
-
-			@Override
-			public PreparedCommit prepare(SealedDirectDelta sealed, long nextRevision) {
-				PreparedAdjacencyCommit prepared = prepareSynchronousCommit(sealed, nextRevision);
-				return prepared != null ? prepared
-						: TripleStore.DirectAdjacencyCommitListener.super.prepare(sealed, nextRevision);
-			}
-
-			@Override
-			public PreparedCommit prepareAsync(Future<SealedDirectDelta> sealed, long nextRevision) {
-				return prepareAsyncCommit(sealed, nextRevision);
-			}
-
-			@Override
-			public SealedDirectDelta finalizeCommit(PreparedCommit prepared) {
-				if (prepared instanceof AsyncPreparedCommit async) {
-					if (async.deferred) {
-						asyncPublicationRevision.accumulateAndGet(async.revision, Math::max);
-						recordPublication(async.revision, async.publication);
-					}
-					async.committed.complete(true);
-					Runnable hook = beforePreparedFinalizeWaitForTest;
-					if (hook != null) {
-						hook.run();
-					}
-					if (async.deferred) {
-						return null;
-					}
-					long waitStarted = async.result.isDone() ? 0L : System.nanoTime();
-					try {
-						SealedDirectDelta result = LmdbDirectAdjacencyCommitDelta.awaitSealed(async.result);
-						if (Thread.currentThread().isInterrupted()) {
-							if (result != null) {
-								releaseDelta(result);
-							}
-							RuntimeException reported = preparedCommitFailure(async.revision, "commit publication",
-									new InterruptedException("Interrupted while awaiting commit publication"));
-							if (reported != null) {
-								throw reported;
-							}
-							return null;
-						}
-						return result;
-					} catch (RuntimeException failure) {
-						RuntimeException reported = preparedCommitFailure(async.revision, "commit preparation",
-								failure);
-						if (reported != null) {
-							throw reported;
-						}
-						return null;
-					} finally {
-						if (waitStarted != 0) {
-							publicationWaitNanos.addAndGet(Math.max(0L, System.nanoTime() - waitStarted));
-						}
-					}
-				}
-				if (prepared instanceof PreparedAdjacencyCommit adjacencyCommit) {
-					return finalizeSynchronousCommit(adjacencyCommit);
-				}
-				return TripleStore.DirectAdjacencyCommitListener.super.finalizeCommit(prepared);
-			}
-
-			@Override
-			public void abort(PreparedCommit prepared) {
-				if (prepared instanceof AsyncPreparedCommit async) {
-					async.committed.complete(false);
-					SealedDirectDelta abandoned = LmdbDirectAdjacencyCommitDelta.awaitSealed(async.result);
-					if (abandoned != null) {
-						releaseDelta(abandoned);
-					}
-				} else if (prepared instanceof PreparedAdjacencyCommit adjacencyCommit) {
-					abortSynchronousCommit(adjacencyCommit);
-				} else {
-					TripleStore.DirectAdjacencyCommitListener.super.abort(prepared);
-				}
-			}
-
-			@Override
-			public void physicalCommitFailedBeforeRevisionBump(long nextRevision) {
-				// the physical database advanced while this delta did not: only a rebuild can re-derive the rows
-				markGapAndScheduleRecovery(nextRevision);
-			}
-		};
-	}
-
-	private static final class AsyncPreparedCommit implements TripleStore.DirectAdjacencyCommitListener.PreparedCommit {
-		final long revision;
-		final CompletableFuture<Boolean> committed = new CompletableFuture<>();
-		final CompletableFuture<Void> publication = new CompletableFuture<>();
-		final boolean deferred;
-		Future<SealedDirectDelta> result;
-
-		AsyncPreparedCommit(long revision, boolean deferred) {
-			this.revision = revision;
-			this.deferred = deferred;
-		}
-	}
-
-	private AsyncPreparedCommit prepareAsyncCommit(Future<SealedDirectDelta> sealing, long revision) {
-		AsyncPreparedCommit commit = new AsyncPreparedCommit(revision, connectionWriteAdmitted);
-		LmdbAdjacencyPublishedState predecessor = null;
-		publicationLock.lock();
-		try {
-			LmdbAdjacencyPublishedState current = published.get();
-			if (!closed && options.synchronousMaintenance() && synchronousUpdatesActivated.get()
-					&& current.base() != null && current.servingState() == AdjacencyServingState.ROW_EXACT
-					&& current.appliedRevision() + 1 == revision && current.gapFromRevision() > revision
-					&& emergencyGap.get().fromRevision() > revision && current.tryRetain()) {
-				predecessor = current;
-				preparationsInFlight.incrementAndGet();
-			}
-		} finally {
-			publicationLock.unlock();
-		}
-		LmdbAdjacencyPublishedState retained = predecessor;
-		try {
-			long[] capturedSelected = retained == null ? new long[0] : captureResolvedSelectedPredicates(retained);
-			commit.result = preparationExecutor.submit(() -> {
-				SealedDirectDelta sealed = null;
-				PreparedApply prepared = null;
-				boolean transferred = false;
-				try {
-					sealed = LmdbDirectAdjacencyCommitDelta.awaitSealed(sealing);
-					if (retained != null && !sealed.isOverflowed()) {
-						long started = System.nanoTime();
-						try {
-							Runnable hook = beforePreparationForTest;
-							if (hook != null) {
-								hook.run();
-							}
-							long[] selected = sealed.hasCapturedCoverage() ? sealed.resolvedSelectedPredicates()
-									: capturedSelected;
-							prepared = prepareApply(sealed, retained, selected, true);
-							hook = afterPreparationForTest;
-							if (hook != null) {
-								hook.run();
-							}
-						} finally {
-							metrics.recordPreparation(Math.max(0L, System.nanoTime() - started));
-						}
-					}
-					if (!commit.committed.join()) {
-						return null;
-					}
-					if (prepared != null) {
-						long started = System.nanoTime();
-						try {
-							publishPrepared(sealed, retained, prepared, true);
-							sealed.publication.complete(null);
-							commit.publication.complete(null);
-						} finally {
-							metrics.recordPublication(Math.max(0L, System.nanoTime() - started));
-						}
-						requestCompactionIfNeeded(published.get());
-						return null;
-					}
-					beforeRevisionBump(sealed, revision);
-					if (commit.deferred) {
-						sealed.publication.whenComplete((ignored, failure) -> {
-							if (failure == null) {
-								commit.publication.complete(null);
-							} else {
-								commit.publication.completeExceptionally(failure);
-							}
-						});
-						transferred = true;
-						applyCommitted(sealed, false);
-						return null;
-					}
-					transferred = true;
-					return sealed;
-				} catch (RuntimeException | Error failure) {
-					if (commit.deferred && commit.committed.join()) {
-						RuntimeException reported = preparedCommitFailure(revision, "commit preparation", failure);
-						if (reported == null) {
-							commit.publication.complete(null);
-						} else {
-							commit.publication.completeExceptionally(reported);
-						}
-					}
-					throw failure;
-				} finally {
-					if (prepared != null) {
-						prepared.close();
-					}
-					if (sealed != null && !transferred) {
-						releaseDelta(sealed);
-					}
-					if (retained != null) {
-						retained.release();
-						completePreparationReservation();
-					}
-				}
-			});
-			return commit;
-		} catch (RuntimeException failure) {
-			if (retained != null) {
-				retained.release();
-				completePreparationReservation();
-			}
-			SealedDirectDelta abandoned = LmdbDirectAdjacencyCommitDelta.awaitSealed(sealing);
-			releaseDelta(abandoned);
-			throw failure;
-		}
-	}
-
-	private final class PreparedAdjacencyCommit implements TripleStore.DirectAdjacencyCommitListener.PreparedCommit {
-		final SealedDirectDelta sealed;
-		final LmdbAdjacencyPublishedState predecessor;
-		final Future<PreparedApply> future;
-		final AtomicBoolean completed = new AtomicBoolean();
-
-		PreparedAdjacencyCommit(SealedDirectDelta sealed, LmdbAdjacencyPublishedState predecessor,
-				Future<PreparedApply> future) {
-			this.sealed = sealed;
-			this.predecessor = predecessor;
-			this.future = future;
-		}
-
-		void completeOwnership() {
-			if (!completed.compareAndSet(false, true)) {
-				return;
-			}
-			try {
-				releaseDelta(sealed);
-			} finally {
-				try {
-					predecessor.release();
-				} finally {
-					completePreparationReservation();
-				}
-			}
-		}
-	}
-
-	private static final class PreparedApply implements AutoCloseable {
-		final LmdbAdjacencyDeltaGeneration generation;
-		final LmdbAdjacencyContextCatalog contextCatalog;
-		final boolean ownsContextCatalog;
-		final long[] extraSelected;
-		final LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate;
-		final LmdbAdjacencyDeltaApplier.StructuralStats structuralStats;
-		private boolean transferred;
-
-		PreparedApply(LmdbAdjacencyDeltaGeneration generation, LmdbAdjacencyContextCatalog contextCatalog,
-				boolean ownsContextCatalog, long[] extraSelected,
-				LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate,
-				LmdbAdjacencyDeltaApplier.StructuralStats structuralStats) {
-			this.generation = generation;
-			this.contextCatalog = contextCatalog;
-			this.ownsContextCatalog = ownsContextCatalog;
-			this.extraSelected = extraSelected;
-			this.planeStatisticsUpdate = planeStatisticsUpdate;
-			this.structuralStats = structuralStats;
-		}
-
-		void transfer() {
-			transferred = true;
-		}
-
-		@Override
-		public void close() {
-			if (transferred) {
-				return;
-			}
-			if (generation != null) {
-				generation.release();
-			}
-			if (ownsContextCatalog) {
-				contextCatalog.release();
-			}
-			transferred = true;
-		}
-	}
-
-	private PreparedAdjacencyCommit prepareSynchronousCommit(SealedDirectDelta sealed, long nextRevision) {
-		if (!options.synchronousMaintenance() || !synchronousUpdatesActivated.get() || sealed == null
-				|| sealed.isOverflowed() || sealed.revision() != nextRevision || closed) {
-			return null;
-		}
-		publicationLock.lock();
-		try {
-			LmdbAdjacencyPublishedState predecessor = published.get();
-			// Re-read under the lock: a build suspends synchronous publication under it before taking its snapshot.
-			if (!synchronousUpdatesActivated.get() || predecessor.base() == null
-					|| predecessor.servingState() != AdjacencyServingState.ROW_EXACT
-					|| predecessor.appliedRevision() + 1 != nextRevision
-					|| predecessor.gapFromRevision() <= nextRevision || !predecessor.tryRetain()) {
-				return null;
-			}
-			long[] resolvedSelected = sealed.hasCapturedCoverage()
-					? sealed.resolvedSelectedPredicates()
-					: captureResolvedSelectedPredicates(predecessor);
-			preparationsInFlight.incrementAndGet();
-			try {
-				Future<PreparedApply> future = preparationExecutor.submit(() -> {
-					long started = System.nanoTime();
-					try {
-						Runnable interleave = beforePreparationForTest;
-						if (interleave != null) {
-							interleave.run();
-						}
-						PreparedApply prepared = prepareApply(sealed, predecessor, resolvedSelected, true);
-						try {
-							interleave = afterPreparationForTest;
-							if (interleave != null) {
-								interleave.run();
-							}
-							return prepared;
-						} catch (RuntimeException | Error failure) {
-							prepared.close();
-							throw failure;
-						}
-					} finally {
-						metrics.recordPreparation(Math.max(0L, System.nanoTime() - started));
-					}
-				});
-				return new PreparedAdjacencyCommit(sealed, predecessor, future);
-			} catch (RuntimeException failure) {
-				completePreparationReservation();
-				predecessor.release();
-				return null;
-			}
-		} finally {
-			publicationLock.unlock();
-		}
-	}
-
-	private void completePreparationReservation() {
-		publicationLock.lock();
-		try {
-			int remaining = preparationsInFlight.decrementAndGet();
-			if (remaining < 0) {
-				throw new IllegalStateException("adjacency preparation reservation underflow");
-			}
-			if (remaining == 0) {
-				noPreparationsInFlight.signalAll();
-			}
-		} finally {
-			publicationLock.unlock();
-		}
-	}
-
-	private SealedDirectDelta finalizeSynchronousCommit(PreparedAdjacencyCommit preparedCommit) {
-		PreparedApply prepared = null;
-		boolean publishedCommit = false;
-		try {
-			Runnable interleave = beforePreparedFinalizeWaitForTest;
-			if (interleave != null) {
-				interleave.run();
-			}
-			prepared = preparedCommit.future.get();
-			long publicationStarted = System.nanoTime();
-			try {
-				publishPrepared(preparedCommit.sealed, preparedCommit.predecessor, prepared, true);
-			} finally {
-				metrics.recordPublication(Math.max(0L, System.nanoTime() - publicationStarted));
-			}
-			publishedCommit = true;
-			return null;
-		} catch (InterruptedException interrupted) {
-			prepared = awaitPreparedUninterruptibly(preparedCommit.future);
-			Thread.currentThread().interrupt();
-			RuntimeException failure = preparedCommitFailure(preparedCommit.sealed.revision(),
-					"interrupted commit preparation", interrupted);
-			if (failure != null) {
-				throw failure;
-			}
-			return null;
-		} catch (ExecutionException | CancellationException failure) {
-			Throwable cause = failure instanceof ExecutionException && failure.getCause() != null
-					? failure.getCause()
-					: failure;
-			RuntimeException reported = preparedCommitFailure(preparedCommit.sealed.revision(), "commit preparation",
-					cause);
-			if (reported != null) {
-				throw reported;
-			}
-			return null;
-		} catch (RuntimeException failure) {
-			RuntimeException reported = preparedCommitFailure(preparedCommit.sealed.revision(),
-					"commit publication", failure);
-			if (reported != null) {
-				throw reported;
-			}
-			return null;
-		} catch (Error failure) {
-			markGap(preparedCommit.sealed.revision());
-			throw failure;
-		} finally {
-			if (prepared != null) {
-				prepared.close();
-			}
-			preparedCommit.completeOwnership();
-			if (publishedCommit) {
-				requestCompactionIfNeeded(published.get());
-			}
-		}
-	}
-
-	private void abortSynchronousCommit(PreparedAdjacencyCommit preparedCommit) {
-		PreparedApply prepared = awaitPreparedUninterruptibly(preparedCommit.future);
-		try {
-			if (prepared != null) {
-				prepared.close();
-			}
-		} finally {
-			preparedCommit.completeOwnership();
-		}
-	}
-
-	private static PreparedApply awaitPreparedUninterruptibly(Future<PreparedApply> future) {
-		boolean interrupted = false;
-		try {
-			while (true) {
-				try {
-					return future.get();
-				} catch (InterruptedException e) {
-					interrupted = true;
-				} catch (ExecutionException | CancellationException ignored) {
-					return null;
-				}
-			}
-		} finally {
-			if (interrupted) {
-				Thread.currentThread().interrupt();
-			}
-		}
-	}
-
-	private RuntimeException preparedCommitFailure(long revision, String phase, Throwable cause) {
-		RuntimeException failure = unexpectedMaintenanceFailure(phase, cause);
-		markGap(revision);
-		maintenanceState = MaintenanceState.DEGRADED_GAP;
-		scheduleQuiescentRebuild();
-		if (options.failOnMaintenanceError()) {
-			return failure;
-		}
-		logger.warn("Direct adjacency {} failed after authoritative LMDB commit; revision {} uses fallback", phase,
-				revision, cause);
 		return null;
 	}
 
-	private void beforeRevisionBump(SealedDirectDelta sealed, long nextRevision) {
-		if (sealed == null) {
-			return;
-		}
-		if (sealed.revision() != nextRevision) {
-			releaseDelta(sealed);
-			markGapAndScheduleRecovery(nextRevision);
-			return;
-		}
-		if (closed) {
-			releaseDelta(sealed);
-			return;
-		}
-		if (sealed.isOverflowed()) {
-			// the commit still succeeds authoritatively; acceleration is disabled from this revision until the
-			// rebuild retires the gap. A bulk load overflows the commit collector routinely, so leaving the gap
-			// unscheduled would disable adjacency for the rest of the process.
-			markGapAndScheduleRecovery(nextRevision);
-			return;
-		}
-		if (sealed.isEmpty()) {
-			// nothing to mark: the applier advances the applied revision without a generation
-			return;
-		}
-		try {
-			publicationLock.lock();
-			try {
-				LmdbAdjacencyPublishedState current = published.get();
-				if (current.servingState() == AdjacencyServingState.CLOSED) {
-					return;
-				}
-				if (current.base() == null) {
-					// Initial reads already fall back wholesale. The byte-bounded delta queue proves continuity;
-					// per-row pending tables only add a count-based failure before a base can serve any row.
-					return;
-				}
-				if (nextRevision <= current.appliedRevision()) {
-					// A rebuild may already include this commit while asynchronous capture is still finishing.
-					// Its late pending table would never be removed: the applier skips already-applied deltas.
-					return;
-				}
-				PendingTable[] pending = current.pending();
-				if (pending.length >= MAX_PENDING_TABLES) {
-					// the maintenance executor has fallen too far behind: degrade instead of unbounded pending scans,
-					// then recover through the no-overlap rebuild once the applier drains
-					markGapAndScheduleRecovery(nextRevision);
-					return;
-				}
-				PendingTable[] appended = Arrays.copyOf(pending, pending.length + 1);
-				appended[pending.length] = sealed.pendingTable();
-				publish(replacementState(current, appended, current.appliedRevision()),
-						LmdbAdjacencyGenerationTransition.noChange());
-			} finally {
-				publicationLock.unlock();
-			}
-		} catch (RuntimeException e) {
-			// allocation-free correctness backstop: every row at this revision and later falls back
-			markGapAndScheduleRecovery(nextRevision);
-			logger.warn("Direct adjacency pending publication failed; revision gap recorded", e);
-			if (options.failOnMaintenanceError()) {
-				RuntimeException failure = unexpectedMaintenanceFailure("pending publication", e);
-				rememberUnexpectedMaintenanceFailure(failure);
-				throw failure;
-			}
-		}
-	}
-
-	/**
-	 * A replacement state sharing the current base and overlays (each retained), with new pending tables and applied
-	 * revision. Caller holds {@link #publicationLock}.
-	 */
-	private LmdbAdjacencyPublishedState replacementState(LmdbAdjacencyPublishedState current, PendingTable[] pending,
-			long appliedRevision) {
-		LmdbInMemoryAdjacencyIndex base = current.base();
-		if (base != null) {
-			base.retain();
-		}
-		LmdbAdjacencyOverlaySet overlays = current.overlays();
-		if (overlays != null) {
-			overlays.retain();
-		}
-		return new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), base, overlays, pending, appliedRevision,
-				current.gapFromRevision(), current.servingState(), current.minSnapshotRevision(),
-				current.planeStatistics());
-	}
-
-	/**
-	 * Hands one drained sealed commit to the applier queue after the complete authoritative sail-store commit.
-	 */
+	/** Retired hand-off: deltas reach the applier through the commit log. Kept for callers that still pass one. */
 	void applyCommitted(SealedDirectDelta sealed) {
 		applyCommitted(sealed, true);
 	}
 
 	void applyCommitted(SealedDirectDelta sealed, boolean awaitPublication) {
-		if (sealed == null) {
-			return;
-		}
-		commitPublication.set(sealed.publication);
-		recordPublication(sealed.revision(), sealed.publication);
-		try {
-			throwIfStrictMaintenanceFailed();
-		} catch (RuntimeException failure) {
-			releaseDelta(sealed);
-			throw failure;
-		}
-		if (sealed.isOverflowed()) {
-			sealed.publication.complete(null);
-			releaseDelta(sealed);
-			return;
-		}
-		Runnable admissionHook = beforeApplyQueueAdmissionForTest;
-		if (admissionHook != null) {
-			try {
-				admissionHook.run();
-			} catch (RuntimeException | Error failure) {
-				releaseDelta(sealed);
-				throw failure;
-			}
-		}
-		synchronized (applyQueue) {
-			if (closed) {
-				releaseDelta(sealed);
-				return;
-			}
-			applyQueue.addLast(sealed);
-			applyQueue.notifyAll();
-		}
-		Future<?> drain;
-		try {
-			drain = submitDrain();
-		} catch (RuntimeException failure) {
-			boolean removed;
-			synchronized (applyQueue) {
-				removed = applyQueue.removeLastOccurrence(sealed);
-			}
-			if (removed) {
-				releaseDelta(sealed);
-			}
-			throw failure;
+		if (sealed != null) {
+			sealed.close();
 		}
 		if (awaitPublication && logicalCommitBatchDepth.get() == 0) {
 			awaitBackingWritePublication();
 		}
 	}
 
-	private void recordPublication(long revision, CompletableFuture<Void> completion) {
-		synchronized (admissionMonitor) {
-			if (revision >= lastPublicationRevision) {
-				lastPublicationRevision = revision;
-				lastCommittedPublication = completion;
-			}
-		}
-		unpublishedRevisions.put(revision, completion);
-		completion.whenComplete((ignored, failure) -> unpublishedRevisions.remove(revision, completion));
-	}
-
 	void captureBackingWritePublication() {
-		// The sink lock still excludes the next backing commit, including the ingest worker's handoff.
-		commitPublication.set(lastCommittedPublication);
+		// the commit log already holds the revision; nothing to capture
 	}
 
+	/** A committer waits for its revision to be applied, unless it is inside a logical commit batch. */
 	void awaitBackingWritePublication() {
-		if (logicalCommitBatchDepth.get() == 0 && !connectionWriteAdmitted) {
-			CompletableFuture<Void> completion = commitPublication.get();
-			commitPublication.remove();
-			awaitPublication(completion);
+		if (logicalCommitBatchDepth.get() == 0) {
+			awaitCommitPublication();
 		}
 	}
 
-	private void awaitPublication(CompletableFuture<Void> completion) {
-		throwIfStrictMaintenanceFailed();
-		if (completion == null || completion.isDone() || maintenanceUnavailable || !options.synchronousMaintenance()
-				|| !synchronousUpdatesActivated.get()) {
-			return;
-		}
-		long started = System.nanoTime();
-		try {
-			awaitSynchronousMaintenance(completion, "revision publication");
-			throwIfStrictMaintenanceFailed();
-		} finally {
-			publicationWaitNanos.addAndGet(Math.max(0L, System.nanoTime() - started));
-		}
+	void beginLogicalCommitBatch() {
+		logicalCommitBatchDepth.set(logicalCommitBatchDepth.get() + 1);
 	}
 
-	private Future<?> submitDrain() {
-		if (closed) {
-			return null;
+	/** Ends a connection's logical commit; with synchronous maintenance the connection waits for its revision here. */
+	void endLogicalCommitBatch() {
+		int depth = logicalCommitBatchDepth.get() - 1;
+		if (depth <= 0) {
+			logicalCommitBatchDepth.remove();
+			awaitCommitPublication();
+		} else {
+			logicalCommitBatchDepth.set(depth);
 		}
-		try {
-			return submitMaintenance(this::drainApplyQueue);
-		} catch (RuntimeException e) {
-			if (!closed) {
-				throw e;
-			}
-			return null;
-		}
-	}
-
-	private Future<?> submitMaintenance(Runnable maintenance) {
-		return maintenanceExecutor.submit(() -> {
-			try {
-				maintenance.run();
-			} catch (RuntimeException failure) {
-				rememberUnexpectedMaintenanceFailure(failure);
-				throw failure;
-			}
-		});
 	}
 
 	/**
-	 * Schedules optional immutable-base acceleration without making an expected admission refusal or a stale-generation
-	 * race transition the store's maintenance state. The task itself is synchronized with base retirement by the
-	 * base-owned {@code SharedPartitionLookup}; close rejects new work and queued tasks observe the closed lookup.
+	 * Synchronous maintenance: wait until the applier has applied the current data revision. The wait completes early
+	 * when the applier cannot apply it (not serving, gap, closed), because LMDB stays authoritative and readers fall
+	 * back. Runs outside every lock a committer may hold; the applier and its workers need none of them. Strict mode
+	 * reports a maintenance failure only after the wait has settled, so the committer sees the failure together with
+	 * the state the applier published for it: a worker remembers a failed preparation before the applier has consumed
+	 * its outcome and published the gap.
 	 */
+	private void awaitCommitPublication() {
+		if (scheduler.isPaused() && !committersWaitWhilePaused) {
+			// A paused applier is a test condition; waiting for publication would deadlock the committing test thread.
+			// Tests pause the applier to observe the pending window, which begins once the record is sealed.
+			awaitHeadSealed(10, TimeUnit.SECONDS);
+			throwIfStrictMaintenanceFailed();
+			return;
+		}
+		if (!closed && options.synchronousMaintenance() && !options.memoryRefused()) {
+			awaitRevisionPublication(tripleStore.getDataRevision());
+		}
+		throwIfStrictMaintenanceFailed();
+	}
+
+	private void awaitRevisionPublication(long revision) {
+		long waitStarted = System.nanoTime();
+		long warnAt = waitStarted + TimeUnit.SECONDS.toNanos(30);
+		try {
+			while (true) {
+				AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+				if (closed) {
+					break;
+				}
+				if (state.status() == AdjacencyState.Status.SERVING) {
+					if (state.appliedRevision() >= revision || state.gapFromRevision() <= revision) {
+						break;
+					}
+					// The committer applies the next unit itself while the applier thread has none in hand: its own
+					// record is sealed and confirmed by now, and its confirm did not wake the loop thread
+					// (committerAppliesConfirmedRecords), so this saves the wake-up and the hand-back.
+					if (scheduler.helpOnce()) {
+						metrics.recordHelpedUnit();
+						continue;
+					}
+					// the loop thread holds a unit or the record is not sealed yet: hand the record to the loop and
+					// wake on the next publish (the revision applied, a gap at or below it, or a state no longer
+					// serving)
+					scheduler.wake();
+					if (applier.awaitApplied(revision, 1, TimeUnit.SECONDS)) {
+						break;
+					}
+				} else if (awaitingStartupBuild(state)) {
+					// A new store's startup build. The applier gaps a commit that lands before the build consumes the
+					// log, since nothing applies it from there; the build's pin covers it all the same, so the gap does
+					// not end this wait. Re-checked each second in case the build fails, is deferred, or the startup
+					// housekeeping ends without requesting it.
+					applier.awaitServing(revision, 1, TimeUnit.SECONDS);
+				} else {
+					// a populated store's build or a failed index: LMDB stays authoritative, adjacency catches up
+					break;
+				}
+				if (System.nanoTime() >= warnAt) {
+					warnAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+					logger.warn("Commit at revision {} has waited {} ms for adjacency publication; applier state {}",
+							revision, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - waitStarted), state);
+				}
+			}
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	/**
+	 * Whether committers wait for a new store's startup build: the store opened empty, the build has not published,
+	 * failed or been deferred, and a build is running, requested, or about to be requested by the startup housekeeping
+	 * that is still running.
+	 */
+	private boolean awaitingStartupBuild(AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state) {
+		if (!awaitStartupBuild || applier.suspended()) {
+			return false;
+		}
+		switch (state.phase()) {
+		case BUILDING:
+			return true;
+		case EMPTY:
+			CompletableFuture<Void> scheduling = startupScheduling;
+			return startupBuildRequested || (scheduling != null && !scheduling.isDone());
+		default:
+			return false;
+		}
+	}
+
+	private void throwIfStrictMaintenanceFailed() {
+		if (!options.failOnMaintenanceError()) {
+			return;
+		}
+		Throwable failure = unexpectedMaintenanceFailure;
+		if (failure != null) {
+			throw new IllegalStateException("Unexpected direct adjacency maintenance failure", failure);
+		}
+		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+		if (state.phase() == AdjacencyState.Phase.FAILED) {
+			throw new IllegalStateException("Unexpected direct adjacency maintenance failure: " + state.reason());
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// write admission
+	// ------------------------------------------------------------------
+
+	/** A writer may proceed unless the applier is consuming and the unapplied log has reached its byte bound. */
+	boolean tryBeginBackingWrite() {
+		return closed || applier.writeAdmitted();
+	}
+
+	/** Connection-level admission, taken before the Sail branch locks: waits for the byte bound only. */
+	void beginConnectionWrite() throws InterruptedException {
+		awaitWriteAdmission();
+	}
+
+	void endConnectionWrite() {
+		// admission is derived from the log; nothing to release
+	}
+
+	void awaitWriteAdmission() throws InterruptedException {
+		if (closed) {
+			return;
+		}
+		if (applier.writeAdmitted()) {
+			return;
+		}
+		admissionWaiters.incrementAndGet();
+		try {
+			applier.awaitWriteAdmission();
+		} finally {
+			admissionWaiters.decrementAndGet();
+		}
+	}
+
+	void endBackingWrite() {
+		// admission is derived from the log; nothing to release
+	}
+
+	// ------------------------------------------------------------------
+	// maintenance requests
+	// ------------------------------------------------------------------
+
+	/** Schedules the repository-local background build; the applier builds when it is not suspended. */
+	void triggerBuild() {
+		requestRebuild();
+	}
+
+	/** Asks the applier for a rebuild: a fresh base pinned at the current revision replacing the published one. */
+	void requestRebuild() {
+		if (closed || options.memoryRefused()) {
+			return;
+		}
+		startupBuildRequested = true;
+		applier.requestRebuild();
+	}
+
+	void scheduleQuiescentRebuild() {
+		requestRebuild();
+	}
+
+	/**
+	 * A reader found an exact view at {@code revision} disagreeing with LMDB (SHADOW mismatch, node-predicate
+	 * inconsistency): the revision becomes a gap and a rebuild is requested.
+	 */
+	void reportCorruption(long revision, String reason) {
+		if (closed) {
+			return;
+		}
+		applier.reportCorruption(revision, reason);
+	}
+
+	/** Retired entry point; a gap is now a report to the applier. */
+	void markGap(long fromRevision) {
+		reportCorruption(fromRevision, "gap recorded");
+	}
+
+	void deferMaintenanceForInitialImport() {
+		// the rebuild after the import is over whatever the import loaded; committers do not wait for it
+		awaitStartupBuild = false;
+		applier.suspend();
+	}
+
+	void resumeMaintenanceAfterInitialImport() {
+		applier.resume();
+	}
+
+	/**
+	 * Waits until the applier serves the data revision current at this call. A bounded diagnostic seam for benchmarks
+	 * and operational startup checks; it never starts a build that configuration disabled.
+	 */
+	boolean awaitCurrentRevisionReady(long timeout, TimeUnit unit) throws InterruptedException {
+		Objects.requireNonNull(unit, "unit");
+		if (timeout < 0L) {
+			throw new IllegalArgumentException("timeout must be non-negative");
+		}
+		if (closed || options.memoryRefused()) {
+			return false;
+		}
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		CompletableFuture<Void> scheduling = startupScheduling;
+		if (scheduling != null) {
+			try {
+				scheduling.get(Math.max(0L, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+			} catch (TimeoutException | ExecutionException | CancellationException unavailable) {
+				return false;
+			}
+		}
+		long revision = tripleStore.getDataRevision();
+		while (true) {
+			if (options.failOnMaintenanceError() && unexpectedMaintenanceFailure != null) {
+				return false;
+			}
+			long remaining = deadline - System.nanoTime();
+			if (applier.awaitServing(revision, Math.min(Math.max(0L, remaining), TimeUnit.MILLISECONDS.toNanos(100)),
+					TimeUnit.NANOSECONDS)) {
+				return !writeTransactionBlocksAdjacency();
+			}
+			if (remaining <= 0 || closed) {
+				return false;
+			}
+			AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+			if (state.status() != AdjacencyState.Status.SERVING && applier.idle() && !applier.retryPending()
+					&& !applier.buildInFlight() && !applier.suspended()) {
+				// nothing is building, requested or scheduled: no wait will make this revision ready
+				return false;
+			}
+		}
+	}
+
+	/** Whether a committer currently waits for its revision: a serving index, or a new store's startup build. */
+	boolean synchronousUpdatesActivated() {
+		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+		return state.status() == AdjacencyState.Status.SERVING || awaitingStartupBuild(state);
+	}
+
+	int queuedCommitCount() {
+		if (closed) {
+			return 0;
+		}
+		return (int) Math.max(0L, log.headRevision() - applierState().appliedRevision());
+	}
+
+	/** Bytes of sealed, unapplied delta rows in the commit log; the quantity write admission is bounded by. */
+	long backlogBytes() {
+		return log.unappliedBytes();
+	}
+
+	long lastCutoverNanos() {
+		return 0L;
+	}
+
+	long lastCutoverRevisions() {
+		return 0L;
+	}
+
+	int lastCutoverQueuedCommits() {
+		return 0;
+	}
+
+	String publicationDiagnostics() {
+		StringBuilder records = new StringBuilder();
+		log.forEachAfter(log.floorRevision(), log.headRevision(), record -> records.append(' ').append(record));
+		return " applier=" + applierState() + ", logHead=" + log.headRevision() + ", logFloor=" + log.floorRevision()
+				+ ", unappliedBytes=" + log.unappliedBytes() + ", buildsStarted=" + snapshotMetrics().buildsStarted
+				+ ", buildsCompleted=" + snapshotMetrics().buildsCompleted + ", records=[" + records + " ]";
+	}
+
+	// ------------------------------------------------------------------
+	// test seams on the applier
+	// ------------------------------------------------------------------
+
+	/** Deterministic build for tests: requests a rebuild and waits until the current revision is served. */
+	boolean buildNowForTest() {
+		if (closed || options.memoryRefused()) {
+			return false;
+		}
+		boolean paused = scheduler.isPaused();
+		if (paused) {
+			scheduler.resume();
+		}
+		try {
+			applier.requestRebuild();
+			boolean serving = awaitServingOrSettled(120, TimeUnit.SECONDS);
+			// leave the applier quiescent so a test can pause and step it deterministically afterwards
+			awaitApplierIdleForTest(120, TimeUnit.SECONDS);
+			return serving && applierState().status() == AdjacencyState.Status.SERVING;
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("interrupted while building direct adjacency", e);
+		} finally {
+			if (paused) {
+				scheduler.pause();
+			}
+		}
+	}
+
+	boolean rebuildNowForTest() {
+		return buildNowForTest();
+	}
+
+	/**
+	 * Waits until the current revision is served, or until the applier has settled without serving it (the build failed
+	 * or was refused and only a delayed retry remains).
+	 */
+	private boolean awaitServingOrSettled(long timeout, TimeUnit unit) throws InterruptedException {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		long revision = tripleStore.getDataRevision();
+		while (true) {
+			if (applier.awaitServing(revision, 10, TimeUnit.MILLISECONDS)) {
+				return true;
+			}
+			if (applier.idle() && awaitWorkersIdleForTest(1, TimeUnit.MILLISECONDS)) {
+				return applier.awaitServing(revision, 1, TimeUnit.MILLISECONDS);
+			}
+			if (System.nanoTime() > deadline) {
+				return false;
+			}
+		}
+	}
+
+	/**
+	 * Pauses the applier loop at a unit boundary (true) or lets it run (false). Resuming waits (bounded) until the log
+	 * head is applied, as the retired queue drained synchronously on resume and tests expect the same.
+	 */
+	void pauseApplierForTest(boolean paused) {
+		if (paused) {
+			scheduler.pause();
+		} else {
+			scheduler.resume();
+			awaitHeadAppliedForTest(30, TimeUnit.SECONDS);
+		}
+	}
+
+	/** Waits until every unapplied record up to the log head is sealed (or gone); returns false on timeout. */
+	private boolean awaitHeadSealed(long timeout, TimeUnit unit) {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		while (true) {
+			boolean sealed = true;
+			long head = log.headRevision();
+			for (long revision = applierState().appliedRevision() + 1; revision <= head; revision++) {
+				AdjacencyCommitLog.Record record = log.record(revision);
+				if (record != null && !record.sealed()) {
+					sealed = false;
+					break;
+				}
+			}
+			if (sealed || closed || System.nanoTime() > deadline) {
+				return sealed;
+			}
+			Thread.onSpinWait();
+		}
+	}
+
+	/**
+	 * Waits until every record up to the log head is sealed. A commit's revision becomes visible before its record's
+	 * seal completes on a worker, and an exact view over an unapplied record needs the sealed pending keys.
+	 */
+	boolean awaitHeadSealedForTest(long timeout, TimeUnit unit) {
+		return awaitHeadSealed(timeout, unit);
+	}
+
+	/** Waits until the log head is applied; returns at once when the applier cannot apply it. */
+	boolean awaitHeadAppliedForTest(long timeout, TimeUnit unit) {
+		if (closed) {
+			return false;
+		}
+		try {
+			return applier.awaitApplied(log.headRevision(), timeout, unit);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return false;
+		}
+	}
+
+	/** Runs one applier unit on the calling thread while the loop is paused. */
+	boolean stepApplierForTest() {
+		return scheduler.stepWhilePaused();
+	}
+
+	/** Waits until the applier has nothing queued, requested or in flight on a worker. */
+	boolean awaitApplierIdleForTest(long timeout, TimeUnit unit) {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		while (!applier.idle() || !awaitWorkersIdleForTest(1, TimeUnit.MILLISECONDS)) {
+			if (System.nanoTime() > deadline) {
+				return false;
+			}
+			Thread.onSpinWait();
+		}
+		return true;
+	}
+
+	boolean buildInFlightForTest() {
+		return applier.buildInFlight();
+	}
+
+	/** Test seam: whether small deltas are prepared on the applier thread (true) or always on a worker. */
+	void inlineSmallPreparesForTest(boolean inline) {
+		inlineSmallPrepares = inline;
+	}
+
+	/** Test seam: whether a backlog of sealed records is prepared as one generation (true) or one each. */
+	void coalescePreparesForTest(boolean coalesce) {
+		coalescePrepares = coalesce;
+	}
+
+	/** Test seam: runs the merge worker operation for {@code [from, toInclusive]} of the current overlays. */
+	PreparedApply mergeForTest(int from, int toInclusive) throws Exception {
+		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
+		return new IndexOps().merge(state.base(), state.overlays(), from, toInclusive);
+	}
+
+	/** Whether a generation preparation is on a worker or its outcome waits in the applier's inbox. */
+	boolean prepareInFlightForTest() {
+		return applier.prepareInFlight();
+	}
+
+	boolean awaitWorkersIdleForTest(long timeout, TimeUnit unit) {
+		try {
+			return workers.awaitIdle(timeout, unit);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return false;
+		}
+	}
+
+	boolean awaitServingForTest(long timeout, TimeUnit unit) {
+		try {
+			return applier.awaitServing(tripleStore.getDataRevision(), timeout, unit);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			return false;
+		}
+	}
+
+	/** Waits until every committed record is applied or the applier gave up on it. */
+	void awaitCommitCleanupForTest() {
+		try {
+			awaitApplierIdleForTest(60, TimeUnit.SECONDS);
+			applier.awaitApplied(log.headRevision(), 60, TimeUnit.SECONDS);
+			awaitApplierIdleForTest(60, TimeUnit.SECONDS);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		}
+	}
+
+	/** Waits until no merge or fold is running or queued (and nothing else is in flight). */
+	void awaitCompactionForTest() {
+		awaitApplierIdleForTest(60, TimeUnit.SECONDS);
+	}
+
+	boolean compactionInFlightForTest() {
+		return applier.compactionInFlight();
+	}
+
+	/** The next {@code times} builds fail with {@code failure} once their scan completes (0 clears the injection). */
+	void injectBuildFailureForTest(RuntimeException failure, int times) {
+		injectedBuildFailuresLeft.set(times);
+		injectedBuildFailure.set(times > 0 ? failure : null);
+	}
+
+	/** The next generation preparation on a worker fails with {@code failure} before it allocates anything. */
+	void injectPrepareFailureForTest(RuntimeException failure) {
+		injectedPrepareFailure.set(failure);
+	}
+
+	/** The next exact acquisition throws {@code failure} after the applier handed out its state. */
+	void injectAcquireFailureForTest(RuntimeException failure) {
+		injectedAcquireFailure.set(failure);
+	}
+
+	/** Writers currently blocked in {@link #awaitWriteAdmission()}. */
+	int admissionWaitersForTest() {
+		return admissionWaiters.get();
+	}
+
+	/**
+	 * Lets committers wait for publication while the applier is paused, so a stepping test can observe a committer
+	 * blocked until it releases the unit that applies its revision. Off by default: a paused applier otherwise means
+	 * the committing test thread must not wait.
+	 */
+	void committersWaitWhilePausedForTest(boolean wait) {
+		committersWaitWhilePaused = wait;
+	}
+
+	/** Asks the applier to fold every generation without waiting; a stepping test consumes the units itself. */
+	void requestFoldForTest() {
+		applier.requestFold();
+	}
+
+	/** Consults the compaction policy now and waits for whatever it chose to publish or be discarded. */
+	void requestCompactionForTest() {
+		applier.requestCompaction();
+		awaitCompactionForTest();
+	}
+
+	/** Folds every published generation into a new base now, regardless of the policy, and waits for the result. */
+	void consolidateNowForTest() {
+		applier.requestFold();
+		awaitCompactionForTest();
+	}
+
+	/**
+	 * Folds only the first {@code prefixCount} generations now and keeps the rest as the suffix: the deterministic way
+	 * to obtain a generation that was prepared against the previous base (a foreign source registry).
+	 */
+	void consolidatePrefixNowForTest(int prefixCount) {
+		applier.requestFold(prefixCount);
+		awaitCompactionForTest();
+	}
+
+	int queuedCommitsForTest() {
+		return queuedCommitCount();
+	}
+
+	boolean synchronousUpdatesActivatedForTest() {
+		return synchronousUpdatesActivated();
+	}
+
+	void awaitAdaptiveAccelerationForTest() {
+		try {
+			accelerationExecutor.submit(() -> {
+			}).get(60, TimeUnit.SECONDS);
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+		} catch (ExecutionException | TimeoutException | RejectedExecutionException ignored) {
+			// the executor is shut down or stuck; the caller only needs a best-effort barrier
+		}
+	}
+
+	/** Best-effort background work requested by read kernels; failures never touch the exact packed path. */
 	private void scheduleAdaptiveAcceleration(Runnable acceleration) {
-		if (closed || maintenanceDeferred) {
+		if (closed) {
 			return;
 		}
 		try {
-			maintenanceExecutor.execute(() -> {
-				if (closed || maintenanceDeferred) {
+			accelerationExecutor.execute(() -> {
+				if (closed) {
 					return;
 				}
 				try {
@@ -1062,746 +976,103 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 	}
 
-	/** Waits until every adaptive task submitted before this call has completed. Test-only synchronization point. */
-	void awaitAdaptiveAccelerationForTest() {
-		Future<?> barrier;
-		try {
-			barrier = maintenanceExecutor.submit(() -> {
-			});
-		} catch (RejectedExecutionException closedExecutor) {
-			if (!closed) {
-				throw closedExecutor;
-			}
-			return;
-		}
-		try {
-			barrier.get(30, TimeUnit.SECONDS);
-		} catch (InterruptedException interrupted) {
-			Thread.currentThread().interrupt();
-			throw new IllegalStateException("interrupted while awaiting adaptive acceleration", interrupted);
-		} catch (ExecutionException | TimeoutException failure) {
-			throw new IllegalStateException("adaptive acceleration did not complete", failure);
-		}
-	}
+	// ------------------------------------------------------------------
+	// index operations the applier composes
+	// ------------------------------------------------------------------
 
-	/**
-	 * Waits for test writers that have already finished their commits to retire preparation output and queued drains.
-	 * Call only after test writers have finished and no new work can be submitted; this is stronger than public
-	 * readiness, which promises an exact published revision but not completion of resource cleanup.
-	 */
-	void awaitCommitCleanupForTest() {
-		Future<?> barrier;
-		try {
-			barrier = preparationExecutor.submit(() -> {
-			});
-		} catch (RejectedExecutionException closedExecutor) {
-			if (!closed) {
-				throw closedExecutor;
-			}
-			return;
-		}
-		try {
-			barrier.get(30, TimeUnit.SECONDS);
-		} catch (InterruptedException interrupted) {
-			Thread.currentThread().interrupt();
-			throw new IllegalStateException("interrupted while awaiting direct adjacency commit cleanup", interrupted);
-		} catch (ExecutionException | TimeoutException failure) {
-			throw new IllegalStateException("direct adjacency commit cleanup did not complete", failure);
-		}
-		awaitAdaptiveAccelerationForTest();
-	}
+	/** One prepared generation with the catalog, coverage and statistics changes that travel with it. */
+	static final class PreparedApply implements AutoCloseable {
+		final LmdbAdjacencyDeltaGeneration generation;
+		final LmdbAdjacencyContextCatalog contextCatalog;
+		final boolean ownsContextCatalog;
+		final long[] extraSelected;
+		final LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate;
+		final LmdbAdjacencyDeltaApplier.StructuralStats structuralStats;
+		/** Statistics of the base this generation was prepared against; the first append starts from them. */
+		final LmdbAdjacencyPlaneStatistics baseStatistics;
+		/**
+		 * For a range merge: the premise overlay set with the range already replaced and its latest-row index remapped,
+		 * built on the merge worker so the applier thread only appends the generations that landed meanwhile. Owns one
+		 * reference; null for a delta preparation.
+		 */
+		LmdbAdjacencyOverlaySet replacedOverlays;
+		/** For a range merge: how many generations the premise overlay set had. */
+		int premiseGenerationCount;
+		private boolean transferred;
 
-	private void awaitSynchronousMaintenance(Future<?> future, String operation) {
-		if (!options.synchronousMaintenance() || !synchronousUpdatesActivated.get() || future == null
-				|| Thread.currentThread() == maintenanceThreadFactory.currentThread()) {
-			return;
+		PreparedApply(LmdbAdjacencyDeltaGeneration generation, LmdbAdjacencyContextCatalog contextCatalog,
+				boolean ownsContextCatalog, long[] extraSelected,
+				LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate,
+				LmdbAdjacencyDeltaApplier.StructuralStats structuralStats,
+				LmdbAdjacencyPlaneStatistics baseStatistics) {
+			this.generation = generation;
+			this.contextCatalog = contextCatalog;
+			this.ownsContextCatalog = ownsContextCatalog;
+			this.extraSelected = extraSelected;
+			this.planeStatisticsUpdate = planeStatisticsUpdate;
+			this.structuralStats = structuralStats;
+			this.baseStatistics = baseStatistics;
 		}
-		try {
-			future.get();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IllegalStateException("Interrupted while awaiting direct adjacency " + operation, e);
-		} catch (ExecutionException e) {
-			Throwable cause = e.getCause() == null ? e : e.getCause();
-			if (cause instanceof RuntimeException runtimeException) {
-				throw runtimeException;
-			}
-			if (cause instanceof Error error) {
-				throw error;
-			}
-			throw new IllegalStateException("Direct adjacency " + operation + " failed", cause);
-		}
-	}
 
-	/**
-	 * Defers the synchronous commit-drain join until all LMDB branch flushes belonging to one logical connection commit
-	 * have submitted their sealed deltas. The scope is thread-confined because {@code SailSourceConnection} performs
-	 * its inferred and explicit branch flushes serially on the committing thread.
-	 */
-	void beginLogicalCommitBatch() {
-		logicalCommitBatchDepth.set(Math.incrementExact(logicalCommitBatchDepth.get()));
-	}
-
-	/** Completes one logical-commit scope and joins every adjacency delta submitted by its branch flushes. */
-	void endLogicalCommitBatch() {
-		int depth = logicalCommitBatchDepth.get();
-		if (depth <= 0) {
-			throw new IllegalStateException("direct adjacency logical commit batch is not active");
-		}
-		if (depth > 1) {
-			logicalCommitBatchDepth.set(depth - 1);
-			return;
-		}
-		logicalCommitBatchDepth.remove();
-		awaitBackingWritePublication();
-	}
-
-	private RuntimeException unexpectedMaintenanceFailure(String operation, Throwable cause) {
-		RuntimeException failure = new IllegalStateException(
-				"Unexpected direct adjacency " + operation + " failure", cause);
-		rememberUnexpectedMaintenanceFailure(failure);
-		return failure;
-	}
-
-	private void rememberUnexpectedMaintenanceFailure(RuntimeException failure) {
-		if (options.failOnMaintenanceError()) {
-			unexpectedMaintenanceFailure.compareAndSet(null, failure);
-		}
-	}
-
-	private void throwIfStrictMaintenanceFailed() {
-		if (options.failOnMaintenanceError()) {
-			RuntimeException failure = unexpectedMaintenanceFailure.get();
-			if (failure != null) {
-				throw failure;
-			}
-		}
-	}
-
-	private void drainApplyQueue() {
-		while (!closed && !applierPausedForTest) {
-			SealedDirectDelta head;
-			synchronized (applyQueue) {
-				head = applyQueue.peekFirst();
-			}
-			if (head == null) {
+		@Override
+		public void close() {
+			if (transferred) {
 				return;
 			}
-			Runnable drainHook = beforeApplyDrainForTest;
-			if (drainHook != null) {
-				drainHook.run();
+			if (replacedOverlays != null) {
+				replacedOverlays.release();
+				replacedOverlays = null;
 			}
-			LmdbAdjacencyPublishedState state = published.get();
-			if (state.base() == null) {
-				// no base yet: an in-progress build's catch-up drains this queue itself
-				return;
-			}
-			if (head.revision() <= state.appliedRevision()) {
-				head.publication.complete(null);
-				releaseDelta(removeHead(head));
-				continue;
-			}
-			if (head.revision() != state.appliedRevision() + 1) {
-				// a missing revision means capture evidence was lost: gap and rebuild (invariant I16)
-				markGap(state.appliedRevision() + 1);
-				maintenanceState = MaintenanceState.DEGRADED_GAP;
-				releaseDelta(removeHead(head));
-				scheduleQuiescentRebuild();
-				continue;
-			}
-			try {
-				applyOne(head);
-				head.publication.complete(null);
-				releaseDelta(removeHead(head));
-			} catch (LmdbAdjacencyMemoryRefusedException e) {
-				maintenanceState = MaintenanceState.APPLY_STALLED;
-				completeUnavailablePublications();
-				logger.warn("Direct adjacency delta apply refused by the memory account; touched rows fall back", e);
-				scheduleQuiescentRebuild();
-				return;
-			} catch (RuntimeException e) {
-				maintenanceState = MaintenanceState.APPLY_STALLED;
-				completeUnavailablePublications();
-				logger.warn("Direct adjacency delta apply failed; touched rows fall back until rebuild", e);
-				scheduleQuiescentRebuild();
-				if (options.failOnMaintenanceError()) {
-					throw unexpectedMaintenanceFailure("commit apply", e);
-				}
-				return;
-			}
-		}
-	}
-
-	private SealedDirectDelta removeHead(SealedDirectDelta expected) {
-		synchronized (applyQueue) {
-			SealedDirectDelta removed = applyQueue.pollFirst();
-			if (removed != expected) {
-				throw new IllegalStateException("apply queue head changed under the single-threaded applier");
-			}
-			return removed;
-		}
-	}
-
-	private void releaseDelta(SealedDirectDelta sealed) {
-		sealed.close();
-		signalWriteAdmission();
-	}
-
-	long backlogBytes() {
-		return saturatingAdd(account.chargedBytes(MemoryKind.PENDING),
-				account.chargedBytes(MemoryKind.PREPARATION_OUTPUT));
-	}
-
-	String publicationDiagnostics() {
-		synchronized (admissionMonitor) {
-			String reason = closed ? "CLOSED"
-					: cutoverAdmissionClosed ? "CATCH_UP"
-							: writeAdmissionBlocked() ? "BACKLOG" : "NONE";
-			return ", backlogBytes=" + backlogBytes() + ", backlogLimitBytes=" + options.backlogMaxBytes()
-					+ ", peakBacklogBytes=" + account.unpublishedHighWaterBytes()
-					+ ", admissionBlockReason=" + reason + ", admittedWrites=" + admittedWrites
-					+ ", catchUpTargetRevision=" + catchUpTargetRevision
-					+ ", publicationRevision=" + published.get().appliedRevision()
-					+ ", commitWaitNanos=" + publicationWaitNanos.get();
-		}
-	}
-
-	/** Called with the sail-store sink lock held, but never waits while retaining it. */
-	boolean tryBeginBackingWrite() {
-		synchronized (admissionMonitor) {
-			if (closed) {
-				throw new IllegalStateException("direct adjacency store is closed");
-			}
-			if (!connectionWriteAdmitted && writeAdmissionBlocked()) {
-				return false;
-			}
-			admittedWrites++;
-			return true;
-		}
-	}
-
-	/** Reserve the commit before it takes shared Sail branch locks. Readers can help flush that same commit. */
-	void beginConnectionWrite() throws InterruptedException {
-		synchronized (admissionMonitor) {
-			while (!closed && (admittedWrites != 0 || writeAdmissionBlocked())) {
-				Runnable hook = beforeWriteAdmissionWaitForTest;
-				if (hook != null) {
-					hook.run();
-				}
-				admissionMonitor.wait();
-			}
-			if (closed) {
-				throw new IllegalStateException("direct adjacency store is closed");
-			}
-			connectionCaptureBudget = account.childBudget(options.commitMaxBytes());
-			connectionWriteAdmitted = true;
-			admittedWrites++;
-		}
-	}
-
-	void endConnectionWrite() {
-		synchronized (admissionMonitor) {
-			// A reader closing a root snapshot can have helped flush the admitted commit on its thread.
-			commitPublication.set(lastCommittedPublication);
-			connectionWriteAdmitted = false;
-			connectionCaptureBudget = null;
-			endBackingWrite();
-		}
-	}
-
-	void awaitWriteAdmission() throws InterruptedException {
-		synchronized (admissionMonitor) {
-			while (!closed && writeAdmissionBlocked()) {
-				Runnable hook = beforeWriteAdmissionWaitForTest;
-				if (hook != null) {
-					hook.run();
-				}
-				admissionMonitor.wait();
-			}
-			if (closed) {
-				throw new IllegalStateException("direct adjacency store is closed");
-			}
-		}
-	}
-
-	private boolean writeAdmissionBlocked() {
-		return cutoverAdmissionClosed || (!maintenanceUnavailable && !options.memoryRefused()
-				&& (rebuildPending.get() || maintenanceState == MaintenanceState.BUILDING
-						|| maintenanceState == MaintenanceState.CATCHING_UP
-						|| maintenanceState == MaintenanceState.ACTIVE
-						|| maintenanceState == MaintenanceState.CONSOLIDATING)
-				&& backlogBytes() >= options.backlogMaxBytes());
-	}
-
-	void endBackingWrite() {
-		synchronized (admissionMonitor) {
-			if (--admittedWrites < 0) {
-				throw new IllegalStateException("adjacency write admission underflow");
-			}
-			admissionMonitor.notifyAll();
-		}
-	}
-
-	private void completeUnavailablePublications() {
-		maintenanceUnavailable = true;
-		synchronousUpdatesActivated.set(false);
-		for (CompletableFuture<Void> completion : unpublishedRevisions.values()) {
-			completion.complete(null);
-		}
-		synchronized (applyQueue) {
-			for (SealedDirectDelta delta : applyQueue) {
-				delta.publication.complete(null);
-			}
-		}
-		signalWriteAdmission();
-	}
-
-	private void signalWriteAdmission() {
-		synchronized (admissionMonitor) {
-			admissionMonitor.notifyAll();
-		}
-	}
-
-	private boolean closeWriteAdmission() throws InterruptedException {
-		synchronized (admissionMonitor) {
-			cutoverAdmissionClosed = true;
-		}
-		Runnable hook = afterWriteAdmissionClosedForTest;
-		if (hook != null) {
-			hook.run();
-		}
-		synchronized (admissionMonitor) {
-			while (!closed && admittedWrites != 0) {
-				admissionMonitor.wait();
-			}
-			return !closed;
-		}
-	}
-
-	private void openWriteAdmission() {
-		synchronized (admissionMonitor) {
-			cutoverAdmissionClosed = false;
-			admissionMonitor.notifyAll();
-		}
-	}
-
-	/**
-	 * Applies one sealed commit at exactly {@code appliedRevision + 1} and publishes the generation and pending removal
-	 * as one state swap (visibility ordering rule 3).
-	 */
-	private void applyOne(SealedDirectDelta sealed) {
-		LmdbAdjacencyPublishedState retainedState = retainPublishedState();
-		if (retainedState == null) {
-			throw new IllegalStateException("could not retain a stable publication for delta apply");
-		}
-		long[] resolvedSelected = sealed.hasCapturedCoverage()
-				? sealed.resolvedSelectedPredicates()
-				: captureResolvedSelectedPredicates(retainedState);
-		try (PreparedApply prepared = prepareApply(sealed, retainedState, resolvedSelected, false)) {
-			publishPrepared(sealed, retainedState, prepared, false);
-			requestCompactionIfNeeded(published.get());
-		} finally {
-			retainedState.release();
-		}
-	}
-
-	private PreparedApply prepareApply(SealedDirectDelta sealed, LmdbAdjacencyPublishedState state,
-			long[] resolvedSelected, boolean speculative) {
-		LmdbInMemoryAdjacencyIndex base = state.base();
-		LmdbAdjacencyDeltaGeneration generation = null;
-		LmdbAdjacencyContextCatalog contextCatalog = state.contextCatalog();
-		boolean ownsContextCatalog = false;
-		long[] extraSelected = state.overlays() == null ? new long[0] : state.overlays().extraSelectedSnapshot();
-		LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate = null;
-		LmdbAdjacencyDeltaApplier.StructuralStats structuralStats = LmdbAdjacencyDeltaApplier.StructuralStats.EMPTY;
-		try {
-			if (!sealed.isEmpty()) {
-				long[] mergedExtra = classifySelected(extraSelected, sealed, base, resolvedSelected);
-				LongPredicate covered = coveredPredicate(base, mergedExtra);
-				LmdbAdjacencyMemoryAccount.MemoryKind nativeOutputKind = speculative
-						? LmdbAdjacencyMemoryAccount.MemoryKind.PREPARATION_OUTPUT
-						: LmdbAdjacencyMemoryAccount.MemoryKind.DELTA;
-				LmdbAdjacencyMemoryAccount.MemoryKind metadataOutputKind = speculative
-						? LmdbAdjacencyMemoryAccount.MemoryKind.PREPARATION_OUTPUT
-						: LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA;
-				LmdbAdjacencyDeltaApplier.Result result = LmdbAdjacencyDeltaApplier.apply(sealed, base, contextCatalog,
-						previousRows(state), covered, mergedExtra, account, workspaceRegionBytes,
-						options.supernodeEdges(), options.supernodeChunkEdges(), options.supernodeTargetBytes(),
-						nativeOutputKind, metadataOutputKind);
-				generation = result.generation;
-				contextCatalog = result.contextCatalog;
-				ownsContextCatalog = contextCatalog != state.contextCatalog();
-				extraSelected = result.extraSelectedAfter;
-				planeStatisticsUpdate = result.planeStatisticsUpdate;
-				structuralStats = result.structuralStats;
-			}
-			return new PreparedApply(generation, contextCatalog, ownsContextCatalog, extraSelected,
-					planeStatisticsUpdate, structuralStats);
-		} catch (RuntimeException | Error failure) {
 			if (generation != null) {
 				generation.release();
 			}
 			if (ownsContextCatalog) {
 				contextCatalog.release();
 			}
-			throw failure;
-		}
-	}
-
-	private void publishPrepared(SealedDirectDelta sealed, LmdbAdjacencyPublishedState predecessor,
-			PreparedApply prepared, boolean exactPredecessor) {
-		publicationLock.lock();
-		try {
-			LmdbAdjacencyPublishedState current = published.get();
-			if (current != predecessor) {
-				if (exactPredecessor || current.base() != predecessor.base()
-						|| current.appliedRevision() != predecessor.appliedRevision()) {
-					throw new IllegalStateException("published predecessor changed during delta preparation");
-				}
-			}
-			PendingTable[] remaining = removePending(current.pending(), sealed.revision());
-			LmdbInMemoryAdjacencyIndex sharedBase = current.base();
-			if (sharedBase != null) {
-				sharedBase.retain();
-			}
-			LmdbAdjacencyOverlaySet newOverlays = null;
-			LmdbAdjacencyPublishedState replacement = null;
-			boolean publishedReplacement = false;
-			try {
-				if (prepared.generation != null || current.overlays() != null) {
-					prepared.contextCatalog.retain();
-					long liveLogicalBytes = current.overlays() == null
-							? prepared.generation == null ? 0 : prepared.generation.logicalBytes()
-							: prepared.generation == null ? current.overlays().liveLogicalBytes()
-									: current.overlays().liveLogicalBytesAfterAppend(prepared.generation);
-					try {
-						if (current.overlays() == null) {
-							prepared.generation.retain();
-							newOverlays = new LmdbAdjacencyOverlaySet(
-									new LmdbAdjacencyDeltaGeneration[] { prepared.generation },
-									prepared.contextCatalog, prepared.extraSelected, liveLogicalBytes);
-						} else if (prepared.generation == null) {
-							prepared.contextCatalog.release();
-							current.overlays().retain();
-							newOverlays = current.overlays();
-						} else {
-							newOverlays = current.overlays()
-									.appendRetained(prepared.generation,
-											prepared.contextCatalog, prepared.extraSelected, liveLogicalBytes);
-						}
-					} catch (RuntimeException | Error failure) {
-						prepared.contextCatalog.release();
-						throw failure;
-					}
-				}
-				if (prepared.ownsContextCatalog) {
-					prepared.contextCatalog.reclassifyOwned(LmdbAdjacencyMemoryAccount.MemoryKind.DELTA,
-							LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA);
-				}
-				replacement = new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), sharedBase, newOverlays,
-						remaining, sealed.revision(), current.gapFromRevision(), current.servingState(),
-						current.minSnapshotRevision(), current.planeStatistics().with(prepared.planeStatisticsUpdate));
-				publish(replacement, prepared.generation == null ? LmdbAdjacencyGenerationTransition.noChange()
-						: LmdbAdjacencyGenerationTransition.append(newOverlays.generationCount() - 1));
-				publishedReplacement = true;
-				replacement = null;
-				metrics.recordStructuralRewrite(prepared.structuralStats);
-				maintenanceState = MaintenanceState.ACTIVE;
-			} finally {
-				if (replacement != null) {
-					replacement.release();
-				} else if (!publishedReplacement) {
-					if (newOverlays != null) {
-						newOverlays.release();
-					}
-					if (sharedBase != null) {
-						sharedBase.close();
-					}
-				}
-			}
-		} finally {
-			publicationLock.unlock();
-		}
-	}
-
-	private void requestCompactionIfNeeded(LmdbAdjacencyPublishedState state) {
-		LmdbAdjacencyOverlaySet overlays = state.overlays();
-		if (closed || overlays == null || overlays.generationCount() == 0 || state.base() == null) {
-			return;
-		}
-		if (overlays.generationCount() >= LmdbAdjacencyTieredCompactionPolicy.FANOUT
-				|| overlays.generationCount() > options.maxDeltaGenerations()
-				|| !state.base().arenaCatalog().hasSourceCapacityFor(2)
-				|| LmdbAdjacencyTieredCompactionPolicy.shouldFoldBase(overlays.retainedBytes(), workspaceRegionBytes,
-						state.base().retainedBytes())) {
-			requestCompaction();
-		}
-	}
-
-	private void requestCompaction() {
-		if (closed || maintenanceDeferred) {
-			return;
-		}
-		compactionRequested.set(true);
-		if (!compactionTaskScheduled.compareAndSet(false, true)) {
-			return;
-		}
-		try {
-			compactionExecutor.execute(this::runCompactionLoop);
-		} catch (RejectedExecutionException e) {
-			compactionTaskScheduled.set(false);
-			if (!closed) {
-				throw e;
-			}
-		}
-	}
-
-	private void runCompactionLoop() {
-		try {
-			while (!closed && !maintenanceDeferred && compactionRequested.getAndSet(false)) {
-				long started = System.nanoTime();
-				boolean progressed;
-				try {
-					progressed = compactOneDeltaRange();
-					if (!progressed) {
-						progressed = foldBaseUnderPressure();
-					}
-				} finally {
-					metrics.recordCompaction(Math.max(0L, System.nanoTime() - started));
-				}
-				if (progressed) {
-					// A successful merge may have exposed another tier candidate. A stale candidate similarly needs
-					// immediate reselection against the publication that won the race.
-					compactionRequested.set(true);
-				}
-			}
-		} catch (RuntimeException failure) {
-			if (!closed) {
-				logger.warn(
-						"Direct adjacency background delta compaction failed; the exact published state remains in use",
-						failure);
-			}
-			if (!closed && options.failOnMaintenanceError()) {
-				rememberUnexpectedMaintenanceFailure(unexpectedMaintenanceFailure("delta compaction", failure));
-			}
-		} finally {
-			compactionTaskScheduled.set(false);
-			if (!closed && compactionRequested.get()) {
-				requestCompaction();
-			}
-		}
-	}
-
-	private boolean foldBaseUnderPressure() {
-		if (preparationsInFlight.get() != 0) {
-			return false;
-		}
-		LmdbAdjacencyPublishedState state = retainPublishedState();
-		if (state == null) {
-			return false;
-		}
-		try {
-			LmdbAdjacencyOverlaySet overlays = state.overlays();
-			if (overlays == null || state.base() == null) {
-				return false;
-			}
-			boolean capacityExhausted = !state.base().arenaCatalog().hasSourceCapacityFor(2);
-			boolean basePressure = LmdbAdjacencyTieredCompactionPolicy.shouldFoldBase(overlays.retainedBytes(),
-					workspaceRegionBytes, state.base().retainedBytes());
-			boolean retainedDebt = LmdbAdjacencyTieredCompactionPolicy.shouldPhysicallyFlatten(overlays.nativeBytes(),
-					overlays.liveLogicalBytes(), workspaceRegionBytes);
-			if (!capacityExhausted && !basePressure && !retainedDebt) {
-				return false;
-			}
-			try {
-				consolidatePagedCsf(state, overlays);
-				return true;
-			} catch (LmdbAdjacencyMemoryRefusedException refusal) {
-				logger.debug("Occupancy-triggered base fold refused; retaining the exact base and overlays", refusal);
-				return false;
-			}
-		} finally {
-			state.release();
+			transferred = true;
 		}
 	}
 
 	/**
-	 * Builds and copy-publishes one selected contiguous generation range. The retained source publication keeps every
-	 * native input alive outside the publication lock. Publication accepts appended suffix generations, but rejects any
-	 * changed source identity or base.
+	 * The tiered compaction policy, consulted by the applier after every publish: a range merge whenever the tiered
+	 * selection finds one (a full normal-band fan-out, or the best range once the generation budget is exceeded), else
+	 * a fold of every generation when the base's source registry is nearly exhausted, the overlays weigh as much as a
+	 * quarter of the base, or retained physical bytes dwarf the live rows.
 	 */
-	private boolean compactOneDeltaRange() {
-		LmdbAdjacencyPublishedState state = retainPublishedState();
-		if (state == null) {
-			return false;
-		}
-		try {
-			LmdbAdjacencyOverlaySet overlays = state.overlays();
-			if (overlays == null || overlays.generationCount() < 2 || state.base() == null) {
-				return false;
-			}
-			if (!state.base().arenaCatalog().hasSourceCapacityFor(1)) {
-				return false;
-			}
-			if (!LmdbAdjacencyTieredCompactionPolicy.select(overlays, options.maxDeltaGenerations(),
-					compactionCandidate)) {
-				return false;
-			}
-			LmdbAdjacencyTieredCompactionPolicy.Candidate candidate = compactionCandidate;
+	private final class CompactionPolicy
+			implements AdjacencyCompactionPolicy<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet, PreparedApply> {
+		private final LmdbAdjacencyTieredCompactionPolicy.Candidate candidate = new LmdbAdjacencyTieredCompactionPolicy.Candidate();
 
-			LmdbAdjacencyDeltaGeneration merged;
-			long inputRetainedBytes = 0;
-			for (int i = candidate.fromInclusive(); i < candidate.toExclusive(); i++) {
-				inputRetainedBytes = saturatingAdd(inputRetainedBytes, overlays.generation(i).retainedBytes());
+		@Override
+		public AdjacencyCompactionPlan select(LmdbInMemoryAdjacencyIndex base, LmdbAdjacencyOverlaySet overlays,
+				AdjacencyIndexOps<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet, PreparedApply> ops) {
+			if (base == null || overlays == null) {
+				return AdjacencyCompactionPlan.none();
 			}
-			try {
-				merged = mergeGenerationRange(state, candidate.fromInclusive(), candidate.toExclusive());
-			} catch (LmdbAdjacencyMemoryRefusedException refusal) {
-				logger.debug("Delta-range compaction refused; retaining the exact overlay", refusal);
-				if (overlays.generationCount() >= Math.multiplyExact(2, options.maxDeltaGenerations())) {
-					scheduleQuiescentRebuild();
-				}
-				return false;
-			}
-
-			Runnable interleave = beforeDeltaCompactionPublicationForTest;
-			if (interleave != null) {
-				interleave.run();
-			}
-			boolean transferred = false;
-			if (!lockCompactionPublication()) {
-				merged.release();
-				return false;
-			}
-			try {
-				LmdbAdjacencyPublishedState current = published.get();
-				LmdbAdjacencyOverlaySet currentOverlays = current.overlays();
-				if (closed || current.base() != state.base()
-						|| !hasGenerationPrefix(currentOverlays, overlays)) {
-					metrics.recordCompactionCandidateRetry();
-					return true;
-				}
-				LmdbAdjacencyDeltaGeneration[] currentGenerations = currentOverlays.generationsSnapshot();
-				int removed = candidate.size();
-				LmdbAdjacencyDeltaGeneration[] replacement = new LmdbAdjacencyDeltaGeneration[currentGenerations.length
-						- removed + 1];
-				System.arraycopy(currentGenerations, 0, replacement, 0, candidate.fromInclusive());
-				replacement[candidate.fromInclusive()] = merged;
-				System.arraycopy(currentGenerations, candidate.toExclusive(), replacement,
-						candidate.fromInclusive() + 1, currentGenerations.length - candidate.toExclusive());
-
-				for (LmdbAdjacencyDeltaGeneration generation : replacement) {
-					if (generation != merged) {
-						generation.retain();
-					}
-				}
-				LmdbAdjacencyContextCatalog contexts = currentOverlays.contextCatalog();
-				contexts.retain();
-				LmdbAdjacencyOverlaySet replacementOverlays;
-				try {
-					replacementOverlays = new LmdbAdjacencyOverlaySet(replacement, contexts,
-							currentOverlays.extraSelectedSnapshot(), currentOverlays.liveLogicalBytes());
-				} catch (RuntimeException | Error failure) {
-					contexts.release();
-					for (LmdbAdjacencyDeltaGeneration generation : replacement) {
-						if (generation != merged) {
-							generation.release();
-						}
-					}
-					throw failure;
-				}
-				LmdbInMemoryAdjacencyIndex base = current.base();
-				base.retain();
-				try {
-					long newestMergedRevision = overlays.generation(candidate.toExclusive() - 1).revision();
-					publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), base, replacementOverlays,
-							current.pending(), current.appliedRevision(), current.gapFromRevision(),
-							current.servingState(), Math.max(current.minSnapshotRevision(), newestMergedRevision),
-							current.planeStatistics()),
-							LmdbAdjacencyGenerationTransition.rangeReplacement(
-									candidate.fromInclusive(), candidate.size(), 1));
-					metrics.recordDeltaMerge(inputRetainedBytes, merged.retainedBytes());
-					transferred = true;
-					maintenanceState = MaintenanceState.ACTIVE;
-				} catch (RuntimeException | Error failure) {
-					base.close();
-					replacementOverlays.release();
-					transferred = true; // the unpublished overlay released the merged generation
-					throw failure;
-				}
-				return true;
-			} finally {
-				publicationLock.unlock();
-				if (!transferred) {
-					merged.release();
-				}
-			}
-		} finally {
-			state.release();
+			LmdbAdjacencyArenaCatalog catalog = base.arenaCatalog();
+			return LmdbAdjacencyTieredCompactionPolicy.plan(overlays, options.maxDeltaGenerations(), candidate,
+					catalog.hasSourceCapacityFor(1), !catalog.hasSourceCapacityFor(2), workspaceRegionBytes,
+					base.retainedBytes(), LmdbAdjacencyTieredCompactionPolicy.shouldFoldForShape(
+							overlays.liveLogicalBytes(), base.incidenceCount()));
 		}
 	}
 
 	/**
-	 * Waits off the commit path until an already-built logical compaction can take the next exact publication turn. The
-	 * fair publication lock gives the queued compactor precedence over a later preparation admission, while the
-	 * expensive merge remains entirely on the compaction executor.
+	 * Merges generations {@code [from, to)} into one generation at the newest merged revision. Rows whose runs already
+	 * live in the base's source registry are retained by reference (one persistent singleton node each); rows from a
+	 * foreign registry are re-encoded into the merged arena. Throws {@link LmdbAdjacencyMemoryRefusedException} when
+	 * the account refuses the output.
 	 */
-	private boolean lockCompactionPublication() {
-		boolean locked = false;
-		try {
-			publicationLock.lockInterruptibly();
-			locked = true;
-			while (!closed && preparationsInFlight.get() != 0) {
-				noPreparationsInFlight.await();
-			}
-			if (closed) {
-				publicationLock.unlock();
-				return false;
-			}
-			return true;
-		} catch (InterruptedException interrupted) {
-			if (locked) {
-				publicationLock.unlock();
-			}
-			Thread.currentThread().interrupt();
-			return false;
-		}
-	}
-
-	private LmdbAdjacencyPublishedState retainPublishedState() {
-		for (int attempt = 0; attempt < 3; attempt++) {
-			LmdbAdjacencyPublishedState state = published.get();
-			if (!state.tryRetain()) {
-				continue;
-			}
-			if (published.get() == state) {
-				return state;
-			}
-			state.release();
-		}
-		return null;
-	}
-
-	private static boolean hasGenerationPrefix(LmdbAdjacencyOverlaySet current,
-			LmdbAdjacencyOverlaySet expectedPrefix) {
-		return current != null && current.hasGenerationPrefix(expectedPrefix);
-	}
-
-	/**
-	 * Two-pass K-way merge of one contiguous range. Pass one drives the sealed arena sizing plan; pass two writes the
-	 * same allocation sequence. The newest version of each row wins and tombstones remain explicit.
-	 */
-	private LmdbAdjacencyDeltaGeneration mergeGenerationRange(LmdbAdjacencyPublishedState state, int from, int to) {
-		LmdbAdjacencyOverlaySet overlays = state.overlays();
-		LmdbAdjacencyContextCatalog contexts = state.contextCatalog();
-		LmdbAdjacencyArenaCatalog baseCatalog = state.base().arenaCatalog();
+	private LmdbAdjacencyDeltaGeneration mergeGenerationRange(LmdbInMemoryAdjacencyIndex base,
+			LmdbAdjacencyOverlaySet overlays, int from, int to) {
+		LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
+		LmdbAdjacencyArenaCatalog baseCatalog = base.arenaCatalog();
 		LmdbAdjacencySourceRegistry targetRegistry = baseCatalog.sourceRegistry();
 		LmdbAdjacencyArenaSizingPlan sizingPlan = new LmdbAdjacencyArenaSizingPlan(workspaceRegionBytes);
 		int[] rowCount = { 0 };
 		List<LmdbAdjacencyRunCodec.SourceSlice> retainedSources = new ArrayList<>();
-		forEachMergedRow(overlays, from, to, (sourceIndex, rowIndex) -> {
+		forEachMergedRow(overlays, from, to, (source, sourceIndex, rowIndex) -> {
 			rowCount[0] = Math.incrementExact(rowCount[0]);
-			LmdbAdjacencyDeltaGeneration source = overlays.generation(sourceIndex);
 			if (!source.tombstoneAt(rowIndex)) {
 				LmdbAdjacencyRunCodec.SourceSlice retainedSource = LmdbAdjacencyRunCodec.wholePersistentSource(
 						source.catalog(), contexts, source.handleAt(rowIndex));
@@ -1838,7 +1109,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		try {
 			arena = new LmdbAdjacencyArena(sizingPlan);
 			arenaOwner = new LmdbAdjacencyDeltaArenaOwner(arena, nativeCharge.transfer());
-			catalog = LmdbAdjacencyArenaCatalog.composed(state.base().arenaCatalog(), arenaOwner, retainedSources);
+			catalog = LmdbAdjacencyArenaCatalog.composed(baseCatalog, arenaOwner, retainedSources);
 			long[] keys = new long[rowCount[0]];
 			byte[] planes = new byte[rowCount[0]];
 			long[] predicates = new long[rowCount[0]];
@@ -1847,9 +1118,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			int[] retained = { 0 };
 			LmdbAdjacencyArena outputArena = arena;
 			LmdbAdjacencyArenaCatalog outputCatalog = catalog;
-			forEachMergedRow(overlays, from, to, (sourceIndex, rowIndex) -> {
+			forEachMergedRow(overlays, from, to, (source, sourceIndex, rowIndex) -> {
 				int target = output[0]++;
-				LmdbAdjacencyDeltaGeneration source = overlays.generation(sourceIndex);
 				keys[target] = source.rowKeyAt(rowIndex);
 				planes[target] = (byte) source.rowPlaneAt(rowIndex);
 				predicates[target] = source.rowPredicateAt(rowIndex);
@@ -1864,10 +1134,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 							retainedSource.firstNeighbor, retainedSource.firstContext, retainedSource.count,
 							retainedSource.sourceOrdinal, retainedSource.sourceId, retainedSource.sourceRef,
 							retainedSource.kind);
-					int level = retainedSource.kind == LmdbAdjacencyRunCodec.PERSISTENT_CHILD_NODE
-							? LmdbAdjacencyRunCodec.persistentNode(retainedSource.registry,
-									retainedSource.sourceId, retainedSource.sourceRef).level() + 1
-							: 0;
+					// level and flags come from the slice's own resolution in the sizing pass
+					int level = LmdbAdjacencyRunCodec.persistentSingletonLevel(retainedSource);
 					runRefs[target] = LmdbAdjacencyRunCodec.writePersistentSingletonNode(outputArena,
 							outputCatalog.sourceRegistry(), level, child,
 							LmdbAdjacencyRunCodec.contextsPresent(retainedSource),
@@ -1884,10 +1152,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 			LmdbAdjacencyMemoryAccount.Charge generationMetadataCharge = metadataCharge.transfer();
 			constructorOwnsResources = true;
-			LmdbAdjacencyDeltaGeneration generation = new LmdbAdjacencyDeltaGeneration(
-					overlays.generation(to - 1).revision(), arenaOwner, catalog,
-					generationMetadataCharge, weight, keys, planes, predicates, runRefs);
-			return generation;
+			LmdbAdjacencyDeltaGeneration merged = new LmdbAdjacencyDeltaGeneration(
+					overlays.generation(to - 1).revision(), arenaOwner, catalog, generationMetadataCharge, weight, keys,
+					planes, predicates, runRefs);
+			merged.coversFrom(overlays.generation(from).firstRevision());
+			return merged;
 		} finally {
 			nativeCharge.close();
 			metadataCharge.close();
@@ -1906,382 +1175,101 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	@FunctionalInterface
 	private interface MergedRowConsumer {
-		void accept(int sourceGeneration, int sourceRow);
+		void accept(LmdbAdjacencyDeltaGeneration source, int sourceGeneration, int sourceRow);
 	}
 
+	/** Visits the newest version of every (key, plane, predicate) row across generations {@code [from, to)}. */
 	private static void forEachMergedRow(LmdbAdjacencyOverlaySet overlays, int from, int to,
 			MergedRowConsumer consumer) {
+		// A k-way merge over a heap of sources ordered by their current row, newest source first among equal rows:
+		// O(rows log k). The former scan of every source per emitted row was O(rows x k) and took seconds once a wide
+		// band held thousands of single-row generations.
 		int count = to - from;
+		LmdbAdjacencyDeltaGeneration[] all = overlays.generationsSnapshot();
+		LmdbAdjacencyDeltaGeneration[] sources = Arrays.copyOfRange(all, from, to);
 		int[] positions = new int[count];
-		while (true) {
-			int chosen = -1;
-			long chosenKey = 0;
-			int chosenPlane = 0;
-			long chosenPredicate = 0;
-			for (int local = 0; local < count; local++) {
-				LmdbAdjacencyDeltaGeneration generation = overlays.generation(from + local);
-				int position = positions[local];
-				if (position >= generation.rowCount()) {
-					continue;
-				}
-				long key = generation.rowKeyAt(position);
-				int plane = generation.rowPlaneAt(position);
-				long predicate = generation.rowPredicateAt(position);
-				if (chosen < 0 || compareRow(key, plane, predicate, chosenKey, chosenPlane, chosenPredicate) < 0) {
-					chosen = local;
-					chosenKey = key;
-					chosenPlane = plane;
-					chosenPredicate = predicate;
-				}
+		int[] heap = new int[count];
+		int size = 0;
+		for (int local = 0; local < count; local++) {
+			if (sources[local].rowCount() > 0) {
+				heap[size++] = local;
+				siftUp(heap, size - 1, sources, positions);
 			}
-			if (chosen < 0) {
-				return;
-			}
-			int newest = -1;
-			int newestRow = -1;
-			for (int local = count - 1; local >= 0; local--) {
-				LmdbAdjacencyDeltaGeneration generation = overlays.generation(from + local);
-				int position = positions[local];
-				if (position < generation.rowCount() && generation.rowKeyAt(position) == chosenKey
-						&& generation.rowPlaneAt(position) == chosenPlane
-						&& generation.rowPredicateAt(position) == chosenPredicate) {
-					if (newest < 0) {
-						newest = local;
-						newestRow = position;
-					}
-					positions[local]++;
+		}
+		while (size > 0) {
+			int newest = heap[0];
+			int newestRow = positions[newest];
+			long key = sources[newest].rowKeyAt(newestRow);
+			int plane = sources[newest].rowPlaneAt(newestRow);
+			long predicate = sources[newest].rowPredicateAt(newestRow);
+			// advance the newest source and every older source positioned on the same row
+			size = advanceTop(heap, size, sources, positions);
+			while (size > 0) {
+				int top = heap[0];
+				int position = positions[top];
+				if (sources[top].rowKeyAt(position) != key || sources[top].rowPlaneAt(position) != plane
+						|| sources[top].rowPredicateAt(position) != predicate) {
+					break;
 				}
+				size = advanceTop(heap, size, sources, positions);
 			}
-			consumer.accept(from + newest, newestRow);
+			consumer.accept(sources[newest], from + newest, newestRow);
 		}
 	}
 
-	private static long saturatingAdd(long left, long right) {
-		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
+	/** Moves the top source past its current row, re-heaps it or drops it when exhausted; returns the new size. */
+	private static int advanceTop(int[] heap, int size, LmdbAdjacencyDeltaGeneration[] sources, int[] positions) {
+		int top = heap[0];
+		positions[top]++;
+		if (positions[top] >= sources[top].rowCount()) {
+			size--;
+			heap[0] = heap[size];
+		}
+		if (size > 0) {
+			siftDown(heap, 0, size, sources, positions);
+		}
+		return size;
 	}
 
-	/**
-	 * Squashes the current overlay's generations into one newest-version-only generation at the applied revision (plan
-	 * 27 Milestone 7). Older pinned snapshots keep serving through their retained states; the replacement state's
-	 * minimum servable snapshot rises to the consolidation revision, so a late acquisition below it falls back instead
-	 * of reading squashed history. Refusal leaves the old set published and exact.
-	 */
-	private void consolidateOnce() {
-		if (maintenanceDeferred) {
-			return;
-		}
-		LmdbAdjacencyPublishedState state = retainPublishedState();
-		if (state == null) {
-			return;
-		}
-		try {
-			LmdbAdjacencyOverlaySet overlays = state.overlays();
-			if (closed || overlays == null || overlays.generationCount() <= 1 || state.base() == null) {
-				return;
-			}
-			maintenanceState = MaintenanceState.CONSOLIDATING;
-			try {
-				consolidatePagedCsf(state, overlays);
-				return;
-			} catch (LmdbAdjacencyMemoryRefusedException refusal) {
-				// A pinned old view may temporarily retain pages that this rewrite wants to replace. Keep the exact
-				// published state and attempt only the bounded overlay coalescing fallback under memory pressure.
-				logger.debug("Paged-CSF merge-down refused; retaining the base and coalescing overlays", refusal);
-			} catch (RuntimeException failure) {
-				maintenanceState = MaintenanceState.ACTIVE;
-				logger.warn("Paged-CSF merge-down failed; the current base and overlays remain published", failure);
-				if (options.failOnMaintenanceError()) {
-					throw unexpectedMaintenanceFailure("paged consolidation", failure);
-				}
-				return;
-			}
-			compactOneDeltaRange();
-			maintenanceState = MaintenanceState.ACTIVE;
-		} finally {
-			state.release();
-		}
+	/** Heap order: smaller current row first; among equal rows the newer (higher-indexed) source first. */
+	private static boolean heapBefore(int a, int b, LmdbAdjacencyDeltaGeneration[] sources, int[] positions) {
+		int pa = positions[a];
+		int pb = positions[b];
+		int cmp = compareRow(sources[a].rowKeyAt(pa), sources[a].rowPlaneAt(pa), sources[a].rowPredicateAt(pa),
+				sources[b].rowKeyAt(pb), sources[b].rowPlaneAt(pb), sources[b].rowPredicateAt(pb));
+		return cmp != 0 ? cmp < 0 : a > b;
 	}
 
-	private void consolidatePagedCsf(LmdbAdjacencyPublishedState state, LmdbAdjacencyOverlaySet overlays) {
-		LmdbPagedCsfConsolidator.Result result = LmdbPagedCsfConsolidator.consolidate(state, account,
-				workspaceRegionBytes);
-		Runnable interleave = beforePagedCsfPublicationForTest;
-		if (interleave != null) {
-			interleave.run();
-		}
-		boolean publishedReplacement = false;
-		publicationLock.lock();
-		try {
-			if (preparationsInFlight.get() != 0) {
-				metrics.recordCompactionCandidateRetry();
-				return;
-			}
-			LmdbAdjacencyPublishedState current = published.get();
-			// A commit appended after the fold snapshot is retained as an unchanged suffix. Any changed folded-prefix
-			// identity or base invalidates this speculative rewrite.
-			if (current.base() != state.base() || !hasGenerationPrefix(current.overlays(), overlays)) {
-				return;
-			}
-			LmdbAdjacencyDeltaGeneration[] currentGenerations = current.overlays().generationsSnapshot();
-			int suffixCount = currentGenerations.length - overlays.generationCount();
-			LmdbAdjacencyOverlaySet suffix = null;
-			if (suffixCount > 0) {
-				LmdbAdjacencyDeltaGeneration[] suffixGenerations = new LmdbAdjacencyDeltaGeneration[suffixCount];
-				System.arraycopy(currentGenerations, overlays.generationCount(), suffixGenerations, 0, suffixCount);
-				for (LmdbAdjacencyDeltaGeneration generation : suffixGenerations) {
-					generation.retain();
-				}
-				LmdbAdjacencyContextCatalog contexts = current.overlays().contextCatalog();
-				contexts.retain();
-				try {
-					suffix = new LmdbAdjacencyOverlaySet(suffixGenerations, contexts,
-							current.overlays().extraSelectedSnapshot());
-				} catch (RuntimeException | Error failure) {
-					contexts.release();
-					for (LmdbAdjacencyDeltaGeneration generation : suffixGenerations) {
-						generation.release();
-					}
-					throw failure;
-				}
-			}
-			try {
-				publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), result.base(), suffix,
-						current.pending(), current.appliedRevision(), current.gapFromRevision(), current.servingState(),
-						Math.max(current.minSnapshotRevision(), state.appliedRevision()),
-						suffix == null ? result.base().planeStatistics() : current.planeStatistics()),
-						LmdbAdjacencyGenerationTransition.prefixRemoval(overlays.generationCount()));
-				metrics.recordBaseFold(overlays.retainedBytes(), result.base().retainedBytes());
-			} catch (RuntimeException | Error failure) {
-				if (suffix != null) {
-					suffix.release();
-				}
-				throw failure;
-			}
-			publishedReplacement = true;
-			maintenanceState = MaintenanceState.ACTIVE;
-			logger.debug("Folded {} overlay generations / {} rows into paged CSF: {} shared shards, {} replaced, "
-					+ "{} newly allocated native bytes; node-predicate projection: {}", result.foldedGenerationCount(),
-					result.foldedRowCount(), result.rewrite().sharedShardCount(), result.rewrite().replacedShardCount(),
-					result.rewrite().allocatedNativeBytes(), describeNodePredicateRewrite(result));
-		} finally {
-			publicationLock.unlock();
-			if (!publishedReplacement) {
-				result.base().close();
-			}
-		}
-	}
-
-	/**
-	 * Distinguishes the three outcomes the projection can have during a fold-down, which the primary rewrite's counters
-	 * cannot express: no projection at all, a rewrite with its own shared/replaced page counts, and the no-change fast
-	 * path that shares the previous structure and therefore allocates nothing.
-	 */
-	private static String describeNodePredicateRewrite(LmdbPagedCsfConsolidator.Result result) {
-		if (result.base().nodePredicateIndexOrNull() == null) {
-			return "absent";
-		}
-		ImmutablePagedQuadCsfIndex.RewriteResult rewrite = result.nodePredicateRewrite();
-		if (rewrite == null) {
-			return "shared (no rows changed)";
-		}
-		return rewrite.sharedShardCount() + " shared shards, " + rewrite.replacedShardCount() + " replaced, "
-				+ rewrite.allocatedNativeBytes() + " newly allocated native bytes";
-	}
-
-	private void consolidateOverlayOnly(LmdbAdjacencyPublishedState state, LmdbAdjacencyOverlaySet overlays) {
-		try {
-			LmdbAdjacencyDeltaGeneration merged = mergeGenerations(state);
-			publicationLock.lock();
-			try {
-				if (preparationsInFlight.get() != 0) {
-					merged.release();
-					if (consolidatedContextCatalog != null
-							&& consolidatedContextCatalog != overlays.contextCatalog()) {
-						consolidatedContextCatalog.release();
-					}
-					consolidatedContextCatalog = null;
-					metrics.recordCompactionCandidateRetry();
-					return;
-				}
-				LmdbAdjacencyPublishedState current = published.get();
-				// pending-append swaps share the same overlay set; any other interleaving abandons this attempt
-				if (current.overlays() != overlays || current.base() == null) {
-					merged.release();
-					if (consolidatedContextCatalog != null
-							&& consolidatedContextCatalog != overlays.contextCatalog()) {
-						consolidatedContextCatalog.release();
-					}
-					consolidatedContextCatalog = null;
-					return;
-				}
-				LmdbInMemoryAdjacencyIndex base = current.base();
-				base.retain();
-				LmdbAdjacencyContextCatalog mergedContexts = consolidatedContextCatalog != null
-						? consolidatedContextCatalog
-						: overlays.contextCatalog();
-				consolidatedContextCatalog = null;
-				if (mergedContexts == overlays.contextCatalog()) {
-					mergedContexts.retain();
-				}
-				LmdbAdjacencyOverlaySet consolidated = new LmdbAdjacencyOverlaySet(
-						new LmdbAdjacencyDeltaGeneration[] { merged }, mergedContexts,
-						overlays.extraSelectedSnapshot(), merged.logicalBytes());
-				publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), base, consolidated,
-						current.pending(), current.appliedRevision(), current.gapFromRevision(),
-						current.servingState(), current.appliedRevision(), current.planeStatistics().flattened()),
-						LmdbAdjacencyGenerationTransition.rebuildInstall(overlays.generationCount(), 1));
-				maintenanceState = MaintenanceState.ACTIVE;
-			} finally {
-				publicationLock.unlock();
-			}
-		} catch (LmdbAdjacencyMemoryRefusedException e) {
-			maintenanceState = MaintenanceState.ACTIVE;
-			logger.warn("Direct adjacency overlay coalescing was refused; retaining the exact paged base/overlay "
-					+ "state until memory is reclaimed or a later commit retries", e);
-		} catch (RuntimeException e) {
-			maintenanceState = MaintenanceState.ACTIVE;
-			logger.warn("Direct adjacency consolidation failed; the current overlay set remains published", e);
-			if (options.failOnMaintenanceError()) {
-				throw unexpectedMaintenanceFailure("overlay consolidation", e);
-			}
-		}
-	}
-
-	/**
-	 * K-way merges the generations' sorted row directories, newest version per row, and copies every surviving run into
-	 * one fresh generation arena. Tombstones survive because they override base rows.
-	 */
-	private LmdbAdjacencyDeltaGeneration mergeGenerations(LmdbAdjacencyPublishedState state) {
-		LmdbAdjacencyOverlaySet overlays = state.overlays();
-		int count = overlays.generationCount();
-		int[] positions = new int[count];
-		// collect merged rows: (key, plane, predicate, sourceGeneration, sourceIndex)
-		List<long[]> rows = new ArrayList<>();
-		while (true) {
-			int chosenGeneration = -1;
-			long chosenKey = 0;
-			int chosenPlane = 0;
-			long chosenPredicate = 0;
-			for (int i = 0; i < count; i++) {
-				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
-				if (positions[i] >= generation.rowCount()) {
-					continue;
-				}
-				long key = generation.rowKeyAt(positions[i]);
-				int plane = generation.rowPlaneAt(positions[i]);
-				long predicate = generation.rowPredicateAt(positions[i]);
-				if (chosenGeneration < 0
-						|| compareRow(key, plane, predicate, chosenKey, chosenPlane, chosenPredicate) < 0) {
-					chosenGeneration = i;
-					chosenKey = key;
-					chosenPlane = plane;
-					chosenPredicate = predicate;
-				}
-			}
-			if (chosenGeneration < 0) {
+	private static void siftUp(int[] heap, int index, LmdbAdjacencyDeltaGeneration[] sources, int[] positions) {
+		int value = heap[index];
+		while (index > 0) {
+			int parent = (index - 1) >>> 1;
+			if (!heapBefore(value, heap[parent], sources, positions)) {
 				break;
 			}
-			// the newest generation holding this row wins; advance every cursor positioned at it
-			int newest = -1;
-			for (int i = count - 1; i >= 0; i--) {
-				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
-				if (positions[i] < generation.rowCount()
-						&& generation.rowKeyAt(positions[i]) == chosenKey
-						&& generation.rowPlaneAt(positions[i]) == chosenPlane
-						&& generation.rowPredicateAt(positions[i]) == chosenPredicate) {
-					if (newest < 0) {
-						newest = i;
-					}
-					positions[i]++;
-				}
-			}
-			rows.add(new long[] { chosenKey, chosenPlane, chosenPredicate, newest,
-					positions[newest] - 1 });
+			heap[index] = heap[parent];
+			index = parent;
 		}
+		heap[index] = value;
+	}
 
-		// subpass A: exact bytes for surviving runs plus a bound for the copied context-extension segments
-		LmdbAdjacencyContextCatalog contexts = (LmdbAdjacencyContextCatalog) state.contextCatalog();
-		long totalBytes = 0;
-		for (long[] row : rows) {
-			LmdbAdjacencyDeltaGeneration source = overlays.generation((int) row[3]);
-			int index = (int) row[4];
-			if (source.tombstoneAt(index)) {
-				continue;
+	private static void siftDown(int[] heap, int index, int size, LmdbAdjacencyDeltaGeneration[] sources,
+			int[] positions) {
+		int value = heap[index];
+		while (true) {
+			int left = 2 * index + 1;
+			if (left >= size) {
+				break;
 			}
-			totalBytes = Math.addExact(totalBytes,
-					copyRun(source, index, contexts, LmdbAdjacencyRunCodec.sizingEncoder(contexts)).totalBytes);
+			int right = left + 1;
+			int child = right < size && heapBefore(heap[right], heap[left], sources, positions) ? right : left;
+			if (!heapBefore(heap[child], value, sources, positions)) {
+				break;
+			}
+			heap[index] = heap[child];
+			index = child;
 		}
-		totalBytes = Math.addExact(totalBytes,
-				Math.addExact((long) contexts.segmentCount() * 16, contexts.size() * Long.BYTES));
-		long reservedBytes = Math.multiplyExact((totalBytes + workspaceRegionBytes - 1) / workspaceRegionBytes,
-				workspaceRegionBytes);
-		LmdbAdjacencyMemoryAccount.Charge reservation = account
-				.tryCharge(LmdbAdjacencyMemoryAccount.MemoryKind.DELTA, reservedBytes);
-		if (reservation == null) {
-			throw new LmdbAdjacencyMemoryRefusedException(
-					"consolidation reservation of " + reservedBytes + " bytes refused");
-		}
-		long metadataBytes = LmdbAdjacencyDeltaGeneration.modeledJavaBytes(rows.size());
-		LmdbAdjacencyMemoryAccount.Charge metadataReservation = account
-				.tryCharge(LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA, metadataBytes);
-		if (metadataReservation == null) {
-			reservation.close();
-			throw new LmdbAdjacencyMemoryRefusedException(
-					"consolidation directory metadata reservation of " + metadataBytes + " bytes refused");
-		}
-		LmdbAdjacencyArena arena = null;
-		boolean success = false;
-		try (reservation; metadataReservation) {
-			arena = new LmdbAdjacencyArena(workspaceRegionBytes);
-			// keep context ordinals stable while moving extension segments off retired generation arenas
-			LmdbAdjacencyContextCatalog copiedContexts = contexts.copyExtensions(arena);
-
-			long[] keys = new long[rows.size()];
-			byte[] planes = new byte[rows.size()];
-			long[] predicates = new long[rows.size()];
-			long[] runRefs = new long[rows.size()];
-			for (int i = 0; i < rows.size(); i++) {
-				long[] row = rows.get(i);
-				keys[i] = row[0];
-				planes[i] = (byte) row[1];
-				predicates[i] = row[2];
-				LmdbAdjacencyDeltaGeneration source = overlays.generation((int) row[3]);
-				int index = (int) row[4];
-				if (source.tombstoneAt(index)) {
-					runRefs[i] = 0;
-					continue;
-				}
-				runRefs[i] = copyRun(source, index, contexts,
-						LmdbAdjacencyRunCodec.writingEncoder(copiedContexts, arena)).rootRef;
-			}
-
-			long actualBytes = arena.capacityBytes();
-			if (!reservation.adjustTo(actualBytes)) {
-				throw new LmdbAdjacencyMemoryRefusedException(
-						"consolidation exceeded its reservation by " + (actualBytes - reservedBytes) + " bytes");
-			}
-			LmdbInMemoryAdjacencyIndex base = state.base();
-			LmdbAdjacencyArenaCatalog slotZero = base.arenaCatalog().baseOnlyCopy();
-			LmdbAdjacencyArenaCatalog catalog;
-			try {
-				catalog = slotZero.appendRetained(arena);
-			} finally {
-				slotZero.close();
-			}
-			LmdbAdjacencyMemoryAccount.Charge generationCharge = reservation.transfer();
-			LmdbAdjacencyMemoryAccount.Charge generationMetadataCharge = metadataReservation.transfer();
-			LmdbAdjacencyDeltaGeneration merged = new LmdbAdjacencyDeltaGeneration(state.appliedRevision(), arena,
-					catalog, generationCharge, generationMetadataCharge, keys, planes, predicates, runRefs);
-			// hand the copied-context catalog to the caller through the overlay swap: the merged generation's
-			// arena now backs the extension segments
-			consolidatedContextCatalog = copiedContexts;
-			success = true;
-			return merged;
-		} finally {
-			if (!success && arena != null) {
-				arena.close();
-			}
-		}
+		heap[index] = value;
 	}
 
 	private static int compareRow(long aKey, int aPlane, long aPredicate, long bKey, int bPlane, long bPredicate) {
@@ -2296,166 +1284,591 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return Long.compareUnsigned(aPredicate, bPredicate);
 	}
 
-	/** Streams one source run through an encoder; returns the encoder result (bytes and, when writing, root ref). */
-	private static LmdbAdjacencyRunCodec.Encoder.Result copyRun(LmdbAdjacencyDeltaGeneration source, int index,
-			ContextCatalog contexts, LmdbAdjacencyRunCodec.Encoder encoder) {
-		long handle = source.handleAt(index);
-		long edges = LmdbAdjacencyRunCodec.edgeCount(source.catalog(), handle);
-		for (long i = 0; i < edges; i++) {
-			encoder.accept(LmdbAdjacencyRunCodec.neighborAt(source.catalog(), handle, i),
-					LmdbAdjacencyRunCodec.contextAt(source.catalog(), contexts, handle, i));
-		}
-		return encoder.finish();
+	private static long saturatingAdd(long left, long right) {
+		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
 	}
 
-	private LmdbAdjacencyContextCatalog consolidatedContextCatalog;
-
-	/** Deterministic package-local entry point for consolidation race and memory-refusal tests. */
-	void consolidateNowForTest() {
-		consolidateOnce();
-	}
-
-	/**
-	 * The no-overlap rebuild protocol (plan 27): publish UNAVAILABLE so new acquisitions fall back, let existing exact
-	 * views finish, free the old base/overlays as their last leases release, then build fresh from LMDB.
-	 */
-	void scheduleQuiescentRebuild() {
-		scheduleQuiescentRebuild(true);
-	}
-
-	private void scheduleQuiescentRebuild(boolean allowRetry) {
-		if (closed || maintenanceDeferred) {
+	/** Strict mode surfaces the first unexpected maintenance failure to committers and readers; gaps are expected. */
+	private void rememberUnexpectedMaintenanceFailure(Throwable failure) {
+		if (!options.failOnMaintenanceError() || failure instanceof AdjacencyGapException
+				|| failure instanceof AdjacencyClassificationGapException || unexpectedMaintenanceFailure != null) {
 			return;
 		}
-		if (!quiescentRebuildPending.compareAndSet(false, true)) {
-			return;
-		}
-		quiescentRebuildRetryAllowed = allowRetry;
-		enqueueQuiescentRebuildStep();
+		unexpectedMaintenanceFailure = failure;
 	}
 
-	private void enqueueQuiescentRebuildStep() {
-		if (closed || maintenanceDeferred || !quiescentRebuildPending.get()
-				|| !quiescentRebuildTaskScheduled.compareAndSet(false, true)) {
-			return;
+	/** Thrown by SELECTED-coverage classification when a predicate's base-domain absence cannot be proven. */
+	static final class AdjacencyClassificationGapException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		AdjacencyClassificationGapException(long revision, long predicate) {
+			super("revision " + revision + " first captures selected predicate " + predicate
+					+ " that the base domain already contains; absence cannot be proven");
 		}
-		try {
-			submitMaintenance(() -> {
-				boolean waitingForViews = false;
-				try {
-					waitingForViews = quiescentRebuild();
-				} finally {
-					quiescentRebuildTaskScheduled.set(false);
-					if (waitingForViews && !closed) {
-						// A quiescent rebuild must yield the sole maintenance thread while an old exact view is
-						// live. The final acquisition/view release resumes this step; the zero check closes the
-						// lost-wakeup race with a release concurrent with task completion.
-						quiescentRebuildAwaitingViews.set(true);
-						if (activeAcquisitionsAndViews.get() == 0) {
-							resumeQuiescentRebuildAfterViews();
-						}
-						return;
-					}
-					boolean allowRetry = quiescentRebuildRetryAllowed;
-					quiescentRebuildPending.set(false);
-					if (allowRetry && shouldRetryQuiescentRebuild()) {
-						scheduleQuiescentRebuild(false);
-					}
+	}
+
+	private final class IndexOps
+			implements AdjacencyIndexOps<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet, PreparedApply> {
+
+		@Override
+		public Candidate<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> build(AdjacencyRetentionHold hold)
+				throws Exception {
+			metrics.recordBuildStarted();
+			LmdbInMemoryAdjacencyIndex index;
+			long baseRevision;
+			try {
+				try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore,
+						options.buildThreads())) {
+					baseRevision = sourceFamily.snapshotRevision();
+					hold.narrowTo(baseRevision);
+					// Resolve selected predicates only after pinning: a dictionary ID always commits before the
+					// triples that use it, so every selected predicate with rows in this snapshot resolves.
+					LmdbAdjacencyCoverage coverage = resolveCoverage();
+					account.beginProgressLogging();
+					logger.info("Creating in-memory adjacency structures: format=paged-csf, snapshotRevision={}, {}",
+							baseRevision, account.memoryUsageSummary());
+					index = LmdbPagedCsfBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
+							workspaceRegionBytes, options.buildThreads(), metrics, nodePredicateOptions(),
+							valueStore == null ? ImmutablePagedQuadCsfIndex.LiteralDatatypeLookup.NONE
+									: valueStore::literalDatatypeIds);
 				}
-			});
-		} catch (RuntimeException e) {
-			quiescentRebuildTaskScheduled.set(false);
-			quiescentRebuildPending.set(false);
-			if (!closed) {
-				throw e;
+			} catch (Exception | Error failure) {
+				awaitStartupBuild = false;
+				metrics.recordBuildAborted();
+				rememberUnexpectedMaintenanceFailure(failure);
+				throw failure;
+			}
+			// Replay the sealed log records above the pin privately; the applier publishes the result and continues
+			// from wherever this replay stopped.
+			LmdbAdjacencyOverlaySet overlays = null;
+			long applied = baseRevision;
+			try {
+				RuntimeException injected = injectedBuildFailure.get();
+				if (injected != null && injectedBuildFailuresLeft.getAndUpdate(left -> Math.max(0, left - 1)) > 0) {
+					if (injectedBuildFailuresLeft.get() == 0) {
+						injectedBuildFailure.set(null);
+					}
+					throw injected;
+				}
+				for (long revision = baseRevision + 1; revision <= log.headRevision(); revision++) {
+					AdjacencyCommitLog.Record record = log.record(revision);
+					if (record == null) {
+						throw new IllegalStateException("commit log record " + revision + " vanished under a hold");
+					}
+					if (record.kind() == AdjacencyCommitLog.Kind.OVERFLOWED) {
+						throw new AdjacencyGapException(revision);
+					}
+					if (!record.sealed()) {
+						break;
+					}
+					if (record.kind() == AdjacencyCommitLog.Kind.DELTA) {
+						PreparedApply prepared = prepare(record, index, overlays);
+						LmdbAdjacencyOverlaySet appended = append(overlays, prepared);
+						if (overlays != null) {
+							overlays.release();
+						}
+						overlays = appended;
+					}
+					applied = revision;
+				}
+			} catch (Exception | Error failure) {
+				awaitStartupBuild = false;
+				if (overlays != null) {
+					overlays.release();
+				}
+				index.close();
+				metrics.recordBuildAborted();
+				rememberUnexpectedMaintenanceFailure(failure);
+				throw failure;
+			}
+			metrics.recordBuildCompleted();
+			logger.info(
+					"Built in-memory adjacency structures: format=paged-csf, snapshotRevision={}, replayedThrough={}, {}",
+					baseRevision, applied, account.memoryUsageSummary());
+			return new Candidate<>(index, overlays, baseRevision, applied);
+		}
+
+		/** Rows of at most this many sealed bytes (about 400) are prepared on the applier thread. */
+		@Override
+		public boolean prepareInline(long sealedBytes) {
+			return inlineSmallPrepares && sealedBytes <= INLINE_PREPARE_MAX_BYTES;
+		}
+
+		@Override
+		public boolean coalesces() {
+			return coalescePrepares;
+		}
+
+		@Override
+		public long coalesceMaxBytes() {
+			return COALESCE_MAX_BYTES;
+		}
+
+		@Override
+		public PreparedApply prepare(List<AdjacencyCommitLog.Record> records, LmdbInMemoryAdjacencyIndex base,
+				LmdbAdjacencyOverlaySet overlays) {
+			List<SealedDirectDelta> parts = new ArrayList<>(records.size());
+			for (AdjacencyCommitLog.Record record : records) {
+				AdjacencyDelta rows = record.rows();
+				if (!(rows instanceof SealedDirectDelta sealed)) {
+					throw new IllegalStateException(
+							"rows of revision " + record.revision() + " are no longer available");
+				}
+				parts.add(sealed);
+			}
+			long started = System.nanoTime();
+			try {
+				RuntimeException injected = injectedPrepareFailure.getAndSet(null);
+				if (injected != null) {
+					throw injected;
+				}
+				SealedDirectDelta coalesced = SealedDirectDelta.coalesce(parts);
+				long[] resolvedSelected = coalesced.hasCapturedCoverage() ? coalesced.resolvedSelectedPredicates()
+						: captureResolvedSelectedPredicates(base);
+				PreparedApply prepared = prepareApply(coalesced, base, overlays, resolvedSelected);
+				if (prepared.generation != null) {
+					prepared.generation.coversFrom(records.get(0).revision());
+				}
+				metrics.recordCoalescedPreparation(records.size());
+				return prepared;
+			} catch (RuntimeException | Error failure) {
+				rememberUnexpectedMaintenanceFailure(failure);
+				throw failure;
+			} finally {
+				metrics.recordPreparation(Math.max(0L, System.nanoTime() - started));
 			}
 		}
-	}
 
-	private void resumeQuiescentRebuildAfterViews() {
-		if (quiescentRebuildAwaitingViews.compareAndSet(true, false)) {
-			enqueueQuiescentRebuildStep();
+		@Override
+		public boolean splitsSnapshot(LmdbAdjacencyOverlaySet overlays, long snapshotRevision) {
+			return overlays.splitsSnapshot(snapshotRevision);
 		}
-	}
 
-	private boolean shouldRetryQuiescentRebuild() {
-		return !closed && !options.memoryRefused() && !rebuildPending.get()
-				&& unexpectedMaintenanceFailure.get() == null
-				&& maintenanceState != MaintenanceState.ACTIVE && maintenanceState != MaintenanceState.CLOSED
-				&& maintenanceState != MaintenanceState.MEMORY_REFUSED
-				&& maintenanceState != MaintenanceState.FAILED_CORRUPT;
-	}
-
-	boolean rebuildNowForTest() {
-		try {
-			maintenanceExecutor.submit(this::quiescentRebuild).get();
-		} catch (Exception e) {
-			throw new IllegalStateException("quiescent rebuild failed", e);
-		}
-		return maintenanceState == MaintenanceState.ACTIVE;
-	}
-
-	/**
-	 * Runs one non-blocking quiescent-rebuild step. Returns {@code true} when old acquisitions or views still retain
-	 * the retired publication and a later release must enqueue the continuation.
-	 */
-	private boolean quiescentRebuild() {
-		if (closed || maintenanceDeferred) {
-			return false;
-		}
-		Runnable stepHook = beforeQuiescentRebuildStepForTest;
-		if (stepHook != null) {
-			stepHook.run();
-		}
-		maintenanceState = MaintenanceState.QUIESCING_FOR_REBUILD;
-		completeUnavailablePublications();
-		publicationLock.lock();
-		try {
-			LmdbAdjacencyPublishedState current = published.get();
-			if (current.servingState() == AdjacencyServingState.CLOSED) {
+		@Override
+		public boolean prefixIdentical(LmdbAdjacencyOverlaySet premise, LmdbAdjacencyOverlaySet current, int count) {
+			if (premise == current) {
+				return true;
+			}
+			LmdbAdjacencyDeltaGeneration[] a = premise.generationsSnapshot();
+			LmdbAdjacencyDeltaGeneration[] b = current.generationsSnapshot();
+			if (a.length < count || b.length < count) {
 				return false;
 			}
-			if (current.servingState() != AdjacencyServingState.UNAVAILABLE || current.base() != null
-					|| current.overlays() != null) {
-				// drop base and overlays: their arenas free when the last read-view lease closes (invariant I14);
-				// pending markers carry so the replacement build keeps its continuity evidence
-				publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), null, null, current.pending(),
-						current.appliedRevision(), current.gapFromRevision(), AdjacencyServingState.UNAVAILABLE, -1,
-						LmdbAdjacencyPlaneStatistics.empty()),
-						LmdbAdjacencyGenerationTransition
-								.closeReset(current.overlays() == null ? 0 : current.overlays().generationCount()));
+			for (int i = 0; i < count; i++) {
+				if (a[i] != b[i]) {
+					return false;
+				}
 			}
-		} finally {
-			publicationLock.unlock();
-		}
-		if (activeAcquisitionsAndViews.get() > 0) {
 			return true;
 		}
-		Runnable buildHook = beforeQuiescentBuildForTest;
-		if (buildHook != null) {
-			buildHook.run();
-		}
-		if (!closed) {
-			buildOnce();
-		}
-		return false;
-	}
 
-	private static PendingTable[] removePending(PendingTable[] pending, long revision) {
-		int index = -1;
-		for (int i = 0; i < pending.length; i++) {
-			if (pending[i].revision() == revision) {
-				index = i;
-				break;
+		@Override
+		public PreparedApply prepare(AdjacencyCommitLog.Record record, LmdbInMemoryAdjacencyIndex base,
+				LmdbAdjacencyOverlaySet overlays) {
+			AdjacencyDelta rows = record.rows();
+			if (!(rows instanceof SealedDirectDelta sealed)) {
+				throw new IllegalStateException("rows of revision " + record.revision() + " are no longer available");
+			}
+			long started = System.nanoTime();
+			try {
+				RuntimeException injected = injectedPrepareFailure.getAndSet(null);
+				if (injected != null) {
+					throw injected;
+				}
+				long[] resolvedSelected = sealed.hasCapturedCoverage() ? sealed.resolvedSelectedPredicates()
+						: captureResolvedSelectedPredicates(base);
+				return prepareApply(sealed, base, overlays, resolvedSelected);
+			} catch (RuntimeException | Error failure) {
+				rememberUnexpectedMaintenanceFailure(failure);
+				throw failure;
+			} finally {
+				metrics.recordPreparation(Math.max(0L, System.nanoTime() - started));
 			}
 		}
-		if (index < 0) {
-			return pending;
+
+		/** No generations is represented by a null overlay set, as the row resolver's fast paths expect. */
+		@Override
+		public LmdbAdjacencyOverlaySet emptyOverlays(LmdbInMemoryAdjacencyIndex base) {
+			return null;
 		}
-		PendingTable[] remaining = new PendingTable[pending.length - 1];
-		System.arraycopy(pending, 0, remaining, 0, index);
-		System.arraycopy(pending, index + 1, remaining, index, pending.length - index - 1);
-		return remaining;
+
+		@Override
+		public LmdbAdjacencyOverlaySet append(LmdbAdjacencyOverlaySet overlays, PreparedApply prepared) {
+			long started = System.nanoTime();
+			try {
+				if (prepared.generation == null) {
+					if (overlays != null) {
+						overlays.retain();
+					}
+					return overlays;
+				}
+				prepared.contextCatalog.retain();
+				LmdbAdjacencyOverlaySet appended;
+				try {
+					if (overlays == null) {
+						prepared.generation.retain();
+						appended = new LmdbAdjacencyOverlaySet(
+								new LmdbAdjacencyDeltaGeneration[] { prepared.generation }, prepared.contextCatalog,
+								prepared.extraSelected, prepared.generation.logicalBytes(),
+								prepared.baseStatistics.with(prepared.planeStatisticsUpdate));
+					} else {
+						long liveLogicalBytes = overlays.liveLogicalBytesAfterAppend(prepared.generation);
+						LmdbAdjacencyPlaneStatistics statistics = overlays.planeStatistics() == null
+								? prepared.baseStatistics
+								: overlays.planeStatistics();
+						appended = overlays.appendRetained(prepared.generation, prepared.contextCatalog,
+								prepared.extraSelected, liveLogicalBytes,
+								statistics.with(prepared.planeStatisticsUpdate));
+					}
+				} catch (RuntimeException | Error failure) {
+					prepared.contextCatalog.release();
+					throw failure;
+				}
+				if (prepared.ownsContextCatalog) {
+					prepared.contextCatalog.reclassifyOwned(LmdbAdjacencyMemoryAccount.MemoryKind.DELTA,
+							LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA);
+				}
+				metrics.recordStructuralRewrite(prepared.structuralStats);
+				return appended;
+			} finally {
+				prepared.close();
+				metrics.recordPublication(Math.max(0L, System.nanoTime() - started));
+			}
+		}
+
+		@Override
+		public int generationCount(LmdbAdjacencyOverlaySet overlays) {
+			return overlays == null ? 0 : overlays.generationCount();
+		}
+
+		@Override
+		public Object generationIdentity(LmdbAdjacencyOverlaySet overlays, int index) {
+			return overlays.generation(index);
+		}
+
+		@Override
+		public long generationRevisionAt(LmdbAdjacencyOverlaySet overlays, int index) {
+			return overlays.generation(index).revision();
+		}
+
+		/**
+		 * Worker operation: merges the generations in {@code [from, toInclusive]} into one newest-version-only
+		 * generation. Rows whose runs live in the base's source registry are retained by reference; foreign runs are
+		 * re-encoded. The merged generation's charges are the worker's until {@link #replaceRange} takes them over.
+		 */
+		@Override
+		public PreparedApply merge(LmdbInMemoryAdjacencyIndex base, LmdbAdjacencyOverlaySet overlays, int from,
+				int toInclusive) {
+			long started = System.nanoTime();
+			long inputRetainedBytes = 0;
+			for (int i = from; i <= toInclusive; i++) {
+				inputRetainedBytes = saturatingAdd(inputRetainedBytes, overlays.generation(i).retainedBytes());
+			}
+			try {
+				LmdbAdjacencyDeltaGeneration merged = mergeGenerationRange(base, overlays, from, toInclusive + 1);
+				metrics.recordDeltaMerge(inputRetainedBytes, merged.retainedBytes());
+				PreparedApply prepared = new PreparedApply(merged, overlays.contextCatalog(), false,
+						overlays.extraSelectedSnapshot(), null, null, null);
+				try {
+					// The latest-row remap along the merged rows is proportional to the band; doing it here keeps it
+					// off the applier thread, where every committer would wait behind it.
+					prepared.replacedOverlays = replacedRange(overlays, from, toInclusive, merged);
+					prepared.premiseGenerationCount = overlays.generationCount();
+				} catch (RuntimeException | Error failure) {
+					prepared.close();
+					throw failure;
+				}
+				return prepared;
+			} catch (RuntimeException | Error failure) {
+				if (!(failure instanceof LmdbAdjacencyMemoryRefusedException)) {
+					rememberUnexpectedMaintenanceFailure(failure);
+				}
+				throw failure;
+			} finally {
+				metrics.recordCompaction(Math.max(0L, System.nanoTime() - started));
+			}
+		}
+
+		/** The overlay set with {@code [from, toInclusive]} replaced by the merged generation; retains everything. */
+		@Override
+		public LmdbAdjacencyOverlaySet replaceRange(LmdbAdjacencyOverlaySet overlays, int from, int toInclusive,
+				PreparedApply merged) {
+			LmdbAdjacencyOverlaySet result = merged.replacedOverlays;
+			if (result == null) {
+				try {
+					return replacedRange(overlays, from, toInclusive, merged.generation);
+				} finally {
+					merged.close(); // the set holds its own reference now
+				}
+			}
+			// The worker replaced the range in the premise set; the generations after the premise landed during the
+			// merge and are appended here, each a search-path insert of its own rows.
+			merged.replacedOverlays = null;
+			merged.close();
+			int count = overlays.generationCount();
+			try {
+				for (int index = merged.premiseGenerationCount; index < count; index++) {
+					LmdbAdjacencyDeltaGeneration appended = overlays.generation(index);
+					boolean last = index == count - 1;
+					LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
+					contexts.retain();
+					LmdbAdjacencyOverlaySet next;
+					try {
+						next = result.appendRetained(appended, contexts, overlays.extraSelectedSnapshot(),
+								last ? overlays.liveLogicalBytes() : result.liveLogicalBytesAfterAppend(appended),
+								last ? overlays.planeStatistics() : result.planeStatistics());
+					} catch (RuntimeException | Error failure) {
+						contexts.release();
+						throw failure;
+					}
+					result.release();
+					result = next;
+				}
+				return result;
+			} catch (RuntimeException | Error failure) {
+				result.release();
+				throw failure;
+			}
+		}
+
+		/** The overlay set with {@code [from, toInclusive]} replaced by {@code merged}; retains everything it holds. */
+		private LmdbAdjacencyOverlaySet replacedRange(LmdbAdjacencyOverlaySet overlays, int from, int toInclusive,
+				LmdbAdjacencyDeltaGeneration mergedGeneration) {
+			LmdbAdjacencyDeltaGeneration[] current = overlays.generationsSnapshot();
+			int removed = toInclusive - from + 1;
+			LmdbAdjacencyDeltaGeneration[] replacement = new LmdbAdjacencyDeltaGeneration[current.length - removed
+					+ 1];
+			System.arraycopy(current, 0, replacement, 0, from);
+			replacement[from] = mergedGeneration;
+			System.arraycopy(current, toInclusive + 1, replacement, from + 1, current.length - toInclusive - 1);
+			for (LmdbAdjacencyDeltaGeneration generation : replacement) {
+				generation.retain();
+			}
+			LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
+			contexts.retain();
+			try {
+				// remaps the latest-row index along the merged and later rows instead of rebuilding it over every row
+				return overlays.withReplacedRange(replacement, from, toInclusive, contexts,
+						overlays.extraSelectedSnapshot(), overlays.liveLogicalBytes(), overlays.planeStatistics());
+			} catch (RuntimeException | Error failure) {
+				contexts.release();
+				for (LmdbAdjacencyDeltaGeneration generation : replacement) {
+					generation.release();
+				}
+				throw failure;
+			}
+		}
+
+		/**
+		 * Worker operation: folds the first {@code prefixCount} generations into a new paged-CSF base. The returned
+		 * base is the worker's until the applier publishes or releases it.
+		 */
+		@Override
+		public Fold<LmdbInMemoryAdjacencyIndex> fold(LmdbInMemoryAdjacencyIndex base,
+				LmdbAdjacencyOverlaySet overlays, int prefixCount) {
+			long started = System.nanoTime();
+			LmdbAdjacencyOverlaySet prefix = overlays;
+			boolean ownsPrefix = false;
+			if (prefixCount < overlays.generationCount()) {
+				prefix = prefixOf(overlays, prefixCount);
+				ownsPrefix = true;
+			}
+			try {
+				LmdbAdjacencyPublishedState projection = new LmdbAdjacencyPublishedState(0L, base, prefix, null,
+						prefix.generation(prefixCount - 1).revision(), Long.MAX_VALUE,
+						LmdbAdjacencyPublishedState.AdjacencyServingState.ROW_EXACT, base.baseRevision(),
+						prefix.planeStatistics());
+				LmdbPagedCsfConsolidator.Result result = LmdbPagedCsfConsolidator.consolidate(projection, account,
+						workspaceRegionBytes);
+				metrics.recordBaseFold(prefix.retainedBytes(), result.base().retainedBytes());
+				logger.debug("Folded {} overlay generations / {} rows into paged CSF: {} shared shards, {} replaced, "
+						+ "{} newly allocated native bytes", result.foldedGenerationCount(), result.foldedRowCount(),
+						result.rewrite().sharedShardCount(), result.rewrite().replacedShardCount(),
+						result.rewrite().allocatedNativeBytes());
+				return new Fold<>(result.base(), prefix.generation(prefixCount - 1).revision());
+			} catch (RuntimeException | Error failure) {
+				if (!(failure instanceof LmdbAdjacencyMemoryRefusedException)) {
+					rememberUnexpectedMaintenanceFailure(failure);
+				}
+				throw failure;
+			} finally {
+				if (ownsPrefix) {
+					prefix.release();
+				}
+				metrics.recordCompaction(Math.max(0L, System.nanoTime() - started));
+			}
+		}
+
+		/** The overlay set without its first {@code count} generations, or null when nothing remains. */
+		@Override
+		public LmdbAdjacencyOverlaySet removePrefix(LmdbAdjacencyOverlaySet overlays, int count) {
+			LmdbAdjacencyDeltaGeneration[] current = overlays.generationsSnapshot();
+			if (count >= current.length) {
+				return null;
+			}
+			LmdbAdjacencyDeltaGeneration[] suffix = Arrays.copyOfRange(current, count, current.length);
+			for (LmdbAdjacencyDeltaGeneration generation : suffix) {
+				generation.retain();
+			}
+			LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
+			contexts.retain();
+			try {
+				// the fold does not change what the rows say, so the plane statistics of base plus overlays carry over
+				return new LmdbAdjacencyOverlaySet(suffix, contexts, overlays.extraSelectedSnapshot(), -1L,
+						overlays.planeStatistics());
+			} catch (RuntimeException | Error failure) {
+				contexts.release();
+				for (LmdbAdjacencyDeltaGeneration generation : suffix) {
+					generation.release();
+				}
+				throw failure;
+			}
+		}
+
+		private LmdbAdjacencyOverlaySet prefixOf(LmdbAdjacencyOverlaySet overlays, int count) {
+			LmdbAdjacencyDeltaGeneration[] prefix = Arrays.copyOf(overlays.generationsSnapshot(), count);
+			for (LmdbAdjacencyDeltaGeneration generation : prefix) {
+				generation.retain();
+			}
+			LmdbAdjacencyContextCatalog contexts = overlays.contextCatalog();
+			contexts.retain();
+			try {
+				return new LmdbAdjacencyOverlaySet(prefix, contexts, overlays.extraSelectedSnapshot(), -1L,
+						overlays.planeStatistics());
+			} catch (RuntimeException | Error failure) {
+				contexts.release();
+				for (LmdbAdjacencyDeltaGeneration generation : prefix) {
+					generation.release();
+				}
+				throw failure;
+			}
+		}
+
+		@Override
+		public boolean transientRefusal(Throwable failure) {
+			return failure instanceof LmdbAdjacencyMemoryRefusedException;
+		}
+
+		/** A refused merge on an overlay set twice the generation budget means memory will not return in time. */
+		@Override
+		public boolean rebuildOnRefusedCompaction(LmdbAdjacencyOverlaySet overlays) {
+			return overlays.generationCount() >= Math.multiplyExact(2, options.maxDeltaGenerations());
+		}
+
+		@Override
+		public boolean secondBaseFits(LmdbInMemoryAdjacencyIndex currentBase) {
+			// A rebuild beside the live base keeps readers exact during the scan. Estimate the new base at the size
+			// of the current one (plus its node-predicate projection); if that does not fit the account, the applier
+			// drops the live base first, as the quiescent rebuild always did.
+			long currentBaseBytes = account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BASE)
+					+ account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.NODE_PREDICATE_NATIVE)
+					+ account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.NODE_PREDICATE_JAVA);
+			return account.totalChargedBytes() + currentBaseBytes <= account.maxBytes();
+		}
+
+		@Override
+		public void retainBase(LmdbInMemoryAdjacencyIndex base) {
+			base.retain();
+		}
+
+		@Override
+		public void releaseBase(LmdbInMemoryAdjacencyIndex base) {
+			base.close();
+		}
+
+		@Override
+		public void retainOverlays(LmdbAdjacencyOverlaySet overlays) {
+			if (overlays != null) {
+				overlays.retain();
+			}
+		}
+
+		@Override
+		public void releaseOverlays(LmdbAdjacencyOverlaySet overlays) {
+			if (overlays != null) {
+				overlays.release();
+			}
+		}
+
+		@Override
+		public void releaseGeneration(PreparedApply prepared) {
+			prepared.close();
+		}
+
+		@Override
+		public void beforePublish(LmdbAdjacencyOverlaySet previous, LmdbAdjacencyOverlaySet next,
+				Transition transition) {
+			LmdbAdjacencyGenerationTransition generations = toGenerationTransition(transition);
+			generations.validate(previous, next);
+			generations.activateAdditions(next);
+		}
+
+		@Override
+		public void afterPublish(LmdbAdjacencyOverlaySet previous, LmdbAdjacencyOverlaySet next,
+				Transition transition) {
+			toGenerationTransition(transition).deactivateRemovals(previous);
+		}
+
+		@Override
+		public void published(AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> previous,
+				AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> next) {
+			LmdbInMemoryAdjacencyIndex base = next.base();
+			if (base != null && base != previous.base()) {
+				// a freshly built base supersedes any corrupt projection, so this capability comes back
+				nodePredicateInconsistent.set(false);
+				awaitStartupBuild = false;
+				logger.info("Published in-memory adjacency structures: format=paged-csf, snapshotRevision={}, "
+						+ "appliedRevision={}, {}", base.baseRevision(), next.appliedRevision(),
+						account.memoryUsageSummary());
+			}
+		}
+
+		private LmdbAdjacencyGenerationTransition toGenerationTransition(Transition transition) {
+			if (transition.prefixCount() < 0) {
+				return LmdbAdjacencyGenerationTransition.noChange();
+			}
+			return LmdbAdjacencyGenerationTransition.rangeReplacement(transition.prefixCount(),
+					transition.removedCount(), transition.addedCount());
+		}
+	}
+
+	private PreparedApply prepareApply(SealedDirectDelta sealed, LmdbInMemoryAdjacencyIndex base,
+			LmdbAdjacencyOverlaySet overlays, long[] resolvedSelected) {
+		LmdbAdjacencyDeltaGeneration generation = null;
+		LmdbAdjacencyContextCatalog inheritedCatalog = overlays == null ? base.contextCatalog()
+				: overlays.contextCatalog();
+		LmdbAdjacencyContextCatalog contextCatalog = inheritedCatalog;
+		boolean ownsContextCatalog = false;
+		long[] extraSelected = overlays == null ? new long[0] : overlays.extraSelectedSnapshot();
+		LmdbAdjacencyPlaneStatistics.Update planeStatisticsUpdate = null;
+		LmdbAdjacencyDeltaApplier.StructuralStats structuralStats = LmdbAdjacencyDeltaApplier.StructuralStats.EMPTY;
+		try {
+			if (!sealed.isEmpty()) {
+				long[] mergedExtra = classifySelected(extraSelected, sealed, base, resolvedSelected);
+				LongPredicate covered = coveredPredicate(base, mergedExtra);
+				LmdbAdjacencyDeltaApplier.Result result = LmdbAdjacencyDeltaApplier.apply(sealed, base, contextCatalog,
+						previousRows(base, overlays), covered, mergedExtra, account, workspaceRegionBytes,
+						options.supernodeEdges(), options.supernodeChunkEdges(), options.supernodeTargetBytes(),
+						LmdbAdjacencyMemoryAccount.MemoryKind.DELTA,
+						LmdbAdjacencyMemoryAccount.MemoryKind.JAVA_METADATA);
+				generation = result.generation;
+				contextCatalog = result.contextCatalog;
+				ownsContextCatalog = contextCatalog != inheritedCatalog;
+				extraSelected = result.extraSelectedAfter;
+				planeStatisticsUpdate = result.planeStatisticsUpdate;
+				structuralStats = result.structuralStats;
+			}
+			return new PreparedApply(generation, contextCatalog, ownsContextCatalog, extraSelected,
+					planeStatisticsUpdate, structuralStats, base.planeStatistics());
+		} catch (RuntimeException | Error failure) {
+			if (generation != null) {
+				generation.release();
+			}
+			if (ownsContextCatalog) {
+				contextCatalog.release();
+			}
+			throw failure;
+		}
 	}
 
 	private LongPredicate coveredPredicate(LmdbInMemoryAdjacencyIndex base, long[] extraSelected) {
@@ -2468,8 +1881,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	/**
 	 * SELECTED-mode classification of previously unseen predicates: a configured-but-unresolved IRI that now resolves
-	 * to a captured raw predicate ID becomes selected; its base-domain absence is proven by the base dictionary (plan's
-	 * absence proof), so its first commit merges against empty rows.
+	 * to a captured raw predicate ID becomes selected; its base-domain absence is proven by the base dictionary, so its
+	 * first commit merges against empty rows. When the base domain already contains the predicate the absence cannot be
+	 * proven and the revision becomes a gap (the applier marks it and rebuilds).
 	 */
 	private long[] classifySelected(long[] extraSelected, SealedDirectDelta sealed,
 			LmdbInMemoryAdjacencyIndex base, long[] resolvedSelected) {
@@ -2490,9 +1904,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				continue;
 			}
 			if (base.predicateCatalog().ordinalForRaw(id) >= 0) {
-				// the base domain contained this predicate: absence cannot be proven, so gap instead of guessing
-				markGap(sealed.revision());
-				continue;
+				throw new AdjacencyClassificationGapException(sealed.revision(), id);
 			}
 			long[] extended = Arrays.copyOf(merged, merged.length + 1);
 			extended[merged.length] = id;
@@ -2502,8 +1914,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return merged;
 	}
 
-	private long[] captureResolvedSelectedPredicates(LmdbAdjacencyPublishedState state) {
-		LmdbInMemoryAdjacencyIndex base = state.base();
+	private long[] captureResolvedSelectedPredicates(LmdbInMemoryAdjacencyIndex base) {
 		if (base == null) {
 			return new long[0];
 		}
@@ -2549,14 +1960,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return resolved;
 	}
 
-	private LmdbAdjacencyDeltaApplier.PreviousRows previousRows(LmdbAdjacencyPublishedState state) {
-		LmdbAdjacencyOverlaySet overlays = state.overlays();
+	private LmdbAdjacencyDeltaApplier.PreviousRows previousRows(LmdbInMemoryAdjacencyIndex base,
+			LmdbAdjacencyOverlaySet overlays) {
 		LmdbAdjacencyOverlaySet.LatestRowLookup overlaySearch = new LmdbAdjacencyOverlaySet.LatestRowLookup();
-		LmdbAdjacencyContextCatalog overlayContexts = state.contextCatalog();
-		LmdbInMemoryAdjacencyIndex base = state.base();
+		LmdbAdjacencyContextCatalog overlayContexts = overlays == null ? base.contextCatalog()
+				: overlays.contextCatalog();
 		LmdbAdjacencyLookupContext baseSearch = new LmdbAdjacencyLookupContext();
 		return (rawKey, plane, rawPredicateId) -> {
-			if (overlays != null && overlays.findLatest(rawKey, plane, rawPredicateId, overlaySearch)) {
+			if (overlays != null && overlays.generationCount() > 0
+					&& overlays.findLatest(rawKey, plane, rawPredicateId, overlaySearch)) {
 				LmdbAdjacencyDeltaGeneration generation = overlaySearch.generation();
 				if (generation.tombstoneAt(overlaySearch.rowIndex())) {
 					return null;
@@ -2601,861 +2013,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 	}
 
-	/**
-	 * Test hook: pauses the applier between pending publication and generation publication. Resume waits for already
-	 * committed preparation, its queued drains, and compaction; test writers must have finished submitting work.
-	 */
-	void pauseApplierForTest(boolean paused) {
-		applierPausedForTest = paused;
-		if (!paused) {
-			submitDrain();
-			// Preparation can still own committed deltas that have not reached applyQueue. Its barrier must precede
-			// the maintenance barrier, otherwise a resumed test can pin pending rows before their drain is submitted.
-			awaitCommitCleanupForTest();
-			awaitCompactionForTest();
-		}
-	}
-
-	void awaitCompactionForTest() {
-		if (Thread.currentThread() == compactionThreadFactory.currentThread()) {
-			return;
-		}
-		while (true) {
-			try {
-				compactionExecutor.submit(() -> {
-				}).get();
-				if (!compactionTaskScheduled.get() && !compactionRequested.get()) {
-					return;
-				}
-			} catch (RejectedExecutionException e) {
-				if (!closed) {
-					throw e;
-				}
-				return;
-			} catch (Exception e) {
-				throw new IllegalStateException("direct adjacency compaction barrier failed", e);
-			}
-		}
-	}
-
-	void requestCompactionForTest() {
-		requestCompaction();
-		awaitCompactionForTest();
-	}
-
-	int queuedCommitsForTest() {
-		return queuedCommitCount();
-	}
-
-	int queuedCommitCount() {
-		synchronized (applyQueue) {
-			return applyQueue.size();
-		}
-	}
-
-	boolean synchronousUpdatesActivatedForTest() {
-		return synchronousUpdatesActivated.get();
-	}
-
-	boolean synchronousUpdatesActivated() {
-		return synchronousUpdatesActivated.get();
-	}
-
-	long lastCutoverNanos() {
-		return lastCutoverNanos;
-	}
-
-	long lastCutoverRevisions() {
-		return lastCutoverRevisions;
-	}
-
-	int lastCutoverQueuedCommits() {
-		return lastCutoverQueuedCommits;
-	}
-
-	// ------------------------------------------------------------------
-	// lifecycle
-	// ------------------------------------------------------------------
-
-	/** Fence partial coverage and finish pre-existing work before the initial import mutates LMDB. */
-	void deferMaintenanceForInitialImport() {
-		synchronized (rebuildSubmissionLock) {
-			maintenanceDeferred = true;
-			maintenanceUnavailable = true;
-			synchronousUpdatesActivated.set(false);
-			markGap(tripleStore.getDataRevision());
-			Future<?> retry = buildRetryFuture;
-			buildRetryFuture = null;
-			if (retry != null) {
-				retry.cancel(false);
-			}
-			Future<?> build = rebuildFuture;
-			if (build != null && !build.isDone()) {
-				build.cancel(true);
-			}
-		}
-		synchronized (applyQueue) {
-			applyQueue.notifyAll();
-		}
-		awaitMaintenanceBarrier(preparationExecutor);
-		awaitMaintenanceBarrier(compactionExecutor);
-		awaitMaintenanceBarrier(maintenanceExecutor);
-		synchronized (rebuildSubmissionLock) {
-			rebuildPending.set(false);
-			rebuildFuture = null;
-			// An old rebuild may have yielded for a snapshot whose final release happened while paused.
-			// Its tasks have drained; the terminal import rebuild must own a fresh scheduling token.
-			quiescentRebuildPending.set(false);
-			quiescentRebuildTaskScheduled.set(false);
-		}
-		maintenanceUnavailable = true;
-	}
-
-	private void awaitMaintenanceBarrier(ExecutorService executor) {
-		try {
-			executor.submit(() -> {
-			}).get();
-		} catch (InterruptedException interrupted) {
-			Thread.currentThread().interrupt();
-			throw new IllegalStateException("Interrupted while deferring adjacency maintenance", interrupted);
-		} catch (ExecutionException failure) {
-			throw new IllegalStateException("Unable to defer adjacency maintenance", failure.getCause());
-		}
-	}
-
-	/** Resume only after the terminal owner releases its native/read/writer resources. */
-	void resumeMaintenanceAfterInitialImport() {
-		maintenanceDeferred = false;
-		// A partially entered deferral can leave an older continuation waiting without a task.
-		if (quiescentRebuildPending.get()) {
-			enqueueQuiescentRebuildStep();
-		}
-	}
-
-	/**
-	 * Schedules a repository-local background build. Empty bootstrap enables commit waiting immediately; populated
-	 * bootstrap enables it at exact cutover. Scheduling never waits for construction.
-	 */
-	void triggerBuild() {
-		throwIfStrictMaintenanceFailed();
-		Future<?> future;
-		synchronized (rebuildSubmissionLock) {
-			if (closed || maintenanceDeferred || options.memoryRefused()) {
-				return;
-			}
-			Future<?> retry = buildRetryFuture;
-			buildRetryFuture = null;
-			if (retry != null) {
-				retry.cancel(false);
-			}
-			var lockManager = tripleStore.getTxnManager().lockManager();
-			Long bootstrapFence = null;
-			boolean rebuildClaimed = false;
-			try {
-				if (options.synchronousMaintenance() && !synchronousUpdatesActivated.get()) {
-					try {
-						bootstrapFence = lockManager.readLock();
-					} catch (InterruptedException e) {
-						Thread.currentThread().interrupt();
-						throw new IllegalStateException(
-								"interrupted while checking direct adjacency bootstrap state", e);
-					}
-					try {
-						synchronousUpdatesActivated.set(tripleStore.isEmpty());
-					} catch (IOException e) {
-						throw new IllegalStateException("could not determine adjacency bootstrap emptiness", e);
-					}
-				}
-				if (rebuildPending.compareAndSet(false, true)) {
-					rebuildClaimed = true;
-					future = submitMaintenance(() -> {
-						synchronized (rebuildSubmissionLock) {
-							rebuildPending.set(false);
-						}
-						buildOnce();
-					});
-					rebuildFuture = future;
-				} else {
-					future = rebuildFuture;
-				}
-			} catch (RuntimeException e) {
-				if (rebuildClaimed) {
-					rebuildPending.set(false);
-				}
-				if (!closed) {
-					throw e;
-				}
-				return;
-			} finally {
-				if (bootstrapFence != null) {
-					lockManager.unlockRead(bootstrapFence);
-				}
-			}
-		}
-	}
-
-	/**
-	 * Waits until the maintenance executor has published an exact view for the data revision current at the readiness
-	 * check and any catch-up cutover has reopened writer admission. This is a bounded diagnostic seam for benchmarks
-	 * and operational startup checks; it never starts a build that configuration disabled.
-	 */
-	boolean awaitCurrentRevisionReady(long timeout, TimeUnit unit) throws InterruptedException {
-		Objects.requireNonNull(unit, "unit");
-		if (timeout < 0L) {
-			throw new IllegalArgumentException("timeout must be non-negative");
-		}
-		long timeoutNanos = unit.toNanos(timeout);
-		long startedNanos = System.nanoTime();
-		CompletableFuture<Void> scheduling = startupScheduling;
-		if (scheduling != null) {
-			try {
-				scheduling.get(Math.max(0L, timeoutNanos - (System.nanoTime() - startedNanos)), TimeUnit.NANOSECONDS);
-			} catch (TimeoutException | ExecutionException | CancellationException unavailable) {
-				return false;
-			}
-		}
-		while (true) {
-			if (servesCurrentRevisionReady()) {
-				return true;
-			}
-			long elapsedNanos = Math.max(0L, System.nanoTime() - startedNanos);
-			long remainingNanos = timeoutNanos - Math.min(timeoutNanos, elapsedNanos);
-			if (remainingNanos == 0L) {
-				return false;
-			}
-			CompletableFuture<Void> pendingPublication = pendingPublicationThrough(tripleStore.getDataRevision());
-			if (pendingPublication != null) {
-				try {
-					pendingPublication.get(remainingNanos, TimeUnit.NANOSECONDS);
-					continue;
-				} catch (TimeoutException e) {
-					return false;
-				} catch (CancellationException e) {
-					continue;
-				} catch (ExecutionException e) {
-					throw new IllegalStateException("direct adjacency publication failed", e.getCause());
-				}
-			}
-			// In the non-deferred commit path the authoritative revision can advance before the sealed delta is handed
-			// to the applier. Wait for the backing writer to enqueue or abandon that delta before probing for progress.
-			synchronized (admissionMonitor) {
-				if (admittedWrites != 0) {
-					long waitElapsedNanos = Math.max(0L, System.nanoTime() - startedNanos);
-					long waitRemainingNanos = timeoutNanos - Math.min(timeoutNanos, waitElapsedNanos);
-					if (waitRemainingNanos == 0L) {
-						return false;
-					}
-					TimeUnit.NANOSECONDS.timedWait(admissionMonitor, waitRemainingNanos);
-					continue;
-				}
-			}
-
-			Future<?> barrier;
-			try {
-				Future<?> retry = buildRetryFuture;
-				barrier = retry != null && !retry.isDone() ? retry : maintenanceExecutor.submit(() -> {
-					if (servesCurrentRevisionReady()) {
-						return ReadinessProbe.READY;
-					}
-					return maintenanceCanReachReadiness() ? ReadinessProbe.PROGRESS_PENDING
-							: ReadinessProbe.UNAVAILABLE;
-				});
-			} catch (RejectedExecutionException e) {
-				return false;
-			}
-			try {
-				Object result = barrier.get(remainingNanos, TimeUnit.NANOSECONDS);
-				if (result == ReadinessProbe.READY) {
-					return true;
-				}
-				if (result == ReadinessProbe.UNAVAILABLE) {
-					// Publication and the maintenance-state transition are separate volatile writes. If the probe
-					// observed their boundary, prefer the exact published state over a transient unavailable verdict.
-					return servesCurrentRevisionReady();
-				}
-			} catch (TimeoutException e) {
-				return false;
-			} catch (CancellationException e) {
-				// An explicit build or shutdown superseded the delayed retry; inspect its current state again.
-			} catch (ExecutionException e) {
-				throw new IllegalStateException("direct adjacency readiness barrier failed", e.getCause());
-			}
-		}
-	}
-
-	private CompletableFuture<Void> pendingPublicationThrough(long revision) {
-		long earliestRevision = Long.MAX_VALUE;
-		CompletableFuture<Void> earliestPublication = null;
-		for (var entry : unpublishedRevisions.entrySet()) {
-			long pendingRevision = entry.getKey();
-			if (pendingRevision <= revision && pendingRevision < earliestRevision) {
-				earliestRevision = pendingRevision;
-				earliestPublication = entry.getValue();
-			}
-		}
-		return earliestPublication;
-	}
-
-	private boolean servesCurrentRevisionExactly() {
-		if (closed || options.memoryRefused() || writeTransactionBlocksAdjacency()) {
-			return false;
-		}
-		long currentRevision = tripleStore.getDataRevision();
-		LmdbAdjacencyPublishedState state = published.get();
-		return state.servingState() == AdjacencyServingState.ROW_EXACT && state.base() != null
-				&& state.appliedRevision() == currentRevision && currentRevision >= state.minSnapshotRevision()
-				&& currentRevision <= state.horizonRevision() && state.gapFromRevision() > currentRevision
-				&& emergencyGap.get().fromRevision() > currentRevision;
-	}
-
-	private boolean servesCurrentRevisionReady() {
-		if (!servesCurrentRevisionExactly()) {
-			return false;
-		}
-		synchronized (admissionMonitor) {
-			return !cutoverAdmissionClosed;
-		}
-	}
-
-	private boolean maintenanceCanReachReadiness() {
-		if (closed || options.memoryRefused() || maintenanceState == MaintenanceState.CLOSED
-				|| maintenanceState == MaintenanceState.MEMORY_REFUSED
-				|| maintenanceState == MaintenanceState.FAILED_CORRUPT) {
-			return false;
-		}
-		Future<?> retry = buildRetryFuture;
-		if ((retry != null && !retry.isDone()) || rebuildPending.get() || quiescentRebuildPending.get()
-				|| maintenanceState == MaintenanceState.BUILDING
-				|| maintenanceState == MaintenanceState.CATCHING_UP
-				|| maintenanceState == MaintenanceState.CONSOLIDATING
-				|| maintenanceState == MaintenanceState.QUIESCING_FOR_REBUILD) {
-			return true;
-		}
-		synchronized (admissionMonitor) {
-			if (admittedWrites != 0) {
-				return true;
-			}
-		}
-		if (pendingPublicationThrough(tripleStore.getDataRevision()) != null) {
-			return true;
-		}
-		synchronized (applyQueue) {
-			return !applyQueue.isEmpty();
-		}
-	}
-
-	/**
-	 * Deterministic synchronous build for tests: runs one build on the maintenance executor and reports success.
-	 */
-	boolean buildNowForTest() {
-		if (closed || options.memoryRefused()) {
-			return false;
-		}
-		AtomicBoolean usableBasePublished = new AtomicBoolean();
-		try {
-			Future<?> future = maintenanceExecutor.submit(() -> {
-				buildOnce();
-				LmdbAdjacencyPublishedState state = published.get();
-				usableBasePublished.set(state.base() != null
-						&& state.servingState() == AdjacencyServingState.ROW_EXACT);
-			});
-			future.get();
-		} catch (Exception e) {
-			throw new IllegalStateException("direct adjacency build failed", e);
-		}
-		return usableBasePublished.get();
-	}
-
-	/**
-	 * Marks every row at {@code fromRevision} and later as unusable through the emergency gap (invariant I16). Every
-	 * event advances the marker sequence, including events hidden by an older effective minimum, so a rebuilding
-	 * generation can only retire the exact gap history it captured.
-	 */
-	void markGap(long fromRevision) {
-		GapMarker current;
-		GapMarker updated;
-		do {
-			current = emergencyGap.get();
-			updated = new GapMarker(Math.min(current.fromRevision(), fromRevision), current.sequence() + 1);
-		} while (!emergencyGap.compareAndSet(current, updated));
-		// Catch-up waits on the apply queue for its next delta or a new gap. A deferred connection commit records an
-		// overflow gap on the preparation thread after releasing write admission; without this wake-up, a catch-up that
-		// already closed admission waits forever for that revision's delta, and so does every later writer.
-		synchronized (applyQueue) {
-			applyQueue.notifyAll();
-		}
-		completeUnavailablePublications();
-	}
-
-	/**
-	 * Records a gap and schedules the rebuild that retires it. The cutover in {@code catchUpAndPublish} is the only
-	 * place the emergency gap is ever cleared, so a gap marked without this scheduling degrades every later snapshot
-	 * for the remaining lifetime of the store.
-	 */
-	private void markGapAndScheduleRecovery(long fromRevision) {
-		markGap(fromRevision);
-		maintenanceState = MaintenanceState.DEGRADED_GAP;
-		scheduleQuiescentRebuild();
-	}
-
-	/**
-	 * The read-path backstop for a gap whose scheduled recovery never landed: a rebuild aborts whenever a concurrent
-	 * {@link #markGap} advances the marker sequence mid-build, and its single retry can be consumed by the same race,
-	 * so scheduling at the write path alone narrows the window rather than closing it. Throttled to
-	 * {@link LmdbDirectAdjacencyOptions#buildRetryMillis()} and never blocking, since acquisition is on the query path.
-	 */
-	private void requestGapRecovery() {
-		if (closed || maintenanceDeferred || options.memoryRefused() || rebuildPending.get()
-				|| quiescentRebuildPending.get()
-				|| unexpectedMaintenanceFailure.get() != null
-				|| maintenanceState == MaintenanceState.CLOSED
-				|| maintenanceState == MaintenanceState.MEMORY_REFUSED
-				|| maintenanceState == MaintenanceState.FAILED_CORRUPT) {
-			return;
-		}
-		long now = System.nanoTime();
-		long previous = lastGapRecoveryNanos.get();
-		if (previous != GAP_RECOVERY_NEVER_ATTEMPTED
-				&& now - previous < TimeUnit.MILLISECONDS.toNanos(options.buildRetryMillis())) {
-			return;
-		}
-		if (!lastGapRecoveryNanos.compareAndSet(previous, now)) {
-			// another degraded acquisition already claimed this interval
-			return;
-		}
-		scheduleQuiescentRebuild();
-	}
-
-	private void buildOnce() {
-		if (closed || maintenanceDeferred || options.memoryRefused()) {
-			return;
-		}
-		metrics.recordBuildStarted();
-		maintenanceUnavailable = false;
-		maintenanceState = MaintenanceState.BUILDING;
-		boolean retryAfterFailure = false;
-		try {
-			if (!suspendSynchronousPublicationForBuild()) {
-				metrics.recordBuildAborted();
-				return;
-			}
-			LmdbAdjacencyCoverage coverage;
-			LmdbInMemoryAdjacencyIndex index;
-			long baseRevision;
-			GapMarker capturedGap;
-			Runnable beforeSnapshot = beforeBuildSnapshotForTest;
-			if (beforeSnapshot != null) {
-				beforeSnapshot.run();
-			}
-			// Capture the gap history before pinning. A commit records its gap no earlier than its physical commit and
-			// the pin waits out that commit's write lock, so every gap captured here belongs to a revision the snapshot
-			// covers. Captured after pinning, a deferred commit's overflow gap for a later revision would be adopted as
-			// retired although its delta never reaches the queue, and catch-up would wait for that revision.
-			capturedGap = emergencyGap.get();
-			try (LmdbAdjacencyBuildTxnFamily sourceFamily = new LmdbAdjacencyBuildTxnFamily(tripleStore,
-					options.buildThreads())) {
-				baseRevision = sourceFamily.snapshotRevision();
-				Runnable afterSnapshot = afterBuildSnapshotForTest;
-				if (afterSnapshot != null) {
-					afterSnapshot.run();
-				}
-				// Resolve selected predicates only after pinning: a dictionary ID always commits before the triples
-				// that use it, so every selected predicate with rows in this snapshot resolves. Resolved earlier, a
-				// predicate first committed in between would leave its rows out of the base, and its next delta would
-				// then treat it as absent from the base and drop them.
-				coverage = resolveCoverage();
-				account.beginProgressLogging();
-				logger.info("Creating in-memory adjacency structures: format=paged-csf, snapshotRevision={}, {}",
-						baseRevision, account.memoryUsageSummary());
-				index = LmdbPagedCsfBaseBuilder.build(sourceFamily, coverage, account, baseArenaRegionBytes,
-						workspaceRegionBytes, options.buildThreads(), metrics, nodePredicateOptions(),
-						valueStore == null ? ImmutablePagedQuadCsfIndex.LiteralDatatypeLookup.NONE
-								: valueStore::literalDatatypeIds);
-			}
-			boolean published = false;
-			try {
-				Runnable interleave = afterBuildScanForTest;
-				if (interleave != null) {
-					interleave.run();
-				}
-				published = catchUpAndPublish(index, baseRevision, capturedGap);
-			} finally {
-				if (!published) {
-					index.close();
-				}
-			}
-			if (published) {
-				lastBuildFailureDescription = "<none>";
-				// A freshly derived projection supersedes the corrupt one, so this capability comes back.
-				nodePredicateInconsistent.set(false);
-				metrics.recordBuildCompleted();
-				logger.info("Published in-memory adjacency structures: format=paged-csf, snapshotRevision={}, {}",
-						baseRevision, account.memoryUsageSummary());
-			} else {
-				lastBuildFailureDescription = "online catch-up could not prove revision continuity";
-				metrics.recordBuildAborted();
-				logger.info("Aborted in-memory adjacency structure build before publication: format=paged-csf, "
-						+ "snapshotRevision={}, {}", baseRevision, account.memoryUsageSummary());
-				if (!closed) {
-					maintenanceState = MaintenanceState.EMPTY;
-					triggerBuild();
-				}
-			}
-		} catch (LmdbAdjacencyMemoryRefusedException e) {
-			lastBuildFailureDescription = describeFailure(e);
-			metrics.recordBuildAborted();
-			maintenanceState = MaintenanceState.MEMORY_REFUSED;
-			logger.info("Refused in-memory adjacency structure build: {}", account.memoryUsageSummary());
-			logger.warn("Direct adjacency build refused by the memory account: {}", e.getMessage());
-		} catch (LmdbAdjacencyBuildUnavailableException e) {
-			lastBuildFailureDescription = describeFailure(e);
-			metrics.recordBuildAborted();
-			if (!closed) {
-				maintenanceState = MaintenanceState.EMPTY;
-				logger.info("Direct adjacency build is unavailable for this configuration: {}", e.getMessage());
-			}
-		} catch (IOException | RuntimeException e) {
-			if (maintenanceDeferred) {
-				metrics.recordBuildAborted();
-				maintenanceState = MaintenanceState.EMPTY;
-				return;
-			}
-			retryAfterFailure = !options.failOnMaintenanceError();
-			lastBuildFailureDescription = describeFailure(e);
-			metrics.recordBuildAborted();
-			logger.info("Aborted in-memory adjacency structure build: {}", account.memoryUsageSummary());
-			if (!closed) {
-				maintenanceState = MaintenanceState.EMPTY;
-				logger.warn("Direct adjacency build aborted; LMDB continues to serve", e);
-			}
-			if (options.failOnMaintenanceError()) {
-				throw unexpectedMaintenanceFailure("build", e);
-			}
-		} finally {
-			maintenanceUnavailable = maintenanceState != MaintenanceState.ACTIVE
-					&& maintenanceState != MaintenanceState.CONSOLIDATING;
-			if (maintenanceUnavailable) {
-				completeUnavailablePublications();
-			}
-			if (retryAfterFailure) {
-				scheduleBuildRetry();
-			}
-			signalWriteAdmission();
-		}
-	}
-
-	/**
-	 * A build catches up from queued deltas, but while an exact live base exists a synchronous commit publishes into
-	 * that base instead of queuing one, so catch-up would wait for its revision forever. Suspend synchronous
-	 * publication and let commits already prepared against the live base publish before the build takes its snapshot:
-	 * every later commit then reaches the queue, and cutover resumes synchronous publication.
-	 *
-	 * @return false when interrupted, typically by close
-	 */
-	private boolean suspendSynchronousPublicationForBuild() {
-		try {
-			publicationLock.lockInterruptibly();
-		} catch (InterruptedException interrupted) {
-			Thread.currentThread().interrupt();
-			return false;
-		}
-		try {
-			if (published.get().base() == null || !synchronousUpdatesActivated.getAndSet(false)) {
-				return true;
-			}
-			while (preparationsInFlight.get() != 0) {
-				noPreparationsInFlight.await();
-			}
-			return true;
-		} catch (InterruptedException interrupted) {
-			Thread.currentThread().interrupt();
-			return false;
-		} finally {
-			publicationLock.unlock();
-		}
-	}
-
-	private void scheduleBuildRetry() {
-		synchronized (rebuildSubmissionLock) {
-			if (closed || maintenanceDeferred || (buildRetryFuture != null && !buildRetryFuture.isDone())) {
-				return;
-			}
-			try {
-				buildRetryFuture = maintenanceExecutor.schedule(() -> {
-					synchronized (rebuildSubmissionLock) {
-						buildRetryFuture = null;
-					}
-					if (!closed && maintenanceUnavailable) {
-						triggerBuild();
-					}
-				}, options.buildRetryMillis(), TimeUnit.MILLISECONDS);
-			} catch (RejectedExecutionException failure) {
-				if (!closed) {
-					throw failure;
-				}
-			}
-		}
-	}
-
-	private static String describeFailure(Throwable failure) {
-		String message = failure.getMessage();
-		return failure.getClass().getName() + (message == null || message.isBlank() ? "" : ": " + message);
-	}
-
-	/**
-	 * Online catch-up: applies queued sealed commits {@code > baseRevision} in strict order against the unpublished
-	 * base, then publishes one continuous state under the TxnManager read lock, which excludes concurrent commits
-	 * (plan's catch-up steps 1–6). Returns false when the build must abort (overflow gap or continuity failure).
-	 */
-	private boolean catchUpAndPublish(LmdbInMemoryAdjacencyIndex index, long baseRevision, GapMarker capturedGap) {
-		if (maintenanceDeferred) {
-			return false;
-		}
-		List<CompletableFuture<Void>> completions = new ArrayList<>();
-		maintenanceState = MaintenanceState.CATCHING_UP;
-		List<LmdbAdjacencyDeltaGeneration> generations = new ArrayList<>();
-		LmdbAdjacencyContextCatalog contextCatalog = index.contextCatalog();
-		boolean ownsContextCatalog = false;
-		long[] extraSelected = new long[0];
-		LmdbAdjacencyPlaneStatistics planeStatistics = index.planeStatistics();
-		long appliedRevision = baseRevision;
-		var lockManager = tripleStore.getTxnManager().lockManager();
-		long cutoverStamp = 0;
-		long cutoverStartedNanos = System.nanoTime();
-		long onlineTarget = tripleStore.getDataRevision();
-		catchUpTargetRevision = onlineTarget;
-		int cutoverQueuedCommits = queuedCommitCount();
-		boolean success = false;
-		try {
-			Runnable onlineHook = beforeOnlineCatchUpForTest;
-			if (onlineHook != null) {
-				onlineHook.run();
-			}
-			while (true) {
-				if (cutoverStamp == 0 && appliedRevision >= onlineTarget) {
-					// Finish the online pass before closing admission. Wait for complete delta handoff without
-					// holding the physical-commit fence: admitted writers need it in order to finish.
-					if (!closeWriteAdmission()) {
-						return false;
-					}
-					cutoverStamp = lockManager.readLock();
-					catchUpTargetRevision = tripleStore.getDataRevision();
-				}
-
-				if (closed || maintenanceDeferred) {
-					return false;
-				}
-				if (emergencyGap.get().sequence() != capturedGap.sequence()) {
-					return false;
-				}
-				SealedDirectDelta head;
-				synchronized (applyQueue) {
-					head = applyQueue.peekFirst();
-				}
-				if (head == null) {
-					long targetRevision = tripleStore.getDataRevision();
-					if (appliedRevision == targetRevision) {
-						publicationLock.lock();
-						try {
-							if (closed || maintenanceDeferred) {
-								return false;
-							}
-							if ((capturedGap.fromRevision() != Long.MAX_VALUE
-									&& capturedGap.fromRevision() > baseRevision)
-									|| emergencyGap.get() != capturedGap) {
-								return false;
-							}
-							LmdbAdjacencyPublishedState current = published.get();
-							List<PendingTable> carried = new ArrayList<>();
-							for (PendingTable pending : current.pending()) {
-								if (pending.revision() > appliedRevision) {
-									carried.add(pending);
-								}
-							}
-							LmdbAdjacencyOverlaySet overlays;
-							if (generations.isEmpty() && contextCatalog == index.contextCatalog()
-									&& extraSelected.length == 0) {
-								overlays = null;
-							} else {
-								if (!ownsContextCatalog) {
-									contextCatalog.retain();
-								}
-								overlays = new LmdbAdjacencyOverlaySet(
-										generations.toArray(new LmdbAdjacencyDeltaGeneration[0]), contextCatalog,
-										extraSelected);
-								ownsContextCatalog = false;
-							}
-							publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), index, overlays,
-									carried.toArray(new PendingTable[0]), appliedRevision, Long.MAX_VALUE,
-									AdjacencyServingState.ROW_EXACT, index.baseRevision(), planeStatistics),
-									LmdbAdjacencyGenerationTransition.rebuildInstall(
-											current.overlays() == null ? 0 : current.overlays().generationCount(),
-											overlays == null ? 0 : overlays.generationCount()));
-							GapMarker clearedGap = new GapMarker(Long.MAX_VALUE, capturedGap.sequence());
-							if (emergencyGap.compareAndSet(capturedGap, clearedGap)) {
-								// This cutover happens while physical commits are fenced. A commit that acquires the
-								// write lock after release is therefore the first synchronous update.
-								synchronousUpdatesActivated.set(true);
-								lastCutoverQueuedCommits = cutoverQueuedCommits;
-								lastCutoverRevisions = Math.max(0L, appliedRevision - baseRevision);
-								lastCutoverNanos = Math.max(0L, System.nanoTime() - cutoverStartedNanos);
-								maintenanceState = MaintenanceState.ACTIVE;
-							} else {
-								maintenanceState = MaintenanceState.DEGRADED_GAP;
-								scheduleQuiescentRebuild();
-							}
-							success = true;
-							return true;
-						} finally {
-							publicationLock.unlock();
-						}
-					}
-					if (targetRevision < appliedRevision) {
-						throw new IllegalStateException("adjacency catch-up advanced past its target revision");
-					}
-					if (!awaitCatchUpQueue(capturedGap)) {
-						return false;
-					}
-					continue;
-				}
-				if (head.revision() <= appliedRevision) {
-					completions.add(head.retainPublication());
-					releaseDelta(removeHead(head));
-					continue;
-				}
-				if (head.revision() != appliedRevision + 1 || head.isOverflowed()) {
-					// lost or overflowed capture: this build cannot reach continuity (invariant I16)
-					markGap(appliedRevision + 1);
-					completions.add(head.retainPublication());
-					releaseDelta(removeHead(head));
-					return false;
-				}
-				if (!head.isEmpty()) {
-					long[] mergedExtra = classifyForCatchUp(index, extraSelected, head);
-					LongPredicate covered = coveredPredicate(index, mergedExtra);
-					LmdbAdjacencyDeltaApplier.Result result = LmdbAdjacencyDeltaApplier.apply(head, index,
-							contextCatalog, catchUpPreviousRows(index, generations, contextCatalog), covered,
-							mergedExtra, account, workspaceRegionBytes, options.supernodeEdges(),
-							options.supernodeChunkEdges(), options.supernodeTargetBytes());
-					if (result.generation != null) {
-						generations.add(result.generation);
-					}
-					LmdbAdjacencyContextCatalog nextContextCatalog = result.contextCatalog;
-					if (nextContextCatalog != contextCatalog) {
-						if (ownsContextCatalog) {
-							contextCatalog.release();
-						}
-						contextCatalog = nextContextCatalog;
-						ownsContextCatalog = true;
-					}
-					extraSelected = result.extraSelectedAfter;
-					planeStatistics = planeStatistics.with(result.planeStatisticsUpdate);
-				}
-				appliedRevision = head.revision();
-				completions.add(head.retainPublication());
-				releaseDelta(removeHead(head));
-			}
-		} catch (InterruptedException interrupted) {
-			Thread.currentThread().interrupt();
-			return false;
-		} finally {
-			if (cutoverStamp != 0) {
-				lockManager.unlockRead(cutoverStamp);
-			}
-			for (CompletableFuture<Void> completion : completions) {
-				completion.complete(null);
-			}
-			openWriteAdmission();
-			if (!success) {
-				for (LmdbAdjacencyDeltaGeneration generation : generations) {
-					generation.release();
-				}
-				if (ownsContextCatalog) {
-					contextCatalog.release();
-				}
-			}
-		}
-	}
-
-	private boolean awaitCatchUpQueue(GapMarker capturedGap) {
-		Runnable waitHook = catchUpWaitForTest;
-		if (waitHook != null) {
-			waitHook.run();
-		}
-		synchronized (applyQueue) {
-			while (applyQueue.isEmpty() && !closed
-					&& emergencyGap.get().sequence() == capturedGap.sequence()) {
-				try {
-					applyQueue.wait();
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					return false;
-				}
-			}
-			return !closed && emergencyGap.get().sequence() == capturedGap.sequence();
-		}
-	}
-
-	private long[] classifyForCatchUp(LmdbInMemoryAdjacencyIndex index, long[] extraSelected,
-			SealedDirectDelta sealed) {
-		LmdbAdjacencyCoverage coverage = index.coverage();
-		if (coverage.isFull() || coverage.unresolvedConfiguredIris().isEmpty() || valueStore == null) {
-			return extraSelected;
-		}
-		long[] merged = extraSelected;
-		for (IRI unresolved : coverage.unresolvedConfiguredIris()) {
-			long id;
-			try {
-				id = valueStore.getId(unresolved);
-			} catch (IOException e) {
-				continue;
-			}
-			if (id == LmdbValue.UNKNOWN_ID || id <= 0 || unsignedContains(merged, id)
-					|| index.predicateCatalog().ordinalForRaw(id) >= 0) {
-				continue;
-			}
-			boolean captured = false;
-			for (int i = 0; i < sealed.eventCount && !captured; i++) {
-				captured = sealed.predicates[i] == id;
-			}
-			if (captured) {
-				long[] extended = Arrays.copyOf(merged, merged.length + 1);
-				extended[merged.length] = id;
-				sortUnsigned(extended);
-				merged = extended;
-			}
-		}
-		return merged;
-	}
-
-	private LmdbAdjacencyDeltaApplier.PreviousRows catchUpPreviousRows(LmdbInMemoryAdjacencyIndex index,
-			List<LmdbAdjacencyDeltaGeneration> generations, LmdbAdjacencyContextCatalog contexts) {
-		LmdbAdjacencyDeltaGeneration[] generationSnapshot = generations
-				.toArray(new LmdbAdjacencyDeltaGeneration[0]);
-		SearchContext[] generationSearches = new SearchContext[generationSnapshot.length];
-		for (int i = 0; i < generationSearches.length; i++) {
-			generationSearches[i] = new SearchContext();
-		}
-		LmdbAdjacencyLookupContext baseSearch = new LmdbAdjacencyLookupContext();
-		return (rawKey, plane, rawPredicateId) -> {
-			for (int i = generationSnapshot.length - 1; i >= 0; i--) {
-				LmdbAdjacencyDeltaGeneration generation = generationSnapshot[i];
-				long found = generation.find(rawKey, plane, rawPredicateId, generationSearches[i]);
-				if (found == LmdbAdjacencyDeltaGeneration.ROW_TOMBSTONE) {
-					return null;
-				}
-				if (found != LmdbAdjacencyDeltaGeneration.NO_VERSION) {
-					return new OldRun(generation.catalog(), contexts, found);
-				}
-			}
-			long handle = index.findRun(rawKey, plane, rawPredicateId, baseSearch);
-			if (handle == LmdbInMemoryAdjacencyIndex.NOT_FOUND || handle == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
-				return null;
-			}
-			return new OldRun(index.arenaCatalog(), index.contextCatalog(), handle);
-		};
-	}
-
 	private LmdbAdjacencyCoverage resolveCoverage() throws IOException {
 		if (options.coverage() != DirectAdjacencyCoverage.SELECTED) {
 			return LmdbAdjacencyCoverage.full();
@@ -3478,131 +2035,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return LmdbAdjacencyCoverage.selected(ids, java.util.Set.copyOf(unresolved));
 	}
 
-	/** Publishes a replacement state and retires the old publisher reference. Caller holds {@link #publicationLock}. */
-	private void publish(LmdbAdjacencyPublishedState state, LmdbAdjacencyGenerationTransition transition) {
-		LmdbAdjacencyPublishedState old = published.get();
-		transition.validate(old.overlays(), state.overlays());
-		transition.activateAdditions(state.overlays());
-		if (!published.compareAndSet(old, state)) {
-			transition.rollbackAdditions(state.overlays());
-			throw new IllegalStateException("published adjacency state changed while publication lock was held");
-		}
-		transition.deactivateRemovals(old.overlays());
-		old.release();
-	}
+	// ------------------------------------------------------------------
+	// close
+	// ------------------------------------------------------------------
 
 	@Override
 	public void close() {
-		publicationLock.lock();
-		try {
-			if (closed) {
-				return;
-			}
-			closed = true;
-			noPreparationsInFlight.signalAll();
-			maintenanceState = MaintenanceState.CLOSED;
-		} finally {
-			publicationLock.unlock();
+		if (closed) {
+			return;
 		}
-		// An in-flight applier borrows the current base/catalog while it builds the replacement generation. Retiring
-		// that publication before the executor quiesces closes native arenas underneath the applier. Stop admission
-		// first, wait without holding publicationLock (applyOne needs it to finish), then release the publication.
-		completeUnavailablePublications();
-		openWriteAdmission();
-		synchronized (applyQueue) {
-			// Admission barrier: an enqueuer that observed the pre-close state is now either visible in the queue or
-			// done.
-			applyQueue.notifyAll();
-		}
-		maintenanceExecutor.shutdown();
-		preparationExecutor.shutdown();
-		// Interrupt blocked work but retain queued tasks: their finally blocks own batches and futures.
-		Thread preparer = preparationThreadFactory.currentThread();
-		if (preparer != null) {
-			preparer.interrupt();
-		}
-		compactionExecutor.shutdownNow();
-		boolean interrupted = false;
-		while (!maintenanceExecutor.isTerminated()) {
-			try {
-				if (!maintenanceExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
-					logger.warn("Direct adjacency maintenance executor did not terminate within 60 seconds; "
-							+ "interrupting queued maintenance before continuing close");
-					maintenanceExecutor.shutdownNow();
-				}
-			} catch (InterruptedException e) {
-				interrupted = true;
-				maintenanceExecutor.shutdownNow();
-			}
-		}
-		while (!preparationExecutor.isTerminated()) {
-			try {
-				if (!preparationExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
-					logger.warn("Direct adjacency preparation executor did not terminate within 60 seconds; "
-							+ "interrupting prepared work before continuing close");
-					Thread preparerToInterrupt = preparationThreadFactory.currentThread();
-					if (preparerToInterrupt != null) {
-						preparerToInterrupt.interrupt();
-					}
-				}
-			} catch (InterruptedException e) {
-				interrupted = true;
-				Thread preparerToInterrupt = preparationThreadFactory.currentThread();
-				if (preparerToInterrupt != null) {
-					preparerToInterrupt.interrupt();
-				}
-			}
-		}
-		while (!compactionExecutor.isTerminated()) {
-			try {
-				if (!compactionExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
-					logger.warn("Direct adjacency compaction executor did not terminate within 60 seconds; "
-							+ "interrupting compaction before continuing close");
-					compactionExecutor.shutdownNow();
-				}
-			} catch (InterruptedException e) {
-				interrupted = true;
-				compactionExecutor.shutdownNow();
-			}
-		}
-		if (interrupted) {
-			Thread.currentThread().interrupt();
-		}
-		publicationLock.lock();
-		try {
-			LmdbAdjacencyPublishedState current = published.get();
-			publish(new LmdbAdjacencyPublishedState(epochs.incrementAndGet(), null, -1, Long.MAX_VALUE,
-					AdjacencyServingState.CLOSED),
-					LmdbAdjacencyGenerationTransition
-							.closeReset(current.overlays() == null ? 0 : current.overlays().generationCount()));
-			// A task that was already running when close began may have completed a final publication.
-			maintenanceState = MaintenanceState.CLOSED;
-		} finally {
-			publicationLock.unlock();
-		}
-		synchronized (applyQueue) {
-			SealedDirectDelta sealed;
-			while ((sealed = applyQueue.pollFirst()) != null) {
-				releaseDelta(sealed);
-			}
-		}
-		long waitedMillis = 0;
-		while (activeAcquisitionsAndViews.get() > 0) {
-			try {
-				Thread.sleep(10);
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				break;
-			}
-			waitedMillis += 10;
-			if (waitedMillis % 5_000 == 0) {
-				logger.warn("Direct adjacency close is waiting for {} active acquisitions/read views",
-						activeAcquisitionsAndViews.get());
-			}
-		}
-		// the CLOSED state's publisher reference: releasing it lets the final read-view release free the arenas
-		LmdbAdjacencyPublishedState state = published.get();
-		state.release();
+		closed = true;
+		// a paused loop would never reach the close unit
+		scheduler.resume();
+		applier.close();
+		captureExecutor.shutdown();
+		accelerationExecutor.shutdownNow();
 	}
 
 	// ------------------------------------------------------------------
@@ -3616,79 +2063,38 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	/** Same-snapshot parallel siblings inherit the parent query lifetime for cross-query promotion accounting. */
 	LmdbAdjacencyReadView acquire(long snapshotRevision, long lifetimeId) {
-		activeAcquisitionsAndViews.incrementAndGet();
-		boolean transferredToView = false;
+		throwIfStrictMaintenanceFailed();
+		if (closed) {
+			return fallback(snapshotRevision, FallbackReason.DISABLED, lifetimeId);
+		}
+		if (options.memoryRefused()) {
+			return fallback(snapshotRevision, FallbackReason.MEMORY_REFUSED, lifetimeId);
+		}
+		if (writeTransactionBlocksAdjacency()) {
+			return fallback(snapshotRevision, FallbackReason.READ_YOUR_WRITES, lifetimeId);
+		}
+		AdjacencyAcquisition<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> acquisition = applier
+				.acquire(snapshotRevision);
+		if (!acquisition.exact()) {
+			return fallback(snapshotRevision, acquisition.reason(), lifetimeId);
+		}
 		try {
-			throwIfStrictMaintenanceFailed();
-			if (closed) {
-				return fallback(snapshotRevision, FallbackReason.DISABLED, lifetimeId);
+			PendingTable[] pending = new PendingTable[acquisition.pending().size()];
+			for (int i = 0; i < pending.length; i++) {
+				pending[i] = (PendingTable) acquisition.pending().get(i);
 			}
-			if (maintenanceDeferred) {
-				return fallback(snapshotRevision, FallbackReason.BUILDING, lifetimeId);
+			LmdbAdjacencyPublishedState projection = project(acquisition.state(), pending);
+			RuntimeException injected = injectedAcquireFailure.getAndSet(null);
+			if (injected != null) {
+				throw injected;
 			}
-			if (options.memoryRefused()) {
-				return fallback(snapshotRevision, FallbackReason.MEMORY_REFUSED, lifetimeId);
-			}
-			if (writeTransactionBlocksAdjacency()) {
-				return fallback(snapshotRevision, FallbackReason.READ_YOUR_WRITES, lifetimeId);
-			}
-			for (int attempt = 0; attempt < 3; attempt++) {
-				LmdbAdjacencyPublishedState state = published.get();
-				if (state.servingState() != AdjacencyServingState.ROW_EXACT || state.base() == null) {
-					return fallback(snapshotRevision,
-							state.servingState() == AdjacencyServingState.CLOSED ? FallbackReason.DISABLED
-									: FallbackReason.BUILDING,
-							lifetimeId);
-				}
-				// Before preparation supplies pending-row evidence, every row at that revision must fall back.
-				// Afterwards the immutable state's horizon permits the existing row-specific pending checks.
-				if (snapshotRevision > state.horizonRevision() && snapshotRevision <= asyncPublicationRevision.get()) {
-					return fallback(snapshotRevision, FallbackReason.PENDING_ROW, lifetimeId);
-				}
-				if (!state.tryRetain()) {
-					continue;
-				}
-				long emergencyGapFromRevision = emergencyGap.get().fromRevision();
-				if (closed || published.get() != state) {
-					state.release();
-					if (closed) {
-						return fallback(snapshotRevision, FallbackReason.DISABLED, lifetimeId);
-					}
-					continue;
-				}
-				if (emergencyGapFromRevision <= snapshotRevision) {
-					state.release();
-					requestGapRecovery();
-					return fallback(snapshotRevision, FallbackReason.REVISION_GAP, lifetimeId);
-				}
-				if (snapshotRevision < state.minSnapshotRevision()) {
-					state.release();
-					return fallback(snapshotRevision, FallbackReason.SNAPSHOT_BEFORE_BASE, lifetimeId);
-				}
-				if (snapshotRevision > state.horizonRevision() || state.gapFromRevision() <= snapshotRevision) {
-					state.release();
-					requestGapRecovery();
-					return fallback(snapshotRevision, FallbackReason.REVISION_GAP, lifetimeId);
-				}
-				Runnable viewHook = beforeExactViewReturnForTest;
-				try {
-					if (viewHook != null) {
-						viewHook.run();
-					}
-					LmdbAdjacencyReadView view = LmdbAdjacencyReadView.exact(snapshotRevision, state,
-							this::onViewClosed, lifetimeId);
-					transferredToView = true;
-					return view;
-				} catch (RuntimeException | Error failure) {
-					state.release();
-					throw failure;
-				}
-			}
-			return fallback(snapshotRevision, FallbackReason.STATE_CHURN, lifetimeId);
-		} finally {
-			if (!transferredToView) {
-				releaseAcquisitionOrView();
-			}
+			LmdbAdjacencyReadView view = LmdbAdjacencyReadView.exact(snapshotRevision, acquisition, projection,
+					this::onViewClosed, lifetimeId);
+			activeViews.incrementAndGet();
+			return view;
+		} catch (RuntimeException | Error failure) {
+			acquisition.close();
+			throw failure;
 		}
 	}
 
@@ -3701,18 +2107,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return LmdbAdjacencyReadView.fallback(snapshotRevision, reason, lifetimeId);
 	}
 
-	/** Called by an exact view when its last lease releases. */
+	/** Called by an exact view when its last lease releases; the acquisition itself released the state. */
 	void onViewClosed() {
-		releaseAcquisitionOrView();
-	}
-
-	private void releaseAcquisitionOrView() {
-		long remaining = activeAcquisitionsAndViews.decrementAndGet();
-		if (remaining == 0 && !closed && quiescentRebuildAwaitingViews.get()) {
-			resumeQuiescentRebuildAfterViews();
-		} else if (!closed) {
-			requestCompactionIfNeeded(published.get());
-		}
+		activeViews.decrementAndGet();
 	}
 
 	/** Records a caller-detected fallback (for example a map-resize-invalidated pinned transaction). */
@@ -4020,6 +2417,70 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	boolean offersUniversalCandidate(LmdbAdjacencyReadView view) {
 		return exactFullSnapshot(view);
+	}
+
+	boolean mayOfferStatementAccess(LmdbAdjacencyReadView view) {
+		return view != null && view.servesSnapshot() && !closed && options.mode() == DirectAdjacencyMode.PREFER
+				&& !writeTransactionBlocksAdjacency();
+	}
+
+	/**
+	 * Upper bound for the directory work of a universal predicate sweep beyond the statement rows it yields: one
+	 * catalog step per predicate plus, with visible overlay generations, the overlay rows each predicate slice has to
+	 * examine. Every predicate slice scans the visible generation rows for its candidates (once through the latest-row
+	 * tree and once more when it resolves replacements), so the overlay rows are charged per predicate. Obsolete
+	 * overlay versions can only be revisited through those rows, which keeps this ceiling finite.
+	 */
+	long predicateSweepWorkUpper(LmdbAdjacencyReadView view) {
+		if (!offersUniversalCandidate(view)) {
+			return -1L;
+		}
+		long predicates = view.state().planeStatistics().predicateDomain().size();
+		long overlayRows = 0L;
+		LmdbAdjacencyOverlaySet overlays = view.state().overlays();
+		if (overlays != null) {
+			for (int i = 0; i < overlays.generationCount(); i++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+				if (generation.revision() <= view.snapshotRevision()) {
+					overlayRows = LmdbUtil.saturatedAdd(overlayRows, generation.rowCount());
+				}
+			}
+		}
+		if (overlayRows == 0L) {
+			return predicates;
+		}
+		long perPredicate = LmdbUtil.saturatedAdd(1L, LmdbUtil.saturatedAdd(overlayRows, overlayRows));
+		long sliceWork = predicates > Long.MAX_VALUE / perPredicate ? Long.MAX_VALUE : predicates * perPredicate;
+		return LmdbUtil.saturatedAdd(sliceWork, overlayRows);
+	}
+
+	/** Upper bound for node-predicate directory work, or -1 when this view cannot offer that access. */
+	long nodePredicateWorkUpper(LmdbAdjacencyReadView view, boolean bySubject, boolean explicit) {
+		if (!mayOfferStatementAccess(view) || !nodePredicateServingEnabled()) {
+			return -1L;
+		}
+		LmdbAdjacencyPublishedState state = view.state();
+		int plane = plane(bySubject, explicit);
+		if (state.base() == null || !state.base().coverage().isFull()
+				|| !state.base().supportsPredicateEnumeration(plane)) {
+			return -1L;
+		}
+		long rows = state.base().nodePredicateIndex().incidenceCount(plane);
+		long sources = 1L;
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		if (overlays != null) {
+			for (int i = 0; i < overlays.generationCount(); i++) {
+				LmdbAdjacencyDeltaGeneration generation = overlays.generation(i);
+				if (generation.revision() <= view.snapshotRevision()) {
+					rows = LmdbUtil.saturatedAdd(rows, generation.rowCount());
+					sources++;
+				}
+			}
+		}
+		// Each merge round consumes at least one directory row. It can examine every active head and then
+		// resolve every matching head, so at most two operations per source are charged per round.
+		long perRound = sources * 2L;
+		return rows > Long.MAX_VALUE / perRound ? Long.MAX_VALUE : rows * perRound;
 	}
 
 	RecordIterator tryOpenUniversal(LmdbAdjacencyReadView view, StatementOrder order, long subject, long predicate,
@@ -4583,8 +3044,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		metrics.recordNodePredicateInconsistency();
 		logger.error("Node-predicate projection is inconsistent with the authoritative adjacency rows ({}); "
-				+ "bound-node predicate enumeration falls back to LMDB and a rebuild has been scheduled", detail);
-		scheduleQuiescentRebuild();
+				+ "the index falls back to LMDB from the current revision until a rebuild publishes", detail);
+		// a base whose projection lies is not trusted for anything: readers fall back until the rebuild publishes
+		reportCorruption(tripleStore.getDataRevision(), "node-predicate projection inconsistent: " + detail);
 	}
 
 	/**
@@ -4706,8 +3168,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		if (!equal) {
 			metrics.recordShadowMismatch();
-			markGap(view.snapshotRevision());
-			maintenanceState = MaintenanceState.DEGRADED_GAP;
+			reportCorruption(view.snapshotRevision(), "SHADOW mismatch");
 			logger.error("Direct adjacency SHADOW mismatch at revision {} for predicate hash {} direction {}: "
 					+ "direct {} rows, LMDB {} rows; adjacency degraded to LMDB", view.snapshotRevision(),
 					Long.hashCode(predicate), direction, direct.size(), lmdb.size());
@@ -5310,6 +3771,13 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return count < 0L ? OptionalLong.empty() : OptionalLong.of(count);
 	}
 
+	boolean canExactPredicateCount(LmdbAdjacencyReadView view, long predicate) {
+		return predicate > 0L && view != null && view.servesSnapshot() && !closed
+				&& options.mode() == DirectAdjacencyMode.PREFER && !writeTransactionBlocksAdjacency()
+				&& scanAggregatesEnabled() && view.snapshotRevision() == view.state().appliedRevision()
+				&& planeCovered(view, predicate);
+	}
+
 	private long tryCountInternal(LmdbAdjacencyReadView view, long subject, long predicate, long object, long context,
 			boolean explicit, boolean existenceOnly) {
 		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
@@ -5530,12 +3998,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	@Override
 	public LmdbAdjacencyMetrics.Snapshot snapshotMetrics() {
-		LmdbAdjacencyPublishedState state = published.get();
+		AdjacencyState<LmdbInMemoryAdjacencyIndex, LmdbAdjacencyOverlaySet> state = applierState();
 		LmdbInMemoryAdjacencyIndex base = state.base();
 		LmdbAdjacencyOverlaySet overlays = state.overlays();
-		return metrics.snapshot(maintenanceState.name(), state.baseRevision(), state.appliedRevision(),
-				tripleStore.getDataRevision(), state.gapFromRevision(), emergencyGap.get().fromRevision(),
-				activeAcquisitionsAndViews.get(),
+		return metrics.snapshot(maintenanceState().name(), base == null ? -1L : base.baseRevision(),
+				state.appliedRevision(), tripleStore.getDataRevision(), state.gapFromRevision(),
+				state.gapFromRevision(), activeViews.get(),
 				base == null ? 0 : account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BASE),
 				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BUILD_COUNTERS),
 				account.chargedBytes(LmdbAdjacencyMemoryAccount.MemoryKind.BUILD_OUTPUT),

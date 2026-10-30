@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjace
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelAdjacencyCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelProjectionCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -77,6 +79,38 @@ class LmdbNativeKernelPartitionsPageTest {
 	}
 
 	@Test
+	void tooFewPagesForTheWorkersFallBackToRootOrdinalsWhenTheDomainIsLargeEnough() {
+		// a tiny plane whose base was built from several scan ranges: two physical pages, sixteen roots
+		PageAdjacency adjacency = new PageAdjacency(2, 16, true);
+		LmdbNativeKernelPartitions.PartitionPlan plan = LmdbNativeKernelPartitions.planAdjacency(0, adjacency, true,
+				false, 8L);
+
+		assertEquals(16L, plan.unitCount(), "root ordinals feed eight units where two pages cannot");
+		assertEquals(LmdbNativeKernelPartitions.UnitKind.ROOT_ORDINAL, plan.plane(0).kind());
+		assertFalse(plan.usesPages());
+	}
+
+	@Test
+	void tooFewPagesAndTooFewRootsKeepThePagePlan() {
+		PageAdjacency adjacency = new PageAdjacency(2, 4, true);
+		LmdbNativeKernelPartitions.PartitionPlan plan = LmdbNativeKernelPartitions.planAdjacency(0, adjacency, true,
+				false, 8L);
+
+		assertEquals(2L, plan.unitCount(), "neither unit kind reaches the minimum; pages keep their locality");
+		assertEquals(LmdbNativeKernelPartitions.UnitKind.PAGE, plan.plane(0).kind());
+	}
+
+	@Test
+	void enoughPagesForTheWorkersKeepThePagePlan() {
+		PageAdjacency adjacency = new PageAdjacency(8, 16, true);
+		LmdbNativeKernelPartitions.PartitionPlan plan = LmdbNativeKernelPartitions.planAdjacency(0, adjacency, true,
+				false, 8L);
+
+		assertEquals(8L, plan.unitCount());
+		assertEquals(LmdbNativeKernelPartitions.UnitKind.PAGE, plan.plane(0).kind());
+	}
+
+	@Test
 	void mergedOrUnavailableViewFallsBackToRootOrdinals() {
 		PageAdjacency overlay = new PageAdjacency(-1, 17, false);
 		LmdbNativeKernelPartitions.PartitionPlan plan = LmdbNativeKernelPartitions.planAdjacency(4, overlay, true,
@@ -85,6 +119,90 @@ class LmdbNativeKernelPartitionsPageTest {
 		assertEquals(17L, plan.unitCount());
 		assertEquals(LmdbNativeKernelPartitions.UnitKind.ROOT_ORDINAL, plan.plane(0).kind());
 		assertFalse(plan.usesPages());
+	}
+
+	@Test
+	void sparsePagesFallBackToEnoughExactRootWindows() {
+		PageAdjacency adjacency = new PageAdjacency(2, 16, true);
+		LmdbNativeKernelPartitions.PartitionPlan pages = LmdbNativeKernelPartitions.planAdjacency(0, adjacency, true,
+				true);
+		LmdbNativeKernelPartitions.PartitionPlan chosen = LmdbNativeParallelKernelAggregate.preferRootPartitions(pages,
+				8, () -> LmdbNativeKernelPartitions.planAdjacency(0, adjacency, false, true));
+
+		assertEquals(16L, chosen.unitCount());
+		assertEquals(LmdbNativeKernelPartitions.UnitKind.ROOT_ORDINAL, chosen.plane(0).kind());
+		List<long[]> ranges = new ArrayList<>(LmdbNativeKernelPartitions.ranges(chosen.unitCount(), 4, 2));
+		assertEquals(0L, ranges.get(0)[0]);
+		assertEquals(16L, ranges.get(ranges.size() - 1)[1]);
+		for (int i = 1; i < ranges.size(); i++) {
+			assertEquals(ranges.get(i - 1)[1], ranges.get(i)[0], "root windows must be contiguous and disjoint");
+		}
+	}
+
+	@Test
+	void sufficientOrUnreplaceablePagesStayInUse() {
+		PageAdjacency enough = new PageAdjacency(8, 32, true);
+		LmdbNativeKernelPartitions.PartitionPlan enoughPages = LmdbNativeKernelPartitions.planAdjacency(0, enough,
+				true, true);
+		assertSame(enoughPages, LmdbNativeParallelKernelAggregate.preferRootPartitions(enoughPages, 8, () -> {
+			throw new AssertionError("a sufficient page plan must not be replanned");
+		}));
+
+		PageAdjacency pageOnly = new PageAdjacency(2, -1, true);
+		LmdbNativeKernelPartitions.PartitionPlan pagePlan = LmdbNativeKernelPartitions.planAdjacency(0, pageOnly, true,
+				true);
+		assertSame(pagePlan, LmdbNativeParallelKernelAggregate.preferRootPartitions(pagePlan, 8,
+				() -> LmdbNativeKernelPartitions.planAdjacency(0, pageOnly, false, true)));
+		PageAdjacency fewerRoots = new PageAdjacency(2, 1, true);
+		LmdbNativeKernelPartitions.PartitionPlan morePages = LmdbNativeKernelPartitions.planAdjacency(0, fewerRoots,
+				true, true);
+		assertSame(morePages, LmdbNativeParallelKernelAggregate.preferRootPartitions(morePages, 8,
+				() -> LmdbNativeKernelPartitions.planAdjacency(0, fewerRoots, false, true)));
+		assertSame(pagePlan, LmdbNativeParallelKernelAggregate.preferRootPartitions(pagePlan, 8, () -> {
+			throw new LmdbNativeKernelPartitions.ParallelKernelDecline("root enumeration unavailable");
+		}));
+		IllegalStateException closeFailure = new IllegalStateException("root planning cleanup failed");
+		LmdbNativeKernelPartitions.ParallelKernelDecline unavailable = new LmdbNativeKernelPartitions.ParallelKernelDecline(
+				"root enumeration unavailable");
+		unavailable.addSuppressed(closeFailure);
+		assertSame(closeFailure, assertThrows(IllegalStateException.class,
+				() -> LmdbNativeParallelKernelAggregate.preferRootPartitions(pagePlan, 8, () -> {
+					throw unavailable;
+				})));
+		LmdbNativeKernelPartitions.ParallelKernelDecline cancelled = new LmdbNativeKernelPartitions.ParallelKernelDecline(
+				"root enumeration cancelled during cleanup");
+		cancelled.addSuppressed(KernelQueryCancelledException.INSTANCE);
+		assertSame(cancelled, assertThrows(LmdbNativeKernelPartitions.ParallelKernelDecline.class,
+				() -> LmdbNativeParallelKernelAggregate.preferRootPartitions(pagePlan, 8, () -> {
+					throw cancelled;
+				})));
+	}
+
+	@Test
+	void sparseWildcardPagesUseOnlyTheRequestedRootPlanes() {
+		WildcardPlanes wildcard = new WildcardPlanes(new PageAdjacency(2, 5, true),
+				new PageAdjacency(2, 8, true));
+		wildcard.bind(1);
+		LmdbNativeKernelPartitions.PartitionPlan pages = LmdbNativeKernelPartitions.planWildcard(3, wildcard, true,
+				true);
+		LmdbNativeKernelPartitions.PartitionPlan roots = LmdbNativeParallelKernelAggregate.preferRootPartitions(pages,
+				6,
+				() -> LmdbNativeKernelPartitions.planWildcard(3, wildcard, false, true));
+		assertEquals(13L, roots.unitCount());
+		assertEquals(LmdbNativeKernelPartitions.UnitKind.ROOT_ORDINAL, roots.plane(0).kind());
+		assertEquals(LmdbNativeKernelPartitions.UnitKind.ROOT_ORDINAL, roots.plane(1).kind());
+		assertEquals(1, wildcard.boundPredicateOrdinal());
+
+		LmdbNativeKernelPartitions.PartitionPlan selectedPages = LmdbNativeKernelPartitions.planWildcardPredicate(3,
+				wildcard, 100L, true, true);
+		LmdbNativeKernelPartitions.PartitionPlan selectedRoots = LmdbNativeParallelKernelAggregate.preferRootPartitions(
+				selectedPages, 4,
+				() -> LmdbNativeKernelPartitions.planWildcardPredicate(3, wildcard, 100L, false, true));
+		assertEquals(1, selectedRoots.planeCount());
+		assertEquals(0, selectedRoots.plane(0).predicateOrdinal());
+		assertEquals(5L, selectedRoots.unitCount());
+		assertEquals(LmdbNativeKernelPartitions.UnitKind.ROOT_ORDINAL, selectedRoots.plane(0).kind());
+		assertEquals(1, wildcard.boundPredicateOrdinal());
 	}
 
 	@Test

@@ -306,7 +306,7 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 				actual.add(statement);
 			}
 		}
-		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(actual).isEqualTo(expected);
 		for (long entries : store.getBackingStore().explicitIndexEntryCounts().values()) {
 			assertThat(entries).isEqualTo(expected.size());
 		}

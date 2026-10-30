@@ -24,6 +24,12 @@ interface SlotPlan {
 
 	/** Whether a native physical cell must remain in its typed lane until a scalar consumer has run. */
 	static boolean requiresPhysicalCells(SlotPlan plan) {
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return requiresPhysicalCells(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return requiresPhysicalCells(memo.original);
+		}
 		if (plan instanceof NativeLogicalResultTransferPlan) {
 			return false;
 		}
@@ -177,7 +183,7 @@ interface SlotPlan {
 			collectFlattenable(right, children, filters);
 			return new MultiJoinPlan(children.toArray(SlotPlan[]::new), filters.toArray(MaskedFilter[]::new));
 		}
-		return new JoinPlan(left, right);
+		return NativeAliasJoinPlan.create(left, right);
 	}
 
 	/**
@@ -186,6 +192,12 @@ interface SlotPlan {
 	 * a trailing pattern may factorize against a prefix containing optional bindings.
 	 */
 	static long assuredMask(SlotPlan plan) {
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return assuredMask(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return assuredMask(memo.original);
+		}
 		if (plan instanceof NativeGraphPlan graph) {
 			return graph.assuredMask();
 		}
@@ -241,6 +253,12 @@ interface SlotPlan {
 	 * its ownership and expression-repeatability rules are reviewed.
 	 */
 	static boolean encounterOrderReplaySafe(SlotPlan plan) {
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return encounterOrderReplaySafe(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return encounterOrderReplaySafe(memo.original);
+		}
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.workerBindable();
 		}

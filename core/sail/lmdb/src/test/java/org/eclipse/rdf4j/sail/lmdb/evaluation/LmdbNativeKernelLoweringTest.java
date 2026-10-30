@@ -28,6 +28,7 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -71,6 +72,23 @@ class LmdbNativeKernelLoweringTest {
 
 	private static PatternPlan pattern(Term s, Term o) {
 		return new PatternPlan(s, Term.constant(PRED), o, Term.unbound(), ContextConstraint.UNRESTRICTED, false, 10D);
+	}
+
+	private static PatternPlan patternWithProfile(Term s, Term p, Term o, double estimate,
+			NativeLmdbQuerySource.IndexAccessProfile profile) {
+		return new PatternPlan(s, p, o, Term.unbound(), ContextConstraint.UNRESTRICTED, false, null, "", null,
+				estimate, profile);
+	}
+
+	private static NativeLmdbQuerySource.IndexAccessProfile prefixAccessProfile(long entries) {
+		int[][] prefixes = new int[StatementOrder.values().length + 1][16];
+		// The null-order profile can select POSC for predicate-only/predicate-object prefixes and SPOC when
+		// a subject binding is also available. All reported prefix components are actual index-key fields.
+		prefixes[0][2] = 2;
+		prefixes[0][3] = 3;
+		prefixes[0][6] = 6;
+		prefixes[0][7] = 7;
+		return new NativeLmdbQuerySource.IndexAccessProfile(entries, 1, prefixes, false, -1L, -1L, -1L);
 	}
 
 	private static RowState freshRow() {
@@ -1399,9 +1417,10 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	/**
-	 * M8 kernel hash join: a two-pattern join whose estimates pass the interpreted hash join's own cost gate (probe
-	 * side large, build side small, probe rows over the minimum) must lower to a HashBuild preamble plus an in-loop
-	 * HashProbe instead of the nested probe chain.
+	 * M8 kernel hash join: a two-pattern join whose static and measured fan-out estimates favor hashing (probe side
+	 * large, build side small, probe rows over the minimum) must lower to a HashBuild preamble plus an in-loop
+	 * HashProbe instead of the nested probe chain. The measured fan-out prices the expected chain only; it does not
+	 * narrow the conservative work interval.
 	 */
 	@Test
 	void twoPatternJoinWithHashFavoredCostsLowersToHashBuildProbe() {
@@ -1413,7 +1432,12 @@ class LmdbNativeKernelLoweringTest {
 		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
 		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
 		try {
-			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, freshRow(), null);
+			RowState row = freshRow(new FanOutStubSource(PRED + 2, true, 10D));
+			LmdbNativeWork.Chain chain = LmdbNativeWork.chain(plan.children, plan.children.length, row,
+					row.boundMask());
+			assertTrue(chain.estimatedPriceable());
+			assertFalse(chain.work().known(), "the sampled fan-out is not a hard work bound");
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, row, null);
 			assertNotNull(lowered, "the two-pattern join must still lower");
 			String key = lowered.kernel.shapeKey();
 			assertTrue(key.contains("hb0("), "expected a HashBuild preamble in the shape key: " + key);
@@ -1476,11 +1500,12 @@ class LmdbNativeKernelLoweringTest {
 
 	/**
 	 * True-cost hash admission (HC:4 regression): when the derived-order probe chain is priceable from measured
-	 * statistics AND dominates the hash plan, the hash sink must decline and keep the probe chain. The shape mirrors
-	 * HC:4: a selective constant-object pattern (the "type" scan, 40.3K) joined with a wide subject-keyed pattern (the
-	 * "weight" pattern, 222.8K) whose measured per-subject fan-out is small — so the chain probes cheaply per row while
-	 * the hash plan must enumerate the wide predicate's whole key domain and drain the build side once per parallel
-	 * work unit. The fan-out is chosen so the chain dominates even at a single build copy, keeping the assertion
+	 * statistics gives the probe chain a lower expected cost than the hash plan, the hash sink must decline and keep
+	 * the probe chain. The expected comparison must not be promoted to a hard work interval. The shape mirrors HC:4: a
+	 * selective constant-object pattern (the "type" scan, 40.3K) joined with a wide subject-keyed pattern (the `weight`
+	 * pattern, 222.8K) whose measured per-subject fan-out is small — so the chain probes cheaply per row while the hash
+	 * plan must enumerate the wide predicate's whole key domain and drain the build side once per parallel work unit.
+	 * The fan-out is chosen so the chain's estimate is lower even at a single build copy, keeping the route assertion
 	 * machine-independent.
 	 */
 	@Test
@@ -1504,10 +1529,69 @@ class LmdbNativeKernelLoweringTest {
 		}
 	}
 
+	@Test
+	void measuredFanOutStillPricesASelectiveProbeWithBroadPhysicalBounds() {
+		NativeLmdbQuerySource.IndexAccessProfile profile = prefixAccessProfile(1_000_000L);
+		PatternPlan type = patternWithProfile(Term.slot(0), Term.constant(PRED), Term.constant(PRED + 8), 40_300D,
+				profile);
+		PatternPlan weight = patternWithProfile(Term.slot(0), Term.constant(PRED + 2), Term.slot(1), 222_800D,
+				profile);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { type, weight }, new MaskedFilter[0]);
+		RowState row = freshRow(new FanOutStubSource(PRED + 2, true, 2.0D));
+
+		LmdbNativeWork typeQuote = type.estimateWork(row, row.boundMask());
+		LmdbNativeWork weightQuote = weight.estimateWork(row, type.producedMask());
+		assertTrue(typeQuote.known(), "the uncorrelated access has a finite physical ceiling");
+		assertTrue(weightQuote.known(), "the indexed bound-prefix probe has a finite physical ceiling");
+		assertTrue(weightQuote.high() > LmdbNativeWork.SEEK + 2D,
+				"the physical ceiling must retain the full-domain source bound");
+		assertEquals(LmdbNativeWork.SEEK + 40_300D, LmdbNativeWork.expectedWork(type, row, row.boundMask()), 0D,
+				"the static estimate is an expected cost, not the midpoint of the whole-index ceiling");
+		assertEquals(LmdbNativeWork.SEEK + 2D,
+				LmdbNativeWork.expectedWork(weight, row, type.producedMask()), 0D,
+				"measured low fan-out prices the fully index-prefixed probe independently of its hard ceiling");
+		assertFalse(LmdbNativeWork.chain(plan.children, plan.children.length, row, row.boundMask()).work().known(),
+				"sampled cardinalities must not narrow the hard interval");
+
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, row, null);
+			assertNotNull(lowered, "the two-pattern join must still lower");
+			String key = lowered.kernel.shapeKey();
+			assertFalse(key.contains("hb0("), "a low-fan-out chain must decline an over-priced hash plan: " + key);
+			assertFalse(key.contains("hp0("), "a low-fan-out chain must retain the probe route: " + key);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
+	@Test
+	void hashAdmissionDeclinesWhenTheBoundPrefixHasLowMeasuredFanOut() {
+		NativeLmdbQuerySource.IndexAccessProfile profile = prefixAccessProfile(1_000_000L);
+		PatternPlan type = patternWithProfile(Term.slot(0), Term.constant(PRED), Term.constant(PRED + 8), 40_300D,
+				profile);
+		PatternPlan weight = patternWithProfile(Term.slot(0), Term.constant(PRED + 2), Term.slot(1), 222_800D,
+				profile);
+		MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { type, weight }, new MaskedFilter[0]);
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		try {
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan,
+					freshRow(new FanOutStubSource(PRED + 2, true, 2.0D)), null);
+			assertNotNull(lowered, "the two-pattern join must still lower");
+			String key = lowered.kernel.shapeKey();
+			assertFalse(key.contains("hb0("), "low measured fan-out must retain the cheaper probe chain: " + key);
+			assertFalse(key.contains("hp0("), "low measured fan-out must retain the probe route: " + key);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+		}
+	}
+
 	/**
 	 * Companion pin for {@link #hashJoinDeclinesWhenDerivedChainDominates}: a genuinely hash-favored shape (tiny build
-	 * side, wide probe, measured fan-out so large that the chain interval sits far above the hash interval even after
-	 * the parallel build-replication charge) must still lower to the hash build/probe pair under the true-cost gate.
+	 * side, wide probe, measured fan-out so large that the chain estimate sits far above the hash estimate even after
+	 * the parallel build-replication charge) must still lower to the hash build/probe pair.
 	 */
 	@Test
 	void hashJoinStillEngagesWhenChainIsDominated() {
@@ -1553,6 +1637,166 @@ class LmdbNativeKernelLoweringTest {
 		} finally {
 			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
 		}
+	}
+
+	@Test
+	void globalScanRetryLowersEveryCyclicEdgeWithoutBypassingScanPolicyThroughWcoj() {
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		String previousWcoj = System.getProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY);
+		String previousScans = System.getProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "true");
+		try {
+			MultiJoinPlan triangle = triangle(PRED, PRED, PRED);
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(triangle, freshRow(), null,
+					true);
+			assertNotNull(lowered);
+			assertEquals(3, lowered.kernel.requirements.scans,
+					"global preferScans must scan every edge, including the WCOJ closing edge");
+			assertEquals(0, lowered.bindings.adjacencies.length,
+					"the cyclic specialization must not register inaccessible adjacency views");
+			assertFalse(lowered.kernel.shapeKey().contains("I("), lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+			restoreProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY, previousWcoj);
+			restoreProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, previousScans);
+		}
+	}
+
+	@Test
+	void selectiveMissingPredicateInCyclicCoreKeepsOnlyAllowedAdjacencies() {
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		String previousWcoj = System.getProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY);
+		String previousScans = System.getProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "true");
+		try {
+			MultiJoinPlan triangle = triangle(PRED, PRED + 2, PRED + 4);
+			LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(triangle, freshRow(), null,
+					false, Set.of(PRED + 2));
+			assertNotNull(lowered);
+			assertEquals(1, lowered.kernel.requirements.scans,
+					"only the predicate whose view was denied should use a quad scan");
+			assertEquals(2, lowered.bindings.adjacencies.length,
+					"the other two cycle edges retain their usable adjacency views");
+			assertFalse(lowered.kernel.shapeKey().contains("I("), lowered.kernel.shapeKey());
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+			restoreProperty(LmdbNativeKernelLowering.WCOJ_KERNEL_PROPERTY, previousWcoj);
+			restoreProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, previousScans);
+		}
+	}
+
+	@Test
+	void selectiveScanPolicyDistinguishesHashBuildFromHashProbe() {
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		String previousHash = System.getProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY);
+		String previousScans = System.getProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "true");
+		try {
+			PatternPlan probe = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.slot(1), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 100_000D);
+			PatternPlan build = new PatternPlan(Term.slot(1), Term.constant(PRED + 2), Term.slot(2), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 100D);
+			MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { probe, build }, new MaskedFilter[0]);
+			RowState row = freshRow(new FanOutStubSource(PRED + 2, true, 4_000D));
+
+			LmdbNativeKernelLowering.Lowered deniedBuild = LmdbNativeKernelLowering.lowerRows(plan, row, null, false,
+					Set.of(PRED + 2));
+			assertNotNull(deniedBuild);
+			assertFalse(deniedBuild.kernel.shapeKey().contains("hb0("), deniedBuild.kernel.shapeKey());
+			assertEquals(1, deniedBuild.kernel.requirements.scans);
+			assertEquals(1, deniedBuild.bindings.adjacencies.length,
+					"the allowed probe pattern keeps its adjacency route when the build is denied");
+
+			LmdbNativeKernelLowering.Lowered deniedProbe = LmdbNativeKernelLowering.lowerRows(plan,
+					freshRow(new FanOutStubSource(PRED + 2, true, 4_000D)), null, false, Set.of(PRED));
+			assertNotNull(deniedProbe);
+			assertTrue(deniedProbe.kernel.shapeKey().contains("hb0("), deniedProbe.kernel.shapeKey());
+			assertTrue(deniedProbe.kernel.shapeKey().contains("hp0("), deniedProbe.kernel.shapeKey());
+			assertEquals(1, deniedProbe.kernel.requirements.scans,
+					"a denied probe can scan while the independently allowed hash build remains active");
+			assertEquals(1, deniedProbe.bindings.adjacencies.length);
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+			restoreProperty(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY, previousHash);
+			restoreProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, previousScans);
+		}
+	}
+
+	@Test
+	void selectiveScanPolicyStaysInsideNestedOptionalAndWitnessBoundaries() {
+		String previousBridge = System.getProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY);
+		String previousScans = System.getProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY);
+		System.setProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "true");
+		try {
+			PatternPlan required = new PatternPlan(Term.slot(0), Term.constant(PRED + 16), Term.slot(3),
+					Term.unbound(), ContextConstraint.UNRESTRICTED, false, 100D);
+			PatternPlan optionalLeft = new PatternPlan(Term.slot(0), Term.constant(PRED + 2), Term.slot(1),
+					Term.unbound(), ContextConstraint.UNRESTRICTED, false, 100D);
+			PatternPlan optionalRight = new PatternPlan(Term.slot(1), Term.constant(PRED + 4), Term.slot(2),
+					Term.unbound(), ContextConstraint.UNRESTRICTED, false, 100D);
+			SlotPlan nestedOptional = new LeftJoinPlan(required,
+					new LeftJoinPlan(optionalLeft, optionalRight));
+			LmdbNativeKernelLowering.Lowered optional = LmdbNativeKernelLowering.lowerRows(nestedOptional,
+					freshRow(), null, false, Set.of(PRED + 4));
+			assertNotNull(optional);
+			assertEquals(1, optional.kernel.requirements.scans,
+					"the denied nested OPTIONAL edge is scanned within its lexical arm");
+			assertTrue(java.util.Arrays.stream(optional.bindings.adjacencies)
+					.anyMatch(request -> request.predicate == PRED + 2),
+					"the permitted nested OPTIONAL edge retains adjacency access");
+			assertTrue(java.util.Arrays.stream(optional.bindings.adjacencies)
+					.anyMatch(request -> request.predicate == PRED + 16),
+					"the required side retains adjacency access");
+
+			StatementPatternExistsFilter exists = new StatementPatternExistsFilter(new StubSource(), Term.slot(0),
+					Term.constant(PRED + 8), Term.constant(91L), Term.unbound(), ContextConstraint.UNRESTRICTED, false);
+			SlotPlan filtered = new FilterPlan(required, exists, -1L);
+			LmdbNativeKernelLowering.Lowered witness = LmdbNativeKernelLowering.lowerRows(filtered, freshRow(), null,
+					false, Set.of(PRED + 8));
+			assertNotNull(witness, "a denied fully bound witness remains lowerable as an exact scan");
+			LmdbNativeKernelIr.Exists loweredWitness = witness.kernel.pipeline.stream()
+					.filter(LmdbNativeKernelIr.Exists.class::isInstance)
+					.map(LmdbNativeKernelIr.Exists.class::cast)
+					.findFirst()
+					.orElseThrow();
+			assertTrue(loweredWitness.pipeline.stream().anyMatch(LmdbNativeKernelIr.ScanQuad.class::isInstance));
+			assertFalse(loweredWitness.pipeline.stream().anyMatch(LmdbNativeKernelIr.ProbeClose.class::isInstance));
+			assertTrue(java.util.Arrays.stream(witness.bindings.adjacencies)
+					.anyMatch(request -> request.predicate == PRED + 16),
+					"the permitted outer producer keeps its adjacency route");
+
+			PatternPlan pathStep = new PatternPlan(Term.slot(1), Term.constant(PRED + 12), Term.slot(2),
+					Term.unbound(), ContextConstraint.UNRESTRICTED, false, 100D);
+			PathPlan deniedPath = new PathPlan(pathStep, 1, NativeLmdbQuerySource.UNKNOWN_ID, 2,
+					NativeLmdbQuerySource.UNKNOWN_ID, 0, 2, false);
+			SlotPlan nestedPath = new JoinPlan(required, deniedPath);
+			LmdbNativeKernelLowering.Lowered path = LmdbNativeKernelLowering.lowerRows(nestedPath, freshRow(), null,
+					false, Set.of(PRED + 12));
+			assertNotNull(path);
+			assertFalse(java.util.Arrays.stream(path.bindings.adjacencies)
+					.anyMatch(request -> request.predicate == PRED + 12),
+					"a denied path predicate must not bypass policy through PathExpand");
+		} finally {
+			restoreProperty(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, previousBridge);
+			restoreProperty(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, previousScans);
+		}
+	}
+
+	private static MultiJoinPlan triangle(long abPredicate, long bcPredicate, long caPredicate) {
+		PatternPlan ab = new PatternPlan(Term.slot(0), Term.constant(abPredicate), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		PatternPlan bc = new PatternPlan(Term.slot(1), Term.constant(bcPredicate), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		PatternPlan ca = new PatternPlan(Term.slot(2), Term.constant(caPredicate), Term.slot(0), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 100D);
+		return new MultiJoinPlan(new SlotPlan[] { ab, bc, ca }, new MaskedFilter[0]);
 	}
 
 	/** The kernel WCOJ sink honors its kill switch: flag off keeps the probe chain. */

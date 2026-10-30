@@ -251,6 +251,7 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		} else {
 			restoreSharedRow();
 		}
+		sharedRow.startScalarFilterAttempt();
 	}
 
 	private void restoreSharedRow() {
@@ -391,7 +392,7 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 			AdaptiveDecision<T> decision = adaptiveModel == null
 					? new AdaptiveDecision<>(rankLegacy(remaining, remaining.stream()
 							.map(capturedWork::get)
-							.toArray(LmdbNativeWork[]::new)), null, -1, "legacy ranking")
+							.toArray(LmdbNativeWork[]::new), sliceRows), null, -1, "legacy ranking")
 					: adaptiveDecision(remaining, sliceRows, adaptiveModel,
 							first && directTag == null
 									? new LmdbNativeAdaptiveArbitration.ProbeContext(probeConfig, probeBudget,
@@ -499,10 +500,15 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		if (candidates.isEmpty()) {
 			return -1;
 		}
-		return rankLegacy(candidates, comparableCosts(candidates, sliceRows));
+		return rankLegacy(candidates, comparableCosts(candidates, sliceRows), sliceRows);
 	}
 
-	private static <T> int rankLegacy(List<LmdbNativeStrategyProposal<T>> candidates, LmdbNativeWork[] costs) {
+	private static <T> int rankLegacy(List<LmdbNativeStrategyProposal<T>> candidates, LmdbNativeWork[] costs,
+			double sliceRows) {
+		int expected = expectedPlanningWinner(candidates, costs, sliceRows);
+		if (expected >= 0) {
+			return expected;
+		}
 		int best = -1;
 		for (int i = 0; i < candidates.size(); i++) {
 			if (candidates.get(i).physicalDominanceProof(candidates) != null || isDominated(candidates, costs, i)) {
@@ -514,6 +520,42 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 			}
 		}
 		return best;
+	}
+
+	/**
+	 * An expected LIMIT price may order only the complete, non-dominated set when every candidate has a finite quote in
+	 * the same native-work units. Missing prices and calibrated time factors leave the existing stable decision intact.
+	 */
+	private static <T> int expectedPlanningWinner(List<LmdbNativeStrategyProposal<T>> candidates,
+			LmdbNativeWork[] costs, double sliceRows) {
+		if (!Double.isFinite(sliceRows) || sliceRows < 0D || candidates.size() < 2) {
+			return -1;
+		}
+		int best = -1;
+		double bestExpected = Double.POSITIVE_INFINITY;
+		int competitors = 0;
+		for (int i = 0; i < candidates.size(); i++) {
+			LmdbNativeStrategyProposal<T> candidate = candidates.get(i);
+			if (candidate.physicalDominanceProof(candidates) != null || isDominated(candidates, costs, i)) {
+				continue;
+			}
+			competitors++;
+			if (LmdbNativeCostCalibration.enabled()
+					&& LmdbNativeCostCalibration.observations(candidate.tag) >= 2L) {
+				return -1;
+			}
+			LmdbNativeStrategyProposal.ExpectedPlanningPrior prior = candidate.expectedPlanningPriorForSlice(sliceRows);
+			if (prior == null || !Double.isFinite(prior.expectedTotalWork())) {
+				return -1;
+			}
+			double expected = prior.expectedTotalWork();
+			if (best < 0 || expected < bestExpected
+					|| (expected == bestExpected && stablePreference(candidate, candidates.get(best)) < 0)) {
+				best = i;
+				bestExpected = expected;
+			}
+		}
+		return competitors >= 2 ? best : -1;
 	}
 
 	private static <T> int rankByPreference(List<LmdbNativeStrategyProposal<T>> candidates) {
@@ -624,9 +666,11 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		for (int index = 0; index < candidates.size(); index++) {
 			physicallyDominated[index] = candidates.get(index).physicalDominanceProof(candidates) != null;
 			LmdbNativeCostPrediction prediction = captured.predictions().get(index);
-			if (!estimates.get(index).workEvidence().isComplete() && prediction.exactCompletedCount() == 0L) {
+			if (!estimates.get(index).workEvidence().isComplete() && prediction.exactCompletedCount() == 0L
+					&& candidates.get(index).planningWork() == null) {
 				// The compatibility scalar remains diagnostic work. A refused producer's units cannot veto a
-				// different executable recipe's proved normal choice at the old static band.
+				// different executable recipe's proved normal choice at the old static band. A planning quote is
+				// the exception: it is the point-estimate price the cold static band has always compared.
 				authoritativeCosts[index] = LmdbNativeWork.UNKNOWN;
 			}
 			if (!physicallyDominated[index]
@@ -665,7 +709,8 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 					estimate, LmdbNativeStrategyPreference.rank(proposal.tag),
 					observation -> diagnostics == null ? proposal.open()
 							: diagnostics.openAttempt(proposal, observation),
-					proposal.probeable, proposal.coldAnchor());
+					proposal.probeable, proposal.coldAnchor(), proposal.expectedPlanningPriorForSlice(sliceRows),
+					proposal.executionResourceWitness());
 			converted.add(new AdaptiveCandidate<>(i, candidate));
 			priced.add(new LmdbNativeAdaptiveArbitration.Priced<>(candidate, captured.predictions().get(i)));
 		}
@@ -718,7 +763,7 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		LmdbNativeWork[] work = new LmdbNativeWork[candidates.size()];
 		for (int i = 0; i < candidates.size(); i++) {
 			tags[i] = candidates.get(i).tag;
-			work[i] = candidates.get(i).effectiveWork(sliceRows);
+			work[i] = candidates.get(i).comparableWork(sliceRows);
 			for (int j = 0; j < i; j++) {
 				if (java.util.Objects.equals(tags[i], tags[j])) {
 					throw new IllegalArgumentException("duplicate physical proposal tag: " + tags[i]);
@@ -900,7 +945,8 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 						hedgeContextForSite(), null, diagnosticEnabled ? this : null);
 			} else {
 				LmdbNativeWork[] costs = comparableCosts(candidates, sliceRows);
-				decision = new AdaptiveDecision<>(rankLegacy(candidates, costs), null, -1, "legacy ranking");
+				decision = new AdaptiveDecision<>(rankLegacy(candidates, costs, sliceRows), null, -1,
+						"legacy ranking");
 			}
 			String role = decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<?>
 					|| decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Hedge<?> ? "trial"

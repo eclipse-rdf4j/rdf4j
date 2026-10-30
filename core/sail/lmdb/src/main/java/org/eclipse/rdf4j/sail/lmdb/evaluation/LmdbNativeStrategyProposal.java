@@ -39,6 +39,38 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		T open() throws IOException;
 	}
 
+	/** Expected planning work in native-work units; never a hard bound or an adaptive-model feature vector. */
+	record ExpectedPlanningPrior(double expectedTotalWork, double expectedBeforeFirstOutputWork) {
+		ExpectedPlanningPrior {
+			if (!Double.isFinite(expectedTotalWork) || expectedTotalWork < 0D
+					|| !Double.isFinite(expectedBeforeFirstOutputWork) || expectedBeforeFirstOutputWork < 0D
+					|| expectedBeforeFirstOutputWork > expectedTotalWork) {
+				throw new IllegalArgumentException("expected planning work must be finite, nonnegative, and ordered");
+			}
+		}
+
+		static ExpectedPlanningPrior blocking(double expectedTotalWork) {
+			return Double.isFinite(expectedTotalWork) && expectedTotalWork >= 0D
+					? new ExpectedPlanningPrior(expectedTotalWork, expectedTotalWork)
+					: null;
+		}
+
+		ExpectedPlanningPrior forSlice(double sliceRows, double estimatedRows) {
+			if (sliceRows == 0D) {
+				return blocking(0D);
+			}
+			if (!Double.isFinite(sliceRows) || sliceRows < 0D || expectedBeforeFirstOutputWork >= expectedTotalWork
+					|| !Double.isFinite(estimatedRows) || estimatedRows <= 0D) {
+				return this;
+			}
+			double fraction = Math.min(1D, sliceRows / estimatedRows);
+			double expected = expectedBeforeFirstOutputWork
+					+ fraction * (expectedTotalWork - expectedBeforeFirstOutputWork);
+			return Double.isFinite(expected) ? new ExpectedPlanningPrior(expected,
+					expectedBeforeFirstOutputWork) : null;
+		}
+	}
+
 	final Opener<T> opener;
 	/**
 	 * Work paid before the first row can be emitted — a parallel group's worker startup, a hash join's build sweep.
@@ -52,7 +84,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	final LmdbNativeWork startupWork;
 	/** Rows this strategy expects to emit, or NaN when unknown. Needed to prorate work against a finite slice. */
 	final double estRows;
-	final double estCost;
+	double estCost;
 	/**
 	 * The same cost as an interval. Scalar-costed proposals report a degenerate interval, so a scalar comparison and a
 	 * {@linkplain LmdbNativeWork#beats domination} test agree on them; proposals that know how uncertain they are can
@@ -72,6 +104,13 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private LmdbNativeCostEstimate physicalEstimate;
 	private NativeAggregatePhysicalPlan aggregatePhysicalPlan;
 	private NativeAggregatePhysicalPlan.ColdAnchor coldAnchor;
+	private ExpectedPlanningPrior expectedPlanningPrior;
+	/**
+	 * The point-estimate planning quote the arbiter ranks with ({@link LmdbNativeWork#planning}); null when the
+	 * conservative {@link #work} interval is the only price. Never a bound, never a proof.
+	 */
+	private LmdbNativeWork planningWork;
+	LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness;
 	private NativeAggregateExecutionEvent.Descriptor aggregateExecution;
 	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
 	private LmdbNativeStrategyProposal<?> mappedOrigin;
@@ -95,8 +134,172 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		result.physicalEstimate = physicalEstimate;
 		result.aggregatePhysicalPlan = aggregatePhysicalPlan;
 		result.coldAnchor = coldAnchor;
+		result.expectedPlanningPrior = expectedPlanningPrior;
+		result.planningWork = planningWork;
+		result.estCost = estCost;
+		result.executionResourceWitness = executionResourceWitness;
 		result.mappedOrigin = this;
 		return result;
+	}
+
+	/**
+	 * Attaches the point-estimate planning quote this strategy is ranked with. The conservative {@link #work} interval
+	 * is unchanged: the planning quote orders candidates and feeds the cost telemetry, but it establishes neither a
+	 * work bound nor a typed adaptive-model feature. A quote no narrower than an already-known {@link #work} is
+	 * redundant and ignored.
+	 */
+	LmdbNativeStrategyProposal<T> withPlanningWork(LmdbNativeWork planning) {
+		if (opened || closed || planningWork != null) {
+			throw new IllegalStateException("A planning quote belongs to one unopened proposal");
+		}
+		Objects.requireNonNull(planning);
+		if (work.known() || !planning.known()) {
+			return this;
+		}
+		planningWork = planning;
+		estCost = planning.high();
+		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withOptionalPlanningWork(LmdbNativeWork planning) {
+		return planning == null ? this : withPlanningWork(planning);
+	}
+
+	LmdbNativeWork planningWork() {
+		return planningWork;
+	}
+
+	/**
+	 * The price the arbiter compares: the planning quote when one was attached, otherwise {@link #effectiveWork}. A
+	 * planning quote is prorated the way the arbiter has always prorated a point estimate: the front-loaded part is
+	 * paid whatever happens and the streaming remainder scales with the share of the result the consumer will ask for.
+	 */
+	LmdbNativeWork comparableWork(double sliceRows) {
+		LmdbNativeWork planning = planningWork;
+		if (planning == null) {
+			return effectiveWork(sliceRows);
+		}
+		if (!(sliceRows >= 0D) || Double.isNaN(estRows) || estRows <= 0D || sliceRows >= estRows) {
+			return planning;
+		}
+		double fraction = sliceRows / estRows;
+		double startupLow = Math.min(startupWork.low(), planning.low());
+		double startupHigh = Math.min(startupWork.known() ? startupWork.high() : planning.high(), planning.high());
+		double low = startupLow + fraction * Math.max(0D, planning.low() - startupLow);
+		double high = startupHigh + fraction * Math.max(0D, planning.high() - startupHigh);
+		return LmdbNativeWork.between(Math.min(low, high), Math.max(low, high));
+	}
+
+	LmdbNativeStrategyProposal<T> withExpectedPlanningPrior(ExpectedPlanningPrior prior) {
+		if (opened || closed || expectedPlanningPrior != null) {
+			throw new IllegalStateException("An expected planning prior belongs to one unopened proposal");
+		}
+		expectedPlanningPrior = Objects.requireNonNull(prior);
+		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withOptionalExpectedPlanningPrior(ExpectedPlanningPrior prior) {
+		return prior == null ? this : withExpectedPlanningPrior(prior);
+	}
+
+	ExpectedPlanningPrior expectedPlanningPrior() {
+		return expectedPlanningPrior;
+	}
+
+	/**
+	 * A cold planning quote for a finite consumer slice. This value is separate from {@link #effectiveWork}: it may
+	 * guide expected-cost selection, but never establishes a work bound or a typed adaptive-model feature.
+	 */
+	ExpectedPlanningPrior expectedPlanningPriorForSlice(double sliceRows) {
+		if (!Double.isFinite(sliceRows) || sliceRows < 0D) {
+			return null;
+		}
+		if (sliceRows == 0D) {
+			return ExpectedPlanningPrior.blocking(0D);
+		}
+		ExpectedPlanningPrior prior = expectedPlanningPrior;
+		if (physicalEstimate != null) {
+			if (!physicalEstimate.workEvidence().isComplete()) {
+				if (prior == null || executionResourceWitness == null && coldAnchor == null) {
+					return null;
+				}
+			} else if (samePhysicalWork(physicalEstimate.startup(), physicalEstimate.total())) {
+				double total = prior == null
+						? work.known() ? midpoint(work) : Double.NaN
+						: prior.expectedTotalWork();
+				return preserveProvenWorkBounds(ExpectedPlanningPrior.blocking(total));
+			} else if (prior == null && !physicalEstimate.startup().isZero()) {
+				// Typed startup counts and compatibility work use different units. Without a producer-supplied scalar
+				// expected prior, a nonzero partial typed startup cannot justify slicing the compatibility scalar.
+				return null;
+			}
+		}
+		if (prior == null) {
+			if (!work.known()) {
+				return null;
+			}
+			double total = midpoint(work);
+			double beforeFirst = startupWork.known() ? Math.min(midpoint(startupWork), total) : 0D;
+			prior = new ExpectedPlanningPrior(total, beforeFirst);
+		} else if (!work.known()
+				&& (executionResourceWitness == null && coldAnchor == null
+						&& (physicalEstimate == null || !physicalEstimate.workEvidence().isComplete()))) {
+			return null;
+		}
+		prior = preserveProvenWorkBounds(prior);
+		return prior == null ? null : prior.forSlice(sliceRows, estRows);
+	}
+
+	private ExpectedPlanningPrior preserveProvenWorkBounds(ExpectedPlanningPrior prior) {
+		if (prior == null) {
+			return null;
+		}
+		// This is still the full-run quote. Validate it before forSlice can legitimately price below the full-run
+		// floor.
+		if (prior.expectedTotalWork() < work.low()
+				|| (work.known() && prior.expectedTotalWork() > work.high())) {
+			return null;
+		}
+		double startupFloor = startupWork.low();
+		if (prior.expectedTotalWork() < startupFloor) {
+			return null;
+		}
+		double expectedStartup = Math.max(prior.expectedBeforeFirstOutputWork(), startupFloor);
+		if (expectedStartup > prior.expectedTotalWork()) {
+			return null;
+		}
+		if (expectedStartup == prior.expectedBeforeFirstOutputWork()) {
+			return prior;
+		}
+		return new ExpectedPlanningPrior(prior.expectedTotalWork(), expectedStartup);
+	}
+
+	private static boolean samePhysicalWork(LmdbNativeCostVector first, LmdbNativeCostVector second) {
+		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+			if (first.low(feature) != second.low(feature) || first.expected(feature) != second.expected(feature)
+					|| first.high(feature) != second.high(feature)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	LmdbNativeStrategyProposal<T> withExecutionResourceWitness(
+			LmdbNativeKernelExecution.ExecutionResourceWitness witness) {
+		if (opened || closed || executionResourceWitness != null) {
+			throw new IllegalStateException("An execution resource witness belongs to one unopened proposal");
+		}
+		executionResourceWitness = Objects.requireNonNull(witness);
+		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withOptionalExecutionResourceWitness(
+			LmdbNativeKernelExecution.ExecutionResourceWitness witness) {
+		return witness == null ? this : withExecutionResourceWitness(witness);
+	}
+
+	LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness() {
+		return executionResourceWitness;
 	}
 
 	/** A plan-owned shared-work proof, independent of scalar calibration and completed timing confidence. */
@@ -226,22 +429,30 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	/**
-	 * Work this strategy will actually consume when the consumer stops after {@code sliceRows} rows.
+	 * Bounds on work consumed when the consumer may stop after {@code sliceRows} rows.
 	 * <p>
-	 * The front-loaded part is paid whatever happens; the streaming remainder is prorated by how much of the result the
-	 * consumer is going to ask for. With no finite slice, or with an unknown row count, this is simply the total work —
-	 * the model declines to guess rather than inventing a discount.
+	 * A result-row estimate does not bound how much input is needed to produce a slice. Keep the front-loaded floor and
+	 * the complete-open ceiling; proportional consumption is only an expected value, not a proven bound.
 	 *
 	 * @param sliceRows rows the consumer can possibly consume, or a negative value when unbounded
 	 */
 	LmdbNativeWork effectiveWork(double sliceRows) {
-		if (!(sliceRows >= 0D) || Double.isNaN(estRows) || estRows <= 0D || sliceRows >= estRows || !work.known()) {
+		if (!Double.isFinite(sliceRows) || sliceRows < 0D) {
 			return work;
 		}
-		double fraction = sliceRows / estRows;
-		double low = startupWork.low() + fraction * Math.max(0D, work.low() - startupWork.low());
-		double high = startupWork.high() + fraction * Math.max(0D, work.high() - startupWork.high());
-		return LmdbNativeWork.between(Math.min(low, high), Math.max(low, high));
+		double lower = sliceRows == 0D ? 0D : Math.min(startupWork.low(), work.high());
+		return LmdbNativeWork.between(lower, work.high());
+	}
+
+	/** A proportional estimate is useful to the adaptive model, but must not narrow a proven interval. */
+	private double expectedWork(double sliceRows) {
+		double total = midpoint(planningWork != null ? planningWork : work);
+		if (!Double.isFinite(sliceRows) || sliceRows < 0D || !Double.isFinite(estRows) || estRows <= 0D) {
+			return total;
+		}
+		double startup = startupWork.known() ? Math.min(midpoint(startupWork), total) : 0D;
+		double fraction = Math.min(1D, sliceRows / estRows);
+		return startup + fraction * (total - startup);
 	}
 
 	/**
@@ -274,20 +485,27 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	LmdbNativeCostEstimate adaptiveEstimate(double sliceRows) {
 		if (physicalEstimate != null) {
-			return sliceRows >= 0D && physicalEstimate.estimatedOutputRows() > 0D
-					&& sliceRows < physicalEstimate.estimatedOutputRows()
-							? physicalEstimate.forConsumption(sliceRows / physicalEstimate.estimatedOutputRows())
-							: physicalEstimate;
+			double rows = physicalEstimate.estimatedOutputRows();
+			if (Double.isFinite(sliceRows) && sliceRows >= 0D && rows > 0D && sliceRows < rows) {
+				return physicalEstimate.forConsumption(sliceRows / rows);
+			}
+			// A slice that covers the whole result drains the strategy completely: the full-run quote and its
+			// complete-drain work evidence stay intact instead of being re-labelled as a partial consumption.
+			return physicalEstimate;
 		}
-		LmdbNativeWork effective = effectiveWork(sliceRows);
+		// The planning quote is the price this strategy is compared on, exactly as the point estimate was before
+		// conservative intervals existed; the hard interval keeps backing proofs and bounds.
+		LmdbNativeWork effective = comparableWork(sliceRows);
 		if (!effective.known()) {
 			return null;
 		}
 		String family = baseTag(tag);
 		LmdbNativeCostVector.Feature rowFeature = rowFeature(family);
-		double totalExpected = midpoint(effective);
 		double startupLow = Math.min(startupWork.low(), effective.low());
 		double startupHigh = Math.min(startupWork.known() ? startupWork.high() : effective.high(), effective.high());
+		double startupExpected = startupLow + (startupHigh - startupLow) * 0.5D;
+		double totalExpected = Math.max(startupExpected,
+				Math.max(effective.low(), Math.min(effective.high(), expectedWork(sliceRows))));
 
 		LmdbNativeCostVector.Builder startup = LmdbNativeCostVector.builder()
 				.add(LmdbNativeCostVector.Feature.OPEN, 1D);
@@ -304,13 +522,15 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}
 		double startupRowLow = Math.max(0D, startupLow - workerStartIntercept);
 		double startupRowHigh = Math.max(0D, startupHigh - workerStartIntercept);
-		double startupRowExpected = startupRowLow + (startupRowHigh - startupRowLow) * 0.5D;
+		double startupRowExpected = Math.max(startupRowLow,
+				Math.min(startupRowHigh, startupExpected - workerStartIntercept));
 		if (startupRowHigh > 0D) {
 			startup.add(rowFeature, startupRowLow, startupRowExpected, startupRowHigh);
 		}
 		double totalRowLow = Math.max(0D, effective.low() - workerStartIntercept);
 		double totalRowHigh = Math.max(0D, effective.high() - workerStartIntercept);
-		double totalRowExpected = totalRowLow + (totalRowHigh - totalRowLow) * 0.5D;
+		double totalRowExpected = Math.max(totalRowLow,
+				Math.min(totalRowHigh, totalExpected - workerStartIntercept));
 		if (totalRowHigh > 0D) {
 			total.add(rowFeature, totalRowLow, totalRowExpected, totalRowHigh);
 		}

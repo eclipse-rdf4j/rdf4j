@@ -137,9 +137,11 @@ class LmdbNativeCoordinatorCancellationTest {
 						assertThat(fixture.signalled)
 								.as("the actual ordered %s boundary must request its control", boundary)
 								.isTrue();
-						assertThat(failure).isSameAs(stop == NativeCoordinatorCompletionContractTest.Stop.QUERY
-								? KernelQueryCancelledException.INSTANCE
-								: LmdbNativeProbeDeadlineExceeded.INSTANCE);
+						if (stop == NativeCoordinatorCompletionContractTest.Stop.QUERY) {
+							assertOwnedQueryCancellation(failure, fixture.emitter.cancellation);
+						} else {
+							assertThat(failure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+						}
 						assertThat(result.get()).isNull();
 					}
 					assertThat(fixture.orderedEmitBinds.get()).as("the ordered collector must bind real Emit workers")
@@ -275,7 +277,7 @@ class LmdbNativeCoordinatorCancellationTest {
 			Throwable failure = catchThrowable(() -> fixture.emitter.kernelGroupRow(new long[] { 1L, 1L }, 0,
 					fixture.groupLayout, null));
 			assertThat(fixture.coordinatorReads).as("a cancelled renderer cannot touch its source").hasValue(0);
-			assertThat(failure).isSameAs(KernelQueryCancelledException.INSTANCE);
+			assertOwnedQueryCancellation(failure, fixture.emitter.cancellation);
 		}
 	}
 
@@ -310,9 +312,11 @@ class LmdbNativeCoordinatorCancellationTest {
 				assertThat(fixture.workerMergeReadsAfterSignal.get())
 						.as("two workers must poll within a bounded DISTINCT copy, independently of set size")
 						.isLessThanOrEqualTo(2 * POLL_BOUND);
-				assertThat(failure).isSameAs(stop == NativeCoordinatorCompletionContractTest.Stop.QUERY
-						? KernelQueryCancelledException.INSTANCE
-						: LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				if (stop == NativeCoordinatorCompletionContractTest.Stop.QUERY) {
+					assertOwnedQueryCancellation(failure, fixture.emitter.cancellation);
+				} else {
+					assertThat(failure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				}
 				assertThat(result.get()).isNull();
 				if (stop == NativeCoordinatorCompletionContractTest.Stop.PROBE) {
 					assertThat(fixture.emitter.cancellation.isCancellationRequested()).isFalse();
@@ -344,9 +348,11 @@ class LmdbNativeCoordinatorCancellationTest {
 				} else {
 					assertThat(fixture.signalled).isTrue();
 					assertThat(fixture.workerMergeReadsAfterSignal.get()).isLessThanOrEqualTo(2 * POLL_BOUND);
-					assertThat(failure).isSameAs(stop == NativeCoordinatorCompletionContractTest.Stop.QUERY
-							? KernelQueryCancelledException.INSTANCE
-							: LmdbNativeProbeDeadlineExceeded.INSTANCE);
+					if (stop == NativeCoordinatorCompletionContractTest.Stop.QUERY) {
+						assertOwnedQueryCancellation(failure, fixture.emitter.cancellation);
+					} else {
+						assertThat(failure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+					}
 					assertThat(result.get()).isNull();
 					if (stop == NativeCoordinatorCompletionContractTest.Stop.PROBE) {
 						assertThat(fixture.emitter.cancellation.isCancellationRequested()).isFalse();
@@ -505,8 +511,11 @@ class LmdbNativeCoordinatorCancellationTest {
 				NativeExecutionPhaseEvent.mark("fixture-materializer-finished", fixture.emitter.cancellation, "FENCED");
 				if (interrupt) {
 					assertThat(fixture.signalled).isTrue();
-					assertThat(failure).isSameAs(probe ? LmdbNativeProbeDeadlineExceeded.INSTANCE
-							: KernelQueryCancelledException.INSTANCE);
+					if (probe) {
+						assertThat(failure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+					} else {
+						assertOwnedQueryCancellation(failure, fixture.emitter.cancellation);
+					}
 					assertThat(results.get()).isNull();
 				} else {
 					assertThat(failure).isNull();
@@ -664,8 +673,11 @@ class LmdbNativeCoordinatorCancellationTest {
 			assertThat(cancelled.readsAfterSignal.get())
 					.as("coordinator work after the request is bounded independently of total input cardinality")
 					.isLessThanOrEqualTo(2 * POLL_BOUND);
-			assertThat(failure).isSameAs(probe ? LmdbNativeProbeDeadlineExceeded.INSTANCE
-					: KernelQueryCancelledException.INSTANCE);
+			if (probe) {
+				assertThat(failure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			} else {
+				assertOwnedQueryCancellation(failure, cancelled.emitter.cancellation);
+			}
 			assertThat(result.get()).as("a cancelled materializer cannot publish a completed internal result").isNull();
 			if (probe) {
 				assertThat(cancelled.emitter.cancellation.isCancellationRequested())
@@ -673,6 +685,13 @@ class LmdbNativeCoordinatorCancellationTest {
 						.isFalse();
 			}
 		}
+	}
+
+	private static void assertOwnedQueryCancellation(Throwable failure, NativeCancellationToken token) {
+		assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
+		KernelQueryCancelledException signal = (KernelQueryCancelledException) failure;
+		assertThat(signal.origin()).as("query cancellation retains the token that requested it").isSameAs(token);
+		assertThat(signal.observedBy(token)).as("the requesting token observes its own terminal signal").isTrue();
 	}
 
 	private static final class Fixture implements AutoCloseable {

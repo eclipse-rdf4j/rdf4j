@@ -18,6 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -25,6 +27,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -61,7 +65,8 @@ class LmdbNoneAdmissionDeadlineTest {
 	@Timeout(value = 45, unit = TimeUnit.SECONDS)
 	void repositoryQueryTimesOutWhileNoneWriterHoldsGrowthAdmission(QueryKind kind, @TempDir Path dataDirectory)
 			throws Exception {
-		LmdbStore store = newStore(dataDirectory);
+		AdmissionWaitProbe queryAdmission = new AdmissionWaitProbe();
+		LmdbStore store = newStore(dataDirectory, queryAdmission);
 		SailRepository repository = new SailRepository(store);
 		ExecutorService queryExecutor = Executors.newSingleThreadExecutor();
 		ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
@@ -85,6 +90,7 @@ class LmdbNoneAdmissionDeadlineTest {
 					query.setMaxExecutionTime(1);
 					queryPrepared.countDown();
 					await(startQuery, "the test must start the prepared public query");
+					queryAdmission.queryThread.set(Thread.currentThread());
 					queryEvaluationStarted.countDown();
 					return evaluateQuery(query);
 				}
@@ -120,8 +126,8 @@ class LmdbNoneAdmissionDeadlineTest {
 			assertTrue(queryEvaluationStarted.await(3, TimeUnit.SECONDS),
 					"the query evaluation must enter on its worker");
 			Future<Boolean> waitingQuery = queryFuture;
-			awaitAdmissionWait(backing, waiting.admissionWaitCount(), queryFuture,
-					"the query must reach the closed growth-admission wait");
+			assertTrue(queryAdmission.entered.await(5, TimeUnit.SECONDS),
+					"the query itself must reach the closed growth-admission wait");
 
 			ExecutionException timeout = assertThrows(ExecutionException.class,
 					() -> waitingQuery.get(4, TimeUnit.SECONDS),
@@ -134,8 +140,11 @@ class LmdbNoneAdmissionDeadlineTest {
 					"the query must time out from the real map-growth admission wait");
 			assertTrue(timedOut.admissionTimeouts() > waiting.admissionTimeouts(),
 					"the query's scoped deadline must be recorded as an admission timeout");
-			assertEquals(waiting.currentAdmissionWaiters(), timedOut.currentAdmissionWaiters(),
-					"the timed-out query must leave no growth-admission waiter behind");
+			// Initial operation admission is synchronous, before the query factory can launch any work.
+			// Observe durable events for that worker, not the changing population of background readers.
+			assertEquals(1, queryAdmission.started.get(), "the query must enter its own admission wait");
+			assertEquals(1, queryAdmission.finished.get(),
+					"the timed-out query must leave admission before the held writer is released");
 			assertEquals(waiting.growthEpisodes(), timedOut.growthEpisodes(),
 					"timing out one query must not abort or replace the writer's shared growth episode");
 			assertEquals(waiting.emergencyFailures(), timedOut.emergencyFailures(),
@@ -234,12 +243,45 @@ class LmdbNoneAdmissionDeadlineTest {
 	}
 
 	private static LmdbStore newStore(Path dataDirectory) {
+		return newStore(dataDirectory, null);
+	}
+
+	private static LmdbStore newStore(Path dataDirectory, AdmissionWaitProbe probe) {
 		return new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(INITIAL_MAP_BYTES)
 				.setValueDBSize(INITIAL_MAP_BYTES)
 				.setAutoGrow(true)
 				.setMapGrowthThreshold(0.10d)
-				.setMapGrowthReadDrainTimeoutMillis(30_000L));
+				.setMapGrowthReadDrainTimeoutMillis(30_000L)) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+					boolean sketchEnabled) throws IOException {
+				return new LmdbSailStore(directory, properties, config, sketchEnabled, getFormat(),
+						getQueryExecutionPolicy()) {
+					@Override
+					void afterAttemptAdmissionWaitStarted() {
+						if (probe != null && Thread.currentThread() == probe.queryThread.get()) {
+							probe.started.incrementAndGet();
+							probe.entered.countDown();
+						}
+					}
+
+					@Override
+					void afterAttemptAdmissionWaitFinished() {
+						if (probe != null && Thread.currentThread() == probe.queryThread.get()) {
+							probe.finished.incrementAndGet();
+						}
+					}
+				};
+			}
+		};
+	}
+
+	private static final class AdmissionWaitProbe {
+		private final AtomicReference<Thread> queryThread = new AtomicReference<>();
+		private final AtomicInteger started = new AtomicInteger();
+		private final AtomicInteger finished = new AtomicInteger();
+		private final CountDownLatch entered = new CountDownLatch(1);
 	}
 
 	private static String growthNamespace() {
@@ -273,24 +315,6 @@ class LmdbNoneAdmissionDeadlineTest {
 			}
 		}
 		throw new IllegalArgumentException("Unsupported public query type: " + query.getClass().getName());
-	}
-
-	private static void awaitAdmissionWait(LmdbSailStore backing, long previousWaitCount,
-			Future<?> query, String message) {
-		long timeoutAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-		while (true) {
-			MapGrowthMetrics.Snapshot metrics = backing.growthMetricsSnapshot();
-			if (metrics.currentAdmissionWaiters() > 0 || metrics.admissionWaitCount() > previousWaitCount) {
-				return;
-			}
-			if (query.isDone()) {
-				throw new AssertionError(message + "; the query finished without entering admission wait");
-			}
-			if (System.nanoTime() >= timeoutAt) {
-				throw new AssertionError(message + "; the query never entered admission wait");
-			}
-			Thread.onSpinWait();
-		}
 	}
 
 	private static void awaitPhase(LmdbSailStore backing, LmdbSailStore.GrowthPhase expected, String message) {

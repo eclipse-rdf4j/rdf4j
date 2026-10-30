@@ -373,12 +373,16 @@ class LmdbMixedPlaneSnapshotTest {
 	}
 
 	@Test
-	void failedSecondSourceAcquisitionReleasesBothPhysicalReaderFamilies(@TempDir File directory) {
+	void failedSecondSourceAcquisitionReleasesBothPhysicalReaderFamilies(@TempDir File directory) throws Exception {
 		String previousPinning = System.getProperty(PINNING_PROPERTY);
 		System.setProperty(PINNING_PROPERTY, "true");
 		InterleavingGate gate = new InterleavingGate();
 		LmdbStore store = new InterleavingLmdbStore(directory, gate);
 		store.init();
+		// Startup maintenance (unused-id reclamation, term-index maintenance) briefly holds ordinary dictionary
+		// readers; the reader-slot comparison below needs a quiescent pool, otherwise a maintenance reader admitted
+		// between the two samples reads as a leak.
+		LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
 		try (SailConnection reader = store.getConnection()) {
 			TxnManager triples = store.getBackingStore().getTripleStore().getTxnManager();
 			TxnManager dictionary = ((ValueStore) store.getValueFactory()).getTxnManager();

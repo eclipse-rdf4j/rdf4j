@@ -23,7 +23,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.stream.Stream;
@@ -72,10 +71,10 @@ class LmdbDirectAdjacencyBuildInterleavingTest {
 	private static final String[] PROPERTIES = { LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY,
 			LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, LmdbDirectAdjacencyStore.ROOT_SCAN_PROPERTY };
 
+	/** Where the write lands relative to a held rebuild: before the build pins its snapshot, or after its scan. */
 	enum Phase {
-		BEFORE_SNAPSHOT,
-		AFTER_SCAN,
-		BEFORE_ONLINE_CATCH_UP
+		BEFORE_PIN,
+		AFTER_SCAN
 	}
 
 	enum Write {
@@ -180,42 +179,25 @@ class LmdbDirectAdjacencyBuildInterleavingTest {
 		LmdbDirectAdjacencyStore direct = sail.getBackingStore().directAdjacencyStore();
 		long buildsBefore = direct.snapshotMetrics().buildsCompleted;
 
-		AtomicBoolean first = new AtomicBoolean(true);
-		AtomicReference<Throwable> writeFailure = new AtomicReference<>();
-		Runnable hook = () -> {
-			if (!first.compareAndSet(true, false)) {
-				return;
-			}
-			Thread writer = new Thread(() -> {
-				try (RepositoryConnection connection = repo.getConnection()) {
-					write.apply.accept(connection, expected);
-				} catch (Throwable failure) {
-					writeFailure.set(failure);
-				}
-			}, "interleaving-writer");
-			writer.start();
-			try {
-				writer.join(TimeUnit.SECONDS.toMillis(30));
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-			}
-			if (writer.isAlive()) {
-				writeFailure.set(new AssertionError("the write did not finish while the rebuild was held at " + phase));
-			}
-		};
 		switch (phase) {
-		case BEFORE_SNAPSHOT -> direct.beforeBuildSnapshotForTest = hook;
-		case AFTER_SCAN -> direct.afterBuildScanForTest = hook;
-		case BEFORE_ONLINE_CATCH_UP -> direct.beforeOnlineCatchUpForTest = hook;
+		case BEFORE_PIN -> ApplierStepping.holdBuildBeforePin(direct);
+		case AFTER_SCAN -> ApplierStepping.holdBuildAfterScan(direct);
 		}
-		direct.scheduleQuiescentRebuild();
-		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-		while ((first.get() || direct.snapshotMetrics().buildsCompleted == buildsBefore)
-				&& System.nanoTime() < deadline) {
-			Thread.sleep(5);
-		}
-		assertThat(first.get()).as("the rebuild reached %s", phase).isFalse();
+		AtomicReference<Throwable> writeFailure = new AtomicReference<>();
+		Thread writer = new Thread(() -> {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				write.apply.accept(connection, expected);
+			} catch (Throwable failure) {
+				writeFailure.set(failure);
+			}
+		}, "interleaving-writer");
+		writer.start();
+		writer.join(TimeUnit.SECONDS.toMillis(30));
+		assertThat(writer.isAlive()).as("the write finishes while the rebuild is held at %s", phase).isFalse();
 		assertThat(writeFailure.get()).isNull();
+		ApplierStepping.releaseBuild(direct);
+		assertThat(ApplierStepping.awaitCondition(() -> direct.snapshotMetrics().buildsCompleted > buildsBefore, 30,
+				TimeUnit.SECONDS)).as("the rebuild completed").isTrue();
 		assertThat(sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
 				.as(sail.getDirectAdjacencyReadinessDescription())
 				.isTrue();
