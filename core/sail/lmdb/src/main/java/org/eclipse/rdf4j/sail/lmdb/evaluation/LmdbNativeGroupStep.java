@@ -1784,7 +1784,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			 * source.
 			 */
 			arbiter.terminalFallback(() -> estimatedProposal(this::evaluateTypeMatrixFallback,
-					LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX, typeMatrixWork));
+					LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX, typeMatrixWork)
+						.filterParent(filterAttempt == null ? NativeFilterLease.parentOf(row) : filterAttempt));
 		}
 
 	}
@@ -1853,9 +1854,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		}
 	}
 
-	private List<BindingSet> evaluateTypeMatrixFallback() {
-		try (NativeReplayBindingList.Builder result = collectResults()) {
-			try (CloseableIteration<BindingSet> rows = typeMatrix.evaluate(base, source)) {
+	private List<BindingSet> evaluateTypeMatrixFallback(NativeFilterLease filters) {
+		try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source, filters);
+				NativeReplayBindingList.Builder result = collectResults()) {
+			// Retain the attempt facade through generic preparation and lazy fallback consumption too.
+			NativeLmdbQuerySource evaluation = SyntheticValueSource.forEvaluation(source);
+			try (CloseableIteration<BindingSet> rows = typeMatrix.evaluate(base, evaluation)) {
 				while (rows.hasNext()) {
 					cancellation.check();
 					result.add(rows.next());

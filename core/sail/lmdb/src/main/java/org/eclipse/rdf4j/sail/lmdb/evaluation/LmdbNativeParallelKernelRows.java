@@ -495,7 +495,7 @@ final class LmdbNativeParallelKernelRows {
 		cancelled.set(true);
 	}
 
-	/** Cancels the worker group pre-handoff and releases every resource; close failures surface as errors only. */
+	/** Cancels and joins pre-handoff workers; the caller selects the settled body and cleanup failures together. */
 	private static void abandon(NativeLmdbQuerySource.ParallelSource[] sources,
 			LmdbNativeParallelPipelines.TaskReservation reservation, NativeExecutionContext.WorkerTasks tasks,
 			WorkerFailures failures, AtomicBoolean cancelled, NativeCancellationToken workerCancellation,
@@ -504,13 +504,9 @@ final class LmdbNativeParallelKernelRows {
 		awaitTasks(tasks);
 		Throwable cleanupFailure = LmdbNativeParallelPipelines.closeSources(sources, tasks.cleanupFailure());
 		failures.cleanup(cleanupFailure);
-		cleanupFailure = failures.cleanupFailure();
 		reservation.close();
 		if (interrupted) {
 			Thread.currentThread().interrupt();
-		}
-		if (cleanupFailure instanceof Error) {
-			throw (Error) cleanupFailure;
 		}
 	}
 
@@ -989,8 +985,8 @@ final class LmdbNativeParallelKernelRows {
 		}
 
 		synchronized Throwable ownedCleanup() {
-			// next reports the body failure from its settled selection after close(false). Public close remains
-			// responsible for reporting an actual owned cleanup failure. A control cannot hide that failure.
+			// Ordered startup checks cleanup separately before handing off its materialized result.
+			// A control cannot hide an actual owned cleanup failure.
 			return cleanupFailure == null ? null : addCloseFailure(control, cleanupFailure);
 		}
 
@@ -1362,6 +1358,7 @@ final class LmdbNativeParallelKernelRows {
 							addCloseFailure(workerFailure, cleanup);
 						}
 					}
+					markFailureReported();
 					throwFailure(workerFailure);
 				}
 				throwFailure(cancellation);
@@ -1389,27 +1386,31 @@ final class LmdbNativeParallelKernelRows {
 			throw new IOException("parallel kernel pipeline failed", problem);
 		}
 
-		private volatile boolean cleanupFailureReported;
+		private volatile boolean failureReported;
+
+		private void markFailureReported() {
+			if (!tasks.isCleanupOwnerThread()) {
+				failureReported = true;
+			}
+		}
 
 		private void throwSettledFailure() throws IOException {
 			Throwable problem = failures.selected();
 			if (problem == null) {
 				return;
 			}
-			if (!tasks.isCleanupOwnerThread()) {
-				cleanupFailureReported = true;
-			}
+			markFailureReported();
 			throwFailure(problem);
 		}
 
-		private void throwOwnedCleanupFailure() {
-			Throwable problem = failures.ownedCleanup();
-			if (cleanupFailureReported || problem == null) {
+		private void throwUnreportedSettledFailure() {
+			Throwable problem = failures.selected();
+			if (failureReported || problem == null) {
 				return;
 			}
-			if (!tasks.isCleanupOwnerThread()) {
-				cleanupFailureReported = true;
-			}
+			// Workers have already filtered this cursor's local stop. Closing without another next() must
+			// still deliver an independent body/control failure, together with its owned cleanup failures.
+			markFailureReported();
 			NativeContextClosingIteration.throwFailure(problem);
 		}
 
@@ -1418,12 +1419,12 @@ final class LmdbNativeParallelKernelRows {
 			close(true);
 		}
 
-		private void close(boolean reportCleanup) {
+		private void close(boolean reportFailure) {
 			if (closed) {
 				awaitTasks(tasks);
 				failures.cleanup(tasks.cleanupFailure());
-				if (reportCleanup) {
-					throwOwnedCleanupFailure();
+				if (reportFailure) {
+					throwUnreportedSettledFailure();
 				}
 				return;
 			}
@@ -1443,8 +1444,8 @@ final class LmdbNativeParallelKernelRows {
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
-			if (reportCleanup) {
-				throwOwnedCleanupFailure();
+			if (reportFailure) {
+				throwUnreportedSettledFailure();
 			}
 		}
 	}

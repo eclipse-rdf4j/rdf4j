@@ -48,6 +48,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 	private final NativeSpillValueCodec codec;
 	private final KernelRuntime.AggregateMemory memory;
 	private final long maxBytes;
+	private final NativeFilterLease feedback;
 	private final List<Cursor> readers = new ArrayList<>();
 	private List<NativeResultRow> resident = new ArrayList<>();
 	private volatile NativeResultCursor producer;
@@ -58,13 +59,20 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 	private Path path;
 	private long residentBytes, publishedRows;
 	private boolean finished, cleaned;
+	private boolean feedbackSettled;
 
 	NativeLazyResultReplay(String[] names, NativeExecutionContext context, NativeCancellationToken cancellation,
 			NativeResultCursor producer) {
+		this(names, context, cancellation, producer, null);
+	}
+
+	NativeLazyResultReplay(String[] names, NativeExecutionContext context, NativeCancellationToken cancellation,
+			NativeResultCursor producer, NativeFilterLease feedback) {
 		this.schema = new NativeResultRow.Schema(names);
 		this.context = context;
 		this.cancellation = new NativeCancellationToken(cancellation);
 		this.producer = producer;
+		this.feedback = feedback;
 		this.maxBytes = Math.max(WORKSPACE_BYTES, NativeCountGroupStore.configuredMaxBytes());
 		this.codec = new NativeSpillValueCodec(this.cancellation,
 				context == null ? null : context::authoritativeQueryScopedValue);
@@ -88,6 +96,17 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		if (failure != null) {
 			terminalFailure = failure;
 			NativeContextClosingIteration.throwFailure(failure);
+		}
+	}
+
+	void includeFeedback(NativeFilterLease selected) {
+		if (feedback == null) {
+			return;
+		}
+		if (selected == null) {
+			context.filterOutcomeOwner().mergeFrozenFilterOutcomes(feedback.memo());
+		} else {
+			selected.include(feedback.memo(), context);
 		}
 	}
 
@@ -128,6 +147,10 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 			producer = null;
 			cancellation.check();
 			LmdbNativeProbeDeadline.poll(0);
+			Throwable failure = settleFeedback(true, null);
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
 			finished = true;
 			return null;
 		}
@@ -235,6 +258,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		synchronized (advanceLock) {
 			failure = KernelRuntime.closeResource(producer, null);
 			producer = null;
+			failure = settleFeedback(finished, failure);
 			if (readers.isEmpty()) {
 				failure = cleanup(failure);
 			}
@@ -251,6 +275,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		cleaned = true;
 		failure = KernelRuntime.closeResource(producer, failure);
 		producer = null;
+		failure = settleFeedback(false, failure);
 		failure = KernelRuntime.closeResource(output, failure);
 		output = null;
 		failure = KernelRuntime.closeResource(() -> {
@@ -265,6 +290,23 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		}, failure);
 		resident = null;
 		return KernelRuntime.closeResource(memory, failure);
+	}
+
+	private Throwable settleFeedback(boolean complete, Throwable failure) {
+		if (feedback == null || feedbackSettled) {
+			return failure;
+		}
+		feedbackSettled = true;
+		if (failure != null) {
+			feedback.abort(failure);
+			return failure;
+		}
+		try {
+			feedback.freeze(complete);
+		} catch (RuntimeException | Error cleanup) {
+			return cleanup;
+		}
+		return null;
 	}
 
 	private final class Cursor implements NativeResultCursor {
@@ -336,6 +378,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 					terminalFailure = problem;
 					failure = KernelRuntime.closeResource(producer, problem);
 					producer = null;
+					failure = settleFeedback(false, failure);
 					terminalFailure = failure;
 				}
 			}

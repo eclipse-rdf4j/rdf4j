@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -53,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -749,6 +751,296 @@ class LmdbNativeFilterAttemptCompletionTest {
 	}
 
 	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void discardedTypeMatrixPredicateInputCannotPublishOrPoisonTheSelectedOrigin(boolean selectRows)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			String query = "SELECT ?type ?p (COUNT(*) AS ?statements) WHERE { "
+					+ "?s <urn:native-attempt:p> ?type . ?s ?p ?o . "
+					+ "FILTER(STR(?p) = \"urn:native-attempt:p\") } GROUP BY ?type ?p";
+			TupleExpr parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			AtomicReference<Group> grouped = new AtomicReference<>();
+			parsed.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Group group) {
+					grouped.compareAndSet(null, group);
+					super.meet(group);
+				}
+			});
+			assertThat(grouped.get()).isNotNull();
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			var triples = new SailDatasetTripleTermSource(fixture.repository.getValueFactory(), fixture.dataset);
+			var strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L, fixture.statistics, false);
+			var compiled = LmdbNativeAggregateCompiler.compileRoot(grouped.get(), context, strategy,
+					(NativeLmdbQuerySource) fixture.dataset);
+			assertThat(compiled.isSupported()).isTrue();
+			assertThat(compiled.step()).isInstanceOf(NativeGroupStep.class);
+			NativeGroupStep step = (NativeGroupStep) compiled.step();
+			assertThat(step.typeMatrix).as("the real planner must retain the predicate-filtered matrix").isNotNull();
+			assertThat(step.arg).isInstanceOf(MultiJoinPlan.class);
+			MultiJoinPlan input = (MultiJoinPlan) step.arg;
+			assertThat(input.filters).hasSize(1);
+			assertThat(NativeFilterLease.inspect(input.filters[0].filter))
+					.as("the matrix and row candidate share the actual planner's recording predicate filter")
+					.isInstanceOf(RecordingNativeBooleanFilter.class);
+
+			fixture.block(parent -> {
+				try (var inherited = SyntheticValueSource.attachEvaluation(parent.source)) {
+					SyntheticValueSource evaluation = SyntheticValueSource.forEvaluation(step.source);
+					NativeExecutionContext child = evaluation.executionContext() == parent.evaluationScope().executionContext()
+							? null : evaluation.executionContext();
+					try (child; var attachment = SyntheticValueSource.attachEvaluation(evaluation);
+							NativeGroupIteration owner = new NativeGroupIteration(evaluation, step.arg, step.layout,
+									step.groupSlots, step.aggregates, step.strictCompare, EmptyBindingSet.getInstance(),
+									step.prefixPattern, step.prefixRunPlan, step.prefixCountRunRows, step.prefixDistinctRuns,
+									step.prefixRunFilter, step.prefixRootKindFilter, step.prefixMinRunCount,
+									step.existsIntersection, step.adjacencyAggregate, step.havingCondition,
+									step.originalExpr, null, step.context)) {
+						owner.typeMatrix = step.typeMatrix;
+						owner.alternatives = step.alternatives;
+						RowState row = new RowState(evaluation, step.layout, EmptyBindingSet.getInstance(),
+								step.originalExpr, owner.cancellation);
+						assertThat(owner.initialize(row)).isTrue();
+						try (AutoCloseable decodedInputs = row::closeDecodedInputs) {
+							NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(owner, row);
+							AtomicReference<LmdbNativeStrategyProposal<List<BindingSet>>> matrix = new AtomicReference<>();
+							try (var inventory = LmdbNativeStrategyArbiter.<List<BindingSet>>forExpr(step.originalExpr, evaluation)
+									.estimateWith(candidate -> {
+										quotes.attach(candidate);
+										if (LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX.equals(candidate.tag)) {
+											@SuppressWarnings("unchecked")
+											var proposal = (LmdbNativeStrategyProposal<List<BindingSet>>) candidate;
+											matrix.compareAndSet(null, proposal);
+										}
+									})) {
+								owner.offerCandidates(row, LmdbNativeAttemptMetrics.root(step.originalExpr), step.arg, inventory);
+								assertThat(matrix.get()).as("capture the production fallback from its real candidate inventory")
+										.isNotNull();
+								long matrixRuns = LmdbNativeTypeMatrix.RUNS.get();
+								List<BindingSet> discarded = matrix.get().open();
+								try {
+									assertThat(discarded).hasSize(128).allSatisfy(result -> {
+										assertThat(result.getValue("p").stringValue()).isEqualTo("urn:native-attempt:p");
+										assertThat(((Literal) result.getValue("statements")).longValue()).isEqualTo(1L);
+									});
+									assertThat(LmdbNativeTypeMatrix.RUNS.get()).as("execute the retained matrix, not a generic fallback")
+											.isGreaterThan(matrixRuns);
+								} finally {
+									if (discarded instanceof AutoCloseable resource) {
+										resource.close();
+									}
+									matrix.get().close();
+								}
+							}
+							if (selectRows) {
+								try (var selected = LmdbNativeStrategyArbiter.<String>forExpr(null, evaluation)) {
+									selected.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
+										assertThat(drainPlan(filters.borrow(step.arg), row)).isEqualTo(128);
+										return "selected-row-input";
+									}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+									}));
+									assertThat(selected.select()).isEqualTo("selected-row-input");
+								}
+							}
+						}
+					}
+				}
+			});
+			if (selectRows) {
+				assertComplete(fixture.statistics, 128L, 0L);
+			} else {
+				assertThat(fixture.statistics.typed).as("an opened but discarded matrix candidate publishes no diagnostics")
+						.isEmpty();
+				assertThat(fixture.statistics.rawCalls).hasValue(0);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void selectedTypeMatrixPrecomputationStaysUnqualifiedAndRespectsEnclosingDiscard(
+			boolean terminal, boolean discardParent) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			withTypeMatrixGroup(fixture, (step, owner, row) -> {
+				NativeFilterLease parent = new NativeFilterLease(NativeFilterLease.parentOf(row));
+				NativeGroupIteration nested = owner.withFilterAttempt(parent);
+				AtomicInteger declined = new AtomicInteger();
+				try (var selected = LmdbNativeStrategyArbiter.<List<BindingSet>>forExpr(step.originalExpr, owner.source)
+						.filterParent(parent)) {
+					nested.offerCandidates(row, LmdbNativeAttemptMetrics.root(step.originalExpr), step.arg,
+							new LmdbNativeCandidateOffers<>() {
+								@Override
+								LmdbNativeCandidateOffers<List<BindingSet>> offer(
+										LmdbNativeStrategyArbiter.Proposer<List<BindingSet>> proposer) throws IOException {
+									LmdbNativeStrategyProposal<List<BindingSet>> proposal = proposer.propose();
+									if (proposal != null) {
+										if (LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX.equals(proposal.tag)) {
+											selected.offer(() -> terminal ? proposal.map(result -> {
+												assertTypeMatrixRowsAndClose(result);
+												declined.incrementAndGet();
+												return null;
+											}, proposal.tag) : proposal);
+										} else {
+											proposal.close();
+										}
+									}
+									return this;
+								}
+
+								@Override
+								LmdbNativeCandidateOffers<List<BindingSet>> terminalFallback(
+										LmdbNativeStrategyArbiter.Proposer<List<BindingSet>> proposer) {
+									if (terminal) {
+										selected.terminalFallback(proposer);
+									}
+									return this;
+								}
+							});
+					assertTypeMatrixRowsAndClose(selected.select());
+					assertThat(declined).as("the terminal route retries after a fully cleaned discarded open")
+							.hasValue(terminal ? 1 : 0);
+					if (discardParent) {
+						parent.discard();
+					} else {
+						parent.commit();
+					}
+				} finally {
+					parent.discard();
+				}
+			});
+			if (discardParent) {
+				assertThat(fixture.statistics.typed).as("a selected child cannot publish through a discarded parent")
+						.isEmpty();
+			} else {
+				assertThat(fixture.statistics.typed).as("predicate IDs do not certify the logical row population")
+						.hasSize(1).allSatisfy(observation -> {
+							assertThat(observation.completed()).isFalse();
+							assertThat(observation.poisonReason()).isEqualTo("native-filter-input-incomplete");
+							assertThat(observation.passedCount()).isZero();
+							assertThat(observation.filteredCount()).isZero();
+						});
+			}
+			assertThat(fixture.statistics.rawCalls).hasValue(0);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void typeMatrixGenericFallbackRetainsTheCandidateParent(boolean selected) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			withTypeMatrixGroup(fixture, (step, owner, row) -> {
+				QueryBindingSet bindings = new QueryBindingSet();
+				bindings.addBinding("external", fixture.repository.getValueFactory().createLiteral("retained"));
+				try (var proposal = new LmdbNativeStrategyProposal<List<BindingSet>>(filters -> {
+					try (var attachment = SyntheticValueSource.attachEvaluation(owner.source, filters)) {
+						NativeLmdbQuerySource evaluation = SyntheticValueSource.forEvaluation(owner.source);
+						long matrixRuns = LmdbNativeTypeMatrix.RUNS.get();
+						List<BindingSet> results = new ArrayList<>();
+						// Nonempty bindings exercise the retained matrix's real semantic fallback.
+						try (var input = step.typeMatrix.evaluate(bindings, evaluation)) {
+							while (input.hasNext()) {
+								results.add(input.next());
+							}
+						}
+						assertThat(LmdbNativeTypeMatrix.RUNS.get()).as("the bound-input route used generic execution")
+								.isEqualTo(matrixRuns);
+						return results;
+					}
+				}, LmdbNativeWork.UNKNOWN, "retained-matrix-generic", () -> {
+				})) {
+					if (selected) {
+						try (var arbiter = LmdbNativeStrategyArbiter.<List<BindingSet>>forExpr(null, owner.source)) {
+							arbiter.offer(() -> proposal);
+							assertThat(arbiter.select()).hasSize(128);
+						}
+					} else {
+						assertThat(proposal.open()).hasSize(128);
+					}
+				}
+			});
+			if (selected) {
+				assertThat(fixture.statistics.typed)
+						.as("the selected generic fallback retains its unqualified filter receipt")
+						.hasSize(1).allSatisfy(observation -> {
+							assertThat(observation.completed()).as("observation=%s", observation).isFalse();
+							assertThat(observation.poisonReason()).as("observation=%s", observation)
+									.isEqualTo("native-filter-input-incomplete");
+							assertThat(observation.passedCount()).as("observation=%s", observation).isEqualTo(128L);
+							assertThat(observation.filteredCount()).as("observation=%s", observation).isZero();
+						});
+				assertThat(fixture.statistics.rawCalls).hasValue(0);
+			} else {
+				assertThat(fixture.statistics.typed).as("discarding a generic child keeps its filter feedback private")
+						.isEmpty();
+				assertThat(fixture.statistics.rawCalls).hasValue(0);
+			}
+		}
+	}
+
+	private static void assertTypeMatrixRowsAndClose(List<BindingSet> rows) {
+		assertThat(rows).isInstanceOf(NativeReplayBindingList.class);
+		try (NativeReplayBindingList result = (NativeReplayBindingList) rows) {
+			assertThat(result).hasSize(128).allSatisfy(binding -> {
+				assertThat(binding.getValue("p").stringValue()).isEqualTo("urn:native-attempt:p");
+				assertThat(((Literal) binding.getValue("statements")).longValue()).isEqualTo(1L);
+			});
+		}
+	}
+
+	private static void withTypeMatrixGroup(Fixture fixture, TypeMatrixAction action) throws Exception {
+		String query = "SELECT ?type ?p (COUNT(*) AS ?statements) WHERE { "
+				+ "?s <urn:native-attempt:p> ?type . ?s ?p ?o . "
+				+ "FILTER(STR(?p) = \"urn:native-attempt:p\") } GROUP BY ?type ?p";
+		TupleExpr parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		AtomicReference<Group> grouped = new AtomicReference<>();
+		parsed.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Group group) {
+				grouped.compareAndSet(null, group);
+				super.meet(group);
+			}
+		});
+		assertThat(grouped.get()).isNotNull();
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		var triples = new SailDatasetTripleTermSource(fixture.repository.getValueFactory(), fixture.dataset);
+		var strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L, fixture.statistics, false);
+		var compiled = LmdbNativeAggregateCompiler.compileRoot(grouped.get(), context, strategy,
+				(NativeLmdbQuerySource) fixture.dataset);
+		assertThat(compiled.isSupported()).isTrue();
+		assertThat(compiled.step()).isInstanceOf(NativeGroupStep.class);
+		NativeGroupStep step = (NativeGroupStep) compiled.step();
+		assertThat(step.typeMatrix).isNotNull();
+		fixture.block(parent -> {
+			try (var inherited = SyntheticValueSource.attachEvaluation(parent.source)) {
+				SyntheticValueSource evaluation = SyntheticValueSource.forEvaluation(step.source);
+				NativeExecutionContext child = evaluation.executionContext() == parent.evaluationScope().executionContext()
+						? null : evaluation.executionContext();
+				try (child; var attachment = SyntheticValueSource.attachEvaluation(evaluation);
+						NativeGroupIteration owner = new NativeGroupIteration(evaluation, step.arg, step.layout,
+								step.groupSlots, step.aggregates, step.strictCompare, EmptyBindingSet.getInstance(),
+								step.prefixPattern, step.prefixRunPlan, step.prefixCountRunRows, step.prefixDistinctRuns,
+								step.prefixRunFilter, step.prefixRootKindFilter, step.prefixMinRunCount,
+								step.existsIntersection, step.adjacencyAggregate, step.havingCondition,
+								step.originalExpr, null, step.context)) {
+					owner.typeMatrix = step.typeMatrix;
+					owner.alternatives = step.alternatives;
+					RowState row = new RowState(evaluation, step.layout, EmptyBindingSet.getInstance(),
+							step.originalExpr, owner.cancellation);
+					assertThat(owner.initialize(row)).isTrue();
+					try (AutoCloseable decoded = row::closeDecodedInputs) {
+						action.run(step, owner, row);
+					}
+				}
+			}
+		});
+	}
+
+	@FunctionalInterface
+	private interface TypeMatrixAction {
+		void run(NativeGroupStep step, NativeGroupIteration owner, RowState row) throws Exception;
+	}
+
+	@ParameterizedTest
 	@CsvSource({ "true,true", "true,false", "false,true" })
 	void actualMemoKeepsItsOncePerQueryComputationAcrossSelectedAndDiscardedReferences(
 			boolean selected, boolean discardFirst) throws Exception {
@@ -819,6 +1111,87 @@ class LmdbNativeFilterAttemptCompletionTest {
 		}
 	}
 
+	@ParameterizedTest
+	@CsvSource({ "true,false", "true,true", "false,false", "false,true" })
+	void lazyMemoPrefixSelectionSettlesIndependentlyOfItsSharedProducer(boolean discardPrefix, boolean finish)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			AtomicInteger evaluations = new AtomicInteger();
+			fixture.block(row -> {
+				NativeSubqueryPlan memo = lazyMemoPlan(fixture, fixture.recording(semantic), evaluations, 8);
+				NativeFilterLease prefix = new NativeFilterLease();
+				try (RowCursor cursor = prefix.borrow(memo).open(row)) {
+					for (int i = 0; i < 3; i++) {
+						assertThat(cursor.next()).isTrue();
+					}
+				}
+				assertThat(semantic.accepts).as("closing a reader must not drain or close its cached producer").hasValue(3);
+				assertThat(semantic.closes).hasValue(0);
+				if (discardPrefix) {
+					prefix.discard();
+				} else {
+					prefix.commit();
+				}
+				assertThat(fixture.statistics.typed).as("candidate selection cannot finalize pending producer evidence")
+						.isEmpty();
+				if (finish) {
+					NativeFilterLease selected = new NativeFilterLease();
+					assertThat(drainPlan(selected.borrow(memo), row)).isEqualTo(8);
+					selected.commit();
+				}
+			});
+			assertThat(evaluations).as("ordinary candidates share one actual computation").hasValue(1);
+			assertThat(semantic.accepts).hasValue(finish ? 8 : 3);
+			assertThat(semantic.closes).hasValue(1);
+			if (finish) {
+				assertComplete(fixture.statistics, 8L, 0L);
+			} else if (discardPrefix) {
+				assertThat(fixture.statistics.typed).isEmpty();
+			} else {
+				assertIncomplete(fixture.statistics);
+				assertThat(fixture.statistics.typed).singleElement().satisfies(outcome ->
+						assertThat(outcome.passedCount()).isEqualTo(3L));
+			}
+		}
+	}
+
+	@Test
+	void boundedMemoProbeCannotPublishOrCancelTheLaterSelectedProducer() throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			AtomicInteger evaluations = new AtomicInteger();
+			fixture.block(row -> {
+				NativeSubqueryPlan memo = lazyMemoPlan(fixture, fixture.recording(semantic), evaluations, 8);
+				NativeFilterLease trial = new NativeFilterLease();
+				LmdbNativeProbeDeadline.AttemptStates attempts = LmdbNativeProbeDeadline.ownAttemptStates();
+				Throwable signal = null;
+				try (var deadline = LmdbNativeProbeDeadline.enter(LmdbNativeProbeDeadline.trippableOnly());
+						RowCursor cursor = trial.borrow(memo).open(row.fork())) {
+					assertThat(cursor.next()).isTrue();
+					assertThat(cursor.next()).isTrue();
+					signal = LmdbNativeProbeDeadline.capacityExhausted();
+					assertThatThrownBy(cursor::next).isSameAs(signal);
+				} finally {
+					trial.discard();
+					assertThat(attempts.settled(signal, false)).isSameAs(signal);
+				}
+				assertThat(row.cancellation.cancellationPublished()).isFalse();
+				assertThat(semantic.closes).as("a losing private producer cannot close a reusable semantic template")
+						.hasValue(0);
+				NativeFilterLease selected = new NativeFilterLease();
+				assertThat(drainPlan(selected.borrow(memo), row)).isEqualTo(8);
+				assertThat(drainPlan(selected.borrow(memo), row)).isEqualTo(8);
+				selected.commit();
+			});
+			assertThat(evaluations).as("the bounded trial owns a separate producer; ordinary replay still evaluates once")
+					.hasValue(2);
+			assertThat(semantic.accepts).hasValue(10);
+			assertThat(semantic.closes).hasValue(1);
+			assertComplete(fixture.statistics, 8L, 0L);
+		}
+	}
+
 	@Test
 	void detachedMemoOutcomesCannotCrossRealEvaluationOwners() throws Exception {
 		try (Fixture fixture = new Fixture(directory)) {
@@ -845,6 +1218,45 @@ class LmdbNativeFilterAttemptCompletionTest {
 		}
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void opaqueMemoInputKeepsItsDiagnosticsInsideTheSelectedReceipt(boolean selected) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			RecordingNativeBooleanFilter template = fixture.recording(semantic);
+			fixture.block(parent -> {
+				QueryEvaluationStep step = ignored -> {
+					SyntheticValueSource source = SyntheticValueSource
+							.forEvaluation((NativeLmdbQuerySource) fixture.dataset);
+					RowState child = new RowState(source, parent.layout, EmptyBindingSet.getInstance());
+					try {
+						drainValues(child, template, 8, false);
+					} catch (IOException failure) {
+						throw new IllegalStateException(failure);
+					}
+					return new CloseableIteratorIteration<>(
+							Collections.<BindingSet>nCopies(8, EmptyBindingSet.getInstance()).iterator());
+				};
+				NativeSubqueryPlan memo = new NativeSubqueryPlan(step, new int[0], new String[0], new int[0],
+						new String[0]);
+				NativeFilterLease candidate = new NativeFilterLease();
+				assertThat(drainPlan(candidate.borrow(memo), parent)).isEqualTo(8);
+				if (selected) {
+					candidate.commit();
+				} else {
+					candidate.discard();
+				}
+			});
+			assertThat(semantic.accepts).hasValue(8);
+			assertThat(semantic.closes).hasValue(1);
+			if (selected) {
+				assertIncomplete(fixture.statistics);
+			} else {
+				assertThat(fixture.statistics.typed).isEmpty();
+			}
+		}
+	}
+
 	@Test
 	void actualScopedMemoAttachmentPreservesTermAuthorityAndInheritedLifetime() throws Exception {
 		try (Fixture fixture = new Fixture(directory)) {
@@ -867,6 +1279,14 @@ class LmdbNativeFilterAttemptCompletionTest {
 					assertThat(original.executionContext().isClosed())
 							.as("the inherited child cannot close or complete its live parent")
 							.isFalse();
+					SyntheticValueSource invocation = original.forInvocation(EmptyBindingSet.getInstance());
+					assertThat(invocation.filterParent()).as("an invocation keeps its producer's detached capture")
+							.isSameAs(capture);
+					try (var child = NativeExecutionContextCarrier.forEvaluation(
+							new CloseableIteratorIteration<BindingSet>(List.<BindingSet>of().iterator()), invocation)) {
+						assertThat(child.hasNext()).isFalse();
+					}
+					assertThat(original.executionContext().isClosed()).isFalse();
 				}
 				capture.freeze(true);
 				assertThat(original.executionContext().isClosed()).isFalse();
@@ -916,6 +1336,61 @@ class LmdbNativeFilterAttemptCompletionTest {
 			assertThat(innerOpens).hasValue(1);
 			assertThat(outerOpens).hasValue(1);
 			assertComplete(fixture.statistics, 8L, 0L);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void partialParentMemoCannotCompleteItsChildWithoutACompleteSelectedReference(boolean selectChild)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			AtomicInteger innerOpens = new AtomicInteger();
+			AtomicInteger outerOpens = new AtomicInteger();
+			fixture.block(row -> {
+				NativeSubqueryPlan inner = memoPlan(fixture, fixture.recording(semantic), innerOpens, 8,
+						new int[0], new String[0]);
+				QueryEvaluationStep outerStep = ignored -> {
+					outerOpens.incrementAndGet();
+					SyntheticValueSource source = SyntheticValueSource
+							.forEvaluation((NativeLmdbQuerySource) fixture.dataset);
+					RowState child = new RowState(source, row.layout, EmptyBindingSet.getInstance());
+					NativeFilterLease selected = new NativeFilterLease(NativeFilterLease.parentOf(child));
+					try {
+						assertThat(drainPlan(selected.borrow(inner), child)).isEqualTo(8);
+						selected.commit();
+					} catch (IOException | RuntimeException | Error failure) {
+						selected.abort(failure);
+						if (failure instanceof IOException checked) {
+							throw new IllegalStateException(checked);
+						}
+						raise(failure);
+					}
+					return new CloseableIteratorIteration<>(
+							Collections.<BindingSet>nCopies(2, EmptyBindingSet.getInstance()).iterator());
+				};
+				NativeSubqueryPlan outer = new NativeSubqueryPlan(outerStep, new int[0], new String[0], new int[0],
+						new String[0]);
+				NativeFilterLease prefix = new NativeFilterLease();
+				try (RowCursor cursor = prefix.borrow(outer).open(row)) {
+					assertThat(cursor.next()).isTrue();
+				}
+				prefix.commit();
+				if (selectChild) {
+					NativeFilterLease selected = new NativeFilterLease();
+					assertThat(drainPlan(selected.borrow(inner), row)).isEqualTo(8);
+					selected.commit();
+				}
+			});
+			assertThat(innerOpens).hasValue(1);
+			assertThat(outerOpens).hasValue(1);
+			assertThat(semantic.accepts).hasValue(8);
+			assertThat(semantic.closes).hasValue(1);
+			if (selectChild) {
+				assertComplete(fixture.statistics, 8L, 0L);
+			} else {
+				assertIncomplete(fixture.statistics);
+			}
 		}
 	}
 
@@ -2166,7 +2641,10 @@ class LmdbNativeFilterAttemptCompletionTest {
 						assertThat(proposal).as("the actual repository plan admits a parallel proposal").isNotNull();
 						proposal.filterParent(NativeFilterLease.parentOf(row));
 						RowCursor cursor = proposal.open();
-						assertThat(cursor).isNotNull();
+						if (cursor == null) {
+							assertThat(cursor).as("parallel open declined: %s; available task capacity: %s",
+									LmdbNativeParallelPipelines.LAST_REJECTION.get(), availableParallelTaskCapacity()).isNotNull();
+						}
 						var selection = new LmdbNativeStrategySelection<>(cursor, null, proposal.filterAttempt());
 						try (selection; cursor) {
 							try {
@@ -2267,6 +2745,67 @@ class LmdbNativeFilterAttemptCompletionTest {
 	private static NativeSubqueryPlan memoPlan(Fixture fixture, RecordingNativeBooleanFilter template,
 			AtomicInteger evaluations, int count, int[] frameSlots, String[] frameNames) {
 		return scopedMemoPlan(fixture, template, evaluations, null, null, count, frameSlots, frameNames);
+	}
+
+	private static NativeSubqueryPlan lazyMemoPlan(Fixture fixture, RecordingNativeBooleanFilter template,
+			AtomicInteger evaluations, int count) {
+		QueryEvaluationStep step = ignored -> {
+			evaluations.incrementAndGet();
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation((NativeLmdbQuerySource) fixture.dataset);
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of(), null);
+			layout.freeze(List.of());
+			RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			NativeFilterLease filters = new NativeFilterLease(NativeFilterLease.parentOf(row));
+			ValuesRow[] values = new ValuesRow[count];
+			Arrays.setAll(values, index -> new ValuesRow(new int[0], new long[0]));
+			RowCursor cursor = new FilterCursor(new ValuesPlan(values).open(row), filters.borrow(template), row);
+			return new CloseableIteration<BindingSet>() {
+				boolean pending, exhausted, closed;
+
+				@Override
+				public boolean hasNext() {
+					if (!pending && !exhausted && !closed) {
+						try {
+							pending = cursor.next();
+						} catch (IOException failure) {
+							throw new IllegalStateException(failure);
+						}
+						exhausted = !pending;
+					}
+					return pending;
+				}
+
+				@Override
+				public BindingSet next() {
+					if (!hasNext()) {
+						throw new NoSuchElementException();
+					}
+					pending = false;
+					return EmptyBindingSet.getInstance();
+				}
+
+				@Override
+				public void remove() {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public void close() {
+					if (closed) {
+						return;
+					}
+					closed = true;
+					try {
+						cursor.close();
+						filters.commit();
+					} catch (RuntimeException | Error failure) {
+						filters.abort(failure);
+						throw failure;
+					}
+				}
+			};
+		};
+		return new NativeSubqueryPlan(step, new int[0], new String[0], new int[0], new String[0]);
 	}
 
 	private static NativeSubqueryPlan scopedMemoPlan(Fixture fixture, RecordingNativeBooleanFilter template,

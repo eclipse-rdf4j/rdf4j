@@ -42,6 +42,7 @@ final class NativeFilterLease {
 	private NativeFilterLease parent;
 	private NativeExecutionContext ownerContext;
 	private final boolean capture;
+	private Frozen capturedMemo;
 	private final IdentityHashMap<Frozen, Boolean> inclusions = new IdentityHashMap<>();
 	private final IdentityHashMap<RecordingNativeBooleanFilter, Outcome> outcomes = new IdentityHashMap<>();
 
@@ -81,7 +82,15 @@ final class NativeFilterLease {
 	static NativeFilterLease capture(NativeExecutionContext context) {
 		NativeFilterLease lease = new NativeFilterLease(false, null, true);
 		lease.ownerContext = context.filterOutcomeOwner();
+		lease.capturedMemo = new Frozen(lease.ownerContext.filterOwnerIdentity());
 		return lease;
+	}
+
+	Frozen memo() {
+		if (!capture) {
+			throw new IllegalStateException("only a producer capture owns a memo receipt");
+		}
+		return capturedMemo;
 	}
 
 	static NativeFilterLease parentOf(RowState row) {
@@ -113,30 +122,55 @@ final class NativeFilterLease {
 		}
 	}
 
-	/** Immutable, resource-free memo data. Identity deduplication precedes every final primitive sum. */
+	/**
+	 * Stable publication receipt independent of the producer and its readers. A capture settles it only after owned
+	 * semantic cleanup. Selected receipts are resolved at query finalization; nested graph identity is deduplicated
+	 * before any primitive counts are summed. The settled contents retain no native resources or execution contexts.
+	 */
 	static final class Frozen {
 		private final Object owner;
-		private final FrozenOutcome[] outcomes;
-		private final Frozen[] inclusions;
+		private volatile Contents contents;
 
-		private Frozen(Object owner, FrozenOutcome[] outcomes, Frozen[] inclusions) {
-			this.owner = owner;
-			this.outcomes = outcomes;
-			this.inclusions = inclusions;
+		private record Contents(FrozenOutcome[] outcomes, Frozen[] inclusions, boolean complete) {
 		}
 
-		void mergeInto(NativeExecutionContext owner, IdentityHashMap<Frozen, Boolean> seen) {
+		private Frozen(Object owner) {
+			this.owner = owner;
+		}
+
+		private void settle(FrozenOutcome[] outcomes, Frozen[] inclusions, boolean complete) {
+			if (contents != null) {
+				throw new IllegalStateException("memo feedback receipt already settled");
+			}
+			contents = new Contents(outcomes, inclusions, complete);
+		}
+
+		void requireOwner(NativeExecutionContext owner) {
 			if (this.owner != owner.filterOwnerIdentity()) {
 				throw new IllegalArgumentException("memo outcomes crossed evaluation owners");
 			}
-			if (seen.put(this, Boolean.TRUE) != null) {
+		}
+
+		void collect(NativeExecutionContext owner, IdentityHashMap<Frozen, Boolean> seen, boolean selectedComplete) {
+			requireOwner(owner);
+			Contents settled = contents;
+			if (settled == null) {
+				throw new IllegalStateException("memo producer did not settle before feedback publication");
+			}
+			boolean complete = selectedComplete && settled.complete();
+			Boolean previous = seen.get(this);
+			if (previous != null && (previous || !complete)) {
 				return;
 			}
-			for (FrozenOutcome outcome : outcomes) {
-				owner.mergeFrozenFilterOutcome(outcome);
+			seen.put(this, complete);
+			for (Frozen included : settled.inclusions()) {
+				included.collect(owner, seen, complete);
 			}
-			for (Frozen included : inclusions) {
-				included.mergeInto(owner, seen);
+		}
+
+		void mergeOwnOutcomes(NativeExecutionContext owner, boolean complete) {
+			for (FrozenOutcome outcome : contents.outcomes()) {
+				owner.mergeFrozenFilterOutcome(outcome, complete);
 			}
 		}
 	}
@@ -153,7 +187,7 @@ final class NativeFilterLease {
 		Throwable failure = closeEntries(null, true);
 		try {
 			if (failure != null) {
-				// Keep only failed-root diagnostics; this capture never becomes a selectable frozen memo.
+				// Keep only failed-root diagnostics; a previously selected receipt settles without complete evidence.
 				for (Outcome outcome : outcomes.values()) {
 					outcome.incomplete = true;
 					outcome.context.mergeDiscardedFilterOutcome(outcome);
@@ -173,8 +207,12 @@ final class NativeFilterLease {
 					throw new IllegalStateException("memo capture included another evaluation");
 				}
 			}
-			return new Frozen(ownerContext.filterOwnerIdentity(), values, children);
+			capturedMemo.settle(values, children, complete);
+			return capturedMemo;
 		} finally {
+			if (capturedMemo.contents == null) {
+				capturedMemo.settle(new FrozenOutcome[0], new Frozen[0], false);
+			}
 			clearReferences();
 		}
 	}
@@ -430,6 +468,9 @@ final class NativeFilterLease {
 		} catch (RuntimeException | Error publicationFailure) {
 			failure = addFailure(failure, publicationFailure);
 		} finally {
+			if (capture && capturedMemo.contents == null) {
+				capturedMemo.settle(new FrozenOutcome[0], new Frozen[0], false);
+			}
 			clearReferences();
 		}
 		if (primary == null && failure != null) {
@@ -439,6 +480,10 @@ final class NativeFilterLease {
 
 	private Throwable closeEntries(Throwable primary, boolean publishFeedback) {
 		Throwable failure = primary;
+		boolean cachedProducer = capture;
+		for (NativeFilterLease ancestor = parent; !cachedProducer && ancestor != null; ancestor = ancestor.parent) {
+			cachedProducer = ancestor.capture;
+		}
 		for (int i = entries.size() - 1; i >= 0; i--) {
 			Entry entry = entries.get(i);
 			if (!entry.used && !suppressFeedback) {
@@ -446,6 +491,11 @@ final class NativeFilterLease {
 			}
 			if (!publishFeedback && entry.recorder != null) {
 				entry.recorder.discardOutcomes();
+			}
+			if (cachedProducer && !entry.owned && entry.cleanup != null) {
+				// A probe's producer and a later ordinary producer may borrow the same semantic template. Its real
+				// owner is the query resource registry; closing one capture cannot revoke another producer's input.
+				continue;
 			}
 			try {
 				(entry.cleanup == null ? entry.attempt : entry.cleanup).close();
@@ -484,8 +534,14 @@ final class NativeFilterLease {
 	}
 
 	void unqualified(RecordingNativeBooleanFilter template, NativeExecutionContext context) {
-		Outcome outcome = open(template, context);
+		Outcome outcome = openUnqualified(template, context);
 		outcome.terminal(0L, 0L, false);
+	}
+
+	Outcome openUnqualified(RecordingNativeBooleanFilter template, NativeExecutionContext context) {
+		Outcome outcome = open(template, context);
+		outcome.incomplete = true;
+		return outcome;
 	}
 
 	private synchronized Outcome open(RecordingNativeBooleanFilter template, NativeExecutionContext context) {

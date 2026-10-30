@@ -131,6 +131,13 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		return filterParent;
 	}
 
+	static NativeFilterLease activeFilterParent(NativeExecutionContext owner) {
+		SyntheticValueSource active = ACTIVE_EVALUATION.get();
+		return active != null && active.context != null && active.context.filterOutcomeOwner() == owner.filterOutcomeOwner()
+				? active.filterParent
+				: null;
+	}
+
 	/** A fresh evaluation-scoped instance over the same store and catalog, owning its own runtime interner. */
 	SyntheticValueSource forEvaluation() {
 		SyntheticValueSource active = ACTIVE_EVALUATION.get();
@@ -159,7 +166,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 					&& parent.generatedKeyAuthority == null;
 			NativeExecutionContext invocation = new NativeExecutionContext(parent.context, bindings, shareTerms);
 			return new SyntheticValueSource(delegate, catalog, invocation, shareTerms ? parent.idSpace() : null,
-					queryExecutionPolicy);
+					queryExecutionPolicy, parent.filterParent);
 		}
 		NativeExecutionContext invocation = new NativeExecutionContext(queryExecutionPolicy);
 		invocation.initializeQueryBase(bindings);
@@ -177,7 +184,8 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		}
 		NativeExecutionContext projectedContext = new NativeExecutionContext(context,
 				NativeEntryBindings.preserve(base, projected));
-		new SyntheticValueSource(delegate, catalog, projectedContext, idSpace(), queryExecutionPolicy);
+		NativeFilterLease parent = filterParent == null ? activeFilterParent(context) : filterParent;
+		new SyntheticValueSource(delegate, catalog, projectedContext, idSpace(), queryExecutionPolicy, parent);
 		return projectedContext;
 	}
 

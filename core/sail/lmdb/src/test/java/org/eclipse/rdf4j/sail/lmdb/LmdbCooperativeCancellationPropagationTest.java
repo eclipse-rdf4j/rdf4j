@@ -327,6 +327,17 @@ class LmdbCooperativeCancellationPropagationTest {
 	@ParameterizedTest
 	@EnumSource(ReentrantClose.class)
 	void callbackCannotTearDownItsOwnNativeOwner(ReentrantClose closeTarget, @TempDir Path dataDir) {
+		assertCallbackCannotTearDownItsOwnNativeOwner(closeTarget, dataDir, false);
+	}
+
+	@ParameterizedTest
+	@EnumSource(ReentrantClose.class)
+	void closeTimeCallbackCannotTearDownItsOwnNativeOwner(ReentrantClose closeTarget, @TempDir Path dataDir) {
+		assertCallbackCannotTearDownItsOwnNativeOwner(closeTarget, dataDir, true);
+	}
+
+	private void assertCallbackCannotTearDownItsOwnNativeOwner(ReentrantClose closeTarget, Path dataDir,
+			boolean closeResult) {
 		AtomicReference<SailConnection> owner = new AtomicReference<>();
 		AtomicReference<CloseableIteration<? extends Statement>> resultRef = new AtomicReference<>();
 		AtomicReference<Throwable> refusal = new AtomicReference<>();
@@ -392,7 +403,11 @@ class LmdbCooperativeCancellationPropagationTest {
 				owner.set(connection);
 				resultRef.set(result);
 				assertTrue(result.hasNext(), "a live native source must be opened before cancellation");
-				assertTrue(assertInstanceOf(CooperativeCancellation.class, result).requestCancellation());
+				if (closeResult) {
+					result.close();
+				} else {
+					assertTrue(assertInstanceOf(CooperativeCancellation.class, result).requestCancellation());
+				}
 				if (closeTarget == ReentrantClose.RESULT) {
 					assertNull(refusal.get(), "the result may request its own deferred close");
 				} else {
@@ -410,6 +425,65 @@ class LmdbCooperativeCancellationPropagationTest {
 			store.shutDown();
 		}
 		assertEquals(1, sourceCloses.get(), "the source closes once after the callback exits");
+	}
+
+	@Test
+	void closeTimeCallbackFailureKeepsDeferredCleanupFailureSuppressed(@TempDir Path dataDir) {
+		RuntimeException callbackFailure = new RuntimeException("close-time cancellation failed");
+		RuntimeException cleanupFailure = new RuntimeException("deferred source close failed");
+		AtomicInteger callbacks = new AtomicInteger();
+		AtomicInteger sourceCloses = new AtomicInteger();
+		LmdbStore store = new LmdbStore(dataDir.toFile()) {
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+				return new LmdbStoreConnection(this) {
+					@Override
+					protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
+							Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+						return new IterationWrapper<Statement>(super.getStatementsInternal(subj, pred, obj,
+								includeInferred, contexts)) {
+							@Override
+							public boolean requestCancellation() {
+								callbacks.incrementAndGet();
+								assertEquals(0, sourceCloses.get(), "the callback must retain its source");
+								throw callbackFailure;
+							}
+
+							@Override
+							protected void handleClose() {
+								try {
+									super.handleClose();
+								} finally {
+									sourceCloses.incrementAndGet();
+								}
+								throw cleanupFailure;
+							}
+						};
+					}
+				};
+			}
+		};
+		store.init();
+		try {
+			var values = SimpleValueFactory.getInstance();
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin();
+				seed.addStatement(values.createIRI("urn:cancel:s"), values.createIRI("urn:cancel:p"),
+						values.createLiteral("o"));
+				seed.commit();
+			}
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			try (SailConnection connection = store.getConnection();
+					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null, false)) {
+				assertTrue(result.hasNext(), "a live native source must be opened before close");
+				assertSame(callbackFailure, assertThrows(RuntimeException.class, result::close));
+				assertEquals(List.of(cleanupFailure), List.of(callbackFailure.getSuppressed()));
+				assertEquals(1, callbacks.get());
+				assertEquals(1, sourceCloses.get());
+			}
+		} finally {
+			store.shutDown();
+		}
 	}
 
 	@Test

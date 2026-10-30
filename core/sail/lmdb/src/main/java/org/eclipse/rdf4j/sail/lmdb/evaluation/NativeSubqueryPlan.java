@@ -380,6 +380,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 						() -> evaluateOnce(row, frameBindings(row, row.base)));
 			}
 		}
+		state.includeFeedback(filters == null ? NativeFilterLease.parentOf(row) : filters);
 		return new NativeSubqueryCursor(this, row, state.cursor(row.cancellation), ownsState ? state : null);
 	}
 
@@ -469,20 +470,34 @@ final class NativeSubqueryPlan implements SlotPlan {
 	}
 
 	private NativeLazyResultReplay prepareReplay(RowState row, BindingSet input, NativeExecutionContext owner) {
+		NativeFilterLease capture = owner == null ? null : NativeFilterLease.capture(owner);
+		try {
+			return prepareReplay(row, input, owner, capture);
+		} catch (RuntimeException | Error failure) {
+			if (capture != null) {
+				capture.abort(failure);
+			}
+			throw failure;
+		}
+	}
+
+	private NativeLazyResultReplay prepareReplay(RowState row, BindingSet input, NativeExecutionContext owner,
+			NativeFilterLease capture) {
 		row.cancellation.check();
-		QueryEvaluationStep prepared = preparedStep(row);
 		BindingSet bodyInput = NativeEntryBindings.preserve(input, projection == null ? input
 				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context));
 		NativeLmdbQuerySource source = row.source;
 		NativeCancellationToken cancellation = row.cancellation;
-		NativeResultCursor delegate = inLexicalScope(source, cancellation,
-				() -> NativeResultSteps.open(prepared, bodyInput));
+		NativeResultCursor delegate = inLexicalScope(source, cancellation, capture,
+				() -> NativeResultSteps.open(preparedStep(row), bodyInput));
 		NativeResultCursor scoped = new NativeResultCursor() {
+			private boolean closed;
+
 			@Override
 			public NativeResultRow next() {
 				try (NativeExecutionContext.ProducerScope ignored = owner == null ? null
 						: owner.borrowCachedProducer()) {
-					return inLexicalScope(source, cancellation, () -> {
+					return inLexicalScope(source, cancellation, capture, () -> {
 						cancellation.check();
 						NativeResultRow next = delegate.next();
 						cancellation.check();
@@ -508,16 +523,20 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 			@Override
 			public void close() {
+				if (closed) {
+					return;
+				}
+				closed = true;
 				try (NativeExecutionContext.ProducerScope ignored = owner == null ? null
 						: owner.borrowCachedProducer()) {
-					inLexicalScope(source, cancellation, () -> {
+					inLexicalScope(source, cancellation, capture, () -> {
 						delegate.close();
 						return null;
 					});
 				}
 			}
 		};
-		return new NativeLazyResultReplay(outNames, owner, cancellation, scoped);
+		return new NativeLazyResultReplay(outNames, owner, cancellation, scoped, capture);
 	}
 
 	private QueryEvaluationStep preparedStep(RowState row) {
@@ -532,8 +551,13 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	private static <T> T inLexicalScope(NativeLmdbQuerySource source, NativeCancellationToken cancellation,
 			Supplier<T> action) {
+		return inLexicalScope(source, cancellation, null, action);
+	}
+
+	private static <T> T inLexicalScope(NativeLmdbQuerySource source, NativeCancellationToken cancellation,
+			NativeFilterLease capture, Supplier<T> action) {
 		try (NativeCancellationToken.Scope cancellationScope = cancellation.enter();
-				SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
+				SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source, capture)) {
 			// The enclosing decision owns forcing; children may select different physical operators. Restore the
 			// scope after every lazy advance and close, not only after constructing the child.
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();

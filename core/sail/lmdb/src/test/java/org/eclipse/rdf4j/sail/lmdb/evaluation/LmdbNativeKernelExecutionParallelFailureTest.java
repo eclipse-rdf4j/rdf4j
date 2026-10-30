@@ -901,7 +901,8 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 	private enum CloseControl {
 		OWNED_STOP,
 		EXPIRED_PROBE,
-		FOREIGN_PROBE
+		FOREIGN_PROBE,
+		FOREIGN_QUERY
 	}
 
 	@ParameterizedTest
@@ -917,6 +918,8 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(plan, scenario.row, null);
 		assertThat(lowered).isNotNull();
 		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		KernelQueryCancelledException foreignQueryCancellation = new KernelQueryCancelledException(new Object(),
+				new Object());
 		AtomicBoolean firstKernel = new AtomicBoolean();
 		AtomicReference<Throwable> closeFailure = new AtomicReference<>();
 		Thread closer = null;
@@ -953,6 +956,9 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 						if (control == CloseControl.FOREIGN_PROBE) {
 							throw KernelCancelledException.INSTANCE;
 						}
+						if (control == CloseControl.FOREIGN_QUERY) {
+							throw foreignQueryCancellation;
+						}
 						KernelRuntime.checkCancelled(context.cancellation);
 						throw new AssertionError("the worker's bound cancellation must be observed");
 					}
@@ -976,6 +982,9 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 			closer.join(TimeUnit.SECONDS.toMillis(10L));
 			assertThat(closer.isAlive()).isFalse();
 			assertThat(snapshotsClosed.await(10L, TimeUnit.SECONDS)).isTrue();
+			assertThat(catchThrowable(cursor::close))
+					.as("a settled worker outcome must be delivered only once by close")
+					.isNull();
 			enclosingQueryCancelled = scenario.row.cancellation.cancellationPublished();
 		} finally {
 			releaseWorker.countDown();
@@ -996,6 +1005,9 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 				.isFalse();
 		if (control == CloseControl.OWNED_STOP) {
 			assertThat(closeFailure.get()).as("the cursor's own worker stop is not a failed probe").isNull();
+		} else if (control == CloseControl.FOREIGN_QUERY) {
+			assertThat(closeFailure.get()).as("an unrelated query cancellation remains an independent worker failure")
+					.isSameAs(foreignQueryCancellation);
 		} else {
 			assertThat(closeFailure.get()).as("an independent probe failure remains visible")
 					.isSameAs(KernelCancelledException.INSTANCE);
@@ -1120,8 +1132,9 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		assertThat(((KernelQueryCancelledException) observed.get()).origin()).isSameAs(scopeOwner);
 	}
 
-	@Test
-	void realRowWorkerFailureAfterHandedOffPageWinsOverQueryCancellation() throws Exception {
+	@ParameterizedTest
+	@CsvSource({ "false", "true" })
+	void realRowWorkerFailureAfterHandedOffPageWinsOverQueryCancellation(boolean cancelQuery) throws Exception {
 		setProperty(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
 		IllegalStateException injected = new IllegalStateException("row worker failed after page handoff");
 		CountDownLatch secondFillEntered = new CountDownLatch(1);
@@ -1170,12 +1183,17 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 			assertThat(secondFillEntered.await(10L, TimeUnit.SECONDS))
 					.as("the emitting worker must be blocked in its next fill after the page is handed off")
 					.isTrue();
-			assertThat(scenario.emitter.requestCancellation()).isTrue();
+			if (cancelQuery) {
+				assertThat(scenario.emitter.requestCancellation()).isTrue();
+			}
 			releaseFailure.countDown();
 			assertThat(workerSnapshotsClosed.await(10L, TimeUnit.SECONDS))
 					.as("both worker snapshots must close after the independent failure is recorded")
 					.isTrue();
 			failure = catchThrowable(cursor::next);
+			assertThat(catchThrowable(cursor::close))
+					.as("close must not report again the worker failure already delivered by next")
+					.isNull();
 		} finally {
 			releaseFailure.countDown();
 			scenario.emitter.close();

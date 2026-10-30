@@ -246,8 +246,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		if (strategy != null) {
 			strategy.captureEvaluationValues(evaluationSource);
 		}
-		if (evaluationSource != source) {
-			return copyForEvaluation(evaluationSource).evaluateCurrentSource(bindings);
+		NativeFilterLease filters = evaluationSource instanceof SyntheticValueSource synthetic
+				? synthetic.filterParent()
+				: null;
+		if (evaluationSource != source || filters != null) {
+			return copyForEvaluation(evaluationSource, filters).evaluateCurrentSource(bindings);
 		}
 		return evaluateCurrentSource(bindings);
 	}
@@ -322,10 +325,19 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 	}
 
-	private LmdbNativeTypeMatrix copyForEvaluation(NativeLmdbQuerySource evaluationSource) {
+	private LmdbNativeTypeMatrix copyForEvaluation(NativeLmdbQuerySource evaluationSource, NativeFilterLease filters) {
+		MaskedFilter[] evaluationFilters = predicateFilters;
+		if (filters != null && predicateFilters.length != 0) {
+			evaluationFilters = new MaskedFilter[predicateFilters.length];
+			for (int i = 0; i < predicateFilters.length; i++) {
+				MaskedFilter filter = predicateFilters[i];
+				evaluationFilters[i] = new MaskedFilter(filters.borrow(filter.filter), filter.mask, filter.adaptive,
+						filter.plannedDepth);
+			}
+		}
 		return new LmdbNativeTypeMatrix(evaluationSource, subjectTypePredicate, objectTypePredicate,
 				subjectTypeKeyPosition,
-				groupNames, aggregateNames, predicateFilters, edgePredicateSlot, layout, strategy, originalExpr,
+				groupNames, aggregateNames, evaluationFilters, edgePredicateSlot, layout, strategy, originalExpr,
 				context, false, valuePositions);
 	}
 

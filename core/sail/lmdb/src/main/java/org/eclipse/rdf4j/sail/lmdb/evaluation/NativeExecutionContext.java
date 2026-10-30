@@ -726,6 +726,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final Object filterOwnerIdentity = new Object();
 	private final ConcurrentHashMap<Object, RecordingNativeBooleanFilter> filterTemplates = new ConcurrentHashMap<>();
 	private final IdentityHashMap<NativeFilterLease.Frozen, Boolean> includedFilterMemos = new IdentityHashMap<>();
+	private final IdentityHashMap<NativeFilterLease.Frozen, Boolean> selectedFilterMemos = new IdentityHashMap<>();
 
 	Object filterOwnerIdentity() {
 		return queryScopeOwner.filterOwnerIdentity;
@@ -736,10 +737,15 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	synchronized void mergeFrozenFilterOutcomes(NativeFilterLease.Frozen frozen) {
-		frozen.mergeInto(this, includedFilterMemos);
+		frozen.requireOwner(this);
+		if (filterPublicationDone) {
+			throw new IllegalStateException("memo selected after query feedback publication");
+		}
+		// Selection may finish before a shared lazy producer. Keep its receipt, never the finished attempt lease.
+		selectedFilterMemos.put(frozen, Boolean.TRUE);
 	}
 
-	void mergeFrozenFilterOutcome(NativeFilterLease.FrozenOutcome frozen) {
+	void mergeFrozenFilterOutcome(NativeFilterLease.FrozenOutcome frozen, boolean complete) {
 		RecordingNativeBooleanFilter template = filterTemplates.get(frozen.template());
 		if (template == null) {
 			throw new IllegalStateException("memo outcome has no evaluation-owned destination");
@@ -750,7 +756,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		value.exhausted = frozen.exhausted();
 		value.passed = frozen.passed();
 		value.rejected = frozen.rejected();
-		value.incomplete = frozen.incomplete();
+		value.incomplete = frozen.incomplete() || !complete;
 		mergeFilterOutcome(value);
 	}
 
@@ -769,6 +775,10 @@ final class NativeExecutionContext implements AutoCloseable {
 	NativeFilterLease.Outcome openFilterOutcome(RecordingNativeBooleanFilter template) {
 		if (filterPublicationDone) {
 			return null;
+		}
+		NativeFilterLease parent = SyntheticValueSource.activeFilterParent(this);
+		if (parent != null) {
+			return parent.openUnqualified(template, filterOutcomeOwner());
 		}
 		NativeFilterLease.Outcome outcome = unqualifiedFilterOutcomes.computeIfAbsent(template.origin,
 				key -> new NativeFilterLease.Outcome(key, this));
@@ -1852,6 +1862,15 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (!filterResourcesClosed || filterResultLeases.get() != 0 || filterPublicationDone) {
 			return;
 		}
+		// All cached producers, filter resources and result borrowers have settled. Receipts may form a shared graph;
+		// resolving it here preserves producer completion independently of each candidate's publication lifetime.
+		for (NativeFilterLease.Frozen frozen : selectedFilterMemos.keySet()) {
+			frozen.collect(this, includedFilterMemos, true);
+		}
+		for (var included : includedFilterMemos.entrySet()) {
+			included.getKey().mergeOwnOutcomes(this, included.getValue());
+		}
+		selectedFilterMemos.clear();
 		filterPublicationDone = true;
 		boolean complete = filterRootExhausted && !filterResultPartial && !filterFailed
 				&& !Thread.currentThread().isInterrupted()
