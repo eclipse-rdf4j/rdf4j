@@ -71,13 +71,17 @@ final class NativeExpressionDomain implements AutoCloseable {
 	private static final long SCOPE_STRUCTURAL_BYTES = 96L + 64L + 64L + 64L + 128L + 64L
 			+ 16L + 64L * Long.BYTES + 64L;
 	private static final Object MISSING = new Object();
-	private static final String[] METRICS = { "InputRows", "Evaluations", "Hits", "Spills", "Refusals", "Uncached",
-			"LastTuple", "Hashed", "IoReads", "IoWrites", "IoReadBytes", "IoWriteBytes" };
+	private static final String METRIC_PREFIX = "nativeRowTermDomain";
+	private static final String[] METRICS = { METRIC_PREFIX + "InputRowsActual", METRIC_PREFIX + "EvaluationsActual",
+			METRIC_PREFIX + "HitsActual", METRIC_PREFIX + "SpillsActual", METRIC_PREFIX + "RefusalsActual",
+			METRIC_PREFIX + "UncachedActual", METRIC_PREFIX + "LastTupleActual", METRIC_PREFIX + "HashedActual",
+			METRIC_PREFIX + "IoReadsActual", METRIC_PREFIX + "IoWritesActual", METRIC_PREFIX + "IoReadBytesActual",
+			METRIC_PREFIX + "IoWriteBytesActual" };
 
 	static void initializeMetrics(TupleExpr target) {
 		if (LmdbNativeExplain.runtimeTelemetryEnabled(target)) {
 			for (String metric : METRICS) {
-				LmdbNativeExplain.initializeRuntimeMetric(target, "nativeRowTermDomain" + metric + "Actual");
+				LmdbNativeExplain.initializeRuntimeMetric(target, metric);
 			}
 		}
 	}
