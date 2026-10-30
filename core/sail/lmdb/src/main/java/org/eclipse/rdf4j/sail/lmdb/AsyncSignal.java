@@ -96,7 +96,7 @@ final class AsyncSignal {
 	 * A signal that arrives during the spins leaves an unused unpark permit, so a later park on this thread may return
 	 * early. That is allowed: every caller re-checks its condition after await returns.
 	 */
-	static final int SPINS = 4096;
+	static final int SPINS = 64 * 1024;
 	static final int YIELDS = 256;
 
 	private final Waiter waiter;

@@ -924,6 +924,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * Best-effort namespace-to-ID memo, invalidated when dictionary IDs can change.
 	 */
 	private final ReverseIdCache<NamespaceKey, Object> namespaceIDCache;
+	/** Committed namespace mappings available only to an admitted dictionary writer. */
+	private final ReverseIdCache<NamespaceKey, Object> writerNamespaceIDCache;
 	private final ObjectLongHashMap<RdfTermKey> transactionValueIds = new ObjectLongHashMap<>();
 	private final ObjectLongHashMap<String> transactionNamespaceIds = new ObjectLongHashMap<>();
 	private FreshValueSession activeFreshValueSession;
@@ -1084,6 +1086,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private static final class WriterPublication {
 		private final Thread owner;
 		private final WriterTransaction transaction;
+		private Map<String, Long> namespaceCandidates;
+		private ReverseIdCache.State<NamespaceKey> namespaceCandidateState;
+		private ValueStoreRevision namespaceCandidateRevision;
+		private long namespaceCandidateEnvironment;
 		private volatile Thread consumer;
 		private volatile boolean failedCleanup;
 
@@ -1329,6 +1335,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS, VALUE_ID_KEYS);
 		namespaceCache = config.getCacheImplementation().create(config.getNamespaceCacheSize());
 		namespaceIDCache = new ReverseIdCache<>(config.getNamespaceIDCacheSize(), false,
+				MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS, NamespaceKey.KEYS);
+		writerNamespaceIDCache = new ReverseIdCache<>(config.getNamespaceIDCacheSize(), false,
 				MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS, NamespaceKey.KEYS);
 
 		open(deferAuxiliaryDatabases);
@@ -12647,6 +12655,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	void persistPreparedValues(PreparedValueBatch prepared) throws IOException {
 		// These records go straight into the writer; per-type fresh ordinals need not move nextId.
+		WriterPublication publication = writerPublication;
 		nativeMutation = true;
 		try (MemoryStack stack = stackPush()) {
 			invalidateUntrustedCountMetadata(stack, writeTxn);
@@ -12743,6 +12752,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					index.toKey(tripleKey, triple.subject, triple.predicate, triple.object, triple.id);
 					keyVal.mv_data(tripleKey.flip());
 					E(mdb_put(writeTxn, index.getDB(true), keyVal, emptyVal, 0));
+				}
+			}
+			if (deferred == null) {
+				// Assignment alone is not a dictionary mapping. Admit only records written by this writer.
+				for (PreparedValueRecord record : prepared.namespaceRecords) {
+					rememberWriterNamespace(publication, record.namespace, record.id);
 				}
 			}
 		}
@@ -13289,6 +13304,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						stack.pop();
 					}
 
+					if (dataBuffer.get(0) == NAMESPACE_VALUE) {
+						// The reverse mapping can disappear while this writer is still active.
+						writerNamespaceIDCache.clear();
+						transactionNamespaceIds.clear();
+					}
+
 					// update ref count if literal or URI namespace is removed
 					if (dataBuffer.get(0) == LITERAL_VALUE || dataBuffer.get(0) == URI_VALUE) {
 						long refId = Varint.readUnsigned(dataBuffer, 1);
@@ -13741,20 +13762,31 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			rethrowFailure(failure);
 		} finally {
-			synchronized (writerAdmission) {
-				if (publicationComplete && writerPublication == publication) {
-					replayDecision = null;
-					writerPublication = null;
-					if (!shuttingDown) {
-						// Only settled publication opens the global ready-value proof again, atomically with
-						// admitting the next writer after aborted IDs and caches have been invalidated.
-						endValueLookupMutation();
+			try {
+				synchronized (writerAdmission) {
+					boolean release = publicationComplete && writerPublication == publication;
+					try {
+						if (release && commit && terminalFailure == null && lastNativeCommitSucceeded
+								&& !publication.transaction.commitWasSkipped() && !shuttingDown) {
+							publishWriterNamespaces(publication);
+						}
+					} finally {
+						if (release) {
+							replayDecision = null;
+							writerPublication = null;
+							if (!shuttingDown) {
+								// Only settled publication opens the global ready-value proof again, atomically with
+								// admitting the next writer after aborted IDs and caches have been invalidated.
+								endValueLookupMutation();
+							}
+						}
+						writerAdmission.notifyAll();
 					}
 				}
-				writerAdmission.notifyAll();
-			}
-			if (!(commit && autoGrow) && (publicationComplete || terminalFailure != null)) {
-				closeLegacyValueIndex(terminalFailure);
+			} finally {
+				if (!(commit && autoGrow) && (publicationComplete || terminalFailure != null)) {
+					closeLegacyValueIndex(terminalFailure);
+				}
 			}
 		}
 	}
@@ -14658,6 +14690,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();
+		writerNamespaceIDCache.clear();
 		commonVocabulary.clear();
 		PREVIOUS_NAMESPACE_HANDLE.setRelease(this, null);
 	}
@@ -15370,17 +15403,34 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private long getNamespaceID(String namespace, boolean create, ValueLookupContext lookup) throws IOException {
+		WriterPublication publication = null;
 		if (isWriteTransactionOwner()) {
+			publication = writerPublication;
 			long transactionId = transactionNamespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
 			if (transactionId != LmdbValue.UNKNOWN_ID) {
+				rememberWriterNamespace(publication, namespace, transactionId);
 				return transactionId;
 			}
 			FreshValueSession freshSession = activeFreshValueSession;
-			if (freshSession != null) {
+			if (isFreshValueSessionUsable(freshSession)) {
 				long freshId = freshSession.namespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
 				if (freshId != LmdbValue.UNKNOWN_ID) {
 					return freshId;
 				}
+			}
+			ReverseIdCache.State<NamespaceKey> writerState = writerNamespaceIDCache.state();
+			ValueStoreRevision writerRevision = revision;
+			ReverseIdCache.Entry<NamespaceKey> committed = writerNamespaceIDCache.get(writerState, namespace,
+					ValuePosition.NONE);
+			if (publication != null && writerPublication == publication && committed != null
+					&& sameRevision(committed.revision(), writerRevision) && sameRevision(writerRevision, revision)
+					&& writerNamespaceIDCache.isCurrent(writerState)) {
+				long id = committed.id();
+				if (transactionNamespaceIds.size() < transactionValueCacheLimit) {
+					transactionNamespaceIds.put(namespace, id);
+				}
+				rememberWriterNamespace(publication, namespace, id);
+				return id;
 			}
 		}
 
@@ -15413,12 +15463,67 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (isWriteTransactionOwner() && transactionNamespaceIds.size() < transactionValueCacheLimit) {
 				transactionNamespaceIds.put(namespace, id);
 			}
+			WriterPublication current = writerPublication;
+			if (publication != null && current != null && current.transaction == publication.transaction) {
+				// A capacity checkpoint can replace the native writer while retaining the logical transaction.
+				rememberWriterNamespace(current, namespace, id);
+			}
 			cacheNamespaceId(namespace, id, generation, cacheState);
 		} else if (lookup != null) {
 			lookup.missingNamespace(namespace, cacheState);
 		}
 
 		return id;
+	}
+
+	/** Keeps only namespace mappings observed or written by this native writer for possible commit publication. */
+	private void rememberWriterNamespace(WriterPublication publication, String namespace, long id) {
+		if (publication == null || publication != writerPublication || !isWriteTransactionOwner()
+				|| id == LmdbValue.UNKNOWN_ID || namespace.length() > MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS) {
+			return;
+		}
+		ReverseIdCache.State<NamespaceKey> state = writerNamespaceIDCache.state();
+		ValueStoreRevision currentRevision = revision;
+		if (publication.namespaceCandidateState != state
+				|| !sameRevision(publication.namespaceCandidateRevision, currentRevision)
+				|| publication.namespaceCandidateEnvironment != environmentGeneration) {
+			if (publication.namespaceCandidates != null) {
+				publication.namespaceCandidates.clear();
+			}
+			publication.namespaceCandidateState = state;
+			publication.namespaceCandidateRevision = currentRevision;
+			publication.namespaceCandidateEnvironment = environmentGeneration;
+		}
+		Map<String, Long> candidates = publication.namespaceCandidates;
+		if (candidates == null) {
+			candidates = new LinkedHashMap<>(16, 0.75f, true);
+			publication.namespaceCandidates = candidates;
+		}
+		Long previous = candidates.get(namespace);
+		if (previous != null && previous.longValue() == id) {
+			return;
+		}
+		if (previous == null && !writerNamespaceIDCache.isUnbounded()
+				&& candidates.size() >= writerNamespaceIDCache.capacity()) {
+			Iterator<String> oldest = candidates.keySet().iterator();
+			oldest.next();
+			oldest.remove();
+		}
+		candidates.put(namespace, id);
+	}
+
+	/** Called with writer admission held, after native commit and revision handling have both succeeded. */
+	private void publishWriterNamespaces(WriterPublication publication) {
+		ReverseIdCache.State<NamespaceKey> state = publication.namespaceCandidateState;
+		if (state == null || !writerNamespaceIDCache.isCurrent(state)
+				|| !sameRevision(publication.namespaceCandidateRevision, revision)
+				|| publication.namespaceCandidateEnvironment != environmentGeneration) {
+			return;
+		}
+		for (Map.Entry<String, Long> candidate : publication.namespaceCandidates.entrySet()) {
+			writerNamespaceIDCache.put(state, NamespaceKey.of(candidate.getKey()), candidate.getValue(), revision, null,
+					ValuePosition.NONE);
+		}
 	}
 
 	static int calculateTransactionValueCacheLimit(long maxHeapBytes) {

@@ -49,7 +49,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks insertion performance with synthetic data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 3)
+@Warmup(iterations = 3, time = 10, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
 @Measurement(iterations = 3)
