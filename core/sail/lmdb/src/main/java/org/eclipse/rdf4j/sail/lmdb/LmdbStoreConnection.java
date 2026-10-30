@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -104,6 +105,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	protected final LmdbStore lmdbStore;
 	private final SailStore sourceStore;
+	/** Only coordinates this connection's new snapshots with cleanup admission; the cleanup worker never needs it. */
+	private final ReentrantLock valueCleanupAdmissionGate;
 
 	/*-----------*
 	 * Variables *
@@ -249,6 +252,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		super(sail, sourceStore, sail.getConnectionEvaluationStrategyFactory());
 		this.lmdbStore = sail;
 		this.sourceStore = sourceStore;
+		valueCleanupAdmissionGate = sail.getBackingStore().asyncValueCleanupEnabled() ? new ReentrantLock() : null;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
 	}
 
@@ -714,42 +718,53 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 		}
 		backing.awaitInitialRunImport(this);
-		// Associate any synchronously-created serializable observation sinks with this connection. The admission can
-		// live
-		// until a lazy result is closed on another worker, so the thread-local writer scope must not escape this call.
-		SailClosable writerOwner = lmdbStore.getBackingStore().enterWriterOwner(this);
+		if (valueCleanupAdmissionGate != null) {
+			lockValueCleanupAdmission();
+		}
 		try {
-			LmdbSailStore.ReadView readView = null;
-			ReadExposureScope readScope = activeReadExposureScope.get();
-			if ((readScope == null || readScope.operationAttempt == null
-					&& readScope.admissionAttempt == readAttemptLease)
-					&& isActive() && level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
-				synchronized (readViewLock) {
-					if (transactionReadView == null) {
-						transactionReadView = lmdbStore.getBackingStore()
-								.createTransactionReadView(mapGrowthObserver, readAttemptLease);
+			// Associate any synchronously-created serializable observation sinks with this connection. The admission
+			// can
+			// live
+			// until a lazy result is closed on another worker, so the thread-local writer scope must not escape this
+			// call.
+			SailClosable writerOwner = lmdbStore.getBackingStore().enterWriterOwner(this);
+			try {
+				LmdbSailStore.ReadView readView = null;
+				ReadExposureScope readScope = activeReadExposureScope.get();
+				if ((readScope == null || readScope.operationAttempt == null
+						&& readScope.admissionAttempt == readAttemptLease)
+						&& isActive() && level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
+					synchronized (readViewLock) {
+						if (transactionReadView == null) {
+							transactionReadView = lmdbStore.getBackingStore()
+									.createTransactionReadView(mapGrowthObserver, readAttemptLease);
+						}
+						readView = transactionReadView;
 					}
-					readView = transactionReadView;
 				}
+				LmdbSailStore.ReadAttemptLease currentReadAttempt = readScope == null ? readAttemptLease
+						: readScope.admissionAttempt;
+				LmdbSailStore.MapGrowthObserver currentReadObserver = readScope != null
+						&& readScope.operationAttempt != null
+								? readScope.operationAttempt.observer
+								: mapGrowthObserver;
+				LmdbSailStore.DatasetAdmission datasetAdmission = lmdbStore.getBackingStore()
+						.beginDatasetAdmission(level, readView, currentReadObserver, currentReadAttempt);
+				if (readScope != null) {
+					readScope.capture(datasetAdmission.readViewLease());
+				}
+				SailClosable admission = datasetAdmission;
+				boolean outermost = SailSource.isOutermostDatasetAcquisition(admission);
+				writerOwner.close();
+				return SailSource.DatasetAcquisition.wrap(admission::close, outermost);
+			} catch (RuntimeException | Error failure) {
+				writerOwner.close();
+				throw failure;
 			}
-			LmdbSailStore.ReadAttemptLease currentReadAttempt = readScope == null ? readAttemptLease
-					: readScope.admissionAttempt;
-			LmdbSailStore.MapGrowthObserver currentReadObserver = readScope != null
-					&& readScope.operationAttempt != null
-							? readScope.operationAttempt.observer
-							: mapGrowthObserver;
-			LmdbSailStore.DatasetAdmission datasetAdmission = lmdbStore.getBackingStore()
-					.beginDatasetAdmission(level, readView, currentReadObserver, currentReadAttempt);
-			if (readScope != null) {
-				readScope.capture(datasetAdmission.readViewLease());
+		} finally {
+			if (valueCleanupAdmissionGate != null) {
+				valueCleanupAdmissionGate.unlock();
 			}
-			SailClosable admission = datasetAdmission;
-			boolean outermost = SailSource.isOutermostDatasetAcquisition(admission);
-			writerOwner.close();
-			return SailSource.DatasetAcquisition.wrap(admission::close, outermost);
-		} catch (RuntimeException | Error failure) {
-			writerOwner.close();
-			throw failure;
 		}
 	}
 
@@ -3033,12 +3048,41 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	private void markTransactionWriteAttempted() {
 		verifyMutationAdmission();
+		LmdbSailStore backing = lmdbStore.getBackingStore();
+		if (valueCleanupAdmissionGate != null && !backing.hasValueCleanupProducer(this)) {
+			lockValueCleanupAdmission();
+			try {
+				boolean mayWait;
+				synchronized (readAttemptLock) {
+					mayWait = !transactionObserved && activeReadOperations == 0 && activeReadCreations == 0
+							&& operationReadAttempts.isEmpty() && replayableIterations.isEmpty();
+				}
+				synchronized (readViewLock) {
+					mayWait &= transactionReadView == null;
+				}
+				// Keep concurrent reads on this same connection from opening a new native view during the wait.
+				// Existing views require nonblocking admission; no writer/publication ownership is acquired here.
+				backing.admitValueCleanupProducer(this, mayWait);
+			} finally {
+				valueCleanupAdmissionGate.unlock();
+			}
+		}
 		LmdbSailStore.ReadAttemptLease admission = transactionAdmissionLease;
 		if (admission != null) {
 			admission.markWriteIntent();
 		}
 		synchronized (readAttemptLock) {
 			transactionWriteAttempted = true;
+		}
+	}
+
+	private void lockValueCleanupAdmission() {
+		try {
+			valueCleanupAdmissionGate.lockInterruptibly();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedSailException("Interrupted while coordinating cleanup admission with a new read",
+					interrupted);
 		}
 	}
 
@@ -3127,6 +3171,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (admission != null) {
 			admission.completeTransaction();
 		}
+		lmdbStore.getBackingStore().completeValueCleanupProducer(this);
 	}
 
 	private final class OperationReadAttempt {

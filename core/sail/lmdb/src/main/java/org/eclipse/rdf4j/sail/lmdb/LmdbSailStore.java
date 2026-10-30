@@ -2618,6 +2618,12 @@ class LmdbSailStore implements SailStore {
 	private final MapGrowthMetrics mapGrowthMetrics = new MapGrowthMetrics();
 	private final MapGrowthCoordinator mapGrowthCoordinator;
 	private final boolean autoGrow;
+	private final boolean asyncValueCleanup;
+	private ValueRetirementCoordinator retirementCoordinator;
+	private AsyncValueRetirementCoordinator asyncValueCleanupCoordinator;
+	private final AtomicLong valueCleanupWriterWaitNanos = new AtomicLong();
+	private final AtomicLong valueCleanupMaintenanceCommits = new AtomicLong();
+	private final AtomicLong writerOwnerContentionWaitNanos = new AtomicLong();
 	private final ReplayRetirementExecutor replayRetirementExecutor = new ReplayRetirementExecutor();
 	private final ThreadLocal<Runnable> replayRetirementOwner = new ThreadLocal<>();
 
@@ -2748,7 +2754,7 @@ class LmdbSailStore implements SailStore {
 
 	/** Scratch storage is optional: NONE never opens a temporary LMDB environment. */
 	private void ensurePersistentSets() throws IOException {
-		if (setFactory != null) {
+		if (setFactory != null || asyncValueCleanup) {
 			return;
 		}
 		PersistentSetFactory<Long> created = setFactoryFactory.create(dataDir);
@@ -2774,6 +2780,10 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private Set<Long> mutationUnusedIds() {
+		if (asyncValueCleanup) {
+			return asyncValueCleanupCoordinator == null ? ValueRetirementCoordinator.Disposable.CANDIDATES
+					: asyncValueCleanupCoordinator.candidates(storeTransactionOwner);
+		}
 		NoneWriteState state = noneWriteState;
 		return state != null && state.owner == storeTransactionOwner
 				&& storeReplayDecision != null && storeReplayDecision.checkpoint ? state.retiredIds : unusedIds;
@@ -3664,9 +3674,10 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void collectUnusedIds(long[] quad) {
+		Set<Long> candidates = mutationUnusedIds();
 		for (long id : quad) {
 			if (id != 0L && !ValueIds.isInlined(id)) {
-				unusedIds.add(id);
+				candidates.add(id);
 			}
 		}
 	}
@@ -4275,6 +4286,8 @@ class LmdbSailStore implements SailStore {
 				} finally {
 					if (retiredOwner && context.ownsOwner) {
 						completeWriterRollback(context.owner);
+					} else {
+						completeUnownedValueCleanupProducer(writerLease.owner);
 					}
 				}
 			}
@@ -4508,6 +4521,8 @@ class LmdbSailStore implements SailStore {
 				} finally {
 					if (context.ownsOwner) {
 						completeWriterRollback(context.owner);
+					} else {
+						completeUnownedValueCleanupProducer(context.owner);
 					}
 				}
 			}
@@ -6076,6 +6091,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	void completeWriterRollback(Object owner) {
+		completeUnownedValueCleanupProducer(owner);
 		synchronized (failedWriterTransactions) {
 			failedWriterTransactions.remove(owner);
 			hasFailedWriterTransactions = !failedWriterTransactions.isEmpty();
@@ -6322,11 +6338,14 @@ class LmdbSailStore implements SailStore {
 					ensureWriterRegistrationActive(registration);
 					checkPublicationAdmission(owner);
 					while (writerOwner != null && writerOwner != owner) {
+						long waitingSince = System.nanoTime();
 						try {
 							writerOwnerMonitor.wait();
 						} catch (InterruptedException e) {
 							Thread.currentThread().interrupt();
 							throw new InterruptedSailException(e);
+						} finally {
+							writerOwnerContentionWaitNanos.addAndGet(System.nanoTime() - waitingSince);
 						}
 						ensureWriterRegistrationActive(registration);
 						checkPublicationAdmission(owner);
@@ -6687,6 +6706,15 @@ class LmdbSailStore implements SailStore {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy, null);
 	}
 
+	/** Internal transaction deltas own a disposable directory, so async mode reclaims them as one whole store. */
+	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy,
+			boolean temporaryOverflow) throws IOException, SailException {
+		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy, null, null,
+				null, TripleStore::new, PersistentSetFactory::new, LmdbFilterSelectivityStats::new, 1024,
+				temporaryOverflow);
+	}
+
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy,
 			Runnable duringValueOverlayWarmupScanForTest) throws IOException, SailException {
@@ -6747,6 +6775,17 @@ class LmdbSailStore implements SailStore {
 			ValueStoreFactory valueStoreFactory, TripleStoreFactory tripleStoreFactory,
 			PersistentSetFactoryFactory setFactoryFactory, FilterSelectivityStatsFactory statsFactory,
 			int asyncQueueCapacity) throws IOException, SailException {
+		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy,
+				duringValueOverlayWarmupScanForTest, afterValueStoreOpenForTest, valueStoreFactory, tripleStoreFactory,
+				setFactoryFactory, statsFactory, asyncQueueCapacity, false);
+	}
+
+	private LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy,
+			Runnable duringValueOverlayWarmupScanForTest, Consumer<ValueStore> afterValueStoreOpenForTest,
+			ValueStoreFactory valueStoreFactory, TripleStoreFactory tripleStoreFactory,
+			PersistentSetFactoryFactory setFactoryFactory, FilterSelectivityStatsFactory statsFactory,
+			int asyncQueueCapacity, boolean temporaryOverflow) throws IOException, SailException {
 		this.opQueue = new CircularBuffer<>(asyncQueueCapacity);
 		this.queryExecutionPolicy = Objects.requireNonNull(queryExecutionPolicy);
 		this.learnedFilterSelectivity = queryExecutionPolicy.experimentalQueryOptimizations()
@@ -6755,6 +6794,7 @@ class LmdbSailStore implements SailStore {
 		sketchBasedJoinEstimatorEnabled &= queryExecutionPolicy.experimentalQueryOptimizations();
 		this.dataDir = dataDir;
 		this.autoGrow = config.getAutoGrow();
+		this.asyncValueCleanup = config.getAsyncValueCleanup();
 		this.mapGrowthCoordinator = new MapGrowthCoordinator(config.getMapGrowthReadDrainTimeoutMillis());
 		this.bulkOperationSize = config.getBulkOperationSize();
 		this.valueOverlayEnabled = config.getValueOverlayEnabled();
@@ -6802,6 +6842,28 @@ class LmdbSailStore implements SailStore {
 					&& tripleStore.isEmpty() && valueStore.canStartFreshValueSession();
 			// Installation is bounded. Durable queues are retained until post-ready maintenance can prove liveness.
 			valueStore.completeStoreInitialization(tripleStore::filterUsedIdsBounded);
+			boolean disposableCleanup = asyncValueCleanup && temporaryOverflow;
+			retirementCoordinator = disposableCleanup ? new ValueRetirementCoordinator.Disposable()
+					: new ValueRetirementCoordinator.Durable(valueStore);
+			if (!disposableCleanup
+					&& (asyncValueCleanup || AsyncValueRetirementCoordinator.hasSpool(dataDir.toPath()))) {
+				asyncValueCleanupCoordinator = new AsyncValueRetirementCoordinator(dataDir.toPath(), config, valueStore,
+						new AsyncValueRetirementCoordinator.Processor() {
+							@Override
+							public boolean process(long[] ids, int size, ValueStore.CleanupReservation identity)
+									throws IOException {
+								return processAsyncValueCleanup(ids, size, identity);
+							}
+
+							@Override
+							public boolean idle() throws IOException {
+								return processAsyncValueCleanup(null, 0, null);
+							}
+						});
+				if (asyncValueCleanup) {
+					retirementCoordinator = asyncValueCleanupCoordinator;
+				}
+			}
 			LmdbDirectAdjacencyOptions directAdjacencyOptions = LmdbDirectAdjacencyOptions.resolve(config);
 			directAdjacency = directAdjacencyOptions.mode() != DirectAdjacencyMode.DISABLED
 					? new LmdbDirectAdjacencyStore(tripleStore, valueStore, storeTxnStarted, storeTxnDirty,
@@ -6845,6 +6907,9 @@ class LmdbSailStore implements SailStore {
 			return;
 		}
 		postReadyStatus = "RUNNING";
+		if (asyncValueCleanupCoordinator != null) {
+			asyncValueCleanupCoordinator.start();
+		}
 		// Handed over only now: a pending scheduling tells a new store's committers that the housekeeping below will
 		// request the startup build (or complete the scheduling without one), so they wait for it rather than return
 		// before the index is exact. A store whose post-ready maintenance never starts must not make them wait.
@@ -6879,7 +6944,7 @@ class LmdbSailStore implements SailStore {
 		}
 		try {
 			// Publish the bounded retirement batch before optional caches capture their value generation.
-			if (!initialImportClosing && valueStore.isValueReclamationEnabled()) {
+			if (!asyncValueCleanup && !initialImportClosing && valueStore.isValueReclamationEnabled()) {
 				recoverRetiredValueIds(tripleStore.getTxnManager().minPinnedSnapshotRevision(), false);
 				reclaimPersistedUnusedIdsAfterInitialization();
 			}
@@ -7272,6 +7337,15 @@ class LmdbSailStore implements SailStore {
 			} catch (Throwable cleanupFailure) {
 				failure = retainRollbackFailure(failure, cleanupFailure);
 			}
+			try {
+				// The native ingestion owner may have been appending hints. Quiesce it before truncating an
+				// unpublished suffix, and never let a spill failure prevent either native rollback above.
+				if (asyncValueCleanup && asyncValueCleanupCoordinator != null && storeTransactionOwner != null) {
+					asyncValueCleanupCoordinator.rollback(storeTransactionOwner);
+				}
+			} catch (Throwable cleanupFailure) {
+				failure = retainRollbackFailure(failure, cleanupFailure);
+			}
 			if (failure != null) {
 				logger.warn("Failed to rollback LMDB transaction", failure);
 				if (failure instanceof Error error) {
@@ -7482,19 +7556,23 @@ class LmdbSailStore implements SailStore {
 					if (namespacesChanged) {
 						stageNamespaceSnapshot(currentNamespaces);
 					}
-					if (!unusedIds.isEmpty()) {
-						valueStore.recordPublicationRetiredIds(new ArrayList<>(unusedIds),
-								tripleStore.getDataRevision() + 1);
-					}
-					// Dictionary additions and retirement intents must be durable before the authoritative triples.
+					retirementCoordinator.recordBeforePublication(unusedIds, tripleStore.getDataRevision() + 1);
+					// Dictionary additions precede authoritative triples in both modes. Only the durable policy records
+					// recoverable retirement intents here; async streams are ineligible until triple publication.
 					commitDictionaryBeforeTriple();
 					if (noneWriteState != null && noneWriteState.owner == owner) {
 						noneWriteState.dictionaryCommitted = true;
 					}
 					markPublicationChanged();
-					unusedIds.clear();
+					if (!asyncValueCleanup) {
+						unusedIds.clear();
+					}
 					commitTripleTransaction();
 					nativeCommitted = true;
+					if (asyncValueCleanup && asyncValueCleanupCoordinator != null) {
+						afterTriplePublicationBeforeCleanupHandoffForTest();
+						asyncValueCleanupCoordinator.published(owner);
+					}
 					LmdbInitialRunImport runImport = initialRunImport;
 					if (runImport != null && runImport.owner == owner) {
 						runImport.commitChunk();
@@ -7544,7 +7622,7 @@ class LmdbSailStore implements SailStore {
 					markPublicationChanged();
 				}
 				namespaceTransactionOwner = null;
-				if (activeTransaction && valueStore.hasRetiredIds()) {
+				if (!asyncValueCleanup && activeTransaction && valueStore.hasRetiredIds()) {
 					try {
 						processRetiredValueIds(tripleStore.getTxnManager().minPinnedSnapshotRevision());
 					} catch (IOException | RuntimeException maintenanceFailure) {
@@ -7801,15 +7879,24 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void processRetiredValueIds(long maxRevisionInclusive) throws IOException {
+		processRetiredValueIds(maxRevisionInclusive, Math.min(4096, valueGcDrainBatchSize()));
+	}
+
+	private enum RetirementDrain {
+		EMPTY,
+		DEFERRED,
+		PROGRESSED
+	}
+
+	private RetirementDrain processRetiredValueIds(long maxRevisionInclusive, int maximum) throws IOException {
 		if (!valueStore.isValueReclamationEnabled()) {
-			return;
+			return RetirementDrain.EMPTY;
 		}
 		// One publication may service one bounded batch, never the entire backlog left by a previous process.
 		{
-			RetiredValueIdStore.DrainBatch batch = valueStore.pollRetiredIds(maxRevisionInclusive,
-					Math.min(4096, valueGcDrainBatchSize()));
+			RetiredValueIdStore.DrainBatch batch = valueStore.pollRetiredIds(maxRevisionInclusive, maximum);
 			if (batch == null || batch.isEmpty()) {
-				return;
+				return RetirementDrain.EMPTY;
 			}
 			WriterTransaction transaction = new WriterTransaction();
 			try {
@@ -7827,6 +7914,11 @@ class LmdbSailStore implements SailStore {
 				// while a reader that still sees them is pinned: only the current revision waits for every such reader.
 				valueStore.recordRetiredIds(frontier, tripleStore.getDataRevision());
 				transaction.invoke(valueStore::commit);
+				// Re-recording a completely UNKNOWN batch is safe but does not advance reclamation. Let the
+				// async driver back off instead of repeatedly rewriting the same durable retirement records.
+				return !batch.staleSeqKeys.isEmpty() || unresolved.size() < batch.ids.size()
+						? RetirementDrain.PROGRESSED
+						: RetirementDrain.DEFERRED;
 			} catch (IOException | RuntimeException | Error failure) {
 				try {
 					valueStore.rollback(transaction);
@@ -7836,6 +7928,111 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 				throw failure;
+			}
+		}
+	}
+
+	/** One complete maintenance transaction; the worker calls this without holding its queue lock or a read view. */
+	private boolean processAsyncValueCleanup(long[] ids, int size, ValueStore.CleanupReservation identity)
+			throws IOException {
+		if (initialImportClosing || !valueStore.isValueReclamationEnabled()) {
+			return false;
+		}
+		Object owner = new Object();
+		long started = System.nanoTime();
+		SailClosable publication = tryBeginPublicationScope(owner);
+		valueCleanupWriterWaitNanos.addAndGet(System.nanoTime() - started);
+		if (publication == null) {
+			return false;
+		}
+		try (publication) {
+			// Public snapshot admission shares the publication gate. A later retirement/reintroduction is safe
+			// only after every existing reader is gone; no saved process-local horizon is used after restart.
+			if (tripleStore.getTxnManager().minPinnedSnapshotRevision() != Long.MAX_VALUE) {
+				return false;
+			}
+			if (!sinkStoreAccessLock.tryLock()) {
+				return false;
+			}
+			try {
+				if (storeTxnStarted.get() || namespaceTransactionOwner != null) {
+					return false;
+				}
+				int maximum = asyncValueCleanupCoordinator.batchSize();
+				if (ids == null) {
+					if (valueStore.hasCleanupValueProtection()) {
+						// One escaped lazy value can retain every later dictionary epoch. Do not create an
+						// unbounded epoch history by repeatedly doing forward GC behind that protection.
+						return false;
+					}
+					RetirementDrain retired = processRetiredValueIds(Long.MAX_VALUE, maximum);
+					if (retired != RetirementDrain.EMPTY) {
+						valueCleanupMaintenanceCommits.incrementAndGet();
+					}
+					if (retired == RetirementDrain.PROGRESSED) {
+						return true;
+					}
+					int visited = valueStore.reclaimPersistedUnusedIdsBatch(maximum);
+					if (visited > 0) {
+						valueCleanupMaintenanceCommits.incrementAndGet();
+					}
+					return valueStore.lastBoundedUnusedReclamationMadeProgress();
+				}
+				WriterTransaction transaction = new WriterTransaction();
+				try {
+					valueStore.startTransaction(true, transaction);
+					if (!identity.isCurrent()) {
+						// Recheck under the owning Sail's publication coordination. An incarnation change
+						// before acquisition invalidates the whole old batch, even if it passed queue inspection.
+						valueStore.rollback(transaction);
+						return true;
+					}
+					Set<Long> roots = new HashSet<>();
+					for (int i = 0; i < size; i++) {
+						roots.add(ids[i]);
+					}
+					if (asyncValueCleanup && !valueStore.hasCleanupValueProtection()) {
+						// Clear any legacy intent for exactly these guarded IDs in this same transaction. An older
+						// durable intent must not survive a direct retirement and eventual numeric-ID recycling.
+						valueStore.removeAsyncRetiredIds(roots);
+						Set<Long> frontier = new HashSet<>();
+						Set<Long> unresolved = new HashSet<>();
+						tripleStore.filterUsedIdsBounded(roots, unresolved);
+						valueStore.gcIds(roots, frontier);
+						frontier.addAll(unresolved);
+						// All dependency decrements and their at-most-three-per-root continuations are atomic.
+						// Persist the bounded frontier instead of blocking on this worker's own full queue.
+						valueStore.recordRetiredIds(frontier, tripleStore.getDataRevision());
+					} else {
+						// A metadata-only continuation avoids creating one dictionary epoch per batch behind a
+						// protected lazy value. It also imports saved hints when reopening in durable mode.
+						// Both paths revalidate through the normal durable drain; a spool is never complete history.
+						valueStore.recordRetiredIds(roots, tripleStore.getDataRevision());
+					}
+					beforeAsyncValueCleanupCommitForTest();
+					transaction.invoke(valueStore::commit);
+					valueCleanupMaintenanceCommits.incrementAndGet();
+					return true;
+				} catch (IOException | RuntimeException | Error failure) {
+					try {
+						valueStore.rollback(transaction);
+					} catch (IOException | RuntimeException | Error cleanup) {
+						if (cleanup != failure) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+					throw failure;
+				}
+			} catch (LmdbTransactionRetryException | LmdbUtil.MapFullException capacity) {
+				if (!autoGrow || capacity.getSuppressed().length != 0) {
+					throw capacity;
+				}
+				// Schedule growth, then release publication/native ownership. The next bounded retry observes
+				// the coordinator's new capacity; the worker never sleeps while owning publication.
+				requestMaintenanceGrowth(owner, MapResizeKind.VALUE_STORE);
+				return false;
+			} finally {
+				sinkStoreAccessLock.unlock();
 			}
 		}
 	}
@@ -8034,6 +8231,12 @@ class LmdbSailStore implements SailStore {
 	/** Runs only after the application attempt has released its read views and logical writer admission. */
 	void completePostCommitValueMaintenance() {
 		try {
+			if (asyncValueCleanup) {
+				if (asyncValueCleanupCoordinator != null) {
+					asyncValueCleanupCoordinator.signal();
+				}
+				return;
+			}
 			if (valueStore.hasRetiredIds()) {
 				long horizon = deferValueGcForPinnedReaders()
 						? tripleStore.getTxnManager().minPinnedSnapshotRevision()
@@ -8369,6 +8572,82 @@ class LmdbSailStore implements SailStore {
 		return valueStore;
 	}
 
+	AsyncValueRetirementCoordinator asyncValueCleanupCoordinator() {
+		return asyncValueCleanupCoordinator;
+	}
+
+	boolean asyncValueCleanupEnabled() {
+		return asyncValueCleanup;
+	}
+
+	boolean hasValueCleanupProducer(Object owner) {
+		return asyncValueCleanupCoordinator != null && asyncValueCleanupCoordinator.hasProducer(owner);
+	}
+
+	long valueCleanupWriterWaitNanos() {
+		return valueCleanupWriterWaitNanos.get();
+	}
+
+	long valueCleanupMaintenanceCommits() {
+		return valueCleanupMaintenanceCommits.get();
+	}
+
+	long writerOwnerContentionWaitNanos() {
+		return writerOwnerContentionWaitNanos.get();
+	}
+
+	void admitValueCleanupProducer(Object owner, boolean mayWait) {
+		if (asyncValueCleanup && asyncValueCleanupCoordinator != null) {
+			asyncValueCleanupCoordinator.admit(owner, mayWait);
+		}
+	}
+
+	void completeValueCleanupProducer(Object owner) {
+		if (asyncValueCleanup && asyncValueCleanupCoordinator != null) {
+			asyncValueCleanupCoordinator.complete(owner);
+		}
+	}
+
+	/**
+	 * Direct sources can share an explicit or implicit owner between sinks, prepared scopes and publications. A
+	 * participant's close is not the publication boundary while another participant still retains that ownership.
+	 * Connections instead transfer their producer explicitly after releasing their transaction read view.
+	 */
+	private void completeUnownedValueCleanupProducer(Object owner) {
+		if (!asyncValueCleanup || asyncValueCleanupCoordinator == null || owner == null
+				|| owner instanceof LmdbStoreConnection) {
+			return;
+		}
+		SailClosable disposal;
+		synchronized (writerOwnerMonitor) {
+			if (writerOwner == owner && writerOwnerReferences > 0
+					|| storeTransactionOwner == owner || namespaceTransactionOwner == owner) {
+				return;
+			}
+			// Atomically detach against a same-owner writer acquisition. Detachment only transfers queue state;
+			// an empty stream's native identity release and file disposal happen outside the writer monitor.
+			disposal = asyncValueCleanupCoordinator.detachCompletedProducer(owner);
+		}
+		if (disposal != null) {
+			disposal.close();
+		}
+	}
+
+	void stopAsyncValueCleanupForShutdown() {
+		if (asyncValueCleanupCoordinator != null) {
+			asyncValueCleanupCoordinator.stopAndAwait();
+		}
+	}
+
+	void beforeAsyncValueCleanupCommitForTest() {
+	}
+
+	void afterTriplePublicationBeforeCleanupHandoffForTest() {
+	}
+
+	void afterAsyncValueCleanupAdmissionForTest(Object owner) {
+	}
+
 	private void discardEstimatorStateTouchedByOpenTransaction() {
 		if (estimatorTouchedSinceStoreTxnStart.getAndSet(false) && sketchBasedJoinEstimator != null) {
 			sketchBasedJoinEstimator.discardAndMarkForRebuild();
@@ -8382,6 +8661,8 @@ class LmdbSailStore implements SailStore {
 				|| sinkStoreAccessLock.isHeldByCurrentThread() || publicationContext.get() != null) {
 			throw new SailException("An active LMDB native/publication owner cannot close its own store");
 		}
+		// Do not put this in attemptClose: a timeout must retain both native environments and the directory lock.
+		stopAsyncValueCleanupForShutdown();
 		initialImportClosing = true;
 		synchronized (initialRunImportMonitor) {
 			initialRunImportMonitor.notifyAll();
@@ -8399,6 +8680,9 @@ class LmdbSailStore implements SailStore {
 		failure = attemptClose(failure, mapGrowthCoordinator::shutdown);
 		failure = attemptClose(failure, this::awaitReplayRetirements);
 		failure = attemptClose(failure, this::awaitNativePublicationForShutdown);
+		if (asyncValueCleanupCoordinator != null) {
+			asyncValueCleanupCoordinator.prepareSpool();
+		}
 		failure = attemptClose(failure, this::shutdownAndAwaitTripleStoreExecutor);
 		if (directAdjacency != null) {
 			failure = attemptClose(failure, directAdjacency::close);
@@ -8440,6 +8724,11 @@ class LmdbSailStore implements SailStore {
 				// Reader managers are already closed. Retain durable unused candidates for bounded post-ready or
 				// explicit maintenance instead of admitting fresh liveness reads during shutdown.
 				failure = attemptClose(failure, valueStore::close);
+				if (asyncValueCleanupCoordinator != null) {
+					asyncValueCleanupCoordinator.finishSpool(failure == null
+							? valueStore.trustedClosedTransactionId()
+							: -1L);
+				}
 			}
 			if (tripleStore != null) {
 				failure = attemptClose(failure, tripleStore::close);
@@ -10010,18 +10299,35 @@ class LmdbSailStore implements SailStore {
 			checkWriteAttemptAdmission();
 			PublicationContext publication = publicationContext.get();
 			Object owner = writerOwner();
-			if (publication != null) {
-				if (publication.owner != owner) {
-					throw new SailException("LMDB sink cannot mutate under another writer's publication scope");
+			while (true) {
+				// This fallback is deliberately nonblocking: direct sinks may already retain a snapshot/publication.
+				admitValueCleanupProducer(owner, false);
+				afterAsyncValueCleanupAdmissionForTest(owner);
+				if (publication != null) {
+					if (publication.owner != owner) {
+						throw new SailException("LMDB sink cannot mutate under another writer's publication scope");
+					}
+					if (!publication.writerLease.closed) {
+						return;
+					}
 				}
-				if (!publication.writerLease.closed) {
+				if (writerLease == null || writerLease.closed) {
+					writerLease = acquireWriterLease(owner);
+				} else if (writerLease.owner != owner) {
+					throw new SailException("LMDB sink cannot change writer ownership while a mutation is pending");
+				}
+				if (!asyncValueCleanup || asyncValueCleanupCoordinator == null) {
 					return;
 				}
-			}
-			if (writerLease == null || writerLease.closed) {
-				writerLease = acquireWriterLease(owner);
-			} else if (writerLease.owner != owner) {
-				throw new SailException("LMDB sink cannot change writer ownership while a mutation is pending");
+				synchronized (writerOwnerMonitor) {
+					if (asyncValueCleanupCoordinator.hasProducer(owner)) {
+						return;
+					}
+				}
+				// Another participant completed this source's previous stream between admission and acquisition.
+				// Release conflicting ownership before reserving a fresh stream; no mutation has started yet.
+				writerLease.close();
+				writerLease = null;
 			}
 		}
 
@@ -10302,6 +10608,8 @@ class LmdbSailStore implements SailStore {
 					synchronized (this) {
 						if (directWriterOwner != null) {
 							completeWriterRollback(directWriterOwner);
+						} else if (fixedWriterOwner != null) {
+							completeUnownedValueCleanupProducer(fixedWriterOwner);
 						}
 					}
 				}
@@ -11730,7 +12038,7 @@ class LmdbSailStore implements SailStore {
 						for (long id : quad) {
 							if (id != 0L && !ValueIds.isInlined(id)) {
 								// only add references, exclude inlined values
-								unusedIds.add(id);
+								mutationUnusedIds().add(id);
 							}
 						}
 					};

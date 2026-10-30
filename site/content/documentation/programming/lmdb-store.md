@@ -179,6 +179,104 @@ with both `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` and
    config:sail.experimentalQueryOptimizations true .
 ```
 
+## Dictionary value cleanup
+
+`asyncValueCleanup` is disabled by default. The default retains durable retirement recording: after removing
+statements, cleanup candidates can survive a restart. This is recoverable cleanup work, not a guarantee that a value
+can be reclaimed immediately. Readers and unresolved values may still pin dictionary records.
+
+Enable best-effort background cleanup before starting the repository:
+
+```java
+LmdbStoreConfig config = new LmdbStoreConfig()
+        .setAsyncValueCleanup(true)
+        .setAsyncValueCleanupMaxCandidates(65_536)
+        .setAsyncValueCleanupMaxBytes(8L * 1024 * 1024)
+        .setAsyncValueCleanupBatchSize(256)
+        .setAsyncValueCleanupMaxPendingProducers(8)
+        .setAsyncValueCleanupAdmissionTimeoutMillis(30_000)
+        .setAsyncValueCleanupShutdownTimeoutMillis(3_500);
+```
+
+This changes dictionary reclamation policy, not RDF transaction semantics or the dictionary format. Committed RDF
+remains correct if a crash loses pending cleanup candidates. Unused dictionary records may then remain on disk, and
+subsequent insertion of the same RDF values can reuse those records. Rollback discards candidates for unpublished work.
+The existing `NONE` behavior can publish checkpoints before the final commit or rollback; cleanup for those already
+published checkpoints remains eligible. Candidates become eligible only after successful statement publication;
+application commits do not reclaim them.
+
+The settings are captured at startup. `LmdbStore` also exposes matching setters, which reject changes while the store
+is initialized. Close and reopen the store to change modes or limits. Changes to a caller-held `LmdbStoreConfig` after
+initialization do not reconfigure the running cleanup worker.
+
+| Setting | Default | Constraint and meaning |
+| --- | ---: | --- |
+| `asyncValueCleanup` | `false` | Enables one background cleanup worker when `true`. |
+| `asyncValueCleanupMaxCandidates` | `65536` | At least 16; bounds retained candidate slots, including producer reservations and worker workspace. |
+| `asyncValueCleanupMaxBytes` | `8388608` | At least 4096; bounds estimated cleanup memory, including producer reservations and worker workspace. |
+| `asyncValueCleanupBatchSize` | `256` | Positive and no larger than the candidate limit; the worker may use a smaller batch to meet the memory bounds. |
+| `asyncValueCleanupMaxPendingProducers` | `8` | Positive upper bound on admitted or queued producer streams; memory limits may reduce effective concurrency. |
+| `asyncValueCleanupAdmissionTimeoutMillis` | `30000` | Positive interruptible timeout for waiting on cleanup producer capacity before publication; not a bound on complete transaction duration. |
+| `asyncValueCleanupShutdownTimeoutMillis` | `3500` | Positive best-effort budget for finishing cleanup and saving pending work; active native calls must still finish safely. |
+
+For RDF configuration, use the same LMDB predicates with either the current or legacy Sail configuration vocabulary:
+
+```turtle
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+
+[] lmdb:asyncValueCleanup true ;
+   lmdb:asyncValueCleanupMaxCandidates 65536 ;
+   lmdb:asyncValueCleanupMaxBytes 8388608 ;
+   lmdb:asyncValueCleanupBatchSize 256 ;
+   lmdb:asyncValueCleanupMaxPendingProducers 8 ;
+   lmdb:asyncValueCleanupAdmissionTimeoutMillis 30000 ;
+   lmdb:asyncValueCleanupShutdownTimeoutMillis 3500 .
+```
+
+Omitted properties preserve the defaults. Exports omit default-valued cleanup properties, so existing configurations
+with unchanged cleanup defaults retain their serialized form. A transaction larger than the queue uses bounded chunks
+and a temporary, non-durable candidate stream; it does not reserve its entire candidate count in memory. Spill-file disk
+usage can grow with the transaction's candidate count; the configured candidate and byte limits govern retained cleanup
+memory. Admission can fail or be interrupted before publication if capacity remains unavailable. A successful publication
+is not reported as rolled back because cleanup handoff later encounters backpressure.
+
+Waiting callers are bounded separately from admitted or queued producer streams. At most the effective producer limit
+may wait for admission; further callers fail before publication. Both limits can shrink to fit the candidate and byte
+bounds, and the estimated memory budget includes waiting-call bookkeeping.
+
+Transaction change sets that overflow memory use disposable LMDB stores. In async mode, these temporary stores keep
+their dictionary records until the entire temporary directory is closed and deleted. They do not create additional
+cleanup workers or consume cleanup producer capacity, and retained internal read views cannot prevent change-set writes.
+
+If `valueOverlayEnabled` is also enabled, asynchronous dictionary reclamation retires the current optional value overlay
+after a successful transaction. Metadata-only durable continuations do not require this invalidation. Existing leased
+views remain valid; subsequent lookups use LMDB until the overlay is explicitly rebuilt. This avoids copying large
+lexical values into overlay updates during bounded cleanup, but can change query lookup performance.
+
+A long-lived reader can indefinitely delay reclamation. Bounded memory therefore does not imply that writers always
+make progress: once producer capacity is exhausted, admission is subject to the configured timeout. Close read results
+and transactions promptly when sustained deletion pressure matters. The worker continues existing durable retirement
+work. Recursive dependency candidates are saved through the existing durable retirement mechanism inside the worker's
+maintenance transaction, atomically with the dependency-count updates, instead of waiting to enter its own cleanup queue.
+
+Lazy values retained outside a tracked read result also remain protected. If their pinned dictionary revisions would
+make cleanup accumulate revision history, the worker saves the affected root candidates through the existing durable
+retirement mechanism and defers reclamation until those protections are released. These fallback writes occur in worker
+maintenance transactions; if a lazy value keeps its protection for the lifetime of the open store, reclamation may wait
+until a later reopen.
+
+Unscoped raw Sail reads can expose lazy values in a way that makes the ValueStore itself retain their dictionary
+revision. Dropping the returned value or closing that raw Sail result does not guarantee that cleanup resumes: another
+revision transition followed by collection, or a reopen, may be needed. Scoped repository iteration avoids this promotion
+to a retained raw dictionary revision.
+
+The shutdown setting budgets cleanup and spooling, not the entire store shutdown. Shutdown stops new producer admission
+and new cleanup batches, wakes producer-capacity waiters, and tries to finish the current batch and save remaining
+candidates. If the worker is still using LMDB when the budget expires, shutdown reports an exception and retains both
+native environments and the store lock; retry shutdown after the worker finishes. Spooling is best effort and may be
+abandoned when its remaining budget expires. Saved candidates are revalidated on restart and are never treated as a
+complete durable retirement history when switching back to the default mode.
+
 ## Store formats and returning to an older release
 
 Existing format-2 repositories keep their format, inlining capabilities and RDF-term encodings when this code opens or
