@@ -40,6 +40,7 @@ import org.junit.rules.TemporaryFolder;
 public class RemoveAddTest {
 
 	private static SailRepository repository;
+	private static File temporaryRoot;
 
 	public static TemporaryFolder tempDir = new TemporaryFolder();
 	static List<Statement> statementList;
@@ -47,6 +48,7 @@ public class RemoveAddTest {
 	@BeforeAll
 	public static void beforeClass() throws IOException {
 		tempDir.create();
+		temporaryRoot = tempDir.getRoot();
 		File file = tempDir.newFolder();
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
@@ -55,11 +57,17 @@ public class RemoveAddTest {
 
 	@AfterAll
 	public static void afterClass() {
-		repository.shutDown();
-		tempDir.delete();
-		tempDir = null;
-		repository = null;
-		statementList = null;
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+			LmdbTestUtil.deleteDir(temporaryRoot);
+		} finally {
+			tempDir = null;
+			temporaryRoot = null;
+			repository = null;
+			statementList = null;
+		}
 	}
 
 	@Test

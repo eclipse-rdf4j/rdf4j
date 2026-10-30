@@ -60,78 +60,81 @@ public class LmdbStoreReindexTest {
 		IRI oldContext = vf.createIRI("http://example.org/oldContext");
 		IRI newContext = vf.createIRI("http://example.org/newContext");
 
-		Repository repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,psoc")));
+		Repository initial = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,psoc")));
 
-		try (RepositoryConnection conn = repo.getConnection()) {
-			// Step1: setup the initial database state
-			logger.info("Preserving initial state ...");
-			conn.begin();
-			RDFInserter inserter = new RDFInserter(conn) {
-				private int count;
+		try (var cleanup = LmdbTestUtil.onClose(initial::shutDown)) {
+			try (RepositoryConnection conn = initial.getConnection()) {
+				// Step1: setup the initial database state
+				logger.info("Preserving initial state ...");
+				conn.begin();
+				RDFInserter inserter = new RDFInserter(conn) {
+					private int count;
 
-				@Override
-				protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) {
-					super.addStatement(subj, pred, obj, ctxt);
-					if (count++ % 1000 == 0) {
-						con.commit();
-						con.begin();
+					@Override
+					protected void addStatement(Resource subj, IRI pred, Value obj, Resource ctxt) {
+						super.addStatement(subj, pred, obj, ctxt);
+						if (count++ % 1000 == 0) {
+							con.commit();
+							con.begin();
+						}
 					}
-				}
-			};
-			RDFLoader loader = new RDFLoader(conn.getParserConfig(), conn.getValueFactory());
-			loader.load(getClass().getResourceAsStream("/lmdbstore-testdata/SES-1867/initialState.nq"), "",
-					RDFFormat.NQUADS, inserter);
-			conn.commit();
-			logger.info("Number of statements: " + conn.size());
+				};
+				RDFLoader loader = new RDFLoader(conn.getParserConfig(), conn.getValueFactory());
+				loader.load(getClass().getResourceAsStream("/lmdbstore-testdata/SES-1867/initialState.nq"), "",
+						RDFFormat.NQUADS, inserter);
+				conn.commit();
+				logger.info("Number of statements: " + conn.size());
 
-			// Step 2: in a single transaction remove "oldContext", then add
-			// statements to "newContext"
-			conn.begin();
+				// Step 2: in a single transaction remove "oldContext", then add
+				// statements to "newContext"
+				conn.begin();
 
-			logger.info("Removing old context");
-			conn.remove((Resource) null, (IRI) null, (Value) null, oldContext);
+				logger.info("Removing old context");
+				conn.remove((Resource) null, (IRI) null, (Value) null, oldContext);
 
-			logger.info("Adding updated context");
-			conn.add(getClass().getResourceAsStream("/lmdbstore-testdata/SES-1867/newTriples.nt"), "",
-					RDFFormat.NTRIPLES,
-					newContext);
-			conn.commit();
+				logger.info("Adding updated context");
+				conn.add(getClass().getResourceAsStream("/lmdbstore-testdata/SES-1867/newTriples.nt"), "",
+						RDFFormat.NTRIPLES,
+						newContext);
+				conn.commit();
 
-			// Step 3: check whether oldContext is actually empty
-			List<Statement> stmts = Iterations.asList(conn.getStatements(null, null, null, false, oldContext));
-			logger.info("Not deleted statements: " + stmts.size());
+				// Step 3: check whether oldContext is actually empty
+				List<Statement> stmts = Iterations.asList(conn.getStatements(null, null, null, false, oldContext));
+				logger.info("Not deleted statements: " + stmts.size());
+			}
 		}
-		repo.shutDown();
 
 		// Step 4: check the repository size with SPOC only
 		// update index usage
 		LmdbStore spocStore = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
-		repo = new SailRepository(spocStore);
-		repo.init();
-		LmdbGcTestMaintenance.awaitPostReady(spocStore);
-		assertTrue(spocStore.awaitIndexRebuild(30, TimeUnit.SECONDS), spocStore.getStartupStatus().toString());
-
+		Repository spocRepository = new SailRepository(spocStore);
 		Model spocStatements;
-		try (RepositoryConnection conn = repo.getConnection()) {
-			logger.info("Repository size with SPOC index only: " + conn.size());
-			spocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
+		try (var cleanup = LmdbTestUtil.onClose(spocRepository::shutDown)) {
+			spocRepository.init();
+			LmdbGcTestMaintenance.awaitPostReady(spocStore);
+			assertTrue(spocStore.awaitIndexRebuild(30, TimeUnit.SECONDS), spocStore.getStartupStatus().toString());
+
+			try (RepositoryConnection conn = spocRepository.getConnection()) {
+				logger.info("Repository size with SPOC index only: " + conn.size());
+				spocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
+			}
 		}
-		repo.shutDown();
 
 		// Step 5: check the repository size with PSOC only
 		// update index usage
 		LmdbStore psocStore = new LmdbStore(dataDir, new LmdbStoreConfig("psoc"));
-		repo = new SailRepository(psocStore);
-		repo.init();
-		LmdbGcTestMaintenance.awaitPostReady(psocStore);
-		assertTrue(psocStore.awaitIndexRebuild(30, TimeUnit.SECONDS), psocStore.getStartupStatus().toString());
-
+		Repository psocRepository = new SailRepository(psocStore);
 		Model psocStatements;
-		try (RepositoryConnection conn = repo.getConnection()) {
-			logger.info("Repository size with PSOC index only: " + conn.size());
-			psocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
+		try (var cleanup = LmdbTestUtil.onClose(psocRepository::shutDown)) {
+			psocRepository.init();
+			LmdbGcTestMaintenance.awaitPostReady(psocStore);
+			assertTrue(psocStore.awaitIndexRebuild(30, TimeUnit.SECONDS), psocStore.getStartupStatus().toString());
+
+			try (RepositoryConnection conn = psocRepository.getConnection()) {
+				logger.info("Repository size with PSOC index only: " + conn.size());
+				psocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
+			}
 		}
-		repo.shutDown();
 
 		// Step 6: computing the differences of the contents of the indices
 		logger.info("Computing differences of sets...");

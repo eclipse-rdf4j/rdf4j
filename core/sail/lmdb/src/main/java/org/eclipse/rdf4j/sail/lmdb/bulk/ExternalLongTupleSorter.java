@@ -34,7 +34,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -557,7 +556,6 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 			snapshot.close();
 			throw failure;
 		}
-		CountDownLatch exited = new CountDownLatch(1);
 		Future<Path> future;
 		try {
 			future = scheduler.submitOrRunInline(lease, () -> {
@@ -578,14 +576,8 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 					}
 					throw failure;
 				}
-			}, () -> {
-				try {
-					snapshot.close();
-				} finally {
-					exited.countDown();
-				}
-			});
-			pendingSpills.add(new PendingSpill(run, future, exited));
+			}, snapshot::close);
+			pendingSpills.add(new PendingSpill(run, future));
 			bufferedRows = 0;
 		} catch (RuntimeException | Error failure) {
 			lease.close();
@@ -642,7 +634,9 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 	private void awaitOldestSpill() throws IOException {
 		PendingSpill pending = pendingSpills.removeFirst();
 		try {
-			runs.add(pending.future().get());
+			Path run = pending.future().get();
+			scheduler.awaitTaskCleanup(pending.future());
+			runs.add(run);
 		} catch (InterruptedException e) {
 			pending.future().cancel(true);
 			InterruptedIOException interrupted = new InterruptedIOException("interrupted while joining tuple spills");
@@ -717,7 +711,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		boolean interrupted = false;
 		while (true) {
 			try {
-				pending.exited().await();
+				scheduler.awaitTaskCleanup(pending.future());
 				return interrupted;
 			} catch (InterruptedException e) {
 				interrupted = true;
@@ -1158,7 +1152,7 @@ final class ExternalLongTupleSorter implements AutoCloseable {
 		void delete(Path path) throws IOException;
 	}
 
-	private record PendingSpill(Path output, Future<Path> future, CountDownLatch exited) {
+	private record PendingSpill(Path output, Future<Path> future) {
 	}
 
 	private static final class RunSnapshot implements AutoCloseable {

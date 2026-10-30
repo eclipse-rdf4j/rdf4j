@@ -32,7 +32,7 @@ jobs:
     - name: Build
       run: mvn -B -U clean install --fail-at-end -Pquick,\!formatting
     - name: Verify
-      run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B --fail-at-end install -P-skipSlowTests -Dmaven.javadoc.skip=true
+      run: exec mvn -B --fail-at-end install -P-skipSlowTests -Dmaven.javadoc.skip=true
     - name: Publish Test Report
       if: failure()
       uses: ScalableCapital/action-surefire-report@v2.0.5
