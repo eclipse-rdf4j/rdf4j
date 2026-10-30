@@ -1510,8 +1510,27 @@ class AdaptiveReplayIntegrationTest {
 		PairedStores(File directory, LmdbStoreConfig config) throws IOException {
 			values = new FaultyValueStore(new File(directory, "values"), config);
 			triplesDirectory = new File(directory, "triples");
-			triples = new FaultyTripleStore(triplesDirectory, new StoreProperties(triplesDirectory), config, values);
-			triples.initializeNamespaceSnapshot(Map.of());
+			FaultyTripleStore openedTriples = null;
+			try {
+				openedTriples = new FaultyTripleStore(triplesDirectory, new StoreProperties(triplesDirectory), config,
+						values);
+				openedTriples.initializeNamespaceSnapshot(Map.of());
+				triples = openedTriples;
+			} catch (IOException | RuntimeException | Error failure) {
+				if (openedTriples != null) {
+					try {
+						openedTriples.close();
+					} catch (Throwable cleanupFailure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+				}
+				try {
+					values.close();
+				} catch (Throwable cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
+			}
 		}
 
 		void warm() throws IOException {
