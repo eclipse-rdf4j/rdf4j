@@ -1028,6 +1028,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private long lastTrustedNativeTransactionId = -1L;
 	private long closingTripleTransactionId = -1L;
 	private boolean cleanCloseInvalidated;
+	private boolean durableCleanupCloseRequested;
+	private long durableCleanupClosedTransactionId = -1L;
 	private long bulkMaximumDataBytes;
 	private long bulkMaximumNamespaceBytes;
 	private long bulkMaximumIriBytes;
@@ -3003,6 +3005,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		lastTrustedNativeTransactionId = -1L;
 		closingTripleTransactionId = -1L;
 		cleanCloseInvalidated = false;
+		durableCleanupCloseRequested = false;
+		durableCleanupClosedTransactionId = -1L;
 		startupExpectedLastTransactionId = -1L;
 		startupInitializationInProgress = false;
 		boolean nativeGenerationExists = new File(dir, "data.mdb").exists();
@@ -14892,6 +14896,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (closeInProgress) {
 					throw new IOException("Cannot clear ValueStore during shutdown");
 				}
+				// Clear destroys the generation: neither a pending request nor a prior close certificate survives.
+				durableCleanupCloseRequested = false;
+				durableCleanupClosedTransactionId = -1L;
 				if (!closeUnderMonitor()) {
 					continue;
 				}
@@ -14956,6 +14963,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		closingTripleTransactionId = tripleTransactionId;
 	}
 
+	/** Requests a forced final native flush solely for optional cleanup-spool recovery authority. */
+	synchronized void requestDurableCleanupClose() {
+		durableCleanupCloseRequested = true;
+		durableCleanupClosedTransactionId = -1L;
+	}
+
+	/** Exact final native transaction certified durable by a successful requested close; otherwise unknown. */
+	synchronized long durableCleanupClosedTransactionId() {
+		return durableCleanupClosedTransactionId;
+	}
+
 	void invalidateCleanCloseAfterUnknownTripleWriter() {
 		closingTripleTransactionId = -1L;
 		cleanCloseInvalidated = true;
@@ -14967,15 +14985,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				: -1L;
 	}
 
-	private void writeCleanRefCountMarker() {
+	private long writeCleanRefCountMarker() {
 		if (bulkCompletionSynced || cleanCloseInvalidated) {
-			return;
+			return -1L;
 		}
 		if (!valueStoreInitializationComplete || !auxiliaryDatabasesInitialized
 				|| !refCountIntegrityEstablished
 				|| refCountRecoveryRequired
 				|| refCountRecoveryInProgress || writeTxn != 0 || lastTrustedNativeTransactionId < 0L) {
-			return;
+			return -1L;
 		}
 		try {
 			writeTransaction((stack, txn) -> {
@@ -14995,6 +15013,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				writeRefCountMarker(stack, txn, REFCOUNT_MARKER_CLEAN);
 				return null;
 			});
+			return trustedClosedTransactionId();
 		} catch (IOException | RuntimeException markerFailure) {
 			// A failed final marker is conservative: the next open remains UNKNOWN until explicit reconstruction.
 			// Preserve normal close/error
@@ -15003,6 +15022,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			logger.warn("Could not persist clean ValueStore ref-count marker; explicit reconstruction is required",
 					markerFailure);
 		}
+		return -1L;
 	}
 
 	private void writeRefCountMarker(MemoryStack stack, long txn, byte state) throws IOException {
@@ -15102,7 +15122,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			beginValueLookupMutation();
 			awaitAndStopValueOverlayWarmup();
-			writeCleanRefCountMarker();
+			durableCleanupClosedTransactionId = -1L;
+			long cleanMarkerTransactionId = writeCleanRefCountMarker();
+			long durableClosedTransactionId = -1L;
 			Throwable failure = null;
 			for (ValueResolutionScope scope : valueResolutionScopes) {
 				try {
@@ -15172,8 +15194,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
 				if (nativeQuiesced && env != 0) {
 					long environment = env;
+					long durableTransactionId = -1L;
+					try {
+						if (failure == null) {
+							durableTransactionId = syncDurableCleanupClose(cleanMarkerTransactionId);
+						}
+					} catch (Throwable syncFailure) {
+						failure = appendFailure(failure, syncFailure);
+					}
 					try {
 						closeEnvironment(environment);
+						durableClosedTransactionId = durableTransactionId;
 					} catch (Throwable closeFailure) {
 						failure = appendFailure(failure, closeFailure);
 					} finally {
@@ -15198,9 +15229,31 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 			rethrowFailure(failure);
+			durableCleanupClosedTransactionId = durableClosedTransactionId;
 			return true;
 		} finally {
 			closeInProgress = false;
+		}
+	}
+
+	/** Called under the final close barrier, after every possible native write and before freeing the environment. */
+	private long syncDurableCleanupClose(long cleanMarkerTransactionId) {
+		if (!durableCleanupCloseRequested || cleanCloseInvalidated || closingTripleTransactionId < 0L
+				|| cleanMarkerTransactionId < 0L || cleanMarkerTransactionId != trustedClosedTransactionId()) {
+			return -1L;
+		}
+		try {
+			if (lastTransactionId() != cleanMarkerTransactionId) {
+				return -1L;
+			}
+			syncEnvironment();
+			// The barrier excludes owned writers; an unowned native writer must never gain replay authority.
+			return lastTransactionId() == cleanMarkerTransactionId ? cleanMarkerTransactionId : -1L;
+		} catch (IOException | RuntimeException syncFailure) {
+			// Recovery hints are optional. A failed durability fence must not prevent native resource cleanup.
+			logger.warn("Could not durably close ValueStore for cleanup recovery; discarding cleanup spool",
+					syncFailure);
+			return -1L;
 		}
 	}
 

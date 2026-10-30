@@ -18,6 +18,7 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
+import java.nio.channels.Channels;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
@@ -38,6 +39,7 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.LongSupplier;
 import java.util.zip.CRC32C;
 import java.util.zip.CheckedInputStream;
 import java.util.zip.CheckedOutputStream;
@@ -63,7 +65,9 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 
 	private static final Logger logger = LoggerFactory.getLogger(AsyncValueRetirementCoordinator.class);
 	private static final int MAGIC = 0x52474331; // RGC1
-	private static final int VERSION = 1;
+	// Version two certifies that the exact final native state was forced before publishing authority.
+	// Version one only checked a transaction number, which could be reused after a NOSYNC power loss.
+	private static final int VERSION = 2;
 	private static final int WORKER_CANDIDATE_SLOTS = 14;
 	/** Roots, three dependency continuations, ref-count cache, retired IDs, bounded liveness and legacy key lists. */
 	private static final int WORKER_BYTES_PER_CANDIDATE = 960;
@@ -132,6 +136,32 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	private long shutdownDeadline;
 	private boolean shutdownJoinFailed;
 	private List<SpoolEntry> shutdownSpool;
+	private LongSupplier spoolTime = System::nanoTime;
+	private SpoolObserver spoolObserver = (event, path) -> {
+	};
+
+	enum SpoolEvent {
+		DATA_FORCE,
+		DATA_FORCED,
+		MANIFEST_FORCE,
+		MANIFEST_FORCED,
+		MANIFEST_MOVE,
+		MANIFEST_PUBLISHED,
+		DIRECTORY_FORCE
+	}
+
+	@FunctionalInterface
+	interface SpoolObserver {
+		void observe(SpoolEvent event, Path path) throws IOException;
+	}
+
+	void spoolObserverForTest(SpoolObserver observer) {
+		spoolObserver = observer;
+	}
+
+	void spoolTimeForTest(LongSupplier time) {
+		spoolTime = time;
+	}
 
 	AsyncValueRetirementCoordinator(Path dataDirectory, LmdbStoreConfig config, ValueStore values,
 			Processor processor) throws IOException {
@@ -167,6 +197,13 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 
 	static boolean hasSpool(Path dataDirectory) {
 		return Files.isRegularFile(dataDirectory.resolve(DIRECTORY).resolve(MANIFEST));
+	}
+
+	/** Disabled mode still owns crash leftovers, but needs neither a coordinator nor a worker to discard them. */
+	static void removeUnpublishedSpool(Path dataDirectory) {
+		if (!hasSpool(dataDirectory)) {
+			removeOrphans(dataDirectory.resolve(DIRECTORY), null);
+		}
 	}
 
 	int batchSize() {
@@ -574,10 +611,9 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		}
 		for (Candidates candidates : pending) {
 			if (candidates.committedCount > 0 && storeIdentity != null
-					&& System.nanoTime() < shutdownDeadline && candidates.guard.isCurrent()) {
+					&& spoolTime.getAsLong() < shutdownDeadline && candidates.guard.isCurrent()) {
 				try {
 					candidates.spoolCommittedPrefix();
-					candidates.closeOutput();
 					shutdownSpool.add(new SpoolEntry(candidates.file.getFileName().toString(),
 							candidates.committedCount, candidates.committedChecksum));
 					candidates.guard.close();
@@ -601,19 +637,26 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		}
 	}
 
-	/** The clean-close marker is a native transaction: bind the spool to the actual final ID, never an assumed +1. */
+	/** Starting new spool I/O is budgeted; a blocking force or native close cannot have a hard elapsed-time bound. */
+	boolean hasPreparedSpool() {
+		return shutdownSpool != null && !shutdownSpool.isEmpty() && spoolTime.getAsLong() < shutdownDeadline;
+	}
+
+	/** Only the certified, forced final native transaction may authorize version-two replay. */
 	void finishSpool(long finalTransactionId) {
+		boolean published = false;
+		Path temporary = directory.resolve("pending.tmp");
 		try {
-			if (shutdownSpool == null || shutdownSpool.isEmpty() || finalTransactionId < 0 || storeIdentity == null
-					|| System.nanoTime() >= shutdownDeadline) {
+			if (!hasPreparedSpool() || finalTransactionId < 0 || storeIdentity == null) {
 				Files.deleteIfExists(directory.resolve(MANIFEST));
 				return;
 			}
 			Files.createDirectories(directory);
-			Path temporary = directory.resolve("pending.tmp");
 			CRC32C checksum = new CRC32C();
-			try (DataOutputStream output = new DataOutputStream(new CheckedOutputStream(new BufferedOutputStream(
-					Files.newOutputStream(temporary), MANIFEST_BUFFER_BYTES), checksum))) {
+			try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.CREATE,
+					StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+					DataOutputStream output = new DataOutputStream(new CheckedOutputStream(new BufferedOutputStream(
+							Channels.newOutputStream(channel), MANIFEST_BUFFER_BYTES), checksum))) {
 				output.writeInt(MAGIC);
 				output.writeInt(VERSION);
 				output.writeInt(storeIdentity.length);
@@ -621,24 +664,38 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				output.writeLong(finalTransactionId);
 				output.writeInt(shutdownSpool.size());
 				for (SpoolEntry entry : shutdownSpool) {
-					if (System.nanoTime() >= shutdownDeadline) {
-						throw new IOException("Cleanup spool budget expired; unpublished work remains best effort");
-					}
 					output.writeUTF(entry.name());
 					output.writeLong(entry.count());
 					output.writeInt(entry.checksum());
 				}
 				output.writeInt((int) checksum.getValue());
+				output.flush();
+				spoolObserver.observe(SpoolEvent.MANIFEST_FORCE, temporary);
+				channel.force(true);
+				spoolObserver.observe(SpoolEvent.MANIFEST_FORCED, temporary);
 			}
+			spoolObserver.observe(SpoolEvent.MANIFEST_MOVE, temporary);
 			Files.move(temporary, directory.resolve(MANIFEST), StandardCopyOption.ATOMIC_MOVE,
 					StandardCopyOption.REPLACE_EXISTING);
+			// Ownership transfers at rename, not at directory sync. A failed sync must never delete published streams.
+			published = true;
+			spoolObserver.observe(SpoolEvent.MANIFEST_PUBLISHED, directory.resolve(MANIFEST));
+			forceDirectory(directory);
+			// The spool directory itself may have been created during this close.
+			forceDirectory(directory.getParent());
 		} catch (AtomicMoveNotSupportedException unsupported) {
 			logger.warn("Atomic cleanup spool publication is unavailable; cleanup work remains best effort",
 					unsupported);
 		} catch (IOException failure) {
-			logger.warn("Unable to publish best-effort LMDB cleanup spool; dictionary records remain reusable",
+			logger.warn("Unable to complete best-effort LMDB cleanup spool publication; published hints remain owned",
 					failure);
 		} finally {
+			if (!published && shutdownSpool != null) {
+				for (SpoolEntry entry : shutdownSpool) {
+					deleteObsoleteFile(directory.resolve(entry.name()));
+				}
+			}
+			deleteObsoleteFile(temporary);
 			shutdownSpool = null;
 			lock.lock();
 			try {
@@ -649,62 +706,57 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		}
 	}
 
+	private void forceDirectory(Path path) {
+		try {
+			spoolObserver.observe(SpoolEvent.DIRECTORY_FORCE, path);
+			try (FileChannel channel = FileChannel.open(path, StandardOpenOption.READ)) {
+				channel.force(true);
+			}
+		} catch (IOException | UnsupportedOperationException unsupported) {
+			logger.warn(
+					"Cleanup spool published, but directory sync is unavailable for {}; crash durability is best effort",
+					path, unsupported);
+		}
+	}
+
 	private record SpoolEntry(String name, long count, int checksum) {
 	}
 
 	private void recover() throws IOException {
 		Path manifest = directory.resolve(MANIFEST);
 		if (!Files.exists(manifest)) {
-			removeOrphans(null);
+			removeOrphans(directory, null);
 			return;
 		}
 		Candidates merged = null;
 		Path retained = null;
 		try {
-			long length = Files.size(manifest);
-			if (length < MANIFEST_HEADER_BYTES) {
-				throw new IOException("Invalid cleanup manifest size");
-			}
-			CRC32C checksum = new CRC32C();
-			try (DataInputStream input = new DataInputStream(new CheckedInputStream(new BufferedInputStream(
-					Files.newInputStream(manifest), MANIFEST_BUFFER_BYTES), checksum))) {
-				if (input.readInt() != MAGIC || input.readInt() != VERSION || input.readInt() != 16) {
-					throw new IOException("Unsupported cleanup manifest");
-				}
-				if (!Arrays.equals(input.readNBytes(16), storeIdentity)
-						|| input.readLong() != values.cleanupStartupTransactionId()) {
-					throw new IOException("Stale cleanup spool belongs to another native store state");
-				}
-				int entries = input.readInt();
-				if (entries < 0 || length != MANIFEST_HEADER_BYTES + (long) MANIFEST_ENTRY_BYTES * entries) {
-					throw new IOException("Invalid cleanup manifest entry count");
-				}
-				merged = new Candidates(values.reserveCleanupIdentity(), false);
-				merged.file = directory.resolve(UUID.randomUUID() + ".ids");
-				ByteBuffer buffer = ByteBuffer.allocate(batchSize * Long.BYTES);
-				// Merge with bounded memory even if the old configuration admitted far more producers. Repeated
-				// stream entries become ordinary duplicate IDs; no shared file is deleted before replay completes.
-				try (FileChannel output = FileChannel.open(merged.file, StandardOpenOption.CREATE_NEW,
-						StandardOpenOption.WRITE)) {
-					for (int i = 0; i < entries; i++) {
-						int nameLength = input.readUnsignedShort();
-						if (nameLength != STREAM_NAME_BYTES) {
-							throw new IOException("Invalid cleanup stream name length");
-						}
-						String name = new String(input.readNBytes(nameLength), StandardCharsets.US_ASCII);
-						long count = input.readLong();
-						int expected = input.readInt();
-						if (!isStreamName(name) || count <= 0 || count > Long.MAX_VALUE / Long.BYTES
-								|| merged.count > Long.MAX_VALUE / Long.BYTES - count) {
-							throw new IOException("Invalid cleanup stream entry");
-						}
-						copyValidatedStream(directory.resolve(name), count, expected, merged, output, buffer);
+			// Validate all metadata and its native authority before using any stream entry. Two streaming passes
+			// avoid allocating a list proportional to an older configuration's producer count.
+			readManifest(manifest, null);
+			merged = new Candidates(values.reserveCleanupIdentity(), false);
+			merged.file = directory.resolve(UUID.randomUUID() + ".ids");
+			ByteBuffer buffer = ByteBuffer.allocate(batchSize * Long.BYTES);
+			Candidates target = merged;
+			try (FileChannel output = FileChannel.open(merged.file, StandardOpenOption.CREATE_NEW,
+					StandardOpenOption.WRITE)) {
+				readManifest(manifest, entry -> {
+					long position = output.position();
+					long count = target.count;
+					int checksum = target.checksum;
+					try {
+						copyValidatedStream(directory.resolve(entry.name()), entry.count(), entry.checksum(), target,
+								output, buffer);
+					} catch (IOException invalidStream) {
+						// A partial copy must not contaminate a healthy sibling's data or rolling checksum.
+						output.truncate(position);
+						output.position(position);
+						target.count = count;
+						target.checksum = checksum;
+						logger.warn("Ignoring invalid best-effort LMDB cleanup stream {}: {}", entry.name(),
+								invalidStream.getMessage());
 					}
-				}
-				int expected = (int) checksum.getValue();
-				if (input.readInt() != expected || input.read() != -1) {
-					throw new IOException("Cleanup manifest checksum mismatch or trailing data");
-				}
+				});
 			}
 			if (merged.count != 0L) {
 				merged.committedCount = merged.count;
@@ -729,7 +781,58 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				logger.warn("Cannot remove consumed cleanup manifest; its native transaction fence remains in force",
 						failure);
 			}
-			removeOrphans(retained);
+			removeOrphans(directory, retained);
+		}
+	}
+
+	@FunctionalInterface
+	private interface SpoolEntryConsumer {
+		void accept(SpoolEntry entry) throws IOException;
+	}
+
+	private void readManifest(Path manifest, SpoolEntryConsumer consumer) throws IOException {
+		long length = Files.size(manifest);
+		if (length < MANIFEST_HEADER_BYTES) {
+			throw new IOException("Invalid cleanup manifest size");
+		}
+		CRC32C checksum = new CRC32C();
+		try (DataInputStream input = new DataInputStream(new CheckedInputStream(new BufferedInputStream(
+				Files.newInputStream(manifest), MANIFEST_BUFFER_BYTES), checksum))) {
+			if (input.readInt() != MAGIC || input.readInt() != VERSION || input.readInt() != 16) {
+				throw new IOException("Unsupported cleanup manifest");
+			}
+			byte[] identity = input.readNBytes(16);
+			long transactionId = input.readLong();
+			if (!Arrays.equals(identity, storeIdentity) || transactionId < 0
+					|| transactionId != values.cleanupStartupTransactionId()) {
+				throw new IOException("Stale cleanup spool belongs to another native store state");
+			}
+			int entries = input.readInt();
+			if (entries < 0 || length != MANIFEST_HEADER_BYTES + (long) MANIFEST_ENTRY_BYTES * entries) {
+				throw new IOException("Invalid cleanup manifest entry count");
+			}
+			long total = 0;
+			for (int i = 0; i < entries; i++) {
+				int nameLength = input.readUnsignedShort();
+				if (nameLength != STREAM_NAME_BYTES) {
+					throw new IOException("Invalid cleanup stream name length");
+				}
+				String name = new String(input.readNBytes(nameLength), StandardCharsets.US_ASCII);
+				long count = input.readLong();
+				int expected = input.readInt();
+				if (!isStreamName(name) || count <= 0 || count > Long.MAX_VALUE / Long.BYTES
+						|| total > Long.MAX_VALUE / Long.BYTES - count) {
+					throw new IOException("Invalid cleanup stream entry");
+				}
+				total += count;
+				if (consumer != null) {
+					consumer.accept(new SpoolEntry(name, count, expected));
+				}
+			}
+			int expected = (int) checksum.getValue();
+			if (input.readInt() != expected || input.read() != -1) {
+				throw new IOException("Cleanup manifest checksum mismatch or trailing data");
+			}
 		}
 	}
 
@@ -769,7 +872,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	}
 
 	/** Files without a validated manifest are crash leftovers, never authority to delete a dictionary record. */
-	private void removeOrphans(Path retained) {
+	private static void removeOrphans(Path directory, Path retained) {
 		if (!Files.isDirectory(directory)) {
 			return;
 		}
@@ -777,11 +880,19 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 			for (Path file : files) {
 				String name = file.getFileName().toString();
 				if (!file.equals(retained) && (isStreamName(name) || name.equals("pending.tmp"))) {
-					Files.deleteIfExists(file);
+					deleteObsoleteFile(file);
 				}
 			}
 		} catch (IOException failure) {
 			logger.warn("Unable to remove obsolete best-effort cleanup files", failure);
+		}
+	}
+
+	private static void deleteObsoleteFile(Path file) {
+		try {
+			Files.deleteIfExists(file);
+		} catch (IOException failure) {
+			logger.warn("Unable to remove obsolete cleanup file {}; a later startup will retry", file, failure);
 		}
 	}
 
@@ -888,6 +999,16 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				buffer.position(Math.toIntExact(committedCount * Long.BYTES));
 				flush();
 			}
+			if (output == null) {
+				output = FileChannel.open(file, StandardOpenOption.WRITE);
+			}
+			output.truncate(committedCount * Long.BYTES);
+			spoolObserver.observe(SpoolEvent.DATA_FORCE, file);
+			output.force(true);
+			spoolObserver.observe(SpoolEvent.DATA_FORCED, file);
+			// Unlike disposal's warning-only close, failure here excludes this stream from publication.
+			output.close();
+			output = null;
 		}
 
 		private void flush() throws IOException {

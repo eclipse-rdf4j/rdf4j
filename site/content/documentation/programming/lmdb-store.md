@@ -274,8 +274,17 @@ The shutdown setting budgets cleanup and spooling, not the entire store shutdown
 and new cleanup batches, wakes producer-capacity waiters, and tries to finish the current batch and save remaining
 candidates. If the worker is still using LMDB when the budget expires, shutdown reports an exception and retains both
 native environments and the store lock; retry shutdown after the worker finishes. Spooling is best effort and may be
-abandoned when its remaining budget expires. Saved candidates are revalidated on restart and are never treated as a
-complete durable retirement history when switching back to the default mode.
+abandoned when its remaining budget expires. The budget stops new spool work; filesystem writes, forced synchronization,
+and native calls already in progress may take longer. Completed candidate streams and their manifest are forced before
+atomic publication. Publishing also forces the paired native store state, including the final value-store close marker,
+even when `forceSync` is disabled. Directory synchronization is attempted where supported; cleanup hints are still best
+effort rather than a complete durable retirement history.
+
+Recovery requires a valid version-two manifest, the exact store identity and the exact certified native transaction.
+Older version-one manifests, stale manifests and bare crash-leftover streams are discarded, never guessed into replay
+authority. A missing or corrupt stream does not discard independently validated healthy siblings. Startup removes owned
+orphan files even when async cleanup is disabled; failed deletions are retried on a later open. This changes no dictionary
+format and does not promise recovery from corruption of the native databases themselves.
 
 ## Store formats and returning to an older release
 

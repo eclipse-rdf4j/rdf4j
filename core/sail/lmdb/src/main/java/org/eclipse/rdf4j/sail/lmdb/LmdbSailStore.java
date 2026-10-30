@@ -6842,6 +6842,7 @@ class LmdbSailStore implements SailStore {
 					&& tripleStore.isEmpty() && valueStore.canStartFreshValueSession();
 			// Installation is bounded. Durable queues are retained until post-ready maintenance can prove liveness.
 			valueStore.completeStoreInitialization(tripleStore::filterUsedIdsBounded);
+			AsyncValueRetirementCoordinator.removeUnpublishedSpool(dataDir.toPath());
 			boolean disposableCleanup = asyncValueCleanup && temporaryOverflow;
 			retirementCoordinator = disposableCleanup ? new ValueRetirementCoordinator.Disposable()
 					: new ValueRetirementCoordinator.Durable(valueStore);
@@ -8710,7 +8711,17 @@ class LmdbSailStore implements SailStore {
 			}
 			if (failure == null && valueStore != null && tripleStore != null && tripleStore.tracksNativeOwnership()) {
 				try {
+					boolean durableSpool = asyncValueCleanupCoordinator != null
+							&& asyncValueCleanupCoordinator.hasPreparedSpool();
+					if (durableSpool) {
+						// The value close marker certifies this paired triple state. Force it first even in NOSYNC
+						// mode.
+						tripleStore.syncEnvironment();
+					}
 					valueStore.prepareCleanClose(tripleStore.trustedTransactionId());
+					if (durableSpool) {
+						valueStore.requestDurableCleanupClose();
+					}
 				} catch (IOException unknownWriter) {
 					valueStore.invalidateCleanCloseAfterUnknownTripleWriter();
 					logger.warn("Cannot certify clean native state before close", unknownWriter);
@@ -8726,7 +8737,7 @@ class LmdbSailStore implements SailStore {
 				failure = attemptClose(failure, valueStore::close);
 				if (asyncValueCleanupCoordinator != null) {
 					asyncValueCleanupCoordinator.finishSpool(failure == null
-							? valueStore.trustedClosedTransactionId()
+							? valueStore.durableCleanupClosedTransactionId()
 							: -1L);
 				}
 			}

@@ -67,6 +67,27 @@ class LmdbAsyncValueCleanupIntegrationTest {
 	private static final Literal OBJECT = VF.createLiteral("persistent dictionary value for asynchronous reclamation");
 
 	@Test
+	void disabledStartupRemovesCrashLeftoversWithoutStartingCleanup(@TempDir Path directory) throws Exception {
+		ObservedStore seed = new ObservedStore(directory.toFile(), configuration(false));
+		seed.init();
+		seed.shutDown();
+		Path spool = Files.createDirectories(directory.resolve("async-value-cleanup"));
+		Path orphan = Files.write(spool.resolve("00000000-0000-0000-0000-000000000001.ids"), new byte[] { 1 });
+		Path temporary = Files.write(spool.resolve("pending.tmp"), new byte[] { 2 });
+		Path unrelated = Files.writeString(spool.resolve("user.ids"), "keep me");
+		ObservedStore store = new ObservedStore(directory.toFile(), configuration(false));
+		store.init();
+		try {
+			assertFalse(Files.exists(orphan));
+			assertFalse(Files.exists(temporary));
+			assertEquals("keep me", Files.readString(unrelated));
+			assertNull(store.getBackingStore().asyncValueCleanupCoordinator());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void directSinkReacquiresProducerWhenAnOlderParticipantCompletesAfterItsAdmission(@TempDir File directory)
 			throws Exception {
 		ObservedStore store = new ObservedStore(directory,

@@ -25,6 +25,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -50,6 +52,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /** Deterministic ownership, bounds and restart tests around a real dictionary incarnation. */
@@ -531,6 +534,177 @@ class AsyncValueRetirementCoordinatorTest {
 	}
 
 	@Test
+	void legacyManifestWithoutDurableNativeFenceIsRejected() throws Exception {
+		writeSpool(1, 3);
+		byte[] metadata = Files.readAllBytes(manifest(directory));
+		ByteBuffer.wrap(metadata).putInt(4, 1);
+		writeManifestChecksum(metadata);
+		Files.write(manifest(directory), metadata);
+		List<Long> processed = new CopyOnWriteArrayList<>();
+		try (Fixture reopened = new Fixture(directory, smallestConfig(), collecting(processed))) {
+			reopened.cleanup.start();
+			assertTrue(reopened.cleanup.awaitEmpty(10, TimeUnit.SECONDS));
+			assertTrue(processed.isEmpty(), "version one never certified native durability");
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = AsyncValueRetirementCoordinator.SpoolEvent.class, names = { "DATA_FORCED", "MANIFEST_FORCED",
+			"MANIFEST_MOVE", "MANIFEST_PUBLISHED" })
+	void processCrashAtSpoolBoundaryNeverReplaysUnpublishedFiles(
+			AsyncValueRetirementCoordinator.SpoolEvent phase) throws Exception {
+		Path log = directory.resolve("crash-child.log");
+		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+				"-Xmx256m", "-cp", System.getProperty("java.class.path"), SpoolCrashChild.class.getName(),
+				directory.toString(), phase.name()).redirectErrorStream(true).redirectOutput(log.toFile()).start();
+		try {
+			assertTrue(child.waitFor(30, TimeUnit.SECONDS), "crash fixture must reach its deterministic halt point");
+			assertEquals(77, child.exitValue(), Files.readString(log));
+		} finally {
+			if (child.isAlive()) {
+				child.destroyForcibly().waitFor(10, TimeUnit.SECONDS);
+			}
+		}
+		List<Long> processed = new CopyOnWriteArrayList<>();
+		try (Fixture reopened = new Fixture(directory, smallestConfig(), collecting(processed))) {
+			reopened.cleanup.start();
+			assertTrue(reopened.cleanup.awaitEmpty(10, TimeUnit.SECONDS));
+			assertEquals(phase == AsyncValueRetirementCoordinator.SpoolEvent.MANIFEST_PUBLISHED
+					? range(1, 3)
+					: List.of(), processed);
+			assertTrue(streamFiles(directory).isEmpty());
+			assertFalse(Files.exists(cleanupDirectory(directory).resolve("pending.tmp")));
+		}
+	}
+
+	public static final class SpoolCrashChild {
+		public static void main(String[] args) throws Exception {
+			Fixture fixture = new Fixture(Path.of(args[0]), config(), collecting(new ArrayList<>()));
+			publish(fixture.cleanup, 1, 3);
+			fixture.cleanup.spoolObserverForTest((event, file) -> {
+				if (event.name().equals(args[1])) {
+					Runtime.getRuntime().halt(77);
+				}
+			});
+			fixture.closeWithSpool();
+			throw new AssertionError("Crash phase was not reached: " + args[1]);
+		}
+	}
+
+	@Test
+	void budgetExpiryAfterPreparationDisposesUnpublishedStreams() throws Exception {
+		try (Fixture fixture = new Fixture(directory, config(), collecting(new ArrayList<>()))) {
+			publish(fixture.cleanup, 1, 3);
+			fixture.cleanup.spoolObserverForTest((event, file) -> {
+				if (event == AsyncValueRetirementCoordinator.SpoolEvent.DATA_FORCED) {
+					fixture.cleanup.spoolTimeForTest(() -> Long.MAX_VALUE);
+				}
+			});
+			fixture.closeWithSpool();
+			assertFalse(Files.exists(manifest(directory)));
+			assertTrue(streamFiles(directory).isEmpty());
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(AsyncValueRetirementCoordinator.SpoolEvent.class)
+	void spoolIoFailuresPreserveOnlyPublishedOrIndependentlyForcedWork(
+			AsyncValueRetirementCoordinator.SpoolEvent failurePoint) throws Exception {
+		AtomicBoolean failOnce = new AtomicBoolean(true);
+		try (Fixture fixture = new Fixture(directory, config(), collecting(new ArrayList<>()))) {
+			publish(fixture.cleanup, 1, 3);
+			publish(fixture.cleanup, 10, 3);
+			fixture.cleanup.spoolObserverForTest((event, file) -> {
+				if (event == failurePoint && failOnce.getAndSet(false)) {
+					if (event == AsyncValueRetirementCoordinator.SpoolEvent.MANIFEST_MOVE) {
+						throw new AtomicMoveNotSupportedException(file.toString(), "pending.rgc",
+								"injected unsupported atomic publication");
+					}
+					throw new IOException("injected " + event);
+				}
+			});
+			fixture.closeWithSpool();
+		}
+		boolean streamFailure = failurePoint == AsyncValueRetirementCoordinator.SpoolEvent.DATA_FORCE
+				|| failurePoint == AsyncValueRetirementCoordinator.SpoolEvent.DATA_FORCED;
+		boolean published = failurePoint == AsyncValueRetirementCoordinator.SpoolEvent.MANIFEST_PUBLISHED
+				|| failurePoint == AsyncValueRetirementCoordinator.SpoolEvent.DIRECTORY_FORCE;
+		assertEquals(streamFailure || published, Files.exists(manifest(directory)));
+		assertFalse(Files.exists(cleanupDirectory(directory).resolve("pending.tmp")));
+		List<Long> expected = new ArrayList<>();
+		if (published) {
+			expected.addAll(range(1, 3));
+		}
+		if (published || streamFailure) {
+			expected.addAll(range(10, 3));
+		}
+		List<Long> processed = new CopyOnWriteArrayList<>();
+		try (Fixture reopened = new Fixture(directory, smallestConfig(), collecting(processed))) {
+			reopened.cleanup.start();
+			assertTrue(reopened.cleanup.awaitEmpty(10, TimeUnit.SECONDS));
+			assertEquals(expected, processed);
+			assertTrue(streamFiles(directory).isEmpty());
+		}
+	}
+
+	@Test
+	void orphanDeletionFailureDoesNotPreventSiblingCleanupAndRetriesOnNextOpen() throws Exception {
+		Path spool = Files.createDirectories(cleanupDirectory(directory));
+		Path blocked = Files.createDirectories(spool.resolve(UUID.randomUUID() + ".ids"));
+		Path child = Files.writeString(blocked.resolve("keep"), "occupied");
+		Path orphan = Files.write(spool.resolve(UUID.randomUUID() + ".ids"), new byte[] { 1 });
+		Path unrelated = Files.writeString(spool.resolve("user.ids"), "unrelated");
+		AsyncValueRetirementCoordinator.removeUnpublishedSpool(directory);
+		assertTrue(Files.exists(blocked));
+		assertFalse(Files.exists(orphan));
+		assertEquals("unrelated", Files.readString(unrelated));
+		Files.delete(child);
+		AsyncValueRetirementCoordinator.removeUnpublishedSpool(directory);
+		assertFalse(Files.exists(blocked));
+		assertTrue(Files.exists(unrelated));
+	}
+
+	@Test
+	void abandonedPreparedStreamsAreRemovedWhenFinalFenceIsUnavailable() throws Exception {
+		try (Fixture fixture = new Fixture(directory, config(), collecting(new ArrayList<>()))) {
+			publish(fixture.cleanup, 1, 3);
+			fixture.close();
+			assertFalse(Files.exists(manifest(directory)));
+			assertTrue(streamFiles(directory).isEmpty(), "unpublished prepared files must retain an owner");
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "missing", "checksum", "partial", "missing-middle", "checksum-middle", "partial-middle" })
+	void damagedStreamDoesNotDiscardHealthySibling(String damage) throws Exception {
+		try (Fixture first = new Fixture(directory, config(), collecting(new ArrayList<>()))) {
+			publish(first.cleanup, 1, 3);
+			publish(first.cleanup, 10, 3);
+			publish(first.cleanup, 20, 3);
+			first.closeWithSpool();
+		}
+		byte[] metadata = Files.readAllBytes(manifest(directory));
+		boolean middle = damage.endsWith("-middle");
+		String firstName = new String(metadata, middle ? 96 : 42, 40, StandardCharsets.US_ASCII);
+		Path damaged = cleanupDirectory(directory).resolve(firstName);
+		if (damage.startsWith("missing")) {
+			Files.delete(damaged);
+		} else {
+			byte[] bytes = Files.readAllBytes(damaged);
+			bytes[0] ^= 1;
+			Files.write(damaged, damage.startsWith("partial") ? Arrays.copyOf(bytes, 7) : bytes);
+		}
+		List<Long> processed = new CopyOnWriteArrayList<>();
+		try (Fixture reopened = new Fixture(directory, smallestConfig(), collecting(processed))) {
+			reopened.cleanup.start();
+			assertTrue(reopened.cleanup.awaitEmpty(10, TimeUnit.SECONDS));
+			List<Long> expected = new ArrayList<>(range(middle ? 1 : 10, 3));
+			expected.addAll(range(20, 3));
+			assertEquals(expected, processed);
+		}
+	}
+
+	@Test
 	void startupRemovesOnlyItsOwnOrphanStreamsAndPartialManifest() throws Exception {
 		Path cleanupDirectory = cleanupDirectory(directory);
 		Files.createDirectories(cleanupDirectory);
@@ -783,8 +957,12 @@ class AsyncValueRetirementCoordinatorTest {
 			if (!closed) {
 				cleanup.stopAndAwait();
 				cleanup.prepareSpool();
+				if (spool && cleanup.hasPreparedSpool()) {
+					values.prepareCleanClose(0L);
+					values.requestDurableCleanupClose();
+				}
 				values.close();
-				cleanup.finishSpool(spool ? values.cleanupTransactionId() : -1L);
+				cleanup.finishSpool(spool ? values.durableCleanupClosedTransactionId() : -1L);
 				closed = true;
 			}
 		}
