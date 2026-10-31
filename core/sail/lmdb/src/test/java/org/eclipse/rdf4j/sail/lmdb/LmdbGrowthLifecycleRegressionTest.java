@@ -145,9 +145,70 @@ class LmdbGrowthLifecycleRegressionTest {
 	}
 
 	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void emergencyGrowthCannotReplaceAnAsyncCleanupWriter(@TempDir Path dataDir) throws Exception {
+		AtomicBoolean holdCleanup = new AtomicBoolean();
+		CountDownLatch cleanupOwnsWriter = new CountDownLatch(1);
+		CountDownLatch releaseCleanup = new CountDownLatch(1);
+		LmdbStore store = new LmdbStore(dataDir.toFile(), new LmdbStoreConfig("spoc,posc")) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+					boolean sketches) throws IOException {
+				return new LmdbSailStore(directory, properties, config, sketches, null, TripleStore::new) {
+					@Override
+					void beforeWriterAuthorityRelease(Object owner) {
+						if (Thread.currentThread().getName().equals("LmdbValueCleanup")
+								&& holdCleanup.compareAndSet(true, false)) {
+							cleanupOwnsWriter.countDown();
+							try {
+								assertTrue(releaseCleanup.await(20, TimeUnit.SECONDS));
+							} catch (InterruptedException interrupted) {
+								Thread.currentThread().interrupt();
+								throw new AssertionError(interrupted);
+							}
+						}
+					}
+				};
+			}
+		};
+		try {
+			store.init();
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+			LmdbSailStore backing = store.getBackingStore();
+			Object writerOwner = new Object();
+			try (LmdbSailStore.ReadAttemptLease writer = backing.registerReadAttempt(writerOwner, NO_REPLAY)) {
+				writer.markWriteIntent();
+				holdCleanup.set(true);
+				backing.asyncValueCleanupCoordinator().signal();
+				assertTrue(cleanupOwnsWriter.await(10, TimeUnit.SECONDS), "actual idle cleanup owns writer admission");
+				try (LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(writerOwner)) {
+					LmdbTransactionRetryException rejected = assertThrows(LmdbTransactionRetryException.class,
+							() -> backing.beginMapGrowthAttempt(writerOwner));
+					assertTrue(rejected.getMessage().contains("cannot replace another admitted writer's continuation"));
+					releaseCleanup.countDown();
+					// Join the actual idle worker after proving rejection, so a later legitimate idle pass cannot
+					// race the admission-after-release assertion. Queue emptiness alone does not imply this.
+					backing.stopAsyncValueCleanupForShutdown();
+					try (LmdbSailStore.MapGrowthAttempt growth = assertDoesNotThrow(
+							() -> backing.beginMapGrowthAttempt(writerOwner))) {
+					}
+				} finally {
+					releaseCleanup.countDown();
+					writer.completeTransaction();
+				}
+			}
+		} finally {
+			releaseCleanup.countDown();
+			store.shutDown();
+		}
+	}
+
+	@Test
 	@Timeout(value = 8, unit = TimeUnit.SECONDS)
 	void checkedInterruptionReleasesEmergencyQuiescenceOwnership(@TempDir Path dataDir) throws Exception {
+		// This fixture controls its only writer; the companion above covers rejection of real async cleanup.
 		LmdbStore store = new LmdbStore(dataDir.toFile(), new LmdbStoreConfig("spoc,posc")
+				.setAsyncValueCleanup(false)
 				.setMapGrowthReadDrainTimeoutMillis(30_000L));
 		store.init();
 		LmdbSailStore backing = store.getBackingStore();
