@@ -193,6 +193,14 @@ interface AdjacencyIndexOps<B, O, G> {
 	}
 
 	/**
+	 * True when a build's pinned source was invalidated by an ordinary storage lifecycle change. The candidate must be
+	 * discarded and retried with a fresh pin, without treating it as an unexpected maintenance failure.
+	 */
+	default boolean buildInvalidated(Throwable failure) {
+		return false;
+	}
+
+	/**
 	 * Whether a worker failure is a memory refusal: expected under pressure, retried later, never a defect. The applier
 	 * logs refusals quietly and keeps the exact state it has.
 	 */
