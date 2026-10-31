@@ -662,6 +662,8 @@ class LmdbLegacyIndexDiscoveryTest {
 				values.createLiteral("unreferenced component"));
 		// Bounded reclamation needs a leading object index to establish term liveness.
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(false)
+				// This fixture deliberately retains reverse-only records until the next startup batch.
+				.setAsyncValueCleanup(false)
 				.setValueEvictionInterval(60_000)
 				.setLegacyReferenceCountRepairEnabled(true);
 		SailRepository initial = new SailRepository(new LmdbStore(directory.toFile(), config));

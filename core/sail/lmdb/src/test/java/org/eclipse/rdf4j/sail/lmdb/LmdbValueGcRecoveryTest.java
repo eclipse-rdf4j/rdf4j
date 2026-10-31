@@ -56,7 +56,9 @@ public class LmdbValueGcRecoveryTest {
 
 	@Test
 	void finalMaintenanceGrowthReleasesAdjacencyBeforeWaitingForAnotherWriter() throws Exception {
+		// The injected GC failures must run on the foreground publication owners, not an async worker.
 		LmdbStoreConfig options = new LmdbStoreConfig("spoc,posc,ospc").setValueDBSize(64L * 1024 * 1024)
+				.setAsyncValueCleanup(false)
 				.setTripleDBSize(64L * 1024 * 1024)
 				.setDirectAdjacencyEnabled(true)
 				.setSketchEstimatorEnabled(false)
@@ -366,11 +368,11 @@ public class LmdbValueGcRecoveryTest {
 					writer.removeStatements(subjectV, pred, null);
 					writer.commit();
 				}
+				// The live reader protects the association; async cleanup may retire it as soon as the reader closes.
+				ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
+				assertThat(valueStore.getId(subjectV)).isNotEqualTo(LmdbValue.UNKNOWN_ID);
 				reader.commit();
 			}
-			// v's dictionary entries are still intact: reclamation never ran (no draining commit followed)
-			ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
-			assertThat(valueStore.getId(vf.createIRI("http://example.com/v"))).isNotEqualTo(LmdbValue.UNKNOWN_ID);
 		} finally {
 			store.shutDown();
 		}
@@ -379,6 +381,10 @@ public class LmdbValueGcRecoveryTest {
 		store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc,ospc"));
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+			// Restarted spool candidates must reach retirement before the durable drain can observe them.
+			assertThat(store.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS))
+					.isTrue();
 			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 			ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
 			assertThat(valueStore.getId(vf.createIRI("http://example.com/v")))
@@ -441,9 +447,13 @@ public class LmdbValueGcRecoveryTest {
 		// A batch bound of one requires separate explicit publications to finish this backlog.
 		System.setProperty("rdf4j.lmdb.valueGc.drainBatchSize", "1");
 		try {
-			store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc,ospc"));
+			store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc,ospc").setAsyncValueCleanupBatchSize(1));
 			store.init();
 			try {
+				LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+				// Both replayed root batches and durable continuations remain bounded to one candidate.
+				assertThat(store.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS))
+						.isTrue();
 				LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 				ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
 				for (int i = 0; i < 5; i++) {

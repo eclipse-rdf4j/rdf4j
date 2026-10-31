@@ -272,6 +272,13 @@ public abstract class AbstractSail implements Sail {
 						throw new SailException("An active Sail operation cannot shut down its own store");
 					}
 				}
+			}
+
+			// Validate the caller before changing subclass ownership. A native maintenance worker can fail
+			// to quiesce; that preflight must leave this lifecycle initialized so shutdown can safely be retried.
+			prepareForShutdown();
+
+			synchronized (activeConnections) {
 				SHUTTING_DOWN.setRelease(this, true);
 				shutdownGeneration++;
 				closing = true;
@@ -334,6 +341,15 @@ public abstract class AbstractSail implements Sail {
 			initializationLock.writeLock().unlock();
 			CancellationSignal.restoreCurrent(previous);
 		}
+	}
+
+	/**
+	 * Quiesces store-specific owners before shutdown changes the initialized state or cancels connections. Called after
+	 * rejecting shutdown from an active operation, under the initialization write lock and without holding the
+	 * active-connections monitor. A failure leaves the store initialized; an implementation must retain any native
+	 * resources that an unfinished owner can still use, and support a later shutdown retry.
+	 */
+	protected void prepareForShutdown() throws SailException {
 	}
 
 	/** Stores with interruptible operation accounting can cancel immediately rather than grant a close grace period. */
