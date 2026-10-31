@@ -93,6 +93,7 @@ class LmdbBorrowedResultWorkerTest {
 		CountDownLatch consumeSecondRow = new CountDownLatch(1);
 		LmdbSailStore.ReadAttemptLease writerAttempt = null;
 		LmdbSailStore.MapGrowthAttempt warning = null;
+		Throwable primaryFailure = null;
 		try {
 			repository.init();
 			BorrowedResultReadFunction function = new BorrowedResultReadFunction(functionIri, workerExecutor,
@@ -183,41 +184,45 @@ class LmdbBorrowedResultWorkerTest {
 					"the original query descendant must complete before the warning writer finishes");
 			assertNull(queryFuture.get(15, TimeUnit.SECONDS),
 					"the lazy query result must finish without callback failures");
+		} catch (Exception | Error failure) {
+			primaryFailure = failure;
+			throw failure;
 		} finally {
-			consumeSecondRow.countDown();
 			BorrowedResultReadFunction function = registeredFunction.get();
-			if (function != null) {
-				function.releaseWorkerRead.countDown();
-			}
-			if (writerAttempt != null) {
-				writerAttempt.completeTransaction();
-				writerAttempt.close();
-			}
-			if (warning != null) {
-				warning.close();
-			}
-			writerFinished.set(true);
-			if (queryFuture != null) {
-				queryExecutor.shutdown();
-				assertTrue(queryExecutor.awaitTermination(15, TimeUnit.SECONDS),
-						"the lazy query owner must terminate");
-				if (!queryFuture.isDone()) {
-					queryExecutor.shutdownNow();
-				}
-			} else {
-				queryExecutor.shutdownNow();
-			}
-			workerExecutor.shutdown();
-			if (!workerExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
-				workerExecutor.shutdownNow();
-				assertTrue(workerExecutor.awaitTermination(5, TimeUnit.SECONDS),
-						"the borrowed-result worker must terminate");
-			}
-			if (function != null) {
-				registry.remove(function);
-			}
-			repository.shutDown();
+			LmdbSailStore.ReadAttemptLease attemptToClose = writerAttempt;
+			LmdbSailStore.MapGrowthAttempt warningToClose = warning;
+			Future<?> queryToClose = queryFuture;
+			LmdbTestUtil.cleanup(primaryFailure,
+					() -> {
+						consumeSecondRow.countDown();
+						probeUpdateCommitted.countDown();
+						if (function != null) {
+							function.releaseWorkerRead.countDown();
+						}
+					},
+					() -> {
+						if (attemptToClose != null) {
+							attemptToClose.completeTransaction();
+						}
+					},
+					attemptToClose,
+					warningToClose,
+					() -> writerFinished.set(true),
+					() -> shutdownQueryExecutor(queryExecutor, queryToClose),
+					() -> LmdbTestUtil.shutdownExecutor(workerExecutor, 10, 5, false,
+							"the borrowed-result worker must terminate"),
+					() -> {
+						if (function != null) {
+							registry.remove(function);
+						}
+					},
+					repository::shutDown);
 		}
+	}
+
+	static void shutdownQueryExecutor(ExecutorService queryExecutor, Future<?> queryFuture) throws Exception {
+		LmdbTestUtil.shutdownExecutor(queryExecutor, queryFuture == null ? 0 : 15, 5, queryFuture != null,
+				"the lazy query owner must terminate");
 	}
 
 	private static Set<String> readProbeValues(SailConnection connection) {
