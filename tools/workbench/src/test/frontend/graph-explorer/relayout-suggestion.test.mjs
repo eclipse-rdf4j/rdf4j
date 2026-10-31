@@ -20,6 +20,7 @@ import {
   laidOutGraph,
   MULTILEVEL_LAYOUT_NODES,
   readLayoutTiming,
+  relayoutEstimate,
   relayoutSuggestion,
   ROUTED_LAYOUT_NODES,
   writeLayoutTiming,
@@ -111,6 +112,17 @@ test("the estimate follows the engines the layout uses at each size", () => {
   // Measured: 499 nodes with routed arrows took 1,959 ms, 650 nodes without them 690 ms.
   const unrouted = estimateLayoutMs({ nodes: 499, links: 1512, durationMs: onPage(1959) }, 650, 2017);
   assert.ok(unrouted > onPage(690) / 3 && unrouted < onPage(690) * 3, `${unrouted} ms`);
+});
+
+test("the button shows an estimate only for a layout expected to take three seconds or more", () => {
+  const previous = { nodes: 100, links: 255, durationMs: 1000 };
+  assert.equal(relayoutEstimate(undefined, 100, 255), null, "no layout timed yet");
+  assert.equal(relayoutEstimate(previous, 100, 255), null);
+  assert.equal(relayoutEstimate({ ...previous, durationMs: 2999 }, 100, 255), null);
+  assert.equal(relayoutEstimate({ ...previous, durationMs: 3000 }, 100, 255), "about 3 s");
+  const larger = estimateLayoutMs(previous, 400, 1222);
+  assert.ok(larger >= 3000, `${larger} ms`);
+  assert.equal(relayoutEstimate(previous, 400, 1222), describeLayoutDuration(larger));
 });
 
 test("the suggestion says what changed", () => {

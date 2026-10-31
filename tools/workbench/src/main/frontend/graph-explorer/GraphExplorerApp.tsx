@@ -50,7 +50,7 @@ import { colorToRgba, readCanvasPalette } from "./graph-canvas-controller.ts";
 import { createGraphVertexCache, graphClipTransform } from "./graph-webgl.ts";
 import { retainGraphLayoutWorker, startGraphLayout } from "./graph-layout-client.ts";
 import { expansionMovableIds } from "./graph-layout-expansion.ts";
-import { describeLayoutDuration, describeRelayoutChanges, estimateLayoutMs, laidOutGraph, readLayoutTiming, relayoutSuggestion, writeLayoutTiming, type LaidOutGraph, type LayoutMode, type LayoutTiming } from "./relayout-suggestion.ts";
+import { describeRelayoutChanges, laidOutGraph, readLayoutTiming, relayoutEstimate, relayoutSuggestion, writeLayoutTiming, type LaidOutGraph, type LayoutMode, type LayoutTiming } from "./relayout-suggestion.ts";
 import { LINK_COUNT_CAP, RdfExplorer, clearMetadataCache } from "./rdf-explorer.ts";
 import { bringsNewLinks, linkCountCap, linkTotalStale, loadedLinkCounts, loadedLinksOf, moreLinks, type LinkTotal } from "./link-counts.ts";
 import { EXPAND_PAGE_LIMIT } from "./explorer-config.ts";
@@ -1086,7 +1086,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       ? "network"
       : changes.mode;
     const timing = layoutTimings[mode];
-    const estimate = timing ? describeLayoutDuration(estimateLayoutMs(timing, drawnGraph.nodes.length, drawnGraph.edges.length)) : null;
+    const estimate = relayoutEstimate(timing, drawnGraph.nodes.length, drawnGraph.edges.length);
     return { ...changes, mode, estimate };
   }, [laidOut, graph.revision, showValues, layoutTimings]);
   const batchById = useMemo(

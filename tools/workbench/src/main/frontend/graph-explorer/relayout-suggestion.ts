@@ -96,6 +96,16 @@ export function estimateLayoutMs(previous: LayoutTiming, nodes: number, links: n
   return previous.durationMs * (layoutCost(nodes, links) / layoutCost(previous.nodes, previous.links));
 }
 
+/** A layout expected to take less than this is quick enough that the suggestion does not show its time. */
+const SHOWN_ESTIMATE_MS = 3000;
+
+/** The estimate the suggestion shows for laying out a drawn graph of this size, if any. */
+export function relayoutEstimate(previous: LayoutTiming | undefined, nodes: number, links: number) {
+  if (!previous) return null;
+  const ms = estimateLayoutMs(previous, nodes, links);
+  return ms < SHOWN_ESTIMATE_MS ? null : describeLayoutDuration(ms);
+}
+
 /** "under a second", "about 3 s", "about 25 s", "about 2 min": an estimate is no more precise than that. */
 export function describeLayoutDuration(ms: number) {
   if (ms < 1000) return "under a second";
