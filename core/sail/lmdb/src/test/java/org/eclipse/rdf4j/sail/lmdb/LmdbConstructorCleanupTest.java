@@ -84,6 +84,8 @@ class LmdbConstructorCleanupTest {
 	void closesPersistentSetFactoryWhenFirstWriterCreatesNamedSet(int failedSet, @TempDir Path directory)
 			throws Exception {
 		Path storeDirectory = Files.createDirectory(directory.resolve("store"));
+		// Async cleanup deliberately bypasses the persistent sets whose construction fails in this test.
+		LmdbStoreConfig durableConfig = config().setAsyncValueCleanup(false);
 		AtomicReference<FailingPersistentSetFactory> factoryReference = new AtomicReference<>();
 		IOException injectedFailure = new IOException("injected failure creating named set " + failedSet);
 		LmdbSailStore.PersistentSetFactoryFactory factory = dataDir -> {
@@ -93,13 +95,13 @@ class LmdbConstructorCleanupTest {
 			return created;
 		};
 
-		LmdbStore initialized = new LmdbStore(storeDirectory.toFile(), config());
+		LmdbStore initialized = new LmdbStore(storeDirectory.toFile(), durableConfig);
 		initialized.init();
 		initialized.shutDown();
 		StoreProperties properties = new StoreProperties(storeDirectory.toFile());
 		assertTrue(properties.load(), "owning initialization publishes coherent format capabilities");
 		try (LmdbSailStore backing = new LmdbSailStore(storeDirectory.toFile(),
-				properties, config(), false, ValueStore::new, TripleStore::new,
+				properties, durableConfig, false, ValueStore::new, TripleStore::new,
 				factory, LmdbFilterSelectivityStats::new)) {
 			assertNull(factoryReference.get(),
 					"the optional factory must remain unopened before a writer mutates data");
@@ -122,7 +124,7 @@ class LmdbConstructorCleanupTest {
 		}
 
 		properties.save(); // Direct backing-store construction does not publish the owning store sidecar.
-		LmdbStore reopened = new LmdbStore(storeDirectory.toFile(), config());
+		LmdbStore reopened = new LmdbStore(storeDirectory.toFile(), durableConfig);
 		reopened.init();
 		try (SailConnection connection = reopened.getConnection();
 				CloseableIteration<? extends Statement> statements = connection.getStatements(null, null, null,

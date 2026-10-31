@@ -18,16 +18,20 @@ import static org.eclipse.rdf4j.workbench.commands.WorkbenchNativeQueryAssertion
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -51,6 +55,7 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -76,6 +81,7 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -89,7 +95,9 @@ import org.eclipse.rdf4j.workbench.support.TestProcess;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -129,12 +137,33 @@ class GraphExplorerNativeVariantsTest {
 	private final Map<String, Backend> inferenceBackends = new LinkedHashMap<>();
 	private Backend inferenceReference;
 	private Path evidence;
+	private String fixtureFingerprint;
+	private boolean regeneratingFixtures;
+	private List<Case> liveCases;
+	private List<Case> fixedCases;
+	private final Map<String, NativeQueryExpectedResults.Expected> expectedResults = new LinkedHashMap<>();
+	private final Map<String, NativeQueryExpectedResults.Identity> fixtureIdentities = new LinkedHashMap<>();
+	private final Map<String, String> fixtureOrigins = new TreeMap<>();
+	private static final Path EXPECTED_RESULTS = Path
+			.of("src/test/resources/org/eclipse/rdf4j/workbench/commands/graph-explorer-native-results");
 
 	@BeforeAll
 	void loadSharedTermIdentities(@TempDir Path directory) throws Exception {
 		temporary = directory;
 		evidence = repositoryRoot().resolve("logs/workbench-native-fast-paths/graph-explorer/variants");
 		Model data = data();
+		List<String> quads = new ArrayList<>();
+		for (var statement : data) {
+			quads.add(JSON.writeValueAsString(List.of(NativeQueryExpectedResults.canonicalTerm(statement.getSubject()),
+					NativeQueryExpectedResults.canonicalTerm(statement.getPredicate()),
+					NativeQueryExpectedResults.canonicalTerm(statement.getObject()),
+					statement.getContext() == null ? "default"
+							: NativeQueryExpectedResults.canonicalTerm(statement.getContext()))));
+		}
+		Collections.sort(quads);
+		fixtureFingerprint = HexFormat.of()
+				.formatHex(MessageDigest.getInstance("SHA-256")
+						.digest(String.join("\n", quads).getBytes(StandardCharsets.UTF_8)));
 		reference = backend("generic-reference", false, false, data);
 		backends.put("native-indexes", backend("native-indexes", true, false, data));
 		backends.put("native-adjacency", backend("native-adjacency", true, true, data));
@@ -183,6 +212,9 @@ class GraphExplorerNativeVariantsTest {
 	}
 
 	Stream<Arguments> liveFacetQueries() throws Exception {
+		if (liveCases != null) {
+			return arguments(liveCases);
+		}
 		List<Case> cases = new ArrayList<>();
 		List<Map<String, Object>> requests = new ArrayList<>();
 		List<String> names = new ArrayList<>();
@@ -274,7 +306,8 @@ class GraphExplorerNativeVariantsTest {
 				cases.add(new Case(names.get(i) + "-explicit-dataset", queries.get(i), dataset));
 			}
 		}
-		return arguments(cases);
+		liveCases = List.copyOf(cases);
+		return arguments(liveCases);
 	}
 
 	Stream<Arguments> defaultRangeQueries() throws Exception {
@@ -295,7 +328,8 @@ class GraphExplorerNativeVariantsTest {
 	@MethodSource("range77Queries")
 	void range77AllPreservesExactBagWithBoundedPhysicalWork(String backendName, Case fixture) throws Exception {
 		Backend backend = backends.get(backendName);
-		List<BindingSet> expected = evaluate(reference.repository, fixture.query, fixture.dataset);
+		NativeQueryExpectedResults.Expected oracle = expectedResults(fixture);
+		List<BindingSet> expected = oracle.rows();
 		try (RepositoryConnection connection = backend.repository.getConnection()) {
 			TupleQuery query = prepare(connection, fixture.query, fixture.dataset);
 			Explanation explanation = query.explain(Explanation.Level.Telemetry);
@@ -337,7 +371,7 @@ class GraphExplorerNativeVariantsTest {
 					.resolve(backendName);
 			writeEvidence(artifacts, fixture.id, fixture.query, metadata, explanation);
 
-			assertEquivalentResults(fixture, expected, actual, backendName);
+			oracle.assertMatches(actual, backendName + " / " + fixture.id);
 			assertEfficientExecutedPlan(explanation, backendName + " / " + fixture.id);
 			assertThat(route).as("executed native route for %s\n%s", fixture.id, explanation)
 					.isNotBlank()
@@ -2101,6 +2135,9 @@ class GraphExplorerNativeVariantsTest {
 	}
 
 	Stream<Arguments> fixedBlankQueries() throws Exception {
+		if (fixedCases != null) {
+			return arguments(fixedCases);
+		}
 		List<Case> cases = new ArrayList<>();
 		for (int rawIndex = 0; rawIndex < BLANK_IDS.size(); rawIndex++) {
 			for (String scope : SCOPES) {
@@ -2119,11 +2156,12 @@ class GraphExplorerNativeVariantsTest {
 						blankQueries(raw, scope, List.of()).path("seed").asText(), null));
 			}
 			String first = blankQueries("page", scope, List.of()).path("expand").asText();
-			List<BindingSet> loaded = evaluate(reference.repository, first, null);
+			List<BindingSet> loaded = new ArrayList<>(
+					expectedResults(new Case("expand-page-first-" + scopeId(scope), first, null)).rows());
 			cases.add(new Case("expand-page-first-" + scopeId(scope), first, null));
 			String second = blankQueries("page", scope, loadedEdges(loaded)).path("expand").asText();
 			cases.add(new Case("expand-page-next-" + scopeId(scope), second, null));
-			loaded.addAll(evaluate(reference.repository, second, null));
+			loaded.addAll(expectedResults(new Case("expand-page-next-" + scopeId(scope), second, null)).rows());
 			cases.add(new Case("expand-page-exhausted-" + scopeId(scope),
 					blankQueries("page", scope, loadedEdges(loaded)).path("expand").asText(), null));
 			List<Map<String, String>> documentEdges = List.of(Map.of("source", "urn:anchor", "predicate", "urn:p",
@@ -2131,7 +2169,8 @@ class GraphExplorerNativeVariantsTest {
 			cases.add(new Case("expand-document-blanks-" + scopeId(scope),
 					blankQueries("iri:urn:anchor", scope, documentEdges).path("expand").asText(), null));
 		}
-		return arguments(cases);
+		fixedCases = List.copyOf(cases);
+		return arguments(fixedCases);
 	}
 
 	@ParameterizedTest(name = "{0}: {1}")
@@ -2149,7 +2188,8 @@ class GraphExplorerNativeVariantsTest {
 
 	private void assertGeneratedVariant(String backendName, Case fixture) throws Exception {
 		Backend backend = backends.get(backendName);
-		List<BindingSet> expected = evaluate(reference.repository, fixture.query, fixture.dataset);
+		NativeQueryExpectedResults.Expected oracle = expectedResults(fixture);
+		List<BindingSet> expected = oracle.rows();
 		try (RepositoryConnection connection = backend.repository.getConnection()) {
 			TupleQuery query = prepare(connection, fixture.query, fixture.dataset);
 			Explanation explanation = query.explain(Explanation.Level.Telemetry);
@@ -2168,42 +2208,195 @@ class GraphExplorerNativeVariantsTest {
 			metadata.put("referenceRows", expected.stream().map(Object::toString).toList());
 			metadata.put("actualRows", actual.stream().map(Object::toString).toList());
 			writeEvidence(evidence.resolve(backendName), fixture.id, fixture.query, metadata, explanation);
-			assertEquivalentResults(fixture, expected, actual, backendName);
+			oracle.assertMatches(actual, backendName + " / " + fixture.id);
 			assertEfficientExecutedPlan(explanation, backendName + " / " + fixture.id);
-			assertEquivalentResults(fixture, expected, evaluate(query), backendName + " repeated");
+			oracle.assertMatches(evaluate(query), backendName + " / " + fixture.id + " repeated");
 			Explanation repeated = query.explain(Explanation.Level.Telemetry);
 			writeEvidence(evidence.resolve(backendName), fixture.id + "-repeated", fixture.query, metadata, repeated);
 			assertEfficientExecutedPlan(repeated, backendName + " / " + fixture.id + " repeated");
 		}
 	}
 
-	private void assertEquivalentResults(Case fixture, List<BindingSet> expected, List<BindingSet> actual,
-			String backend) {
-		try (var connection = reference.repository.getConnection()) {
-			SailTupleQuery witness = (SailTupleQuery) prepare(connection, fixture.query, fixture.dataset);
-			TupleExpr expression = witness.getParsedQuery().getTupleExpr();
-			TupleExpr root = expression instanceof QueryRoot queryRoot ? queryRoot.getArg() : expression;
-			if (root instanceof Slice slice && slice.hasLimit() && !slice.hasOffset()
-					&& !ordered(slice.getArg()) && expected.size() == slice.getLimit()) {
-				assertThat(repeatable(slice.getArg())).as("the generated membership oracle must be repeatable")
-						.isTrue();
-				assertThat(actual).as("unordered LIMIT cardinality: %s / %s", backend, fixture.id)
-						.hasSize(expected.size());
-				// Keep the unsliced reference's projection and DISTINCT operators intact. One unbound stream proves
-				// that
-				// every candidate in the capped result has its full bag multiplicity without rerunning the query per
-				// row.
-				witness.getParsedQuery().setTupleExpr(slice.getArg().clone());
-				NativeQueryResultBagWitness.assertContained(actual, witness::evaluate,
-						backend + " / " + fixture.id + " unordered LIMIT witness");
-				return;
-			}
+	@Test
+	void storedGenericFixturesCoverCurrentGeneratedCorpus() throws Exception {
+		List<String> names = new ArrayList<>();
+		for (Arguments arguments : Stream.concat(liveFacetQueries(), fixedBlankQueries()).toList()) {
+			Case fixture = (Case) arguments.get()[1];
+			expectedResults(fixture);
+			names.add(fixture.id + ".json");
 		}
-		assertThat(bag(actual)).as("exact result bag: %s / %s", backend, fixture.id)
-				.containsExactlyInAnyOrderEntriesOf(bag(expected));
+		names = names.stream().distinct().sorted().toList();
+		try (var files = Files.list(EXPECTED_RESULTS)) {
+			assertThat(files.map(path -> path.getFileName().toString())
+					.filter(name -> name.endsWith(".json") && !name.equals("manifest.json"))
+					.sorted()
+					.toList())
+							.as("stored fixtures must cover exactly the generated corpus")
+							.containsExactlyElementsOf(names);
+		}
+		JsonNode manifest = JSON.readTree(Files.readString(EXPECTED_RESULTS.resolve("manifest.json")));
+		assertThat(manifest.path("schemaVersion").isIntegralNumber() && manifest.path("schemaVersion").asInt() == 1)
+				.isTrue();
+		assertThat(manifest.path("generationRevision").asText()).matches("[0-9a-f]{40}");
+		assertThat(manifest.path("fixtureFingerprint").asText()).isEqualTo(fixtureFingerprint);
+		List<String> recorded = new ArrayList<>();
+		manifest.path("files").forEach(name -> recorded.add(name.asText()));
+		assertThat(recorded).containsExactlyElementsOf(names);
+		assertThat(manifest.path("origins")).isEqualTo(JSON.valueToTree(fixtureOrigins));
 	}
 
-	private static boolean repeatable(TupleExpr expression) {
+	@Test
+	void storedSimpleResultsMatchBoundedGenericControls() throws Exception {
+		for (Arguments arguments : liveFacetQueries().filter(a -> a.get()[0].equals("native-indexes")).toList()) {
+			Case fixture = (Case) arguments.get()[1];
+			if (!Set.of("exact-empty-sources", "facet-no-selection-default").contains(fixture.id)) {
+				continue;
+			}
+			NativeQueryExpectedResults.Expected expected = expectedResults(fixture);
+			try (var connection = reference.repository.getConnection()) {
+				SailTupleQuery query = (SailTupleQuery) prepare(connection, fixture.query, fixture.dataset);
+				TupleExpr expression = query.getParsedQuery().getTupleExpr();
+				TupleExpr root = expression instanceof QueryRoot queryRoot ? queryRoot.getArg() : expression;
+				if (expected.unorderedLimit() != null) {
+					query.getParsedQuery().setTupleExpr(((Slice) root).getArg().clone());
+				}
+				assertThat(bag(evaluate(query))).as("small differential control: %s", fixture.id)
+						.containsExactlyInAnyOrderEntriesOf(bag(expected.rows()));
+			}
+		}
+	}
+
+	@Test
+	@EnabledIfSystemProperty(named = "rdf4j.workbench.nativeFixtures.regenerate", matches = "true")
+	void regenerateGenericExpectedResults() throws Exception {
+		String revision = System.getProperty("rdf4j.workbench.nativeFixtures.revision", "");
+		assertThat(revision).as(
+				"record the generic engine source revision with -Drdf4j.workbench.nativeFixtures.revision=$(git rev-parse HEAD)")
+				.matches("[0-9a-f]{40}");
+		regeneratingFixtures = true;
+		try {
+			String selection = System.getProperty("rdf4j.workbench.nativeFixtures.cases", ".*");
+			for (Arguments arguments : liveFacetQueries().toList()) {
+				Case fixture = (Case) arguments.get()[1];
+				if (fixture.id.matches(selection)) {
+					expectedResults(fixture);
+				}
+			}
+			for (Arguments arguments : fixedBlankQueries().toList()) {
+				Case fixture = (Case) arguments.get()[1];
+				if (fixture.id.matches(selection)) {
+					expectedResults(fixture);
+				}
+			}
+			if (selection.equals(".*")) {
+				Files.writeString(EXPECTED_RESULTS.resolve("manifest.json"),
+						JSON.writeValueAsString(new TreeMap<>(Map.of(
+								"schemaVersion", 1, "generationRevision", revision, "origins", fixtureOrigins,
+								"fixtureFingerprint",
+								fixtureFingerprint,
+								"files",
+								fixtureIdentities.keySet().stream().map(id -> id + ".json").sorted().toList())))
+								+ "\n");
+			}
+		} finally {
+			regeneratingFixtures = false;
+		}
+	}
+
+	private NativeQueryExpectedResults.Expected expectedResults(Case fixture) throws Exception {
+		String dataset = fixture.dataset == null ? "repository-default;includeInferred=true"
+				: JSON.writeValueAsString(new TreeMap<>(Map.of(
+						"defaultGraphs",
+						fixture.dataset.getDefaultGraphs()
+								.stream()
+								.map(NativeQueryExpectedResults::canonicalTerm)
+								.sorted()
+								.toList(),
+						"namedGraphs",
+						fixture.dataset.getNamedGraphs()
+								.stream()
+								.map(NativeQueryExpectedResults::canonicalTerm)
+								.sorted()
+								.toList(),
+						"defaultRemoveGraphs",
+						fixture.dataset.getDefaultRemoveGraphs()
+								.stream()
+								.map(NativeQueryExpectedResults::canonicalTerm)
+								.sorted()
+								.toList(),
+						"defaultInsertGraph",
+						fixture.dataset.getDefaultInsertGraph() == null ? "none"
+								: NativeQueryExpectedResults.canonicalTerm(fixture.dataset.getDefaultInsertGraph()),
+						"includeInferred", true)));
+		NativeQueryExpectedResults.Identity identity = new NativeQueryExpectedResults.Identity(fixture.query, dataset,
+				fixtureFingerprint);
+		NativeQueryExpectedResults.Identity previous = fixtureIdentities.putIfAbsent(fixture.id, identity);
+		assertThat(previous == null || previous.equals(identity))
+				.as("fixture IDs must identify one query and dataset: %s", fixture.id)
+				.isTrue();
+		TupleExpr parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, fixture.query, null).getTupleExpr();
+		assertThat(repeatable(parsed)).as("persisted oracle must be deterministic: %s", fixture.id).isTrue();
+		String key = fixture.id + "\n" + fixture.query + "\n" + dataset;
+		NativeQueryExpectedResults.Expected cached = expectedResults.get(key);
+		if (cached != null) {
+			assertFixtureMode(cached, parsed);
+			return cached;
+		}
+		Path file = EXPECTED_RESULTS.resolve(fixture.id + ".json");
+		if (regeneratingFixtures) {
+			boolean current = false;
+			if (Files.exists(file) && !Boolean.getBoolean("rdf4j.workbench.nativeFixtures.force")) {
+				try {
+					assertFixtureMode(NativeQueryExpectedResults.read(file, identity), parsed);
+					current = true;
+				} catch (IOException | IllegalArgumentException stale) {
+					// Only the explicit regeneration command may replace stale fixture files.
+				}
+			}
+			if (!current) {
+				long start = System.nanoTime();
+				System.out.println("Generating generic oracle: " + fixture.id);
+				try (var connection = reference.repository.getConnection()) {
+					SailTupleQuery query = (SailTupleQuery) prepare(connection, fixture.query, fixture.dataset);
+					TupleExpr expression = query.getParsedQuery().getTupleExpr();
+					assertThat(repeatable(expression)).as("persisted oracle must be deterministic: %s", fixture.id)
+							.isTrue();
+					TupleExpr root = expression instanceof QueryRoot queryRoot ? queryRoot.getArg() : expression;
+					Long limit = null;
+					if (root instanceof Slice slice && slice.hasLimit() && !slice.hasOffset()
+							&& !ordered(slice.getArg())) {
+						limit = slice.getLimit();
+						query.getParsedQuery().setTupleExpr(slice.getArg().clone());
+					}
+					NativeQueryExpectedResults.write(file, identity, evaluate(query), limit,
+							System.getProperty("rdf4j.workbench.nativeFixtures.revision"));
+				}
+				System.out.printf("Generated generic oracle: %s (%.3f seconds)%n", fixture.id,
+						(System.nanoTime() - start) / 1e9);
+			}
+		}
+		NativeQueryExpectedResults.Expected result = NativeQueryExpectedResults.read(file, identity);
+		assertFixtureMode(result, parsed);
+		assertThat(result.generatorRevision()).as("fixture origin must be a real source revision")
+				.isNotEqualTo("0".repeat(40));
+		fixtureOrigins.put(fixture.id + ".json", result.generatorRevision());
+		expectedResults.put(key, result);
+		return result;
+	}
+
+	static Long storedUnorderedLimit(TupleExpr expression) {
+		TupleExpr root = expression instanceof QueryRoot queryRoot ? queryRoot.getArg() : expression;
+		return root instanceof Slice slice && slice.hasLimit() && !slice.hasOffset() && !ordered(slice.getArg())
+				? slice.getLimit()
+				: null;
+	}
+
+	static void assertFixtureMode(NativeQueryExpectedResults.Expected expected, TupleExpr expression) {
+		assertThat(expected.unorderedLimit()).as("stored comparison mode must match the generated query")
+				.isEqualTo(storedUnorderedLimit(expression));
+	}
+
+	static boolean repeatable(TupleExpr expression) {
 		boolean[] repeatable = { true };
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -2215,12 +2408,29 @@ class GraphExplorerNativeVariantsTest {
 			public void meet(FunctionCall node) {
 				repeatable[0] &= FunctionRegistry.getInstance()
 						.get(node.getURI())
-						.map(function -> !function.mustReturnDifferentResult())
+						.map(GraphExplorerNativeVariantsTest::persistentFunction)
 						.orElse(false);
 				super.meet(node);
 			}
 		});
 		return repeatable[0];
+	}
+
+	private static boolean persistentFunction(Function function) {
+		if (function.mustReturnDifferentResult() || function.getDeterminism() == Determinism.VOLATILE
+				|| function.getURI().equals("NOW")) {
+			return false;
+		}
+		if (function.getDeterminism() == Determinism.DETERMINISTIC) {
+			return true;
+		}
+		// These core SPARQL implementations predate the explicit determinism contract. Unknown extension
+		// implementations are not safe to freeze merely because two invocations may happen to agree.
+		return Set.of("string", "xsd", "triple", "hash", "datetime", "numeric", "rdfterm")
+				.stream()
+				.anyMatch(group -> function.getClass()
+						.getPackageName()
+						.equals("org.eclipse.rdf4j.query.algebra.evaluation.function." + group));
 	}
 
 	private static boolean ordered(TupleExpr expression) {

@@ -610,7 +610,8 @@ class LmdbPreparedBulkStoreTest {
 	@Test
 	void reusableFreeIdsDoNotTriggerStartupRecovery() throws Exception {
 		Path target = directory.resolve("reusable-ids");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
+		// This fixture observes the bounded post-ready reclamation hook of durable cleanup.
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setAsyncValueCleanup(false);
 		StringBuilder input = new StringBuilder();
 		for (int index = 0; index < 200; index++) {
 			input.append("<urn:delete:")
@@ -846,7 +847,9 @@ class LmdbPreparedBulkStoreTest {
 	@ValueSource(booleans = { false, true })
 	void firstPreparedOpeningSupportsMutationAndSharedTermGarbageCollection(boolean inline) throws Exception {
 		Path target = directory.resolve("first-write-" + inline);
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(inline);
+		// This fixture observes the bounded post-ready reclamation hook of durable cleanup.
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(inline)
+				.setAsyncValueCleanup(false);
 		String inner = "<<( <urn:shared> <urn:p> \"shared\"@EN )>>";
 		String input = "<urn:remove> <urn:p> <<( <urn:outer> <urn:p> " + inner + " )>> .\n"
 				+ "<urn:keep> <urn:p> " + inner + " .\n";

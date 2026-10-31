@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junitpioneer.jupiter.SetSystemProperty;
 
 class LmdbStoreConfigTest {
 
@@ -93,6 +95,247 @@ class LmdbStoreConfigTest {
 	private static final IRI MAP_GROWTH_THRESHOLD = LmdbStoreSchema.MAP_GROWTH_THRESHOLD;
 
 	private static final IRI READ_ONLY_REPLAY_MAX_RETRIES = LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES;
+
+	@Test
+	void asyncValueCleanupDefaultsToEnabledWithOmittedConfiguration() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		assertThat(config.getAsyncValueCleanup()).isTrue();
+		assertThat(config.getAsyncValueCleanupMaxCandidates())
+				.isEqualTo((int) (config.getAsyncValueCleanupMaxBytes() / Long.BYTES));
+		assertThat(config.getAsyncValueCleanupMaxBytes())
+				.isEqualTo(Math.max(4096L, Math.min(Runtime.getRuntime().maxMemory() / 100, 64L * 1024 * 1024)));
+		assertThat(config.getAsyncValueCleanupBatchSize()).isEqualTo(256);
+		assertThat(config.getAsyncValueCleanupMaxPendingProducers())
+				.isEqualTo((int) Math.max(1, config.getAsyncValueCleanupMaxBytes() / 1024));
+		assertThat(config.getAsyncValueCleanupPressureTimeoutMillis()).isEqualTo(250L);
+		assertThat(config.getAsyncValueCleanupAdmissionTimeoutMillis()).isEqualTo(250L);
+		assertThat(config.getAsyncValueCleanupShutdownTimeoutMillis()).isEqualTo(3_500L);
+
+		Model exported = new LinkedHashModel();
+		Resource node = config.export(exported);
+		assertThat(exported.filter(node, null, null).predicates())
+				.noneMatch(predicate -> predicate.getLocalName().startsWith("asyncValueCleanup"));
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+		parsed.parse(exported, node);
+		assertThat(parsed.getAsyncValueCleanup()).isTrue();
+	}
+
+	@Test
+	void defaultCandidateCapacityTracksByteBudgetAndPreservesExplicitCap() {
+		LmdbStoreConfig config = new LmdbStoreConfig().setAsyncValueCleanupMaxBytes(16L * 1024 * 1024);
+		assertThat(config.getAsyncValueCleanupMaxCandidates()).isEqualTo(2 * 1024 * 1024);
+		Model omitted = new LinkedHashModel();
+		Resource omittedNode = config.export(omitted);
+		assertThat(omitted.filter(omittedNode, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_MAX_CANDIDATES, null)).isEmpty();
+		config.setAsyncValueCleanupMaxCandidates(config.getAsyncValueCleanupMaxCandidates());
+		Model explicit = new LinkedHashModel();
+		Resource node = config.export(explicit);
+		assertThat(explicit.filter(node, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_MAX_CANDIDATES, null)).hasSize(1);
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+		parsed.parse(explicit, node);
+		parsed.setAsyncValueCleanupMaxBytes(32L * 1024 * 1024);
+		assertThat(parsed.getAsyncValueCleanupMaxCandidates()).isEqualTo(2 * 1024 * 1024);
+		assertThat(new LmdbStoreConfig().setAsyncValueCleanupMaxBytes(Long.MAX_VALUE)
+				.getAsyncValueCleanupMaxCandidates()).isEqualTo(Integer.MAX_VALUE);
+	}
+
+	@Test
+	void producerDefaultTracksBudgetAndExplicitEqualDefaultSurvivesExport() {
+		LmdbStoreConfig config = new LmdbStoreConfig().setAsyncValueCleanupMaxBytes(16L * 1024 * 1024);
+		assertThat(config.getAsyncValueCleanupMaxPendingProducers()).isEqualTo(16_384);
+		assertThat(config.isAsyncValueCleanupMaxPendingProducersConfigured()).isFalse();
+		config.setAsyncValueCleanupMaxPendingProducers(16_384);
+		assertThat(config.isAsyncValueCleanupMaxPendingProducersConfigured()).isTrue();
+		Model model = new LinkedHashModel();
+		Resource node = config.export(model);
+		assertThat(model.filter(node, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS, null)).hasSize(1);
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+		parsed.parse(model, node);
+		parsed.setAsyncValueCleanupMaxBytes(32L * 1024 * 1024);
+		assertThat(parsed.getAsyncValueCleanupMaxPendingProducers()).isEqualTo(16_384);
+		assertThat(parsed.isAsyncValueCleanupMaxPendingProducersConfigured()).isTrue();
+	}
+
+	@Test
+	void pressureTimeoutParsesAndExportsAndRejectsNegativeValues() {
+		IRI predicate = Values.iri(LmdbStoreSchema.NAMESPACE, "asyncValueCleanupPressureTimeoutMillis");
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		model.add(node, predicate, Values.literal(0L));
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(model, node);
+		Model exported = new LinkedHashModel();
+		Resource exportedNode = config.export(exported);
+		assertThat(exported.filter(exportedNode, predicate, null).objects()).containsExactly(Values.literal(0L));
+		model.remove(node, predicate, null);
+		model.add(node, predicate, Values.literal(-1L));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
+	void explicitThirtySecondAdmissionTimeoutSurvivesExport() {
+		LmdbStoreConfig config = new LmdbStoreConfig().setAsyncValueCleanupAdmissionTimeoutMillis(30_000L);
+		Model model = new LinkedHashModel();
+		Resource node = config.export(model);
+		assertThat(model.filter(node, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS, null).objects())
+				.containsExactly(Values.literal(30_000L));
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+		parsed.parse(model, node);
+		assertThat(parsed.getAsyncValueCleanupAdmissionTimeoutMillis()).isEqualTo(30_000L);
+	}
+
+	@Test
+	void cleanupMemoryDefaultTracksHeapWithFloorAndCap() {
+		assertThat(LmdbStoreConfig.defaultAsyncValueCleanupMaxBytes(0)).isEqualTo(4096);
+		assertThat(LmdbStoreConfig.defaultAsyncValueCleanupMaxBytes(100_000)).isEqualTo(4096);
+		assertThat(LmdbStoreConfig.defaultAsyncValueCleanupMaxBytes(128L * 1024 * 1024))
+				.isEqualTo(128L * 1024 * 1024 / 100);
+		assertThat(LmdbStoreConfig.defaultAsyncValueCleanupMaxBytes(64L * 1024 * 1024 * 100))
+				.isEqualTo(64L * 1024 * 1024);
+		assertThat(LmdbStoreConfig.defaultAsyncValueCleanupMaxBytes(Long.MAX_VALUE))
+				.isEqualTo(64L * 1024 * 1024);
+	}
+
+	@Test
+	void explicitCleanupMemoryLimitEqualToRuntimeDefaultSurvivesExport() {
+		long bytes = new LmdbStoreConfig().getAsyncValueCleanupMaxBytes();
+		LmdbStoreConfig config = new LmdbStoreConfig().setAsyncValueCleanupMaxBytes(bytes);
+		Model model = new LinkedHashModel();
+		Resource node = config.export(model);
+		assertThat(model.filter(node, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_MAX_BYTES, null)).hasSize(1);
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+		parsed.parse(model, node);
+		assertThat(parsed.getAsyncValueCleanupMaxBytes()).isEqualTo(bytes);
+	}
+
+	@Test
+	void configurationsPredatingAsyncCleanupUseTheEnabledDefault() {
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+		parsed.parse(new LinkedHashModel(), Values.bnode());
+		assertThat(parsed.getAsyncValueCleanup()).isTrue();
+	}
+
+	@Test
+	@SetSystemProperty(key = "org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", value = "true")
+	void legacyConfigurationUsesEnabledDefaultAndRetainsExplicitFalse() {
+		asyncValueCleanupDefaultsToEnabledWithOmittedConfiguration();
+		configurationsPredatingAsyncCleanupUseTheEnabledDefault();
+		asyncValueCleanupBooleanRoundTrips(false);
+		asyncValueCleanupBooleanRoundTrips(true);
+		explicitCleanupMemoryLimitEqualToRuntimeDefaultSurvivesExport();
+		defaultCandidateCapacityTracksByteBudgetAndPreservesExplicitCap();
+		producerDefaultTracksBudgetAndExplicitEqualDefaultSurvivesExport();
+		pressureTimeoutParsesAndExportsAndRejectsNegativeValues();
+	}
+
+	@Test
+	void asyncValueCleanupSettersRejectUnsafeBounds() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		assertThatIllegalArgumentException().isThrownBy(() -> config.setAsyncValueCleanupMaxCandidates(15));
+		assertThatIllegalArgumentException().isThrownBy(() -> config.setAsyncValueCleanupMaxBytes(4095));
+		assertThatIllegalArgumentException().isThrownBy(() -> config.setAsyncValueCleanupBatchSize(0));
+		assertThatIllegalArgumentException().isThrownBy(() -> config.setAsyncValueCleanupMaxPendingProducers(0));
+		assertThatIllegalArgumentException().isThrownBy(() -> config.setAsyncValueCleanupAdmissionTimeoutMillis(0));
+		assertThatIllegalArgumentException().isThrownBy(() -> config.setAsyncValueCleanupPressureTimeoutMillis(-1));
+		assertThatIllegalArgumentException().isThrownBy(() -> config.setAsyncValueCleanupShutdownTimeoutMillis(0));
+		config.setAsyncValueCleanupMaxCandidates(16).setAsyncValueCleanupBatchSize(17);
+		assertThatThrownBy(config::validate).isInstanceOf(SailConfigException.class);
+		config.setAsyncValueCleanupBatchSize(1)
+				.setAsyncValueCleanupMaxBytes(4096)
+				.setAsyncValueCleanupMaxPendingProducers(1)
+				.setAsyncValueCleanupAdmissionTimeoutMillis(1)
+				.setAsyncValueCleanupShutdownTimeoutMillis(1);
+		config.validate();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void asyncValueCleanupBooleanRoundTrips(boolean enabled) {
+		LmdbStoreConfig config = new LmdbStoreConfig().setAsyncValueCleanup(enabled);
+		Model exported = new LinkedHashModel();
+		Resource node = config.export(exported);
+		assertThat(exported.contains(node, LmdbStoreSchema.ASYNC_VALUE_CLEANUP, Values.literal(false)))
+				.isEqualTo(!enabled);
+		assertThat(exported.contains(node, LmdbStoreSchema.ASYNC_VALUE_CLEANUP, Values.literal(true))).isFalse();
+		LmdbStoreConfig parsed = new LmdbStoreConfig();
+		parsed.parse(exported, node);
+		assertThat(parsed.getAsyncValueCleanup()).isEqualTo(enabled);
+	}
+
+	@Test
+	void asyncValueCleanupParsesAndExportsAllSettings() {
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		model.add(node, Values.iri(LmdbStoreSchema.NAMESPACE + "asyncValueCleanup"), Values.literal(false));
+		model.add(node, Values.iri(LmdbStoreSchema.NAMESPACE + "asyncValueCleanupMaxCandidates"), Values.literal(2048));
+		model.add(node, Values.iri(LmdbStoreSchema.NAMESPACE + "asyncValueCleanupMaxBytes"), Values.literal(262144L));
+		model.add(node, Values.iri(LmdbStoreSchema.NAMESPACE + "asyncValueCleanupBatchSize"), Values.literal(64));
+		model.add(node, Values.iri(LmdbStoreSchema.NAMESPACE + "asyncValueCleanupMaxPendingProducers"),
+				Values.literal(2));
+		model.add(node, Values.iri(LmdbStoreSchema.NAMESPACE + "asyncValueCleanupAdmissionTimeoutMillis"),
+				Values.literal(500L));
+		model.add(node, Values.iri(LmdbStoreSchema.NAMESPACE + "asyncValueCleanupShutdownTimeoutMillis"),
+				Values.literal(3000L));
+
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(model, node);
+		Model exported = new LinkedHashModel();
+		Resource exportedNode = config.export(exported);
+		for (Statement statement : model) {
+			assertThat(exported.contains(exportedNode, statement.getPredicate(), statement.getObject()))
+					.as("Configuration roundtrip retains %s", statement.getPredicate())
+					.isTrue();
+		}
+	}
+
+	@Test
+	@SetSystemProperty(key = "org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", value = "true")
+	void asyncValueCleanupRoundTripsWithLegacySailConfiguration() {
+		asyncValueCleanupParsesAndExportsAllSettings();
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "asyncValueCleanupMaxCandidates", "asyncValueCleanupMaxBytes",
+			"asyncValueCleanupBatchSize", "asyncValueCleanupMaxPendingProducers",
+			"asyncValueCleanupAdmissionTimeoutMillis",
+			"asyncValueCleanupShutdownTimeoutMillis" })
+	void asyncValueCleanupRejectsZeroBounds(String propertyName) {
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		model.add(node, Values.iri(LmdbStoreSchema.NAMESPACE + propertyName), Values.literal(0));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "asyncValueCleanup", "asyncValueCleanupMaxCandidates", "asyncValueCleanupMaxBytes",
+			"asyncValueCleanupBatchSize", "asyncValueCleanupMaxPendingProducers",
+			"asyncValueCleanupAdmissionTimeoutMillis", "asyncValueCleanupPressureTimeoutMillis",
+			"asyncValueCleanupShutdownTimeoutMillis" })
+	void asyncValueCleanupRejectsNonLiteralAndConflictingValues(String propertyName) {
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		IRI property = Values.iri(LmdbStoreSchema.NAMESPACE + propertyName);
+		model.add(node, property, Values.iri("urn:invalid"));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+		model.clear();
+		model.add(node, property, Values.literal(1024));
+		model.add(node, property, Values.literal(2048));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
+	void asyncValueCleanupRejectsMalformedAndOverflowingValues() {
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		model.add(node, LmdbStoreSchema.ASYNC_VALUE_CLEANUP, Values.literal("sometimes"));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+		model.clear();
+		model.add(node, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_MAX_CANDIDATES, Values.literal(1L << 32));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+		model.clear();
+		model.add(node, LmdbStoreSchema.ASYNC_VALUE_CLEANUP_MAX_BYTES, Values.literal("9223372036854775808"));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+	}
 
 	@Test
 	void legacyReferenceCountRepairDefaultsToDisabled() {

@@ -4910,7 +4910,7 @@ class TripleStore implements Closeable {
 
 	/**
 	 * Removes live or unprovably-unused IDs from reclamation candidates using only native point/prefix seeks. A missing
-	 * leading component index means UNKNOWN, so the value is retained for explicit exhaustive maintenance.
+	 * leading component index means UNKNOWN unless object absence can be proven with predicate/object prefix seeks.
 	 */
 	void filterUsedIdsBounded(Collection<Long> ids) throws IOException {
 		filterUsedIdsBounded(ids, null);
@@ -4918,8 +4918,18 @@ class TripleStore implements Closeable {
 
 	/** Collects the UNKNOWN candidates separately so durable retirement work is retained for later maintenance. */
 	void filterUsedIdsBounded(Collection<Long> ids, Collection<Long> unresolved) throws IOException {
-		txnManager.doWithFreshPriority((stack, txn) -> {
+		filterUsedIdsBounded(ids, unresolved, 65_536);
+	}
+
+	/** Applies a shared native-seek budget to the PO fallback; returns the number of fallback seeks performed. */
+	int filterUsedIdsBounded(Collection<Long> ids, Collection<Long> unresolved, int objectSeekBudget)
+			throws IOException {
+		if (objectSeekBudget < 0) {
+			throw new IllegalArgumentException("Object seek budget must be nonnegative");
+		}
+		return txnManager.doWithFreshPriority((stack, txn) -> {
 			List<TripleIndex> active = indexes;
+			int objectSeeks = 0;
 			MDBVal key = MDBVal.calloc(stack);
 			MDBVal value = MDBVal.calloc(stack);
 			ByteBuffer buffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
@@ -4946,6 +4956,17 @@ class TripleStore implements Closeable {
 						.filter(index -> index.getFieldSeq()[0] == component)
 						.findFirst()
 						.orElse(null);
+				if (leading == null && component == 'o') {
+					TripleIndex predicateObject = active.stream()
+							.filter(index -> index.getFieldSeq()[0] == 'p' && index.getFieldSeq()[1] == 'o')
+							.findFirst()
+							.orElse(null);
+					if (predicateObject != null) {
+						objectSeeks = filterObjectsByPredicate(stack, txn, predicateObject, ids, unresolved,
+								objectSeekBudget);
+						continue;
+					}
+				}
 				if (leading == null) {
 					for (Iterator<Long> candidates = ids.iterator(); candidates.hasNext();) {
 						long id = candidates.next();
@@ -4985,8 +5006,106 @@ class TripleStore implements Closeable {
 					}
 				}
 			}
-			return null;
+			return objectSeeks;
 		});
+	}
+
+	/**
+	 * A loose PO index scan: jump to each distinct predicate, then seek the exact (predicate, object) prefix. Do not
+	 * decode or walk statement payloads. Candidate-major order allows complete absence proofs for early candidates even
+	 * when the whole batch exceeds the shared budget. Re-enumerating predicates avoids an unreserved, cardinality-sized
+	 * cache. An individual candidate whose proof exceeds the budget remains UNKNOWN.
+	 */
+	private int filterObjectsByPredicate(MemoryStack stack, long txn, TripleIndex index, Collection<Long> ids,
+			Collection<Long> unresolved, int seekBudget) throws IOException {
+		if (ids.isEmpty()) {
+			return 0;
+		}
+		MDBVal key = MDBVal.calloc(stack);
+		MDBVal value = MDBVal.calloc(stack);
+		ByteBuffer buffer = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+		PointerBuffer handle = stack.mallocPointer(1);
+		long explicitCursor = 0;
+		long inferredCursor = 0;
+		int seeks = 0;
+		try {
+			E(mdb_cursor_open(txn, index.getDB(true), handle));
+			explicitCursor = handle.get(0);
+			E(mdb_cursor_open(txn, index.getDB(false), handle));
+			inferredCursor = handle.get(0);
+			candidates: for (Iterator<Long> candidates = ids.iterator(); candidates.hasNext();) {
+				long id = candidates.next();
+				for (int plane = 0; plane < 2; plane++) {
+					long cursor = plane == 0 ? explicitCursor : inferredCursor;
+					long nextPredicate = 0;
+					while (true) {
+						if (seeks == seekBudget) {
+							deferLivenessCandidates(candidates, id, unresolved);
+							return seeks;
+						}
+						buffer.clear();
+						index.getMinKey(buffer, -1, nextPredicate, -1, -1);
+						key.mv_data(buffer.flip());
+						seeks++;
+						int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+						if (rc == MDB_NOTFOUND) {
+							break;
+						}
+						E(rc);
+						long predicate = Varint.readUnsigned(key.mv_data());
+						if (predicate < nextPredicate) {
+							throw new IOException("PO index predicate is outside the nonnegative ordered ID range");
+						}
+						if (seeks == seekBudget) {
+							deferLivenessCandidates(candidates, id, unresolved);
+							return seeks;
+						}
+						buffer.clear();
+						index.getMinKey(buffer, -1, predicate, id, -1);
+						key.mv_data(buffer.flip());
+						seeks++;
+						rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+						if (rc == MDB_SUCCESS) {
+							ByteBuffer found = key.mv_data();
+							if (Varint.readUnsigned(found) == predicate && Varint.readUnsigned(found) == id) {
+								candidates.remove();
+								continue candidates;
+							}
+						} else if (rc != MDB_NOTFOUND) {
+							E(rc);
+						}
+						// Varint IDs are nonnegative longs, not the full unsigned-long domain. Never wrap the
+						// terminal ID to a negative wildcard (getMinKey would restart the scan at zero).
+						if (predicate == Long.MAX_VALUE) {
+							break;
+						}
+						nextPredicate = predicate + 1;
+					}
+				}
+			}
+			return seeks;
+		} finally {
+			if (inferredCursor != 0) {
+				mdb_cursor_close(inferredCursor);
+			}
+			if (explicitCursor != 0) {
+				mdb_cursor_close(explicitCursor);
+			}
+		}
+	}
+
+	private static void deferLivenessCandidates(Iterator<Long> candidates, long current, Collection<Long> unresolved) {
+		if (unresolved != null) {
+			unresolved.add(current);
+		}
+		candidates.remove();
+		while (candidates.hasNext()) {
+			long id = candidates.next();
+			if (unresolved != null) {
+				unresolved.add(id);
+			}
+			candidates.remove();
+		}
 	}
 
 	private static boolean literalId(long id) {

@@ -245,9 +245,11 @@ class ValueStoreCanonicalIriTest {
 			store.startTransaction(true);
 			store.gcIds(Set.of(id), new HashSet<>());
 			store.commit();
-			store.forceEvictionOfValues();
-			store.startTransaction(true);
-			store.commit();
+			// No Sail coordinator owns this standalone dictionary.
+			store.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			store.reclaimPersistedUnusedIdsBatch(4096);
 			assertEquals(LmdbValue.UNKNOWN_ID, store.getId(original));
 			IRI replacement = store.createIRI("urn:", "canonical:reuse/replacement");
 			store.startTransaction(true);

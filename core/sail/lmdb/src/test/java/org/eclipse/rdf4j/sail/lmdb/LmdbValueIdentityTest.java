@@ -125,7 +125,11 @@ class LmdbValueIdentityTest {
 			};
 			retire(store, oldId);
 			awaitCollection(source.collected);
-			store.forceEvictionOfValues();
+			// No Sail coordinator owns this standalone dictionary; reclaim the released cohort explicitly.
+			store.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			store.reclaimPersistedUnusedIdsBatch(4096);
 			store.startTransaction(true);
 			assertEquals(oldId, store.storeValue(VF.createBNode("cache-replacement")),
 					"The late completion must address an actually reassigned native compound ID");
@@ -191,7 +195,11 @@ class LmdbValueIdentityTest {
 			await(comparedRevision);
 			retire(store, oldId);
 			awaitCollection(source.collected);
-			store.forceEvictionOfValues();
+			// No Sail coordinator owns this standalone dictionary; reclaim the released cohort explicitly.
+			store.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			store.reclaimPersistedUnusedIdsBatch(4096);
 			store.startTransaction(true);
 			try {
 				long replacementId = store.storeValue(shape.payload("replacement"));

@@ -15,19 +15,25 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayCapacityException;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.ValueOverlayRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
@@ -202,7 +208,8 @@ public class ValueStoreCompressedOverlayTest {
 	@Test
 	void reverseRetirementDoesNotResurrectAnIdFromTheCompressedBase() throws Exception {
 		var vf = SimpleValueFactory.getInstance();
-		var store = new ValueStore(new File(directory, "retire"), config().setInlineLiterals(false));
+		var store = new ValueStore(new File(directory, "retire"),
+				config().setInlineLiterals(false).setAsyncValueCleanup(false));
 		try {
 			store.startTransaction(true);
 			var value = vf.createBNode("retired");
@@ -216,6 +223,44 @@ public class ValueStoreCompressedOverlayTest {
 			assertSame(base, store.compressedValueOverlayStats());
 			assertEquals(org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID, store.getId(value));
 			assertEquals(value, store.getValue(id));
+		} finally {
+			store.close();
+		}
+	}
+
+	@Test
+	@Timeout(30)
+	void defaultCleanupInvalidatesCurrentOverlayButPreservesLeasedRecordsAndNativeFallback() throws Exception {
+		LmdbStoreConfig config = config().setInlineLiterals(false).setValueDBSize(8L * 1024 * 1024);
+		assertTrue(config.getAsyncValueCleanup(), "this regression must exercise the omitted default-on policy");
+		var store = new ValueStore(new File(directory, "default-retirement"), config);
+		try {
+			var value = SimpleValueFactory.getInstance().createLiteral("leased lexical bytes é/漢字");
+			byte[] lexical = value.getLabel().getBytes(StandardCharsets.UTF_8);
+			store.startTransaction(true);
+			long id = store.storeValue(value);
+			store.commit();
+			assertNotNull(store.warmCompressedValueOverlay(options()));
+			// Hold the real immutable overlay lease, without pinning a native read transaction: native
+			// reader admission deliberately prevents some writer transitions while a callback is active.
+			var field = ValueStore.class.getDeclaredField("compressedValues");
+			field.setAccessible(true);
+			ValueOverlayRegistry registry = (ValueOverlayRegistry) field.get(store);
+			try (var lease = registry.acquireSnapshot(store.compressedValueOverlayViewStats().transactionId())) {
+				assertNotNull(lease);
+				assertTrue(lease.visitRecord(id, record -> assertTrue(record.lexicalEquals(lexical))));
+				store.startTransaction(true);
+				store.gcIds(new HashSet<>(Set.of(id)), new HashSet<>());
+				store.commit();
+				store.clearCaches();
+				assertNull(store.compressedValueOverlayStats(), "async cleanup retires the current optional overlay");
+				assertEquals(LmdbValue.UNKNOWN_ID, store.getId(value));
+				assertEquals(value, store.getValue(id), "retained records remain resolvable through LMDB");
+				assertTrue(store.visitRecord(id, record -> assertTrue(record.lexicalEquals(lexical))),
+						"new record visitors fall back to LMDB after overlay invalidation");
+				assertTrue(lease.visitRecord(id, record -> assertTrue(record.lexicalEquals(lexical))),
+						"the old leased record remains readable after publication");
+			}
 		} finally {
 			store.close();
 		}
