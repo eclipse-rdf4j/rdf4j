@@ -67,11 +67,11 @@ public class QueryBenchmarkTest {
 
 	static {
 		try {
-			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
-			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
-			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
-			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
-			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5.qr"), StandardCharsets.UTF_8);
+			query1 = readQuery(getResourceAsStream("benchmarkFiles/query1.qr"));
+			query2 = readQuery(getResourceAsStream("benchmarkFiles/query2.qr"));
+			query3 = readQuery(getResourceAsStream("benchmarkFiles/query3.qr"));
+			query4 = readQuery(getResourceAsStream("benchmarkFiles/query4.qr"));
+			query5 = readQuery(getResourceAsStream("benchmarkFiles/query5.qr"));
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -89,7 +89,9 @@ public class QueryBenchmarkTest {
 		System.out.println("Adding statements");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
+			try (InputStream data = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+				connection.add(data, "", RDFFormat.TURTLE);
+			}
 			connection.commit();
 		}
 
@@ -116,6 +118,12 @@ public class QueryBenchmarkTest {
 
 		System.out.println("Done");
 
+	}
+
+	static String readQuery(InputStream input) throws IOException {
+		try (input) {
+			return IOUtils.toString(input, StandardCharsets.UTF_8);
+		}
 	}
 
 	private static InputStream getResourceAsStream(String name) {

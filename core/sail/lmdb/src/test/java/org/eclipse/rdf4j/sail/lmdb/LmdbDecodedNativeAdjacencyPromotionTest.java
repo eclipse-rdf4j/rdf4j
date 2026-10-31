@@ -14,21 +14,24 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
-import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.csf.CsfAdaptiveMemoryTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
 /** End-to-end wiring for the base-owned decoded CSR selected by later query lifetimes. */
 class LmdbDecodedNativeAdjacencyPromotionTest {
 
 	private static final int ROWS = 1_024;
+	private static final long CHILD_HEAP_BYTES = 256L << 20;
 	private static final long PREDICATE = uri(10_000);
 	private static final long FIRST_SUBJECT = uri(100_000);
 	private static final long FIRST_OBJECT = uri(200_000);
@@ -40,8 +43,7 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 		return ValueIds.createId(ValueIds.T_URI, payload);
 	}
 
-	@BeforeEach
-	void setUp(@TempDir File dataDir) throws Exception {
+	private void setUp(File dataDir) throws Exception {
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyEnabled(true)
@@ -61,18 +63,123 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 		assertThat(store.buildNowForTest()).isTrue();
 	}
 
-	@AfterEach
-	void tearDown() throws Exception {
-		if (store != null) {
-			store.close();
-		}
-		if (tripleStore != null) {
-			tripleStore.close();
-		}
+	private void tearDown() throws Exception {
+		LmdbTestUtil.cleanup(null, store == null ? null : store::close, tripleStore);
 	}
 
 	@Test
-	void laterQueryBindsConcreteDecodedAdjacencyAndBorrowsItsRun() throws IOException {
+	void laterQueryBindsConcreteDecodedAdjacencyAndBorrowsItsRun(
+			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
+		runProbe(directory, false);
+	}
+
+	@Test
+	void refusedPromotionRetainsExactPackedAdjacency(
+			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
+		runProbe(directory, true);
+	}
+
+	/**
+	 * Admission deliberately depends on process heap headroom. A shared test fork can legitimately refuse promotion
+	 * because earlier tests left collectible garbage; isolate the success contract rather than overriding that guard.
+	 */
+	private static void runProbe(Path directory, boolean refuse) throws Exception {
+		boolean[] safeToDelete = { true };
+		try (AutoCloseable directoryOwner = () -> {
+			if (safeToDelete[0]) {
+				LmdbTestUtil.deleteDir(directory.toFile());
+			}
+		}) {
+			Path output = directory.resolve("promotion.log");
+			Path data = Files.createDirectory(directory.resolve("store"));
+			Path temporary = Files.createDirectory(directory.resolve("tmp"));
+			String classpath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
+			ProcessBuilder builder = new ProcessBuilder(
+					Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+					"-ea", "-Xmx256m", "-XX:ActiveProcessorCount=2", "-Djava.io.tmpdir=" + temporary,
+					"-Drdf4j.lmdb.csf.adaptiveAccelerators.enabled=true",
+					"-Drdf4j.lmdb.csf.adaptiveAccelerators.maxObjectBytes=1048576",
+					"-Drdf4j.lmdb.csf.adaptiveAccelerators.maxTotalBytes=67108864",
+					"-Drdf4j.lmdb.csf.adaptiveAccelerators.minHeapHeadroomBytes="
+							+ (refuse ? CHILD_HEAP_BYTES : 32L << 20),
+					"-cp", classpath, Probe.class.getName(), data.toString(), Boolean.toString(refuse),
+					temporary.toString())
+							.redirectErrorStream(true)
+							.redirectOutput(output.toFile());
+			// The subprocess owns a fixed heap/admission policy, independent of external JVM option injection.
+			for (String option : new String[] { "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS" }) {
+				builder.environment().remove(option);
+			}
+			Process process = builder.start();
+			safeToDelete[0] = false;
+			try (AutoCloseable child = () -> {
+				stopChild(process);
+				// A failed reap retains the directory instead of deleting files still owned by a native process.
+				safeToDelete[0] = true;
+			};
+					var input = process.getInputStream();
+					var error = process.getErrorStream();
+					var stdin = process.getOutputStream()) {
+				try {
+					assertThat(process.waitFor(60, TimeUnit.SECONDS))
+							.withFailMessage("Promotion probe timed out: %s", Files.readString(output))
+							.isTrue();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw interrupted;
+				}
+				String diagnostic = Files.readString(output);
+				assertThat(process.exitValue()).withFailMessage(diagnostic).isZero();
+				assertThat(diagnostic).contains("PROMOTION_PROBE_COMPLETE refuse=" + refuse);
+			}
+		}
+	}
+
+	private static void stopChild(Process process) {
+		boolean interrupted = Thread.interrupted();
+		try {
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+				while (process.isAlive() && System.nanoTime() < deadline) {
+					try {
+						process.waitFor(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+					} catch (InterruptedException failure) {
+						interrupted = true;
+					}
+				}
+				assertThat(process.isAlive()).as("promotion probe must terminate after cancellation").isFalse();
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	public static final class Probe {
+		public static void main(String[] args) throws Exception {
+			assertThat(Probe.class.desiredAssertionStatus()).isTrue();
+			assertThat(Runtime.getRuntime().maxMemory()).isPositive().isLessThanOrEqualTo(CHILD_HEAP_BYTES);
+			Path temporary = Files.createTempFile("promotion-owned-", ".tmp");
+			try {
+				assertThat(temporary.getParent()).as("child temporary files belong to the parent-owned root")
+						.isEqualTo(Path.of(args[2]));
+			} finally {
+				Files.delete(temporary);
+			}
+			boolean refuse = Boolean.parseBoolean(args[1]);
+			LmdbDecodedNativeAdjacencyPromotionTest fixture = new LmdbDecodedNativeAdjacencyPromotionTest();
+			try (AutoCloseable owner = fixture::tearDown) {
+				fixture.setUp(Path.of(args[0]).toFile());
+				fixture.assertPromotionOutcome(refuse);
+			}
+			System.out.println("PROMOTION_PROBE_COMPLETE refuse=" + refuse);
+		}
+	}
+
+	private void assertPromotionOutcome(boolean refuse) throws Exception {
+		long refusalsBefore = CsfAdaptiveMemoryTestAccess.refusals();
 		// One query may be hot but cannot retain a whole-partition decode by itself. Two complete view lifetimes earn
 		// it.
 		for (int lifetime = 0; lifetime < 2; lifetime++) {
@@ -91,6 +198,17 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision());
 				NativeLmdbQuerySource.NativeAdjacency adjacency = store.adjacency(view, PREDICATE, true, true)) {
+			if (refuse) {
+				assertThat(CsfAdaptiveMemoryTestAccess.refusals()).isGreaterThan(refusalsBefore);
+				assertThat(adjacency).isInstanceOf(LmdbDirectNativeAdjacency.class);
+				for (int i = 0; i < ROWS; i++) {
+					long run = adjacency.find(FIRST_SUBJECT + ((long) i << 7));
+					assertThat(run).isPositive();
+					assertThat(adjacency.size(run)).isEqualTo(1);
+					assertThat(adjacency.neighborAt(run, 0)).isEqualTo(FIRST_OBJECT + ((long) i << 7));
+				}
+				return;
+			}
 			assertThat(adjacency).isInstanceOf(LmdbDecodedNativeAdjacency.class);
 			NativeLmdbQuerySource.NativeAdjacency.NeighborSlice slice = new NativeLmdbQuerySource.NativeAdjacency.NeighborSlice();
 			assertThat(adjacency.borrowNeighbors(FIRST_SUBJECT, slice)).isTrue();
