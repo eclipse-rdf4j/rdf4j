@@ -90,19 +90,27 @@ public final class LmdbQueryMemoryManager {
 		if (additionalBytes > perQueryMaxBytes || additionalBytes > maxBytes) {
 			return false;
 		}
-		while (!fits(query, additionalBytes)) {
+		while (true) {
+			// Reclaimers may close the requesting ledger or the reservation being grown reentrantly.
+			if (query.closed || (excluded != null && excluded.closed)) {
+				return false;
+			}
+			if (fits(query, additionalBytes)) {
+				// Keep the admission decision tied to an open requester at the success boundary.
+				return !query.closed && (excluded == null || !excluded.closed);
+			}
 			boolean queryLimitExceeded = additionalBytes > perQueryMaxBytes - query.usedBytes;
 			Reservation candidate = oldestReclaimable(queryLimitExceeded ? query : null, excluded);
 			if (candidate == null) {
 				return false;
 			}
 			if (candidate.reclaim()) {
+				// Settle a successful callback before checking whether its caller closed the requester.
 				candidate.releaseAll();
 			} else {
 				candidate.disableReclamation();
 			}
 		}
-		return true;
 	}
 
 	private boolean fits(QueryLedger query, long additionalBytes) {
@@ -173,6 +181,10 @@ public final class LmdbQueryMemoryManager {
 				if (closed || !makeRoom(this, bytes, null)) {
 					return null;
 				}
+				// A reclaimer may close this ledger reentrantly while makeRoom is running.
+				if (closed) {
+					return null;
+				}
 				Reservation reservation = new Reservation(this, bytes, reclaimable);
 				reservations.add(reservation);
 				account(this, bytes);
@@ -230,6 +242,10 @@ public final class LmdbQueryMemoryManager {
 				if (closed || owner.closed || !makeRoom(owner, additionalBytes, this)) {
 					return false;
 				}
+				// Reclaimers can close this reservation or its owner before makeRoom returns.
+				if (closed || owner.closed) {
+					return false;
+				}
 				bytes += additionalBytes;
 				account(owner, additionalBytes);
 				touch(this);
@@ -272,6 +288,16 @@ public final class LmdbQueryMemoryManager {
 		}
 
 		private void releaseAll() {
+			if (closed) {
+				return;
+			}
+			if (bytes == 0L) {
+				closed = true;
+				reclaimable = null;
+				reclaimableLru.remove(this);
+				owner.reservations.remove(this);
+				return;
+			}
 			releaseBytes(bytes);
 		}
 
