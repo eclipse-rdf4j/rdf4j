@@ -35,6 +35,17 @@ import org.junit.jupiter.api.Test;
 
 class LmdbExecutorCleanupTest {
 	@Test
+	void asyncHandoffCleanupClosesBackingAfterCallerTerminationFails() throws Exception {
+		ExecutorService executor = mock(ExecutorService.class);
+		AutoCloseable backing = mock(AutoCloseable.class);
+		when(executor.awaitTermination(8, TimeUnit.SECONDS)).thenReturn(false);
+		when(executor.awaitTermination(anyLong(), eq(TimeUnit.NANOSECONDS))).thenReturn(true);
+		assertThrows(AssertionError.class, () -> LmdbAsyncHandoffTest.closeExecutorAndBacking(executor, backing));
+		verify(backing).close();
+		verify(executor).shutdownNow();
+	}
+
+	@Test
 	void failedGracefulQueryShutdownStillInterruptsItsWorker() throws Exception {
 		ExecutorService executor = mock(ExecutorService.class);
 		Future<?> query = mock(Future.class);
