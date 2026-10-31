@@ -320,8 +320,12 @@ public class LmdbNativePrimitiveGroupingTest {
 		System.setProperty(LmdbWildcardPredicateBatch.ENABLED_PROPERTY, "false");
 		try {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery(
-						"SELECT ?p (COUNT(?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p").evaluate());
+				SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(
+						"SELECT ?p (COUNT(?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p");
+				// This is a representation contract, not a cost-ranking contract. Learned costs may legitimately
+				// prefer a nested-loop table even with wildcard batching disabled.
+				query.setForcedLmdbExecutionStrategy("orderedSinglePatternGroups");
+				List<BindingSet> rows = QueryResults.asList(query.evaluate());
 				assertThat(rows).hasSize(3)
 						.allSatisfy(
 								row -> assertThat(((Literal) row.getValue("c")).longValue()).isEqualTo(200L));
