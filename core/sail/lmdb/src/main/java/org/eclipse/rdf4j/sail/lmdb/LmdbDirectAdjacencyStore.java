@@ -1288,10 +1288,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
 	}
 
-	/** Strict mode surfaces the first unexpected maintenance failure to committers and readers; gaps are expected. */
+	/** Strict mode surfaces defects, not supported gaps, capability limits or memory refusals. */
 	private void rememberUnexpectedMaintenanceFailure(Throwable failure) {
 		if (!options.failOnMaintenanceError() || failure instanceof AdjacencyGapException
-				|| failure instanceof AdjacencyClassificationGapException || unexpectedMaintenanceFailure != null) {
+				|| failure instanceof AdjacencyClassificationGapException
+				|| failure instanceof LmdbAdjacencyBuildUnavailableException
+				|| failure instanceof LmdbAdjacencyMemoryRefusedException || unexpectedMaintenanceFailure != null) {
 			return;
 		}
 		unexpectedMaintenanceFailure = failure;
@@ -1742,6 +1744,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 				throw failure;
 			}
+		}
+
+		@Override
+		public boolean buildUnavailable(Throwable failure) {
+			return failure instanceof LmdbAdjacencyBuildUnavailableException;
 		}
 
 		@Override
