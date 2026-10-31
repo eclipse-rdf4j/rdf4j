@@ -94,6 +94,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -123,7 +124,7 @@ public class LmdbSailStoreTest {
 			F.createLiteral("two"));
 
 	@BeforeEach
-	public void before(@TempDir File dataDir) {
+	public void before(@TempDir(cleanup = CleanupMode.NEVER) File dataDir) {
 		defaultLocale = Locale.getDefault();
 		Locale.setDefault(Locale.ENGLISH);
 		this.dataDir = dataDir;
@@ -799,39 +800,51 @@ public class LmdbSailStoreTest {
 
 	@Test
 	void approveAllPropagatesPredicateStoreFailureAsSailException() throws Exception {
-		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
-		LmdbSailStore backingStore = sail.getBackingStore();
+		IRI failingPredicate = F.createIRI("urn:failing-predicate");
+		IOException expectedFailure = new IOException("expected predicate failure");
+		repo.shutDown();
+		// Construct one native owner before background maintenance starts; a spy would copy mutable writer state.
+		repo = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc").setBulkOperationSize(256)) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+					boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+				return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
+						(valueDirectory, storeProperties, valueConfig) -> new ValueStore(valueDirectory,
+								storeProperties,
+								valueConfig, false, null,
+								LmdbStoreFormat.resolveDictionary(valueDirectory, storeProperties, valueConfig), true) {
+							@Override
+							public long storeValue(Value value) throws IOException {
+								if (failingPredicate.equals(value)) {
+									throw expectedFailure;
+								}
+								return super.storeValue(value);
+							}
+						}, TripleStore::new);
+			}
+		});
+		repo.init();
+		LmdbSailStore backingStore = ((LmdbStore) ((SailRepository) repo).getSail()).getBackingStore();
 		try (RepositoryConnection connection = repo.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			connection.add(F.createIRI("urn:materialize-before-spy"), F.createIRI("urn:materialize-predicate"),
+			connection.add(F.createIRI("urn:materialize-before-fault"), F.createIRI("urn:materialize-predicate"),
 					F.createIRI("urn:materialize-object"));
 			connection.commit();
 		}
-		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
-		valueStoreField.setAccessible(true);
-		ValueStore originalValueStore = (ValueStore) valueStoreField.get(backingStore);
-		ValueStore valueStoreSpy = spy(originalValueStore);
-		IRI failingPredicate = F.createIRI("urn:failing-predicate");
-		SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE);
-
-		doAnswer(invocation -> {
-			Value value = invocation.getArgument(0);
-			if (failingPredicate.equals(value)) {
-				throw new IOException("expected predicate failure");
-			}
-			return invocation.callRealMethod();
-		}).when(valueStoreSpy).storeValue(any(Value.class));
-
-		valueStoreField.set(backingStore, valueStoreSpy);
-		try {
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
 			SailException exception = assertThrows(SailException.class,
 					() -> sink.approveAll(Set.of(F.createStatement(F.createIRI("urn:subject"), failingPredicate,
 							F.createLiteral("object"))), Set.of()));
-
-			assertTrue(exception.getCause() instanceof IOException);
-		} finally {
-			valueStoreField.set(backingStore, originalValueStore);
-			sink.close();
+			assertSame(expectedFailure, exception.getCause());
+		}
+		// The injected failure must release its transaction without replacing or disabling the cleanup owner.
+		try (RepositoryConnection connection = repo.getConnection()) {
+			IRI subject = F.createIRI("urn:after-predicate-failure");
+			connection.begin(IsolationLevels.NONE);
+			connection.add(subject, RDFS.LABEL, F.createLiteral("recovered"));
+			connection.commit();
+			assertTrue(connection.hasStatement(subject, RDFS.LABEL, F.createLiteral("recovered"), false));
 		}
 	}
 
@@ -2020,11 +2033,16 @@ public class LmdbSailStoreTest {
 
 	@AfterEach
 	public void after() {
-		try {
-			repo.shutDown();
-		} finally {
-			LmdbTestUtil.deleteDir(dataDir);
-			Locale.setDefault(defaultLocale);
+		closeFixture(repo, dataDir, () -> Locale.setDefault(defaultLocale));
+	}
+
+	static void closeFixture(Repository repository, File directory, Runnable restoreLocale) {
+		try (var localeRestore = LmdbTestUtil.onClose(restoreLocale)) {
+			if (repository != null) {
+				repository.shutDown();
+			}
+			// Failed shutdown retains native ownership; neither this fixture nor JUnit may delete its files.
+			LmdbTestUtil.deleteDir(directory);
 		}
 	}
 
