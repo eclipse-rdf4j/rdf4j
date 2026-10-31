@@ -850,23 +850,43 @@ public class LmdbSailStoreTest {
 
 	@Test
 	void approveAllBatchesTripleStoreWritesIntoBulkCalls() throws Exception {
+		List<Integer> alignedCounts = new ArrayList<>();
+		List<Integer> alignedCapacities = new ArrayList<>();
+		int[] scalarCalls = { 0 };
+		repo.shutDown();
+		// Instrument the single constructed native owner, rather than copying its transaction bookkeeping.
+		repo = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc").setBulkOperationSize(256)) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+					boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+				return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled, null,
+						(tripleDirectory, storeProperties, tripleConfig, valueStore) -> new TripleStore(
+								tripleDirectory, storeProperties, tripleConfig, valueStore) {
+							@Override
+							public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects,
+									long[] contexts, int count, boolean explicit, IntConsumer addedIndexConsumer)
+									throws IOException {
+								alignedCounts.add(count);
+								alignedCapacities.add(subjects.length);
+								super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+										addedIndexConsumer);
+							}
+
+							@Override
+							public boolean storeTriple(long subject, long predicate, long object, long context,
+									boolean explicit) throws IOException {
+								scalarCalls[0]++;
+								return super.storeTriple(subject, predicate, object, context, explicit);
+							}
+						});
+			}
+		});
+		repo.init();
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = false;
-
-		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
-		tripleStoreField.setAccessible(true);
-		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
-		TripleStore tripleStoreSpy = spy(originalTripleStore);
-		List<Integer> alignedCounts = new ArrayList<>();
-		List<Integer> alignedCapacities = new ArrayList<>();
-		doAnswer(invocation -> {
-			alignedCounts.add(invocation.getArgument(4));
-			alignedCapacities.add(((long[]) invocation.getArgument(0)).length);
-			return invocation.callRealMethod();
-		}).when(tripleStoreSpy)
-				.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-						any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+		TripleStore tripleStore = backingStore.getTripleStore();
 
 		Set<Statement> statements = new LinkedHashSet<>();
 		for (int i = 0; i < 1025; i++) {
@@ -877,20 +897,21 @@ public class LmdbSailStoreTest {
 					F.createIRI("urn:context:" + (i % 7))));
 		}
 
-		tripleStoreField.set(backingStore, tripleStoreSpy);
 		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-			clearInvocations(tripleStoreSpy);
+			alignedCounts.clear();
+			alignedCapacities.clear();
+			scalarCalls[0] = 0;
 			sink.approveAll(statements, Set.of());
 			sink.flush();
 
 			assertEquals(List.of(256, 256, 256, 256, 1), alignedCounts);
 			assertEquals(List.of(256, 256, 256, 256, 1), alignedCapacities);
-			verify(tripleStoreSpy, times(5)).storeTriplesAligned(any(long[].class), any(long[].class),
-					any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
-			verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
-		} finally {
-			tripleStoreField.set(backingStore, originalTripleStore);
+			assertEquals(5, alignedCounts.size());
+			assertEquals(1, scalarCalls[0]);
 		}
+
+		assertEquals("bulk instrumentation must preserve the real native owner generation",
+				tripleStore.lastTransactionId(), tripleStore.trustedTransactionId());
 
 		try (RepositoryConnection observer = repo.getConnection()) {
 			assertEquals("bulk addition must preserve the three seed rows and add every input", 1028L, observer.size());
