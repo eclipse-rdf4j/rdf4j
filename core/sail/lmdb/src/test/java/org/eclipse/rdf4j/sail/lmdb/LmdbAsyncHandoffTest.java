@@ -634,10 +634,15 @@ class LmdbAsyncHandoffTest {
 			triples.releaseNextMutation.countDown();
 			triples.releaseCommit.countDown();
 			triples.releaseRollback.countDown();
-			executor.shutdown();
-			assertTrue(executor.awaitTermination(8, TimeUnit.SECONDS), "the caller must finish before fixture cleanup");
-			backing.close();
+			closeExecutorAndBacking(executor, backing::close);
 		}
+	}
+
+	static void closeExecutorAndBacking(ExecutorService executor, AutoCloseable backing) throws Exception {
+		LmdbTestUtil.cleanup(null,
+				() -> LmdbTestUtil.shutdownExecutor(executor, 8, 5, true,
+						"the caller must finish before fixture cleanup"),
+				backing);
 	}
 
 	@FunctionalInterface

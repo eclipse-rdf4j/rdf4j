@@ -49,6 +49,8 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.mock.web.MockServletContext;
@@ -62,6 +64,7 @@ import jakarta.servlet.http.HttpServletResponse;
 /**
  * @author Dale Visser
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class CreateServletTest {
 
 	@TempDir
@@ -88,7 +91,7 @@ public class CreateServletTest {
 	public final void testExpectedTemplatesCanBeResolved() {
 		for (String template : sourceTemplateTypes()) {
 			String resource = template + ".ttl";
-			assertThat(RepositoryConfig.class.getResourceAsStream(resource)).isNotNull().as(resource);
+			assertThat(RepositoryConfig.class.getResource(resource)).as(resource).isNotNull();
 		}
 	}
 
@@ -317,9 +320,7 @@ public class CreateServletTest {
 		var servlet = new CreateServlet();
 		servlet.setRepositoryManager(new LocalRepositoryManager(datadir));
 
-		var in = getClass().getResourceAsStream("/configFiles/memory-legacy.ttl");
-
-		try {
+		try (var in = getClass().getResourceAsStream("/configFiles/memory-legacy.ttl")) {
 			String legacyConfigString = new String(in.readAllBytes(), StandardCharsets.UTF_8);
 			RepositoryConfig config = servlet.updateRepositoryConfig(legacyConfigString);
 
@@ -335,9 +336,7 @@ public class CreateServletTest {
 		var servlet = new CreateServlet();
 		servlet.setRepositoryManager(new LocalRepositoryManager(datadir));
 
-		var in = getClass().getResourceAsStream("/configFiles/memory.ttl");
-
-		try {
+		try (var in = getClass().getResourceAsStream("/configFiles/memory.ttl")) {
 			String legacyConfigString = new String(in.readAllBytes(), StandardCharsets.UTF_8);
 			RepositoryConfig config = servlet.updateRepositoryConfig(legacyConfigString);
 
@@ -350,18 +349,23 @@ public class CreateServletTest {
 
 	@Test
 	public void testUpdateRepositoryConfig_useLegacy_legacyConfig() {
-		var in = getClass().getResourceAsStream("/configFiles/memory-legacy.ttl");
-
-		try {
-			System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "true");
+		String property = "org.eclipse.rdf4j.model.vocabulary.useLegacyConfig";
+		String previous = System.getProperty(property);
+		try (var in = getClass().getResourceAsStream("/configFiles/memory-legacy.ttl")) {
+			System.setProperty(property, "true");
 			String legacyConfigString = new String(in.readAllBytes(), StandardCharsets.UTF_8);
 			RepositoryConfig config = servlet.updateRepositoryConfig(legacyConfigString);
-			System.setProperty("org.eclipse.rdf4j.model.vocabulary.useLegacyConfig", "");
 
 			assertThat(config.getID()).isEqualTo("legacy");
 			assertThat(config.getTitle()).isEqualTo("Legacy Test Repository");
 		} catch (RDF4JException | IOException e) {
 			fail(e.getMessage());
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
 		}
 	}
 
