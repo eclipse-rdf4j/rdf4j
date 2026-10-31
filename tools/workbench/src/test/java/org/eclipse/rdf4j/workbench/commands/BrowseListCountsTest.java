@@ -166,14 +166,13 @@ class BrowseListCountsTest {
 		long deadline = System.nanoTime() + unit.toNanos(timeout);
 		while (System.nanoTime() < deadline) {
 			boolean inSharedCount = false;
-			boolean waitingForResult = false;
 			for (StackTraceElement frame : thread.getStackTrace()) {
 				inSharedCount |= frame.getClassName().equals(BrowseList.class.getName())
 						&& frame.getMethodName().equals("sharedWithinBudget");
-				waitingForResult |= frame.getClassName().equals("java.util.concurrent.FutureTask")
-						&& frame.getMethodName().equals("awaitDone");
 			}
-			if (inSharedCount && waitingForResult) {
+			// The pre-call gate is an untimed await. Inside this application method, the only
+			// timed wait is for the shared result, after waiter registration has completed.
+			if (inSharedCount && thread.getState() == Thread.State.TIMED_WAITING) {
 				return true;
 			}
 			TimeUnit.MILLISECONDS.sleep(1);
