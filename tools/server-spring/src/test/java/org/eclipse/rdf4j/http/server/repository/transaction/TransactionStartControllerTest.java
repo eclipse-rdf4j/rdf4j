@@ -16,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 import static org.assertj.core.api.Assertions.fail;
 import static org.eclipse.rdf4j.common.transaction.IsolationLevels.READ_COMMITTED;
 import static org.eclipse.rdf4j.common.transaction.IsolationLevels.SNAPSHOT;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -23,18 +25,24 @@ import static org.mockito.Mockito.when;
 
 import java.util.HashMap;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.HttpMethod;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -186,6 +194,30 @@ class TransactionStartControllerTest {
 		when(tx.getID()).thenReturn(UUID.randomUUID());
 
 		assertThatIllegalArgumentException().isThrownBy(() -> controller.handleRequest(request, response));
+	}
+
+	@ParameterizedTest
+	@MethodSource("constructionFailures")
+	void constructionFailurePreservesServerError(Exception failure) throws Exception {
+		TransactionStartController failing = spy(new TransactionStartController());
+		Repository repository = RepositoryInterceptor.getRepository(request);
+		doThrow(failure).when(failing).createTransaction(repository);
+		try {
+			ServerHTTPException actual = assertThrows(ServerHTTPException.class,
+					() -> failing.handleRequest(request, response));
+			assertThat(actual.getStatusCode()).isEqualTo(500);
+			assertThat(actual.getCause()).isSameAs(failure);
+			// Preserve ServerHTTPException(String, Throwable)'s existing cause-derived message.
+			assertThat(actual).hasMessage(failure.toString());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static Stream<Exception> constructionFailures() {
+		return Stream.of(new ExecutionException(new RepositoryException("connection acquisition")),
+				new InterruptedException("connection acquisition interrupted"),
+				new RepositoryException("connection acquisition rejected"));
 	}
 
 }
