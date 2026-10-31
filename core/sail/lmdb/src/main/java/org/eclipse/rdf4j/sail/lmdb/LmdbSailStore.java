@@ -7947,6 +7947,8 @@ class LmdbSailStore implements SailStore {
 		if (publication == null) {
 			return false;
 		}
+		Object completedOverlayGeneration = null;
+		Throwable primaryFailure = null;
 		try (publication) {
 			// Public snapshot admission shares the publication gate. A later retirement/reintroduction is safe
 			// only after every existing reader is gone; no saved process-local horizon is used after restart.
@@ -7956,10 +7958,12 @@ class LmdbSailStore implements SailStore {
 			if (!sinkStoreAccessLock.tryLock()) {
 				return false;
 			}
+			boolean ownsCompletion = false;
 			try {
 				if (storeTxnStarted.get() || namespaceTransactionOwner != null) {
 					return false;
 				}
+				ownsCompletion = true;
 				int maximum = asyncValueCleanupCoordinator.batchSize();
 				if (ids == null) {
 					if (valueStore.hasCleanupValueProtection()) {
@@ -8034,7 +8038,27 @@ class LmdbSailStore implements SailStore {
 				requestMaintenanceGrowth(owner, MapResizeKind.VALUE_STORE);
 				return false;
 			} finally {
+				if (ownsCompletion) {
+					completedOverlayGeneration = valueStore.valueOverlayWriterCompletionToken();
+				}
 				sinkStoreAccessLock.unlock();
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			primaryFailure = failure;
+			throw failure;
+		} finally {
+			// Notify only after native, sink and publication ownership are released. A cancelled initial-import
+			// warmup can now retry, without recreating an optional overlay whose request already completed.
+			try {
+				valueStore.signalValueOverlayWriterCompletedIfCurrent(completedOverlayGeneration);
+			} catch (RuntimeException | Error notificationFailure) {
+				if (primaryFailure != null) {
+					if (notificationFailure != primaryFailure) {
+						primaryFailure.addSuppressed(notificationFailure);
+					}
+				} else {
+					reportOptionalDerivedFailure(notificationFailure);
+				}
 			}
 		}
 	}
