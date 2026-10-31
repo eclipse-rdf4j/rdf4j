@@ -28,6 +28,7 @@ import java.util.Set;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
+import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -42,6 +43,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -52,6 +54,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 public class QueryBenchmarkTest {
 
 	private static SailRepository repository;
+	private static File ownedDirectory;
 	private static final SimpleValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
 	private static final IRI LOWERCASE_DISTRIBUTION = VALUE_FACTORY.createIRI("http://www.w3.org/ns/dcat#distribution");
 	private static final IRI UPPERCASE_DISTRIBUTION = VALUE_FACTORY.createIRI("http://www.w3.org/ns/dcat#Distribution");
@@ -77,7 +80,8 @@ public class QueryBenchmarkTest {
 	static List<Statement> statementList;
 
 	@BeforeAll
-	public static void beforeClass(@TempDir File dataDir) throws IOException {
+	public static void beforeClass(@TempDir(cleanup = CleanupMode.NEVER) File dataDir) throws IOException {
+		ownedDirectory = dataDir;
 		System.out.println("Before class");
 
 		repository = new SailRepository(new NativeStore(dataDir, "spoc,ospc,psoc"));
@@ -130,10 +134,24 @@ public class QueryBenchmarkTest {
 	}
 
 	@AfterAll
-	public static void afterClass() {
-		repository.shutDown();
+	public static void afterClass() throws IOException {
+		cleanupRepository(repository, ownedDirectory);
 		repository = null;
 		statementList = null;
+		ownedDirectory = null;
+	}
+
+	static void cleanupRepository(SailRepository owner, File directory) throws IOException {
+		if (owner != null) {
+			owner.shutDown();
+		}
+		// JUnit must not delete native files when shutdown fails; this owner deletes only safely closed data.
+		if (directory != null) {
+			FileUtil.deleteDir(directory);
+			if (directory.exists()) {
+				throw new IOException("Unable to delete owned benchmark directory: " + directory);
+			}
+		}
 	}
 
 	@Test
