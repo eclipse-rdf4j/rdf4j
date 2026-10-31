@@ -2986,7 +2986,7 @@ class LmdbFrozenReplayTest {
 
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
-	void inferredPrefixCapacityFailureRestartsBeforeExplicitApplications(@TempDir Path directory) throws Exception {
+	void explicitPrefixCapacityFailureRestartsBeforeInferredApplications(@TempDir Path directory) throws Exception {
 		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(2);
 		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
 		SailRepository repository = new SailRepository(store);
@@ -3010,7 +3010,7 @@ class LmdbFrozenReplayTest {
 			repository.init();
 			store.getBackingStore().enableMultiThreading = false;
 			store.probe.reset();
-			store.probe.failBeforeExplicitAfterInferred.set(true);
+			store.probe.failBeforeInferredAfterExplicit.set(true);
 			store.addSailChangedListener(event -> {
 				notifications.incrementAndGet();
 				if (event.statementsAdded()) {
@@ -3067,21 +3067,23 @@ class LmdbFrozenReplayTest {
 		Set<Statement> observedPersistedAll = persistedAll;
 		String observedVisibleNamespace = immediatelyVisibleNamespace;
 		String observedPersistedNamespace = persistedNamespace;
-		assertAll("an explicit-phase capacity failure replays prior inferred rows with the full snapshot",
-				() -> assertEquals(1, store.probe.explicitCapacityFailures.get(),
-						"the failure must activate at the first explicit aligned batch"),
-				() -> assertEquals(1, store.probe.inferredRowsBeforeExplicitFailure.get(),
-						"the first attempt must physically apply the inferred prefix before explicit application"),
-				() -> assertEquals(0, store.probe.explicitRowsBeforeFailure.get(),
-						"no explicit row may be applied before the injected capacity failure"),
+		assertAll("an inferred-phase capacity failure replays prior explicit rows with the full snapshot",
+				() -> assertEquals(1, store.probe.inferredCapacityFailures.get(),
+						"the failure must activate at the first inferred application"),
+				() -> assertEquals(explicitStatements.size(), store.probe.explicitRowsBeforeInferredFailure.get(),
+						"the first attempt must physically apply the explicit prefix before inferred application"),
+				() -> assertEquals(0, store.probe.inferredRowsBeforeFailure.get(),
+						"no inferred row may be applied before the injected capacity failure"),
+				() -> assertEquals(1, store.probe.inferredCapacityRollbacks.get(),
+						"the failed attempt must roll back its already-applied explicit prefix"),
 				() -> assertEquals(2, store.probe.transactionStarts.get(),
-						"the inferred prefix and explicit failure must restart as one fresh whole attempt"),
-				() -> assertEquals(2, store.probe.inferredRowsApplied.get(),
-						"the inferred input must be applied once in the abandoned attempt and once in the successful replay"),
-				() -> assertEquals(explicitStatements.size(), store.probe.explicitRowsApplied.get(),
-						"the successful attempt must apply every explicit input exactly once"),
+						"the explicit prefix and inferred failure must restart as one fresh whole attempt"),
+				() -> assertEquals(1, store.probe.inferredRowsApplied.get(),
+						"the inferred input must be applied once in the successful replay"),
+				() -> assertEquals(2 * explicitStatements.size(), store.probe.explicitRowsApplied.get(),
+						"every explicit input must be applied once per physical attempt"),
 				() -> assertNull(observedCommitFailure,
-						"the covered commit must recover from the explicit-phase capacity failure: "
+						"the covered commit must recover from the inferred-phase capacity failure: "
 								+ observedCommitFailure),
 				() -> assertEquals(expectedExplicit, observedVisibleExplicit),
 				() -> assertEquals(expectedAll, observedVisibleAll,
@@ -5274,9 +5276,10 @@ class LmdbFrozenReplayTest {
 		private final AtomicInteger deadlinePrefixRows = new AtomicInteger();
 		private final AtomicInteger inferredRowsApplied = new AtomicInteger();
 		private final AtomicInteger explicitRowsApplied = new AtomicInteger();
-		private final AtomicInteger inferredRowsBeforeExplicitFailure = new AtomicInteger();
-		private final AtomicInteger explicitRowsBeforeFailure = new AtomicInteger();
-		private final AtomicInteger explicitCapacityFailures = new AtomicInteger();
+		private final AtomicInteger inferredRowsBeforeFailure = new AtomicInteger();
+		private final AtomicInteger explicitRowsBeforeInferredFailure = new AtomicInteger();
+		private final AtomicInteger inferredCapacityFailures = new AtomicInteger();
+		private final AtomicInteger inferredCapacityRollbacks = new AtomicInteger();
 		private final AtomicInteger nativeCommitCapacityFailures = new AtomicInteger();
 		private final AtomicInteger nativeCommitCapacityFailureBudget = new AtomicInteger();
 		private final AtomicInteger valueCommitCapacityFailures = new AtomicInteger();
@@ -5319,7 +5322,8 @@ class LmdbFrozenReplayTest {
 		private final AtomicBoolean failNextCommit = new AtomicBoolean();
 		private final AtomicBoolean failAfterNativeCommitWithoutReceipt = new AtomicBoolean();
 		private final AtomicBoolean failAfterAlignedPrefix = new AtomicBoolean();
-		private final AtomicBoolean failBeforeExplicitAfterInferred = new AtomicBoolean();
+		private final AtomicBoolean failBeforeInferredAfterExplicit = new AtomicBoolean();
+		private final AtomicBoolean inferredCapacityRollbackPending = new AtomicBoolean();
 		private final AtomicBoolean failAfterSuccessfulCommit = new AtomicBoolean();
 		private final AtomicBoolean failRollbackAfterSuccessfulAbort = new AtomicBoolean();
 
@@ -5376,9 +5380,10 @@ class LmdbFrozenReplayTest {
 			deadlinePrefixRows.set(0);
 			inferredRowsApplied.set(0);
 			explicitRowsApplied.set(0);
-			inferredRowsBeforeExplicitFailure.set(0);
-			explicitRowsBeforeFailure.set(0);
-			explicitCapacityFailures.set(0);
+			inferredRowsBeforeFailure.set(0);
+			explicitRowsBeforeInferredFailure.set(0);
+			inferredCapacityFailures.set(0);
+			inferredCapacityRollbacks.set(0);
 			nativeCommitCapacityFailures.set(0);
 			nativeCommitCapacityFailureBudget.set(0);
 			valueCommitCapacityFailures.set(0);
@@ -5399,7 +5404,8 @@ class LmdbFrozenReplayTest {
 			failNextCommit.set(false);
 			failAfterNativeCommitWithoutReceipt.set(false);
 			failAfterAlignedPrefix.set(false);
-			failBeforeExplicitAfterInferred.set(false);
+			failBeforeInferredAfterExplicit.set(false);
+			inferredCapacityRollbackPending.set(false);
 			failAfterSuccessfulCommit.set(false);
 			failRollbackAfterSuccessfulAbort.set(false);
 		}
@@ -5514,6 +5520,9 @@ class LmdbFrozenReplayTest {
 		@Override
 		public void rollback() throws IOException {
 			super.rollback();
+			if (probe.inferredCapacityRollbackPending.compareAndSet(true, false)) {
+				probe.inferredCapacityRollbacks.incrementAndGet();
+			}
 			if (probe.terminalPreNativeRollbackPending.compareAndSet(true, false)) {
 				probe.successfulTerminalPreNativeRollbacks.incrementAndGet();
 			}
@@ -5673,10 +5682,11 @@ class LmdbFrozenReplayTest {
 		}
 
 		private void beforeNativeApplication(boolean explicit) throws IOException {
-			if (explicit && probe.failBeforeExplicitAfterInferred.compareAndSet(true, false)) {
-				probe.inferredRowsBeforeExplicitFailure.set(probe.inferredRowsApplied.get());
-				probe.explicitRowsBeforeFailure.set(probe.explicitRowsApplied.get());
-				probe.explicitCapacityFailures.incrementAndGet();
+			if (!explicit && probe.failBeforeInferredAfterExplicit.compareAndSet(true, false)) {
+				probe.inferredRowsBeforeFailure.set(probe.inferredRowsApplied.get());
+				probe.explicitRowsBeforeInferredFailure.set(probe.explicitRowsApplied.get());
+				probe.inferredCapacityFailures.incrementAndGet();
+				probe.inferredCapacityRollbackPending.set(true);
 				try {
 					LmdbUtil.checkMapFull(MDB_MAP_FULL);
 				} catch (IOException failure) {
