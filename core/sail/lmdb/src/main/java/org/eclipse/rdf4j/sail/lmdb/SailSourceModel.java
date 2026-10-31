@@ -190,6 +190,8 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 
 	final SailSource source;
 
+	private final AutoCloseable ownedWriterCleanup;
+
 	SailDataset dataset;
 
 	SailSink sink;
@@ -201,11 +203,21 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 	private final IsolationLevels level = IsolationLevels.NONE;
 
 	public SailSourceModel(SailStore store) {
-		this(store.getExplicitSailSource());
+		// Store-backed models own a private NONE publication independently of the outer changeset.
+		if (store instanceof LmdbSailStore lmdb) {
+			Object owner = new Object();
+			source = lmdb.getExplicitSailSource(owner);
+			ownedWriterCleanup = () -> lmdb.completeWriterRollback(owner);
+		} else {
+			source = store.getExplicitSailSource();
+			ownedWriterCleanup = null;
+		}
 	}
 
 	public SailSourceModel(SailSource source) {
+		// An arbitrary backing source can carry a stronger transaction; do not grant checkpoint authority.
 		this.source = source;
+		ownedWriterCleanup = null;
 	}
 
 	@Override
@@ -265,6 +277,7 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 			}
 			failure = closeResource(currentSink, failure);
 		}
+		failure = closeResource(ownedWriterCleanup, failure);
 		if (failure != null) {
 			throw propagate(failure);
 		}
@@ -642,7 +655,8 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 		sink = null;
 		dataset = null;
 		failure = closeResource(partialSink, failure);
-		return closeResource(partialDataset, failure);
+		failure = closeResource(partialDataset, failure);
+		return closeResource(ownedWriterCleanup, failure);
 	}
 
 	private static Throwable closeResource(AutoCloseable resource, Throwable failure) {
