@@ -135,35 +135,43 @@ class QueryStorageTest {
 					.saveQuery("urn:test:repository", "saved", "alice", false, QueryLanguage.SPARQL,
 							"ASK {}", false, 10, 0);
 		}
-		ExecutorService executor = Executors.newFixedThreadPool(2);
-		try {
-			for (int round = 0; round < 20; round++) {
-				QueryStorage.Lease previous = QueryStorage.acquire(config);
-				CountDownLatch ready = new CountDownLatch(2);
-				CountDownLatch start = new CountDownLatch(1);
-				Future<?> release = executor.submit(() -> {
-					ready.countDown();
-					await(start);
-					previous.close();
-				});
-				Future<QueryStorage.Lease> acquire = executor.submit(() -> {
-					ready.countDown();
-					await(start);
-					return QueryStorage.acquire(config);
-				});
-				assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
-				start.countDown();
-				try (QueryStorage.Lease next = acquire.get(10, TimeUnit.SECONDS)) {
-					release.get(10, TimeUnit.SECONDS);
-					assertThat(next.storage().getQueryText("urn:test:repository", "alice", "saved"))
-							.isEqualTo("ASK {}");
-				} finally {
-					previous.close();
+		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			try {
+				for (int round = 0; round < 20; round++) {
+					try (QueryStorage.Lease previous = QueryStorage.acquire(config)) {
+						CountDownLatch ready = new CountDownLatch(2);
+						CountDownLatch start = new CountDownLatch(1);
+						try {
+							Future<?> release = executor.submit(() -> {
+								ready.countDown();
+								await(start);
+								previous.close();
+							});
+							Future<?> acquire = executor.submit(() -> {
+								ready.countDown();
+								await(start);
+								// The acquiring worker owns its lease even if the test stops waiting for it.
+								try (QueryStorage.Lease next = QueryStorage.acquire(config)) {
+									release.get(10, TimeUnit.SECONDS);
+									assertThat(next.storage().getQueryText("urn:test:repository", "alice", "saved"))
+											.isEqualTo("ASK {}");
+								}
+								return null;
+							});
+							assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+							start.countDown();
+							acquire.get(10, TimeUnit.SECONDS);
+							release.get(10, TimeUnit.SECONDS);
+						} finally {
+							start.countDown();
+						}
+					}
 				}
+			} finally {
+				executor.shutdownNow();
 			}
-		} finally {
-			executor.shutdownNow();
 		}
+
 		assertDirectoryReleased(directory);
 	}
 
