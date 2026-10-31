@@ -413,6 +413,195 @@ class LmdbInitialNoneImportAccelerationTest {
 		}
 	}
 
+	@Test
+	@Timeout(30)
+	void queuedCleanupCanRetireRebuiltTerminalOverlayWithoutLosingCommittedData() throws Exception {
+		LmdbStore sail = new LmdbStore(directory, config(true, true));
+		sail.init();
+		try {
+			List<String> phases = new CopyOnWriteArrayList<>();
+			awaitTerminalAccelerators(sail, System.nanoTime(), phases, "initial");
+			try (PausedCleanup cleanup = new PausedCleanup(sail)) {
+				IRI removed = VF.createIRI("urn:initial-none:terminal");
+				try (var writer = sail.getConnection()) {
+					writer.begin(IsolationLevels.NONE);
+					writer.addStatement(removed, PREDICATE, VF.createLiteral("prefix"));
+					writer.flush();
+					writer.removeStatements(removed, PREDICATE, null);
+					writer.commit();
+				}
+				assertThat(cleanup.entered.await(10, TimeUnit.SECONDS)).as("actual root cleanup batch is held")
+						.isTrue();
+				awaitTerminalAccelerators(sail, System.nanoTime(), phases, "rebuilt before cleanup");
+				IRI survivor = VF.createIRI("urn:initial-none:survivor");
+				var value = VF.createLiteral("still committed");
+				try (var writer = sail.getConnection()) {
+					writer.begin(IsolationLevels.NONE);
+					writer.addStatement(survivor, PREDICATE, value);
+					writer.commit();
+				}
+				awaitTerminalAccelerators(sail, System.nanoTime(), phases, "follow-up before cleanup");
+				ValueStore values = sail.getBackingStore().valueStore();
+				long beforeCleanup = values.nativeCommitGeneration();
+				cleanup.close();
+				assertThat(cleanup.coordinator.awaitEmpty(10, TimeUnit.SECONDS))
+						.as("queued root batch committed and acknowledged, not all durable retirements drained")
+						.isTrue();
+				assertThat(values.nativeCommitGeneration()).isGreaterThan(beforeCleanup);
+				assertThat(values.awaitValueOverlayReady(10, TimeUnit.SECONDS))
+						.as("bounded async reclamation may retire the optional rebuilt overlay")
+						.isFalse();
+				try (var reader = sail.getConnection()) {
+					assertThat(reader.size()).isEqualTo(1);
+					assertThat(reader.hasStatement(survivor, PREDICATE, value, false)).isTrue();
+					assertThat(reader.hasStatement(removed, PREDICATE, null, false)).isFalse();
+				}
+			}
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(30)
+	void asyncCleanupSupersedingImportWarmupStillCompletesRequestedRebuild(boolean newerWriter) throws Exception {
+		AtomicBoolean holdNextScan = new AtomicBoolean();
+		CountDownLatch startupCompletion = new CountDownLatch(1);
+		CountDownLatch scanEntered = new CountDownLatch(1);
+		CountDownLatch releaseScan = new CountDownLatch(1);
+		CountDownLatch cleanupCommitted = new CountDownLatch(1);
+		CountDownLatch releaseAfterCommit = new CountDownLatch(1);
+		LmdbStore sail = new LmdbStore(directory, config(false, true)) {
+			@Override
+			LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig storeConfig,
+					boolean sketches) throws IOException {
+				return new LmdbSailStore(dataDir, properties, storeConfig, sketches,
+						(valueDir, valueProperties, valueConfig) -> new ValueStore(valueDir, valueProperties,
+								valueConfig, false, null, LmdbStoreFormat.fromProperties(valueProperties, valueConfig),
+								true) {
+							@Override
+							void signalValueOverlayWriterCompleted() {
+								super.signalValueOverlayWriterCompleted();
+								startupCompletion.countDown();
+							}
+
+							@Override
+							public CompressedValueOverlay.Stats warmCompressedValueOverlay(
+									CompressedValueOverlay.Options options, BooleanSupplier cancelled)
+									throws IOException {
+								// The caller has captured the request generation, but no native read transaction is
+								// held.
+								if (holdNextScan.compareAndSet(true, false)) {
+									scanEntered.countDown();
+									try {
+										assertThat(releaseScan.await(20, TimeUnit.SECONDS)).isTrue();
+									} catch (InterruptedException interrupted) {
+										Thread.currentThread().interrupt();
+										throw new AssertionError(interrupted);
+									}
+								}
+								return super.warmCompressedValueOverlay(options, cancelled);
+							}
+						}, TripleStore::new);
+			}
+		};
+		sail.init();
+		try {
+			awaitAccelerators(sail, false, true);
+			// Fresh dictionary term-index cleanup schedules startup warming before its final completion signal.
+			// Observe that tail too, so it cannot accidentally certify the later writer in the stale-token case.
+			assertThat(startupCompletion.await(10, TimeUnit.SECONDS)).isTrue();
+			try (PausedCleanup cleanup = new PausedCleanup(sail)) {
+				cleanup.coordinator.afterBatchCommitForTest(() -> {
+					cleanupCommitted.countDown();
+					try {
+						assertThat(releaseAfterCommit.await(20, TimeUnit.SECONDS)).isTrue();
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError(interrupted);
+					}
+				});
+				holdNextScan.set(true);
+				try (var writer = sail.getConnection()) {
+					writer.begin(IsolationLevels.NONE);
+					writer.addStatement(VF.createIRI("urn:initial-none:superseded"), PREDICATE,
+							VF.createLiteral("remove"));
+					writer.flush();
+					writer.clear();
+					writer.commit();
+				}
+				assertThat(scanEntered.await(10, TimeUnit.SECONDS)).as("requested import scan is in flight").isTrue();
+				assertThat(cleanup.entered.await(10, TimeUnit.SECONDS)).as("root cleanup is queued").isTrue();
+				cleanup.close();
+				assertThat(cleanupCommitted.await(10, TimeUnit.SECONDS))
+						.as("cleanup native and publication ownership released before retry observation")
+						.isTrue();
+				ValueStore values = sail.getBackingStore().valueStore();
+				IRI laterValue = VF.createIRI("urn:initial-none:later-writer");
+				if (newerWriter) {
+					Object oldCompletion = values.valueOverlayWriterCompletionToken();
+					values.startTransaction(true);
+					try {
+						values.storeValue(laterValue);
+						values.commit();
+					} finally {
+						values.rollback();
+					}
+					values.signalValueOverlayWriterCompletedIfCurrent(oldCompletion);
+				}
+				releaseScan.countDown();
+				if (newerWriter) {
+					assertThat(values.awaitValueOverlayReady(1, TimeUnit.SECONDS))
+							.as("stale maintenance completion must not certify the newer writer's generation")
+							.isFalse();
+					values.signalValueOverlayWriterCompleted();
+				}
+				assertThat(values.awaitValueOverlayReady(5, TimeUnit.SECONDS))
+						.as("pending initial rebuild must retry after cleanup supersedes its scan: %s; pending=%s",
+								values.compressedValueOverlayMaintenanceStats(),
+								values.hasPendingValueOverlayMaintenance())
+						.isTrue();
+				if (newerWriter) {
+					assertThat(values.getId(laterValue))
+							.isNotEqualTo(org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID);
+				}
+			}
+		} finally {
+			releaseScan.countDown();
+			releaseAfterCommit.countDown();
+			sail.shutDown();
+		}
+	}
+
+	private static final class PausedCleanup implements AutoCloseable {
+		private final AsyncValueRetirementCoordinator coordinator;
+		private final CountDownLatch entered = new CountDownLatch(1);
+		private final CountDownLatch release = new CountDownLatch(1);
+
+		private PausedCleanup(LmdbStore sail) {
+			coordinator = sail.getBackingStore().asyncValueCleanupCoordinator();
+			// This hook runs before native writer admission and without holding the coordinator queue lock.
+			coordinator.beforeBatchForTest(() -> {
+				entered.countDown();
+				try {
+					assertThat(release.await(30, TimeUnit.SECONDS)).as("cleanup gate released before shutdown")
+							.isTrue();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(interrupted);
+				}
+			});
+		}
+
+		@Override
+		public void close() {
+			release.countDown();
+			coordinator.beforeBatchForTest(() -> {
+			});
+		}
+	}
+
 	private void runTerminalVariant(TerminalVariant variant, long started, List<String> phases) throws Exception {
 		recordTerminalPhase(started, phases, "store construction entered");
 		LmdbStore sail = new LmdbStore(directory, config(true, true));
@@ -420,8 +609,12 @@ class LmdbInitialNoneImportAccelerationTest {
 		sail.init();
 		recordTerminalPhase(started, phases, "store init exited");
 		IRI subject = VF.createIRI("urn:initial-none:terminal");
+		PausedCleanup cleanup = null;
 		try {
 			awaitTerminalAccelerators(sail, started, phases, "initial");
+			// Readiness is point-in-time: a later legal cleanup commit can retire the optional overlay.
+			// Keep async cleanup enabled, but observe the import rebuild before allowing that invalidation.
+			cleanup = new PausedCleanup(sail);
 			recordTerminalPhase(started, phases, "terminal connection entered");
 			try (var writer = sail.getConnection()) {
 				recordTerminalPhase(started, phases, "terminal transaction begin entered");
@@ -484,6 +677,9 @@ class LmdbInitialNoneImportAccelerationTest {
 			recordTerminalPhase(started, phases, "follow-up connection close exited");
 			awaitTerminalAccelerators(sail, started, phases, "after follow-up");
 		} finally {
+			if (cleanup != null) {
+				cleanup.close();
+			}
 			recordTerminalPhase(started, phases, "shutdown entered");
 			sail.shutDown();
 			recordTerminalPhase(started, phases, "shutdown exited");
