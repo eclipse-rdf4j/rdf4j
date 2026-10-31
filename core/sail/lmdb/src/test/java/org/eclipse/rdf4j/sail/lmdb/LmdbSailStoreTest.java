@@ -1653,50 +1653,40 @@ public class LmdbSailStoreTest {
 	void approveAllCanDisableBulkOperationsViaConfig() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		setBulkOperationSize(config, 0);
-		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-disabled"), config);
-		sail.init();
+		ConfiguredBulkWriteObserver writes = new ConfiguredBulkWriteObserver();
+		repo.shutDown();
+		LmdbStore sail = writes.createStore(new File(dataDir, "bulk-disabled"), config);
+		repo = new SailRepository(sail);
+		repo.init();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
 
-		try {
-			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.enableMultiThreading = false;
-
-			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
-			tripleStoreField.setAccessible(true);
-			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
-			TripleStore tripleStoreSpy = spy(originalTripleStore);
-
-			tripleStoreField.set(backingStore, tripleStoreSpy);
-			try {
-				try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-					clearInvocations(tripleStoreSpy);
-					sink.approveAll(sampleStatements(5), Set.of());
-					sink.flush();
-
-					verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
-							any(long[].class), any(long[].class), anyInt(), anyBoolean(), anyBoolean(),
-							any(IntConsumer.class));
-					verify(tripleStoreSpy, times(5)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(),
-							anyBoolean());
-				}
-
-				clearInvocations(tripleStoreSpy);
-				try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-					sink.approve(F.createIRI("urn:disabled:subject:1"), F.createIRI("urn:disabled:predicate"),
-							F.createIRI("urn:disabled:object:1"), null);
-					sink.approve(F.createIRI("urn:disabled:subject:2"), F.createIRI("urn:disabled:predicate"),
-							F.createIRI("urn:disabled:object:2"), null);
-					sink.flush();
-				}
-				verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean(), anyBoolean(),
-						any(IntConsumer.class));
-				verify(tripleStoreSpy, times(2)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
-			} finally {
-				tripleStoreField.set(backingStore, originalTripleStore);
-			}
-		} finally {
-			sail.shutDown();
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			writes.reset();
+			sink.approveAll(sampleStatements(5), Set.of());
+			sink.flush();
+			assertTrue(writes.alignedCounts.isEmpty());
+			assertEquals(0, writes.eightArgumentAlignedCalls);
+			assertEquals(5, writes.scalarCalls);
 		}
+		writes.reset();
+		Set<Statement> expected = sampleStatements(5);
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			for (int i = 1; i <= 2; i++) {
+				Statement statement = F.createStatement(F.createIRI("urn:disabled:subject:" + i),
+						F.createIRI("urn:disabled:predicate"), F.createIRI("urn:disabled:object:" + i));
+				expected.add(statement);
+				sink.approve(statement.getSubject(), statement.getPredicate(), statement.getObject(), null);
+			}
+			sink.flush();
+		}
+		assertTrue(writes.alignedCounts.isEmpty());
+		assertEquals(0, writes.eightArgumentAlignedCalls);
+		assertEquals(2, writes.scalarCalls);
+		TripleStore triples = backingStore.getTripleStore();
+		assertEquals("instrumentation must preserve the real native owner generation",
+				triples.lastTransactionId(), triples.trustedTransactionId());
+		assertBufferedBatchStatements(backingStore, expected);
 	}
 
 	@Test
@@ -2071,46 +2061,81 @@ public class LmdbSailStoreTest {
 	void approveAllUsesConfiguredBulkOperationSize() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		setBulkOperationSize(config, 2);
-		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-size-two"), config);
-		sail.init();
+		ConfiguredBulkWriteObserver writes = new ConfiguredBulkWriteObserver();
+		repo.shutDown();
+		LmdbStore sail = writes.createStore(new File(dataDir, "bulk-size-two"), config);
+		repo = new SailRepository(sail);
+		repo.init();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			writes.reset();
+			sink.approveAll(sampleStatements(5), Set.of());
+			sink.flush();
 
-		try {
-			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.enableMultiThreading = false;
+			assertEquals("the full batches and one-row tail must use ordered aligned calls", List.of(2, 2, 1),
+					writes.alignedCounts);
+			assertEquals("each prepared aligned array must match the valid row count", List.of(2, 2, 1),
+					writes.alignedCapacities);
+			assertEquals(3, writes.alignedCounts.size());
+			assertEquals(1, writes.scalarCalls);
+			assertBufferedBatchStatements(backingStore, sampleStatements(5));
+		}
+		TripleStore triples = backingStore.getTripleStore();
+		assertEquals("instrumentation must preserve the real native owner generation",
+				triples.lastTransactionId(), triples.trustedTransactionId());
+	}
 
-			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
-			tripleStoreField.setAccessible(true);
-			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
-			TripleStore tripleStoreSpy = spy(originalTripleStore);
-			List<Integer> alignedCounts = new ArrayList<>();
-			List<Integer> alignedCapacities = new ArrayList<>();
-			doAnswer(invocation -> {
-				alignedCounts.add(invocation.getArgument(4));
-				alignedCapacities.add(((long[]) invocation.getArgument(0)).length);
-				return invocation.callRealMethod();
-			}).when(tripleStoreSpy)
-					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+	/** Records calls on the single real native owner, rather than copying its mutable transaction state. */
+	private static final class ConfiguredBulkWriteObserver {
+		private final List<Integer> alignedCounts = new ArrayList<>();
+		private final List<Integer> alignedCapacities = new ArrayList<>();
+		private int eightArgumentAlignedCalls;
+		private int scalarCalls;
 
-			tripleStoreField.set(backingStore, tripleStoreSpy);
-			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-				clearInvocations(tripleStoreSpy);
-				sink.approveAll(sampleStatements(5), Set.of());
-				sink.flush();
+		private void reset() {
+			alignedCounts.clear();
+			alignedCapacities.clear();
+			eightArgumentAlignedCalls = 0;
+			scalarCalls = 0;
+		}
 
-				assertEquals("the full batches and one-row tail must use ordered aligned calls", List.of(2, 2, 1),
-						alignedCounts);
-				assertEquals("each prepared aligned array must match the valid row count", List.of(2, 2, 1),
-						alignedCapacities);
-				verify(tripleStoreSpy, times(3)).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
-				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
-				assertBufferedBatchStatements(backingStore, sampleStatements(5));
-			} finally {
-				tripleStoreField.set(backingStore, originalTripleStore);
-			}
-		} finally {
-			sail.shutDown();
+		private LmdbStore createStore(File directory, LmdbStoreConfig config) {
+			return new LmdbStore(directory, config) {
+				@Override
+				LmdbSailStore createBackingStore(File dataDirectory, StoreProperties properties,
+						LmdbStoreConfig storeConfig, boolean sketches) throws IOException {
+					return new LmdbSailStore(dataDirectory, properties, storeConfig, sketches, null,
+							(tripleDirectory, tripleProperties, tripleConfig, values) -> new TripleStore(
+									tripleDirectory, tripleProperties, tripleConfig, values) {
+								@Override
+								public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects,
+										long[] contexts, int count, boolean explicit, IntConsumer addedIndexConsumer)
+										throws IOException {
+									alignedCounts.add(count);
+									alignedCapacities.add(subjects.length);
+									super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+											addedIndexConsumer);
+								}
+
+								@Override
+								void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects,
+										long[] contexts, int count, boolean explicit, boolean mayHaveInferred,
+										IntConsumer addedIndexConsumer) throws IOException {
+									eightArgumentAlignedCalls++;
+									super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+											mayHaveInferred, addedIndexConsumer);
+								}
+
+								@Override
+								public boolean storeTriple(long subject, long predicate, long object, long context,
+										boolean explicit) throws IOException {
+									scalarCalls++;
+									return super.storeTriple(subject, predicate, object, context, explicit);
+								}
+							});
+				}
+			};
 		}
 	}
 
