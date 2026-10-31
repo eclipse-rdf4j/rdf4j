@@ -62,6 +62,7 @@ class TimeLimitIterationTest {
 			iteration.interrupt();
 		});
 
+		Throwable primaryFailure = null;
 		try {
 			signal.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 			assertEquals(0L, cancellationRequested.getCount(),
@@ -71,14 +72,19 @@ class TimeLimitIterationTest {
 			assertThat(((BlockingIteration) delegate).closeThread.get()).isNotSameAs(signalThread.get());
 			assertEquals(1L, releaseClose.getCount(),
 					"the cancellation signal must return while delegate cleanup remains blocked");
+		} catch (Exception | Error testFailure) {
+			primaryFailure = testFailure;
+			throw testFailure;
 		} finally {
-			releaseClose.countDown();
-			if (!signal.isDone()) {
-				signal.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-			}
-			iteration.close();
-			executor.shutdownNow();
-			executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			IterationTestCleanup.close(primaryFailure,
+					releaseClose::countDown,
+					() -> {
+						if (!signal.isDone()) {
+							signal.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+						}
+					},
+					iteration::close,
+					() -> IterationTestCleanup.stopExecutor(executor));
 		}
 	}
 
@@ -96,18 +102,21 @@ class TimeLimitIterationTest {
 			iteration.interrupt();
 		});
 
+		Throwable primaryFailure = null;
 		try {
 			signal.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 			assertEquals(1L, closeEntered.getCount(), "the timeout signal must not close a non-cooperative delegate");
 			assertTrue(closeEntered.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS),
 					"the last escalation step must close a non-cooperative delegate");
 			assertThat(delegate.closeThread.get()).isNotSameAs(signalThread.get());
+		} catch (Exception | Error testFailure) {
+			primaryFailure = testFailure;
+			throw testFailure;
 		} finally {
-			releaseClose.countDown();
-			signal.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-			iteration.close();
-			executor.shutdownNow();
-			executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			IterationTestCleanup.close(primaryFailure,
+					releaseClose::countDown,
+					() -> signal.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS), iteration::close,
+					() -> IterationTestCleanup.stopExecutor(executor));
 		}
 	}
 
@@ -121,6 +130,7 @@ class TimeLimitIterationTest {
 		Future<String> worker = executor.submit(iteration::next);
 		Future<?> signal = null;
 
+		Throwable primaryFailure = null;
 		try {
 			assertTrue(nextEntered.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS),
 					"the delegate next call must be in flight before cancellation");
@@ -132,17 +142,25 @@ class TimeLimitIterationTest {
 					() -> worker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS));
 			assertInstanceOf(TestTimeoutException.class, timeout.getCause(),
 					"an accepted timeout must win over a value returned by the in-flight next call");
+		} catch (Exception | Error testFailure) {
+			primaryFailure = testFailure;
+			throw testFailure;
 		} finally {
-			releaseNext.countDown();
-			if (signal != null && !signal.isDone()) {
-				signal.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-			}
-			if (!worker.isDone()) {
-				worker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-			}
-			iteration.close();
-			executor.shutdownNow();
-			executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			Future<?> signalToClose = signal;
+			IterationTestCleanup.close(primaryFailure,
+					releaseNext::countDown,
+					() -> {
+						if (signalToClose != null && !signalToClose.isDone()) {
+							signalToClose.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+						}
+					},
+					() -> {
+						if (!worker.isDone()) {
+							worker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+						}
+					},
+					iteration::close,
+					() -> IterationTestCleanup.stopExecutor(executor));
 		}
 	}
 
@@ -231,6 +249,7 @@ class TimeLimitIterationTest {
 		});
 
 		SignallingTimeLimitIteration later = null;
+		Throwable primaryFailure = null;
 		try {
 			assertTrue(hasNextEntered.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS),
 					"the first evaluation must be in flight before scheduling the later timeout");
@@ -247,16 +266,16 @@ class TimeLimitIterationTest {
 					"the earlier timeout must be accepted by the cooperative delegate");
 			assertEquals(1L, closeEntered.getCount(),
 					"the timer must only signal; delegate close belongs to the evaluation worker");
+		} catch (Exception | Error testFailure) {
+			primaryFailure = testFailure;
+			throw testFailure;
 		} finally {
-			releaseClose.countDown();
-			releaseHasNext.countDown();
-			blockedWorker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-			blocked.close();
-			if (later != null) {
-				later.close();
-			}
-			executor.shutdownNow();
-			executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			SignallingTimeLimitIteration laterToClose = later;
+			IterationTestCleanup.close(primaryFailure,
+					releaseClose::countDown, releaseHasNext::countDown,
+					() -> blockedWorker.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS), blocked::close,
+					laterToClose == null ? null : laterToClose::close,
+					() -> IterationTestCleanup.stopExecutor(executor));
 		}
 
 		assertFalse(workerFailure.get() != null, () -> "unexpected evaluation worker failure: " + workerFailure.get());
@@ -272,6 +291,7 @@ class TimeLimitIterationTest {
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		SignallingTimeLimitIteration later = null;
 
+		Throwable primaryFailure = null;
 		try {
 			assertTrue(requestEntered.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS),
 					"the first timeout must reach the failing cooperative request");
@@ -283,14 +303,15 @@ class TimeLimitIterationTest {
 
 			assertTrue(laterSignal.get(FUTURE_TIMEOUT_SECONDS + 1L, TimeUnit.SECONDS),
 					"a cooperative-request failure must not terminate the process-wide timeout timer");
+		} catch (Exception | Error testFailure) {
+			primaryFailure = testFailure;
+			throw testFailure;
 		} finally {
-			releaseRequest.countDown();
-			failing.close();
-			if (later != null) {
-				later.close();
-			}
-			executor.shutdownNow();
-			executor.awaitTermination(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+			SignallingTimeLimitIteration laterToClose = later;
+			IterationTestCleanup.close(primaryFailure,
+					releaseRequest::countDown, failing::close,
+					laterToClose == null ? null : laterToClose::close,
+					() -> IterationTestCleanup.stopExecutor(executor));
 		}
 	}
 
