@@ -50,6 +50,7 @@ import { colorToRgba, readCanvasPalette } from "./graph-canvas-controller.ts";
 import { createGraphVertexCache, graphClipTransform } from "./graph-webgl.ts";
 import { retainGraphLayoutWorker, startGraphLayout } from "./graph-layout-client.ts";
 import { expansionMovableIds } from "./graph-layout-expansion.ts";
+import { describeLayoutDuration, describeRelayoutChanges, estimateLayoutMs, laidOutGraph, readLayoutTiming, relayoutSuggestion, writeLayoutTiming, type LaidOutGraph, type LayoutMode, type LayoutTiming } from "./relayout-suggestion.ts";
 import { LINK_COUNT_CAP, RdfExplorer, clearMetadataCache } from "./rdf-explorer.ts";
 import { bringsNewLinks, linkCountCap, linkTotalStale, loadedLinkCounts, loadedLinksOf, moreLinks, type LinkTotal } from "./link-counts.ts";
 import { EXPAND_PAGE_LIMIT } from "./explorer-config.ts";
@@ -190,6 +191,13 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLayoutAnimating, setIsLayoutAnimating] = useState(false);
   const [isLayoutComputing, setIsLayoutComputing] = useState(false);
+  /** What the last full layout placed (or a stored graph showed): later changes are measured against it. */
+  const [laidOut, setLaidOut] = useState<LaidOutGraph | null>(null);
+  /** How long this browser's last full layout of each kind took, for the estimate of the next one. */
+  const [layoutTimings, setLayoutTimings] = useState<Partial<Record<LayoutMode, LayoutTiming>>>(() => {
+    const storage = browserStorage();
+    return { network: readLayoutTiming(storage, "network"), hierarchy: readLayoutTiming(storage, "hierarchy"), square: readLayoutTiming(storage, "square") };
+  });
   const [isLargeGraphDragging, setIsLargeGraphDragging] = useState(false);
   const [webglAvailable, setWebglAvailable] = useState(true);
   const [edgeBends, setEdgeBends] = useState<Map<string, number>>(new Map());
@@ -809,6 +817,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     applyRouting(saved.graph, showValuesRef.current);
     // The incoming revision belongs to another view; only this page's generation orders asynchronous work.
     const restoredGraph = { ...saved.graph, revision: graphRef.current.revision + 1 };
+    // A stored graph comes with its own positions: changes are measured from what it showed.
+    setLaidOut(laidOutGraph(canvasGraph(restoredGraph, showValuesRef.current)));
     animateProgrammaticGraph(restoredGraph, saved.transform, { skipLayout: true, duration: 0 });
     setQuery(saved.query);
     setProvenanceBatches(saved.provenanceBatches);
@@ -1063,6 +1073,22 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     const ids = selectedNodeIdList.filter((id) => drawnNodeById.has(id));
     return ids.length >= 2 ? new Set(ids) : null;
   }, [selectedNodeIdList, drawnNodeById]);
+  /**
+   * The nodes and links that changed since the last full layout, when the graph would look better laid out again,
+   * the layout to run and how long it should take. Animations move nodes without a new revision; only what is drawn
+   * and pinned matters here, and both change the revision.
+   */
+  const relayout = useMemo(() => {
+    const changes = laidOut ? relayoutSuggestion(laidOut, drawnGraph) : null;
+    if (!changes) return null;
+    // A hierarchy is not laid out with pinned nodes or past 1,500 nodes (as in the Layout menu): organize instead.
+    const mode = changes.mode === "hierarchy" && (drawnGraph.nodes.length > 1500 || drawnGraph.nodes.some((node) => node.pinned))
+      ? "network"
+      : changes.mode;
+    const timing = layoutTimings[mode];
+    const estimate = timing ? describeLayoutDuration(estimateLayoutMs(timing, drawnGraph.nodes.length, drawnGraph.edges.length)) : null;
+    return { ...changes, mode, estimate };
+  }, [laidOut, graph.revision, showValues, layoutTimings]);
   const batchById = useMemo(
     () => new Map(provenanceBatches.map((batch) => [batch.id, batch])),
     [provenanceBatches],
@@ -1480,6 +1506,14 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       if (!cancelled && graphRef.current.revision === graphSnapshot.revision) {
         const targetGraph = applyGraphPositions(graphRef.current, positionByEntityId);
         const targetNodes = targetGraph.nodes;
+        // A layout of the whole graph is what later changes are measured against, and its time estimates the next.
+        if (!isIncremental && !isLocalLayout && !requestedLayout?.repairOnly) {
+          const mode = requestedLayout?.mode ?? "network";
+          const timing = { nodes: graphSnapshot.nodes.length, links: graphSnapshot.edges.length, durationMs: performance.now() - layoutStartedAt };
+          setLaidOut(laidOutGraph(graphSnapshot, mode));
+          setLayoutTimings((current) => ({ ...current, [mode]: timing }));
+          writeLayoutTiming(browserStorage(), mode, timing);
+        }
         setEdgeBends(result.bends);
         setEdgeRoutes(result.routes ?? new Map());
         // "Organizing the network…" becomes "Organized the network." once the positions are in; other messages stay.
@@ -3706,14 +3740,16 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setGraph(next);
   };
 
-  const arrangeLayout = (mode: 'network' | 'hierarchy' | 'square') => {
+  /** Arranges the selection (two or more nodes) or, with `wholeGraph` or without one, every node. */
+  const arrangeLayout = (mode: LayoutMode, wholeGraph = false) => {
     if (!graph.nodes.length) return;
+    const selection = wholeGraph ? null : layoutSelection;
     setViewMode("graph");
     invalidateAsyncRequests();
     pushHistory();
     requestedLayoutRef.current = {mode};
     layoutIntentRef.current = null;
-    localLayoutNodeIdsRef.current = layoutSelection;
+    localLayoutNodeIdsRef.current = selection;
     setIsLayoutAnimating(false);
     setEdgeBends(new Map());
     setEdgeRoutes(new Map());
@@ -3722,7 +3758,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       revision: current.revision + 1,
     }));
     setLayoutNonce((value) => value + 1);
-    const what = layoutSelection ? `the ${layoutSelection.size} selected nodes` : null;
+    const what = selection ? `the ${selection.size} selected nodes` : null;
     setStatus(
       mode === 'hierarchy'
         ? what ? `Arranging ${what} as a hierarchy…` : "Arranging as a hierarchy…"
@@ -3787,6 +3823,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     skipLayoutRevisionRef.current = next.revision;
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = null;
+    setLaidOut(laidOutGraph(canvasGraph(next, showValuesRef.current)));
     graphRef.current = next; setGraph(next);
     const fitted = fitBoxes(next.nodes.map(node => ({x:node.x ?? 0,y:node.y ?? 0,width:220,height:50})));
     transformRef.current = fitted; setTransform(fitted);
@@ -3803,6 +3840,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     pushHistory();
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = null;
+    setLaidOut(null);
     setIsLayoutAnimating(false);
     setEdgeBends(new Map());
     setEdgeRoutes(new Map());
@@ -4095,49 +4133,65 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               onReveal={focusLinkedNode}
               onSearchRepository={(term) => void searchForSeed(term)}
             />
-            {hasSelectionCriteria || selectedNodeIds.size > 1 ? (
-              <div className="focus-summary selection-summary" aria-live="polite">
-                <strong>
-                  {selectedNodeIds.size}{" "}
-                  {selectedNodeIds.size === 1 ? "node" : "nodes"} {filters.hasActive ? "match the filters" : "selected"}
-                </strong>
-                <div className="selection-actions">
-                  <button
-                    className="workbench-action workbench-action--secondary"
-                    type="button"
-                    aria-label={filters.hasActive ? `Clear the filters that select ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}` : `Clear the selection of ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}`}
-                    onClick={() => {
-                      clearFacetFilters();
-                      setManualSelectedNodeIds(new Set());
-                    }}
-                  >
-                    <Icon name="clear" />
-                    Clear
-                  </button>
-                  <button
-                    className="workbench-action workbench-action--secondary"
-                    type="button"
-                    title="Load the neighbours of every selected node"
-                    disabled={!selectedNodeIds.size || expandingNodeIds.size > 0}
-                    onClick={() => void expandNodes([...selectedNodeIds], [...selectedNodeIds][0])}
-                  >
-                    <Icon name="expand" />
-                    Expand
-                  </button>
-                  <button
-                    className="workbench-action workbench-action--secondary"
-                    type="button"
-                    aria-keyshortcuts="Delete"
-                    title="Hide the selected nodes from the graph (Delete). Undo brings them back."
-                    disabled={!selectedNodeIds.size}
-                    onClick={() => hideNodes(new Set(selectedNodeIds))}
-                  >
-                    <Icon name="hide" />
-                    Hide
-                  </button>
+            {/* Under the find field: the selection bar, then the offer to lay the changed graph out again. */}
+            <div className="canvas-notices">
+              {hasSelectionCriteria || selectedNodeIds.size > 1 ? (
+                <div className="focus-summary selection-summary" aria-live="polite">
+                  <strong>
+                    {selectedNodeIds.size}{" "}
+                    {selectedNodeIds.size === 1 ? "node" : "nodes"} {filters.hasActive ? "match the filters" : "selected"}
+                  </strong>
+                  <div className="selection-actions">
+                    <button
+                      className="workbench-action workbench-action--secondary"
+                      type="button"
+                      aria-label={filters.hasActive ? `Clear the filters that select ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}` : `Clear the selection of ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}`}
+                      onClick={() => {
+                        clearFacetFilters();
+                        setManualSelectedNodeIds(new Set());
+                      }}
+                    >
+                      <Icon name="clear" />
+                      Clear
+                    </button>
+                    <button
+                      className="workbench-action workbench-action--secondary"
+                      type="button"
+                      title="Load the neighbours of every selected node"
+                      disabled={!selectedNodeIds.size || expandingNodeIds.size > 0}
+                      onClick={() => void expandNodes([...selectedNodeIds], [...selectedNodeIds][0])}
+                    >
+                      <Icon name="expand" />
+                      Expand
+                    </button>
+                    <button
+                      className="workbench-action workbench-action--secondary"
+                      type="button"
+                      aria-keyshortcuts="Delete"
+                      title="Hide the selected nodes from the graph (Delete). Undo brings them back."
+                      disabled={!selectedNodeIds.size}
+                      onClick={() => hideNodes(new Set(selectedNodeIds))}
+                    >
+                      <Icon name="hide" />
+                      Hide
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : null}
+              ) : null}
+              {relayout && !workspaceBusy ? (
+                <button
+                  className="workbench-action workbench-action--secondary relayout-suggestion"
+                  type="button"
+                  title={`${describeRelayoutChanges(relayout)} since the graph was last laid out. Lay it out again (Undo brings this layout back)${relayout.estimate ? `; that takes ${relayout.estimate}` : ""}.`}
+                  onClick={() => arrangeLayout(relayout.mode, true)}
+                >
+                  <Icon name="layout" />
+                  Re-run layout
+                  {/* The space keeps the words apart in the button's accessible name; the flex gap spaces them on screen. */}
+                  {relayout.estimate ? <>{" "}<span className="relayout-estimate">{relayout.estimate}</span></> : null}
+                </button>
+              ) : null}
+            </div>
             {!graph.nodes.length && workspaceRestored && !isQuerying && (
               <div className="empty-state">
                 <h3>The graph is empty</h3>
