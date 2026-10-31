@@ -92,16 +92,18 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 		}) {
 			Path output = directory.resolve("promotion.log");
 			Path data = Files.createDirectory(directory.resolve("store"));
+			Path temporary = Files.createDirectory(directory.resolve("tmp"));
 			String classpath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
 			ProcessBuilder builder = new ProcessBuilder(
 					Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-					"-ea", "-Xmx256m", "-XX:ActiveProcessorCount=2",
+					"-ea", "-Xmx256m", "-XX:ActiveProcessorCount=2", "-Djava.io.tmpdir=" + temporary,
 					"-Drdf4j.lmdb.csf.adaptiveAccelerators.enabled=true",
 					"-Drdf4j.lmdb.csf.adaptiveAccelerators.maxObjectBytes=1048576",
 					"-Drdf4j.lmdb.csf.adaptiveAccelerators.maxTotalBytes=67108864",
 					"-Drdf4j.lmdb.csf.adaptiveAccelerators.minHeapHeadroomBytes="
 							+ (refuse ? CHILD_HEAP_BYTES : 32L << 20),
-					"-cp", classpath, Probe.class.getName(), data.toString(), Boolean.toString(refuse))
+					"-cp", classpath, Probe.class.getName(), data.toString(), Boolean.toString(refuse),
+					temporary.toString())
 							.redirectErrorStream(true)
 							.redirectOutput(output.toFile());
 			// The subprocess owns a fixed heap/admission policy, independent of external JVM option injection.
@@ -159,6 +161,13 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 		public static void main(String[] args) throws Exception {
 			assertThat(Probe.class.desiredAssertionStatus()).isTrue();
 			assertThat(Runtime.getRuntime().maxMemory()).isPositive().isLessThanOrEqualTo(CHILD_HEAP_BYTES);
+			Path temporary = Files.createTempFile("promotion-owned-", ".tmp");
+			try {
+				assertThat(temporary.getParent()).as("child temporary files belong to the parent-owned root")
+						.isEqualTo(Path.of(args[2]));
+			} finally {
+				Files.delete(temporary);
+			}
 			boolean refuse = Boolean.parseBoolean(args[1]);
 			LmdbDecodedNativeAdjacencyPromotionTest fixture = new LmdbDecodedNativeAdjacencyPromotionTest();
 			try (AutoCloseable owner = fixture::tearDown) {
