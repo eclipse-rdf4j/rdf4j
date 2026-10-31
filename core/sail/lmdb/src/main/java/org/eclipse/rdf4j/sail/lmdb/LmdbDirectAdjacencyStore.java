@@ -1292,6 +1292,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private void rememberUnexpectedMaintenanceFailure(Throwable failure) {
 		if (!options.failOnMaintenanceError() || failure instanceof AdjacencyGapException
 				|| failure instanceof AdjacencyClassificationGapException
+				|| failure instanceof LmdbAdjacencyBuildInvalidatedException
+				|| failure instanceof LmdbSailStore.MapResizeConflictException
 				|| failure instanceof LmdbAdjacencyBuildUnavailableException
 				|| failure instanceof LmdbAdjacencyMemoryRefusedException || unexpectedMaintenanceFailure != null) {
 			return;
@@ -1744,6 +1746,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				}
 				throw failure;
 			}
+		}
+
+		@Override
+		public boolean buildInvalidated(Throwable failure) {
+			return failure instanceof LmdbAdjacencyBuildInvalidatedException
+					|| failure instanceof LmdbSailStore.MapResizeConflictException;
 		}
 
 		@Override
