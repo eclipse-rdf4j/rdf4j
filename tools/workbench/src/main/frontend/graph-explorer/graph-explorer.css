@@ -923,14 +923,29 @@ html[data-theme="dark"] .graph-explorer {
   backdrop-filter: blur(6px);
 }
 
-/* The selection bar: how many nodes are selected and what can be done with them, in one row. */
-.graph-explorer #graph-explorer-app .selection-summary {
+/* Under the find field, one under the other: the selection bar and the offer to lay the graph out again. */
+.graph-explorer #graph-explorer-app .canvas-notices {
   position: absolute;
   z-index: 2;
   top: calc(var(--control-height) + 20px);
   left: 12px;
   display: flex;
   max-width: calc(100% - 24px);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  /* The canvas stays usable between and beside them. */
+  pointer-events: none;
+}
+
+.graph-explorer #graph-explorer-app .canvas-notices > * {
+  pointer-events: auto;
+}
+
+/* The selection bar: how many nodes are selected and what can be done with them, in one row. */
+.graph-explorer #graph-explorer-app .selection-summary {
+  display: flex;
+  max-width: 100%;
   align-items: center;
   gap: 12px;
   padding: 4px 4px 4px 12px;
@@ -961,6 +976,20 @@ html[data-theme="dark"] .graph-explorer {
 
 .graph-explorer #graph-explorer-app .selection-actions .workbench-action {
   padding: 0 10px;
+}
+
+/* Offered once enough of the graph changed since its last full layout, with how long a new one should take. */
+.graph-explorer #graph-explorer-app .relayout-suggestion {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 12px;
+  box-shadow: var(--overlay-shadow);
+  animation: summary-enter var(--motion-medium) var(--ease-out) both;
+}
+
+.graph-explorer #graph-explorer-app .relayout-estimate {
+  color: var(--muted);
+  font-weight: 400;
 }
 
 .graph-explorer #graph-explorer-app .zoom-controls {
@@ -3175,7 +3204,8 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
     min-height: var(--workbench-touch-height);
   }
 
-  .graph-explorer #graph-explorer-app :is(.selection-actions, .zoom-controls) .workbench-action {
+  .graph-explorer #graph-explorer-app :is(.selection-actions, .zoom-controls) .workbench-action,
+  .graph-explorer #graph-explorer-app .relayout-suggestion {
     height: var(--workbench-touch-height);
     min-height: var(--workbench-touch-height);
   }

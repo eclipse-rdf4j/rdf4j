@@ -93,7 +93,9 @@ class LmdbSnapshotValueLifetimeTest {
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void postReadyUnusedStatAdmissionOwnsOneValueReaderUntilReleased(@TempDir File dataDir) throws Exception {
-		AdmissionObservationStore store = new AdmissionObservationStore(dataDir, true);
+		// Only durable cleanup runs the unused-stat estimate on the post-ready worker.
+		AdmissionObservationStore store = new AdmissionObservationStore(dataDir, true,
+				new LmdbStoreConfig("spoc,posc").setForceSync(true).setAsyncValueCleanup(false));
 		try {
 			store.init();
 			IRI subject = VF.createIRI("urn:snapshot-lifetime:post-ready-owner:subject");
@@ -241,47 +243,94 @@ class LmdbSnapshotValueLifetimeTest {
 		FailingReadSnapshotStore store = new FailingReadSnapshotStore(dataDir);
 		store.init();
 		try {
-			LmdbGcTestMaintenance.awaitPostReady(store);
-			assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS),
-					"native index maintenance must finish before admission");
-			LmdbSailStore backingStore = store.getBackingStore();
-			TripleStore tripleStore = store.tripleStore;
-			ValueStore valueStore = store.valueStore;
-			assertSame(tripleStore, backingStore.getTripleStore(), "the fixture must observe the admitted TripleStore");
-			assertSame(valueStore, backingStore.valueStore(), "the fixture must inject into the admitted ValueStore");
-			assertNull(backingStore.currentReadViewLease(), "the measured acquisition must start a fresh paired view");
-			int triplePermits = availableReaderPermits(tripleStore.getTxnManager());
-			int valuePermits = availableReaderPermits(valueStore.getTxnManager());
-			store.expectedTriplePermits = triplePermits;
-			store.expectedSnapshotThread = Thread.currentThread();
-			store.failNextSnapshotStart.set(true);
-			int startsBefore = store.snapshotStartCalls.get();
-			SailException failure = assertThrows(SailException.class,
-					() -> {
-						try (SailDataset ignored = backingStore.getExplicitSailSource()
-								.dataset(IsolationLevels.SNAPSHOT_READ)) {
-						}
-					},
-					() -> "paired starts before/after=" + startsBefore + "/" + store.snapshotStartCalls.get()
-							+ ", measured starts=" + store.measuredSnapshotStartCalls.get()
-							+ ", fault pending=" + store.failNextSnapshotStart.get()
-							+ ", bound view=" + backingStore.currentReadViewLease());
-			assertFalse(store.failNextSnapshotStart.get(), "the measured paired acquisition must consume the fault");
-			assertEquals(1, store.measuredSnapshotStartCalls.get(),
-					"exactly the measured caller must enter the injected second-environment start");
-			assertFalse(failure instanceof SailConflictException,
-					"an injected native snapshot-start I/O failure is not a transaction conflict");
-			assertTrue(failure.getCause() instanceof IOException,
-					"the injected second-environment start failure must remain the reported cause");
-			assertEquals("injected ValueStore snapshot start failure", failure.getCause().getMessage());
-			assertEquals(triplePermits, availableReaderPermits(tripleStore.getTxnManager()),
-					"failed paired acquisition must return the first environment's reader permit");
-			assertEquals(valuePermits, availableReaderPermits(valueStore.getTxnManager()),
-					"failed ValueStore acquisition must return its reserved reader permit");
+			assertFailedValueSnapshotReturnsReservations(store);
 		} finally {
 			store.expectedSnapshotThread = null;
 			store.shutDown();
 		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void ambientCleanupReaderCanReturnBeforeMeasuredSnapshotFailure(@TempDir File dataDir) throws Exception {
+		FailingReadSnapshotStore store = new FailingReadSnapshotStore(dataDir, true);
+		CountDownLatch ambientReader = new CountDownLatch(1);
+		CountDownLatch releaseReader = new CountDownLatch(1);
+		AtomicBoolean holdNextReader = new AtomicBoolean(true);
+		try {
+			store.init();
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+			store.valueStore.getTxnManager().setAdmissionObserverForTest(txn -> {
+				if (Thread.currentThread().getName().equals("LmdbValueCleanup")
+						&& holdNextReader.compareAndSet(true, false)) {
+					ambientReader.countDown();
+					try {
+						assertTrue(releaseReader.await(20, TimeUnit.SECONDS));
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError(interrupted);
+					}
+				}
+			});
+			store.getBackingStore().asyncValueCleanupCoordinator().signal();
+			assertTrue(ambientReader.await(10, TimeUnit.SECONDS));
+			int permitsWithAmbientReader = availableSnapshotReaderPermits(store.valueStore.getTxnManager());
+			releaseReader.countDown();
+			// Join the real idle worker before measuring conservation of only the injected paired acquisition.
+			store.getBackingStore().stopAsyncValueCleanupForShutdown();
+			assertEquals(permitsWithAmbientReader + 1,
+					availableSnapshotReaderPermits(store.valueStore.getTxnManager()),
+					"an unrelated cleanup reader legitimately returns one ordinary permit before acquisition");
+			assertFailedValueSnapshotReturnsReservations(store);
+		} finally {
+			releaseReader.countDown();
+			store.expectedSnapshotThread = null;
+			store.shutDown();
+		}
+	}
+
+	private static int availableSnapshotReaderPermits(TxnManager manager) {
+		return manager.availableReadTxnSlots(Integer.MAX_VALUE, 0);
+	}
+
+	private static void assertFailedValueSnapshotReturnsReservations(FailingReadSnapshotStore store) throws Exception {
+		LmdbGcTestMaintenance.awaitPostReady(store);
+		assertTrue(store.awaitIndexRebuild(10, TimeUnit.SECONDS),
+				"native index maintenance must finish before admission");
+		LmdbSailStore backingStore = store.getBackingStore();
+		TripleStore tripleStore = store.tripleStore;
+		ValueStore valueStore = store.valueStore;
+		assertSame(tripleStore, backingStore.getTripleStore(), "the fixture must observe the admitted TripleStore");
+		assertSame(valueStore, backingStore.valueStore(), "the fixture must inject into the admitted ValueStore");
+		assertNull(backingStore.currentReadViewLease(), "the measured acquisition must start a fresh paired view");
+		int triplePermits = availableSnapshotReaderPermits(tripleStore.getTxnManager());
+		int valuePermits = availableSnapshotReaderPermits(valueStore.getTxnManager());
+		store.expectedTriplePermits = triplePermits;
+		store.expectedSnapshotThread = Thread.currentThread();
+		store.failNextSnapshotStart.set(true);
+		int startsBefore = store.snapshotStartCalls.get();
+		SailException failure = assertThrows(SailException.class,
+				() -> {
+					try (SailDataset ignored = backingStore.getExplicitSailSource()
+							.dataset(IsolationLevels.SNAPSHOT_READ)) {
+					}
+				},
+				() -> "paired starts before/after=" + startsBefore + "/" + store.snapshotStartCalls.get()
+						+ ", measured starts=" + store.measuredSnapshotStartCalls.get()
+						+ ", fault pending=" + store.failNextSnapshotStart.get()
+						+ ", bound view=" + backingStore.currentReadViewLease());
+		assertFalse(store.failNextSnapshotStart.get(), "the measured paired acquisition must consume the fault");
+		assertEquals(1, store.measuredSnapshotStartCalls.get(),
+				"exactly the measured caller must enter the injected second-environment start");
+		assertFalse(failure instanceof SailConflictException,
+				"an injected native snapshot-start I/O failure is not a transaction conflict");
+		assertTrue(failure.getCause() instanceof IOException,
+				"the injected second-environment start failure must remain the reported cause");
+		assertEquals("injected ValueStore snapshot start failure", failure.getCause().getMessage());
+		assertEquals(triplePermits, availableSnapshotReaderPermits(tripleStore.getTxnManager()),
+				"failed paired acquisition must return the first environment's reader permit");
+		assertEquals(valuePermits, availableSnapshotReaderPermits(valueStore.getTxnManager()),
+				"failed ValueStore acquisition must return its reserved reader permit");
 	}
 
 	@Test
@@ -1898,8 +1947,10 @@ class LmdbSnapshotValueLifetimeTest {
 					writer.removeStatements(null, PREDICATE, null, context);
 					writer.commit();
 				}
-				assertTrue(store.getBackingStore().hasRetiredValueIds(),
-						"the old TripleStore reader must preserve raw IDs before values are constructed");
+				assertTrue(
+						store.getBackingStore().asyncValueCleanupCoordinator().metrics().unacknowledgedCandidates() > 0
+								|| store.getBackingStore().hasRetiredValueIds(),
+						"the old TripleStore reader must preserve queued or durable raw IDs before values are constructed");
 				try (SailConnection writer = store.getConnection()) {
 					writer.begin(IsolationLevels.SNAPSHOT);
 					writer.addStatement(VF.createIRI("urn:dictionary-growth:new:large"), PREDICATE,
@@ -1938,6 +1989,8 @@ class LmdbSnapshotValueLifetimeTest {
 		// Keep this test independent of resize fallback. The small-map test below covers forced invalidation.
 		long mapSize = 64L * 1024 * 1024;
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				// This case checks durable intents and exact foreground publication transaction counts.
+				.setAsyncValueCleanup(false)
 				.setForceSync(true)
 				.setTripleDBSize(mapSize)
 				.setValueDBSize(mapSize));
@@ -2237,8 +2290,10 @@ class LmdbSnapshotValueLifetimeTest {
 					writer.removeStatements(subject, PREDICATE, object, context);
 					writer.commit();
 				}
-				assertTrue(store.getBackingStore().hasRetiredValueIds(),
-						"the consumed old-generation reader must initially protect retired dictionary IDs");
+				assertTrue(
+						store.getBackingStore().asyncValueCleanupCoordinator().metrics().unacknowledgedCandidates() > 0
+								|| store.getBackingStore().hasRetiredValueIds(),
+						"the consumed old-generation reader must initially preserve queued or durable dictionary IDs");
 
 				try (SailConnection writer = store.getConnection()) {
 					writer.begin(IsolationLevels.SNAPSHOT);
@@ -2334,16 +2389,23 @@ class LmdbSnapshotValueLifetimeTest {
 						VF.createLiteral("maintenance"));
 				writer.commit();
 			}
+			// Snapshot closure permits queued roots to reach retirement; escaped value protection need not end.
+			assertTrue(store.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS));
 			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 			assertFalse(store.getBackingStore().hasRetiredValueIds(),
 					"after the invalidated dataset closes, a later publication must drain retired values");
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(subject),
+					"retirement must remove the old forward mapping before the subject is reintroduced");
 			try (SailConnection writer = store.getConnection()) {
 				writer.begin(IsolationLevels.SNAPSHOT);
 				writer.addStatement(subject, PREDICATE, object, context);
 				writer.commit();
 			}
-			assertNotEquals(originalId, readSubjectId(store, subject, object, context),
-					"reclaimed IDs must not remain attached to the old dataset's retired statement");
+			// Async physical reclamation may legitimately reuse the numeric ID after materialization.
+			assertNotEquals(LmdbValue.UNKNOWN_ID, readSubjectId(store, subject, object, context),
+					"the reintroduced statement must resolve through a valid current dictionary mapping");
+			assertEquals(subject.stringValue(), escapedSubject.stringValue(),
+					"the escaped materialized value must retain its meaning after retirement and reintroduction");
 		} finally {
 			store.shutDown();
 		}
@@ -2542,7 +2604,12 @@ class LmdbSnapshotValueLifetimeTest {
 		private int expectedTriplePermits;
 
 		private FailingReadSnapshotStore(File dataDir) {
-			super(dataDir, new LmdbStoreConfig("spoc,posc").setForceSync(true));
+			// This fixture measures exact reader conservation; the companion covers default-enabled cleanup.
+			this(dataDir, false);
+		}
+
+		private FailingReadSnapshotStore(File dataDir, boolean asyncCleanup) {
+			super(dataDir, new LmdbStoreConfig("spoc,posc").setForceSync(true).setAsyncValueCleanup(asyncCleanup));
 		}
 
 		@Override
@@ -2565,10 +2632,8 @@ class LmdbSnapshotValueLifetimeTest {
 										if (measuredCaller && failNextSnapshotStart.compareAndSet(true, false)) {
 											try (snapshot) {
 												assertEquals(expectedTriplePermits - 1,
-														availableReaderPermits(tripleStore.getTxnManager()),
+														availableSnapshotReaderPermits(tripleStore.getTxnManager()),
 														"ValueStore start must follow the paired TripleStore reader start");
-											} catch (ReflectiveOperationException e) {
-												throw new IOException(e);
 											}
 											throw new IOException("injected ValueStore snapshot start failure");
 										}
@@ -2609,7 +2674,11 @@ class LmdbSnapshotValueLifetimeTest {
 		}
 
 		private AdmissionObservationStore(File dataDir, boolean deferPostReadyStart) {
-			super(dataDir, new LmdbStoreConfig("spoc,posc").setForceSync(true));
+			this(dataDir, deferPostReadyStart, new LmdbStoreConfig("spoc,posc").setForceSync(true));
+		}
+
+		private AdmissionObservationStore(File dataDir, boolean deferPostReadyStart, LmdbStoreConfig config) {
+			super(dataDir, config);
 			this.deferPostReadyStart = deferPostReadyStart;
 		}
 

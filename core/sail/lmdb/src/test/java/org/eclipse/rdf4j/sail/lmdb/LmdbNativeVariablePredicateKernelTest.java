@@ -38,6 +38,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIrTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Gate C milestone C3: a SPARQL pattern with a variable predicate and a bound endpoint compiles into a kernel, and
@@ -275,8 +277,10 @@ class LmdbNativeVariablePredicateKernelTest {
 				.doesNotContain("strategy: NOT_ACTIVATED");
 	}
 
-	@Test
-	void groupedWildcardJoinUsesIrInterpreterBeforeJaninoAdmission(@TempDir File ordinaryDir,
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void groupedWildcardJoinUsesIrInterpreterBeforeJaninoAdmission(boolean synchronousCompilation,
+			@TempDir File ordinaryDir,
 			@TempDir File interpretedDir) {
 		String query = "PREFIX ex: <" + NS + "> "
 				+ "SELECT ?p (COUNT(*) AS ?count) WHERE { "
@@ -291,17 +295,29 @@ class LmdbNativeVariablePredicateKernelTest {
 			repo = null;
 		}
 
-		open(interpretedDir, true, false);
-		assertThat(run(query)).containsExactlyElementsOf(expected);
-		String executed;
-		try (RepositoryConnection conn = repo.getConnection()) {
-			executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		String previousSynchronous = System.getProperty(JANINO_SYNCHRONOUS_PROPERTY);
+		try {
+			System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, Boolean.toString(synchronousCompilation));
+			open(interpretedDir, true, false);
+			// The fixture must not race asynchronous compilation or reuse an already compiled kernel.
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+			assertThat(run(query)).containsExactlyElementsOf(expected);
+			String executed;
+			try (RepositoryConnection conn = repo.getConnection()) {
+				executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+			}
+			assertThat(executed)
+					.as("the explicitly disabled Janino switch must still leave wildcard IR active%n%s", executed)
+					.contains("nativeExecutionPath=irAggregateParallelInterpreted")
+					.contains("strategy: irAggregateParallelInterpreted")
+					.doesNotContain("strategy: NOT_ACTIVATED");
+		} finally {
+			if (previousSynchronous == null) {
+				System.clearProperty(JANINO_SYNCHRONOUS_PROPERTY);
+			} else {
+				System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, previousSynchronous);
+			}
 		}
-		assertThat(executed)
-				.as("the default-off Janino switch must still leave wildcard IR active%n%s", executed)
-				.contains("nativeExecutionPath=irAggregateParallelInterpreted")
-				.contains("strategy: irAggregateParallelInterpreted")
-				.doesNotContain("strategy: NOT_ACTIVATED");
 	}
 
 	@Test

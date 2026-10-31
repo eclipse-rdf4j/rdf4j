@@ -53,7 +53,8 @@ class LmdbMaintenanceGrowthTest {
 	@Timeout(value = 60, unit = java.util.concurrent.TimeUnit.SECONDS)
 	void startupRetirementRecoveryGrowsFromItsNaturalCommittedFootprint(@TempDir Path dataDirectory)
 			throws Exception {
-		LmdbStoreConfig fixedCapacity = config(false);
+		// The sizing probes below specifically observe durable post-ready retirement recovery.
+		LmdbStoreConfig fixedCapacity = config(false).setAsyncValueCleanup(false);
 		IRI subject = VF.createIRI("urn:lmdb:maintenance-growth:live-subject");
 		TripleTerm quoted = VF.createTripleTerm(subject, PREDICATE, VF.createLiteral("nested committed value"));
 		TripleTerm nestedQuoted = VF.createTripleTerm(subject, PREDICATE, quoted);
@@ -110,7 +111,8 @@ class LmdbMaintenanceGrowthTest {
 			valueStore.close();
 		}
 
-		StartupMetadataProbeStore reopened = new StartupMetadataProbeStore(dataDirectory.toFile(), config(true),
+		StartupMetadataProbeStore reopened = new StartupMetadataProbeStore(dataDirectory.toFile(),
+				config(true).setAsyncValueCleanup(false),
 				Thread.currentThread());
 		reopened.init();
 		LmdbTestUtil.awaitPostReadyInitialization(reopened, 30L, java.util.concurrent.TimeUnit.SECONDS);
@@ -157,7 +159,7 @@ class LmdbMaintenanceGrowthTest {
 		StoreProperties reopenedProperties = new StoreProperties(dataDirectory.toFile());
 		reopenedProperties.load();
 		ValueStore recoveredValues = new ValueStore(new File(dataDirectory.toFile(), "values"), reopenedProperties,
-				config(true));
+				config(true).setAsyncValueCleanup(false));
 		try {
 			assertEquals(LmdbValue.UNKNOWN_ID, recoveredValues.getId(orphan),
 					"the startup liveness pass must reclaim the unreferenced retired value");
