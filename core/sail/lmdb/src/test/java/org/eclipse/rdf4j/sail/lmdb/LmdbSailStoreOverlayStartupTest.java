@@ -177,12 +177,40 @@ class LmdbSailStoreOverlayStartupTest {
 	void ownedMutationCancelsBeforeScanAtEitherAdmissionBoundary(boolean beforeScheduling) throws Exception {
 		seedRetirement();
 		CountDownLatch startupRequested = new CountDownLatch(1);
+		CountDownLatch termCleanupPending = new CountDownLatch(1);
+		CountDownLatch releaseTermCleanup = new CountDownLatch(1);
 		CountDownLatch startWarmup = new CountDownLatch(1);
 		CountDownLatch innerAdmission = new CountDownLatch(1);
 		CountDownLatch releaseInnerAdmission = new CountDownLatch(1);
 		CountDownLatch scanStarted = new CountDownLatch(1);
 		LmdbSailStore.ValueStoreFactory factory = (path, properties, config) -> new ValueStore(path, properties,
 				config, false, scanStarted::countDown) {
+			@Override
+			void startIndexRebuildAfterStoreInitialization() {
+				if (beforeScheduling) {
+					setTermIndexMaintenanceObserver(phase -> {
+						if (phase.equals("cleanup-batch")) {
+							termCleanupPending.countDown();
+							try {
+								// The test's outer finally releases this gate, including on assertion/timeout failure.
+								releaseTermCleanup.await();
+							} catch (InterruptedException interrupted) {
+								Thread.currentThread().interrupt();
+								throw new AssertionError(interrupted);
+							}
+						}
+					});
+				}
+				super.startIndexRebuildAfterStoreInitialization();
+			}
+
+			@Override
+			boolean awaitIndexRebuild(long timeout, TimeUnit unit) throws IOException, InterruptedException {
+				// The fixture's prerequisite wait releases and joins deliberately delayed real index cleanup.
+				releaseTermCleanup.countDown();
+				return super.awaitIndexRebuild(timeout, unit);
+			}
+
 			@Override
 			void startValueOverlayWarmupAfterStoreInitialization() {
 				startupRequested.countDown();
@@ -204,11 +232,16 @@ class LmdbSailStoreOverlayStartupTest {
 			try {
 				owner.startBackgroundMaintenanceAfterInitialization();
 				await(startupRequested);
+				if (beforeScheduling) {
+					await(termCleanupPending);
+				}
+				ValueStore values = owner.valueStore();
+				// Warm-up scheduling waits for term-index maintenance. Do not hold the writer it needs to finish.
+				assertThat(values.awaitIndexRebuild(10, TimeUnit.SECONDS)).isTrue();
 				if (!beforeScheduling) {
 					startWarmup.countDown();
 					await(innerAdmission);
 				}
-				ValueStore values = owner.valueStore();
 				try (var publication = owner.getExplicitSailSource().beginPublication()) {
 					values.startTransaction(true);
 					try {
@@ -235,6 +268,7 @@ class LmdbSailStoreOverlayStartupTest {
 				Boolean overlayHit = values.withData(id, (address, length) -> Boolean.FALSE, record -> Boolean.TRUE);
 				assertThat(overlayHit).isFalse();
 			} finally {
+				releaseTermCleanup.countDown();
 				startWarmup.countDown();
 				releaseInnerAdmission.countDown();
 			}
