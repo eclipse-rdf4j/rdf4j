@@ -93,7 +93,9 @@ class LmdbSnapshotValueLifetimeTest {
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void postReadyUnusedStatAdmissionOwnsOneValueReaderUntilReleased(@TempDir File dataDir) throws Exception {
-		AdmissionObservationStore store = new AdmissionObservationStore(dataDir, true);
+		// Only durable cleanup runs the unused-stat estimate on the post-ready worker.
+		AdmissionObservationStore store = new AdmissionObservationStore(dataDir, true,
+				new LmdbStoreConfig("spoc,posc").setForceSync(true).setAsyncValueCleanup(false));
 		try {
 			store.init();
 			IRI subject = VF.createIRI("urn:snapshot-lifetime:post-ready-owner:subject");
@@ -1898,8 +1900,10 @@ class LmdbSnapshotValueLifetimeTest {
 					writer.removeStatements(null, PREDICATE, null, context);
 					writer.commit();
 				}
-				assertTrue(store.getBackingStore().hasRetiredValueIds(),
-						"the old TripleStore reader must preserve raw IDs before values are constructed");
+				assertTrue(
+						store.getBackingStore().asyncValueCleanupCoordinator().metrics().unacknowledgedCandidates() > 0
+								|| store.getBackingStore().hasRetiredValueIds(),
+						"the old TripleStore reader must preserve queued or durable raw IDs before values are constructed");
 				try (SailConnection writer = store.getConnection()) {
 					writer.begin(IsolationLevels.SNAPSHOT);
 					writer.addStatement(VF.createIRI("urn:dictionary-growth:new:large"), PREDICATE,
@@ -1938,6 +1942,8 @@ class LmdbSnapshotValueLifetimeTest {
 		// Keep this test independent of resize fallback. The small-map test below covers forced invalidation.
 		long mapSize = 64L * 1024 * 1024;
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
+				// This case checks durable intents and exact foreground publication transaction counts.
+				.setAsyncValueCleanup(false)
 				.setForceSync(true)
 				.setTripleDBSize(mapSize)
 				.setValueDBSize(mapSize));
@@ -2237,8 +2243,10 @@ class LmdbSnapshotValueLifetimeTest {
 					writer.removeStatements(subject, PREDICATE, object, context);
 					writer.commit();
 				}
-				assertTrue(store.getBackingStore().hasRetiredValueIds(),
-						"the consumed old-generation reader must initially protect retired dictionary IDs");
+				assertTrue(
+						store.getBackingStore().asyncValueCleanupCoordinator().metrics().unacknowledgedCandidates() > 0
+								|| store.getBackingStore().hasRetiredValueIds(),
+						"the consumed old-generation reader must initially preserve queued or durable dictionary IDs");
 
 				try (SailConnection writer = store.getConnection()) {
 					writer.begin(IsolationLevels.SNAPSHOT);
@@ -2334,16 +2342,23 @@ class LmdbSnapshotValueLifetimeTest {
 						VF.createLiteral("maintenance"));
 				writer.commit();
 			}
+			// Snapshot closure permits queued roots to reach retirement; escaped value protection need not end.
+			assertTrue(store.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS));
 			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 			assertFalse(store.getBackingStore().hasRetiredValueIds(),
 					"after the invalidated dataset closes, a later publication must drain retired values");
+			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(subject),
+					"retirement must remove the old forward mapping before the subject is reintroduced");
 			try (SailConnection writer = store.getConnection()) {
 				writer.begin(IsolationLevels.SNAPSHOT);
 				writer.addStatement(subject, PREDICATE, object, context);
 				writer.commit();
 			}
-			assertNotEquals(originalId, readSubjectId(store, subject, object, context),
-					"reclaimed IDs must not remain attached to the old dataset's retired statement");
+			// Async physical reclamation may legitimately reuse the numeric ID after materialization.
+			assertNotEquals(LmdbValue.UNKNOWN_ID, readSubjectId(store, subject, object, context),
+					"the reintroduced statement must resolve through a valid current dictionary mapping");
+			assertEquals(subject.stringValue(), escapedSubject.stringValue(),
+					"the escaped materialized value must retain its meaning after retirement and reintroduction");
 		} finally {
 			store.shutDown();
 		}
@@ -2609,7 +2624,11 @@ class LmdbSnapshotValueLifetimeTest {
 		}
 
 		private AdmissionObservationStore(File dataDir, boolean deferPostReadyStart) {
-			super(dataDir, new LmdbStoreConfig("spoc,posc").setForceSync(true));
+			this(dataDir, deferPostReadyStart, new LmdbStoreConfig("spoc,posc").setForceSync(true));
+		}
+
+		private AdmissionObservationStore(File dataDir, boolean deferPostReadyStart, LmdbStoreConfig config) {
+			super(dataDir, config);
 			this.deferPostReadyStart = deferPostReadyStart;
 		}
 
