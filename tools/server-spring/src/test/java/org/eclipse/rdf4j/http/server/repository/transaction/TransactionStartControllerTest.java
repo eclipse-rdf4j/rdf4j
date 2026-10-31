@@ -16,14 +16,18 @@ import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 import static org.assertj.core.api.Assertions.fail;
 import static org.eclipse.rdf4j.common.transaction.IsolationLevels.READ_COMMITTED;
 import static org.eclipse.rdf4j.common.transaction.IsolationLevels.SNAPSHOT;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Stream;
@@ -39,8 +43,10 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.http.HttpMethod;
@@ -50,7 +56,8 @@ import org.springframework.web.servlet.ModelAndView;
 
 class TransactionStartControllerTest {
 	private final static String REPO_ID = "test-repo";
-	private final TransactionStartController controller = new TransactionStartController();
+	private final FixtureCleanup fixture = new FixtureCleanup();
+	private final TransactionStartController controller = ownedController();
 
 	private MockHttpServletRequest request;
 	private MockHttpServletResponse response;
@@ -60,9 +67,36 @@ class TransactionStartControllerTest {
 		request = new MockHttpServletRequest();
 		request.setRequestURI("/repositories/" + REPO_ID + "/transactions");
 		request.setAttribute("repositoryID", REPO_ID);
-		request.setAttribute("repository", new SailRepository(new MemoryStore()));
+		Repository repository = new SailRepository(new MemoryStore());
+		fixture.repository = repository::shutDown;
+		request.setAttribute("repository", repository);
 		request.setMethod(HttpMethod.POST.name());
 		response = new MockHttpServletResponse();
+	}
+
+	@AfterEach
+	void tearDown() throws Exception {
+		fixture.close();
+	}
+
+	private TransactionStartController ownedController() {
+		return new TransactionStartController() {
+			@Override
+			Transaction createTransaction(Repository repository) throws ExecutionException, InterruptedException {
+				return ownTransaction(super.createTransaction(repository));
+			}
+		};
+	}
+
+	private Transaction ownTransaction(Transaction transaction) {
+		fixture.ownTransaction(transaction, () -> {
+			try {
+				ActiveTransactionRegistry.INSTANCE.deregister(transaction);
+			} catch (RepositoryException notRegistered) {
+				// Request setup may fail before registration, or the controller may already have removed it.
+			}
+		});
+		return transaction;
 	}
 
 	@Test
@@ -85,15 +119,9 @@ class TransactionStartControllerTest {
 		String location = getHeaders(result).get("Location");
 		UUID id = UUID.fromString(location.substring(location.lastIndexOf('/') + 1));
 		Transaction transaction = ActiveTransactionRegistry.INSTANCE.getTransaction(id);
-		try {
-			org.assertj.core.api.Assertions.assertThatThrownBy(() -> transaction.prepareQuery(QueryLanguage.SPARQL,
-					"ASK { <_:fixed> <urn:p> <urn:o> }", null))
-					.hasRootCauseInstanceOf(MalformedQueryException.class);
-		} finally {
-			transaction.close();
-			ActiveTransactionRegistry.INSTANCE.deregister(transaction);
-			RepositoryInterceptor.getRepository(request).shutDown();
-		}
+		org.assertj.core.api.Assertions.assertThatThrownBy(() -> transaction.prepareQuery(QueryLanguage.SPARQL,
+				"ASK { <_:fixed> <urn:p> <urn:o> }", null))
+				.hasRootCauseInstanceOf(MalformedQueryException.class);
 	}
 
 	@Test
@@ -148,15 +176,15 @@ class TransactionStartControllerTest {
 
 	@Test
 	void createTransactionLocation_withPositiveIsolationOldPath() throws Exception {
-		TransactionStartController controller = spy(TransactionStartController.class);
-		Transaction tx = mock(Transaction.class);
+		TransactionStartController controller = spy(ownedController());
+		Transaction tx = ownTransaction(mock(Transaction.class));
 		// Arrange
 		controller.setExternalUrl(null);
 
 		request.addParameter("isolation-level", "SNAPSHOT");
 		Repository repository = RepositoryInterceptor.getRepository(request);
 
-		when(controller.createTransaction(repository)).thenReturn(tx);
+		doReturn(tx).when(controller).createTransaction(repository);
 		when(tx.getID()).thenReturn(UUID.randomUUID());
 		// Act
 		controller.handleRequest(request, response);
@@ -165,15 +193,15 @@ class TransactionStartControllerTest {
 
 	@Test
 	void createTransactionLocation_withIsolationOldPath() throws Exception {
-		TransactionStartController controller = spy(TransactionStartController.class);
-		Transaction tx = mock(Transaction.class);
+		TransactionStartController controller = spy(ownedController());
+		Transaction tx = ownTransaction(mock(Transaction.class));
 		// Arrange
 		controller.setExternalUrl(null);
 
 		request.addParameter("isolation-level", "http://www.openrdf.org/schema/sesame#READ_COMMITTED");
 		Repository repository = RepositoryInterceptor.getRepository(request);
 
-		when(controller.createTransaction(repository)).thenReturn(tx);
+		doReturn(tx).when(controller).createTransaction(repository);
 		when(tx.getID()).thenReturn(UUID.randomUUID());
 		// Act
 		controller.handleRequest(request, response);
@@ -183,14 +211,14 @@ class TransactionStartControllerTest {
 	@Test
 	void createTransactionLocation_withNegativeIsolationOldPath() throws Exception {
 
-		TransactionStartController controller = spy(TransactionStartController.class);
-		Transaction tx = mock(Transaction.class);
+		TransactionStartController controller = spy(ownedController());
+		Transaction tx = ownTransaction(mock(Transaction.class));
 		controller.setExternalUrl(null);
 
 		request.addParameter("isolation-level", "GARBAGE");
 		Repository repository = RepositoryInterceptor.getRepository(request);
 
-		when(controller.createTransaction(repository)).thenReturn(tx);
+		doReturn(tx).when(controller).createTransaction(repository);
 		when(tx.getID()).thenReturn(UUID.randomUUID());
 
 		assertThatIllegalArgumentException().isThrownBy(() -> controller.handleRequest(request, response));
@@ -202,22 +230,38 @@ class TransactionStartControllerTest {
 		TransactionStartController failing = spy(new TransactionStartController());
 		Repository repository = RepositoryInterceptor.getRepository(request);
 		doThrow(failure).when(failing).createTransaction(repository);
-		try {
-			ServerHTTPException actual = assertThrows(ServerHTTPException.class,
-					() -> failing.handleRequest(request, response));
-			assertThat(actual.getStatusCode()).isEqualTo(500);
-			assertThat(actual.getCause()).isSameAs(failure);
-			// Preserve ServerHTTPException(String, Throwable)'s existing cause-derived message.
-			assertThat(actual).hasMessage(failure.toString());
-		} finally {
-			repository.shutDown();
-		}
+		ServerHTTPException actual = assertThrows(ServerHTTPException.class,
+				() -> failing.handleRequest(request, response));
+		assertThat(actual.getStatusCode()).isEqualTo(500);
+		assertThat(actual.getCause()).isSameAs(failure);
+		// Preserve ServerHTTPException(String, Throwable)'s existing cause-derived message.
+		assertThat(actual).hasMessage(failure.toString());
 	}
 
 	private static Stream<Exception> constructionFailures() {
 		return Stream.of(new ExecutionException(new RepositoryException("connection acquisition")),
 				new InterruptedException("connection acquisition interrupted"),
 				new RepositoryException("connection acquisition rejected"));
+	}
+
+	static final class FixtureCleanup implements AutoCloseable {
+		private final List<AutoCloseable> transactions = new ArrayList<>();
+		AutoCloseable repository;
+
+		void ownTransaction(AutoCloseable transaction, AutoCloseable registration) {
+			transactions.add(() -> {
+				try (AutoCloseable registrationOwner = registration) {
+					transaction.close();
+				}
+			});
+		}
+
+		@Override
+		public void close() throws Exception {
+			try (AutoCloseable repositoryOwner = repository) {
+				assertAll(transactions.stream().map(transaction -> (Executable) transaction::close));
+			}
+		}
 	}
 
 }
