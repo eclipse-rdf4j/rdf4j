@@ -3164,6 +3164,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 	}
 
+	LmdbSailStore.ReadAttemptLease valueCleanupGeneration() {
+		return transactionAdmissionLease;
+	}
+
 	private void completeTransactionAdmission() {
 		writeAttempt = null;
 		LmdbSailStore.ReadAttemptLease admission = transactionAdmissionLease;
@@ -3171,7 +3175,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (admission != null) {
 			admission.completeTransaction();
 		}
-		lmdbStore.getBackingStore().completeValueCleanupProducer(this);
+		lmdbStore.getBackingStore().completeValueCleanupProducer(this, admission);
 	}
 
 	private final class OperationReadAttempt {

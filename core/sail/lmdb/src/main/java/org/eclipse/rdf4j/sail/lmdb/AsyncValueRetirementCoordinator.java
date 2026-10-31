@@ -77,8 +77,8 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	private static final int FIXED_BYTES = 2048;
 	/** Stream/channel/path, guard, map/queue entries, one bounded admission waiter and spool bookkeeping. */
 	private static final int PRODUCER_OVERHEAD = 1024;
-	/** Preallocated map/deque arrays remain retained even while no producer is admitted. */
-	private static final int PRODUCER_CONTAINER_BYTES = 64;
+	/** Includes retained identity-map arrays and old/new array overlap during resizing with wide references. */
+	private static final int PRODUCER_CONTAINER_BYTES = 128;
 	/** Segment node, byte-array header and heap ByteBuffer wrapper, including uncompressed-reference headroom. */
 	private static final int SEGMENT_OVERHEAD = 160;
 	private static final int MANIFEST_BUFFER_BYTES = 256;
@@ -112,6 +112,8 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	private final int batchSize;
 	private final int producerLimit;
 	private final int activeProducerLimit;
+	private final int stagingProducerLimit;
+	private int producerContainerCapacity;
 	private final long maxCandidates;
 	private int baseBuffers;
 	private int admissionSpillers;
@@ -213,8 +215,9 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		if (producers < 1) {
 			throw new IllegalArgumentException("Async value cleanup bounds cannot fit a producer and worker");
 		}
-		activeProducerLimit = producers;
-		this.producers = new IdentityHashMap<>(activeProducerLimit);
+		stagingProducerLimit = producers;
+		producerContainerCapacity = producers;
+		this.producers = new IdentityHashMap<>(producers);
 		queue = new CandidateQueue();
 		long countBound = config.getAsyncValueCleanupMaxCandidates() / (producers + WORKER_CANDIDATE_SLOTS);
 		long byteBound = (available - (long) producers * PRODUCER_OVERHEAD)
@@ -223,18 +226,19 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		if (batchSize < 1) {
 			throw new IllegalArgumentException("Async value cleanup bounds cannot fit one candidate batch");
 		}
-		workerBytes = FIXED_BYTES + (long) activeProducerLimit * PRODUCER_CONTAINER_BYTES
+		workerBytes = FIXED_BYTES + (long) stagingProducerLimit * PRODUCER_CONTAINER_BYTES
 				+ (long) batchSize * WORKER_BYTES_PER_CANDIDATE;
 		producerBytes = PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES + (long) batchSize * Long.BYTES;
 		producerLimit = (int) Math.min(config.getAsyncValueCleanupMaxPendingProducers(),
 				(maxBytes - workerBytes) / (PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES));
-		long extraSlots = maxCandidates - (long) batchSize * (activeProducerLimit + WORKER_CANDIDATE_SLOTS);
-		long extraBytes = maxBytes - workerBytes - (long) activeProducerLimit * producerBytes;
+		activeProducerLimit = explicitStreamLimit ? stagingProducerLimit : producerLimit;
+		long extraSlots = maxCandidates - (long) batchSize * (stagingProducerLimit + WORKER_CANDIDATE_SLOTS);
+		long extraBytes = maxBytes - workerBytes - (long) stagingProducerLimit * producerBytes;
 		segmentSize = (int) Math.max(0,
 				Math.min(4096, Math.min(extraSlots, (extraBytes - SEGMENT_OVERHEAD) / Long.BYTES)));
 		segmentBytes = SEGMENT_OVERHEAD + (long) segmentSize * Long.BYTES;
 		long extraSegmentLimit = segmentSize == 0 ? 0 : Math.min(extraSlots / segmentSize, extraBytes / segmentBytes);
-		effectiveMemoryCandidateCapacity = (long) activeProducerLimit * batchSize + extraSegmentLimit * segmentSize;
+		effectiveMemoryCandidateCapacity = (long) stagingProducerLimit * batchSize + extraSegmentLimit * segmentSize;
 		recover();
 	}
 
@@ -255,6 +259,10 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 
 	/** Call before acquiring conflicting ownership; an already observing writer must use nonblocking admission. */
 	void admit(Object owner, boolean mayWait) {
+		admit(owner, mayWait, null);
+	}
+
+	void admit(Object owner, boolean mayWait, Object generation) {
 		long started = System.nanoTime();
 		Candidates initializer = null;
 		boolean reserved = false;
@@ -268,6 +276,10 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				while (true) {
 					Candidates existing = producers.get(owner);
 					if (existing != null && existing.ready) {
+						if (generation != null && existing.generation != generation) {
+							existing.generation = generation;
+							existing.completionRequested = false;
+						}
 						return;
 					}
 					if (stopping) {
@@ -294,9 +306,11 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 					if (producerSlot && fitsProducerBuffer()) {
 						reservations++;
 						reserved = true;
+						producerContainerCapacity = Math.max(producerContainerCapacity, producers.size() + 1);
 						// The existing bounded stream object is also its initialization token. Concurrent sinks
 						// sharing an owner cannot reserve twice while native identity admission is outside this lock.
 						initializer = new Candidates(null, true);
+						initializer.generation = generation;
 						producers.put(owner, initializer);
 						updateHighWater();
 						break;
@@ -308,7 +322,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 										+ "release pinned readers and retry the transaction");
 					}
 					if (!waiting) {
-						if (waitingProducers + pressureWaiters + admissionSpillers >= activeProducerLimit) {
+						if (!fitsAdditionalAdmissionOwner()) {
 							admissionTimeouts++;
 							throw new SailException(
 									"Async value cleanup admission waiter limit reached before publication; "
@@ -316,6 +330,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 						}
 						waitingProducers++;
 						waiting = true;
+						updateHighWater();
 					}
 					admissionWaitStarted.run();
 					remaining = changed.awaitNanos(remaining);
@@ -327,7 +342,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				admissionWaitNanos += System.nanoTime() - started;
 				lock.unlock();
 			}
-			initializer.guard = values.reserveCleanupIdentity(mayWait);
+			initializer.guard = mayWait ? values.reserveCleanupIdentity(true) : values.tryReserveCleanupIdentity();
 			lock.lock();
 			try {
 				if (stopping || producers.get(owner) != initializer) {
@@ -372,7 +387,8 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		long waiters = waitingProducers + pressureWaiters + admissionSpillers;
 		long metadata = Math.max(reservations + spooledReservations + 1L, waiters)
 				- Math.max(reservations + spooledReservations, waiters);
-		return metadata * (PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES) + (long) batchSize * Long.BYTES;
+		return metadata * (PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES) + (long) batchSize * Long.BYTES
+				+ Math.max(0L, producers.size() + 1L - producerContainerCapacity) * PRODUCER_CONTAINER_BYTES;
 	}
 
 	private boolean fitsProducerBuffer() {
@@ -382,8 +398,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 
 	/** Select under queue ownership; perform unforced I/O without queue/native/publication ownership. */
 	private boolean spillQueuedForAdmission(boolean ownsWaiterCredit) throws IOException {
-		if (stopping || waitingProducers + pressureWaiters + admissionSpillers
-				- (ownsWaiterCredit ? 1 : 0) >= activeProducerLimit) {
+		if (stopping || !ownsWaiterCredit && !fitsAdditionalAdmissionOwner()) {
 			return false;
 		}
 		Candidates selected = null;
@@ -419,6 +434,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 			waitingProducers--;
 		}
 		admissionSpillers++;
+		updateHighWater();
 		lock.unlock();
 		try {
 			beforeAdmissionSpill.run();
@@ -454,6 +470,76 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 			return candidates != null && candidates.ready;
 		} finally {
 			lock.unlock();
+		}
+	}
+
+	boolean hasProducer(Object owner, Object generation) {
+		lock.lock();
+		try {
+			Candidates candidate = producers.get(owner);
+			return candidate != null && candidate.ready
+					&& (generation == null || candidate.generation == generation);
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	/** A stale logical transaction must never complete its owner's replacement producer generation. */
+	void requestCompletion(Object owner, Object generation) {
+		lock.lock();
+		try {
+			Candidates candidate = producers.get(owner);
+			if (candidate != null && candidate.ready && generation != null && candidate.generation == generation) {
+				candidate.completionRequested = true;
+			}
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	boolean completionRequested(Object owner) {
+		lock.lock();
+		try {
+			Candidates candidate = producers.get(owner);
+			return candidate != null && candidate.completionRequested;
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	/** Activate an admitted token before the dictionary owner can submit any candidate-producing operations. */
+	void ensureWriterIdentity(Object owner, WriterTransaction transaction) throws IOException {
+		Candidates candidate;
+		lock.lock();
+		try {
+			candidate = producers.get(owner);
+			if (candidate == null || !candidate.ready) {
+				throw new IllegalStateException("Writer identity requires prior cleanup capacity admission");
+			}
+			if (candidate.guard != null) {
+				return;
+			}
+		} finally {
+			lock.unlock();
+		}
+		ValueStore.CleanupReservation guard = values.reserveCleanupIdentityForWriter(transaction);
+		try {
+			lock.lock();
+			try {
+				if (producers.get(owner) != candidate || !candidate.ready) {
+					throw new IllegalStateException("Cleanup producer changed during writer identity activation");
+				}
+				if (candidate.guard == null) {
+					candidate.guard = guard;
+					guard = null;
+				}
+			} finally {
+				lock.unlock();
+			}
+		} finally {
+			if (guard != null) {
+				guard.close();
+			}
 		}
 	}
 
@@ -515,13 +601,21 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	 * transfer directly to the worker. An in-progress initializer still owns and disposes its own token.
 	 */
 	SailClosable detachCompletedProducer(Object owner) {
+		return detachCompletedProducer(owner, false);
+	}
+
+	SailClosable detachCompletedProducer(Object owner, boolean requireCompletionRequest) {
 		lock.lock();
 		try {
 			Candidates candidates = producers.get(owner);
-			if (candidates == null || !candidates.ready) {
+			if (candidates == null || !candidates.ready
+					|| requireCompletionRequest && !candidates.completionRequested) {
 				return null;
 			}
 			producers.remove(owner);
+			// Queued work must not retain the completed connection/read-attempt object graph.
+			candidates.generation = null;
+			candidates.completionRequested = false;
 			if (candidates.file != null) {
 				candidates.discardBuffers();
 			}
@@ -1220,6 +1314,8 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	/** Append-only hints: cancelling re-additions is unnecessary because the worker revalidates statement usage. */
 	private final class Candidates extends AbstractSet<Long> implements SailClosable {
 		private ValueStore.CleanupReservation guard;
+		private Object generation;
+		private boolean completionRequested;
 		private boolean ready;
 		private boolean completionReleased;
 		private boolean baselineBuffer;
@@ -1263,7 +1359,8 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		private boolean grow() {
 			lock.lock();
 			try {
-				long futureActive = Math.min(activeProducerLimit - producers.size(), producerLimit - reservations);
+				long futureActive = Math.max(0,
+						Math.min(stagingProducerLimit - producers.size(), producerLimit - reservations));
 				if (file != null || segmentSize == 0
 						|| retainedBytes() + segmentBytes + futureActive * producerBytes > maxBytes
 						|| retainedCandidateSlots() + segmentSize + futureActive * batchSize > maxCandidates) {
@@ -1286,6 +1383,9 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		public boolean add(Long id) {
 			if (id == 0L || ValueIds.isInlined(id)) {
 				return false;
+			}
+			if (guard == null) {
+				throw new IllegalStateException("Retirement candidates require an activated dictionary identity");
 			}
 			try {
 				if (!buffer.hasRemaining() && !grow()) {
@@ -1610,6 +1710,8 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		}
 
 		private void dispose() {
+			generation = null;
+			completionRequested = false;
 			closeOutput();
 			closeInput();
 			try {
@@ -1642,7 +1744,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 			return;
 		}
 		// Waiter metadata is bounded as well. Bypass the optional pause if its waiter budget is full.
-		if (waitingProducers + pressureWaiters + admissionSpillers >= activeProducerLimit) {
+		if (!fitsAdditionalAdmissionOwner()) {
 			return;
 		}
 		if (!pressureGateActive) {
@@ -1655,6 +1757,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		}
 		long cycle = pressureSequence;
 		pressureWaiters++;
+		updateHighWater();
 		try {
 			while (!stopping && pressureGateActive && pressureSequence == cycle) {
 				long remaining = pressureDeadline - System.nanoTime();
@@ -1684,8 +1787,22 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		return queued;
 	}
 
+	/** Waiters/spill owners share the conservative per-stream bookkeeping allowance, never an uncharged slot. */
+	private boolean fitsAdditionalAdmissionOwner() {
+		long owners = (long) waitingProducers + pressureWaiters + admissionSpillers;
+		long limit = activeProducerLimit;
+		long streams = (long) reservations + spooledReservations;
+		long additional = (Math.max(streams, owners + 1) - Math.max(streams, owners))
+				* (PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES);
+		return owners < limit && retainedBytes() + additional <= maxBytes;
+	}
+
+	int stagingProducerLimit() {
+		return stagingProducerLimit;
+	}
+
 	private long retainedBytes() {
-		return workerBytes
+		return workerBytes + (long) (producerContainerCapacity - stagingProducerLimit) * PRODUCER_CONTAINER_BYTES
 				+ (long) Math.max(reservations + spooledReservations,
 						waitingProducers + pressureWaiters + admissionSpillers)
 						* (PRODUCER_OVERHEAD - PRODUCER_CONTAINER_BYTES)

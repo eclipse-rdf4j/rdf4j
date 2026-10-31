@@ -66,6 +66,37 @@ class LmdbAsyncValueCleanupIntegrationTest {
 	private static final IRI PREDICATE = VF.createIRI("urn:async-cleanup:predicate");
 	private static final Literal OBJECT = VF.createLiteral("persistent dictionary value for asynchronous reclamation");
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void connectionCompletionRetainsCleanupProducerUntilOuterPublicationCloses(boolean rollback,
+			@TempDir File directory) throws Exception {
+		ObservedStore store = new ObservedStore(directory, configuration(true));
+		store.init();
+		try (SailConnection writer = store.getConnection()) {
+			LmdbSailStore backing = store.getBackingStore();
+			backing.enableMultiThreading = false;
+			writer.begin(IsolationLevels.NONE);
+			try (SailSource.PublicationScope outer = (SailSource.PublicationScope) backing.beginPublication(writer)) {
+				writer.addStatement(SUBJECT, PREDICATE, OBJECT);
+				if (rollback) {
+					outer.fail();
+					writer.rollback();
+				} else {
+					writer.commit();
+				}
+				if (!rollback) {
+					assertTrue(backing.hasValueCleanupProducer(writer),
+							"the outer publication still owns the producer after logical connection completion");
+				}
+			}
+			assertFalse(backing.hasValueCleanupProducer(writer),
+					"the final native owner releases the completed producer");
+			assertEquals(!rollback, contains(store));
+		} finally {
+			store.shutDown();
+		}
+	}
+
 	@Test
 	void defaultCleanupPreservesTransactionsAcrossReopenAndExplicitDurableMode(@TempDir File directory)
 			throws Exception {
@@ -972,6 +1003,9 @@ class LmdbAsyncValueCleanupIntegrationTest {
 					"switching modes must import and revalidate the valid best-effort spool");
 			assertFalse(contains(durable));
 			assertEquals(LmdbValue.UNKNOWN_ID, durable.getBackingStore().valueStore().getId(SUBJECT));
+			add(durable);
+			assertTrue(contains(durable),
+					"a recovery-only cleanup coordinator must not require async producer admission");
 		} finally {
 			durable.shutDown();
 		}

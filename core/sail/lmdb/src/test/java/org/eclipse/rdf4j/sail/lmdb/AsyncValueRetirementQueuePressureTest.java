@@ -15,9 +15,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -31,6 +33,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -44,6 +47,225 @@ import org.junit.jupiter.params.provider.ValueSource;
 class AsyncValueRetirementQueuePressureTest {
 	@TempDir
 	Path directory;
+
+	@Test
+	void nonwaitingProducerAdmissionSurvivesConcurrentDictionaryPublication() throws Exception {
+		try (Fixture f = new Fixture(directory, config(), new AtomicInteger())) {
+			Field field = ValueStore.class.getDeclaredField("associationGate");
+			field.setAccessible(true);
+			ReentrantLock publication = (ReentrantLock) field.get(f.values);
+			CountDownLatch entered = new CountDownLatch(1);
+			CountDownLatch release = new CountDownLatch(1);
+			AtomicReference<Throwable> failure = new AtomicReference<>();
+			Thread publisher = new Thread(() -> {
+				publication.lock();
+				try {
+					entered.countDown();
+					assertTrue(release.await(10, TimeUnit.SECONDS));
+				} catch (Throwable problem) {
+					failure.set(problem);
+				} finally {
+					publication.unlock();
+				}
+			}, "cleanup-admission-publication");
+			publisher.start();
+			Object owner = new Object();
+			try {
+				assertTrue(entered.await(10, TimeUnit.SECONDS));
+				// A read-to-write upgrade cannot wait on this gate while retaining its snapshot.
+				// Capacity admission precedes the writer fence and has not observed any candidate ID.
+				f.cleanup.admit(owner, false);
+				assertTrue(f.cleanup.hasProducer(owner));
+				assertThrows(IllegalStateException.class, () -> f.cleanup.candidates(owner).add(candidate(1)),
+						"an unfenced token must not capture numeric identities");
+				f.cleanup.rollback(owner);
+			} finally {
+				release.countDown();
+				publisher.join(10000);
+			}
+			assertFalse(publisher.isAlive());
+			assertNull(failure.get());
+			f.cleanup.complete(owner);
+			assertFalse(f.cleanup.hasProducer(owner));
+		}
+	}
+
+	@Test
+	void nativeWriterActivatesDeferredIdentityWithoutWaitingForPublicationGate() throws Exception {
+		try (Fixture f = new Fixture(directory, config(), new AtomicInteger())) {
+			WriterTransaction transaction = new WriterTransaction();
+			assertThrows(IOException.class, () -> f.values.reserveCleanupIdentityForWriter(transaction));
+			f.values.startTransaction(true, transaction);
+			assertThrows(IOException.class, () -> f.values.reserveCleanupIdentityForWriter(new WriterTransaction()));
+			Field field = ValueStore.class.getDeclaredField("associationGate");
+			field.setAccessible(true);
+			ReentrantLock publication = (ReentrantLock) field.get(f.values);
+			CountDownLatch entered = new CountDownLatch(1);
+			CountDownLatch release = new CountDownLatch(1);
+			AtomicReference<Throwable> failure = new AtomicReference<>();
+			Thread foreign = new Thread(() -> {
+				publication.lock();
+				try {
+					assertThrows(IOException.class, () -> f.values.reserveCleanupIdentityForWriter(transaction));
+					entered.countDown();
+					assertTrue(release.await(10, TimeUnit.SECONDS));
+				} catch (Throwable problem) {
+					failure.set(problem);
+				} finally {
+					publication.unlock();
+				}
+			}, "cleanup-foreign-writer");
+			foreign.start();
+			Object owner = new Object();
+			try {
+				assertTrue(entered.await(10, TimeUnit.SECONDS));
+				f.cleanup.admit(owner, false);
+				assertThrows(IllegalStateException.class, () -> f.cleanup.candidates(owner).add(candidate(1)));
+				f.cleanup.ensureWriterIdentity(owner, transaction);
+				assertTrue(f.cleanup.candidates(owner).add(candidate(1)));
+				// Repeated activation preserves the existing reservation, including a checkpoint continuation.
+				f.cleanup.ensureWriterIdentity(owner, transaction);
+			} finally {
+				release.countDown();
+				foreign.join(10000);
+				f.values.rollback();
+			}
+			assertFalse(foreign.isAlive());
+			assertNull(failure.get());
+			assertThrows(IOException.class, () -> f.values.reserveCleanupIdentityForWriter(transaction));
+			f.cleanup.rollback(owner);
+			f.cleanup.complete(owner);
+		}
+	}
+
+	@Test
+	void completionRequestsAreBoundToTheExactProducerGeneration() throws Exception {
+		try (Fixture f = new Fixture(directory, config(), new AtomicInteger())) {
+			Object owner = new Object();
+			Object first = new Object();
+			Object second = new Object();
+			f.cleanup.admit(owner, true, first);
+			f.cleanup.requestCompletion(owner, first);
+			assertTrue(f.cleanup.completionRequested(owner));
+			f.cleanup.admit(owner, false, second);
+			assertFalse(f.cleanup.hasProducer(owner, first));
+			assertTrue(f.cleanup.hasProducer(owner, second));
+			assertFalse(f.cleanup.completionRequested(owner));
+			f.cleanup.requestCompletion(owner, first);
+			f.cleanup.requestCompletion(owner, null);
+			assertNull(f.cleanup.detachCompletedProducer(owner, true),
+					"an old outer scope must not detach the renewed, still-active producer");
+			f.cleanup.requestCompletion(owner, second);
+			f.cleanup.admit(owner, false, second);
+			f.cleanup.admit(owner, false, null);
+			assertTrue(f.cleanup.completionRequested(owner),
+					"same-generation and internal admission cannot revoke completion");
+			var disposal = f.cleanup.detachCompletedProducer(owner, true);
+			assertTrue(disposal != null);
+			disposal.close();
+			assertFalse(f.cleanup.hasProducer(owner));
+		}
+	}
+
+	@Test
+	void defaultAdmissionUsesChargedCapacityRatherThanEightActiveProducers() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(16L * 1024 * 1024)
+				.setValueOverlayEnabled(false)
+				.setAsyncValueCleanupMaxBytes(4L * 1024 * 1024);
+		try (Fixture f = new Fixture(directory, config, new AtomicInteger())) {
+			long initial = f.cleanup.metrics().retainedBytes();
+			List<Object> owners = new ArrayList<>();
+			for (int i = 0; i < 20; i++) {
+				Object owner = new Object();
+				owners.add(owner);
+				f.cleanup.admit(owner, false);
+			}
+			assertEquals(20, f.cleanup.metrics().liveProducers());
+			assertTrue(f.cleanup.metrics().activeProducerLimit() >= 20);
+			assertTrue(f.cleanup.metrics().retainedBytes() <= config.getAsyncValueCleanupMaxBytes());
+			for (Object owner : owners) {
+				f.cleanup.complete(owner);
+			}
+			long after = f.cleanup.metrics().retainedBytes();
+			assertTrue(after > initial, "the demand-grown identity map remains allocated and charged");
+			Object reused = new Object();
+			f.cleanup.admit(reused, false);
+			f.cleanup.complete(reused);
+			assertEquals(after, f.cleanup.metrics().retainedBytes(), "reusing capacity must not charge it twice");
+		}
+	}
+
+	@Test
+	void defaultWaitersUseTheirOwnChargedCapacityAndReleaseCredits() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(16L * 1024 * 1024)
+				.setValueOverlayEnabled(false)
+				.setAsyncValueCleanupMaxBytes(4L * 1024 * 1024)
+				.setAsyncValueCleanupMaxCandidates(16)
+				.setAsyncValueCleanupBatchSize(1)
+				.setAsyncValueCleanupAdmissionTimeoutMillis(10000);
+		try (Fixture f = new Fixture(directory, config, new AtomicInteger())) {
+			Object first = new Object();
+			Object second = new Object();
+			f.cleanup.admit(first, false);
+			f.cleanup.admit(second, false);
+			CountDownLatch waiting = new CountDownLatch(12);
+			ThreadLocal<Boolean> counted = ThreadLocal.withInitial(() -> false);
+			f.cleanup.admissionWaitStartedForTest(() -> {
+				if (!counted.get()) {
+					counted.set(true);
+					waiting.countDown();
+				}
+			});
+			AtomicReference<Throwable> failure = new AtomicReference<>();
+			List<Thread> threads = new ArrayList<>();
+			for (int i = 0; i < 12; i++) {
+				Thread thread = new Thread(() -> {
+					Object owner = new Object();
+					try {
+						f.cleanup.admit(owner, true);
+					} catch (Throwable problem) {
+						failure.compareAndSet(null, problem);
+					} finally {
+						f.cleanup.complete(owner);
+					}
+				}, "charged-cleanup-waiter");
+				threads.add(thread);
+				thread.start();
+			}
+			try {
+				assertTrue(waiting.await(5, TimeUnit.SECONDS),
+						"default waiter capacity must not be the staging baseline");
+				assertEquals(12, f.cleanup.metrics().waitingProducers());
+				assertTrue(f.cleanup.metrics().retainedBytes() <= config.getAsyncValueCleanupMaxBytes());
+			} finally {
+				f.cleanup.complete(first);
+				f.cleanup.complete(second);
+				for (Thread thread : threads) {
+					thread.join(10000);
+				}
+			}
+			for (Thread thread : threads) {
+				assertFalse(thread.isAlive(), "every admitted waiter must terminate");
+			}
+			assertNull(failure.get());
+			assertEquals(0, f.cleanup.metrics().waitingProducers());
+			assertEquals(0, f.cleanup.metrics().admissionSpillers());
+		}
+	}
+
+	@Test
+	void defaultDynamicAdmissionStillHonorsTinyByteBudget() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(16L * 1024 * 1024)
+				.setValueOverlayEnabled(false)
+				.setAsyncValueCleanupMaxBytes(4096);
+		try (Fixture f = new Fixture(directory, config, new AtomicInteger())) {
+			Object first = new Object();
+			f.cleanup.admit(first, false);
+			assertThrows(SailException.class, () -> f.cleanup.admit(new Object(), false));
+			assertTrue(f.cleanup.metrics().retainedBytes() <= 4096);
+			f.cleanup.complete(first);
+		}
+	}
 
 	@Test
 	void memoryQueueGrowsBeyondOldFixedProducerBuffers() throws Exception {
@@ -520,7 +742,7 @@ class AsyncValueRetirementQueuePressureTest {
 			f.cleanup.admit(owner, false);
 			Set<Long> ids = f.cleanup.candidates(owner);
 			long capacity = f.cleanup.metrics().effectiveMemoryCandidateCapacity()
-					- (long) (f.cleanup.metrics().activeProducerLimit() - 1) * f.cleanup.batchSize();
+					- (long) (f.cleanup.stagingProducerLimit() - 1) * f.cleanup.batchSize();
 			for (long i = 1; i <= capacity; i++) {
 				ids.add(candidate(i));
 			}

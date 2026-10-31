@@ -216,7 +216,7 @@ initialization do not reconfigure the running cleanup worker.
 | `asyncValueCleanupMaxCandidates` | Derived from the cleanup byte budget | At least 16; an explicit value additionally bounds retained candidate slots, including producer reservations and worker workspace. |
 | `asyncValueCleanupMaxBytes` | 1% of JVM maximum heap, capped at 64 MiB | At least 4096; bounds estimated cleanup memory, including producer reservations and worker workspace. Explicit values override the dynamic default. |
 | `asyncValueCleanupBatchSize` | `256` | Positive and no larger than the candidate limit; the worker may use a smaller batch to meet the memory bounds. |
-| `asyncValueCleanupMaxPendingProducers` | Byte budget / 1024, at least 1 | Positive upper bound on total active and queued producer streams. A separate small active-staging limit and the charged byte budget may constrain admission sooner. Explicit values override this derived total cap. |
+| `asyncValueCleanupMaxPendingProducers` | Byte budget / 1024, at least 1 | Positive upper bound on total active and queued producer streams. The charged byte and candidate budgets may constrain admission sooner. Explicit values override this derived total cap. |
 | `asyncValueCleanupPressureTimeoutMillis` | `250` | Nonnegative maximum brief pause for safe new-writer admission under cleanup pressure; zero disables this optional pause. |
 | `asyncValueCleanupAdmissionTimeoutMillis` | `250` | Positive interruptible total admission wait before publication, including any pressure pause; not a bound on complete transaction duration. Explicit longer values remain supported. |
 | `asyncValueCleanupShutdownTimeoutMillis` | `3500` | Positive best-effort budget for finishing cleanup and saving pending work; active native calls must still finish safely. |
@@ -249,10 +249,11 @@ usage can grow with the transaction's candidate count; the configured candidate 
 memory. Admission can fail or be interrupted before publication if capacity remains unavailable. A successful publication
 is not reported as rolled back because cleanup handoff later encounters backpressure.
 
-Waiting callers are bounded separately from admitted or queued producer streams. Their limit follows the effective
-active-staging limit (normally at most eight), not the larger total queued-stream cap; further callers fail before
-publication. These limits can shrink to fit the candidate and byte bounds, and the estimated memory budget includes
-waiting-call bookkeeping.
+Concurrent producers and waiting callers grow on demand within the charged byte budget and the effective producer-stream
+limit; eight is only the initial staging-reservation baseline, not a default concurrency ceiling. Waiting callers are
+counted separately from admitted or queued streams, with no more than the effective producer limit waiting at once.
+Explicit configured caps remain hard limits. The estimated memory budget includes waiting-call bookkeeping and retained
+producer-map capacity; callers fail before publication if these bounds cannot accommodate them.
 
 Transaction change sets that overflow memory use disposable LMDB stores. In async mode, these temporary stores keep
 their dictionary records until the entire temporary directory is closed and deleted. They do not create additional

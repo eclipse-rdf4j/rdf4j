@@ -5101,6 +5101,38 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
+	/** Returns no guard on publication contention; no numeric candidate may be captured until writer activation. */
+	CleanupReservation tryReserveCleanupIdentity() throws IOException {
+		if (!associationGate.tryLock()) {
+			return null;
+		}
+		try {
+			return reserveCleanupIdentity(false);
+		} finally {
+			associationGate.unlock();
+		}
+	}
+
+	/**
+	 * A deferred producer activates only after acquiring the exclusive native writer, before observing candidates.
+	 * Native single-writer ownership orders any earlier recycler before this reservation; the counter prevents later
+	 * reclamation. No publication-gate wait is needed, including when this writer retains an older read snapshot.
+	 */
+	CleanupReservation reserveCleanupIdentityForWriter(WriterTransaction expected) throws IOException {
+		synchronized (writerAdmission) {
+			WriterPublication publication = writerPublication;
+			Thread current = Thread.currentThread();
+			if (shuttingDown || env == 0L || writeTxn == 0L || expected == null
+					|| writeTxnOwner != current || publication == null || publication.owner != current
+					|| publication.transaction != expected || publication.consumer != null) {
+				throw new IOException("Cleanup identity activation requires the current exclusive dictionary writer");
+			}
+			CleanupReservation reservation = new CleanupReservation(this, environmentGeneration);
+			cleanupReservations = Math.incrementExact(cleanupReservations);
+			return reservation;
+		}
+	}
+
 	/** One bounded producer's identity lifetime; never contains a native transaction, cursor, or restart horizon. */
 	static final class CleanupReservation implements SailClosable {
 		private ValueStore store;

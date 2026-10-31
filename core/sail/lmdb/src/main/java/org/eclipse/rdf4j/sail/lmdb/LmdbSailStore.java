@@ -6117,6 +6117,7 @@ class LmdbSailStore implements SailStore {
 		for (ReadAttemptLease attempt : completed) {
 			retireCompletedWriterLeases(attempt);
 		}
+		completeUnownedValueCleanupProducer(owner);
 	}
 
 	private void recordWriterCapacityFailure(Object owner, Throwable failure) {
@@ -8582,7 +8583,8 @@ class LmdbSailStore implements SailStore {
 	}
 
 	boolean hasValueCleanupProducer(Object owner) {
-		return asyncValueCleanupCoordinator != null && asyncValueCleanupCoordinator.hasProducer(owner);
+		return asyncValueCleanupCoordinator != null && asyncValueCleanupCoordinator.hasProducer(owner,
+				owner instanceof LmdbStoreConnection connection ? connection.valueCleanupGeneration() : null);
 	}
 
 	long valueCleanupWriterWaitNanos() {
@@ -8599,35 +8601,41 @@ class LmdbSailStore implements SailStore {
 
 	void admitValueCleanupProducer(Object owner, boolean mayWait) {
 		if (asyncValueCleanup && asyncValueCleanupCoordinator != null) {
-			asyncValueCleanupCoordinator.admit(owner, mayWait);
+			asyncValueCleanupCoordinator.admit(owner, mayWait,
+					owner instanceof LmdbStoreConnection connection ? connection.valueCleanupGeneration() : null);
 		}
 	}
 
-	void completeValueCleanupProducer(Object owner) {
+	void completeValueCleanupProducer(Object owner, Object generation) {
 		if (asyncValueCleanup && asyncValueCleanupCoordinator != null) {
-			asyncValueCleanupCoordinator.complete(owner);
+			synchronized (writerOwnerMonitor) {
+				asyncValueCleanupCoordinator.requestCompletion(owner, generation);
+			}
+			completeUnownedValueCleanupProducer(owner);
 		}
 	}
 
 	/**
 	 * Direct sources can share an explicit or implicit owner between sinks, prepared scopes and publications. A
 	 * participant's close is not the publication boundary while another participant still retains that ownership.
-	 * Connections instead transfer their producer explicitly after releasing their transaction read view.
+	 * Connections request completion after releasing their transaction read view; an outer publication can still retain
+	 * the producer until its native writer and final ownership lease have retired.
 	 */
 	private void completeUnownedValueCleanupProducer(Object owner) {
-		if (!asyncValueCleanup || asyncValueCleanupCoordinator == null || owner == null
-				|| owner instanceof LmdbStoreConnection) {
+		if (!asyncValueCleanup || asyncValueCleanupCoordinator == null || owner == null) {
 			return;
 		}
 		SailClosable disposal;
 		synchronized (writerOwnerMonitor) {
-			if (writerOwner == owner && writerOwnerReferences > 0
+			if (owner instanceof LmdbStoreConnection && !asyncValueCleanupCoordinator.completionRequested(owner)
+					|| writerOwner == owner && writerOwnerReferences > 0
 					|| storeTransactionOwner == owner || namespaceTransactionOwner == owner) {
 				return;
 			}
 			// Atomically detach against a same-owner writer acquisition. Detachment only transfers queue state;
 			// an empty stream's native identity release and file disposal happen outside the writer monitor.
-			disposal = asyncValueCleanupCoordinator.detachCompletedProducer(owner);
+			disposal = asyncValueCleanupCoordinator.detachCompletedProducer(owner,
+					owner instanceof LmdbStoreConnection);
 		}
 		if (disposal != null) {
 			disposal.close();
@@ -11245,6 +11253,9 @@ class LmdbSailStore implements SailStore {
 							tripleStore.startTransaction(storeReplayDecision, nativeTransaction);
 						}
 						valueStore.startTransaction(true, nativeTransaction);
+						if (asyncValueCleanup && asyncValueCleanupCoordinator != null) {
+							asyncValueCleanupCoordinator.ensureWriterIdentity(storeTransactionOwner, nativeTransaction);
+						}
 					} catch (Exception | Error e) {
 						if (workerRequired && !workerSubmitted) {
 							// There is no worker to consume a rollback request when executor submission itself failed.

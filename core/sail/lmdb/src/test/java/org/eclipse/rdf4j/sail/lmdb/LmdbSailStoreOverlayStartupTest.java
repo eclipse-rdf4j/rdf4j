@@ -242,7 +242,19 @@ class LmdbSailStoreOverlayStartupTest {
 	@Test
 	@Timeout(30)
 	void ownerCloseStopsItsWarmupAndReleasesOverlayReservations() throws Exception {
-		seedRetirement();
+		// This test owns warmup cancellation, not the separate cleanup-versus-warmup invalidation race.
+		// A live-only seed keeps default async cleanup enabled without racing pending retirement.
+		LmdbStore seed = new LmdbStore(directory, config(false));
+		seed.init();
+		try {
+			try (NotifyingSailConnection writer = seed.getConnection()) {
+				writer.begin();
+				writer.addStatement(KEEPER, PREDICATE, VF.createLiteral("kept"));
+				writer.commit();
+			}
+		} finally {
+			seed.shutDown();
+		}
 		long retainedBefore = OverlayMemoryBudget.configuredShared().stats().used();
 		CountDownLatch scanStarted = new CountDownLatch(1);
 		CountDownLatch releaseScan = new CountDownLatch(1);
