@@ -1342,7 +1342,8 @@ class ValueStoreIdCacheTest {
 	}
 
 	private static LmdbStoreConfig config() {
-		return new LmdbStoreConfig().setValueOverlayEnabled(false).setInlineLiterals(false);
+		// These tests exercise ID and namespace caches, not the unrelated primary value-cache capacity.
+		return new LmdbStoreConfig().setValueOverlayEnabled(false).setInlineLiterals(false).setValueCacheSize(128);
 	}
 
 	private static long persist(CountingValueStore store, Value value) throws Exception {
