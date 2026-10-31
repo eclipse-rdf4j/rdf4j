@@ -872,15 +872,19 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 						ops.retainOverlays(current.overlays());
 					}
 				}
+				boolean unavailable = ops.buildUnavailable(failure);
 				boolean refused = ops.transientRefusal(failure);
 				Phase phase = current.status() == Status.SERVING ? current.phase()
-						: refused ? Phase.MEMORY_REFUSED : Phase.FAILED;
+						: unavailable ? Phase.EMPTY : refused ? Phase.MEMORY_REFUSED : Phase.FAILED;
 				publish(new AdjacencyState<>(nextEpoch(), current.base(), current.overlays(),
 						current.appliedRevision(), current.gapFromRevision(), current.minSnapshotRevision(),
-						current.status(), phase, (refused ? "rebuild refused: " : "rebuild failed: ")
+						current.status(), phase,
+						(unavailable ? "rebuild unavailable: " : refused ? "rebuild refused: " : "rebuild failed: ")
 								+ describe(failure),
 						this::onStateReleased), Transition.noChange());
-				scheduleRetry();
+				if (!unavailable) {
+					scheduleRetry();
+				}
 				return;
 			}
 			AdjacencyState<B, O> current = published.get();

@@ -184,6 +184,15 @@ interface AdjacencyIndexOps<B, O, G> {
 	}
 
 	/**
+	 * Whether this build is unsupported by the current configuration or capabilities. This is a normal unavailable
+	 * outcome, not a maintenance defect or temporary memory refusal. Keep any serving base and wait for an explicit
+	 * rebuild request rather than repeatedly retrying an unchanged configuration.
+	 */
+	default boolean buildUnavailable(Throwable failure) {
+		return false;
+	}
+
+	/**
 	 * Whether a worker failure is a memory refusal: expected under pressure, retried later, never a defect. The applier
 	 * logs refusals quietly and keeps the exact state it has.
 	 */
