@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -41,7 +42,16 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LmdbStoreFormatCompatibilityTest {
 
 	@TempDir
+	Path temporaryRoot;
+
 	Path directory;
+
+	@BeforeEach
+	void setUpDirectory() throws IOException {
+		// The bulk-loader lock and external configuration fixtures are siblings of the store.
+		// Own their common parent so JUnit removes them too, after store handles have closed.
+		directory = Files.createDirectory(temporaryRoot.resolve("store"));
+	}
 
 	@Test
 	void newStoreAuthorsFormatSeven() throws Exception {
@@ -93,6 +103,30 @@ class LmdbStoreFormatCompatibilityTest {
 		assertThatThrownBy(store::init).isInstanceOf(SailException.class);
 		assertThat(directory.resolve("store.properties")).doesNotExist();
 		assertThat(directory.resolve("lmdbrdf.ver")).doesNotExist();
+	}
+
+	@Test
+	void externalConfigurationTargetStaysInsideOwnedTemporaryRoot() throws Exception {
+		Path target = directory.resolveSibling(directory.getFileName() + "-configuration");
+		try {
+			repositoryConfigurationMustBeARegularFile(true);
+			assertThat(Files.readString(target)).isEqualTo("external owner metadata");
+			assertThat(directory.resolve("config.ttl").toRealPath())
+					.as("external-to-store fixture metadata still belongs to the test's temporary root")
+					.startsWith(temporaryRoot);
+		} finally {
+			// Also clean up the deliberately red baseline, where the target escapes the JUnit-owned root.
+			Files.deleteIfExists(target);
+		}
+	}
+
+	@Test
+	void bulkLoaderLockStaysInsideOwnedTemporaryRoot() throws Exception {
+		standaloneBulkLoaderCannotReplaceExistingOrClearedLegacyStore(false);
+		Path lock = directory.resolveSibling("." + directory.getFileName() + ".lmdb-bulk-load.lock");
+		assertThat(lock).isRegularFile();
+		assertThat(lock).as("the retained lock inode must remain inside the test's owned temporary root")
+				.startsWith(temporaryRoot);
 	}
 
 	@Test
