@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -314,8 +316,39 @@ public class QueryBenchmarkTest {
 
 	}
 
+	@Test
+	public void updateFixtureDoesNotChangeLaterOrderedUnionResults() {
+		assertSimpleUpdateTransitions(IsolationLevels.READ_COMMITTED, false);
+		orderedUnionLimitQueryProducesExpectedCount();
+	}
+
+	@Test
+	public void failedUpdateAssertionStillRestoresOriginalQueryFixture() {
+		AssertionError failure = new AssertionError("simulated assertion after committed update");
+		assertSame(failure, assertThrows(AssertionError.class, () -> withRestoredBenchmarkTypes(() -> {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
+				connection.prepareUpdate(query3).execute();
+				connection.commit();
+			}
+			throw failure;
+		})));
+		orderedUnionLimitQueryProducesExpectedCount();
+	}
+
 	private static void assertSimpleUpdateTransitions(IsolationLevel isolationLevel, boolean assertNoRemaps) {
+		withRestoredBenchmarkTypes(() -> assertSimpleUpdateTransitionsOnCurrentFixture(isolationLevel, assertNoRemaps));
+	}
+
+	private static void withRestoredBenchmarkTypes(Runnable action) {
 		resetBenchmarkTypeStatements();
+		try (LmdbTestUtil.Cleanup ignored = LmdbTestUtil.onClose(QueryBenchmarkTest::resetBenchmarkTypeStatements)) {
+			action.run();
+		}
+	}
+
+	private static void assertSimpleUpdateTransitionsOnCurrentFixture(IsolationLevel isolationLevel,
+			boolean assertNoRemaps) {
 		LmdbSailStore backingStore = ((LmdbStore) repository.getSail()).getBackingStore();
 		MapGrowthMetrics.Snapshot initialGrowth = backingStore.growthMetricsSnapshot();
 		Set<Statement> initialTypes;
