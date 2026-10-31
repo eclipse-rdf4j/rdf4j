@@ -6213,6 +6213,26 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		scheduleRequestedInitialImportOverlay();
 	}
 
+	/** Capture only while the caller still owns publication and has released its native writer. */
+	Object valueOverlayWriterCompletionToken() {
+		return valueLookupGeneration;
+	}
+
+	/** A delayed maintenance completion must never certify a newer writer's generation as publicly released. */
+	void signalValueOverlayWriterCompletedIfCurrent(Object completedGeneration) {
+		if (!valueOverlayEnabled || completedGeneration == null) {
+			return;
+		}
+		synchronized (valueOverlayBuildAdmission) {
+			if (valueLookupGeneration != completedGeneration) {
+				return;
+			}
+			publiclyReleasedOverlayGeneration = completedGeneration;
+			valueOverlayBuildAdmission.notifyAll();
+		}
+		scheduleRequestedInitialImportOverlay();
+	}
+
 	/** Either terminal writer cleanup or cancelled-worker completion can be the event that makes retry possible. */
 	private void scheduleRequestedInitialImportOverlay() {
 		Object request;

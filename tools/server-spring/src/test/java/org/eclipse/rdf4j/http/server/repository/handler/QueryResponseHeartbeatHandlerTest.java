@@ -309,39 +309,39 @@ class QueryResponseHeartbeatHandlerTest {
 			}
 		});
 
-		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver);
-		ExecutorService httpExecutor = Executors.newCachedThreadPool();
-		HttpServer server;
-		try {
-			server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-		} catch (IOException e) {
-			Assumptions.assumeTrue(false, "Loopback HTTP server unavailable: " + e.getMessage());
-			return;
-		}
-		server.setExecutor(httpExecutor);
-		server.createContext("/query", exchange -> {
-			MockHttpServletRequest request = newQueryRequest();
-			request.setRequestURI("/query");
-			ExchangeResponse response = new ExchangeResponse(exchange);
-			when(resolver.getRepository(request)).thenReturn(repository);
-			when(resolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+		try (SocketFixture fixture = new SocketFixture()) {
+			DefaultQueryRequestHandler handler = fixture.handler = new DefaultQueryRequestHandler(resolver);
+			ExecutorService httpExecutor = fixture.httpExecutor = Executors.newCachedThreadPool();
+			HttpServer server;
 			try {
-				ModelAndView modelAndView = handler.handleQueryRequest(request, RequestMethod.POST, response);
-				if (modelAndView != null) {
-					modelAndView.getView().render(modelAndView.getModel(), request, response);
-				}
-			} catch (Throwable t) {
-				requestFailure.set(t);
-			} finally {
-				try {
-					exchange.close();
-				} finally {
-					requestFinished.countDown();
-				}
+				server = fixture.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+			} catch (IOException e) {
+				Assumptions.assumeTrue(false, "Loopback HTTP server unavailable: " + e.getMessage());
+				return;
 			}
-		});
-		server.start();
-		try {
+			server.setExecutor(httpExecutor);
+			server.createContext("/query", exchange -> {
+				MockHttpServletRequest request = newQueryRequest();
+				request.setRequestURI("/query");
+				ExchangeResponse response = new ExchangeResponse(exchange);
+				when(resolver.getRepository(request)).thenReturn(repository);
+				when(resolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+				try {
+					ModelAndView modelAndView = handler.handleQueryRequest(request, RequestMethod.POST, response);
+					if (modelAndView != null) {
+						modelAndView.getView().render(modelAndView.getModel(), request, response);
+					}
+				} catch (Throwable t) {
+					requestFailure.set(t);
+				} finally {
+					try {
+						exchange.close();
+					} finally {
+						requestFinished.countDown();
+					}
+				}
+			});
+			server.start();
 			try (Socket socket = new Socket("127.0.0.1", server.getAddress().getPort())) {
 				socket.setSoTimeout(15_000);
 				OutputStream request = socket.getOutputStream();
@@ -359,10 +359,64 @@ class QueryResponseHeartbeatHandlerTest {
 			verify(repository, org.mockito.Mockito.timeout(10_000)).cancelQuery(generatedRequestId.get());
 			verify(connection, org.mockito.Mockito.atLeastOnce()).close();
 			assertThat(requestFailure.get()).isNull();
+		}
+	}
+
+	static final class SocketFixture implements AutoCloseable {
+		HttpServer server;
+		ExecutorService httpExecutor;
+		DefaultQueryRequestHandler handler;
+
+		@Override
+		public void close() throws Exception {
+			closeSocketFixture(server, httpExecutor, handler);
+		}
+	}
+
+	static void closeSocketFixture(HttpServer server, ExecutorService httpExecutor,
+			DefaultQueryRequestHandler handler) throws Exception {
+		try (AutoCloseable reap = () -> awaitSocketWorkers(httpExecutor);
+				AutoCloseable closeHandler = () -> {
+					if (handler != null) {
+						handler.shutdown();
+					}
+				};
+				AutoCloseable stopWorkers = () -> {
+					if (httpExecutor != null) {
+						httpExecutor.shutdownNow();
+					}
+				}) {
+			if (server != null) {
+				server.stop(0);
+			}
+		}
+	}
+
+	private static void awaitSocketWorkers(ExecutorService executor) {
+		if (executor == null) {
+			return;
+		}
+		boolean interrupted = false;
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		try {
+			while (true) {
+				try {
+					assertThat(
+							executor.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS))
+									.as("loopback HTTP workers must terminate during fixture cleanup")
+									.isTrue();
+					return;
+				} catch (InterruptedException e) {
+					interrupted = true;
+					if (System.nanoTime() >= deadline) {
+						throw new AssertionError("interrupted while reaping loopback HTTP workers", e);
+					}
+				}
+			}
 		} finally {
-			server.stop(0);
-			httpExecutor.shutdownNow();
-			handler.shutdown();
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 
