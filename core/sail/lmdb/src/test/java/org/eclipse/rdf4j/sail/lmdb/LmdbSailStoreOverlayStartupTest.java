@@ -24,6 +24,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayMemoryBudget;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -138,10 +140,9 @@ class LmdbSailStoreOverlayStartupTest {
 			assertThat(values.getId(RETIRED)).isEqualTo(LmdbValue.UNKNOWN_ID);
 			boolean overlayReady = values.awaitValueOverlayReady(10, TimeUnit.SECONDS);
 			if (scanStarted.getCount() != 0) {
-				// The warm-up never reached its scan: default async retirement changed the dictionary view first.
+				// Either admission check can observe retirement before the native scan hook is reached.
 				assertThat(overlayReady).isFalse();
-				assertThat(values.compressedValueOverlayMaintenanceStats().lastFailure())
-						.contains("dictionary view changed before automatic warm-up started");
+				assertPreScanCancellation(values);
 			}
 			long id = values.getId(KEEPER);
 			assertThat(id).isNotEqualTo(LmdbValue.UNKNOWN_ID);
@@ -158,6 +159,85 @@ class LmdbSailStoreOverlayStartupTest {
 		} finally {
 			releaseScan.countDown();
 			owner.close();
+		}
+	}
+
+	private static void assertPreScanCancellation(ValueStore values) {
+		var maintenance = values.compressedValueOverlayMaintenanceStats();
+		assertThat(maintenance.discarded()).as("a real dictionary mutation cancels the optional warm-up").isPositive();
+		assertThat(maintenance.refusals()).as("this is cancellation, not an exhausted overlay budget").isZero();
+		assertThat(maintenance.lastFailure()).isIn(
+				"Value overlay warm-up cancelled: dictionary view changed before automatic warm-up started",
+				"Value overlay warm-up cancelled: Cannot build a value overlay during dictionary mutation");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(30)
+	void ownedMutationCancelsBeforeScanAtEitherAdmissionBoundary(boolean beforeScheduling) throws Exception {
+		seedRetirement();
+		CountDownLatch startupRequested = new CountDownLatch(1);
+		CountDownLatch startWarmup = new CountDownLatch(1);
+		CountDownLatch innerAdmission = new CountDownLatch(1);
+		CountDownLatch releaseInnerAdmission = new CountDownLatch(1);
+		CountDownLatch scanStarted = new CountDownLatch(1);
+		LmdbSailStore.ValueStoreFactory factory = (path, properties, config) -> new ValueStore(path, properties,
+				config, false, scanStarted::countDown) {
+			@Override
+			void startValueOverlayWarmupAfterStoreInitialization() {
+				startupRequested.countDown();
+				await(startWarmup);
+				super.startValueOverlayWarmupAfterStoreInitialization();
+			}
+
+			@Override
+			public CompressedValueOverlay.Stats warmCompressedValueOverlay(CompressedValueOverlay.Options options,
+					BooleanSupplier cancelled) throws IOException {
+				// The automatic worker has passed its outer generation check; no native reader is held here.
+				innerAdmission.countDown();
+				await(releaseInnerAdmission);
+				return super.warmCompressedValueOverlay(options, cancelled);
+			}
+		};
+		try (LmdbSailStore owner = new LmdbSailStore(directory, new StoreProperties(directory),
+				config(true).setAsyncValueCleanup(false), false, factory, TripleStore::new)) {
+			try {
+				owner.startBackgroundMaintenanceAfterInitialization();
+				await(startupRequested);
+				if (!beforeScheduling) {
+					startWarmup.countDown();
+					await(innerAdmission);
+				}
+				ValueStore values = owner.valueStore();
+				try (var publication = owner.getExplicitSailSource().beginPublication()) {
+					values.startTransaction(true);
+					try {
+						assertThat(lookupScope(values)).as("real owned mutation invalidates the lookup generation")
+								.isNull();
+						startWarmup.countDown();
+						releaseInnerAdmission.countDown();
+						joinPostReadyInitializer();
+						assertThat(values.awaitValueOverlayReady(10, TimeUnit.SECONDS)).isFalse();
+						assertThat(scanStarted.getCount()).as("neither cancellation reaches the native scan hook")
+								.isOne();
+						assertPreScanCancellation(values);
+						assertThat(values.compressedValueOverlayMaintenanceStats().lastFailure())
+								.contains(beforeScheduling ? "dictionary view changed before automatic warm-up started"
+										: "Cannot build a value overlay during dictionary mutation");
+					} finally {
+						values.rollback();
+					}
+				}
+				long id = values.getId(KEEPER);
+				assertThat(id).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+				assertThat(values.getValue(id)).isEqualTo(KEEPER);
+				assertThat(values.compressedValueOverlayStats()).isNull();
+				Boolean overlayHit = values.withData(id, (address, length) -> Boolean.FALSE, record -> Boolean.TRUE);
+				assertThat(overlayHit).isFalse();
+			} finally {
+				startWarmup.countDown();
+				releaseInnerAdmission.countDown();
+			}
 		}
 	}
 
