@@ -377,6 +377,8 @@ final class PackedPlanMaterializer {
 		Projection projection = new Projection(relation(query, recipe, relChild(query, recipe, nodeId, 0)),
 				projectionList(query, query.payloadPrimary(payloadId)), query.payloadFlags(payloadId) != 0);
 		projection.setProjectionContext(term(query, query.payloadSecondary(payloadId)));
+		projection.setInheritedGraphParameter(
+				(String) query.objectValue(PackedProjectionPayloads.parameterName(query, payloadId)));
 		return projection;
 	}
 
@@ -442,7 +444,8 @@ final class PackedPlanMaterializer {
 	private static Filter filter(PackedQuery query, PackedPlanRecipe recipe, int nodeId, int payloadId) {
 		Filter filter = new Filter(relation(query, recipe, relChild(query, recipe, nodeId, 0)),
 				scalar(query, recipe, nodeId, query.filterConditionFromPayload(payloadId)));
-		// A selected recipe may have changed the argument's structural position. Its original visible frame stays fixed.
+		// A selected recipe may have changed the argument's structural position. Its original visible frame stays
+		// fixed.
 		int scope = query.payloadSecondary(recipe == null ? payloadId : query.relocatedFilterPayload(payloadId));
 		setConditionScope(filter, query, scope);
 		return filter;

@@ -333,9 +333,9 @@ class PackedPhysicalCostContractTest {
 	void disconnectedComponentEvidenceIsNotStampedAsWholeJoinEvidence() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern left = new StatementPattern(Var.of("left"),
-				Var.of("leftPredicate", values.createIRI("urn:left")), Var.of("leftValue"));
+				Var.of("leftPredicate", values.createIRI("urn:left"), true, true), Var.of("leftValue"));
 		StatementPattern right = new StatementPattern(Var.of("right"),
-				Var.of("rightPredicate", values.createIRI("urn:right")), Var.of("rightValue"));
+				Var.of("rightPredicate", values.createIRI("urn:right"), true, true), Var.of("rightValue"));
 		int[] joinEvents = new int[2];
 		PackedCostModel model = new PackedCostModel() {
 
@@ -495,9 +495,9 @@ class PackedPhysicalCostContractTest {
 	void genericDependentSubqueryCostIsChargedToOwningFilter() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = new StatementPattern(Var.of("subject"),
-				Var.of("outerPredicate", values.createIRI("urn:outer")), Var.of("outerValue"));
+				Var.of("outerPredicate", values.createIRI("urn:outer"), true, true), Var.of("outerValue"));
 		StatementPattern dependent = new StatementPattern(Var.of("subject"),
-				Var.of("dependentPredicate", values.createIRI("urn:dependent")), Var.of("dependentValue"));
+				Var.of("dependentPredicate", values.createIRI("urn:dependent"), true, true), Var.of("dependentValue"));
 		Filter filter = new Filter(outer,
 				new Or(new Exists(dependent), new ValueConstant(values.createLiteral(false))));
 		PackedCostModel model = new PackedCostModel() {
@@ -560,9 +560,9 @@ class PackedPhysicalCostContractTest {
 	void dependentSubqueryCostParticipatesInOwningFilterWinnerSelection() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = new StatementPattern(Var.of("subject"),
-				Var.of("outerPredicate", values.createIRI("urn:outer")), Var.of("outerValue"));
+				Var.of("outerPredicate", values.createIRI("urn:outer"), true, true), Var.of("outerValue"));
 		StatementPattern dependent = new StatementPattern(Var.of("subject"),
-				Var.of("dependentPredicate", values.createIRI("urn:dependent")), Var.of("dependentValue"));
+				Var.of("dependentPredicate", values.createIRI("urn:dependent"), true, true), Var.of("dependentValue"));
 		Filter filter = new Filter(outer, new Not(new Exists(dependent)));
 		PackedCostModel model = new PackedCostModel() {
 
@@ -618,9 +618,10 @@ class PackedPhysicalCostContractTest {
 	void semiAntiProviderReceivesOriginatingDependentCostEvent() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = new StatementPattern(Var.of("subject"),
-				Var.of("outerPredicate", values.createIRI("urn:event-outer")), Var.of("outerValue"));
+				Var.of("outerPredicate", values.createIRI("urn:event-outer"), true, true), Var.of("outerValue"));
 		StatementPattern dependent = new StatementPattern(Var.of("subject"),
-				Var.of("dependentPredicate", values.createIRI("urn:event-dependent")), Var.of("dependentValue"));
+				Var.of("dependentPredicate", values.createIRI("urn:event-dependent"), true, true),
+				Var.of("dependentValue"));
 		Filter filter = new Filter(outer, new Not(new Exists(dependent)));
 		boolean[] observed = new boolean[1];
 		PackedCostModel model = new PackedCostModel() {
@@ -685,11 +686,12 @@ class PackedPhysicalCostContractTest {
 	void compositeDependentPlanPublishesOuterIndependentReopenEvent() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = new StatementPattern(Var.of("subject"),
-				Var.of("outerPredicate", values.createIRI("urn:event-outer")), Var.of("outerValue"));
+				Var.of("outerPredicate", values.createIRI("urn:event-outer"), true, true), Var.of("outerValue"));
 		StatementPattern independent = new StatementPattern(Var.of("observation"),
-				Var.of("valuePredicate", values.createIRI("urn:event-value")), Var.of("value"));
+				Var.of("valuePredicate", values.createIRI("urn:event-value"), true, true), Var.of("value"));
 		StatementPattern correlated = new StatementPattern(Var.of("subject"),
-				Var.of("observationPredicate", values.createIRI("urn:event-observation")), Var.of("observation"));
+				Var.of("observationPredicate", values.createIRI("urn:event-observation"), true, true),
+				Var.of("observation"));
 		Filter filter = new Filter(outer, new Not(new Exists(new Join(independent, correlated))));
 		boolean[] observed = new boolean[1];
 		PackedCostModel model = new PackedCostModel() {
@@ -763,11 +765,11 @@ class PackedPhysicalCostContractTest {
 	void inheritedPrefixChargesEveryReopenOfNestedJoinChildren() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = new StatementPattern(Var.of("subject"),
-				Var.of("outerPredicate", values.createIRI("urn:outer")), Var.of("outerValue"));
+				Var.of("outerPredicate", values.createIRI("urn:outer"), true, true), Var.of("outerValue"));
 		StatementPattern first = new StatementPattern(Var.of("subject"),
-				Var.of("firstPredicate", values.createIRI("urn:first")), Var.of("joinKey"));
+				Var.of("firstPredicate", values.createIRI("urn:first"), true, true), Var.of("joinKey"));
 		StatementPattern second = new StatementPattern(Var.of("joinKey"),
-				Var.of("secondPredicate", values.createIRI("urn:second")), Var.of("result"));
+				Var.of("secondPredicate", values.createIRI("urn:second"), true, true), Var.of("result"));
 		Join nestedJoin = new Join(first, second);
 		Union source = new Union(outer, nestedJoin);
 		PackedCostModel model = new PackedCostModel() {
@@ -845,11 +847,11 @@ class PackedPhysicalCostContractTest {
 	private void assertContextualInvocationDomain(boolean filtered, boolean singleLeaf) {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = new StatementPattern(Var.of("subject"),
-				Var.of("outerPredicate", values.createIRI("urn:outer")), Var.of("outerValue"));
+				Var.of("outerPredicate", values.createIRI("urn:outer"), true, true), Var.of("outerValue"));
 		StatementPattern first = new StatementPattern(Var.of("subject"),
-				Var.of("firstPredicate", values.createIRI("urn:first")), Var.of("joinKey"));
+				Var.of("firstPredicate", values.createIRI("urn:first"), true, true), Var.of("joinKey"));
 		StatementPattern second = new StatementPattern(Var.of("joinKey"),
-				Var.of("secondPredicate", values.createIRI("urn:second")), Var.of("result"));
+				Var.of("secondPredicate", values.createIRI("urn:second"), true, true), Var.of("result"));
 		TupleExpr input = singleLeaf ? first : new Join(first, second);
 		TupleExpr nested = filtered ? new Filter(input, new ValueConstant(values.createLiteral(true)))
 				: new Extension(input, new ExtensionElem(Var.of("result"), "alias"));
@@ -935,11 +937,11 @@ class PackedPhysicalCostContractTest {
 	void disconnectedComponentResultWorkRepeatsAcrossInheritedInvocations() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern outer = new StatementPattern(Var.of("outerSubject"),
-				Var.of("outerPredicate", values.createIRI("urn:outer")), Var.of("outerValue"));
+				Var.of("outerPredicate", values.createIRI("urn:outer"), true, true), Var.of("outerValue"));
 		StatementPattern first = new StatementPattern(Var.of("componentSubject"),
-				Var.of("firstPredicate", values.createIRI("urn:first")), Var.of("joinKey"));
+				Var.of("firstPredicate", values.createIRI("urn:first"), true, true), Var.of("joinKey"));
 		StatementPattern second = new StatementPattern(Var.of("joinKey"),
-				Var.of("secondPredicate", values.createIRI("urn:second")), Var.of("result"));
+				Var.of("secondPredicate", values.createIRI("urn:second"), true, true), Var.of("result"));
 		Join nestedJoin = new Join(first, second);
 		Union source = new Union(outer, nestedJoin);
 		PackedCostModel model = new PackedCostModel() {
@@ -1009,11 +1011,11 @@ class PackedPhysicalCostContractTest {
 	void scheduledSemiAntiExactCacheHitRetainsOriginatingAlgorithmEvent() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern provider = new StatementPattern(Var.of("provider"),
-				Var.of("providerPredicate", values.createIRI("urn:provider")), Var.of("gate"));
+				Var.of("providerPredicate", values.createIRI("urn:provider"), true, true), Var.of("gate"));
 		StatementPattern continuation = new StatementPattern(Var.of("gate"),
-				Var.of("continuationPredicate", values.createIRI("urn:continuation")), Var.of("value"));
+				Var.of("continuationPredicate", values.createIRI("urn:continuation"), true, true), Var.of("value"));
 		StatementPattern dependent = new StatementPattern(Var.of("gate"),
-				Var.of("dependentPredicate", values.createIRI("urn:dependent")), Var.of("dependentValue"));
+				Var.of("dependentPredicate", values.createIRI("urn:dependent"), true, true), Var.of("dependentValue"));
 		Filter filter = new Filter(new Join(provider, continuation), new Not(new Exists(dependent)));
 		PackedCostModel model = new PackedCostModel() {
 
@@ -1058,11 +1060,11 @@ class PackedPhysicalCostContractTest {
 	void scheduledSemiAntiLocalCostIncludesItsSelectedPrefix() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		StatementPattern provider = new StatementPattern(Var.of("provider"),
-				Var.of("providerPredicate", values.createIRI("urn:provider")), Var.of("gate"));
+				Var.of("providerPredicate", values.createIRI("urn:provider"), true, true), Var.of("gate"));
 		StatementPattern continuation = new StatementPattern(Var.of("continuation"),
-				Var.of("continuationPredicate", values.createIRI("urn:continuation")), Var.of("value"));
+				Var.of("continuationPredicate", values.createIRI("urn:continuation"), true, true), Var.of("value"));
 		StatementPattern dependent = new StatementPattern(Var.of("gate"),
-				Var.of("dependentPredicate", values.createIRI("urn:dependent")), Var.of("dependentValue"));
+				Var.of("dependentPredicate", values.createIRI("urn:dependent"), true, true), Var.of("dependentValue"));
 		Filter filter = new Filter(new Join(provider, continuation), new Not(new Exists(dependent)));
 		PackedCostModel model = new PackedCostModel() {
 

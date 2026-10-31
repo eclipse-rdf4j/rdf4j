@@ -33,7 +33,10 @@ public final class FilterBindingScope {
 		return forGate(filter, filter.getArg(), filter.isVariableScopeChange(), TupleExpr::getBindingNames);
 	}
 
-	/** Whether a rewrite that reads condition variables directly observes the condition's complete input. */
+	/**
+	 * Whether this exact condition can observe every required input through its resolved scope. A complete proof can
+	 * elide a projected binding copy for the current expression; it never widens the reusable structural authority.
+	 */
 	public static boolean allowsAllConditionBindings(Filter filter) {
 		ConditionBindingScope scope = resolve(filter);
 		if (scope.retainsAllBindings()) {
@@ -90,8 +93,7 @@ public final class FilterBindingScope {
 		}
 		Set<String> retained = TupleExprs.filterConditionBindingNames(filter.getCondition(), scopeChange,
 				argument, bindingNames);
-		if (isPartOfSubQuery(argument) || TupleExprs.conditionFrameContainsAllObservations(
-				TupleExprs.conditionBindingDomain(filter.getCondition()), retained)) {
+		if (isPartOfSubQuery(argument)) {
 			return ConditionBindingScope.ALL;
 		}
 		return ConditionBindingScope.retain(retained);

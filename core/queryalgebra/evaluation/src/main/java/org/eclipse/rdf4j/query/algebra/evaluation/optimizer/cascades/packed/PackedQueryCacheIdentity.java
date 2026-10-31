@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -314,6 +315,7 @@ final class PackedQueryCacheIdentity {
 		private final Map<String, Integer> extensionDefinitions = new LinkedHashMap<>();
 		private final Set<String> extensionInputConflicts = new LinkedHashSet<>();
 		private final Set<String> bindingAssignmentNames = new LinkedHashSet<>();
+		private final Set<String> projectionCallerNames = new LinkedHashSet<>();
 		private boolean serviceBoundary;
 
 		private static IdentitySurface collect(TupleExpr source) {
@@ -336,6 +338,13 @@ final class PackedQueryCacheIdentity {
 			} else if (node instanceof BindingSetAssignment assignment) {
 				bindingAssignmentNames.addAll(assignment.getBindingNames());
 				bindingAssignmentNames.addAll(assignment.getAssuredBindingNames());
+			} else if (node instanceof Projection projection) {
+				Var caller = projection.getProjectionContext();
+				if (caller != null && !caller.hasValue() && projection.getInheritedGraphParameter() != null) {
+					// This metadata reads the invocation before its argument can produce a same-named BIND.
+					projectionCallerNames.add(caller.getName());
+					extensionInputConflicts.add(caller.getName());
+				}
 			} else if (node instanceof Service) {
 				serviceBoundary = true;
 			}
@@ -357,6 +366,8 @@ final class PackedQueryCacheIdentity {
 					anonymousNames.computeIfAbsent(name, ignored -> anonymousNames.size());
 				}
 			}
+			// A caller-frame symbol remains an external name even if another occurrence was marked anonymous.
+			anonymousNames.keySet().removeAll(projectionCallerNames);
 			for (String anonymousName : anonymousNames.keySet()) {
 				if (rootBindingNames.contains(anonymousName)
 						|| bindingAssignmentNames.contains(anonymousName)) {

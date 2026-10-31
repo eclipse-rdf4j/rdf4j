@@ -1185,6 +1185,9 @@ class PackedCostSessionLifecycleTest {
 				new Join(pattern(values, "subject", "urn:second-source", "object"),
 						pattern(values, "subject", "urn:second-detail", "detail")),
 				Var.of("object"));
+		// Equal condition transforms need equal visibility, even when their tuple inputs differ.
+		firstFilter.setConditionBindingScope(Filter.ConditionBindingScope.retain(java.util.Set.of("object")));
+		secondFilter.setConditionBindingScope(Filter.ConditionBindingScope.retain(java.util.Set.of("object")));
 		firstFilter.setResultSizeEstimate(11.0d);
 		firstFilter.setCostEstimate(12.0d);
 		secondFilter.setResultSizeEstimate(21.0d);
@@ -1514,7 +1517,8 @@ class PackedCostSessionLifecycleTest {
 
 	private static StatementPattern pattern(SimpleValueFactory values, String subject, String predicate,
 			String object) {
-		return new StatementPattern(Var.of(subject), Var.of("predicate", values.createIRI(predicate)), Var.of(object));
+		return new StatementPattern(Var.of(subject), Var.of("predicate", values.createIRI(predicate), true, true),
+				Var.of(object));
 	}
 
 	private static double rows(PackedQueryView query, int relationId) {

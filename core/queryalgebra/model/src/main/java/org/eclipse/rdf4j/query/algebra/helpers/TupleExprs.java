@@ -27,9 +27,28 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.Add;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.AnnotationTripleRef;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Clear;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.CompareAll;
+import org.eclipse.rdf4j.query.algebra.CompareAny;
+import org.eclipse.rdf4j.query.algebra.Copy;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Create;
+import org.eclipse.rdf4j.query.algebra.Datatype;
+import org.eclipse.rdf4j.query.algebra.DeleteData;
+import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -37,28 +56,75 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.HasLang;
+import org.eclipse.rdf4j.query.algebra.HasLangDir;
+import org.eclipse.rdf4j.query.algebra.IRIFunction;
+import org.eclipse.rdf4j.query.algebra.If;
+import org.eclipse.rdf4j.query.algebra.In;
+import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Intersection;
+import org.eclipse.rdf4j.query.algebra.IsBNode;
+import org.eclipse.rdf4j.query.algebra.IsLiteral;
+import org.eclipse.rdf4j.query.algebra.IsNumeric;
+import org.eclipse.rdf4j.query.algebra.IsResource;
+import org.eclipse.rdf4j.query.algebra.IsTriple;
+import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Label;
+import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangDir;
+import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
+import org.eclipse.rdf4j.query.algebra.Load;
+import org.eclipse.rdf4j.query.algebra.LocalName;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
+import org.eclipse.rdf4j.query.algebra.Modify;
+import org.eclipse.rdf4j.query.algebra.Move;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Namespace;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Regex;
+import org.eclipse.rdf4j.query.algebra.ReifiedTripleRef;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
+import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.Window;
+import org.eclipse.rdf4j.query.algebra.WindowElem;
+import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
@@ -458,26 +524,98 @@ public class TupleExprs {
 		return bindingObservationDomain(expression);
 	}
 
+	/**
+	 * Concrete implementations whose child traversal describes their complete built-in binding observation contract.
+	 * Inherited visitor dispatch is not such a proof: a subclass may change evaluation or hide additional inputs. New
+	 * model implementations must be reviewed here before analysis treats their domain as complete. Keep unknown
+	 * extension nodes, including evaluation-only function wrappers, conservative rather than trusting their package.
+	 * SERVICE stays unknown because its serialized remote expression and public backend may observe invocation bindings
+	 * beyond the traversed tuple preview. INTERSECT, DISTINCT and REDUCED also stay unknown: their whole-row identity
+	 * comparisons can observe arbitrary input names unless a separate input-domain proof bounds them. The holder defers
+	 * the immutable exact-class table until an observation domain is actually inspected.
+	 */
+	private static final class BindingObservationTypes {
+		private static final Set<Class<?>> COMPLETE = Set.of(
+				Add.class, AggregateFunctionCall.class, And.class, AnnotationTripleRef.class, ArbitraryLengthPath.class,
+				Avg.class, BNodeGenerator.class, BindingSetAssignment.class, Bound.class, Clear.class, Coalesce.class,
+				Compare.class, CompareAll.class, CompareAny.class, Copy.class, Count.class, Create.class,
+				Datatype.class,
+				DeleteData.class, DescribeOperator.class, Difference.class, EmptySet.class, Exists.class,
+				Extension.class, ExtensionElem.class, Filter.class, FunctionCall.class, Graph.class, Group.class,
+				GroupConcat.class, GroupElem.class, HasLang.class, HasLangDir.class, IRIFunction.class, If.class,
+				In.class, InsertData.class, IsBNode.class, IsLiteral.class, IsNumeric.class,
+				IsResource.class, IsTriple.class, IsURI.class, Join.class, Label.class, Lang.class, LangDir.class,
+				LangMatches.class, Lateral.class, LeftJoin.class, ListMemberOperator.class, Load.class, LocalName.class,
+				MathExpr.class, Max.class, Min.class, Modify.class, Move.class, MultiProjection.class, Namespace.class,
+				Not.class, Or.class, Order.class, OrderElem.class, Projection.class, ProjectionElem.class,
+				ProjectionElemList.class, QueryRoot.class, Regex.class, ReifiedTripleRef.class,
+				SameTerm.class, Sample.class, SingletonSet.class, Slice.class, StatementPattern.class,
+				Str.class, StrLangDir.class, Sum.class, TripleRef.class, Union.class, ValueConstant.class, Var.class,
+				Window.class, WindowElem.class, WindowFunctionCall.class, ZeroLengthPath.class
+		);
+	}
+
 	private static ConditionBindingDomain bindingObservationDomain(QueryModelNode expression) {
 		Set<String> names = new HashSet<>();
 		boolean[] known = { true };
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
-				if (node instanceof Var var && !var.hasValue() && var.getName() != null) {
+				known[0] &= BindingObservationTypes.COMPLETE.contains(node.getClass());
+				if (node instanceof Var var && (!var.hasValue() || !var.isConstant()) && var.getName() != null) {
+					// Optimizer values do not remove named caller compatibility or parameter reification.
 					names.add(var.getName());
 				} else if (node instanceof BindingSetAssignment assignment) {
 					names.addAll(assignment.getDeclaredBindingNames());
-					known[0] &= assignment.getBindingSets() == null || assignment.hasRepeatableBindingSets();
+					if (assignment.getBindingSets() != null) {
+						if (assignment.hasRepeatableBindingSets()) {
+							// Explicit headers need not enumerate every actual row column. This metadata is cached.
+							names.addAll(assignment.getPossibleBindingNames());
+						} else {
+							// Observation analysis must never acquire an arbitrary single-use row iterator.
+							known[0] = false;
+						}
+					}
 				} else if (node instanceof ProjectionElem element) {
 					names.add(element.getName());
 					element.getProjectionAlias().ifPresent(names::add);
 				} else if (node instanceof ExtensionElem element) {
 					names.add(element.getName());
+				} else if (node instanceof Count count && count.isDistinct() && count.getArg() == null) {
+					// COUNT(DISTINCT *) hashes complete mappings, including names absent from the model.
+					known[0] = false;
 				} else if (node instanceof Group group) {
 					names.addAll(group.getGroupBindingNames());
+				} else if (node instanceof GroupElem element) {
+					names.add(element.getName());
+				} else if (node instanceof WindowElem element) {
+					names.add(element.getName());
+				} else if (node instanceof Projection projection) {
+					Var caller = projection.getProjectionContext();
+					String parameter = projection.getInheritedGraphParameter();
+					if (caller != null && parameter != null) {
+						// Projection context is metadata, not a visited child. Its lowering reads a fixed value
+						// directly, unlike a public GRAPH selector, but always inspects private input authority.
+						known[0] &= caller.getClass() == Var.class;
+						names.add(parameter);
+						if (!caller.hasValue() && caller.getName() != null) {
+							names.add(caller.getName());
+						}
+					}
+				} else if (node instanceof Lateral lateral) {
+					// Original name membership selects right-side lexical substitution, independently of Vars.
+					names.addAll(lateral.getRightInputBindingNames());
+				} else if (node instanceof Filter filter) {
+					// These are external physical parameters, not additional argument outputs.
+					names.addAll(filter.getRequiredInputBindingNames());
 				}
 				super.meetNode(node);
+			}
+
+			@Override
+			public void meet(Graph graph) {
+				// Graph's compatibility default dispatches to meetOther; the exact built-in contract is known.
+				meetNode(graph);
 			}
 
 			@Override

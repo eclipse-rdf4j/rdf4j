@@ -235,13 +235,17 @@ class PackedQueryCodecTest {
 	}
 
 	@Test
-	void arbitraryLengthPathPackedAssuredBindingsIncludePathExpressionBindings() {
+	void arbitraryPathPhysicalAssuranceIsConservativeComparedWithDeclaredStepSchema() {
 		StatementPattern step = new StatementPattern(Var.of("stepStart"),
 				Var.of("pathPredicate"), Var.of("stepEnd"));
 		ArbitraryLengthPath source = new ArbitraryLengthPath(StatementPattern.Scope.NAMED_CONTEXTS,
 				Var.of("start"), step, Var.of("end"), Var.of("graph"), 1L);
 
-		assertPackedAssuredBindingsMatch(source);
+		PackedQuery packed = PackedQueryCodec.encode(source);
+		assertEquals(Set.of("start", "end"),
+				Set.copyOf(packed.bindingNames(packed.relAssuredMaskId(packed.rootRelId()))));
+		assertEquals(source.getBindingNames(), new PackedQueryView(packed).bindingNames(source),
+				"declared path schema remains distinct from conservative physical assurance");
 	}
 
 	@Test

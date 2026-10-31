@@ -22,10 +22,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.WINF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -33,7 +35,11 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -56,6 +62,9 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.Window;
+import org.eclipse.rdf4j.query.algebra.WindowElem;
+import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
@@ -167,6 +176,223 @@ public class TupleExprsTest {
 		assertThat(domain.known()).isTrue();
 		assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of("implicit"))).isTrue();
 		assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of("other"))).isFalse();
+	}
+
+	@Test
+	public void scalarSubclassesCannotInheritCompleteBindingObservationProofs() {
+		for (ValueExpr expression : List.of(new Bound(Var.of("observed")) {
+		},
+				new FunctionCall("urn:test:opaque-observation", Var.of("observed")) {
+				},
+				new ValueConstant(f.createLiteral(true)) {
+				}, new Var("observed") {
+				},
+				new Exists(new SingletonSet()) {
+				})) {
+			TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(expression);
+			assertThat(domain.known()).as("inherited scalar dispatch does not certify %s",
+					expression.getClass().getSuperclass().getSimpleName()).isFalse();
+			assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, domain.names())).isFalse();
+		}
+		for (ValueExpr expression : List.of(new Bound(Var.of("observed")),
+				new FunctionCall("urn:test:ordinary-observation", Var.of("observed")),
+				new ValueConstant(f.createLiteral(true)), Var.of("observed"), new Exists(new SingletonSet()))) {
+			TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(expression);
+			assertThat(domain.known())
+					.as("ordinary concrete %s remains complete", expression.getClass().getSimpleName())
+					.isTrue();
+			assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, domain.names())).isTrue();
+		}
+	}
+
+	@Test
+	public void aggregateTargetIsObservedThroughSetMembershipInsideExists() {
+		Group group = new Group(new SingletonSet());
+		group.addGroupElement(new GroupElem("namedTarget", new Count(null)));
+		assertNamedTargetObservation(group);
+	}
+
+	@Test
+	public void windowTargetIsObservedThroughSetMembershipInsideExists() {
+		Window window = new Window(new SingletonSet());
+		window.addElement(new WindowElem("namedTarget", new WindowFunctionCall(WINF.rowNumber.stringValue())));
+		assertNamedTargetObservation(window);
+	}
+
+	private static void assertNamedTargetObservation(TupleExpr producer) {
+		// INTERSECT compares complete rows. Its SingletonSet side can carry an incoming namedTarget, while the
+		// producer side overwrites it. The target string is therefore an observation even without any Var node.
+		ValueExpr membership = new Exists(new Intersection(new SingletonSet(), producer));
+		for (ValueExpr condition : List.of(membership, new Not(membership.clone()),
+				new Exists(new Filter(new SingletonSet(), new Not(membership.clone()))))) {
+			TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(condition);
+			assertThat(!domain.known() || domain.names().contains("namedTarget"))
+					.as("a complete %s observation proof must include the named target",
+							producer.getClass().getSimpleName())
+					.isTrue();
+			assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of())).isFalse();
+		}
+	}
+
+	@Test
+	public void repeatableValuesObservationIncludesColumnsBeyondItsDeclaredHeader() {
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("header"));
+		values.setBindingSets(List.of(new ListBindingSet(List.of("header", "actualExtra"),
+				f.createLiteral(1), f.createLiteral(2))));
+		assertThat(values.hasRepeatableBindingSets()).isTrue();
+		assertThat(values.getDeclaredBindingNames()).containsExactly("header");
+		assertThat(values.getPossibleBindingNames()).containsExactlyInAnyOrder("header", "actualExtra");
+
+		TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(new Not(new Exists(values)));
+		assertThat(domain.names()).as("actual VALUES columns can participate in implicit input compatibility")
+				.containsExactlyInAnyOrder("header", "actualExtra");
+		assertThat(domain.known()).isTrue();
+		assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of("header"))).isFalse();
+	}
+
+	@Test
+	public void singleUseValuesObservationDoesNotDiscoverExtraColumnsByOpeningRows() {
+		AtomicInteger opened = new AtomicInteger();
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("header"));
+		values.setBindingSets((Iterable<BindingSet>) () -> {
+			opened.incrementAndGet();
+			return List.<BindingSet>of(new ListBindingSet(List.of("header", "actualExtra"),
+					f.createLiteral(1), f.createLiteral(2))).iterator();
+		});
+		TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(new Not(new Exists(values)));
+		assertThat(domain.names()).containsExactly("header");
+		assertThat(domain.known()).isFalse();
+		assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of("header"))).isFalse();
+		assertThat(opened).hasValue(0);
+	}
+
+	@Test
+	public void standardTupleSubclassesCannotClaimACompleteBindingObservationDomain() {
+		for (TupleExpr expression : opaqueTupleObservationVariants()) {
+			TupleExprs.ConditionBindingDomain domain = TupleExprs.tupleBindingObservationDomain(expression);
+			assertThat(domain.known()).as("inherited visit(%s) does not certify the subclass's binding contract",
+					expression.getClass().getSuperclass().getSimpleName()).isFalse();
+			assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, domain.names())).isFalse();
+		}
+	}
+
+	@Test
+	public void opaqueTupleDomainsRemainUnknownThroughExistsNegationAndValuesComposition() {
+		for (TupleExpr opaque : opaqueTupleObservationVariants()) {
+			BindingSetAssignment values = declaredObservationValues("declaredHeader");
+			ValueExpr condition = new Not(new Exists(new Filter(values,
+					new Not(new Exists(new Join(new SingletonSet(), opaque))))));
+			TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(condition);
+			assertThat(domain.names()).contains("declaredHeader");
+			assertThat(domain.known()).as("an enclosing built-in must not certify its opaque descendant: %s",
+					opaque.getClass().getSuperclass().getSimpleName()).isFalse();
+			assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, domain.names())).isFalse();
+		}
+	}
+
+	@Test
+	public void builtInObservationDomainsRetainNonVarDeclarationsAndAliasNames() {
+		BindingSetAssignment values = declaredObservationValues("header");
+		assertThat(values.getAssuredBindingNames()).isEmpty();
+		Extension extension = new Extension(values,
+				new ExtensionElem(new ValueConstant(f.createLiteral(true)), "extended"));
+		Projection projection = new Projection(extension,
+				new ProjectionElemList(new ProjectionElem("extended", "alias"), new ProjectionElem("header")));
+		Group group = new Group(projection, Set.of("header"));
+		ValueExpr condition = new Not(new Exists(group));
+		TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(condition);
+		assertThat(domain.known()).isTrue();
+		assertThat(domain.names()).containsExactlyInAnyOrder("header", "extended", "alias");
+		assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of("header", "extended", "alias")))
+				.isTrue();
+		assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of("extended", "alias")))
+				.isFalse();
+
+		for (TupleExpr standard : List.of(new SingletonSet(),
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new Join(new SingletonSet(), new SingletonSet()),
+				new Union(new SingletonSet(), new SingletonSet()),
+				new LeftJoin(new SingletonSet(), new SingletonSet()),
+				new Slice(new SingletonSet(), 0, 1))) {
+			TupleExprs.ConditionBindingDomain observed = TupleExprs.tupleBindingObservationDomain(standard);
+			assertThat(observed.known()).as("ordinary %s remains supported", standard.getClass().getSimpleName())
+					.isTrue();
+			assertThat(TupleExprs.conditionFrameContainsAllObservations(observed, observed.names())).isTrue();
+		}
+
+		TupleExpr wholeRowDistinct = new Distinct(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		TupleExprs.ConditionBindingDomain distinctObservations = TupleExprs
+				.tupleBindingObservationDomain(wholeRowDistinct);
+		assertThat(distinctObservations.names()).containsExactlyInAnyOrder("s", "p", "o");
+		assertThat(distinctObservations.known())
+				.as("DISTINCT compares complete rows and cannot certify a finite domain")
+				.isFalse();
+		assertThat(TupleExprs.conditionFrameContainsAllObservations(distinctObservations, distinctObservations.names()))
+				.isFalse();
+	}
+
+	@Test
+	public void singleUseValuesRemainUnknownWithoutBeingOpenedInsideNestedConditions() {
+		AtomicInteger opened = new AtomicInteger();
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("streamHeader"));
+		values.setBindingSets(() -> {
+			opened.incrementAndGet();
+			throw new AssertionError("observation inspection must not open a single-use VALUES producer");
+		});
+		ValueExpr condition = new Exists(new Filter(new SingletonSet(), new Not(new Exists(values))));
+		TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(condition);
+		assertThat(domain.names()).containsExactly("streamHeader");
+		assertThat(domain.known()).isFalse();
+		assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of("streamHeader"))).isFalse();
+		assertThat(opened).hasValue(0);
+	}
+
+	private static BindingSetAssignment declaredObservationValues(String header) {
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of(header));
+		values.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		return values;
+	}
+
+	/** Each subclass inherits the built-in visit method but exposes a custom binding contract. */
+	private static List<TupleExpr> opaqueTupleObservationVariants() {
+		StatementPattern statement = new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object")) {
+			@Override
+			public Set<String> getBindingNames() {
+				return Set.of("subject", "predicate", "object", "customInput");
+			}
+		};
+		Join join = new Join(declaredObservationValues("leftHeader"), new SingletonSet()) {
+			@Override
+			public Set<String> getBindingNames() {
+				return Set.of("leftHeader", "customInput");
+			}
+		};
+		Projection projection = new Projection(declaredObservationValues("source"),
+				new ProjectionElemList(new ProjectionElem("source", "projected"))) {
+			@Override
+			public Set<String> getBindingNames() {
+				return Set.of("projected", "customInput");
+			}
+		};
+		BindingSetAssignment values = new BindingSetAssignment() {
+			@Override
+			public Set<String> getBindingNames() {
+				return Set.of("valuesHeader", "customInput");
+			}
+		};
+		values.setDeclaredBindingNames(Set.of("valuesHeader"));
+		values.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		Group group = new Group(declaredObservationValues("groupHeader"), Set.of("groupHeader")) {
+			@Override
+			public Set<String> getBindingNames() {
+				return Set.of("groupHeader", "customInput");
+			}
+		};
+		return List.of(statement, join, projection, values, group);
 	}
 
 	@Test

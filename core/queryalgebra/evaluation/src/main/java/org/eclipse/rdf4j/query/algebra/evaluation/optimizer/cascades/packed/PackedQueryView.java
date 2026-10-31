@@ -37,8 +37,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /** Read-only primitive-ID view supplied to packed cost and implementation providers. */
@@ -375,18 +373,7 @@ public final class PackedQueryView {
 			}
 			slot = slot + 1 & mask;
 		}
-		LinkedHashSet<String> logicalNames = new LinkedHashSet<>(expression.getBindingNames());
-		Set<String> unboundVariableNames = VarNameCollector.process(expression);
-		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Var variable) {
-				String name = variable.getName();
-				if (variable.hasValue() && name != null && !unboundVariableNames.contains(name)) {
-					logicalNames.remove(name);
-				}
-			}
-		});
-		Set<String> names = Set.copyOf(logicalNames);
+		Set<String> names = declaredOutputNames(expression);
 		if (materializedBindingNameCount + 1 > materializedBindingNameResizeThreshold) {
 			resizeMaterializedBindingNames(Math.multiplyExact(materializedBindingNameKeys.length, 2));
 			slot = materializedBindingNameSlot(expression, materializedBindingNameKeys.length);
@@ -399,6 +386,110 @@ public final class PackedQueryView {
 		materializedBindingNameValues[slot] = names;
 		materializedBindingNameCount++;
 		return names;
+	}
+
+	private Set<String> declaredOutputNames(TupleExpr expression) {
+		Class<?> type = expression.getClass();
+		if (type == org.eclipse.rdf4j.query.algebra.StatementPattern.class) {
+			return tupleOutputNames(PackedRelOp.STATEMENT_PATTERN,
+					((org.eclipse.rdf4j.query.algebra.StatementPattern) expression).getVarList());
+		}
+		if (type == org.eclipse.rdf4j.query.algebra.ZeroLengthPath.class) {
+			return tupleOutputNames(PackedRelOp.ZERO_LENGTH_PATH,
+					((org.eclipse.rdf4j.query.algebra.ZeroLengthPath) expression).getVarList());
+		}
+		if (type == org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath.class) {
+			org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath path = (org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath) expression;
+			Set<String> names = new LinkedHashSet<>(tupleOutputNames(PackedRelOp.ARBITRARY_LENGTH_PATH,
+					java.util.Arrays.asList(path.getSubjectVar(), path.getObjectVar(), path.getContextVar())));
+			// The provider API retains the model's declaration of assured path-body names.
+			names.addAll(bindingNames(path.getPathExpression()));
+			names.retainAll(path.getBindingNames());
+			return Set.copyOf(names);
+		}
+		if (type == org.eclipse.rdf4j.query.algebra.TripleRef.class
+				|| type == org.eclipse.rdf4j.query.algebra.ReifiedTripleRef.class
+				|| type == org.eclipse.rdf4j.query.algebra.AnnotationTripleRef.class) {
+			return tupleOutputNames(PackedRelOp.TRIPLE_REF,
+					((org.eclipse.rdf4j.query.algebra.TripleRef) expression).getVarList());
+		}
+		if (type == org.eclipse.rdf4j.query.algebra.TupleFunctionCall.class) {
+			return tupleOutputNames(PackedRelOp.TUPLE_FUNCTION,
+					((org.eclipse.rdf4j.query.algebra.TupleFunctionCall) expression).getResultVars());
+		}
+		// These operators own explicit output declarations, independent of names inside their arguments.
+		if (type == org.eclipse.rdf4j.query.algebra.Projection.class
+				|| type == org.eclipse.rdf4j.query.algebra.MultiProjection.class
+				|| type == org.eclipse.rdf4j.query.algebra.Group.class || type == BindingSetAssignment.class) {
+			return Set.copyOf(expression.getBindingNames());
+		}
+		if (type == Extension.class) {
+			Extension extension = (Extension) expression;
+			Set<String> names = new LinkedHashSet<>(bindingNames(extension.getArg()));
+			for (ExtensionElem element : extension.getElements()) {
+				names.add(element.getName());
+			}
+			return Set.copyOf(names);
+		}
+		if (type == org.eclipse.rdf4j.query.algebra.Intersection.class) {
+			BinaryTupleOperator binary = (BinaryTupleOperator) expression;
+			Set<String> names = new LinkedHashSet<>(bindingNames(binary.getLeftArg()));
+			names.retainAll(bindingNames(binary.getRightArg()));
+			return Set.copyOf(names);
+		}
+		if (type == org.eclipse.rdf4j.query.algebra.Difference.class) {
+			return bindingNames(((BinaryTupleOperator) expression).getLeftArg());
+		}
+		if (type == org.eclipse.rdf4j.query.algebra.Graph.class) {
+			org.eclipse.rdf4j.query.algebra.Graph graph = (org.eclipse.rdf4j.query.algebra.Graph) expression;
+			Set<String> names = new LinkedHashSet<>(bindingNames(graph.getArg()));
+			Var selector = graph.getGraphName();
+			if (!selector.isConstant()) {
+				names.add(selector.getName());
+			}
+			return Set.copyOf(names);
+		}
+		if (type == Filter.class) {
+			Filter filter = (Filter) expression;
+			Set<String> names = new LinkedHashSet<>(bindingNames(filter.getArg()));
+			// Filter's model schema declares direct EXISTS names without promising they are physical outputs.
+			if (filter.getCondition() instanceof org.eclipse.rdf4j.query.algebra.Exists exists) {
+				names.addAll(bindingNames(exists.getSubQuery()));
+			}
+			return Set.copyOf(names);
+		}
+		if (type == org.eclipse.rdf4j.query.algebra.QueryRoot.class
+				|| type == org.eclipse.rdf4j.query.algebra.Distinct.class
+				|| type == org.eclipse.rdf4j.query.algebra.Reduced.class
+				|| type == org.eclipse.rdf4j.query.algebra.Slice.class
+				|| type == org.eclipse.rdf4j.query.algebra.Order.class
+				|| type == org.eclipse.rdf4j.query.algebra.DescribeOperator.class
+				|| type == org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr.class
+				|| type == org.eclipse.rdf4j.query.algebra.Service.class) {
+			return bindingNames(((UnaryTupleOperator) expression).getArg());
+		}
+		if (type == Join.class || type == org.eclipse.rdf4j.query.algebra.LeftJoin.class
+				|| type == org.eclipse.rdf4j.query.algebra.Union.class
+				|| type == org.eclipse.rdf4j.query.algebra.Lateral.class) {
+			BinaryTupleOperator binary = (BinaryTupleOperator) expression;
+			Set<String> names = new LinkedHashSet<>(bindingNames(binary.getLeftArg()));
+			names.addAll(bindingNames(binary.getRightArg()));
+			return Set.copyOf(names);
+		}
+		// Opaque producer implementations keep their declared output contract; no child visitor can replace it.
+		return Set.copyOf(expression.getBindingNames());
+	}
+
+	private static Set<String> tupleOutputNames(int operator, List<Var> variables) {
+		Set<String> names = new LinkedHashSet<>();
+		for (int ordinal = 0; ordinal < variables.size(); ordinal++) {
+			Var variable = variables.get(ordinal);
+			if (variable != null && PackedTermBindings.possibleOutput(operator, ordinal, variable.hasValue() ? 1 : 0,
+					variable.isConstant() ? PackedQuery.TERM_CONSTANT : 0)) {
+				names.add(variable.getName());
+			}
+		}
+		return Set.copyOf(names);
 	}
 
 	private void resizeMaterializedBindingNames(int capacity) {
@@ -813,7 +904,8 @@ public final class PackedQueryView {
 
 	public boolean prefixBindsStatementComponent(PackedCostContext context, int relationId, int component) {
 		int termId = statementPatternTerm(relationId, component);
-		if (termId == 0) {
+		if (termId == 0 || !PackedTermBindings.observesTupleBinding(query.payloadSecondary(termId),
+				query.payloadFlags(termId))) {
 			return false;
 		}
 		int symbolId = query.symbolIdForObject(query.payloadPrimary(termId));
@@ -838,7 +930,8 @@ public final class PackedQueryView {
 	 */
 	public boolean relationBindsStatementComponent(int bindingRelationId, int statementRelationId, int component) {
 		int termId = statementPatternTerm(statementRelationId, component);
-		if (termId == 0) {
+		if (termId == 0 || !PackedTermBindings.observesTupleBinding(query.payloadSecondary(termId),
+				query.payloadFlags(termId))) {
 			return false;
 		}
 		int symbolId = query.symbolIdForObject(query.payloadPrimary(termId));
@@ -849,7 +942,8 @@ public final class PackedQueryView {
 	@InternalUseOnly
 	public boolean relationAssuresStatementComponent(int bindingRelationId, int statementRelationId, int component) {
 		int termId = statementPatternTerm(statementRelationId, component);
-		if (termId == 0) {
+		if (termId == 0 || !PackedTermBindings.observesTupleBinding(query.payloadSecondary(termId),
+				query.payloadFlags(termId))) {
 			return false;
 		}
 		int symbolId = query.symbolIdForObject(query.payloadPrimary(termId));

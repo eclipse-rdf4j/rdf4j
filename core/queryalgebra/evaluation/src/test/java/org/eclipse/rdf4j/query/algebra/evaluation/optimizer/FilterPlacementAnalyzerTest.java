@@ -74,6 +74,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer.Alternative;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer.Envelope;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -159,6 +160,7 @@ class FilterPlacementAnalyzerTest {
 	@Test
 	void supportedSubtreeAnalysisPreservesInheritedBindingFacts() {
 		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
+		filter.setConditionBindingScope(ConditionBindingScope.ALL);
 		Slice island = new Slice(filter, 0, -1);
 		Join parent = new Join(values("outer", 3), island);
 		parent.setAlgorithm("JoinIterator");
@@ -176,6 +178,36 @@ class FilterPlacementAnalyzerTest {
 				assertThat(site.conditionFrame().guaranteedNames()).contains("outer");
 			}
 		});
+		assertEveryPlacementPreservesBag(root, filter, envelope);
+	}
+
+	@Test
+	void supportedSubtreeAnalysisKeepsAutomaticScopeDistinctFromAll() {
+		BindingSetAssignment left = values("x", 1);
+		BindingSetAssignment right = values("y", 2);
+		Join local = new Join(left, right);
+		Filter filter = new Filter(local, new Bound(Var.of("x")));
+		Slice island = new Slice(filter, 0, -1);
+		Join parent = new Join(values("outer", 3), island);
+		parent.setAlgorithm("JoinIterator");
+		QueryRoot root = new QueryRoot(parent);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		Envelope envelope = new FilterPlacementAnalyzer(island, analysis).analyze(filter);
+
+		assertThat(filter.getConditionBindingScope()).isSameAs(ConditionBindingScope.AUTO);
+		assertThat(FilterBindingScope.resolve(filter)).isEqualTo(ConditionBindingScope.retain(Set.of("x", "y")));
+		assertThat(envelope.originalSite().retainsAllBindings()).isFalse();
+		assertThat(envelope.originalSite().retainedBindingNames()).containsExactlyInAnyOrder("x", "y");
+		assertThat(singletonSites(envelope)).containsExactlyInAnyOrder(local, left, right);
+		FilterPlacementAnalyzer.Site rightSite = envelope.singletonAlternatives()
+				.stream()
+				.flatMap(alternative -> alternative.cut().stream())
+				.filter(site -> site.argument() == right)
+				.findFirst()
+				.orElseThrow();
+		assertThat(rightSite.input().guaranteedNames()).contains("x");
+		assertThat(rightSite.conditionFrame().guaranteedNames()).contains("x").doesNotContain("outer");
 		assertEveryPlacementPreservesBag(root, filter, envelope);
 	}
 
@@ -211,15 +243,43 @@ class FilterPlacementAnalyzerTest {
 		Envelope envelope = new FilterPlacementAnalyzer(island, analysis).analyze(filter);
 
 		assertThat(envelope.originalSite().conditionFrame().guaranteedNames()).contains("outer");
-		assertThat(envelope.singletonAlternatives()).hasSize(3);
-		assertThat(alternatives(envelope)).isEqualTo(envelope.singletonAlternatives());
 		Join local = (Join) filter.getArg();
-		assertThat(envelope.potentialSites(argument -> true)).containsExactlyInAnyOrder(local, local.getLeftArg(),
-				local.getRightArg());
+		assertThat(envelope.singletonAlternatives()).hasSize(1);
+		assertThat(singletonSites(envelope)).containsExactly(local);
+		assertThat(alternatives(envelope)).isEqualTo(envelope.singletonAlternatives());
+		assertThat(envelope.potentialSites(argument -> true)).containsExactly(local);
 		assertThat(envelope.earliestCompleteCut(argument -> true).orElseThrow().cut())
 				.singleElement()
-				.satisfies(site -> assertThat(site.argument()).isSameAs(local.getLeftArg()));
+				.satisfies(site -> assertThat(site.argument()).isSameAs(local));
 		assertThat(envelope.alternatives(argument -> false)).isEmpty();
+		assertEveryPlacementPreservesBag(root, filter, envelope);
+	}
+
+	@Test
+	void supportedSubtreeAnalysisMovesWhenConditionInputIsProducedInsideTheIsland() {
+		BindingSetAssignment left = values("x", 1);
+		BindingSetAssignment right = values("y", 2);
+		Join local = new Join(left, right);
+		Filter filter = new Filter(local, new Bound(Var.of("x")));
+		Slice island = new Slice(filter, 0, -1);
+		Join parent = new Join(values("outer", 3), island);
+		parent.setAlgorithm("JoinIterator");
+		QueryRoot root = new QueryRoot(parent);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		Envelope envelope = new FilterPlacementAnalyzer(island, analysis).analyze(filter);
+
+		assertThat(analysis.contextAt(island).guaranteedNames()).contains("outer").doesNotContain("x");
+		assertThat(envelope.originalSite().conditionFrame().guaranteedNames()).contains("x").doesNotContain("outer");
+		assertThat(singletonSites(envelope)).containsExactlyInAnyOrder(local, left, right);
+		FilterPlacementAnalyzer.Site rightSite = envelope.singletonAlternatives()
+				.stream()
+				.flatMap(alternative -> alternative.cut().stream())
+				.filter(site -> site.argument() == right)
+				.findFirst()
+				.orElseThrow();
+		assertThat(rightSite.input().guaranteedNames()).contains("x");
+		assertThat(rightSite.conditionFrame().guaranteedNames()).contains("x").doesNotContain("outer");
 		assertEveryPlacementPreservesBag(root, filter, envelope);
 	}
 
@@ -912,11 +972,17 @@ class FilterPlacementAnalyzerTest {
 		Join join = new Join(left, filter);
 		QueryRoot root = new QueryRoot(join);
 		Envelope envelope = analyzer(root).analyze(filter);
+		assertThat(filter.getConditionBindingScope()).isSameAs(ConditionBindingScope.AUTO);
+		assertThat(FilterBindingScope.resolve(filter)).isEqualTo(ConditionBindingScope.retain(Set.of("local")));
+		Filter ordinary = filter.clone();
+		ordinary.setVariableScopeChange(false);
+		assertThat(FilterBindingScope.resolve(ordinary))
+				.isEqualTo(ConditionBindingScope.retain(Set.of("local", "outer", "predicate", "object")));
 		assertThat(envelope.originalSite().conditionFrame().maybeBoundNames()).doesNotContain("outer");
-		assertThat(envelope.originalSite().retainedBindingNames())
-				.containsExactlyInAnyOrder("local", "outer", "predicate", "object");
+		assertThat(envelope.originalSite().retainedBindingNames()).containsExactly("local");
 		assertThat(envelope.originalSite().conditionFrame().maybeBoundNames()).containsExactly("local");
 		assertThat(singletonSites(envelope)).doesNotContain(join, root);
+		assertEveryPlacementPreservesBag(root, filter, envelope);
 	}
 
 	@Test

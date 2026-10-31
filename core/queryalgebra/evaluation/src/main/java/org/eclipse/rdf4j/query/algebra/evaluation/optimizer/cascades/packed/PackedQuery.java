@@ -28,6 +28,8 @@ final class PackedQuery {
 	static final int TERM_CONSTANT = 1 << 1;
 	static final int TERM_BNODE = 1 << 2;
 	static final int TERM_API_INPUT_ORIGIN = 1 << 3;
+	// A NAME_SET used as a scalar observation domain can enumerate only a lower bound of its reads.
+	static final int OBSERVATION_INCOMPLETE = 1;
 
 	private final int rootRelId;
 	private final PackedExpressionInterner relations;
@@ -328,6 +330,42 @@ final class PackedQuery {
 		return bindingFacts.scalarDependencyMaskId(scalarId);
 	}
 
+	boolean scalarObservationsComplete(int scalarId) {
+		return bindingFacts.scalarObservationsComplete(scalarId);
+	}
+
+	/** A finite resolved predicate frame remains complete even when its scalar observes entire mappings. */
+	boolean predicateObservationsComplete(int relationId) {
+		int condition = predicateCondition(relationId);
+		return scalarObservationsComplete(condition)
+				|| payloadPrimary(predicateScope(relationId)) == PackedFilterPayloads.RETAINED;
+	}
+
+	int predicateObservationMaskId(int relationId) {
+		int condition = predicateCondition(relationId);
+		int scope = predicateScope(relationId);
+		int reads = unionMasks(scalarDependencyMaskId(condition), scalarEmbeddedReferenceMaskId(condition));
+		if (payloadPrimary(scope) == PackedFilterPayloads.RETAINED) {
+			int allowed = bindingFacts.nameSetMask(this, scope);
+			return scalarObservationsComplete(condition) ? intersectMasks(reads, allowed) : allowed;
+		}
+		if (!scalarObservationsComplete(condition)) {
+			throw new PackedMemoInvariantException("unbounded predicate observations are not a finite mask");
+		}
+		return reads;
+	}
+
+	private int predicateCondition(int relationId) {
+		return relOperator(relationId) == PackedRelOp.FILTER ? filterCondition(relationId)
+				: payloadPrimary(relPayload(relationId));
+	}
+
+	private int predicateScope(int relationId) {
+		int payload = relPayload(relationId);
+		return relOperator(relationId) == PackedRelOp.FILTER ? PackedFilterPayloads.resolvedScope(payloads, payload)
+				: payloadChild(payload, 1);
+	}
+
 	int scalarEmbeddedReferenceMaskId(int scalarId) {
 		return bindingFacts.scalarEmbeddedReferenceMaskId(scalarId);
 	}
@@ -474,7 +512,7 @@ final class PackedQuery {
 	}
 
 	private boolean projectionPayloadHasObservableEvaluationEffects(int payloadId) {
-		if (payloadId == 0 || payloadOperator(payloadId) != PackedPayloadOp.PROJECTION) {
+		if (!PackedProjectionPayloads.valid(this, payloadId)) {
 			return true;
 		}
 		return projectionListHasObservableEvaluationEffects(payloadPrimary(payloadId));
@@ -666,9 +704,9 @@ final class PackedQuery {
 		 * PackedCostContext, not to either relation's encoded child. Binary operators, projections, extensions, and
 		 * scope boundaries retain child-specific algebra even when their packed payload happens to be equal.
 		 * Canonicalizing those nodes would make an immutable costing event invoke the provider with a different
-		 * operator's expression.
-		 * The source's declared AUTO mode and a relocated fixed mode share a cost identity only when their entire
-		 * captured condition and visibility descriptor agree; equal scalar conditions alone do not prove that.
+		 * operator's expression. The source's declared AUTO mode and a relocated fixed mode share a cost identity only
+		 * when their entire captured condition and visibility descriptor agree; equal scalar conditions alone do not
+		 * prove that.
 		 */
 		return relOperator(first) == PackedRelOp.FILTER
 				&& relOperator(second) == PackedRelOp.FILTER

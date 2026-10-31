@@ -300,9 +300,11 @@ class PackedSearchTest {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		TupleExpr source = new Filter(
 				new Join(
-						new StatementPattern(Var.of("person"), Var.of("namePredicate", values.createIRI("urn:name")),
+						new StatementPattern(Var.of("person"),
+								Var.of("namePredicate", values.createIRI("urn:name"), false, true),
 								Var.of("name")),
-						new StatementPattern(Var.of("person"), Var.of("agePredicate", values.createIRI("urn:age")),
+						new StatementPattern(Var.of("person"),
+								Var.of("agePredicate", values.createIRI("urn:age"), false, true),
 								Var.of("age"))),
 				new Compare(Var.of("age"), new ValueConstant(values.createLiteral(18)), Compare.CompareOp.GE));
 
@@ -3362,7 +3364,8 @@ class PackedSearchTest {
 
 	private static StatementPattern pattern(SimpleValueFactory values, String subject, String predicate,
 			String object, double rows) {
-		StatementPattern pattern = new StatementPattern(Var.of(subject), Var.of(predicate, values.createIRI(predicate)),
+		StatementPattern pattern = new StatementPattern(Var.of(subject),
+				Var.of(predicate, values.createIRI(predicate), false, true),
 				Var.of(object));
 		if (Double.isFinite(rows)) {
 			pattern.setResultSizeEstimate(rows);

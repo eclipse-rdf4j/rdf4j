@@ -71,7 +71,8 @@ class PackedFilterConditionScopeTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final PackedCostModel COSTS = (query, id) -> query.isBindingSetAssignment(id)
-			? query.bindingAssignmentRowCount(id) : 1.0d;
+			? query.bindingAssignmentRowCount(id)
+			: 1.0d;
 	private static final PackedPlanCache.Context CACHE_CONTEXT = new PackedPlanCache.Context(1, 2, 3, 4, 5, 6, 7);
 
 	@Test
@@ -86,7 +87,8 @@ class PackedFilterConditionScopeTest {
 			assertEquals(source.hashCode(), restored.hashCode());
 			assertTrue(restored.getRequiredInputBindingNames().isEmpty(), "condition visibility creates no parameters");
 			for (int id = 1; id <= query.objectCount(); id++) {
-				assertFalse(query.objectValue(id) instanceof QueryModelNode, "packed data cannot retain source algebra");
+				assertFalse(query.objectValue(id) instanceof QueryModelNode,
+						"packed data cannot retain source algebra");
 			}
 		}
 	}
@@ -112,12 +114,17 @@ class PackedFilterConditionScopeTest {
 						"equal scalar conditions with different visibility cannot share an interned relation");
 			}
 		}
-		Filter first = scoped(new SingletonSet(), ConditionBindingScope.retain(new LinkedHashSet<>(List.of("Aa", "BB"))));
-		Filter reversed = scoped(new SingletonSet(), ConditionBindingScope.retain(new LinkedHashSet<>(List.of("BB", "Aa"))));
+		Filter first = scoped(new SingletonSet(),
+				ConditionBindingScope.retain(new LinkedHashSet<>(List.of("Aa", "BB"))));
+		Filter reversed = scoped(new SingletonSet(),
+				ConditionBindingScope.retain(new LinkedHashSet<>(List.of("BB", "Aa"))));
 		assertEquals(first.getConditionBindingScope(), reversed.getConditionBindingScope());
-		assertTrue(PackedQueryCacheIdentity.createComplete(first).matches(PackedQueryCacheIdentity.createComplete(reversed)),
+		assertTrue(
+				PackedQueryCacheIdentity.createComplete(first)
+						.matches(PackedQueryCacheIdentity.createComplete(reversed)),
 				"retained names unused elsewhere still have deterministic set identity");
-		assertTrue(PackedQueryFamilyIdentity.create(first, null).matches(PackedQueryFamilyIdentity.create(reversed, null)));
+		assertTrue(PackedQueryFamilyIdentity.create(first, null)
+				.matches(PackedQueryFamilyIdentity.create(reversed, null)));
 	}
 
 	@Test
@@ -129,7 +136,8 @@ class PackedFilterConditionScopeTest {
 			ConditionBindingScope resolved = FilterBindingScope.resolve(automatic);
 			Filter fixed = scoped(input.clone(), resolved);
 			Filter differentVisibility = scoped(input.clone(), resolved.retainsAllBindings()
-					? ConditionBindingScope.retain(Set.of()) : ConditionBindingScope.ALL);
+					? ConditionBindingScope.retain(Set.of())
+					: ConditionBindingScope.ALL);
 			Filter differentCondition = new Filter(input.clone(), new Bound(Var.of("o")));
 			differentCondition.setConditionBindingScope(resolved);
 			assertEquals(inputBindsRead, resolved.allows("x"));
@@ -161,7 +169,8 @@ class PackedFilterConditionScopeTest {
 					new Compare(Var.of("alias"), new ValueConstant(VF.createLiteral("1"))));
 			aliases.setConditionBindingScope(scope);
 			List<String> aliasRows = scope.isAuto() || scope.retainsAllBindings() || scope.allows("alias")
-					? List.of("alias=\"1\"|x=\"1\"", "alias=\"1\"|x=\"1\"") : List.of();
+					? List.of("alias=\"1\"|x=\"1\"", "alias=\"1\"|x=\"1\"")
+					: List.of();
 			assertPackedRoutes(PackedPlanDifferentialSupport.model(), aliases, aliasRows);
 
 			for (boolean closingProjection : List.of(false, true)) {
@@ -255,7 +264,8 @@ class PackedFilterConditionScopeTest {
 		String med = "http://example.com/theme/medical/";
 		for (String patient : List.of("early", "late")) {
 			data.add(VF.createIRI(med + patient), RDF.TYPE, VF.createIRI(med + "Patient"));
-			data.add(VF.createIRI(med + patient), VF.createIRI(med + "hasEncounter"), VF.createIRI(med + patient + "Encounter"));
+			data.add(VF.createIRI(med + patient), VF.createIRI(med + "hasEncounter"),
+					VF.createIRI(med + patient + "Encounter"));
 			data.add(VF.createIRI(med + patient + "Encounter"), VF.createIRI(med + "recordedOn"),
 					VF.createLiteral(patient.equals("early") ? "2024-05-01" : "2024-06-02", XSD.DATE));
 		}
@@ -304,7 +314,8 @@ class PackedFilterConditionScopeTest {
 				}
 
 				@Override
-				public void estimate(PackedQueryView query, int id, PackedCostContext context, PackedCostEstimate output) {
+				public void estimate(PackedQueryView query, int id, PackedCostContext context,
+						PackedCostEstimate output) {
 					PackedPlanDifferentialSupport.ANTI_JOIN_FORCING_COSTS.estimate(query, id, context, output);
 				}
 
@@ -348,7 +359,8 @@ class PackedFilterConditionScopeTest {
 				for (boolean visibleOutside : List.of(false, true)) {
 					ConditionBindingScope hidden = ConditionBindingScope.retain(Set.of());
 					Filter inner = new Filter(subjectInputs(), anti
-							? new Not(new Exists(subjectProbe())) : new Exists(subjectProbe()));
+							? new Not(new Exists(subjectProbe()))
+							: new Exists(subjectProbe()));
 					inner.setConditionBindingScope(visibleOutside ? hidden : visible);
 					Filter source = new Filter(inner, inner.getCondition().clone());
 					source.setConditionBindingScope(visibleOutside ? visible : hidden);
@@ -371,7 +383,8 @@ class PackedFilterConditionScopeTest {
 							continue;
 						}
 						if (query.relOperator(id) == PackedRelOp.FILTER && query.filterCondition(id) == condition) {
-							filterScopes.add(query.payloadSecondary(query.relocatedFilterPayload(query.relPayload(id))));
+							filterScopes
+									.add(query.payloadSecondary(query.relocatedFilterPayload(query.relPayload(id))));
 							commuted |= (query.relRuleMask(id) & PackedRuleProofs.FILTER_COMMUTATION) != 0L;
 						} else if (query.relOperator(id) == (anti ? PackedRelOp.ANTI_JOIN : PackedRelOp.SEMI_JOIN)
 								&& query.payloadPrimary(query.relPayload(id)) == condition) {
@@ -379,11 +392,14 @@ class PackedFilterConditionScopeTest {
 						}
 					}
 					assertTrue(commuted, "ordinary adjacent-filter commutation reaches the shared memo group");
-					assertEquals(2, filterScopes.size(), "the root group naturally contains both condition projections");
+					assertEquals(2, filterScopes.size(),
+							"the root group naturally contains both condition projections");
 					// A generated inner FILTER lacks the source's replay-safety audit, so its outer predicate may
-					// legitimately have no typed alternative. Another group member's typed scope still cannot replace it.
+					// legitimately have no typed alternative. Another group member's typed scope still cannot replace
+					// it.
 					assertFalse(typedScopes.isEmpty(), "the original audited input admits typed implementations");
-					assertTrue(filterScopes.containsAll(typedScopes), "every typed scope belongs to a real root predicate");
+					assertTrue(filterScopes.containsAll(typedScopes),
+							"every typed scope belongs to a real root predicate");
 
 					AtomicInteger scheduledCosts = new AtomicInteger();
 					PackedCostModel costs = new PackedCostModel() {
@@ -438,8 +454,10 @@ class PackedFilterConditionScopeTest {
 								super.meet(filter);
 							}
 						});
-						assertTrue(typed.get() > 0, "a typed scheduled recipe survives into the selected execution plan");
-						assertEquals(expected, PackedPlanDifferentialSupport.evaluate(antiData(), result.selectedPlan()),
+						assertTrue(typed.get() > 0,
+								"a typed scheduled recipe survives into the selected execution plan");
+						assertEquals(expected,
+								PackedPlanDifferentialSupport.evaluate(antiData(), result.selectedPlan()),
 								() -> "candidate matching must preserve condition visibility: anti=" + anti
 										+ ", visible=" + visible + ", visibleOutside=" + visibleOutside
 										+ "\n" + result.selectedPlan());
@@ -459,12 +477,14 @@ class PackedFilterConditionScopeTest {
 				probe.setConditionBindingScope(scope);
 				Projection right = new Projection(probe,
 						new ProjectionElemList(new ProjectionElem("x", privateSubject ? "privateSubject" : "x"),
-								new ProjectionElem("object", "payload")), true);
+								new ProjectionElem("object", "payload")),
+						true);
 				TupleExpr source = new Difference(subjectInputs(), right);
 				PackedQuery encoded = PackedQueryCodec.encode(source);
 				assertEquals(source, PackedPlanMaterializer.materialize(encoded, encoded.rootRelId()));
 				List<String> expected = privateSubject || !scope.allows("x")
-						? List.of("x=urn:t:a", "x=urn:t:a", "x=urn:t:b") : List.of("x=urn:t:b");
+						? List.of("x=urn:t:a", "x=urn:t:a", "x=urn:t:b")
+						: List.of("x=urn:t:b");
 				assertPackedRoutes(data, source, expected);
 			}
 		}
@@ -515,7 +535,8 @@ class PackedFilterConditionScopeTest {
 	}
 
 	private static StatementPattern subjectProbe() {
-		return new StatementPattern(Var.of("x"), Var.of("predicate", VF.createIRI("urn:t:p")), Var.of("object"));
+		return new StatementPattern(Var.of("x"), Var.of("predicate", VF.createIRI("urn:t:p"), true, true),
+				Var.of("object"));
 	}
 
 	private static BindingSetAssignment subjectInputs() {

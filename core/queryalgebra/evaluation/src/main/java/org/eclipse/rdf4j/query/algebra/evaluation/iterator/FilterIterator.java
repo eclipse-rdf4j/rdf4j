@@ -64,12 +64,14 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
@@ -87,6 +89,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public class FilterIterator extends FilterIteration<BindingSet>
 		implements IndexReportingIterator, FeedbackWorkReportingIterator {
@@ -161,7 +164,8 @@ public class FilterIterator extends FilterIteration<BindingSet>
 			return QueryEvaluationStep.EMPTY;
 		}
 		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
-		Function<BindingSet, BindingSet> retain = bindingScope.retainsAllBindings() ? Function.identity()
+		Function<BindingSet, BindingSet> retain = FilterBindingScope.allowsAllConditionBindings(filter)
+				? Function.identity()
 				: retainBindings(bindingScope.bindingNames(), context);
 		FilterFeedbackMode feedbackMode = feedbackMode(filter, evaluationStatistics);
 		Function<BindingSet, BindingSet> argumentBindings = resourceEqualityArgumentBindings(filter);
@@ -332,9 +336,11 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		Function<BindingSet, CloseableIteration<BindingSet>> unscopedProbe = existsProbeFunction(subQuery,
 				existsArg, strategy, context);
 		Function<BindingSet, CloseableIteration<BindingSet>> existsProbeFunction = bindingScope.retainsAllBindings()
-				? unscopedProbe : bindings -> unscopedProbe.apply(conditionBindings.apply(bindings));
+				? unscopedProbe
+				: bindings -> unscopedProbe.apply(conditionBindings.apply(bindings));
 		Function<BindingSet, CloseableIteration<BindingSet>> materializationFunction = bindingScope.retainsAllBindings()
-				? existsArg::evaluate : bindings -> existsArg.evaluate(conditionBindings.apply(bindings));
+				? existsArg::evaluate
+				: bindings -> existsArg.evaluate(conditionBindings.apply(bindings));
 		return materializedExistsStep(filter, evaluationStatistics, algorithmHint, arg, materializationFunction,
 				existsProbeFunction, subQuery, sharedBindingArray, correlationKeyBindingArray,
 				materializationParameterBindingArray, strategyMode, negated);
@@ -910,13 +916,14 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		this.condition = condition;
 		this.strategy = strategy;
 		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
-		if (bindingScope.retainsAllBindings()) {
+		if (FilterBindingScope.allowsAllConditionBindings(filter)) {
 			this.retain = Function.identity();
 		} else {
+			String[] retainedNames = bindingScope.bindingNames().toArray(String[]::new);
 			this.retain = (bs) -> {
 				QueryBindingSet nbs = new QueryBindingSet(bs);
 				nbs.retainAll(bindingScope.bindingNames());
-				return nbs;
+				return retainConditionMetadata(bs, nbs, retainedNames);
 			};
 		}
 	}
@@ -971,6 +978,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	/** Prepares the same condition-visible binding projection for a proven alternate filter placement. */
 	public static Function<BindingSet, BindingSet> retainBindings(Set<String> bindingNames,
 			QueryEvaluationContext context) {
+		String[] retainedNames = bindingNames.toArray(String[]::new);
 		@SuppressWarnings("unchecked")
 		final Predicate<BindingSet>[] hasBinding = new Predicate[bindingNames.size()];
 		@SuppressWarnings("unchecked")
@@ -992,8 +1000,20 @@ public class FilterIterator extends FilterIteration<BindingSet>
 					setBinding[i].accept(bs, nbs);
 				}
 			}
-			return nbs;
+			return retainConditionMetadata(bs, nbs, retainedNames);
 		};
+	}
+
+	/** Keeps provenance only for the permitted condition frame, including absent optimizer parameters. */
+	private static BindingSet retainConditionMetadata(BindingSet original, MutableBindingSet copy,
+			String[] retainedNames) {
+		BindingSetOrigin origin = BindingSetOrigin.projected(BindingSetOrigin.of(original), retainedNames,
+				retainedNames, BindingSetOrigin.of(EmptyBindingSet.getInstance()));
+		// Native map/array rows keep their representation. Foreign mutable rows need the existing metadata carrier.
+		MutableBindingSet retained = BindingSetOrigin.mutable(copy);
+		BindingSetOrigin.set(retained, origin);
+		// Graph authority additionally requires a present, matching value, so excluded mappings stay excluded.
+		return GraphFrameBindings.preserve(original, retained);
 	}
 
 	private static boolean containsSubQueryValueOperator(ValueExpr condition) {

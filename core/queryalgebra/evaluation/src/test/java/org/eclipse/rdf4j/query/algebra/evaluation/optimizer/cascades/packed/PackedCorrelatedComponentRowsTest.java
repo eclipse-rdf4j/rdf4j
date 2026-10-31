@@ -802,7 +802,7 @@ class PackedCorrelatedComponentRowsTest {
 
 	private static StatementPattern pattern(SimpleValueFactory values, String subject, String predicate,
 			String object) {
-		return new StatementPattern(Var.of(subject), Var.of("predicate", values.createIRI(predicate)),
+		return new StatementPattern(Var.of(subject), Var.of("predicate", values.createIRI(predicate), true, true),
 				Var.of(object));
 	}
 

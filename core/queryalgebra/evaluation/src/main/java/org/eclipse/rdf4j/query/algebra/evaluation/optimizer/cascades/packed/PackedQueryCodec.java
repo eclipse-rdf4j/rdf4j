@@ -1132,7 +1132,7 @@ final class PackedQueryCodec {
 				scratch[start + ordinal] = scalar(call.getArgs().get(ordinal), path + ".arg[" + ordinal + ']');
 			}
 			for (int ordinal = 0; ordinal < resultCount; ordinal++) {
-				scratch[start + argumentCount + ordinal] = term(call.getResultVars().get(ordinal));
+				scratch[start + argumentCount + ordinal] = resultTerm(call.getResultVars().get(ordinal));
 			}
 			int payload = payloads.internCanonical(PackedPayloadOp.TUPLE_FUNCTION, objects.intern(call.getURI()),
 					argumentCount, resultCount, scratch, start, argumentCount + resultCount);
@@ -1143,7 +1143,7 @@ final class PackedQueryCodec {
 		private int zeroLengthPath(ZeroLengthPath path, int nodeFlags) {
 			statementTerms[0] = term(path.getSubjectVar());
 			statementTerms[1] = term(path.getObjectVar());
-			statementTerms[2] = term(path.getContextVar());
+			statementTerms[2] = resultTerm(path.getContextVar());
 			int payload = payloads.internCanonical(PackedPayloadOp.ZERO_LENGTH_PATH,
 					path.getScope().ordinal() + 1, 0, 0, statementTerms, 0, 3);
 			return internRelation(PackedRelOp.ZERO_LENGTH_PATH, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
@@ -1151,9 +1151,9 @@ final class PackedQueryCodec {
 
 		private int arbitraryLengthPath(ArbitraryLengthPath path, String operatorPath, int nodeFlags) {
 			int pathExpression = relation(path.getPathExpression(), operatorPath + ".pathExpression");
-			statementTerms[0] = term(path.getSubjectVar());
-			statementTerms[1] = term(path.getObjectVar());
-			statementTerms[2] = term(path.getContextVar());
+			statementTerms[0] = resultTerm(path.getSubjectVar());
+			statementTerms[1] = resultTerm(path.getObjectVar());
+			statementTerms[2] = resultTerm(path.getContextVar());
 			int payload = payloads.internCanonical(PackedPayloadOp.ARBITRARY_LENGTH_PATH,
 					path.getScope().ordinal() + 1, (int) path.getMinLength(), (int) (path.getMinLength() >>> 32),
 					statementTerms, 0, 3);
@@ -1185,8 +1185,8 @@ final class PackedQueryCodec {
 		private int projectionPayload(Projection projection, String path) {
 			int listId = projectionList(projection.getProjectionElemList(), path + ".elements");
 			int contextTermId = term(projection.getProjectionContext());
-			return payloads.internCanonical(PackedPayloadOp.PROJECTION, listId, contextTermId,
-					projection.isSubquery() ? 1 : 0, NO_CHILDREN, 0, 0);
+			return PackedProjectionPayloads.create(payloads, listId, contextTermId, projection.isSubquery(),
+					bindingName(projection.getInheritedGraphParameter()));
 		}
 
 		private int multiProjectionPayload(MultiProjection projection, String path) {
@@ -1264,6 +1264,13 @@ final class PackedQueryCodec {
 			return stringSetPayload(names, true);
 		}
 
+		private int observationDomainPayload(TupleExprs.ConditionBindingDomain domain) {
+			String[] names = domain.names().toArray(String[]::new);
+			Arrays.sort(names);
+			return stringSetPayload(Arrays.asList(names), true,
+					domain.known() ? 0 : PackedQuery.OBSERVATION_INCOMPLETE);
+		}
+
 		private int conditionScopePayload(Filter.ConditionBindingScope scope) {
 			// Names can be absent from both the condition and tuple outputs. Introduce new symbols in a stable order.
 			String[] names = scope.bindingNames().toArray(String[]::new);
@@ -1281,6 +1288,10 @@ final class PackedQueryCodec {
 		}
 
 		private int stringSetPayload(Iterable<String> names, boolean bindingNames) {
+			return stringSetPayload(names, bindingNames, 0);
+		}
+
+		private int stringSetPayload(Iterable<String> names, boolean bindingNames, int flags) {
 			int count = 0;
 			for (String ignored : names) {
 				count++;
@@ -1291,7 +1302,7 @@ final class PackedQueryCodec {
 				scratch[start + ordinal++] = bindingNames ? bindingName(name) : objects.intern(name);
 			}
 			Arrays.sort(scratch, start, start + count);
-			int payloadId = payloads.internCanonical(PackedPayloadOp.NAME_SET, 0, 0, 0, scratch, start, count);
+			int payloadId = payloads.internCanonical(PackedPayloadOp.NAME_SET, 0, 0, flags, scratch, start, count);
 			releaseScratch(start);
 			return payloadId;
 		}
@@ -1427,7 +1438,7 @@ final class PackedQueryCodec {
 			}
 			if (expression instanceof Exists exists) {
 				int payload = subqueryPayload(exists.getSubQuery(), 0, path);
-				int referencedNames = nameSetPayload(TupleExprs.conditionBindingDomain(exists).names());
+				int referencedNames = observationDomainPayload(TupleExprs.conditionBindingDomain(exists));
 				return scalars.internCanonical(PackedScalarOp.EXISTS, payload, referencedNames, 0, NO_CHILDREN, 0,
 						0);
 			}
@@ -1572,7 +1583,7 @@ final class PackedQueryCodec {
 			int payload = subqueryPayload(subquery, compareOperator, path);
 			// Same slot convention as EXISTS: the subquery's referenced names, so liveness and scheduling see
 			// every outer binding the subquery reads rather than only the names it can bind.
-			int referencedNames = nameSetPayload(TupleExprs.tupleBindingObservationDomain(subquery).names());
+			int referencedNames = observationDomainPayload(TupleExprs.tupleBindingObservationDomain(subquery));
 			unary[0] = argumentId;
 			return scalars.internCanonical(operator, payload, referencedNames, 0, unary, 0, 1);
 		}
@@ -1581,6 +1592,15 @@ final class PackedQueryCodec {
 			int subqueryId = relation(subquery, path + ".subquery");
 			unary[0] = subqueryId;
 			return payloads.internCanonical(PackedPayloadOp.SUBQUERY_VALUE, compareOperator, 0, 0, unary, 0, 1);
+		}
+
+		/** Result declarations which can bind even a valued constant still require a binding symbol. */
+		private int resultTerm(Var variable) {
+			int result = term(variable);
+			if (result != 0) {
+				symbols.intern(payloads.payloadId(result));
+			}
+			return result;
 		}
 
 		private int term(Var variable) {
@@ -1598,7 +1618,7 @@ final class PackedQueryCodec {
 				flags |= PackedQuery.TERM_API_INPUT_ORIGIN;
 			}
 			int nameId = objects.intern(cacheIdentityName(variable.getName()));
-			if (!variable.hasValue()) {
+			if (!variable.hasValue() || !variable.isConstant()) {
 				symbols.intern(nameId);
 			}
 			int valueId = objects.intern(parameterValue(variable.getValue(),

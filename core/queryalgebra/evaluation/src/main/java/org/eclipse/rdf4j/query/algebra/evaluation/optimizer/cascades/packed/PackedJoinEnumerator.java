@@ -2916,10 +2916,10 @@ final class PackedJoinEnumerator {
 			observations = query.unionMasks(observations, query.relOutputMaskId(relation));
 			observations = query.unionMasks(observations, relationFrameMask(query, relation));
 			if (member < 0) {
-				int condition = query.relOperator(relation) == PackedRelOp.FILTER ? query.filterCondition(relation)
-						: query.payloadPrimary(query.relPayload(relation));
-				observations = query.unionMasks(observations, query.scalarDependencyMaskId(condition));
-				observations = query.unionMasks(observations, query.scalarEmbeddedReferenceMaskId(condition));
+				if (!query.predicateObservationsComplete(relation)) {
+					return false;
+				}
+				observations = query.unionMasks(observations, query.predicateObservationMaskId(relation));
 			}
 		}
 		return !query.masksIntersect(frame, observations);
@@ -3262,9 +3262,10 @@ final class PackedJoinEnumerator {
 		int[] sourceStack = null;
 		for (int filterOrdinal = 0; filterOrdinal < filterCount; filterOrdinal++) {
 			int filter = filters[filterOrdinal];
-			int condition = predicateConditionId(filter);
-			int observations = query.unionMasks(query.scalarDependencyMaskId(condition),
-					query.scalarEmbeddedReferenceMaskId(condition));
+			if (!query.predicateObservationsComplete(filter)) {
+				return false;
+			}
+			int observations = query.predicateObservationMaskId(filter);
 			int observedWrites = query.intersectMasks(observations, allWrites);
 			if (observedWrites == 0) {
 				continue;
@@ -3678,6 +3679,9 @@ final class PackedJoinEnumerator {
 		}
 		int inputRelationId = query.relChild(filterRelationId, 0);
 		int conditionId = predicateConditionId(filterRelationId);
+		if (!query.scalarObservationsComplete(conditionId)) {
+			return 0;
+		}
 		int embeddedReferenceMaskId = query.scalarEmbeddedReferenceMaskId(conditionId);
 		int outerOutputMaskId = query.relOutputMaskId(inputRelationId);
 		if (embeddedReferenceMaskId == 0
@@ -11136,6 +11140,9 @@ final class PackedJoinEnumerator {
 		int scheduledPrefixCount = collectPhysicalPrefixRelations(inputWinnerId, scheduledPrefixRelations,
 				prefixCount);
 		int conditionId = predicateConditionId(filterRelationId);
+		if (!query.scalarObservationsComplete(conditionId)) {
+			return defaultWinnerId;
+		}
 		int embeddedReferenceMaskId = query.scalarEmbeddedReferenceMaskId(conditionId);
 		int outerOutputMaskId = query.relOutputMaskId(inputRelationId);
 		if (!prefixAssuresCorrelatedBindings(scheduledPrefixRelations, scheduledPrefixCount,
