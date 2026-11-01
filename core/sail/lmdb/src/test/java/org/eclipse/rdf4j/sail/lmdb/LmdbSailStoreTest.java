@@ -48,6 +48,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
@@ -1847,50 +1848,84 @@ public class LmdbSailStoreTest {
 
 	@Test
 	void approveAllBulkFailureDiscardsNonIsolatedEstimatorUpdates() throws Exception {
+		assertBulkFailureEstimatorLifecycle(false);
+	}
+
+	@Test
+	void discardedEstimatorCanRebuildTheCommittedSnapshotAfterBulkFailure() throws Exception {
+		assertBulkFailureEstimatorLifecycle(true);
+	}
+
+	private void assertBulkFailureEstimatorLifecycle(boolean rebuildAfterDiscard) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(true);
 		config.setExperimentalQueryOptimizations(true);
 		setBulkOperationSize(config, 2);
-		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-failure-estimator"), config);
-		sail.init();
-
-		try {
-			LmdbTestUtil.awaitPostReadyInitialization(sail, 10, TimeUnit.SECONDS);
-			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.enableMultiThreading = false;
-			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
-			try (SailSink seedSink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-				seedSink.approveAll(sampleStatements(5), Set.of());
-				seedSink.flush();
+		AtomicBoolean failAligned = new AtomicBoolean();
+		AtomicInteger injectedCalls = new AtomicInteger();
+		IOException injectedFailure = new IOException("expected aligned bulk failure after estimator update");
+		repo.shutDown();
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-failure-estimator"), config) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig storeConfig,
+					boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+				return new LmdbSailStore(directory, properties, storeConfig, sketchBasedJoinEstimatorEnabled, null,
+						(tripleDirectory, storeProperties, tripleConfig, valueStore) -> new TripleStore(
+								tripleDirectory, storeProperties, tripleConfig, valueStore) {
+							@Override
+							public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects,
+									long[] contexts, int count, boolean explicit, IntConsumer addedIndexConsumer)
+									throws IOException {
+								if (failAligned.get()) {
+									injectedCalls.incrementAndGet();
+									addedIndexConsumer.accept(0);
+									throw injectedFailure;
+								}
+								super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+										addedIndexConsumer);
+							}
+						});
 			}
-			estimator.rebuild();
-			assertTrue("Expected estimator to be ready before the failed bulk add", estimator.isReady());
-
-			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
-			tripleStoreField.setAccessible(true);
-			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
-			TripleStore tripleStoreSpy = spy(originalTripleStore);
-
-			doAnswer(invocation -> {
-				IntConsumer addedIndexConsumer = invocation.getArgument(6);
-				addedIndexConsumer.accept(0);
-				throw new IOException("expected aligned bulk failure after estimator update");
-			}).when(tripleStoreSpy)
-					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
-
-			tripleStoreField.set(backingStore, tripleStoreSpy);
-			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-				assertThrows(SailException.class, () -> sink.approveAll(sampleStatements(2), Set.of()));
-
-				assertFalse("Expected rollback to discard estimator state after an eager non-isolated update",
-						estimator.isReady());
-				assertEquals(0, backingStore.reservedAlignedWriteStatements());
-			} finally {
-				tripleStoreField.set(backingStore, originalTripleStore);
-			}
-		} finally {
-			sail.shutDown();
+		};
+		// Register the sole native owner before initialization so normal safe teardown owns every failure path.
+		repo = new SailRepository(sail);
+		repo.init();
+		LmdbTestUtil.awaitPostReadyInitialization(sail, 10, TimeUnit.SECONDS);
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+		SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+		// A background rebuild may make the estimator ready again immediately after rollback discards it.
+		// Observe discard with that worker joined; the companion separately verifies its real recovery.
+		estimator.stop();
+		try (SailSink seedSink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			seedSink.approveAll(sampleStatements(5), Set.of());
+			seedSink.flush();
 		}
+		estimator.rebuild();
+		assertTrue("Expected estimator to be ready before the failed bulk add", estimator.isReady());
+		failAligned.set(true);
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			SailException failure = assertThrows(SailException.class,
+					() -> sink.approveAll(sampleStatements(2), Set.of()));
+			assertSame(injectedFailure, failure.getCause());
+			assertEquals("The intended eager-update failure must be reached exactly once", 1, injectedCalls.get());
+			assertFalse("Expected rollback to discard estimator state after an eager non-isolated update",
+					estimator.isReady());
+			assertEquals(0, backingStore.reservedAlignedWriteStatements());
+		} finally {
+			failAligned.set(false);
+		}
+		if (rebuildAfterDiscard) {
+			estimator.startBackgroundRefresh(1);
+			assertTrue("The actual refresher rebuilds the committed snapshot",
+					estimator.awaitReady(10, TimeUnit.SECONDS));
+			assertTrue(estimator.isReady());
+		}
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+			assertEquals("Failed bulk work must not change the committed seed", 5,
+					dataset.getStatementCount(null, null, null));
+		}
+		assertEquals(backingStore.getTripleStore().lastTransactionId(),
+				backingStore.getTripleStore().trustedTransactionId());
 	}
 
 	private static void setBulkOperationSize(LmdbStoreConfig config, int bulkOperationSize) {
