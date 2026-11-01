@@ -498,6 +498,9 @@ class TripleStore implements Closeable {
 	private final LmdbPageCardinalityEstimator pageEstimator;
 	/** Exact aggregate page access remains available independently of sampled cardinality estimation. */
 	private final LmdbPageCardinalityEstimator exactIndexReader;
+	/** Dedicated key sampler; never interpreted as a legacy statement-tree reader. */
+	private final LmdbPageCardinalityEstimator persistentPageEstimator;
+	private final LmdbPersistentCardinalityEstimator persistentCardinalityEstimator;
 	private final AtomicLong dataRevision = new AtomicLong();
 	private final LmdbFanOutStats explicitFanOutStats = new LmdbFanOutStats();
 	private final LmdbFanOutStats inferredFanOutStats = new LmdbFanOutStats();
@@ -724,6 +727,11 @@ class TripleStore implements Closeable {
 			replayPolicy = new TxnReplayPolicy(config.getMapGrowthThreshold());
 			valueEnvironmentGeneration = valueStore == null ? 0L : valueStore.environmentGeneration();
 			bulkMapGrowthCount = 0L;
+			persistentPageEstimator = pageWalkingEstimatorEnabled
+					? new LmdbPageCardinalityEstimator(dataMdbFile, env, mainDbi)
+					: null;
+			persistentCardinalityEstimator = new LmdbPersistentCardinalityEstimator(persistentAdjacency,
+					persistentPageEstimator);
 		} catch (IOException | RuntimeException | Error failure) {
 			cleanupAfterInitializationFailure(failure);
 			throw failure;
@@ -2529,6 +2537,13 @@ class TripleStore implements Closeable {
 			failure.addSuppressed(cleanupFailure);
 		}
 
+		if (persistentPageEstimator != null) {
+			try {
+				persistentPageEstimator.close();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+		}
 		if (pageEstimator != null) {
 			try {
 				pageEstimator.close();
@@ -2708,6 +2723,13 @@ class TripleStore implements Closeable {
 				txnManager.closeUnderExclusiveLock();
 			} catch (Throwable closeFailure) {
 				failure = appendCloseFailure(failure, closeFailure);
+			}
+			if (persistentPageEstimator != null) {
+				try {
+					persistentPageEstimator.close();
+				} catch (Throwable closeFailure) {
+					failure = appendCloseFailure(failure, closeFailure);
+				}
 			}
 			if (pageEstimator != null) {
 				try {
@@ -3735,15 +3757,11 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	/** Returns snapshot-local cardinality from persistent metadata, scanning only for residual constraints. */
+	/** Uses exact metadata domains and bounded snapshot-local estimation for residual constraints. */
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
 		// Query optimization can already hold all ordinary reader permits; retain its reserved admission lane.
-		return txnManager
-				.doWithPriority((stack,
-						txn) -> (double) persistentAdjacency.count(txn, normalizeSpoPatternId(subj),
-								normalizeSpoPatternId(pred), normalizeSpoPatternId(obj), context, true)
-								+ persistentAdjacency.count(txn, normalizeSpoPatternId(subj),
-										normalizeSpoPatternId(pred), normalizeSpoPatternId(obj), context, false));
+		return txnManager.doWithPriority((stack, txn) -> persistentCardinalityEstimator.estimate(txn,
+				normalizeSpoPatternId(subj), normalizeSpoPatternId(pred), normalizeSpoPatternId(obj), context));
 	}
 
 	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {

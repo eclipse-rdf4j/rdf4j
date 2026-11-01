@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BooleanSupplier;
@@ -47,6 +48,64 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	private static final Logger logger = LoggerFactory.getLogger(LmdbPageCardinalityEstimator.class);
 	private static final int STATEMENT_COMPONENT_COUNT = 4;
 	private static final int BINDING_SHAPE_COUNT = 1 << STATEMENT_COMPONENT_COUNT;
+
+	/** Request-local work admission shared with the caller's native value projection. */
+	public interface SamplingBudget {
+		void checkpoint();
+
+		void nativeRead();
+
+		void pageAccess();
+
+		void keyAccess();
+	}
+
+	static final SamplingBudget NO_SAMPLING_LIMITS = new SamplingBudget() {
+		@Override
+		public void checkpoint() {
+		}
+
+		@Override
+		public void nativeRead() {
+		}
+
+		@Override
+		public void pageAccess() {
+		}
+
+		@Override
+		public void keyAccess() {
+		}
+	};
+
+	public enum KeySampleStatus {
+		EXHAUSTIVE,
+		SAMPLED,
+		UNSUPPORTED_SNAPSHOT,
+		UNSUPPORTED_COMPARATOR
+	}
+
+	/** Detached key and its complete contribution coefficient, including stratum averaging. */
+	public record WeightedKey(byte[] key, double coefficient, int stratumId) {
+		public WeightedKey {
+			Objects.requireNonNull(key, "key");
+			if (!Double.isFinite(coefficient) || coefficient <= 0D) {
+				throw new IllegalArgumentException("A key contribution coefficient must be finite and positive");
+			}
+		}
+	}
+
+	/** EXHAUSTIVE certifies keys only; every selected value must still be projected before mass is exact. */
+	public record WeightedKeySample(KeySampleStatus status, List<WeightedKey> draws) {
+		public WeightedKeySample {
+			Objects.requireNonNull(status, "status");
+			draws = List.copyOf(draws);
+			if ((status == KeySampleStatus.UNSUPPORTED_SNAPSHOT || status == KeySampleStatus.UNSUPPORTED_COMPARATOR)
+					&& !draws.isEmpty()) {
+				throw new IllegalArgumentException("An unsupported sample cannot contain partial evidence");
+			}
+		}
+	}
 
 	/**
 	 * Estimate and reliability evidence used by {@code TripleStore} to decide whether another physical index is worth
@@ -270,13 +329,88 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		return new ReadView(snapshot(txnId, readTxn, mappingGeneration, true));
 	}
 
+	/** Budgeted conservative read scope; no caller-supplied mapping generation is assumed. */
+	public ReadView readTransaction(long readTxn, SamplingBudget budget) throws IOException {
+		return samplingReadTransaction(readTxn, 0L, false, budget);
+	}
+
+	/**
+	 * Budgeted managed read scope with the same lifetime/generation contract as {@link #readTransaction(long, long)}.
+	 */
+	public ReadView readTransaction(long readTxn, long mappingGeneration, SamplingBudget budget) throws IOException {
+		return samplingReadTransaction(readTxn, mappingGeneration, true, budget);
+	}
+
+	private ReadView samplingReadTransaction(long readTxn, long mappingGeneration, boolean managed,
+			SamplingBudget budget) throws IOException {
+		Objects.requireNonNull(budget, "budget");
+		budget.checkpoint();
+		if (readTxn == 0L) {
+			throw new IllegalArgumentException("A pinned read-only LMDB transaction is required");
+		}
+		if (!dataFile.hasNativeEnvironment()) {
+			// Transaction IDs alone cannot certify that a borrowed native handle belongs to this data file.
+			snapshotLock.readLock().lock();
+			try {
+				if (closed) {
+					throw new IOException("LMDB page cardinality estimator is closed");
+				}
+				return new ReadView(null, budget, true);
+			} finally {
+				snapshotLock.readLock().unlock();
+			}
+		}
+		dataFile.validateSamplingTransaction(readTxn, budget);
+		budget.nativeRead();
+		long txnId = mdb_txn_id(readTxn);
+		SnapshotCache selected = snapshot(txnId, readTxn, mappingGeneration, managed, budget, true);
+		return new ReadView(selected, budget, selected == null);
+	}
+
 	/** Estimates sharing one borrowed transaction and its verified mapping identity. */
 	public final class ReadView implements AutoCloseable {
 		private final Thread owner = Thread.currentThread();
+		private final SamplingBudget samplingBudget;
+		private final boolean unavailableSnapshot;
 		private SnapshotCache snapshot;
+		private boolean viewClosed;
 
 		private ReadView(SnapshotCache snapshot) {
+			this(snapshot, NO_SAMPLING_LIMITS, false);
+		}
+
+		private ReadView(SnapshotCache snapshot, SamplingBudget samplingBudget, boolean unavailableSnapshot) {
 			this.snapshot = snapshot;
+			this.samplingBudget = samplingBudget;
+			this.unavailableSnapshot = unavailableSnapshot;
+		}
+
+		/**
+		 * Selects bounded probability-weighted keys in a half-open bytewise range. Null bounds are unbounded. Values
+		 * remain the caller's responsibility and must be read from this scope's same pinned native transaction. Budget
+		 * exhaustion and ordinary failures propagate; no incomplete weighted sample is returned.
+		 */
+		public WeightedKeySample sampleWeightedKeys(String dbName, byte[] lowerInclusive, byte[] upperExclusive,
+				int maxDraws, long streamId) throws IOException {
+			checkOwner();
+			if (viewClosed) {
+				throw new IllegalStateException("LMDB estimation scope is closed");
+			}
+			if (samplingBudget == NO_SAMPLING_LIMITS) {
+				throw new IllegalStateException("Weighted sampling requires a budgeted read scope");
+			}
+			samplingBudget.checkpoint();
+			if (unavailableSnapshot) {
+				return new WeightedKeySample(KeySampleStatus.UNSUPPORTED_SNAPSHOT, List.of());
+			}
+			SnapshotCache current = openSnapshot();
+			if (!current.borrowed || current.meta.txnId() != current.txnId) {
+				return new WeightedKeySample(KeySampleStatus.UNSUPPORTED_SNAPSHOT, List.of());
+			}
+			LmdbDb db = namedDb(current, dbName, samplingBudget);
+			return new LmdbBtreeRangeCounter(dataFile, current.meta, current.pageCache,
+					stableDatabaseIdentity(dbName), samplingBudget)
+							.sampleWeightedKeys(db, lowerInclusive, upperExclusive, maxDraws, streamId);
 		}
 
 		public long totalEntries(String dbName) throws IOException {
@@ -380,9 +514,12 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		@Override
 		public void close() {
 			checkOwner();
-			if (snapshot != null) {
-				snapshot = null;
-				snapshotLock.readLock().unlock();
+			if (!viewClosed) {
+				viewClosed = true;
+				if (snapshot != null) {
+					snapshot = null;
+					snapshotLock.readLock().unlock();
+				}
 			}
 		}
 	}
@@ -817,6 +954,12 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 	 */
 	private SnapshotCache snapshot(long txnId, long readTxn, long mappingGeneration, boolean managed)
 			throws IOException {
+		return snapshot(txnId, readTxn, mappingGeneration, managed, NO_SAMPLING_LIMITS, false);
+	}
+
+	private SnapshotCache snapshot(long txnId, long readTxn, long mappingGeneration, boolean managed,
+			SamplingBudget budget, boolean allowUnavailable) throws IOException {
+		budget.checkpoint();
 		snapshotLock.readLock().lock();
 		boolean acquired = false;
 		try {
@@ -827,17 +970,22 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 			SnapshotCache cached = lastSnapshot;
 			boolean matchingCache = cached != null
 					&& cached.matches(txnId, mappingGeneration, borrowed, managed);
+			if (matchingCache && allowUnavailable && cached.meta.txnId() != txnId) {
+				return null;
+			}
 			if (matchingCache && !borrowed) {
 				acquired = true;
 				return cached;
 			}
 			if (matchingCache && managed) {
+				budget.checkpoint();
+				budget.nativeRead();
 				dataFile.validateNativeMap(cached.meta, readTxn, txnId);
 				acquired = true;
 				return cached;
 			}
 			if (matchingCache) {
-				LmdbMeta verified = dataFile.withNativeMap(cached.meta, cached.anchor, readTxn, txnId);
+				LmdbMeta verified = dataFile.withNativeMap(cached.meta, cached.anchor, readTxn, txnId, budget);
 				if (cached.meta.nativeMapAddress() == verified.nativeMapAddress()
 						&& cached.meta.nativeMappedSize() == verified.nativeMappedSize()) {
 					acquired = true;
@@ -850,11 +998,15 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 				return refreshed;
 			}
 
-			LmdbMeta meta = dataFile.readMetaForTxn(txnId);
+			LmdbMeta meta = dataFile.readMetaForTxn(txnId, budget, allowUnavailable);
+			if (allowUnavailable && (meta == null || meta.txnId() != txnId)) {
+				// A live native reader can outlast both alternating meta pages. Never map an older root as its view.
+				return null;
+			}
 			LmdbDataFile.MappingAnchor anchor = null;
 			if (borrowed) {
-				anchor = dataFile.mappingAnchor(meta);
-				meta = dataFile.withNativeMap(meta, anchor, readTxn, txnId);
+				anchor = dataFile.mappingAnchor(meta, budget);
+				meta = dataFile.withNativeMap(meta, anchor, readTxn, txnId, budget);
 			}
 			SnapshotCache discovered = new SnapshotCache(txnId, mappingGeneration, meta, anchor, borrowed, managed);
 			lastSnapshot = discovered;
@@ -869,13 +1021,20 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 
 	/** Reads a named database descriptor from LMDB's main database, then caches it only inside this snapshot. */
 	private LmdbDb namedDb(SnapshotCache snapshot, String dbName) throws IOException {
+		return namedDb(snapshot, dbName, NO_SAMPLING_LIMITS);
+	}
+
+	private LmdbDb namedDb(SnapshotCache snapshot, String dbName, SamplingBudget budget) throws IOException {
+		budget.checkpoint();
+		budget.keyAccess();
 		LmdbDb cached = snapshot.namedDbs.get(dbName);
-		if (cached != null) {
+		boolean strict = budget != NO_SAMPLING_LIMITS;
+		if (cached != null && (!strict || snapshot.weightedNamedDbs.contains(dbName))) {
 			return cached;
 		}
 
 		LmdbBtreeRangeCounter counter = new LmdbBtreeRangeCounter(dataFile, snapshot.meta, snapshot.pageCache,
-				stableDatabaseIdentity("<main>"));
+				stableDatabaseIdentity("<main>"), budget);
 		RangeCountResult lookupStats = new RangeCountResult();
 		byte[] key = dbName.getBytes(StandardCharsets.UTF_8);
 		byte[] keyWithTerminator = new byte[key.length + 1];
@@ -892,6 +1051,13 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 
 		ByteBuffer valueBuffer = ByteBuffer.wrap(value).order(snapshot.meta.byteOrder());
 		LmdbDb parsed = LmdbDb.parse(valueBuffer, 0);
+		if (strict) {
+			// An old API may have cached parsed fields without certifying descriptor flags/length. Publish only
+			// the descriptor just re-read through the strict budgeted path before stamping that certification.
+			snapshot.namedDbs.put(dbName, parsed);
+			snapshot.weightedNamedDbs.add(dbName);
+			return parsed;
+		}
 		LmdbDb existing = snapshot.namedDbs.putIfAbsent(dbName, parsed);
 		return existing == null ? parsed : existing;
 	}
@@ -919,6 +1085,7 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 		final boolean managed;
 		final LmdbPageCache pageCache = new LmdbPageCache();
 		final Map<String, LmdbDb> namedDbs = new ConcurrentHashMap<>();
+		final Set<String> weightedNamedDbs = ConcurrentHashMap.newKeySet();
 
 		SnapshotCache(long txnId, long mappingGeneration, LmdbMeta meta, LmdbDataFile.MappingAnchor anchor,
 				boolean borrowed, boolean managed) {

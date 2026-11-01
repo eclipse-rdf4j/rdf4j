@@ -870,5 +870,23 @@
       "replacement_test": "canonicalOrdersSupportIntersectionWithSubjectOnlyPreference",
       "repair_basis": "Canonical persistent authority replaces unavailable legacy-order premise with exact results and actual route/native metadata proof."
     }
-  ]
+  ],
+  "bounded_cardinality": {
+    "original_to_replacement": {
+      "disablingPageWalkingUsesRdf4j532Estimates(File)": "disablingPageWalkingUsesBoundedPersistentEstimates(File)",
+      "disablingPageCardinalityEstimatorUsesRdf4j532Estimates(File)": "disablingPageCardinalityEstimatorUsesBoundedPersistentEstimates(File)"
+    },
+    "contract": "Independent generated rows plus exact both-plane scans; exact scalar facts and \u00b150% residual accuracy. No physical bias floating goldens. Four real structural/native flag-path controls preserve mode selection. Exact membership/count APIs unchanged.",
+    "runtime_evidence": "repair-evidence/weighted-cardinality-reference-green-reports/",
+    "gate": {
+      "tests": 111,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    "scope": "Focused gates, not a full-suite claim. Full original ledger 288 passed using explicit replacement mappings.",
+    "new_reds": "15 public quality/work cases:11 failures; physical4:4 failures; unchanged large-SO quality failed before combined-plane reference-incidence cap.",
+    "bounded_work": "Whole-call budgets include both planes, metadata discovery, raw page/key visits and native complete-value projections; signed base-relative deltas; explicit incomplete-sample fallback.",
+    "limits": "Weighted estimates are approximate; enabled mode plus fallback/capping is not claimed globally unbiased or universally accurate. Disabled native prefix is a bounded compatibility heuristic."
+  }
 }

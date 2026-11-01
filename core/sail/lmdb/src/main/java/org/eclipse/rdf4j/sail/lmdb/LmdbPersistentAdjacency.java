@@ -693,6 +693,11 @@ final class LmdbPersistentAdjacency {
 		return readCount(txn, key(CONTEXT, plane(explicit, false), context));
 	}
 
+	/** Cross-plane role incidences: an upper bound for a bound-ID query, not a subject/object marginal. */
+	long referenceCount(long txn, long id) throws IOException {
+		return readCount(txn, key(REFERENCES, id));
+	}
+
 	boolean isIdReferenced(long txn, long id) throws IOException {
 		return id != 0 && readCount(txn, key(REFERENCES, id)) != 0;
 	}

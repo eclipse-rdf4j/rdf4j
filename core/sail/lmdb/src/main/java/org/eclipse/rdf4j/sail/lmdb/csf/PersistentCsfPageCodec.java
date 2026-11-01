@@ -32,6 +32,8 @@ public final class PersistentCsfPageCodec {
 	public static final int MAX_PAIRS = 1024;
 
 	static final int HEADER_BYTES = 32;
+	/** Maximum validated envelope and payload size, before borrowing or decoding a native value. */
+	public static final int MAX_ENCODED_BYTES = HEADER_BYTES + NativeSlabAllocator.MAX_PAGE_BYTES;
 	static final int MAGIC = 0x41465343; // CSFA in little-endian byte order
 	static final int VERSION = 1;
 	static final int CHECKSUM_AT = 20;

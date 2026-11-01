@@ -146,16 +146,17 @@ final class TermOwnerGraphVerifier {
 			long third = readCanonicalUnsigned(key);
 			long fourth = readCanonicalUnsigned(key);
 			long id = cspo ? first : fourth;
-			if (key.hasRemaining() || !isTerm(id)) {
+			if (key.hasRemaining() || id <= 0 || !isTerm(id)) {
 				throw new IllegalArgumentException("invalid canonical term owner key");
 			}
 			Frame frame = cspo ? new Frame(id, second, third, fourth, 0) : new Frame(id, first, second, third, 0);
 			int subjectType = ValueIds.getIdType(frame.subject());
-			if (!ValueIds.isReference(frame.subject())
+			boolean referenceObject = ValueIds.isReference(frame.object());
+			if (frame.subject() <= 0 || !ValueIds.isReference(frame.subject())
 					|| subjectType != ValueIds.T_URI && subjectType != ValueIds.T_BNODE
-					|| !ValueIds.isReference(frame.predicate())
+					|| frame.predicate() <= 0 || !ValueIds.isReference(frame.predicate())
 					|| ValueIds.getIdType(frame.predicate()) != ValueIds.T_URI
-					|| !ValueIds.isReference(frame.object()) && !ValueIds.isInlined(frame.object())) {
+					|| (referenceObject ? frame.object() <= 0 : !ValueIds.isInlined(frame.object()))) {
 				throw new IllegalArgumentException("invalid RDF roles in canonical term owner");
 			}
 			return frame;

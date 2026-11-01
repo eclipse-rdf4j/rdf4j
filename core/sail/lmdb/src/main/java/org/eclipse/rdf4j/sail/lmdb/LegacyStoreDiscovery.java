@@ -258,9 +258,12 @@ final class LegacyStoreDiscovery {
 			throw new IOException("ValueStore native format fence disagrees with persisted LmdbStore format");
 		}
 		ByteBuffer epoch = ByteBuffer.wrap(getBoundedValue(valuesTxn, metadata, new byte[] { 1 }, 1, 9));
-		if (readCanonicalUnsigned(epoch) <= 0L || epoch.hasRemaining()) {
+		long currentEpoch = readCanonicalUnsigned(epoch);
+		if (currentEpoch <= 0L || epoch.hasRemaining()) {
 			throw new IOException("Malformed ValueStore retirement boot epoch");
 		}
+		// Admission must reject exhaustion before any startup writer or compatibility metadata changes.
+		RetiredValueIdStore.nextBootEpoch(currentEpoch);
 
 		int namespaces = tripleDatabases.get(TripleStore.NAMESPACE_DATABASE_NAME);
 		validateMetadataVersion(getBoundedValue(triplesTxn, namespaces, TripleStore.NAMESPACE_FORMAT_KEY,
@@ -884,9 +887,11 @@ final class LegacyStoreDiscovery {
 			return;
 		}
 		ByteBuffer encodedEpoch = ByteBuffer.wrap(bootEpoch);
-		if (readCanonicalUnsigned(encodedEpoch) <= 0 || encodedEpoch.hasRemaining()) {
+		long currentEpoch = readCanonicalUnsigned(encodedEpoch);
+		if (currentEpoch <= 0 || encodedEpoch.hasRemaining()) {
 			throw new IOException("Malformed ValueStore retirement boot epoch");
 		}
+		RetiredValueIdStore.nextBootEpoch(currentEpoch);
 	}
 
 	/** Validates both queue indexes with fixed cursor state; stale sequence hints remain valid and recoverable. */
@@ -1223,7 +1228,7 @@ final class LegacyStoreDiscovery {
 			if (dependency != 0) {
 				long dependencyId = dependency;
 				int expectedIdType = dependencyType;
-				if (ValueIds.getIdType(dependencyId) != expectedIdType) {
+				if (dependencyId < 0 || ValueIds.getIdType(dependencyId) != expectedIdType) {
 					throw new IOException("ValueStore owner has an invalid forward dependency");
 				}
 				if (requireLive) {
@@ -1531,7 +1536,7 @@ final class LegacyStoreDiscovery {
 					long context = readCanonicalUnsigned(contextKey);
 					ByteBuffer count = value.mv_data().duplicate();
 					long references = readCanonicalUnsigned(count);
-					if (context < 0 || references == 0 || contextKey.hasRemaining() || count.hasRemaining()) {
+					if (context < 0 || references <= 0 || contextKey.hasRemaining() || count.hasRemaining()) {
 						throw new IOException("Malformed context reference record");
 					}
 					if (context != 0) {
@@ -1633,7 +1638,7 @@ final class LegacyStoreDiscovery {
 					}
 					E(rc);
 					ByteBuffer references = value.mv_data().duplicate();
-					if (readCanonicalUnsigned(references) == 0 || references.hasRemaining()) {
+					if (readCanonicalUnsigned(references) <= 0 || references.hasRemaining()) {
 						throw new IOException("Malformed context reference record");
 					}
 				} finally {
