@@ -16,7 +16,6 @@ package org.eclipse.rdf4j.workbench.base;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
-import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.OperationTimedOutException;
@@ -42,9 +41,7 @@ public abstract class TupleServlet extends TransformationServlet {
 		try (RepositoryConnection con = repository.getConnection()) {
 			builder.repositoryOrigins(con);
 			con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
-			for (Namespace ns : Iterations.asList(con.getNamespaces())) {
-				builder.prefix(ns.getPrefix(), ns.getName());
-			}
+			builder.namespaces(Iterations.asList(con.getNamespaces()));
 			builder.start(variables(req));
 			builder.link(List.of("info"));
 			this.service(req, resp, builder, con);

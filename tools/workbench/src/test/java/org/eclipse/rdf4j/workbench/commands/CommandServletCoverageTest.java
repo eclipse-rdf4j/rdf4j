@@ -203,7 +203,7 @@ class CommandServletCoverageTest {
 
 		servlet.service(request, response);
 
-		verify(builder).prefix("ex", "urn:ex:");
+		verify(builder).namespaces(List.of(new SimpleNamespace("ex", "urn:ex:")));
 		verify(builder).start("subject", "predicate", "object", "context");
 		verify(builder).link(List.of("info"));
 		verify(builder).metadata("statement-preview-requested", true);
