@@ -654,16 +654,18 @@ test('Explore preserves its persisted datatype option and reports a result-limit
     assert.ok(output.includes('id="explore-show-datatypes"'), 'Explore should keep the existing datatype control id');
     assert.ok(output.includes('name="show-datatypes" value="show-dataypes"'),
         'Explore should preserve the request value consumed by the existing endpoint');
-    assert.ok(output.includes('id="result-limited"'), 'a full default-limit page should identify truncated results');
+    // The notice's id is a template value (the shared callout), so it is read from the interleaved markup.
+    assert.ok(flattenTemplateMarkup(workbench.views.pageTemplate(model, context, runtime)).includes('id="result-limited"'),
+        'a full default-limit page should identify truncated results');
 
     workbench.__testWindow.location = { search: '?resource=%3Curn%3Aexample%3Aresource%3E&limit_explore=0' };
-    const unlimited = collectTemplateText(workbench.views.pageTemplate(model, context, runtime)).join(' ');
+    const unlimited = flattenTemplateMarkup(workbench.views.pageTemplate(model, context, runtime));
     assert.ok(!unlimited.includes('id="result-limited"'), 'unlimited Explore results should not show the truncation notice');
 
     // A limit_explore cookie from an earlier page does not set this page's limit: 10 rows of a limit of 100.
     workbench.getCookie = (name) => name === 'limit_explore' ? '10' : '';
     workbench.__testWindow.location = { search: '?resource=%3Curn%3Aexample%3Aresource%3E' };
-    const ten = collectTemplateText(workbench.views.pageTemplate({ ...model, rowCount: 10 }, context, runtime)).join(' ');
+    const ten = flattenTemplateMarkup(workbench.views.pageTemplate({ ...model, rowCount: 10 }, context, runtime));
     assert.ok(!ten.includes('id="result-limited"'), 'the cookie is not the limit the server used');
 });
 
@@ -1028,6 +1030,26 @@ test('saved-query cards show a readable owner while retaining its opaque selecto
     const values = collectTemplateText(template).join(' ');
     assert.ok(values.includes('alice'), 'the visible owner is readable');
     assert.ok(values.includes(owner), 'forms retain the opaque storage selector');
+});
+
+// A saved query's card shows what the query does, not only its name: its text after the prologue (PREFIX, BASE and
+// comment lines), on one line that the stylesheet shortens to the card's width, with the whole text as its tooltip.
+test('saved-query cards preview the query after its prologue', () => {
+    const workbench = loadWorkbench();
+    const queryText = 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n# the labels\nBASE <http://example.org/>\n'
+        + 'SELECT ?s ?label\nWHERE {\n  ?s rdfs:label ?label\n}\nLIMIT 10';
+    const row = { query: 'urn:saved:1', queryName: 'Labels', queryText,
+        user: 'alice', queryLn: 'SPARQL', infer: 'true', rowsPerPage: '20', shared: 'false' };
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'saved-queries', vars: Object.keys(row), rows: [Object.values(row)], metadata: {}
+    }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
+    // The flattened markup does not escape attribute values, so the tooltip runs up to the code element.
+    const preview = /<p class="saved-query-row__preview" title="?([\s\S]*?)"?><code>([^<]*)<\/code><\/p>/.exec(markup);
+    assert.ok(preview, 'the card has a preview line');
+    assert.equal(preview[2], 'SELECT ?s ?label WHERE { ?s rdfs:label ?label } LIMIT 10');
+    assert.equal(preview[1], queryText, 'the tooltip is the whole query');
+    assert.ok(markup.indexOf('saved-query-row__preview') > markup.indexOf('saved-query-row__heading'),
+        'the preview follows the name');
 });
 
 test('modification and browse views preserve their action form identifiers', () => {
@@ -2118,6 +2140,58 @@ test('summary and information render key/value lists instead of simple tables', 
     assert.match(information, /<dl class="workbench-kv"/);
     assert.doesNotMatch(information, /table class="simple"/);
     assert.doesNotMatch(information, /<th>[^<]*:<\/th>/);
+});
+
+// Memory used is shown against the maximum: a meter and the share, besides the two amounts the server reports.
+test('Information shows the memory in use as a share of the maximum', () => {
+    const workbench = loadWorkbench();
+    const render = (used, maximum) => flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'information', vars: ['version', 'os', 'jvm', 'user', 'memory-used', 'maximum-memory'],
+        rows: [['6.2.0', 'macOS', 'Java 25', 'tester', used, maximum]], rowCount: 1, metadata: {}
+    }, { basePath: '/workbench', repositoryId: '', workbench: {} }, fakeRuntime()));
+    const memory = render('1810 MB', '30688 MB');
+    assert.match(memory, /<dt>Memory used<\/dt><dd>1810 MB <meter class="workbench-memory-meter" min="0" max="?30688"? value="?1810"?\s+aria-label="Memory used of the maximum"><\/meter> <span class="workbench-memory-share">6% of the maximum<\/span><\/dd>/);
+    assert.match(memory, /<dt>Maximum memory<\/dt><dd>30688 MB<\/dd>/);
+    const unknown = render('a lot', '30688 MB');
+    assert.doesNotMatch(unknown, /<meter/, 'amounts the Workbench cannot read stay as the server wrote them');
+    assert.match(unknown, /<dt>Memory used<\/dt><dd>a lot<\/dd>/);
+});
+
+// Summary says what kind of store the repository is, from the sail types in its configuration: the store, then what
+// the sails stacked on it add. A type the Workbench does not know is named as configured.
+// Explain names its keyboard shortcut in its tooltip, as Execute does (Shift with Ctrl, or Cmd on Apple platforms).
+test('the Explain button names its shortcut as Execute does', () => {
+    const workbench = loadWorkbench();
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate({ viewId: 'query', vars: [], rows: [], metadata: {} },
+        { basePath: '/workbench', repositoryId: 'repo', workbench: {} }, fakeRuntime()));
+    const explain = /<button id="explain-trigger"[^>]*>/.exec(markup);
+    assert.ok(explain, 'the query page has an Explain button');
+    assert.match(explain[0], /title="?Explain \(Shift\+Ctrl\+Enter\)"?/);
+    assert.match(markup, /title="?Execute \(Ctrl\+Enter\)"?/);
+});
+
+test('Summary names the store and the sails stacked on it', () => {
+    const workbench = loadWorkbench();
+    const store = (turtle) => {
+        const markup = flattenTemplateMarkup(workbench.views.pageTemplate({
+            viewId: 'summary', vars: ['id', 'description', 'location', 'server', 'size', 'contexts'],
+            rows: [['repo', 'Repo', 'http://example.test/repositories/repo', 'http://example.test', '1', '0']],
+            rowCount: 1, metadata: { 'config-model-turtle': turtle }
+        }, { basePath: '/workbench', repositoryId: 'repo', workbench: {}, locale: 'en-US' }, fakeRuntime()));
+        const match = /<dt>Store<\/dt><dd>([^<]*)<\/dd>/.exec(markup);
+        return match ? match[1] : null;
+    };
+    assert.equal(store('[] config:rep.impl [ config:rep.type "openrdf:SailRepository" ; config:sail.impl [ '
+        + 'config:sail.type "openrdf:MemoryStore" ] ] .'), 'Memory Store');
+    assert.equal(store('config:sail.impl [ config:sail.type "rdf4j:ShaclSail" ; config:delegate [ '
+        + 'config:sail.type "rdf4j:SchemaCachingRDFSInferencer" ; config:delegate [ config:sail.type "rdf4j:LmdbStore" ] ] ]'),
+        'LMDB Store with SHACL validation and RDFS inference');
+    assert.equal(store('sail:sailType "ex:AuditSail" ; sail:delegate [ sail:sailType "openrdf:NativeStore" ]'),
+        'Native Store with ex:AuditSail', 'legacy configuration names its sails the same way');
+    assert.equal(store('config:rep.impl [ config:rep.type "openrdf:SPARQLRepository" ]'), 'SPARQL endpoint');
+    assert.equal(store('config:rep.impl [ config:rep.type "openrdf:HTTPRepository" ]'), 'Remote RDF4J repository');
+    assert.equal(store('config:rep.impl [ config:rep.type "fedx:FedXRepository" ]'), 'Federation');
+    assert.equal(store(''), null, 'no configuration, no Store row');
 });
 
 test('Summary is one card with Repository and Size sections and the configuration disclosure (M5.4)', () => {

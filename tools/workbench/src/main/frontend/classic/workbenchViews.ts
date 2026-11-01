@@ -395,6 +395,48 @@ namespace workbench {
             button.setAttribute('data-workbench-icon', knownName);
             button.setAttribute('aria-label', accessibleName);
         }
+
+        /** The pending return of each confirming copy button to its own icon and name. */
+        const copyConfirmations = new WeakMap<any, { timer: any; icon: string; label: string }>();
+
+        /**
+         * Confirm a copy on the button that made it. When the clipboard takes the text (copying resolves), the button
+         * shows a check and is named "Copied" for a moment and the page's status line says so; when it refuses, or
+         * there is no clipboard (copying is false), the status line says how to copy instead.
+         */
+        export function confirmCopy(button: any, copying: any): void {
+            const document = button && button.ownerDocument;
+            if (!document) {
+                return;
+            }
+            const view = document.defaultView || (typeof window !== 'undefined' ? window : null);
+            const say = (message: string) => {
+                const status = document.getElementById('workbench-route-status');
+                if (status) {
+                    status.textContent = message;
+                }
+            };
+            const refused = () => say('Could not copy. Select the text to copy it.');
+            if (!copying || typeof copying.then !== 'function') {
+                refused();
+                return;
+            }
+            copying.then(() => {
+                const pending = copyConfirmations.get(button);
+                if (pending && view) {
+                    view.clearTimeout(pending.timer);
+                }
+                const original: { timer: any; icon: string; label: string } = pending || { timer: null,
+                    icon: button.getAttribute('data-workbench-icon') || 'copy', label: button.getAttribute('aria-label') || '' };
+                decorateButton(button, 'check', 'Copied');
+                say('Copied');
+                original.timer = view ? view.setTimeout(() => {
+                    copyConfirmations.delete(button);
+                    decorateButton(button, original.icon, original.label);
+                }, 1500) : null;
+                copyConfirmations.set(button, original);
+            }, refused);
+        }
     }
 
     export namespace views {
@@ -922,21 +964,36 @@ namespace workbench {
             return [];
         }
 
-        function isDisabled(item: any, info: any): boolean {
+        const readRoutes: { [key: string]: boolean } = {
+            summary: true, namespaces: true, contexts: true, types: true, explore: true, graph: true,
+            query: true, 'saved-queries': true, export: true
+        };
+        const writeRoutes: { [key: string]: boolean } = {
+            update: true, add: true, remove: true, clear: true
+        };
+
+        /** Why a menu item cannot be opened, as its tooltip says; empty when it can be. */
+        function disabledReason(item: any, info: any): string {
             const id = item.id || item['menu-item-id'];
-            if (id === 'config' && (!info.id || info.id === 'NONE')) {
-                return true;
-            }
+            const noRepository = !info.id || info.id === 'NONE';
             const readable = info.readable !== false && String(info.readable) !== 'false';
             const writeable = info.writeable !== false && String(info.writeable) !== 'false';
-            const readRoutes: { [key: string]: boolean } = {
-                summary: true, namespaces: true, contexts: true, types: true, explore: true, graph: true,
-                query: true, 'saved-queries': true, export: true
-            };
-            const writeRoutes: { [key: string]: boolean } = {
-                update: true, add: true, remove: true, clear: true
-            };
-            return !!item.disabled || (!!readRoutes[id] && !readable) || (!!writeRoutes[id] && !writeable);
+            const blocked = id === 'config' ? noRepository
+                : (!!readRoutes[id] && !readable) || (!!writeRoutes[id] && !writeable);
+            if (!blocked) {
+                return item.disabled ? 'Not available' : '';
+            }
+            if (noRepository) {
+                return 'Choose a repository first';
+            }
+            if (readRoutes[id]) {
+                return 'You cannot read this repository';
+            }
+            return readable ? 'You can only read this repository' : 'You cannot change this repository';
+        }
+
+        function isDisabled(item: any, info: any): boolean {
+            return disabledReason(item, info) !== '';
         }
 
         /** Groups with more items than this keep a disclosure so long custom menus stay manageable. */
@@ -950,7 +1007,7 @@ namespace workbench {
         }
 
         function navigationItem(runtime: LitRuntime, context: ViewContext, info: any, item: any,
-                                groupLabel: string, active: string, idPrefix: string): any {
+                                active: string, idPrefix: string): any {
             const h = runtime.html;
             const id = text(item.id || item['menu-item-id']);
             const label = text(item.label || item['menu-item-label'] || id);
@@ -958,11 +1015,13 @@ namespace workbench {
             // The Query item says when a query runs on, or has finished, out of sight; its name stays "Query".
             const activity = id === 'query' && active !== 'query' ? queryActivity(context) : '';
             const activityId = idPrefix + '-query-activity';
+            const unavailable = disabledReason(item, info);
             return h`<li class=${active === id ? 'current' : ''}>
-                ${isDisabled(item, info)
-                    ? h`<span class="disabled" title=${groupLabel}>${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}</span>`
+                ${unavailable
+                    ? h`<span class="disabled" aria-disabled="true"
+                        title=${unavailable}>${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}</span>`
                     : h`<a href=${href} data-workbench-nav-href=${href}
-                        title=${groupLabel} aria-current=${active === id ? 'page' : 'false'}
+                        aria-current=${active === id ? 'page' : 'false'}
                         aria-describedby=${activity ? activityId : runtime.nothing}>
                         ${icon(runtime, item.icon || item['menu-item-icon'] || id)}${label}${activity
                             ? h`<span class="workbench-nav-activity" data-activity=${activity} aria-hidden="true"></span>`
@@ -985,7 +1044,7 @@ namespace workbench {
                 const groupId = text(group.id || group['menu-group-id'] || 'workbench');
                 const groupLabel = text(group.label || group['menu-group-label'] || 'Workbench');
                 const list = h`<ul id=${idPrefix + '-items-' + groupId} class="group" aria-labelledby=${idPrefix + '-label-' + groupId}>
-                    ${items.map((item: any) => navigationItem(runtime, context, info, item, groupLabel, active, idPrefix))}
+                    ${items.map((item: any) => navigationItem(runtime, context, info, item, active, idPrefix))}
                 </ul>`;
                 if (items.length > navigationDisclosureThreshold) {
                     const containsActive = items.some((item: any) => text(item.id || item['menu-item-id']) === active);
@@ -1142,7 +1201,18 @@ namespace workbench {
             const h = runtime.html;
             const context = state.context;
             const groups = shellMenuGroups(context);
-            return h`${contextBar(context, state.viewId, runtime)}
+            // The first stop for the keyboard: past the menu to the page's heading, without changing the URL (the
+            // router would take a hash link for a navigation).
+            const skip = (event: any) => {
+                event.preventDefault();
+                const document = event.currentTarget.ownerDocument;
+                const target = document.getElementById('title_heading') || document.getElementById('workbench-outlet');
+                if (target) {
+                    target.focus();
+                }
+            };
+            return h`<a class="workbench-skip-link" href="#workbench-outlet" @click=${skip}>Skip to content</a>
+            ${contextBar(context, state.viewId, runtime)}
             <nav id="workbench-navigation-disclosure" class="workbench-navigation-disclosure" aria-label="Workbench menu">
                 <div id="navigation" class="workbench-nav"><ul class="maingroup">${
                     navigation(context, state.viewId, runtime, 'workbench-nav', groups)}</ul></div>
@@ -1649,11 +1719,49 @@ namespace workbench {
                 : h`<section class=${sectionClass}>${content}</section>`;
         }
 
+        /** Names of the sail and repository types RDF4J's templates configure. */
+        const configuredTypeLabels: { [type: string]: string } = {
+            'openrdf:MemoryStore': 'Memory Store',
+            'openrdf:NativeStore': 'Native Store',
+            'rdf4j:LmdbStore': 'LMDB Store',
+            'rdf4j:SchemaCachingRDFSInferencer': 'RDFS inference',
+            'openrdf:ForwardChainingRDFSInferencer': 'RDFS inference',
+            'openrdf:DirectTypeHierarchyInferencer': 'direct type inference',
+            'openrdf:CustomGraphQueryInferencer': 'custom rule inference',
+            'openrdf:LuceneSail': 'Lucene full-text search',
+            'rdf4j:ShaclSail': 'SHACL validation',
+            'openrdf:HTTPRepository': 'Remote RDF4J repository',
+            'openrdf:SPARQLRepository': 'SPARQL endpoint',
+            'openrdf:ProxyRepository': 'Proxy to another repository',
+            'fedx:FedXRepository': 'Federation'
+        };
+
+        /**
+         * What kind of store a configuration describes, for Summary: its innermost sail (the store) with what the
+         * sails stacked on it add, outermost first, or a repository that has no sails; empty when it names neither.
+         */
+        function configuredStore(turtle: string): string {
+            const label = (type: string) => configuredTypeLabels[type] || type;
+            const sails: string[] = [];
+            const sailType = /(?:sail\.type|sailType)\s+"([^"]+)"/g;
+            for (let match = sailType.exec(turtle); match; match = sailType.exec(turtle)) {
+                sails.push(match[1]);
+            }
+            if (!sails.length) {
+                const repository = /(?:rep\.type|repositoryType)\s+"([^"]+)"/.exec(turtle);
+                return repository && repository[1] !== 'openrdf:SailRepository' ? label(repository[1]) : '';
+            }
+            const stacked = sails.slice(0, -1).map(label);
+            return label(sails[sails.length - 1]) + (stacked.length ? ' with ' + (stacked.length === 1 ? stacked[0]
+                : stacked.slice(0, -1).join(', ') + ' and ' + stacked[stacked.length - 1]) : '');
+        }
+
         /** Summary (M5.4, mockup 12): one card with Repository and Size sections and the configuration disclosure. */
         function summaryPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const row = firstRecord(model);
             const config = text(meta(model, 'config-model-turtle', 'config-model'));
+            const store = configuredStore(config);
             const code = (value: any) => {
                 const content = text(value);
                 return content ? h`<code>${content}</code>` : '';
@@ -1667,14 +1775,18 @@ namespace workbench {
                     : h`<span title=${counts.state === 'timed-out' ? countedPages.summary.timedOut
                         : counts.reason ? 'Counts are not available: ' + counts.reason : 'No count is available'}>—</span>`;
             };
+            const repository: [string, any][] = [
+                ['ID', code(field(row, 'id'))],
+                ['Title', field(row, 'description')],
+                ['Location', code(field(row, 'location'))],
+                ['Server', code(field(row, 'server'))]
+            ];
+            if (store) {
+                repository.push(['Store', store]);
+            }
             return h`<section id="workbench-summary" class="workbench-island workbench-summary">
                 <h2>Repository</h2>
-                ${keyValueList(runtime, [
-                    ['ID', code(field(row, 'id'))],
-                    ['Title', field(row, 'description')],
-                    ['Location', code(field(row, 'location'))],
-                    ['Server', code(field(row, 'server'))]
-                ])}
+                ${keyValueList(runtime, repository)}
                 <h2>Size</h2>
                 ${keyValueList(runtime, [
                     ['Statements', count('size')],
@@ -1699,9 +1811,26 @@ namespace workbench {
                     ['Operating system', field(row, 'os')], ['Java runtime', field(row, 'jvm')], ['Process user', field(row, 'user')]
                 ], 'workbench-information-section', 'information-runtime', false)}
                 ${simpleSection(runtime, 'Memory', [
-                    ['Memory used', field(row, 'memory-used')], ['Maximum memory', field(row, 'maximum-memory')]
+                    ['Memory used', memoryUsed(runtime, text(field(row, 'memory-used')), text(field(row, 'maximum-memory')))],
+                    ['Maximum memory', field(row, 'maximum-memory')]
                 ], 'workbench-information-section', 'information-memory', false)}
             </div>`;
+        }
+
+        /** The memory in use as the server reports it ("1810 MB"), with a meter and its share of the maximum. */
+        function memoryUsed(runtime: LitRuntime, used: string, maximum: string): any {
+            const megabytes = (value: string) => {
+                const match = /^(\d+) MB$/.exec(value.trim());
+                return match ? Number(match[1]) : NaN;
+            };
+            const usedMegabytes = megabytes(used);
+            const maximumMegabytes = megabytes(maximum);
+            if (!(usedMegabytes >= 0) || !(maximumMegabytes > 0)) {
+                return used;
+            }
+            const share = Math.round(100 * Math.min(usedMegabytes, maximumMegabytes) / maximumMegabytes);
+            return runtime.html`${used} <meter class="workbench-memory-meter" min="0" max=${maximumMegabytes} value=${usedMegabytes}
+                aria-label="Memory used of the maximum"></meter> <span class="workbench-memory-share">${share}% of the maximum</span>`;
         }
 
         function repositoryUrl(context: ViewContext, id: string, route: string): string {
@@ -1800,6 +1929,62 @@ namespace workbench {
             </section>`;
         }
 
+        /** The stores of the repository templates RDF4J ships, by the first part of a template's id. */
+        const repositoryStores: { [prefix: string]: { group: string; text: string } } = {
+            memory: { group: 'Memory', text: 'Keeps all data in memory and can save it to disk.' },
+            native: { group: 'Native', text: 'Stores the data on disk in B-tree indexes, for data larger than memory.' },
+            lmdb: { group: 'LMDB', text: 'Stores the data on disk in LMDB, a memory-mapped database, for large data.' },
+            remote: { group: 'Remote and federation', text: 'Uses a repository on another RDF4J Server.' },
+            sparql: { group: 'Remote and federation', text: 'Uses a SPARQL endpoint, queried and updated over HTTP.' },
+            federate: { group: 'Remote and federation', text: 'Queries several repositories as one.' }
+        };
+
+        /** What the shipped templates add to their store, by the rest of the template's id. */
+        const repositoryFeatures: { [suffix: string]: string } = {
+            rdfs: 'Adds RDF Schema inference.',
+            'rdfs-dt': 'Adds RDF Schema and direct type inference.',
+            lucene: 'Adds Lucene full-text search.',
+            'rdfs-lucene': 'Adds RDF Schema inference and Lucene full-text search.',
+            customrule: 'Adds inference from a rule written as a graph query.',
+            shacl: 'Validates every change against SHACL shapes.'
+        };
+
+        function repositoryStore(type: string): { store: any; feature: string } {
+            const dash = type.indexOf('-');
+            const prefix = dash < 0 ? type : type.substring(0, dash);
+            const suffix = dash < 0 ? '' : type.substring(dash + 1);
+            const store = Object.prototype.hasOwnProperty.call(repositoryStores, prefix) ? repositoryStores[prefix] : null;
+            const feature = suffix && Object.prototype.hasOwnProperty.call(repositoryFeatures, suffix)
+                ? repositoryFeatures[suffix] : '';
+            return store && (!suffix || feature) ? { store, feature } : { store: null, feature: '' };
+        }
+
+        /** What a repository type is, for the line under New Repository's chooser; empty for a type not shipped. */
+        function repositoryTypeDescription(type: string): string {
+            const known = repositoryStore(type);
+            return known.store ? known.store.text + (known.feature ? ' ' + known.feature : '') : '';
+        }
+
+        /** The types grouped by their store, groups in the order their first type comes; others last, as Other. */
+        function repositoryTypeGroups(types: { type: string; label: string }[]): { label: string; types: any[] }[] {
+            const groups: { label: string; types: any[] }[] = [];
+            const other: any[] = [];
+            types.forEach((entry) => {
+                const known = repositoryStore(entry.type);
+                if (!known.store) {
+                    other.push(entry);
+                    return;
+                }
+                let group = groups.filter((candidate) => candidate.label === known.store.group)[0];
+                if (!group) {
+                    group = { label: known.store.group, types: [] };
+                    groups.push(group);
+                }
+                group.types.push(entry);
+            });
+            return other.length ? groups.concat([{ label: 'Other', types: other }]) : groups;
+        }
+
         function createPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const rows = records(model);
@@ -1810,11 +1995,23 @@ namespace workbench {
                     && model.vars.indexOf('id') >= 0) {
                 return federateForm(runtime, rows, context);
             }
+            const types = rows.map((row: any) => ({ type: text(row.type), label: text(row.label) }));
+            const describe = (event: any) => {
+                const select = event.currentTarget;
+                const line = select && select.ownerDocument ? select.ownerDocument.getElementById('type-description') : null;
+                if (line) {
+                    line.textContent = repositoryTypeDescription(select.value);
+                    line.hidden = !line.textContent;
+                }
+            };
+            const first = types.length ? repositoryTypeDescription(types[0].type) : '';
             return h`<form id="create-type-form" action="create" method="get" class="workbench-island workbench-form-card">
                 <div class="workbench-field"><label for="type">Repository type</label>
-                    <select id="type" name="type">
-                        ${rows.map((row: any) => h`<option value=${text(row.type)}>${text(row.label)}</option>`)}
+                    <select id="type" name="type" aria-describedby="type-description" @change=${describe}>
+                        ${repositoryTypeGroups(types).map((group: any) => h`<optgroup label=${group.label}>${
+                            group.types.map((entry: any) => h`<option value=${entry.type}>${entry.label}</option>`)}</optgroup>`)}
                     </select>
+                    <p id="type-description" class="workbench-field__help" ?hidden=${!first}>${first}</p>
                 </div>
                 <div class="workbench-form-actions">
                     <span class="workbench-action workbench-action--primary"><label class="workbench-action-hit-area">
@@ -2199,10 +2396,10 @@ namespace workbench {
                 }
             };
             const editRow = (row: any) => h`<tr class="workbench-namespace-edit">
-                <td data-label="Prefix"><input type="text" aria-label="Prefix"
+                <td data-label="Prefix"><input type="text" aria-label="Prefix" placeholder="ex"
                     value=${state.draft ? state.draft.prefix : row ? row.prefix : ''}
                     autocomplete="off" spellcheck="false" @keydown=${(event: any) => editKeys(event, row)} /></td>
-                <td data-label="Namespace"><input type="text" aria-label="Namespace"
+                <td data-label="Namespace"><input type="text" aria-label="Namespace" placeholder="http://example.org/ns#"
                     value=${state.draft ? state.draft.namespace : row ? row.namespace : ''}
                     autocomplete="off" spellcheck="false" @keydown=${(event: any) => editKeys(event, row)} /></td>
                 <td class="workbench-row-actions" data-label="Actions"><button type="button"
@@ -2517,11 +2714,10 @@ namespace workbench {
             const isQueryable = isIri || key.indexOf('<_:') === 0;
             const comment = summary.comment ? text(summary.comment) : '';
             const types = distinctExploreValues(model, summary.types || []);
-            const copy = () => {
+            const copy = (event: any) => {
                 const clipboard = typeof navigator !== 'undefined' && navigator.clipboard;
-                if (clipboard && typeof clipboard.writeText === 'function') {
-                    clipboard.writeText(isIri ? key.slice(1, -1) : key);
-                }
+                workbench.icons.confirmCopy(event.currentTarget, clipboard && typeof clipboard.writeText === 'function'
+                    ? clipboard.writeText(isIri ? key.slice(1, -1) : key) : false);
             };
             const toggleComment = (event: any) => {
                 const button = event.currentTarget;
@@ -2533,6 +2729,13 @@ namespace workbench {
                     button.textContent = expanded ? 'Show less' : 'Show more';
                 }
             };
+            // The card's actions share one row.
+            const actions = isQueryable ? [
+                pageEnabled(context, 'query') ? h`<a class="workbench-action workbench-action--secondary explore-resource-card__query"
+                    href=${'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }')}>${icon(runtime, 'query')}<span>Query this resource</span></a>` : '',
+                addToGraphControl(runtime, context, { kind: 'resource', term: key },
+                    'Add this resource and its neighbours to the graph', false)
+            ].filter((action: any) => !!action) : [];
             return h`<section id="explore-resource-card" class="workbench-island explore-resource-card" aria-label="Explored resource">
                 ${summary.label ? h`<h2>${text(summary.label)}</h2>` : ''}
                 <div class="explore-resource-card__iri"><code id="explore-resource-iri">${isIri ? key.slice(1, -1) : key}</code>
@@ -2547,10 +2750,7 @@ namespace workbench {
                 ${comment ? h`<div class="explore-resource-card__description"><p class="explore-resource-card__comment workbench-prose">${comment}</p>
                     ${comment.length > 240 ? h`<button class="workbench-action workbench-action--ghost explore-resource-card__more" type="button"
                         aria-expanded="false" @click=${toggleComment}>Show more</button>` : ''}</div>` : ''}
-                ${isQueryable && pageEnabled(context, 'query') ? h`<a class="workbench-action workbench-action--secondary explore-resource-card__query"
-                    href=${'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }')}>${icon(runtime, 'query')}<span>Query this resource</span></a>` : ''}
-                ${isQueryable ? addToGraphControl(runtime, context, { kind: 'resource', term: key },
-                    'Add this resource and its neighbours to the graph', false) : ''}
+                ${actions.length ? h`<div class="explore-resource-card__actions">${actions}</div>` : ''}
             </section>`;
         }
         const exploreGroups: any[] = [
@@ -2593,15 +2793,39 @@ namespace workbench {
                 roles: key && rowCount(model) <= exploreGroupedRowLimit
                     ? { outgoing: [], predicate: [], incoming: [], graph: [] } : null,
                 types: [],
-                labelCount: 0,
-                label: null,
-                commentCount: 0,
-                comment: null,
-                subclassCount: 0,
-                domainCount: 0,
-                subPropertyCount: 0,
-                rangeCount: 0
+                labels: [],
+                comments: []
             };
+        }
+
+        /** How many labels and comments of the explored resource Explore keeps to choose from. */
+        const exploreLiteralChoices = 64;
+
+        /**
+         * The label or comment to show of several: the one in the reader's language (navigator.languages; a regional
+         * language also takes its base language), else one without a language, else the English one, else the first.
+         */
+        function preferredLiteral(values: any[]): any {
+            if (values.length < 2) {
+                return values.length ? values[0] : null;
+            }
+            const languageOf = (value: any) => value && typeof value === 'object' && value.language
+                ? String(value.language).toLowerCase() : '';
+            const find = (accept: (language: string) => boolean) => values.filter((value) => accept(languageOf(value)))[0];
+            const navigatorObject: any = typeof navigator !== 'undefined' ? navigator : null;
+            const readers: string[] = !navigatorObject ? [] : (navigatorObject.languages && navigatorObject.languages.length
+                ? Array.prototype.slice.call(navigatorObject.languages) : [navigatorObject.language])
+                .filter((language: any) => !!language).map((language: any) => String(language).toLowerCase());
+            for (let index = 0; index < readers.length; index++) {
+                const reader = readers[index];
+                const base = reader.split('-')[0];
+                const chosen = find((language) => language === reader)
+                    || find((language) => language.split('-')[0] === base);
+                if (chosen) {
+                    return chosen;
+                }
+            }
+            return find((language) => language === '') || find((language) => language.split('-')[0] === 'en') || values[0];
         }
 
         function candidateBefore(left: any, right: any): boolean {
@@ -2660,24 +2884,21 @@ namespace workbench {
                     accumulator.types.push(object);
                 }
                 if (predicate === rdfsNamespace + 'label' && aboutResource) {
-                    accumulator.labelCount++;
-                    accumulator.label = object;
+                    if (accumulator.labels.length < exploreLiteralChoices) {
+                        accumulator.labels.push(object);
+                    }
                 } else if (predicate === rdfsNamespace + 'comment' && aboutResource) {
-                    accumulator.commentCount++;
-                    accumulator.comment = object;
-                } else if (predicate === rdfsNamespace + 'subClassOf') {
-                    accumulator.subclassCount++;
-                } else if (predicate === rdfsNamespace + 'domain') {
-                    accumulator.domainCount++;
-                } else if (predicate === rdfsNamespace + 'subPropertyOf') {
-                    accumulator.subPropertyCount++;
-                } else if (predicate === rdfsNamespace + 'range') {
-                    accumulator.rangeCount++;
+                    if (accumulator.comments.length < exploreLiteralChoices) {
+                        accumulator.comments.push(object);
+                    }
                 }
                 exploreGroups.forEach((definition: any) => {
                     if (predicate === definition.predicate) {
                         const value = definition.field === 'subject' ? subject : object;
-                        if (value !== null && typeof value !== 'undefined') {
+                        // The explored resource is the statement's other end: its super classes are the objects of
+                        // its own subClassOf statements, its sub classes the subjects of those about it.
+                        const anchor = definition.field === 'subject' ? object : subject;
+                        if (value !== null && typeof value !== 'undefined' && (!key || matches(anchor))) {
                             addExploreCandidate(accumulator.groups[definition.key], value, rowIndex, explorePageSize);
                         }
                     }
@@ -2712,14 +2933,10 @@ namespace workbench {
                 };
             });
             return {
-                label: accumulator.labelCount === 1 ? accumulator.label : null,
-                comment: accumulator.commentCount === 1 ? accumulator.comment : null,
+                label: preferredLiteral(accumulator.labels),
+                comment: preferredLiteral(accumulator.comments),
                 roles: accumulator.roles,
                 types: accumulator.types,
-                subclassCount: accumulator.subclassCount,
-                domainCount: accumulator.domainCount,
-                subPropertyCount: accumulator.subPropertyCount,
-                rangeCount: accumulator.rangeCount,
                 groups
             };
         }
@@ -2791,9 +3008,16 @@ namespace workbench {
         function exploreGroupContent(runtime: LitRuntime, model: PageModel, context: ViewContext,
                                      definition: any, page: any): any {
             const h = runtime.html;
-            return h`<h3>${definition.title}</h3>
-                <ul>${distinctExploreValues(model, page.items)
-                    .map((value: any) => h`<li>${renderTerm(runtime, value, context, true)}</li>`)}</ul>
+            const namespaces = exploreNamespaces(model);
+            // Members use the repository prefixes, as the statement tables beside them do.
+            const member = (value: any) => {
+                const href = resultExploreHref(value);
+                return href ? h`<a href=${href} title=${text(value)}>${exploreGraphLabel(value, namespaces)}</a>`
+                    : renderTerm(runtime, value, context, true);
+            };
+            // The heading counts the group's members as the statement groups count theirs (the pager below counts alike).
+            return h`<h3>${definition.title} <span class="explore-group__count">${formatCount(String(page.count), context)}</span></h3>
+                <ul>${distinctExploreValues(model, page.items).map((value: any) => h`<li>${member(value)}</li>`)}</ul>
                 ${page.count > explorePageSize ? h`<div class="workbench-form-actions workbench-window-controls"
                     role="group" aria-label=${definition.title + ' pages'}>
                     <span role="status">Showing ${page.start + 1}–${page.start + page.items.length} of ${page.count}</span>
@@ -2847,21 +3071,12 @@ namespace workbench {
             // A page as long as the limit in use may have been cut short.
             const resultLimited = !rejected && !!exploreResourceKey(model) && resultLimit > 0 && total === resultLimit;
             const groupPages = summary.groups || {};
-            const classGroups = [exploreGroups[0], exploreGroups[1]]
-                .map((definition: any) => exploreGroupList(runtime, model, context, definition, groupPages[definition.key]));
-            const propertyGroups: any[] = [];
-            if (summary.domainCount) {
-                propertyGroups.push(exploreGroupList(runtime, model, context, exploreGroups[2], groupPages.properties));
-                if (summary.subPropertyCount) {
-                    propertyGroups.push(exploreGroupList(runtime, model, context, exploreGroups[3], groupPages.superProperties));
-                    propertyGroups.push(exploreGroupList(runtime, model, context, exploreGroups[4], groupPages.subProperties));
-                }
-                propertyGroups.push(exploreGroupList(runtime, model, context, exploreGroups[5], groupPages.domain));
-            }
-            if (summary.rangeCount) {
-                propertyGroups.push(exploreGroupList(runtime, model, context, exploreGroups[6], groupPages.range));
-            }
-            const groupedResults = summary.subclassCount || summary.domainCount || summary.rangeCount
+            // Every group the explored resource has members in, classes first; exploreGroupList leaves out empty ones.
+            const groupList = (definition: any) => exploreGroupList(runtime, model, context, definition,
+                groupPages[definition.key]);
+            const classGroups = exploreGroups.slice(0, 2).map(groupList);
+            const propertyGroups = exploreGroups.slice(2).map(groupList);
+            const groupedResults = classGroups.concat(propertyGroups).some((group: any) => !!group)
                 ? h`<div class="workbench-explore-groups">
                     ${classGroups.some((group: any) => !!group) ? h`<div>${classGroups}</div>` : ''}
                     ${propertyGroups.some((group: any) => !!group) ? h`<div>${propertyGroups}</div>` : ''}
@@ -2914,7 +3129,7 @@ namespace workbench {
                     </div>
                     <div class="workbench-action-toolbar__panels workbench-disclosure-track">${exploreDisplay.panel}</div>
                 </form>
-                ${resultLimited ? h`<p id="result-limited">The results shown may be truncated.</p>` : ''}
+                ${resultLimited ? callout(runtime, 'info', 'The results shown may be truncated.', undefined, 'result-limited') : ''}
                 ${model.error ? callout(runtime, 'error', model.error.message) : errorCallout(runtime, model)}
                 ${!model.error && (resource || exploreResourceKey(model))
                     ? exploreResourceCard(runtime, model, summary, resource || exploreResourceKey(model), context) : ''}
@@ -3038,6 +3253,13 @@ namespace workbench {
             }
         }
 
+        /** A saved query on one line: its text after the prologue (PREFIX, BASE and comment lines), spaces collapsed. */
+        function savedQueryPreview(query: string): string {
+            return query.split(/\r?\n/).map((line: string) => line.trim())
+                .filter((line: string) => line && line.charAt(0) !== '#' && !/^(PREFIX|BASE)\b/i.test(line))
+                .join(' ').replace(/\s+/g, ' ');
+        }
+
         function savedQueryContent(runtime: LitRuntime, row: any, index: number): any {
             const h = runtime.html;
             const urn = text(row.query);
@@ -3046,8 +3268,10 @@ namespace workbench {
             const query = text(row.queryText || row.query);
             const queryTimeout = text(row.queryTimeout).trim() || '0';
             const formId = 'saved-query-exec-' + index;
+            const preview = savedQueryPreview(query);
             return h`
                         <div class="saved-query-row__heading"><h2>${queryName}</h2><span>${savedQueryDisplayOwner(owner)}</span></div>
+                        ${preview ? h`<p class="saved-query-row__preview" title=${query}><code>${preview}</code></p>` : ''}
                         <div class="saved-query-actions">
                             <form method="post" action="query" id=${formId}
                                 data-workbench-query-execution="true"
@@ -4308,6 +4532,26 @@ namespace workbench {
             </form>${configurationReference(runtime, groups, vocabulary)}</div>`;
         }
 
+        /**
+         * The server's refusal of an update. A syntax error is shown as the Query page shows one: its position in the
+         * title, the parser's message in words, Go to line, and the message as written under Parser details.
+         */
+        function updateErrorCallout(runtime: LitRuntime, error: string): any {
+            const h = runtime.html;
+            const stream: any = workbench.queryStream;
+            const syntax = stream && typeof stream.syntaxError === 'function' ? stream.syntaxError(error, 'update') : null;
+            if (!syntax) {
+                return callout(runtime, 'error', error, undefined, 'updateString.errors');
+            }
+            return callout(runtime, 'error', h`<div class="query-result-error__message">${syntax.summary}</div>
+                <div class="query-result-error__actions"><button type="button"
+                    class="query-result-error__goto workbench-action workbench-action--secondary"
+                    @click=${() => invoke('workbench.update.showErrorLocation', syntax.line, syntax.column, true)}>Go to line ${
+                    syntax.line}</button></div>
+                <details class="query-result-error__details"><summary>Parser details</summary><pre>${error}</pre></details>`,
+                'Syntax error on line ' + syntax.line + ', column ' + syntax.column, 'updateString.errors');
+        }
+
         function updatePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const error = pageErrorMessage(model);
@@ -4332,7 +4576,7 @@ namespace workbench {
                             'Update executed');
                     }}
                     @input=${(event: any) => clearSubmission(event, model, context, runtime)}>
-                ${error ? callout(runtime, 'error', error, undefined, 'updateString.errors')
+                ${error ? updateErrorCallout(runtime, error)
                     : h`<span id="updateString.errors" class="error" role="alert"></span>`}
                 <div id="update-editor" class="workbench-field"><label for="update">SPARQL Update</label>
                     <textarea id="update" name="update" rows="16" cols="80">${query}</textarea>
@@ -4832,6 +5076,7 @@ namespace workbench {
                                 @click=${() => invoke('workbench.query.cancelQuery')}>${icon(runtime, 'stop')}<span>Cancel</span></button>
                             <button id="explain-trigger" class="query-action workbench-action workbench-action--secondary" type="button"
                                 ?hidden=${!queryExplainEnabled(context)}
+                                title=${'Explain (Shift+' + (isMacPlatform() ? 'Cmd' : 'Ctrl') + '+Enter)'}
                                 @click=${() => invoke('workbench.query.runExplain', null, 'explain-trigger')}>${icon(runtime, 'explain')}<span>Explain</span></button>
                             <button id="explain-trigger-cancel" class="query-explain-cancel workbench-action workbench-action--warning" type="button"
                                 aria-label="Cancel explanation" title="Cancel explanation" aria-hidden="true" disabled ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}

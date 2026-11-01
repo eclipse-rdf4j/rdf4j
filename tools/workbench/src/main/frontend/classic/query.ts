@@ -1101,10 +1101,6 @@ namespace workbench {
         }
 
         /**
-         * Insert a PREFIX line for every repository namespace that the query does not declare yet, at the
-         * top of the editor. The edit goes through the editor, so Cmd/Ctrl+Z undoes it; no confirmation.
-         */
-        /**
          * The query without its comments, string literals and IRIs (each replaced by a space), so that the keywords
          * left are the query's own: '# PREFIX ex: <...>' or "PREFIX ex:" declare nothing.
          */
@@ -1143,6 +1139,10 @@ namespace workbench {
             return result;
         }
 
+        /**
+         * Insert a PREFIX line for every repository namespace that the query does not declare yet, at the
+         * top of the editor. The edit goes through the editor, so Cmd/Ctrl+Z undoes it; no confirmation.
+         */
         export function insertPrefixes() {
             if (!isPrefixInsertionEnabled()) {
                 return;
@@ -4646,8 +4646,14 @@ namespace workbench {
                 persistent: null,
                 // Queries run through the Workbench form; YASQE must never send them to its default endpoint.
                 sparql: { endpoint: '', showQueryButton: false },
+                screenReaderLabel: paneKey === 'compare' ? 'SPARQL compare query' : 'SPARQL query',
                 extraKeys: queryEditorKeys(paneKey)
             });
+            workbench.yasqeHelper.enableToolbarKeyboard(paneEditor);
+            if (paneKey !== 'compare') {
+                workbench.yasqeHelper.showEmptyHint(paneEditor,
+                    'Write a SPARQL query, for example: SELECT * WHERE { ?s ?p ?o } LIMIT 10');
+            }
             var queryPage = document.getElementById('query-page');
             if (queryPage && queryPage.getAttribute('data-editor-fullscreen-enabled') === 'false') {
                 var fullscreenControl = <HTMLElement>paneEditor.getWrapperElement().querySelector('.fullscreenToggleBtns');
@@ -5066,14 +5072,22 @@ namespace workbench {
                 $('#explain').val('');
                 $('#explain-level').val('');
             });
+            /** Copy a pane's explanation and confirm it on the button that was pressed. */
+            function copyAndConfirm(button: HTMLElement, paneKey: string) {
+                var copying = copyExplanation(paneKey);
+                var icons: any = (<any>workbench).icons;
+                if (icons && typeof icons.confirmCopy === 'function') {
+                    icons.confirmCopy(button, copying);
+                }
+            }
             on('#copy-explanation', 'click', function() {
-                copyExplanation('primary');
+                copyAndConfirm(this, 'primary');
             });
             on('#copy-explanation-compare', 'click', function() {
-                copyExplanation('compare');
+                copyAndConfirm(this, 'compare');
             });
             on('#query-compare-copy', 'click', function() {
-                copyExplanation('primary');
+                copyAndConfirm(this, 'primary');
             });
             on('#query-compare-swap', 'click', function() {
                 swapCompareQueries();
