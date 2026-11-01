@@ -1,0 +1,182 @@
+{
+  "phase_b": {
+    "base": "06f778b1d0a2caaba4ec160ce2c6e7c91b5ef8e8",
+    "patch": "retired-phase-b13-tests-06f778.patch",
+    "patch_sha256": "0a885093af3ccd94084ceec6823bdcbe8df1e8de66059535eec3e2fa48376a9e",
+    "scope": "TEST ONLY: 3 existing files, 13 prior CI cases; immutable additive five-case patch is unchanged and not included. No JVM/Maven/formatter/commit/push.",
+    "validation": "Static diff/check/line-length only; owner must run all 13 replacement cases.",
+    "hit_proof": {
+      "liveness": "Real mdb_get is counted, DBI must be adjacency metadata and key exactly type 7 + 8-byte ID. Any native cursor method fails. Each nonsentinel candidate must cause exactly one read, independent of PO budget; all four positions, duplicate logical writes, cross-plane/cross-row reference multiplicity, rollback and final deletion are asserted.",
+      "snapshot": "A real SailDataset is materialized and prefix/root plans captured before a distinct statement commit. Exact RDF revision +1, old 50/new 51, absent/present new subject, disjoint root partitions, prefix counts, supported orders and parallel-source admission are asserted.",
+      "preferences": "Every one of 24 preferences reopens the same nonempty explicit/inferred store. Exact native DB names and raw pages/metadata/deltas maps must remain unchanged; RDF revision begins at zero with no mutation. Namespace-native commits are allowed across constructors; only repeated compatibility scheduling must not invent a native commit. Exact independent unsigned-ordered rows and both-direction/count/reference helper are checked.",
+      "corruption": "Actual native format value overwritten with 3 or 8192 bytes, normal constructor must throw. Entire nonvolatile directory snapshot must remain unchanged (shared fixture excludes lock and lock.mdb); actual valid bytes restored, full raw authority and both-plane model required on fresh reopen."
+    },
+    "mapping": [
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "predicateLeadingButNotPoIndexCannotProveObjectAbsence",
+        "replacement_method": "referenceMetadataProvesObjectLivenessWithoutPoPreference",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#predicateLeadingButNotPoIndexCannotProveObjectAbsence"
+        ],
+        "preserved_guarantee": "Predicate-leading but non-PO order cannot manufacture proof of object absence.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:96"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "missingSubjectProofStillRetainsIrisButNotAbsentLiterals",
+        "replacement_method": "referenceMetadataRetainsLiveSubjectsWithoutSubjectPreference",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#missingSubjectProofStillRetainsIrisButNotAbsentLiterals"
+        ],
+        "preserved_guarantee": "An IRI potentially used as subject cannot be reclaimed without subject proof; absent literals can be reclaimed.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:109"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "missingPredicateProofStillRetainsIrisWithDirectObjectIndex",
+        "replacement_method": "referenceMetadataRetainsLivePredicatesWithoutPredicatePreference",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#missingPredicateProofStillRetainsIrisWithDirectObjectIndex"
+        ],
+        "preserved_guarantee": "An IRI potentially used as predicate cannot be reclaimed without predicate proof; absent literal can be reclaimed.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:123"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "budgetMustCoverBothPlanesBeforeAbsenceIsProven",
+        "replacement_method": "referenceMetadataCoversBothPlanesWithoutFallbackBudget",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#budgetMustCoverBothPlanesBeforeAbsenceIsProven"
+        ],
+        "preserved_guarantee": "An inferred-only live object must never be called unused just because explicit-plane probe consumed budget.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:137"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "seekCountDependsOnDistinctPredicatesNotStatementMultiplicity",
+        "replacement_method": "referenceLookupWorkDoesNotDependOnStatementMultiplicity",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#seekCountDependsOnDistinctPredicatesNotStatementMultiplicity"
+        ],
+        "preserved_guarantee": "Liveness work is bounded rather than proportional to statement multiplicity.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:153"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "highPredicateCardinalityStillMakesPartialBatchProgressWithinDefaultBudget",
+        "replacement_method": "highPredicateCardinalityUsesOneReferenceLookupPerCandidate",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#highPredicateCardinalityStillMakesPartialBatchProgressWithinDefaultBudget"
+        ],
+        "preserved_guarantee": "High predicate cardinality cannot cause unbounded scans or lose unresolved backlog; finite batches make safe progress.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:172"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "budgetExhaustionAndNoUnresolvedCollectorCannotReturnFalseUnused",
+        "replacement_method": "zeroBudgetAndNoUnresolvedCollectorKeepOnlyActuallyUnusedDuplicates",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#budgetExhaustionAndNoUnresolvedCollectorCannotReturnFalseUnused"
+        ],
+        "preserved_guarantee": "A budget-exhausted probe without an UNKNOWN collector must fail conservatively rather than reclaim a live ID.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:190"
+      },
+      {
+        "class": "TripleStoreBackgroundReindexTest",
+        "old_method": "constructionRetainsCommittedIndexesUntilBackgroundMaintenanceStarts",
+        "replacement_method": "logicalPreferenceChangesPreserveAdjacencyAuthorityBeforeMaintenance",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStoreBackgroundReindexTest#constructionRetainsCommittedIndexesUntilBackgroundMaintenanceStarts(Path)"
+        ],
+        "preserved_guarantee": "Opening with changed preferences must not prematurely replace/drop durable data before a safe authority transition.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreBackgroundReindexTest.java:274"
+      },
+      {
+        "class": "TripleStoreBackgroundReindexTest",
+        "old_method": "boundedLivenessRetainsUnresolvedCandidatesWithoutScanning",
+        "replacement_method": "boundedReferenceMetadataPreservesAllPositionsMultiplicityAndRollback",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStoreBackgroundReindexTest#boundedLivenessRetainsUnresolvedCandidatesWithoutScanning(Path)"
+        ],
+        "preserved_guarantee": "Unknown liveness must not return an ID as safely unused, and proof must avoid unbounded statement scans.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreBackgroundReindexTest.java:393"
+      },
+      {
+        "class": "TripleStoreBackgroundReindexTest",
+        "old_method": "invalidDescriptorResetsOnlyInactiveTreesAndCoalescesRepeatedStarts",
+        "replacement_method": "malformedFormatCertificateFailsClosedWithoutChangingAuthority",
+        "cases": 2,
+        "ci_identities": [
+          "TripleStoreBackgroundReindexTest#invalidDescriptorResetsOnlyInactiveTreesAndCoalescesRepeatedStarts(int, Path)[1]",
+          "TripleStoreBackgroundReindexTest#invalidDescriptorResetsOnlyInactiveTreesAndCoalescesRepeatedStarts(int, Path)[2]"
+        ],
+        "preserved_guarantee": "Corrupt/oversized build descriptor must not destroy active authoritative trees; repeated starts cannot spawn duplicate writers.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreBackgroundReindexTest.java:511"
+      },
+      {
+        "class": "TripleStoreBackgroundReindexTest",
+        "old_method": "canonicalPermutationsBoundPhysicalSchemaAcrossRepeatedReconfiguration",
+        "replacement_method": "allLogicalPermutationsPreserveTheFixedNativeSchemaAndEveryRow",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStoreBackgroundReindexTest#canonicalPermutationsBoundPhysicalSchemaAcrossRepeatedReconfiguration(Path)"
+        ],
+        "preserved_guarantee": "Repeated use of all 24 permutations preserves exact rows and bounds native DBI count without leaking physical generations.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreBackgroundReindexTest.java:745"
+      },
+      {
+        "class": "LmdbBackgroundIndexGenerationTest",
+        "old_method": "heldDatasetPlansWithItsCommittedGenerationAfterBackgroundCutover",
+        "replacement_method": "heldDatasetPlansAgainstItsPinnedSnapshotAfterAnOrdinaryCommit",
+        "cases": 1,
+        "ci_identities": [
+          "LmdbBackgroundIndexGenerationTest#heldDatasetPlansWithItsCommittedGenerationAfterBackgroundCutover"
+        ],
+        "preserved_guarantee": "Held SailDataset uses its own original generation for supported orders, prefix runs, root partitions and parallel-source admission while fresh readers see current generation.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbBackgroundIndexGenerationTest.java:43"
+      }
+    ]
+  },
+  "pinned_gc": {
+    "patch": "retired-phase-b-gc2-dedup-after-additive.patch",
+    "sha256": "4b41dbad9cb550ad57e01dbd015773fd2a2dcee4e1fc3b46e180bfb802b6d6e1",
+    "precondition": "Apply ONLY AFTER reindex-contract-tests-06f778.patch SHA256 e3669e0f7593d4dbbf8632875c05a7ed6873bec31e460191dfc387e5b820ad6d. Separate from the nonoverlapping phase-B13 patch.",
+    "authorization": "Owner reported both new pinned-before-clear cases passing via parent on 2026-11-01; approved retirement of only the two delayed-object-index cases. No JVM was run by this reviewer.",
+    "mapping": [
+      {
+        "old": "LmdbValueGcOwnershipTest#legacyCloseRetainsUnusedTermsWhileObjectIndexBuildIsDelayed(boolean)[1]",
+        "replacement": "LmdbValueGcOwnershipTest#legacyPinnedSnapshotBeforeClearRetainsTermsUntilRetirement(boolean)[1]",
+        "inline": false
+      },
+      {
+        "old": "LmdbValueGcOwnershipTest#legacyCloseRetainsUnusedTermsWhileObjectIndexBuildIsDelayed(boolean)[2]",
+        "replacement": "LmdbValueGcOwnershipTest#legacyPinnedSnapshotBeforeClearRetainsTermsUntilRetirement(boolean)[2]",
+        "inline": true
+      }
+    ],
+    "preserved_contracts": [
+      "Protected old statement/dictionary IDs cannot be published unused while a real pre-clear snapshot remains pinned; new test additionally verifies old materialized rows and prevents ID reuse.",
+      "Once the protection ends, finite retirement work progresses into durable unused IDs.",
+      "Store shutdown retains that durable unused backlog for the next bounded post-ready cleanup.",
+      "After reopen, the finite backlog is consumed without changing retained triple-term or shared-component IDs/values.",
+      "Both literal-inlining settings remain exercised.",
+      "The existing non-delayed legacyCloseRetainsUnusedTermsForPostReadyCleanupAndPreservesLiveDependencies parameter pair and every assertion remain; its helper is only specialized to the already-selected false branch."
+    ],
+    "removed_obsolete_mechanism": [
+      "Deleted two-case delayed-index wrapper, now-unreachable delayed worker factory, and delayIndex/releaseIndex branch from shared helper. No production no-op worker restoration.",
+      "No claim that absent preferred object/predicate ordering implies UNKNOWN: exact persisted references now prove liveness. Phase B13 independently tests that proof in all positions, both planes, bounded native work and reference multiplicity."
+    ],
+    "validation": "Static diff-check and apply-check against base + immutable additive patch pass. New replacement body is byte-for-byte unchanged by this patch. Owner should rerun the existing non-delayed pair plus the proven pinned pair after integration."
+  },
+  "runtime_validation": "Phase B liveness11, held-generation1, authority/config/corruption5 and GC4 pass; two malformed-format cases rerun after asserting their distinct existing rejection reasons. Test-only replacements, no remaining retired-worker family waived."
+}

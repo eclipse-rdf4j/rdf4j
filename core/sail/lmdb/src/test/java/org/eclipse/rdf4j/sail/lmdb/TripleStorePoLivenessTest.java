@@ -12,14 +12,22 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.lwjgl.util.lmdb.LMDB;
+import org.lwjgl.util.lmdb.MDBVal;
+import org.mockito.MockedStatic;
 
 class TripleStorePoLivenessTest {
 	@TempDir
@@ -85,89 +93,83 @@ class TripleStorePoLivenessTest {
 	}
 
 	@Test
-	void predicateLeadingButNotPoIndexCannotProveObjectAbsence() throws Exception {
+	void referenceMetadataProvesObjectLivenessWithoutPoPreference() throws Exception {
 		try (TripleStore store = new TripleStore(directory, new LmdbStoreConfig("spoc,psoc"), null)) {
-			long absent = ValueIds.createId(ValueIds.T_LITERAL, 700);
-			List<Long> candidates = new ArrayList<>(List.of(absent));
-			List<Long> unresolved = new ArrayList<>();
-			store.filterUsedIdsBounded(candidates, unresolved);
-			assertThat(candidates).isEmpty();
-			assertThat(unresolved).containsExactly(absent);
+			long live = ValueIds.createId(ValueIds.T_LITERAL, 700);
+			long absent = ValueIds.createId(ValueIds.T_LITERAL, 701);
+			store.startTransaction();
+			store.storeTriple(102, 2, live, 0, false);
+			store.commit();
+			assertMetadataProof(store, new ArrayList<>(List.of(live, absent)), new ArrayList<>(), 0,
+					List.of(absent));
 		}
 	}
 
 	@Test
-	void missingSubjectProofStillRetainsIrisButNotAbsentLiterals() throws Exception {
+	void referenceMetadataRetainsLiveSubjectsWithoutSubjectPreference() throws Exception {
 		try (TripleStore store = new TripleStore(directory, new LmdbStoreConfig("posc"), null)) {
-			long iri = ValueIds.createId(ValueIds.T_URI, 700);
-			long literal = ValueIds.createId(ValueIds.T_LITERAL, 701);
-			List<Long> candidates = new ArrayList<>(List.of(iri, literal));
-			List<Long> unresolved = new ArrayList<>();
-			store.filterUsedIdsBounded(candidates, unresolved);
-			assertThat(candidates).containsExactly(literal);
-			assertThat(unresolved).containsExactly(iri);
+			long live = ValueIds.createId(ValueIds.T_URI, 700);
+			long absentIri = ValueIds.createId(ValueIds.T_URI, 701);
+			long absentLiteral = ValueIds.createId(ValueIds.T_LITERAL, 702);
+			store.startTransaction();
+			store.storeTriple(live, 2, 900, 0, true);
+			store.commit();
+			assertMetadataProof(store, new ArrayList<>(List.of(live, absentIri, absentLiteral)), new ArrayList<>(),
+					0, List.of(absentIri, absentLiteral));
 		}
 	}
 
 	@Test
-	void missingPredicateProofStillRetainsIrisWithDirectObjectIndex() throws Exception {
+	void referenceMetadataRetainsLivePredicatesWithoutPredicatePreference() throws Exception {
 		try (TripleStore store = new TripleStore(directory, new LmdbStoreConfig("spoc,ospc"), null)) {
-			long iri = ValueIds.createId(ValueIds.T_URI, 700);
-			long literal = ValueIds.createId(ValueIds.T_LITERAL, 701);
-			List<Long> candidates = new ArrayList<>(List.of(iri, literal));
-			List<Long> unresolved = new ArrayList<>();
-			store.filterUsedIdsBounded(candidates, unresolved);
-			assertThat(candidates).containsExactly(literal);
-			assertThat(unresolved).containsExactly(iri);
+			long live = ValueIds.createId(ValueIds.T_URI, 700);
+			long absentIri = ValueIds.createId(ValueIds.T_URI, 701);
+			long absentLiteral = ValueIds.createId(ValueIds.T_LITERAL, 702);
+			store.startTransaction();
+			store.storeTriple(102, live, 900, 0, false);
+			store.commit();
+			assertMetadataProof(store, new ArrayList<>(List.of(live, absentIri, absentLiteral)), new ArrayList<>(),
+					0, List.of(absentIri, absentLiteral));
 		}
 	}
 
 	@Test
-	void budgetMustCoverBothPlanesBeforeAbsenceIsProven() throws Exception {
+	void referenceMetadataCoversBothPlanesWithoutFallbackBudget() throws Exception {
 		try (TripleStore store = new TripleStore(directory, new LmdbStoreConfig("spoc,posc"), null)) {
-			long absent = ValueIds.createId(ValueIds.T_LITERAL, 700);
+			long live = ValueIds.createId(ValueIds.T_LITERAL, 700);
+			long absent = ValueIds.createId(ValueIds.T_LITERAL, 701);
 			store.startTransaction();
 			store.storeTriple(102, 2, 900, 0, true);
-			store.storeTriple(102, 258, absent, 0, false);
+			store.storeTriple(102, 258, live, 0, false);
 			store.commit();
-			List<Long> candidates = new ArrayList<>(List.of(absent));
-			List<Long> unresolved = new ArrayList<>();
-			assertThat(store.filterUsedIdsBounded(candidates, unresolved, 3)).isEqualTo(3);
-			assertThat(candidates).isEmpty();
-			assertThat(unresolved).containsExactly(absent);
-			candidates.add(absent);
-			unresolved.clear();
-			assertThat(store.filterUsedIdsBounded(candidates, unresolved, 5)).isEqualTo(5);
-			assertThat(candidates).isEmpty();
-			assertThat(unresolved).isEmpty();
+			for (int budget : new int[] { 0, 3, 5 }) {
+				assertMetadataProof(store, new ArrayList<>(List.of(live, absent)), new ArrayList<>(), budget,
+						List.of(absent));
+			}
 		}
 	}
 
 	@Test
-	void seekCountDependsOnDistinctPredicatesNotStatementMultiplicity() throws Exception {
+	void referenceLookupWorkDoesNotDependOnStatementMultiplicity() throws Exception {
 		try (TripleStore store = new TripleStore(directory, new LmdbStoreConfig("spoc,posc"), null)) {
 			long absent = ValueIds.createId(ValueIds.T_LITERAL, 700);
 			store.startTransaction();
 			store.storeTriple(102, 2, 900, 0, true);
 			store.commit();
-			List<Long> candidates = new ArrayList<>(List.of(absent));
-			List<Long> unresolved = new ArrayList<>();
-			assertThat(store.filterUsedIdsBounded(candidates, unresolved, 4)).isEqualTo(4);
-			assertThat(candidates).containsExactly(absent);
-			assertThat(unresolved).isEmpty();
+			assertMetadataProof(store, new ArrayList<>(List.of(absent, 900L)), new ArrayList<>(), 4,
+					List.of(absent));
 			store.startTransaction();
 			for (int i = 1; i <= 10_000; i++) {
 				store.storeTriple(102 + 128L * i, 2, 900, 0, true);
 			}
 			store.commit();
-			assertThat(store.filterUsedIdsBounded(candidates, unresolved, 4)).isEqualTo(4);
-			assertThat(candidates).containsExactly(absent);
-			assertThat(unresolved).isEmpty();
+			assertMetadataProof(store, new ArrayList<>(List.of(absent, 900L)), new ArrayList<>(), 4,
+					List.of(absent));
 		}
 	}
 
 	@Test
-	void highPredicateCardinalityStillMakesPartialBatchProgressWithinDefaultBudget() throws Exception {
+	void highPredicateCardinalityUsesOneReferenceLookupPerCandidate() throws Exception {
 		try (TripleStore store = new TripleStore(directory, new LmdbStoreConfig("spoc,posc"), null)) {
 			store.startTransaction();
 			for (int i = 1; i <= 1024; i++) {
@@ -178,22 +180,24 @@ class TripleStorePoLivenessTest {
 			for (int i = 0; i < 64; i++) {
 				candidates.add(ValueIds.createId(ValueIds.T_LITERAL, 2000 + i));
 			}
-			List<Long> original = List.copyOf(candidates);
-			List<Long> unresolved = new ArrayList<>();
-			store.filterUsedIdsBounded(candidates, unresolved);
-			// Each complete candidate costs 2*1024 predicate/object seeks + two end-of-plane seeks.
-			assertThat(candidates).containsExactlyElementsOf(original.subList(0, 31));
-			assertThat(unresolved).containsExactlyElementsOf(original.subList(31, 64));
+			List<Long> absent = List.copyOf(candidates);
+			candidates.add(900L);
+			assertMetadataProof(store, candidates, new ArrayList<>(), 65_536, absent);
 		}
 	}
 
 	@Test
-	void budgetExhaustionAndNoUnresolvedCollectorCannotReturnFalseUnused() throws Exception {
+	void zeroBudgetAndNoUnresolvedCollectorKeepOnlyActuallyUnusedDuplicates() throws Exception {
 		try (TripleStore store = new TripleStore(directory, new LmdbStoreConfig("spoc,posc"), null)) {
 			long absent = ValueIds.createId(ValueIds.T_LITERAL, 700);
-			List<Long> candidates = new ArrayList<>(List.of(absent, absent));
-			assertThat(store.filterUsedIdsBounded(candidates, null, 0)).isZero();
-			assertThat(candidates).isEmpty();
+			long live = ValueIds.createId(ValueIds.T_LITERAL, 701);
+			store.startTransaction();
+			store.storeTriple(102, 2, live, 0, true);
+			store.commit();
+			assertMetadataProof(store, new ArrayList<>(List.of(absent, live, absent, live)), null, 0,
+					List.of(absent, absent));
+			assertThrows(IllegalArgumentException.class,
+					() -> store.filterUsedIdsBounded(new ArrayList<>(List.of(live)), null, -1));
 		}
 	}
 
@@ -209,6 +213,36 @@ class TripleStorePoLivenessTest {
 			List<Long> unresolved = new ArrayList<>();
 			assertThat(store.filterUsedIdsBounded(candidates, unresolved, 0)).isZero();
 			assertThat(candidates).containsExactly(absent);
+			assertThat(unresolved).isEmpty();
+		}
+	}
+
+	/** Certify the real bounded proof, not only the compatibility method's zero fallback counter. */
+	static void assertMetadataProof(TripleStore store, List<Long> candidates, Collection<Long> unresolved, int budget,
+			List<Long> expectedUnused) throws IOException {
+		long expectedReads = candidates.stream().filter(id -> id != -1 && id != 0).count();
+		int metadata = store.getTxnManager()
+				.doWith((stack, txn) -> LmdbPersistentAdjacency.openExisting(txn).metadataDbi());
+		AtomicInteger referenceReads = new AtomicInteger();
+		try (MockedStatic<LMDB> ignored = mockStatic(LMDB.class, invocation -> {
+			String method = invocation.getMethod().getName();
+			assertThat(method.startsWith("mdb_cursor_"))
+					.as("liveness must not scan statement, page, delta or metadata cursors")
+					.isFalse();
+			if (method.equals("mdb_get")) {
+				assertThat((int) invocation.getArgument(1)).isEqualTo(metadata);
+				MDBVal key = invocation.getArgument(2);
+				assertThat(key.mv_size()).isEqualTo(1 + Long.BYTES);
+				assertThat(key.mv_data().get(0)).as("persisted REFERENCES key").isEqualTo((byte) 7);
+				referenceReads.incrementAndGet();
+			}
+			return invocation.callRealMethod();
+		})) {
+			assertThat(store.filterUsedIdsBounded(candidates, unresolved, budget)).isZero();
+		}
+		assertThat((long) referenceReads.get()).isEqualTo(expectedReads);
+		assertThat(candidates).containsExactlyElementsOf(expectedUnused);
+		if (unresolved != null) {
 			assertThat(unresolved).isEmpty();
 		}
 	}
