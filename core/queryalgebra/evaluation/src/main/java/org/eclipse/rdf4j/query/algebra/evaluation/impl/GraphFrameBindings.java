@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.io.Serializable;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -68,6 +69,12 @@ public final class GraphFrameBindings implements Serializable {
 		return supplied != null && supplied.equals(bindings.getValue(parameter));
 	}
 
+	/** Immutable full private-frame map for an internal owner-scoped transport; values are never supplied by name. */
+	@InternalUseOnly
+	public Map<String, Value> retainedParametersForTransport() {
+		return parameters;
+	}
+
 	public GraphFrameBindings merge(GraphFrameBindings other) {
 		if (other.parameters.isEmpty() || this == other) {
 			return this;
@@ -78,6 +85,51 @@ public final class GraphFrameBindings implements Serializable {
 		Map<String, Value> combined = new HashMap<>(parameters);
 		combined.putAll(other.parameters);
 		return new GraphFrameBindings(combined);
+	}
+
+	/**
+	 * Applies source graph-frame metadata only for names whose mapping was actually accepted by the target. Metadata on
+	 * an unbound or schema-rejected source name cannot qualify an equal target value.
+	 */
+	public static MutableBindingSet overlayWrittenMappings(MutableBindingSet target, BindingSet source,
+			Collection<String> writtenNames) {
+		return overlayWrittenMappings(target, source, from(source), writtenNames);
+	}
+
+	public static MutableBindingSet overlayWrittenMappings(MutableBindingSet target, BindingSet source,
+			GraphFrameBindings sourceFrames, Collection<String> writtenNames) {
+		if (writtenNames.isEmpty()) {
+			return target;
+		}
+		GraphFrameBindings targetFrames = from(target);
+		if (targetFrames.parameters.isEmpty() && sourceFrames.parameters.isEmpty()) {
+			return target;
+		}
+		Map<String, Value> combined = new HashMap<>(targetFrames.parameters);
+		for (String name : writtenNames) {
+			combined.remove(name);
+			if (source.hasBinding(name)) {
+				Value supplied = sourceFrames.parameters.get(name);
+				if (supplied != null) {
+					Value sourceValue = source.getValue(name);
+					if (supplied == sourceValue || supplied.equals(sourceValue)) {
+						combined.put(name, supplied);
+					}
+				}
+			}
+		}
+		GraphFrameBindings updated = combined.isEmpty() ? EMPTY : new GraphFrameBindings(combined);
+		if (target instanceof MutableCarrier carrier) {
+			carrier.setGraphFrameBindings(updated);
+			return target;
+		}
+		if (updated.parameters.isEmpty()) {
+			// An immutable carrier may still expose its old frame through the target after an accepted overwrite.
+			// Keep an explicit empty view only when it masks such an existing frame; ordinary rows stay
+			// allocation-free.
+			return targetFrames.parameters.isEmpty() ? target : new SuppliedBindings(target, EMPTY);
+		}
+		return new SuppliedBindings(target, updated);
 	}
 
 	public GraphFrameBindings without(String parameter) {

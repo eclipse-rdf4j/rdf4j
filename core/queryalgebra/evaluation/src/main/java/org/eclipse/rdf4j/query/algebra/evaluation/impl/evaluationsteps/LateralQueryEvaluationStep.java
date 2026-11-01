@@ -159,8 +159,7 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 			return filterLateralInputBindings(EmptyBindingSet.getInstance(), leftBindings);
 		}
 
-		QueryBindingSet filtered = new QueryBindingSet(originalBindings.size() + rightInputBindingNames.size());
-		filtered.addAll(originalBindings);
+		QueryBindingSet filtered = new QueryBindingSet(originalBindings);
 		Set<String> addedNames = new HashSet<>();
 		for (String bindingName : rightInputBindingNames) {
 			Binding binding = leftBindings.getBinding(bindingName);
@@ -169,9 +168,11 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 				addedNames.add(bindingName);
 			}
 		}
-		BindingSetOrigin.set(filtered, BindingSetOrigin.overlay(BindingSetOrigin.of(originalBindings),
-				BindingSetOrigin.of(leftBindings), addedNames));
-		return filtered;
+		if (!addedNames.isEmpty()) {
+			BindingSetOrigin.set(filtered, BindingSetOrigin.overlay(BindingSetOrigin.of(originalBindings),
+					BindingSetOrigin.of(leftBindings), addedNames));
+		}
+		return GraphFrameBindings.overlayWrittenMappings(filtered, leftBindings, addedNames);
 	}
 
 	private BindingSet filterLateralInputBindings(BindingSet originalBindings, BindingSet leftBindings) {

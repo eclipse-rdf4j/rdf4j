@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
@@ -155,8 +156,7 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 			return filterLateralInputBindings(bindings);
 		}
 
-		QueryBindingSet filtered = new QueryBindingSet(originalBindings.size() + rightInputBindingNames.size());
-		filtered.addAll(originalBindings);
+		QueryBindingSet filtered = new QueryBindingSet(originalBindings);
 		Set<String> addedNames = new HashSet<>();
 		for (String bindingName : rightInputBindingNames) {
 			Binding binding = bindings.getBinding(bindingName);
@@ -165,9 +165,11 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 				addedNames.add(bindingName);
 			}
 		}
-		BindingSetOrigin.set(filtered, BindingSetOrigin.overlay(BindingSetOrigin.of(originalBindings),
-				BindingSetOrigin.of(bindings), addedNames));
-		return filtered;
+		if (!addedNames.isEmpty()) {
+			BindingSetOrigin.set(filtered, BindingSetOrigin.overlay(BindingSetOrigin.of(originalBindings),
+					BindingSetOrigin.of(bindings), addedNames));
+		}
+		return GraphFrameBindings.overlayWrittenMappings(filtered, bindings, addedNames);
 	}
 
 	private BindingSet filterLateralInputBindings(BindingSet bindings) {
@@ -198,8 +200,7 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 			return null;
 		}
 
-		QueryBindingSet merged = new QueryBindingSet(leftBindings.size() + rightBindings.size());
-		merged.addAll(leftBindings);
+		QueryBindingSet merged = new QueryBindingSet(leftBindings);
 		return HashJoinIteration.merge(merged, rightBindings);
 	}
 

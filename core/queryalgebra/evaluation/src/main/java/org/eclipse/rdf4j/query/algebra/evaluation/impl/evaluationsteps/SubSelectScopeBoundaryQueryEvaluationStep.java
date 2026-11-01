@@ -117,13 +117,20 @@ public final class SubSelectScopeBoundaryQueryEvaluationStep implements QueryEva
 			if (complete) {
 				return row;
 			}
-			QueryBindingSet merged = new QueryBindingSet(outer.size() + row.size());
-			merged.addAll(outer);
+			QueryBindingSet merged = new QueryBindingSet(outer);
+			Set<String> writtenNames = new HashSet<>();
+			for (String name : row.getBindingNames()) {
+				if (row.hasBinding(name)) {
+					writtenNames.add(name);
+				}
+			}
 			for (Binding binding : row) {
 				merged.setBinding(binding);
 			}
-			BindingSetOrigin.set(merged, BindingSetOrigin.overlay(BindingSetOrigin.of(outer), BindingSetOrigin.of(row),
-					row.getBindingNames()));
+			if (!writtenNames.isEmpty()) {
+				BindingSetOrigin.set(merged, BindingSetOrigin.overlay(BindingSetOrigin.of(outer),
+						BindingSetOrigin.of(row), writtenNames));
+			}
 			return merged;
 		}
 

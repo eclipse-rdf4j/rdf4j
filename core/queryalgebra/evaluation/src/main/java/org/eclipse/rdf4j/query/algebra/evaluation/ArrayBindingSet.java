@@ -542,15 +542,27 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public void addAll(ArrayBindingSet other) {
-		GraphFrameBindings supplied = GraphFrameBindings.from(other);
-		if (graphFrames != null) {
-			other.getBindingNames().forEach(this::forgetGraphFrame);
-		}
+		addAll(other, false);
+	}
+
+	@InternalUseOnly
+	public Set<String> addAllAndGetWrittenNames(ArrayBindingSet other) {
+		return addAll(other, true);
+	}
+
+	private Set<String> addAll(ArrayBindingSet other, boolean reportWrittenNames) {
+		GraphFrameBindings sourceFrames = GraphFrameBindings.from(other);
+		boolean trackOrigin = origin != null || BindingSetOrigin.tracked(other);
+		boolean trackFrames = graphFrames != null || !sourceFrames.retainedParametersForTransport().isEmpty();
+		List<String> writtenNames = trackOrigin || trackFrames || reportWrittenNames ? new ArrayList<>() : null;
 		if (other.bindingNames == bindingNames) {
 			for (int i = 0; i < bindingNames.length; i++) {
 				if (isBoundValue(other.values[i])) {
 					this.values[i] = other.values[i];
 					this.empty = false;
+					if (writtenNames != null) {
+						writtenNames.add(bindingNames[i]);
+					}
 				}
 			}
 		} else {
@@ -559,19 +571,25 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 					Value value = other.getValue(bindingNames[i]);
 					this.values[i] = value == null ? NULL_VALUE : value;
 					this.empty = false;
+					if (writtenNames != null) {
+						writtenNames.add(bindingNames[i]);
+					}
 				}
 			}
 		}
 
-		if (origin != null || BindingSetOrigin.tracked(other)) {
-			origin = BindingSetOrigin.overlay(BindingSetOrigin.of(this), BindingSetOrigin.of(other),
-					other.getBindingNames());
+		if (trackOrigin && !writtenNames.isEmpty()) {
+			origin = BindingSetOrigin.overlayWrittenMappings(BindingSetOrigin.of(this), BindingSetOrigin.of(other),
+					writtenNames);
 		}
-		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));
+		if (trackFrames) {
+			GraphFrameBindings.overlayWrittenMappings(this, other, sourceFrames, writtenNames);
+		}
 		clearCache();
 		if (sharedSortedBindingNamesCache != null) {
 			activeBindingMask = calculateActiveBindingMask();
 		}
+		return reportWrittenNames ? Set.copyOf(writtenNames) : Set.of();
 
 	}
 

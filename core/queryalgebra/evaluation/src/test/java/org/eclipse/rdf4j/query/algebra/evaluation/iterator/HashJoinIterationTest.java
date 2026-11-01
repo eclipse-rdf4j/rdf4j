@@ -14,12 +14,15 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,8 +38,11 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.AbstractBindingSet;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -49,18 +55,23 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StreamBindingSchema;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -84,6 +95,318 @@ public class HashJoinIterationTest {
 			return null;
 		}
 	}, null);
+
+	@Test
+	void requestMappingWithoutHiddenValueReplacesTheOldJoinPayload() {
+		Value old = vf.createLiteral("old");
+		Value current = vf.createLiteral("current");
+		QueryBindingSet oldRequest = new QueryBindingSet();
+		oldRequest.setBinding("parameter", old);
+		QueryBindingSet target = new QueryBindingSet(BindingSetOrigin.optimizationInput(oldRequest));
+		assertFalse(target.hasBinding("parameter"), "optimization input carries the value as hidden request authority");
+
+		QueryBindingSet requestRow = new QueryBindingSet();
+		requestRow.setBinding("parameter", current);
+		BindingSet requestWrite = BindingSetOrigin.requestInput(requestRow);
+		assertTrue(BindingSetOrigin.of(requestWrite).isRequest("parameter"));
+		assertNull(BindingSetOrigin.of(requestWrite).parameterValue("parameter"),
+				"requestInput carries a mapping but no hidden re-entry value");
+
+		HashJoinIteration.merge(target, requestWrite);
+		assertSame(current, target.getValue("parameter"), "the hash join wrote the request mapping");
+		assertTrue(BindingSetOrigin.of(target).isRequest("parameter"));
+		assertNull(BindingSetOrigin.of(target).parameterValue("parameter"),
+				"a mapping write without a hidden source value must clear the old parameter");
+
+		BindingSet projected = BindingScopeAnalysis.retain(target, Set.of());
+		BindingSet afterMaterialization = BindingSetOrigin.materializeParameters(projected,
+				List.of(Var.of("parameter", old, false, false)), new QueryEvaluationContext.Minimal(null));
+		assertFalse(afterMaterialization.hasBinding("parameter"),
+				"the superseded request must not reappear after projection");
+	}
+
+	@Test
+	void semanticJoinDoesNotReplaceAnUnwrittenRequestWithTheOtherInputsValue() {
+		Value leftValue = vf.createLiteral("left-input");
+		Value rightValue = vf.createLiteral("right-input");
+		Value payload = vf.createLiteral("row-payload");
+		QueryBindingSet leftRequest = new QueryBindingSet();
+		leftRequest.setBinding("parameter", leftValue);
+		QueryBindingSet target = new QueryBindingSet(BindingSetOrigin.optimizationInput(leftRequest));
+
+		QueryBindingSet rightRequest = new QueryBindingSet();
+		rightRequest.setBinding("parameter", rightValue);
+		QueryBindingSet source = new QueryBindingSet(BindingSetOrigin.optimizationInput(rightRequest));
+		source.setBinding("payload", payload);
+		assertFalse(source.hasBinding("parameter"), "the source carries no mapping write for this name");
+
+		HashJoinIteration.merge(target, source);
+		assertSame(payload, target.getValue("payload"));
+		assertTrue(BindingSetOrigin.of(target).isRequest("parameter"));
+		assertSame(leftValue, BindingSetOrigin.of(target).parameterValue("parameter"),
+				"an unwritten source parameter must not replace the target's request payload");
+		BindingSet projected = BindingScopeAnalysis.retain(target, Set.of());
+		BindingSet materialized = BindingSetOrigin.materializeParameters(projected,
+				List.of(Var.of("parameter", leftValue, false, false)), new QueryEvaluationContext.Minimal(null));
+		assertSame(leftValue, materialized.getValue("parameter"));
+	}
+
+	@Test
+	void localAndUnknownJoinWritesEvictOlderParametersBeforeLaterRequestEntry() {
+		Value old = vf.createLiteral("old");
+		Value first = vf.createLiteral("local-or-unknown");
+		Value later = vf.createLiteral("later-request");
+		for (boolean local : List.of(false, true)) {
+			QueryBindingSet oldRequest = new QueryBindingSet();
+			oldRequest.setBinding("parameter", old);
+			QueryBindingSet target = new QueryBindingSet(BindingSetOrigin.optimizationInput(oldRequest));
+
+			QueryBindingSet firstRow = new QueryBindingSet();
+			firstRow.setBinding("parameter", first);
+			if (local) {
+				BindingSetOrigin.set(firstRow, BindingSetOrigin.of(firstRow).producing(Set.of("parameter")));
+			}
+			HashJoinIteration.merge(target, firstRow);
+			assertSame(first, target.getValue("parameter"));
+			assertFalse(BindingSetOrigin.of(target).isRequest("parameter"));
+			assertNull(BindingSetOrigin.of(target).parameterValue("parameter"));
+
+			BindingSet projected = BindingScopeAnalysis.retain(target, Set.of());
+			QueryBindingSet reentered = new QueryBindingSet(projected);
+			QueryBindingSet laterRow = new QueryBindingSet();
+			laterRow.setBinding("parameter", later);
+			HashJoinIteration.merge(reentered, BindingSetOrigin.requestInput(laterRow));
+			assertSame(later, reentered.getValue("parameter"));
+			assertTrue(BindingSetOrigin.of(reentered).isRequest("parameter"));
+			assertNull(BindingSetOrigin.of(reentered).parameterValue("parameter"),
+					"LOCAL and UNKNOWN writes both retire the older hidden request payload; local=" + local);
+
+			BindingSet projectedAfterLaterRequest = BindingScopeAnalysis.retain(reentered, Set.of());
+			BindingSet afterMaterialization = BindingSetOrigin.materializeParameters(projectedAfterLaterRequest,
+					List.of(Var.of("parameter", old, false, false)), new QueryEvaluationContext.Minimal(null));
+			assertFalse(afterMaterialization.hasBinding("parameter"),
+					"a later request without a hidden payload cannot revive the first owner's value; local=" + local);
+		}
+	}
+
+	@Test
+	void hashJoinUntrustedEqualWriteMasksLastImmutableGraphFrame() {
+		Value graph = vf.createIRI("urn:test:private-graph");
+		MutableBindingSet target = immutableGraphCarrier(new MapBindingSet(), graph);
+		assertFalse(GraphFrameBindings.isSupplied(target, "graph"),
+				"the retained descriptor alone is not supplied while its mapping is absent");
+
+		MapBindingSet untrusted = new MapBindingSet();
+		untrusted.addBinding("graph", graph);
+		MutableBindingSet merged = HashJoinIteration.merge(target, untrusted);
+
+		assertSame(graph, merged.getValue("graph"), "the accepted hash-join write preserves the mapping");
+		assertFalse(GraphFrameBindings.isSupplied(merged, "graph"),
+				"an equal but untrusted write must not revive the stale last frame descriptor");
+		assertTrue(GraphFrameBindings.from(merged).retainedParametersForTransport().isEmpty(),
+				"the overwritten descriptor is removed from the resulting frame");
+	}
+
+	@Test
+	void hashJoinMasksImmutableGraphFrameBehindBindingSetOriginMutableCarrier() {
+		Value graph = vf.createIRI("urn:test:private-graph");
+		MutableBindingSet immutable = immutableGraphCarrier(new MapBindingSet(), graph);
+		MutableBindingSet target = BindingSetOrigin.mutable(immutable);
+		assertFalse(GraphFrameBindings.isSupplied(target, "graph"));
+
+		MapBindingSet untrusted = new MapBindingSet();
+		untrusted.addBinding("graph", graph);
+		MutableBindingSet merged = HashJoinIteration.merge(target, untrusted);
+
+		assertSame(graph, merged.getValue("graph"));
+		assertFalse(GraphFrameBindings.isSupplied(merged, "graph"),
+				"the binding-origin mutable wrapper must not expose the delegate's overwritten frame");
+		assertTrue(GraphFrameBindings.from(merged).retainedParametersForTransport().isEmpty());
+	}
+
+	@Test
+	void hashJoinRetainsAnUnwrittenGraphFrame() {
+		Value graph = vf.createIRI("urn:test:private-graph");
+		MutableBindingSet mappedTarget = GraphFrameBindings.supply(new MapBindingSet(), "graph", graph);
+		MapBindingSet payload = new MapBindingSet();
+		payload.addBinding("payload", vf.createLiteral("row"));
+		MutableBindingSet retained = HashJoinIteration.merge(mappedTarget, payload);
+		assertSame(graph, retained.getValue("graph"));
+		assertTrue(GraphFrameBindings.isSupplied(retained, "graph"),
+				"an unwritten supplied mapping retains its frame");
+	}
+
+	@Test
+	void hashJoinTransfersAFrameFromAnActuallySuppliedAcceptedWrite() {
+		Value graph = vf.createIRI("urn:test:private-graph");
+		MapBindingSet emptyTarget = new MapBindingSet();
+		MutableBindingSet suppliedSource = GraphFrameBindings.supply(new MapBindingSet(), "graph", graph);
+		MutableBindingSet supplied = HashJoinIteration.merge(emptyTarget, suppliedSource);
+		assertSame(graph, supplied.getValue("graph"));
+		assertTrue(GraphFrameBindings.isSupplied(supplied, "graph"),
+				"a genuinely supplied accepted write transfers its frame");
+	}
+
+	@Test
+	void hashJoinProbeCopyPreservesItsContextFrameWhenNoBuildMappingIsWritten() throws Exception {
+		Value graph = vf.createIRI("urn:test:private-graph");
+		MapBindingSet untrustedRow = new MapBindingSet();
+		untrustedRow.addBinding("graph", graph);
+		List<BindingSet> result = executeHashJoin(List.of(EmptyBindingSet.getInstance()),
+				List.of(untrustedRow), graphCarrierContext(graph, true), HashJoinIteration.BuildSide.LEFT);
+		assertEquals(1, result.size());
+		assertEquals(Set.of("graph"), result.get(0).getBindingNames());
+		assertSame(graph, result.get(0).getValue("graph"));
+		assertTrue(GraphFrameBindings.isSupplied(result.get(0), "graph"),
+				"the untrusted right row is the probe; the context-created carrier frame was not overwritten by a build mapping");
+	}
+
+	@Test
+	void hashJoinExecutionMasksOverwrittenLastFrameOnCustomCarrier() throws Exception {
+		Value graph = vf.createIRI("urn:test:private-graph");
+		MapBindingSet untrustedRow = new MapBindingSet();
+		untrustedRow.addBinding("graph", graph);
+		List<BindingSet> result = executeHashJoin(List.of(EmptyBindingSet.getInstance()),
+				List.of(untrustedRow), graphCarrierContext(graph, true), HashJoinIteration.BuildSide.RIGHT);
+		assertEquals(1, result.size());
+		assertEquals(Set.of("graph"), result.get(0).getBindingNames());
+		assertSame(graph, result.get(0).getValue("graph"));
+		assertFalse(GraphFrameBindings.isSupplied(result.get(0), "graph"),
+				"the right build row actually writes graph into the empty left probe, masking the destination's stale frame");
+	}
+
+	@Test
+	void hashJoinExecutionRetainsUnwrittenFrameOnCustomCarrier() throws Exception {
+		Value graph = vf.createIRI("urn:test:private-graph");
+		MutableBindingSet framedProbe = GraphFrameBindings.supply(new MapBindingSet(), "graph", graph);
+		MapBindingSet payloadRow = new MapBindingSet();
+		payloadRow.addBinding("payload", vf.createLiteral("row"));
+		List<BindingSet> retainedResult = executeHashJoin(List.of(framedProbe), List.of(payloadRow),
+				graphCarrierContext(graph, false));
+		assertEquals(1, retainedResult.size());
+		assertTrue(GraphFrameBindings.isSupplied(retainedResult.get(0), "graph"),
+				"a frame for a mapping the join did not write remains supplied");
+	}
+
+	@Test
+	void hashJoinExecutionTransfersActuallySuppliedFrameToCustomCarrier() throws Exception {
+		Value graph = vf.createIRI("urn:test:private-graph");
+		MapBindingSet emptyProbe = new MapBindingSet();
+		MutableBindingSet framedBuild = GraphFrameBindings.supply(new MapBindingSet(), "graph", graph);
+		List<BindingSet> suppliedResult = executeHashJoin(List.of(emptyProbe), List.of(framedBuild),
+				graphCarrierContext(graph, false));
+		assertEquals(1, suppliedResult.size());
+		assertTrue(GraphFrameBindings.isSupplied(suppliedResult.get(0), "graph"),
+				"a frame on an accepted source mapping transfers to the result");
+	}
+
+	private static MutableBindingSet immutableGraphCarrier(MutableBindingSet delegate, Value graph) {
+		MutableBindingSet frameSource = GraphFrameBindings.supply(new MapBindingSet(), "graph", graph);
+		return new ImmutableGraphCarrier(delegate, GraphFrameBindings.from(frameSource));
+	}
+
+	private static QueryEvaluationContext graphCarrierContext(Value graph, boolean staleWhenUnframed) {
+		GraphFrameBindings staleFrame = GraphFrameBindings.from(
+				GraphFrameBindings.supply(new MapBindingSet(), "graph", graph));
+		return new QueryEvaluationContext.Minimal(null) {
+			@Override
+			public MutableBindingSet createBindingSet(BindingSet bindings) {
+				MapBindingSet copy = new MapBindingSet();
+				for (Binding binding : bindings) {
+					copy.addBinding(binding);
+				}
+				GraphFrameBindings frames = GraphFrameBindings.from(bindings);
+				if (staleWhenUnframed && frames == GraphFrameBindings.EMPTY) {
+					frames = staleFrame;
+				}
+				return new ImmutableGraphCarrier(copy, frames);
+			}
+		};
+	}
+
+	private static List<BindingSet> executeHashJoin(List<? extends BindingSet> left, List<? extends BindingSet> right,
+			QueryEvaluationContext context) throws QueryEvaluationException {
+		return executeHashJoin(left, right, context, HashJoinIteration.BuildSide.UNKNOWN);
+	}
+
+	private static List<BindingSet> executeHashJoin(List<? extends BindingSet> left, List<? extends BindingSet> right,
+			QueryEvaluationContext context, HashJoinIteration.BuildSide buildSide) throws QueryEvaluationException {
+		QueryEvaluationStep leftStep = bindings -> new CloseableIteratorIteration<>(left.iterator());
+		QueryEvaluationStep rightStep = bindings -> new CloseableIteratorIteration<>(right.iterator());
+		try (HashJoinIteration join = new HashJoinIteration(leftStep, rightStep, EmptyBindingSet.getInstance(), false,
+				new String[0], context, buildSide, null)) {
+			List<BindingSet> rows = new ArrayList<>();
+			join.forEachRemaining(rows::add);
+			return rows;
+		}
+	}
+
+	private static final class ImmutableGraphCarrier extends AbstractBindingSet
+			implements MutableBindingSet, GraphFrameBindings.Carrier {
+
+		private final MutableBindingSet delegate;
+		private final GraphFrameBindings frames;
+
+		private ImmutableGraphCarrier(MutableBindingSet delegate, GraphFrameBindings frames) {
+			this.delegate = delegate;
+			this.frames = frames;
+		}
+
+		@Override
+		public GraphFrameBindings getGraphFrameBindings() {
+			return frames;
+		}
+
+		@Override
+		public Iterator<Binding> iterator() {
+			return delegate.iterator();
+		}
+
+		@Override
+		public Set<String> getBindingNames() {
+			return delegate.getBindingNames();
+		}
+
+		@Override
+		public Binding getBinding(String name) {
+			return delegate.getBinding(name);
+		}
+
+		@Override
+		public boolean hasBinding(String name) {
+			return delegate.hasBinding(name);
+		}
+
+		@Override
+		public Value getValue(String name) {
+			return delegate.getValue(name);
+		}
+
+		@Override
+		public int size() {
+			return delegate.size();
+		}
+
+		@Override
+		public void addBinding(Binding binding) {
+			delegate.addBinding(binding);
+		}
+
+		@Override
+		public void setBinding(String name, Value value) {
+			delegate.setBinding(name, value);
+		}
+
+		@Override
+		public void setBinding(Binding binding) {
+			delegate.setBinding(binding);
+		}
+
+		@Override
+		public void removeBinding(String name) {
+			delegate.removeBinding(name);
+		}
+	}
 
 	@Test
 	void inheritedOnlyBindingsYieldToLocalOutputsAcrossBuildSides() {

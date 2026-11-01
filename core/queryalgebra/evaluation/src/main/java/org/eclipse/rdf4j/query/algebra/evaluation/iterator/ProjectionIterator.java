@@ -234,10 +234,6 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	}
 
 	private static QueryBindingSet makeNewQueryBindings(BindingSet parentBindings, boolean includeAllParentBindings) {
-		final QueryBindingSet resultBindings = new QueryBindingSet();
-		if (includeAllParentBindings) {
-			resultBindings.addAll(parentBindings);
-		}
-		return resultBindings;
+		return includeAllParentBindings ? new QueryBindingSet(parentBindings) : new QueryBindingSet();
 	}
 }

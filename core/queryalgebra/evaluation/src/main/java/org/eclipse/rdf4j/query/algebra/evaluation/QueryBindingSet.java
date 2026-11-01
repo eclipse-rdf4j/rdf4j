@@ -72,31 +72,69 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 	public QueryBindingSet(BindingSet bindingSet) {
 		this(bindingSet.size());
 		copyValues(bindingSet);
+		setGraphFrameBindings(GraphFrameBindings.from(bindingSet));
 		BindingSetOrigin.copy(bindingSet, this);
 	}
 
 	public void addAll(BindingSet bindingSet) {
+		boolean trackOrigin = origin != null || BindingSetOrigin.tracked(bindingSet);
+		GraphFrameBindings sourceFrames = GraphFrameBindings.from(bindingSet);
+		boolean trackFrames = graphFrames != null || !sourceFrames.retainedParametersForTransport().isEmpty();
+		Collection<String> writtenNames = trackOrigin || trackFrames ? actualBindingNames(bindingSet) : Set.of();
 		copyValues(bindingSet);
-		if (origin != null || BindingSetOrigin.tracked(bindingSet)) {
-			origin = BindingSetOrigin.overlay(BindingSetOrigin.of(this), BindingSetOrigin.of(bindingSet),
-					bindingSet.getBindingNames());
+		if (trackOrigin && !writtenNames.isEmpty()) {
+			origin = BindingSetOrigin.overlayWrittenMappings(BindingSetOrigin.of(this), BindingSetOrigin.of(bindingSet),
+					writtenNames);
+		}
+		if (trackFrames) {
+			GraphFrameBindings.overlayWrittenMappings(this, bindingSet, sourceFrames, writtenNames);
 		}
 	}
 
 	private void copyValues(BindingSet bindingSet) {
-		GraphFrameBindings supplied = GraphFrameBindings.from(bindingSet);
-		if (graphFrames != null) {
-			bindingSet.getBindingNames().forEach(this::forgetGraphFrame);
-		}
-		BindingSet values = BindingSetOrigin.unwrap(bindingSet);
+		BindingSet values = unwrapMapping(bindingSet);
 		if (values instanceof QueryBindingSet query) {
 			bindings.putAll(query.bindings);
 		} else {
-			for (Binding binding : values) {
-				addBinding(binding);
+			// Iterators can omit actual null keys; name sets can conversely include schema-only UNDEF.
+			for (String name : values.getBindingNames()) {
+				if (values.hasBinding(name)) {
+					setBinding(name, values.getValue(name));
+				}
 			}
 		}
-		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));
+	}
+
+	private static BindingSet unwrapMapping(BindingSet bindings) {
+		BindingSet current = bindings;
+		while (true) {
+			BindingSet originDelegate = BindingSetOrigin.unwrap(current);
+			if (originDelegate != current) {
+				current = originDelegate;
+				continue;
+			}
+			BindingSet graphDelegate = GraphFrameBindings.unwrap(current);
+			if (graphDelegate != current) {
+				current = graphDelegate;
+				continue;
+			}
+			return current;
+		}
+	}
+
+	@InternalUseOnly
+	public static Collection<String> actualBindingNames(BindingSet source) {
+		BindingSet values = unwrapMapping(source);
+		if (values instanceof QueryBindingSet query) {
+			return query.bindings.keySet();
+		}
+		java.util.ArrayList<String> names = new java.util.ArrayList<>(source.size());
+		for (String name : source.getBindingNames()) {
+			if (source.hasBinding(name)) {
+				names.add(name);
+			}
+		}
+		return names;
 	}
 
 	@Override

@@ -44,6 +44,13 @@ import org.eclipse.rdf4j.query.impl.RemoteBNode;
 @InternalUseOnly
 public final class BindingSetOrigin implements Serializable {
 
+	/** Immutable internal row views expose their actual authority without changing their native value layout. */
+	public interface ReadOnlyCarrier {
+		BindingSetOrigin getBindingSetOrigin();
+
+		boolean isBindingSetOriginTracked();
+	}
+
 	/** A prepared native capability may consume entry provenance itself, retaining its concrete physical type. */
 	public interface InputAware {
 		void configureInputOrigin(boolean requestEntry);
@@ -83,6 +90,9 @@ public final class BindingSetOrigin implements Serializable {
 		if (graphDelegate != bindings) {
 			return of(graphDelegate);
 		}
+		if (bindings instanceof ReadOnlyCarrier carrier) {
+			return carrier.getBindingSetOrigin();
+		}
 		if (bindings instanceof Carrier carrier) {
 			return carrier.origin;
 		}
@@ -103,7 +113,13 @@ public final class BindingSetOrigin implements Serializable {
 		if (bindings.isEmpty() || tracked(bindings)) {
 			return bindings;
 		}
-		return new Carrier(bindings, new BindingSetOrigin(bindings.getBindingNames(), Set.of()));
+		Set<String> requests = new HashSet<>();
+		for (String name : bindings.getBindingNames()) {
+			if (bindings.hasBinding(name)) {
+				requests.add(name);
+			}
+		}
+		return requests.isEmpty() ? bindings : new Carrier(bindings, new BindingSetOrigin(requests, Set.of()));
 	}
 
 	/**
@@ -127,6 +143,147 @@ public final class BindingSetOrigin implements Serializable {
 			}
 		}
 		return with(mapping, new BindingSetOrigin(origin.requestNames(), origin.localNames(), parameters));
+	}
+
+	/** Immutable full authority map for owner-scoped internal transport, including currently hidden parameters. */
+	@org.eclipse.rdf4j.common.annotation.InternalUseOnly
+	public Map<String, Value> retainedParametersForTransport() {
+		return parameters;
+	}
+
+	/**
+	 * Conservative reusable authority proof for an owner-scoped transport/physical receipt. Value representatives must
+	 * be the same objects, including hidden parameters; no RDF equality, lexical lookup or optional cache key is
+	 * consulted. Equal immutable producer-chain structure is sufficient. Differently grouped but equivalent chains may
+	 * conservatively decline without flattening or allocating an unbounded comparison workspace.
+	 */
+	@InternalUseOnly
+	public boolean sameTransportAuthority(BindingSetOrigin other, Runnable poll) {
+		if (this == other) {
+			return true;
+		}
+		if (other == null || !sameParameterRepresentatives(parameters, other.parameters, poll)) {
+			return false;
+		}
+		BindingSetOrigin left = this, right = other;
+		while (left != right) {
+			poll.run();
+			if (left == null || right == null
+					|| !sameNames(left.requests, right.requests, poll)
+					|| !sameNames(left.locals, right.locals, poll)
+					|| !sameNames(left.produced, right.produced, poll)) {
+				return false;
+			}
+			left = left.parent;
+			right = right.parent;
+		}
+		return true;
+	}
+
+	private static boolean sameNames(Set<String> left, Set<String> right, Runnable poll) {
+		if (left == right) {
+			return true;
+		}
+		if (left.size() != right.size()) {
+			return false;
+		}
+		for (String name : left) {
+			poll.run();
+			if (!right.contains(name)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean sameParameterRepresentatives(Map<String, Value> left, Map<String, Value> right,
+			Runnable poll) {
+		if (left == right) {
+			return true;
+		}
+		if (left.size() != right.size()) {
+			return false;
+		}
+		for (Map.Entry<String, Value> parameter : left.entrySet()) {
+			poll.run();
+			if (right.get(parameter.getKey()) != parameter.getValue()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Normalized immutable name flags, constructed only after an owner has admitted their bounded workspace. */
+	@org.eclipse.rdf4j.common.annotation.InternalUseOnly
+	public record RetainedNames(Set<String> requests, Set<String> locals) {
+	}
+
+	@org.eclipse.rdf4j.common.annotation.InternalUseOnly
+	public RetainedNames retainedNamesForTransport(Runnable poll) {
+		BindingSetOrigin root = this;
+		while (root.parent != null) {
+			poll.run();
+			root = root.parent;
+		}
+		Set<String> requests = new HashSet<>(), locals = new HashSet<>();
+		for (String name : root.requests) {
+			poll.run();
+			requests.add(name);
+		}
+		for (String name : root.locals) {
+			poll.run();
+			locals.add(name);
+		}
+		for (BindingSetOrigin layer = this; layer.parent != null; layer = layer.parent) {
+			poll.run();
+			for (String name : layer.produced) {
+				poll.run();
+				requests.remove(name);
+				locals.add(name);
+			}
+		}
+		return new RetainedNames(java.util.Collections.unmodifiableSet(requests),
+				java.util.Collections.unmodifiableSet(locals));
+	}
+
+	/** No allocation or lexical access on the ordinary no-metadata row path. */
+	@org.eclipse.rdf4j.common.annotation.InternalUseOnly
+	public boolean hasRetainedMetadata() {
+		if (!parameters.isEmpty()) {
+			return true;
+		}
+		for (BindingSetOrigin layer = this; layer != null; layer = layer.parent) {
+			if (!layer.requests.isEmpty() || !layer.locals.isEmpty() || !layer.produced.isEmpty()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Visits existing immutable carrier structure before a transport owner allocates its normalized key. The visitor
+	 * may refuse admission immediately; no full key, flattened name set or lexical representation is constructed.
+	 */
+	@org.eclipse.rdf4j.common.annotation.InternalUseOnly
+	public long visitRetainedMetadata(java.util.function.BiConsumer<Object, Long> account,
+			java.util.function.Consumer<Value> values) {
+		long names = 0L;
+		for (BindingSetOrigin layer = this; layer != null; layer = layer.parent) {
+			account.accept(layer, 64L);
+			for (Set<String> set : java.util.List.of(layer.requests, layer.locals, layer.produced)) {
+				account.accept(set, 32L + 32L * set.size());
+				names = Math.addExact(names, set.size());
+				for (String name : set) {
+					account.accept(name, 40L + 2L * name.length());
+				}
+			}
+		}
+		account.accept(parameters, 32L + 48L * parameters.size());
+		for (Map.Entry<String, Value> parameter : parameters.entrySet()) {
+			account.accept(parameter.getKey(), 40L + 2L * parameter.getKey().length());
+			values.accept(parameter.getValue());
+		}
+		return names;
 	}
 
 	public boolean hasParameters() {
@@ -244,9 +401,16 @@ public final class BindingSetOrigin implements Serializable {
 		if (graphDelegate != bindings) {
 			return tracked(graphDelegate);
 		}
-		return bindings instanceof Carrier || bindings instanceof MutableCarrier
+		return bindings instanceof ReadOnlyCarrier carrier && carrier.isBindingSetOriginTracked()
+				|| bindings instanceof Carrier || bindings instanceof MutableCarrier
 				|| bindings instanceof QueryBindingSet query && query.origin != null
 				|| bindings instanceof ArrayBindingSet array && array.origin != null;
+	}
+
+	/** Exact internal admission proof: tracked UNKNOWN and an untracked mapping have different entry semantics. */
+	@InternalUseOnly
+	public static boolean isTrackedInput(BindingSet bindings) {
+		return tracked(bindings);
 	}
 
 	public static void set(BindingSet bindings, BindingSetOrigin origin) {
@@ -328,6 +492,16 @@ public final class BindingSetOrigin implements Serializable {
 				: new ProducedIteration(rows, mapper);
 	}
 
+	/** The ordinary producer event rule for a native boundary with an exact actual invocation. */
+	@InternalUseOnly
+	public static BindingSet produced(BindingSet row, Collection<String> names, BindingSet sharedInput) {
+		if (names.isEmpty() && (sharedInput == null || !of(sharedInput).hasParameters())
+				|| row == sharedInput && !tracked(row)) {
+			return row;
+		}
+		return with(row, inheritParameters(row, sharedInput).producing(names));
+	}
+
 	private static class ProducedIteration extends IterationWrapper<BindingSet> {
 		private final Function<BindingSet, BindingSet> mapper;
 
@@ -399,23 +573,111 @@ public final class BindingSetOrigin implements Serializable {
 		}
 	}
 
-	/** A mapping-preserving overlay, used after a physical merge has already selected the winning values. */
-	public static BindingSetOrigin overlay(BindingSetOrigin base, BindingSetOrigin added, Collection<String> names) {
+	/**
+	 * Applies provenance for mappings actually written by an overlay. A write masks any previous request payload for
+	 * that name; only a request source which still owns a hidden payload can provide a replacement. Unwritten names
+	 * keep the target's provenance and hidden parameters. Full-row copying remains
+	 * {@link #copy(BindingSet, BindingSet)}.
+	 */
+	public static BindingSetOrigin overlayWrittenMappings(BindingSetOrigin base, BindingSetOrigin added,
+			Collection<String> names) {
 		if (names.isEmpty()) {
 			return base;
 		}
 		Set<String> requests = new HashSet<>(base.requestNames());
 		Set<String> locals = new HashSet<>(base.localNames());
+		Set<String> addedRequests = added.requestNames();
+		Set<String> addedLocals = added.localNames();
+		Map<String, Value> addedParameters = added.parameters;
+		Map<String, Value> parameters = base.parameters;
 		for (String name : names) {
 			requests.remove(name);
 			locals.remove(name);
-			if (added.isRequest(name)) {
+			boolean request = addedRequests.contains(name);
+			if (request) {
 				requests.add(name);
-			} else if (added.isLocal(name)) {
+			} else if (addedLocals.contains(name)) {
 				locals.add(name);
 			}
+			Value replacement = request ? addedParameters.get(name) : null;
+			Value previous = parameters.get(name);
+			if (previous != replacement) {
+				if (parameters == base.parameters) {
+					parameters = new HashMap<>(base.parameters);
+				}
+				if (replacement == null) {
+					parameters.remove(name);
+				} else {
+					parameters.put(name, replacement);
+				}
+			}
 		}
-		return new BindingSetOrigin(requests, locals, mergeParameters(base, added));
+		return new BindingSetOrigin(requests, locals, parameters);
+	}
+
+	/**
+	 * Merges the invocation payloads of two semantic input rows after a physical merge has selected its mapping
+	 * winners. Names identify the mappings supplied by the added row; their request payload replaces or clears the base
+	 * payload for that name, while unrelated payloads from both rows remain available to later operators.
+	 */
+	public static BindingSetOrigin overlay(BindingSetOrigin base, BindingSetOrigin added, Collection<String> names) {
+		if (names.isEmpty()) {
+			return base;
+		}
+		if (!base.hasRetainedMetadata() && !added.hasRetainedMetadata()) {
+			return UNKNOWN;
+		}
+
+		Set<String> writes = asSet(names);
+		Set<String> baseRequests = base.requestNames();
+		Set<String> baseLocals = base.localNames();
+		Set<String> addedRequests = added.requestNames();
+		Set<String> addedLocals = added.localNames();
+		Set<String> requests = new HashSet<>(baseRequests);
+		Set<String> locals = new HashSet<>(baseLocals);
+		Map<String, Value> parameters = mergeParameters(base, added);
+		for (String name : added.parameters.keySet()) {
+			if (!writes.contains(name) && (baseRequests.contains(name) || baseLocals.contains(name))) {
+				Value retained = base.parameters.get(name);
+				if (parameters.get(name) != retained || retained == null && parameters.containsKey(name)) {
+					if (parameters == base.parameters || parameters == added.parameters) {
+						parameters = new HashMap<>(parameters);
+					}
+					if (retained == null) {
+						parameters.remove(name);
+					} else {
+						parameters.put(name, retained);
+					}
+				}
+			}
+		}
+		for (String name : writes) {
+			requests.remove(name);
+			locals.remove(name);
+			if (addedRequests.contains(name)) {
+				requests.add(name);
+			} else if (addedLocals.contains(name)) {
+				locals.add(name);
+			}
+			Value replacement = addedRequests.contains(name) ? added.parameters.get(name) : null;
+			Value previous = parameters.get(name);
+			if (previous != replacement) {
+				if (parameters == base.parameters || parameters == added.parameters) {
+					parameters = new HashMap<>(parameters);
+				}
+				if (replacement == null) {
+					parameters.remove(name);
+				} else {
+					parameters.put(name, replacement);
+				}
+			}
+		}
+		return new BindingSetOrigin(requests, locals, parameters);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Set<String> asSet(Collection<String> names) {
+		return names instanceof Set<?> ? (Set<String>) names : new HashSet<>(names);
 	}
 
 	public static BindingSetOrigin projected(BindingSetOrigin source, String[] sources, String[] targets,

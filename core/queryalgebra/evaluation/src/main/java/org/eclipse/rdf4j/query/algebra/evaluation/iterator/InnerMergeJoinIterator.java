@@ -14,7 +14,9 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -29,6 +31,7 @@ import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 /**
@@ -107,22 +110,29 @@ public class InnerMergeJoinIterator implements CooperativeCancellation, Closeabl
 		} else {
 			joined = context.createBindingSet(left);
 		}
-		BindingSet unwrappedRight = BindingSetOrigin.unwrap(right);
+		BindingSet unwrappedRight = GraphFrameBindings.unwrap(BindingSetOrigin.unwrap(right));
 		if (joined instanceof ArrayBindingSet && unwrappedRight instanceof ArrayBindingSet) {
-			((ArrayBindingSet) joined).addAll((ArrayBindingSet) unwrappedRight);
-			BindingSetOrigin.set(joined, BindingSetOrigin.overlay(BindingSetOrigin.of(left), BindingSetOrigin.of(right),
-					right.getBindingNames()));
-			return joined;
+			Set<String> writtenNames = ((ArrayBindingSet) joined)
+					.addAllAndGetWrittenNames((ArrayBindingSet) unwrappedRight);
+			if (!writtenNames.isEmpty()) {
+				BindingSetOrigin.set(joined, BindingSetOrigin.overlay(BindingSetOrigin.of(left),
+						BindingSetOrigin.of(right), writtenNames));
+			}
+			return GraphFrameBindings.overlayWrittenMappings(joined, right, writtenNames);
 		}
 
+		Set<String> writtenNames = new HashSet<>();
 		for (Binding binding : right) {
 			if (!joined.hasBinding(binding.getName())) {
 				joined.addBinding(binding);
+				writtenNames.add(binding.getName());
 			}
 		}
-		BindingSetOrigin.set(joined, BindingSetOrigin.overlay(BindingSetOrigin.of(left), BindingSetOrigin.of(right),
-				right.getBindingNames()));
-		return joined;
+		if (!writtenNames.isEmpty()) {
+			BindingSetOrigin.set(joined, BindingSetOrigin.overlay(BindingSetOrigin.of(left),
+					BindingSetOrigin.of(right), writtenNames));
+		}
+		return GraphFrameBindings.overlayWrittenMappings(joined, right, writtenNames);
 	}
 
 	private void calculateNext() {

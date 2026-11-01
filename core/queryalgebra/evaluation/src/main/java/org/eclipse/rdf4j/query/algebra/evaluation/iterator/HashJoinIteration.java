@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -208,8 +209,8 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		this.joinNode = joinNode;
 		this.mapMaker = this::makeHashTable;
 		this.mapValueMaker = this::makeHashValue;
-		this.bsMaker = source -> BindingSetOrigin.mutableCopy(source,
-				context.createBindingSet(BindingSetOrigin.unwrap(source)));
+		this.bsMaker = source -> GraphFrameBindings.preserve(source, BindingSetOrigin.mutableCopy(source,
+				context.createBindingSet(BindingSetOrigin.unwrap(source))));
 	}
 
 	private CloseableIteration<BindingSet> openRightIteration() throws QueryEvaluationException {
@@ -390,9 +391,11 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 				addedNames.add(name);
 			}
 		}
-		BindingSetOrigin.set(result, BindingSetOrigin.overlay(BindingSetOrigin.of(probe), BindingSetOrigin.of(buildRow),
-				addedNames));
-		return result;
+		if (!addedNames.isEmpty()) {
+			BindingSetOrigin.set(result, BindingSetOrigin.overlay(BindingSetOrigin.of(probe),
+					BindingSetOrigin.of(buildRow), addedNames));
+		}
+		return GraphFrameBindings.overlayWrittenMappings(result, buildRow, addedNames);
 	}
 
 	static MutableBindingSet merge(MutableBindingSet result, BindingSet candidate) {
@@ -410,10 +413,11 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 				}
 			}
 		}
-		BindingSetOrigin.set(result,
-				BindingSetOrigin.overlay(BindingSetOrigin.of(result), BindingSetOrigin.of(candidate),
-						addedNames));
-		return result;
+		if (!addedNames.isEmpty()) {
+			BindingSetOrigin.set(result, BindingSetOrigin.overlay(BindingSetOrigin.of(result),
+					BindingSetOrigin.of(candidate), addedNames));
+		}
+		return GraphFrameBindings.overlayWrittenMappings(result, candidate, addedNames);
 	}
 
 	/**
