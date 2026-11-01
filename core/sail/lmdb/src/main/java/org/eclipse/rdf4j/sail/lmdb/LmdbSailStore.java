@@ -3261,16 +3261,18 @@ class LmdbSailStore implements SailStore {
 			logger.warn("Unable to clean up the initial LMDB run import files", cleanup);
 		}
 		synchronized (initialRunImportMonitor) {
-			if (initialRunImport == runImport) {
-				initialRunImport = null;
-				initialRunImportThread = null;
-			}
 			if (finished) {
 				initialRunImportsCompleted++;
 			} else if (initialRunImportFailure == null) {
 				initialRunImportFailure = failure == null
 						? new IllegalStateException("The initial run import ended without completing")
 						: failure;
+			}
+			// Admission reads the active owner before the failure without taking this monitor. Publish failure
+			// first: observing the volatile owner clear must also expose the terminal failure to a new peer.
+			if (initialRunImport == runImport) {
+				initialRunImport = null;
+				initialRunImportThread = null;
 			}
 			initialRunImportMonitor.notifyAll();
 		}
