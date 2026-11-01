@@ -564,7 +564,6 @@ html[data-theme="dark"] .graph-explorer {
 
 /* The View menu: one button named after the view shown (Graph, Triples, …) that opens the list of views. */
 .graph-explorer #graph-explorer-app .view-menu > summary {
-  position: relative;
   display: inline-flex;
   height: var(--control-height);
   min-height: var(--control-height);
@@ -584,18 +583,6 @@ html[data-theme="dark"] .graph-explorer {
 .graph-explorer #graph-explorer-app .view-menu[open] > summary {
   border-color: var(--accent);
   background: var(--panel-strong);
-}
-
-/* Another view is recommended for the loaded data: a dot on the menu, and "Recommended" on that view's row. */
-.graph-explorer #graph-explorer-app .view-menu > summary[data-recommended="true"]::after {
-  content: "";
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
 }
 
 /* Menus: the View, Layout and Tools popovers are workbench-popover panels with option rows. */
@@ -667,7 +654,7 @@ html[data-theme="dark"] .graph-explorer {
   width: 240px;
 }
 
-/* History and the Values and Labels switches: rows of the Tools menu in the compact toolbar only. */
+/* History, the Values and Labels switches and full screen: rows of the Tools menu in the compact toolbar only. */
 .graph-explorer #graph-explorer-app .toolbar-menu-popover .toolbar-compact-item {
   display: none;
 }
@@ -3219,8 +3206,9 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
 
 /*
  * The toolbar takes the first step that fits on one row (toolbar-fit.ts sets data-fit): its labels, then only its icons
- * (the labels stay in aria-label and title), then its compact form, where history and the Values and Labels switches
- * are rows of the Tools menu. It stays one row: the hints above it and the search on the canvas keep their places.
+ * (the labels stay in aria-label and title), then its compact form, where history, the Values and Labels switches and
+ * full screen are rows of the Tools menu, and which fits a 320px phone. It stays one row: the hints above it and the
+ * search on the canvas keep their places.
  */
 .graph-explorer #graph-explorer-app .graph-toolbar:is([data-fit="icons"], [data-fit="compact"]) .toolbar-label {
   display: none;
@@ -3239,7 +3227,7 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   gap: 4px;
 }
 
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] :is(.history-controls, .values-toggle, .labels-toggle) {
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] :is(.history-controls, .values-toggle, .labels-toggle, .fullscreen-toggle) {
   display: none;
 }
 
@@ -3256,12 +3244,17 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   display: block;
 }
 
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] .toolbar-menu .workbench-disclosure-chevron {
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] :is(.toolbar-menu, .view-menu) .workbench-disclosure-chevron {
   display: none;
 }
 
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] :is(.toolbar-menu > summary, .workbench-action--secondary) {
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] :is(.toolbar-menu > summary, .view-menu > summary, .workbench-action--secondary) {
   padding-inline: 8px;
+}
+
+/* Help keeps the width of its neighbours rather than the Workbench's touch width for icon buttons. */
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] .help-tip-button {
+  width: var(--control-height);
 }
 
 @container graph-panel (max-width: 640px) {

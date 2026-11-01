@@ -167,7 +167,8 @@ test('the toolbar is one bar at every width: labels, then icons, then its compac
         };
     });
     const seen = [];
-    for (const width of [1700, 1460, 1300, 1100, 1000, 900, 800, 700, 600, 480, 390, 1000, 1700]) {
+    // Down to the narrowest phones (320px), where the compact form still fits on one row.
+    for (const width of [1700, 1460, 1300, 1100, 1000, 900, 800, 700, 600, 480, 390, 360, 320, 1000, 1700]) {
         await page.setViewportSize({ width, height: 900 });
         await expect.poll(async () => (await state()).rows, { message: `one row at ${width}px` }).toBe(1);
         seen.push({ width, ...(await state()) });
@@ -198,16 +199,17 @@ test('the views are chosen from one View menu named after the current view', asy
     await expect(explorer.locator('.view-menu')).not.toHaveAttribute('open', '');
 });
 
-test('on a phone the toolbar keeps every action: undo, redo, values and labels move into Tools', async ({ page }) => {
+test('on a phone the toolbar keeps every action: undo, redo, values, labels and full screen move into Tools', async ({ page }) => {
     await openGraphPage(page, 390, 844);
     const explorer = page.locator('.graph-explorer');
     await expect(explorer.locator('.graph-toolbar')).toHaveAttribute('data-fit', 'compact');
     await expect(explorer.getByRole('button', { name: 'Undo the last graph change' })).toBeHidden();
     await expect(explorer.getByRole('button', { name: 'Show values and types as nodes' })).toBeHidden();
+    await expect(explorer.getByRole('button', { name: 'Enter full screen' })).toBeHidden();
 
     await explorer.getByLabel('Open workspace tools').click();
     const tools = explorer.locator('.toolbar-menu-popover');
-    for (const name of ['Undo', 'Redo', 'Show values and types as nodes', 'Show all relation labels']) {
+    for (const name of ['Undo', 'Redo', 'Show values and types as nodes', 'Show all relation labels', 'Full screen']) {
         await expect(tools.getByRole('button', { name, exact: true })).toBeVisible();
     }
     await tools.getByRole('button', { name: 'Show values and types as nodes', exact: true }).click();

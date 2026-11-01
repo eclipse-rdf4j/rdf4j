@@ -46,7 +46,6 @@ export type ExplorerToolbarProps = {
   queryPanelOpen: boolean;
   onToggleQueryPanel: () => void;
   viewMode: ViewMode;
-  recommendedView: ViewMode;
   onViewMode: (mode: ViewMode) => void;
   canUndo: boolean;
   canRedo: boolean;
@@ -91,10 +90,11 @@ function closeOnChoice(event: MouseEvent<HTMLDivElement>) {
 
 /**
  * The explorer's one-row toolbar: query editor, the View menu, history, what the graph shows, layout, tools, full
- * screen. In its compact form (a phone) history and the Values and Labels switches are rows of the Tools menu.
+ * screen. In its compact form (a phone) history, the Values and Labels switches and full screen are rows of the Tools
+ * menu.
  */
 export function ExplorerToolbar(props: ExplorerToolbarProps) {
-  const { menuRefs, onMenuOpen, viewMode, recommendedView } = props;
+  const { menuRefs, onMenuOpen, viewMode } = props;
   // Only one toolbar menu is open at a time.
   const opened = (own: keyof ToolbarMenuRefs) => (event: SyntheticEvent<HTMLDetailsElement>) => {
     if (!event.currentTarget.open) return;
@@ -105,7 +105,6 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
     onMenuOpen();
   };
   const currentView = VIEWS.find(([mode]) => mode === viewMode)?.[1] ?? "Graph";
-  const otherRecommended = recommendedView !== viewMode && recommendedView !== "graph";
   // In the compact toolbar these buttons are rows of the Tools menu (graph-explorer.css shows one or the other).
   const compactItems: ToolbarMenuItem[] = [
     { label: "Undo", description: `The last graph change (${HISTORY_KEYS.undo.shown})`, onSelect: props.onUndo,
@@ -116,6 +115,7 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
       disabled: !props.hasNodes },
     { label: "Show all relation labels", onSelect: props.onToggleLabels, pressed: props.showAllEdgeLabels,
       disabled: !props.hasLinks },
+    { label: "Full screen", onSelect: props.onToggleFullscreen, pressed: props.isFullscreen },
   ];
   // Labels while everything fits on one row with them, then icons, then the compact form (toolbar-fit.ts): measured
   // after every render, since a filter count or the chosen view's name changes the width, and whenever the panel resizes.
@@ -150,11 +150,7 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
         <span className="toolbar-label">Query editor</span>
       </button>
       <details ref={menuRefs.view} className="view-menu" onToggle={opened("view")}>
-        <summary
-          aria-label={`View: ${currentView}`}
-          title={otherRecommended ? "Choose a view · another view is recommended for this data" : "Choose a view"}
-          data-recommended={otherRecommended ? "true" : undefined}
-        >
+        <summary aria-label={`View: ${currentView}`} title="Choose a view">
           {currentView}
           <Icon name="chevron" className="workbench-disclosure-chevron" />
         </summary>
@@ -169,10 +165,7 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
               onClick={() => props.onViewMode(mode)}
             >
               <span>{label}</span>
-              <small>
-                {recommendedView === mode && mode !== "graph" ? "Recommended · " : ""}
-                {description}
-              </small>
+              <small>{description}</small>
             </button>
           ))}
         </div>
@@ -284,7 +277,7 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
           <GuideContent sections={GUIDE} />
         </HelpTip>
         <button
-          className="workbench-action workbench-action--ghost workbench-action--icon"
+          className="workbench-action workbench-action--ghost workbench-action--icon fullscreen-toggle"
           type="button"
           aria-label={props.isFullscreen ? "Exit full screen" : "Enter full screen"}
           title={props.isFullscreen ? "Exit full screen" : "Full screen"}

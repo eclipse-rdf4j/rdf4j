@@ -53,14 +53,6 @@ function mapEmbedUrl(places: ReturnType<typeof placesOf>) {
   return `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${places[0].latitude}%2C${places[0].longitude}`;
 }
 
-/** The view a "recommended" mark points at: a map for coordinates, a timeline for dates, a matrix for many nodes. */
-export function recommendedViewOf(graph: Graph, nodeById: ReadonlyMap<string, GraphNode>): ViewMode {
-  if (placesOf(graph.edges, nodeById).length) return "map";
-  if (timelineEventsOf(graph.edges, nodeById).length >= 2) return "timeline";
-  if (graph.nodes.length > 80) return "matrix";
-  return "graph";
-}
-
 /**
  * The non-graph views of the loaded data: Triples, Cards, Matrix, Timeline, Map and Chart. Their derived data is
  * computed here, so it is only computed while one of them is shown.
