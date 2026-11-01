@@ -116,7 +116,7 @@ public final class Varint {
 	 * </p>
 	 *
 	 * @param bb    buffer for writing bytes
-	 * @param value value to encode
+	 * @param value unsigned 64-bit value represented by its Java long bit pattern
 	 */
 	public static void writeUnsigned(final ByteBuffer bb, final long value) {
 
@@ -137,7 +137,10 @@ public final class Varint {
 		}
 
 		if (value < 0) {
-			throw new IllegalArgumentException("Negative value can not be encoded as varint: " + value);
+			// The upper unsigned half uses the existing eight-byte payload form. Negative Java longs are
+			// valid inline IDs and logical range coordinates, not negative unsigned values.
+			bb.put((byte) 0xFF);
+			writeSignificantBits(bb, value, Long.BYTES);
 		} else if (value <= 240) {
 			bb.put((byte) value);
 		} else if (value <= 2287) {
@@ -228,7 +231,7 @@ public final class Varint {
 	 */
 	public static int calcLengthUnsigned(long value) {
 		if (value < 0) {
-			throw new IllegalArgumentException("Negative value can not be encoded as varint: " + value);
+			return 1 + Long.BYTES;
 		} else if (value <= 240) {
 			return 1;
 		} else if (value <= 2287) {
@@ -543,23 +546,8 @@ public final class Varint {
 	 * @param values array with values to write
 	 */
 	public static void writeListUnsigned(final ByteBuffer bb, final long[] values) {
-		// TODO: Optimise for quads and also call writeUnsigned
-		for (int i = 0; i < values.length; i++) {
-			final long value = values[i];
-			if (value <= 240) {
-				bb.put((byte) value);
-			} else if (value <= 2287) {
-				bb.put((byte) ((value - 240) / 256 + 241));
-				bb.put((byte) ((value - 240) % 256));
-			} else if (value <= 67823) {
-				bb.put((byte) 249);
-				bb.put((byte) ((value - 2288) / 256));
-				bb.put((byte) ((value - 2288) % 256));
-			} else {
-				int bytes = descriptor(value) + 1;
-				bb.put((byte) (250 + (bytes - 3)));
-				writeSignificantBits(bb, value, bytes);
-			}
+		for (long value : values) {
+			writeUnsigned(bb, value);
 		}
 	}
 

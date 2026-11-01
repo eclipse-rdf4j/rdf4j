@@ -764,18 +764,24 @@ class TripleStore implements Closeable {
 
 	private RecordIterator scanAdjacency(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, String order) throws IOException {
-		int mask = boundMask(subj, pred, obj, context);
+		long subject = normalizeSpoPatternId(subj);
+		long predicate = normalizeSpoPatternId(pred);
+		long object = normalizeSpoPatternId(obj);
+		int mask = boundMask(subject, predicate, object, context);
 		if (isStreamingAdjacencyOrder(order)) {
-			return persistentAdjacency.scan(txn, subj, pred, obj, context, explicit, order);
+			return persistentAdjacency.scan(txn, subject, predicate, object, context, explicit, order);
 		}
 		String inputOrder = bestStreamingAdjacencyOrder(mask);
 		return new LmdbSnapshotSortIterator(txn, order,
-				() -> persistentAdjacency.scan(txn, subj, pred, obj, context, explicit, inputOrder));
+				() -> persistentAdjacency.scan(txn, subject, predicate, object, context, explicit, inputOrder));
 	}
 
 	/** The raw transaction is protected by the caller for the entire lifetime of the returned iterator. */
 	private RecordIterator scanAdjacency(long txn, long subj, long pred, long obj, long context,
 			boolean explicit, String order) throws IOException {
+		subj = normalizeSpoPatternId(subj);
+		pred = normalizeSpoPatternId(pred);
+		obj = normalizeSpoPatternId(obj);
 		int mask = boundMask(subj, pred, obj, context);
 		if (isStreamingAdjacencyOrder(order)) {
 			return persistentAdjacency.scan(txn, subj, pred, obj, context, explicit, order);
@@ -2452,12 +2458,18 @@ class TripleStore implements Closeable {
 			return true;
 		}
 		TripleIndex index = bestIndexByBoundMask[mask];
-		return index != null && index.getRangePrefixLength(subj, pred, obj, context) == Integer.bitCount(mask);
+		return index != null && index.getRangePrefixLength(normalizeSpoPatternId(subj), normalizeSpoPatternId(pred),
+				normalizeSpoPatternId(obj), context) == Integer.bitCount(mask);
+	}
+
+	/** Legacy zero wildcards apply only to SPO patterns; signed identifiers and graph zero remain literal. */
+	private static long normalizeSpoPatternId(long id) {
+		return id == 0 ? -1 : id;
 	}
 
 	private static int boundMask(long subj, long pred, long obj, long context) {
-		return (subj != -1 ? 1 : 0) | (pred != -1 ? 2 : 0) | (obj != -1 ? 4 : 0)
-				| (context != -1 ? 8 : 0);
+		return (normalizeSpoPatternId(subj) != -1 ? 1 : 0) | (normalizeSpoPatternId(pred) != -1 ? 2 : 0)
+				| (normalizeSpoPatternId(obj) != -1 ? 4 : 0) | (context != -1 ? 8 : 0);
 	}
 
 	/** Makes explicitly configured headroom available before setup and migration pin a write transaction. */
@@ -2795,7 +2807,8 @@ class TripleStore implements Closeable {
 	RecordIterator getTriples(Txn txn, StatementOrder statementOrder, long subj, long pred, long obj,
 			long context, boolean explicit) throws IOException {
 		TripleIndex index = withGeneration(txn, selected -> TripleIndex.getBestCompatibleOrderedIndex(
-				selected.indexes, statementOrder, subj, pred, obj, context));
+				selected.indexes, statementOrder, normalizeSpoPatternId(subj), normalizeSpoPatternId(pred),
+				normalizeSpoPatternId(obj), context));
 		if (index == null) {
 			throw new UnsupportedOperationException("StatementOrder is not supported: " + statementOrder);
 		}
@@ -2848,7 +2861,8 @@ class TripleStore implements Closeable {
 			long obj, long context) {
 		EnumSet<StatementOrder> supported = EnumSet.noneOf(StatementOrder.class);
 		for (StatementOrder order : StatementOrder.values()) {
-			if (TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order, subj, pred, obj,
+			if (TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order, normalizeSpoPatternId(subj),
+					normalizeSpoPatternId(pred), normalizeSpoPatternId(obj),
 					context) != null) {
 				supported.add(order);
 			}
@@ -2917,7 +2931,8 @@ class TripleStore implements Closeable {
 
 	private static String orderedIndexName(IndexGeneration generation, StatementOrder order, long subj, long pred,
 			long obj, long context) {
-		TripleIndex index = TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order, subj, pred, obj,
+		TripleIndex index = TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order,
+				normalizeSpoPatternId(subj), normalizeSpoPatternId(pred), normalizeSpoPatternId(obj),
 				context);
 		return index == null ? "" : index.toString();
 	}
@@ -2973,7 +2988,8 @@ class TripleStore implements Closeable {
 		});
 		return new LmdbPrefixRunIterator(plan,
 				getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, plan.index(), true),
-				subj, pred, obj, context, countRunRows,
+				normalizeSpoPatternId(subj), normalizeSpoPatternId(pred), normalizeSpoPatternId(obj), context,
+				countRunRows,
 				metadataRunCount(txn, snapshotState[0], snapshotState[1], plan, subj, pred, obj, context, explicit));
 	}
 
@@ -3058,9 +3074,9 @@ class TripleStore implements Closeable {
 
 	private static long boundValue(int field, long subj, long pred, long obj, long context) {
 		return switch (field) {
-		case TripleIndex.SUBJ_IDX -> subj;
-		case TripleIndex.PRED_IDX -> pred;
-		case TripleIndex.OBJ_IDX -> obj;
+		case TripleIndex.SUBJ_IDX -> normalizeSpoPatternId(subj);
+		case TripleIndex.PRED_IDX -> normalizeSpoPatternId(pred);
+		case TripleIndex.OBJ_IDX -> normalizeSpoPatternId(obj);
 		case TripleIndex.CONTEXT_IDX -> context;
 		default -> throw new IllegalArgumentException("Invalid statement field index: " + field);
 		};
@@ -3075,7 +3091,8 @@ class TripleStore implements Closeable {
 	private long countPersistentStatements(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit) throws IOException {
 		NativeLmdbQuerySource.checkpointCancellation();
-		long count = persistentAdjacency.count(txn.get(), subj, pred, obj, context, explicit);
+		long count = persistentAdjacency.count(txn.get(), normalizeSpoPatternId(subj), normalizeSpoPatternId(pred),
+				normalizeSpoPatternId(obj), context, explicit);
 		if (hasMetadataCount(boundMask(subj, pred, obj, context))) {
 			recordExactMetadataCount();
 		}
@@ -3526,7 +3543,8 @@ class TripleStore implements Closeable {
 		return withGeneration(txnRef, selected -> {
 			TripleIndex index = selected.best[boundMask(subj, pred, obj, context)];
 			List<LmdbAdjacencyRangePlanner.Split> splits = new LmdbAdjacencyRangePlanner(persistentAdjacency)
-					.plan(txnRef.get(), index.toString(), subj, pred, obj, context, explicit, targetPartitions, 4);
+					.plan(txnRef.get(), index.toString(), normalizeSpoPatternId(subj), normalizeSpoPatternId(pred),
+							normalizeSpoPatternId(obj), context, explicit, targetPartitions, 4);
 			List<byte[]> keys = new ArrayList<>(splits.size());
 			for (LmdbAdjacencyRangePlanner.Split split : splits) {
 				long[] quad = split.quad();
@@ -3559,7 +3577,8 @@ class TripleStore implements Closeable {
 			// This historical API requests the number of boundaries, despite its parameter name.
 			int partitions = (int) Math.min((long) targetPartitions + 1, Integer.MAX_VALUE);
 			List<LmdbAdjacencyRangePlanner.Split> splits = new LmdbAdjacencyRangePlanner(persistentAdjacency)
-					.plan(txnRef.get(), plan.index().toString(), subj, pred, obj, context, explicit, partitions,
+					.plan(txnRef.get(), plan.index().toString(), normalizeSpoPatternId(subj),
+							normalizeSpoPatternId(pred), normalizeSpoPatternId(obj), context, explicit, partitions,
 							tupleLength);
 			long[][] result = new long[splits.size()][tupleLength];
 			char[] fields = plan.index().getFieldSeq();
@@ -3608,7 +3627,8 @@ class TripleStore implements Closeable {
 			}
 			int partitions = (int) Math.min((long) targetSplits + 1, Integer.MAX_VALUE);
 			List<LmdbAdjacencyRangePlanner.Split> splits = new LmdbAdjacencyRangePlanner(persistentAdjacency)
-					.plan(txnRef.get(), order, subj, pred, obj, context, explicit, partitions, 4);
+					.plan(txnRef.get(), order, normalizeSpoPatternId(subj), normalizeSpoPatternId(pred),
+							normalizeSpoPatternId(obj), context, explicit, partitions, 4);
 			List<OrderedSplit> result = new ArrayList<>(splits.size());
 			for (LmdbAdjacencyRangePlanner.Split split : splits) {
 				long[] quad = split.quad();
@@ -3719,8 +3739,11 @@ class TripleStore implements Closeable {
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
 		// Query optimization can already hold all ordinary reader permits; retain its reserved admission lane.
 		return txnManager
-				.doWithPriority((stack, txn) -> (double) persistentAdjacency.count(txn, subj, pred, obj, context, true)
-						+ persistentAdjacency.count(txn, subj, pred, obj, context, false));
+				.doWithPriority((stack,
+						txn) -> (double) persistentAdjacency.count(txn, normalizeSpoPatternId(subj),
+								normalizeSpoPatternId(pred), normalizeSpoPatternId(obj), context, true)
+								+ persistentAdjacency.count(txn, normalizeSpoPatternId(subj),
+										normalizeSpoPatternId(pred), normalizeSpoPatternId(obj), context, false));
 	}
 
 	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {
@@ -3806,9 +3829,9 @@ class TripleStore implements Closeable {
 	}
 
 	private static boolean matchesPattern(long[] quad, long subj, long pred, long obj, long context) {
-		return (subj == -1 || quad[TripleIndex.SUBJ_IDX] == subj)
-				&& (pred == -1 || quad[TripleIndex.PRED_IDX] == pred)
-				&& (obj == -1 || quad[TripleIndex.OBJ_IDX] == obj)
+		return (normalizeSpoPatternId(subj) == -1 || quad[TripleIndex.SUBJ_IDX] == subj)
+				&& (normalizeSpoPatternId(pred) == -1 || quad[TripleIndex.PRED_IDX] == pred)
+				&& (normalizeSpoPatternId(obj) == -1 || quad[TripleIndex.OBJ_IDX] == obj)
 				&& (context == -1 || quad[TripleIndex.CONTEXT_IDX] == context);
 	}
 
