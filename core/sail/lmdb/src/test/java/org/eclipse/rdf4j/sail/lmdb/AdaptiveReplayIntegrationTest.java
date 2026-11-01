@@ -147,7 +147,7 @@ class AdaptiveReplayIntegrationTest {
 			try (var writer = repository.getConnection()) {
 				writer.begin(IsolationLevels.SNAPSHOT);
 				if (midFlush) {
-					store.triples.failContextCall = 2;
+					store.triples.mutationFault.armMapFull(2);
 				}
 				for (int i = 0; i < 20; i++) {
 					applicationWrites.incrementAndGet();
@@ -159,6 +159,10 @@ class AdaptiveReplayIntegrationTest {
 						"the forced native failure must test emergency growth without a preceding soft warning");
 				store.triples.failNextCommit = !midFlush;
 				writer.commit();
+				if (midFlush) {
+					store.triples.mutationFault.assertInjectedOnce(2, 2);
+					store.triples.mutationFault.assertResizedAfterAbort();
+				}
 				assertEquals(1, successfulRetryValidations.get(),
 						"the assertion must run after the successful native retry and before publication returns");
 				if (successfulRetryValidationFailure.get() != null) {
@@ -397,11 +401,14 @@ class AdaptiveReplayIntegrationTest {
 				stores.triples.storeTriple(10_000, 7, 11, 9, true);
 				stores.triples.writeNamespaceSnapshot(Map.of("prefix", "urn:uncommitted:"));
 			}
-			stores.triples.failContextCall = prefix ? 2 : 1;
+			stores.triples.mutationFault.armMapFull(prefix ? 2 : 1);
 			long initialMap = tripleMapSize(stores.triples);
 			LmdbTransactionRetryException retry = assertThrows(LmdbTransactionRetryException.class,
 					() -> stores.triples.storeTriplesAligned(new long[] { 20_000, 20_001 }, new long[] { 7, 7 },
 							new long[] { 11, 11 }, new long[] { 50, 51 }, 2, true));
+			stores.triples.mutationFault.assertInjectedOnce(prefix ? 2 : 1, 1);
+			stores.triples.mutationFault.assertResizedAfterAbort();
+			assertSame(Thread.currentThread(), stores.triples.mutationFault.injectedThread());
 			assertTrue(tripleMapSize(stores.triples) > initialMap);
 			assertEquals(0, stores.triples.writeTxn);
 			assertEquals(64, count(stores.triples, true));
@@ -1705,7 +1712,7 @@ class AdaptiveReplayIntegrationTest {
 		private volatile Runnable successfulRetryValidation;
 		private volatile AtomicReference<Thread> bulkWorker;
 		private volatile CountDownLatch bulkWritesCompleted;
-		private int failContextCall;
+		private final LmdbPersistentMutationFault mutationFault = new LmdbPersistentMutationFault();
 		private volatile CountDownLatch delayedStartEntered;
 		private volatile CountDownLatch resumeDelayedStart;
 
@@ -1732,7 +1739,9 @@ class AdaptiveReplayIntegrationTest {
 		@Override
 		public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
 				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
-			super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
+			try (var ignored = mutationFault.injectInto(this)) {
+				super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
+			}
 			AtomicReference<Thread> worker = bulkWorker;
 			CountDownLatch completed = bulkWritesCompleted;
 			if (worker != null && completed != null) {
@@ -1767,7 +1776,9 @@ class AdaptiveReplayIntegrationTest {
 
 		@Override
 		public void commit() throws IOException {
-			super.commit();
+			try (var ignored = mutationFault == null ? null : mutationFault.observe(this)) {
+				super.commit();
+			}
 			Runnable validation = successfulRetryValidation;
 			if (validation != null) {
 				successfulRetryValidation = null;
@@ -1785,10 +1796,16 @@ class AdaptiveReplayIntegrationTest {
 		}
 
 		@Override
-		void incrementAlignedContext(MemoryStack stack, long context, int amount) throws IOException {
-			super.incrementAlignedContext(stack, context, amount);
-			if (failContextCall > 0 && --failContextCall == 0) {
-				throw new MapFullException();
+		public void rollback() throws IOException {
+			try (var ignored = mutationFault == null ? null : mutationFault.observe(this)) {
+				super.rollback();
+			}
+		}
+
+		@Override
+		boolean growMapForEstimatedWrite(long bytes, LmdbSailStore.MapGrowthAttempt attempt) throws IOException {
+			try (var ignored = mutationFault == null ? null : mutationFault.observe(this)) {
+				return super.growMapForEstimatedWrite(bytes, attempt);
 			}
 		}
 	}

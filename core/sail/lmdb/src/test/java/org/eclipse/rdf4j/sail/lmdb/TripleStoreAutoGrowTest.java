@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -37,6 +38,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -241,11 +243,17 @@ public class TripleStoreAutoGrowTest {
 			store.commit();
 			StatementBatch batch = createBatch(710_000L, 2);
 			store.startTransaction();
-			assertThrows(IOException.class,
+			IOException failure = assertThrows(IOException.class,
 					() -> store.storeTriplesAligned(batch.subj, batch.pred, batch.obj, batch.context, batch.subj.length,
 							true));
-			assertThrows(IOException.class, store::commit,
+			assertSame(store.injectedFailure, failure);
+			IOException poisoned = assertThrows(IOException.class, store::commit,
 					"A failed native mutation must poison the logical transaction");
+			assertSame(failure, poisoned.getCause());
+			store.mutationFault.assertInjectedOnce(1, 1);
+			store.mutationFault.assertAborted();
+			store.mutationFault.assertNotResized();
+			assertSame(Thread.currentThread(), store.mutationFault.injectedThread());
 			assertOnlyStoredQuad(store, baseline);
 		}
 		try (TripleStore reopened = new TripleStore(storeDir, config, null)) {
@@ -554,11 +562,17 @@ public class TripleStoreAutoGrowTest {
 			int[] callbackCounts = new int[batch.subj.length];
 
 			fallbackStore.startTransaction();
+			long initialMapSize = mapSize(fallbackStore);
 			assertFalse(requiresResize(fallbackStore), "the healthy writer must enter before the resize threshold");
 			assertDoesNotThrow(
 					() -> fallbackStore.storeTriplesAligned(batch.subj, batch.pred, batch.obj, batch.context,
 							batch.subj.length, true, index -> callbackCounts[index]++));
 			assertDoesNotThrow(fallbackStore::commit);
+			fallbackStore.mutationFault.assertInjectedOnce(2, 1);
+			fallbackStore.mutationFault.assertResizedAfterAbort();
+			assertSame(Thread.currentThread(), fallbackStore.mutationFault.injectedThread());
+			assertTrue(mapSize(fallbackStore) > initialMapSize,
+					"the actual second-context failure must force native growth and complete replay");
 
 			for (int i = 0; i < callbackCounts.length; i++) {
 				assertEquals(1, callbackCounts[i], "Each callback must run once after the replayed batch commits");
@@ -885,35 +899,65 @@ public class TripleStoreAutoGrowTest {
 	}
 
 	private static final class FailingContextAlignedTripleStore extends TripleStore {
-		private int incrementCalls;
+		private final LmdbPersistentMutationFault mutationFault = new LmdbPersistentMutationFault();
 
 		private FailingContextAlignedTripleStore(File dir, LmdbStoreConfig config) throws IOException {
 			super(dir, config, null);
+			mutationFault.armMapFull(2);
 		}
 
 		@Override
-		void incrementAlignedContext(org.lwjgl.system.MemoryStack stack, long context, int amount) throws IOException {
-			incrementCalls++;
-			if (incrementCalls == 2) {
-				throw new TripleStore.MapFullException();
+		public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
+				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
+			try (var ignored = mutationFault.injectInto(this)) {
+				super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
 			}
-			super.incrementAlignedContext(stack, context, amount);
+		}
+
+		@Override
+		public void commit() throws IOException {
+			try (var ignored = mutationFault == null ? null : mutationFault.observe(this)) {
+				super.commit();
+			}
+		}
+
+		@Override
+		public void rollback() throws IOException {
+			try (var ignored = mutationFault == null ? null : mutationFault.observe(this)) {
+				super.rollback();
+			}
 		}
 	}
 
 	private static final class FailingAlignedContextTripleStore extends TripleStore {
-		private boolean failAfterFirstContextWrite = true;
+		private final LmdbPersistentMutationFault mutationFault = new LmdbPersistentMutationFault();
+		private final IOException injectedFailure = new IOException(
+				"injected failure after the aligned adjacency write");
 
 		private FailingAlignedContextTripleStore(File dir, LmdbStoreConfig config) throws IOException {
 			super(dir, config, null);
+			mutationFault.armIOException(1, injectedFailure);
 		}
 
 		@Override
-		void incrementAlignedContext(org.lwjgl.system.MemoryStack stack, long context, int amount) throws IOException {
-			super.incrementAlignedContext(stack, context, amount);
-			if (failAfterFirstContextWrite) {
-				failAfterFirstContextWrite = false;
-				throw new IOException("injected failure after the aligned main-index write");
+		public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
+				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
+			try (var ignored = mutationFault.injectInto(this)) {
+				super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
+			}
+		}
+
+		@Override
+		public void commit() throws IOException {
+			try (var ignored = mutationFault == null ? null : mutationFault.observe(this)) {
+				super.commit();
+			}
+		}
+
+		@Override
+		public void rollback() throws IOException {
+			try (var ignored = mutationFault == null ? null : mutationFault.observe(this)) {
+				super.rollback();
 			}
 		}
 	}
