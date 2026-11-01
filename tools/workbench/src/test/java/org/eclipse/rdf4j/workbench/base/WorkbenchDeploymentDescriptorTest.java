@@ -109,6 +109,27 @@ class WorkbenchDeploymentDescriptorTest {
 		assertThat(mapped).as("all Workbench repository commands are protected").isTrue();
 	}
 
+	/** The query editor's fallback namespaces are served outside the repository routes, to every page alike. */
+	@Test
+	void theFallbackNamespacesServletIsMapped() throws Exception {
+		Document descriptor = descriptor();
+		Map<String, String> classes = new HashMap<>();
+		NodeList servlets = descriptor.getElementsByTagName("servlet");
+		for (int index = 0; index < servlets.getLength(); index++) {
+			Element servlet = (Element) servlets.item(index);
+			classes.put(text(servlet, "servlet-name"), text(servlet, "servlet-class"));
+		}
+		Map<String, String> patterns = new HashMap<>();
+		NodeList mappings = descriptor.getElementsByTagName("servlet-mapping");
+		for (int index = 0; index < mappings.getLength(); index++) {
+			Element mapping = (Element) mappings.item(index);
+			patterns.put(text(mapping, "url-pattern"), text(mapping, "servlet-name"));
+		}
+
+		assertThat(classes.get(patterns.get("/fallback-namespaces")))
+				.isEqualTo("org.eclipse.rdf4j.workbench.proxy.config.WorkbenchFallbackNamespacesServlet");
+	}
+
 	private static final String ENTRY = "/scripts/graph-explorer/graph-explorer.mjs";
 	private static final String QUERY_RENDERER_ENTRY = "/scripts/graph-explorer/query-graph-renderer.mjs";
 	private static final String STYLESHEET = "/styles/graph-explorer.css";
@@ -161,7 +182,7 @@ class WorkbenchDeploymentDescriptorTest {
 
 	@Test
 	void theRevalidatedNamesAreTheExplorerOutputsThatCarryNoHash() throws Exception {
-		String vite = Files.readString(Path.of("vite.config.ts"));
+		String vite = Files.readString(Path.of("vite.config.mts"));
 
 		assertThat(vite).contains("entryFileNames: \"scripts/graph-explorer/[name].mjs\"")
 				.contains("\"graph-explorer\":", "\"query-graph-renderer\":")

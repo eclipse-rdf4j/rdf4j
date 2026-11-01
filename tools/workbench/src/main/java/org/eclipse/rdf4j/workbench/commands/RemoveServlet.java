@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -287,15 +288,21 @@ public class RemoveServlet extends TransformationServlet {
 		builder.end();
 	}
 
-	/** Lists the graphs in name order, which the page offers as the graph to remove from. */
+	/**
+	 * Lists the graphs in name order, which the page offers as the graph to remove from, with the repository's
+	 * prefixes, which its preview uses to shorten IRIs as the other statement tables do.
+	 */
 	@Override
 	public void service(TupleResultBuilder builder)
 			throws RepositoryException, QueryResultHandlerException {
 		List<Resource> contexts;
+		List<Namespace> namespaces;
 		try (RepositoryConnection con = repository.getConnection()) {
 			contexts = new ArrayList<>(Iterations.asList(con.getContextIDs()));
+			namespaces = Iterations.asList(con.getNamespaces());
 		}
 		contexts.sort(BrowseList.BY_NAME);
+		builder.namespaces(namespaces);
 		builder.start(CONTEXT);
 		builder.link(List.of(INFO));
 		for (Resource context : contexts) {

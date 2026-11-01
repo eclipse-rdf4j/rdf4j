@@ -52,20 +52,8 @@
     margin: 0 auto 0 0;
 }
 
-.query-form__label:after {
-    content: ':';
-}
-
-.query-form__label--blank:after {
-    content: '';
-}
-
 .query-form__row--stacked .query-form__label {
     padding-top: 0;
-}
-
-.query-form__row--stacked .query-form__label:after {
-    content: '';
 }
 
 .query-form__field {
@@ -169,10 +157,6 @@ body.workbench-body .query-page .error:empty {
 
     .query-form__label {
         padding-top: 0;
-    }
-
-    .query-form__label:after {
-        content: '';
     }
 
     .query-editor-header {
@@ -1584,12 +1568,12 @@ body.workbench-body #content .query-output .query-results:not([data-fullscreen="
     color: var(--workbench-muted);
 }
 
-/* The editor line a server parser error points at; the next edit clears it. */
-.query-page .query-editor-error-line {
+/* The editor line a server parser error points at (Query and SPARQL Update); the next edit clears it. */
+:is(.query-page, #update-editor) .query-editor-error-line {
     background: var(--workbench-danger-surface);
 }
 
-.query-page .query-editor-error-marker {
+:is(.query-page, #update-editor) .query-editor-error-marker {
     display: inline-block;
     width: 8px;
     height: 8px;

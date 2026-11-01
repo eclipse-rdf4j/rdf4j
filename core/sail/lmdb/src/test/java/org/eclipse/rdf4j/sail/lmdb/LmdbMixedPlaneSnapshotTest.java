@@ -111,6 +111,15 @@ class LmdbMixedPlaneSnapshotTest {
 
 	@Test
 	void interruptedDictionaryAdmissionReturnsReservedTripleReaders(@TempDir File directory) throws Exception {
+		assertInterruptedDictionaryAdmission(directory, false);
+	}
+
+	@Test
+	void tripleAdmissionFrameDoesNotEstablishDictionaryReservation(@TempDir File directory) throws Exception {
+		assertInterruptedDictionaryAdmission(directory, true);
+	}
+
+	private void assertInterruptedDictionaryAdmission(File directory, boolean holdTripleAdmission) throws Exception {
 		String previousPinning = System.getProperty(PINNING_PROPERTY);
 		System.setProperty(PINNING_PROPERTY, "true");
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc"));
@@ -119,8 +128,15 @@ class LmdbMixedPlaneSnapshotTest {
 		LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		List<TxnManager.Txn> fillers = new ArrayList<>();
+		List<TxnManager.Txn> tripleFillers = new ArrayList<>();
+		CountDownLatch tripleAdmission = new CountDownLatch(1);
+		CountDownLatch releaseTripleAdmission = new CountDownLatch(1);
 		CountDownLatch finished = new CountDownLatch(1);
-		try (SailConnection reader = store.getConnection()) {
+		try (SailConnection reader = store.getConnection();
+				var gateOwner = LmdbTestUtil.onClose(() -> {
+					releaseTripleAdmission.countDown();
+					executor.shutdownNow();
+				})) {
 			TxnManager triples = store.getBackingStore().getTripleStore().getTxnManager();
 			TxnManager dictionary = ((ValueStore) store.getValueFactory()).getTxnManager();
 			int availableTriples = triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);
@@ -129,6 +145,29 @@ class LmdbMixedPlaneSnapshotTest {
 				fillers.add(filler);
 			}
 			AtomicReference<Thread> acquiring = new AtomicReference<>();
+			CountDownLatch dictionaryAdmission = new CountDownLatch(1);
+			dictionary.beforeBlockingReaderAdmissionForTest = () -> {
+				if (Thread.currentThread() == acquiring.get()) {
+					dictionaryAdmission.countDown();
+				}
+			};
+			if (holdTripleAdmission) {
+				for (TxnManager.Txn filler : triples.createReadTxnPinnedFamily(availableTriples, () -> 0L)) {
+					tripleFillers.add(filler);
+				}
+				triples.beforeBlockingReaderAdmissionForTest = () -> {
+					if (Thread.currentThread() != acquiring.get()) {
+						return;
+					}
+					tripleAdmission.countDown();
+					try {
+						releaseTripleAdmission.await();
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new SailException(interrupted);
+					}
+				};
+			}
 			AtomicReference<RuntimeException> failure = new AtomicReference<>();
 			AtomicReference<SailDatasetSnapshot> remainingContext = new AtomicReference<>();
 			CountDownLatch started = new CountDownLatch(1);
@@ -145,7 +184,19 @@ class LmdbMixedPlaneSnapshotTest {
 				}
 			});
 			assertTrue(started.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS));
-			awaitReaderAdmission(acquiring.get());
+			if (holdTripleAdmission) {
+				assertTrue(tripleAdmission.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+				for (TxnManager.Txn filler : tripleFillers) {
+					filler.close();
+				}
+				tripleFillers.clear();
+				// A triple-pool wait is not the dictionary admission boundary, even though both use
+				// acquireReaderPermits. No caller-owned triple permit exists until this gate releases.
+				assertEquals(1L, dictionaryAdmission.getCount());
+				assertEquals(availableTriples, triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+				releaseTripleAdmission.countDown();
+			}
+			assertTrue(dictionaryAdmission.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS));
 			assertEquals(availableTriples - 1, triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
 			assertTrue(pendingRead.cancel(true));
 			assertTrue(finished.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS));
@@ -154,7 +205,13 @@ class LmdbMixedPlaneSnapshotTest {
 			assertEquals(availableTriples, triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
 			assertEquals(Long.MAX_VALUE, triples.minPinnedSnapshotRevision());
 		} finally {
+			releaseTripleAdmission.countDown();
+			store.getBackingStore().getTripleStore().getTxnManager().beforeBlockingReaderAdmissionForTest = null;
+			((ValueStore) store.getValueFactory()).getTxnManager().beforeBlockingReaderAdmissionForTest = null;
 			executor.shutdownNow();
+			for (TxnManager.Txn filler : tripleFillers) {
+				filler.close();
+			}
 			for (TxnManager.Txn filler : fillers) {
 				filler.close();
 			}
@@ -257,6 +314,12 @@ class LmdbMixedPlaneSnapshotTest {
 					fillers.add(filler);
 				}
 				AtomicReference<Thread> acquiringThread = new AtomicReference<>();
+				CountDownLatch tripleAdmission = new CountDownLatch(1);
+				triples.beforeBlockingReaderAdmissionForTest = () -> {
+					if (Thread.currentThread() == acquiringThread.get()) {
+						tripleAdmission.countDown();
+					}
+				};
 				CountDownLatch started = new CountDownLatch(1);
 				pendingRead = executor.submit(() -> {
 					acquiringThread.set(Thread.currentThread());
@@ -266,7 +329,7 @@ class LmdbMixedPlaneSnapshotTest {
 					}
 				});
 				assertTrue(started.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS));
-				awaitReaderAdmission(acquiringThread.get());
+				assertTrue(tripleAdmission.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS));
 				pendingClose = executor.submit(() -> {
 					held.close();
 					if (previous.isActive()) {
@@ -276,6 +339,7 @@ class LmdbMixedPlaneSnapshotTest {
 				pendingClose.get(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 				assertEquals(0, pendingRead.get(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS));
 			} finally {
+				triples.beforeBlockingReaderAdmissionForTest = null;
 				for (TxnManager.Txn filler : fillers) {
 					filler.close();
 				}
@@ -293,20 +357,6 @@ class LmdbMixedPlaneSnapshotTest {
 				System.setProperty(PINNING_PROPERTY, previousPinning);
 			}
 		}
-	}
-
-	private static void awaitReaderAdmission(Thread acquiring) {
-		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(DIAGNOSTIC_TIMEOUT_SECONDS);
-		do {
-			for (StackTraceElement frame : acquiring.getStackTrace()) {
-				if (frame.getClassName().equals(TxnManager.class.getName())
-						&& frame.getMethodName().equals("acquireReaderPermits")) {
-					return;
-				}
-			}
-			Thread.onSpinWait();
-		} while (System.nanoTime() < deadline);
-		throw new AssertionError("The next read did not wait for physical reader admission");
 	}
 
 	@ParameterizedTest

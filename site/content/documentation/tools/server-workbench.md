@@ -297,6 +297,39 @@ answers `400 Bad Request` without creating a repository. The list is checked whe
 contains characters other than letters, digits, `.`, `_` and `-`, a type listed twice, or a type whose template cannot be
 loaded makes the whole policy invalid, so every Workbench page answers `503 Service Unavailable` as described above.
 
+#### Namespaces and the prefixes the query editor knows
+
+The Query and Update editors know the namespaces of the repository. They complete a prefix after `PREFIX`, and
+typing a prefixed name such as `skos:Concept` adds the missing `PREFIX skos: <…>` line at the top of the query.
+**Insert prefixes** (under Query settings) adds a line for every repository namespace the query does not declare yet.
+
+For a prefix that the repository does not define, the editors fall back on a second list of prefixes. Typing a prefixed
+name from this list adds its `PREFIX` line, as for a repository namespace. **Insert prefixes** never adds the fallback
+list. The Workbench ships with an empty fallback list; a deployment sets its own with `namespaces.fallback`.
+
+Two keys of `workbench.properties` change this. Neither is part of the packaged defaults. Each takes `prefix:namespace`
+entries separated by commas and/or whitespace. A namespace may be written in angle brackets, which it needs when it
+contains a comma. A prefix may be empty (`:http://example.org/`, the default namespace).
+
+```properties
+# Namespaces that every repository has, as far as the Workbench is concerned.
+namespaces=dcat:http://www.w3.org/ns/dcat# acme:<https://acme.example/vocab#>
+# The prefixes the editors fall back on; an empty value turns the fallback off.
+namespaces.fallback=schema:https://schema.org/ foaf:http://xmlns.com/foaf/0.1/
+```
+
+- `namespaces`: pages treat these namespaces as if every repository had stored them. This covers the editors and
+  **Insert prefixes**, and the prefixed names in the result tables, Explore, the Remove preview and the other pages
+  that show the repository's prefixes. A prefix that a repository stores keeps the repository's namespace. The
+  Namespaces page lists, and changes, only the namespaces the repository stores.
+- `namespaces.fallback`: the fallback list. It replaces the whole bundled list (empty in this release) rather than
+  adding to it. An empty value turns the fallback off.
+
+An entry without a colon, an invalid prefix, a namespace that is not an absolute IRI, or a prefix listed twice makes
+the whole policy invalid. Every Workbench page then answers `503 Service Unavailable`, as described above. The editors
+load the fallback list once per page from `<workbench>/fallback-namespaces`. Browsers check it again on every page
+load, so a changed list reaches the editors as soon as the Workbench has restarted.
+
 ### OpenTelemetry Tracing
 
 RDF4J Server can optionally be instrumented with [OpenTelemetry](https://opentelemetry.io/) tracing, recording one span per SPARQL query/update evaluated against a repository. This is entirely opt-in: with no configuration, RDF4J Server behaves exactly as before, with zero overhead. For general background on RDF4J's OpenTelemetry support (the underlying module, its configuration options, and programmatic use outside of Server/Workbench), see [Observability using OpenTelemetry](/documentation/programming/observability/).

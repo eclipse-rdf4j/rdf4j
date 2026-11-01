@@ -43,7 +43,6 @@ import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -1451,9 +1450,7 @@ public class QueryServlet extends TransformationServlet {
 		final String query = getQueryText(req);
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		try (RepositoryConnection con = repository.getConnection()) {
-			for (Namespace ns : Iterations.asList(con.getNamespaces())) {
-				builder.prefix(ns.getPrefix(), ns.getName());
-			}
+			builder.namespaces(Iterations.asList(con.getNamespaces()));
 		}
 		builder.start(EDIT_PARAMS);
 		builder.link(Arrays.asList(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
@@ -1680,9 +1677,7 @@ public class QueryServlet extends TransformationServlet {
 
 		final TupleResultBuilder builder = getTupleResultBuilder(req, resp, writerOutput);
 		if (query.isEmpty() || req.isParameterPresent(EXPLAIN)) {
-			for (Namespace ns : Iterations.asList(con.getNamespaces())) {
-				builder.prefix(ns.getPrefix(), ns.getName());
-			}
+			builder.namespaces(Iterations.asList(con.getNamespaces()));
 		}
 		if (query.isEmpty()) {
 			builder.start();

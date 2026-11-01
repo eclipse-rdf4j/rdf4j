@@ -151,7 +151,7 @@ class WorkbenchFrontendBuildTest {
 		assertThat(packageJson).contains("\"build:classic\"").contains("\"build:explorer\"");
 		assertThat(Files.exists(Path.of("package-lock.json"))).as("package-lock.json is committed").isTrue();
 		assertThat(Files.exists(Path.of("tsconfig.classic.json"))).isTrue();
-		assertThat(Files.exists(Path.of("vite.config.ts"))).isTrue();
+		assertThat(Files.exists(Path.of("vite.config.mts"))).isTrue();
 	}
 
 	private static Element frontendPlugin() throws Exception {
