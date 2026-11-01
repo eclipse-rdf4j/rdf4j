@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -27,11 +28,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.IntSupplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -49,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.AsyncIteratorBuffer;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
@@ -57,6 +62,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -249,13 +255,15 @@ class LmdbReadAttemptCancellationTest {
 
 	@Test
 	@Timeout(value = 60, unit = TimeUnit.SECONDS)
-	void connectionCloseCancelsCapturedWorkerWaitingForReaderPermit(@TempDir Path dataDir) throws Exception {
+	void connectionCloseCancelsCapturedWorkerWaitingForReaderPermit(@TempDir(cleanup = CleanupMode.NEVER) Path dataDir)
+			throws Exception {
 		assertCancellation(dataDir, Finish.CLOSE_ACTIVE, true, false);
 	}
 
 	@Test
 	@Timeout(value = 60, unit = TimeUnit.SECONDS)
-	void closeWaitsForCancelledNativeReadToUnwindBeforeSourceCleanup(@TempDir Path dataDir) throws Exception {
+	void closeWaitsForCancelledNativeReadToUnwindBeforeSourceCleanup(@TempDir(cleanup = CleanupMode.NEVER) Path dataDir)
+			throws Exception {
 		assertCancellation(dataDir, Finish.CLOSE_ACTIVE, true, false, true);
 	}
 
@@ -263,8 +271,42 @@ class LmdbReadAttemptCancellationTest {
 	@MethodSource("cancellationCases")
 	@Timeout(value = 60, unit = TimeUnit.SECONDS)
 	void finalizationCancelsAdmittedNativeWaits(Finish finish, boolean asynchronous, boolean nativeBarrier,
-			@TempDir Path dataDir) throws Exception {
+			@TempDir(cleanup = CleanupMode.NEVER) Path dataDir) throws Exception {
 		assertCancellation(dataDir, finish, asynchronous, nativeBarrier);
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void earlyFailureReleasesPausedNativeWorkerBeforeResultCleanup(@TempDir(cleanup = CleanupMode.NEVER) Path dataDir)
+			throws Exception {
+		AssertionError primary = new AssertionError("injected before native contention setup");
+		AtomicReference<CancellationFailureProbe> probe = new AtomicReference<>();
+		var executor = Executors.newSingleThreadExecutor();
+		try {
+			Future<?> fixture = executor.submit(() -> {
+				assertCancellation(dataDir, Finish.CLOSE_ACTIVE, true, false, true,
+						probe::set, () -> {
+							throw primary;
+						});
+				return null;
+			});
+			ExecutionException failure = assertThrows(ExecutionException.class,
+					() -> fixture.get(5, TimeUnit.SECONDS));
+			assertSame(primary, failure.getCause(), "cleanup must preserve the original body failure");
+			assertNotNull(probe.get());
+			assertEquals(1, probe.get().closeCalls().getAsInt(), "the real source must close exactly once");
+			assertFalse(dataDir.toFile().exists(), "safe failure cleanup must delete its closed native root");
+		} finally {
+			// Rescue the baseline's blocked cleanup before joining, so the RED itself never strands a worker.
+			CancellationFailureProbe captured = probe.get();
+			if (captured != null) {
+				captured.releaseGates().run();
+			}
+			LmdbTestUtil.shutdownExecutor(executor, 5, 5, false, "failure-injection fixture must terminate");
+		}
+	}
+
+	private record CancellationFailureProbe(Runnable releaseGates, IntSupplier closeCalls) {
 	}
 
 	private static Stream<Arguments> cancellationCases() {
@@ -281,6 +323,14 @@ class LmdbReadAttemptCancellationTest {
 
 	private static void assertCancellation(Path dataDir, Finish finish, boolean asynchronous, boolean nativeBarrier,
 			boolean pauseNativeUnwind) throws Exception {
+		assertCancellation(dataDir, finish, asynchronous, nativeBarrier, pauseNativeUnwind, ignored -> {
+		}, () -> {
+		});
+	}
+
+	private static void assertCancellation(Path dataDir, Finish finish, boolean asynchronous, boolean nativeBarrier,
+			boolean pauseNativeUnwind, Consumer<CancellationFailureProbe> registerProbe, Runnable beforeContention)
+			throws Exception {
 		CountDownLatch beforeNativeRead = new CountDownLatch(1);
 		CountDownLatch allowNativeRead = new CountDownLatch(1);
 		CountDownLatch nativeReadBlocked = new CountDownLatch(1);
@@ -288,6 +338,10 @@ class LmdbReadAttemptCancellationTest {
 		CountDownLatch allowNativeUnwind = new CountDownLatch(pauseNativeUnwind ? 1 : 0);
 		CountDownLatch sourceClosed = new CountDownLatch(1);
 		AtomicInteger closeCalls = new AtomicInteger();
+		registerProbe.accept(new CancellationFailureProbe(() -> {
+			allowNativeRead.countDown();
+			allowNativeUnwind.countDown();
+		}, closeCalls::get));
 		AtomicReference<Thread> nativeThread = new AtomicReference<>();
 		AtomicReference<Thread> finishingThread = new AtomicReference<>();
 		AtomicReference<Throwable> nativeFailure = new AtomicReference<>();
@@ -363,142 +417,167 @@ class LmdbReadAttemptCancellationTest {
 			}
 		});
 		SailRepository repository = new SailRepository(store);
-		repository.init();
-		// Startup maintenance (unused-id reclamation, term-index maintenance) briefly holds ordinary dictionary
-		// readers. One released after the pool below is filled would admit the native read without blocking, so the
-		// contention this test arms must start from a quiescent pool.
-		LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
-		List<TxnManager.ReaderReservation> held = new ArrayList<>();
-		try (var executor = Executors.newFixedThreadPool(2);
-				RepositoryConnection connection = repository.getConnection()) {
-			if (finish != Finish.CLOSE_IDLE) {
-				connection.begin(IsolationLevels.SNAPSHOT_READ);
-			}
-			try (TupleQueryResult result = connection.prepareTupleQuery("SELECT ?x WHERE { VALUES ?x { 1 2 } }")
-					.evaluate()) {
-				assertTrue(result.hasNext());
-				result.next();
-				var pulling = executor.submit(() -> {
-					try {
-						result.hasNext();
-					} catch (RuntimeException expectedCancellation) {
-						// Both direct and asynchronous pulls report the interrupted native admission.
-					}
-				});
-				assertTrue(beforeNativeRead.await(5, TimeUnit.SECONDS));
-				TxnManager manager = ((ValueStore) store.getBackingStore().getValueFactory()).getTxnManager();
-				long writeStamp = nativeBarrier ? manager.lockManager().writeLock() : 0L;
-				manager.beforeBlockingReaderAdmissionForTest = () -> {
-					throw new CapacityReached();
-				};
-				try {
-					if (!nativeBarrier) {
+		try (var repositoryOwner = LmdbTestUtil.onClose(() -> closeCancellationRepository(repository, dataDir))) {
+			repository.init();
+			// Startup maintenance (unused-id reclamation, term-index maintenance) briefly holds ordinary dictionary
+			// readers. One released after the pool below is filled would admit the native read without blocking, so the
+			// contention this test arms must start from a quiescent pool.
+			LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
+			List<TxnManager.ReaderReservation> held = new ArrayList<>();
+			try (AutoCloseable reservationOwner = () -> closeReaderReservations(held);
+					var executor = Executors.newFixedThreadPool(2);
+					RepositoryConnection connection = repository.getConnection();
+					AutoCloseable setupGateOwner = () -> {
+						// evaluate() can fail before returning a result owner; release before connection teardown too.
+						allowNativeUnwind.countDown();
+						allowNativeRead.countDown();
+						closeReaderReservations(held);
+					}) {
+				if (finish != Finish.CLOSE_IDLE) {
+					connection.begin(IsolationLevels.SNAPSHOT_READ);
+				}
+				try (TupleQueryResult result = connection.prepareTupleQuery("SELECT ?x WHERE { VALUES ?x { 1 2 } }")
+						.evaluate();
+						AutoCloseable gateOwner = () -> {
+							// Result close can wait for this real worker's uninterruptible unwind gate.
+							// Release gates and artificial contention before invoking any blocking result cleanup.
+							allowNativeUnwind.countDown();
+							allowNativeRead.countDown();
+							closeReaderReservations(held);
+						}) {
+					assertTrue(result.hasNext());
+					result.next();
+					var pulling = executor.submit(() -> {
 						try {
-							for (int i = 0; i < TxnManager.POOL_SIZE; i++) {
-								held.add(manager.reserveReadTxn(false));
-							}
-						} catch (CapacityReached expected) {
-							// Existing snapshot ownership determines the remaining capacity.
-						}
-					}
-					manager.beforeBlockingReaderAdmissionForTest = nativeReadBlocked::countDown;
-					allowNativeRead.countDown();
-					if (nativeBarrier) {
-						awaitWaitingIn(nativeThread, "acquireReadBarrierInterruptibly");
-					} else {
-						assertTrue(nativeReadBlocked.await(5, TimeUnit.SECONDS));
-						awaitWaitingIn(nativeThread, "acquireReaderPermits");
-					}
-					// Cancellation drain, source cleanup and connection close share one finalization budget.
-					// The final close can run ten GC passes over a shared JVM's heap; it is not a separate
-					// five-second latency contract after the native cancellation has already succeeded.
-					long finalizationDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-					var closing = executor.submit(() -> {
-						finishingThread.set(Thread.currentThread());
-						try {
-							switch (finish) {
-							case CLOSE_ACTIVE, CLOSE_IDLE -> connection.close();
-							case PREPARE_INTERRUPTED -> connection.prepare();
-							case COMMIT_INTERRUPTED -> connection.commit();
-							case ROLLBACK_INTERRUPTED -> connection.rollback();
-							}
-							return Thread.currentThread().isInterrupted();
-						} catch (RuntimeException failure) {
-							finishingFailure.set(failure);
-							return Thread.currentThread().isInterrupted();
-						} finally {
-							Thread.interrupted();
+							result.hasNext();
+						} catch (RuntimeException expectedCancellation) {
+							// Both direct and asynchronous pulls report the interrupted native admission.
 						}
 					});
+					assertTrue(beforeNativeRead.await(5, TimeUnit.SECONDS));
+					beforeContention.run();
+					TxnManager manager = ((ValueStore) store.getBackingStore().getValueFactory()).getTxnManager();
+					long writeStamp = nativeBarrier ? manager.lockManager().writeLock() : 0L;
+					manager.beforeBlockingReaderAdmissionForTest = () -> {
+						throw new CapacityReached();
+					};
 					try {
-						if (finish.interrupted()) {
-							awaitWaitingIn(finishingThread, "finishReadAttempt");
-							finishingThread.get().interrupt();
+						if (!nativeBarrier) {
+							try {
+								for (int i = 0; i < TxnManager.POOL_SIZE; i++) {
+									held.add(manager.reserveReadTxn(false));
+								}
+							} catch (CapacityReached expected) {
+								// Existing snapshot ownership determines the remaining capacity.
+							}
 						}
-						assertTrue(nativeReadExited.await(remainingFinalizationNanos(finalizationDeadline),
-								TimeUnit.NANOSECONDS),
-								() -> cancellationFailureContext(finish, asynchronous, nativeBarrier, nativeFailure,
-										finishingFailure, nativeThread, finishingThread));
-						assertNotNull(nativeFailure.get(), "The native admission must fail through cancellation");
-						assertInstanceOf(InterruptedException.class, nativeFailure.get().getCause());
-						if (pauseNativeUnwind) {
-							assertEquals(1L, sourceClosed.getCount(), "the admitted worker still owns its read scope");
-							assertFalse(closing.isDone(), "connection close must wait for native cleanup");
+						manager.beforeBlockingReaderAdmissionForTest = nativeReadBlocked::countDown;
+						allowNativeRead.countDown();
+						if (nativeBarrier) {
+							awaitWaitingIn(nativeThread, "acquireReadBarrierInterruptibly");
+						} else {
+							assertTrue(nativeReadBlocked.await(5, TimeUnit.SECONDS));
+							awaitWaitingIn(nativeThread, "acquireReaderPermits");
+						}
+						// Cancellation drain, source cleanup and connection close share one finalization budget.
+						// The final close can run ten GC passes over a shared JVM's heap; it is not a separate
+						// five-second latency contract after the native cancellation has already succeeded.
+						long finalizationDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+						var closing = executor.submit(() -> {
+							finishingThread.set(Thread.currentThread());
+							try {
+								switch (finish) {
+								case CLOSE_ACTIVE, CLOSE_IDLE -> connection.close();
+								case PREPARE_INTERRUPTED -> connection.prepare();
+								case COMMIT_INTERRUPTED -> connection.commit();
+								case ROLLBACK_INTERRUPTED -> connection.rollback();
+								}
+								return Thread.currentThread().isInterrupted();
+							} catch (RuntimeException failure) {
+								finishingFailure.set(failure);
+								return Thread.currentThread().isInterrupted();
+							} finally {
+								Thread.interrupted();
+							}
+						});
+						try {
+							if (finish.interrupted()) {
+								awaitWaitingIn(finishingThread, "finishReadAttempt");
+								finishingThread.get().interrupt();
+							}
+							assertTrue(nativeReadExited.await(remainingFinalizationNanos(finalizationDeadline),
+									TimeUnit.NANOSECONDS),
+									() -> cancellationFailureContext(finish, asynchronous, nativeBarrier, nativeFailure,
+											finishingFailure, nativeThread, finishingThread));
+							assertNotNull(nativeFailure.get(), "The native admission must fail through cancellation");
+							assertInstanceOf(InterruptedException.class, nativeFailure.get().getCause());
+							if (pauseNativeUnwind) {
+								assertEquals(1L, sourceClosed.getCount(),
+										"the admitted worker still owns its read scope");
+								assertFalse(closing.isDone(), "connection close must wait for native cleanup");
+								allowNativeUnwind.countDown();
+							}
+							if (!finish.interrupted()) {
+								// The native exit signal precedes the end of its admitted scope. Wait for source
+								// cleanup while contention remains held; full close may itself need that barrier.
+								assertTrue(sourceClosed.await(remainingFinalizationNanos(finalizationDeadline),
+										TimeUnit.NANOSECONDS),
+										"Source cleanup must finish within the finalization budget");
+								assertEquals(0L, sourceClosed.getCount(),
+										"Connection close must close its source after native admission unwinds");
+							}
+						} finally {
 							allowNativeUnwind.countDown();
+							closeReaderReservations(held);
+							held.clear();
+							if (writeStamp != 0L) {
+								manager.lockManager().unlockWrite(writeStamp);
+								writeStamp = 0L;
+							}
 						}
-						if (!finish.interrupted()) {
-							// The native exit signal precedes the end of its admitted scope. Wait for source
-							// cleanup while contention remains held; full close may itself need that barrier.
-							assertTrue(sourceClosed.await(remainingFinalizationNanos(finalizationDeadline),
-									TimeUnit.NANOSECONDS), "Source cleanup must finish within the finalization budget");
-							assertEquals(0L, sourceClosed.getCount(),
-									"Connection close must close its source after native admission unwinds");
+						assertEquals(finish.interrupted(),
+								closing.get(remainingFinalizationNanos(finalizationDeadline), TimeUnit.NANOSECONDS),
+								"Finalization must preserve the caller's interrupted status");
+						RuntimeException completionFailure = finishingFailure.get();
+						if (completionFailure != null) {
+							if (finish.interrupted()) {
+								assertTrue(hasCause(completionFailure, InterruptedSailException.class),
+										"Interrupted finalization may report interruption, but no unrelated failure");
+							} else {
+								assertInstanceOf(SailException.class, completionFailure);
+								assertEquals("Connection closed before all iterations were closed.",
+										completionFailure.getMessage());
+							}
 						}
+						if (finish.interrupted()) {
+							assertNotNull(captured.get());
+							assertThrows(SailException.class, captured.get()::checkActive,
+									"Queued captured work from the cancelled read must not enter a finished attempt");
+						}
+						pulling.get(5, TimeUnit.SECONDS);
+						result.close();
+						assertEquals(1, closeCalls.get());
 					} finally {
-						allowNativeUnwind.countDown();
-						held.forEach(TxnManager.ReaderReservation::close);
-						held.clear();
+						manager.beforeBlockingReaderAdmissionForTest = null;
+						allowNativeRead.countDown();
 						if (writeStamp != 0L) {
 							manager.lockManager().unlockWrite(writeStamp);
-							writeStamp = 0L;
 						}
-					}
-					assertEquals(finish.interrupted(),
-							closing.get(remainingFinalizationNanos(finalizationDeadline), TimeUnit.NANOSECONDS),
-							"Finalization must preserve the caller's interrupted status");
-					RuntimeException completionFailure = finishingFailure.get();
-					if (completionFailure != null) {
-						if (finish.interrupted()) {
-							assertTrue(hasCause(completionFailure, InterruptedSailException.class),
-									"Interrupted finalization may report interruption, but no unrelated failure");
-						} else {
-							assertInstanceOf(SailException.class, completionFailure);
-							assertEquals("Connection closed before all iterations were closed.",
-									completionFailure.getMessage());
-						}
-					}
-					if (finish.interrupted()) {
-						assertNotNull(captured.get());
-						assertThrows(SailException.class, captured.get()::checkActive,
-								"Queued captured work from the cancelled read must not enter a finished attempt");
-					}
-					pulling.get(5, TimeUnit.SECONDS);
-					result.close();
-					assertEquals(1, closeCalls.get());
-				} finally {
-					manager.beforeBlockingReaderAdmissionForTest = null;
-					allowNativeRead.countDown();
-					if (writeStamp != 0L) {
-						manager.lockManager().unlockWrite(writeStamp);
 					}
 				}
 			}
-		} finally {
-			allowNativeUnwind.countDown();
-			allowNativeRead.countDown();
-			held.forEach(TxnManager.ReaderReservation::close);
-			repository.shutDown();
 		}
+	}
+
+	static void closeCancellationRepository(Repository repository, Path directory) {
+		repository.shutDown();
+		// An unsuccessful native shutdown retains ownership; automatic TempDir deletion is disabled.
+		LmdbTestUtil.deleteDir(directory);
+	}
+
+	private static void closeReaderReservations(List<TxnManager.ReaderReservation> held) throws Exception {
+		LmdbTestUtil.cleanup(null, held.toArray(AutoCloseable[]::new));
+		held.clear();
 	}
 
 	private static long remainingFinalizationNanos(long deadline) {
