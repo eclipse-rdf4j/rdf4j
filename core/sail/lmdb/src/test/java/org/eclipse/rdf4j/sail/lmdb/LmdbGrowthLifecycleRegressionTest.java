@@ -67,6 +67,7 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -204,76 +205,146 @@ class LmdbGrowthLifecycleRegressionTest {
 	}
 
 	@Test
+	@Timeout(value = 20, unit = TimeUnit.SECONDS)
+	void emergencyGrowthCannotReplacePostReadyRecoveryWriter(@TempDir(cleanup = CleanupMode.NEVER) Path dataDir)
+			throws Exception {
+		CountDownLatch recoveryOwnsWriter = new CountDownLatch(1);
+		CountDownLatch releaseRecovery = new CountDownLatch(1);
+		LmdbStore store = new LmdbStore(dataDir.toFile(), new LmdbStoreConfig("spoc,posc")
+				.setAsyncValueCleanup(false)) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+					boolean sketches) throws IOException {
+				return new LmdbSailStore(directory, properties, config, sketches,
+						(valueDirectory, valueProperties, valueConfig) -> new ValueStore(valueDirectory,
+								valueProperties, valueConfig, false, null,
+								LmdbStoreFormat.resolveDictionary(valueDirectory, valueProperties, valueConfig), true) {
+							private int startupPolls;
+
+							@Override
+							RetiredValueIdStore.DrainBatch pollRetiredIds(long revision, int maximum)
+									throws IOException {
+								// The first poll is preflight; the second is inside admitted recovery publication.
+								if (Thread.currentThread().getName().equals("LmdbStore-PostReady")
+										&& ++startupPolls == 2) {
+									recoveryOwnsWriter.countDown();
+									try {
+										releaseRecovery.await();
+									} catch (InterruptedException interrupted) {
+										Thread.currentThread().interrupt();
+										throw new IOException(interrupted);
+									}
+								}
+								return super.pollRetiredIds(revision, maximum);
+							}
+						}, TripleStore::new);
+			}
+		};
+		try (var storeOwner = LmdbTestUtil.onClose(() -> {
+			store.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}); var gateOwner = LmdbTestUtil.onClose(releaseRecovery::countDown)) {
+			store.init();
+			assertTrue(recoveryOwnsWriter.await(5, TimeUnit.SECONDS), "post-ready recovery owns publication");
+			LmdbSailStore backing = store.getBackingStore();
+			Object writerOwner = new Object();
+			try (LmdbSailStore.ReadAttemptLease writer = backing.registerReadAttempt(writerOwner, NO_REPLAY)) {
+				writer.markWriteIntent();
+				try (var completion = LmdbTestUtil.onClose(writer::completeTransaction);
+						LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(writerOwner)) {
+					LmdbTransactionRetryException rejected = assertThrows(LmdbTransactionRetryException.class,
+							() -> backing.beginMapGrowthAttempt(writerOwner));
+					assertTrue(rejected.getMessage().contains("cannot replace another admitted writer's continuation"));
+					releaseRecovery.countDown();
+					LmdbGcTestMaintenance.awaitPostReady(store);
+					try (LmdbSailStore.MapGrowthAttempt growth = assertDoesNotThrow(
+							() -> backing.beginMapGrowthAttempt(writerOwner))) {
+					}
+				}
+			}
+		}
+	}
+
+	@Test
 	@Timeout(value = 8, unit = TimeUnit.SECONDS)
-	void checkedInterruptionReleasesEmergencyQuiescenceOwnership(@TempDir Path dataDir) throws Exception {
-		// This fixture controls its only writer; the companion above covers rejection of real async cleanup.
+	void checkedInterruptionReleasesEmergencyQuiescenceOwnership(
+			@TempDir(cleanup = CleanupMode.NEVER) Path dataDir) throws Exception {
+		// Isolate this interruption contract from both async cleanup and post-ready recovery publications.
 		LmdbStore store = new LmdbStore(dataDir.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setAsyncValueCleanup(false)
 				.setMapGrowthReadDrainTimeoutMillis(30_000L));
-		store.init();
-		LmdbSailStore backing = store.getBackingStore();
-		Object writerOwner = new Object();
-		Object readerOwner = new Object();
-		LmdbSailStore.ReadAttemptLease writerAttempt = backing.registerReadAttempt(writerOwner, NO_REPLAY);
-		writerAttempt.markWriteIntent();
-		LmdbSailStore.ReadAttemptLease readerAttempt = backing.registerReadAttempt(readerOwner, NO_REPLAY);
-		LmdbSailStore.ReadView readerView = backing.createTransactionReadView(NO_REPLAY, readerAttempt);
-		LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(writerOwner);
-		LmdbSailStore.MapGrowthAttempt growth = backing.beginMapGrowthAttempt(writerOwner);
-		ExecutorService executor = Executors.newSingleThreadExecutor();
-		ExecutorService retryExecutor = Executors.newSingleThreadExecutor();
-		AtomicReference<Thread> workerThread = new AtomicReference<>();
-		AtomicBoolean interruptRestored = new AtomicBoolean();
-		Future<?> interruptedRequest = executor.submit(() -> {
-			workerThread.set(Thread.currentThread());
-			try {
-				growth.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
-			} catch (IOException expected) {
-				interruptRestored.set(Thread.currentThread().isInterrupted());
-				throw new RuntimeException(expected);
-			}
-		});
-		try {
-			Thread worker = awaitWorkerWaiting(workerThread);
-			worker.interrupt();
-			ExecutionException failure = assertThrows(ExecutionException.class,
-					() -> interruptedRequest.get(2, TimeUnit.SECONDS));
-			assertTrue(failure.getCause().getCause() instanceof IOException,
-					"quiescence interruption must be reported as checked I/O failure");
-			assertTrue(interruptRestored.get(), "quiescence must restore the interrupted worker's status");
-
-			if (readerView != null) {
-				readerView.close();
-				readerView = null;
-			}
-			readerAttempt.close();
-			{
-				Future<?> retry = retryExecutor.submit(() -> {
-					if (Thread.currentThread() == worker) {
-						throw new AssertionError("the retry must run on a distinct quiescence owner thread");
-					}
-					try (InterruptingTimeLimit limit = InterruptingTimeLimit.start(250)) {
-						growth.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
-					}
-					return null;
-				});
-				assertDoesNotThrow(() -> retry.get(2, TimeUnit.SECONDS),
-						"a checked interruption must relinquish quiescence ownership for the next attempt");
-			}
-		} finally {
-			if (readerView != null) {
-				readerView.close();
-			}
-			readerAttempt.close();
-			growth.close();
-			warning.close();
-			writerAttempt.completeTransaction();
-			writerAttempt.close();
-			executor.shutdownNow();
-			assertTrue(executor.awaitTermination(3, TimeUnit.SECONDS));
-			retryExecutor.shutdownNow();
-			assertTrue(retryExecutor.awaitTermination(3, TimeUnit.SECONDS));
+		try (var storeOwner = LmdbTestUtil.onClose(() -> {
 			store.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		})) {
+			store.init();
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			LmdbSailStore backing = store.getBackingStore();
+			Object writerOwner = new Object();
+			Object readerOwner = new Object();
+			try (LmdbSailStore.ReadAttemptLease writerAttempt = backing.registerReadAttempt(writerOwner, NO_REPLAY);
+					var writerCompletion = LmdbTestUtil.onClose(writerAttempt::completeTransaction)) {
+				writerAttempt.markWriteIntent();
+				try (LmdbSailStore.ReadAttemptLease readerAttempt = backing.registerReadAttempt(readerOwner,
+						NO_REPLAY)) {
+					AtomicReference<LmdbSailStore.ReadView> readerView = new AtomicReference<>(
+							backing.createTransactionReadView(NO_REPLAY, readerAttempt));
+					try (var viewOwner = LmdbTestUtil.onClose(() -> {
+						LmdbSailStore.ReadView view = readerView.getAndSet(null);
+						if (view != null) {
+							view.close();
+						}
+					});
+							LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(writerOwner);
+							LmdbSailStore.MapGrowthAttempt growth = backing.beginMapGrowthAttempt(writerOwner)) {
+						ExecutorService executor = Executors.newSingleThreadExecutor();
+						try (AutoCloseable executorOwner = () -> LmdbTestUtil.shutdownExecutor(executor, 0, 3, false,
+								"interrupted quiescence worker must terminate")) {
+							ExecutorService retryExecutor = Executors.newSingleThreadExecutor();
+							try (AutoCloseable retryOwner = () -> LmdbTestUtil.shutdownExecutor(retryExecutor, 0, 3,
+									false,
+									"retry quiescence worker must terminate")) {
+								AtomicReference<Thread> workerThread = new AtomicReference<>();
+								AtomicBoolean interruptRestored = new AtomicBoolean();
+								Future<?> interruptedRequest = executor.submit(() -> {
+									workerThread.set(Thread.currentThread());
+									try {
+										growth.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+									} catch (IOException expected) {
+										interruptRestored.set(Thread.currentThread().isInterrupted());
+										throw new RuntimeException(expected);
+									}
+								});
+								Thread worker = awaitWorkerWaiting(workerThread);
+								worker.interrupt();
+								ExecutionException failure = assertThrows(ExecutionException.class,
+										() -> interruptedRequest.get(2, TimeUnit.SECONDS));
+								assertTrue(failure.getCause().getCause() instanceof IOException,
+										"quiescence interruption must be reported as checked I/O failure");
+								assertTrue(interruptRestored.get(),
+										"quiescence must restore the interrupted worker's status");
+
+								readerView.getAndSet(null).close();
+								readerAttempt.close();
+								{
+									Future<?> retry = retryExecutor.submit(() -> {
+										if (Thread.currentThread() == worker) {
+											throw new AssertionError(
+													"the retry must run on a distinct quiescence owner thread");
+										}
+										try (InterruptingTimeLimit limit = InterruptingTimeLimit.start(250)) {
+											growth.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+										}
+										return null;
+									});
+									assertDoesNotThrow(() -> retry.get(2, TimeUnit.SECONDS),
+											"a checked interruption must relinquish quiescence ownership for the next attempt");
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 
