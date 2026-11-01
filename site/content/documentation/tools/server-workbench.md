@@ -710,7 +710,7 @@ The “Clear Repository” page is powerful. Leaving the lone “Context:” fie
 
 #### SPARQL Update
 
-The “Execute SPARQL Update on Repository” page gives a text area where you enter a SPARQL 1.1 Update command. SPARQL Update is an extension to the SPARQL query language that provides full CRUD (Create Read Update Delete) capabilities. For more information see the W3C Recommendation for SPARQL 1.1 Update. Clicking “Execute” executes the specified SPARQL Update operation.
+The “Execute SPARQL Update on Repository” page gives a text area where you enter a SPARQL 1.1 Update command. SPARQL Update is an extension to the SPARQL query language that provides full CRUD (Create Read Update Delete) capabilities. For more information see the W3C Recommendation for SPARQL 1.1 Update. Clicking “Execute” executes the specified SPARQL Update operation. The browser keeps what you type as a draft for each repository (and server), so an update written for one repository is never waiting, ready to run, on another repository's page.
 
 When a repository with SHACL validation rejects a change made with Add, Remove, Clear or SPARQL Update, the Workbench lists the violations, one per line, with the focus node, the path, the offending value and what the constraint expected (or the shape's `sh:message`), for example `- ex:alice, ex:age: value "abc": expected datatype xsd:integer`. Long reports list their first 20 violations.
 

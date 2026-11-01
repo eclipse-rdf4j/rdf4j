@@ -206,7 +206,8 @@ test('Information shows memory in use against the maximum, its share on one line
 	const meter = page.locator('#information-memory meter.workbench-memory-meter');
 	await expect(meter).toHaveAccessibleName('Memory used of the maximum');
 	const share = page.locator('#information-memory .workbench-memory-share');
-	await expect(share).toHaveText(/^\d+% of the maximum$/);
+	// A small server's share reads "less than 1%", the longest form, rather than a misleading 0%.
+	await expect(share).toHaveText(/^(\d+%|less than 1%|more than 99%) of the maximum$/);
 	// One line: every box of the text has the same top (a run may still be split into several boxes on that line).
 	const lines = await share.evaluate((element) => new Set(Array.from(element.getClientRects(), (rect) => Math.round(rect.top))).size);
 	expect(lines, 'the share does not break mid-phrase').toBe(1);
