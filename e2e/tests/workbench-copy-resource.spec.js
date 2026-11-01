@@ -62,6 +62,22 @@ test('a prefixed IRI in the query results shows its copy button on hover and cop
 		expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(BSBM_INSTANCES + 'ProductType1');
 	});
 
+test('on a narrow screen a type\'s buttons stay beside its name in the record card', async ({ page }) => {
+	await page.setViewportSize({ width: 375, height: 812 });
+	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'types'), { waitUntil: 'domcontentloaded' });
+	const cell = page.locator('#types-results td[data-label="Type"]')
+		.filter({ has: page.getByRole('link', { name: 'bsbm:Product', exact: true }) });
+	await expect(cell).toBeVisible({ timeout: 15000 });
+	const name = await cell.locator('a').first().boundingBox();
+	for (const selector of ['.resource-copy', '.workbench-add-to-graph']) {
+		const button = await cell.locator(selector).boundingBox();
+		expect(button, selector).not.toBeNull();
+		expect(button.x, selector + ' follows the name').toBeGreaterThanOrEqual(name.x + name.width);
+		expect(Math.abs((button.y + button.height / 2) - (name.y + name.height / 2)), selector + ' on the name\'s line')
+			.toBeLessThan(name.height);
+	}
+});
+
 test('the copy button after an Explore group member is reached from the keyboard', async ({ page }) => {
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'explore') + '?resource='

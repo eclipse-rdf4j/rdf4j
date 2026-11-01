@@ -22,11 +22,12 @@ const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-d
 
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
-function loadWorkbench() {
+function loadWorkbench(navigatorOverride) {
     const workbench = {};
     const window = { setTimeout, clearTimeout };
     const copied = [];
-    const navigator = { clipboard: { writeText: text => { copied.push(text); return Promise.resolve(); } } };
+    const navigator = navigatorOverride
+        || { clipboard: { writeText: text => { copied.push(text); return Promise.resolve(); } } };
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({ console, URL, URLSearchParams, Promise, window, workbench, navigator,
         setTimeout, clearTimeout });
@@ -141,6 +142,103 @@ test('Explore offers to copy its type chips and the members of its groups', () =
 
     memberButtons[0].click({ currentTarget: { ownerDocument: null }, preventDefault() {}, stopPropagation() {} });
     assert.deepEqual(copied, [EX + 'Sub']);
+});
+
+// On a narrow screen a type's row becomes a card whose cells are a label column and a value column: the name and its
+// buttons are one element, so the buttons stay beside the name instead of wrapping under the label.
+test('the Types page keeps a type and its buttons together in one element of the cell', () => {
+    const { workbench } = loadWorkbench();
+    const { markup } = page(workbench, 'types', [[iri(EX + 'Product')]], ['type'], { 'total-result-count': 1 });
+
+    const cell = /<td data-label=[^>]*>([\s\S]*?)<\/td>/.exec(markup)[1].trim();
+    assert.match(cell, /^<span class="workbench-copyable">[\s\S]*<\/span>$/,
+        'the cell holds a single wrapper: ' + cell.replace(/\s+/g, ' ').slice(0, 200));
+    // (Add to graph, which needs the Graph page's context, follows the copy button inside the wrapper too.)
+    assert.match(cell, /<a [^>]*>ex:Product<\/a>[\s\S]*class="?resource-copy/,
+        'the wrapper holds the name, then the copy button');
+});
+
+/**
+ * A document whose selection can be copied (document.execCommand('copy')), as on a page served over plain HTTP where
+ * the browser offers no navigator.clipboard.
+ */
+function selectionClipboard(document, works) {
+    const copied = [];
+    const create = document.createElement.bind(document);
+    document.createElement = (tag) => {
+        const element = create(tag);
+        if (String(tag).toLowerCase() === 'textarea') {
+            element.select = () => { document.selectedText = element.value; };
+        }
+        return element;
+    };
+    document.execCommand = (command) => {
+        if (command === 'copy' && works && typeof document.selectedText === 'string') {
+            copied.push(document.selectedText);
+            return true;
+        }
+        return false;
+    };
+    return copied;
+}
+
+async function clickFirstCopyButton(workbench, document) {
+    const status = document.createElement('div');
+    status.setAttribute('id', 'workbench-route-status');
+    document.body.appendChild(status);
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const rows = [[iri(EX + 'a')]];
+    const table = new workbench.queryStream.ResultTable(root, {
+        rowCount: () => rows.length,
+        variables: () => ['a'],
+        read: async (start, count) => rows.slice(start, start + count),
+        namespaces: () => [{ prefix: 'ex', name: EX }]
+    }, { layout: 'table' });
+    await table.render();
+    const button = root.querySelector('.resource-copy');
+    button.dispatchEvent({ type: 'click', preventDefault() {}, stopPropagation() {} });
+    await new Promise(resolve => setImmediate(resolve));
+    return { button, status, table };
+}
+
+test('without a clipboard (a page served over plain HTTP) the copy button copies through the selection', async () => {
+    const { workbench } = loadWorkbench({});
+    const document = new FakeDocument();
+    const copied = selectionClipboard(document, true);
+
+    const { button, status, table } = await clickFirstCopyButton(workbench, document);
+
+    assert.deepEqual(copied, ['http://example.org/a']);
+    assert.equal(button.getAttribute('aria-label'), 'Copied');
+    assert.equal(status.textContent, 'Copied');
+    assert.equal(document.body.querySelectorAll('textarea').length, 0, 'the helper text area is gone again');
+    assert.equal(document.activeElement, button, 'focus returns to the copy button');
+    table.dispose();
+});
+
+test('when the clipboard refuses, the copy button copies through the selection', async () => {
+    const { workbench } = loadWorkbench({ clipboard: { writeText: () => Promise.reject(new Error('denied')) } });
+    const document = new FakeDocument();
+    const copied = selectionClipboard(document, true);
+
+    const { button, table } = await clickFirstCopyButton(workbench, document);
+
+    assert.deepEqual(copied, ['http://example.org/a']);
+    assert.equal(button.getAttribute('aria-label'), 'Copied');
+    table.dispose();
+});
+
+test('when nothing can copy, the status line says how to copy instead', async () => {
+    const { workbench } = loadWorkbench({});
+    const document = new FakeDocument();
+    selectionClipboard(document, false);
+
+    const { button, status, table } = await clickFirstCopyButton(workbench, document);
+
+    assert.equal(button.getAttribute('aria-label'), 'Copy http://example.org/a');
+    assert.equal(status.textContent, 'Could not copy. Select the text to copy it.');
+    table.dispose();
 });
 
 test('the Types page offers to copy a prefixed type, not a type shown in full', () => {

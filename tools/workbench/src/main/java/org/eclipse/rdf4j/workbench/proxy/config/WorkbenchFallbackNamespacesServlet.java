@@ -13,6 +13,9 @@ package org.eclipse.rdf4j.workbench.proxy.config;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -24,14 +27,15 @@ import jakarta.servlet.http.HttpServletResponse;
 /**
  * Serves the namespaces the query editor falls back on for prefixes that are not defined, as one JSON object of
  * prefixes and namespaces: the bundled (empty) list, or {@code namespaces.fallback} of workbench.properties. The list
- * is the same for every repository and page, so the browser keeps it as long as other static files.
+ * is the same for every repository and page but changes with workbench.properties, so browsers revalidate it on every
+ * page load (an unchanged list costs a {@code 304 Not Modified}) instead of keeping it like the static files.
  */
 public class WorkbenchFallbackNamespacesServlet extends HttpServlet {
 
 	private static final long serialVersionUID = 1L;
 
-	/** The JSON of a policy's list; the policy is fixed until the application restarts. */
-	private record Body(WorkbenchPolicy policy, byte[] json) {
+	/** The JSON of a policy's list and its entity tag; the policy is fixed until the application restarts. */
+	private record Body(WorkbenchPolicy policy, byte[] json, String tag) {
 	}
 
 	private transient volatile Body cache;
@@ -44,21 +48,58 @@ public class WorkbenchFallbackNamespacesServlet extends HttpServlet {
 			resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
 			return;
 		}
-		byte[] body = body(WorkbenchPolicyLoader.getPolicy(getServletContext(), null));
+		WorkbenchPolicy policy;
+		try {
+			policy = WorkbenchPolicyLoader.getPolicy(getServletContext(), null);
+		} catch (InvalidWorkbenchPolicyException e) {
+			WorkbenchPolicyResponse.sendInvalidPolicy(resp, e);
+			return;
+		}
+		Body body = body(policy);
+		// Replaces the ten minutes the Workbench's cache filter allows every file.
+		resp.setHeader("Cache-Control", "no-cache");
+		resp.setHeader("ETag", body.tag());
+		if (matches(req.getHeader("If-None-Match"), body.tag())) {
+			resp.setStatus(HttpServletResponse.SC_NOT_MODIFIED);
+			return;
+		}
 		resp.setContentType("application/json");
 		resp.setCharacterEncoding(StandardCharsets.UTF_8.name());
-		resp.setContentLength(body.length);
+		resp.setContentLength(body.json().length);
 		if ("GET".equals(method)) {
-			resp.getOutputStream().write(body);
+			resp.getOutputStream().write(body.json());
 		}
 	}
 
-	private byte[] body(WorkbenchPolicy policy) throws IOException {
+	/** Whether an If-None-Match header names the tag (weak comparison, as RFC 9110 asks for this header). */
+	private static boolean matches(String ifNoneMatch, String tag) {
+		if (ifNoneMatch == null) {
+			return false;
+		}
+		for (String candidate : ifNoneMatch.split(",")) {
+			String trimmed = candidate.trim();
+			if (trimmed.equals("*") || (trimmed.startsWith("W/") ? trimmed.substring(2) : trimmed).equals(tag)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private Body body(WorkbenchPolicy policy) throws IOException {
 		Body cached = cache;
 		if (cached == null || cached.policy() != policy) {
-			cached = new Body(policy, new ObjectMapper().writeValueAsBytes(policy.getFallbackNamespaces()));
+			byte[] json = new ObjectMapper().writeValueAsBytes(policy.getFallbackNamespaces());
+			cached = new Body(policy, json, "\"" + sha256(json) + "\"");
 			cache = cached;
 		}
-		return cached.json();
+		return cached;
+	}
+
+	private static String sha256(byte[] bytes) {
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+		} catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException("Every Java runtime has SHA-256", e);
+		}
 	}
 }

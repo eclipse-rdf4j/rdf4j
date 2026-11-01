@@ -4658,6 +4658,7 @@ body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workben
 }
 
 body.workbench-body .workbench-page-surface :is(.resource, td, .workbench-copyable):hover > :is(.resource-add-to-graph, .workbench-add-to-graph, .resource-copy),
+body.workbench-body .workbench-page-surface td:hover > .workbench-copyable > :is(.resource-add-to-graph, .workbench-add-to-graph, .resource-copy),
 body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph, .resource-copy):focus-visible,
 body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph).is-added,
 body.workbench-body .workbench-page-surface .resource-copy[aria-label="Copied"] {

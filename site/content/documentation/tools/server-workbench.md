@@ -327,8 +327,8 @@ namespaces.fallback=schema:https://schema.org/ foaf:http://xmlns.com/foaf/0.1/
 
 An entry without a colon, an invalid prefix, a namespace that is not an absolute IRI, or a prefix listed twice makes
 the whole policy invalid. Every Workbench page then answers `503 Service Unavailable`, as described above. The editors
-load the fallback list once per page from `<workbench>/fallback-namespaces`. The browser caches it like the other
-static files.
+load the fallback list once per page from `<workbench>/fallback-namespaces`. Browsers check it again on every page
+load, so a changed list reaches the editors as soon as the Workbench has restarted.
 
 ### OpenTelemetry Tracing
 

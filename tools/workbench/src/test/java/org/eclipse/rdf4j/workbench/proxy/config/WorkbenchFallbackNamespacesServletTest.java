@@ -13,11 +13,18 @@ package org.eclipse.rdf4j.workbench.proxy.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletConfig;
@@ -31,16 +38,39 @@ import jakarta.servlet.http.HttpServletResponse;
 /** The list of namespaces the query editor falls back on, as one JSON object of prefixes and namespaces. */
 class WorkbenchFallbackNamespacesServletTest {
 
+	@TempDir
+	Path tempDir;
+
 	private static MockHttpServletResponse get(Properties properties, String method) throws Exception {
+		return get(properties, method, null);
+	}
+
+	private static MockHttpServletResponse get(Properties properties, String method, String ifNoneMatch)
+			throws Exception {
 		MockServletContext context = new MockServletContext();
 		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
 				WorkbenchPolicy.fromProperties(properties, Set.of()));
+		return serve(context, method, ifNoneMatch);
+	}
+
+	private static MockHttpServletResponse serve(MockServletContext context, String method, String ifNoneMatch)
+			throws Exception {
 		WorkbenchFallbackNamespacesServlet servlet = new WorkbenchFallbackNamespacesServlet();
 		servlet.init(new MockServletConfig(context, "fallback-namespaces"));
+		MockHttpServletRequest request = new MockHttpServletRequest(context, method,
+				"/rdf4j-workbench/fallback-namespaces");
+		if (ifNoneMatch != null) {
+			request.addHeader("If-None-Match", ifNoneMatch);
+		}
 		MockHttpServletResponse response = new MockHttpServletResponse();
-		servlet.service(new MockHttpServletRequest(context, method, "/rdf4j-workbench/fallback-namespaces"),
-				response);
+		servlet.service(request, response);
 		return response;
+	}
+
+	private static Properties fallback(String value) {
+		Properties properties = new Properties();
+		properties.setProperty("namespaces.fallback", value);
+		return properties;
 	}
 
 	private static Map<String, String> json(MockHttpServletResponse response) throws Exception {
@@ -63,6 +93,59 @@ class WorkbenchFallbackNamespacesServletTest {
 		properties.setProperty("namespaces.fallback", "acme:https://acme.example/vocab#");
 
 		assertThat(json(get(properties, "GET"))).containsExactly(Map.entry("acme", "https://acme.example/vocab#"));
+	}
+
+	// The Workbench's cache filter lets browsers keep other files for ten minutes; this list changes with
+	// workbench.properties, so after a restart the editors must see the new list at once.
+	@Test
+	void browsersRevalidateTheListOnEveryPageLoad() throws Exception {
+		MockHttpServletResponse response = get(new Properties(), "GET");
+
+		assertThat(response.getHeader("Cache-Control")).isEqualTo("no-cache");
+		assertThat(response.getHeader("ETag")).as("a strong, quoted entity tag").matches("\"[^\"]+\"");
+	}
+
+	@Test
+	void aListTheBrowserAlreadyHasIsAnsweredWithNotModified() throws Exception {
+		String tag = get(fallback("acme:https://acme.example/vocab#"), "GET").getHeader("ETag");
+
+		MockHttpServletResponse unchanged = get(fallback("acme:https://acme.example/vocab#"), "GET", tag);
+		assertThat(unchanged.getStatus()).isEqualTo(HttpServletResponse.SC_NOT_MODIFIED);
+		assertThat(unchanged.getContentAsByteArray()).isEmpty();
+		assertThat(unchanged.getHeader("ETag")).isEqualTo(tag);
+
+		MockHttpServletResponse changed = get(fallback("acme:https://acme.example/other#"), "GET", tag);
+		assertThat(changed.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+		assertThat(changed.getHeader("ETag")).isNotEqualTo(tag);
+		assertThat(json(changed)).containsExactly(Map.entry("acme", "https://acme.example/other#"));
+	}
+
+	// Like every Workbench page, the list answers 503 with the problem while workbench.properties is invalid.
+	@Test
+	@ResourceLock("thread-context-class-loader")
+	void anInvalidPolicyIsAnsweredWithServiceUnavailable() throws Exception {
+		Path classpathRoot = tempDir.resolve("classpath");
+		Path classpathFile = classpathRoot.resolve("org/eclipse/rdf4j/common/app/config/workbench.properties");
+		Files.createDirectories(classpathFile.getParent());
+		Files.writeString(classpathFile, "namespaces=acme:relative/path\n", StandardCharsets.UTF_8);
+		Thread thread = Thread.currentThread();
+		ClassLoader originalClassLoader = thread.getContextClassLoader();
+		try (URLClassLoader testClassLoader = new URLClassLoader(new URL[] { classpathRoot.toUri().toURL() },
+				originalClassLoader) {
+			@Override
+			public URL getResource(String name) {
+				return super.getResource(name.startsWith("/") ? name.substring(1) : name);
+			}
+		}) {
+			thread.setContextClassLoader(testClassLoader);
+			MockHttpServletResponse response = serve(new MockServletContext(), "GET", null);
+
+			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			assertThat(response.getContentAsString()).contains("workbench.properties is invalid")
+					.contains("'acme'");
+		} finally {
+			thread.setContextClassLoader(originalClassLoader);
+		}
 	}
 
 	@Test
