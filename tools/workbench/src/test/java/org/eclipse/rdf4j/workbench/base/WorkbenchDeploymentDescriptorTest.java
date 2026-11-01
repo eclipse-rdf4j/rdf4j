@@ -161,7 +161,7 @@ class WorkbenchDeploymentDescriptorTest {
 
 	@Test
 	void theRevalidatedNamesAreTheExplorerOutputsThatCarryNoHash() throws Exception {
-		String vite = Files.readString(Path.of("vite.config.ts"));
+		String vite = Files.readString(Path.of("vite.config.mts"));
 
 		assertThat(vite).contains("entryFileNames: \"scripts/graph-explorer/[name].mjs\"")
 				.contains("\"graph-explorer\":", "\"query-graph-renderer\":")

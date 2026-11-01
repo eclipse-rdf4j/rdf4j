@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -29,7 +31,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
@@ -37,19 +41,106 @@ import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCapture;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanCaptureContext;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanExplanation;
 import org.eclipse.rdf4j.benchmark.common.plan.QueryPlanSnapshot;
+import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.io.FileUtil;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.MockedStatic;
 
 class QueryPlanSnapshotCliTest {
 
 	@TempDir
 	Path temporary;
+
+	private MockedStatic<ThemeDataSetGenerator> themeFixture;
+
+	@BeforeEach
+	void useBoundedRealThemeDataForCliContracts() {
+		// These are CLI/plan/serialization contracts, not default benchmark-scale generation tests.
+		// Generate every real theme with explicit small configs; benchmark-common retains default-scale coverage.
+		themeFixture = smallThemeConfigurations();
+	}
+
+	@AfterEach
+	void restoreThemeConfigurationFactories() {
+		if (themeFixture != null) {
+			themeFixture.close();
+		}
+	}
+
+	@Test
+	void boundedFixtureRetainsEveryPhysicalThemeAndNamedGraph() throws Exception {
+		long rows = 0;
+		Map<IRI, Long> expectedGraphCounts = new LinkedHashMap<>();
+		int physicalThemes = 0;
+		var values = SimpleValueFactory.getInstance();
+		for (Theme theme : Theme.values()) {
+			Model model = ThemeDataSetGenerator.generate(theme);
+			if (theme == Theme.ANALYTICS || theme == Theme.EXPLORATION) {
+				assertTrue(model.isEmpty(), "Virtual themes contribute no statements: " + theme);
+				continue;
+			}
+			physicalThemes++;
+			assertFalse(model.isEmpty(), "Physical theme must retain actual data: " + theme);
+			var graph = values.createIRI("http://example.com/theme/graph/"
+					+ theme.name().toLowerCase(Locale.ROOT).replace('_', '-'));
+			assertEquals(Set.of(graph), model.contexts(), "Real named-graph dispatch: " + theme);
+			expectedGraphCounts.put(graph, (long) model.size());
+			rows += model.size();
+		}
+		assertEquals(11, physicalThemes);
+		assertTrue(rows > 11 && rows < 100_000, "Bounded real fixture row count: " + rows);
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--no-interactive", "--store", "memory", "--theme", "MEDICAL_RECORDS", "--query-index", "0"
+		});
+		try (var runtime = QueryPlanSnapshotStoreSupport.createStoreRuntime(options)) {
+			QueryPlanSnapshotStoreSupport.ensureThemeDataLoaded(runtime);
+			try (var connection = runtime.repository.getConnection()) {
+				assertEquals(rows, connection.size(), "The real CLI loader must retain all generated themes");
+				for (var expected : expectedGraphCounts.entrySet()) {
+					assertEquals(expected.getValue().longValue(), connection.size(expected.getKey()),
+							"Loaded graph row count: " + expected.getKey());
+				}
+			}
+		}
+	}
+
+	@Test
+	void boundedFixtureCliExecutesNonemptyMedicalQueryAndPersistsActualCount() throws Exception {
+		var values = SimpleValueFactory.getInstance();
+		Model medical = ThemeDataSetGenerator.generate(Theme.MEDICAL_RECORDS);
+		long expectedPatients = medical.filter(null, RDF.TYPE,
+				values.createIRI("http://example.com/theme/medical/Patient")).subjects().size();
+		assertTrue(expectedPatients > 0);
+		Path outputDirectory = temporary.resolve("bounded-semantic-snapshot");
+		String query = "SELECT ?patient WHERE { GRAPH <http://example.com/theme/graph/medical-records> { "
+				+ "?patient a <http://example.com/theme/medical/Patient> } }";
+		QueryPlanSnapshotCliOptions options = QueryPlanSnapshotCli.parseArgs(new String[] {
+				"--no-interactive", "--store", "memory", "--theme", "MEDICAL_RECORDS",
+				"--query", query, "--output-dir", outputDirectory.toString()
+		});
+		newCli("", new ByteArrayOutputStream()).run(options);
+		Path snapshotFile;
+		try (var snapshots = Files.list(outputDirectory)) {
+			List<Path> files = snapshots.filter(path -> path.toString().endsWith(".json")).toList();
+			assertEquals(1, files.size());
+			snapshotFile = files.get(0);
+		}
+		QueryPlanSnapshot snapshot = new QueryPlanCapture().readSnapshot(snapshotFile);
+		assertEquals(query, snapshot.getQueryString());
+		assertEquals(Long.toString(expectedPatients), snapshot.getMetadata().get("execution.resultCount"));
+		assertEquals("1", snapshot.getMetadata().get("execution.runs"));
+	}
 
 	private static final int TEST_EXECUTION_REPEAT_MIN_RUNS = 1;
 	private static final int TEST_EXECUTION_REPEAT_MAX_RUNS = 1;
@@ -1377,5 +1468,90 @@ class QueryPlanSnapshotCliTest {
 		explanations.put("executed", executedExplanation);
 		snapshot.setExplanations(explanations);
 		capture.writeSnapshot(outputDir.resolve(queryId + "-" + capturedAt.replace(":", "-") + ".json"), snapshot);
+	}
+
+	private static MockedStatic<ThemeDataSetGenerator> smallThemeConfigurations() {
+		MockedStatic<ThemeDataSetGenerator> generators = mockStatic(ThemeDataSetGenerator.class, CALLS_REAL_METHODS);
+		try {
+			generators.when(ThemeDataSetGenerator::medicalConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.MedicalConfig().withPatientCount(16)
+							.withPractitionerCount(4));
+			generators.when(ThemeDataSetGenerator::socialMediaConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.SocialMediaConfig().withUserCount(16)
+							.withPostsPerUser(2)
+							.withCommentsPerPost(2)
+							.withLikesPerPost(2)
+							.withFollowsPerUser(2)
+							.withTagsPerPost(2)
+							.withTagCount(4)
+							.withCliqueSizes(4, 4));
+			generators.when(ThemeDataSetGenerator::libraryConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.LibraryConfig().withBookCount(16)
+							.withAuthorCount(8)
+							.withBranchCount(2)
+							.withCopiesPerBook(2)
+							.withAuthorsPerBook(2)
+							.withMemberCount(8)
+							.withLoansPerMember(2));
+			generators.when(ThemeDataSetGenerator::engineeringConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.EngineeringConfig().withComponentCount(24)
+							.withAssemblyCount(4)
+							.withRequirementCount(4)
+							.withTestsPerRequirement(2));
+			generators.when(ThemeDataSetGenerator::highlyConnectedConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.HighlyConnectedConfig().withNodeCount(16)
+							.withHubCount(2)
+							.withEdgesPerNode(2));
+			generators.when(ThemeDataSetGenerator::trainConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.TrainConfig().withStationCount(16)
+							.withRouteCount(4)
+							.withStopsPerRoute(4)
+							.withTrainCount(8)
+							.withTripsPerTrain(2));
+			generators.when(ThemeDataSetGenerator::electricalGridConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.ElectricalGridConfig().withSubstationCount(4)
+							.withTransformersPerSubstation(2)
+							.withLinesPerSubstation(2)
+							.withMetersPerTransformer(2));
+			generators.when(ThemeDataSetGenerator::pharmaConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.PharmaConfig().withDrugCount(16)
+							.withMoleculeCount(16)
+							.withChemicalClassCount(4)
+							.withTargetCount(8)
+							.withPathwayCount(4)
+							.withDiseaseCount(4)
+							.withTrialCount(8)
+							.withArmsPerTrial(2)
+							.withSideEffectCount(4)
+							.withSideEffectsPerDrug(2)
+							.withBiomarkerCount(4)
+							.withCombinationCount(4)
+							.withMoleculesPerDrug(2)
+							.withTargetsPerDrug(2)
+							.withTargetsPerMolecule(2)
+							.withIndicationsPerDrug(2)
+							.withDrugsPerCombination(2)
+							.withComparatorCount(4));
+			generators.when(ThemeDataSetGenerator::adaptiveFilterPlacementConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.AdaptiveFilterPlacementConfig().withProbeCount(32)
+							.withQualifyingProbeCount(8)
+							.withRoutesPerProbe(2)
+							.withDecoyRouteCount(16));
+			generators.when(ThemeDataSetGenerator::realEstateConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.RealEstateConfig().withDistrictCount(4)
+							.withAgentCount(8)
+							.withAmenityCount(4)
+							.withPropertyCount(24));
+			generators.when(ThemeDataSetGenerator::dataTransformationConfig)
+					.thenAnswer(ignored -> new ThemeDataSetGenerator.DataTransformationConfig().withRecordCount(32));
+			return generators;
+		} catch (RuntimeException | Error failure) {
+			try {
+				generators.close();
+			} catch (RuntimeException | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
 	}
 }

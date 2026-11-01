@@ -499,13 +499,19 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 	}
 
 	boolean idle() {
-		// read order matters: a unit leaves the inbox only after runningUnit is raised, and the flags it raises are
-		// written before runningUnit drops again
+		// read order matters: each handoff raises its successor before dropping itself, so the reads follow the
+		// handoffs. A unit leaves the inbox only after runningUnit is raised, and the flags it raises are written
+		// before runningUnit drops again; startRebuild raises buildInFlight before dropping rebuildRequested, so the
+		// request is read before the flag. Worker completions drop their in-flight flag inside a unit, so the inbox
+		// and runningUnit are read again last.
 		if (!inbox.isEmpty() || runningUnit) {
 			return false;
 		}
-		return !buildInFlight && prepareInFlight < 0 && !compactionInFlight && !rebuildRequested && !closeRequested
-				&& !compactionRequested && !foldRequested;
+		if (rebuildRequested || closeRequested || compactionRequested || foldRequested || buildInFlight
+				|| prepareInFlight >= 0 || compactionInFlight) {
+			return false;
+		}
+		return inbox.isEmpty() && !runningUnit;
 	}
 
 	private boolean step(boolean dryRun) {
@@ -854,8 +860,8 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			}
 			if (candidate == null) {
 				Throwable failure = outcome.failure();
-				if (failure instanceof AdjacencyGapException) {
-					// the next pin lands at or beyond the gap
+				if (failure instanceof AdjacencyGapException || ops.buildInvalidated(failure)) {
+					// The next pin lands at or beyond the gap, or replaces an invalidated source snapshot.
 					rebuildRequested = true;
 					return;
 				}
@@ -866,15 +872,19 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 						ops.retainOverlays(current.overlays());
 					}
 				}
+				boolean unavailable = ops.buildUnavailable(failure);
 				boolean refused = ops.transientRefusal(failure);
 				Phase phase = current.status() == Status.SERVING ? current.phase()
-						: refused ? Phase.MEMORY_REFUSED : Phase.FAILED;
+						: unavailable ? Phase.EMPTY : refused ? Phase.MEMORY_REFUSED : Phase.FAILED;
 				publish(new AdjacencyState<>(nextEpoch(), current.base(), current.overlays(),
 						current.appliedRevision(), current.gapFromRevision(), current.minSnapshotRevision(),
-						current.status(), phase, (refused ? "rebuild refused: " : "rebuild failed: ")
+						current.status(), phase,
+						(unavailable ? "rebuild unavailable: " : refused ? "rebuild refused: " : "rebuild failed: ")
 								+ describe(failure),
 						this::onStateReleased), Transition.noChange());
-				scheduleRetry();
+				if (!unavailable) {
+					scheduleRetry();
+				}
 				return;
 			}
 			AdjacencyState<B, O> current = published.get();

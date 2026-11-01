@@ -115,16 +115,13 @@ class LmdbBlankNodeReferenceLifecycleTest {
 			repository.shutDown();
 		}
 
-		SailRepository reopened = new SailRepository(
-				new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc")));
+		LmdbStore reopenedStore = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc"));
+		SailRepository reopened = new SailRepository(reopenedStore);
 		reopened.init();
 		try {
-			for (Thread helper : Thread.getAllStackTraces().keySet()) {
-				if (helper.getName().equals("LmdbStore-PostReady")) {
-					helper.join(TimeUnit.SECONDS.toMillis(10));
-					assertFalse(helper.isAlive(), "bounded post-ready reclamation must complete");
-				}
-			}
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(reopenedStore);
+			assertTrue(reopenedStore.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS));
+			LmdbGcTestMaintenance.drainRetirements(reopenedStore.getBackingStore());
 			try (var connection = reopened.getConnection()) {
 				var dictionary = (ValueStore) reopened.getValueFactory();
 				assertEquals(LmdbValue.UNKNOWN_ID, dictionary.getId(expected, false),

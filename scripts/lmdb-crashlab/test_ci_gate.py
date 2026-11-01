@@ -2,16 +2,14 @@ import json
 import re
 import random
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from ci_gate import (
-    FAILSAFE_IT_CLASSES,
     POWER_CUT_SCENARIOS,
-    SUREFIRE_TEST_CLASSES,
     validate_campaign_reports as validate_all_campaign_reports,
-    validate_selected_test_reports,
 )
 from run_ci_campaigns import build_campaign_plan
 from run_powercut_campaign import SCENARIOS
@@ -344,37 +342,70 @@ class CiGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_campaign_reports(calibration_report(), namespace_report(), self.reports)
 
-    def test_selected_java_reports_must_be_present_and_have_zero_skips(self):
+    def test_owner_java_report_gate_validates_each_kind_without_other_reports(self):
+        from validate_java_reports import SUREFIRE_TEST_CLASSES, FAILSAFE_IT_CLASSES
+        for kind, classes in (("unit", SUREFIRE_TEST_CLASSES), ("integration", FAILSAFE_IT_CLASSES)):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                command = [sys.executable, str(Path(__file__).with_name("validate_java_reports.py")),
+                           "--kind", kind, "--reports-dir", str(root)]
+                for name in classes:
+                    (root / f"TEST-{name}.xml").write_text(
+                        f'<testsuite name="org.example.{name}" tests="1" failures="0" '
+                        'errors="0" skipped="0"/>', encoding="utf-8")
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertEqual(0, result.returncode, result.stderr)
+                selected = root / f"TEST-{classes[0]}.xml"
+                original = selected.read_text()
+                for attribute, old, new in (("skipped", "0", "1"), ("failures", "0", "1"),
+                                            ("errors", "0", "1"), ("tests", "1", "0")):
+                    selected.write_text(original.replace(f'{attribute}="{old}"', f'{attribute}="{new}"'))
+                    result = subprocess.run(command, capture_output=True, text=True)
+                    self.assertEqual(1, result.returncode, result.stderr)
+                selected.unlink()
+                (root / "TEST-Unrelated.xml").write_text(
+                    '<testsuite name="Unrelated" tests="1" failures="0" errors="0" skipped="0"/>')
+                result = subprocess.run(command, capture_output=True, text=True)
+                self.assertEqual(1, result.returncode, result.stderr)
+                self.assertIn("did not run selected test classes", result.stderr)
+
+    def test_pr_verify_validates_existing_reports_in_owning_jobs(self):
+        source = (Path(__file__).parents[2] / ".github/workflows/pr-verify.yml").read_text()
+        unit = source.split("  lmdb-unit-tests:", 1)[1].split("  unit-tests:", 1)[0]
+        integration = source.split("  integration-tests:", 1)[1].split("  slow-tests:", 1)[0]
+        self.assertIn("--kind unit --reports-dir core/sail/lmdb/target/surefire-reports", unit)
+        self.assertLess(unit.index("id: test"), unit.index("--kind unit"))
+        self.assertLess(unit.index("--kind unit"), unit.index("id: sync_validation"))
+        self.assertIn("--kind integration --reports-dir core/sail/lmdb/target/failsafe-reports", integration)
+        self.assertLess(integration.index("- name: Verify"), integration.index("--kind integration"))
+
+    def test_campaign_gate_cli_needs_no_junit_reports(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            surefire = root / "surefire"
-            failsafe = root / "failsafe"
-            surefire.mkdir()
-            failsafe.mkdir()
-            for class_name in SUREFIRE_TEST_CLASSES:
-                (surefire / f"TEST-org.example.{class_name}.xml").write_text(
-                    f'<testsuite name="org.example.{class_name}" tests="1" failures="0" '
-                    'errors="0" skipped="0"/>\n', encoding="utf-8")
-            for class_name in FAILSAFE_IT_CLASSES:
-                (failsafe / f"TEST-org.example.{class_name}.xml").write_text(
-                    f'<testsuite name="org.example.{class_name}" tests="1" failures="0" '
-                    'errors="0" skipped="0"/>\n', encoding="utf-8")
-            validate_selected_test_reports(surefire, failsafe)
-            selected = SUREFIRE_TEST_CLASSES[0]
-            path = next(surefire.glob(f"*{selected}.xml"))
-            path.write_text(path.read_text(encoding="utf-8").replace('skipped="0"', 'skipped="1"'),
-                            encoding="utf-8")
-            with self.assertRaises(ValueError):
-                validate_selected_test_reports(surefire, failsafe)
-            path.write_text(path.read_text(encoding="utf-8").replace('skipped="1"', 'skipped="0"')
-                            .replace('failures="0"', 'failures="1"'), encoding="utf-8")
-            with self.assertRaises(ValueError):
-                validate_selected_test_reports(surefire, failsafe)
-            path.write_text(path.read_text(encoding="utf-8").replace('failures="1"', 'failures="0"'),
-                            encoding="utf-8")
-            path.unlink()
-            with self.assertRaises(ValueError):
-                validate_selected_test_reports(surefire, failsafe)
+            command = [sys.executable, str(Path(__file__).with_name("ci_gate.py"))]
+            reports = [
+                ("calibration", calibration_report()),
+                ("namespace", namespace_report()),
+                *(("powercut", report) for report in self.reports),
+                *(("running", running_report(trial)) for trial in RUNNING_TRIALS),
+            ]
+            for index, (kind, report) in enumerate(reports):
+                path = root / f"{index}.json"
+                path.write_text(json.dumps(report), encoding="utf-8")
+                command.extend([f"--{kind}-report", str(path)])
+            summary = root / "summary.json"
+            step_summary = root / "summary.md"
+            command.extend(["--summary-json", str(summary), "--github-step-summary", str(step_summary)])
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual("PASS", json.loads(summary.read_text())["status"])
+            self.assertNotIn("java_tests", json.loads(summary.read_text()))
+            self.assertNotIn("Surefire", step_summary.read_text())
+            # Removing the JUnit prerequisite must not weaken campaign validation.
+            (root / "0.json").write_text(json.dumps({"result": "SKIPPED"}), encoding="utf-8")
+            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(1, result.returncode, result.stderr)
+            self.assertIn("calibration did not pass", result.stderr)
 
     def test_pull_request_workflow_filters_relevant_changes_and_selects_every_gate_case(self):
         workflow = Path(__file__).parents[2] / ".github/workflows/lmdb-qemu-durability.yml"
@@ -411,8 +442,15 @@ class CiGateTests(unittest.TestCase):
         self.assertNotIn("continue-on-error:", source)
         for scenario in (*POWER_CUT_SCENARIOS, *RUNNING_TRIALS):
             self.assertIn(scenario, source)
-        for test_class in (*SUREFIRE_TEST_CLASSES, *FAILSAFE_IT_CLASSES):
-            self.assertIn(test_class, source)
+        self.assertNotIn("-Dtest=", source)
+        self.assertNotIn("-Dit.test=", source)
+        self.assertNotIn("--surefire-dir", source)
+        self.assertNotIn("--failsafe-dir", source)
+        self.assertIn("-Pquick clean install", source)
+        self.assertNotIn("maven.test.skip", source)
+        self.assertIn("target/test-classes", source)
+        self.assertIn("test_guest_writer_cutpoints.py", source)
+        self.assertIn("scripts/lmdb-crashlab/run-tests.sh", source)
         gate = Path(__file__).with_name("ci_gate.py").read_text(encoding="utf-8")
         self.assertIn("Linux x86_64 under QEMU KVM", gate)
 

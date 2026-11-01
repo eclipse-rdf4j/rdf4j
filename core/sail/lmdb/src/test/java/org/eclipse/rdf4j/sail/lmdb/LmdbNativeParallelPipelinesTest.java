@@ -870,6 +870,7 @@ public class LmdbNativeParallelPipelinesTest {
 
 	@ParameterizedTest
 	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	@Timeout(60)
 	void closingResultCancelsWorkersDeniedBeforeNativeDelegateClose(boolean failWorker, boolean outputBackpressure)
 			throws Exception {
 		CountDownLatch workersEntered = new CountDownLatch(3);
@@ -878,6 +879,10 @@ public class LmdbNativeParallelPipelinesTest {
 		CountDownLatch releaseDelegateClose = new CountDownLatch(1);
 		CountDownLatch workerScopesClosed = new CountDownLatch(4);
 		CountDownLatch activeScopeClosed = new CountDownLatch(1);
+		AutoCloseable releaseCloseGates = () -> {
+			releaseWorkers.countDown();
+			releaseDelegateClose.countDown();
+		};
 		AtomicBoolean gateRegistration = new AtomicBoolean();
 		AtomicInteger activations = new AtomicInteger();
 		AtomicReference<Thread> activeWorker = new AtomicReference<>();
@@ -903,7 +908,7 @@ public class LmdbNativeParallelPipelinesTest {
 							protected void handleClose() {
 								delegateCloses.incrementAndGet();
 								delegateCloseEntered.countDown();
-								awaitCloseOrdering(releaseDelegateClose);
+								awaitOwnedCloseGate(releaseDelegateClose);
 								super.handleClose();
 							}
 						});
@@ -935,7 +940,7 @@ public class LmdbNativeParallelPipelinesTest {
 						}
 						if (activation > 1) {
 							workersEntered.countDown();
-							awaitCloseOrdering(releaseWorkers);
+							awaitOwnedCloseGate(releaseWorkers);
 						}
 						if (failWorker && activation == 2) {
 							// The denied sibling must finish its task (and publish owner cancellation) first.
@@ -949,12 +954,14 @@ public class LmdbNativeParallelPipelinesTest {
 								activeScopeClosed.countDown();
 							}
 						};
-					})) {
+					});
+					AutoCloseable setupGateOwner = releaseCloseGates) {
 				gateRegistration.set(true);
 				SailTupleQuery query = (SailTupleQuery) connection
 						.prepareTupleQuery(outputBackpressure ? highFanoutChain() : chain(""));
 				query.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
-				try (TupleQueryResult result = query.evaluate()) {
+				try (TupleQueryResult result = query.evaluate();
+						AutoCloseable resultGateOwner = releaseCloseGates) {
 					assertThat(result.hasNext()).isTrue();
 					assertThat(result.next().getBindingNames()).containsExactlyInAnyOrderElementsOf(outputBackpressure
 							? List.of("subject", "value", "value2", "value3")
@@ -1023,6 +1030,16 @@ public class LmdbNativeParallelPipelinesTest {
 				closer.get().join(10_000L);
 			}
 			guarded.shutDown();
+		}
+	}
+
+	/** Test-owned phase gates are released by their scope, never by an unrelated wait budget expiring. */
+	private static void awaitOwnedCloseGate(CountDownLatch gate) {
+		try {
+			gate.await();
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(failure);
 		}
 	}
 

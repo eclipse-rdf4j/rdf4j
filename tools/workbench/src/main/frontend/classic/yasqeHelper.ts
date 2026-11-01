@@ -204,5 +204,62 @@ namespace workbench {
             //i.e., disable the property/class autocompleters
             YASQE.defaults.autocompleters = [newPrefixCompleterName, "variables"];
         }
+
+        /** YASQE's toolbar controls, which it draws as plain divs, and the names they get as buttons. */
+        var toolbarControls: { [selector: string]: string } = {
+            '.yasqe_share': 'Share query',
+            '.yasqe_fullscreenBtn': 'Full screen',
+            '.yasqe_smallscreenBtn': 'Exit full screen'
+        };
+
+        /**
+         * Show a quiet line where the text of an empty editor starts, saying what goes in it. Screen readers skip it
+         * (the editor's field has its own name), and it is hidden whenever the editor has text.
+         */
+        export function showEmptyHint(editor: any, text: string): void {
+            var wrapper: HTMLElement = editor && editor.getWrapperElement ? editor.getWrapperElement() : null;
+            if (!wrapper) {
+                return;
+            }
+            var hint = document.createElement('div');
+            hint.className = 'workbench-editor-hint';
+            hint.setAttribute('aria-hidden', 'true');
+            hint.textContent = text;
+            wrapper.appendChild(hint);
+            var update = function() {
+                hint.hidden = editor.getValue() !== '';
+                if (!hint.hidden) {
+                    // A line's text starts 4px (CodeMirror's line padding) after the gutters.
+                    var gutters: HTMLElement = editor.getGutterElement ? editor.getGutterElement() : null;
+                    hint.style.left = ((gutters ? gutters.offsetWidth : 0) + 4) + 'px';
+                }
+            };
+            editor.on('change', update);
+            editor.on('refresh', update);
+            update();
+        }
+
+        /** Make the editor's Share and Full screen controls buttons that a keyboard can reach and press. */
+        export function enableToolbarKeyboard(editor: any): void {
+            var wrapper: HTMLElement = editor && editor.getWrapperElement ? editor.getWrapperElement() : null;
+            if (!wrapper) {
+                return;
+            }
+            Object.keys(toolbarControls).forEach(function(selector) {
+                var control = <HTMLElement>wrapper.querySelector(selector);
+                if (!control || control.getAttribute('role') === 'button') {
+                    return;
+                }
+                control.setAttribute('role', 'button');
+                control.setAttribute('tabindex', '0');
+                control.setAttribute('aria-label', toolbarControls[selector]);
+                control.addEventListener('keydown', function(event: KeyboardEvent) {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        control.click();
+                    }
+                });
+            });
+        }
     }
 }

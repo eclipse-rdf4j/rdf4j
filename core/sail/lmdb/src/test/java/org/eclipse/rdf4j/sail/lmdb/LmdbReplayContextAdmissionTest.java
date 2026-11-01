@@ -95,6 +95,7 @@ class LmdbReplayContextAdmissionTest {
 		CountDownLatch allowReaderConnectionClose = new CountDownLatch(1);
 		CountDownLatch writerWarningStarted = new CountDownLatch(1);
 		CountDownLatch allowWriterCommit = new CountDownLatch(1);
+		Throwable primaryFailure = null;
 		try {
 			repository.init();
 			function.setBackingStore(store.getBackingStore());
@@ -203,25 +204,30 @@ class LmdbReplayContextAdmissionTest {
 					"a later independent read on the reused worker must observe the committed clear");
 			allowReaderConnectionClose.countDown();
 			assertNull(queryFuture.get(10, TimeUnit.SECONDS), "the query must complete without callback failures");
+		} catch (Exception | Error failure) {
+			primaryFailure = failure;
+			throw failure;
 		} finally {
-			function.allowWorkerRead.countDown();
-			allowReaderConnectionClose.countDown();
-			allowWriterCommit.countDown();
-			queryExecutor.shutdown();
-			assertTrue(queryExecutor.awaitTermination(25, TimeUnit.SECONDS), "the query worker must terminate");
-			if (writerFuture != null) {
-				writerFuture.get(20, TimeUnit.SECONDS);
-			}
-			workerExecutor.shutdown();
-			if (!workerExecutor.awaitTermination(15, TimeUnit.SECONDS)) {
-				workerExecutor.shutdownNow();
-				assertTrue(workerExecutor.awaitTermination(5, TimeUnit.SECONDS),
-						"the captured read worker must terminate");
-			}
-			writerExecutor.shutdown();
-			assertTrue(writerExecutor.awaitTermination(10, TimeUnit.SECONDS), "the writer worker must terminate");
-			registry.remove(function);
-			repository.shutDown();
+			Future<Void> writerToClose = writerFuture;
+			LmdbTestUtil.cleanup(primaryFailure,
+					() -> {
+						function.allowWorkerRead.countDown();
+						allowReaderConnectionClose.countDown();
+						allowWriterCommit.countDown();
+					},
+					() -> LmdbTestUtil.shutdownExecutor(queryExecutor, 25, 5, true,
+							"the query worker must terminate"),
+					() -> {
+						if (writerToClose != null) {
+							writerToClose.get(20, TimeUnit.SECONDS);
+						}
+					},
+					() -> LmdbTestUtil.shutdownExecutor(workerExecutor, 15, 5, false,
+							"the captured read worker must terminate"),
+					() -> LmdbTestUtil.shutdownExecutor(writerExecutor, 10, 5, true,
+							"the writer worker must terminate"),
+					() -> registry.remove(function),
+					repository::shutDown);
 		}
 	}
 

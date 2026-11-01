@@ -118,7 +118,14 @@ class Transaction implements AutoCloseable {
 	Transaction(Repository repository) throws InterruptedException, ExecutionException {
 		this.id = UUID.randomUUID();
 		this.rep = repository;
-		this.txnConnection = getTransactionConnection();
+		try {
+			this.txnConnection = getTransactionConnection();
+		} catch (InterruptedException | ExecutionException | RuntimeException | Error failure) {
+			// Interrupted acquisition queues its connection cleanup before we stop accepting work.
+			// Do not cancel/drain that task: a provider may still return an owned connection.
+			executor.shutdown();
+			throw failure;
+		}
 	}
 
 	/**
@@ -463,13 +470,48 @@ class Transaction implements AutoCloseable {
 		// create a new RepositoryConnection with correct parser settings
 		Future<RepositoryConnection> result = submit(() -> {
 			RepositoryConnection conn = rep.getConnection();
-			ParserConfig config = conn.getParserConfig();
-			config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
-			config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
-
-			return conn;
+			try {
+				ParserConfig config = conn.getParserConfig();
+				config.addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
+				config.addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
+				return conn;
+			} catch (RuntimeException | Error failure) {
+				try {
+					conn.close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (closeFailure != failure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+				throw failure;
+			}
 		});
-		return getFromFuture(result);
+		try {
+			return getFromFuture(result);
+		} catch (InterruptedException failure) {
+			// This runs after acquisition on the same dedicated thread, including when acquisition
+			// completed just before the caller was interrupted. Keeping the Future uncancelled preserves
+			// its eventual connection; shutdownNow/cancel could discard it before this owner sees it.
+			executor.execute(() -> closeAbandonedConnection(result));
+			throw failure;
+		}
+	}
+
+	/** Runs behind acquisition on the transaction executor, which is shut down orderly by the failed constructor. */
+	private void closeAbandonedConnection(Future<RepositoryConnection> result) {
+		try {
+			// The constructor's getFromFuture already decremented activeOperations on interruption.
+			result.get().close();
+		} catch (ExecutionException failure) {
+			// Failed initialization already closed any connection it acquired.
+			logger.debug("Connection acquisition failed after transaction construction was interrupted",
+					failure.getCause());
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			logger.warn("Interrupted while closing an abandoned transaction connection", failure);
+		} catch (RuntimeException failure) {
+			logger.warn("Could not close an abandoned transaction connection", failure);
+		}
 	}
 
 	/**

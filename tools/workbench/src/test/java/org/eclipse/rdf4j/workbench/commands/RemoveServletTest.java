@@ -35,6 +35,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -440,6 +441,23 @@ public class RemoveServletTest {
 				.asText()).isEqualTo("context");
 		assertThat(rows(records)).singleElement()
 				.satisfies(row -> assertThat(row.get(0).path("value").asText()).isEqualTo("urn:test:g"));
+	}
+
+	/** The page names the repository's prefixes, so its preview shortens IRIs as the Query and Explore tables do. */
+	@Test
+	public void pageDataNamesTheRepositoryPrefixes() throws Exception {
+		Repository repository = store();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.setNamespace("test", "urn:test:");
+		}
+		List<JsonNode> records = request(repository, new MockHttpServletResponse());
+
+		assertThat(records.stream()
+				.filter(record -> "namespaces".equals(record.path("type").asText()))
+				.flatMap(record -> StreamSupport.stream(record.path("values").spliterator(), false))
+				.filter(namespace -> "test".equals(namespace.path("prefix").asText()))
+				.map(namespace -> namespace.path("name").asText()))
+						.containsExactly("urn:test:");
 	}
 
 	private static Repository store() {

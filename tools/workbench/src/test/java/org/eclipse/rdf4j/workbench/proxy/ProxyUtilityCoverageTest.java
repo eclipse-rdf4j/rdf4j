@@ -31,6 +31,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.workbench.support.TestFilterConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -46,6 +48,7 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class ProxyUtilityCoverageTest {
 
 	private static final String ACCEPTED_SERVER_PREFIXES_PROPERTY = "org.eclipse.rdf4j.workbench.accepted-server-prefixes";
@@ -342,6 +345,7 @@ class ProxyUtilityCoverageTest {
 
 	@Test
 	void serverValidatorUsesSystemPropertyPrefixesForRemoteServers() throws Exception {
+		String previous = System.getProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY);
 		AtomicInteger requests = new AtomicInteger();
 		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/protocol", exchange -> {
@@ -358,13 +362,14 @@ class ProxyUtilityCoverageTest {
 			assertThat(validator.isValidServer(baseUrl)).isTrue();
 			assertThat(requests).hasValue(1);
 		} finally {
-			System.clearProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY);
+			restoreAcceptedServerPrefixes(previous);
 			server.stop(0);
 		}
 	}
 
 	@Test
 	void serverValidatorSystemPropertyOverridesServletConfigPrefixes() {
+		String previous = System.getProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY);
 		try {
 			System.setProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY, "/admin-rdf4j-server");
 			ServerValidator validator = new ServerValidator(new org.eclipse.rdf4j.workbench.support.TestServletConfig(
@@ -373,7 +378,15 @@ class ProxyUtilityCoverageTest {
 			assertThat(validator.isValidServer("/admin-rdf4j-server")).isTrue();
 			assertThat(validator.isValidServer("/rdf4j-server")).isFalse();
 		} finally {
+			restoreAcceptedServerPrefixes(previous);
+		}
+	}
+
+	private static void restoreAcceptedServerPrefixes(String previous) {
+		if (previous == null) {
 			System.clearProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY);
+		} else {
+			System.setProperty(ACCEPTED_SERVER_PREFIXES_PROPERTY, previous);
 		}
 	}
 

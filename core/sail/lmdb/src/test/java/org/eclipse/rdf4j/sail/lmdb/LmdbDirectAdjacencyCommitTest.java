@@ -56,23 +56,24 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void aSynchronousCommitterAppliesItsOwnRecordWhileTheApplierThreadIsIdle() throws Exception {
+	void synchronousCommitsKeepEveryRevisionExactWhileCompactionsRun() throws Exception {
 		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
 		assertThat(store.buildNowForTest()).isTrue();
 
-		// The record is sealed when the commit confirms it and the applier thread is parked between commits: the
-		// committer, which would otherwise wait for the applier's wake-up and publish, runs that unit itself.
+		// Compaction outcomes may compete with the committer for the applier's unit lock. Which thread wins is
+		// scheduling-dependent; synchronous publication, not a percentage of helper units, is the contract here.
 		for (int i = 1; i <= 1_000; i++) {
 			commitQuads(new long[][] { add(uri(50_000 + i), P1, O1, 0, true) });
 			assertThat(store.publishedStateForTest().appliedRevision()).isEqualTo(tripleStore.getDataRevision());
 		}
-		// confirming its own record does not wake the applier thread: the committer applies it, so the loop thread
-		// only runs units the committer could not take, mostly a merge landing (a worker outcome) that holds the
-		// unit lock at the moment a commit confirms; with helping only in the wait the committer won about half
-		assertThat(store.helpedUnitsForTest()).as("units applied on committing threads").isGreaterThanOrEqualTo(750);
+		assertThat(store.awaitApplierIdleForTest(30, TimeUnit.SECONDS)).as("all compaction outcomes settle").isTrue();
+		assertThat(store.phaseTimings().publicationCount()).as("every committed record was published").isEqualTo(1_000);
+		assertThat(store.phaseTimings().compactionCount()).as("the real compaction path was exercised").isPositive();
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
 			assertThat(view.isExact()).isTrue();
 			assertThat(probe(view, uri(50_500), P1, O1, 0, true)).hasSize(1);
+			assertThat(probe(view, -1, P1, O1, 0, true)).as("the seed and all committed rows remain visible")
+					.hasSize(1_001);
 		}
 	}
 
@@ -1390,6 +1391,33 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
+	void strictValidationKeepsWorkerMemoryRefusalRecoverable() throws Exception {
+		commitQuads(new long[][] { add(S1, P1, O1, 0, true) });
+		recreateStore(Map.of(
+				LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true",
+				LmdbDirectAdjacencyOptions.FAIL_ON_MAINTENANCE_ERROR_PROPERTY, "true"));
+		store.injectBuildFailureForTest(new LmdbAdjacencyMemoryRefusedException("injected worker reservation refusal"),
+				Integer.MAX_VALUE);
+		try {
+			ApplierStepping.holdBuildAfterScan(store);
+			ApplierStepping.stepUntil(store, () -> !store.buildInFlightForTest(), "the refusal was published");
+			assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.MEMORY_REFUSED);
+			try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+				assertThat(view.isExact()).isFalse();
+				assertThat(view.fallbackReason()).isEqualTo(FallbackReason.MEMORY_REFUSED);
+			}
+		} finally {
+			store.injectBuildFailureForTest(null, 0);
+			store.pauseApplierForTest(false);
+		}
+		assertThat(store.buildNowForTest()).isTrue();
+		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
+			assertThat(view.isExact()).isTrue();
+			assertThat(probe(view, S1, P1, O1, 0, true)).hasSize(1);
+		}
+	}
+
+	@Test
 	void strictValidationKeepsUnbuildableIndexConfigurationAsSupportedFallback(@TempDir File dataDir)
 			throws Exception {
 		store.close();
@@ -1409,6 +1437,7 @@ class LmdbDirectAdjacencyCommitTest {
 		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
 
 		store.triggerBuild();
+		assertThat(store.awaitApplierIdleForTest(10, TimeUnit.SECONDS)).isTrue();
 
 		assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.EMPTY);
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {

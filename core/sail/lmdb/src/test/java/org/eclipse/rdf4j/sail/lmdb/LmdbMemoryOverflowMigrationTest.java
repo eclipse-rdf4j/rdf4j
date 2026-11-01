@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -165,12 +166,14 @@ class LmdbMemoryOverflowMigrationTest {
 
 				assertThatThrownBy(model::close).isSameAs(model.storeCloseFailure);
 
-				assertThat(model.dataDirectory).doesNotExist();
+				assertThat(model.dataDirectory).exists();
 				verify(model.createdSink, times(2)).close();
 				verify(model.createdDataset, times(1)).close();
 				verify(model.createdStore, times(1)).close();
+				doNothing().when(model.createdStore).close();
 				model.close();
-				verify(model.createdStore, times(1)).close();
+				verify(model.createdStore, times(2)).close();
+				assertThat(model.dataDirectory).doesNotExist();
 			});
 			break;
 		default:
@@ -188,9 +191,13 @@ class LmdbMemoryOverflowMigrationTest {
 			assertThat(model).containsExactlyInAnyOrderElementsOf(model.originalRows);
 			assertThat(model.getNamespace("ex"))
 					.hasValueSatisfying(namespace -> assertThat(namespace.getName()).isEqualTo("urn:example:"));
-			assertThat(model.dataDirectory).doesNotExist();
+			assertThat(model.dataDirectory).exists();
 			verify(model.createdSink).close();
 			verify(model.createdStore).close();
+			doNothing().when(model.createdStore).close();
+			model.close();
+			verify(model.createdStore, times(2)).close();
+			assertThat(model.dataDirectory).doesNotExist();
 		});
 	}
 
@@ -245,24 +252,30 @@ class LmdbMemoryOverflowMigrationTest {
 			}
 			assertion.verify(model, statement);
 		} finally {
-			model.close();
-			if (model.dataDirectory != null && model.dataDirectory.exists()) {
-				FileUtil.deleteDir(model.dataDirectory);
-			}
 			try {
-				setPressureThresholds(oldHigh, oldMedium, oldLow, oldMinimum);
-				setPressureThresholds(Integer.MAX_VALUE, Integer.MAX_VALUE, -1, -1);
-				try (GcNotifications notifications = new GcNotifications()) {
-					notifications.requestGcAndAwait();
+				// Disarm only the mock shutdown refusal before retrying the retained owner.
+				if (model.createdStore != null) {
+					doNothing().when(model.createdStore).close();
+				}
+				model.close();
+				if (model.dataDirectory != null && model.dataDirectory.exists()) {
+					FileUtil.deleteDir(model.dataDirectory);
 				}
 			} finally {
-				setPressureThresholds(oldHigh, oldMedium, oldLow, oldMinimum);
-			}
-			TestOverflowModel reset = new TestOverflowModel(FailureMode.NONE, null);
-			try {
-				reset.spillToDiskIfNeeded();
-			} finally {
-				reset.close();
+				try {
+					setPressureThresholds(Integer.MAX_VALUE, Integer.MAX_VALUE, -1, -1);
+					try (GcNotifications notifications = new GcNotifications()) {
+						notifications.requestGcAndAwait();
+					}
+				} finally {
+					setPressureThresholds(oldHigh, oldMedium, oldLow, oldMinimum);
+				}
+				TestOverflowModel reset = new TestOverflowModel(FailureMode.NONE, null);
+				try {
+					reset.spillToDiskIfNeeded();
+				} finally {
+					reset.close();
+				}
 			}
 		}
 	}
@@ -357,6 +370,7 @@ class LmdbMemoryOverflowMigrationTest {
 			createdSink = mock(SailSink.class);
 			createdDataset = mock(SailDataset.class);
 			when(createdStore.getExplicitSailSource()).thenReturn(source);
+			when(createdStore.getExplicitSailSource(any(Object.class))).thenReturn(source);
 			when(source.sink(IsolationLevels.NONE)).thenReturn(createdSink);
 			when(source.dataset(IsolationLevels.NONE)).thenReturn(createdDataset);
 			doAnswer(invocation -> new TrackingIteration(statement)).when(createdDataset)
