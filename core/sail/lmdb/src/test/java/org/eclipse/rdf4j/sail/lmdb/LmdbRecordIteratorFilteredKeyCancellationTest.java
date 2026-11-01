@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,6 +33,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.lwjgl.util.lmdb.LMDB;
+import org.mockito.MockedStatic;
 
 /** Real LMDB filtered-key cancellation and deadline boundaries for both iterator consumption paths. */
 class LmdbRecordIteratorFilteredKeyCancellationTest {
@@ -39,7 +42,6 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 	private static final int MAX_FILTERED_VISITS_AFTER_SIGNAL = 1_024;
 
 	private TripleStore tripleStore;
-	private ObservingTripleIndex index;
 
 	@BeforeEach
 	void setUp(@TempDir File dataDir) throws Exception {
@@ -48,8 +50,6 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 		for (long predicate = 1; predicate <= PHYSICAL_ROWS; predicate++) {
 			tripleStore.storeTriple(1L, predicate, 1L, 1L, true);
 		}
-		// The observer opens the same explicit database and delegates every match decision to TripleIndex unchanged.
-		index = new ObservingTripleIndex("spoc", "spoc", false, tripleStore.env, tripleStore.writeTxn);
 		tripleStore.commit();
 	}
 
@@ -63,21 +63,24 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 	@Test
 	void uncancelledControlVisitsMoreThanOneThousandFilteredKeysForNextAndFill() throws Exception {
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			LmdbRecordIterator iterator = openMismatchIterator(txn);
+			RecordIterator iterator = openMismatchIterator(txn);
 			try {
 				assertThat(iterator.next()).isNull();
-				assertThat(index.filteredKeyVisits()).isGreaterThan(MAX_FILTERED_VISITS_AFTER_SIGNAL);
+				assertThat(iterator.getSourceRowsFilteredActual()).isGreaterThan(MAX_FILTERED_VISITS_AFTER_SIGNAL);
+				assertThat(iterator.getSourceRowsScannedActual()).isEqualTo(PHYSICAL_ROWS);
+				assertThat(iterator.getSourceRowsMatchedActual()).isZero();
 			} finally {
 				iterator.close();
 			}
 		}
 
-		index.resetFilteredKeyVisits();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			LmdbRecordIterator iterator = openMismatchIterator(txn);
+			RecordIterator iterator = openMismatchIterator(txn);
 			try {
 				assertThat(iterator.fill(new long[PHYSICAL_ROWS * 4], PHYSICAL_ROWS)).isZero();
-				assertThat(index.filteredKeyVisits()).isGreaterThan(MAX_FILTERED_VISITS_AFTER_SIGNAL);
+				assertThat(iterator.getSourceRowsFilteredActual()).isGreaterThan(MAX_FILTERED_VISITS_AFTER_SIGNAL);
+				assertThat(iterator.getSourceRowsScannedActual()).isEqualTo(PHYSICAL_ROWS);
+				assertThat(iterator.getSourceRowsMatchedActual()).isZero();
 			} finally {
 				iterator.close();
 			}
@@ -86,16 +89,13 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 
 	@Test
 	void retainedResetStartsANewCancellationPollBudget() throws Exception {
-		index.resetFilteredKeyVisits();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			LmdbRecordIterator iterator = new LmdbRecordIterator(index, true, 1L, -1L, 1L, 1L, true, txn, null,
-					true);
+			LmdbRecordIterator iterator = tripleStore.getTriplesRetained(txn, 1L, -1L, 1L, 1L, true);
 			try {
 				assertThat(iterator.fill(new long[1_500 * 4], 1_500)).isEqualTo(1_500);
 				assertThat(iterator.getSourceRowsScannedActual()).isEqualTo(1_500);
 				iterator.close();
-				iterator.reset(index, true, 1L, -1L, 2L, -1L, true);
-				index.resetFilteredKeyVisits();
+				tripleStore.resetTriples(iterator, 1L, -1L, -1L, 2L, true);
 				AtomicReference<Object> cancellationToken = new AtomicReference<>();
 
 				Throwable failure = catchThrowable(
@@ -104,7 +104,7 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 
 				assertAll("a retained iterator reset begins a fresh bounded polling interval",
 						() -> assertCancellationProvenance(failure, cancellationToken.get()),
-						() -> assertThat(index.filteredKeyVisits())
+						() -> assertThat(iterator.getSourceRowsFilteredActual())
 								.as("the already-cancelled token is checked before another key visit")
 								.isZero(),
 						() -> assertThat(iterator.getSourceRowsScannedActual())
@@ -120,12 +120,12 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 	@CsvSource({ "NEXT, false", "NEXT, true", "FILL, false", "FILL, true" })
 	void nextAndFillPollCancellationAndDeadlineAndReleaseReaders(PullMode pullMode, boolean deadlineSignal)
 			throws Exception {
-		index.resetFilteredKeyVisits();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			LmdbRecordIterator iterator = openMismatchIterator(txn);
+			RecordIterator iterator = openMismatchIterator(txn);
 			try {
 				AtomicReference<Object> cancellationToken = new AtomicReference<>();
-				Throwable failure = invokeWithSignal(iterator, pullMode, deadlineSignal, cancellationToken);
+				SignalOutcome outcome = invokeWithSignal(iterator, pullMode, deadlineSignal, cancellationToken);
+				Throwable failure = outcome.failure();
 				RuntimeException expected = deadlineSignal ? NativeCancellationTestAccess.probeDeadlineSignal()
 						: KernelQueryCancelledException.INSTANCE;
 				long scansAtFailure = iterator.getSourceRowsScannedActual();
@@ -148,8 +148,14 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 								assertCancellationProvenance(failure, cancellationToken.get());
 							}
 						},
-						() -> assertThat(index.filteredKeyVisits())
-								.as("physical mismatch matcher callbacks after the first signal")
+						() -> assertThat(outcome.filteredAtSignal())
+								.as("the signal follows the first real residual mismatch")
+								.isEqualTo(1L),
+						() -> assertThat(outcome.nativeCursorReads())
+								.as("the cancellation barrier observes real native cursor reads")
+								.isPositive(),
+						() -> assertThat(iterator.getSourceRowsFilteredActual())
+								.as("physical residual mismatches through cancellation")
 								.isLessThanOrEqualTo(MAX_FILTERED_VISITS_AFTER_SIGNAL),
 						() -> assertThat(nextAfterSignalFailure).as("next() after signal").isNull(),
 						() -> assertThat(nextAfterSignal.get()).as("a signaled iterator is exhausted").isNull(),
@@ -165,28 +171,33 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 		}
 	}
 
-	private Throwable invokeWithSignal(LmdbRecordIterator iterator, PullMode pullMode, boolean deadlineSignal,
+	private SignalOutcome invokeWithSignal(RecordIterator iterator, PullMode pullMode, boolean deadlineSignal,
 			AtomicReference<Object> cancellationToken) {
 		if (deadlineSignal) {
 			AtomicReference<Runnable> trip = new AtomicReference<>();
-			index.onFirstFilteredKey = () -> trip.get().run();
-			return catchThrowable(() -> NativeCancellationTestAccess.withTrippableProbeDeadline(trip::set, () -> {
-				pull(iterator, pullMode);
-				return null;
-			}));
+			try (FilteredScanObserver observation = new FilteredScanObserver(iterator, () -> trip.get().run())) {
+				Throwable failure = catchThrowable(
+						() -> NativeCancellationTestAccess.withTrippableProbeDeadline(trip::set, () -> {
+							pull(iterator, pullMode);
+							return null;
+						}));
+				return observation.outcome(failure);
+			}
 		}
 
 		CountDownLatch firstFilteredKey = new CountDownLatch(1);
 		CountDownLatch continueScan = new CountDownLatch(1);
-		index.onFirstFilteredKey = () -> {
+		try (FilteredScanObserver observation = new FilteredScanObserver(iterator, () -> {
 			firstFilteredKey.countDown();
 			await(continueScan);
-		};
-		return catchThrowable(() -> NativeCancellationTestAccess.cancelAfter(firstFilteredKey, continueScan,
-				cancellationToken::set, () -> {
-					pull(iterator, pullMode);
-					return null;
-				}));
+		})) {
+			Throwable failure = catchThrowable(() -> NativeCancellationTestAccess.cancelAfter(firstFilteredKey,
+					continueScan, cancellationToken::set, () -> {
+						pull(iterator, pullMode);
+						return null;
+					}));
+			return observation.outcome(failure);
+		}
 	}
 
 	private static void assertCancellationProvenance(Throwable failure, Object cancellationToken) {
@@ -200,17 +211,17 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 				.isSameAs(cancellationToken);
 	}
 
-	private static void pull(LmdbRecordIterator iterator, PullMode pullMode) {
+	private static void pull(RecordIterator iterator, PullMode pullMode) {
 		switch (pullMode) {
 		case NEXT -> assertThat(iterator.next()).isNull();
 		case FILL -> assertThat(iterator.fill(new long[PHYSICAL_ROWS * 4], PHYSICAL_ROWS)).isZero();
 		}
 	}
 
-	private LmdbRecordIterator openMismatchIterator(Txn txn) throws IOException {
-		// Each predicate has one object-1 key. The bound object-2 mismatch is beyond spoc's s-only range prefix, so
-		// skip-scan cannot leap across predicate groups and every physical key reaches the real matcher.
-		return new LmdbRecordIterator(index, true, 1L, -1L, 2L, -1L, true, txn);
+	private RecordIterator openMismatchIterator(Txn txn) throws IOException {
+		// An adjacency row can seek past a bound-object mismatch. Keep its neighbor unbound instead: context-2
+		// is residual, so the context-1 edge in every predicate row reaches the real persistent matcher.
+		return tripleStore.getTriples(txn, 1L, -1L, -1L, 2L, true);
 	}
 
 	private int freshReaderRowCount() throws Exception {
@@ -241,40 +252,43 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 		FILL
 	}
 
-	private static final class ObservingTripleIndex extends TripleIndex {
-		private final AtomicInteger filteredKeyVisits = new AtomicInteger();
-		private volatile Runnable onFirstFilteredKey;
+	private record SignalOutcome(Throwable failure, long filteredAtSignal, long nativeCursorReads) {
+	}
 
-		private ObservingTripleIndex(String name, String fieldSeq, boolean createInferredIndex, long env, long writeTxn)
-				throws IOException {
-			super(name, fieldSeq, createInferredIndex, env, writeTxn);
-		}
+	/** Observes real native reads without replacing their result or the persistent iterator's match decision. */
+	private static final class FilteredScanObserver implements AutoCloseable {
+		private final MockedStatic<LMDB> nativeCalls;
+		private long filteredAtSignal = -1;
+		private long nativeCursorReads;
+		private int depth;
 
-		@Override
-		int keyToQuadMatchStatus(long keyAddress, int rangePrefixLength, long matchSubj, long matchPred, long matchObj,
-				long matchContext, long[] quad) {
-			int status = super.keyToQuadMatchStatus(keyAddress, rangePrefixLength, matchSubj, matchPred, matchObj,
-					matchContext, quad);
-			if (status == TripleIndex.KEY_FILTERED && filteredKeyVisits.incrementAndGet() == 1) {
-				Runnable callback = onFirstFilteredKey;
-				if (callback != null) {
-					callback.run();
+		private FilteredScanObserver(RecordIterator iterator, Runnable onFirstFilteredRow) {
+			nativeCalls = mockStatic(LMDB.class, invocation -> {
+				boolean outermost = depth++ == 0;
+				try {
+					Object result = invocation.callRealMethod();
+					if (outermost && invocation.getMethod().getName().equals("mdb_cursor_get")) {
+						nativeCursorReads++;
+						long filtered = iterator.getSourceRowsFilteredActual();
+						if (filteredAtSignal < 0 && filtered > 0) {
+							filteredAtSignal = filtered;
+							onFirstFilteredRow.run();
+						}
+					}
+					return result;
+				} finally {
+					depth--;
 				}
-			}
-			return status;
+			});
+		}
+
+		private SignalOutcome outcome(Throwable failure) {
+			return new SignalOutcome(failure, filteredAtSignal, nativeCursorReads);
 		}
 
 		@Override
-		void close() {
-			// TripleStore owns the shared DBI and closes it with its configured index.
-		}
-
-		private int filteredKeyVisits() {
-			return filteredKeyVisits.get();
-		}
-
-		private void resetFilteredKeyVisits() {
-			filteredKeyVisits.set(0);
+		public void close() {
+			nativeCalls.close();
 		}
 	}
 }
