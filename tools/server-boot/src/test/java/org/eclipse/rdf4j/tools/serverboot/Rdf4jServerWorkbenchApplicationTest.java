@@ -300,6 +300,18 @@ class Rdf4jServerWorkbenchApplicationTest {
 		assertThat(cacheFilter.isAsyncSupported()).isTrue();
 	}
 
+	/** Like the WAR, the runner serves the namespaces the Workbench query editor falls back on. */
+	@Test
+	void theWorkbenchFallbackNamespacesAreServedLikeTheWar() throws IOException {
+		ResponseEntity<String> response = restTemplate.getForEntity(
+				"http://localhost:" + port + "/rdf4j-workbench/fallback-namespaces", String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getHeaders().getContentType()).isNotNull()
+				.satisfies(type -> assertThat(type.isCompatibleWith(MediaType.APPLICATION_JSON)).isTrue());
+		assertThat(JSON_MAPPER.readTree(response.getBody()).isObject()).isTrue();
+	}
+
 	@Test
 	void theExplorerEntryIsRevalidatedAfterTheLongCacheHeaderLikeTheWar() {
 		assertThat(revalidatedEntryFilter.getUrlPatterns()).containsExactlyInAnyOrder(

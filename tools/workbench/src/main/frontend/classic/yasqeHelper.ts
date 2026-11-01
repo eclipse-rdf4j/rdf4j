@@ -175,6 +175,49 @@ namespace workbench {
 
     export namespace yasqeHelper {
 
+        /** The page's one request for the fallback namespaces, shared by its editors. */
+        var fallbackNamespaces: Promise<{ [prefix: string]: string }> = null;
+
+        /**
+         * The namespaces to fall back on for prefixes that the repository does not define: the deployment's list
+         * (namespaces.fallback; the bundled list is empty); none when they cannot be loaded.
+         */
+        function loadFallbackNamespaces(): Promise<{ [prefix: string]: string }> {
+            if (!fallbackNamespaces) {
+                var app = typeof document !== 'undefined' && document.getElementById
+                    ? document.getElementById('workbench-app') : null;
+                var basePath = app ? app.getAttribute('data-workbench-base-path') || '' : '';
+                fallbackNamespaces = typeof fetch !== 'function' ? Promise.resolve({})
+                    : fetch(basePath + '/fallback-namespaces', { credentials: 'same-origin' }).then(function(response) {
+                        return response.ok ? response.json() : {};
+                    }).then(function(namespaces: any) {
+                        return namespaces && typeof namespaces === 'object' ? namespaces : {};
+                    }, function() {
+                        return {};
+                    });
+            }
+            return fallbackNamespaces;
+        }
+
+        /**
+         * The prefix completions: the given namespaces (the repository's, with the configured ones the server adds),
+         * then the fallback namespaces for the prefixes those do not define.
+         */
+        function prefixCompletions(namespaces: any, fallback: { [prefix: string]: string }): Array<string> {
+            var completions: Array<string> = [];
+            var defined: { [prefix: string]: boolean } = {};
+            for (var key in namespaces) {
+                completions.push(key + " <" + namespaces[key] + ">");
+                defined[key.charAt(key.length - 1) === ':' ? key.slice(0, -1) : key] = true;
+            }
+            Object.keys(fallback).forEach(function(prefix) {
+                if (!Object.prototype.hasOwnProperty.call(defined, prefix) && typeof fallback[prefix] === 'string') {
+                    completions.push(prefix + ": <" + fallback[prefix] + ">");
+                }
+            });
+            return completions;
+        }
+
         export function setupCompleters(namespaces: any) {//namespace in form {"rdf:":"http://bla"}
             var newPrefixCompleterName = "customPrefixCompleter";
             //take the current prefix completer as base, to present our own namespaces for prefix autocompletion
@@ -185,14 +228,17 @@ namespace workbench {
                 });
                 return {
                     bulk: true,
-                    async: false,
+                    // YASQE stores every list handed to the callback: the repository's namespaces at once, then
+                    // with the fallback namespaces when they arrive. Typing a prefixed name adds its PREFIX line.
+                    async: true,
                     autoShow: true,
-                    get: function() {
-                        var completerArray : Array<string> = [];
-                        for (var key in namespaces) {
-                            completerArray.push(key + " <" +namespaces[key] + ">");
-                        }
-                        return completerArray
+                    get: function(token: any, callback: (completions: Array<string>) => void) {
+                        callback(prefixCompletions(namespaces, {}));
+                        loadFallbackNamespaces().then(function(fallback) {
+                            if (Object.keys(fallback).length) {
+                                callback(prefixCompletions(namespaces, fallback));
+                            }
+                        });
                     },
                     isValidCompletionPosition: function() {
                         return YASQE.Autocompleters.prefixes.isValidCompletionPosition(yasqe);},

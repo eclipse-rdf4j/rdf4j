@@ -473,12 +473,16 @@ test('yasqe helper registers namespace completer and delegates prefix helpers', 
     const completer = yasqe.state.registeredCompleters[0].factory(fakeEditor, 'customPrefixCompleter');
     fakeEditor.handler();
 
-    assert.deepEqual(Array.from(completer.get()), [
+    // The completer hands YASQE the given namespaces at once; the fallback namespaces follow when they arrive
+    // (workbench-fallback-namespaces.test.js).
+    const lists = [];
+    completer.get(null, (list) => lists.push(Array.from(list)));
+    assert.deepEqual(lists[0], [
         'ex <http://example.com/>',
         'foaf <http://xmlns.com/foaf/0.1/>'
     ]);
     assert.equal(completer.bulk, true);
-    assert.equal(completer.async, false);
+    assert.equal(completer.async, true);
     assert.equal(completer.autoShow, true);
     assert.equal(completer.isValidCompletionPosition(), false);
     assert.equal(completer.preProcessToken('tok'), 'editor:tok');
