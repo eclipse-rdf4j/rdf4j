@@ -99,10 +99,12 @@ import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFuncti
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * @author Bart Hanssens
  */
+@Isolated("Uses the process-wide query circuit-breaker policy")
 public class GroupIteratorTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final EvaluationStrategy EVALUATOR = new DefaultEvaluationStrategy(null, null);
@@ -793,34 +795,27 @@ public class GroupIteratorTest {
 
 	@Test
 	public void testHeavyOperatorKillSwitchInterruptsGroupIteratorWithoutBreakerCheckpoint() throws Exception {
-		String previousEnabled = System.getProperty(BREAKER_ENABLED);
-		Field heavyOperatorExecutionEnabled = QueryExecutionContext.class
-				.getDeclaredField("heavyOperatorExecutionEnabled");
-		heavyOperatorExecutionEnabled.setAccessible(true);
-		boolean previousHeavyOperatorExecutionEnabled = heavyOperatorExecutionEnabled.getBoolean(null);
-
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupBindingName("a");
-
 		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
-		QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.WORKBENCH, "test",
-				"select * where { ?s ?p ?o } group by ?a");
-		try {
-			resetGlobalBreaker();
-			System.setProperty(BREAKER_ENABLED, "false");
+		withCriticalBreakerProperties(() -> {
+			// Register after reset and establish the real policy, rather than overwriting a monitor-owned flag.
+			QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.WORKBENCH, "test",
+					"select * where { ?s ?p ?o } group by ?a");
 			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activate(handle);
 					GroupIterator groupIterator = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(),
 							CONTEXT)) {
-				heavyOperatorExecutionEnabled.setBoolean(null, false);
+				// The same refresh that invalidated the old reflected flag now preserves the actual kill policy.
+				assertThat(breaker.snapshotStatus().getState()).isEqualTo("CRITICAL");
 				assertThatExceptionOfType(QueryInterruptedException.class).isThrownBy(groupIterator::next);
+				assertThat(handle.isCancelRequested()).isTrue();
+				assertThat(handle.getLastHeavyOperator())
+						.as("the direct kill guard must interrupt before a GROUP_BY_START or GROUP_BY_BUILD checkpoint")
+						.isEqualTo("GROUP_BY");
+			} finally {
+				breaker.complete(handle);
 			}
-			assertThat(handle.isCancelRequested()).isTrue();
-		} finally {
-			heavyOperatorExecutionEnabled.setBoolean(null, previousHeavyOperatorExecutionEnabled);
-			restoreProperty(BREAKER_ENABLED, previousEnabled);
-			breaker.complete(handle);
-			resetGlobalBreaker();
-		}
+		});
 	}
 
 	private void resetGlobalBreaker() throws Exception {
