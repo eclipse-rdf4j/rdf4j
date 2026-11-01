@@ -437,6 +437,12 @@ namespace workbench {
                 copyConfirmations.set(button, original);
             }, refused);
         }
+
+        /** Copy text to the clipboard and confirm it on the button that asked (see confirmCopy). */
+        export function copyText(button: any, text: string): void {
+            const clipboard = typeof navigator !== 'undefined' && navigator.clipboard;
+            confirmCopy(button, clipboard && typeof clipboard.writeText === 'function' ? clipboard.writeText(text) : false);
+        }
     }
 
     export namespace views {
@@ -2526,7 +2532,9 @@ namespace workbench {
                     : '';
             const href = resultExploreHref(term);
             return h`<td data-label=${list.label}>${href
-                ? h`<a href="${href}" title=${full}>${label}</a>` : label}${addition}</td>`;
+                ? h`<a href="${href}" title=${full}>${label}</a>` : label}${
+                // A type shows its IRI in full, without angle brackets, when no prefix matches: only a prefixed one is copied.
+                copyResourceControl(runtime, term, term.kind === 'bnode' ? label : prefixed)}${addition}</td>`;
         }
 
         function browseCountCell(runtime: LitRuntime, list: any, counts: BrowseCounts, value: any,
@@ -2651,6 +2659,29 @@ namespace workbench {
             }));
         }
 
+        /**
+         * The copy button after a resource shown with a prefix, or after a blank node, shown on hover and keyboard focus:
+         * it copies the complete IRI or the blank node. Nothing for any other term or label.
+         */
+        function copyResourceControl(runtime: LitRuntime, term: any, label: string): any {
+            const stream = workbench.queryStream as any;
+            const value = term && typeof term === 'object' && stream && typeof stream.copyableTerm === 'function'
+                ? stream.copyableTerm(term, label) : '';
+            if (!value) {
+                return '';
+            }
+            const copy = (event: any) => {
+                if (event && typeof event.preventDefault === 'function') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                workbench.icons.copyText(event.currentTarget, value);
+            };
+            return runtime.html`<button type="button" class="resource-copy workbench-action workbench-action--ghost workbench-action--icon"
+                title=${term.kind === 'bnode' ? 'Copy blank node' : 'Copy IRI'} aria-label=${'Copy ' + value}
+                @click=${copy}>${icon(runtime, 'copy')}</button>`;
+        }
+
         function exploreGraphLabel(term: any, namespaces: any[]): string {
             if (!term) {
                 return 'Default graph';
@@ -2689,7 +2720,8 @@ namespace workbench {
                     <h3 id=${headingId} class="explore-group__title">${role.title}
                         <span class="explore-group__count">${rows.length}</span>
                         ${oneGraph && role.key !== 'graph'
-                            ? h`<span class="explore-group__graph">Graph: ${exploreGraphLabel(graphs[0], namespaces)}</span>` : ''}</h3>
+                            ? h`<span class="explore-group__graph workbench-copyable">Graph: ${exploreGraphLabel(graphs[0], namespaces)}${
+                                copyResourceControl(runtime, graphs[0], exploreGraphLabel(graphs[0], namespaces))}</span>` : ''}</h3>
                     ${resultTable(runtime, model, context, {
                         key: 'explore-' + role.key,
                         label: role.title + ' statements',
@@ -2744,8 +2776,8 @@ namespace workbench {
                 ${types.length ? h`<ul class="explore-resource-card__types" aria-label="Types">${types.map((type: any) => {
                     const href = resultExploreHref(type);
                     const label = exploreGraphLabel(type, namespaces);
-                    return h`<li>${href ? h`<a class="explore-chip" href=${href}>${label}</a>`
-                        : h`<span class="explore-chip">${label}</span>`}</li>`;
+                    return h`<li class="workbench-copyable">${href ? h`<a class="explore-chip" href=${href}>${label}</a>`
+                        : h`<span class="explore-chip">${label}</span>`}${copyResourceControl(runtime, type, label)}</li>`;
                 })}</ul>` : ''}
                 ${comment ? h`<div class="explore-resource-card__description"><p class="explore-resource-card__comment workbench-prose">${comment}</p>
                     ${comment.length > 240 ? h`<button class="workbench-action workbench-action--ghost explore-resource-card__more" type="button"
@@ -3017,7 +3049,8 @@ namespace workbench {
             };
             // The heading counts the group's members as the statement groups count theirs (the pager below counts alike).
             return h`<h3>${definition.title} <span class="explore-group__count">${formatCount(String(page.count), context)}</span></h3>
-                <ul>${distinctExploreValues(model, page.items).map((value: any) => h`<li>${member(value)}</li>`)}</ul>
+                <ul>${distinctExploreValues(model, page.items).map((value: any) => h`<li class="workbench-copyable">${member(value)}${
+                    copyResourceControl(runtime, value, exploreGraphLabel(value, namespaces))}</li>`)}</ul>
                 ${page.count > explorePageSize ? h`<div class="workbench-form-actions workbench-window-controls"
                     role="group" aria-label=${definition.title + ' pages'}>
                     <span role="status">Showing ${page.start + 1}–${page.start + page.items.length} of ${page.count}</span>

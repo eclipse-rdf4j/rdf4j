@@ -302,9 +302,7 @@ public class RemoveServlet extends TransformationServlet {
 			namespaces = Iterations.asList(con.getNamespaces());
 		}
 		contexts.sort(BrowseList.BY_NAME);
-		for (Namespace namespace : namespaces) {
-			builder.prefix(namespace.getPrefix(), namespace.getName());
-		}
+		builder.namespaces(namespaces);
 		builder.start(CONTEXT);
 		builder.link(List.of(INFO));
 		for (Resource context : contexts) {

@@ -4637,9 +4637,10 @@ body.workbench-body .workbench-page-surface a.resourceURL {
 	color: var(--workbench-teal);
 }
 
-/* "Add to graph" after an IRI in result tables and after a type or graph name: shown on hover and keyboard focus, and
-   always on touch screens; a check-styled link to the Graph page once added. */
-body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph.workbench-action--icon) {
+/* "Add to graph" after an IRI in result tables and after a type or graph name, and the copy button after a resource
+   shown with a prefix or a blank node: shown on hover and keyboard focus, and always on touch screens; a check-styled
+   link to the Graph page once added, and a check while "Copied". */
+body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph.workbench-action--icon, .resource-copy) {
 	width: 24px;
 	min-width: 24px;
 	height: 24px;
@@ -4651,14 +4652,15 @@ body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workben
 	transition: opacity 120ms ease;
 }
 
-body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph.workbench-action--icon) .workbench-action-icon {
+body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph.workbench-action--icon, .resource-copy) .workbench-action-icon {
 	width: 14px;
 	height: 14px;
 }
 
-body.workbench-body .workbench-page-surface :is(.resource, td):hover > :is(.resource-add-to-graph, .workbench-add-to-graph),
-body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph):focus-visible,
-body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph).is-added {
+body.workbench-body .workbench-page-surface :is(.resource, td, .workbench-copyable):hover > :is(.resource-add-to-graph, .workbench-add-to-graph, .resource-copy),
+body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph, .resource-copy):focus-visible,
+body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph).is-added,
+body.workbench-body .workbench-page-surface .resource-copy[aria-label="Copied"] {
 	opacity: 1;
 }
 
@@ -4666,8 +4668,13 @@ body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workben
 	color: var(--workbench-success, var(--workbench-teal));
 }
 
+/* The copy button follows the name on its text line without making the line, and so the row, taller. */
+body.workbench-body .workbench-page-surface .resource-copy.workbench-action {
+	margin-block: -4px;
+}
+
 @media (hover: none) {
-	body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph.workbench-action--icon) {
+	body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph.workbench-action--icon, .resource-copy) {
 		opacity: 1;
 	}
 }
