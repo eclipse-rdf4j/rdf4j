@@ -102,22 +102,40 @@ public class TripleStoreTest {
 
 	@Test
 	public void alignedBatchReusesMainIndexWriteCursor() throws Exception {
-		long[] subj = { 1, 2, 3 };
-		long[] pred = { 4, 4, 4 };
-		long[] obj = { 5, 6, 7 };
-		long[] context = { 0, 0, 0 };
-
-		tripleStore.startTransaction();
-		try {
-			tripleStore.storeTriplesAligned(subj, pred, obj, context, subj.length, true);
-
-			Field cursorsField = TripleStore.class.getDeclaredField("explicitAlignedWriteCursors");
-			cursorsField.setAccessible(true);
-			long[] cursors = (long[]) cursorsField.get(tripleStore);
-			assertTrue("the main index should retain a write cursor for the transaction", cursors[0] != 0);
-			assertTrue("the secondary index should retain a write cursor for the transaction", cursors[1] != 0);
-		} finally {
-			tripleStore.rollback();
+		long[] subjects = { 1, 2, 3 };
+		long[] predicates = { 4, 4, 4 };
+		long[] objects = { 5, 6, 7 };
+		long[] contexts = { 0, 0, 0 };
+		List<List<Long>> expected = LmdbPersistentMutationBatchObservation.rows(subjects, predicates, objects,
+				contexts, subjects.length);
+		File cursorDir = new File(dataDir, "aligned-write-cursors");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		try (TripleStore store = new TripleStore(cursorDir, config, null)) {
+			for (boolean commit : new boolean[] { false, true }) {
+				store.startTransaction();
+				var observation = LmdbPersistentMutationBatchObservation.observe(store);
+				try (observation) {
+					store.storeTriplesAligned(subjects, predicates, objects, contexts, subjects.length, true,
+							observation.callbacks(null));
+				}
+				observation.assertBatch(subjects.length, 1, true);
+				assertEquals(List.of(0, 1, 2), observation.callbackIndices());
+				assertEquals(Thread.currentThread(), observation.writerThread());
+				assertArrayEquals(new long[] { 1, 2, 3 }, subjects);
+				assertArrayEquals(new long[] { 4, 4, 4 }, predicates);
+				assertArrayEquals(new long[] { 5, 6, 7 }, objects);
+				assertArrayEquals(new long[] { 0, 0, 0 }, contexts);
+				if (commit) {
+					store.commit();
+				} else {
+					store.rollback();
+				}
+				LmdbPersistentMutationBatchObservation.assertDirections(store, commit ? expected : List.of(),
+						List.of());
+			}
+		}
+		try (TripleStore reopened = new TripleStore(cursorDir, config, null)) {
+			LmdbPersistentMutationBatchObservation.assertDirections(reopened, expected, List.of());
 		}
 	}
 
@@ -126,7 +144,7 @@ public class TripleStoreTest {
 		int initialArenaCount = TripleStore.openPreparedKeyArenaCount();
 		File preparedDir = new File(dataDir, "prepared-worker-failure");
 		try (TripleStore preparedStore = new TripleStore(preparedDir,
-				new LmdbStoreConfig("spoc,ospc,psoc,posc"), null)) {
+				new LmdbStoreConfig("spoc,ospc,posc,psoc"), null)) {
 			long[] subjects = { 1, 2, 3, 4 };
 			long[] predicates = { 9, 8, 9, 8 };
 			long[] objects = { 7, 6, 5, 4 };
@@ -153,7 +171,7 @@ public class TripleStoreTest {
 	public void preparedFourIndexOrdersAreExact() throws Exception {
 		File preparedDir = new File(dataDir, "prepared-index-order");
 		try (TripleStore preparedStore = new TripleStore(preparedDir,
-				new LmdbStoreConfig("spoc,ospc,psoc,posc"), null);
+				new LmdbStoreConfig("spoc,ospc,posc,psoc"), null);
 				var executor = Executors.newFixedThreadPool(3)) {
 			long[] subjects = { 1, 1, 2, 2, 3, 4, 4, 5 };
 			long[] predicates = { 2, 3, 1, 1, 2, 1, 3, 2 };
@@ -179,7 +197,7 @@ public class TripleStoreTest {
 	public void globalPreparedFourIndexOrdersAndDuplicateFilteringAreExact() throws Exception {
 		File preparedDir = new File(dataDir, "global-prepared-index-order");
 		try (TripleStore preparedStore = new TripleStore(preparedDir,
-				new LmdbStoreConfig("spoc,ospc,psoc,posc"), null);
+				new LmdbStoreConfig("spoc,ospc,posc,psoc"), null);
 				var executor = Executors.newFixedThreadPool(3)) {
 			long[] subjects = { 1, 1, 2, 2, 2, 3, 4, 4, 5 };
 			long[] predicates = { 2, 3, 1, 1, 1, 2, 1, 3, 2 };
@@ -217,6 +235,73 @@ public class TripleStoreTest {
 			for (long count : preparedStore.explicitIndexEntryCounts().values()) {
 				assertEquals(8L, count);
 			}
+		}
+	}
+
+	@Test
+	public void globalIdBatchWritesPersistentDirectionsWithoutPreparedIndexWork() throws Exception {
+		long[] subjects = { 1, 1, 2, 2, 2, 3, 4, 4, 5 };
+		long[] predicates = { 2, 3, 1, 1, 1, 2, 1, 3, 2 };
+		long[] objects = { 9, 8, 9, 9, 9, 7, 8, 7, 8 };
+		long[] contexts = { 1, 0, 0, 2, 0, 1, 0, 2, 0 };
+		long[] valueIds = { 0, 5, 2, 9, 1, 8, 3, 7, 4, 6 };
+		int[] localIds = new int[valueIds.length];
+		for (int local = 0; local < valueIds.length; local++) {
+			localIds[(int) valueIds[local]] = local;
+		}
+		int[] quads = new int[(subjects.length + 2) * 4];
+		Arrays.fill(quads, Integer.MAX_VALUE); // An invalid suffix must never be resolved beyond count.
+		for (int row = 0; row < subjects.length; row++) {
+			quads[4 * row] = localIds[(int) subjects[row]];
+			quads[4 * row + 1] = localIds[(int) predicates[row]];
+			quads[4 * row + 2] = localIds[(int) objects[row]];
+			quads[4 * row + 3] = contexts[row] == 0 ? -1 : localIds[(int) contexts[row]];
+		}
+		int[] originalQuads = quads.clone();
+		long[] originalValues = valueIds.clone();
+		List<List<Long>> expected = LmdbPersistentMutationBatchObservation
+				.rows(subjects, predicates, objects, contexts, subjects.length)
+				.stream()
+				.distinct()
+				.toList();
+		assertEquals(8, expected.size());
+		int initialArenaCount = TripleStore.openPreparedKeyArenaCount();
+		File globalDir = new File(dataDir, "global-id-persistent-write");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+		List<String> queryOrders = List.of("spoc", "ospc", "psoc", "posc");
+		try (TripleStore store = new TripleStore(globalDir, config, null)) {
+			store.startTransaction();
+			var observation = LmdbPersistentMutationBatchObservation.observe(store);
+			try (observation) {
+				// This is the actual LmdbSailStore global-ID path; legacy per-index preparers are not involved.
+				assertEquals(8, store.storeGloballyOrderedFreshTriples(quads, valueIds, subjects.length, null, null));
+			}
+			observation.assertBatch(8, 3, true);
+			assertEquals(Thread.currentThread(), observation.writerThread());
+			assertArrayEquals(originalQuads, quads);
+			assertArrayEquals(originalValues, valueIds);
+			assertEquals(initialArenaCount, TripleStore.openPreparedKeyArenaCount());
+			store.commit();
+			LmdbPersistentMutationBatchObservation.assertDirections(store, expected, List.of());
+			LmdbPersistentMutationBatchObservation.assertOrders(store, queryOrders, expected, List.of());
+		}
+		try (TripleStore reopened = new TripleStore(globalDir, config, null)) {
+			LmdbPersistentMutationBatchObservation.assertDirections(reopened, expected, List.of());
+			LmdbPersistentMutationBatchObservation.assertOrders(reopened, queryOrders, expected, List.of());
+		}
+		assertEquals(initialArenaCount, TripleStore.openPreparedKeyArenaCount());
+	}
+
+	@Test
+	public void globalPreparedOrderRejectsUnsupportedDescriptorPermutation() throws Exception {
+		File unsupportedDir = new File(dataDir, "unsupported-global-prepared-order");
+		try (TripleStore unsupported = new TripleStore(unsupportedDir,
+				new LmdbStoreConfig("spoc,ospc,psoc,posc"), null);
+				var executor = Executors.newSingleThreadExecutor()) {
+			IllegalStateException failure = assertThrows(IllegalStateException.class,
+					() -> unsupported.prepareGlobalIndexOrdersAsync(executor, new int[] { 0, 1, 2, 3 },
+							new long[] { 1, 2, 3, 0 }, 1));
+			assertEquals("Global prepared order requires spoc,ospc,posc,psoc indexes", failure.getMessage());
 		}
 	}
 
@@ -919,21 +1004,32 @@ public class TripleStoreTest {
 	@Test
 	public void testIndexesAreReorderedForAlignedBatchTraversal() throws Exception {
 		File orderedIndexDir = new File(dataDir, "ordered-index-store");
-		orderedIndexDir.mkdirs();
-
-		try (TripleStore orderedIndexStore = new TripleStore(orderedIndexDir,
-				new LmdbStoreConfig("spoc,psoc,sopc,opsc,posc,ospc"), null)) {
+		List<String> configured = List.of("spoc", "psoc", "sopc", "opsc", "posc", "ospc");
+		LmdbStoreConfig config = new LmdbStoreConfig(String.join(",", configured));
+		List<List<Long>> explicit = List.of(List.of(2L, 4L, 8L, 1L), List.of(1L, 5L, 9L, 0L),
+				List.of(2L, 4L, 7L, 2L), List.of(1L, 4L, 9L, 2L));
+		List<List<Long>> inferred = List.of(List.of(12L, 4L, 8L, 2L), List.of(11L, 5L, 7L, 0L));
+		try (TripleStore store = new TripleStore(orderedIndexDir, config, null)) {
 			Field indexesField = TripleStore.class.getDeclaredField("indexes");
 			indexesField.setAccessible(true);
-
 			@SuppressWarnings("unchecked")
-			List<TripleIndex> configuredIndexes = (List<TripleIndex>) indexesField
-					.get(orderedIndexStore);
-
-			assertEquals(Arrays.asList("spoc", "ospc", "posc", "opsc", "sopc", "psoc"),
-					configuredIndexes.stream()
-							.map(index -> new String(index.getFieldSeq()))
-							.collect(Collectors.toList()));
+			List<TripleIndex> descriptors = (List<TripleIndex>) indexesField.get(store);
+			assertEquals("configured query preferences are no longer reordered for physical secondary writes",
+					configured, descriptors.stream().map(TripleIndex::toString).collect(Collectors.toList()));
+			store.startTransaction();
+			for (List<Long> row : explicit) {
+				store.storeTriple(row.get(0), row.get(1), row.get(2), row.get(3), true);
+			}
+			for (List<Long> row : inferred) {
+				store.storeTriple(row.get(0), row.get(1), row.get(2), row.get(3), false);
+			}
+			store.commit();
+			LmdbPersistentMutationBatchObservation.assertDirections(store, explicit, inferred);
+			LmdbPersistentMutationBatchObservation.assertOrders(store, configured, explicit, inferred);
+		}
+		try (TripleStore reopened = new TripleStore(orderedIndexDir, config, null)) {
+			LmdbPersistentMutationBatchObservation.assertDirections(reopened, explicit, inferred);
+			LmdbPersistentMutationBatchObservation.assertOrders(reopened, configured, explicit, inferred);
 		}
 	}
 

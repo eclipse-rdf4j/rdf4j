@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
@@ -745,6 +747,7 @@ class LmdbNoneStreamingIngestionTest {
 		Set<Statement> expected = statements(37);
 
 		try (LmdbSailStore store = newStore(dataDir, config, observed)) {
+			observed.get().observeAlignedBatch = true;
 			try (SailSink sink = store.getExplicitSailSource(WRITER_OWNER).sink(IsolationLevels.NONE)) {
 				for (Statement statement : expected) {
 					sink.approve(statement.getSubject(), statement.getPredicate(), statement.getObject(),
@@ -770,10 +773,42 @@ class LmdbNoneStreamingIngestionTest {
 			assertEquals(partial.count(), partial.objectCapacity(), "the object array must match its valid row count");
 			assertEquals(partial.count(), partial.contextCapacity(),
 					"the context array must match its valid row count");
-			assertTrue(triples.sortedSecondaryIndexPassCount.get() > 0,
-					"a short NONE batch must use the native sorted secondary-index path");
+			assertEquals(1, triples.batchObservations.size(), "observe the actual single writer-thread call");
+			LmdbPersistentMutationBatchObservation observation = triples.batchObservations.get(0);
+			observation.assertBatch(expected.size(), 1, true);
+			assertSame(triples.observedAlignedEntryThread, observation.writerThread());
+			List<Integer> expectedCallbacks = new ArrayList<>();
+			for (int index = 0; index < expected.size(); index++) {
+				expectedCallbacks.add(index);
+			}
+			assertEquals(expectedCallbacks, observation.callbackIndices(), "preserve every accepted input index");
+			assertEquals(0, triples.scalarWriteCount.get(), "a short batch must not fall back to public scalar writes");
+			LmdbPersistentMutationBatchObservation.assertDirections(triples, resolvedRows(store, expected), List.of());
 			assertEquals(expected, readStatements(store), "the partial native batch must preserve exact content");
 		}
+		AtomicReference<ObservingTripleStore> reopenedTriples = new AtomicReference<>();
+		try (LmdbSailStore reopened = newStore(dataDir, config, reopenedTriples)) {
+			assertEquals(expected, readStatements(reopened), "the exact short batch must survive reopening");
+			LmdbPersistentMutationBatchObservation.assertDirections(reopenedTriples.get(),
+					resolvedRows(reopened, expected), List.of());
+		}
+	}
+
+	private static List<List<Long>> resolvedRows(LmdbSailStore store, Set<Statement> statements) throws IOException {
+		List<List<Long>> rows = new ArrayList<>(statements.size());
+		ValueStore values = store.valueStore();
+		for (Statement statement : statements) {
+			long subject = values.getId(statement.getSubject());
+			long predicate = values.getId(statement.getPredicate());
+			long object = values.getId(statement.getObject());
+			long context = statement.getContext() == null ? 0L : values.getId(statement.getContext());
+			assertNotEquals(LmdbValue.UNKNOWN_ID, subject);
+			assertNotEquals(LmdbValue.UNKNOWN_ID, predicate);
+			assertNotEquals(LmdbValue.UNKNOWN_ID, object);
+			assertNotEquals(LmdbValue.UNKNOWN_ID, context);
+			rows.add(List.of(subject, predicate, object, context));
+		}
+		return rows;
 	}
 
 	@Test
@@ -6549,7 +6584,9 @@ class LmdbNoneStreamingIngestionTest {
 		private final AtomicInteger alignedStatementCount = new AtomicInteger();
 		private final AtomicInteger partialAlignedArrayCount = new AtomicInteger();
 		private final CopyOnWriteArrayList<AlignedBatchCall> alignedBatchCalls = new CopyOnWriteArrayList<>();
-		private final AtomicInteger sortedSecondaryIndexPassCount = new AtomicInteger();
+		private volatile boolean observeAlignedBatch;
+		private volatile Thread observedAlignedEntryThread;
+		private final CopyOnWriteArrayList<LmdbPersistentMutationBatchObservation> batchObservations = new CopyOnWriteArrayList<>();
 		private final AtomicInteger nativeQuadCaptureCount = new AtomicInteger();
 		private final AtomicInteger maxNativeQuadCaptureLimit = new AtomicInteger();
 		private final AtomicBoolean diskReplayJournalObserved = new AtomicBoolean();
@@ -6797,8 +6834,23 @@ class LmdbNoneStreamingIngestionTest {
 				partialAlignedArrayCount.incrementAndGet();
 			}
 			try {
-				super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
-						addedIndexConsumer);
+				if (observeAlignedBatch) {
+					long[][] original = { subjects.clone(), predicates.clone(), objects.clone(), contexts.clone() };
+					observedAlignedEntryThread = Thread.currentThread();
+					var observation = LmdbPersistentMutationBatchObservation.observe(this);
+					try (observation) {
+						super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+								observation.callbacks(addedIndexConsumer));
+					}
+					assertArrayEquals(original[0], subjects);
+					assertArrayEquals(original[1], predicates);
+					assertArrayEquals(original[2], objects);
+					assertArrayEquals(original[3], contexts);
+					batchObservations.add(observation);
+				} else {
+					super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+							addedIndexConsumer);
+				}
 				if (failNextFrozenAlignedMapFullAfterMutation.compareAndSet(true, false)) {
 					try {
 						LmdbUtil.E(MDB_MAP_FULL);
@@ -6840,14 +6892,6 @@ class LmdbNoneStreamingIngestionTest {
 			} finally {
 				observeDiskReplayJournal();
 			}
-		}
-
-		@Override
-		void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index, long[] subjects,
-				long[] predicates, long[] objects, long[] contexts) {
-			sortedSecondaryIndexPassCount.incrementAndGet();
-			super.sortStatementIndicesByLeadingField(statementIndices, length, index, subjects, predicates, objects,
-					contexts);
 		}
 
 		@Override

@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import java.io.File;
@@ -20,7 +19,6 @@ import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -34,150 +32,57 @@ public class TripleStoreIndexOrderOptimizationTest {
 	public void testEightIndexesMatchBruteForceOptimalOrder(@TempDir File dataDir) throws Exception {
 		List<String> configuredIndexSpecs = Arrays.asList("spoc", "psoc", "sopc", "opsc", "posc", "ospc", "oscp",
 				"pocs");
-
-		try (TripleStore store = new TripleStore(dataDir, new LmdbStoreConfig(String.join(",", configuredIndexSpecs)),
-				null)) {
-			assertEquals(expectedIndexOrder(configuredIndexSpecs), configuredIndexOrder(store));
-		} finally {
-			LmdbTestUtil.deleteDir(dataDir);
-		}
+		assertConfiguredOrdersAndContent(dataDir, configuredIndexSpecs);
 	}
 
 	@Test
 	public void testTwentyFourIndexesInitializeWithinTimeout(@TempDir File dataDir) throws Exception {
 		List<String> configuredIndexSpecs = allIndexSpecs();
-
 		assertTimeoutPreemptively(Duration.ofSeconds(5), () -> {
 			try (TripleStore store = new TripleStore(dataDir,
-					new LmdbStoreConfig(String.join(",", configuredIndexSpecs)),
-					null)) {
-				List<String> configuredOrder = configuredIndexOrder(store);
-				assertEquals(configuredIndexSpecs.size(), configuredOrder.size());
-				assertEquals(configuredIndexSpecs.stream().sorted().collect(Collectors.toList()),
-						configuredOrder.stream().sorted().collect(Collectors.toList()));
-				assertTrue(countReusableTransitions(configuredOrder) == configuredIndexSpecs.size() - 1);
-			} finally {
-				LmdbTestUtil.deleteDir(dataDir);
+					new LmdbStoreConfig(String.join(",", configuredIndexSpecs)), null)) {
+				assertEquals(configuredIndexSpecs, configuredIndexOrder(store));
 			}
 		});
+		// Read-order correctness is independent of the bounded initialization work assertion above.
+		assertConfiguredOrdersAndContent(dataDir, configuredIndexSpecs);
+	}
+
+	private void assertConfiguredOrdersAndContent(File directory, List<String> orders) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig(String.join(",", orders));
+		List<List<Long>> explicit = List.of(List.of(2L, 4L, 8L, 1L), List.of(1L, 5L, 9L, 0L),
+				List.of(2L, 4L, 7L, 2L), List.of(1L, 4L, 9L, 2L), List.of(2L, 5L, 7L, 0L),
+				List.of(1L, 4L, 8L, 1L));
+		List<List<Long>> inferred = List.of(List.of(12L, 4L, 8L, 2L), List.of(11L, 5L, 7L, 0L),
+				List.of(11L, 4L, 8L, 1L));
+		try (TripleStore store = new TripleStore(directory, config, null)) {
+			// These are logical query-order preferences, no longer a native secondary-write traversal plan.
+			assertEquals(orders, configuredIndexOrder(store));
+			store.startTransaction();
+			for (List<Long> row : explicit) {
+				store.storeTriple(row.get(0), row.get(1), row.get(2), row.get(3), true);
+			}
+			for (List<Long> row : inferred) {
+				store.storeTriple(row.get(0), row.get(1), row.get(2), row.get(3), false);
+			}
+			store.commit();
+			LmdbPersistentMutationBatchObservation.assertDirections(store, explicit, inferred);
+			LmdbPersistentMutationBatchObservation.assertOrders(store, orders, explicit, inferred);
+		}
+		try (TripleStore reopened = new TripleStore(directory, config, null)) {
+			assertEquals(orders, configuredIndexOrder(reopened));
+			LmdbPersistentMutationBatchObservation.assertDirections(reopened, explicit, inferred);
+			LmdbPersistentMutationBatchObservation.assertOrders(reopened, orders, explicit, inferred);
+		}
 	}
 
 	private List<String> configuredIndexOrder(TripleStore store) throws Exception {
+		// Read-only descriptor observation preserves the configured-preference contract. No internal state is changed.
 		Field indexesField = TripleStore.class.getDeclaredField("indexes");
 		indexesField.setAccessible(true);
-
 		@SuppressWarnings("unchecked")
 		List<TripleIndex> configuredIndexes = (List<TripleIndex>) indexesField.get(store);
-		return configuredIndexes.stream()
-				.map(index -> new String(index.getFieldSeq()))
-				.collect(Collectors.toList());
-	}
-
-	private List<String> expectedIndexOrder(List<String> configuredIndexSpecs) {
-		String mainFieldSeq = configuredIndexSpecs.getFirst();
-		List<String> secondarySpecs = new ArrayList<>(configuredIndexSpecs.subList(1, configuredIndexSpecs.size()));
-		OrderScore bestOrder = findBestSecondaryIndexOrder(mainFieldSeq, mainFieldSeq, secondarySpecs);
-		List<String> expectedOrder = new ArrayList<>(configuredIndexSpecs.size());
-		expectedOrder.add(mainFieldSeq);
-		expectedOrder.addAll(bestOrder.indexOrder);
-		return expectedOrder;
-	}
-
-	private OrderScore findBestSecondaryIndexOrder(String mainFieldSeq, String currentFieldSeq,
-			List<String> remainingIndexSpecs) {
-		if (remainingIndexSpecs.isEmpty()) {
-			return new OrderScore(List.of(), 0, 0);
-		}
-
-		OrderScore bestOrder = null;
-		List<String> sortedCandidates = new ArrayList<>(remainingIndexSpecs);
-		Collections.sort(sortedCandidates);
-		for (String candidateFieldSeq : sortedCandidates) {
-			List<String> nextRemaining = new ArrayList<>(remainingIndexSpecs);
-			nextRemaining.remove(candidateFieldSeq);
-
-			OrderScore tailOrder = findBestSecondaryIndexOrder(mainFieldSeq, candidateFieldSeq, nextRemaining);
-			OrderScore candidateScore = new OrderScore(prepend(candidateFieldSeq, tailOrder.indexOrder),
-					tailOrder.reusedTransitions + (canReuseCurrentOrder(currentFieldSeq, candidateFieldSeq) ? 1 : 0),
-					tailOrder.mainOrderResets
-							+ (shouldResetToMainIndexOrder(mainFieldSeq, currentFieldSeq, candidateFieldSeq) ? 1 : 0));
-
-			if (isBetterIndexOrder(candidateScore, bestOrder)) {
-				bestOrder = candidateScore;
-			}
-		}
-
-		return bestOrder;
-	}
-
-	private List<String> prepend(String fieldSeq, List<String> indexOrder) {
-		List<String> candidateOrder = new ArrayList<>(indexOrder.size() + 1);
-		candidateOrder.add(fieldSeq);
-		candidateOrder.addAll(indexOrder);
-		return candidateOrder;
-	}
-
-	private boolean isBetterIndexOrder(OrderScore candidateScore, OrderScore bestScore) {
-		if (bestScore == null) {
-			return true;
-		}
-		if (candidateScore.reusedTransitions != bestScore.reusedTransitions) {
-			return candidateScore.reusedTransitions > bestScore.reusedTransitions;
-		}
-		if (candidateScore.mainOrderResets != bestScore.mainOrderResets) {
-			return candidateScore.mainOrderResets > bestScore.mainOrderResets;
-		}
-		return compareIndexOrder(candidateScore.indexOrder, bestScore.indexOrder) < 0;
-	}
-
-	private int compareIndexOrder(List<String> left, List<String> right) {
-		for (int i = 0; i < Math.min(left.size(), right.size()); i++) {
-			int compare = left.get(i).compareTo(right.get(i));
-			if (compare != 0) {
-				return compare;
-			}
-		}
-		return Integer.compare(left.size(), right.size());
-	}
-
-	private boolean shouldResetToMainIndexOrder(String mainFieldSeq, String currentFieldSeq, String targetFieldSeq) {
-		return !canReuseCurrentOrder(currentFieldSeq, targetFieldSeq)
-				&& canReuseCurrentOrder(mainFieldSeq, targetFieldSeq);
-	}
-
-	private boolean canReuseCurrentOrder(String currentFieldSeq, String targetFieldSeq) {
-		int currentIndex = 0;
-		for (int i = 1; i < targetFieldSeq.length(); i++) {
-			while (currentIndex < currentFieldSeq.length()
-					&& currentFieldSeq.charAt(currentIndex) != targetFieldSeq.charAt(i)) {
-				if (currentFieldSeq.charAt(currentIndex) == targetFieldSeq.charAt(0)) {
-					currentIndex++;
-					continue;
-				}
-				return false;
-			}
-			if (currentIndex == currentFieldSeq.length()) {
-				return false;
-			}
-			currentIndex++;
-		}
-		return true;
-	}
-
-	private record OrderScore(List<String> indexOrder, int reusedTransitions, int mainOrderResets) {
-	}
-
-	private int countReusableTransitions(List<String> configuredOrder) {
-		int reusedTransitions = 0;
-		String currentFieldSeq = configuredOrder.getFirst();
-		for (int i = 1; i < configuredOrder.size(); i++) {
-			String targetFieldSeq = configuredOrder.get(i);
-			if (canReuseCurrentOrder(currentFieldSeq, targetFieldSeq)) {
-				reusedTransitions++;
-			}
-			currentFieldSeq = targetFieldSeq;
-		}
-		return reusedTransitions;
+		return configuredIndexes.stream().map(index -> new String(index.getFieldSeq())).collect(Collectors.toList());
 	}
 
 	private List<String> allIndexSpecs() {
@@ -191,7 +96,6 @@ public class TripleStoreIndexOrderOptimizationTest {
 			permutations.add(prefix);
 			return;
 		}
-
 		for (int i = 0; i < remaining.length(); i++) {
 			appendPermutations(prefix + remaining.charAt(i),
 					remaining.substring(0, i) + remaining.substring(i + 1), permutations);

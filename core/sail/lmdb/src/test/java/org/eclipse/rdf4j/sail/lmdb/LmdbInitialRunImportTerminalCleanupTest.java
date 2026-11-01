@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/documents/edl-v10.php.
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.lwjgl.util.lmdb.LMDB.MDB_PANIC;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.mockito.Mockito.mockStatic;
 
 import java.io.IOException;
@@ -33,6 +35,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.lwjgl.util.lmdb.LMDB;
 import org.mockito.MockedStatic;
 
 /** A reset-authorizing import marker cannot survive an acknowledged successful import. */
@@ -53,10 +56,14 @@ class LmdbInitialRunImportTerminalCleanupTest {
 				.setValueOverlayEnabled(false)
 				.setBulkOperationSize(64);
 		Path marker = directory.resolve(LmdbInitialRunImport.MARKER_FILE_NAME);
-		Path target = site == CleanupSite.RUN_DIRECTORY
+		Path target = site == CleanupSite.RUN_DIRECTORY || site == CleanupSite.SYNC_AND_RUN_DIRECTORY
 				? directory.resolve(LmdbInitialRunImport.RUN_DIRECTORY_NAME)
 				: marker;
-		IOException injected = new IOException("injected terminal import cleanup failure: " + site);
+		Throwable injected = switch (site) {
+		case MARKER_RUNTIME -> new IllegalStateException("injected unchecked terminal import cleanup failure");
+		case MARKER_ERROR -> new AssertionError("injected error during terminal import cleanup");
+		default -> new IOException("injected terminal import cleanup failure: " + site);
+		};
 		LmdbStore sail = new LmdbStore(directory.toFile(), config);
 		sail.init();
 		Throwable commitFailure;
@@ -80,10 +87,26 @@ class LmdbInitialRunImportTerminalCleanupTest {
 				long tripleCommitsBefore = triples.getNativeCommitGeneration();
 				long valueCommitsBefore = values.nativeCommitGeneration();
 				Thread writerThread = Thread.currentThread();
-				try (MockedStatic<Files> ignored = mockStatic(Files.class, call -> {
+				try (MockedStatic<LMDB> nativeCalls = mockStatic(LMDB.class, call -> {
+					if (site == CleanupSite.SYNC_AND_RUN_DIRECTORY
+							&& call.getMethod().getName().equals("mdb_env_sync")
+							&& (long) call.getArgument(0) == triples.env) {
+						// Execute the actual final native sync, then inject its error return. The generated
+						// LmdbException is the real primary exception from the caller's checked error path.
+						assertThat(Thread.currentThread()).isSameAs(writerThread);
+						assertThat(triples.writeTxn).isZero();
+						assertThat(triples.getNativeCommitGeneration()).isGreaterThan(tripleCommitsBefore);
+						assertThat(values.nativeCommitGeneration()).isGreaterThan(valueCommitsBefore);
+						assertThat((int) call.callRealMethod()).isEqualTo(MDB_SUCCESS);
+						observation.primarySyncInjected++;
+						return MDB_PANIC;
+					}
+					return call.callRealMethod();
+				}); MockedStatic<Files> ignored = mockStatic(Files.class, call -> {
 					if (call.getMethod().getName().equals("deleteIfExists")
 							&& ((Path) call.getArgument(0)).toAbsolutePath().equals(target.toAbsolutePath())) {
 						observation.calls++;
+						observation.cleanupAfterPrimarySync = observation.primarySyncInjected > 0;
 						observation.thread = Thread.currentThread();
 						observation.tripleCommits = triples.getNativeCommitGeneration() - tripleCommitsBefore;
 						observation.valueCommits = values.nativeCommitGeneration() - valueCommitsBefore;
@@ -127,14 +150,20 @@ class LmdbInitialRunImportTerminalCleanupTest {
 			reopened.shutDown();
 		}
 		System.out.printf("terminal-import-cleanup site=%s calls=%d injected=%d tripleCommits=%d valueCommits=%d "
-				+ "committedRowsBeforeFault=%d commitAcknowledged=%s completed=%d peerRows=%d reopenedRows=%d%n",
+				+ "committedRowsBeforeFault=%d commitAcknowledged=%s completed=%d peerRows=%d reopenedRows=%d "
+				+ "primarySyncInjected=%d%n",
 				site, observation.calls, observation.injected, observation.tripleCommits, observation.valueCommits,
-				observation.committedRows, commitFailure == null, completed, peerRows, reopenedRows);
+				observation.committedRows, commitFailure == null, completed, peerRows, reopenedRows,
+				observation.primarySyncInjected);
 		assertAll("terminal cleanup must not acknowledge data that the surviving marker authorizes resetting",
 				() -> assertThat(observation.calls).isEqualTo(1),
 				() -> assertThat(observation.tripleCommits).isPositive(),
 				() -> assertThat(observation.valueCommits).isPositive(),
 				() -> assertThat(observation.activeTripleWriter).isZero(),
+				() -> assertThat(observation.primarySyncInjected)
+						.isEqualTo(site == CleanupSite.SYNC_AND_RUN_DIRECTORY ? 1 : 0),
+				() -> assertThat(observation.cleanupAfterPrimarySync)
+						.isEqualTo(site == CleanupSite.SYNC_AND_RUN_DIRECTORY),
 				() -> assertThat(observation.committedRows).isEqualTo(ROWS),
 				() -> assertThat(marker).doesNotExist(),
 				() -> {
@@ -147,8 +176,22 @@ class LmdbInitialRunImportTerminalCleanupTest {
 						assertThat(reopenedRows).isEqualTo(ROWS);
 					} else {
 						assertThat(observation.injected).isEqualTo(1);
-						assertThat(commitFailure).isInstanceOf(SailException.class);
+						if (site == CleanupSite.MARKER_RUNTIME || site == CleanupSite.MARKER_ERROR) {
+							assertThat(commitFailure).as("unchecked cleanup failures escape without replacement")
+									.isSameAs(injected);
+						} else {
+							assertThat(commitFailure).isInstanceOf(SailException.class);
+						}
 						assertThat(containsIdentity(commitFailure, injected)).isTrue();
+						if (site == CleanupSite.SYNC_AND_RUN_DIRECTORY) {
+							LmdbUtil.LmdbException primary = primaryNativeFailure(commitFailure);
+							assertThat(primary).as("sync failure remains on the primary cause chain").isNotNull();
+							assertThat(primary.errorCode).isEqualTo(MDB_PANIC);
+							assertThat(primary.getSuppressed()).containsExactly(injected);
+							assertThat(containsIdentity(peerFailure, primary))
+									.as("subsequent peers receive the same original failure, not its cleanup replacement")
+									.isTrue();
+						}
 						assertThat(completed).as("failed cleanup cannot report a completed import").isZero();
 						assertThat(peerFailure).isInstanceOf(SailException.class);
 						assertThat(containsIdentity(peerFailure, injected)).isTrue();
@@ -157,6 +200,16 @@ class LmdbInitialRunImportTerminalCleanupTest {
 						assertThat(reopenedRows).isZero();
 					}
 				});
+	}
+
+	private static LmdbUtil.LmdbException primaryNativeFailure(Throwable failure) {
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		for (Throwable current = failure; current != null && visited.add(current); current = current.getCause()) {
+			if (current instanceof LmdbUtil.LmdbException nativeFailure) {
+				return nativeFailure;
+			}
+		}
+		return null;
 	}
 
 	private static boolean containsIdentity(Throwable failure, Throwable expected) {
@@ -182,12 +235,17 @@ class LmdbInitialRunImportTerminalCleanupTest {
 	private enum CleanupSite {
 		SUCCESS,
 		RUN_DIRECTORY,
-		MARKER
+		MARKER,
+		MARKER_RUNTIME,
+		MARKER_ERROR,
+		SYNC_AND_RUN_DIRECTORY
 	}
 
 	private static final class TerminalObservation {
 		private int calls;
 		private int injected;
+		private int primarySyncInjected;
+		private boolean cleanupAfterPrimarySync;
 		private Thread thread;
 		private long tripleCommits;
 		private long valueCommits;
