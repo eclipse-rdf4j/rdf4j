@@ -359,10 +359,7 @@ class LmdbNativeAliasJoinWorkTest {
 		try {
 			loadUnion(actual, values);
 			loadUnion(generic, values);
-			assertThat(actualStore.getLmdbStats().tripleDatabases().keySet())
-					.as("the UNION skew fixture uses the ordinary default spoc,posc indexes")
-					.contains("spocspoc", "poscposc")
-					.doesNotContain("ospcospc");
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(actualStore, 8L * values + 3, 0);
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
@@ -456,10 +453,7 @@ class LmdbNativeAliasJoinWorkTest {
 		try {
 			load(actual, values);
 			load(generic, values);
-			assertThat(actualStore.getLmdbStats().tripleDatabases().keySet())
-					.as("the native store uses the ordinary default spoc,posc indexes")
-					.contains("spocspoc", "poscposc")
-					.doesNotContain("ospcospc");
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(actualStore, 2L * values + 3, 0);
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
@@ -552,16 +546,9 @@ class LmdbNativeAliasJoinWorkTest {
 		try {
 			loadObjectBoundAlias(actual, values, matchesPerFocus);
 			loadObjectBoundAlias(generic, values, matchesPerFocus);
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(actualStore,
+					(long) values * (matchesPerFocus + 9), 0);
 			var indexes = actualStore.getLmdbStats().tripleDatabases().keySet();
-			assertThat(indexes).as("object-alias configuration %s", indexConfiguration)
-					.contains("spocspoc", "poscposc");
-			if (indexLabel.equals("rich-ospc")) {
-				assertThat(indexes).as("the rich control has the object-leading index")
-						.contains("ospcospc");
-			} else {
-				assertThat(indexes).as("the ordinary control lacks an object-leading index")
-						.doesNotContain("ospcospc");
-			}
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
@@ -638,15 +625,8 @@ class LmdbNativeAliasJoinWorkTest {
 			loadFixedKeyObjectAlias(actual, keyCount, unrelatedRows);
 			loadFixedKeyObjectAlias(generic, keyCount, unrelatedRows);
 			var indexes = actualStore.getLmdbStats().tripleDatabases().keySet();
-			assertThat(indexes).as("the fixture uses its declared native index set")
-					.contains("spocspoc", "poscposc");
-			if (indexLabel.equals("rich-ospc")) {
-				assertThat(indexes).as("the physical lookup control includes a real object-leading index")
-						.contains("ospcospc");
-			} else {
-				assertThat(indexes).as("default indexes provide no object-leading lookup")
-						.doesNotContain("ospcospc");
-			}
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(actualStore,
+					2L * keyCount + unrelatedRows, 0);
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
@@ -989,10 +969,7 @@ class LmdbNativeAliasJoinWorkTest {
 		try {
 			loadAdverse(actual, broadPredicates);
 			loadAdverse(generic, broadPredicates);
-			assertThat(actualStore.getLmdbStats().tripleDatabases().keySet())
-					.as("the adversarial native store uses the ordinary default spoc,posc indexes")
-					.contains("spocspoc", "poscposc")
-					.doesNotContain("ospcospc");
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(actualStore, broadPredicates + 2L, 0);
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
