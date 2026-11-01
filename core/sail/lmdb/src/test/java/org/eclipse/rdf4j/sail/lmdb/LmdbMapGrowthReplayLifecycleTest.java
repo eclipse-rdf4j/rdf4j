@@ -300,13 +300,28 @@ class LmdbMapGrowthReplayLifecycleTest {
 
 	@Test
 	@Timeout(value = 45, unit = TimeUnit.SECONDS)
-	void activePreResultParallelSortStopsOldAttemptAndReplaysAfterGrowth(@TempDir Path dataDirectory)
+	void activePreResultParallelSortKeyPreparationStopsOldAttemptAndReplaysAfterGrowth(@TempDir Path dataDirectory)
 			throws Exception {
+		assertParallelSortKeyPreparationStopsAfterGrowth(dataDirectory, false);
+	}
+
+	@Test
+	@Timeout(value = 45, unit = TimeUnit.SECONDS)
+	void sortKeyPreparationDoesNotCountReplacementCallbacksAsOldWork(@TempDir Path dataDirectory)
+			throws Exception {
+		assertParallelSortKeyPreparationStopsAfterGrowth(dataDirectory, true);
+	}
+
+	private void assertParallelSortKeyPreparationStopsAfterGrowth(Path dataDirectory, boolean delayWriterReturn)
+			throws Exception {
+		// The custom ORDER expression is captured before the parallel sort compares stored keys.
+		// This fixture checks that pre-result key preparation retires the original read attempt.
 		prestartCommonPoolWorkers();
 		String functionIri = "urn:lmdb:replay-lifecycle:cooperative-sort:" + UUID.randomUUID();
 		AtomicBoolean growthStarted = new AtomicBoolean();
-		AtomicBoolean writerFinished = new AtomicBoolean();
-		SortReplayBarrierFunction function = new SortReplayBarrierFunction(functionIri, growthStarted, writerFinished);
+		CountDownLatch writerCommitted = new CountDownLatch(1);
+		CountDownLatch releaseWriter = new CountDownLatch(1);
+		SortReplayBarrierFunction function = new SortReplayBarrierFunction(functionIri, growthStarted);
 		FunctionRegistry functionRegistry = FunctionRegistry.getInstance();
 		LmdbStore store = new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
@@ -359,7 +374,12 @@ class LmdbMapGrowthReplayLifecycleTest {
 					growthWriter.addStatement(VF.createIRI("urn:lmdb:replay-lifecycle:cooperative:after-growth"),
 							FIRST_PREDICATE, VF.createLiteral("after-growth"));
 					growthWriter.commit();
-					writerFinished.set(true);
+					writerCommitted.countDown();
+					if (delayWriterReturn) {
+						// A committed publication may admit the replacement before this caller returns.
+						// The test owns release in finally; no timer may silently end this observation phase.
+						releaseWriter.await();
+					}
 				}
 				return null;
 			});
@@ -368,8 +388,17 @@ class LmdbMapGrowthReplayLifecycleTest {
 			growthStarted.set(true);
 			function.releaseFirstInvocation();
 
-			writer.get(20, TimeUnit.SECONDS);
-			List<String> values = query.get(20, TimeUnit.SECONDS);
+			List<String> values;
+			if (delayWriterReturn) {
+				assertTrue(writerCommitted.await(20, TimeUnit.SECONDS), "the growth writer must commit");
+				values = query.get(20, TimeUnit.SECONDS);
+				assertFalse(writer.isDone(), "the replacement must complete while the committed caller is held");
+				releaseWriter.countDown();
+				writer.get(20, TimeUnit.SECONDS);
+			} else {
+				writer.get(20, TimeUnit.SECONDS);
+				values = query.get(20, TimeUnit.SECONDS);
+			}
 			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			MapGrowthMetrics.Snapshot after = backingStore.growthMetricsSnapshot();
 			assertTrue(mapSize(tripleStore) > initialMapSize, "the writer must complete real TripleStore map growth");
@@ -378,11 +407,15 @@ class LmdbMapGrowthReplayLifecycleTest {
 			assertEquals(PARALLEL_SORT_INPUT_ROWS + 1, values.size(),
 					"the replacement result must contain the published row exactly once");
 			assertTrue(values.contains("after-growth"), "the replayed snapshot must include the growth publication");
-			int inFlightComparatorBound = Math.max(8, ForkJoinPool.getCommonPoolParallelism() * 2);
-			assertTrue(function.callbacksDuringGrowth() <= inFlightComparatorBound,
-					"after one in-flight comparator reaches its checkpoint, only the concurrently active sort workers "
-							+ "may finish callbacks before the replacement starts; bound=" + inFlightComparatorBound
-							+ ", callbacks=" + function.callbacksDuringGrowth());
+			int inFlightCallbackBound = Math.max(8, ForkJoinPool.getCommonPoolParallelism() * 2);
+			if (delayWriterReturn) {
+				assertTrue(function.replacementCallbacks() > inFlightCallbackBound,
+						"replacement sort-key preparation must run beyond the old-attempt bound while caller is held");
+			}
+			assertTrue(function.originalCallbacksAfterGrowthStarted() <= inFlightCallbackBound,
+					"old-attempt sort-key callbacks must stop at their cooperative checkpoints; replacement "
+							+ "key preparation must not count against that bound; bound=" + inFlightCallbackBound
+							+ ", callbacks=" + function.originalCallbacksAfterGrowthStarted());
 			assertEquals(before.forcedInvalidationEpisodes(), after.forcedInvalidationEpisodes(),
 					"the parallel sort must complete before the bounded reader invalidation fallback");
 			assertEquals(before.forcedInvalidatedViews(), after.forcedInvalidatedViews(),
@@ -390,6 +423,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 			assertEquals(before.replayAccepted() + 1, after.replayAccepted(),
 					"the active snapshot sort must be accepted for exactly one whole-transaction replay");
 		} finally {
+			releaseWriter.countDown();
 			function.releaseFirstInvocation();
 			executor.shutdownNow();
 			try {
@@ -682,21 +716,20 @@ class LmdbMapGrowthReplayLifecycleTest {
 	private static final class SortReplayBarrierFunction implements Function {
 		private final String functionIri;
 		private final AtomicBoolean growthStarted;
-		private final AtomicBoolean writerFinished;
+		private final AtomicReference<TripleSource> originalSource = new AtomicReference<>();
 		private final CountDownLatch firstInvocation = new CountDownLatch(1);
 		private final CountDownLatch releaseFirstInvocation = new CountDownLatch(1);
 		private final AtomicInteger invocationCount = new AtomicInteger();
-		private final AtomicInteger callbacksDuringGrowth = new AtomicInteger();
+		private final AtomicInteger originalCallbacksAfterGrowthStarted = new AtomicInteger();
+		private final AtomicInteger replacementCallbacks = new AtomicInteger();
 
 		private SortReplayBarrierFunction(String functionIri) {
-			this(functionIri, new AtomicBoolean(), new AtomicBoolean());
+			this(functionIri, new AtomicBoolean());
 		}
 
-		private SortReplayBarrierFunction(String functionIri, AtomicBoolean growthStarted,
-				AtomicBoolean writerFinished) {
+		private SortReplayBarrierFunction(String functionIri, AtomicBoolean growthStarted) {
 			this.functionIri = functionIri;
 			this.growthStarted = growthStarted;
-			this.writerFinished = writerFinished;
 		}
 
 		@Override
@@ -711,9 +744,16 @@ class LmdbMapGrowthReplayLifecycleTest {
 
 		@Override
 		public Value evaluate(TripleSource tripleSource, Value... args) throws ValueExprEvaluationException {
+			// Every replacement evaluation creates its own TripleSource. Publication can restart it before
+			// the writer's commit() caller returns; caller timing is not an old-attempt identity.
+			originalSource.compareAndSet(null, tripleSource);
 			int invocation = invocationCount.incrementAndGet();
-			if (growthStarted.get() && !writerFinished.get()) {
-				callbacksDuringGrowth.incrementAndGet();
+			if (growthStarted.get()) {
+				if (tripleSource == originalSource.get()) {
+					originalCallbacksAfterGrowthStarted.incrementAndGet();
+				} else {
+					replacementCallbacks.incrementAndGet();
+				}
 			}
 			if (invocation == 1) {
 				firstInvocation.countDown();
@@ -738,8 +778,12 @@ class LmdbMapGrowthReplayLifecycleTest {
 			return invocationCount.get();
 		}
 
-		private int callbacksDuringGrowth() {
-			return callbacksDuringGrowth.get();
+		private int originalCallbacksAfterGrowthStarted() {
+			return originalCallbacksAfterGrowthStarted.get();
+		}
+
+		private int replacementCallbacks() {
+			return replacementCallbacks.get();
 		}
 
 		private void releaseFirstInvocation() {
