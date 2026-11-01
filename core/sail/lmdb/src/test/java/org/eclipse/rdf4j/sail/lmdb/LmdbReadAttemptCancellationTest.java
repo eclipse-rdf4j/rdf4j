@@ -409,6 +409,10 @@ class LmdbReadAttemptCancellationTest {
 						assertTrue(nativeReadBlocked.await(5, TimeUnit.SECONDS));
 						awaitWaitingIn(nativeThread, "acquireReaderPermits");
 					}
+					// Cancellation drain, source cleanup and connection close share one finalization budget.
+					// The final close can run ten GC passes over a shared JVM's heap; it is not a separate
+					// five-second latency contract after the native cancellation has already succeeded.
+					long finalizationDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
 					var closing = executor.submit(() -> {
 						finishingThread.set(Thread.currentThread());
 						try {
@@ -431,10 +435,8 @@ class LmdbReadAttemptCancellationTest {
 							awaitWaitingIn(finishingThread, "finishReadAttempt");
 							finishingThread.get().interrupt();
 						}
-						// Connection finalization first runs AbstractSailConnection.forceCloseActiveOperations, up to
-						// ten System.gc() passes over whatever the shared test JVM retains; on a loaded CI runner
-						// those alone exceed two seconds, so the budget bounds a hang, not the cancellation latency.
-						assertTrue(nativeReadExited.await(30, TimeUnit.SECONDS),
+						assertTrue(nativeReadExited.await(remainingFinalizationNanos(finalizationDeadline),
+								TimeUnit.NANOSECONDS),
 								() -> cancellationFailureContext(finish, asynchronous, nativeBarrier, nativeFailure,
 										finishingFailure, nativeThread, finishingThread));
 						assertNotNull(nativeFailure.get(), "The native admission must fail through cancellation");
@@ -447,7 +449,8 @@ class LmdbReadAttemptCancellationTest {
 						if (!finish.interrupted()) {
 							// The native exit signal precedes the end of its admitted scope. Wait for source
 							// cleanup while contention remains held; full close may itself need that barrier.
-							sourceClosed.await();
+							assertTrue(sourceClosed.await(remainingFinalizationNanos(finalizationDeadline),
+									TimeUnit.NANOSECONDS), "Source cleanup must finish within the finalization budget");
 							assertEquals(0L, sourceClosed.getCount(),
 									"Connection close must close its source after native admission unwinds");
 						}
@@ -460,7 +463,8 @@ class LmdbReadAttemptCancellationTest {
 							writeStamp = 0L;
 						}
 					}
-					assertEquals(finish.interrupted(), closing.get(5, TimeUnit.SECONDS),
+					assertEquals(finish.interrupted(),
+							closing.get(remainingFinalizationNanos(finalizationDeadline), TimeUnit.NANOSECONDS),
 							"Finalization must preserve the caller's interrupted status");
 					RuntimeException completionFailure = finishingFailure.get();
 					if (completionFailure != null) {
@@ -495,6 +499,10 @@ class LmdbReadAttemptCancellationTest {
 			held.forEach(TxnManager.ReaderReservation::close);
 			repository.shutDown();
 		}
+	}
+
+	private static long remainingFinalizationNanos(long deadline) {
+		return Math.max(0L, deadline - System.nanoTime());
 	}
 
 	private static void awaitUninterruptibly(CountDownLatch latch) {
