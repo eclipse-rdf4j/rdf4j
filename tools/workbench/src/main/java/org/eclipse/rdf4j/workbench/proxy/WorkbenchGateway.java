@@ -294,17 +294,20 @@ public class WorkbenchGateway extends AbstractServlet {
 		String submittedServer = server.trim();
 		server = normalizeServer(req, submittedServer);
 		if (server == null) {
-			// Invalid server was submitted by form. Present entry form again
-			// with error message.
+			// Invalid server was submitted by form. Present entry form again with what to check: the URL may be
+			// mistyped, its server down, or not one this Workbench may connect to (accepted-server-prefixes).
+			String message = submittedServer.isEmpty() ? "Enter the URL of an RDF4J Server."
+					: "Cannot connect to this server. Check the URL, that the server is running, and that this "
+							+ "Workbench is allowed to connect to it.";
 			if (isNativeHtmlPost(req)) {
 				writeServerPageModel(req, resp, new String[] { "error-message", "server" },
-						new Object[] { "Invalid Server URL", submittedServer });
+						new Object[] { message, submittedServer });
 				return;
 			}
 			final TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 			builder.start("error-message", "server");
 			builder.link(List.of("info"));
-			builder.result("Invalid Server URL", submittedServer);
+			builder.result(message, submittedServer);
 			builder.end();
 			return;
 

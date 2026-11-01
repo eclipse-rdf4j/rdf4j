@@ -149,35 +149,73 @@ test('a failed graph stylesheet load reports an accessible retry and recovers', 
     expect(stylesheetRequests).toBe(2);
 });
 
-test('the toolbar turns to icons instead of breaking into two rows', async ({ page }) => {
+test('the toolbar is one bar at every width: labels, then icons, then its compact form', async ({ page }) => {
     const errors = [];
     page.on('pageerror', (error) => errors.push(error.message));
     page.on('console', (message) => message.type() === 'error' && errors.push(message.text()));
     await openGraphPage(page, 1700, 900);
     const toolbar = page.locator('.graph-explorer .graph-toolbar');
     const state = () => toolbar.evaluate((bar) => {
-        const items = [...bar.children];
-        const tops = items.map((item) => Math.round(item.getBoundingClientRect().top));
-        const views = bar.querySelector('.view-strip');
-        const viewsTop = Math.round(views.getBoundingClientRect().top);
+        const items = [...bar.querySelectorAll(':scope > *, .toolbar-actions > *')]
+            .filter((item) => !item.matches('.toolbar-actions') && getComputedStyle(item).display !== 'none');
+        const tops = items.map((item) => Math.round(item.getBoundingClientRect().top + item.getBoundingClientRect().height / 2));
         return {
             fit: bar.dataset.fit,
-            rows: new Set(tops).size,
+            rows: Math.max(...tops) - Math.min(...tops) <= 4 ? 1 : 2,
             labels: getComputedStyle(bar.querySelector('.toolbar-label')).display !== 'none',
-            viewsAlone: items.every((item) => item === views || Math.round(item.getBoundingClientRect().top) > viewsTop),
+            overflow: bar.scrollWidth > bar.clientWidth + 1,
         };
     });
-    const tidy = (entry) => entry.rows === 1 || (entry.fit === 'narrow' && entry.rows === 2 && entry.viewsAlone);
     const seen = [];
-    for (const width of [1700, 1500, 1460, 1440, 1420, 1400, 1300, 1100, 1000, 950, 900, 1000, 1300, 1460, 1700]) {
+    // Down to the narrowest phones (320px), where the compact form still fits on one row.
+    for (const width of [1700, 1460, 1300, 1100, 1000, 900, 800, 700, 600, 480, 390, 360, 320, 1000, 1700]) {
         await page.setViewportSize({ width, height: 900 });
-        await expect.poll(async () => tidy(await state()), { message: `a tidy toolbar at ${width}px` }).toBe(true);
+        await expect.poll(async () => (await state()).rows, { message: `one row at ${width}px` }).toBe(1);
         seen.push({ width, ...(await state()) });
     }
+    expect(seen.every((entry) => !entry.overflow), JSON.stringify(seen)).toBe(true);
     expect(seen[0].labels, 'labels when there is room').toBe(true);
-    expect(seen.some((entry) => entry.fit === 'icons' && entry.rows === 1), 'icons on one row before anything else').toBe(true);
-    expect(seen[seen.length - 1].labels, 'labels again once there is room').toBe(true);
+    expect(seen.some((entry) => entry.fit === 'icons'), 'icons before anything else').toBe(true);
+    expect(seen.find((entry) => entry.width === 390).fit, 'the compact form on a phone').toBe('compact');
+    await expect.poll(async () => (await state()).labels, { message: 'labels again once there is room' }).toBe(true);
     expect(errors.filter((message) => /ResizeObserver/.test(message))).toEqual([]);
+});
+
+test('the views are chosen from one View menu named after the current view', async ({ page }) => {
+    await openGraphPage(page, 1024, 768);
+    const explorer = page.locator('.graph-explorer');
+    await expect(explorer.getByRole('tab')).toHaveCount(0);
+    const views = explorer.locator('.view-menu > summary');
+    await expect(views).toHaveText('Graph');
+    await expect(views).toHaveAccessibleName('View: Graph');
+
+    await views.click();
+    const choices = explorer.locator('.view-menu-popover button');
+    await expect(choices).toHaveCount(7);
+    await expect(choices.filter({ hasText: 'Graph' }).first()).toHaveAttribute('aria-current', 'true');
+    await explorer.locator('.view-menu-popover button[data-view="table"]').click();
+
+    await expect(views).toHaveText('Triples');
+    await expect(explorer.locator('.view-menu')).not.toHaveAttribute('open', '');
+});
+
+test('on a phone the toolbar keeps every action: undo, redo, values, labels and full screen move into Tools', async ({ page }) => {
+    await openGraphPage(page, 390, 844);
+    const explorer = page.locator('.graph-explorer');
+    await expect(explorer.locator('.graph-toolbar')).toHaveAttribute('data-fit', 'compact');
+    await expect(explorer.getByRole('button', { name: 'Undo the last graph change' })).toBeHidden();
+    await expect(explorer.getByRole('button', { name: 'Show values and types as nodes' })).toBeHidden();
+    await expect(explorer.getByRole('button', { name: 'Enter full screen' })).toBeHidden();
+
+    await explorer.getByLabel('Open workspace tools').click();
+    const tools = explorer.locator('.toolbar-menu-popover');
+    for (const name of ['Undo', 'Redo', 'Show values and types as nodes', 'Show all relation labels', 'Full screen']) {
+        await expect(tools.getByRole('button', { name, exact: true })).toBeVisible();
+    }
+    await tools.getByRole('button', { name: 'Show values and types as nodes', exact: true }).click();
+    await explorer.getByLabel('Open workspace tools').click();
+    await expect(tools.getByRole('button', { name: 'Show values and types as nodes', exact: true }))
+        .toHaveAttribute('aria-pressed', 'true');
 });
 
 for (const theme of ['light', 'dark']) {

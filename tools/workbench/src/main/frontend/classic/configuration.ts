@@ -90,13 +90,7 @@ namespace workbench {
             const listeners = buttons.map((button) => {
                 const copy = () => {
                     reconcile();
-                    const view = button.ownerDocument.defaultView;
-                    const clipboard = view && view.navigator && view.navigator.clipboard;
-                    if (!clipboard || typeof clipboard.writeText !== 'function') {
-                        if (copyStatus) { copyStatus.textContent = 'Select the example text to copy it.'; }
-                        return;
-                    }
-                    clipboard.writeText(button.getAttribute('data-config-reference-copy') || '').then(() => {
+                    (<any>workbench).icons.copying(button, button.getAttribute('data-config-reference-copy') || '').then(() => {
                         if (!disposed && copyStatus) { copyStatus.textContent = 'Turtle example copied.'; }
                     }, () => {
                         if (!disposed && copyStatus) { copyStatus.textContent = 'Could not copy. Select the example text to copy it.'; }
