@@ -12,8 +12,8 @@ Restore reliable query-ready in-memory adjacency, snapshot-safe reads, bounded-r
 - [x] (2026-11-01 19:17Z) Created isolated checkout and cache.
 - [x] (2026-11-01 19:24Z) Reproduced grouping and range failures.
 - [x] (2026-11-01 19:27Z) Repaired complete snapshot-local grouping selection; independent review and 61 new cases pass.
-- [in_progress] Validate and publish grouping repair.
-- [ ] Repair reader admission and growth contracts.
+- [x] (2026-11-01 19:33Z) Validated and published grouping repair421e1593, preserving06f778.
+- [in_progress] Repair reader admission and growth contracts.
 - [ ] Retarget retired instrumentation without weakening assertions.
 - [ ] Rerun failure ledger and broad gates.
 
@@ -59,3 +59,5 @@ Initial red evidence:58 cases,29 failures,0errors; added parallel-range selectio
 Grouping validation:61 new cases pass; existing selection53 cases has46 passes and7 separately classified pre-existing failures (six zero-wildcard applier oracle failures, one retired SPOC skipped-row work assertion). Kernel, WCOJ direct frontier, range planning and bootstrap suites pass unchanged. Cross-module CLI readiness validation follows module install.
 
 The exact CI-blocking QueryPlanSnapshotCliTest.directAdjacencyWaitInitializesReusedLmdbStore now passes unchanged (1/1). Serial configuration/reopen matrix also passes with rdf4j.lmdb.prefixRun.enabled=false (58/58), proving optional range planning does not gate support. Module install, formatting and diff checks passed. No claim is made that the remaining failure families are fixed by this commit.
+
+Reserved-reader and renewal telemetry repairs: pre-fix CardinalityTest had two unchanged five-second timeouts; new scalar/bulk renewal cases exposed scanned3/matched5 and decreasing work totals. Restore doWithPriority; accumulate retired physical-reader work once after successful replacement, preserving lease/version and close/open ordering. Post-fix selection24 cases passes, including all CardinalityTest cases, the new next/fill renewal cases, persistent iterator contracts and direct adjacency snapshots. Independent review found no blocker. The zero-SPO wildcard reproduction also fails and remains a separate repair.

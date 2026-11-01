@@ -3717,8 +3717,10 @@ class TripleStore implements Closeable {
 
 	/** Returns snapshot-local cardinality from persistent metadata, scanning only for residual constraints. */
 	protected double cardinality(long subj, long pred, long obj, long context) throws IOException {
-		return txnManager.doWith((stack, txn) -> (double) persistentAdjacency.count(txn, subj, pred, obj, context, true)
-				+ persistentAdjacency.count(txn, subj, pred, obj, context, false));
+		// Query optimization can already hold all ordinary reader permits; retain its reserved admission lane.
+		return txnManager
+				.doWithPriority((stack, txn) -> (double) persistentAdjacency.count(txn, subj, pred, obj, context, true)
+						+ persistentAdjacency.count(txn, subj, pred, obj, context, false));
 	}
 
 	List<IndexAccessPath> indexAccessPaths(int boundComponentMask) {

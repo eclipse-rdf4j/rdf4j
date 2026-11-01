@@ -2673,6 +2673,8 @@ final class LmdbPersistentAdjacency {
 		private final ScanOrder order;
 		private long version;
 		private RawIterator raw;
+		private long retiredRowsScanned;
+		private long retiredRowsMatched;
 		private long[] last;
 		private long[] pendingSeek;
 		private volatile boolean closed;
@@ -2731,7 +2733,12 @@ final class LmdbPersistentAdjacency {
 			if (version != txn.version()) {
 				// Pinned views reject invalidation above. Ordinary current readers may renew and resume.
 				raw.close();
-				raw = openRaw();
+				RawIterator renewed = openRaw();
+				// Replacement changes the physical reader, not the identity of this logical scan. Accumulate only
+				// after opening succeeds so a failed renewal cannot double-count the retired reader on retry.
+				retiredRowsScanned += raw.getSourceRowsScannedActual();
+				retiredRowsMatched += raw.getSourceRowsMatchedActual();
+				raw = renewed;
 				version = txn.version();
 				if (pendingSeek != null) {
 					raw.reposition(pendingSeek, false);
@@ -2838,17 +2845,17 @@ final class LmdbPersistentAdjacency {
 
 		@Override
 		public long getSourceRowsScannedActual() {
-			return raw.getSourceRowsScannedActual();
+			return retiredRowsScanned + raw.getSourceRowsScannedActual();
 		}
 
 		@Override
 		public long getSourceRowsMatchedActual() {
-			return raw.getSourceRowsMatchedActual();
+			return retiredRowsMatched + raw.getSourceRowsMatchedActual();
 		}
 
 		@Override
 		public long getSourceRowsFilteredActual() {
-			return raw.getSourceRowsFilteredActual();
+			return retiredRowsScanned - retiredRowsMatched + raw.getSourceRowsFilteredActual();
 		}
 
 		@Override
