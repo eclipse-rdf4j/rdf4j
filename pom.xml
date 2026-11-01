@@ -66,6 +66,7 @@
 		<jackson3.version>3.2.3</jackson3.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.6</jsonldjava.version>
+		<jelly.version>4.0.1</jelly.version>
 		<last.japicmp.compare.version>6.0.0</last.japicmp.compare.version>
 		<jaxb.version>2.3.8</jaxb.version>
 		<!-- LWJGL 3.4.3 embeds LMDB 1.0, which requires migration of existing LMDB databases. -->
@@ -1202,6 +1203,16 @@
 				<groupId>org.apache.santuario</groupId>
 				<artifactId>xmlsec</artifactId>
 				<version>${xmlsec.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>eu.neverblink.jelly</groupId>
+				<artifactId>jelly-rdf4j</artifactId>
+				<version>${jelly.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>eu.neverblink.jelly</groupId>
+				<artifactId>jelly-rdf4j-sparql</artifactId>
+				<version>${jelly.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>com.github.jsonld-java</groupId>
