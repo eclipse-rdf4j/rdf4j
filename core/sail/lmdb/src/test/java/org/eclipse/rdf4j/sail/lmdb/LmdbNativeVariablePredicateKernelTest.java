@@ -36,8 +36,12 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIrTestAccess;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Gate C milestone C3: a SPARQL pattern with a variable predicate and a bound endpoint compiles into a kernel, and
@@ -50,6 +54,7 @@ import org.junit.jupiter.api.io.TempDir;
  * subject equal to predicate, subject equal to object, and a graph variable that is also the predicate variable — which
  * are exactly where a "fresh variable" branch would overwrite a binding that already exists.
  */
+@Isolated("Scopes native strategy properties across setup, query execution and cleanup")
 class LmdbNativeVariablePredicateKernelTest {
 
 	private static final ValueFactory F = SimpleValueFactory.getInstance();
@@ -67,33 +72,60 @@ class LmdbNativeVariablePredicateKernelTest {
 
 	private SailRepository repo;
 
+	static final List<String> OWNED_PROPERTIES = List.of(
+			"rdf4j.lmdb.nativeQueryEngine.enabled",
+			"rdf4j.lmdb.janinoCodegen.enabled",
+			"rdf4j.lmdb.janinoCodegen.thresholdRows",
+			LmdbNativeKernelIrTestAccess.NODE_PREDICATES_PROPERTY,
+			LmdbNativeKernelIrTestAccess.WILDCARD_PREDICATES_PROPERTY,
+			LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY,
+			LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY,
+			LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY,
+			"rdf4j.lmdb.wcoj.enabled",
+			"rdf4j.lmdb.prefixRun.enabled",
+			"rdf4j.lmdb.directAdjacency.scanAggregates.enabled",
+			"rdf4j.lmdb.packedFtree.enabled",
+			"rdf4j.lmdb.factorizedTail.enabled",
+			"rdf4j.lmdb.factorizedRows.enabled",
+			"rdf4j.lmdb.parallel.enabled",
+			"rdf4j.lmdb.parallel.minWorkEstimate",
+			"rdf4j.lmdb.parallel.threads",
+			"rdf4j.lmdb.irKernelParallel.enabled",
+			"rdf4j.lmdb.nativeBatch.enabled",
+			COST_CALIBRATION_PROPERTY);
+
+	private final Map<String, String> previousProperties = new LinkedHashMap<>();
+
+	@BeforeEach
+	void captureProperties() {
+		for (String key : OWNED_PROPERTIES) {
+			previousProperties.put(key, System.getProperty(key));
+			System.clearProperty(key);
+		}
+	}
+
 	@AfterEach
 	void tearDown() {
-		if (repo != null) {
-			repo.shutDown();
-			repo = null;
+		cleanupFixture(() -> {
+			if (repo != null) {
+				repo.shutDown();
+				repo = null;
+			}
+		});
+	}
+
+	void cleanupFixture(Runnable shutdown) {
+		try {
+			shutdown.run();
+		} finally {
+			previousProperties.forEach((key, value) -> {
+				if (value == null) {
+					System.clearProperty(key);
+				} else {
+					System.setProperty(key, value);
+				}
+			});
 		}
-		System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
-		System.clearProperty("rdf4j.lmdb.janinoCodegen.enabled");
-		System.clearProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
-		System.clearProperty(
-				LmdbNativeKernelIrTestAccess.NODE_PREDICATES_PROPERTY);
-		System.clearProperty(LmdbNativeKernelIrTestAccess.WILDCARD_PREDICATES_PROPERTY);
-		System.clearProperty(LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY);
-		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY);
-		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
-		System.clearProperty("rdf4j.lmdb.wcoj.enabled");
-		System.clearProperty("rdf4j.lmdb.prefixRun.enabled");
-		System.clearProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");
-		System.clearProperty("rdf4j.lmdb.packedFtree.enabled");
-		System.clearProperty("rdf4j.lmdb.factorizedTail.enabled");
-		System.clearProperty("rdf4j.lmdb.factorizedRows.enabled");
-		System.clearProperty("rdf4j.lmdb.parallel.enabled");
-		System.clearProperty("rdf4j.lmdb.parallel.minWorkEstimate");
-		System.clearProperty("rdf4j.lmdb.parallel.threads");
-		System.clearProperty("rdf4j.lmdb.irKernelParallel.enabled");
-		System.clearProperty("rdf4j.lmdb.nativeBatch.enabled");
-		System.clearProperty(COST_CALIBRATION_PROPERTY);
 	}
 
 	private static void enableProjectionFreeWildcard() {
@@ -275,8 +307,10 @@ class LmdbNativeVariablePredicateKernelTest {
 				.doesNotContain("strategy: NOT_ACTIVATED");
 	}
 
-	@Test
-	void groupedWildcardJoinUsesIrInterpreterBeforeJaninoAdmission(@TempDir File ordinaryDir,
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void groupedWildcardJoinUsesIrInterpreterBeforeJaninoAdmission(boolean synchronousCompilation,
+			@TempDir File ordinaryDir,
 			@TempDir File interpretedDir) {
 		String query = "PREFIX ex: <" + NS + "> "
 				+ "SELECT ?p (COUNT(*) AS ?count) WHERE { "
@@ -291,17 +325,29 @@ class LmdbNativeVariablePredicateKernelTest {
 			repo = null;
 		}
 
-		open(interpretedDir, true, false);
-		assertThat(run(query)).containsExactlyElementsOf(expected);
-		String executed;
-		try (RepositoryConnection conn = repo.getConnection()) {
-			executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+		String previousSynchronous = System.getProperty(JANINO_SYNCHRONOUS_PROPERTY);
+		try {
+			System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, Boolean.toString(synchronousCompilation));
+			open(interpretedDir, true, false);
+			// The fixture must not race asynchronous compilation or reuse an already compiled kernel.
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+			assertThat(run(query)).containsExactlyElementsOf(expected);
+			String executed;
+			try (RepositoryConnection conn = repo.getConnection()) {
+				executed = conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+			}
+			assertThat(executed)
+					.as("the explicitly disabled Janino switch must still leave wildcard IR active%n%s", executed)
+					.contains("nativeExecutionPath=irAggregateParallelInterpreted")
+					.contains("strategy: irAggregateParallelInterpreted")
+					.doesNotContain("strategy: NOT_ACTIVATED");
+		} finally {
+			if (previousSynchronous == null) {
+				System.clearProperty(JANINO_SYNCHRONOUS_PROPERTY);
+			} else {
+				System.setProperty(JANINO_SYNCHRONOUS_PROPERTY, previousSynchronous);
+			}
 		}
-		assertThat(executed)
-				.as("the default-off Janino switch must still leave wildcard IR active%n%s", executed)
-				.contains("nativeExecutionPath=irAggregateParallelInterpreted")
-				.contains("strategy: irAggregateParallelInterpreted")
-				.doesNotContain("strategy: NOT_ACTIVATED");
 	}
 
 	@Test

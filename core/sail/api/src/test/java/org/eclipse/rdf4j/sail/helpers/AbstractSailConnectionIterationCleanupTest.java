@@ -49,6 +49,12 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 
 @Timeout(60)
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -312,6 +318,140 @@ class AbstractSailConnectionIterationCleanupTest {
 			} finally {
 				releaseClose.countDown();
 			}
+		}
+	}
+
+	@Test
+	void exhaustedIterationDoesNotReportAbandonmentWhenCleanerRuns() {
+		assertCleanerAbandonment(false);
+	}
+
+	@Test
+	void genuinelyAbandonedIterationStillReportsAndCloses() {
+		assertCleanerAbandonment(true);
+	}
+
+	@Test
+	void liveResultIsNotClosedByHasNext() {
+		CountingIteration delegate = new CountingIteration() {
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+		};
+		CapturingCleaner cleaner = new CapturingCleaner();
+		try (CleanerIteration<Integer> iteration = new CleanerIteration<>(delegate, cleaner)) {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(delegate.closes.get()).isZero();
+		}
+		cleaner.registration.clean();
+		assertThat(delegate.closes.get()).isOne();
+	}
+
+	@Test
+	void failedHasNextPreservesFailureAndLeavesCleanupToTheOwner() {
+		IllegalStateException failure = new IllegalStateException("pull failed");
+		CountingIteration delegate = new CountingIteration() {
+			@Override
+			public boolean hasNext() {
+				throw failure;
+			}
+		};
+		CapturingCleaner cleaner = new CapturingCleaner();
+		try (CleanerIteration<Integer> iteration = new CleanerIteration<>(delegate, cleaner)) {
+			assertThatThrownBy(iteration::hasNext).isSameAs(failure);
+			assertThat(delegate.closes.get()).as("a failed pull retains the existing caller-owned cleanup contract")
+					.isZero();
+		}
+		cleaner.registration.clean();
+		assertThat(delegate.closes.get()).isOne();
+	}
+
+	@Test
+	void exhaustedResultReportsCloseFailureOnceWithoutLaterAbandonment() {
+		IllegalStateException failure = new IllegalStateException("close failed");
+		CountingIteration delegate = new CountingIteration() {
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+				throw failure;
+			}
+		};
+		Logger logger = (Logger) LoggerFactory.getLogger(CleanerIteration.class);
+		Level previousLevel = logger.getLevel();
+		Thread invokingThread = Thread.currentThread();
+		ListAppender<ILoggingEvent> appender = new ListAppender<>() {
+			@Override
+			protected void append(ILoggingEvent event) {
+				if (Thread.currentThread() == invokingThread) {
+					super.append(event);
+				}
+			}
+		};
+		appender.start();
+		logger.addAppender(appender);
+		logger.setLevel(Level.WARN);
+		CapturingCleaner cleaner = new CapturingCleaner();
+		try (CleanerIteration<Integer> iteration = new CleanerIteration<>(delegate, cleaner)) {
+			// This deliberately non-auto-closing delegate exercises the wrapper's exhaustion close itself.
+			assertThatThrownBy(iteration::hasNext).isSameAs(failure);
+			assertThat(delegate.closes.get()).isOne();
+			assertThatCode(iteration::close).doesNotThrowAnyException();
+			cleaner.registration.clean();
+			assertThat(delegate.closes.get()).as("a failed close attempt is not retried by owner or cleaner")
+					.isOne();
+			assertThat(appender.list.stream().map(ILoggingEvent::getFormattedMessage))
+					.noneMatch(message -> message.contains("Forced closing of unclosed iteration"));
+		} finally {
+			logger.detachAppender(appender);
+			appender.stop();
+			logger.setLevel(previousLevel);
+		}
+	}
+
+	private static void assertCleanerAbandonment(boolean abandonLiveResult) {
+		Logger logger = (Logger) LoggerFactory.getLogger(CleanerIteration.class);
+		Level previousLevel = logger.getLevel();
+		Thread invokingThread = Thread.currentThread();
+		ListAppender<ILoggingEvent> appender = new ListAppender<>() {
+			@Override
+			protected void append(ILoggingEvent event) {
+				// registration.clean runs synchronously; unrelated older cleaner tasks are not this observation.
+				if (Thread.currentThread() == invokingThread) {
+					super.append(event);
+				}
+			}
+		};
+		appender.start();
+		logger.addAppender(appender);
+		logger.setLevel(Level.WARN);
+		AtomicInteger actualCloses = new AtomicInteger();
+		CloseableIteratorIteration<Integer> delegate = new CloseableIteratorIteration<>(Collections.emptyIterator()) {
+			@Override
+			protected void handleClose() {
+				actualCloses.incrementAndGet();
+			}
+		};
+		CapturingCleaner cleaner = new CapturingCleaner();
+		try (CleanerIteration<Integer> iteration = new CleanerIteration<>(delegate, cleaner)) {
+			if (!abandonLiveResult) {
+				assertThat(iteration.hasNext()).isFalse();
+				assertThat(delegate.isClosed()).as("exhaustion already closed the underlying result").isTrue();
+				assertThat(actualCloses.get()).isOne();
+			}
+			// Invoke the registered cleanup deterministically: no GC, sleeps, or private-field access.
+			cleaner.registration.clean();
+			assertThat(actualCloses.get()).as("native/resource cleanup occurs exactly once").isOne();
+			assertThat(appender.list.stream()
+					.filter(event -> event.getFormattedMessage()
+							.contains("Forced closing of unclosed iteration"))
+					.count())
+							.as("only a genuinely abandoned live result should produce an abandonment warning")
+							.isEqualTo(abandonLiveResult ? 1L : 0L);
+		} finally {
+			logger.detachAppender(appender);
+			appender.stop();
+			logger.setLevel(previousLevel);
 		}
 	}
 

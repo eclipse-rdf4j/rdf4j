@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -60,6 +62,7 @@ public class QueryBenchmarkTest {
 
 	private static SailRepository repository;
 	private static File dataDir;
+	private static File temporaryRoot;
 
 	public static TemporaryFolder tempDir = new TemporaryFolder();
 	static List<Statement> statementList;
@@ -89,42 +92,30 @@ public class QueryBenchmarkTest {
 
 	static {
 		try {
-			common_themes = IOUtils.toString(getResourceAsStream("benchmarkFiles/common-themes.qr"),
-					StandardCharsets.UTF_8);
-			different_datasets_with_similar_distributions = IOUtils.toString(
-					getResourceAsStream("benchmarkFiles/different-datasets-with-similar-distributions.qr"),
-					StandardCharsets.UTF_8);
-			long_chain = IOUtils.toString(getResourceAsStream("benchmarkFiles/long-chain.qr"), StandardCharsets.UTF_8);
-			optional_lhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-lhs-filter.qr"),
-					StandardCharsets.UTF_8);
-			optional_rhs_filter = IOUtils.toString(getResourceAsStream("benchmarkFiles/optional-rhs-filter.qr"),
-					StandardCharsets.UTF_8);
-			ordered_union_limit = IOUtils.toString(getResourceAsStream("benchmarkFiles/ordered-union-limit.qr"),
-					StandardCharsets.UTF_8);
-			lots_of_optional = IOUtils.toString(getResourceAsStream("benchmarkFiles/lots-of-optional.qr"),
-					StandardCharsets.UTF_8);
-			minus = IOUtils.toString(getResourceAsStream("benchmarkFiles/minus.qr"), StandardCharsets.UTF_8);
-			nested_optionals = IOUtils.toString(getResourceAsStream("benchmarkFiles/nested-optionals.qr"),
-					StandardCharsets.UTF_8);
-			particularly_large_join_surface = IOUtils.toString(
-					getResourceAsStream("benchmarkFiles/particularly-large-join-surface.qr"), StandardCharsets.UTF_8);
-			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
-			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
-			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
-			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
-			query7_pathexpression1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query7-pathexpression1.qr"),
-					StandardCharsets.UTF_8);
-			query8_pathexpression2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query8-pathexpression2.qr"),
-					StandardCharsets.UTF_8);
-			query_distinct_predicates = IOUtils.toString(
-					getResourceAsStream("benchmarkFiles/query-distinct-predicates.qr"), StandardCharsets.UTF_8);
-			simple_filter_not = IOUtils.toString(getResourceAsStream("benchmarkFiles/simple-filter-not.qr"),
-					StandardCharsets.UTF_8);
-			wild_card_chain_with_common_ends = IOUtils.toString(
-					getResourceAsStream("benchmarkFiles/wild-card-chain-with-common-ends.qr"), StandardCharsets.UTF_8);
-			sub_select = IOUtils.toString(getResourceAsStream("benchmarkFiles/sub-select.qr"), StandardCharsets.UTF_8);
-			multiple_sub_select = IOUtils.toString(
-					getResourceAsStream("benchmarkFiles/multiple-sub-select.qr"), StandardCharsets.UTF_8);
+			common_themes = readQuery(getResourceAsStream("benchmarkFiles/common-themes.qr"));
+			different_datasets_with_similar_distributions = readQuery(
+					getResourceAsStream("benchmarkFiles/different-datasets-with-similar-distributions.qr"));
+			long_chain = readQuery(getResourceAsStream("benchmarkFiles/long-chain.qr"));
+			optional_lhs_filter = readQuery(getResourceAsStream("benchmarkFiles/optional-lhs-filter.qr"));
+			optional_rhs_filter = readQuery(getResourceAsStream("benchmarkFiles/optional-rhs-filter.qr"));
+			ordered_union_limit = readQuery(getResourceAsStream("benchmarkFiles/ordered-union-limit.qr"));
+			lots_of_optional = readQuery(getResourceAsStream("benchmarkFiles/lots-of-optional.qr"));
+			minus = readQuery(getResourceAsStream("benchmarkFiles/minus.qr"));
+			nested_optionals = readQuery(getResourceAsStream("benchmarkFiles/nested-optionals.qr"));
+			particularly_large_join_surface = readQuery(
+					getResourceAsStream("benchmarkFiles/particularly-large-join-surface.qr"));
+			query1 = readQuery(getResourceAsStream("benchmarkFiles/query1.qr"));
+			query2 = readQuery(getResourceAsStream("benchmarkFiles/query2.qr"));
+			query3 = readQuery(getResourceAsStream("benchmarkFiles/query3.qr"));
+			query4 = readQuery(getResourceAsStream("benchmarkFiles/query4.qr"));
+			query7_pathexpression1 = readQuery(getResourceAsStream("benchmarkFiles/query7-pathexpression1.qr"));
+			query8_pathexpression2 = readQuery(getResourceAsStream("benchmarkFiles/query8-pathexpression2.qr"));
+			query_distinct_predicates = readQuery(getResourceAsStream("benchmarkFiles/query-distinct-predicates.qr"));
+			simple_filter_not = readQuery(getResourceAsStream("benchmarkFiles/simple-filter-not.qr"));
+			wild_card_chain_with_common_ends = readQuery(
+					getResourceAsStream("benchmarkFiles/wild-card-chain-with-common-ends.qr"));
+			sub_select = readQuery(getResourceAsStream("benchmarkFiles/sub-select.qr"));
+			multiple_sub_select = readQuery(getResourceAsStream("benchmarkFiles/multiple-sub-select.qr"));
 
 		} catch (IOException e) {
 			throw new RuntimeException(e);
@@ -135,14 +126,16 @@ public class QueryBenchmarkTest {
 	public static void beforeClass() throws IOException {
 		try {
 			tempDir.create();
+			temporaryRoot = tempDir.getRoot();
 			dataDir = tempDir.newFolder();
 
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc");
 			repository = new SailRepository(new LmdbStore(dataDir, config));
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection = repository.getConnection();
+					InputStream input = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
 				connection.begin(IsolationLevels.NONE);
-				connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
+				connection.add(input, "", RDFFormat.TURTLE);
 				connection.commit();
 			}
 
@@ -150,8 +143,14 @@ public class QueryBenchmarkTest {
 				statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
 			}
 		} catch (IOException | RuntimeException | Error e) {
-			cleanupStore();
+			cleanupAfterFailure(e, QueryBenchmarkTest::cleanupStore);
 			throw e;
+		}
+	}
+
+	static String readQuery(InputStream input) throws IOException {
+		try (input) {
+			return IOUtils.toString(input, StandardCharsets.UTF_8);
 		}
 	}
 
@@ -168,21 +167,31 @@ public class QueryBenchmarkTest {
 	}
 
 	private static void cleanupStore() {
-		try {
-			if (repository != null) {
-				repository.shutDown();
-			}
-		} finally {
-			if (dataDir != null) {
-				LmdbTestUtil.deleteDir(dataDir);
-			}
-			if (tempDir != null) {
-				tempDir.delete();
-			}
+		cleanupRepository(repository, () -> {
+			LmdbTestUtil.deleteDir(temporaryRoot);
+			temporaryRoot = null;
 			tempDir = null;
 			dataDir = null;
 			repository = null;
 			statementList = null;
+		});
+	}
+
+	static void cleanupRepository(SailRepository repository, Runnable deleteFiles) {
+		if (repository != null) {
+			repository.shutDown();
+		}
+		deleteFiles.run();
+	}
+
+	/** Keeps an already-propagating setup failure primary while still attempting cleanup. */
+	static void cleanupAfterFailure(Throwable primary, Runnable cleanup) {
+		try {
+			cleanup.run();
+		} catch (Throwable failure) {
+			if (failure != primary) {
+				primary.addSuppressed(failure);
+			}
 		}
 	}
 
@@ -314,8 +323,39 @@ public class QueryBenchmarkTest {
 
 	}
 
+	@Test
+	public void updateFixtureDoesNotChangeLaterOrderedUnionResults() {
+		assertSimpleUpdateTransitions(IsolationLevels.READ_COMMITTED, false);
+		orderedUnionLimitQueryProducesExpectedCount();
+	}
+
+	@Test
+	public void failedUpdateAssertionStillRestoresOriginalQueryFixture() {
+		AssertionError failure = new AssertionError("simulated assertion after committed update");
+		assertSame(failure, assertThrows(AssertionError.class, () -> withRestoredBenchmarkTypes(() -> {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
+				connection.prepareUpdate(query3).execute();
+				connection.commit();
+			}
+			throw failure;
+		})));
+		orderedUnionLimitQueryProducesExpectedCount();
+	}
+
 	private static void assertSimpleUpdateTransitions(IsolationLevel isolationLevel, boolean assertNoRemaps) {
+		withRestoredBenchmarkTypes(() -> assertSimpleUpdateTransitionsOnCurrentFixture(isolationLevel, assertNoRemaps));
+	}
+
+	private static void withRestoredBenchmarkTypes(Runnable action) {
 		resetBenchmarkTypeStatements();
+		try (LmdbTestUtil.Cleanup ignored = LmdbTestUtil.onClose(QueryBenchmarkTest::resetBenchmarkTypeStatements)) {
+			action.run();
+		}
+	}
+
+	private static void assertSimpleUpdateTransitionsOnCurrentFixture(IsolationLevel isolationLevel,
+			boolean assertNoRemaps) {
 		LmdbSailStore backingStore = ((LmdbStore) repository.getSail()).getBackingStore();
 		MapGrowthMetrics.Snapshot initialGrowth = backingStore.growthMetricsSnapshot();
 		Set<Statement> initialTypes;
