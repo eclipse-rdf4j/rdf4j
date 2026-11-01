@@ -748,7 +748,7 @@ Click on “Explore” in the sidebar menu. You are presented with an “Explore
 
 Data types expressed with qnames also need to have their namespace defined in the repository.
 
-By using the “Results per page” setting and the “Previous …” and “Next …” buttons, you may page through a long set of results, or display all of the results at once. There is also a “Show data types & language tags” checkbox which, when un-checked, allows a less verbose table view.
+By using the “Results per page” setting and the “Previous …” and “Next …” buttons, you may page through a long set of results, or display all of the results at once. There is also a “Show data types & language tags” checkbox which, when un-checked, allows a less verbose table view. Explore remembers what you explored in each repository, with its page and “Results per page”, until you close the browser tab: open it again from the sidebar menu (or from another repository and back) and it shows that resource again. Explore an empty “Resource” field to start afresh.
 
 #### Graph Page
 
