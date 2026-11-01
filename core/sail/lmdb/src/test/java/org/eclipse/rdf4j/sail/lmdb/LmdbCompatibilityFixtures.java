@@ -195,6 +195,35 @@ public final class LmdbCompatibilityFixtures {
 		return nativeEntryCount(directory.resolve("triples"), database);
 	}
 
+	/** Counts committed base-plus-delta quads without assuming one physical record per statement. */
+	static long persistentStatementCount(Path directory, boolean explicit) throws IOException {
+		long env = NULL;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_env_create(handle));
+			env = handle.get(0);
+			E(mdb_env_set_maxdbs(env, 8));
+			E(mdb_env_open(env, directory.resolve("triples").toString(), MDB_NOTLS | MDB_RDONLY, 0664));
+			return LmdbUtil.readTransaction(env, (inner, txn) -> {
+				LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn);
+				long count = 0;
+				try (RecordIterator records = adjacency.scan(txn, -1, -1, -1, -1, explicit)) {
+					while (records.next() != null) {
+						count++;
+					}
+				}
+				if (count != adjacency.count(txn, explicit)) {
+					throw new IOException("Persisted adjacency count disagrees with its merged statement stream");
+				}
+				return count;
+			});
+		} finally {
+			if (env != NULL) {
+				mdb_env_close(env);
+			}
+		}
+	}
+
 	static long nativeValueEntryCount(Path directory, String database) throws IOException {
 		return nativeEntryCount(directory.resolve("values"), database);
 	}

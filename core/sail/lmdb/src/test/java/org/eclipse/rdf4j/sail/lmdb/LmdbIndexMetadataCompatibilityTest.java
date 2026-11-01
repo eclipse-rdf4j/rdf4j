@@ -110,7 +110,7 @@ class LmdbIndexMetadataCompatibilityTest {
 
 	@ParameterizedTest
 	@CsvSource({ "2,false", "2,true", "7,false", "7,true" })
-	void statementIndexesRebuildExactExplicitAndInferredRows(int version, boolean inline) throws Exception {
+	void configuredOrdersPreserveExactExplicitAndInferredAdjacencyRows(int version, boolean inline) throws Exception {
 		prepareFormat(version, inline);
 		var vf = SimpleValueFactory.getInstance();
 		var predicate = vf.createIRI("urn:index:predicate");
@@ -151,10 +151,8 @@ class LmdbIndexMetadataCompatibilityTest {
 			} finally {
 				repository.shutDown();
 			}
-			for (String spec : indexes.split(",")) {
-				assertEquals(8, LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, spec + spec));
-				assertEquals(8, LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, spec + spec + "-inf"));
-			}
+			assertEquals(8, LmdbCompatibilityFixtures.persistentStatementCount(directory, true));
+			assertEquals(8, LmdbCompatibilityFixtures.persistentStatementCount(directory, false));
 		}
 	}
 

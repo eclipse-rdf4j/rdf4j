@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -84,7 +85,8 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 				.getMethod("tripleDatabases")
 				.invoke(stats);
 		assertEquals(6, valueDatabases.size());
-		assertEquals(6, tripleDatabases.size());
+		assertEquals(Set.of("main", "adjacency-pages", "adjacency-metadata", "adjacency-deltas", "namespaces"),
+				tripleDatabases.keySet());
 
 		Object mainValueDatabase = valueDatabases.get("main");
 		assertNotNull(mainValueDatabase);
@@ -92,9 +94,19 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 		assertTrue((int) mainValueDatabase.getClass().getMethod("pageSize").invoke(mainValueDatabase) > 0);
 		assertTrue((long) mainValueDatabase.getClass().getMethod("entries").invoke(mainValueDatabase) > 0);
 
-		Object contextsDatabase = tripleDatabases.get("contexts");
-		assertNotNull(contextsDatabase);
-		assertEquals(1L, contextsDatabase.getClass().getMethod("entries").invoke(contextsDatabase));
+		Object pagesDatabase = tripleDatabases.get("adjacency-pages");
+		assertEquals(2L, pagesDatabase.getClass().getMethod("entries").invoke(pagesDatabase));
+		Object deltasDatabase = tripleDatabases.get("adjacency-deltas");
+		assertEquals(0L, deltasDatabase.getClass().getMethod("entries").invoke(deltasDatabase));
+		Object metadataDatabase = tripleDatabases.get("adjacency-metadata");
+		assertTrue((long) metadataDatabase.getClass().getMethod("entries").invoke(metadataDatabase) > 0);
+		assertEquals(1L, con.size());
+		assertEquals(1L, con.size(context));
+		try (var contexts = con.getContextIDs()) {
+			assertTrue(contexts.hasNext());
+			assertEquals(context, contexts.next());
+			assertFalse(contexts.hasNext());
+		}
 		assertThrows(UnsupportedOperationException.class, valueDatabases::clear);
 		assertThrows(UnsupportedOperationException.class, tripleDatabases::clear);
 	}

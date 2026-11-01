@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
@@ -24,6 +25,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -45,6 +47,9 @@ class LmdbContextIdIterator implements Closeable {
 	private long txnRefVersion;
 
 	private final long txn;
+	private final long txnLease;
+	/** Negative for legacy context keys; otherwise the metadata key prefix followed by a big-endian context ID. */
+	private final int metadataPrefix;
 
 	private volatile boolean closed = false;
 
@@ -63,6 +68,15 @@ class LmdbContextIdIterator implements Closeable {
 	private final Thread ownerThread = Thread.currentThread();
 
 	LmdbContextIdIterator(int dbi, Txn txnRef) throws IOException {
+		this(dbi, txnRef, -1);
+	}
+
+	LmdbContextIdIterator(int dbi, Txn txnRef, byte metadataPrefix) throws IOException {
+		this(dbi, txnRef, Byte.toUnsignedInt(metadataPrefix));
+	}
+
+	private LmdbContextIdIterator(int dbi, Txn txnRef, int metadataPrefix) throws IOException {
+		this.metadataPrefix = metadataPrefix;
 		this.pool = txnRef.getValuePool();
 		this.keyData = pool.getVal();
 		this.valueData = pool.getVal();
@@ -82,8 +96,13 @@ class LmdbContextIdIterator implements Closeable {
 		try {
 			synchronized (txnRef) {
 				txnRef.ensureSnapshotValid();
+				this.txnLease = txnRef.lease();
 				this.txnRefVersion = txnRef.version();
 				this.txn = txnRef.get();
+				if (metadataPrefix >= 0) {
+					minKeyBuf = pool.getKeyBuffer();
+					minKeyBuf.clear().put((byte) metadataPrefix).flip();
+				}
 
 				try (MemoryStack stack = MemoryStack.stackPush()) {
 					PointerBuffer pp = stack.mallocPointer(1);
@@ -116,12 +135,12 @@ class LmdbContextIdIterator implements Closeable {
 				if (closed) {
 					return null;
 				}
-				txnRef.ensureSnapshotValid();
+				txnRef.ensureSnapshotValid(txnLease);
 
 				int lastResult;
 				if (txnRefVersion != txnRef.version()) {
 					// A pinned cursor must fail before renewal onto the transaction's newer map generation.
-					txnRef.ensureSnapshotValid();
+					txnRef.ensureSnapshotValid(txnLease);
 					E(mdb_cursor_renew(txn, cursor));
 					if (fetchNext) {
 						// cursor must be positioned on last item, reuse minKeyBuf if available
@@ -129,11 +148,15 @@ class LmdbContextIdIterator implements Closeable {
 							minKeyBuf = pool.getKeyBuffer();
 						}
 						minKeyBuf.clear();
-						Varint.writeUnsigned(minKeyBuf, record[0]);
+						if (metadataPrefix >= 0) {
+							minKeyBuf.order(ByteOrder.BIG_ENDIAN).put((byte) metadataPrefix).putLong(record[0]);
+						} else {
+							Varint.writeUnsigned(minKeyBuf, record[0]);
+						}
 						minKeyBuf.flip();
 						keyData.mv_data(minKeyBuf);
 						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
-						if (lastResult != MDB_SUCCESS) {
+						if (lastResult == MDB_NOTFOUND) {
 							// use MDB_SET_RANGE if key was deleted
 							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
 							if (lastResult == MDB_SUCCESS) {
@@ -142,6 +165,9 @@ class LmdbContextIdIterator implements Closeable {
 							}
 						}
 						if (lastResult != MDB_SUCCESS) {
+							if (lastResult != MDB_NOTFOUND) {
+								E(lastResult);
+							}
 							closeInternalUnderCurrentReadLock();
 							return null;
 						}
@@ -164,10 +190,27 @@ class LmdbContextIdIterator implements Closeable {
 				}
 
 				while (lastResult == MDB_SUCCESS) {
-					record[0] = Varint.readUnsigned(keyData.mv_data());
+					ByteBuffer key = keyData.mv_data();
+					if (metadataPrefix >= 0) {
+						if (key == null || !key.hasRemaining()
+								|| Byte.toUnsignedInt(key.get(key.position())) != metadataPrefix) {
+							break;
+						}
+						ByteBuffer value = valueData.mv_data();
+						if (key.remaining() != 1 + Long.BYTES || value == null || value.remaining() != Long.BYTES
+								|| value.order(ByteOrder.BIG_ENDIAN).getLong(value.position()) <= 0) {
+							throw new SailException("Malformed persistent adjacency context metadata");
+						}
+						record[0] = key.order(ByteOrder.BIG_ENDIAN).getLong(key.position() + 1);
+					} else {
+						record[0] = Varint.readUnsigned(key);
+					}
 					// fetch next value
 					fetchNext = true;
 					return record;
+				}
+				if (lastResult != MDB_SUCCESS && lastResult != MDB_NOTFOUND) {
+					E(lastResult);
 				}
 				closeInternalUnderCurrentReadLock();
 				return null;
@@ -178,6 +221,13 @@ class LmdbContextIdIterator implements Closeable {
 		} catch (IOException e) {
 			closeInternalUnderCurrentReadLock();
 			throw new SailException(e.getMessage(), e);
+		} catch (RuntimeException | Error failure) {
+			try {
+				closeInternalUnderCurrentReadLock();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}

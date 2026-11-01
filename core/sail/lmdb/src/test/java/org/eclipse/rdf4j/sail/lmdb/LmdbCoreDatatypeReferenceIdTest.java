@@ -201,7 +201,7 @@ class LmdbCoreDatatypeReferenceIdTest {
 		assertThat(upgraded.load()).isTrue();
 		assertThat(upgraded.getVersion()).isEqualTo("2");
 		assertThat(upgraded.usesCoreDatatypeLiteralReferences()).isFalse();
-		assertThat(new File(directory, "lmdbrdf.ver")).doesNotExist();
+		assertThat(new File(directory, "lmdbrdf.ver")).hasContent(LmdbPersistentAdjacencyFence.MARKER);
 	}
 
 	@Test

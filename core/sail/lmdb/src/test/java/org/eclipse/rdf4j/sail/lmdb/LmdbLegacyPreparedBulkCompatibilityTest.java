@@ -243,7 +243,9 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 		}
 		assertThat(reopenedProperties).as("canonical metadata keeps every protocol and capability property")
 				.isEqualTo(expectedProperties);
-		assertThat(directory.resolve("lmdbrdf.ver")).doesNotExist();
+		assertThat(Files.readString(directory.resolve("lmdbrdf.ver")))
+				.as("the legacy dictionary stays unchanged while old tuple-index writers are fenced out")
+				.isEqualTo(LmdbPersistentAdjacencyFence.MARKER);
 
 		// Engagement assertions follow all functional import, duplicate, ownership, GC and reopen assertions.
 		int initialMaximumBatches = maximumNativeBatches(payload.size());
