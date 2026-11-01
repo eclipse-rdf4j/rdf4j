@@ -4782,12 +4782,11 @@ class TripleStore implements Closeable {
 		if (count == 0) {
 			return 0;
 		}
-		long estimate = 64L;
-		for (int row = 0; row < count; row++) {
-			estimate = saturatedAdd(estimate, estimateTripleMutationBytes(input.subject(row), input.predicate(row),
-					input.object(row), input.context(row)));
-		}
-		prepareForMutation(estimate);
+		// Input cardinality is not required native space: duplicates and shared metadata can make a large
+		// batch tiny. Admit one mutation unit, then check measured allocation after the workspace closes.
+		// A real MAP_FULL still follows the complete-journal or caller-owned whole-attempt recovery below.
+		prepareForMutation(estimateTripleMutationBytes(input.subject(0), input.predicate(0), input.object(0),
+				input.context(0)));
 		long firstRecord = -1L;
 		if (usesReplayJournal()) {
 			firstRecord = mutationJournal.mark();
@@ -4807,6 +4806,11 @@ class TripleStore implements Closeable {
 		try {
 			try {
 				physical.execute(added);
+				// Reserve exhaustion is capacity pressure even if LMDB accepted every put. No external callbacks
+				// or derived effects may escape until the actual complete batch leaves its hard reserve intact.
+				if (requiresResize()) {
+					throw new MapFullException();
+				}
 			} catch (MapFullException capacity) {
 				if (!usesReplayJournal()) {
 					growForTransactionRetry(0L, capacity);
