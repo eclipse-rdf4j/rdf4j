@@ -13,7 +13,7 @@ Restore reliable query-ready in-memory adjacency, snapshot-safe reads, bounded-r
 - [x] (2026-11-01 19:24Z) Reproduced grouping and range failures.
 - [x] (2026-11-01 19:27Z) Repaired complete snapshot-local grouping selection; independent review and 61 new cases pass.
 - [x] (2026-11-01 19:33Z) Validated and published grouping repair421e1593, preserving06f778.
-- [in_progress] Repair reader admission and growth contracts.
+- [in_progress] Repair remaining growth, estimator and loading terminal-state contracts.
 - [ ] Retarget retired instrumentation without weakening assertions.
 - [ ] Rerun failure ledger and broad gates.
 
@@ -75,3 +75,7 @@ Storage-fixture retarget validation: all 32 original failures in the legacy sema
 Query/aggregation fixture retarget validation: all 18 ordered-DISTINCT and 11 primitive-grouping cases pass, including actual OPTIONAL order barriers, separated duplicate witnesses, forced legal route hit proofs and exact generic/native bags. Five query-cost methods pass: residual filter work remains visible, finite IN executes exactly three selected bound-P/O LMDB probes with exact results under either legal VALUES/ExactDomain order, absent-row aggregate callbacks remain exact, real native seek work remains within the existing quote, and reduced-page census proves actual multi-quad pages. No query kernel production changes or cost-threshold relaxation.
 
 Retired-contract phase B validated: exact reference liveness performs bounded real metadata lookup across positions/planes and rollback; logical preference changes retain native authority and all24 order semantics; malformed short/oversized certificates fail closed without changing nonvolatile files and recover after restoring the certificate; a real50→51 commit preserves pinned plans/rows and excludes fresh parallel readers from the old snapshot. All21 selected runtime cases pass. Two dead delayed-index GC cases are replaced only by the already-proven pinned-before-clear parameter pair, retaining the existing non-delayed pair. Explicit original→replacement mapping is committed beside this plan; remaining retired-worker growth/publication/crash families are not waived.
+
+Loading terminal-state priority: a new three-case automated test reproduces a pre-existing upstream cleanup failure hazard. Both real run-directory and marker-delete IOException injections occur after both native commits with130 authoritative rows, yet commit was acknowledged/completed1 and restart reset to0; success control preserves130. The narrow repair marks terminal cleanup failure before notifying peers, preserves primary/suppressed failure identity and rejects false success. It does not add a completed-marker protocol or alter existing interrupted, unacknowledged import restart semantics. Red reports are preserved before editing production.
+
+Terminal cleanup validation: the same three-case repro now passes (failed cleanup is unacknowledged, completed0, peer access fails closed; success retains130 rows), and all75 adjacent initial-import/marker-sync/fresh-NONE/acceleration cases pass unchanged. Independent review found no blocker. Additional unchecked and primary-plus-cleanup exception controls are being prepared; they do not change the repair protocol.

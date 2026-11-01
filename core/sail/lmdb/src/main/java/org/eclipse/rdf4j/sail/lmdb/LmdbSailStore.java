@@ -3240,13 +3240,24 @@ class LmdbSailStore implements SailStore {
 	 */
 	private void endInitialRunImport(LmdbInitialRunImport runImport, boolean finished, Throwable failure) {
 		valueStore.stopDeferringLookupRecords();
+		Throwable originalFailure = failure;
+		Throwable cleanupFailure = null;
 		try {
 			if (finished) {
 				runImport.finished();
 			} else {
 				runImport.close();
 			}
-		} catch (IOException cleanup) {
+		} catch (IOException | RuntimeException | Error cleanup) {
+			// A surviving marker still authorizes reset on restart. Native commits alone therefore cannot
+			// acknowledge a completed import: publish failure before waking any waiting reader or writer.
+			finished = false;
+			cleanupFailure = cleanup;
+			if (failure == null) {
+				failure = cleanup;
+			} else if (failure != cleanup) {
+				failure.addSuppressed(cleanup);
+			}
 			logger.warn("Unable to clean up the initial LMDB run import files", cleanup);
 		}
 		synchronized (initialRunImportMonitor) {
@@ -3266,6 +3277,15 @@ class LmdbSailStore implements SailStore {
 		if (finished && sketchBasedJoinEstimator != null) {
 			// The import never fed the estimator; rebuild it from the store, which is authoritative.
 			sketchBasedJoinEstimator.discardAndMarkForRebuild();
+		}
+		if (cleanupFailure != null && originalFailure == null) {
+			if (cleanupFailure instanceof Error error) {
+				throw error;
+			}
+			if (cleanupFailure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			throw new SailException("Unable to complete initial LMDB run import cleanup", cleanupFailure);
 		}
 	}
 
