@@ -2802,6 +2802,40 @@ class TripleStore implements Closeable {
 		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, true);
 	}
 
+	/** Exact snapshot-local streaming order for adjacency groups, independent of query-order preferences. */
+	boolean supportsAdjacencyScanOrder(Txn txn, String fieldSequence) {
+		return selectGeneration(txn, generation -> streamingAdjacencyIndex(generation, fieldSequence) != null);
+	}
+
+	/** A single leading field is insufficient: both group keys and neighbor/context pairs must stay contiguous. */
+	RecordIterator getTriplesInAdjacencyOrder(Txn txn, String fieldSequence, long subj, long pred, long obj,
+			long context, boolean explicit) throws IOException {
+		TripleIndex index = withGeneration(txn, generation -> streamingAdjacencyIndex(generation, fieldSequence));
+		if (index == null) {
+			throw new UnsupportedOperationException("Streaming adjacency order is not supported: " + fieldSequence);
+		}
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, true);
+	}
+
+	/** Optional build partitioning must use the same complete order and generation as its eventual worker scan. */
+	LmdbPrefixRunPlan prefixRunPlanForAdjacencyOrder(Txn txn, String fieldSequence, int[] prefixFields) {
+		return selectGeneration(txn, generation -> {
+			TripleIndex index = streamingAdjacencyIndex(generation, fieldSequence);
+			return index == null ? null : prefixRunPlan(List.of(index), prefixFields, -1, -1, -1, -1);
+		});
+	}
+
+	private static TripleIndex streamingAdjacencyIndex(IndexGeneration generation, String fieldSequence) {
+		if (isStreamingAdjacencyOrder(fieldSequence)) {
+			for (TripleIndex index : generation.indexes) {
+				if (index.toString().equals(fieldSequence)) {
+					return index;
+				}
+			}
+		}
+		return null;
+	}
+
 	Set<StatementOrder> getSupportedOrders(long subj, long pred, long obj, long context) {
 		return supportedOrders(queryGeneration, subj, pred, obj, context);
 	}
