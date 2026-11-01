@@ -437,6 +437,58 @@ namespace workbench {
                 copyConfirmations.set(button, original);
             }, refused);
         }
+
+        /**
+         * Copy text by selecting it in a hidden text area, for when the browser offers no clipboard: it has none on a
+         * page served over plain HTTP other than localhost, where many Workbenches run. Focus returns to the button.
+         */
+        function copyThroughSelection(button: any, text: string): boolean {
+            const document = button && button.ownerDocument;
+            if (!document || !document.body || typeof document.execCommand !== 'function') {
+                return false;
+            }
+            const area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.setAttribute('aria-hidden', 'true');
+            area.style.position = 'fixed';
+            area.style.top = '0';
+            area.style.left = '0';
+            area.style.opacity = '0';
+            area.style.pointerEvents = 'none';
+            document.body.appendChild(area);
+            let copied = false;
+            try {
+                area.select();
+                copied = document.execCommand('copy') === true;
+            } catch (error) {
+                copied = false;
+            } finally {
+                area.parentNode.removeChild(area);
+                if (typeof button.focus === 'function') {
+                    button.focus();
+                }
+            }
+            return copied;
+        }
+
+        /**
+         * Copy text to the clipboard for the button that asked: settles once copied, and fails when nothing could copy.
+         * Without a clipboard, or when it refuses, the text is copied through a selection instead.
+         */
+        export function copying(button: any, text: string): Promise<void> {
+            const view = button && button.ownerDocument && button.ownerDocument.defaultView;
+            const host = (view && view.navigator) || (typeof navigator !== 'undefined' ? navigator : null);
+            const clipboard = host && host.clipboard;
+            const fallback = () => copyThroughSelection(button, text) ? Promise.resolve() : Promise.reject();
+            return clipboard && typeof clipboard.writeText === 'function'
+                ? clipboard.writeText(text).catch(fallback) : fallback();
+        }
+
+        /** Copy text (see copying) and confirm it on the button that asked (see confirmCopy). */
+        export function copyText(button: any, text: string): void {
+            confirmCopy(button, copying(button, text));
+        }
     }
 
     export namespace views {
@@ -1828,9 +1880,13 @@ namespace workbench {
             if (!(usedMegabytes >= 0) || !(maximumMegabytes > 0)) {
                 return used;
             }
-            const share = Math.round(100 * Math.min(usedMegabytes, maximumMegabytes) / maximumMegabytes);
+            const fraction = Math.min(usedMegabytes, maximumMegabytes) / maximumMegabytes;
+            const rounded = Math.round(100 * fraction);
+            // A share that rounds to 0% or 100% without being so says so, instead of reading as empty or full.
+            const share = rounded === 0 && fraction > 0 ? 'less than 1%'
+                : rounded === 100 && fraction < 1 ? 'more than 99%' : rounded + '%';
             return runtime.html`${used} <meter class="workbench-memory-meter" min="0" max=${maximumMegabytes} value=${usedMegabytes}
-                aria-label="Memory used of the maximum"></meter> <span class="workbench-memory-share">${share}% of the maximum</span>`;
+                aria-label="Memory used of the maximum"></meter> <span class="workbench-memory-share">${share} of the maximum</span>`;
         }
 
         function repositoryUrl(context: ViewContext, id: string, route: string): string {
@@ -2525,8 +2581,12 @@ namespace workbench {
                         + ' { ?s ?p ?o } } LIMIT 200' }, 'Add up to 200 statements from ' + label + ' to the graph', true)
                     : '';
             const href = resultExploreHref(term);
-            return h`<td data-label=${list.label}>${href
-                ? h`<a href="${href}" title=${full}>${label}</a>` : label}${addition}</td>`;
+            // One element for the name and its buttons: a narrow screen draws the cell as a label column and a value
+            // column, and the buttons belong beside the name in the value column.
+            return h`<td data-label=${list.label}><span class="workbench-copyable">${href
+                ? h`<a href="${href}" title=${full}>${label}</a>` : label}${
+                // A type shows its IRI in full, without angle brackets, when no prefix matches: only a prefixed one is copied.
+                copyResourceControl(runtime, term, term.kind === 'bnode' ? label : prefixed)}${addition}</span></td>`;
         }
 
         function browseCountCell(runtime: LitRuntime, list: any, counts: BrowseCounts, value: any,
@@ -2651,6 +2711,29 @@ namespace workbench {
             }));
         }
 
+        /**
+         * The copy button after a resource shown with a prefix, or after a blank node, shown on hover and keyboard focus:
+         * it copies the complete IRI or the blank node. Nothing for any other term or label.
+         */
+        function copyResourceControl(runtime: LitRuntime, term: any, label: string): any {
+            const stream = workbench.queryStream as any;
+            const value = term && typeof term === 'object' && stream && typeof stream.copyableTerm === 'function'
+                ? stream.copyableTerm(term, label) : '';
+            if (!value) {
+                return '';
+            }
+            const copy = (event: any) => {
+                if (event && typeof event.preventDefault === 'function') {
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                workbench.icons.copyText(event.currentTarget, value);
+            };
+            return runtime.html`<button type="button" class="resource-copy workbench-action workbench-action--ghost workbench-action--icon"
+                title=${term.kind === 'bnode' ? 'Copy blank node' : 'Copy IRI'} aria-label=${'Copy ' + value}
+                @click=${copy}>${icon(runtime, 'copy')}</button>`;
+        }
+
         function exploreGraphLabel(term: any, namespaces: any[]): string {
             if (!term) {
                 return 'Default graph';
@@ -2689,7 +2772,8 @@ namespace workbench {
                     <h3 id=${headingId} class="explore-group__title">${role.title}
                         <span class="explore-group__count">${rows.length}</span>
                         ${oneGraph && role.key !== 'graph'
-                            ? h`<span class="explore-group__graph">Graph: ${exploreGraphLabel(graphs[0], namespaces)}</span>` : ''}</h3>
+                            ? h`<span class="explore-group__graph workbench-copyable">Graph: ${exploreGraphLabel(graphs[0], namespaces)}${
+                                copyResourceControl(runtime, graphs[0], exploreGraphLabel(graphs[0], namespaces))}</span>` : ''}</h3>
                     ${resultTable(runtime, model, context, {
                         key: 'explore-' + role.key,
                         label: role.title + ' statements',
@@ -2715,9 +2799,7 @@ namespace workbench {
             const comment = summary.comment ? text(summary.comment) : '';
             const types = distinctExploreValues(model, summary.types || []);
             const copy = (event: any) => {
-                const clipboard = typeof navigator !== 'undefined' && navigator.clipboard;
-                workbench.icons.confirmCopy(event.currentTarget, clipboard && typeof clipboard.writeText === 'function'
-                    ? clipboard.writeText(isIri ? key.slice(1, -1) : key) : false);
+                workbench.icons.copyText(event.currentTarget, isIri ? key.slice(1, -1) : key);
             };
             const toggleComment = (event: any) => {
                 const button = event.currentTarget;
@@ -2744,8 +2826,8 @@ namespace workbench {
                 ${types.length ? h`<ul class="explore-resource-card__types" aria-label="Types">${types.map((type: any) => {
                     const href = resultExploreHref(type);
                     const label = exploreGraphLabel(type, namespaces);
-                    return h`<li>${href ? h`<a class="explore-chip" href=${href}>${label}</a>`
-                        : h`<span class="explore-chip">${label}</span>`}</li>`;
+                    return h`<li class="workbench-copyable">${href ? h`<a class="explore-chip" href=${href}>${label}</a>`
+                        : h`<span class="explore-chip">${label}</span>`}${copyResourceControl(runtime, type, label)}</li>`;
                 })}</ul>` : ''}
                 ${comment ? h`<div class="explore-resource-card__description"><p class="explore-resource-card__comment workbench-prose">${comment}</p>
                     ${comment.length > 240 ? h`<button class="workbench-action workbench-action--ghost explore-resource-card__more" type="button"
@@ -3017,7 +3099,8 @@ namespace workbench {
             };
             // The heading counts the group's members as the statement groups count theirs (the pager below counts alike).
             return h`<h3>${definition.title} <span class="explore-group__count">${formatCount(String(page.count), context)}</span></h3>
-                <ul>${distinctExploreValues(model, page.items).map((value: any) => h`<li>${member(value)}</li>`)}</ul>
+                <ul>${distinctExploreValues(model, page.items).map((value: any) => h`<li class="workbench-copyable">${member(value)}${
+                    copyResourceControl(runtime, value, exploreGraphLabel(value, namespaces))}</li>`)}</ul>
                 ${page.count > explorePageSize ? h`<div class="workbench-form-actions workbench-window-controls"
                     role="group" aria-label=${definition.title + ' pages'}>
                     <span role="status">Showing ${page.start + 1}–${page.start + page.items.length} of ${page.count}</span>
@@ -3268,9 +3351,11 @@ namespace workbench {
             const query = text(row.queryText || row.query);
             const queryTimeout = text(row.queryTimeout).trim() || '0';
             const formId = 'saved-query-exec-' + index;
+            // Every card has the same buttons: each is described by the query's name.
+            const nameId = 'saved-query-name-' + index;
             const preview = savedQueryPreview(query);
             return h`
-                        <div class="saved-query-row__heading"><h2>${queryName}</h2><span>${savedQueryDisplayOwner(owner)}</span></div>
+                        <div class="saved-query-row__heading"><h2 id=${nameId}>${queryName}</h2><span>${savedQueryDisplayOwner(owner)}</span></div>
                         ${preview ? h`<p class="saved-query-row__preview" title=${query}><code>${preview}</code></p>` : ''}
                         <div class="saved-query-actions">
                             <form method="post" action="query" id=${formId}
@@ -3284,20 +3369,20 @@ namespace workbench {
                                 <input type="hidden" name="infer" value=${text(row.infer)} />
                                 <input type="hidden" name="query-timeout" value=${queryTimeout} />
                                 <span class="workbench-action workbench-action--primary"><label class="workbench-action-hit-area">
-                                    ${icon(runtime, 'execute')}<span class="workbench-action-label"><input type="submit" value="Execute" /></span>
+                                    ${icon(runtime, 'execute')}<span class="workbench-action-label"><input type="submit" value="Execute" aria-describedby=${nameId} /></span>
                                 </label></span>
                             </form>
                             <button type="button" class="saved-query-toggle workbench-action workbench-action--secondary" id=${urn + '-toggle'} data-query-urn=${urn}
-                                aria-expanded="false" aria-controls=${urn + '-metadata'}>Show details</button>
+                                aria-expanded="false" aria-controls=${urn + '-metadata'} aria-describedby=${nameId}>Show details</button>
                             <form method="post" action="query"><input type="hidden" name="action" value="edit" />
                                 <input type="hidden" name="queryLn" value=${text(row.queryLn)} /><input type="hidden" name="query" value=${queryName} />
                                 <input type="hidden" name="ref" value="id" /><input type="hidden" name="owner" value=${owner} />
                                 <input type="hidden" name="infer" value=${text(row.infer)} />
-                                <input type="hidden" name="query-timeout" value=${queryTimeout} /><button class="workbench-action workbench-action--secondary" type="submit">Edit</button>
+                                <input type="hidden" name="query-timeout" value=${queryTimeout} /><button class="workbench-action workbench-action--secondary" type="submit" aria-describedby=${nameId}>Edit</button>
                             </form>
                             <form method="post" id=${urn} action="saved-queries"><input type="hidden" name="delete" value=${urn} />
                                 <button type="button" class="saved-query-delete workbench-action workbench-action--danger-outline" data-query-owner=${owner} data-query-name=${queryName}
-                                    data-query-urn=${urn}>Delete…</button>
+                                    data-query-urn=${urn} aria-describedby=${nameId}>Delete…</button>
                             </form>
                         </div>
                         <div id=${'saved-query-results-' + index} class="query-results"></div>

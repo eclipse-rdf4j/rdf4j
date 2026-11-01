@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.workbench.proxy.CacheFilter;
 import org.eclipse.rdf4j.workbench.proxy.CookieCacheControlFilter;
 import org.eclipse.rdf4j.workbench.proxy.RedirectFilter;
 import org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchFallbackNamespacesServlet;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.security.WorkbenchCsrfFilter;
 import org.eclipse.rdf4j.workbench.security.WorkbenchSessionCookieInitializer;
@@ -219,6 +220,15 @@ public class Rdf4jServerWorkbenchApplication {
 		// The same upload limits as the Workbench WAR's gateway: 10 GiB a file, every part spooled to disk.
 		registration.setMultipartConfig(new MultipartConfigElement("", WorkbenchRequest.MAX_UPLOAD_BYTES,
 				WorkbenchRequest.MAX_UPLOAD_REQUEST_BYTES, WorkbenchRequest.UPLOAD_SPOOL_THRESHOLD_BYTES));
+		return registration;
+	}
+
+	/** Mirrors web.xml: the namespaces the Workbench query editor falls back on for prefixes that are not defined. */
+	@Bean
+	ServletRegistrationBean<WorkbenchFallbackNamespacesServlet> rdf4jWorkbenchFallbackNamespacesServlet() {
+		ServletRegistrationBean<WorkbenchFallbackNamespacesServlet> registration = new ServletRegistrationBean<>(
+				new WorkbenchFallbackNamespacesServlet(), "/rdf4j-workbench/fallback-namespaces");
+		registration.setName("rdf4jWorkbenchFallbackNamespaces");
 		return registration;
 	}
 
@@ -431,15 +441,14 @@ public class Rdf4jServerWorkbenchApplication {
 	}
 
 	/**
-	 * Mirrors web.xml: the graph explorer's unhashed entry and stylesheet are revalidated (they load hashed chunks).
+	 * Mirrors web.xml: scripts and stylesheets keep their names across releases, so they are revalidated and an upgrade
+	 * never leaves a browser running the previous release's scripts (or an explorer entry whose chunks are gone).
 	 */
 	@Bean
-	FilterRegistrationBean<CacheFilter> revalidatedEntryFilter() {
+	FilterRegistrationBean<CacheFilter> revalidatedAssetFilter() {
 		FilterRegistrationBean<CacheFilter> registration = new FilterRegistrationBean<>(new CacheFilter());
-		registration.addUrlPatterns("/rdf4j-workbench/scripts/graph-explorer/graph-explorer.mjs",
-				"/rdf4j-workbench/scripts/graph-explorer/query-graph-renderer.mjs",
-				"/rdf4j-workbench/styles/graph-explorer.css");
-		registration.setName("RevalidatedEntryFilter");
+		registration.addUrlPatterns("/rdf4j-workbench/scripts/*", "/rdf4j-workbench/styles/*");
+		registration.setName("RevalidatedAssetFilter");
 		registration.setOrder(3);
 		registration.setAsyncSupported(true);
 		registration.addInitParameter("Cache-Control", "0");

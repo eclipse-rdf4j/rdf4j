@@ -1284,15 +1284,23 @@ body.query-result-embedded-body .query-result-embedded .query-result-layout[data
     color: var(--query-muted);
 }
 
-/* External-link arrow beside result IRIs: shown on hover or keyboard focus only. */
+/* External-link arrow beside result IRIs: shown on hover or keyboard focus, and always on touch screens, which cannot
+   hover. It fades instead of hiding, so that it stays in the tab order. */
 .query-result-embedded a.resourceURL {
     margin-left: 8px;
-    visibility: hidden;
+    opacity: 0;
+    transition: opacity 120ms ease;
 }
 
 .query-result-embedded div.resource:hover > a.resourceURL,
 .query-result-embedded div.resource:focus-within > a.resourceURL {
-    visibility: visible;
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .query-result-embedded a.resourceURL {
+        opacity: 1;
+    }
 }
 
 .query-result-embedded .queryResult {

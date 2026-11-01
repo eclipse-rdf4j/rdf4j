@@ -3366,6 +3366,17 @@ namespace workbench {
             return abbreviatedIri(value, namespaces);
         }
 
+        /**
+         * What the copy button beside a shown term copies: the complete IRI of an IRI shown with a prefix, or a blank
+         * node as it is shown; '' for any other term (an IRI shown in full can be selected as it is).
+         */
+        export function copyableTerm(term: RdfTerm, label: string): string {
+            if (term && term.kind === 'iri' && label && label.charAt(0) !== '<') {
+                return term.value || '';
+            }
+            return term && term.kind === 'bnode' ? label : '';
+        }
+
         /** True when a literal's datatype deserves a visible tag: not a string and not a number (M4.3). */
         export function showsDatatypeTag(display: FormattedRdfTerm): boolean {
             return display.kind === 'literal' && !!display.datatype && !display.numeric && !display.language
@@ -5990,6 +6001,7 @@ namespace workbench {
                         target.classList.add('rdf-numeric');
                     }
                 }
+                var copied = copyableTerm(term, display.label);
                 if (display.exploreHref) {
                     var resource = createElement(this.document, 'div', 'resource');
                     // A literal with line breaks keeps them, in the cell's font, and wraps its long lines (C27).
@@ -6001,6 +6013,9 @@ namespace workbench {
                         explore.textContent = display.label;
                     }
                     resource.appendChild(explore);
+                    if (copied) {
+                        resource.appendChild(this.copyButton(display.kind, copied));
+                    }
                     if (display.externalHref) {
                         var external = createElement(this.document, 'a', 'resourceURL');
                         external.setAttribute('href', display.externalHref);
@@ -6015,12 +6030,41 @@ namespace workbench {
                     }
                     target.appendChild(resource);
                     this.appendTermTags(resource, display, term && term.direction, namespaces);
+                } else if (copied) {
+                    // A blank node without an Explore page can still be copied.
+                    var plain = createElement(this.document, 'div', 'resource');
+                    appendBreakableText(this.document, plain, display.label);
+                    plain.appendChild(this.copyButton(display.kind, copied));
+                    target.appendChild(plain);
                 } else {
                     target.textContent = display.label;
                 }
                 if (display.language) {
                     target.setAttribute('lang', display.language);
                 }
+            }
+
+            /**
+             * The copy button after an IRI shown with a prefix or after a blank node, shown on hover and keyboard focus:
+             * it copies the complete IRI or the blank node and turns into a check for a moment.
+             */
+            private copyButton(kind: string, text: string): any {
+                var button = createElement(this.document, 'button',
+                    'resource-copy workbench-action workbench-action--ghost workbench-action--icon');
+                button.setAttribute('type', 'button');
+                button.setAttribute('title', kind === 'bnode' ? 'Copy blank node' : 'Copy IRI');
+                decorateWithWorkbenchIcon(button, 'copy', 'Copy ' + text);
+                button.addEventListener('click', (event: any) => {
+                    if (event && typeof event.preventDefault === 'function') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }
+                    var icons = (workbench as any).icons;
+                    if (icons && typeof icons.copyText === 'function') {
+                        icons.copyText(button, text);
+                    }
+                }, false);
+                return button;
             }
 
             /** The "Add to graph" button after an IRI: it turns into a check once the IRI is queued. */

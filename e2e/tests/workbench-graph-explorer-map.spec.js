@@ -57,9 +57,14 @@ test('the Map view places resources by geo:lat/geo:long and schema:geo coordinat
     await waitForRoute(page, 'graph');
     const explorer = page.locator('.graph-explorer');
     await explorer.getByRole('button', { name: 'Load 100 statements' }).click();
-    await expect(explorer.locator('.recommended-mark')).toHaveCount(0);
-    await explorer.locator('.view-menu > summary').click();
-    await expect(explorer.locator('.view-menu-popover button', { hasText: 'Map' })).toContainText('Recommended');
+    await expect(explorer.getByText(/Loaded \d+ statements/)).toBeVisible();
+    const views = explorer.locator('.view-menu > summary');
+    await views.click();
+    // No view is pushed on the reader: the View button carries no mark and the menu names no view "Recommended".
+    await expect(explorer.locator('.view-menu-popover button', { hasText: 'Map' })).toBeVisible();
+    await expect(explorer.locator('.view-menu-popover')).not.toContainText('Recommended');
+    await expect(views).toHaveAttribute('title', 'Choose a view');
+    expect(await views.evaluate((summary) => getComputedStyle(summary, '::after').content)).toBe('none');
     await explorer.locator('.view-menu-popover button', { hasText: 'Map' }).click();
 
     const places = explorer.locator('.map-locations button');

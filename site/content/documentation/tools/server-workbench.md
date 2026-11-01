@@ -297,6 +297,39 @@ answers `400 Bad Request` without creating a repository. The list is checked whe
 contains characters other than letters, digits, `.`, `_` and `-`, a type listed twice, or a type whose template cannot be
 loaded makes the whole policy invalid, so every Workbench page answers `503 Service Unavailable` as described above.
 
+#### Namespaces and the prefixes the query editor knows
+
+The Query and Update editors know the namespaces of the repository. They complete a prefix after `PREFIX`, and
+typing a prefixed name such as `skos:Concept` adds the missing `PREFIX skos: <…>` line at the top of the query.
+**Insert prefixes** (under Query settings) adds a line for every repository namespace the query does not declare yet.
+
+For a prefix that the repository does not define, the editors fall back on a second list of prefixes. Typing a prefixed
+name from this list adds its `PREFIX` line, as for a repository namespace. **Insert prefixes** never adds the fallback
+list. The Workbench ships with an empty fallback list; a deployment sets its own with `namespaces.fallback`.
+
+Two keys of `workbench.properties` change this. Neither is part of the packaged defaults. Each takes `prefix:namespace`
+entries separated by commas and/or whitespace. A namespace may be written in angle brackets, which it needs when it
+contains a comma. A prefix may be empty (`:http://example.org/`, the default namespace).
+
+```properties
+# Namespaces that every repository has, as far as the Workbench is concerned.
+namespaces=dcat:http://www.w3.org/ns/dcat# acme:<https://acme.example/vocab#>
+# The prefixes the editors fall back on; an empty value turns the fallback off.
+namespaces.fallback=schema:https://schema.org/ foaf:http://xmlns.com/foaf/0.1/
+```
+
+- `namespaces`: pages treat these namespaces as if every repository had stored them. This covers the editors and
+  **Insert prefixes**, and the prefixed names in the result tables, Explore, the Remove preview and the other pages
+  that show the repository's prefixes. A prefix that a repository stores keeps the repository's namespace. The
+  Namespaces page lists, and changes, only the namespaces the repository stores.
+- `namespaces.fallback`: the fallback list. It replaces the whole bundled list (empty in this release) rather than
+  adding to it. An empty value turns the fallback off.
+
+An entry without a colon, an invalid prefix, a namespace that is not an absolute IRI, or a prefix listed twice makes
+the whole policy invalid. Every Workbench page then answers `503 Service Unavailable`, as described above. The editors
+load the fallback list once per page from `<workbench>/fallback-namespaces`. Browsers check it again on every page
+load, so a changed list reaches the editors as soon as the Workbench has restarted.
+
 ### OpenTelemetry Tracing
 
 RDF4J Server can optionally be instrumented with [OpenTelemetry](https://opentelemetry.io/) tracing, recording one span per SPARQL query/update evaluated against a repository. This is entirely opt-in: with no configuration, RDF4J Server behaves exactly as before, with zero overhead. For general background on RDF4J's OpenTelemetry support (the underlying module, its configuration options, and programmatic use outside of Server/Workbench), see [Observability using OpenTelemetry](/documentation/programming/observability/).
@@ -677,7 +710,7 @@ The “Clear Repository” page is powerful. Leaving the lone “Context:” fie
 
 #### SPARQL Update
 
-The “Execute SPARQL Update on Repository” page gives a text area where you enter a SPARQL 1.1 Update command. SPARQL Update is an extension to the SPARQL query language that provides full CRUD (Create Read Update Delete) capabilities. For more information see the W3C Recommendation for SPARQL 1.1 Update. Clicking “Execute” executes the specified SPARQL Update operation.
+The “Execute SPARQL Update on Repository” page gives a text area where you enter a SPARQL 1.1 Update command. SPARQL Update is an extension to the SPARQL query language that provides full CRUD (Create Read Update Delete) capabilities. For more information see the W3C Recommendation for SPARQL 1.1 Update. Clicking “Execute” executes the specified SPARQL Update operation. The browser keeps what you type as a draft for each repository (and server), so an update written for one repository is never waiting, ready to run, on another repository's page.
 
 When a repository with SHACL validation rejects a change made with Add, Remove, Clear or SPARQL Update, the Workbench lists the violations, one per line, with the focus node, the path, the offending value and what the constraint expected (or the shape's `sh:message`), for example `- ex:alice, ex:age: value "abc": expected datatype xsd:integer`. Long reports list their first 20 violations.
 
@@ -715,13 +748,13 @@ Click on “Explore” in the sidebar menu. You are presented with an “Explore
 
 Data types expressed with qnames also need to have their namespace defined in the repository.
 
-By using the “Results per page” setting and the “Previous …” and “Next …” buttons, you may page through a long set of results, or display all of the results at once. There is also a “Show data types & language tags” checkbox which, when un-checked, allows a less verbose table view.
+By using the “Results per page” setting and the “Previous …” and “Next …” buttons, you may page through a long set of results, or display all of the results at once. There is also a “Show data types & language tags” checkbox which, when un-checked, allows a less verbose table view. Explore remembers what you explored in each repository, with its page and “Results per page”, until you close the browser tab: open it again from the sidebar menu (or from another repository and back) and it shows that resource again. Explore an empty “Resource” field to start afresh.
 
 #### Graph Page
 
 Click on “Graph” in the sidebar menu to explore the repository as an interactive graph. The graph starts empty: load the first 100 statements, find a resource with the search field in the top-left corner of the canvas (it lists the loaded nodes as you type, and its last choice searches the repository's labels and adds the matching resources), or run a query in the query editor. Queries may be `CONSTRUCT` or `DESCRIBE` queries, or `SELECT` queries whose result columns name a `?source`, a `?predicate` and a `?target` (or `?s`, `?p`, `?o`). The other Workbench pages offer “Add to graph” as well: on a resource in Explore (the resource and its neighbours), on any IRI in a result table, on the results of a query on the Query page, and on the rows of the Types (instances of the type) and Graphs (statements of the named graph) pages; what is added appears on the Graph page of the same repository the next time it opens, or straight away in a Graph page open in another tab. The graph, its layout, groups and selection are kept in the browser (per repository) and come back when the page is opened again; “Clear graph” empties it, and Undo brings it back.
 
-Resources are drawn as nodes, coloured by RDF type, and the links between them as edges. Click a node to see its details (types, literal values and links, each link leading to the linked node); double-click it, or use “Expand” in the details, to load its neighbours. A number such as “+12” on a node says how many of its links are not loaded yet; click it, or expand the node again, to load the next ones. Literal values and `rdf:type` links are shown in the details rather than as nodes; “Values” draws them as nodes too. Click a link (or next to it) to see its statement: what the predicate means (its description, domain and range, how many statements use it), and a card for every resource that says something about the statement: RDF 1.2 reifiers (`<< s p o >>` and `{| … |}` annotations), classic `rdf:Statement` reifications, and statements that refer to the triple term `<<( s p o )>>`; each card can be added to the graph. The details of a node offer the same statement card for each of its values and links (“Statement: …”), which also works from the keyboard. A reifier, or a resource that refers to a triple term, is connected to the statement it is about by a dashed line to the middle of the statement's edge. Right-click or long-press a node for more actions, such as expanding a single relation or selecting neighbours; the type names under the graph select the nodes of a type. “Filters” narrows the selection by type and by the values of the nodes' properties, including values the repository has that are not loaded (they load in the background, are kept in the browser for an hour and load again after any change made through the Workbench): the counts always say how many nodes a choice would select, choices that would select nothing are left out, numbers and dates are filtered by a from–to range, and the active filters are listed as chips at the top of the panel. Open the query editor (“Query editor”) to change the query, or to hand it over to the Query page (“Open on the Query page”). The “More views” menu shows the same data as a triple table, cards, an adjacency matrix, a timeline, a map (of WKT points, and of `geo:lat`/`geo:long` or `schema:latitude`/`schema:longitude` values, also on a `schema:geo` node) or value charts (one numeric property at a time); while nodes are selected, these views show only the statements of the selection, and the triple table shows 500 rows at a time. “Tools” downloads the loaded statements as Turtle and the drawn graph as an SVG or PNG image. The “?” button at the end of the toolbar lists every mouse, touch and keyboard control.
+Resources are drawn as nodes, coloured by RDF type, and the links between them as edges. Click a node to see its details (types, literal values and links, each link leading to the linked node); double-click it, or use “Expand” in the details, to load its neighbours. A number such as “+12” on a node says how many of its links are not loaded yet; click it, or expand the node again, to load the next ones. Literal values and `rdf:type` links are shown in the details rather than as nodes; “Values” draws them as nodes too. Click a link (or next to it) to see its statement: what the predicate means (its description, domain and range, how many statements use it), and a card for every resource that says something about the statement: RDF 1.2 reifiers (`<< s p o >>` and `{| … |}` annotations), classic `rdf:Statement` reifications, and statements that refer to the triple term `<<( s p o )>>`; each card can be added to the graph. The details of a node offer the same statement card for each of its values and links (“Statement: …”), which also works from the keyboard. A reifier, or a resource that refers to a triple term, is connected to the statement it is about by a dashed line to the middle of the statement's edge. Right-click or long-press a node for more actions, such as expanding a single relation or selecting neighbours; the type names under the graph select the nodes of a type. “Filters” narrows the selection by type and by the values of the nodes' properties, including values the repository has that are not loaded (they load in the background, are kept in the browser for an hour and load again after any change made through the Workbench): the counts always say how many nodes a choice would select, choices that would select nothing are left out, numbers and dates are filtered by a from–to range, and the active filters are listed as chips at the top of the panel. Open the query editor (“Query editor”) to change the query, or to hand it over to the Query page (“Open on the Query page”). The view menu beside “Query editor” (it shows the name of the current view, “Graph” at first) shows the same data as a triple table, cards, an adjacency matrix, a timeline, a map (of WKT points, and of `geo:lat`/`geo:long` or `schema:latitude`/`schema:longitude` values, also on a `schema:geo` node) or value charts (one numeric property at a time); while nodes are selected, these views show only the statements of the selection, and the triple table shows 500 rows at a time. “Tools” downloads the loaded statements as Turtle and the drawn graph as an SVG or PNG image; on a narrow screen it also holds undo, redo, “Values”, “Labels” and full screen, so that the toolbar stays one row. The “?” button near the end of the toolbar lists every mouse, touch and keyboard control.
 
 The page is built for large graphs: 50,000 nodes and 200,000 links load in a few seconds and move smoothly. From 500 drawn nodes it switches to a WebGL renderer that shows labels when zoomed in or for the selected node, the layout is computed in the background (“Arranging…” is shown meanwhile), and the stored copy takes about 12 MB of browser storage.
 

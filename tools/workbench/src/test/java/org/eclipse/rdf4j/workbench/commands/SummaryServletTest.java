@@ -78,6 +78,32 @@ class SummaryServletTest {
 				.doesNotContain("_:");
 	}
 
+	/**
+	 * The servlet outlives a change of title (Save and restart on the Configuration page keeps the repository object):
+	 * the Summary shows the repository's current title, like its configuration below.
+	 */
+	@Test
+	void serviceShowsTheRepositorysCurrentTitle() throws Exception {
+		SummaryServlet servlet = new SummaryServlet();
+		RepositoryManager manager = mock(RepositoryManager.class);
+		RepositoryInfo whenCreated = new RepositoryInfo();
+		whenCreated.setId("memory");
+		whenCreated.setDescription("Old title");
+		RepositoryInfo current = new RepositoryInfo();
+		current.setId("memory");
+		current.setDescription("New title");
+		when(manager.getRepositoryConfig("memory")).thenReturn(repositoryConfig());
+		when(manager.getRepositoryInfo("memory")).thenReturn(current);
+		servlet.setRepositoryManager(manager);
+		servlet.setRepositoryInfo(whenCreated);
+
+		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+		servlet.service(
+				new TupleResultBuilder(new WorkbenchTupleResultWriter(buffer), SimpleValueFactory.getInstance()));
+
+		assertThat(buffer.toString(StandardCharsets.UTF_8)).contains("New title").doesNotContain("Old title");
+	}
+
 	private static RepositoryConfig repositoryConfig() {
 		MemoryStoreConfig memoryStoreConfig = new MemoryStoreConfig(true, 123L);
 		return new RepositoryConfig("memory", "Memory repo", new SailRepositoryConfig(memoryStoreConfig)) {
