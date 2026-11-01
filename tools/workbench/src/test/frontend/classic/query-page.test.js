@@ -806,6 +806,54 @@ test('saved query edit takes precedence over stale tab draft', () => {
     assert.equal(harness.context.workbench.query.getQueryValue(), 'ASK {}');
 });
 
+// The editors' text fields are what a screen reader lands on: like the Configuration editor, each names what it edits.
+test('query editors name themselves for screen readers', () => {
+    const harness = createQueryBrowserHarness({
+        initialExplanationFormat: 'text',
+        query: 'SELECT * WHERE {?s ?p ?o}',
+        compareQuery: ''
+    });
+    harness.runPageLoad();
+    assert.equal(harness.yasqeState.instances.query.options.screenReaderLabel, 'SPARQL query');
+    harness.context.workbench.query.toggleCompareMode();
+    assert.equal(harness.yasqeState.instances['query-compare'].options.screenReaderLabel, 'SPARQL compare query');
+});
+
+// YASQE draws Share and Full screen as plain divs: each query editor has them made keyboard buttons (yasqeHelper).
+test('each query editor gets keyboard buttons for its toolbar controls', () => {
+    const prepared = [];
+    const harness = createQueryBrowserHarness({
+        initialExplanationFormat: 'text',
+        query: 'SELECT * WHERE {?s ?p ?o}',
+        compareQuery: '',
+        workbench: { yasqeHelper: { setupCompleters() {}, showEmptyHint() {},
+            enableToolbarKeyboard(editor) { prepared.push(editor); } } }
+    });
+    harness.runPageLoad();
+    // Identity checks: a diff of the fake editors would take the test runner very long to print.
+    assert.equal(prepared.length, 1);
+    assert.ok(prepared[0] === harness.yasqeState.instances.query, 'the query editor is prepared');
+    harness.context.workbench.query.toggleCompareMode();
+    assert.equal(prepared.length, 2);
+    assert.ok(prepared[1] === harness.yasqeState.instances['query-compare'], 'the compare editor is prepared');
+});
+
+test('the query editor shows an example when it is empty; the compare editor does not', () => {
+    const hints = [];
+    const harness = createQueryBrowserHarness({
+        initialExplanationFormat: 'text',
+        query: 'SELECT * WHERE {?s ?p ?o}',
+        compareQuery: '',
+        workbench: { yasqeHelper: { setupCompleters() {}, enableToolbarKeyboard() {},
+            showEmptyHint(editor, text) { hints.push([editor, text]); } } }
+    });
+    harness.runPageLoad();
+    harness.context.workbench.query.toggleCompareMode();
+    assert.equal(hints.length, 1, 'one editor shows the hint');
+    assert.ok(hints[0][0] === harness.yasqeState.instances.query, 'it is the query editor');
+    assert.equal(hints[0][1], 'Write a SPARQL query, for example: SELECT * WHERE { ?s ?p ?o } LIMIT 10');
+});
+
 test('editor shortcuts click Execute, Explain and Save and never use the YASQE endpoint', () => {
     const harness = createQueryBrowserHarness();
     harness.runPageLoad();

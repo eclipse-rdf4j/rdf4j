@@ -42,11 +42,15 @@ namespace workbench {
                 persistent: "update",
                 // Updates run through the Workbench form; YASQE must never send them to its default endpoint.
                 sparql: { endpoint: '', showQueryButton: false },
+                screenReaderLabel: 'SPARQL update',
                 extraKeys: {
                     'Ctrl-Enter': submitUpdateForm,
                     'Cmd-Enter': submitUpdateForm
                 }
             });
+
+            workbench.yasqeHelper.enableToolbarKeyboard(yasqe);
+            yasqe.on('change', clearErrorLocation);
 
             // The editor frame grows with its content like the Query editor (styles/query.css) and can be
             // resized with the handle under it.
@@ -65,6 +69,44 @@ namespace workbench {
             }
         }
 
+        /** The editor line (0-based) marked as where the server's parser stopped, or null. */
+        var errorLine: number = null;
+
+        /**
+         * Mark the line (1-based) where the server's parser stopped, as the Query page does; with reveal, also put the
+         * cursor at the column and scroll it into view.
+         */
+        export function showErrorLocation(line: number, column: number, reveal: boolean): void {
+            if (!yasqe || !(line >= 1)) {
+                return;
+            }
+            clearErrorLocation();
+            var doc = yasqe.getDoc();
+            var index = Math.min(line - 1, Math.max(0, doc.lineCount() - 1));
+            var marker = document.createElement('span');
+            marker.className = 'query-editor-error-marker';
+            marker.title = 'The server reported a syntax error on this line';
+            yasqe.setGutterMarker(index, 'gutterErrorBar', marker);
+            yasqe.addLineClass(index, 'background', 'query-editor-error-line');
+            errorLine = index;
+            if (reveal) {
+                yasqe.focus();
+                doc.setCursor({ line: index, ch: Math.max(0, column - 1) });
+                yasqe.scrollIntoView(null, 80);
+            }
+        }
+
+        function clearErrorLocation(): void {
+            if (errorLine === null) {
+                return;
+            }
+            if (yasqe) {
+                yasqe.setGutterMarker(errorLine, 'gutterErrorBar', null);
+                yasqe.removeLineClass(errorLine, 'background', 'query-editor-error-line');
+            }
+            errorLine = null;
+        }
+
         /** Route mount (plan task M9.1): open the editor; the returned function closes it again. */
         export function mount(outlet: HTMLElement): () => void {
             initYasqe(outlet);
@@ -81,6 +123,7 @@ namespace workbench {
                     }
                     yasqe.toTextArea();
                     yasqe = null;
+                    errorLine = null;
                 }
             };
         }

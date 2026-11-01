@@ -57,6 +57,9 @@ export default defineConfig({
     emptyOutDir: false,
     sourcemap: true,
     cssCodeSplit: false,
+    // The Graphviz layout worker and the query plan renderer embed Graphviz compiled to WebAssembly (about 1.4 MB
+    // each) and load only where they are used; the warning stays on for anything that grows past them.
+    chunkSizeWarningLimit: 1400,
     rollupOptions: {
       input: {
         "graph-explorer": fileURLToPath(new URL("./src/main/frontend/graph-explorer/main.tsx", import.meta.url)),

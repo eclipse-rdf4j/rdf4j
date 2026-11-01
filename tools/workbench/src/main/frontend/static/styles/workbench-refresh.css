@@ -92,6 +92,28 @@
 	--workbench-motion-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
+/* "Skip to content": the shell's first keyboard stop, out of sight until it has keyboard focus. Positioned, so it
+ * takes no cell of the shell's grid; the link states outrank the shared link colour. */
+body.workbench-body a.workbench-skip-link:is(:link, :visited, :active, :hover) {
+	position: absolute;
+	top: var(--workbench-space-related);
+	left: var(--workbench-space-related);
+	z-index: 1000;
+	padding: var(--workbench-space-related) var(--workbench-control-inset);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-primary);
+	color: var(--workbench-primary-text);
+	font-weight: 600;
+	text-decoration: none;
+	transform: translateY(calc(-100% - 2 * var(--workbench-space-related)));
+}
+
+body.workbench-body a.workbench-skip-link:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
+	transform: none;
+}
+
 /* Page-level corrections keep the shared shell and each operation island
  * visually distinct without changing the legacy page contracts. */
 body.workbench-body #workbench-page-surface:has(> form),
@@ -237,6 +259,12 @@ body.workbench-body #saved-queries > .saved-queries-empty a {
 }
 
 body.workbench-body #workbench-page-surface > .workbench-form-card {
+	max-width: 760px;
+}
+
+/* A form page's own notes and errors, above its card, are as wide as the card they belong to. */
+body.workbench-body #workbench-page-surface:has(> .workbench-form-card) > .workbench-callout {
+	box-sizing: border-box;
 	max-width: 760px;
 }
 
@@ -732,6 +760,33 @@ body.workbench-body .saved-query-row .yasqe .yasqe_buttons .svgImg:focus-visible
 	border-color: var(--workbench-rule);
 	background: var(--workbench-inset);
 	color: var(--workbench-ink);
+}
+
+/* yasqeHelper.showEmptyHint: the line an empty editor shows where its text starts (left is set from the gutters). */
+body.workbench-body .CodeMirror > .workbench-editor-hint {
+	position: absolute;
+	top: 4px;
+	right: 72px;
+	z-index: 3;
+	overflow: hidden;
+	color: var(--workbench-muted);
+	/* The interface font, so the hint reads as an instruction and not as text in the editor. */
+	font-family: var(--workbench-font);
+	font-size: var(--workbench-control-font-size);
+	line-height: inherit;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	pointer-events: none;
+}
+
+body.workbench-body .CodeMirror > .workbench-editor-hint[hidden] {
+	display: none;
+}
+
+/* yasqeHelper.enableToolbarKeyboard makes them buttons: keyboard focus draws the ring every action draws. */
+body.workbench-body .yasqe .yasqe_buttons .svgImg[role="button"]:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 2px;
 }
 
 body.workbench-body .query-page .yasqe .yasqe_buttons .svgImg svg,
@@ -2918,6 +2973,37 @@ body.workbench-body .workbench-kv__row > dd {
 	overflow-wrap: anywhere;
 }
 
+/* Information's memory in use against the maximum: a slim primary-coloured meter and its share. */
+body.workbench-body .workbench-memory-meter {
+	width: 120px;
+	height: 8px;
+	margin: 0 var(--workbench-space-related);
+	vertical-align: middle;
+}
+
+body.workbench-body .workbench-memory-meter::-webkit-meter-bar {
+	border: 0;
+	border-radius: 999px;
+	background: var(--workbench-soft-rule);
+}
+
+body.workbench-body .workbench-memory-meter::-webkit-meter-optimum-value {
+	border-radius: 999px;
+	background: var(--workbench-primary);
+}
+
+body.workbench-body .workbench-memory-meter::-moz-meter-bar {
+	border-radius: 999px;
+	background: var(--workbench-primary);
+}
+
+body.workbench-body .workbench-memory-share {
+	color: var(--workbench-muted);
+	font-size: var(--workbench-control-font-size);
+	/* On a phone the share moves under the meter as a whole instead of breaking mid-phrase. */
+	white-space: nowrap;
+}
+
 body.workbench-body .workbench-kv__row > dd.workbench-kv__code,
 body.workbench-body .workbench-kv__row > dd code {
 	font-family: var(--workbench-code-font);
@@ -3681,6 +3767,13 @@ body.workbench-body .explore-resource-card__iri > code {
 	overflow-wrap: anywhere;
 	color: var(--workbench-body);
 	font-family: var(--workbench-code-font);
+}
+
+/* The card's actions share one row and wrap on a narrow screen. */
+body.workbench-body .explore-resource-card__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--workbench-control-gap);
 }
 
 body.workbench-body .explore-resource-card__types {
@@ -4785,6 +4878,26 @@ body.workbench-body .saved-query-row__heading > :is(h2, span) {
 	margin: 0;
 	white-space: normal;
 	overflow-wrap: anywhere;
+}
+
+/* The query's text after its prologue belongs to its name (association distance), on one line shortened to the card's
+ * width; its tooltip holds the whole query. */
+body.workbench-body .saved-query-row__heading:has(+ .saved-query-row__preview) {
+	margin-bottom: var(--workbench-space-association);
+}
+
+body.workbench-body .saved-query-row__preview {
+	min-width: 0;
+	margin: 0 0 var(--workbench-form-gap);
+	overflow: hidden;
+	color: var(--workbench-muted);
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+body.workbench-body .saved-query-row__preview > code {
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-control-font-size);
 }
 
 body.workbench-body .saved-query-actions {
