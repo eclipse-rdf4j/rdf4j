@@ -13,6 +13,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const {
+    chooseGraphView,
     deleteRepository,
     memoryRepositoryConfiguration,
     repositoryPageUrl,
@@ -163,8 +164,8 @@ test('the wheel still zooms the canvas after a data view was shown', async ({ pa
         Object.defineProperty(Navigator.prototype, 'userAgentData', { get: () => undefined });
     });
     const explorer = await loadAll(page);
-    await explorer.getByRole('tab', { name: 'Triples' }).click();
-    await explorer.getByRole('tab', { name: 'Graph' }).click();
+    await chooseGraphView(explorer, 'table');
+    await chooseGraphView(explorer, 'graph');
     const layer = explorer.locator('svg.graph-canvas > g').first();
     await expect(layer).toBeAttached();
     const scale = async () => Number(/scale\(([^)]+)\)/.exec((await layer.getAttribute('transform')) ?? '')?.[1]);

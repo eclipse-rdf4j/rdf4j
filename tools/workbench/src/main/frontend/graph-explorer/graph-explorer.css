@@ -562,71 +562,43 @@ html[data-theme="dark"] .graph-explorer {
   font-variant-numeric: tabular-nums;
 }
 
-/* View tabs: Graph | Triples | Cards | More views, drawn as one workbench-segmented control. */
-.graph-explorer #graph-explorer-app .view-strip {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-}
-
-.graph-explorer #graph-explorer-app .primary-view-tabs {
-  display: flex;
-  align-items: stretch;
-}
-
-.graph-explorer #graph-explorer-app :is(.primary-view-tabs > button, .view-menu > summary) {
+/* The View menu: one button named after the view shown (Graph, Triples, …) that opens the list of views. */
+.graph-explorer #graph-explorer-app .view-menu > summary {
   position: relative;
   display: inline-flex;
   height: var(--control-height);
   min-height: var(--control-height);
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin: 0;
-  padding: 0 12px;
+  gap: 8px;
+  padding: 0 10px 0 12px;
   border: 1px solid var(--line);
-  border-radius: 0;
-  color: var(--workbench-nav);
+  border-radius: var(--control-radius);
+  color: var(--ink);
   background: var(--panel);
-  font: 500 var(--workbench-control-font-size)/1.2 var(--sans);
+  font: 600 var(--workbench-control-font-size)/1.2 var(--sans);
   white-space: nowrap;
   cursor: pointer;
 }
 
-.graph-explorer #graph-explorer-app .primary-view-tabs > button + button,
-.graph-explorer #graph-explorer-app .view-menu > summary {
-  border-left-width: 0;
-}
-
-.graph-explorer #graph-explorer-app .primary-view-tabs > button:first-child {
-  border-top-left-radius: var(--control-radius);
-  border-bottom-left-radius: var(--control-radius);
-}
-
-.graph-explorer #graph-explorer-app .view-menu > summary {
-  border-top-right-radius: var(--control-radius);
-  border-bottom-right-radius: var(--control-radius);
-}
-
-.graph-explorer #graph-explorer-app :is(.primary-view-tabs > button, .view-menu > summary):hover {
-  color: var(--ink);
+.graph-explorer #graph-explorer-app .view-menu > summary:hover,
+.graph-explorer #graph-explorer-app .view-menu[open] > summary {
+  border-color: var(--accent);
   background: var(--panel-strong);
 }
 
-.graph-explorer #graph-explorer-app :is(.primary-view-tabs > button.is-active, .view-menu.is-active > summary, .view-menu[open] > summary) {
-  color: var(--ink);
-  background: var(--selected);
-  box-shadow: inset 0 -3px 0 var(--accent);
-  font-weight: 600;
+/* Another view is recommended for the loaded data: a dot on the menu, and "Recommended" on that view's row. */
+.graph-explorer #graph-explorer-app .view-menu > summary[data-recommended="true"]::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
-.graph-explorer #graph-explorer-app .recommended-mark {
-  color: var(--accent);
-  font-size: 18px;
-  line-height: 0;
-}
-
-/* Menus: the Layout, Tools and More views popovers are workbench-popover panels with option rows. */
+/* Menus: the View, Layout and Tools popovers are workbench-popover panels with option rows. */
 .graph-explorer #graph-explorer-app :is(.toolbar-menu, .view-menu) {
   position: relative;
 }
@@ -693,6 +665,17 @@ html[data-theme="dark"] .graph-explorer {
 
 .graph-explorer #graph-explorer-app .layout-menu .toolbar-menu-popover {
   width: 240px;
+}
+
+/* History and the Values and Labels switches: rows of the Tools menu in the compact toolbar only. */
+.graph-explorer #graph-explorer-app .toolbar-menu-popover .toolbar-compact-item {
+  display: none;
+}
+
+.graph-explorer #graph-explorer-app .toolbar-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line-soft);
 }
 
 /* Help (help-tip.tsx): a "?" button opens a panel with the details most readers can skip, such as the graph's
@@ -3199,7 +3182,7 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
  * beside the Workbench sidebar and beside an open query drawer, not to the window.
  * ------------------------------------------------------------------------- */
 @media (pointer: coarse), (max-width: 900px) {
-  .graph-explorer #graph-explorer-app :is(.primary-view-tabs > button, .view-menu > summary, .toolbar-menu > summary) {
+  .graph-explorer #graph-explorer-app :is(.view-menu > summary, .toolbar-menu > summary) {
     height: var(--workbench-touch-height);
     min-height: var(--workbench-touch-height);
   }
@@ -3236,10 +3219,10 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
 
 /*
  * The toolbar takes the first step that fits on one row (toolbar-fit.ts sets data-fit): its labels, then only its icons
- * (the labels stay in aria-label and title), then the narrow layout: the views on a row of their own, the actions
- * spread below. A narrow panel always takes the narrow layout (the container rules below).
+ * (the labels stay in aria-label and title), then its compact form, where history and the Values and Labels switches
+ * are rows of the Tools menu. It stays one row: the hints above it and the search on the canvas keep their places.
  */
-.graph-explorer #graph-explorer-app .graph-toolbar:is([data-fit="icons"], [data-fit="narrow"]) .toolbar-label {
+.graph-explorer #graph-explorer-app .graph-toolbar:is([data-fit="icons"], [data-fit="compact"]) .toolbar-label {
   display: none;
 }
 
@@ -3247,42 +3230,38 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   padding-inline: 10px;
 }
 
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] {
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] {
   gap: 6px;
   padding: 6px 8px;
 }
 
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] .view-strip {
-  order: -1;
-  width: 100%;
-}
-
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] :is(.primary-view-tabs, .primary-view-tabs > button, .view-menu) {
-  flex: 1 1 auto;
-}
-
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] .view-menu > summary {
-  width: 100%;
-}
-
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] .toolbar-actions {
-  min-width: 0;
-  flex: 1;
-  margin-left: 0;
-  justify-content: space-between;
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] .toolbar-actions {
   gap: 4px;
 }
 
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] .workbench-disclosure-chevron {
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] :is(.history-controls, .values-toggle, .labels-toggle) {
   display: none;
 }
 
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] :is(.toolbar-menu > summary, .workbench-action--secondary) {
-  padding-inline: 8px;
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] .panel-toggles > .workbench-action:not(.values-toggle, .labels-toggle) {
+  margin-left: 0;
+  border-radius: var(--control-radius);
 }
 
-.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="narrow"] .history-controls .workbench-action--icon {
-  width: 36px;
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] .toolbar-menu-popover .toolbar-compact-item {
+  display: grid;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] .toolbar-menu-popover .toolbar-menu-separator {
+  display: block;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] .toolbar-menu .workbench-disclosure-chevron {
+  display: none;
+}
+
+.graph-explorer #graph-explorer-app .graph-toolbar[data-fit="compact"] :is(.toolbar-menu > summary, .workbench-action--secondary) {
+  padding-inline: 8px;
 }
 
 @container graph-panel (max-width: 640px) {
@@ -3322,31 +3301,11 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
     padding: 6px 8px;
   }
 
-  .graph-explorer #graph-explorer-app .view-strip {
-    order: -1;
-    width: 100%;
-  }
-
-  .graph-explorer #graph-explorer-app .primary-view-tabs,
-  .graph-explorer #graph-explorer-app .primary-view-tabs > button,
-  .graph-explorer #graph-explorer-app .view-menu {
-    flex: 1 1 auto;
-  }
-
-  .graph-explorer #graph-explorer-app .view-menu > summary {
-    width: 100%;
-  }
-
   .graph-explorer #graph-explorer-app .toolbar-actions {
-    min-width: 0;
-    flex: 1;
-    margin-left: 0;
-    justify-content: space-between;
     gap: 4px;
   }
 
-
-  .graph-explorer #graph-explorer-app :is(.toolbar-menu, .graph-toolbar) .workbench-disclosure-chevron {
+  .graph-explorer #graph-explorer-app .toolbar-menu .workbench-disclosure-chevron {
     display: none;
   }
 

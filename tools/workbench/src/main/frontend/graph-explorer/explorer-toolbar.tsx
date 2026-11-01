@@ -73,13 +73,11 @@ export type ExplorerToolbarProps = {
   onMenuOpen: () => void;
 };
 
-const PRIMARY_VIEWS: ReadonlyArray<[ViewMode, string]> = [
-  ["graph", "Graph"],
-  ["table", "Triples"],
-  ["cards", "Cards"],
-];
-
-const MORE_VIEWS: ReadonlyArray<[ViewMode, string, string]> = [
+/** The views of the loaded graph, as the View menu offers them: the mode, its name and what it shows. */
+const VIEWS: ReadonlyArray<[ViewMode, string, string]> = [
+  ["graph", "Graph", "Resources and the links between them"],
+  ["table", "Triples", "Every statement as a row"],
+  ["cards", "Cards", "One card per resource"],
   ["matrix", "Matrix", "Connection density"],
   ["timeline", "Timeline", "Dates and events"],
   ["map", "Map", "Places and coordinates"],
@@ -91,7 +89,10 @@ function closeOnChoice(event: MouseEvent<HTMLDivElement>) {
   if ((event.target as Element).closest("button")) event.currentTarget.parentElement?.removeAttribute("open");
 }
 
-/** The explorer's one-row toolbar: query editor, views, history, what the graph shows, layout, tools, full screen. */
+/**
+ * The explorer's one-row toolbar: query editor, the View menu, history, what the graph shows, layout, tools, full
+ * screen. In its compact form (a phone) history and the Values and Labels switches are rows of the Tools menu.
+ */
 export function ExplorerToolbar(props: ExplorerToolbarProps) {
   const { menuRefs, onMenuOpen, viewMode, recommendedView } = props;
   // Only one toolbar menu is open at a time.
@@ -103,8 +104,20 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
     });
     onMenuOpen();
   };
-  const secondaryViewActive = MORE_VIEWS.some(([mode]) => mode === viewMode);
-  // Labels while everything fits on one row with them, then icons, then the narrow layout (toolbar-fit.ts): measured
+  const currentView = VIEWS.find(([mode]) => mode === viewMode)?.[1] ?? "Graph";
+  const otherRecommended = recommendedView !== viewMode && recommendedView !== "graph";
+  // In the compact toolbar these buttons are rows of the Tools menu (graph-explorer.css shows one or the other).
+  const compactItems: ToolbarMenuItem[] = [
+    { label: "Undo", description: `The last graph change (${HISTORY_KEYS.undo.shown})`, onSelect: props.onUndo,
+      disabled: !props.canUndo },
+    { label: "Redo", description: `The last undone graph change (${HISTORY_KEYS.redo.shown})`, onSelect: props.onRedo,
+      disabled: !props.canRedo },
+    { label: "Show values and types as nodes", onSelect: props.onToggleValues, pressed: props.showValues,
+      disabled: !props.hasNodes },
+    { label: "Show all relation labels", onSelect: props.onToggleLabels, pressed: props.showAllEdgeLabels,
+      disabled: !props.hasLinks },
+  ];
+  // Labels while everything fits on one row with them, then icons, then the compact form (toolbar-fit.ts): measured
   // after every render, since a filter count or the chosen view's name changes the width, and whenever the panel resizes.
   const toolbarRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<ToolbarFit>({ level: 0, widths: [] });
@@ -136,51 +149,34 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
         <Icon name="query" />
         <span className="toolbar-label">Query editor</span>
       </button>
-      <nav className="view-strip" aria-label="Explore the loaded RDF graph">
-        <div className="primary-view-tabs" role="tablist" aria-label="Primary data views">
-          {PRIMARY_VIEWS.map(([mode, label]) => (
+      <details ref={menuRefs.view} className="view-menu" onToggle={opened("view")}>
+        <summary
+          aria-label={`View: ${currentView}`}
+          title={otherRecommended ? "Choose a view · another view is recommended for this data" : "Choose a view"}
+          data-recommended={otherRecommended ? "true" : undefined}
+        >
+          {currentView}
+          <Icon name="chevron" className="workbench-disclosure-chevron" />
+        </summary>
+        <div className="view-menu-popover" onClick={closeOnChoice}>
+          {VIEWS.map(([mode, label, description]) => (
             <button
               key={mode}
               type="button"
-              role="tab"
-              aria-selected={viewMode === mode}
+              data-view={mode}
+              aria-current={viewMode === mode ? "true" : undefined}
               className={viewMode === mode ? "is-active" : ""}
               onClick={() => props.onViewMode(mode)}
             >
-              {label}
-              {recommendedView === mode && mode !== "graph" ? (
-                <span className="recommended-mark" title="Recommended for this data">•</span>
-              ) : null}
+              <span>{label}</span>
+              <small>
+                {recommendedView === mode && mode !== "graph" ? "Recommended · " : ""}
+                {description}
+              </small>
             </button>
           ))}
         </div>
-        <details
-          ref={menuRefs.view}
-          className={`view-menu${secondaryViewActive ? " is-active" : ""}`}
-          onToggle={opened("view")}
-        >
-          <summary>
-            {secondaryViewActive ? `${viewMode[0].toUpperCase()}${viewMode.slice(1)}` : "More views"}
-            <Icon name="chevron" className="workbench-disclosure-chevron" />
-          </summary>
-          <div className="view-menu-popover" onClick={closeOnChoice}>
-            {MORE_VIEWS.map(([mode, label, description]) => (
-              <button
-                key={mode}
-                type="button"
-                className={viewMode === mode ? "is-active" : ""}
-                onClick={() => props.onViewMode(mode)}
-              >
-                <span>{label}</span>
-                <small>
-                  {recommendedView === mode ? "Recommended · " : ""}
-                  {description}
-                </small>
-              </button>
-            ))}
-          </div>
-        </details>
-      </nav>
+      </details>
       <div className="toolbar-actions">
         <div className="toolbar-group history-controls" role="group" aria-label="Workspace history">
           <button
@@ -208,7 +204,7 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
         </div>
         <div className="toolbar-group panel-toggles" role="group" aria-label="What the graph shows">
           <button
-            className="workbench-action workbench-action--secondary"
+            className="workbench-action workbench-action--secondary values-toggle"
             type="button"
             aria-label="Show values and types as nodes"
             title="Show values and types as nodes"
@@ -220,7 +216,7 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
             <span className="toolbar-label">Values</span>
           </button>
           <button
-            className="workbench-action workbench-action--secondary"
+            className="workbench-action workbench-action--secondary labels-toggle"
             type="button"
             aria-label="Show all relation labels"
             title="Show all relation labels"
@@ -275,6 +271,10 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
             <Icon name="chevron" className="workbench-disclosure-chevron" />
           </summary>
           <div className="toolbar-menu-popover" onClick={closeOnChoice}>
+            {compactItems.map((item) => (
+              <MenuItem key={item.label} item={item} className="toolbar-compact-item" />
+            ))}
+            <div className="toolbar-compact-item toolbar-menu-separator" role="separator" />
             {props.toolItems.map((item) => (
               <MenuItem key={item.label} item={item} />
             ))}
@@ -299,12 +299,12 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
 }
 
 /** A menu row: the label names it; a description, shown under the label, describes it without renaming it. */
-function MenuItem({ item, strong = false }: { item: ToolbarMenuItem; strong?: boolean }) {
+function MenuItem({ item, strong = false, className }: { item: ToolbarMenuItem; strong?: boolean; className?: string }) {
   const descriptionId = useId();
   return (
     <button
       type="button"
-      className={item.danger ? "danger-action" : undefined}
+      className={[item.danger ? "danger-action" : "", className ?? ""].filter(Boolean).join(" ") || undefined}
       aria-pressed={item.pressed}
       aria-label={item.description ? item.label : undefined}
       aria-describedby={item.description ? descriptionId : undefined}

@@ -114,6 +114,7 @@ import { useWorkspaceLibrary } from "./use-workspace-library.tsx";
 import { snapshotSourceOrNull } from "./workspace-snapshots.ts";
 import type { WorkspaceSnapshotMetadata } from "./workspace-snapshot-store.ts";
 import { repositoryScope } from "./repository-identity.ts";
+import { copyToClipboard } from "./clipboard.ts";
 
 export type GraphExplorerProps = {
   /** The Workbench context path, e.g. /rdf4j-workbench. */
@@ -3603,7 +3604,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
 
   const copyText = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       setStatus("Copied.");
     } catch {
       setStatus("Copying is not available here; select the text instead.");

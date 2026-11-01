@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigSecrets;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
+import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.WriterConfig;
@@ -92,9 +93,13 @@ public class SummaryServlet extends TransformationServlet {
 	public void service(TupleResultBuilder builder)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException, QueryResultHandlerException {
 		builder.metadata(EFFECTIVE_CONFIG_TURTLE, getEffectiveConfigTurtle());
+		// This servlet outlives a change of title (Save and restart keeps the repository object): ask for the current
+		// one.
+		RepositoryInfo current = manager.getRepositoryInfo(info.getId());
+		RepositoryInfo shown = current != null ? current : info;
 		builder.start("id", "description", "location", "server", "size", "contexts");
 		builder.link(List.of(INFO));
-		builder.result(info.getId(), info.getDescription(), info.getLocation(), getServer(), null, null);
+		builder.result(shown.getId(), shown.getDescription(), shown.getLocation(), getServer(), null, null);
 		builder.end();
 	}
 
