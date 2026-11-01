@@ -205,7 +205,7 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 	public SailSourceModel(SailStore store) {
 		// Store-backed models own a private NONE publication independently of the outer changeset.
 		if (store instanceof LmdbSailStore lmdb) {
-			Object owner = new Object();
+			Object owner = new LmdbSailStore.PrivateModelWriterOwner();
 			source = lmdb.getExplicitSailSource(owner);
 			ownedWriterCleanup = () -> lmdb.completeWriterRollback(owner);
 		} else {
