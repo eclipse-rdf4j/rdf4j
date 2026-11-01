@@ -12,17 +12,22 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_env;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,7 +35,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
 
-/** Index rebuilds must keep their native source cursor valid while the actual map grows. */
+/** Real adjacency growth must preserve every row, the committed prefix, and reader ownership. */
 class LmdbIndexRebuildGrowthTest {
 
 	@TempDir(cleanup = CleanupMode.ON_SUCCESS)
@@ -39,11 +44,12 @@ class LmdbIndexRebuildGrowthTest {
 	@ParameterizedTest
 	@CsvSource({ "2,false,false", "2,true,false", "7,false,false", "7,true,false",
 			"2,false,true", "2,true,true", "7,false,true", "7,true,true" })
-	void capacityDerivedStatementRebuildKeepsEverySourceRow(int format, boolean inline, boolean inferred)
+	void capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int format, boolean inline, boolean inferred)
 			throws Exception {
-		Path output = directory.resolve("rebuild-child.log");
+		Path output = directory.resolve("adjacency-growth-child.log");
 		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-		Process child = new ProcessBuilder(java, "-ea", "-XX:-CreateCoredumpOnCrash",
+		Process child = new ProcessBuilder(java, "-ea", "-Xmx384m", "-XX:ActiveProcessorCount=2",
+				"-XX:-CreateCoredumpOnCrash",
 				"-XX:ErrorFile=" + directory.resolve("hs_err_pid%p.log"), "-cp", System.getProperty("java.class.path"),
 				GrowthChild.class.getName(), directory.toString(), Integer.toString(format),
 				Boolean.toString(inline), Boolean.toString(inferred))
@@ -52,10 +58,10 @@ class LmdbIndexRebuildGrowthTest {
 						.start();
 		try {
 			boolean completed = child.waitFor(60, TimeUnit.SECONDS);
-			assertThat(completed).as("Native rebuild child must finish; evidence: %s", output).isTrue();
+			assertThat(completed).as("Native adjacency growth child must finish; evidence: %s", output).isTrue();
 			String evidence = Files.readString(output);
 			assertThat(child.exitValue()).as(evidence).isZero();
-			assertThat(evidence).contains("ACTUAL_REBUILD_GROWTH=", "EXACT_REBUILT_ROWS=");
+			assertThat(evidence).contains("ACTUAL_ADJACENCY_GROWTH=", "EXACT_GROWN_ROWS=");
 		} catch (InterruptedException failure) {
 			Thread.currentThread().interrupt();
 			throw failure;
@@ -80,6 +86,9 @@ class LmdbIndexRebuildGrowthTest {
 	public static final class GrowthChild {
 		private static final String INDEXES = "spoc,spco,sopc,socp,scpo,scop,psoc,psco,posc,pocs,pcso,pcos,"
 				+ "ospc,oscp,opsc,opcs,ocsp,ocps,cspo,csop,cpso,cpos,cosp,cops";
+		private static final long PREFIX = 9_000_000;
+		private static final long OTHER_PLANE = 8_000_000;
+		private static final long ROLLED_BACK = 7_000_000;
 
 		public static void main(String[] arguments) throws Exception {
 			Path directory = Path.of(arguments[0]);
@@ -91,75 +100,128 @@ class LmdbIndexRebuildGrowthTest {
 			// Choose the fresh fixture dialect before creating any native tables; no existing IDs are relabeled.
 			StoreProperties properties = new StoreProperties(directory.toFile()).setVersion(Integer.toString(format))
 					.setInlineLiterals(inline);
-			long before;
 			int rows;
-			try (TripleStore initial = new TripleStore(data.toFile(), properties, config("spoc", inline), null)) {
-				before = nativeMapSize(initial.getTxnManager());
-				// Each index stores four nonempty encoded IDs. Across all 24 indexes the key bytes alone exceed
-				// this observed map capacity; no page-density or timing assumption is needed to require growth.
-				rows = Math.toIntExact(before / (4L * INDEXES.split(",").length) + 1);
+			try (TripleStore initial = new TripleStore(data.toFile(), properties, config(INDEXES, inline), null)) {
 				initial.startTransaction();
-				for (int index = 0; index < rows; index++) {
-					assertThat(initial.storeTriple(index + 1L, 2, 3, 4, !inferred)).isTrue();
-				}
+				assertThat(initial.storeTriple(PREFIX, 9, PREFIX + 1, 0, !inferred)).isTrue();
+				assertThat(initial.storeTriple(OTHER_PLANE, 8, OTHER_PLANE + 1, 0, inferred)).isTrue();
 				initial.commit();
-				assertThat(nativeMapSize(initial.getTxnManager()))
-						.as("single-index fixture must retain the observed capacity before rebuilding")
-						.isEqualTo(before);
+				long before = nativeMapSize(initial.getTxnManager());
+				// Each distinct subject needs a REFERENCES metadata entry: a 9-byte key and an 8-byte count.
+				// Those payload bytes alone exceed this observed map, independently of page density, logical
+				// order preferences, or a write forecast. Repeated quads would not establish this lower bound.
+				rows = Math.toIntExact(before / 17L + 1);
+				assertThat(rows).isLessThan((int) ROLLED_BACK);
+				long revision = initial.getDataRevision();
+				try (Txn pinned = initial.getTxnManager().createReadTxnPinned(initial::getDataRevision);
+						RecordIterator prefix = initial.getTriples(pinned, PREFIX, 9, PREFIX + 1, 0, !inferred)) {
+					assertThat(prefix.next()).containsExactly(PREFIX, 9, PREFIX + 1, 0);
+					initial.startTransaction();
+					for (int index = 0; index < rows; index++) {
+						assertThat(initial.storeTriple(index + 1L, 2, 3, 4, !inferred)).isTrue();
+					}
+					initial.commit();
+					long after = nativeMapSize(initial.getTxnManager());
+					assertThat(after).as("the unique metadata footprint must require actual growth")
+							.isGreaterThan(before);
+					assertThat(initial.getDataRevision()).isEqualTo(revision + 1);
+					assertThatThrownBy(prefix::next).isInstanceOf(LmdbSailStore.MapResizeConflictException.class);
+					System.out.println("ACTUAL_ADJACENCY_GROWTH=" + before + "->" + after);
+				}
+				verifyRows(initial, rows, inferred);
+				verifyRollback(initial, rows, inferred);
 				verifyRows(initial, rows, inferred);
 			}
 			properties.save();
-			StoreProperties loaded = new StoreProperties(directory.toFile());
-			assertThat(loaded.load()).isTrue();
-			try (TripleStore rebuilt = new TripleStore(data.toFile(), loaded,
-					config(INDEXES, inline), null)) {
-				assertThat(nativeMapSize(rebuilt.getTxnManager()))
-						.as("construction must retain the committed layout without rebuilding its trees")
-						.isEqualTo(before);
-				rebuilt.startBackgroundIndexRebuild();
-				assertThat(rebuilt.awaitIndexRebuild(45, TimeUnit.SECONDS)).as(rebuilt.indexRebuildStatus()).isTrue();
-				long after = nativeMapSize(rebuilt.getTxnManager());
-				assertThat(after).isGreaterThan(before);
-				System.out.println("ACTUAL_REBUILD_GROWTH=" + before + "->" + after);
-				verifyRows(rebuilt, rows, inferred);
-			}
-			loaded.save();
-			for (String spec : INDEXES.split(",")) {
-				assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, spec + spec))
-						.isEqualTo(inferred ? 0 : rows);
-				assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, spec + spec + "-inf"))
-						.isEqualTo(inferred ? rows : 0);
-			}
 			StoreProperties cold = new StoreProperties(directory.toFile());
 			assertThat(cold.load()).isTrue();
+			assertThat(cold.getVersion()).isEqualTo(Integer.toString(format));
+			assertThat(cold.getInlineLiterals()).isEqualTo(inline);
 			try (TripleStore reopened = new TripleStore(data.toFile(), cold,
 					config(INDEXES, inline), null)) {
 				verifyRows(reopened, rows, inferred);
 			}
-			System.out.println("EXACT_REBUILT_ROWS=" + rows);
+			System.out.println("EXACT_GROWN_ROWS=" + rows + ",FORMAT=" + format + ",INLINE=" + inline
+					+ ",INFERRED=" + inferred);
 		}
 
 		private static void verifyRows(TripleStore store, int rows, boolean inferred) throws Exception {
-			Set<Long> subjects = new HashSet<>();
-			try (var transaction = store.getTxnManager().createReadTxn();
-					RecordIterator statements = store.getTriples(transaction, -1, 2, 3, 4, !inferred)) {
-				long[] statement;
-				while ((statement = statements.next()) != null) {
-					assertThat(statement).containsExactly(statement[0], 2, 3, 4);
-					assertThat(subjects.add(statement[0])).isTrue();
+			store.getTxnManager().doWith((stack, transaction) -> {
+				LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(transaction);
+				for (boolean explicit : new boolean[] { true, false }) {
+					boolean target = explicit != inferred;
+					int grownRows = target ? rows : 0;
+					long prefix = target ? PREFIX : OTHER_PLANE;
+					long predicate = target ? 9 : 8;
+					Set<Long> expected = new HashSet<>();
+					expected.add(prefix);
+					for (long subject = 1; subject <= grownRows; subject++) {
+						expected.add(subject);
+					}
+					for (String order : List.of("psoc", "posc")) {
+						Set<Long> subjects = new HashSet<>();
+						try (RecordIterator statements = adjacency.scan(transaction, -1, -1, -1, -1, explicit,
+								order)) {
+							for (long[] quad = statements.next(); quad != null; quad = statements.next()) {
+								assertThat(quad).containsExactly(quad[0], quad[0] == prefix ? predicate : 2,
+										quad[0] == prefix ? prefix + 1 : 3, quad[0] == prefix ? 0 : 4);
+								assertThat(subjects.add(quad[0])).as("no duplicate %s record", order).isTrue();
+							}
+						}
+						assertEquals(expected, subjects, order + " must preserve every complete quad and value ID");
+					}
+					assertThat(adjacency.count(transaction, explicit)).isEqualTo(grownRows + 1);
+					assertThat(adjacency.predicateCount(transaction, 2, explicit)).isEqualTo(grownRows);
+					assertThat(adjacency.contextCount(transaction, 0, explicit)).isEqualTo(1);
+					assertThat(adjacency.contextCount(transaction, 4, explicit)).isEqualTo(grownRows);
+					assertThat(adjacency.rowCount(transaction, 2, 3, explicit, true)).isEqualTo(grownRows);
+					assertThat(adjacency.rowCount(transaction, 2, 1, explicit, false)).isEqualTo(target ? 1 : 0);
+				}
+				assertThat(adjacency.contextTotal(transaction, 0)).isEqualTo(2);
+				assertThat(adjacency.contextTotal(transaction, 4)).isEqualTo(rows);
+				assertThat(adjacency.contextTotal(transaction, 17)).isZero();
+				assertThat(adjacency.isIdReferenced(transaction, PREFIX)).isTrue();
+				assertThat(adjacency.isIdReferenced(transaction, OTHER_PLANE)).isTrue();
+				assertThat(adjacency.isIdReferenced(transaction, ROLLED_BACK)).isFalse();
+				return null;
+			});
+			try (Txn transaction = store.getTxnManager().createReadTxn();
+					LmdbContextIdIterator contexts = store.getContexts(transaction)) {
+				Set<Long> actual = new HashSet<>();
+				for (long[] context = contexts.next(); context != null; context = contexts.next()) {
+					assertThat(actual.add(context[0])).isTrue();
+				}
+				assertThat(actual).containsExactlyInAnyOrder(0L, 4L);
+				for (long subject : new long[] { 1, rows / 2L, rows }) {
+					try (RecordIterator prefix = store.getTriples(transaction, subject, 2, -1, 4, !inferred)) {
+						assertThat(prefix.next()).containsExactly(subject, 2, 3, 4);
+						assertThat(prefix.next()).isNull();
+					}
 				}
 			}
-			assertThat(subjects).hasSize(rows);
-			Set<Long> expected = new HashSet<>();
-			for (long subject = 1; subject <= rows; subject++) {
-				expected.add(subject);
+		}
+
+		private static void verifyRollback(TripleStore store, int rows, boolean inferred) throws IOException {
+			long revision = store.getDataRevision();
+			List<Long> removed = new ArrayList<>();
+			store.startTransaction();
+			for (long subject : new long[] { PREFIX, 1, rows }) {
+				store.removeTriplesByContext(subject, -1, -1, -1, !inferred, quad -> removed.add(quad[0]));
 			}
-			assertEquals(expected, subjects);
+			assertThat(removed).containsExactly(PREFIX, 1L, (long) rows);
+			assertThat(store.storeTriple(ROLLED_BACK, 7, ROLLED_BACK + 1, 17, !inferred)).isTrue();
+			LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(store.writeTxn);
+			assertThat(adjacency.count(store.writeTxn, !inferred)).isEqualTo(rows - 1);
+			assertThat(adjacency.count(store.writeTxn, inferred)).isEqualTo(1);
+			assertThat(adjacency.contains(store.writeTxn, PREFIX, 9, PREFIX + 1, 0, !inferred)).isFalse();
+			assertThat(adjacency.contains(store.writeTxn, ROLLED_BACK, 7, ROLLED_BACK + 1, 17, !inferred)).isTrue();
+			store.rollback();
+			assertThat(store.getDataRevision()).isEqualTo(revision);
 		}
 
 		private static LmdbStoreConfig config(String indexes, boolean inline) {
 			return new LmdbStoreConfig(indexes).setInlineLiterals(inline)
-					.setTripleDBSize(Math.toIntExact(LmdbUtil.MIN_FREE_SPACE * INDEXES.split(",").length))
+					.setTripleDBSize(1L << 20)
 					.setForceSync(false)
 					.setSketchEstimatorEnabled(false)
 					.setValueHashCacheEnabled(false);

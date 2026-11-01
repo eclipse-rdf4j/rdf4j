@@ -178,5 +178,206 @@
     ],
     "validation": "Static diff-check and apply-check against base + immutable additive patch pass. New replacement body is byte-for-byte unchanged by this patch. Owner should rerun the existing non-delayed pair plus the proven pinned pair after integration."
   },
-  "runtime_validation": "Phase B liveness11, held-generation1, authority/config/corruption5 and GC4 pass; two malformed-format cases rerun after asserting their distinct existing rejection reasons. Test-only replacements, no remaining retired-worker family waived."
+  "runtime_validation": "Phase B liveness11, held-generation1, authority/config/corruption5 and GC4 pass; two malformed-format cases rerun after asserting their distinct existing rejection reasons. Test-only replacements, no remaining retired-worker family waived.",
+  "phase_c": {
+    "title": "Approved phase C9 test-only current-contract retargeting",
+    "patch": "retired-phase-c9-tests-after-b0683562.patch",
+    "sha256": "5973b9ffa76505f70b06d6543f0734942aab3b1636ed064514c6d7648784c843",
+    "diff_base": "b0683562d4d34115788993efbdf7997494bd4ac8",
+    "base_note": "Incremental after the published native-fault retarget. Its AutoGrow helper and assertions are preserved byte-for-byte; earlier additive/B13/GC2 paths are excluded.",
+    "scope": [
+      "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbIndexRebuildGrowthTest.java",
+      "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreAutoGrowTest.java"
+    ],
+    "runtime": "Owner gate31/31 passed; all nine mapped replacements executed with exact native hit proof.",
+    "static_checks": [
+      "git diff --check passed",
+      "temporary-index git apply --cached --check against b0683562 passed",
+      "all changed lines <=120 columns",
+      "AutoGrow diff contains only imports, the one replaced method and its retired helper replacement"
+    ],
+    "next_runtime_selection": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow,TripleStoreAutoGrowTest#testAdjacencySetupRetryReopensDroppedDbiAfterAbort",
+    "remaining_old20": "Publication/mutation 15 and process-crash 5 remain unresolved and unchanged; this patch does not waive or delete them.",
+    "mappings": [
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[1]",
+        "matrix_id": 3,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[1]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[2]",
+        "matrix_id": 4,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[2]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[3]",
+        "matrix_id": 5,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[3]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[4]",
+        "matrix_id": 6,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[4]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[5]",
+        "matrix_id": 7,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[5]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[6]",
+        "matrix_id": 8,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[6]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[7]",
+        "matrix_id": 9,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[7]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[8]",
+        "matrix_id": 10,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[8]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "TripleStoreAutoGrowTest#testReindexRetryReopensDroppedDbiAfterAbort",
+        "matrix_id": 13,
+        "old_guarantee": "After dropping native DBIs and aborting a capacity-limited writer, retry must reopen valid handles and preserve exact pattern/context rows through reopen.",
+        "replacement": "TripleStoreAutoGrowTest#testAdjacencySetupRetryReopensDroppedDbiAfterAbort",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "Actual raw legacy DBIs, four distinct quads across explicit/inferred and default/named contexts.",
+          "Same-environment successful reads of all four populated source trees and all five native legacy drops.",
+          "Exact real metadata format-key mdb_put receives one MDB_MAP_FULL after copied native plane totals are verified.",
+          "All writer cursors close before abort, no closed cursor operation/double-close, abort before same-environment resize.",
+          "Replacement writer epoch is later; successful new DBI opens are proven without requiring changed integer/pointer values.",
+          "Only complete format write and successful native commit finish recovery; exact event and attempt counts.",
+          "Full both-direction/both-plane membership/value IDs, row/context/reference metadata, bound queries, rollback and cold reopen."
+        ],
+        "hit_proof_marker": "ACTUAL_SETUP_DBI_RETRY=[fault, abort, grow, reopen, format, commit]",
+        "retired_assumption": "no-op background reindex callback",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.TripleStoreAutoGrowTest.xml"
+      }
+    ]
+  }
 }

@@ -794,7 +794,9 @@ class LmdbSnapshotValueLifetimeTest {
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void softGrowthAllowsFrozenCommitBeforeTheWritingSnapshotRetires(LmdbSailStore.MapResizeKind kind,
 			@TempDir File dataDir) throws Exception {
-		long pressuredMap = (kind == LmdbSailStore.MapResizeKind.VALUE_STORE ? 8L : 4L) * 1024 * 1024;
+		// The persistent adjacency control occupies 3,891,200 bytes for this input. Five MiB retains the
+		// unchanged 512 KiB hard reserve while crossing the 10% soft watermark; four MiB cannot do both.
+		long pressuredMap = (kind == LmdbSailStore.MapResizeKind.VALUE_STORE ? 8L : 5L) * 1024 * 1024;
 		SoftPressureStore store = new SoftPressureStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(kind == LmdbSailStore.MapResizeKind.TRIPLE_STORE ? pressuredMap

@@ -11554,7 +11554,8 @@ class LmdbSailStore implements SailStore {
 			List<Statement> statements = Arrays.asList(batch.statements).subList(0, batch.size);
 			long valueEstimate = valueStore.estimateWriteBytes(statements);
 			// An initial run import writes no triple index entry until it completes.
-			long tripleEstimate = runImport != null ? 0L : tripleStore.estimateWriteBytes(statements);
+			// This sink's batch belongs to exactly one explicit/inferred plane, unlike a merged preflight.
+			long tripleEstimate = runImport != null ? 0L : tripleStore.estimateSinglePlaneWriteBytes(statements);
 			long bytes = LmdbUtil.saturatedAdd(valueEstimate, tripleEstimate);
 			// Reserve deferred native bookkeeping separately from batch payload. A chunk's size is bounded
 			// even when the maps are large enough that a percentage alone would allow unbounded dirty pages.

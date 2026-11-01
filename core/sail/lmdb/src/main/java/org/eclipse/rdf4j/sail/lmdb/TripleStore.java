@@ -3900,14 +3900,22 @@ class TripleStore implements Closeable {
 	}
 
 	long estimateWriteBytes(List<Statement> statements) {
-		long estimate = 0L;
-		long perIndexBytes = 2L * TripleIndex.MAX_KEY_LENGTH + 64L;
-		long perStatementBytes = saturatedAdd(saturatedMultiply(indexes.size() + stagingIndexes.size(), perIndexBytes),
-				64L);
-		for (Statement ignored : statements) {
-			estimate = saturatedAdd(estimate, perStatementBytes);
+		// The persistent physical schema is fixed; configured logical query orders do not multiply writes.
+		// Preserve every input row because a merged preflight may contain the same statement in both planes.
+		return estimateWriteBytes(statements.size());
+	}
+
+	/** Advisory estimate for one plane's ordered input; only adjacent equal quads share one mutation unit. */
+	long estimateSinglePlaneWriteBytes(List<Statement> statements) {
+		long runs = 0L;
+		Statement previous = null;
+		for (Statement statement : statements) {
+			if (!statement.equals(previous)) {
+				runs++;
+			}
+			previous = statement;
 		}
-		return estimate;
+		return estimateWriteBytes(runs);
 	}
 
 	long estimateWriteBytes(SailSource.WritePreflight preflight) {
