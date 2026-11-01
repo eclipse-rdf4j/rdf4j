@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -424,6 +425,97 @@ class LmdbValueGcOwnershipTest {
 	@ValueSource(booleans = { false, true })
 	void legacyCloseRetainsUnusedTermsWhileObjectIndexBuildIsDelayed(boolean inlining) throws Exception {
 		assertLegacyCloseRetainsUnusedTerms(inlining, true);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void legacyPinnedSnapshotBeforeClearRetainsTermsUntilRetirement(boolean inlining) throws Exception {
+		writeLegacyProperties();
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI predicate = vf.createIRI("urn:ownership:pinned:predicate");
+		IRI oldSubject = vf.createIRI("urn:ownership:pinned:old-row");
+		Literal component = vf.createLiteral("shared pinned triple-term dictionary component");
+		TripleTerm inner = vf.createTripleTerm(vf.createIRI("urn:ownership:pinned:inner"), predicate, component);
+		TripleTerm removed = vf.createTripleTerm(vf.createIRI("urn:ownership:pinned:removed"), predicate, inner);
+		TripleTerm retained = vf.createTripleTerm(vf.createIRI("urn:ownership:pinned:retained"), predicate, component);
+		LmdbStoreConfig options = config().setTripleIndexes("spoc,psoc")
+				.setInlineLiterals(inlining)
+				.setValueEvictionInterval(60_000L)
+				.setAsyncValueCleanup(false);
+		LmdbStore store = openLegacyWithVerifiedCounts(options);
+		long retainedId;
+		long componentId;
+		try {
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(oldSubject, predicate, removed);
+				connection.commit();
+			}
+			LmdbSailStore backing = store.getBackingStore();
+			ValueStore values = (ValueStore) store.getValueFactory();
+			long removedId = values.getId(removed);
+			assertThat(unusedIdCount(values)).isZero();
+			try (SailDataset pinned = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT)) {
+				try (var statements = pinned.getStatements(oldSubject, predicate, null)) {
+					assertThat(statements.hasNext()).isTrue();
+					assertThat(statements.next().getObject()).isEqualTo(removed);
+					assertThat(statements.hasNext()).isFalse();
+				}
+				assertThat(backing.getTripleStore().getTxnManager().minPinnedSnapshotRevision())
+						.as("pin the real statement snapshot before clearing its rows")
+						.isNotEqualTo(Long.MAX_VALUE);
+				try (NotifyingSailConnection connection = store.getConnection()) {
+					connection.begin();
+					connection.clear();
+					connection.commit();
+					connection.begin();
+					connection.addStatement(vf.createIRI("urn:ownership:pinned:new-row"), predicate, retained);
+					connection.addStatement(vf.createIRI("urn:ownership:pinned:direct-component"), predicate,
+							component);
+					connection.commit();
+					try (var statements = connection.getStatements(oldSubject, predicate, null, false)) {
+						assertThat(statements.hasNext()).isFalse();
+					}
+				}
+				// Automatic maintenance must respect the pin. Explicit complete-work recovery deliberately
+				// requires no protected readers and therefore must not be used until this dataset is closed.
+				backing.completePostCommitValueMaintenance();
+				assertThat(backing.hasRetiredValueIds()).as("the old reader retains the cleared terms").isTrue();
+				assertThat(unusedIdCount(values)).as("no retained ID may reach the reusable-value backlog").isZero();
+				retainedId = values.getId(retained);
+				componentId = values.getId(component);
+				assertThat(retainedId).as("a newer term cannot reuse an ID visible in the pinned snapshot")
+						.isNotEqualTo(removedId);
+				assertThat(values.getValue(removedId)).isEqualTo(removed);
+				try (var statements = pinned.getStatements(oldSubject, predicate, null)) {
+					assertThat(statements.hasNext()).isTrue();
+					assertThat(statements.next().getObject()).isEqualTo(removed);
+					assertThat(statements.hasNext()).isFalse();
+				}
+			}
+			LmdbGcTestMaintenance.awaitNoPinnedTripleSnapshot(store);
+			LmdbGcTestMaintenance.drainRetirements(backing);
+			assertThat(backing.hasRetiredValueIds()).isFalse();
+			assertThat(unusedIdCount(values)).as("retiring the reader permits bounded unused-value publication")
+					.isPositive();
+		} finally {
+			store.shutDown();
+		}
+		assertThat(unusedIdCount()).as("close preserves the durable unused backlog for post-ready reclamation")
+				.isPositive();
+		store = new LmdbStore(directory.toFile(), options);
+		store.init();
+		try {
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			ValueStore values = (ValueStore) store.getValueFactory();
+			assertThat(unusedIdCount(values)).isZero();
+			assertThat(values.getId(retained)).isEqualTo(retainedId);
+			assertThat(values.getValue(retainedId)).isEqualTo(retained);
+			assertThat(values.getId(component)).isEqualTo(componentId);
+			assertThat(values.getValue(componentId)).isEqualTo(component);
+		} finally {
+			store.shutDown();
+		}
 	}
 
 	private void assertLegacyCloseRetainsUnusedTerms(boolean inlining, boolean delayIndex) throws Exception {

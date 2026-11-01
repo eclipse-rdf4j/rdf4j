@@ -16,7 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -130,7 +132,7 @@ class LmdbStatsLoggingTest {
 						.contains("before writes", dataDir.toString());
 				assertThat(after.valueDatabases().get("main").entries())
 						.isGreaterThan(before.valueDatabases().get("main").entries());
-				assertThat(after.tripleDatabases().get("contexts").entries()).isEqualTo(1);
+				assertSingleCommittedContext(store, after, 2);
 				assertThat(events(Level.TRACE).getLast().getFormattedMessage()).contains("after commit");
 
 				// Once the store is populated, approval starts the next native transaction even when its writes buffer.
@@ -145,7 +147,7 @@ class LmdbStatsLoggingTest {
 	@ParameterizedTest
 	@EnumSource(value = IsolationLevels.class, names = { "NONE", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT",
 			"SERIALIZABLE" })
-	void logsWritesAcrossIsolationLevels(IsolationLevels isolation) {
+	void logsWritesAcrossIsolationLevels(IsolationLevels isolation) throws IOException {
 		LmdbStore store = new LmdbStore(dataDir, config());
 		store.init();
 		try (NotifyingSailConnection snapshotReader = store.getConnection();
@@ -174,11 +176,26 @@ class LmdbStatsLoggingTest {
 
 			appender.list.clear();
 			before = store.getLmdbStats();
+			TripleStore triples = store.getBackingStore().getTripleStore();
+			long dataRevision = triples.getDataRevision();
+			long nativeGeneration = triples.getNativeCommitGeneration();
 			connection.begin(isolation);
 			connection.setNamespace("rdf", RDF.NAMESPACE);
 			connection.commit();
-			// Namespace-only changes do not open a native write transaction.
-			assertThat(store.getLmdbStats()).isEqualTo(before);
+			// Namespaces have native authority, but a namespace-only commit must not rewrite RDF or values.
+			LmdbStats afterNamespace = store.getLmdbStats();
+			assertThat(afterNamespace.valueDatabases()).isEqualTo(before.valueDatabases());
+			var beforeRdf = new LinkedHashMap<>(before.tripleDatabases());
+			var afterRdf = new LinkedHashMap<>(afterNamespace.tripleDatabases());
+			var oldNamespace = beforeRdf.remove(TripleStore.NAMESPACE_DATABASE_NAME);
+			var newNamespace = afterRdf.remove(TripleStore.NAMESPACE_DATABASE_NAME);
+			assertThat(oldNamespace).isNotNull();
+			assertThat(newNamespace).isNotNull();
+			assertThat(newNamespace.entries()).isGreaterThan(oldNamespace.entries());
+			assertThat(afterRdf).isEqualTo(beforeRdf);
+			assertThat(triples.getDataRevision()).isEqualTo(dataRevision);
+			assertThat(triples.getNativeCommitGeneration()).isEqualTo(nativeGeneration + 1);
+			assertThat(triples.readNamespaceSnapshot()).containsExactlyEntriesOf(Map.of("rdf", RDF.NAMESPACE));
 			assertThat(snapshots(Level.TRACE)).isEmpty();
 
 			appender.list.clear();
@@ -188,6 +205,13 @@ class LmdbStatsLoggingTest {
 			connection.prepare();
 			connection.commit();
 			assertThat(snapshots(Level.TRACE)).isEmpty();
+		} finally {
+			store.shutDown();
+		}
+		store.init();
+		try (NotifyingSailConnection connection = store.getConnection()) {
+			assertThat(connection.getNamespace("rdf")).isEqualTo(RDF.NAMESPACE);
+			assertThat(connection.hasStatement(null, null, null, true)).isFalse();
 		} finally {
 			store.shutDown();
 		}
@@ -236,7 +260,7 @@ class LmdbStatsLoggingTest {
 				assertThat(event.getThrowableProxy().getMessage()).isEqualTo("Stats unavailable for test");
 			});
 			store.failStats = false;
-			assertThat(store.getLmdbStats().tripleDatabases().get("contexts").entries()).isEqualTo(1);
+			assertSingleCommittedContext(store, store.getLmdbStats(), 1);
 			store.failStats = true;
 		}
 		assertThat(events(Level.WARN)).hasSize(3);
@@ -308,6 +332,22 @@ class LmdbStatsLoggingTest {
 					.as("the %s diagnostic length", bulkOperationSize == 0 ? "scalar" : "bulk")
 					.isLessThan(512);
 			assertThat(diagnostic).doesNotContain(largeLabel).contains("IRI", "Literal");
+		}
+	}
+
+	private static void assertSingleCommittedContext(LmdbSailStore store, LmdbStats stats, long statements)
+			throws IOException {
+		assertThat(stats.tripleDatabases()).containsKeys("adjacency-pages", "adjacency-metadata", "adjacency-deltas",
+				TripleStore.NAMESPACE_DATABASE_NAME);
+		assertThat(stats.tripleDatabases().get("adjacency-metadata").entries()).isPositive();
+		TripleStore triples = store.getTripleStore();
+		long context = store.valueStore().getId(RDFS.RESOURCE);
+		try (TxnManager.Txn txn = triples.getTxnManager().createReadTxn();
+				LmdbContextIdIterator contexts = triples.getContexts(txn)) {
+			assertThat(contexts.next()).containsExactly(context);
+			assertThat(contexts.next()).isNull();
+			assertThat(triples.countContextIfAuthoritative(txn, context, true)).isEqualTo(statements);
+			assertThat(triples.countContextIfAuthoritative(txn, context, false)).isZero();
 		}
 	}
 

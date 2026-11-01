@@ -18,6 +18,7 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbPersistentAdjacencyCompactionWorkT
 import static org.eclipse.rdf4j.sail.lmdb.LmdbPersistentAdjacencyCompactionWorkTest.baseModel;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbPersistentAdjacencyCompactionWorkTest.hotQuad;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbPersistentAdjacencyCompactionWorkTest.records;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.mockito.Mockito.mockStatic;
@@ -140,6 +141,118 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 		try (TripleStore reopened = new TripleStore(directory.toFile(), config, null)) {
 			assertCommittedState(reopened, changes.expected);
 		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(RecoveryMode.class)
+	@Timeout(90)
+	void compactionCapacityFailureRespectsAdmittedRecoveryMode(RecoveryMode mode) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setAutoGrow(true)
+				.setForceSync(true)
+				.setSketchEstimatorEnabled(false)
+				.setTripleDBSize(8L << 20);
+		Set<Quad> original = baseModel(2 * LmdbPersistentAdjacency.PAGE_QUADS + 64);
+		Changes changes = new Changes(original);
+		try (TripleStore store = new TripleStore(directory.toFile(), config, null)) {
+			store.startTransaction();
+			for (Quad quad : original) {
+				assertThat(store.storeTriple(quad.subject(), quad.predicate(), quad.object(), quad.context(),
+						quad.explicit())).isTrue();
+			}
+			LmdbPersistentAdjacency.openExisting(store.writeTxn).compact(store.writeTxn, true);
+			store.commit();
+			long revision = store.getDataRevision();
+			long mapSize = store.mapSizeBytes();
+			try (Txn pinned = store.getTxnManager().createReadTxnPinned(store::getDataRevision);
+					RecordIterator oldRows = store.getTriples(pinned, -1, -1, -1, -1, true)) {
+				LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(pinned.get());
+				Map<String, Map<String, String>> originalAuthority = authority(pinned.get(), adjacency);
+				assertThat(oldRows.next()).containsExactly(10, 20, 1000, 0);
+				TxnReplayPolicy.Decision admission = store.prepareReplayDecision();
+				assertThat(admission.track).as("the journal arm must retain its complete logical input").isTrue();
+				TxnReplayPolicy.Decision decision = switch (mode) {
+				case JOURNAL -> admission;
+				case FROZEN -> admission.forFrozenReplay();
+				case NATIVE_CHUNK -> admission.forNativeCheckpoints();
+				};
+				store.startTransaction(decision);
+				changes.apply(store);
+				changes.assertCallbacks();
+				assertThat(store.mapSizeBytes()).as("reach the commit fault without earlier map growth")
+						.isEqualTo(mapSize);
+				assertThat(records(store.writeTxn, adjacency.metadataDbi()).keySet())
+						.contains("0a000000000000000014", "0a010000000000000014");
+				CompactionFault fault;
+				try (CompactionFault active = new CompactionFault(FaultSite.PAGE_PUT, store.writeTxn, adjacency,
+						() -> {
+							assertModel(adjacency, pinned.get(), original);
+							changes.assertCallbacks();
+						})) {
+					fault = active;
+					switch (mode) {
+					case JOURNAL -> store.commit();
+					case FROZEN -> {
+						FrozenStatementCapacityException failure = assertThrows(FrozenStatementCapacityException.class,
+								store::commit);
+						assertThat(store.ownsFrozenCapacity(failure, decision)).isTrue();
+						assertThat(store.ownsFrozenCapacity(failure, admission.forFrozenReplay())).isFalse();
+					}
+					case NATIVE_CHUNK -> {
+						LmdbNativeChunkFullException failure = assertThrows(LmdbNativeChunkFullException.class,
+								store::commit);
+						assertThat(failure.environment).isEqualTo(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+					}
+					}
+				}
+				assertThat(fault.injected).as("fail an actual page put after partial native compaction").isTrue();
+				assertThat(fault.successfulDeletes).isPositive();
+				assertThat(fault.aborted).isTrue();
+				assertThat(fault.liveWriterCursors).isEmpty();
+				assertThat(fault.events).containsSubsequence("fault", "abort");
+				assertThat(store.writeTxn).isZero();
+				assertThat(store.currentWriterTransaction()).isNull();
+				changes.assertCallbacks();
+				if (mode == RecoveryMode.JOURNAL) {
+					assertThat(fault.mapResizes).isEqualTo(1);
+					assertThat(fault.events).containsSubsequence("fault", "abort", "map-resize");
+					assertThat(store.mapSizeBytes()).isGreaterThan(mapSize);
+					assertThatThrownBy(oldRows::next).isInstanceOf(LmdbSailStore.MapResizeConflictException.class);
+				} else {
+					assertThat(fault.mapResizes).as("only the admitted caller may recover retained native work")
+							.isZero();
+					assertThat(store.mapSizeBytes()).isEqualTo(mapSize);
+					assertThat(store.getDataRevision()).isEqualTo(revision);
+					assertThat(oldRows.next()).containsExactly(10, 20, 1002, 0);
+					assertModel(adjacency, pinned.get(), original);
+					assertThat(authority(pinned.get(), adjacency)).isEqualTo(originalAuthority);
+					store.getTxnManager().doWith((stack, txn) -> {
+						assertModel(adjacency, txn, original);
+						assertThat(authority(txn, adjacency)).isEqualTo(originalAuthority);
+						return null;
+					});
+					store.rollback();
+					changes.clearCallbacks();
+					TxnReplayPolicy.Decision retry = store.prepareReplayDecision();
+					store.startTransaction(mode == RecoveryMode.FROZEN ? retry.forFrozenReplay()
+							: retry.forNativeCheckpoints());
+					changes.apply(store);
+					store.commit();
+					changes.assertCallbacks();
+					assertModel(adjacency, pinned.get(), original);
+				}
+				assertThat(store.getDataRevision()).isEqualTo(revision + 1);
+				assertCommittedState(store, changes.expected);
+			}
+		}
+		try (TripleStore reopened = new TripleStore(directory.toFile(), config, null)) {
+			assertCommittedState(reopened, changes.expected);
+		}
+	}
+
+	private enum RecoveryMode {
+		JOURNAL,
+		FROZEN,
+		NATIVE_CHUNK
 	}
 
 	private static void assertCommittedState(TripleStore store, Set<Quad> expected) throws IOException {
