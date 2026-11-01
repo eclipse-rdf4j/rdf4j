@@ -1958,6 +1958,50 @@ test('a failure without rows hides Full screen and Display', async () => {
     renderer.dispose();
 });
 
+// JavaCC names the token it stopped at as kind and image ('Encountered " ")" ") "" at line 2, column 14.'); the callout
+// says which token was unexpected and lists what could come instead when that list is short.
+// CONSTRUCT and DESCRIBE answer with statements: their columns are named as Explore and Remove name statement columns.
+test('statement results name their columns Subject, Predicate, Object and Graph', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+    await renderer.accept({ type: 'view', id: 'graph' });
+    await renderer.accept({ type: 'vars', values: ['subject', 'predicate', 'object', 'context'] });
+    await renderer.accept({ type: 'rows', values: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' },
+        { kind: 'literal', value: 'o' }, null]] });
+    await renderer.accept({ type: 'end', metadata: { 'total-result-count': 1 } });
+    assert.deepEqual(renderer.root.querySelectorAll('thead th').map(cell => cell.textContent),
+        ['Subject', 'Predicate', 'Object', 'Graph']);
+    renderer.dispose();
+});
+
+test('a syntax error names the unexpected token in words', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const summary = async (message) => {
+        const target = document.createElement('section');
+        document.body.appendChild(target);
+        const renderer = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore() });
+        await renderer.accept({ type: 'view', id: 'query-result-error' });
+        await renderer.accept({ type: 'error', status: 400, message });
+        const text = target.querySelector('.query-result-error__message').textContent;
+        assert.equal(target.querySelector('.query-result-error__details pre').textContent, message);
+        renderer.dispose();
+        return text;
+    };
+    const long = Array.from({ length: 30 }, (_unused, index) => `    "f${index}" ...`).join('\n');
+    assert.equal(await summary(`Encountered " ")" ") "" at line 2, column 14.\nWas expecting one of:\n${long}`),
+        'Unexpected ")".', 'a long list of alternatives stays in the parser details');
+    assert.equal(await summary('Encountered " "where" "WHERE "" at line 1, column 10.\nWas expecting one of:\n'
+        + '    "{" ...\n    "from" ...'), 'Unexpected "WHERE". Expected "{" or "from".');
+    assert.equal(await summary('Encountered " <VAR1> "?x "" at line 1, column 8.\nWas expecting:\n    <IRI> ...'),
+        'Unexpected "?x".', 'token kinds are no words to show');
+    assert.equal(await summary('Lexical error at line 1, column 5.  Encountered: "#" (35), after : ""'),
+        'Lexical error at line 1, column 5.', 'other parser messages keep their first sentence');
+});
+
 test('a syntax error becomes a callout that points at the line and keeps the parser details', async () => {
     const queryStream = loadQueryStreamApi();
     const document = new FakeDocument();
@@ -1973,7 +2017,7 @@ test('a syntax error becomes a callout that points at the line and keeps the par
     const alert = target.querySelector('[role="alert"]');
     assert.equal(alert.querySelector('.workbench-callout__title').textContent, 'Syntax error on line 1, column 27');
     assert.equal(alert.querySelector('.query-result-error__message').textContent,
-        'Encountered "<EOF>" at line 1, column 27.');
+        'The query ends too early. Expected "{".', 'the parser\'s message in words; the details keep it as written');
     assert.equal(alert.querySelector('.query-result-error__details pre').textContent, message);
     const goTo = alert.querySelector('.query-result-error__goto');
     assert.equal(goTo.textContent, 'Go to line 1');

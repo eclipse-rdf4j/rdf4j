@@ -3118,10 +3118,50 @@ namespace workbench {
             return match ? { line: Number(match[1]), column: Number(match[2]) } : null;
         }
 
+        /** The names of a statement result's columns, as the statement tables of Explore and Remove show them. */
+        var statementColumnNames: { [name: string]: string } = {
+            subject: 'Subject', predicate: 'Predicate', object: 'Object', context: 'Graph'
+        };
+
         function firstSentence(message: string): string {
             var text = String(message || '').trim();
             var match = /^[\s\S]*?\.(?=\s|$)/.exec(text);
             return (match ? match[0] : text.split('\n')[0]).trim();
+        }
+
+        /**
+         * A parser error's position and its message in words, naming what was parsed (a query by default, or an
+         * update); null for a message that names no position.
+         */
+        export function syntaxError(message: string, subject?: string): { line: number; column: number; summary: string } {
+            var location = errorLocation(message);
+            return location ? { line: location.line, column: location.column,
+                summary: syntaxErrorSummary(message, subject) } : null;
+        }
+
+        /**
+         * A parser message in words. JavaCC names the token it stopped at by kind and image ('Encountered " ")" ") ""
+         * at line 2, column 14.') or as "<EOF>", then lists what could come instead; the callout's title already names
+         * the line and column, so this says which token was unexpected and, when there are few, what was expected.
+         * Other messages keep their first sentence.
+         */
+        function syntaxErrorSummary(message: string, subject?: string): string {
+            var text = String(message || '').trim();
+            var token = /^Encountered\s+" .*? "(.*?) "" at line \d+, column \d+\./.exec(text);
+            var sentence = /^Encountered\s+"<EOF>"/.test(text) ? 'The ' + (subject || 'query') + ' ends too early.'
+                : token ? 'Unexpected "' + token[1] + '".' : '';
+            if (!sentence) {
+                return firstSentence(text);
+            }
+            var list = /\nWas expecting(?: one of)?:\s*\n([\s\S]*)$/.exec(text);
+            var expected = list ? list[1].split('\n').map(function(line) {
+                return line.trim().replace(/\s*\.\.\.$/, '');
+            }).filter(function(line) { return !!line; }) : [];
+            // Only quoted tokens are words a query can contain; kinds such as <VAR1> stay in the details.
+            var words = expected.length > 0 && expected.length <= 4
+                && expected.every(function(entry) { return /^".*"$/.test(entry); });
+            return words ? sentence + ' Expected ' + (expected.length === 1 ? expected[0]
+                : expected.slice(0, -1).join(', ') + ' or ' + expected[expected.length - 1]) + '.' : sentence;
         }
 
         /**
@@ -3738,8 +3778,10 @@ namespace workbench {
                     maxDomRows: this.options.maxDomRows,
                     label: 'Query results',
                     elementId: (name: string) => this.elementId(name),
-                    // Tuple results name their columns by variable, written as in the query: ?product (M4.3).
-                    columnLabel: (name: string) => this.state.view === 'tuple' ? '?' + name : name,
+                    // Tuple results name their columns by variable, written as in the query: ?product (M4.3); statement
+                    // results name theirs as Explore and Remove do (Subject, Predicate, Object, Graph).
+                    columnLabel: (name: string) => this.state.view === 'tuple' ? '?' + name
+                        : this.state.view === 'graph' && statementColumnNames[name] ? statementColumnNames[name] : name,
                     columnClass: (name: string) => this.state.view === 'tuple' ? 'query-result-variable' : '',
                     fullscreen: () => this.target.getAttribute('data-fullscreen') === 'true',
                     render: () => this.renderAndReport(),
@@ -4271,7 +4313,7 @@ namespace workbench {
                     body.appendChild(title);
                 }
                 var text = createElement(this.document, 'span', 'query-result-error__message');
-                text.textContent = location ? firstSentence(message) : message;
+                text.textContent = location ? syntaxErrorSummary(message) : message;
                 body.appendChild(text);
                 if (error && error.code === 'storage') {
                     var resetActions = createElement(this.document, 'div', 'query-result-error__actions');
