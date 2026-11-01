@@ -8249,7 +8249,11 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	/** Recovers durable value-ID retirement intents only after opening the authoritative TripleStore. */
+	/**
+	 * Explicit complete-work recovery after opening the authoritative TripleStore. The caller must ensure that no
+	 * protected reader needs the retired IDs; automatic recovery instead clamps its horizon after publication
+	 * admission.
+	 */
 	void recoverRetiredValueIds() throws IOException {
 		recoverRetiredValueIds(Long.MAX_VALUE, true);
 	}
@@ -8392,7 +8396,13 @@ class LmdbSailStore implements SailStore {
 							throw failure;
 						}
 					}
-					processRetiredValueIds(maxRevisionInclusive);
+					// Automatic recovery can wait for publication admission after capturing its horizon. A reader
+					// admitted in that interval must protect later retirements, even if the captured horizon was MAX.
+					// Recheck under publication ownership, which excludes new paired snapshot admission.
+					long admittedHorizon = !recoverBufferedRetirements && deferValueGcForPinnedReaders()
+							? Math.min(maxRevisionInclusive, tripleStore.getTxnManager().minPinnedSnapshotRevision())
+							: maxRevisionInclusive;
+					processRetiredValueIds(admittedHorizon);
 				} catch (LmdbTransactionRetryException | LmdbUtil.MapFullException capacity) {
 					if (!autoGrow || capacity.getSuppressed().length != 0) {
 						throw capacity;
