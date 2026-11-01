@@ -860,8 +860,8 @@ final class AdjacencyApplier<B, O, G> implements AutoCloseable {
 			}
 			if (candidate == null) {
 				Throwable failure = outcome.failure();
-				if (failure instanceof AdjacencyGapException) {
-					// the next pin lands at or beyond the gap
+				if (failure instanceof AdjacencyGapException || ops.buildInvalidated(failure)) {
+					// The next pin lands at or beyond the gap, or replaces an invalidated source snapshot.
 					rebuildRequested = true;
 					return;
 				}

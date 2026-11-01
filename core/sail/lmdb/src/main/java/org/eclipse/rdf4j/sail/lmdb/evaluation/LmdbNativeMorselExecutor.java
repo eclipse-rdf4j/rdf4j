@@ -19,6 +19,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.ReadOperationClosedException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+
 /**
  * Bounded exchange and worker lifetime for a morsel pipeline. A task is finished only after its finally block, never
  * merely because a Future was cancelled. The caller owns the pool and the sibling snapshots.
@@ -68,7 +71,11 @@ final class LmdbNativeMorselExecutor<T> implements AutoCloseable {
 								task.run(index, this);
 							}
 						} catch (Throwable problem) {
-							fail(problem);
+							if (ownedWorkerStop(problem, worker, replayContext)) {
+								stop();
+							} else {
+								fail(problem);
+							}
 						}
 					}
 				});
@@ -80,6 +87,21 @@ final class LmdbNativeMorselExecutor<T> implements AutoCloseable {
 			awaitWorkers();
 			checkFailure();
 		}
+	}
+
+	/** Only this worker's attributed control flow is cancellation; cleanup failures remain failures. */
+	private boolean ownedWorkerStop(Throwable problem, NativeExecutionContext.WorkerTasks.Task worker,
+			NativeExecutionContext.WorkerContext context) {
+		if (problem.getSuppressed().length != 0) {
+			return false;
+		}
+		if (problem instanceof ReadOperationClosedException closed && context.ownsCancellation(closed.owner())) {
+			return true;
+		}
+		if (problem instanceof KernelQueryCancelledException query) {
+			return context.ownsCancellation(query.origin()) || cancellation.owns(query);
+		}
+		return stopped() && worker.ownsActivationClosure(problem);
 	}
 
 	boolean stopped() {
