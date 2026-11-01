@@ -68,6 +68,7 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -399,20 +400,6 @@ class LmdbSnapshotValueLifetimeTest {
 			addHistoricalReadViews(readViews, privateField(operationAttempt, "lease"));
 		}
 		return new ArrayList<>(readViews);
-	}
-
-	private List<Statement> valueGrowthBatch(IRI predicate, String suffix, int count) {
-		List<Statement> statements = new ArrayList<>(count);
-		for (int i = 0; i < count; i++) {
-			String uniqueSuffix = suffix + ":" + i;
-			// The unique 512-byte literals guarantee growth. A short namespace keeps alternative IRI encoding
-			// probes from dominating this snapshot-lifetime fixture's bounded execution time.
-			statements.add(VF.createStatement(
-					VF.createIRI("urn:g:" + uniqueSuffix),
-					predicate,
-					VF.createLiteral("h".repeat(512 - uniqueSuffix.length()) + uniqueSuffix)));
-		}
-		return statements;
 	}
 
 	private void addHistoricalReadViews(Set<Object> readViews, Object attempt) throws Exception {
@@ -2334,19 +2321,13 @@ class LmdbSnapshotValueLifetimeTest {
 				}
 				long valueMapAfterFirstGrowth = mapSize(valueStore);
 				long valueOccupiedAfterFirstGrowth = valueStore.occupiedBytes();
-				int secondGrowthCount = Math.toIntExact(valueMapAfterFirstGrowth / 512L + 1L);
-				List<Statement> secondGrowthBatch = valueGrowthBatch(growthPredicate, "second", secondGrowthCount);
-				assertTrue(Math.multiplyExact((long) secondGrowthBatch.size(), 512L) > valueMapAfterFirstGrowth,
-						"unique 512-byte literals must exceed the entire previous map before native overhead");
 				MapGrowthMetrics.Snapshot growthMetricsBeforeSecond = store.getBackingStore().growthMetricsSnapshot();
 				assertTrue(growthMetricsBeforeSecond.readerDrainWaitCount() > 0,
 						"the first forced reader retirement must await bounded reader grace");
-				try (SailConnection writer = store.getConnection()) {
-					writer.begin(IsolationLevels.SNAPSHOT);
-					for (Statement statement : secondGrowthBatch) {
-						writer.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
-					}
-					writer.commit();
+				// Force a second real resize without scaling a transaction's statement count with the first map growth.
+				// The logical dataset remains open, but its retired native pin must not delay this reservation.
+				try (SailClosable publication = store.getBackingStore().getExplicitSailSource().beginPublication()) {
+					valueStore.reserveWriteCapacity(Math.addExact(valueMapAfterFirstGrowth, 4096L));
 				}
 				try (SailConnection admissionBarrier = store.getConnection()) {
 					admissionBarrier.begin(IsolationLevels.SNAPSHOT);
@@ -2359,8 +2340,7 @@ class LmdbSnapshotValueLifetimeTest {
 						"the still-open invalidated dataset must overlap a second real ValueStore resize; initial map/occupied="
 								+ initialValueMapSize + "/" + initialValueOccupiedBytes + ", after first="
 								+ valueMapAfterFirstGrowth + "/" + valueOccupiedAfterFirstGrowth + ", after second="
-								+ valueMapAfterSecondGrowth + "/" + valueOccupiedAfterSecondGrowth + ", statementCount="
-								+ secondGrowthBatch.size());
+								+ valueMapAfterSecondGrowth + "/" + valueOccupiedAfterSecondGrowth);
 				assertEquals(growthMetricsBeforeSecond.readerDrainWaitCount(),
 						growthMetricsAfterSecond.readerDrainWaitCount(),
 						"a retired native pin must not require another bounded reader-grace wait");
