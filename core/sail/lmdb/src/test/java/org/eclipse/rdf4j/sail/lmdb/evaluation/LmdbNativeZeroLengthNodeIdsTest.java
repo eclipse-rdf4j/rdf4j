@@ -29,9 +29,12 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection;
@@ -367,6 +370,34 @@ public class LmdbNativeZeroLengthNodeIdsTest {
 		}
 	}
 
+	@Test
+	public void packedCountUsesCanonicalScanWithoutChangingZeroLengthResults() throws Exception {
+		openFixture(true, false);
+		List<BindingSet> baseline = rows(PRESENT_COUNT, false, false, true);
+		long domainsBefore = ZeroLengthPathPlan.NODE_DOMAIN_OPENS.get();
+		long scansBefore = ZeroLengthPathPlan.CANONICAL_SCAN_OPENS.get();
+		assertThat(rows(PRESENT_COUNT, true, true, true, "packedFtreeAggregate"))
+				.containsExactlyInAnyOrderElementsOf(baseline);
+		assertThat(countValue(baseline)).isEqualTo(11L);
+		assertThat(ZeroLengthPathPlan.NODE_DOMAIN_OPENS.get()).isEqualTo(domainsBefore);
+		assertThat(ZeroLengthPathPlan.CANONICAL_SCAN_OPENS.get()).isGreaterThan(scansBefore);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(PRESENT_COUNT);
+			prepared.setForcedLmdbExecutionStrategy("packedFtreeAggregate");
+			assertThat(hasActualStrategy(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode(),
+					"packedFtreeAggregate")).as("actual packed aggregate execution").isTrue();
+		}
+	}
+
+	private static boolean hasActualStrategy(GenericPlanNode node, String strategy) {
+		if (strategy.equals(node.getStringMetricActual("nativeExecutionPath"))) {
+			return true;
+		}
+		return node.getPlans() != null && node.getPlans()
+				.stream()
+				.anyMatch(child -> hasActualStrategy(child, strategy));
+	}
+
 	private void assertConnectionCountParity(SailRepositoryConnection connection, long expected) {
 		System.setProperty(NATIVE, "true");
 		System.setProperty(ENABLED, "false");
@@ -385,13 +416,18 @@ public class LmdbNativeZeroLengthNodeIdsTest {
 		List<BindingSet> baseline = rows(query, true, false, includeInferred);
 		assertThat(rows(query, false, false, includeInferred)).as("generic baseline: " + query)
 				.containsExactlyInAnyOrderElementsOf(baseline);
-		long before = ZeroLengthPathPlan.NODE_DOMAIN_OPENS.get();
-		long rowsBefore = ZeroLengthPathPlan.NODE_DOMAIN_ROWS.get();
 		assertThat(rows(query, true, true, includeInferred)).as("ID-node producer: " + query)
 				.containsExactlyInAnyOrderElementsOf(baseline);
 		assertThat(rows(query, true, null, includeInferred)).as("default ID-node producer: " + query)
 				.containsExactlyInAnyOrderElementsOf(baseline);
 		if (requireDomain) {
+			// Automatic aggregate dispatch may legally select an encounter-ordered canonical scan.
+			// Separately exercise the generic row consumer whose node-domain service this fixture covers.
+			long before = ZeroLengthPathPlan.NODE_DOMAIN_OPENS.get();
+			long rowsBefore = ZeroLengthPathPlan.NODE_DOMAIN_ROWS.get();
+			assertThat(rows(query, true, true, includeInferred, "nestedLoop"))
+					.as("explicit generic node-domain consumer: " + query)
+					.containsExactlyInAnyOrderElementsOf(baseline);
 			assertThat(ZeroLengthPathPlan.NODE_DOMAIN_OPENS.get()).as("actual adjacency node-domain service: " + query)
 					.isGreaterThan(before);
 			assertThat(ZeroLengthPathPlan.NODE_DOMAIN_ROWS.get()).as("actual node rows: " + query)
@@ -400,6 +436,11 @@ public class LmdbNativeZeroLengthNodeIdsTest {
 	}
 
 	private List<BindingSet> rows(String query, boolean nativeEngine, Boolean nodeIds, boolean includeInferred) {
+		return rows(query, nativeEngine, nodeIds, includeInferred, null);
+	}
+
+	private List<BindingSet> rows(String query, boolean nativeEngine, Boolean nodeIds, boolean includeInferred,
+			String forcedStrategy) {
 		System.setProperty(NATIVE, Boolean.toString(nativeEngine));
 		if (nodeIds == null) {
 			System.clearProperty(ENABLED);
@@ -407,7 +448,8 @@ public class LmdbNativeZeroLengthNodeIdsTest {
 			System.setProperty(ENABLED, Boolean.toString(nodeIds));
 		}
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			TupleQuery prepared = connection.prepareTupleQuery(query);
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
 			prepared.setIncludeInferred(includeInferred);
 			return QueryResults.asList(prepared.evaluate());
 		}
