@@ -149,6 +149,11 @@ import org.slf4j.event.Level;
  * A disk based {@link SailStore} implementation that keeps committed statements in a {@link TripleStore}.
  */
 class LmdbSailStore implements SailStore {
+
+	/** Private disk models need checkpoint recovery, not an input-sized in-heap fresh-value dictionary. */
+	static final class PrivateModelWriterOwner {
+	}
+
 	private static final class ReplayRetirementExecutor {
 		private static final int WORKER_COUNT = 4;
 		private static final int QUEUE_CAPACITY = 128;
@@ -8249,7 +8254,11 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	/** Recovers durable value-ID retirement intents only after opening the authoritative TripleStore. */
+	/**
+	 * Explicit complete-work recovery after opening the authoritative TripleStore. The caller must ensure that no
+	 * protected reader needs the retired IDs; automatic recovery instead clamps its horizon after publication
+	 * admission.
+	 */
 	void recoverRetiredValueIds() throws IOException {
 		recoverRetiredValueIds(Long.MAX_VALUE, true);
 	}
@@ -8392,7 +8401,13 @@ class LmdbSailStore implements SailStore {
 							throw failure;
 						}
 					}
-					processRetiredValueIds(maxRevisionInclusive);
+					// Automatic recovery can wait for publication admission after capturing its horizon. A reader
+					// admitted in that interval must protect later retirements, even if the captured horizon was MAX.
+					// Recheck under publication ownership, which excludes new paired snapshot admission.
+					long admittedHorizon = !recoverBufferedRetirements && deferValueGcForPinnedReaders()
+							? Math.min(maxRevisionInclusive, tripleStore.getTxnManager().minPinnedSnapshotRevision())
+							: maxRevisionInclusive;
+					processRetiredValueIds(admittedHorizon);
 				} catch (LmdbTransactionRetryException | LmdbUtil.MapFullException capacity) {
 					if (!autoGrow || capacity.getSuppressed().length != 0) {
 						throw capacity;
@@ -10301,7 +10316,8 @@ class LmdbSailStore implements SailStore {
 				Object sourceWriterOwner) throws SailException {
 			this.directWriterOwner = sourceWriterOwner;
 			this.explicit = explicit;
-			this.freshImportEligible = explicit && level != null
+			this.freshImportEligible = !(requestedWriterOwner instanceof PrivateModelWriterOwner)
+					&& explicit && level != null
 					&& (IsolationLevels.NONE.equals(level) || IsolationLevels.READ_COMMITTED.equals(level));
 			this.adaptiveBulkWrites = bulkOperationSize > 0 && sketchBasedJoinEstimator == null
 					&& level != null && IsolationLevels.NONE.isCompatibleWith(level);
@@ -11535,7 +11551,8 @@ class LmdbSailStore implements SailStore {
 			}
 			Object owner = writerOwner();
 			// Other NONE writers wait at the writer gate while an initial run import holds the store.
-			if (!explicit || mayHaveInferred || freshNoneImportOwner != null && freshNoneImportOwner != owner
+			if (!freshImportEligible || !explicit || mayHaveInferred
+					|| freshNoneImportOwner != null && freshNoneImportOwner != owner
 					|| noneWriteStates.size() != 1 && initialRunImport == null
 					|| !valueStore.isFreshValueSessionUsable(session)
 					|| valueStore.freshValueSessionSize(session) >= freshNoneValueLimit()) {
@@ -11664,7 +11681,7 @@ class LmdbSailStore implements SailStore {
 		/** Whether {@code storeFreshNoneValues} would resolve a batch of this size from the fresh session. */
 		private boolean freshSessionAccepts(int rows) {
 			ValueStore.FreshValueSession session = freshValueSession;
-			return nativeCheckpoints && explicit && !mayHaveInferred && session != null
+			return freshImportEligible && nativeCheckpoints && explicit && !mayHaveInferred && session != null
 					&& !freshValueSessionInvalidated && freshNoneImportOwner == writerOwner()
 					&& valueStore.isFreshValueSessionUsable(session)
 					&& valueStore.freshValueSessionSize(session) + 4L * rows < freshNoneValueLimit();
