@@ -4479,11 +4479,16 @@ namespace workbench {
             document.body.removeChild(link);
         }
 
-        export function copyExplanation(paneKey?: string) {
+        /** The explanation a pane shows, as copied, or '' when it shows none. */
+        function getPaneExplanationText(paneKey?: string): string {
             var normalizedPaneKey: PaneKey = paneKey === 'compare' ? 'compare' : 'primary';
             var paneDisplayExplanation = getPaneDisplayExplanation(getPaneMachineState(normalizedPaneKey));
-            var displayContent = getExplanationDisplayContent(paneDisplayExplanation);
-            if (!paneDisplayExplanation || !displayContent) {
+            return paneDisplayExplanation ? getExplanationDisplayContent(paneDisplayExplanation) || '' : '';
+        }
+
+        export function copyExplanation(paneKey?: string) {
+            var displayContent = getPaneExplanationText(paneKey);
+            if (!displayContent) {
                 return false;
             }
             if (!window.navigator
@@ -5072,12 +5077,17 @@ namespace workbench {
                 $('#explain').val('');
                 $('#explain-level').val('');
             });
-            /** Copy a pane's explanation and confirm it on the button that was pressed. */
+            /**
+             * Copy a pane's explanation and confirm it on the button that was pressed; without a clipboard (a page
+             * served over plain HTTP) it is copied through a selection.
+             */
             function copyAndConfirm(button: HTMLElement, paneKey: string) {
-                var copying = copyExplanation(paneKey);
+                var text = getPaneExplanationText(paneKey);
                 var icons: any = (<any>workbench).icons;
-                if (icons && typeof icons.confirmCopy === 'function') {
-                    icons.confirmCopy(button, copying);
+                if (text) {
+                    icons.copyText(button, text);
+                } else {
+                    icons.confirmCopy(button, false);
                 }
             }
             on('#copy-explanation', 'click', function() {
@@ -5108,6 +5118,17 @@ namespace workbench {
             // Add event handlers to the save name field to react to changes in it.
             // 'input' covers autofill and a dropped text, which press no key (C23).
             on('#query-name', 'keydown cut paste input', handleNameChange);
+            // Enter in a text field submits the form with its first button, Execute: the name field saves instead.
+            on('#query-name', 'keydown', function saveOnEnter(event: JQueryKeyEventObject) {
+                if (event.key !== 'Enter' || (<any>event).isComposing) {
+                    return;
+                }
+                event.preventDefault();
+                if (validQueryName(String($('#query-name').val() || ''))) {
+                    $('#action').val('save');
+                    doSubmit();
+                }
+            });
 
             // Add event handlers to the query text area to react to changes in it.
             function deferInputChange(handler: () => void) {

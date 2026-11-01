@@ -309,8 +309,20 @@ test('malformed extension documentation leaves the configuration editor availabl
     assert.match(markup, /No reference is available for this configuration/);
 });
 
-for (const outcome of ['copied', 'unavailable', 'refused']) {
-    test('Turtle example copy reports ' + outcome + ' without changing the draft', async () => {
+// A page served over plain HTTP (other than localhost) has no navigator.clipboard: the example is then copied through a
+// selection, as when the clipboard refuses.
+const copyOutcomes = [
+    { name: 'copied', clipboard: 'works', selection: false, copied: true },
+    { name: 'copied through the selection without a clipboard', clipboard: 'missing', selection: true, copied: true },
+    { name: 'copied through the selection when the clipboard refuses', clipboard: 'refuses', selection: true,
+        copied: true },
+    { name: 'how to copy when nothing can copy', clipboard: 'missing', selection: false, copied: false },
+    { name: 'how to copy when the clipboard refuses and the selection cannot copy', clipboard: 'refuses',
+        selection: false, copied: false }
+];
+
+for (const outcome of copyOutcomes) {
+    test('Turtle example copy reports ' + outcome.name + ' without changing the draft', async () => {
         const harness = createFormBrowserHarness();
         const page = harness.registerElement('div');
         const textarea = harness.registerElement('textarea', { id: 'configuration', value: 'draft configuration' });
@@ -324,16 +336,34 @@ for (const outcome of ['copied', 'unavailable', 'refused']) {
             'data-config-reference-copy': example
         } });
         const copied = [];
-        harness.document.defaultView = { navigator: outcome === 'unavailable' ? {} : { clipboard: {
+        harness.document.defaultView = { navigator: outcome.clipboard === 'missing' ? {} : { clipboard: {
             writeText(value) {
+                if (outcome.clipboard === 'refuses') {
+                    return Promise.reject(new Error('clipboard refused'));
+                }
                 copied.push(value);
-                return outcome === 'refused' ? Promise.reject(new Error('clipboard refused')) : Promise.resolve();
+                return Promise.resolve();
             }
         } } };
+        const create = harness.document.createElement.bind(harness.document);
+        harness.document.createElement = (tag) => {
+            const element = create(tag);
+            if (String(tag).toLowerCase() === 'textarea') {
+                element.select = () => { harness.document.selectedText = element.value; };
+            }
+            return element;
+        };
+        harness.document.execCommand = (command) => {
+            if (command !== 'copy' || !outcome.selection || typeof harness.document.selectedText !== 'string') {
+                return false;
+            }
+            copied.push(harness.document.selectedText);
+            return true;
+        };
         [search, status, button].forEach((element) => reference.appendChild(element));
         [textarea, reference].forEach((element) => page.appendChild(element));
         harness.document.body.appendChild(page);
-        harness.loadScripts(['configuration.js']);
+        harness.loadScripts(['workbenchViews.js', 'configuration.js']);
         const dispose = harness.context.workbench.configuration.mount(page);
         assert.equal(status.textContent, '', 'new reference mounts clear previous copy feedback');
 
@@ -342,8 +372,8 @@ for (const outcome of ['copied', 'unavailable', 'refused']) {
 
         assert.equal(textarea.value, 'draft configuration');
         assert.equal(harness.document.activeElement, button);
-        assert.deepEqual(copied, outcome === 'unavailable' ? [] : [example]);
-        assert.match(status.textContent, outcome === 'copied' ? /example copied/ : /Select the example text/);
+        assert.deepEqual(copied, outcome.copied ? [example] : []);
+        assert.match(status.textContent, outcome.copied ? /example copied/ : /Select the example text/);
         dispose();
         assert.equal(button.listenerCount('click'), 0);
     });

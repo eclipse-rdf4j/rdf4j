@@ -475,3 +475,29 @@ test('All results stay virtualized while desktop and mobile scrolling reaches la
 		});
 	}
 });
+
+test('Explore opens again on what was explored after a visit to another page', async ({ page }) => {
+	await page.setViewportSize({ width: 1440, height: 1000 });
+	const health = monitorPage(page);
+	const resource = `<${LARGE_RESOURCE_IRI}>`;
+	const exploredUrl = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore?resource=${encodeURIComponent(resource)}`
+		+ '&limit_explore=100&offset=100';
+	await page.goto(exploredUrl, { waitUntil: 'domcontentloaded' });
+	await waitForRoute(page, 'explore');
+	await expect(exploreRows(page).first()).toBeVisible();
+
+	await page.locator('#navigation a[data-workbench-nav-href="query"]').click();
+	await waitForRoute(page, 'query');
+	await page.locator('#navigation a[data-workbench-nav-href="explore"]').click();
+	await waitForRoute(page, 'explore');
+
+	// The resource, its page and the row limit, in the address and on the page.
+	await expect(page).toHaveURL(exploredUrl);
+	await expect(page.locator('#resource')).toHaveValue(resource);
+	await expect(page.locator('#explore-resource-value')).toHaveText(resource);
+	await expect(page.locator('#explore-result-count')).toContainText('Rows 101–200');
+	// The Query page stays parked in the document, so the page checks are the browser's own.
+	expect(health.pageErrors).toEqual([]);
+	expect(health.consoleErrors).toEqual([]);
+	expect(health.failedRequests).toEqual([]);
+});

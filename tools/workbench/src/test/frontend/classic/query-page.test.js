@@ -65,6 +65,40 @@ test('query utilities cover name validation, query language switch, save, and su
     assert.equal(harness.alerts.length, 0);
 });
 
+// Enter in a text field submits the form with its first button, Execute: in the Save query pane it saves instead.
+test('Enter in the query name saves the query instead of running it', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    harness.setValue('query-name', 'Alice outgoing');
+    let prevented = false;
+
+    harness.document.getElementById('query-name').trigger('keydown',
+        { key: 'Enter', preventDefault() { prevented = true; } });
+
+    assert.equal(prevented, true, 'the form is not submitted, which would run the query');
+    assert.equal(harness.getProperty('action', 'value'), 'save');
+    const request = harness.ajaxRequests[harness.ajaxRequests.length - 1];
+    assert.ok(request, 'the query is saved');
+    assert.equal(request.params.get('query-name'), 'Alice outgoing');
+    request.resolve({ accessible: true, written: true });
+    assert.equal(harness.getText('save-feedback'), 'Query saved.');
+});
+
+test('Enter in an invalid query name neither saves nor runs the query', () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    harness.setValue('query-name', 'bad!');
+    let prevented = false;
+
+    harness.document.getElementById('query-name').trigger('keydown',
+        { key: 'Enter', preventDefault() { prevented = true; } });
+    harness.advanceTimers(0);
+
+    assert.equal(prevented, true);
+    assert.equal(harness.ajaxRequests.length, 0);
+    assert.match(harness.getText('save-feedback'), /A name has 1 to 32/);
+});
+
 test('disabled editor fullscreen hides YASQE control and blocks F11', () => {
     const harness = createQueryBrowserHarness({ editorFullscreenEnabled: false });
     harness.runPageLoad();
@@ -245,6 +279,40 @@ test('query explanation copy writes the current pane explanation to the clipboar
 
     await harness.context.workbench.query.copyExplanation('compare');
     assert.deepEqual(clipboardWrites, ['Primary plan', 'Compare plan']);
+});
+
+// A page served over plain HTTP (other than localhost) has no navigator.clipboard: the explanation is then copied
+// through a selection, and the button confirms it like any copy button.
+test('without a clipboard the explanation copy button copies through the selection', async () => {
+    const harness = createQueryBrowserHarness({
+        initialExplanation: 'Primary plan',
+        initialExplanationFormat: 'text',
+        window: { navigator: {} }
+    });
+    harness.runPageLoad();
+    harness.runScript('scripts/workbenchViews.js');
+    const copied = [];
+    const create = harness.document.createElement.bind(harness.document);
+    harness.document.createElement = (tag) => {
+        const element = create(tag);
+        if (String(tag).toLowerCase() === 'textarea') {
+            element.select = () => { harness.document.selectedText = element.value; };
+        }
+        return element;
+    };
+    harness.document.execCommand = (command) => {
+        if (command !== 'copy' || typeof harness.document.selectedText !== 'string') {
+            return false;
+        }
+        copied.push(harness.document.selectedText);
+        return true;
+    };
+
+    harness.click('copy-explanation');
+    await new Promise(setImmediate);
+
+    assert.deepEqual(copied, ['Primary plan']);
+    assert.equal(harness.getAttribute('copy-explanation', 'aria-label'), 'Copied');
 });
 
 test('interactive Text explanation requests JSON and toggles cached highlighting', async () => {

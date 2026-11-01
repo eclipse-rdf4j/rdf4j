@@ -12,6 +12,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const {
+    chooseGraphView,
     deleteRepository,
     memoryRepositoryConfiguration,
     repositoryPageUrl,
@@ -342,13 +343,13 @@ test('Control+A and Command+A select every drawn node without taking over native
     await expect(summary(page)).toHaveText(`${drawnCount} nodes selected`);
 
     // A selected graph node is left alone when another data view owns the keyboard.
-    await explorer.getByRole('tab', { name: 'Graph' }).click();
+    await chooseGraphView(explorer, 'graph');
     await explorer.locator('.selection-summary').getByRole('button', { name: /^Clear the selection/ }).click();
     await node(page, 'Alice').click({ modifiers: ['Shift'] });
     await expect(summary(page)).toHaveText('1 node selected');
-    await explorer.getByRole('tab', { name: 'Triples' }).click();
+    await chooseGraphView(explorer, 'table');
     await page.keyboard.press('Control+a');
-    await explorer.getByRole('tab', { name: 'Graph' }).click();
+    await chooseGraphView(explorer, 'graph');
     await expect(summary(page)).toHaveText('1 node selected');
     await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(1);
 });
