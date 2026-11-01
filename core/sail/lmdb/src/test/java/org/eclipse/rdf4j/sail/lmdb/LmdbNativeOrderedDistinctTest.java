@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -32,7 +33,10 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeOrderedDistinctTest {
 
 	private static final String EX = "urn:ordered-distinct:";
@@ -90,15 +94,32 @@ class LmdbNativeOrderedDistinctTest {
 		try {
 			ValueFactory vf = repository.getValueFactory();
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.add(vf.createIRI(EX, "name/1"), vf.createIRI(EX, "birthday/1"),
-						vf.createIRI(EX, "person/1"));
-				connection.add(vf.createIRI(EX, "name/2"), vf.createIRI(EX, "birthday/1"),
-						vf.createIRI(EX, "person/1"));
+				for (int name = 1; name <= 3; name++) {
+					IRI subject = vf.createIRI(EX, "name/" + name);
+					int key = name == 2 ? 2 : 1;
+					connection.add(subject, vf.createIRI(EX, "eligible"), vf.createIRI(EX, "yes"));
+					connection.add(subject, vf.createIRI(EX, "birthday/" + key),
+							vf.createIRI(EX, "person/" + key));
+				}
 			}
-			String query = "SELECT DISTINCT ?person ?birthday WHERE { ?name ?birthday ?person . }";
+			// OPTIONAL preserves the unrelated left name order. No physical permutation can promote its right-hand
+			// DISTINCT keys ahead of that barrier, even when all canonical adjacency orders are available.
+			String body = "WHERE { ?name <" + EX + "eligible> <" + EX + "yes> . "
+					+ "OPTIONAL { ?name ?birthday ?person . FILTER(?birthday != <" + EX + "eligible>) } }";
+			String query = "SELECT DISTINCT ?person ?birthday " + body;
 
 			assertThat(explain(repository, query)).contains("distinctStrategy=GLOBAL_HASH");
-			assertNativeMatchesGeneric(repository, query, 1);
+			assertThat(bindings(repository, "SELECT ?person ?birthday " + body, "nestedLoop"))
+					.as("the input repeats a DISTINCT key after a different key, not just in an adjacent run")
+					.extracting(row -> row.getValue("person").stringValue())
+					.containsExactly(EX + "person/1", EX + "person/2", EX + "person/1");
+			assertNativeMatchesGeneric(repository, query, 2);
+			assertForcedMatchesGeneric(repository, query, 2, "nestedLoop", "nestedLoop");
+			assertThat(bindings(repository, query, "nestedLoop"))
+					.extracting(row -> List.of(row.getValue("person"), row.getValue("birthday")))
+					.containsExactlyInAnyOrder(
+							List.of(vf.createIRI(EX, "person/1"), vf.createIRI(EX, "birthday/1")),
+							List.of(vf.createIRI(EX, "person/2"), vf.createIRI(EX, "birthday/2")));
 		} finally {
 			repository.shutDown();
 		}
@@ -121,7 +142,10 @@ class LmdbNativeOrderedDistinctTest {
 					.contains("distinctChannels=[MONOTONIC]")
 					.contains("groupOrderPrefix=1");
 			assertNativeMatchesGeneric(repository, query, 2);
-			assertThat(strategy(repository, query)).isEqualTo("orderedDistinctGroups");
+			// Automatic costing may legally prefer prefixRunGroups. Force the eligible streaming DISTINCT route
+			// to prove that its monotonic channel still executes, rather than asserting an obsolete cost winner.
+			assertForcedMatchesGeneric(repository, query, 2, "orderedDistinctGroups", "orderedDistinctGroups");
+			assertTwoGroupsWithTwoDistinctValues(repository, query, "orderedDistinctGroups");
 		} finally {
 			repository.shutDown();
 			restoreProperty(JANINO_FLAG, previousJanino);
@@ -162,14 +186,27 @@ class LmdbNativeOrderedDistinctTest {
 	void argumentGroupOrderUsesMonotonicChannelWithGroupMap() {
 		SailRepository repository = repository("argument-group", "ospc");
 		try {
-			addNumericGroups(repository);
-			String query = "SELECT ?group (COUNT(DISTINCT ?value) AS ?count) WHERE { ?group <" + EX
-					+ "value> ?value . } GROUP BY ?group";
+			ValueFactory vf = repository.getValueFactory();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				int[] values = { 10, 10, 20, 20, 10 };
+				int[] groups = { 1, 2, 1, 2, 1 };
+				for (int event = 0; event < values.length; event++) {
+					IRI subject = vf.createIRI(EX, "event/" + event);
+					connection.add(subject, vf.createIRI(EX, "value"), vf.createLiteral(values[event]));
+					connection.add(subject, vf.createIRI(EX, "group"), vf.createIRI(EX, "group/" + groups[event]));
+				}
+			}
+			// The value can lead the left input, but a group produced only by OPTIONAL can never lead that input.
+			// Repeated groups across value partitions therefore need a group map with per-group monotonic channels.
+			String query = "SELECT ?group (COUNT(DISTINCT ?value) AS ?count) WHERE { ?event <" + EX
+					+ "value> ?value . OPTIONAL { ?event <" + EX + "group> ?group } } GROUP BY ?group";
 
 			assertThat(explain(repository, query))
 					.contains("distinctChannels=[MONOTONIC]")
 					.contains("groupOrderPrefix=0");
 			assertNativeMatchesGeneric(repository, query, 2);
+			assertForcedMatchesGeneric(repository, query, 2, "orderedDistinctGroups", "orderedDistinctGroups");
+			assertTwoGroupsWithTwoDistinctValues(repository, query, "orderedDistinctGroups");
 		} finally {
 			repository.shutDown();
 		}
@@ -250,16 +287,25 @@ class LmdbNativeOrderedDistinctTest {
 		try {
 			ValueFactory vf = repository.getValueFactory();
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.add(vf.createIRI(EX, "group/1"), vf.createIRI(EX, "name/1"), vf.createLiteral(10));
-				connection.add(vf.createIRI(EX, "group/1"), vf.createIRI(EX, "name/2"), vf.createLiteral(10));
+				for (int group = 1; group <= 2; group++) {
+					for (int event = 1; event <= 3; event++) {
+						IRI eventId = vf.createIRI(EX, "event/" + group + "/" + event);
+						connection.add(vf.createIRI(EX, "group/" + group), vf.createIRI(EX, "event"), eventId);
+						connection.add(eventId, vf.createIRI(EX, "value"), vf.createLiteral(event == 2 ? 20 : 10));
+					}
+				}
 			}
-			String query = "SELECT ?group (COUNT(DISTINCT ?value) AS ?count) WHERE { ?group ?name ?value . } "
-					+ "GROUP BY ?group";
+			// Ordered groups on the left do not order a value introduced on the right of OPTIONAL. Each group
+			// revisits value 10 after value 20, so adjacent-only DISTINCT would incorrectly count three values.
+			String query = "SELECT ?group (COUNT(DISTINCT ?value) AS ?count) WHERE { ?group <" + EX
+					+ "event> ?event . OPTIONAL { ?event <" + EX + "value> ?value } } GROUP BY ?group";
 
 			assertThat(explain(repository, query))
 					.contains("distinctChannels=[HASH]")
 					.contains("groupOrderPrefix=0");
-			assertNativeMatchesGeneric(repository, query, 1);
+			assertNativeMatchesGeneric(repository, query, 2);
+			assertForcedMatchesGeneric(repository, query, 2, "nestedLoop", "singleSlotGroups");
+			assertTwoGroupsWithTwoDistinctValues(repository, query, "nestedLoop");
 		} finally {
 			repository.shutDown();
 		}
@@ -543,35 +589,72 @@ class LmdbNativeOrderedDistinctTest {
 
 	private void assertNativeMatchesGeneric(SailRepository repository, String query, int expectedRows) {
 		List<String> nativeRows = rows(repository, query);
+		assertThat(nativeRows).hasSize(expectedRows).isEqualTo(genericRows(repository, query));
+	}
+
+	private void assertForcedMatchesGeneric(SailRepository repository, String query, int expectedRows,
+			String forcedStrategy, String executionPath) {
+		assertThat(rows(repository, query, forcedStrategy)).hasSize(expectedRows)
+				.isEqualTo(genericRows(repository, query));
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(KernelExecutionTestAccess.eligibleStrategies(connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode()))
+							.as("the requested algorithm is a legal candidate, not a forced fallback")
+							.contains(forcedStrategy);
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			prepared.setLmdbResultCacheRequested(false);
+			GenericPlanNode executed = prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode();
+			assertThat(findStrategy(executed)).as("the forced candidate really executed\n%s", executed)
+					.isEqualTo(executionPath);
+			assertThat(sumLongMetric(executed, "nativeInvocationsActual")).isEqualTo(1L);
+		}
+	}
+
+	private void assertTwoGroupsWithTwoDistinctValues(SailRepository repository, String query, String forcedStrategy) {
+		List<BindingSet> actual = bindings(repository, query, forcedStrategy);
+		assertThat(actual).extracting(row -> row.getValue("group"))
+				.containsExactlyInAnyOrder(repository.getValueFactory().createIRI(EX, "group/1"),
+						repository.getValueFactory().createIRI(EX, "group/2"));
+		assertThat(actual).allSatisfy(row -> assertThat(((Literal) row.getValue("count")).longValue()).isEqualTo(2L));
+	}
+
+	private List<String> genericRows(SailRepository repository, String query) {
 		String previous = System.getProperty(NATIVE_FLAG);
-		List<String> genericRows;
 		try {
 			System.setProperty(NATIVE_FLAG, "false");
-			genericRows = rows(repository, query);
+			return rows(repository, query);
 		} finally {
-			if (previous == null) {
-				System.clearProperty(NATIVE_FLAG);
-			} else {
-				System.setProperty(NATIVE_FLAG, previous);
-			}
+			restoreProperty(NATIVE_FLAG, previous);
 		}
-		assertThat(nativeRows).hasSize(expectedRows).isEqualTo(genericRows);
 	}
 
 	private List<String> rows(SailRepository repository, String query) {
+		return rows(repository, query, null);
+	}
+
+	private List<BindingSet> bindings(SailRepository repository, String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			ArrayList<String> rows = new ArrayList<>();
-			for (BindingSet row : QueryResults.asList(connection.prepareTupleQuery(query).evaluate())) {
-				ArrayList<String> names = new ArrayList<>(row.getBindingNames());
-				names.sort(String::compareTo);
-				StringBuilder canonical = new StringBuilder();
-				for (String name : names) {
-					canonical.append(name).append('=').append(row.getValue(name)).append(';');
-				}
-				rows.add(canonical.toString());
-			}
-			rows.sort(String::compareTo);
-			return rows;
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			prepared.setLmdbResultCacheRequested(false);
+			return QueryResults.asList(prepared.evaluate());
 		}
+	}
+
+	private List<String> rows(SailRepository repository, String query, String forcedStrategy) {
+		ArrayList<String> rows = new ArrayList<>();
+		for (BindingSet row : bindings(repository, query, forcedStrategy)) {
+			ArrayList<String> names = new ArrayList<>(row.getBindingNames());
+			names.sort(String::compareTo);
+			StringBuilder canonical = new StringBuilder();
+			for (String name : names) {
+				canonical.append(name).append('=').append(row.getValue(name)).append(';');
+			}
+			rows.add(canonical.toString());
+		}
+		rows.sort(String::compareTo);
+		return rows;
 	}
 }

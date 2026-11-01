@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -230,10 +231,10 @@ public class LmdbNativePrimitiveGroupingTest {
 	}
 
 	@Test
-	public void unsafeContextFirstOrderKeepsPrimitiveTwoKeyGroupMapWhenBoundedCountsAreDisabled() {
+	public void unboundPredicateBetweenGroupKeysKeepsPrimitiveTwoKeyGroupMapWhenBoundedCountsAreDisabled() {
 		SailRepository contextRepository = new SailRepository(
-				new LmdbStore(new File(dataDir, "context-first"),
-						new LmdbStoreConfig("cspo").setNativeEvaluationEnabled(true)));
+				new LmdbStore(new File(dataDir, "interleaved-two-key"),
+						new LmdbStoreConfig("spoc").setNativeEvaluationEnabled(true)));
 		String previousBounded = System.getProperty(NativeCountGroupStore.ENABLED_PROPERTY);
 		System.setProperty(NativeCountGroupStore.ENABLED_PROPERTY, "false");
 		try {
@@ -241,25 +242,71 @@ public class LmdbNativePrimitiveGroupingTest {
 				ValueFactory vf = connection.getValueFactory();
 				connection.begin();
 				for (int i = 0; i < 600; i++) {
-					connection.add(vf.createIRI(EX, "context-subject/" + i),
-							vf.createIRI(EX, "context-predicate/" + (i % 3)),
+					connection.add(vf.createIRI(EX, "context-subject/" + (i % 3)),
+							vf.createIRI(EX, "context-predicate/" + (i / 15)),
 							vf.createIRI(EX, "context-object/" + (i % 5)),
 							vf.createIRI(EX, "context/" + (i % 7)));
 				}
 				connection.commit();
 			}
-			resetCounters();
+			// All canonical SPOC/OPSC/PSOC/POSC streams put the unbound predicate before or between S and O.
+			// Every predicate revisits all 15 (S,O) groups, so none provides a complete grouping prefix.
 			String query = """
-					SELECT ?p ?o (COUNT(DISTINCT ?s) AS ?c)
+					SELECT ?s ?o (COUNT(DISTINCT ?p) AS ?c)
 					WHERE { GRAPH ?g { ?s ?p ?o } }
-					GROUP BY ?p ?o
+					GROUP BY ?s ?o
 					""";
+			List<BindingSet> generic;
+			String previousNative = System.setProperty(NATIVE_FLAG, "false");
+			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
+				generic = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			} finally {
+				restoreProperty(NATIVE_FLAG, previousNative);
+			}
+			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
+				GenericPlanNode optimized = connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.toGenericPlanNode();
+				assertThat(KernelExecutionTestAccess.eligibleStrategies(optimized)).contains("nestedLoop");
+				assertThat(optimized.toString()).as("the real available orders do not complete the two-key group")
+						.contains("groupOrderPrefix=1");
+				SailTupleQuery input = (SailTupleQuery) connection.prepareTupleQuery(
+						"SELECT ?s ?o WHERE { GRAPH ?g { ?s ?p ?o } }");
+				input.setForcedLmdbExecutionStrategy("nestedLoop");
+				input.setLmdbResultCacheRequested(false);
+				List<BindingSet> inputRows = QueryResults.asList(input.evaluate());
+				assertThat(inputRows).hasSize(600);
+				long groupRuns = 0;
+				String previousKey = null;
+				for (BindingSet row : inputRows) {
+					String key = row.getValue("s").stringValue() + "|" + row.getValue("o").stringValue();
+					if (!key.equals(previousKey)) {
+						groupRuns++;
+						previousKey = key;
+					}
+				}
+				assertThat(groupRuns).as("the source actually revisits groups after intervening keys")
+						.isGreaterThan(15L);
+			}
+			resetCounters();
 			List<BindingSet> serial;
 			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
-				serial = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+				prepared.setForcedLmdbExecutionStrategy("nestedLoop");
+				prepared.setLmdbResultCacheRequested(false);
+				serial = QueryResults.asList(prepared.evaluate());
 
 				assertThat(serial).hasSize(15)
 						.allSatisfy(row -> assertThat(((Literal) row.getValue("c")).longValue()).isEqualTo(40L));
+				assertThat(serial).containsExactlyInAnyOrderElementsOf(generic);
+				List<String> expectedKeys = new ArrayList<>();
+				for (int subject = 0; subject < 3; subject++) {
+					for (int object = 0; object < 5; object++) {
+						expectedKeys.add(EX + "context-subject/" + subject + "|" + EX + "context-object/" + object);
+					}
+				}
+				assertThat(serial).extracting(row -> row.getValue("s").stringValue() + "|"
+						+ row.getValue("o").stringValue()).containsExactlyInAnyOrderElementsOf(expectedKeys);
 			}
 
 			assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isEqualTo(600L);
@@ -268,6 +315,7 @@ public class LmdbNativePrimitiveGroupingTest {
 					return connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
 				}
 			}).isEqualTo(15L);
+			assertThat(strategy(contextRepository, query, "nestedLoop")).isEqualTo("primitiveTupleGroups");
 			String previousParallel = System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 			long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
