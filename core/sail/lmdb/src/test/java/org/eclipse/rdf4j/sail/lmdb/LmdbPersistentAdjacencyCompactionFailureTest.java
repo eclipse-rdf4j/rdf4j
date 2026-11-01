@@ -19,7 +19,9 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbPersistentAdjacencyCompactionWorkT
 import static org.eclipse.rdf4j.sail.lmdb.LmdbPersistentAdjacencyCompactionWorkTest.hotQuad;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbPersistentAdjacencyCompactionWorkTest.records;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.lwjgl.util.lmdb.LMDB.MDB_CORRUPTED;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.mockito.Mockito.mockStatic;
 
@@ -93,7 +95,12 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 					changes.assertCallbacks();
 				})) {
 					fault = active;
-					if (site == FaultSite.CODEC) {
+					if (site == FaultSite.NATIVE_NON_CAPACITY) {
+						LmdbUtil.LmdbException failure = assertThrows(LmdbUtil.LmdbException.class, store::commit);
+						assertThat(failure.errorCode).isEqualTo(MDB_CORRUPTED);
+					} else if (site == FaultSite.FATAL_CODEC) {
+						assertThat(assertThrows(AssertionError.class, store::commit)).isSameAs(active.fatalFailure);
+					} else if (site == FaultSite.CODEC) {
 						assertThatThrownBy(store::commit).isInstanceOf(IllegalStateException.class)
 								.hasMessage("injected compaction codec failure");
 					} else {
@@ -110,7 +117,12 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 				}
 				assertThat(store.writeTxn).isZero();
 				changes.assertCallbacks();
-				if (site == FaultSite.CODEC) {
+				if (site.abortsWithoutReplay()) {
+					assertThat(fault.nativeCommitAttempts).isZero();
+					assertThat(fault.writerRestarts).as("non-capacity failure cannot autonomously restart a writer")
+							.isZero();
+					assertThat(fault.injections).isEqualTo(1);
+					assertThat(store.currentWriterTransaction()).isNull();
 					assertThat(fault.mapResizes).isZero();
 					assertThat(store.mapSizeBytes()).isEqualTo(mapSize);
 					assertThat(store.getDataRevision()).isEqualTo(revision);
@@ -119,6 +131,8 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 					store.getTxnManager().doWith((stack, txn) -> {
 						assertModel(adjacency, txn, original);
 						assertThat(authority(txn, adjacency)).isEqualTo(originalAuthority);
+						LmdbPersistentAdjacencyContractAssertions.assertSnapshot(txn, original,
+								LmdbPersistentAdjacencyContractAssertions.union(original, changes.expected));
 						return null;
 					});
 					// A fresh transaction can repeat the operation after the failed native transaction is gone.
@@ -136,10 +150,14 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 				}
 				assertThat(store.getDataRevision()).isEqualTo(revision + 1);
 				assertCommittedState(store, changes.expected);
+				LmdbPersistentAdjacencyContractAssertions.assertState(store, changes.expected,
+						LmdbPersistentAdjacencyContractAssertions.union(original, changes.expected));
 			}
 		}
 		try (TripleStore reopened = new TripleStore(directory.toFile(), config, null)) {
 			assertCommittedState(reopened, changes.expected);
+			LmdbPersistentAdjacencyContractAssertions.assertState(reopened, changes.expected,
+					LmdbPersistentAdjacencyContractAssertions.union(original, changes.expected));
 		}
 	}
 
@@ -228,6 +246,8 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 					store.getTxnManager().doWith((stack, txn) -> {
 						assertModel(adjacency, txn, original);
 						assertThat(authority(txn, adjacency)).isEqualTo(originalAuthority);
+						LmdbPersistentAdjacencyContractAssertions.assertSnapshot(txn, original,
+								LmdbPersistentAdjacencyContractAssertions.union(original, changes.expected));
 						return null;
 					});
 					store.rollback();
@@ -267,7 +287,13 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 	private enum FaultSite {
 		CODEC,
 		DELTA_DELETE,
-		PAGE_PUT
+		PAGE_PUT,
+		NATIVE_NON_CAPACITY,
+		FATAL_CODEC;
+
+		boolean abortsWithoutReplay() {
+			return this == CODEC || this == NATIVE_NON_CAPACITY || this == FATAL_CODEC;
+		}
 	}
 
 	private static final class Changes {
@@ -351,6 +377,10 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 		int successfulDeletes;
 		int deletionAttempts;
 		int mapResizes;
+		int nativeCommitAttempts;
+		int writerRestarts;
+		int injections;
+		final AssertionError fatalFailure = new AssertionError("injected fatal compaction codec failure");
 
 		CompactionFault(FaultSite site, long writer, LmdbPersistentAdjacency adjacency, BeforeFault beforeFault) {
 			nativeCalls = mockStatic(LMDB.class, invocation -> {
@@ -389,11 +419,18 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 					}
 					return result;
 				}
-				if (method.equals("mdb_put") && site == FaultSite.PAGE_PUT && !injected && !aborted
+				if (method.equals("mdb_put") && (site == FaultSite.PAGE_PUT || site == FaultSite.NATIVE_NON_CAPACITY)
+						&& !injected && !aborted
 						&& (long) invocation.getArgument(0) == writer
 						&& (int) invocation.getArgument(1) == adjacency.pagesDbi() && successfulDeletes > 0) {
 					inject(beforeFault);
-					return MDB_MAP_FULL;
+					return site == FaultSite.NATIVE_NON_CAPACITY ? MDB_CORRUPTED : MDB_MAP_FULL;
+				}
+				if (method.equals("mdb_txn_begin") && ((int) invocation.getArgument(2) & MDB_RDONLY) == 0) {
+					writerRestarts++;
+				}
+				if (method.equals("mdb_txn_commit")) {
+					nativeCommitAttempts++;
 				}
 				if (method.equals("mdb_txn_abort") && injected && !aborted
 						&& (long) invocation.getArgument(0) == writer) {
@@ -412,9 +449,13 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 			});
 			try {
 				codecCalls = mockStatic(PersistentCsfPageCodec.class, invocation -> {
-					if (invocation.getMethod().getName().equals("encode") && site == FaultSite.CODEC && !injected
+					if (invocation.getMethod().getName().equals("encode")
+							&& (site == FaultSite.CODEC || site == FaultSite.FATAL_CODEC) && !injected
 							&& successfulDeletes > 0) {
 						inject(beforeFault);
+						if (site == FaultSite.FATAL_CODEC) {
+							throw fatalFailure;
+						}
 						throw new IllegalStateException("injected compaction codec failure");
 					}
 					return invocation.callRealMethod();
@@ -437,6 +478,7 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 					.isTrue();
 			beforeFault.run();
 			injected = true;
+			injections++;
 			events.add("fault");
 		}
 

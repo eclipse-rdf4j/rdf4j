@@ -27,8 +27,11 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -322,12 +325,65 @@ public class LmdbExistsIntersectionQueryTest {
 	}
 
 	@Test
-	public void missingSupportingIndexFallsBackAndStaysCorrect() {
+	public void canonicalOrdersSupportIntersectionWithSubjectOnlyPreference() {
 		openRepository("spoc");
-
-		long before = LmdbNativeExistsIntersection.OPENED.get();
 		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(6L);
-		assertThat(LmdbNativeExistsIntersection.OPENED.get()).isEqualTo(before);
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			assertThat(KernelExecutionTestAccess.eligibleStrategies(conn.prepareTupleQuery(SUBJECTS_ALSO_OBJECTS)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode())).contains("existsIntersection");
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(SUBJECTS_ALSO_OBJECTS);
+			prepared.setForcedLmdbExecutionStrategy("existsIntersection");
+			prepared.setLmdbResultCacheRequested(false);
+			List<BindingSet> forced = QueryResults.asList(prepared.evaluate());
+			assertThat(forced).hasSize(1);
+			assertThat(((Literal) forced.getFirst().getValue("count")).longValue()).isEqualTo(6L);
+			long before = LmdbNativeExistsIntersection.OPENED.get();
+			GenericPlanNode executed = prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode();
+			assertThat(findRoute(executed)).as("actual route: %s", executed).isEqualTo("existsIntersection");
+			assertThat(invocations(executed)).isEqualTo(1L);
+			assertThat(LmdbNativeExistsIntersection.OPENED.get()).isGreaterThan(before);
+			String property = "rdf4j.lmdb.nativeQueryEngine.enabled";
+			String old = System.setProperty(property, "false");
+			try {
+				SailTupleQuery generic = (SailTupleQuery) conn.prepareTupleQuery(SUBJECTS_ALSO_OBJECTS);
+				generic.setLmdbResultCacheRequested(false);
+				assertThat(QueryResults.asList(generic.evaluate())).containsExactlyInAnyOrderElementsOf(forced);
+			} finally {
+				if (old == null) {
+					System.clearProperty(property);
+				} else {
+					System.setProperty(property, old);
+				}
+			}
+		}
+	}
+
+	private static String findRoute(GenericPlanNode node) {
+		String own = node.getStringMetricActual("nativeExecutionPath");
+		if (own != null) {
+			return own;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String found = findRoute(child);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static long invocations(GenericPlanNode node) {
+		long count = node.getLongMetricsActual() == null ? 0L
+				: node.getLongMetricsActual().getOrDefault("nativeInvocationsActual", 0L);
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				count += invocations(child);
+			}
+		}
+		return count;
 	}
 
 	private void openRepository(String indexes) {

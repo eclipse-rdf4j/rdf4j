@@ -194,51 +194,6 @@ public class TripleStoreTest {
 	}
 
 	@Test
-	public void globalPreparedFourIndexOrdersAndDuplicateFilteringAreExact() throws Exception {
-		File preparedDir = new File(dataDir, "global-prepared-index-order");
-		try (TripleStore preparedStore = new TripleStore(preparedDir,
-				new LmdbStoreConfig("spoc,ospc,posc,psoc"), null);
-				var executor = Executors.newFixedThreadPool(3)) {
-			long[] subjects = { 1, 1, 2, 2, 2, 3, 4, 4, 5 };
-			long[] predicates = { 2, 3, 1, 1, 1, 2, 1, 3, 2 };
-			long[] objects = { 9, 8, 9, 9, 9, 7, 8, 7, 8 };
-			long[] contexts = { 1, 0, 0, 2, 0, 1, 0, 2, 0 };
-			long[] valueIds = new long[10];
-			for (int i = 0; i < valueIds.length; i++) {
-				valueIds[i] = i;
-			}
-			int[] quads = new int[subjects.length * 4];
-			for (int i = 0; i < subjects.length; i++) {
-				quads[4 * i] = (int) subjects[i];
-				quads[4 * i + 1] = (int) predicates[i];
-				quads[4 * i + 2] = (int) objects[i];
-				quads[4 * i + 3] = (int) contexts[i];
-			}
-
-			TripleStore.GlobalPreparedIndexOrdersTask task = preparedStore.prepareGlobalIndexOrdersAsync(executor,
-					quads, valueIds, subjects.length);
-			assertArrayEquals(expectedOrder("spoc", subjects, predicates, objects, contexts), task.awaitMain());
-			assertArrayEquals(expectedOrder("ospc", subjects, predicates, objects, contexts), task.awaitSecondary(1));
-			assertArrayEquals(expectedOrder("posc", subjects, predicates, objects, contexts), task.awaitSecondary(2));
-			assertArrayEquals(expectedOrder("psoc", subjects, predicates, objects, contexts), task.awaitSecondary(3));
-
-			preparedStore.startTransaction();
-			try {
-				preparedStore.storeGloballyOrderedFreshTriples(quads, valueIds, subjects.length, task, executor);
-				preparedStore.commit();
-			} catch (Throwable e) {
-				preparedStore.rollback();
-				throw e;
-			} finally {
-				task.cancel();
-			}
-			for (long count : preparedStore.explicitIndexEntryCounts().values()) {
-				assertEquals(8L, count);
-			}
-		}
-	}
-
-	@Test
 	public void globalIdBatchWritesPersistentDirectionsWithoutPreparedIndexWork() throws Exception {
 		long[] subjects = { 1, 1, 2, 2, 2, 3, 4, 4, 5 };
 		long[] predicates = { 2, 3, 1, 1, 1, 2, 1, 3, 2 };
@@ -273,7 +228,7 @@ public class TripleStoreTest {
 			store.startTransaction();
 			var observation = LmdbPersistentMutationBatchObservation.observe(store);
 			try (observation) {
-				// This is the actual LmdbSailStore global-ID path; legacy per-index preparers are not involved.
+				// Exercise the persistent primitive directly; Sail large-batch admission is a separate contract.
 				assertEquals(8, store.storeGloballyOrderedFreshTriples(quads, valueIds, subjects.length, null, null));
 			}
 			observation.assertBatch(8, 3, true);

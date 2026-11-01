@@ -232,7 +232,8 @@ public final class LmdbCompatibilityFixtures {
 		});
 	}
 
-	static void assertPersistentStatementAuthority(LmdbStore store, long explicit, long inferred) throws IOException {
+	public static void assertPersistentStatementAuthority(LmdbStore store, long explicit, long inferred)
+			throws IOException {
 		assertThat(store.getLmdbStats().tripleDatabases().keySet())
 				.as("reported statement databases expose persistent pages, metadata and deltas")
 				.contains(LmdbPersistentAdjacency.PAGES_DATABASE, LmdbPersistentAdjacency.METADATA_DATABASE,

@@ -13,8 +13,8 @@ Restore reliable query-ready in-memory adjacency, snapshot-safe reads, bounded-r
 - [x] (2026-11-01 19:24Z) Reproduced grouping and range failures.
 - [x] (2026-11-01 19:27Z) Repaired complete snapshot-local grouping selection; independent review and 61 new cases pass.
 - [x] (2026-11-01 19:33Z) Validated and published grouping repair421e1593, preserving06f778.
-- [in_progress] Repair remaining growth, estimator and loading terminal-state contracts.
-- [ ] Retarget retired instrumentation without weakening assertions.
+- [in_progress] Repair the bounded persistent-cardinality planning contract.
+- [x] Retarget retired instrumentation without weakening assertions.
 - [ ] Rerun failure ledger and broad gates.
 
 ## Context and Orientation
@@ -89,3 +89,9 @@ Capacity-model and phase-C validation:31 cases pass. Generic List and count fore
 Frozen broad validation at localf6daa576: all56 original failing classes executed1,024 cases, with986 passes,33 failures,2 errors and3 skips. Exact original-case ledger now253 passed/35 failed/0 unverified, including explicit renamed-test mapping; remaining35 are known pending estimator/retired-format contracts, not new regression families. Reports and immutable source/tree provenance are preserved.
 
 Terminal admission ordering: a deterministic protocol test starts a real import and pauses the private defensive false/null terminal branch during fallback exception construction. Pre-fix a peer returned successfully before failure publication; post-fix it demonstrably blocks on the exact owned monitor and then receives the same failure. This is not represented as a normal cleanup-I/O concurrent reproduction. Publish the failure before the volatile owner clear, preserving the lock-free reader fast path and notify semantics. All79 adjacent/protocol/real-cleanup cases pass.
+
+Current authority/global primitive contract gate:35 cases pass. The unreachable private four-permutation preparer fixture is explicitly replaced by the stronger actual global-ID primitive test; this does not claim the currently gated Sail large-batch route engages. Default bulk object lookups and normal-close POSC semantics verify actual persistent authority and exact rows across reopen, not removed physical permutation names.
+
+Canonical query and metadata availability:36 query cases pass, including forced eligible prefix/EXISTS routes with cache disabled and exact generic bags; a real S/O cube proves noncontiguity/refusal under all four canonical orders. Seven metadata/refusal controls pass, proving exactly one correct-plane native predicate-count lookup, pinned/fresh/reopen and inferred promotion/deletion. Selected-work controls preserve8-worker/full256-row models and prove unchanged actual reads when unrelated populations double:builder17gets/180moves;scanner0gets/10moves. Five certified real process-death cuts pass with full authority and two reopens. D publication cases remain unresolved at an experimental-policy fixture-admission assertion; later assertions have not yet executed.
+
+D/E final mapping:all20 retired worker invocations now have observed real-authority replacements; compaction8, mutation4, certified crash5 and corrected-policy publication3 pass. Retained BackgroundReindex/CrashRecovery controls33 pass after exact13-method retirement. Exact original ledger286 passed/2 failed/0 unverified; the two remaining old estimate goldens share the genuine unbounded format-native planning root, not a reason to waive its work/accuracy contract. New estimator quality/work gate15 cases has11 failures and4 tiny exact controls passing before implementation.
