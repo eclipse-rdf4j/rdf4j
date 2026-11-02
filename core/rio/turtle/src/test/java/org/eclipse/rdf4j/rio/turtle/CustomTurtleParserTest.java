@@ -185,7 +185,7 @@ public class CustomTurtleParserTest {
 
 	@Test
 	public void testSupportedSettings() {
-		assertThat(parser.getSupportedSettings()).hasSize(15);
+		assertThat(parser.getSupportedSettings()).hasSize(16).contains(BasicParserSettings.MAX_NESTING_DEPTH);
 	}
 
 	@Test

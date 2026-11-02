@@ -49,6 +49,7 @@ class QuerySafetyNameFactsTest {
 		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(query);
 
 		assertThat(snapshot.isRepeatable(query)).isTrue();
+		assertThat(snapshot.isRepeatableAcrossExecutions(query)).isTrue();
 		assertThat(snapshot.mayRaiseQueryFatalError(query)).isFalse();
 		assertThat(snapshot.usesMappingParameterizedEvaluation(query)).isFalse();
 		assertThat(snapshot.containsLateral(query)).isFalse();

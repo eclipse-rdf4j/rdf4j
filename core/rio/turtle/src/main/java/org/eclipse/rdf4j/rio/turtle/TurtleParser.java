@@ -117,6 +117,7 @@ public class TurtleParser extends AbstractRDFParser {
 	@Override
 	public Collection<RioSetting<?>> getSupportedSettings() {
 		Set<RioSetting<?>> result = new HashSet<>(super.getSupportedSettings());
+		result.add(BasicParserSettings.MAX_NESTING_DEPTH);
 		result.add(TurtleParserSettings.CASE_INSENSITIVE_DIRECTIVES);
 		result.add(TurtleParserSettings.ACCEPT_TURTLESTAR);
 		return result;
@@ -509,57 +510,62 @@ public class TurtleParser extends AbstractRDFParser {
 	 * Parses a collection, e.g. <var>( item1 item2 item3 )</var>.
 	 */
 	protected Resource parseCollection() throws IOException, RDFParseException, RDFHandlerException {
-		verifyCharacterOrFail(readCodePoint(), "(");
+		enterNestingLevel();
+		try {
+			verifyCharacterOrFail(readCodePoint(), "(");
 
-		int c = skipWSC();
+			int c = skipWSC();
 
-		if (c == ')') {
-			// Empty list
-			readCodePoint();
-			if (subject != null) {
-				reportStatement(subject, predicate, RDF.NIL);
-			}
-			return RDF.NIL;
-		} else {
-			Resource listRoot = createNode();
-			if (subject != null) {
-				reportStatement(subject, predicate, listRoot);
-			}
+			if (c == ')') {
+				// Empty list
+				readCodePoint();
+				if (subject != null) {
+					reportStatement(subject, predicate, RDF.NIL);
+				}
+				return RDF.NIL;
+			} else {
+				Resource listRoot = createNode();
+				if (subject != null) {
+					reportStatement(subject, predicate, listRoot);
+				}
 
-			// Remember current subject and predicate
-			Resource oldSubject = subject;
-			IRI oldPredicate = predicate;
+				// Remember current subject and predicate
+				Resource oldSubject = subject;
+				IRI oldPredicate = predicate;
 
-			// generated bNode becomes subject, predicate becomes rdf:first
-			subject = listRoot;
-			predicate = RDF.FIRST;
-
-			parseObject();
-
-			Resource bNode = listRoot;
-
-			while (skipWSC() != ')') {
-				// Create another list node and link it to the previous
-				Resource newNode = createNode();
-				reportStatement(bNode, RDF.REST, newNode);
-
-				// New node becomes the current
-				subject = bNode = newNode;
+				// generated bNode becomes subject, predicate becomes rdf:first
+				subject = listRoot;
+				predicate = RDF.FIRST;
 
 				parseObject();
+
+				Resource bNode = listRoot;
+
+				while (skipWSC() != ')') {
+					// Create another list node and link it to the previous
+					Resource newNode = createNode();
+					reportStatement(bNode, RDF.REST, newNode);
+
+					// New node becomes the current
+					subject = bNode = newNode;
+
+					parseObject();
+				}
+
+				// Skip ')'
+				readCodePoint();
+
+				// Close the list
+				reportStatement(bNode, RDF.REST, RDF.NIL);
+
+				// Restore previous subject and predicate
+				subject = oldSubject;
+				predicate = oldPredicate;
+
+				return listRoot;
 			}
-
-			// Skip ')'
-			readCodePoint();
-
-			// Close the list
-			reportStatement(bNode, RDF.REST, RDF.NIL);
-
-			// Restore previous subject and predicate
-			subject = oldSubject;
-			predicate = oldPredicate;
-
-			return listRoot;
+		} finally {
+			exitNestingLevel();
 		}
 	}
 
@@ -568,41 +574,46 @@ public class TurtleParser extends AbstractRDFParser {
 	 * surrounded by square brackets.
 	 */
 	protected Resource parseImplicitBlank() throws IOException, RDFParseException, RDFHandlerException {
-		verifyCharacterOrFail(readCodePoint(), "[");
+		enterNestingLevel();
+		try {
+			verifyCharacterOrFail(readCodePoint(), "[");
 
-		Resource bNode = createNode();
-		if (subject != null) {
-			reportStatement(subject, predicate, bNode);
-		}
-
-		skipWSC();
-		int c = readCodePoint();
-		if (c != ']') {
-			unread(c);
-
-			// Remember current subject and predicate
-			Resource oldSubject = subject;
-			IRI oldPredicate = predicate;
-
-			// generated bNode becomes subject
-			subject = bNode;
-
-			// Enter recursion with nested predicate-object list
-			skipWSC();
-
-			parsePredicateObjectList();
+			Resource bNode = createNode();
+			if (subject != null) {
+				reportStatement(subject, predicate, bNode);
+			}
 
 			skipWSC();
+			int c = readCodePoint();
+			if (c != ']') {
+				unread(c);
 
-			// Read closing bracket
-			verifyCharacterOrFail(readCodePoint(), "]");
+				// Remember current subject and predicate
+				Resource oldSubject = subject;
+				IRI oldPredicate = predicate;
 
-			// Restore previous subject and predicate
-			subject = oldSubject;
-			predicate = oldPredicate;
+				// generated bNode becomes subject
+				subject = bNode;
+
+				// Enter recursion with nested predicate-object list
+				skipWSC();
+
+				parsePredicateObjectList();
+
+				skipWSC();
+
+				// Read closing bracket
+				verifyCharacterOrFail(readCodePoint(), "]");
+
+				// Restore previous subject and predicate
+				subject = oldSubject;
+				predicate = oldPredicate;
+			}
+
+			return bNode;
+		} finally {
+			exitNestingLevel();
 		}
-
-		return bNode;
 	}
 
 	/**
@@ -714,8 +725,18 @@ public class TurtleParser extends AbstractRDFParser {
 
 			skipWSC();
 
-			// Read datatype
-			Value datatype = parseValue();
+			// A datatype is an IRI, not an arbitrary value. In particular, never recurse into
+			// another quoted literal or triple term before discovering that its type is illegal.
+			Value datatype;
+			int start = peekCodePoint();
+			if (start == '<' && !peekIsTripleTerm() && !peekIsReifiedTriple()) {
+				datatype = parseURI();
+			} else if (start == ':' || TurtleUtil.isPrefixStartChar(start)) {
+				datatype = parseQNameOrBoolean();
+			} else {
+				reportFatalError("Expected a datatype IRI after '^^'");
+				return null;
+			}
 			if (datatype == null) {
 				// the datatype IRI could not be parsed. report as error only if VERIFY_URI_SYNTAX is enabled, silently
 				// skip otherwise.
@@ -764,7 +785,8 @@ public class TurtleParser extends AbstractRDFParser {
 		try {
 			result = TurtleUtil.decodeString(result);
 		} catch (IllegalArgumentException e) {
-			reportError(e.getMessage(), BasicParserSettings.VERIFY_DATATYPE_VALUES);
+			// Serialization escapes are syntax, independent of datatype lexical validation.
+			reportFatalError(e.getMessage());
 		}
 
 		return result;
@@ -921,7 +943,7 @@ public class TurtleParser extends AbstractRDFParser {
 				}
 
 				if (!ASCIIUtil.isNumber(c)) {
-					reportError("Exponent value missing", BasicParserSettings.VERIFY_DATATYPE_VALUES);
+					reportFatalError("Exponent value missing");
 				}
 
 				appendCodepoint(value, c);
@@ -1014,7 +1036,8 @@ public class TurtleParser extends AbstractRDFParser {
 				// invalid according to test <turtle-syntax-bad-uri-04.ttl>
 				uri = TurtleUtil.decodeString(uri);
 			} catch (IllegalArgumentException e) {
-				reportError(e.getMessage(), BasicParserSettings.VERIFY_DATATYPE_VALUES);
+				// Serialization escapes are syntax, independent of datatype lexical validation.
+				reportFatalError(e.getMessage());
 			}
 
 			return super.resolveURI(uri);
@@ -1467,85 +1490,95 @@ public class TurtleParser extends AbstractRDFParser {
 	 * @throws IOException
 	 */
 	protected TripleTerm parseTripleTerm() throws IOException {
-		verifyCharacterOrFail(readCodePoint(), "<");
-		verifyCharacterOrFail(readCodePoint(), "<");
-		verifyCharacterOrFail(readCodePoint(), "(");
-		skipWSC();
-		Value subject = parseValue();
-		if (subject instanceof Resource) {
+		enterNestingLevel();
+		try {
+			verifyCharacterOrFail(readCodePoint(), "<");
+			verifyCharacterOrFail(readCodePoint(), "<");
+			verifyCharacterOrFail(readCodePoint(), "(");
 			skipWSC();
-			IRI predicate = parsePredicate();
-			skipWSC();
-			Value object = parseValue();
-			if (object != null) {
+			Value subject = parseValue();
+			if (subject instanceof Resource) {
 				skipWSC();
-				verifyCharacterOrFail(readCodePoint(), ")");
-				verifyCharacterOrFail(readCodePoint(), ">");
-				verifyCharacterOrFail(readCodePoint(), ">");
-				return valueFactory.createTripleTerm((Resource) subject, predicate, object);
+				IRI predicate = parsePredicate();
+				skipWSC();
+				Value object = parseValue();
+				if (object != null) {
+					skipWSC();
+					verifyCharacterOrFail(readCodePoint(), ")");
+					verifyCharacterOrFail(readCodePoint(), ">");
+					verifyCharacterOrFail(readCodePoint(), ">");
+					return valueFactory.createTripleTerm((Resource) subject, predicate, object);
+				} else {
+					reportFatalError("Missing object in triple term");
+				}
 			} else {
-				reportFatalError("Missing object in triple term");
+				reportFatalError("Illegal subject val in triple term: " + subject);
 			}
-		} else {
-			reportFatalError("Illegal subject val in triple term: " + subject);
-		}
 
-		return null;
+			return null;
+		} finally {
+			exitNestingLevel();
+		}
 	}
 
 	protected Resource parseReifiedTriple() throws IOException {
-		verifyCharacterOrFail(readCodePoint(), "<");
-		verifyCharacterOrFail(readCodePoint(), "<");
-		skipWSC();
-
-		TripleTerm oldTripleTerm = currTripleTerm;
-
-		Value rtSubject;
-		if (peekIsReifiedTriple()) {
-			rtSubject = parseReifiedTriple();
-		} else {
-			rtSubject = parseValue();
-		}
-
-		if (rtSubject instanceof Resource) {
+		enterNestingLevel();
+		try {
+			verifyCharacterOrFail(readCodePoint(), "<");
+			verifyCharacterOrFail(readCodePoint(), "<");
 			skipWSC();
-			IRI predicate = parsePredicate();
-			skipWSC();
-			Value rtObject;
+
+			TripleTerm oldTripleTerm = currTripleTerm;
+
+			Value rtSubject;
 			if (peekIsReifiedTriple()) {
-				rtObject = parseReifiedTriple();
+				rtSubject = parseReifiedTriple();
 			} else {
-				rtObject = parseValue();
+				rtSubject = parseValue();
 			}
 
-			if (rtObject != null) {
-
-				currTripleTerm = valueFactory.createTripleTerm((Resource) rtSubject, predicate, rtObject);
-
-				Resource reifier;
-
-				if (skipWSC() == '~') {
-					reifier = parseReifier();
+			if (rtSubject instanceof Resource) {
+				skipWSC();
+				IRI predicate = parsePredicate();
+				skipWSC();
+				Value rtObject;
+				if (peekIsReifiedTriple()) {
+					rtObject = parseReifiedTriple();
 				} else {
-					reifier = valueFactory.createBNode();
+					rtObject = parseValue();
 				}
 
-				skipWSC();
-				verifyCharacterOrFail(readCodePoint(), ">");
-				verifyCharacterOrFail(readCodePoint(), ">");
+				if (rtObject != null) {
 
-				addReifyingTriple(reifier);
+					currTripleTerm = valueFactory.createTripleTerm((Resource) rtSubject, predicate, rtObject);
 
-				currTripleTerm = oldTripleTerm;
+					Resource reifier;
 
-				return currReifier;
+					if (skipWSC() == '~') {
+						reifier = parseReifier();
+					} else {
+						reifier = valueFactory.createBNode();
+					}
+
+					skipWSC();
+					verifyCharacterOrFail(readCodePoint(), ">");
+					verifyCharacterOrFail(readCodePoint(), ">");
+
+					addReifyingTriple(reifier);
+
+					currTripleTerm = oldTripleTerm;
+
+					return currReifier;
+				} else {
+					reportFatalError("Missing object in triple term");
+				}
 			} else {
-				reportFatalError("Missing object in triple term");
+				reportFatalError("Illegal subject val in reified triple: " + rtSubject);
 			}
-		} else {
-			reportFatalError("Illegal subject val in reified triple: " + rtSubject);
+			return null;
+		} finally {
+			exitNestingLevel();
 		}
-		return null;
 	}
 
 	protected void addReifyingTriple(Resource reifier) {
@@ -1572,24 +1605,29 @@ public class TurtleParser extends AbstractRDFParser {
 	}
 
 	protected void parseAnnotationBlock() throws IOException {
-		verifyCharacterOrFail(readCodePoint(), "{");
-		verifyCharacterOrFail(readCodePoint(), "|");
-		skipWSC();
+		enterNestingLevel();
+		try {
+			verifyCharacterOrFail(readCodePoint(), "{");
+			verifyCharacterOrFail(readCodePoint(), "|");
+			skipWSC();
 
-		final TripleTerm oldTripleTerm = currTripleTerm;
+			final TripleTerm oldTripleTerm = currTripleTerm;
 
-		if (currReifier == null) {
-			addReifyingTriple(valueFactory.createBNode());
+			if (currReifier == null) {
+				addReifyingTriple(valueFactory.createBNode());
+			}
+
+			subject = currReifier;
+
+			parsePredicateObjectList();
+			verifyCharacterOrFail(readCodePoint(), "|");
+			verifyCharacterOrFail(readCodePoint(), "}");
+
+			currReifier = null;
+			currTripleTerm = oldTripleTerm;
+		} finally {
+			exitNestingLevel();
 		}
-
-		subject = currReifier;
-
-		parsePredicateObjectList();
-		verifyCharacterOrFail(readCodePoint(), "|");
-		verifyCharacterOrFail(readCodePoint(), "}");
-
-		currReifier = null;
-		currTripleTerm = oldTripleTerm;
 	}
 
 	protected void parseAnnotation() throws IOException {

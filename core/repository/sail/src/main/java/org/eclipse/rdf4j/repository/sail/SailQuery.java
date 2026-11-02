@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.rdfparser.RdfParserQuerySupport;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.AbstractParserQuery;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
@@ -97,7 +98,8 @@ public abstract class SailQuery extends AbstractParserQuery {
 			timeout = getMaxExecutionTime();
 		}
 
-		TupleExpr tupleExpr = getParsedQuery().getTupleExpr().clone();
+		TupleExpr tupleExpr = RdfParserQuerySupport.rewriteOwned(getParsedQuery().getTupleExpr().clone(),
+				getBindings());
 
 		if (!(tupleExpr instanceof QueryRoot)) {
 			// Add a dummy root node to the tuple expressions to allow optimizers to modify the actual root node

@@ -1,0 +1,4 @@
+PREFIX parse: <http://rdf4j.org/function/parse#>
+SELECT ?s ?p ?o WHERE {
+  (?document "text/turtle") parse:triples (?s ?p ?o) .
+}

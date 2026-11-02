@@ -181,6 +181,13 @@ public class UndeclaredFunctionPolicyTest {
 		assertThat(QueryEvaluationUtility.isRepeatable(undeclared, QueryExecutionPolicy.EXPERIMENTAL)).isFalse();
 		assertThat(QueryEvaluationUtility.isSafeForPlanConstantFolding(undeclared,
 				QueryExecutionPolicy.EXPERIMENTAL)).isFalse();
+		withRegistered(undeclared, () -> {
+			FunctionCall undeclaredCall = new FunctionCall(undeclared.getURI());
+			assertThat(QueryEvaluationUtility.querySafetySnapshot(undeclaredCall, QueryExecutionPolicy.DEFAULT)
+					.isRepeatableAcrossExecutions(undeclaredCall)).isTrue();
+			assertThat(QueryEvaluationUtility.querySafetySnapshot(undeclaredCall, QueryExecutionPolicy.EXPERIMENTAL)
+					.isRepeatableAcrossExecutions(undeclaredCall)).isFalse();
+		});
 		// Outside a strategy's preparation phase the classification stays conservative.
 		assertThat(QueryEvaluationUtility.isRepeatable(undeclared)).isFalse();
 
