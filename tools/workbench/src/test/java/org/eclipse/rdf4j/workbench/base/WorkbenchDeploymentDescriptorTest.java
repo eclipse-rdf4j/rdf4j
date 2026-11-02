@@ -135,11 +135,12 @@ class WorkbenchDeploymentDescriptorTest {
 	private static final String STYLESHEET = "/styles/graph-explorer.css";
 
 	/**
-	 * The explorer's entry and stylesheet keep their names across releases while the chunks and workers they load are
-	 * hashed: they are revalidated, so an upgrade never pairs a cached entry with chunks the new WAR no longer has.
+	 * Scripts and stylesheets keep their names across releases (the explorer's entry also loads hashed chunks): they
+	 * are revalidated, so after an upgrade a browser never runs the previous release's scripts against the new server,
+	 * nor pairs a cached entry with chunks the new WAR no longer has.
 	 */
 	@Test
-	void theGraphExplorerEntryAndStylesheetAreRevalidatedAfterTheLongCache() throws Exception {
+	void scriptsAndStylesheetsAreRevalidatedAfterTheLongCache() throws Exception {
 		Document descriptor = descriptor();
 		Map<String, String> filterClasses = new HashMap<>();
 		Map<String, Map<String, String>> filterParams = new HashMap<>();
@@ -170,12 +171,11 @@ class WorkbenchDeploymentDescriptorTest {
 			}
 		}
 
-		assertThat(filterClasses).containsEntry("RevalidatedEntryFilter", CacheFilter.class.getName());
-		assertThat(filterParams.get("RevalidatedEntryFilter")).containsEntry("Cache-Control", "0");
-		assertThat(patterns.get("RevalidatedEntryFilter"))
-				.containsExactlyInAnyOrder(ENTRY, QUERY_RENDERER_ENTRY, STYLESHEET);
+		assertThat(filterClasses).containsEntry("RevalidatedAssetFilter", CacheFilter.class.getName());
+		assertThat(filterParams.get("RevalidatedAssetFilter")).containsEntry("Cache-Control", "0");
+		assertThat(patterns.get("RevalidatedAssetFilter")).containsExactlyInAnyOrder("/scripts/*", "/styles/*");
 		assertThat(patterns.get("CacheFilter")).containsExactly("*");
-		assertThat(mappingOrder.indexOf("RevalidatedEntryFilter"))
+		assertThat(mappingOrder.indexOf("RevalidatedAssetFilter"))
 				.as("the revalidation header must be set after the long cache header it replaces")
 				.isGreaterThan(mappingOrder.indexOf("CacheFilter"));
 	}
@@ -193,19 +193,19 @@ class WorkbenchDeploymentDescriptorTest {
 	}
 
 	@Test
-	void theFiltersInMappingOrderRevalidateTheEntryAndCacheEverythingElse() throws Exception {
+	void theFiltersInMappingOrderRevalidateScriptsAndStylesAndCacheEverythingElse() throws Exception {
 		CacheFilter longCache = cacheFilter("600");
 		CacheFilter revalidate = cacheFilter("0");
 
-		for (String path : List.of(ENTRY, QUERY_RENDERER_ENTRY, STYLESHEET)) {
+		for (String path : List.of(ENTRY, QUERY_RENDERER_ENTRY, STYLESHEET, "/scripts/workbenchApp.js",
+				"/styles/workbench-refresh.css")) {
 			MockHttpServletResponse response = new MockHttpServletResponse();
 			longCache.doFilter(new MockHttpServletRequest("GET", path), response,
 					(request, target) -> revalidate.doFilter(request, target, (ignored, done) -> {
 					}));
 			assertThat(response.getHeaders("Cache-Control")).as(path).containsExactly("max-age=0, public");
 		}
-		for (String path : List.of("/scripts/workbenchApp.js", "/scripts/graph-explorer/chunks/layout-a1b2.mjs",
-				"/scripts/graph-explorer/workers/layout-c3d4.mjs")) {
+		for (String path : List.of("/favicon.ico", "/images/logo.svg")) {
 			MockHttpServletResponse response = new MockHttpServletResponse();
 			longCache.doFilter(new MockHttpServletRequest("GET", path), response, (ignored, done) -> {
 			});

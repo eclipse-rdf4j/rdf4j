@@ -441,15 +441,14 @@ public class Rdf4jServerWorkbenchApplication {
 	}
 
 	/**
-	 * Mirrors web.xml: the graph explorer's unhashed entry and stylesheet are revalidated (they load hashed chunks).
+	 * Mirrors web.xml: scripts and stylesheets keep their names across releases, so they are revalidated and an upgrade
+	 * never leaves a browser running the previous release's scripts (or an explorer entry whose chunks are gone).
 	 */
 	@Bean
-	FilterRegistrationBean<CacheFilter> revalidatedEntryFilter() {
+	FilterRegistrationBean<CacheFilter> revalidatedAssetFilter() {
 		FilterRegistrationBean<CacheFilter> registration = new FilterRegistrationBean<>(new CacheFilter());
-		registration.addUrlPatterns("/rdf4j-workbench/scripts/graph-explorer/graph-explorer.mjs",
-				"/rdf4j-workbench/scripts/graph-explorer/query-graph-renderer.mjs",
-				"/rdf4j-workbench/styles/graph-explorer.css");
-		registration.setName("RevalidatedEntryFilter");
+		registration.addUrlPatterns("/rdf4j-workbench/scripts/*", "/rdf4j-workbench/styles/*");
+		registration.setName("RevalidatedAssetFilter");
 		registration.setOrder(3);
 		registration.setAsyncSupported(true);
 		registration.addInitParameter("Cache-Control", "0");

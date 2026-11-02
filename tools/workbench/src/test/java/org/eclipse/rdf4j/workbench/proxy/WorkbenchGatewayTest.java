@@ -221,7 +221,7 @@ class WorkbenchGatewayTest {
 		invalidRequest.addParameter("workbench-server", "bad-server");
 		CapturedResponse invalidResponse = new CapturedResponse();
 		gateway.service(invalidRequest, invalidResponse);
-		assertThat(invalidResponse.getBody()).contains("Invalid Server URL").contains("bad-server");
+		assertThat(invalidResponse.getBody()).contains("Cannot connect to this server").contains("bad-server");
 	}
 
 	@Test
@@ -245,8 +245,36 @@ class WorkbenchGatewayTest {
 		invalid.addParameter("workbench-server", "bad-server");
 		CapturedResponse invalidResponse = new CapturedResponse();
 		gateway.service(invalid, invalidResponse);
-		assertThat(invalidResponse.getBody()).contains("Invalid Server URL");
+		assertThat(invalidResponse.getBody()).contains("Cannot connect to this server");
 		assertThat(linkedModels(invalidResponse.getBody())).containsExactly("info");
+	}
+
+	/** An empty server field asks for a URL; a URL the Workbench cannot use says what to check. */
+	@Test
+	void theConnectionPageSaysWhatIsWrongWithTheServer() throws Exception {
+		ServerValidator validator = mock(ServerValidator.class);
+		when(validator.isValidServer("http://localhost:9/rdf4j-server")).thenReturn(false);
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("9"), validator);
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "/rdf4j-server",
+				"change-server-path", "/change",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+
+		MockHttpServletRequest empty = request("POST", "/workbench/change", "/change");
+		empty.addHeader("Accept", "application/vnd.rdf4j.workbench+ndjson");
+		empty.addParameter("workbench-server", "  ");
+		CapturedResponse emptyResponse = new CapturedResponse();
+		gateway.service(empty, emptyResponse);
+		assertThat(emptyResponse.getBody()).contains("Enter the URL of an RDF4J Server.");
+
+		MockHttpServletRequest unusable = request("POST", "/workbench/change", "/change");
+		unusable.addHeader("Accept", "application/vnd.rdf4j.workbench+ndjson");
+		unusable.addParameter("workbench-server", "http://localhost:9/rdf4j-server");
+		CapturedResponse unusableResponse = new CapturedResponse();
+		gateway.service(unusable, unusableResponse);
+		assertThat(unusableResponse.getBody()).contains("Cannot connect to this server. Check the URL, that the server "
+				+ "is running, and that this Workbench is allowed to connect to it.")
+				.contains("http://localhost:9/rdf4j-server");
 	}
 
 	private static List<String> linkedModels(String ndjson) {
@@ -282,7 +310,7 @@ class WorkbenchGatewayTest {
 		assertThat(response.getRecordedContentType()).startsWith("text/html");
 		assertThat(response.getBody())
 				.contains("data-workbench-view=\"server\"")
-				.doesNotContain("<?xml-stylesheet", ".xsl", "Invalid Server URL");
+				.doesNotContain("<?xml-stylesheet", ".xsl", "Cannot connect to this server");
 	}
 
 	@Test
@@ -455,7 +483,8 @@ class WorkbenchGatewayTest {
 				.contains("data-workbench-view=\"server\"", "data-workbench-initial-model=")
 				.doesNotContain("<?xml-stylesheet", ".xsl");
 		assertThat(initialPageModel(html))
-				.contains("\"id\":\"server\"", "\"type\":\"view\"", "Invalid Server URL", "\"type\":\"end\"");
+				.contains("\"id\":\"server\"", "\"type\":\"view\"", "Cannot connect to this server",
+						"\"type\":\"end\"");
 		org.mockito.Mockito.verify(validator, org.mockito.Mockito.times(1)).isValidServer("bad-server");
 	}
 
@@ -942,7 +971,7 @@ class WorkbenchGatewayTest {
 
 		gateway.service(changeRequest, response);
 
-		assertThat(response.getBody()).contains("Invalid Server URL").contains("/rdf4j-server2");
+		assertThat(response.getBody()).contains("Cannot connect to this server").contains("/rdf4j-server2");
 		assertThat(cookies.addedCookies).doesNotContainKey("workbench-server");
 	}
 
@@ -963,7 +992,8 @@ class WorkbenchGatewayTest {
 
 		gateway.service(changeRequest, response);
 
-		assertThat(response.getBody()).contains("Invalid Server URL").contains("//evil.example/rdf4j-server");
+		assertThat(response.getBody()).contains("Cannot connect to this server")
+				.contains("//evil.example/rdf4j-server");
 		assertThat(cookies.addedCookies).doesNotContainKey("workbench-server");
 	}
 
@@ -984,7 +1014,7 @@ class WorkbenchGatewayTest {
 
 		gateway.service(changeRequest, response);
 
-		assertThat(response.getBody()).contains("Invalid Server URL")
+		assertThat(response.getBody()).contains("Cannot connect to this server")
 				.contains("http://example.org/rdf4j-server/tenant-a");
 		assertThat(cookies.addedCookies).doesNotContainKey("workbench-server");
 	}
@@ -1006,7 +1036,7 @@ class WorkbenchGatewayTest {
 
 		gateway.service(changeRequest, response);
 
-		assertThat(response.getBody()).contains("Invalid Server URL")
+		assertThat(response.getBody()).contains("Cannot connect to this server")
 				.contains("https://example.org:8443/rdf4j-server/tenant-a");
 		assertThat(cookies.addedCookies).doesNotContainKey("workbench-server");
 	}
@@ -1028,7 +1058,7 @@ class WorkbenchGatewayTest {
 
 		gateway.service(changeRequest, response);
 
-		assertThat(response.getBody()).contains("Invalid Server URL")
+		assertThat(response.getBody()).contains("Cannot connect to this server")
 				.contains("https://user@example.org/rdf4j-server/tenant-a");
 		assertThat(cookies.addedCookies).doesNotContainKey("workbench-server");
 	}
@@ -1050,7 +1080,7 @@ class WorkbenchGatewayTest {
 
 		gateway.service(changeRequest, response);
 
-		assertThat(response.getBody()).contains("Invalid Server URL")
+		assertThat(response.getBody()).contains("Cannot connect to this server")
 				.contains("https://example.org/rdf4j-server/../admin");
 		assertThat(cookies.addedCookies).doesNotContainKey("workbench-server");
 	}

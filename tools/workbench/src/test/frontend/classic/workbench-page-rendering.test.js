@@ -2152,6 +2152,10 @@ test('Information shows the memory in use as a share of the maximum', () => {
     const memory = render('1810 MB', '30688 MB');
     assert.match(memory, /<dt>Memory used<\/dt><dd>1810 MB <meter class="workbench-memory-meter" min="0" max="?30688"? value="?1810"?\s+aria-label="Memory used of the maximum"><\/meter> <span class="workbench-memory-share">6% of the maximum<\/span><\/dd>/);
     assert.match(memory, /<dt>Maximum memory<\/dt><dd>30688 MB<\/dd>/);
+    // A share that rounds to 0% or 100% without being so is not shown as either.
+    assert.match(render('113 MB', '30688 MB'), /less than 1% of the maximum/);
+    assert.match(render('30650 MB', '30688 MB'), /more than 99% of the maximum/);
+    assert.match(render('30688 MB', '30688 MB'), />100% of the maximum/);
     const unknown = render('a lot', '30688 MB');
     assert.doesNotMatch(unknown, /<meter/, 'amounts the Workbench cannot read stay as the server wrote them');
     assert.match(unknown, /<dt>Memory used<\/dt><dd>a lot<\/dd>/);

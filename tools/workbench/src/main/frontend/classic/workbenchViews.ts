@@ -473,14 +473,21 @@ namespace workbench {
         }
 
         /**
-         * Copy text to the clipboard and confirm it on the button that asked (see confirmCopy). Without a clipboard, or
-         * when it refuses, the text is copied through a selection instead.
+         * Copy text to the clipboard for the button that asked: settles once copied, and fails when nothing could copy.
+         * Without a clipboard, or when it refuses, the text is copied through a selection instead.
          */
-        export function copyText(button: any, text: string): void {
-            const clipboard = typeof navigator !== 'undefined' && navigator.clipboard;
+        export function copying(button: any, text: string): Promise<void> {
+            const view = button && button.ownerDocument && button.ownerDocument.defaultView;
+            const host = (view && view.navigator) || (typeof navigator !== 'undefined' ? navigator : null);
+            const clipboard = host && host.clipboard;
             const fallback = () => copyThroughSelection(button, text) ? Promise.resolve() : Promise.reject();
-            confirmCopy(button, clipboard && typeof clipboard.writeText === 'function'
-                ? clipboard.writeText(text).catch(fallback) : fallback());
+            return clipboard && typeof clipboard.writeText === 'function'
+                ? clipboard.writeText(text).catch(fallback) : fallback();
+        }
+
+        /** Copy text (see copying) and confirm it on the button that asked (see confirmCopy). */
+        export function copyText(button: any, text: string): void {
+            confirmCopy(button, copying(button, text));
         }
     }
 
@@ -1873,9 +1880,13 @@ namespace workbench {
             if (!(usedMegabytes >= 0) || !(maximumMegabytes > 0)) {
                 return used;
             }
-            const share = Math.round(100 * Math.min(usedMegabytes, maximumMegabytes) / maximumMegabytes);
+            const fraction = Math.min(usedMegabytes, maximumMegabytes) / maximumMegabytes;
+            const rounded = Math.round(100 * fraction);
+            // A share that rounds to 0% or 100% without being so says so, instead of reading as empty or full.
+            const share = rounded === 0 && fraction > 0 ? 'less than 1%'
+                : rounded === 100 && fraction < 1 ? 'more than 99%' : rounded + '%';
             return runtime.html`${used} <meter class="workbench-memory-meter" min="0" max=${maximumMegabytes} value=${usedMegabytes}
-                aria-label="Memory used of the maximum"></meter> <span class="workbench-memory-share">${share}% of the maximum</span>`;
+                aria-label="Memory used of the maximum"></meter> <span class="workbench-memory-share">${share} of the maximum</span>`;
         }
 
         function repositoryUrl(context: ViewContext, id: string, route: string): string {
@@ -3340,9 +3351,11 @@ namespace workbench {
             const query = text(row.queryText || row.query);
             const queryTimeout = text(row.queryTimeout).trim() || '0';
             const formId = 'saved-query-exec-' + index;
+            // Every card has the same buttons: each is described by the query's name.
+            const nameId = 'saved-query-name-' + index;
             const preview = savedQueryPreview(query);
             return h`
-                        <div class="saved-query-row__heading"><h2>${queryName}</h2><span>${savedQueryDisplayOwner(owner)}</span></div>
+                        <div class="saved-query-row__heading"><h2 id=${nameId}>${queryName}</h2><span>${savedQueryDisplayOwner(owner)}</span></div>
                         ${preview ? h`<p class="saved-query-row__preview" title=${query}><code>${preview}</code></p>` : ''}
                         <div class="saved-query-actions">
                             <form method="post" action="query" id=${formId}
@@ -3356,20 +3369,20 @@ namespace workbench {
                                 <input type="hidden" name="infer" value=${text(row.infer)} />
                                 <input type="hidden" name="query-timeout" value=${queryTimeout} />
                                 <span class="workbench-action workbench-action--primary"><label class="workbench-action-hit-area">
-                                    ${icon(runtime, 'execute')}<span class="workbench-action-label"><input type="submit" value="Execute" /></span>
+                                    ${icon(runtime, 'execute')}<span class="workbench-action-label"><input type="submit" value="Execute" aria-describedby=${nameId} /></span>
                                 </label></span>
                             </form>
                             <button type="button" class="saved-query-toggle workbench-action workbench-action--secondary" id=${urn + '-toggle'} data-query-urn=${urn}
-                                aria-expanded="false" aria-controls=${urn + '-metadata'}>Show details</button>
+                                aria-expanded="false" aria-controls=${urn + '-metadata'} aria-describedby=${nameId}>Show details</button>
                             <form method="post" action="query"><input type="hidden" name="action" value="edit" />
                                 <input type="hidden" name="queryLn" value=${text(row.queryLn)} /><input type="hidden" name="query" value=${queryName} />
                                 <input type="hidden" name="ref" value="id" /><input type="hidden" name="owner" value=${owner} />
                                 <input type="hidden" name="infer" value=${text(row.infer)} />
-                                <input type="hidden" name="query-timeout" value=${queryTimeout} /><button class="workbench-action workbench-action--secondary" type="submit">Edit</button>
+                                <input type="hidden" name="query-timeout" value=${queryTimeout} /><button class="workbench-action workbench-action--secondary" type="submit" aria-describedby=${nameId}>Edit</button>
                             </form>
                             <form method="post" id=${urn} action="saved-queries"><input type="hidden" name="delete" value=${urn} />
                                 <button type="button" class="saved-query-delete workbench-action workbench-action--danger-outline" data-query-owner=${owner} data-query-name=${queryName}
-                                    data-query-urn=${urn}>Delete…</button>
+                                    data-query-urn=${urn} aria-describedby=${nameId}>Delete…</button>
                             </form>
                         </div>
                         <div id=${'saved-query-results-' + index} class="query-results"></div>

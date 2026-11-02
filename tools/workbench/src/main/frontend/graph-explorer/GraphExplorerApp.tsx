@@ -45,7 +45,7 @@ import { QueryDrawer } from "./query-drawer.tsx";
 import { FindField } from "./find-field.tsx";
 import { EdgeView, NodeView, stableCurves, type NodeHandlers } from "./graph-canvas-view.tsx";
 import { useFacetFilters } from "./use-facet-filters.ts";
-import { DataViews, recommendedViewOf, type DataViewMode } from "./data-views.tsx";
+import { DataViews, type DataViewMode } from "./data-views.tsx";
 import { colorToRgba, readCanvasPalette } from "./graph-canvas-controller.ts";
 import { createGraphVertexCache, graphClipTransform } from "./graph-webgl.ts";
 import { retainGraphLayoutWorker, startGraphLayout } from "./graph-layout-client.ts";
@@ -114,6 +114,7 @@ import { useWorkspaceLibrary } from "./use-workspace-library.tsx";
 import { snapshotSourceOrNull } from "./workspace-snapshots.ts";
 import type { WorkspaceSnapshotMetadata } from "./workspace-snapshot-store.ts";
 import { repositoryScope } from "./repository-identity.ts";
+import { copyToClipboard } from "./clipboard.ts";
 
 export type GraphExplorerProps = {
   /** The Workbench context path, e.g. /rdf4j-workbench. */
@@ -1197,11 +1198,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         ? filterNodes.filter((node) => selectedNodeIds.has(node.id))
         : filterNodes,
     [filterNodes, selectedNodeIds],
-  );
-  // The "Recommended" mark depends on the loaded structure, not on labels; very large graphs are sampled.
-  const recommendedView = useMemo(
-    () => recommendedViewOf(graph.edges.length > 20000 ? { ...graph, edges: graph.edges.slice(0, 20000) } : graph, metadataNodeById),
-    [graph.revision],
   );
   const useWebglRenderer =
     !largeGraph && webglAvailable &&
@@ -3603,7 +3599,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
 
   const copyText = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       setStatus("Copied.");
     } catch {
       setStatus("Copying is not available here; select the text instead.");
@@ -3954,7 +3950,6 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               setQueryPanelOpen((current) => !current);
             }}
             viewMode={viewMode}
-            recommendedView={recommendedView}
             onViewMode={(mode) => {
               finishTransientAction();
               setViewMode(mode);

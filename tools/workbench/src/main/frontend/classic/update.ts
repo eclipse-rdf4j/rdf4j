@@ -24,9 +24,31 @@ namespace workbench {
             }
         }
 
+        /**
+         * Where YASQE keeps the draft of the repository shown: one draft per server and repository, so an update typed
+         * for one repository is never offered, ready to run, in another. Null (no draft kept) without a repository.
+         */
+        function draftStorageKey(): string {
+            var app = document.getElementById('workbench-app');
+            var repository = app && app.getAttribute('data-workbench-repository-id');
+            if (!repository) {
+                return null;
+            }
+            var identity = app.getAttribute('data-workbench-server-identity') || '';
+            // WorkbenchServlet follows the server's 'sha256:<digest>' with ':' and a scope that is new in every
+            // browser session; the draft belongs to the server and outlives the session.
+            var digest = /^sha256:[0-9a-f]+/.exec(identity);
+            var server = digest ? digest[0] : identity;
+            return 'workbench:update-draft:' + encodeURIComponent(server) + ':' + encodeURIComponent(repository);
+        }
+
         function initYasqe(root: HTMLElement) {
             workbench.yasqeHelper.setupCompleters(namespaces);
-            yasqe = YASQE.fromTextArea(root.querySelector('#update'), {
+            var textarea = <HTMLTextAreaElement>root.querySelector('#update');
+            // Lit reuses the textarea when another repository's Update page replaces this one, and the previous
+            // editor left its text in it; start from the freshly rendered text, then the repository's own draft.
+            textarea.value = textarea.defaultValue;
+            yasqe = YASQE.fromTextArea(textarea, {
                 createShareLink: function () {
                     return {update: yasqe.getValue()};
                 },
@@ -36,10 +58,7 @@ namespace workbench {
                     }
                 },
 
-                // This way, we don't conflict with the YASQE editor of the
-                // regular query interface, and we show the most recent
-                // -update- query.
-                persistent: "update",
+                persistent: draftStorageKey(),
                 // Updates run through the Workbench form; YASQE must never send them to its default endpoint.
                 sparql: { endpoint: '', showQueryButton: false },
                 screenReaderLabel: 'SPARQL update',

@@ -56,14 +56,14 @@
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 		<enforce-javaee-provided.fail>true</enforce-javaee-provided.fail>
 		<slf4j.version>2.0.20</slf4j.version>
-		<logback.version>1.6.5</logback.version>
+		<logback.version>1.6.6</logback.version>
 		<log4j.version>2.26.1</log4j.version>
 		<httpclient.version>4.5.14</httpclient.version>
 		<httpclient5.version>5.6.5</httpclient5.version>
 		<httpcore5.version>5.4.4</httpcore5.version>
-		<jackson.version>2.22.3</jackson.version>
+		<jackson.version>2.22.4</jackson.version>
 		<jackson.annotations.version>2.22</jackson.annotations.version>
-		<jackson3.version>3.2.3</jackson3.version>
+		<jackson3.version>3.2.4</jackson3.version>
 		<httpcore.version>4.4.16</httpcore.version>
 		<jsonldjava.version>0.13.6</jsonldjava.version>
 		<last.japicmp.compare.version>6.0.0</last.japicmp.compare.version>
@@ -72,12 +72,12 @@
 		<lwjgl.version>3.4.2</lwjgl.version>
 		<janino.version>3.1.12</janino.version>
 		<lucene.version>10.5.2</lucene.version>
-		<elasticsearch.version>9.5.4</elasticsearch.version>
-		<spring.version>7.0.9</spring.version>
+		<elasticsearch.version>9.5.5</elasticsearch.version>
+		<spring.version>7.0.10</spring.version>
 		<guava.version>33.7.2-jre</guava.version>
 		<gson.version>2.14.0</gson.version>
 		<brotli4j.version>1.23.0</brotli4j.version>
-		<zstd-jni.version>1.5.7-23</zstd-jni.version>
+		<zstd-jni.version>1.5.7-25</zstd-jni.version>
 		<commons-compress.version>1.28.0</commons-compress.version>
 		<xz.version>1.12</xz.version>
 		<jmhVersion>1.37</jmhVersion>
@@ -95,7 +95,7 @@
 		<jakarta.jstl.version>3.0.2</jakarta.jstl.version>
 		<wiremock.version>4.0.0-beta.39</wiremock.version>
 		<jetty.version>12.1.14</jetty.version>
-		<netty.version>4.2.18.Final</netty.version>
+		<netty.version>4.2.19.Final</netty.version>
 		<opentelemetry.version>1.66.0</opentelemetry.version>
 		<bouncycastle.version>1.86</bouncycastle.version>
 		<testcontainers.version>2.0.5</testcontainers.version>
@@ -535,7 +535,7 @@
 					<plugin>
 						<groupId>com.diffplug.spotless</groupId>
 						<artifactId>spotless-maven-plugin</artifactId>
-						<version>3.10.3</version>
+						<version>3.10.4</version>
 						<configuration>
 							<java>
 								<includes>
@@ -949,7 +949,7 @@
 			<dependency>
 				<groupId>org.mozilla</groupId>
 				<artifactId>rhino</artifactId>
-				<version>1.9.1</version>
+				<version>1.9.2</version>
 			</dependency>
 			<dependency>
 				<groupId>org.apache.thrift</groupId>
@@ -1292,7 +1292,7 @@
 					<artifactId>frontend-maven-plugin</artifactId>
 					<version>2.0.2</version>
 					<configuration>
-						<nodeVersion>v22.23.3</nodeVersion>
+						<nodeVersion>v22.23.4</nodeVersion>
 						<installDirectory>${project.build.directory}</installDirectory>
 					</configuration>
 				</plugin>
@@ -1397,7 +1397,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-surefire-plugin</artifactId>
-					<version>3.6.0</version>
+					<version>3.6.1</version>
 					<configuration>
 						<!-- Prepend JaCoCo agent args when profile 'jacoco' sets @{argLine} -->
 						<argLine>@{argLine} ${mockito.javaagent} -Xmx8G -Djava.awt.headless=true</argLine>
@@ -1410,7 +1410,7 @@
 				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-failsafe-plugin</artifactId>
-					<version>3.6.0</version>
+					<version>3.6.1</version>
 					<configuration>
 						<forkCount>1</forkCount>
 						<reuseForks>true</reuseForks>

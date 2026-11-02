@@ -145,7 +145,7 @@ public class CreateServlet extends TransformationServlet {
 		builder.start(federate ? FEDERATE_RESULT_VARS : typedTemplate ? TEMPLATE_RESULT_VARS : TYPE_PICKER_RESULT_VARS);
 		builder.link(List.of(INFO));
 		if (federate) {
-			for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
+			for (RepositoryInfo info : getAllRepositoryInfosInIdOrder()) {
 				String identity = info.getId();
 				builder.result(identity, info.getDescription(), info.getLocation());
 			}
