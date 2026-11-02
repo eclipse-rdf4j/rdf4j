@@ -34,7 +34,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 
@@ -541,7 +540,6 @@ final class ExternalByteKeySorter implements AutoCloseable {
 
 	private void submitSpill(Path output, SpillSnapshot snapshot, BulkTaskScheduler.ResourceLease lease)
 			throws IOException {
-		CountDownLatch exited = new CountDownLatch(1);
 		try {
 			Future<Path> future = scheduler.submitOrRunInline(lease, () -> {
 				try {
@@ -557,14 +555,8 @@ final class ExternalByteKeySorter implements AutoCloseable {
 					}
 					throw failure;
 				}
-			}, () -> {
-				try {
-					snapshot.close();
-				} finally {
-					exited.countDown();
-				}
-			});
-			pendingSpills.add(new PendingSpill(output, future, exited));
+			}, snapshot::close);
+			pendingSpills.add(new PendingSpill(output, future));
 		} catch (RuntimeException | Error failure) {
 			lease.close();
 			snapshot.close();
@@ -575,7 +567,9 @@ final class ExternalByteKeySorter implements AutoCloseable {
 	private void awaitOldestSpill() throws IOException {
 		PendingSpill pending = pendingSpills.removeFirst();
 		try {
-			runs.add(pending.future().get());
+			Path run = pending.future().get();
+			scheduler.awaitTaskCleanup(pending.future());
+			runs.add(run);
 		} catch (InterruptedException e) {
 			pending.future().cancel(true);
 			InterruptedIOException interrupted = new InterruptedIOException(
@@ -636,7 +630,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 		boolean interrupted = false;
 		while (true) {
 			try {
-				pending.exited().await();
+				scheduler.awaitTaskCleanup(pending.future());
 				return interrupted;
 			} catch (InterruptedException e) {
 				interrupted = true;
@@ -984,7 +978,7 @@ final class ExternalByteKeySorter implements AutoCloseable {
 			long spillMemoryBytes) {
 	}
 
-	private record PendingSpill(Path output, Future<Path> future, CountDownLatch exited) {
+	private record PendingSpill(Path output, Future<Path> future) {
 	}
 
 	@FunctionalInterface

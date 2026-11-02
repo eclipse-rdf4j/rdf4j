@@ -112,7 +112,7 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 		}
 
 		assertThat(query.isAlive()).isFalse();
-		assertThat(queryFailure.get()).isSameAs(KernelQueryCancelledException.INSTANCE);
+		assertQueryOwnedCancellation(queryFailure.get(), owner.rowCancellation);
 		assertThat(result.get()).isNull();
 		assertThat(slow.closedWhileWorkerActive).isFalse();
 		assertThat(slow.workerFinished).isTrue();
@@ -263,6 +263,7 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 		NativeGroupIteration emitter = new NativeGroupIteration(owner, SlotPlan.singleton(), layout, new int[0],
 				new AggregateSpec[] { AggregateSpec.star("count") }, false, base, null, null, false, null);
 		RowState row = new RowState(owner, layout, base);
+		owner.rowCancellation = row.cancellation;
 		assertThat(emitter.initialize(row)).isTrue();
 
 		TypeMatrixAggregate terminal = new TypeMatrixAggregate(0, false, 0, 1);
@@ -281,6 +282,14 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 		return LmdbNativeParallelKernelAggregate.tryEvaluate(lowered,
 				new NativeLmdbQuerySource.NativeAdjacency[0], null, null,
 				new TypeMatrixContext[] { matrix }, domains, SlotPlan.singleton(), row, emitter, target, kernelFactory);
+	}
+
+	private static void assertQueryOwnedCancellation(Throwable failure, NativeCancellationToken token) {
+		assertThat(token).as("the query evaluation publishes its row token before worker admission").isNotNull();
+		assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
+		KernelQueryCancelledException signal = (KernelQueryCancelledException) failure;
+		assertThat(signal.origin()).as("the query thread's interrupt belongs to the row token").isSameAs(token);
+		assertThat(signal.observedBy(token)).as("the row token observes its own terminal signal").isTrue();
 	}
 
 	private static void restore(String property, String value) {
@@ -382,6 +391,7 @@ class LmdbNativeParallelTypeMatrixDrainTest {
 
 	private static final class TypeMatrixOwner extends TypeMatrixSource {
 		private final NativeLmdbQuerySource.ParallelSource[] workers;
+		private volatile NativeCancellationToken rowCancellation;
 		private int openCalls;
 
 		private TypeMatrixOwner(NativeLmdbQuerySource.ParallelSource... workers) {

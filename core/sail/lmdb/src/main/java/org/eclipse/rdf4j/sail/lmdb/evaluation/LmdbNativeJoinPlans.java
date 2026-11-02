@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 @Experimental
 final class MultiJoinPlan implements SlotPlan {
@@ -182,16 +183,17 @@ final class MultiJoinPlan implements SlotPlan {
 	}
 
 	/**
-	 * Improves the compiler order with a bounded local search. Each accepted adjacent swap strictly dominates the
-	 * current complete chain under the existing work model, so the lowering never follows an estimate-only ranking.
-	 * Filter placement is checked before a swap is accepted; a candidate that delays any filter is discarded. Unknown
-	 * intervals keep the compiler order, and the finite pass bound prevents planning cost from growing exponentially.
+	 * Improves the compiler order with a bounded local search over the separate expected-work estimates. These
+	 * estimates guide planning only; {@link LmdbNativeWork.Chain#work()} remains the conservative quote used for
+	 * arbitration. Filter placement is checked before a swap is accepted; a candidate that delays any filter is
+	 * discarded. Missing expected prices keep the compiler order, and the finite pass bound prevents planning cost from
+	 * growing exponentially.
 	 */
 	private SlotPlan[] costedLoweringOrder(RowState row, long initialBoundMask) {
 		OrderedPlan incumbent = derive(initialBoundMask, false);
 		SlotPlan[] order = incumbent.order.clone();
-		LmdbNativeWork currentWork = LmdbNativeWork.chain(order, order.length, row, initialBoundMask).work();
-		if (!currentWork.known()) {
+		LmdbNativeWork.Chain current = LmdbNativeWork.chain(order, order.length, row, initialBoundMask);
+		if (!current.estimatedPriceable()) {
 			return order;
 		}
 
@@ -205,11 +207,12 @@ final class MultiJoinPlan implements SlotPlan {
 				if (!preservesFilterPlacement(candidate, initialBoundMask, incumbent.filterDepth)) {
 					continue;
 				}
-				LmdbNativeWork candidateWork = LmdbNativeWork.chain(candidate, candidate.length, row,
-						initialBoundMask).work();
-				if (candidateWork.beats(currentWork)) {
+				LmdbNativeWork.Chain candidatePrice = LmdbNativeWork.chain(candidate, candidate.length, row,
+						initialBoundMask);
+				if (candidatePrice.estimatedPriceable()
+						&& candidatePrice.estimatedWork() < current.estimatedWork()) {
 					order = candidate;
-					currentWork = candidateWork;
+					current = candidatePrice;
 					improved = true;
 				}
 			}
@@ -672,7 +675,7 @@ final class MultiJoinPlan implements SlotPlan {
 	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
 		// Cost the order this plan will actually execute, not the compiler order.
 		MultiJoinPlan.OrderedPlan derived = derivedPlan(boundMask);
-		return LmdbNativeWork.chain(derived.order, derived.order.length, row, boundMask).work();
+		return LmdbNativeWork.chainHard(derived.order, derived.order.length, row, boundMask);
 	}
 
 	@Override
@@ -865,6 +868,103 @@ final class LateralPlan implements SlotPlan {
 	}
 }
 
+/** Combines cleanup without attaching occurrence-specific failures to suppression-disabled control signals. */
+@Experimental
+final class JoinCleanup {
+	static Throwable close(AutoCloseable resource, Throwable failure) {
+		return combine(failure, KernelRuntime.closeResource(resource, null));
+	}
+
+	static Throwable combine(Throwable failure, Throwable cleanup) {
+		if (cleanup == null) {
+			return failure;
+		}
+		if (failure == null || failure == cleanup) {
+			return cleanup;
+		}
+		Throwable realFailure = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(failure);
+		Throwable realCleanup = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(cleanup);
+		if (realFailure == null) {
+			if (realCleanup == null) {
+				return failure;
+			}
+			addSuppressed(realCleanup, failure);
+			return realCleanup;
+		}
+		if (realCleanup != null) {
+			addSuppressed(realFailure, realCleanup);
+		} else {
+			addSuppressed(realFailure, cleanup);
+		}
+		return realFailure;
+	}
+
+	private static void addSuppressed(Throwable primary, Throwable secondary) {
+		if (primary != secondary) {
+			for (Throwable existing : primary.getSuppressed()) {
+				if (existing == secondary) {
+					return;
+				}
+			}
+			primary.addSuppressed(secondary);
+		}
+	}
+}
+
+/** Owns a joined row's remaining logical copies after each child weight has been claimed once. */
+@Experimental
+final class JoinWeightDelivery {
+	private long leftWeight = 1L;
+	private long remaining;
+	private boolean current;
+	private boolean claimed;
+
+	static long claim(RowCursor cursor) {
+		long weight = cursor instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
+		if (weight <= 0L) {
+			throw new IllegalStateException("nonpositive join bag weight");
+		}
+		return weight;
+	}
+
+	void left(RowCursor cursor) {
+		leftWeight = claim(cursor);
+	}
+
+	void emit(long rightWeight) {
+		remaining = Math.multiplyExact(leftWeight, rightWeight);
+		current = true;
+		claimed = false;
+	}
+
+	boolean repeat() {
+		if (current && !claimed && remaining > 1L) {
+			remaining--;
+			return true;
+		}
+		current = false;
+		remaining = 0L;
+		claimed = false;
+		return false;
+	}
+
+	long multiplicity() {
+		if (!current) {
+			throw new IllegalStateException("join multiplicity requested without a current row");
+		}
+		long result = remaining;
+		remaining = 1L;
+		claimed = true;
+		return result;
+	}
+
+	void clear() {
+		current = false;
+		remaining = 0L;
+		claimed = false;
+	}
+}
+
 /**
  * Non-reorderable correlated LATERAL cursor. Bindings present at operator entry remain visible to the right arm;
  * bindings added by the left arm are visible only when declared in {@code rightInputBindingNames}. Hidden left values
@@ -876,6 +976,7 @@ final class LateralCursor implements FactorizedRowCursor {
 	private final SlotPlan rightPlan;
 	private final long visibleInputMask;
 	private final RowState row;
+	private final JoinWeightDelivery weights = new JoinWeightDelivery();
 	private final int[] hiddenSlots;
 	private final long[] hiddenValues;
 	private RowCursor right;
@@ -887,7 +988,9 @@ final class LateralCursor implements FactorizedRowCursor {
 	private int pollTick;
 
 	LateralCursor(RowCursor left, SlotPlan rightPlan, long visibleInputMask, RowState row) {
-		this.left = left;
+		this.left = row.encounterOrderRequired || !SlotPlan.encounterOrderReplaySafe(rightPlan)
+				? LmdbNativeFactorAlgebra.logical(left, row)
+				: left;
 		this.rightPlan = rightPlan;
 		this.visibleInputMask = visibleInputMask;
 		this.row = row;
@@ -897,8 +1000,24 @@ final class LateralCursor implements FactorizedRowCursor {
 
 	@Override
 	public boolean next() throws IOException {
+		try {
+			return advance();
+		} catch (IOException | RuntimeException | Error problem) {
+			Throwable combined = JoinCleanup.close(this, problem);
+			if (combined != problem) {
+				NativeContextClosingIteration.throwFailure(combined);
+			}
+			throw problem;
+		}
+	}
+
+	private boolean advance() throws IOException {
 		if (closed || row.cancellation.isCancellationRequested()) {
 			return false;
+		}
+		LmdbNativeProbeDeadline.poll(++pollTick);
+		if (weights.repeat()) {
+			return true;
 		}
 		while (true) {
 			LmdbNativeProbeDeadline.poll(++pollTick);
@@ -906,24 +1025,20 @@ final class LateralCursor implements FactorizedRowCursor {
 				hideLeftBindings();
 				long previousScope = row.enterLexicalScope(rightLexicalInputMask);
 				boolean available;
+				long rightWeight = 1L;
 				try {
 					try (RowState.LateralOccurrenceScope ignored = row.activateLateralOccurrence(lateralOccurrence)) {
 						available = right.next();
-					}
-				} catch (IOException | RuntimeException | Error problem) {
-					try {
-						close();
-					} catch (Throwable cleanup) {
-						if (cleanup != problem) {
-							problem.addSuppressed(cleanup);
+						if (available) {
+							rightWeight = JoinWeightDelivery.claim(right);
 						}
 					}
-					throw problem;
 				} finally {
 					row.restoreLexicalScope(previousScope);
 					restoreLeftBindings();
 				}
 				if (available) {
+					weights.emit(rightWeight);
 					return true;
 				}
 				closeRight();
@@ -932,25 +1047,16 @@ final class LateralCursor implements FactorizedRowCursor {
 				close();
 				return false;
 			}
+			weights.left(left);
 			captureAndHideLeftBindings();
 			rightLexicalInputMask = row.boundMask();
 			RowState.LateralOccurrence nextOccurrence = row.newLateralOccurrence();
+			lateralOccurrence = nextOccurrence;
 			long previousScope = row.enterLexicalScope(rightLexicalInputMask);
 			try {
 				try (RowState.LateralOccurrenceScope ignored = row.activateLateralOccurrence(nextOccurrence)) {
 					right = rightPlan.open(row);
 				}
-				lateralOccurrence = nextOccurrence;
-			} catch (IOException | RuntimeException | Error problem) {
-				row.closeLateralOccurrence(nextOccurrence);
-				try {
-					close();
-				} catch (Throwable cleanup) {
-					if (cleanup != problem) {
-						problem.addSuppressed(cleanup);
-					}
-				}
-				throw problem;
 			} finally {
 				row.restoreLexicalScope(previousScope);
 				restoreLeftBindings();
@@ -966,21 +1072,16 @@ final class LateralCursor implements FactorizedRowCursor {
 		Throwable failure = null;
 		if (closingRight != null) {
 			try (RowState.LateralOccurrenceScope ignored = row.activateLateralOccurrence(closingOccurrence)) {
-				try {
-					closingRight.close();
-				} catch (RuntimeException | Error problem) {
-					failure = problem;
-				}
+				failure = JoinCleanup.close(closingRight, failure);
+			} catch (RuntimeException | Error problem) {
+				failure = JoinCleanup.combine(failure, problem);
 			}
 		}
 		if (closingOccurrence != null) {
-			row.closeLateralOccurrence(closingOccurrence);
-		}
-		if (failure instanceof Error error) {
-			throw error;
+			failure = JoinCleanup.close(() -> row.closeLateralOccurrence(closingOccurrence), failure);
 		}
 		if (failure != null) {
-			throw (RuntimeException) failure;
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 
@@ -1023,36 +1124,18 @@ final class LateralCursor implements FactorizedRowCursor {
 			return;
 		}
 		closed = true;
-		Throwable failure = null;
-		try {
-			closeRight();
-		} catch (RuntimeException | Error problem) {
-			failure = problem;
-		}
-		try {
-			left.close();
-		} catch (RuntimeException | Error problem) {
-			if (failure == null) {
-				failure = problem;
-			} else if (failure != problem) {
-				failure.addSuppressed(problem);
-			}
-		} finally {
-			restoreLeftBindings();
-		}
-		if (failure instanceof RuntimeException runtimeException) {
-			throw runtimeException;
-		}
-		if (failure instanceof Error error) {
-			throw error;
+		weights.clear();
+		Throwable failure = JoinCleanup.close(this::closeRight, null);
+		failure = JoinCleanup.close(left, failure);
+		failure = JoinCleanup.close(this::restoreLeftBindings, failure);
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 
 	@Override
 	public long multiplicity() {
-		long leftMultiplicity = left instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
-		long rightMultiplicity = right instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
-		return Math.multiplyExact(leftMultiplicity, rightMultiplicity);
+		return weights.multiplicity();
 	}
 }
 
@@ -1229,6 +1312,8 @@ final class JoinCursor implements FactorizedRowCursor {
 	final RowCursor leftCursor;
 	final SlotPlan right;
 	final RowState row;
+	private final JoinWeightDelivery weights = new JoinWeightDelivery();
+	private boolean closed;
 	final PathTargetDecision pathTargetDecision;
 	final boolean ownsPathTargetDecision;
 	private int probePollTick;
@@ -1284,7 +1369,9 @@ final class JoinCursor implements FactorizedRowCursor {
 	JoinCursor(RowCursor leftCursor, SlotPlan right, RowState row, long leftProducedMask,
 			PathTargetDecision pathTargetDecision, boolean ownsPathTargetDecision, long entryBoundMask,
 			double expectedProbes, double perProbeRows, double sweepEstimate) {
-		this.leftCursor = leftCursor;
+		this.leftCursor = row.encounterOrderRequired || !SlotPlan.encounterOrderReplaySafe(right)
+				? LmdbNativeFactorAlgebra.logical(leftCursor, row)
+				: leftCursor;
 		this.right = right;
 		this.row = row;
 		this.pathTargetDecision = pathTargetDecision;
@@ -1302,19 +1389,33 @@ final class JoinCursor implements FactorizedRowCursor {
 
 	@Override
 	public long multiplicity() {
-		long leftMultiplicity = leftCursor instanceof FactorizedRowCursor factorized
-				? factorized.multiplicity()
-				: 1L;
-		long rightMultiplicity = rightCursor instanceof FactorizedRowCursor factorized
-				? factorized.multiplicity()
-				: 1L;
-		return Math.multiplyExact(leftMultiplicity, rightMultiplicity);
+		return weights.multiplicity();
 	}
 
 	@Override
 	public boolean next() throws IOException {
+		try {
+			return advance();
+		} catch (IOException | RuntimeException | Error problem) {
+			Throwable combined = JoinCleanup.close(this, problem);
+			if (combined != problem) {
+				NativeContextClosingIteration.throwFailure(combined);
+			}
+			throw problem;
+		}
+	}
+
+	private boolean advance() throws IOException {
+		if (closed) {
+			return false;
+		}
+		LmdbNativeProbeDeadline.poll(++probePollTick);
+		row.cancellation.poll(probePollTick);
+		if (weights.repeat()) {
+			return true;
+		}
 		if (rightMaterialized) {
-			return replayNext();
+			return nextReplay();
 		}
 		while (true) {
 			// A long run of left rows with empty right sides spins here without emitting; the consumer's per-row
@@ -1325,32 +1426,50 @@ final class JoinCursor implements FactorizedRowCursor {
 					if (capturingReplay) {
 						recordReplay();
 					}
+					weights.emit(1L);
 					return true;
 				}
 				closePatternRight();
 				if (finishCapturedRight()) {
-					return replayNext();
+					return nextReplay();
 				}
 			} else if (rightCursor != null) {
 				if (rightCursor.next()) {
+					long rightWeight = JoinWeightDelivery.claim(rightCursor);
 					if (capturingReplay) {
-						recordReplay();
+						if (rightWeight == 1L) {
+							recordReplay();
+						} else {
+							// The existing replay stores bindings, not weights. Reopen the producer for later left rows
+							// rather than retaining an incomplete weighted bag.
+							disableReplay();
+						}
 					}
+					weights.emit(rightWeight);
 					return true;
 				}
 				closeRight();
 				if (finishCapturedRight()) {
-					return replayNext();
+					return nextReplay();
 				}
 			}
 			if (!leftCursor.next()) {
 				return false;
 			}
+			weights.left(leftCursor);
 			rightCursor = openRight();
 			if (replaySlots != null && !rightMaterialized && !replayDisabled) {
 				capturingReplay = true;
 			}
 		}
+	}
+
+	private boolean nextReplay() throws IOException {
+		if (!replayNext()) {
+			return false;
+		}
+		weights.emit(1L);
+		return true;
 	}
 
 	RowCursor openRight() throws IOException {
@@ -1473,11 +1592,14 @@ final class JoinCursor implements FactorizedRowCursor {
 	}
 
 	private void closePatternRight() {
-		releasePatternBinding();
-		patternCursor.close();
 		patternRightActive = false;
 		patternBatchRows = 0;
 		patternBatchPosition = 0;
+		Throwable failure = JoinCleanup.close(this::releasePatternBinding, null);
+		failure = JoinCleanup.close(patternCursor, failure);
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
+		}
 	}
 
 	boolean replayNext() throws IOException {
@@ -1498,6 +1620,7 @@ final class JoinCursor implements FactorizedRowCursor {
 			if (!leftCursor.next()) {
 				return false;
 			}
+			weights.left(leftCursor);
 			replayIndex = 0;
 		}
 	}
@@ -1576,43 +1699,55 @@ final class JoinCursor implements FactorizedRowCursor {
 
 	@Override
 	public void close() {
-		releaseReplay();
-		closeRight();
+		if (closed) {
+			return;
+		}
+		closed = true;
+		weights.clear();
+		Throwable failure = JoinCleanup.close(this::releaseReplay, null);
+		failure = JoinCleanup.close(this::closeRight, failure);
 		if (pathMemo != null) {
-			pathMemo.close();
+			PathResultMemo owned = pathMemo;
 			pathMemo = null;
+			failure = JoinCleanup.close(owned::close, failure);
 		}
 		if (rightMemo != null) {
-			rightMemo.close();
+			failure = JoinCleanup.close(rightMemo::close, failure);
 		}
 		if (rightProbe != null) {
-			rightProbe.close();
+			NativeLmdbQuerySource.NativeProbe owned = rightProbe;
 			rightProbe = null;
+			failure = JoinCleanup.close(owned, failure);
 		}
 		if (patternBatchMemory != null) {
-			patternBatchMemory.close();
+			LmdbAdaptiveLongArray owned = patternBatchMemory;
 			patternBatchMemory = null;
+			failure = JoinCleanup.close(owned, failure);
 		}
 		if (replayMemory != null) {
-			replayMemory.close();
+			LmdbAdaptiveLongArray owned = replayMemory;
 			replayMemory = null;
+			failure = JoinCleanup.close(owned, failure);
 		}
-		try {
-			leftCursor.close();
-		} finally {
-			if (ownsPathTargetDecision) {
-				pathTargetDecision.close();
-			}
+		failure = JoinCleanup.close(leftCursor, failure);
+		if (ownsPathTargetDecision) {
+			failure = JoinCleanup.close(pathTargetDecision::close, failure);
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 
 	void closeRight() {
+		RowCursor owned = rightCursor;
+		rightCursor = null;
+		Throwable failure = null;
 		if (patternRightActive) {
-			closePatternRight();
+			failure = JoinCleanup.close(this::closePatternRight, null);
 		}
-		if (rightCursor != null) {
-			rightCursor.close();
-			rightCursor = null;
+		failure = JoinCleanup.close(owned, failure);
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 }

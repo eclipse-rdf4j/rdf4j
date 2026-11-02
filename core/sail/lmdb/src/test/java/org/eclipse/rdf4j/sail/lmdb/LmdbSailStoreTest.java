@@ -48,6 +48,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
@@ -94,6 +95,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -123,7 +125,7 @@ public class LmdbSailStoreTest {
 			F.createLiteral("two"));
 
 	@BeforeEach
-	public void before(@TempDir File dataDir) {
+	public void before(@TempDir(cleanup = CleanupMode.NEVER) File dataDir) {
 		defaultLocale = Locale.getDefault();
 		Locale.setDefault(Locale.ENGLISH);
 		this.dataDir = dataDir;
@@ -799,61 +801,93 @@ public class LmdbSailStoreTest {
 
 	@Test
 	void approveAllPropagatesPredicateStoreFailureAsSailException() throws Exception {
-		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
-		LmdbSailStore backingStore = sail.getBackingStore();
+		IRI failingPredicate = F.createIRI("urn:failing-predicate");
+		IOException expectedFailure = new IOException("expected predicate failure");
+		repo.shutDown();
+		// Construct one native owner before background maintenance starts; a spy would copy mutable writer state.
+		repo = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc").setBulkOperationSize(256)) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+					boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+				return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
+						(valueDirectory, storeProperties, valueConfig) -> new ValueStore(valueDirectory,
+								storeProperties,
+								valueConfig, false, null,
+								LmdbStoreFormat.resolveDictionary(valueDirectory, storeProperties, valueConfig), true) {
+							@Override
+							public long storeValue(Value value) throws IOException {
+								if (failingPredicate.equals(value)) {
+									throw expectedFailure;
+								}
+								return super.storeValue(value);
+							}
+						}, TripleStore::new);
+			}
+		});
+		repo.init();
+		LmdbSailStore backingStore = ((LmdbStore) ((SailRepository) repo).getSail()).getBackingStore();
 		try (RepositoryConnection connection = repo.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			connection.add(F.createIRI("urn:materialize-before-spy"), F.createIRI("urn:materialize-predicate"),
+			connection.add(F.createIRI("urn:materialize-before-fault"), F.createIRI("urn:materialize-predicate"),
 					F.createIRI("urn:materialize-object"));
 			connection.commit();
 		}
-		Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
-		valueStoreField.setAccessible(true);
-		ValueStore originalValueStore = (ValueStore) valueStoreField.get(backingStore);
-		ValueStore valueStoreSpy = spy(originalValueStore);
-		IRI failingPredicate = F.createIRI("urn:failing-predicate");
-		SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE);
-
-		doAnswer(invocation -> {
-			Value value = invocation.getArgument(0);
-			if (failingPredicate.equals(value)) {
-				throw new IOException("expected predicate failure");
-			}
-			return invocation.callRealMethod();
-		}).when(valueStoreSpy).storeValue(any(Value.class));
-
-		valueStoreField.set(backingStore, valueStoreSpy);
-		try {
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
 			SailException exception = assertThrows(SailException.class,
 					() -> sink.approveAll(Set.of(F.createStatement(F.createIRI("urn:subject"), failingPredicate,
 							F.createLiteral("object"))), Set.of()));
-
-			assertTrue(exception.getCause() instanceof IOException);
-		} finally {
-			valueStoreField.set(backingStore, originalValueStore);
-			sink.close();
+			assertSame(expectedFailure, exception.getCause());
+		}
+		// The injected failure must release its transaction without replacing or disabling the cleanup owner.
+		try (RepositoryConnection connection = repo.getConnection()) {
+			IRI subject = F.createIRI("urn:after-predicate-failure");
+			connection.begin(IsolationLevels.NONE);
+			connection.add(subject, RDFS.LABEL, F.createLiteral("recovered"));
+			connection.commit();
+			assertTrue(connection.hasStatement(subject, RDFS.LABEL, F.createLiteral("recovered"), false));
 		}
 	}
 
 	@Test
 	void approveAllBatchesTripleStoreWritesIntoBulkCalls() throws Exception {
+		List<Integer> alignedCounts = new ArrayList<>();
+		List<Integer> alignedCapacities = new ArrayList<>();
+		int[] scalarCalls = { 0 };
+		repo.shutDown();
+		// Instrument the single constructed native owner, rather than copying its transaction bookkeeping.
+		repo = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc").setBulkOperationSize(256)) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+					boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+				return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled, null,
+						(tripleDirectory, storeProperties, tripleConfig, valueStore) -> new TripleStore(
+								tripleDirectory, storeProperties, tripleConfig, valueStore) {
+							@Override
+							public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects,
+									long[] contexts, int count, boolean explicit, IntConsumer addedIndexConsumer)
+									throws IOException {
+								alignedCounts.add(count);
+								alignedCapacities.add(subjects.length);
+								super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+										addedIndexConsumer);
+							}
+
+							@Override
+							public boolean storeTriple(long subject, long predicate, long object, long context,
+									boolean explicit) throws IOException {
+								scalarCalls[0]++;
+								return super.storeTriple(subject, predicate, object, context, explicit);
+							}
+						});
+			}
+		});
+		repo.init();
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = false;
-
-		Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
-		tripleStoreField.setAccessible(true);
-		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
-		TripleStore tripleStoreSpy = spy(originalTripleStore);
-		List<Integer> alignedCounts = new ArrayList<>();
-		List<Integer> alignedCapacities = new ArrayList<>();
-		doAnswer(invocation -> {
-			alignedCounts.add(invocation.getArgument(4));
-			alignedCapacities.add(((long[]) invocation.getArgument(0)).length);
-			return invocation.callRealMethod();
-		}).when(tripleStoreSpy)
-				.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-						any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+		TripleStore tripleStore = backingStore.getTripleStore();
 
 		Set<Statement> statements = new LinkedHashSet<>();
 		for (int i = 0; i < 1025; i++) {
@@ -864,20 +898,21 @@ public class LmdbSailStoreTest {
 					F.createIRI("urn:context:" + (i % 7))));
 		}
 
-		tripleStoreField.set(backingStore, tripleStoreSpy);
 		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-			clearInvocations(tripleStoreSpy);
+			alignedCounts.clear();
+			alignedCapacities.clear();
+			scalarCalls[0] = 0;
 			sink.approveAll(statements, Set.of());
 			sink.flush();
 
 			assertEquals(List.of(256, 256, 256, 256, 1), alignedCounts);
 			assertEquals(List.of(256, 256, 256, 256, 1), alignedCapacities);
-			verify(tripleStoreSpy, times(5)).storeTriplesAligned(any(long[].class), any(long[].class),
-					any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
-			verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
-		} finally {
-			tripleStoreField.set(backingStore, originalTripleStore);
+			assertEquals(5, alignedCounts.size());
+			assertEquals(1, scalarCalls[0]);
 		}
+
+		assertEquals("bulk instrumentation must preserve the real native owner generation",
+				tripleStore.lastTransactionId(), tripleStore.trustedTransactionId());
 
 		try (RepositoryConnection observer = repo.getConnection()) {
 			assertEquals("bulk addition must preserve the three seed rows and add every input", 1028L, observer.size());
@@ -1619,50 +1654,40 @@ public class LmdbSailStoreTest {
 	void approveAllCanDisableBulkOperationsViaConfig() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		setBulkOperationSize(config, 0);
-		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-disabled"), config);
-		sail.init();
+		ConfiguredBulkWriteObserver writes = new ConfiguredBulkWriteObserver();
+		repo.shutDown();
+		LmdbStore sail = writes.createStore(new File(dataDir, "bulk-disabled"), config);
+		repo = new SailRepository(sail);
+		repo.init();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
 
-		try {
-			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.enableMultiThreading = false;
-
-			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
-			tripleStoreField.setAccessible(true);
-			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
-			TripleStore tripleStoreSpy = spy(originalTripleStore);
-
-			tripleStoreField.set(backingStore, tripleStoreSpy);
-			try {
-				try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-					clearInvocations(tripleStoreSpy);
-					sink.approveAll(sampleStatements(5), Set.of());
-					sink.flush();
-
-					verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
-							any(long[].class), any(long[].class), anyInt(), anyBoolean(), anyBoolean(),
-							any(IntConsumer.class));
-					verify(tripleStoreSpy, times(5)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(),
-							anyBoolean());
-				}
-
-				clearInvocations(tripleStoreSpy);
-				try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-					sink.approve(F.createIRI("urn:disabled:subject:1"), F.createIRI("urn:disabled:predicate"),
-							F.createIRI("urn:disabled:object:1"), null);
-					sink.approve(F.createIRI("urn:disabled:subject:2"), F.createIRI("urn:disabled:predicate"),
-							F.createIRI("urn:disabled:object:2"), null);
-					sink.flush();
-				}
-				verify(tripleStoreSpy, never()).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean(), anyBoolean(),
-						any(IntConsumer.class));
-				verify(tripleStoreSpy, times(2)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
-			} finally {
-				tripleStoreField.set(backingStore, originalTripleStore);
-			}
-		} finally {
-			sail.shutDown();
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			writes.reset();
+			sink.approveAll(sampleStatements(5), Set.of());
+			sink.flush();
+			assertTrue(writes.alignedCounts.isEmpty());
+			assertEquals(0, writes.eightArgumentAlignedCalls);
+			assertEquals(5, writes.scalarCalls);
 		}
+		writes.reset();
+		Set<Statement> expected = sampleStatements(5);
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			for (int i = 1; i <= 2; i++) {
+				Statement statement = F.createStatement(F.createIRI("urn:disabled:subject:" + i),
+						F.createIRI("urn:disabled:predicate"), F.createIRI("urn:disabled:object:" + i));
+				expected.add(statement);
+				sink.approve(statement.getSubject(), statement.getPredicate(), statement.getObject(), null);
+			}
+			sink.flush();
+		}
+		assertTrue(writes.alignedCounts.isEmpty());
+		assertEquals(0, writes.eightArgumentAlignedCalls);
+		assertEquals(2, writes.scalarCalls);
+		TripleStore triples = backingStore.getTripleStore();
+		assertEquals("instrumentation must preserve the real native owner generation",
+				triples.lastTransactionId(), triples.trustedTransactionId());
+		assertBufferedBatchStatements(backingStore, expected);
 	}
 
 	@Test
@@ -1823,50 +1848,84 @@ public class LmdbSailStoreTest {
 
 	@Test
 	void approveAllBulkFailureDiscardsNonIsolatedEstimatorUpdates() throws Exception {
+		assertBulkFailureEstimatorLifecycle(false);
+	}
+
+	@Test
+	void discardedEstimatorCanRebuildTheCommittedSnapshotAfterBulkFailure() throws Exception {
+		assertBulkFailureEstimatorLifecycle(true);
+	}
+
+	private void assertBulkFailureEstimatorLifecycle(boolean rebuildAfterDiscard) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(true);
 		config.setExperimentalQueryOptimizations(true);
 		setBulkOperationSize(config, 2);
-		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-failure-estimator"), config);
-		sail.init();
-
-		try {
-			LmdbTestUtil.awaitPostReadyInitialization(sail, 10, TimeUnit.SECONDS);
-			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.enableMultiThreading = false;
-			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
-			try (SailSink seedSink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-				seedSink.approveAll(sampleStatements(5), Set.of());
-				seedSink.flush();
+		AtomicBoolean failAligned = new AtomicBoolean();
+		AtomicInteger injectedCalls = new AtomicInteger();
+		IOException injectedFailure = new IOException("expected aligned bulk failure after estimator update");
+		repo.shutDown();
+		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-failure-estimator"), config) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig storeConfig,
+					boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+				return new LmdbSailStore(directory, properties, storeConfig, sketchBasedJoinEstimatorEnabled, null,
+						(tripleDirectory, storeProperties, tripleConfig, valueStore) -> new TripleStore(
+								tripleDirectory, storeProperties, tripleConfig, valueStore) {
+							@Override
+							public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects,
+									long[] contexts, int count, boolean explicit, IntConsumer addedIndexConsumer)
+									throws IOException {
+								if (failAligned.get()) {
+									injectedCalls.incrementAndGet();
+									addedIndexConsumer.accept(0);
+									throw injectedFailure;
+								}
+								super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+										addedIndexConsumer);
+							}
+						});
 			}
-			estimator.rebuild();
-			assertTrue("Expected estimator to be ready before the failed bulk add", estimator.isReady());
-
-			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
-			tripleStoreField.setAccessible(true);
-			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
-			TripleStore tripleStoreSpy = spy(originalTripleStore);
-
-			doAnswer(invocation -> {
-				IntConsumer addedIndexConsumer = invocation.getArgument(6);
-				addedIndexConsumer.accept(0);
-				throw new IOException("expected aligned bulk failure after estimator update");
-			}).when(tripleStoreSpy)
-					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
-
-			tripleStoreField.set(backingStore, tripleStoreSpy);
-			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-				assertThrows(SailException.class, () -> sink.approveAll(sampleStatements(2), Set.of()));
-
-				assertFalse("Expected rollback to discard estimator state after an eager non-isolated update",
-						estimator.isReady());
-				assertEquals(0, backingStore.reservedAlignedWriteStatements());
-			} finally {
-				tripleStoreField.set(backingStore, originalTripleStore);
-			}
-		} finally {
-			sail.shutDown();
+		};
+		// Register the sole native owner before initialization so normal safe teardown owns every failure path.
+		repo = new SailRepository(sail);
+		repo.init();
+		LmdbTestUtil.awaitPostReadyInitialization(sail, 10, TimeUnit.SECONDS);
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+		SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+		// A background rebuild may make the estimator ready again immediately after rollback discards it.
+		// Observe discard with that worker joined; the companion separately verifies its real recovery.
+		estimator.stop();
+		try (SailSink seedSink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			seedSink.approveAll(sampleStatements(5), Set.of());
+			seedSink.flush();
 		}
+		estimator.rebuild();
+		assertTrue("Expected estimator to be ready before the failed bulk add", estimator.isReady());
+		failAligned.set(true);
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			SailException failure = assertThrows(SailException.class,
+					() -> sink.approveAll(sampleStatements(2), Set.of()));
+			assertSame(injectedFailure, failure.getCause());
+			assertEquals("The intended eager-update failure must be reached exactly once", 1, injectedCalls.get());
+			assertFalse("Expected rollback to discard estimator state after an eager non-isolated update",
+					estimator.isReady());
+			assertEquals(0, backingStore.reservedAlignedWriteStatements());
+		} finally {
+			failAligned.set(false);
+		}
+		if (rebuildAfterDiscard) {
+			estimator.startBackgroundRefresh(1);
+			assertTrue("The actual refresher rebuilds the committed snapshot",
+					estimator.awaitReady(10, TimeUnit.SECONDS));
+			assertTrue(estimator.isReady());
+		}
+		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+			assertEquals("Failed bulk work must not change the committed seed", 5,
+					dataset.getStatementCount(null, null, null));
+		}
+		assertEquals(backingStore.getTripleStore().lastTransactionId(),
+				backingStore.getTripleStore().trustedTransactionId());
 	}
 
 	private static void setBulkOperationSize(LmdbStoreConfig config, int bulkOperationSize) {
@@ -2020,11 +2079,16 @@ public class LmdbSailStoreTest {
 
 	@AfterEach
 	public void after() {
-		try {
-			repo.shutDown();
-		} finally {
-			LmdbTestUtil.deleteDir(dataDir);
-			Locale.setDefault(defaultLocale);
+		closeFixture(repo, dataDir, () -> Locale.setDefault(defaultLocale));
+	}
+
+	static void closeFixture(Repository repository, File directory, Runnable restoreLocale) {
+		try (var localeRestore = LmdbTestUtil.onClose(restoreLocale)) {
+			if (repository != null) {
+				repository.shutDown();
+			}
+			// Failed shutdown retains native ownership; neither this fixture nor JUnit may delete its files.
+			LmdbTestUtil.deleteDir(directory);
 		}
 	}
 
@@ -2032,46 +2096,81 @@ public class LmdbSailStoreTest {
 	void approveAllUsesConfiguredBulkOperationSize() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		setBulkOperationSize(config, 2);
-		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-size-two"), config);
-		sail.init();
+		ConfiguredBulkWriteObserver writes = new ConfiguredBulkWriteObserver();
+		repo.shutDown();
+		LmdbStore sail = writes.createStore(new File(dataDir, "bulk-size-two"), config);
+		repo = new SailRepository(sail);
+		repo.init();
+		LmdbSailStore backingStore = sail.getBackingStore();
+		backingStore.enableMultiThreading = false;
+		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			writes.reset();
+			sink.approveAll(sampleStatements(5), Set.of());
+			sink.flush();
 
-		try {
-			LmdbSailStore backingStore = sail.getBackingStore();
-			backingStore.enableMultiThreading = false;
+			assertEquals("the full batches and one-row tail must use ordered aligned calls", List.of(2, 2, 1),
+					writes.alignedCounts);
+			assertEquals("each prepared aligned array must match the valid row count", List.of(2, 2, 1),
+					writes.alignedCapacities);
+			assertEquals(3, writes.alignedCounts.size());
+			assertEquals(1, writes.scalarCalls);
+			assertBufferedBatchStatements(backingStore, sampleStatements(5));
+		}
+		TripleStore triples = backingStore.getTripleStore();
+		assertEquals("instrumentation must preserve the real native owner generation",
+				triples.lastTransactionId(), triples.trustedTransactionId());
+	}
 
-			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
-			tripleStoreField.setAccessible(true);
-			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
-			TripleStore tripleStoreSpy = spy(originalTripleStore);
-			List<Integer> alignedCounts = new ArrayList<>();
-			List<Integer> alignedCapacities = new ArrayList<>();
-			doAnswer(invocation -> {
-				alignedCounts.add(invocation.getArgument(4));
-				alignedCapacities.add(((long[]) invocation.getArgument(0)).length);
-				return invocation.callRealMethod();
-			}).when(tripleStoreSpy)
-					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
-							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+	/** Records calls on the single real native owner, rather than copying its mutable transaction state. */
+	private static final class ConfiguredBulkWriteObserver {
+		private final List<Integer> alignedCounts = new ArrayList<>();
+		private final List<Integer> alignedCapacities = new ArrayList<>();
+		private int eightArgumentAlignedCalls;
+		private int scalarCalls;
 
-			tripleStoreField.set(backingStore, tripleStoreSpy);
-			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
-				clearInvocations(tripleStoreSpy);
-				sink.approveAll(sampleStatements(5), Set.of());
-				sink.flush();
+		private void reset() {
+			alignedCounts.clear();
+			alignedCapacities.clear();
+			eightArgumentAlignedCalls = 0;
+			scalarCalls = 0;
+		}
 
-				assertEquals("the full batches and one-row tail must use ordered aligned calls", List.of(2, 2, 1),
-						alignedCounts);
-				assertEquals("each prepared aligned array must match the valid row count", List.of(2, 2, 1),
-						alignedCapacities);
-				verify(tripleStoreSpy, times(3)).storeTriplesAligned(any(long[].class), any(long[].class),
-						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
-				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
-				assertBufferedBatchStatements(backingStore, sampleStatements(5));
-			} finally {
-				tripleStoreField.set(backingStore, originalTripleStore);
-			}
-		} finally {
-			sail.shutDown();
+		private LmdbStore createStore(File directory, LmdbStoreConfig config) {
+			return new LmdbStore(directory, config) {
+				@Override
+				LmdbSailStore createBackingStore(File dataDirectory, StoreProperties properties,
+						LmdbStoreConfig storeConfig, boolean sketches) throws IOException {
+					return new LmdbSailStore(dataDirectory, properties, storeConfig, sketches, null,
+							(tripleDirectory, tripleProperties, tripleConfig, values) -> new TripleStore(
+									tripleDirectory, tripleProperties, tripleConfig, values) {
+								@Override
+								public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects,
+										long[] contexts, int count, boolean explicit, IntConsumer addedIndexConsumer)
+										throws IOException {
+									alignedCounts.add(count);
+									alignedCapacities.add(subjects.length);
+									super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+											addedIndexConsumer);
+								}
+
+								@Override
+								void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects,
+										long[] contexts, int count, boolean explicit, boolean mayHaveInferred,
+										IntConsumer addedIndexConsumer) throws IOException {
+									eightArgumentAlignedCalls++;
+									super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit,
+											mayHaveInferred, addedIndexConsumer);
+								}
+
+								@Override
+								public boolean storeTriple(long subject, long predicate, long object, long context,
+										boolean explicit) throws IOException {
+									scalarCalls++;
+									return super.storeTriple(subject, predicate, object, context, explicit);
+								}
+							});
+				}
+			};
 		}
 	}
 

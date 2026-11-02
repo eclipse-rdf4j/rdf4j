@@ -558,7 +558,9 @@ public final class QueryAlgebraBindingAnalysis {
 		if (parent instanceof LeftJoin leftJoin) {
 			ReadOnlyContext leftJoinInput = leftJoinInput(leftJoin, input);
 			if (child == leftJoin.getRightArg()) {
-				if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
+				if (TupleExprs.containsSubquery(leftJoin.getRightArg())
+						|| TupleExprs.subqueryObservesInjectedBindings(leftJoin.getRightArg(),
+								leftJoin.getLeftArg().getBindingNames())) {
 					// ScopedLeftJoinIterator withholds the left row, but forwards the OPTIONAL's entry input.
 					return input.withScopeIdentity(nextScopeId(leftJoin.getRightArg()));
 				}
@@ -682,7 +684,8 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 			// Classify from the frame before this join's left side is evaluated. Modifier analysis roots itself at the
 			// right subtree, so its inherited input is preserved while parent links outside that subtree are ignored.
-			if (!isOutOfScopeForLeftBindings(right, input)) {
+			if (!isOutOfScopeForLeftBindings(right, input)
+					&& !TupleExprs.subqueryObservesInjectedBindings(right, join.getLeftArg().getBindingNames())) {
 				return withOutput(input, outputFacts(join.getLeftArg(), input));
 			}
 			return input;
@@ -740,7 +743,9 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private ReadOnlyContext computeLeftJoinInput(LeftJoin leftJoin, ReadOnlyContext input) {
-		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())) {
+		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
+				|| TupleExprs.subqueryObservesInjectedBindings(leftJoin.getRightArg(),
+						leftJoin.getLeftArg().getBindingNames())) {
 			return input;
 		}
 		Set<String> optionalInputNames = new HashSet<>(VarNameCollector.process(leftJoin.getRightArg()));

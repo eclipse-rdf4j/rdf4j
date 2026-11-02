@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
@@ -42,6 +43,12 @@ public interface NativeLmdbQuerySource {
 	String LMDB_ENCOUNTER_ORDER_REASON = "ENCOUNTER_ORDER_REQUIRES_LMDB";
 
 	long UNKNOWN_ID = org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
+
+	/** Poll the current native evaluation and speculative probe from an LMDB source operation. */
+	static void checkpointCancellation() {
+		NativeCancellationToken.checkCurrent();
+		LmdbNativeProbeDeadline.poll(0);
+	}
 
 	long idOf(Value value) throws QueryEvaluationException;
 
@@ -201,6 +208,12 @@ public interface NativeLmdbQuerySource {
 		default void measurement(boolean adjacency, long scannedRows, long matchedRows, long filteredRows,
 				boolean censored) {
 		}
+
+		/** Distinguishes physical iterator counters from the returned-row telemetry fallback. */
+		default void measurement(boolean adjacency, long scannedRows, long matchedRows, long filteredRows,
+				boolean censored, boolean physicalScanCount) {
+			measurement(adjacency, scannedRows, matchedRows, filteredRows, censored);
+		}
 	}
 
 	default RecordIterator statements(long subj, long pred, long obj, long context,
@@ -265,6 +278,56 @@ public interface NativeLmdbQuerySource {
 
 	default String indexName(StatementOrder order, long subj, long pred, long obj, long context) {
 		return indexName(subj, pred, obj, context);
+	}
+
+	/**
+	 * Snapshot-local physical LMDB access information for work estimation. Unlike
+	 * {@link #indexName(long, long, long, long)}, this describes the actual LMDB indexes rather than an ordering shared
+	 * by arbitrated sources. A source which cannot supply the information without scanning declines with {@code null}.
+	 */
+	default IndexAccessProfile indexAccessProfile() {
+		return null;
+	}
+
+	/**
+	 * A hard upper bound for a direct LMDB sweep on this source's pinned snapshot. A non-null result also proves that
+	 * {@link #lmdbStatements(long, long, long, long, AdjacencyAccessObserver)} uses that same physical snapshot.
+	 * Sources unable to provide both guarantees must decline.
+	 */
+	default IndexAccessProfile pinnedLmdbSweepProfile() {
+		return null;
+	}
+
+	/**
+	 * One prefix-component mask for each statement order and hypothetical S/P/O/C binding mask. The predicate-sweep
+	 * work is -1 when no universal adjacency candidate exists, or -2 when it exists but its upper work is unknown.
+	 * Node-predicate work is -1 when the corresponding direction cannot be offered.
+	 */
+	@Experimental
+	record IndexAccessProfile(long entries, int sources, int[][] prefixes, boolean adjacencyPossible,
+			long adjacencyPredicateWork, long outgoingAdjacencyWork, long incomingAdjacencyWork) {
+		public IndexAccessProfile {
+			if (entries < 0 || sources < 1 || adjacencyPredicateWork < -2L || outgoingAdjacencyWork < -1L
+					|| incomingAdjacencyWork < -1L
+					|| prefixes.length != StatementOrder.values().length + 1) {
+				throw new IllegalArgumentException("Invalid physical index access profile");
+			}
+			prefixes = Arrays.stream(prefixes).map(int[]::clone).toArray(int[][]::new);
+			for (int[] row : prefixes) {
+				if (row.length != 16) {
+					throw new IllegalArgumentException("Invalid physical index binding masks");
+				}
+			}
+		}
+
+		@Override
+		public int[][] prefixes() {
+			return Arrays.stream(prefixes).map(int[]::clone).toArray(int[][]::new);
+		}
+
+		public int prefixMask(StatementOrder order, int bindingMask) {
+			return prefixes[order == null ? 0 : order.ordinal() + 1][bindingMask];
+		}
 	}
 
 	default LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
@@ -600,6 +663,163 @@ public interface NativeLmdbQuerySource {
 	@Experimental
 	public interface RunView {
 
+		/** Caller-owned proof for a contiguous span in the original, unfiltered run coordinate space. */
+		final class ContextSpan {
+			private long end;
+			private long context = -1L;
+
+			public void set(long end, long commonContext) {
+				this.end = end;
+				this.context = commonContext;
+			}
+
+			public long end() {
+				return end;
+			}
+
+			public boolean hasCommonContext() {
+				return context >= 0L;
+			}
+
+			public long commonContext() {
+				if (!hasCommonContext()) {
+					throw new IllegalStateException("span has no common context proof");
+				}
+				return context;
+			}
+
+			public static boolean acceptsContext(long raw, long wanted, long[] accepted, boolean excludeDefault) {
+				if (excludeDefault && raw == 0L || wanted >= 0L && raw != wanted) {
+					return false;
+				}
+				if (accepted == null) {
+					return true;
+				}
+				for (long graph : accepted) {
+					if (raw == graph) {
+						return true;
+					}
+				}
+				return false;
+			}
+
+			/**
+			 * Copies from one eligible physical span, or skips one disjoint span and returns zero. In both cases
+			 * {@link #end()} is the next RAW offset. Mixed contexts retain the caller's exact residual filtering. The
+			 * raw limit also permits fixed-offset parallel windows without widening their assigned range.
+			 */
+			public int copyAccepted(RunView view, long handle, long from, long limit, int maximum,
+					long[] neighbors, int neighborOffset, long[] graphs, int contextOffset,
+					long wanted, long[] accepted, boolean excludeDefault) {
+				if (from < 0L || limit < from || maximum < 0) {
+					throw new IllegalArgumentException("invalid context window");
+				}
+				if (wanted < 0L && accepted == null && !excludeDefault) {
+					int count = view.copyNeighbors(handle, from, (int) Math.min(maximum, limit - from),
+							neighbors, neighborOffset);
+					if (graphs != null && view.copyContexts(handle, from, count, graphs, contextOffset) != count) {
+						throw new IllegalStateException("native adjacency returned a short context copy");
+					}
+					set(from + count, -1L);
+					return count;
+				}
+				view.contextSpan(handle, from, this);
+				long rawEnd = Math.min(limit, end);
+				if (from < limit && rawEnd <= from) {
+					throw new IllegalStateException("context span made no progress");
+				}
+				long common = hasCommonContext() ? commonContext() : -1L;
+				if (common >= 0L && !acceptsContext(common, wanted, accepted, excludeDefault)) {
+					set(rawEnd, common);
+					return 0;
+				}
+				int requested = (int) Math.min(maximum, rawEnd - from);
+				int count = view.copyContextSpan(handle, from, requested, neighbors, neighborOffset,
+						common >= 0L ? null : graphs, contextOffset);
+				if (count != requested) {
+					throw new IllegalStateException("native adjacency returned a short context-span copy");
+				}
+				if (common >= 0L && graphs != null) {
+					Arrays.fill(graphs, contextOffset, contextOffset + count, common);
+				}
+				set(from + count, common);
+				return count;
+			}
+
+			public int copyAccepted(NativeAdjacency.KeyRunCursor view, long from, long limit, int maximum,
+					long[] neighbors, int neighborOffset, long[] graphs, int contextOffset,
+					long wanted, long[] accepted, boolean excludeDefault) {
+				if (from < 0L || limit < from || maximum < 0) {
+					throw new IllegalArgumentException("invalid context window");
+				}
+				if (wanted < 0L && accepted == null && !excludeDefault) {
+					int count = view.copyNeighbors(from, (int) Math.min(maximum, limit - from),
+							neighbors, neighborOffset);
+					if (graphs != null && view.copyContexts(from, count, graphs, contextOffset) != count) {
+						throw new IllegalStateException("native adjacency returned a short context copy");
+					}
+					set(from + count, -1L);
+					return count;
+				}
+				if (!view.contextSpan(from, this)) {
+					set(limit, -1L);
+				}
+				long rawEnd = Math.min(limit, end);
+				if (from < limit && rawEnd <= from) {
+					throw new IllegalStateException("context span made no progress");
+				}
+				long common = hasCommonContext() ? commonContext() : -1L;
+				if (common >= 0L && !acceptsContext(common, wanted, accepted, excludeDefault)) {
+					set(rawEnd, common);
+					return 0;
+				}
+				int requested = (int) Math.min(maximum, rawEnd - from);
+				int count = view.copyContextSpan(from, requested, neighbors, neighborOffset,
+						common >= 0L ? null : graphs, contextOffset);
+				if (count != requested) {
+					throw new IllegalStateException("native adjacency returned a short context-span copy");
+				}
+				if (common >= 0L && graphs != null) {
+					Arrays.fill(graphs, contextOffset, contextOffset + count, common);
+				}
+				set(from + count, common);
+				return count;
+			}
+
+		}
+
+		/** Physical span metadata without pair payload reads; generic sources conservatively expose an unknown span. */
+		default void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+			long count = size(runHandle);
+			if (fromOffset < 0L || fromOffset > count) {
+				throw new IllegalArgumentException("context span offset out of range: " + fromOffset);
+			}
+			target.set(count, -1L);
+		}
+
+		/** Reads one accepted-span neighbor without eagerly materializing other physical spans. */
+		default long neighborInContextSpan(long runHandle, long offset) {
+			return neighborAt(runHandle, offset);
+		}
+
+		/** Reads one mixed-span context without eagerly materializing other physical spans. */
+		default long contextInContextSpan(long runHandle, long offset) {
+			return contextAt(runHandle, offset);
+		}
+
+		/** Bounded pair copy for a span consumer, avoiding optional eager whole-run materialization. */
+		default int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			if (neighbors == null) {
+				return copyContexts(runHandle, fromOffset, length, contexts, contextOffset);
+			}
+			int count = copyNeighbors(runHandle, fromOffset, length, neighbors, neighborOffset);
+			if (contexts != null && copyContexts(runHandle, fromOffset, count, contexts, contextOffset) != count) {
+				throw new IllegalStateException("native adjacency returned a short context copy");
+			}
+			return count;
+		}
+
 		/** Number of incidences in the run. */
 		long size(long runHandle);
 
@@ -708,6 +928,7 @@ public interface NativeLmdbQuerySource {
 			@Override
 			default void close() {
 			}
+
 		}
 
 		/** The node has provably no predicates in this view. */
@@ -923,6 +1144,28 @@ public interface NativeLmdbQuerySource {
 
 		static KeyRunCursor boundedKeyRunCursor(KeyRunCursor delegate, long fromOrdinal, long toOrdinal) {
 			return new KeyRunCursor() {
+				@Override
+				public boolean contextSpan(long fromOffset, ContextSpan target) {
+					return delegate.contextSpan(fromOffset, target);
+				}
+
+				@Override
+				public long neighborInContextSpan(long offset) {
+					return delegate.neighborInContextSpan(offset);
+				}
+
+				@Override
+				public long contextInContextSpan(long offset) {
+					return delegate.contextInContextSpan(offset);
+				}
+
+				@Override
+				public int copyContextSpan(long fromOffset, int length, long[] neighbors, int neighborOffset,
+						long[] contexts, int contextOffset) {
+					return delegate.copyContextSpan(fromOffset, length, neighbors, neighborOffset, contexts,
+							contextOffset);
+				}
+
 				private long ordinal;
 
 				@Override
@@ -1565,6 +1808,31 @@ public interface NativeLmdbQuerySource {
 				return false;
 			}
 
+			default long neighborInContextSpan(long offset) {
+				return neighborAt(offset);
+			}
+
+			default long contextInContextSpan(long offset) {
+				return contextAt(offset);
+			}
+
+			/** False when this cursor cannot expose physical span metadata; callers use an unknown whole-run span. */
+			default boolean contextSpan(long fromOffset, ContextSpan target) {
+				return false;
+			}
+
+			default int copyContextSpan(long fromOffset, int length, long[] neighbors, int neighborOffset,
+					long[] contexts, int contextOffset) {
+				if (neighbors == null) {
+					return copyContexts(fromOffset, length, contexts, contextOffset);
+				}
+				int copied = copyNeighbors(fromOffset, length, neighbors, neighborOffset);
+				if (contexts != null && copyContexts(fromOffset, copied, contexts, contextOffset) != copied) {
+					throw new IllegalStateException("native adjacency returned a short context copy");
+				}
+				return copied;
+			}
+
 			/** Binds {@code key} and returns its run size, or a non-positive missing/not-covered sentinel. */
 			long bind(long key);
 
@@ -1596,6 +1864,30 @@ public interface NativeLmdbQuerySource {
 		 */
 		@Experimental
 		interface KeyRunCursor extends AutoCloseable {
+			default boolean contextSpan(long fromOffset, ContextSpan target) {
+				return false;
+			}
+
+			default long neighborInContextSpan(long offset) {
+				return neighborAt(offset);
+			}
+
+			default long contextInContextSpan(long offset) {
+				return contextAt(offset);
+			}
+
+			default int copyContextSpan(long fromOffset, int length, long[] neighbors, int neighborOffset,
+					long[] contexts, int contextOffset) {
+				if (neighbors == null) {
+					return copyContexts(fromOffset, length, contexts, contextOffset);
+				}
+				int copied = copyNeighbors(fromOffset, length, neighbors, neighborOffset);
+				if (contexts != null && copyContexts(fromOffset, copied, contexts, contextOffset) != copied) {
+					throw new IllegalStateException("native adjacency returned a short context copy");
+				}
+				return copied;
+			}
+
 			/** Exports the positioned row without discarding/relooking up its physical coordinate. */
 			default boolean borrow(BorrowedFactorBatch target, int lane) {
 				return false;
@@ -1796,6 +2088,29 @@ public interface NativeLmdbQuerySource {
 				private long handle;
 
 				@Override
+				public long neighborInContextSpan(long offset) {
+					return adjacency.neighborInContextSpan(handle, offset);
+				}
+
+				@Override
+				public long contextInContextSpan(long offset) {
+					return adjacency.contextInContextSpan(handle, offset);
+				}
+
+				@Override
+				public boolean contextSpan(long fromOffset, ContextSpan target) {
+					adjacency.contextSpan(handle, fromOffset, target);
+					return true;
+				}
+
+				@Override
+				public int copyContextSpan(long fromOffset, int length, long[] neighbors, int neighborOffset,
+						long[] contexts, int contextOffset) {
+					return adjacency.copyContextSpan(handle, fromOffset, length, neighbors, neighborOffset, contexts,
+							contextOffset);
+				}
+
+				@Override
 				public boolean borrow(BorrowedFactorBatch target, int lane) {
 					return adjacency.borrowRun(handle, target, lane);
 				}
@@ -1980,6 +2295,29 @@ public interface NativeLmdbQuerySource {
 				}
 
 				@Override
+				public boolean contextSpan(long fromOffset, ContextSpan target) {
+					adjacency.contextSpan(handle, fromOffset, target);
+					return true;
+				}
+
+				@Override
+				public long neighborInContextSpan(long offset) {
+					return adjacency.neighborInContextSpan(handle, offset);
+				}
+
+				@Override
+				public long contextInContextSpan(long offset) {
+					return adjacency.contextInContextSpan(handle, offset);
+				}
+
+				@Override
+				public int copyContextSpan(long fromOffset, int length, long[] neighbors, int neighborOffset,
+						long[] contexts, int contextOffset) {
+					return adjacency.copyContextSpan(handle, fromOffset, length, neighbors, neighborOffset, contexts,
+							contextOffset);
+				}
+
+				@Override
 				public long neighborAt(long runOffset) {
 					return adjacency.neighborAt(handle, runOffset);
 				}
@@ -2015,69 +2353,7 @@ public interface NativeLmdbQuerySource {
 			if (delegate == null) {
 				return null;
 			}
-			return new KeyRunCursor() {
-				private long ordinal;
-
-				@Override
-				public boolean advance() {
-					while (ordinal < fromOrdinal) {
-						if (!delegate.advance()) {
-							return false;
-						}
-						ordinal++;
-					}
-					if (ordinal >= toOrdinal || !delegate.advance()) {
-						return false;
-					}
-					ordinal++;
-					return true;
-				}
-
-				@Override
-				public long key() {
-					return delegate.key();
-				}
-
-				@Override
-				public long runHandle() {
-					return delegate.runHandle();
-				}
-
-				@Override
-				public long runSize() {
-					return delegate.runSize();
-				}
-
-				@Override
-				public long distinctNeighborCount() {
-					return delegate.distinctNeighborCount();
-				}
-
-				@Override
-				public long neighborAt(long runOffset) {
-					return delegate.neighborAt(runOffset);
-				}
-
-				@Override
-				public long contextAt(long runOffset) {
-					return delegate.contextAt(runOffset);
-				}
-
-				@Override
-				public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
-					return delegate.copyNeighbors(runOffset, length, target, targetOffset);
-				}
-
-				@Override
-				public int copyContexts(long runOffset, int length, long[] target, int targetOffset) {
-					return delegate.copyContexts(runOffset, length, target, targetOffset);
-				}
-
-				@Override
-				public void close() {
-					delegate.close();
-				}
-			};
+			return boundedKeyRunCursor(delegate, fromOrdinal, toOrdinal);
 		}
 
 		@Override
@@ -2140,6 +2416,39 @@ public interface NativeLmdbQuerySource {
 	/** Exact statement count across all contexts, available only from bounded, snapshot-valid predicate metadata. */
 	default OptionalLong exactPredicateCount(long predicate) {
 		return OptionalLong.empty();
+	}
+
+	/**
+	 * A deferred exact predicate-count read from the same bounded snapshot metadata that its work quote describes.
+	 * Consumers must execute this plan instead of making a separate {@link #count(long, long, long, long)} call: that
+	 * call may select a different source path with different physical work. Preparation must not perform the count or
+	 * publish execution metrics. Generic sources decline by default.
+	 */
+	default PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+		return null;
+	}
+
+	/** An executable, snapshot-bound predicate count with a finite physical-work quote. */
+	interface PreparedPredicateCount {
+		/** Expected physical work in index/metadata page operations; never more than {@link #workUnitsHigh()}. */
+		double workUnits();
+
+		/** Physical-work floor when the exact number of metadata operations is only known after execution. */
+		default double workUnitsLow() {
+			return workUnits();
+		}
+
+		/** Physical-work ceiling; finite whenever the plan is offered. */
+		default double workUnitsHigh() {
+			return workUnits();
+		}
+
+		/** Exact source-owned metadata lookup count when this plan can name that operation. */
+		default OptionalLong metadataLookups() {
+			return OptionalLong.empty();
+		}
+
+		OptionalLong execute() throws IOException;
 	}
 
 	/** A revision-valid ordered-integer zone map together with the index whose varying field it describes. */

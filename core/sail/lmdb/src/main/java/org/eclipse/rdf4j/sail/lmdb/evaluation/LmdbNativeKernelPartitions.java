@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildca
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 
 /**
  * Root-partitioning support shared by the parallel kernel rungs (three-tier parity ExecPlan, Milestone 10B). A kernel
@@ -659,7 +660,7 @@ final class LmdbNativeKernelPartitions {
 		}
 
 		static PartitionPlan planAdjacency(int viewIndex, NativeLmdbQuerySource.NativeAdjacency adjacency,
-				boolean pageProducer, boolean requireContexts) {
+				boolean pageProducer, boolean requireContexts, long minimumUnits) {
 			Objects.requireNonNull(adjacency, "adjacency");
 			if (viewIndex < 0) {
 				throw new IllegalArgumentException("view index must be non-negative");
@@ -667,9 +668,14 @@ final class LmdbNativeKernelPartitions {
 			if (pageProducer) {
 				long pages = adjacency.pageCount();
 				if (pages >= 2L && pageCapability(adjacency, requireContexts)) {
-					return new PartitionPlan(new PlanePlan[] {
-							new PlanePlan(viewIndex, -1, UnitKind.PAGE, 0L, pages)
-					});
+					// Too few pages to occupy the workers: root ordinals take over when they reach the minimum, and
+					// pages keep their locality when neither kind does (the caller declines either way).
+					boolean rootsSuffice = pages < minimumUnits && adjacency.keyCount() >= minimumUnits;
+					if (!rootsSuffice) {
+						return new PartitionPlan(new PlanePlan[] {
+								new PlanePlan(viewIndex, -1, UnitKind.PAGE, 0L, pages)
+						});
+					}
 				}
 			}
 			long roots = adjacency.keyCount();
@@ -862,7 +868,18 @@ final class LmdbNativeKernelPartitions {
 
 	static PartitionPlan planAdjacency(int viewIndex, NativeLmdbQuerySource.NativeAdjacency adjacency,
 			boolean pageProducer, boolean requireContexts) {
-		return PartitionPlan.planAdjacency(viewIndex, adjacency, pageProducer, requireContexts);
+		return PartitionPlan.planAdjacency(viewIndex, adjacency, pageProducer, requireContexts, 0L);
+	}
+
+	/**
+	 * Like {@link #planAdjacency(int, NativeLmdbQuerySource.NativeAdjacency, boolean, boolean)}, but a page plan with
+	 * fewer than {@code minimumUnits} pages yields to root ordinals when the key domain does reach that minimum. A
+	 * small plane whose base was assembled from several scan ranges can hold only a handful of physical pages while
+	 * still enumerating enough roots to feed every worker.
+	 */
+	static PartitionPlan planAdjacency(int viewIndex, NativeLmdbQuerySource.NativeAdjacency adjacency,
+			boolean pageProducer, boolean requireContexts, long minimumUnits) {
+		return PartitionPlan.planAdjacency(viewIndex, adjacency, pageProducer, requireContexts, minimumUnits);
 	}
 
 	static PartitionPlan planWildcard(int viewIndex, NativeLmdbQuerySource.WildcardAdjacency wildcard,
@@ -899,6 +916,28 @@ final class LmdbNativeKernelPartitions {
 		@Override
 		public int findBatch(long[] keys, int keyOffset, int count, long[] runHandles, int runOffset) {
 			return delegate.findBatch(keys, keyOffset, count, runHandles, runOffset);
+		}
+
+		@Override
+		public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+			delegate.contextSpan(runHandle, fromOffset, target);
+		}
+
+		@Override
+		public long neighborInContextSpan(long runHandle, long offset) {
+			return delegate.neighborInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public long contextInContextSpan(long runHandle, long offset) {
+			return delegate.contextInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			return delegate.copyContextSpan(runHandle, fromOffset, length, neighbors, neighborOffset, contexts,
+					contextOffset);
 		}
 
 		@Override
@@ -1010,6 +1049,28 @@ final class LmdbNativeKernelPartitions {
 		@Override
 		public int findBatch(long[] keys, int keyOffset, int count, long[] runHandles, int runOffset) {
 			return delegate.findBatch(keys, keyOffset, count, runHandles, runOffset);
+		}
+
+		@Override
+		public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+			delegate.contextSpan(runHandle, fromOffset, target);
+		}
+
+		@Override
+		public long neighborInContextSpan(long runHandle, long offset) {
+			return delegate.neighborInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public long contextInContextSpan(long runHandle, long offset) {
+			return delegate.contextInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			return delegate.copyContextSpan(runHandle, fromOffset, length, neighbors, neighborOffset, contexts,
+					contextOffset);
 		}
 
 		@Override
@@ -1240,6 +1301,28 @@ final class LmdbNativeKernelPartitions {
 		}
 
 		@Override
+		public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+			delegate.contextSpan(runHandle, fromOffset, target);
+		}
+
+		@Override
+		public long neighborInContextSpan(long runHandle, long offset) {
+			return delegate.neighborInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public long contextInContextSpan(long runHandle, long offset) {
+			return delegate.contextInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			return delegate.copyContextSpan(runHandle, fromOffset, length, neighbors, neighborOffset, contexts,
+					contextOffset);
+		}
+
+		@Override
 		public long size(long runHandle) {
 			return delegate.size(runHandle);
 		}
@@ -1430,6 +1513,32 @@ final class LmdbNativeKernelPartitions {
 		public long quadCount() {
 			ensureRootBound();
 			return rootBounded ? -1L : delegate.quadCount();
+		}
+
+		@Override
+		public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+			ensureRootBound();
+			delegate.contextSpan(runHandle, fromOffset, target);
+		}
+
+		@Override
+		public long neighborInContextSpan(long runHandle, long offset) {
+			ensureRootBound();
+			return delegate.neighborInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public long contextInContextSpan(long runHandle, long offset) {
+			ensureRootBound();
+			return delegate.contextInContextSpan(runHandle, offset);
+		}
+
+		@Override
+		public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+				long[] contexts, int contextOffset) {
+			ensureRootBound();
+			return delegate.copyContextSpan(runHandle, fromOffset, length, neighbors, neighborOffset, contexts,
+					contextOffset);
 		}
 
 		@Override

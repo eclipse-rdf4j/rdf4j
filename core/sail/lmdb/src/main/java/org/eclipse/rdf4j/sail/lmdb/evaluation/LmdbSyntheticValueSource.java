@@ -72,7 +72,9 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	private final LmdbNativeTermAuthority authority;
 	private NativeGeneratedKeyPlan generatedKeyPlan = NativeGeneratedKeyPlan.NONE;
 	private NativeGeneratedKeyAuthority generatedKeyAuthority;
-	/** Shared identity token for same-evaluation parallel decorators; {@code null} means this instance is the token. */
+	/**
+	 * Shared token for wrappers with the same complete synthetic term space; {@code null} means this source owns it.
+	 */
 	private final Object syntheticIdSpace;
 
 	/** Compile-scoped carrier: catalog resolution only, no runtime interning. */
@@ -95,8 +97,9 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		this.catalog = catalog;
 		this.queryExecutionPolicy = policy;
 		this.context = context;
-		this.authority = context == null ? null : new LmdbNativeTermAuthority(delegate, catalog, context);
 		this.syntheticIdSpace = syntheticIdSpace;
+		this.authority = context == null ? null
+				: new LmdbNativeTermAuthority(delegate, catalog, context, idSpace());
 		if (context != null) {
 			context.installEvaluationSource(this);
 			context.installQueryScopedValueRegistrar(this::retainQueryScopedValue);
@@ -562,6 +565,16 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public IndexAccessProfile indexAccessProfile() {
+		return delegate.indexAccessProfile();
+	}
+
+	@Override
+	public IndexAccessProfile pinnedLmdbSweepProfile() {
+		return delegate.pinnedLmdbSweepProfile();
+	}
+
+	@Override
 	public String indexName(long subj, long pred, long obj, long context) {
 		return anySynthetic(subj, pred, obj, context) ? "" : delegate.indexName(subj, pred, obj, context);
 	}
@@ -750,6 +763,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public OptionalLong exactPredicateCount(long predicate) {
 		return synthetic(predicate) ? OptionalLong.empty() : delegate.exactPredicateCount(predicate);
+	}
+
+	@Override
+	public PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+		return synthetic(predicate) ? null : delegate.prepareExactPredicateCount(predicate);
 	}
 
 	@Override

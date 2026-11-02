@@ -15,6 +15,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -24,25 +27,38 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+
+import jdk.jfr.Recording;
+import jdk.jfr.RecordingState;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 
 /**
  * Differential correctness gate for the REAL_ESTATE theme queries on the LMDB native query engine: every catalog query
  * is evaluated once with the native engine enabled and once with it disabled (generic RDF4J evaluator), and the result
  * multisets must match. Uses a scaled-down dataset so the gate stays fast enough to run after every engine change.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbRealEstateNativeParityTest {
 
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final String SYNCHRONOUS_CODEGEN_FLAG = "rdf4j.lmdb.janinoCodegen.synchronous";
+	private static final String EXECUTION_PATH_METRIC = "nativeExecutionPath";
+	private static final String STRATEGY_EVENT = "org.eclipse.rdf4j.lmdb.NativeStrategyDecision";
 
 	@TempDir
 	static File dataDir;
@@ -51,19 +67,7 @@ public class LmdbRealEstateNativeParityTest {
 
 	@BeforeAll
 	static void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			ThemeDataSetGenerator.generateRealEstate(
-					ThemeDataSetGenerator.realEstateConfig()
-							.withPropertyCount(4000)
-							.withAgentCount(400)
-							.withDistrictCount(40)
-							.withAmenityCount(60),
-					new RDFInserter(connection));
-			connection.commit();
-		}
+		repository = createRepository(dataDir);
 	}
 
 	@AfterAll
@@ -75,14 +79,15 @@ public class LmdbRealEstateNativeParityTest {
 
 	@ParameterizedTest
 	@ValueSource(ints = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 })
-	void nativeResultsMatchGeneric(int queryIndex) {
+	void nativeResultsMatchGeneric(int queryIndex) throws IOException {
 		String query = ThemeQueryCatalog.queryFor(Theme.REAL_ESTATE, queryIndex);
-		List<String> nativeRows = rows(query);
 		String previous = System.getProperty(NATIVE_FLAG);
-		List<String> genericRows;
+		QueryExecution nativeExecution;
 		try {
-			System.setProperty(NATIVE_FLAG, "false");
-			genericRows = rows(query);
+			System.setProperty(NATIVE_FLAG, "true");
+			nativeExecution = queryIndex == 4
+					? rowsWithNativeDiagnostics(repository, dataDir.toPath(), query)
+					: new QueryExecution(rows(query), List.of(), null);
 		} finally {
 			if (previous == null) {
 				System.clearProperty(NATIVE_FLAG);
@@ -90,19 +95,248 @@ public class LmdbRealEstateNativeParityTest {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
 		}
+		List<String> nativeRows = nativeExecution.rows();
+		if (queryIndex == 4) {
+			System.out.println("REAL_ESTATE query 4 first native execution strategy events:\n"
+					+ String.join("\n", nativeExecution.strategyEvents()));
+		}
+		List<String> genericRows = genericRows(query);
 		assertThat(nativeRows)
-				.as("native vs generic rows for REAL_ESTATE query " + queryIndex + ":\n" + query)
+				.as(() -> "native vs generic rows for REAL_ESTATE query " + queryIndex + ":\n" + query
+						+ (queryIndex == 4 ? "\nfirst native evaluation JFR: " + nativeExecution.recordingPath()
+								+ "\nfirst native evaluation strategy events:\n"
+								+ String.join("\n", nativeExecution.strategyEvents()) : "")
+						+ (nativeRows.equals(genericRows) ? "" : nativeReruns(query)))
 				.isEqualTo(genericRows);
 	}
 
-	private static List<String> rows(String query) {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			List<BindingSet> result = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
-			return result.stream()
-					.map(LmdbRealEstateNativeParityTest::canonical)
-					.sorted()
-					.collect(Collectors.toList());
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"orderedDistinctGroups",
+			"packedFtreeAggregate",
+			"irAggregateParallel",
+			"irAggregateParallelInterpreted",
+			"irAggregate",
+			"irAggregateInterpreted"
+	})
+	void realEstateQueryFourMatchesGenericForForcedAggregateRoute(String strategy) {
+		String query = ThemeQueryCatalog.queryFor(Theme.REAL_ESTATE, 4);
+		String previousNative = System.getProperty(NATIVE_FLAG);
+		String previous = System.getProperty(SYNCHRONOUS_CODEGEN_FLAG);
+		try {
+			System.setProperty(NATIVE_FLAG, "true");
+			System.setProperty(SYNCHRONOUS_CODEGEN_FLAG, "true");
+			List<String> expected = genericRows(query);
+			List<String> actual = rows(query, strategy);
+			String executedPlan = explainExecuted(query, strategy);
+
+			assertThat(actual)
+					.as("native vs generic rows for REAL_ESTATE query 4 through " + strategy + ":\n" + query)
+					.isEqualTo(expected);
+			assertThat(executedPlan)
+					.as("executed plan for forced strategy " + strategy)
+					.contains(EXECUTION_PATH_METRIC + "=" + strategy);
+		} finally {
+			if (previousNative == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previousNative);
+			}
+			if (previous == null) {
+				System.clearProperty(SYNCHRONOUS_CODEGEN_FLAG);
+			} else {
+				System.setProperty(SYNCHRONOUS_CODEGEN_FLAG, previous);
+			}
 		}
+	}
+
+	@Test
+	void realEstateQueryFourMatchesGenericOnFreshStore(@TempDir File freshDataDir) throws IOException {
+		String query = ThemeQueryCatalog.queryFor(Theme.REAL_ESTATE, 4);
+		SailRepository freshRepository = createRepository(freshDataDir);
+		String previous = System.getProperty(NATIVE_FLAG);
+		try {
+			System.setProperty(NATIVE_FLAG, "true");
+			QueryExecution nativeExecution = rowsWithNativeDiagnostics(freshRepository, freshDataDir.toPath(), query);
+			System.setProperty(NATIVE_FLAG, "false");
+			List<String> genericRows = rows(freshRepository, query);
+			System.out.println("REAL_ESTATE query 4 fresh-store first native execution strategy events:\n"
+					+ String.join("\n", nativeExecution.strategyEvents()));
+			assertThat(nativeExecution.rows())
+					.as("fresh-store native vs generic rows for REAL_ESTATE query 4:\n" + query
+							+ "\nfirst native evaluation JFR: " + nativeExecution.recordingPath()
+							+ "\nfirst native evaluation strategy events:\n"
+							+ String.join("\n", nativeExecution.strategyEvents()))
+					.isEqualTo(genericRows);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+			freshRepository.shutDown();
+		}
+	}
+
+	/**
+	 * Evaluates a mismatching query natively again, so a failure shows whether the store keeps answering wrongly or one
+	 * evaluation raced, together with the plan each rerun executed.
+	 */
+	private static String nativeReruns(String query) {
+		StringBuilder reruns = new StringBuilder();
+		String previous = System.getProperty(NATIVE_FLAG);
+		try {
+			System.setProperty(NATIVE_FLAG, "true");
+			for (int rerun = 1; rerun <= 3; rerun++) {
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					reruns.append("\nnative rerun ").append(rerun).append(": ").append(rows(query));
+					reruns.append("\n")
+							.append(connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry));
+				} catch (RuntimeException failure) {
+					reruns.append("\nnative rerun ").append(rerun).append(" failed: ").append(failure);
+				}
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
+		return reruns.toString();
+	}
+
+	private static List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private static List<String> rows(String query, String forcedStrategy) {
+		return rows(repository, query, forcedStrategy);
+	}
+
+	private static List<String> rows(SailRepository targetRepository, String query) {
+		return rows(targetRepository, query, null);
+	}
+
+	private static List<String> rows(SailRepository targetRepository, String query, String forcedStrategy) {
+		try (SailRepositoryConnection connection = targetRepository.getConnection()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			List<BindingSet> result = QueryResults.asList(preparedQuery.evaluate());
+			return canonicalRows(result);
+		}
+	}
+
+	private static QueryExecution rowsWithNativeDiagnostics(SailRepository targetRepository, Path recordingDirectory,
+			String query) throws IOException {
+		Path recordingPath = recordingDirectory.resolve("native-query-4-first-evaluation.jfr");
+		List<BindingSet> result;
+		try (Recording recording = new Recording()) {
+			recording.enable(STRATEGY_EVENT).withThreshold(Duration.ZERO);
+			recording.start();
+			Throwable queryFailure = null;
+			try (SailRepositoryConnection connection = targetRepository.getConnection()) {
+				result = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			} catch (RuntimeException | Error failure) {
+				queryFailure = failure;
+				throw failure;
+			} finally {
+				try {
+					if (recording.getState() == RecordingState.RUNNING) {
+						recording.stop();
+					}
+					recording.dump(recordingPath);
+				} catch (IOException | RuntimeException | Error cleanupFailure) {
+					if (queryFailure != null) {
+						queryFailure.addSuppressed(cleanupFailure);
+					} else {
+						throw cleanupFailure;
+					}
+				}
+			}
+		}
+		List<String> strategyEvents = RecordingFile.readAllEvents(recordingPath)
+				.stream()
+				.filter(event -> STRATEGY_EVENT.equals(event.getEventType().getName()))
+				.filter(event -> "GROUP BY dispatch".equals(event.getString("decisionPoint")))
+				.map(LmdbRealEstateNativeParityTest::renderStrategyEvent)
+				.toList();
+		return new QueryExecution(canonicalRows(result), strategyEvents, recordingPath);
+	}
+
+	private static String renderStrategyEvent(RecordedEvent event) {
+		return "evaluationId=" + event.getLong("evaluationId")
+				+ ", boundaryId=" + event.getLong("boundaryId")
+				+ ", decisionId=" + event.getLong("decisionId")
+				+ ", decisionPoint=" + event.getString("decisionPoint")
+				+ ", phase=" + event.getString("phase")
+				+ ", strategy=" + event.getString("strategy")
+				+ ", variant=" + event.getString("variant")
+				+ ", workerBucket=" + event.getInt("workerBucket")
+				+ ", status=" + event.getString("status")
+				+ ", forcedStrategy=" + event.getString("forcedStrategy")
+				+ ", dispatchMode=" + event.getString("dispatchMode")
+				+ ", selectionReason=" + event.getString("selectionReason")
+				+ ", availabilityReason=" + event.getString("availabilityReason")
+				+ ", executionMode=" + event.getString("executionMode")
+				+ ", compilationCacheState=" + event.getString("compilationCacheState")
+				+ ", observationCompletion=" + event.getString("observationCompletion")
+				+ ", failureType=" + event.getString("failureType");
+	}
+
+	private static List<String> canonicalRows(List<BindingSet> result) {
+		return result.stream()
+				.map(LmdbRealEstateNativeParityTest::canonical)
+				.sorted()
+				.collect(Collectors.toList());
+	}
+
+	private static SailRepository createRepository(File directory) {
+		SailRepository newRepository = new SailRepository(new LmdbStore(directory,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+		try (SailRepositoryConnection connection = newRepository.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			ThemeDataSetGenerator.generateRealEstate(
+					ThemeDataSetGenerator.realEstateConfig()
+							.withPropertyCount(4000)
+							.withAgentCount(400)
+							.withDistrictCount(40)
+							.withAmenityCount(60),
+					new RDFInserter(connection));
+			connection.commit();
+		}
+		return newRepository;
+	}
+
+	private static String explainExecuted(String query, String forcedStrategy) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			return preparedQuery.explain(Explanation.Level.Executed).toString();
+		}
+	}
+
+	private static List<String> genericRows(String query) {
+		return genericRows(repository, query);
+	}
+
+	private static List<String> genericRows(SailRepository targetRepository, String query) {
+		String previous = System.getProperty(NATIVE_FLAG);
+		try {
+			System.setProperty(NATIVE_FLAG, "false");
+			return rows(targetRepository, query);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
+	}
+
+	private record QueryExecution(List<String> rows, List<String> strategyEvents, Path recordingPath) {
 	}
 
 	/** Rows rendered independently of binding iteration order. */

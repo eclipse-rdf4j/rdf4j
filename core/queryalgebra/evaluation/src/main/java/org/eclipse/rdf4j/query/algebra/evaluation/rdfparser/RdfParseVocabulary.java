@@ -13,15 +13,16 @@ package org.eclipse.rdf4j.query.algebra.evaluation.rdfparser;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.PARSEF;
 
 /** Names reserved by the opt-in RDF parsing extension. These are not SPARQL built-ins. */
 public final class RdfParseVocabulary {
-	public static final String NAMESPACE = "http://rdf4j.org/function/parse#";
+	public static final String NAMESPACE = PARSEF.NAMESPACE;
 	public static final String SERVICE = "urn:rdf4j:parse";
-	public static final IRI TRIPLES = iri("triples");
-	public static final IRI QUADS = iri("quads");
-	public static final IRI TRIPLE_TERMS = iri("tripleTerms");
-	public static final IRI TURTLE = iri("turtle");
+	public static final IRI TRIPLES = PARSEF.triples;
+	public static final IRI QUADS = PARSEF.quads;
+	public static final IRI TRIPLE_TERMS = PARSEF.tripleTerms;
+	public static final IRI TURTLE = PARSEF.turtle;
 	/** Explicit marker for the SERVICE configuration node. */
 	public static final IRI SOURCE = iri("Source");
 

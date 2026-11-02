@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbNativeKernelHooksIdentityTest {
 
@@ -293,6 +295,81 @@ class LmdbNativeKernelHooksIdentityTest {
 		}
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void rawSourceIdentityUsesOnlyProvenCanonicalIds(boolean canonical) {
+		Value first = canonical ? VF.createLiteral("1", CoreDatatype.XSD.INTEGER) : VF.createLiteral("same", "en");
+		Value second = canonical ? VF.createLiteral("01", CoreDatatype.XSD.INTEGER) : VF.createLiteral("same", "EN");
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.hasCanonicalIds()).thenReturn(canonical);
+		when(source.lazyValue(1L)).thenReturn(first);
+		when(source.lazyValue(2L)).thenReturn(second);
+		when(source.lazyValue(3L)).thenReturn(iri("different"));
+		RowState row = row(source);
+		assertThat(row.termAuthority()).as("raw sources need no synthetic authority").isNull();
+		assertThat(row.boundMask()).isZero();
+		LmdbNativeKernelHooks hooks = hooks(row);
+		try {
+			assertThat(hooks.sameRdfTerm(1L, 1L)).isTrue();
+			assertThat(hooks.sameRdfTerm(1L, 2L)).isEqualTo(!canonical);
+			assertThat(hooks.sameRdfTerm(1L, 3L)).isFalse();
+			assertThat(hooks.sameRdfTerm(UNKNOWN, 1L)).isFalse();
+			assertThat(hooks.sameRdfTerm(0L, UNKNOWN)).isFalse();
+			assertThat(hooks.supportsCanonicalTermKeys()).isEqualTo(canonical);
+			if (canonical) {
+				assertThat(hooks.canonicalTermKey(1L)).isEqualTo(1L);
+				assertThat(hooks.canonicalTermKey(2L)).isEqualTo(2L);
+				assertThat(hooks.termHashKey(1L)).isEqualTo(1L);
+				assertThat(hooks.termHashKey(2L)).isEqualTo(2L);
+			} else {
+				assertThatThrownBy(() -> hooks.canonicalTermKey(1L))
+						.isInstanceOf(UnsupportedOperationException.class);
+				assertThat(hooks.rdfTermHash(1L)).isEqualTo(hooks.rdfTermHash(2L));
+				assertThat(hooks.termHashKey(1L)).isEqualTo(hooks.termHashKey(2L));
+			}
+			assertThat(hooks.rdfTermHash(UNKNOWN)).isNotEqualTo(hooks.rdfTermHash(0L));
+		} finally {
+			hooks.closeFilters();
+			row.closeDecodedInputs();
+		}
+	}
+
+	@Test
+	void rawHooksImportForeignTermsThroughTheTargetMapping() {
+		Value shared = VF.createLiteral("shared", "en");
+		NativeLmdbQuerySource target = mock(NativeLmdbQuerySource.class);
+		when(target.idSpace()).thenReturn(new Object());
+		when(target.hasCanonicalIds()).thenReturn(true);
+		when(target.idOf(shared)).thenReturn(1L);
+		when(target.idOf(iri("absent"))).thenReturn(UNKNOWN);
+		when(target.lazyValue(1L)).thenReturn(shared);
+		NativeLmdbQuerySource foreign = mock(NativeLmdbQuerySource.class);
+		when(foreign.idSpace()).thenReturn(new Object());
+		when(foreign.lazyValue(10L)).thenReturn(shared);
+		RowState targetRow = row(target), foreignRow = row(foreign);
+		LmdbNativeKernelHooks targetHooks = hooks(targetRow), foreignHooks = hooks(foreignRow);
+		SyntheticValueSource synthetic = evaluationSource(PlanValueCatalog.EMPTY);
+		RowState generatedRow = row(synthetic);
+		LmdbNativeKernelHooks generatedHooks = hooks(generatedRow);
+		try {
+			assertThat(targetRow.termAuthority()).isNull();
+			assertThat(targetHooks.importRdfTerm(foreignHooks, 10L)).isEqualTo(1L);
+			assertThat(targetHooks.importRdfTerm(foreignHooks, UNKNOWN)).isEqualTo(UNKNOWN);
+			assertThat(targetHooks.importRdfTerm(foreignHooks, 0L)).isZero();
+			long generated = synthetic.internComputedValue(iri("absent"));
+			assertThat(synthetic.authority().kind(generated)).isEqualTo(NativeIdKind.RUNTIME);
+			assertThatThrownBy(() -> targetHooks.importRdfTerm(generatedHooks, generated))
+					.as("a raw target cannot publish a foreign generated ID it cannot represent")
+					.isInstanceOf(QueryEvaluationException.class);
+		} finally {
+			targetHooks.closeFilters();
+			foreignHooks.closeFilters();
+			targetRow.closeDecodedInputs();
+			foreignRow.closeDecodedInputs();
+			close(generatedHooks, generatedRow, synthetic);
+		}
+	}
+
 	private static CatalogValues catalogValues(Value first, Value second) {
 		PlanValueCatalog.Builder builder = new PlanValueCatalog.Builder();
 		long firstId = UNKNOWN;
@@ -314,7 +391,7 @@ class LmdbNativeKernelHooksIdentityTest {
 		return new SyntheticValueSource(new CodecSource(), catalog).forEvaluation();
 	}
 
-	private static RowState row(SyntheticValueSource source) {
+	private static RowState row(NativeLmdbQuerySource source) {
 		RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
 		Arrays.fill(row.slots, UNKNOWN);
 		row.recomputeBoundMask();

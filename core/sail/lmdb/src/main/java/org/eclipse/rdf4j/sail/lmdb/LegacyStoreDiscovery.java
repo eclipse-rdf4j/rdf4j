@@ -83,7 +83,8 @@ final class LegacyStoreDiscovery {
 	private static final int MAX_SHORT_VALUE_KEY = 16;
 	private static final int RETIREMENT_HINT_SPILL_THRESHOLD = 1024;
 	private static final Set<String> VALUE_METADATA_DBS = Set.of("free_ids", "gc_meta", "ref_counts", "unused_ids");
-	private static final Set<String> V6_VALUE_METADATA_DBS = Set.of("free_ids", "gc_meta", "ref_counts", "unused_ids",
+	private static final Set<String> MODERN_VALUE_METADATA_DBS = Set.of("free_ids", "gc_meta", "ref_counts",
+			"unused_ids",
 			"retired_ids", "retired_ids_seq");
 	private static final List<String> INDEX_SPECS = indexSpecs();
 	private static final byte[] STATEMENT_BUILD_KEY = "triple-index-build".getBytes(StandardCharsets.US_ASCII);
@@ -136,7 +137,7 @@ final class LegacyStoreDiscovery {
 				Map<String, Integer> triplesDatabases = readDatabaseCatalog(stack, triplesTxn, triplesMain, true,
 						exhaustive);
 				LegacyRetirementQueue retirementQueue = validateLegacyRetirementQueue(stack, valuesTxn,
-						valuesDatabases, legacy, exhaustive);
+						valuesDatabases, properties, legacy, exhaustive);
 				Set<String> physicalStatementIndexes = classifyStatementIndexes(triplesDatabases);
 				Set<String> physicalTermIndexes = classifyTermIndexes(valuesDatabases, properties, legacy);
 				Set<String> activeStatementIndexes = validateNamespaceMetadata(stack, triplesTxn, triplesDatabases,
@@ -204,7 +205,7 @@ final class LegacyStoreDiscovery {
 		int triplesMain = openMainDatabase(stack, triplesTxn);
 		validateDatabaseFlags(stack, valuesTxn, valuesMain, "values main");
 		validateDatabaseFlags(stack, triplesTxn, triplesMain, "triples main");
-		for (String name : V6_VALUE_METADATA_DBS) {
+		for (String name : MODERN_VALUE_METADATA_DBS) {
 			openKnownDatabase(stack, valuesTxn, name, valueDatabases, true);
 		}
 		openKnownDatabase(stack, valuesTxn, ValueStore.TERM_INDEX_MANIFEST_DATABASE, valueDatabases, true);
@@ -229,8 +230,9 @@ final class LegacyStoreDiscovery {
 			throw new IOException("Unsupported ValueStore retirement metadata schema");
 		}
 		byte[] format = getBoundedValue(valuesTxn, metadata, new byte[] { 3 }, 1, 1);
-		if (format[0] != LmdbStoreFormat.CURRENT_VERSION) {
-			throw new IOException("ValueStore native format fence disagrees with current LmdbStore format");
+		int expectedVersion = parseVersion(properties.getVersion());
+		if (!LmdbStoreFormat.isSupportedModernVersion(expectedVersion) || format[0] != expectedVersion) {
+			throw new IOException("ValueStore native format fence disagrees with persisted LmdbStore format");
 		}
 		ByteBuffer epoch = ByteBuffer.wrap(getBoundedValue(valuesTxn, metadata, new byte[] { 1 }, 1, 9));
 		if (readCanonicalUnsigned(epoch) <= 0L || epoch.hasRemaining()) {
@@ -592,8 +594,8 @@ final class LegacyStoreDiscovery {
 		}
 
 		Set<String> expectedValues = new LinkedHashSet<>(VALUE_METADATA_DBS);
-		if (!legacy && LmdbStoreFormat.CURRENT_VERSION == parseVersion(properties.getVersion())) {
-			expectedValues = new LinkedHashSet<>(V6_VALUE_METADATA_DBS);
+		if (!legacy && LmdbStoreFormat.isSupportedModernVersion(parseVersion(properties.getVersion()))) {
+			expectedValues = new LinkedHashSet<>(MODERN_VALUE_METADATA_DBS);
 		} else if (legacy && retirementQueue != LegacyRetirementQueue.ABSENT) {
 			expectedValues.add("retired_ids");
 			expectedValues.add("retired_ids_seq");
@@ -749,10 +751,8 @@ final class LegacyStoreDiscovery {
 
 	/** Validates the published schema or proves a schema-less historical queue bootstrap contains no records. */
 	private static LegacyRetirementQueue validateLegacyRetirementQueue(MemoryStack stack, long transaction,
-			Map<String, Integer> namedDatabases, boolean legacy, boolean exhaustive) throws IOException {
-		if (!legacy && !exhaustive) {
-			return LegacyRetirementQueue.ABSENT;
-		}
+			Map<String, Integer> namedDatabases, StoreProperties properties, boolean legacy, boolean exhaustive)
+			throws IOException {
 		boolean hasById = namedDatabases.containsKey("retired_ids");
 		boolean hasSequence = namedDatabases.containsKey("retired_ids_seq");
 		Integer metadataDatabase = namedDatabases.get("gc_meta");
@@ -763,8 +763,13 @@ final class LegacyStoreDiscovery {
 		if (legacy && nativeFormat != null) {
 			throw new IOException("ValueStore native format fence disagrees with LmdbStore format 2");
 		}
-		if (!legacy && !Arrays.equals(nativeFormat, new byte[] { LmdbStoreFormat.CURRENT_VERSION })) {
-			throw new IOException("ValueStore native format fence disagrees with the current LmdbStore format");
+		int expectedVersion = parseVersion(properties.getVersion());
+		if (!legacy && (!LmdbStoreFormat.isSupportedModernVersion(expectedVersion)
+				|| !Arrays.equals(nativeFormat, new byte[] { (byte) expectedVersion }))) {
+			throw new IOException("ValueStore native format fence disagrees with the persisted LmdbStore format");
+		}
+		if (!legacy && !exhaustive) {
+			return LegacyRetirementQueue.ABSENT;
 		}
 
 		if (schema == null) {

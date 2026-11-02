@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.rdfparser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -21,11 +22,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -215,16 +214,14 @@ class RdfDocumentParserTest {
 	}
 
 	@Test
-	void expiredQueryDeadlineAbortsParsing() throws InterruptedException {
-		try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1)) {
-			CountDownLatch expired = new CountDownLatch(1);
-			try (var registration = deadline.onExpiration(expired::countDown)) {
-				assertTrue(expired.await(10, TimeUnit.SECONDS));
-			}
-			try (var scope = deadline.enter()) {
-				assertThrows(QueryInterruptedException.class, () -> parse(TRIPLE));
-			}
+	void expiredQueryTimeLimitAbortsParsing() {
+		try (InterruptingTimeLimit timeLimit = InterruptingTimeLimit.start(0)) {
+			assertTrue(timeLimit.fired());
+			assertTrue(Thread.currentThread().isInterrupted());
+			assertThrows(QueryInterruptedException.class, () -> parse(TRIPLE));
+			assertTrue(Thread.currentThread().isInterrupted());
 		}
+		assertFalse(Thread.currentThread().isInterrupted());
 	}
 
 	@Test

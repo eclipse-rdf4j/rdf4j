@@ -13,10 +13,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.io.File;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -26,6 +29,9 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -36,6 +42,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Milestone 10B (three-tier parity ExecPlan): with {@code rdf4j.lmdb.irAggregateParallel.enabled=true}, an IR aggregate
@@ -142,6 +154,39 @@ class LmdbNativeIrAggregateParallelTest {
 	private SailRepository repository;
 	private Map<String, String> previousProperties;
 
+	@Test
+	void fusedParallelWorkersAttributeScanAndExpressionsToTheirQuery(@TempDir Path directory) throws Exception {
+		String eventName = "org.eclipse.rdf4j.lmdb.NativeExecutionPhase";
+		Path path = directory.resolve("parallel-input-phases.jfr");
+		long consumerThread = Thread.currentThread().threadId();
+		try (Recording recording = new Recording()) {
+			recording.enable(eventName).withThreshold(Duration.ZERO);
+			recording.start();
+			assertAllExecutionRungs(COMPUTED_GROUP_QUERY);
+			recording.stop();
+			recording.dump(path);
+		}
+		List<RecordedEvent> events = RecordingFile.readAllEvents(path)
+				.stream()
+				.filter(event -> eventName.equals(event.getEventType().getName()))
+				.toList();
+		List<Long> groupIdentities = events.stream()
+				.filter(event -> "group".equals(event.getString("phase")))
+				.map(event -> event.getLong("evaluationId"))
+				.toList();
+		for (String phase : List.of("scan", "expressions")) {
+			List<RecordedEvent> workers = events.stream()
+					.filter(event -> phase.equals(event.getString("phase"))
+							&& event.getThread().getJavaThreadId() != consumerThread)
+					.toList();
+			assertThat(workers).as("actual fused workers must publish their %s lifetime", phase).isNotEmpty();
+			assertThat(workers).allSatisfy(event -> {
+				assertThat(event.getString("outcome")).isEqualTo("COMPLETED");
+				assertThat(event.getLong("evaluationId")).isIn(groupIdentities);
+			});
+		}
+	}
+
 	@BeforeEach
 	void setUp() {
 		previousProperties = new HashMap<>();
@@ -176,6 +221,7 @@ class LmdbNativeIrAggregateParallelTest {
 					conn.add(m, q, vf.createLiteral(i * 7 + j));
 					// q2 equals q for j==0 and differs for j==1, so FILTER(?v != ?v2) keeps exactly the j==1 rows
 					conn.add(m, q2, vf.createLiteral(i * 7 + 2 * j));
+					conn.add(m, q2, vf.createLiteral(i * 7 + 2 * j), vf.createIRI(EX, "graph"));
 					// q3: the global minimum is a tie between two distinct terms on the first and last root keys
 					if (i == 0 && j == 0) {
 						conn.add(m, q3, vf.createLiteral(new BigDecimal("1")));
@@ -251,8 +297,232 @@ class LmdbNativeIrAggregateParallelTest {
 	}
 
 	@Test
+	void multiPatternAggregateQuoteKeepsExpectedPriceSeparateFromHardWorkAndForcedIrRuns() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = rows(GROUPED_QUERY);
+		assertThat(expected).hasSize(600);
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+
+		KernelExecutionTestAccess.resetMetrics();
+		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		List<String> forced = rows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
+		assertThat(forced).as("explicit IR selection must preserve the generic result bag")
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+				.as("an explicitly selected available IR candidate must execute its worker producer")
+				.isGreaterThan(parallelBefore);
+
+		GenericPlanNode plan = explainPlan(GROUPED_QUERY, null);
+		JsonNode inventory = parseQuotes(plan);
+		JsonNode parallelCandidate = candidate(inventory, LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION);
+		assertThat(parallelCandidate).as("the natural candidate inventory must retain parallel aggregation")
+				.isNotNull();
+		assertThat(parallelCandidate.path("physicalFeaturesKnown").asBoolean())
+				.as("the generic multi-stage producer has no complete physical quote")
+				.isFalse();
+		assertThat(parallelCandidate.path("total").isNull())
+				.as("the point-priced peer must not be mistaken for a proved physical total")
+				.isTrue();
+
+		JsonNode irCandidate = candidate(inventory,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
+		assertThat(irCandidate).as("the natural inventory must retain the available interpreted IR candidate: %s",
+				inventory).isNotNull();
+		assertThat(irCandidate.path("physicalFeaturesKnown").asBoolean())
+				.as("the multi-stage IR producer has no complete physical quote: %s", irCandidate)
+				.isFalse();
+		assertThat(irCandidate.path("total").isNull())
+				.as("the expected IR price must remain separate from a hard physical total: %s", irCandidate)
+				.isTrue();
+		boolean completeWorkEvidence = irCandidate.path("workEvidenceComplete").asBoolean();
+		JsonNode partialEstimate = irCandidate.path("partialEstimate");
+		JsonNode expectedPrior = irCandidate.path("expectedPlanningPrior");
+		assertThat(completeWorkEvidence)
+				.as("the multi-stage IR lane is compared on its point-estimate planning quote, so its comparable "
+						+ "work is complete even though no typed physical total is proved: %s", irCandidate)
+				.isTrue();
+		assertThat(partialEstimate.isNull())
+				.as("expected work must not be smuggled into a model cost vector: %s", irCandidate)
+				.isTrue();
+		assertThat(expectedPrior.isObject())
+				.as("the IR candidate must retain a separate expected planning prior while hard work is incomplete; "
+						+ "candidate=%s inventory=%s", irCandidate, inventory)
+				.isTrue();
+		JsonNode expectedWork = expectedPrior.path("expectedTotalWork");
+		assertThat(expectedWork.isNumber())
+				.as("the expected planning prior must carry work units: %s", expectedPrior)
+				.isTrue();
+		assertThat(expectedWork.asDouble())
+				.as("the expected IR work must be finite and positive: %s", expectedPrior)
+				.isFinite()
+				.isPositive();
+		assertThat(expectedPrior.path("expectedBeforeFirstOutputWork").asDouble())
+				.as("aggregate output is materialized before its first row, so LIMIT cannot prorate this work")
+				.isEqualTo(expectedWork.asDouble());
+	}
+
+	@Test
+	void multiPatternAggregateProposalCarriesBudgetedExecutionResourceWitness() {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+
+		JsonNode inventory = parseQuotes(explainPlan(GROUPED_QUERY, null));
+		JsonNode candidate = candidate(inventory,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
+		assertThat(candidate).as("the interpreted parallel aggregate must pass lowering admission: %s", inventory)
+				.isNotNull();
+		JsonNode witness = candidate.path("executionResourceWitness");
+		assertThat(witness.isObject())
+				.as("normal selection needs a separate resource witness from admitted kernel ownership: %s", candidate)
+				.isTrue();
+		assertThat(witness.path("queryLedgerBounded").asBoolean())
+				.as("aggregate retained state must be charged to the query ledger: %s", witness)
+				.isTrue();
+		assertThat(witness.path("workerSlotsReservedOnOpen").asBoolean())
+				.as("parallel task slots must be reserved by the selected opener: %s", witness)
+				.isTrue();
+		assertThat(witness.has("inputReductionProof"))
+				.as("the resource witness must not claim input reduction or a cold physical anchor: %s", witness)
+				.isFalse();
+	}
+
+	@Test
 	void sipKeyWildcardParallelUsesWholePredicateWindows() {
 		assertAllExecutionRungs(SIP_KEY_WILDCARD_QUERY);
+	}
+
+	@Test
+	void nestedStringAggregatesBindAndExecuteEveryWorkerRung() {
+		for (String expression : List.of("STRLEN(STRAFTER(STR(?m), \"m\"))",
+				"STRLEN(STRBEFORE(STR(?m), \"m\"))",
+				"xsd:integer(STRSTARTS(STR(?m), \"http://\"))",
+				"xsd:integer(STRENDS(STR(?m), \"0\"))",
+				"STRLEN(IF(BOUND(?m), STRAFTER(STR(?m), \"m\"), COALESCE(?missing, \"fallback\")))")) {
+			assertAllExecutionRungs("PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+					+ "SELECT (SUM(" + expression + ") AS ?total) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+					+ "q> ?v }");
+		}
+	}
+
+	@Test
+	void correlatedExistsAggregatesExecuteIndependentWorkerPredicates() {
+		for (String predicate : List.of(
+				"EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe = ?v) }",
+				"NOT EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe != ?v) }",
+				"EXISTS { { ?m <" + EX + "q2> ?probe } UNION { ?m <" + EX
+						+ "missing> ?probe } FILTER(?probe = ?v) }",
+				"EXISTS { ?m <" + EX + "q2> ?probe OPTIONAL { ?m <" + EX
+						+ "missing> ?unused } FILTER(?probe = ?v) }",
+				"EXISTS { ?m <" + EX + "q2> ?probe MINUS { ?m <" + EX
+						+ "missing> ?probe } FILTER(?probe = ?v) }")) {
+			assertAllExecutionRungs("SELECT (COUNT(?v) AS ?count) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+					+ "q> ?v . FILTER(" + predicate + ") }");
+		}
+	}
+
+	@Test
+	void lexicalExistsAggregatesKeepIndependentWorkerFrames() {
+		long subqueriesBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
+		long graphsBefore = NativeGraphPlan.WORKER_BINDINGS.get();
+		String subquery = "{ SELECT ?m ?probe WHERE { ?m <" + EX + "q2> ?probe } }";
+		for (String predicate : List.of(
+				"EXISTS { " + subquery + " FILTER(?probe = ?v) }",
+				"EXISTS { GRAPH <" + EX + "graph> { ?m <" + EX + "q2> ?probe } FILTER(?probe = ?v) }",
+				"EXISTS { GRAPH ?graph { " + subquery + " } FILTER(?probe = ?v) }",
+				"EXISTS { ?m <" + EX + "q2> ?probe OPTIONAL { " + subquery
+						+ " FILTER(?probe = ?v) } FILTER(?probe = ?v) }",
+				"NOT EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe != ?v) MINUS { " + subquery
+						+ " FILTER(?probe = ?v) } }",
+				"EXISTS { FILTER NOT EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe != ?v) } }")) {
+			assertAllExecutionRungs("SELECT (COUNT(?v) AS ?count) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+					+ "q> ?v . FILTER(" + predicate + ") }");
+		}
+		assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get()).isGreaterThan(subqueriesBefore);
+		assertThat(NativeGraphPlan.WORKER_BINDINGS.get()).isGreaterThan(graphsBefore);
+	}
+
+	@Test
+	void unprojectedWitnessInputsReachEachActualWorkerInBothVersions() {
+		for (String version : List.of("1.1", "1.2")) {
+			for (String body : List.of("?m <" + EX + "q2> ?probe",
+					"{ ?m <" + EX + "q2> ?probe } UNION { VALUES ?probe { -1 } }")) {
+				String query = "VERSION \"" + version + "\" SELECT (COUNT(?v) AS ?c) WHERE { ?s <" + EX
+						+ "p> ?m . ?m <" + EX + "q> ?v . FILTER EXISTS { SELECT ?probe WHERE { " + body
+						+ " FILTER(?probe = ?v) } } }";
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+				assertThat(count(query, null)).as("the independent evaluator must preserve the witness inputs")
+						.isEqualTo(600L);
+				long workersBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
+				try {
+					assertAllExecutionRungs(query);
+				} catch (QueryEvaluationException failure) {
+					throw new AssertionError("The forced worker-local witness query failed:\n" + query + "\n"
+							+ explain(query), failure);
+				}
+				assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get())
+						.as("both parallel rungs must bind worker-local lexical witness recipes")
+						.isGreaterThan(workersBefore);
+			}
+		}
+	}
+
+	@Test
+	void lateralLexicalWitnessesRebindGraphAndNullableEntryDomainsInEveryWorkerRung() {
+		long subqueriesBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
+		String query = "SELECT (COUNT(?v) AS ?c) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+				+ "q> ?v . FILTER EXISTS { VALUES (?graph ?marker) { (<" + EX + "graph> UNDEF) (<" + EX
+				+ "graph> 1) } LATERAL { SELECT ?m ?probe ?graph WHERE { GRAPH ?graph { ?m <" + EX
+				+ "q2> ?probe FILTER EXISTS { ?m <" + EX
+				+ "q2> ?probe } } } LIMIT 1 } FILTER(?probe = ?v) } }";
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		assertThat(count(query, null)).as("the generic graph-scoped witness must accept the 600 equal-value rows")
+				.isEqualTo(600L);
+		try {
+			assertAllExecutionRungs(query);
+		} catch (QueryEvaluationException failure) {
+			throw new AssertionError("The LATERAL worker candidate must have a proved legal path:\n" + explain(query),
+					failure);
+		}
+		assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get())
+				.as("the actual workers must prepare the LATERAL lexical producer")
+				.isGreaterThan(subqueriesBefore);
+	}
+
+	@Test
+	void lexicalRootProducersRetainTheirNaturalPartitionGuard() {
+		String subquery = "{ SELECT ?m ?v WHERE { ?m <" + EX + "q> ?v } }";
+		for (String producer : List.of(subquery,
+				"GRAPH ?graph { { SELECT ?m ?v WHERE { ?m <" + EX + "q2> ?v } } }",
+				"OPTIONAL { " + subquery + " }")) {
+			// The lexical producer itself must be the root. A separate outer pattern may supply a legitimate
+			// scan/adjacency partition. Even variable GRAPH over a plain pattern can fuse to a partitionable
+			// named-context scan, so retain a lexical subquery inside the graph boundary in this fixture.
+			String query = "SELECT (COUNT(?v) AS ?count) WHERE { " + producer + " }";
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			List<String> expected = rows(query);
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
+			long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+			assertThat(rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE))
+					.containsExactlyInAnyOrderElementsOf(expected);
+			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+			assertThat(rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED))
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(catchThrowable(() -> rows(query,
+					LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED)))
+							.as(() -> query + '\n' + explain(query))
+							.isInstanceOf(QueryEvaluationException.class)
+							.hasMessageContaining("root-not-partitionable");
+			assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);
+		}
+	}
+
+	@Test
+	void lexicalGraphProducersBindWithinPartitionedOptionalKernels() {
+		assertAllExecutionRungs("SELECT (COUNT(?probe) AS ?count) WHERE { ?s <" + EX
+				+ "p> ?m . ?m <" + EX + "q> ?v . OPTIONAL { GRAPH <" + EX + "graph> { ?m <" + EX
+				+ "q2> ?probe } FILTER(?probe != ?v) } }");
 	}
 
 	@Test
@@ -498,10 +768,11 @@ class LmdbNativeIrAggregateParallelTest {
 		assertThat(interpretedParallel).as("forced interpreted parallel IR must match the generic evaluator")
 				.containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(generatedParallelRuns)
-				.as("the generated route must execute through the parallel aggregate scheduler")
+				.as(() -> "the generated route must execute through the parallel aggregate scheduler: " + query
+						+ '\n' + explain(query))
 				.isGreaterThan(parallelBefore);
 		assertThat(interpretedParallelRuns)
-				.as("the interpreted route must execute through the parallel aggregate scheduler")
+				.as("the interpreted route must execute through the parallel aggregate scheduler: %s", query)
 				.isGreaterThan(generatedParallelRuns);
 	}
 
@@ -523,6 +794,51 @@ class LmdbNativeIrAggregateParallelTest {
 
 	private List<String> rows(String query) {
 		return rows(query, null);
+	}
+
+	private String explain(String query) {
+		return explainPlan(query, null).toString();
+	}
+
+	private GenericPlanNode explainPlan(String query, String forcedStrategy) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return preparedQuery.explain(Explanation.Level.Telemetry).toGenericPlanNode();
+		}
+	}
+
+	private static JsonNode parseQuotes(GenericPlanNode plan) {
+		String inventory = metric(plan, NativeAggregateCostQuotes.METRIC);
+		assertThat(inventory).as("aggregate planning must expose its candidate inventory").isNotNull();
+		return JsonMapper.builder().build().readTree(inventory);
+	}
+
+	private static JsonNode candidate(JsonNode candidates, String strategy) {
+		for (JsonNode candidate : candidates) {
+			if (strategy.equals(candidate.path("strategy").asText())) {
+				return candidate;
+			}
+		}
+		return null;
+	}
+
+	private static String metric(GenericPlanNode node, String key) {
+		String value = node.getStringMetricActual(key);
+		if (value != null) {
+			return value;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String nested = metric(child, key);
+				if (nested != null) {
+					return nested;
+				}
+			}
+		}
+		return null;
 	}
 
 	private List<String> rows(String query, String forcedStrategy) {

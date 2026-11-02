@@ -41,10 +41,7 @@ final class LmdbDirectAdjacencyPredicatePrefixRunCursor implements LmdbPrefixRun
 		this.fixedPredicate = fixedPredicate;
 		this.plane = explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
 				: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
-		this.predicates = statistics.activePredicates(plane);
-		if (fixedPredicate > 0) {
-			this.nextOrdinal = lowerBound(fixedPredicate);
-		}
+		this.predicates = fixedPredicate > 0 ? new long[] { fixedPredicate } : statistics.activePredicates(plane);
 		view.retainLease();
 		boolean success = false;
 		try {
@@ -108,20 +105,6 @@ final class LmdbDirectAdjacencyPredicatePrefixRunCursor implements LmdbPrefixRun
 		}
 		nextOrdinal = low;
 		return nextOrdinal < predicates.length;
-	}
-
-	private int lowerBound(long value) {
-		int low = 0;
-		int high = predicates.length;
-		while (low < high) {
-			int mid = (low + high) >>> 1;
-			if (Long.compareUnsigned(predicates[mid], value) < 0) {
-				low = mid + 1;
-			} else {
-				high = mid;
-			}
-		}
-		return low;
 	}
 
 	@Override

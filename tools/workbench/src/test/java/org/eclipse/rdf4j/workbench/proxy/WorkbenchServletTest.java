@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -471,6 +472,89 @@ public class WorkbenchServletTest {
 			}
 		} finally {
 			servlet.destroy();
+		}
+	}
+
+	@Test
+	void policyQueryDefaultTimeoutOverridesTheInitParameter() throws Exception {
+		Properties properties = new Properties();
+		properties.setProperty("menu.items", "summary,query,repositories");
+		properties.setProperty("menu.group.explore.visible", "true");
+		properties.setProperty("menu.group.repositories.visible", "true");
+		properties.setProperty("query.default-timeout", "15");
+
+		TimeoutCapturingServlet servlet = initTimeoutServlet(WorkbenchPolicy.fromProperties(properties, Set.of()));
+		try {
+			assertThat(servlet.getServletConfig().getInitParameter("default-query-timeout")).isEqualTo("15");
+			assertThat(serviceRepository(servlet)).isEqualTo("15");
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void initParameterQueryTimeoutIsKeptWhenPolicyIsSilent() throws Exception {
+		TimeoutCapturingServlet servlet = initTimeoutServlet(policy("summary,query,repositories"));
+		try {
+			assertThat(servlet.getServletConfig().getInitParameter("default-query-timeout")).isEqualTo("60");
+			assertThat(serviceRepository(servlet)).isEqualTo("60");
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	private static TimeoutCapturingServlet initTimeoutServlet(WorkbenchPolicy policy) throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		MockServletContext context = new MockServletContext();
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE, policy);
+		Map<String, String> params = new LinkedHashMap<>();
+		params.put("default-path", "/repositories");
+		params.put("default-command", "/summary");
+		params.put("default-query-timeout", "60");
+		params.put(WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server");
+		params.put(LEGACY_TRANSFORMATIONS, "/transform");
+		params.put("/summary", SummaryServlet.class.getName());
+		TimeoutCapturingServlet servlet = new TimeoutCapturingServlet(manager);
+		servlet.init(new TestServletConfig("workbench", context, params));
+		return servlet;
+	}
+
+	/** Services a request for a repository and returns the default query timeout its child servlet was given. */
+	private static String serviceRepository(TimeoutCapturingServlet servlet) throws Exception {
+		servlet.service(request("/workbench/repo/summary", "/repo/summary", "", "/workbench"),
+				new MockHttpServletResponse());
+		assertThat(servlet.childTimeouts).as("child servlets created").isNotEmpty();
+		return servlet.childTimeouts.get(0);
+	}
+
+	private static final class TimeoutCapturingServlet extends WorkbenchServlet {
+		private final RepositoryManager manager;
+		private final List<String> childTimeouts = new CopyOnWriteArrayList<>();
+
+		private TimeoutCapturingServlet(RepositoryManager manager) {
+			this.manager = manager;
+		}
+
+		@Override
+		protected RepositoryManager createRepositoryManager(String param) {
+			return manager;
+		}
+
+		@Override
+		protected ProxyRepositoryServlet createProxyRepositoryServlet() {
+			return new ProxyRepositoryServlet() {
+				@Override
+				public void init(ServletConfig config) {
+					childTimeouts.add(config.getInitParameter("default-query-timeout"));
+				}
+
+				@Override
+				public void service(HttpServletRequest req, HttpServletResponse resp) {
+					// The child's own work is not under test.
+				}
+			};
 		}
 	}
 

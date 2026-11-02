@@ -24,14 +24,15 @@ import {compactFans, peelSatellites, placeSatellites, similaritySprings} from '.
 import {keepPreviousOrientation, orientToViewport} from './graph-layout-orientation.ts';
 import {layoutSubset} from './graph-layout-selection.ts';
 import type { EdgeRoute, Graph, PointerPosition } from './graph-types.ts';
-import {computeOrganicLayout, refineOrganicLayout} from './graph-layout-organic.ts';
+import {computeOrganicLayout} from './graph-layout-organic.ts';
 import {routeEdges as routeArrows} from './graph-edge-router.ts';
 
 export type LayoutOptions = {
   incremental?: boolean;
   localNodeIds?: Set<string> | null;
   movableNodeIds?: Set<string>;
-  refine?: boolean;
+  /** Start from the cards' current positions instead of afresh: the group centres of a grouped drawing being extended. */
+  fromCurrent?: boolean;
   seed?: number;
   aspectRatio?: number;
   mode?: 'network' | 'hierarchy' | 'square';
@@ -78,7 +79,7 @@ function flatCandidates(graph: Graph, options: LayoutOptions): LayoutResult[] {
     return {positions, bends: new Map(), fanned: true};
   };
   const candidates = [solve()];
-  if (!options.incremental && !options.localNodeIds?.size && !options.refine && !options.nodeSizes && graph.nodes.length <= 350) {
+  if (!options.incremental && !options.localNodeIds?.size && !options.nodeSizes && graph.nodes.length <= 350) {
     const springs = similaritySprings(graph, peeled);
     if (springs.length) candidates.push(solve(springs));
   }
@@ -89,9 +90,9 @@ function organizeComponent(graph: Graph, options: LayoutOptions): LayoutResult {
   const hub = computeHubNeighborhoodLayout(graph, options, core => organizeComponent(core, options));
   if (hub) return hub;
   // Two deterministic starts reduce local minima on medium exploration graphs.
-  // Only organize changes the global arrangement. Refine/expand keep the map.
+  // Only organize changes the global arrangement. Expand keeps the map.
   const multiStart = graph.nodes.length >= 80 && graph.nodes.length <= 350 && graph.edges.length <= 600 &&
-    !options.refine && !options.incremental && !options.localNodeIds?.size && !graph.nodes.some(n => n.pinned);
+    !options.incremental && !options.localNodeIds?.size && !graph.nodes.some(n => n.pinned);
   let best: LayoutResult | undefined, bestScore = Infinity;
   const seen = new Set<string>(), pool: LayoutResult[] = [];
   for (const seed of multiStart ? [42, 101] : [42]) {
@@ -153,7 +154,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
   }
   // Square, and Hierarchy of a selection, shape a block of nodes (the selection, or every unpinned node) and leave the
   // others where they are.
-  if (!options.refine && (options.mode === 'square' || (options.mode === 'hierarchy' && options.localNodeIds?.size))) {
+  if (options.mode === 'square' || (options.mode === 'hierarchy' && options.localNodeIds?.size)) {
     const ids = options.localNodeIds?.size ? options.localNodeIds : new Set(graph.nodes.map(node => node.id));
     const positions = await layoutSubset(graph, ids, async part => {
       if (options.mode === 'square') return computeSquareLayout(part);
@@ -163,7 +164,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     return {positions, ...(graph.nodes.length <= 1500 ? routeEdges(graph, positions, options.includeRoutes) : {bends: new Map<string, number>()})};
   }
   const organic = (options.mode ?? 'network') === 'network' && !options.groups?.length && graph.nodes.length <= ORGANIC_LIMIT;
-  if (organic && options.localNodeIds?.size && !options.refine) {
+  if (organic && options.localNodeIds?.size) {
     if (options.mode) {
       // Organize asked for on a selection: the selection becomes a block of its own, centred where it was and moved
       // clear of the other cards.
@@ -176,43 +177,29 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     checked(result);
     return Object.assign(result, routeEdges(graph, result.positions, options.includeRoutes));
   }
-  if (organic && options.refine) {
-    const result = refineOrganicLayout(graph, options);
-    checked(result);
-    return Object.assign(result, routeEdges(graph, result.positions, options.includeRoutes));
-  }
   if (organic) {
     const result = computeOrganicLayout(graph, options);
-    if (!options.incremental && !options.refine && !graph.nodes.some(node => node.pinned)) keepPreviousOrientation(graph, result.positions);
+    if (!options.incremental && !graph.nodes.some(node => node.pinned)) keepPreviousOrientation(graph, result.positions);
     checked(result);
     return Object.assign(result, routeEdges(graph, result.positions, options.includeRoutes));
   }
   const constrained = graph.nodes.some(node => layoutNodeFixed(node, options));
-  if (options.refine && graph.nodes.length <= 1500) {
-    // Refine is a local, monotonic readability repair. Re-running fCoSE here
-    // used to erase deliberate placement even when no conflicts existed.
-    const result = checked(computeSparseLayout(graph, {...options, repairOnly: true}));
-    improveLayoutReadability(graph, result.positions, options, layoutNeighborhoods(graph, options).groups);
-    repairRoutedObstructions(graph, result.positions, options);
-    Object.assign(result, routeEdges(graph, result.positions, options.includeRoutes));
-    return result;
-  }
   if (graph.nodes.length > 1500) {
     if (options.groups?.length) {
       const grouped = computeGroupedLayout(graph, options);
       if (grouped) return checked(grouped);
     }
     // Keep edits to an existing large map local; full organization is coarsened.
-    return checked(constrained || options.refine ? computeSparseLayout(graph, {...options, incremental: true,
+    return checked(constrained ? computeSparseLayout(graph, {...options, incremental: true,
       movableNodeIds: options.incremental ? options.movableNodeIds : new Set(graph.nodes.filter(n => !layoutNodeFixed(n, options)).map(n => n.id)),
     }) : computeMultilevelLayout(graph, options));
   }
   let result: LayoutResult;
-  if (options.mode === 'hierarchy' && !constrained && !options.refine) {
+  if (options.mode === 'hierarchy' && !constrained) {
     const {computeGraphvizLayout} = await import('./graph-layout-graphviz.ts');
     result = await computeGraphvizLayout(graph, 'dot');
   } else {
-    const parts = constrained || options.refine || options.groups?.length ? [graph] : componentGraphs(graph);
+    const parts = constrained || options.groups?.length ? [graph] : componentGraphs(graph);
     const positions = new Map<string, PointerPosition>();
     const protectedNodeIds = new Set<string>();
     let grouped = false;
@@ -222,7 +209,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
       organized.protectedNodeIds?.forEach(id => protectedNodeIds.add(id));
       for (const [id, p] of organized.positions) positions.set(id, p);
     }
-    if (!constrained && !options.refine) {
+    if (!constrained) {
       packLayoutComponents(parts, positions, options.aspectRatio);
       orientToViewport(graph, positions, options);
       keepPreviousOrientation(graph, positions);

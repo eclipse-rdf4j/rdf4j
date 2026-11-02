@@ -19,13 +19,16 @@ import static org.mockito.Mockito.mock;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -35,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.If;
+import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -205,37 +209,43 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 
 	@Test
 	public void testAggregateOptimization() throws RDF4JException {
-		String query = "prefix ex: <ex:>" + "select (max(1) AS ?a) \n " + "where {\n" + "?x a ?z \n"
-				+ "}";
+		String query = "select (max(concat(\"x\", \"y\")) AS ?a) where {?x a ?z}";
 
 		ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
 		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
 		TupleExpr original = pq.getTupleExpr();
 
-		final AlgebraFinder finder = new AlgebraFinder();
+		AlgebraFinder finder = new AlgebraFinder();
 		original.visit(finder);
-		assertTrue(finder.groupElemFound);
+		assertThat(finder.groupElemFound).isTrue();
+		assertThat(finder.functionCallFound).isTrue();
+		assertThat(finder.groupElements).singleElement().satisfies(groupElem -> {
+			assertThat(groupElem.getOperator()).isInstanceOf(Max.class);
+			assertThat(((Max) groupElem.getOperator()).getArg()).isInstanceOf(FunctionCall.class);
+		});
 
 		// reset for re-use on optimized query
 		finder.reset();
 
-		QueryBindingSet constants = new QueryBindingSet();
-		constants.addBinding("x", SimpleValueFactory.getInstance().createLiteral("foo"));
-		constants.addBinding("z", SimpleValueFactory.getInstance().createLiteral("bar"));
-
-		TupleExpr optimized = optimize(pq.getTupleExpr().clone(), constants, strategy);
+		TupleExpr optimized = optimize(pq.getTupleExpr().clone(), new QueryBindingSet(), strategy);
 
 		optimized.visit(finder);
+		assertThat(finder.groupElemFound).isTrue();
 		assertThat(finder.functionCallFound).isFalse();
+		assertThat(finder.groupElements).singleElement().satisfies(groupElem -> {
+			assertThat(groupElem.getOperator()).isInstanceOf(Max.class);
+			assertThat(((Max) groupElem.getOperator()).getArg()).isInstanceOf(ValueConstant.class);
+			assertThat(((ValueConstant) ((Max) groupElem.getOperator()).getArg()).getValue())
+					.isEqualTo(SimpleValueFactory.getInstance().createLiteral("xy"));
+		});
 
-		CloseableIteration<BindingSet> result = strategy.precompile(optimized)
-				.evaluate(
-						new EmptyBindingSet());
-		assertNotNull(result);
-		assertTrue(result.hasNext());
-		BindingSet bindings = result.next();
-		assertTrue(bindings.hasBinding("a"));
-		assertEquals(1, ((Literal) bindings.getBinding("a").getValue()).intValue());
+		BindingSet noAggregateValues = bindings(Map.of());
+		assertThat(evaluate(strategy, original, EmptyBindingSet.getInstance())).containsExactly(noAggregateValues);
+		assertThat(evaluate(strategy, optimized, EmptyBindingSet.getInstance())).containsExactly(noAggregateValues);
+
+		assertBothOptimizationPathsProduce(strategy,
+				"select (max(concat(\"x\", \"y\")) AS ?a) where {}",
+				bindings(Map.of("a", SimpleValueFactory.getInstance().createLiteral("xy"))));
 	}
 
 	@Test
@@ -259,39 +269,85 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
 		TupleExpr original = pq.getTupleExpr();
 
-		final AlgebraFinder finder = new AlgebraFinder();
+		AlgebraFinder finder = new AlgebraFinder();
 		original.visit(finder);
-		assertTrue(finder.groupElemFound);
+		assertThat(finder.groupElemFound).isTrue();
+		assertThat(finder.groupElements).hasSize(6);
 
 		// reset for re-use on optimized query
 		finder.reset();
 
-		QueryBindingSet constants = new QueryBindingSet();
-
-		TupleExpr optimized = optimize(pq.getTupleExpr().clone(), constants, strategy);
+		TupleExpr optimized = optimize(pq.getTupleExpr().clone(), new QueryBindingSet(), strategy);
 
 		optimized.visit(finder);
 		assertThat(finder.functionCallFound).isFalse();
+		assertThat(finder.groupElemFound).isTrue();
+		assertThat(finder.groupElements).hasSize(6);
 
-		CloseableIteration<BindingSet> result = strategy.precompile(optimized)
-				.evaluate(
-						new EmptyBindingSet());
-		assertNotNull(result);
-		assertTrue(result.hasNext());
+		BindingSet noInputExpected = bindings(Map.of(
+				"c", integerLiteral(0),
+				"d", integerLiteral(0),
+				"e", integerLiteral(0),
+				"f", integerLiteral(0)));
+		assertThat(evaluate(strategy, original, EmptyBindingSet.getInstance())).containsExactly(noInputExpected);
+		assertThat(evaluate(strategy, optimized, EmptyBindingSet.getInstance())).containsExactly(noInputExpected);
 
-		BindingSet bindings = result.next();
-		assertTrue(bindings.hasBinding("a"));
-		assertTrue(bindings.hasBinding("b"));
-		assertTrue(bindings.hasBinding("c"));
-		assertTrue(bindings.hasBinding("d"));
-		assertTrue(bindings.hasBinding("e"));
-		assertTrue(bindings.hasBinding("f"));
-		assertEquals(1, ((Literal) bindings.getBinding("a").getValue()).intValue());
-		assertEquals(1, ((Literal) bindings.getBinding("b").getValue()).intValue());
-		assertEquals(1, ((Literal) bindings.getBinding("c").getValue()).intValue());
-		assertEquals(0, ((Literal) bindings.getBinding("d").getValue()).intValue());
-		assertEquals(0, ((Literal) bindings.getBinding("e").getValue()).intValue());
-		assertEquals(0, ((Literal) bindings.getBinding("f").getValue()).intValue());
+		String oneEmptyMappingQuery = String.join("\n",
+				"SELECT",
+				"  (MAX(1) AS ?a)",
+				"  (MIN(1) AS ?b)",
+				"  (AVG(1) AS ?c)",
+				"  (COUNT(1) AS ?d)",
+				"  (COUNT(DISTINCT 1) AS ?e)",
+				"  (COUNT(*) AS ?f)",
+				"WHERE {}"
+		);
+		assertBothOptimizationPathsProduce(strategy, oneEmptyMappingQuery, bindings(Map.of(
+				"a", integerLiteral(1),
+				"b", integerLiteral(1),
+				"c", SimpleValueFactory.getInstance().createLiteral("1", XSD.DECIMAL),
+				"d", integerLiteral(1),
+				"e", integerLiteral(1),
+				"f", integerLiteral(1))));
+
+		String nonEmptyNumericValuesQuery = String.join("\n",
+				"SELECT",
+				"  (MAX(?v) AS ?a)",
+				"  (MIN(?v) AS ?b)",
+				"  (AVG(?v) AS ?c)",
+				"  (COUNT(?v) AS ?d)",
+				"WHERE { VALUES ?v { 1 3 } }"
+		);
+		assertBothOptimizationPathsProduce(strategy, nonEmptyNumericValuesQuery, bindings(Map.of(
+				"a", integerLiteral(3),
+				"b", integerLiteral(1),
+				"c", SimpleValueFactory.getInstance().createLiteral("2", XSD.DECIMAL),
+				"d", integerLiteral(2))));
+
+		String duplicateAndUnboundValuesQuery = String.join("\n",
+				"SELECT",
+				"  (MAX(1) AS ?a)",
+				"  (MIN(1) AS ?b)",
+				"  (AVG(1) AS ?c)",
+				"  (COUNT(1) AS ?d)",
+				"  (COUNT(DISTINCT 1) AS ?e)",
+				"  (COUNT(*) AS ?f)",
+				"  (COUNT(?v) AS ?g)",
+				"  (COUNT(DISTINCT ?v) AS ?h)",
+				"WHERE { VALUES ?v { 1 1 UNDEF } }"
+		);
+		assertBothOptimizationPathsProduce(strategy, duplicateAndUnboundValuesQuery, bindings(Map.of(
+				"a", integerLiteral(1),
+				"b", integerLiteral(1),
+				"c", SimpleValueFactory.getInstance().createLiteral("1", XSD.DECIMAL),
+				"d", integerLiteral(3),
+				"e", integerLiteral(1),
+				"f", integerLiteral(3),
+				"g", integerLiteral(2),
+				"h", integerLiteral(1))));
+
+		assertBothOptimizationPathsProduce(strategy,
+				"SELECT ?s (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?s");
 	}
 
 	private class AlgebraFinder extends AbstractQueryModelVisitor<RuntimeException> {
@@ -301,6 +357,8 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 		public boolean functionCallFound = false;
 
 		public boolean groupElemFound = false;
+
+		public final List<GroupElem> groupElements = new ArrayList<>();
 
 		@Override
 		public void meet(And and) {
@@ -319,12 +377,39 @@ public class ConstantOptimizerTest extends QueryOptimizerTest {
 			logicalAndfound = false;
 			functionCallFound = false;
 			groupElemFound = false;
+			groupElements.clear();
 		}
 
+		@Override
 		public void meet(GroupElem ge) {
 			groupElemFound = true;
+			groupElements.add(ge);
 			super.meet(ge);
 		}
+	}
+
+	private void assertBothOptimizationPathsProduce(EvaluationStrategy strategy, String query,
+			BindingSet... expectedResults) throws RDF4JException {
+		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr original = parsedQuery.getTupleExpr();
+		TupleExpr optimized = optimize(original.clone(), new QueryBindingSet(), strategy);
+
+		assertThat(evaluate(strategy, original, EmptyBindingSet.getInstance()))
+				.as("without constant optimization")
+				.containsExactly(expectedResults);
+		assertThat(evaluate(strategy, optimized, EmptyBindingSet.getInstance()))
+				.as("with constant optimization")
+				.containsExactly(expectedResults);
+	}
+
+	private static QueryBindingSet bindings(Map<String, ? extends Value> bindings) {
+		QueryBindingSet result = new QueryBindingSet();
+		bindings.forEach(result::addBinding);
+		return result;
+	}
+
+	private static Literal integerLiteral(int value) {
+		return SimpleValueFactory.getInstance().createLiteral(Integer.toString(value), XSD.INTEGER);
 	}
 
 	private TupleExpr optimize(TupleExpr expr, BindingSet bs, EvaluationStrategy strategy) {

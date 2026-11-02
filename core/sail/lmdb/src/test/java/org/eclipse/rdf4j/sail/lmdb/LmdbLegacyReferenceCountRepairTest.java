@@ -72,7 +72,7 @@ class LmdbLegacyReferenceCountRepairTest {
 		var literal = vf.createLiteral("dictionary value awaiting legacy reference-count repair");
 		var isolation = snapshot ? IsolationLevels.SNAPSHOT : IsolationLevels.NONE;
 		long literalId;
-		LmdbStore store = store(false);
+		LmdbStore store = durableStore(false);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (var connection = repository.getConnection()) {
@@ -89,6 +89,7 @@ class LmdbLegacyReferenceCountRepairTest {
 			connection.commit();
 			assertThat(connection.hasStatement(subject, predicate, literal, false)).isFalse();
 			assertThat(((ValueStore) store.getValueFactory()).getId(literal)).isEqualTo(literalId);
+			// This contract follows durable retirement intents through offline repair and a held post-ready gate.
 			assertThat(store.getBackingStore().valueStore().hasRetiredIds()).isTrue();
 		} finally {
 			repository.shutDown();
@@ -98,7 +99,7 @@ class LmdbLegacyReferenceCountRepairTest {
 				.isNotNull();
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 })).isNull();
 
-		store = store(false);
+		store = durableStore(false);
 		repository = new SailRepository(store);
 		repository.init();
 		try (var connection = repository.getConnection()) {
@@ -108,7 +109,7 @@ class LmdbLegacyReferenceCountRepairTest {
 			repository.shutDown();
 		}
 
-		store = store(true);
+		store = durableStore(true);
 		repository = new SailRepository(store);
 		repository.init();
 		try (var connection = repository.getConnection()) {
@@ -135,11 +136,57 @@ class LmdbLegacyReferenceCountRepairTest {
 				.as("explicit count reconstruction retains deferred owners and queues for bounded maintenance")
 				.isNotNull();
 
-		repository = new SailRepository(store(false));
+		repository = new SailRepository(durableStore(false));
 		repository.init();
 		repository.shutDown();
 		assertEarlierReferenceCountReaderAccepts(
 				LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 }));
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void defaultAsyncCleanupPreservesUnverifiedValuesAcrossRemovalAndReopen(boolean snapshot) throws Exception {
+		LmdbCompatibilityFixtures.extract("v2-610-default.zip", directory);
+		var vf = SimpleValueFactory.getInstance();
+		var subject = vf.createIRI("urn:legacy-repair:async-subject");
+		var predicate = vf.createIRI("urn:legacy-repair:async-predicate");
+		var literal = vf.createLiteral("unverified async cleanup must not delete this value");
+		var isolation = snapshot ? IsolationLevels.SNAPSHOT : IsolationLevels.NONE;
+		LmdbStore store = store(false);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		long literalId;
+		try (var connection = repository.getConnection()) {
+			connection.begin(isolation);
+			connection.add(subject, predicate, literal);
+			connection.commit();
+			literalId = ((ValueStore) store.getValueFactory()).getId(literal);
+			connection.begin(isolation);
+			connection.remove(subject, predicate, literal);
+			connection.rollback();
+			assertThat(connection.hasStatement(subject, predicate, literal, false)).isTrue();
+			connection.begin(isolation);
+			connection.remove(subject, predicate, literal);
+			connection.commit();
+			assertThat(connection.hasStatement(subject, predicate, literal, false)).isFalse();
+			assertThat(((ValueStore) store.getValueFactory()).getId(literal)).isEqualTo(literalId);
+			assertThat(store.getBackingStore().valueStore().hasTrustedReferenceCounts()).isFalse();
+		} finally {
+			repository.shutDown();
+		}
+		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, null, LmdbCompatibilityFixtures.idKey(literalId)))
+				.as("best-effort hint loss never authorizes deletion with unverified counts")
+				.isNotNull();
+		store = store(false);
+		repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			assertThat(connection.hasStatement(subject, predicate, literal, false)).isFalse();
+			assertThat(((ValueStore) store.getValueFactory()).getId(literal)).isEqualTo(literalId);
+			assertThat(store.getBackingStore().valueStore().hasTrustedReferenceCounts()).isFalse();
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@ParameterizedTest
@@ -250,8 +297,14 @@ class LmdbLegacyReferenceCountRepairTest {
 		return new LmdbStore(directory.toFile(), new LmdbStoreConfig().setLegacyReferenceCountRepairEnabled(repair));
 	}
 
+	private LmdbStore durableStore(boolean repair) {
+		return new LmdbStore(directory.toFile(), new LmdbStoreConfig().setLegacyReferenceCountRepairEnabled(repair)
+				.setAsyncValueCleanup(false));
+	}
+
 	private LmdbStore storeWithPostReadyGateHeld(boolean repair) {
-		return new LmdbStore(directory.toFile(), new LmdbStoreConfig().setLegacyReferenceCountRepairEnabled(repair)) {
+		return new LmdbStore(directory.toFile(), new LmdbStoreConfig().setLegacyReferenceCountRepairEnabled(repair)
+				.setAsyncValueCleanup(false)) {
 			@Override
 			LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 					boolean sketches) throws IOException {

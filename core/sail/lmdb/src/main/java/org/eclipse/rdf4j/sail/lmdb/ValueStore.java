@@ -33,7 +33,6 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RDONLY;
 import static org.lwjgl.util.lmdb.LMDB.MDB_RESERVE;
-import static org.lwjgl.util.lmdb.LMDB.MDB_SET;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SET_RANGE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
@@ -112,6 +111,7 @@ import java.util.zip.CRC32;
 
 import org.eclipse.collections.impl.map.mutable.primitive.LongLongHashMap;
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectLongHashMap;
+import org.eclipse.collections.impl.set.mutable.primitive.LongHashSet;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -119,7 +119,6 @@ import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
@@ -133,7 +132,6 @@ import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -549,8 +547,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			return null;
 		}
 		FreshValueSession session = new FreshValueSession();
+		freshValueSessionSpoiled = false;
 		activeFreshValueSession = session;
 		return session;
+	}
+
+	/**
+	 * Reports whether {@code session} still knows every dictionary value. Any ordinary insert while a session is active
+	 * (another writer, or a non-fresh path of this one) allocates through {@link #nextId(byte, CoreDatatype)}, which
+	 * spoils the session: assigning fresh IDs afterwards could duplicate the inserted value.
+	 */
+	boolean isFreshValueSessionUsable(FreshValueSession session) {
+		return session != null && activeFreshValueSession == session && !freshValueSessionSpoiled;
+	}
+
+	int freshValueSessionSize(FreshValueSession session) {
+		return session.valueIds.size();
 	}
 
 	/** Tests the same fresh-dictionary eligibility without claiming a session or mutating dictionary state. */
@@ -583,12 +595,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	void commitFreshValueTransaction(FreshValueSession session) {
 		if (session != null) {
 			clearFreshValueTransaction(session);
+			LmdbDeferredValueLookups lookups = deferredLookups;
+			if (lookups != null) {
+				lookups.commit();
+			}
 		}
 	}
 
 	void rollbackFreshValueTransaction(FreshValueSession session) {
 		if (session == null) {
 			return;
+		}
+		LmdbDeferredValueLookups lookups = deferredLookups;
+		if (lookups != null) {
+			lookups.rollback();
 		}
 		for (int i = session.provisionalValues.size() - 1; i >= 0; i--) {
 			session.valueIds.removeKey(session.provisionalValues.get(i));
@@ -656,6 +676,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * Maximum size of keys before hashing is used (size of two long values)
 	 */
 	private static final int MAX_KEY_SIZE = ValueStoreRecordCodec.MAX_INLINE_KEY_BYTES;
+	/** Bounds one batch's absent alternative-IRI hashes (8 bytes each); a full set is cleared and rebuilt. */
+	private static final int MAX_ABSENT_RECORD_HASHES = 1 << 20;
 	private static final int MAX_UNSIGNED_ID_BYTES = 9;
 	private static final int MAX_ID_KEY_BYTES = 1 + MAX_UNSIGNED_ID_BYTES;
 	private static final int MAX_HASH_ID_KEY_BYTES = 1 + MAX_UNSIGNED_ID_BYTES + MAX_ID_KEY_BYTES;
@@ -902,9 +924,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * Best-effort namespace-to-ID memo, invalidated when dictionary IDs can change.
 	 */
 	private final ReverseIdCache<NamespaceKey, Object> namespaceIDCache;
+	/** Committed namespace mappings available only to an admitted dictionary writer. */
+	private final ReverseIdCache<NamespaceKey, Object> writerNamespaceIDCache;
 	private final ObjectLongHashMap<RdfTermKey> transactionValueIds = new ObjectLongHashMap<>();
 	private final ObjectLongHashMap<String> transactionNamespaceIds = new ObjectLongHashMap<>();
 	private FreshValueSession activeFreshValueSession;
+
+	/**
+	 * While an initial run import is active, the data-keyed and hash-keyed records of fresh values go here instead of
+	 * into the main database; {@link #writeDeferredLookups} writes them when the import completes.
+	 */
+	private volatile LmdbDeferredValueLookups deferredLookups;
+	private volatile boolean freshValueSessionSpoiled;
 	private final int transactionValueCacheLimit = calculateTransactionValueCacheLimit(
 			Runtime.getRuntime().maxMemory());
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
@@ -968,6 +999,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private final RetiredValueIdStore retiredIdStore = new RetiredValueIdStore();
 	/** Marker observation captured before any startup database creation or writer transaction. */
 	private RefCountMarkerStatus startupMarkerStatus;
+	/** Immutable for one open; startupMarkerStatus may subsequently advance with checked bootstrap writes. */
+	private long cleanupStartupTransactionId = -1L;
 	/** Captured before bootstrap creates named databases; an empty native catalog has no layout to import. */
 	private boolean startupMainDatabaseEmpty;
 	private boolean auxiliaryDatabasesInitialized;
@@ -995,6 +1028,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private long lastTrustedNativeTransactionId = -1L;
 	private long closingTripleTransactionId = -1L;
 	private boolean cleanCloseInvalidated;
+	private boolean durableCleanupCloseRequested;
+	private long durableCleanupClosedTransactionId = -1L;
 	private long bulkMaximumDataBytes;
 	private long bulkMaximumNamespaceBytes;
 	private long bulkMaximumIriBytes;
@@ -1055,6 +1090,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private static final class WriterPublication {
 		private final Thread owner;
 		private final WriterTransaction transaction;
+		private Map<String, Long> namespaceCandidates;
+		private ReverseIdCache.State<NamespaceKey> namespaceCandidateState;
+		private ValueStoreRevision namespaceCandidateRevision;
+		private long namespaceCandidateEnvironment;
 		private volatile Thread consumer;
 		private volatile boolean failedCleanup;
 
@@ -1163,6 +1202,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private Object[] previousNamespaceEntry;
 
 	private final long valueEvictionInterval;
+	/** Startup-only reclamation policy; never read the caller's mutable configuration during a transaction. */
+	private final boolean asyncValueCleanup;
+	/** Bounded producer identities protect reverse records without retaining a native reader or revision history. */
+	private volatile long cleanupReservations;
+	private volatile boolean cleanupNativeMetricsEnabled;
+	private volatile long nativeDeleteAttempts;
+	private volatile long nativeDeleteSuccesses;
+	private volatile boolean lastBoundedUnusedReclamationProgress;
 	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
 	private final boolean orderedNumericIds;
@@ -1216,7 +1263,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	@InternalUseOnly
 	public ValueStore(File dir, LmdbStoreConfig config) throws IOException {
-		this(dir, new StoreProperties(dir), config);
+		this(dir, StoreProperties.forDictionary(dir), config);
 	}
 
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config) throws IOException {
@@ -1235,7 +1282,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases,
 			Runnable duringValueOverlayWarmupScanForTest) throws IOException {
 		this(dir, properties, config, deferAuxiliaryDatabases, duringValueOverlayWarmupScanForTest,
-				LmdbStoreFormat.fromProperties(properties, config), false);
+				LmdbStoreFormat.resolveDictionary(dir, properties, config), false);
 	}
 
 	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases,
@@ -1263,7 +1310,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		this.growthPolicy = new MapGrowthPolicy(config.getMapGrowthThreshold());
 		this.mapSize = config.getValueDBSize();
 		this.valueEvictionInterval = config.getValueEvictionInterval();
-		this.lazyRevisions = new LazyRevisionTracker(unusedRevisionIds, valueEvictionInterval);
+		this.asyncValueCleanup = config.getAsyncValueCleanup();
+		this.lazyRevisions = new LazyRevisionTracker(unusedRevisionIds, valueEvictionInterval, !asyncValueCleanup);
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = format.inlinesLiterals();
 		this.valueOverlayEnabled = config.getValueOverlayEnabled();
@@ -1300,6 +1348,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS, VALUE_ID_KEYS);
 		namespaceCache = config.getCacheImplementation().create(config.getNamespaceCacheSize());
 		namespaceIDCache = new ReverseIdCache<>(config.getNamespaceIDCacheSize(), false,
+				MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS, NamespaceKey.KEYS);
+		writerNamespaceIDCache = new ReverseIdCache<>(config.getNamespaceIDCacheSize(), false,
 				MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS, NamespaceKey.KEYS);
 
 		open(deferAuxiliaryDatabases);
@@ -1475,7 +1525,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					// Absence makes the earlier repair reader reconstruct atomically. Never replace an incomplete or
 					// stale reconstruction with its one-byte completion marker.
 					MDBVal marker = MDBVal.calloc(stack).mv_data(stack.bytes(REF_COUNTS_VERSION_KEY));
-					E(mdb_del(writeTxn, refCountsDbi, marker, null));
+					E(trackedDelete(writeTxn, refCountsDbi, marker, null));
 					legacyStructuredRefCountMarker = false;
 				}
 			}
@@ -2096,6 +2146,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** One post-ready batch. Every visited key consumes the limit, including live, protected and uncertain entries. */
 	int reclaimPersistedUnusedIdsBatch(int maxVisitedRecords) throws IOException {
+		lastBoundedUnusedReclamationProgress = false;
 		long requiredBytes = estimatePersistedUnusedBatchWriteBytes(maxVisitedRecords);
 		if (requiredBytes == 0L) {
 			return 0;
@@ -2104,7 +2155,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			transaction.invoke(() -> startTransaction(false, DictionaryTransactionPurpose.BOUNDED_RECLAMATION));
 			boolean enabled = isValueReclamationEnabled();
-			boolean protectedValues = enabled && lazyRevisions.hasProtectedValues();
+			boolean protectedValues = enabled && (cleanupReservations != 0L || lazyRevisions.hasProtectedValues());
 			long occupied = enabled && !protectedValues ? LmdbUtil.getNewSize(pageSize, writeTxn, 0L) : -1L;
 			boolean capacityRequired = enabled && !protectedValues
 					&& growthPolicy.hardCapacityRequired(mapSize, occupied, requiredBytes);
@@ -2115,13 +2166,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				rollback(transaction);
 				return 0;
 			}
-			int visited;
+			UnusedReclamationPass pass;
 			try (MemoryStack stack = stackPush()) {
-				visited = freeUnusedIdsAndValues(stack, writeTxn, null, valueIdLivenessChecker, maxVisitedRecords);
+				pass = freeUnusedIdsAndValues(stack, writeTxn, null, valueIdLivenessChecker, maxVisitedRecords);
 			}
-			observeBoundedUnusedReclamationForTest("visited", requiredBytes, occupied, mapSize, visited);
+			observeBoundedUnusedReclamationForTest("visited", requiredBytes, occupied, mapSize, pass.visited());
 			transaction.invoke(this::commit);
-			return visited;
+			lastBoundedUnusedReclamationProgress = pass.progress();
+			return pass.visited();
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
 				rollback(transaction);
@@ -2131,6 +2183,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 			throw failure;
+		}
+	}
+
+	/** Visiting a pinned/uncertain record is not progress; only committed deletion of a pending marker is. */
+	boolean lastBoundedUnusedReclamationMadeProgress() {
+		return lastBoundedUnusedReclamationProgress;
+	}
+
+	/** Lazy values or explicit dictionary scopes may outlive their statement snapshot. */
+	boolean hasCleanupValueProtection() {
+		return lazyRevisions.hasProtectedValues();
+	}
+
+	int cleanupEpochCountForTest() {
+		synchronized (unusedRevisionIds) {
+			return lazyRevisions.epochs.size();
 		}
 	}
 
@@ -2370,7 +2438,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private static void verifyOwnerRecordType(long id, byte[] data) throws IOException {
-		if (data.length == 0) {
+		verifyOwnerRecordType(id, data.length, data.length == 0 ? 0 : data[0]);
+	}
+
+	private static void verifyOwnerRecordType(long id, ByteBuffer data) throws IOException {
+		verifyOwnerRecordType(id, data.remaining(), data.hasRemaining() ? data.get(data.position()) : 0);
+	}
+
+	private static void verifyOwnerRecordType(long id, int length, int actualType) throws IOException {
+		if (length == 0) {
 			throw new IOException("Cannot rebuild ValueStore ref_counts: empty value record for owner " + id);
 		}
 		byte expectedType = switch (ValueIds.getIdType(id)) {
@@ -2382,8 +2458,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				"Cannot rebuild ValueStore ref_counts: unexpected main-record ID type for owner "
 						+ id);
 		};
-		if (data[0] != expectedType) {
-			throw new IOException("Cannot rebuild ValueStore ref_counts: owner " + id + " has record type " + data[0]
+		if (actualType != expectedType) {
+			throw new IOException("Cannot rebuild ValueStore ref_counts: owner " + id + " has record type " + actualType
 					+ " but expected " + expectedType);
 		}
 	}
@@ -2916,6 +2992,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		referenceCountGeneration = null;
 		trustedAllocationNextId = -1L;
 		startupMarkerStatus = null;
+		cleanupStartupTransactionId = -1L;
 		termIndexManifestInitialized = false;
 		termIndexBuild = null;
 		requestedTermIndexSpecs = null;
@@ -2928,10 +3005,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		lastTrustedNativeTransactionId = -1L;
 		closingTripleTransactionId = -1L;
 		cleanCloseInvalidated = false;
+		durableCleanupCloseRequested = false;
+		durableCleanupClosedTransactionId = -1L;
 		startupExpectedLastTransactionId = -1L;
 		startupInitializationInProgress = false;
 		boolean nativeGenerationExists = new File(dir, "data.mdb").exists();
-		boolean newNativeGeneration = !nativeGenerationExists && (!properties.isLoaded() || replacingNativeGeneration);
+		boolean newNativeGeneration = !nativeGenerationExists
+				&& (!properties.isLoaded() || replacingNativeGeneration || properties.recreatesNativeGeneration());
 		if (!format.isLegacy() && !nativeGenerationExists && !newNativeGeneration) {
 			throw new IOException(
 					"Missing native ValueStore generation for existing LmdbStore format " + format.getVersion());
@@ -2978,6 +3058,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			throw failure;
 		}
 		startupMarkerStatus = markerStatus;
+		cleanupStartupTransactionId = markerStatus.nativeTransactionId();
 		refCountRecoveryRequired = !markerStatus.emptyStore() && !markerStatus.valid();
 		refCountIntegrityEstablished = false;
 		openHashFileQuietly();
@@ -3053,7 +3134,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				throw new IOException(
 						"ValueStore detected an intervening native writer before authoring its format fence");
 			}
-			RetiredValueIdStore.authorFormatFenceWithTransaction(txn);
+			RetiredValueIdStore.authorFormatFenceWithTransaction(txn, format);
 			return mdb_txn_id(txn);
 		});
 		// Carry only the native identity consumed by our checked writer into startup. A later native writer must
@@ -3633,7 +3714,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(TermIndexBuild.KEY));
 		TermIndexBuild build = termIndexBuild;
 		if (build == null) {
-			E(mdb_del(txn, termIndexManifestDbi, key, null));
+			E(trackedDelete(txn, termIndexManifestDbi, key, null));
 		} else {
 			MDBVal value = MDBVal.calloc(stack).mv_data(stack.bytes(build.encode(mdb_txn_id(txn))));
 			E(mdb_put(txn, termIndexManifestDbi, key, value, 0));
@@ -4030,7 +4111,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				int rc = mdb_cursor_get(cursor, key, value, MDB_FIRST);
 				int removed = 0;
 				while (rc == MDB_SUCCESS && removed < TERM_INDEX_REBUILD_BATCH_SIZE) {
-					E(mdb_cursor_del(cursor, 0));
+					E(trackedCursorDelete(cursor, 0));
 					removed++;
 					rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
 				}
@@ -4615,6 +4696,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private long nextId(byte valueType, CoreDatatype coreDatatype) throws IOException {
+		if (activeFreshValueSession != null) {
+			freshValueSessionSpoiled = true;
+		}
 		int idType = valueIdType(valueType);
 		if (freeIdsAvailable && isValueReclamationEnabled()) {
 			// next id from store
@@ -4638,7 +4722,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							// Format 2 ordinals are global. Format 6 fresh writers allocate by reference family,
 							// so their free records can only be recycled within that same family.
 							boolean owned = referenceOrdinalOwned(stack, txn, value, idType);
-							E(mdb_cursor_del(cursor, 0));
+							E(trackedCursorDelete(cursor, 0));
 							if (!owned) {
 								clearStoredHash(freedId);
 								return value;
@@ -4776,7 +4860,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		valueIdentity = new ValueIdentity(revision, nextLazyRevision, pending == null ? null : pending.predecessor);
 		ValueCacheEpoch previousCaches = valueCaches;
 		if (previousCaches != null) {
-			valueCaches = new ValueCacheEpoch(revision, previousCaches.completed.length);
+			valueCaches = new ValueCacheEpoch(revision, previousCaches.capacity, asyncValueCleanup);
 		}
 		ValueStoreRevision.Lazy[] lazyRevisions = new ValueStoreRevision.Lazy[ValuePosition.ALL + 1];
 		lazyRevisions[ValuePosition.NONE] = nextLazyRevision;
@@ -4786,7 +4870,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		positionLazyRevisions = lazyRevisions;
 		if (valueCaches == null) {
-			valueCaches = new ValueCacheEpoch(revision, valueCache.length);
+			valueCaches = new ValueCacheEpoch(revision, valueCache.length, asyncValueCleanup);
 		}
 	}
 
@@ -4865,7 +4949,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (caches.predecessorDependent) {
 				// A pending parent may have completed with older child capabilities. Drop that bounded cache
 				// before releasing the writer's predecessor pin; never rebind a published canonical shell.
-				valueCaches = new ValueCacheEpoch(current.revision, caches.completed.length);
+				valueCaches = new ValueCacheEpoch(current.revision, caches.capacity, asyncValueCleanup);
 			}
 		} else {
 			nativeValueAssociation = pending.previous;
@@ -4937,9 +5021,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private ValueResolutionScope openValueResolutionScope(boolean oldestProtected) {
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		try {
-			acquireAssociationGate(deadline);
+			acquireAssociationGate();
 		} catch (IOException failure) {
 			throw new SailException(failure);
 		}
@@ -4950,7 +5033,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					throw new SailException("Cannot open a value resolution scope while the store is closing");
 				}
 				while (true) {
-					checkValueScopeDeadline(deadline);
 					if (Thread.currentThread().isInterrupted()) {
 						throw new SailException("Interrupted while capturing dictionary identity");
 					}
@@ -4985,35 +5067,173 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return reservation;
 	}
 
-	private static void checkValueScopeDeadline(QueryExecutionDeadline deadline) {
-		if (deadline != null && deadline.isExpired()) {
-			throw new QueryInterruptedException("Query evaluation took too long");
+	/**
+	 * Protects queued numeric IDs against physical recycling. The coordinator obtains its bounded producer admission
+	 * before calling this method and before admitting a statement snapshot or writer. The publication gate orders any
+	 * already-running eviction before the producer can observe its first candidate. Forward retirement remains allowed:
+	 * it preserves the reverse record and is idempotent, so a full queue can drain while this protection is held.
+	 * <p>
+	 * This deliberately does not reserve a lazy-value epoch. One large spilled transaction may require arbitrarily many
+	 * bounded maintenance commits; pinning an epoch for that whole interval would retain their entire revision history.
+	 */
+	CleanupReservation reserveCleanupIdentity() throws IOException {
+		return reserveCleanupIdentity(true);
+	}
+
+	/** A caller already observing a snapshot must fail admission instead of waiting for dictionary publication. */
+	CleanupReservation reserveCleanupIdentity(boolean mayWait) throws IOException {
+		if (mayWait) {
+			acquireAssociationGate();
+		} else if (!associationGate.tryLock()) {
+			throw new IOException("Cannot reserve cleanup identity while dictionary publication is active");
+		}
+		try {
+			synchronized (writerAdmission) {
+				if (shuttingDown || env == 0L) {
+					throw new IOException("Cannot reserve cleanup identity while the ValueStore is closing");
+				}
+				CleanupReservation reservation = new CleanupReservation(this, environmentGeneration);
+				cleanupReservations = Math.incrementExact(cleanupReservations);
+				return reservation;
+			}
+		} finally {
+			associationGate.unlock();
 		}
 	}
 
-	private void acquireAssociationGate(QueryExecutionDeadline deadline) throws IOException {
-		checkValueScopeDeadline(deadline);
-		// Expiry interrupts this wait, so nothing here reads a clock to size a timeout.
-		QueryExecutionDeadline.ExpiryInterruption interruption = deadline == null ? null
-				: deadline.interruptOnExpiry();
+	/** Returns no guard on publication contention; no numeric candidate may be captured until writer activation. */
+	CleanupReservation tryReserveCleanupIdentity() throws IOException {
+		if (!associationGate.tryLock()) {
+			return null;
+		}
+		try {
+			return reserveCleanupIdentity(false);
+		} finally {
+			associationGate.unlock();
+		}
+	}
+
+	/**
+	 * A deferred producer activates only after acquiring the exclusive native writer, before observing candidates.
+	 * Native single-writer ownership orders any earlier recycler before this reservation; the counter prevents later
+	 * reclamation. No publication-gate wait is needed, including when this writer retains an older read snapshot.
+	 */
+	CleanupReservation reserveCleanupIdentityForWriter(WriterTransaction expected) throws IOException {
+		synchronized (writerAdmission) {
+			WriterPublication publication = writerPublication;
+			Thread current = Thread.currentThread();
+			if (shuttingDown || env == 0L || writeTxn == 0L || expected == null
+					|| writeTxnOwner != current || publication == null || publication.owner != current
+					|| publication.transaction != expected || publication.consumer != null) {
+				throw new IOException("Cleanup identity activation requires the current exclusive dictionary writer");
+			}
+			CleanupReservation reservation = new CleanupReservation(this, environmentGeneration);
+			cleanupReservations = Math.incrementExact(cleanupReservations);
+			return reservation;
+		}
+	}
+
+	/** One bounded producer's identity lifetime; never contains a native transaction, cursor, or restart horizon. */
+	static final class CleanupReservation implements SailClosable {
+		private ValueStore store;
+		private final long environmentGeneration;
+
+		private CleanupReservation(ValueStore store, long environmentGeneration) {
+			this.store = store;
+			this.environmentGeneration = environmentGeneration;
+		}
+
+		/** A direct ValueStore clear/reopen must not transfer old candidates into its replacement incarnation. */
+		synchronized boolean isCurrent() {
+			return store != null && store.env != 0L && store.environmentGeneration == environmentGeneration;
+		}
+
+		@Override
+		public synchronized void close() {
+			ValueStore released = store;
+			store = null;
+			if (released != null) {
+				synchronized (released.writerAdmission) {
+					if (released.cleanupReservations <= 0L) {
+						throw new IllegalStateException("Cleanup identity reservation was released without an owner");
+					}
+					released.cleanupReservations--;
+				}
+			}
+		}
+	}
+
+	/**
+	 * Optional benchmark counters for every native delete invocation in this dictionary and its retirement indexes.
+	 * They include failed or rolled-back attempts and metadata/free-ID deletes; statement-index deletes are separate.
+	 * Updates retain the existing single-native-writer ownership. Reading these Java counters is safe after close.
+	 */
+	void enableCleanupNativeMetrics() {
+		cleanupNativeMetricsEnabled = true;
+		retiredIdStore.enableNativeDeleteMetrics();
+	}
+
+	record CleanupNativeMetrics(long attemptedDeletes, long successfulDeletes) {
+	}
+
+	CleanupNativeMetrics cleanupNativeMetrics() {
+		return new CleanupNativeMetrics(nativeDeleteAttempts + retiredIdStore.nativeDeleteAttempts(),
+				nativeDeleteSuccesses + retiredIdStore.nativeDeleteSuccesses());
+	}
+
+	private int trackedDelete(long transaction, int database, MDBVal key, MDBVal data) {
+		boolean measured = cleanupNativeMetricsEnabled;
+		if (measured) {
+			nativeDeleteAttempts++;
+		}
+		int result = mdb_del(transaction, database, key, data);
+		if (measured && result == MDB_SUCCESS) {
+			nativeDeleteSuccesses++;
+		}
+		return result;
+	}
+
+	private int trackedCursorDelete(long cursor, int flags) {
+		boolean measured = cleanupNativeMetricsEnabled;
+		if (measured) {
+			nativeDeleteAttempts++;
+		}
+		int result = mdb_cursor_del(cursor, flags);
+		if (measured && result == MDB_SUCCESS) {
+			nativeDeleteSuccesses++;
+		}
+		return result;
+	}
+
+	/** Existing, persisted store-incarnation identity; the async policy creates no dictionary metadata. */
+	byte[] cleanupStoreIdentity() {
+		return referenceCountGeneration == null ? null : referenceCountGeneration.clone();
+	}
+
+	/** Native identity observed before any startup write; process-local snapshot revisions are never replay proof. */
+	long cleanupStartupTransactionId() {
+		return cleanupStartupTransactionId;
+	}
+
+	/**
+	 * Exact last owned native commit. After close this includes the final clean marker; a spool stamped before that
+	 * marker would be conservatively rejected on every normal restart. Unknown native writers invalidate authority.
+	 */
+	long cleanupTransactionId() throws IOException {
+		if (env == 0L) {
+			return trustedClosedTransactionId();
+		}
+		long observed = lastTransactionId();
+		return observed == lastTrustedNativeTransactionId ? observed : -1L;
+	}
+
+	/** A query time limit or cancellation ends the wait by interrupting it. */
+	private void acquireAssociationGate() throws IOException {
 		try {
 			associationGate.lockInterruptibly();
 		} catch (InterruptedException failure) {
-			if (interruption != null && interruption.disarm()) {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while capturing dictionary identity", failure);
-		}
-		if (interruption != null && interruption.disarm()) {
-			// Expiry landed after acquisition: clear its interrupt; the check below releases the gate.
-			Thread.interrupted();
-		}
-		try {
-			checkValueScopeDeadline(deadline);
-		} catch (RuntimeException | Error failure) {
-			associationGate.unlock();
-			throw failure;
 		}
 	}
 
@@ -5032,7 +5252,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** Waits only after a failed admission has released native barriers, snapshot handles and reader permits. */
 	void awaitValueReaderAdmission() throws IOException {
-		acquireAssociationGate(QueryExecutionDeadline.current());
+		acquireAssociationGate();
 		try {
 			synchronized (writerAdmission) {
 				if (shuttingDown || env == 0) {
@@ -5044,22 +5264,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private boolean tryAcquireAssociationGate(QueryExecutionDeadline deadline) throws IOException {
-		checkValueScopeDeadline(deadline);
+	private boolean tryAcquireAssociationGate() throws IOException {
 		try {
-			if (!associationGate.tryLock(0L, TimeUnit.NANOSECONDS)) {
-				return false;
-			}
+			return associationGate.tryLock(0L, TimeUnit.NANOSECONDS);
 		} catch (InterruptedException failure) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while capturing dictionary identity", failure);
-		}
-		try {
-			checkValueScopeDeadline(deadline);
-			return true;
-		} catch (RuntimeException | Error failure) {
-			associationGate.unlock();
-			throw failure;
 		}
 	}
 
@@ -5176,15 +5386,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					}
 				}
 			}
-			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			if (!tryAcquireAssociationGate(deadline)) {
+			if (!tryAcquireAssociationGate()) {
 				throw new ValueReadAdmissionException();
 			}
 			gateHeld = true;
 			boolean capturedIdentity = false;
 			try {
 				while (true) {
-					checkValueScopeDeadline(deadline);
 					captured = requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested;
 					reservation = lazyRevisions.reserve(captured);
 					if (reservation != null || captured.idEpoch() == null) {
@@ -5236,7 +5444,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (isWriteTransactionOwner()) {
 			// The native writer can be consumed by commit, rollback, clear or close on another thread. Keep its
 			// association ownership through the complete borrowed read, and recheck after acquiring that ownership.
-			acquireAssociationGate(QueryExecutionDeadline.current());
+			acquireAssociationGate();
 			try {
 				synchronized (writerAdmission) {
 					if (shuttingDown) {
@@ -5365,6 +5573,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private static final class LazyRevisionTracker {
 		private final Set<Long> unusedRevisionIds;
 		private final long evictionInterval;
+		private final boolean collectEvictionCohorts;
 		private final Map<Long, ValueEpoch> epochs = new LinkedHashMap<>();
 		private final ArrayDeque<ValueEpoch> retiredEpochs = new ArrayDeque<>();
 		private long nextEpoch;
@@ -5373,9 +5582,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private long legacyEpochs;
 		private volatile long nextValueEvictionTime;
 
-		private LazyRevisionTracker(Set<Long> unusedRevisionIds, long evictionInterval) {
+		private LazyRevisionTracker(Set<Long> unusedRevisionIds, long evictionInterval,
+				boolean collectEvictionCohorts) {
 			this.unusedRevisionIds = unusedRevisionIds;
 			this.evictionInterval = evictionInterval;
+			this.collectEvictionCohorts = collectEvictionCohorts;
 		}
 
 		void register(ValueStoreRevision.Lazy revision) {
@@ -5436,6 +5647,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 
 		void retireCurrentEpoch() {
+			if (!collectEvictionCohorts) {
+				// The async worker scans the existing durable unused_ids tree after protection releases. Retaining
+				// one timed-eviction hint per maintenance commit would make a spilled transaction unbounded on heap.
+				return;
+			}
 			synchronized (unusedRevisionIds) {
 				retiredEpochs.addLast(currentEpoch);
 			}
@@ -5997,6 +6213,26 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		scheduleRequestedInitialImportOverlay();
 	}
 
+	/** Capture only while the caller still owns publication and has released its native writer. */
+	Object valueOverlayWriterCompletionToken() {
+		return valueLookupGeneration;
+	}
+
+	/** A delayed maintenance completion must never certify a newer writer's generation as publicly released. */
+	void signalValueOverlayWriterCompletedIfCurrent(Object completedGeneration) {
+		if (!valueOverlayEnabled || completedGeneration == null) {
+			return;
+		}
+		synchronized (valueOverlayBuildAdmission) {
+			if (valueLookupGeneration != completedGeneration) {
+				return;
+			}
+			publiclyReleasedOverlayGeneration = completedGeneration;
+			valueOverlayBuildAdmission.notifyAll();
+		}
+		scheduleRequestedInitialImportOverlay();
+	}
+
 	/** Either terminal writer cleanup or cancelled-worker completion can be the event that makes retry possible. */
 	private void scheduleRequestedInitialImportOverlay() {
 		Object request;
@@ -6418,13 +6654,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (caches.revision != completedRevision(expectedRevision)) {
 			return null;
 		}
+		ValueCacheArrays arrays = caches.arrays;
+		if (arrays == null) {
+			return null;
+		}
 		int idx = valueCacheIndex(id, expectedRevision.getPositionMask());
 		if (idx < 0) {
 			return null;
 		}
 
 		for (int way = 0; way < VALUE_CACHE_WAYS; way++) {
-			ValueCacheEntry entry = (ValueCacheEntry) VALUE_CACHE_ELEMENT.getAcquire(caches.completed, idx + way);
+			ValueCacheEntry entry = (ValueCacheEntry) VALUE_CACHE_ELEMENT.getAcquire(arrays.completed, idx + way);
 			if (entry != null && entry.id == id && expectedRevision.equals(entry.revision)
 					&& entry.semanticVersion != LmdbValue.UNKNOWN_ID
 					&& entry.semanticVersion == entry.value.getSemanticVersion()) {
@@ -6465,16 +6705,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (idx < 0) {
 			return;
 		}
+		ValueCacheArrays arrays = caches.arraysForPublication();
 		// The canonical shell remains shared even when deferred children prevent caching its complete payload.
 		// Refresh its semantic witness after initialization; naked exposure then retains those children's epochs.
 		long lexicalLength = value.retainedLexicalLength();
 		if (lexicalLength > MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS) {
 			// A cold shell may only reveal its retained payload size when initialization finishes.
 			for (int way = 0; way < VALUE_CACHE_WAYS; way++) {
-				CanonicalValueEntry entry = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(caches.canonical,
+				CanonicalValueEntry entry = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(arrays.canonical,
 						idx + way);
 				if (entry != null && entry.id == id && entry.value == value) {
-					CANONICAL_CACHE_ELEMENT.compareAndSet(caches.canonical, idx + way, entry, null);
+					CANONICAL_CACHE_ELEMENT.compareAndSet(arrays.canonical, idx + way, entry, null);
 				}
 			}
 			return;
@@ -6485,7 +6726,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		int slot = -1;
 		for (int way = 0; way < VALUE_CACHE_WAYS; way++) {
-			ValueCacheEntry existing = (ValueCacheEntry) VALUE_CACHE_ELEMENT.getAcquire(caches.completed, idx + way);
+			ValueCacheEntry existing = (ValueCacheEntry) VALUE_CACHE_ELEMENT.getAcquire(arrays.completed, idx + way);
 			if (existing != null && existing.id == id) {
 				slot = idx + way;
 				break;
@@ -6497,7 +6738,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (slot < 0) {
 			slot = idx + ((spreadValueId(id) >>> 8) & VALUE_CACHE_WAY_MASK);
 		}
-		VALUE_CACHE_ELEMENT.setRelease(caches.completed, slot,
+		VALUE_CACHE_ELEMENT.setRelease(arrays.completed, slot,
 				new ValueCacheEntry(id, sourceRevision, value, value.getSemanticVersion()));
 	}
 
@@ -6512,12 +6753,40 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private static final class ValueCacheEpoch {
 		private final ValueStoreRevision.Default revision;
-		private final ValueCacheEntry[] completed;
-		private final CanonicalValueEntry[] canonical;
+		private final int capacity;
+		private volatile ValueCacheArrays arrays;
 		private volatile boolean predecessorDependent;
 
-		private ValueCacheEpoch(ValueStoreRevision.Default revision, int size) {
+		private ValueCacheEpoch(ValueStoreRevision.Default revision, int capacity, boolean lazyArrays) {
 			this.revision = revision;
+			this.capacity = capacity;
+			if (!lazyArrays) {
+				arrays = new ValueCacheArrays(capacity);
+			}
+		}
+
+		private ValueCacheArrays arraysForPublication() {
+			ValueCacheArrays current = arrays;
+			if (current == null) {
+				synchronized (this) {
+					current = arrays;
+					if (current == null) {
+						// Background cleanup publishes many dictionary epochs without constructing model values.
+						// Allocate only when a reader actually publishes a cache entry. Arrays remain private to
+						// their immutable epoch, so an older lazy lookup can never observe a newer canonical shell.
+						arrays = current = new ValueCacheArrays(capacity);
+					}
+				}
+			}
+			return current;
+		}
+	}
+
+	private static final class ValueCacheArrays {
+		private final ValueCacheEntry[] completed;
+		private final CanonicalValueEntry[] canonical;
+
+		private ValueCacheArrays(int size) {
 			completed = new ValueCacheEntry[size];
 			canonical = new CanonicalValueEntry[size];
 		}
@@ -6778,8 +7047,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private CanonicalValueEntry canonicalValue(ValueCacheEpoch caches, int idx, long id) {
+		ValueCacheArrays arrays = caches.arrays;
+		if (arrays == null) {
+			return null;
+		}
 		for (int way = 0; way < VALUE_CACHE_WAYS; way++) {
-			CanonicalValueEntry entry = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(caches.canonical,
+			CanonicalValueEntry entry = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(arrays.canonical,
 					idx + way);
 			if (entry != null && entry.id == id && entry.isCurrent()) {
 				return entry;
@@ -6789,10 +7062,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private LmdbValue publishCanonicalValue(ValueCacheEpoch caches, int idx, long id, LmdbValue value) {
+		ValueCacheArrays arrays = caches.arraysForPublication();
 		int slot = -1;
 		CanonicalValueEntry previous = null;
 		for (int way = 0; way < VALUE_CACHE_WAYS; way++) {
-			CanonicalValueEntry entry = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(caches.canonical,
+			CanonicalValueEntry entry = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(arrays.canonical,
 					idx + way);
 			if (entry != null && entry.id == id && entry.isCurrent()) {
 				return entry.value;
@@ -6804,10 +7078,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		if (slot < 0) {
 			slot = idx + ((spreadValueId(id) >>> 8) & VALUE_CACHE_WAY_MASK);
-			previous = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(caches.canonical, slot);
+			previous = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(arrays.canonical, slot);
 		}
 		CanonicalValueEntry entry = new CanonicalValueEntry(id, value, value.getSemanticVersion());
-		CanonicalValueEntry witness = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.compareAndExchange(caches.canonical,
+		CanonicalValueEntry witness = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.compareAndExchange(arrays.canonical,
 				slot, previous, entry);
 		// One bounded publication attempt. A racing same-ID lookup shares the winner; a collision may remain uncached.
 		return witness != previous && witness != null && witness.id == id && witness.isCurrent() ? witness.value
@@ -7110,7 +7384,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			resizeMap(txn, requiredSize, activeWriteTxnCommitted);
 		} finally {
-			safeAllocationResize.remove();
+			safeAllocationResize.set(null);
 		}
 	}
 
@@ -7588,12 +7862,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void estimateFreshIri(PreparedValueFootprint footprint, Set<String> namespaces, IRI iri) {
-		String namespace = iri.getNamespace();
+		IriStorageEncoding.Split split = IriStorageEncoding.split(iri, format);
+		String namespace = split.namespace();
 		if (namespaces.add(namespace)) {
 			footprint.addStoredRecordUpperBound(add(1L, utf8LengthUpperBound(namespace)), pageSize);
 		}
 		footprint.addStoredRecordUpperBound(
-				add(1L, add(MAX_UNSIGNED_ID_BYTES, utf8LengthUpperBound(iri.getLocalName()))), pageSize);
+				add(1L, add(MAX_UNSIGNED_ID_BYTES, utf8LengthUpperBound(split.localName()))), pageSize);
 		footprint.addReference();
 	}
 
@@ -8058,7 +8333,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return saturatedEstimateAdd(bytes, estimatedRetainedBytes(statement.getContext()));
 	}
 
-	private static long estimatedRetainedBytes(Value value) {
+	static long estimatedRetainedBytes(Value value) {
 		long bytes = 0L;
 		Value checkpoint = value;
 		long power = 1L;
@@ -8401,7 +8676,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				idVal.mv_data(id2data(idBb, entry.getKey()).flip());
 				if (count <= 0) {
 					// delete count entry
-					E(mdb_del(writeTxn, refCountsDbi, idVal, null));
+					E(trackedDelete(writeTxn, refCountsDbi, idVal, null));
 				} else {
 					// update count
 					countBb.clear();
@@ -8426,6 +8701,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private long findId(byte[] data, boolean create, CoreDatatype coreDatatype, ValueLookupContext lookup)
 			throws IOException {
+		if (create) {
+			checkLookupRecordsAvailable();
+		}
 		boolean admitted = create && enterStandaloneValueWriter();
 		try {
 			return findIdAdmitted(data, create, coreDatatype, lookup);
@@ -8464,7 +8742,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
 				return data2id(idVal.mv_data());
 			}
-			long alternativeId = findAlternativeIriId(data, stack, txn);
+			long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+					: findAlternativeIriId(data, stack, txn);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -8511,7 +8790,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			} else {
 				// no value for hash exists
-				long alternativeId = findAlternativeIriId(data, stack, txn);
+				long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+						: findAlternativeIriId(data, stack, txn);
 				if (alternativeId != LmdbValue.UNKNOWN_ID) {
 					return alternativeId;
 				}
@@ -8573,7 +8853,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 
-			long alternativeId = findAlternativeIriId(data, stack, txn);
+			long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+					: findAlternativeIriId(data, stack, txn);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -8618,6 +8899,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** Resolve the same lexical IRI even when its writer preserved a different namespace/local-name boundary. */
 	private long findAlternativeIriId(byte[] data, MemoryStack stack, long txn) throws IOException {
+		return findAlternativeIriId(data, stack, txn, null);
+	}
+
+	/**
+	 * @param absentRecordHashes record hashes whose {@code HASH_KEY} is known to be missing from {@code txn}, or
+	 *                           {@code null}. A missing hash key rules out every record with that hash, so the set
+	 *                           stays exact for as long as its owner removes each hash it inserts.
+	 */
+	private long findAlternativeIriId(byte[] data, MemoryStack stack, long txn, LongHashSet absentRecordHashes)
+			throws IOException {
+		assert !format.usesCanonicalIriEncoding() : "Canonical dictionary misses must not search alternative splits";
 		if (data[0] != URI_VALUE) {
 			return LmdbValue.UNKNOWN_ID;
 		}
@@ -8643,19 +8935,20 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			namespaceData.position(namespaceData.position() + 1);
 			namespaceData.get(lexical, 0, namespaceLength);
 			encoded.get(lexical, namespaceLength, encoded.remaining());
-			return findAlternativeIriId(lexical, namespaceLength, namespaceId, stack, txn);
+			return findAlternativeIriId(lexical, namespaceLength, namespaceId, stack, txn, absentRecordHashes);
 		} finally {
 			stack.pop();
 		}
 	}
 
 	private long findAlternativeIriId(IRI iri, ValueLookupContext lookup) throws IOException {
+		assert !format.usesCanonicalIriEncoding() : "Canonical namespace misses establish absence";
 		byte[] lexical = iri.stringValue().getBytes(StandardCharsets.UTF_8);
 		return readTransaction(env, (stack, txn) -> {
 			if (lookup != null) {
 				lookup.captureScope(txn);
 			}
-			return findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn);
+			return findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn, null);
 		});
 	}
 
@@ -8665,9 +8958,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * Long namespace keys are hash indexed. Compute their prefix hashes once, without copying or reencoding prefixes.
 	 */
 	private long findAlternativeIriId(byte[] lexical, int excludedNamespaceLength, long excludedNamespaceId,
-			MemoryStack stack, long txn)
+			MemoryStack stack, long txn, LongHashSet absentRecordHashes)
 			throws IOException {
-		try (AlternativeIriLookup lookup = new AlternativeIriLookup(lexical, stack, txn)) {
+		assert !format.usesCanonicalIriEncoding() : "Canonical stores have one representation per lexical IRI";
+		alternativeIriLookupStarted();
+		try (AlternativeIriLookup lookup = new AlternativeIriLookup(lexical, stack, txn, absentRecordHashes)) {
 			long result = lookup.find(excludedNamespaceLength, excludedNamespaceId);
 			lookup.publish();
 			return result;
@@ -8683,6 +8978,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private final byte[] lexical;
 		private final long txn;
 		private final MemoryStack stack;
+		private final LongHashSet absentRecordHashes;
 		private final MDBVal key;
 		private final MDBVal value;
 		private MDBVal id;
@@ -8710,10 +9006,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private long namespaceCursor;
 		private long hashCursor;
 
-		private AlternativeIriLookup(byte[] lexical, MemoryStack stack, long txn) {
+		private AlternativeIriLookup(byte[] lexical, MemoryStack stack, long txn, LongHashSet absentRecordHashes) {
 			this.lexical = lexical;
 			this.txn = txn;
 			this.stack = stack;
+			this.absentRecordHashes = absentRecordHashes;
 			key = MDBVal.malloc(stack);
 			value = MDBVal.malloc(stack);
 			scope = valueLookupScope(generation, txn);
@@ -9025,6 +9322,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				E(rc);
 				return data2id(value.mv_data());
 			}
+			if (absentRecordHashes != null && absentRecordHashes.contains(hash)) {
+				return LmdbValue.UNKNOWN_ID;
+			}
 			if (hashKey == null) {
 				hashKey = stack.malloc(2 + 2 * Long.BYTES + 2);
 			}
@@ -9035,6 +9335,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			key.mv_data(hashKey);
 			int rc = probeIriAlternative(txn, key, value);
 			if (rc == MDB_NOTFOUND) {
+				if (absentRecordHashes != null) {
+					if (absentRecordHashes.size() >= MAX_ABSENT_RECORD_HASHES) {
+						absentRecordHashes.clear();
+					}
+					absentRecordHashes.add(hash);
+				}
 				return LmdbValue.UNKNOWN_ID;
 			}
 			E(rc);
@@ -9122,6 +9428,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 		}
 		return true;
+	}
+
+	/** Observation seam for regression tests and benchmarks; no observer allocation in normal operation. */
+	void alternativeIriLookupStarted() {
 	}
 
 	int probeIriAlternative(long txn, MDBVal key, MDBVal value) {
@@ -9212,10 +9522,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			primaryStoreKeys[i] = primaryStoreSortKey(data[i]);
 			secondaryStoreKeys[i] = secondaryStoreSortKey(data[i]);
 		}
-		int[] scratchOrder = new int[count];
-		long[] scratchKeys = new long[count];
-		int[] counts = new int[256];
-		int[] offsets = new int[256];
+		// Small batches, such as one statement's values, sort by insertion and never touch the radix scratch.
+		boolean radix = count > LeadingFieldSorters.LSD_RADIX_THRESHOLD;
+		int[] scratchOrder = radix ? new int[count] : null;
+		long[] scratchKeys = radix ? new long[count] : null;
+		int[] counts = radix ? new int[256] : null;
+		int[] offsets = radix ? new int[256] : null;
 		LeadingFieldSorters.lsdRadixSort(order, secondaryStoreKeys, count, scratchOrder, scratchKeys, counts,
 				offsets);
 		for (int i = 0; i < count; i++) {
@@ -9260,6 +9572,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private final MDBVal hashVal;
 		private final ByteBuffer idBuffer;
 		private final ByteBuffer hashBuffer;
+		/**
+		 * Alternative-IRI probes of this batch that found no {@code HASH_KEY}. The encoded batch already holds its
+		 * namespace and datatype IDs, so within one run the only hash-keyed inserts are this storer's own, and
+		 * {@link #storeFirstLargeId} removes each hash it inserts.
+		 */
+		private final LongHashSet absentRecordHashes = format.usesCanonicalIriEncoding() ? null : new LongHashSet();
 
 		private BatchIdStorer(MemoryStack stack, long txn) {
 			this.stack = stack;
@@ -9288,7 +9606,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
 				return data2id(idVal.mv_data());
 			}
-			long alternativeId = findAlternativeIriId(data, stack, txn);
+			long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+					: findAlternativeIriId(data, stack, txn, absentRecordHashes);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -9319,7 +9638,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					return data2id(idVal.mv_data());
 				}
 			} else {
-				return storeFirstLargeId(data, coreDatatype);
+				return storeFirstLargeId(data, coreDatatype, dataHash);
 			}
 
 			hashBuffer.put(0, HASHID_KEY);
@@ -9355,8 +9674,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			return storeHashCollisionId(data, hashLength, coreDatatype);
 		}
 
-		private long storeFirstLargeId(byte[] data, CoreDatatype coreDatatype) throws IOException {
-			long alternativeId = findAlternativeIriId(data, stack, txn);
+		private long storeFirstLargeId(byte[] data, CoreDatatype coreDatatype, long dataHash) throws IOException {
+			long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+					: findAlternativeIriId(data, stack, txn, absentRecordHashes);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -9366,6 +9686,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			dataVal.mv_size(data.length);
 			long activeWriteTxn = currentWriteTxn(txn);
 			E(mdb_put(activeWriteTxn, dbi, hashVal, idVal, 0));
+			if (absentRecordHashes != null) {
+				absentRecordHashes.remove(dataHash);
+			}
 			E(mdb_put(activeWriteTxn, dbi, idVal, dataVal, MDB_RESERVE));
 			dataVal.mv_data().put(data);
 			recordCompressedValueChange(newId);
@@ -9374,7 +9697,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 
 		private long storeHashCollisionId(byte[] data, int hashLength, CoreDatatype coreDatatype) throws IOException {
-			long alternativeId = findAlternativeIriId(data, stack, txn);
+			long alternativeId = format.usesCanonicalIriEncoding() ? LmdbValue.UNKNOWN_ID
+					: findAlternativeIriId(data, stack, txn, absentRecordHashes);
 			if (alternativeId != LmdbValue.UNKNOWN_ID) {
 				return alternativeId;
 			}
@@ -9922,11 +10246,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return switch (value.getType()) {
 		case Value.Type.IRI -> {
 			IRI iri = (IRI) value;
-			byte[] namespaceBytes = iri.getNamespace().getBytes(StandardCharsets.UTF_8);
+			IriStorageEncoding.Split split = IriStorageEncoding.split(iri, format);
+			byte[] namespaceBytes = split.namespace().getBytes(StandardCharsets.UTF_8);
 			byte[] namespaceData = new byte[namespaceBytes.length + 1];
 			namespaceData[0] = NAMESPACE_VALUE;
 			System.arraycopy(namespaceBytes, 0, namespaceData, 1, namespaceBytes.length);
-			yield new SnapshotIRI(namespaceData, iri.getLocalName().getBytes(StandardCharsets.UTF_8));
+			yield new SnapshotIRI(namespaceData, split.localName().getBytes(StandardCharsets.UTF_8));
 		}
 		case Value.Type.BNode -> new SnapshotEncodedValue(bnode2data((BNode) value, false));
 		case Value.Type.Literal -> {
@@ -10089,7 +10414,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		case SnapshotIRI iri -> {
 			byte[] data = uri2data(snapshot, txn, iri);
 			long found = data == null ? LmdbValue.UNKNOWN_ID : findId(snapshot, txn, data);
-			if (found != LmdbValue.UNKNOWN_ID) {
+			if (found != LmdbValue.UNKNOWN_ID || format.usesCanonicalIriEncoding()) {
 				yield found;
 			}
 			byte[] lexical = new byte[iri.namespaceData().length - 1 + iri.localNameData().length];
@@ -10097,7 +10422,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			System.arraycopy(iri.localNameData(), 0, lexical, iri.namespaceData().length - 1,
 					iri.localNameData().length);
 			try (MemoryStack stack = stackPush()) {
-				yield findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn);
+				yield findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn, null);
 			}
 		}
 		case SnapshotLiteral literal -> {
@@ -10994,10 +11319,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				throw new IOException("Interrupted while looking up a ValueStore snapshot value",
 						new InterruptedException());
 			}
-			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
-			if (deadline != null && deadline.isExpired()) {
-				throw new QueryInterruptedException("Query evaluation took too long");
-			}
 		}
 
 		private void cacheLookup(Value value, SnapshotLookupKey key, long id) {
@@ -11398,17 +11719,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (readLocked) {
 			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 		}
-		long stamp = 0;
+		long stamp = writeLockAfterCommit(lockManager);
 		try {
-			stamp = lockManager.writeLock();
 			txnManager.reset();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException(e);
 		} finally {
-			if (stamp != 0) {
-				lockManager.unlockWrite(stamp);
-			}
+			lockManager.unlockWrite(stamp);
 			if (readLocked) {
 				boolean interrupted = Thread.interrupted();
 				for (;;) {
@@ -11467,11 +11782,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 								&& isKnownRefCountMarkerSchema(marker.mv_data()))) {
 			// Earlier readers may trust the one-byte completion sentinel, so remove it before skipping owner deltas.
 			// Unknown schemas never authorize counts here; preserve their payload for their owning implementation.
-			E(mdb_del(txn, refCountsDbi, key, null));
+			E(trackedDelete(txn, refCountsDbi, key, null));
 		}
 		int metadata = openDatabaseWithTxn(txn, "gc_meta", 0);
 		key.mv_data(stack.bytes(ReferenceCountProof.KEY));
-		E(mdb_del(txn, metadata, key, null));
+		E(trackedDelete(txn, metadata, key, null));
 	}
 
 	private void writeReferenceCountProof(MemoryStack stack, long txn) throws IOException {
@@ -11483,7 +11798,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		int metadata = openDatabaseWithTxn(txn, "gc_meta", 0);
 		MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(ReferenceCountProof.KEY));
 		if (!hasTrustedReferenceCounts() || deferNextIdPersistence) {
-			E(mdb_del(txn, metadata, key, null));
+			E(trackedDelete(txn, metadata, key, null));
 		} else {
 			MDBVal value = MDBVal.calloc(stack)
 					.mv_data(stack.bytes(ReferenceCountProof.encode(
@@ -11492,7 +11807,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		key.mv_data(stack.bytes(ReferenceCountProof.ALLOCATION_KEY));
 		if (deferNextIdPersistence) {
-			E(mdb_del(txn, metadata, key, null));
+			E(trackedDelete(txn, metadata, key, null));
 		} else {
 			MDBVal value = MDBVal.calloc(stack)
 					.mv_data(stack.bytes(ReferenceCountProof.encode(
@@ -11651,6 +11966,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private void recordCompressedValueChange(long id) {
 		if (compressedValueMutation != null)
 			compressedValueMutation.touch(id);
+	}
+
+	private void invalidateOverlayForAsyncCleanup() {
+		if (asyncValueCleanup && compressedValueMutation != null) {
+			// Cleanup's bounded ID workspace cannot include arbitrary lexical records or optional delta builders.
+			// A refused publication retires only the new current overlay after a successful native commit; rollback
+			// retains it, and already-leased snapshots keep their immutable old representation.
+			compressedValueMutation.invalidate("bounded asynchronous dictionary reclamation");
+		}
 	}
 
 	private void discardCompressedValueMutation() {
@@ -11944,7 +12268,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 								? literal.getCoreDatatype()
 								: CoreDatatype.NONE;
 						id = findId(data, create, coreDatatype, lookup);
-					} else if (value instanceof IRI iri) {
+					} else if (!format.usesCanonicalIriEncoding() && value instanceof IRI iri) {
 						id = findAlternativeIriId(iri, lookup);
 					}
 				}
@@ -12363,7 +12687,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (existingId != LmdbValue.UNKNOWN_ID) {
 			return existingId;
 		}
-		long namespaceId = assignFreshNamespace(session, predicate.getNamespace());
+		long namespaceId = assignFreshNamespace(session, IriStorageEncoding.namespace(predicate, format));
 		long id = nextFreshPredicateId(session);
 		session.valueIds.put(predicate, id);
 		session.provisionalValues.add(predicate);
@@ -12405,7 +12729,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 		switch (value.getType()) {
 		case Value.Type.IRI:
-			referencedId = assignFreshNamespace(session, ((IRI) value).getNamespace());
+			referencedId = assignFreshNamespace(session, IriStorageEncoding.namespace((IRI) value, format));
 			id = nextFreshId(session, URI_VALUE);
 			break;
 		case Value.Type.BNode:
@@ -12468,7 +12792,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		switch (value.getType()) {
 		case Value.Type.IRI:
 			IRI iri = (IRI) value;
-			data = uri2data(iri, session.namespaceIds.getIfAbsent(iri.getNamespace(), LmdbValue.UNKNOWN_ID));
+			IriStorageEncoding.Split split = IriStorageEncoding.split(iri, format);
+			data = uri2data(split, session.namespaceIds.getIfAbsent(split.namespace(), LmdbValue.UNKNOWN_ID));
 			break;
 		case Value.Type.BNode:
 			data = bnode2data((BNode) value, true);
@@ -12528,8 +12853,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		switch (value.getType()) {
 		case Value.Type.IRI:
 			IRI iri = (IRI) value;
-			long namespaceId = prepareFreshNamespace(session, prepared, iri.getNamespace());
-			data = uri2data(iri, namespaceId);
+			IriStorageEncoding.Split split = IriStorageEncoding.split(iri, format);
+			long namespaceId = prepareFreshNamespace(session, prepared, split.namespace());
+			data = uri2data(split, namespaceId);
 			referencedId = namespaceId;
 			break;
 		case Value.Type.BNode:
@@ -12597,8 +12923,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 	}
 
-	private byte[] uri2data(IRI iri, long namespaceId) {
-		return ValueStoreRecordCodec.iriData(iri, namespaceId);
+	private byte[] uri2data(IriStorageEncoding.Split split, long namespaceId) {
+		return ValueStoreRecordCodec.iriData(split, namespaceId);
 	}
 
 	private byte[] literal2data(Literal literal, long datatypeId) {
@@ -12606,6 +12932,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	void persistPreparedValues(PreparedValueBatch prepared) throws IOException {
+		// These records go straight into the writer; per-type fresh ordinals need not move nextId.
+		WriterPublication publication = writerPublication;
+		nativeMutation = true;
 		try (MemoryStack stack = stackPush()) {
 			invalidateUntrustedCountMetadata(stack, writeTxn);
 			PointerBuffer cursorHandle = stack.mallocPointer(1);
@@ -12617,9 +12946,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			MDBVal emptyVal = MDBVal.calloc(stack);
 			ByteBuffer idBytes = idBuffer(stack);
 			ByteBuffer hashBytes = stack.malloc(2 + 2 * Long.BYTES + 2);
+			LmdbDeferredValueLookups deferred = activeFreshValueSession != null ? deferredLookups : null;
 			try {
 				for (PreparedValueRecord record : prepared.records) {
 					if (record.data.length > MAX_KEY_SIZE) {
+						continue;
+					}
+					if (deferred != null) {
+						deferred.add(record.data, record.data.length, record.id);
 						continue;
 					}
 					stack.push();
@@ -12662,6 +12996,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						hashBytes.put(idVal.mv_data().duplicate());
 					}
 					keyVal.mv_data(hashBytes.flip());
+					if (deferred != null) {
+						deferred.add(hashBytes, record.id);
+						continue;
+					}
 					E(mdb_cursor_put(cursor, keyVal, record.firstForHash ? idVal : emptyVal, 0));
 				}
 			} finally {
@@ -12694,7 +13032,76 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					E(mdb_put(writeTxn, index.getDB(true), keyVal, emptyVal, 0));
 				}
 			}
+			if (deferred == null) {
+				// Assignment alone is not a dictionary mapping. Admit only records written by this writer.
+				for (PreparedValueRecord record : prepared.namespaceRecords) {
+					rememberWriterNamespace(publication, record.namespace, record.id);
+				}
+			}
 		}
+	}
+
+	/** Starts deferring the lookup records of fresh values; only an initial run import calls this. */
+	void deferLookupRecords(LmdbDeferredValueLookups lookups) {
+		deferredLookups = lookups;
+	}
+
+	void stopDeferringLookupRecords() {
+		deferredLookups = null;
+	}
+
+	boolean lookupRecordsDeferred() {
+		return deferredLookups != null;
+	}
+
+	private void checkLookupRecordsAvailable() {
+		if (deferredLookups != null) {
+			throw new IllegalStateException(
+					"Values cannot be created outside the initial import's fresh session while its lookup records are deferred");
+		}
+	}
+
+	/**
+	 * Writes the merged lookup records of an initial run import into the open write transaction, in key order. The main
+	 * database also holds the records of every named sub-database, which sort above all value keys, so these are sorted
+	 * plain puts rather than appends.
+	 *
+	 * @return the number of records written
+	 */
+	long writeDeferredLookups(LmdbDeferredValueLookups.Source source) throws IOException {
+		return writeTransaction((stack, txn) -> {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_cursor_open(txn, dbi, handle));
+			long cursor = handle.get(0);
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.malloc(stack);
+			MDBVal emptyVal = MDBVal.calloc(stack);
+			ByteBuffer key = stack.malloc(LmdbDeferredValueLookups.MAX_KEY_BYTES);
+			ByteBuffer idBytes = idBuffer(stack);
+			long written = 0;
+			try {
+				long id;
+				while ((id = source.next(key)) >= 0) {
+					keyVal.mv_data(key);
+					if (key.get(0) == HASHID_KEY) {
+						E(mdb_cursor_put(cursor, keyVal, emptyVal, 0));
+					} else {
+						idBytes.clear();
+						dataVal.mv_data(id2data(idBytes, id).flip());
+						E(mdb_cursor_put(cursor, keyVal, dataVal, 0));
+					}
+					written++;
+				}
+			} finally {
+				mdb_cursor_close(cursor);
+			}
+			return written;
+		});
+	}
+
+	/** Flushes committed pages to disk; the environment runs without per-commit sync. */
+	void syncEnvironment() throws IOException {
+		E(mdb_env_sync(env, true));
 	}
 
 	void publishPreparedValues(PreparedValueBatch prepared) {
@@ -12738,6 +13145,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (count == 0) {
 			return;
 		}
+		checkLookupRecordsAvailable();
 		if (writeTxn != 0 && !isWriteTransactionOwner()) {
 			long writer = awaitJoinableWriter();
 			if (writer != 0L) {
@@ -12932,6 +13340,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				final Collection<Long> finalIds = candidates;
 				final Collection<Long> finalNextIds = nextIds;
 				writeTransaction((stack, writeTxn) -> {
+					invalidateOverlayForAsyncCleanup();
 					MDBVal revIdVal = MDBVal.calloc(stack);
 					MDBVal dataVal = MDBVal.calloc(stack);
 
@@ -12939,6 +13348,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					Varint.writeUnsigned(revIdBb, revision.getRevisionId());
 					int revLength = revIdBb.position();
 					Set<Long> retiredIds = deleteValueToIdMappings(stack, writeTxn, finalIds, finalNextIds);
+					if (!retiredIds.isEmpty() && activeFreshValueSession != null) {
+						// The session maps every value it assigned; a collected one would be handed its stale ID.
+						freshValueSessionSpoiled = true;
+					}
 					for (long id : retiredIds) {
 						revIdBb.position(revLength).limit(revIdBb.capacity());
 						revIdVal.mv_data(id2data(revIdBb, id).flip());
@@ -13030,6 +13443,26 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							batch.matchedSeqKeys.size() + batch.staleSeqKeys.size()));
 			writeTransaction((stack, writeTxn) -> {
 				retiredIdStore.removeDrained(stack, writeTxn, batch);
+				return null;
+			});
+			return null;
+		});
+	}
+
+	/**
+	 * Removes the current durable retirement authority for revalidated async candidates. The worker owns publication
+	 * and the active dictionary transaction, so no newer retirement can interleave. Clearing both indexes in the same
+	 * transaction as forward reclamation prevents a legacy intent from surviving reclamation and later ID reuse.
+	 */
+	void removeAsyncRetiredIds(Collection<Long> ids) throws IOException {
+		if (ids.isEmpty() || !retiredIdStore.hasPending()) {
+			return;
+		}
+		requireRefCountIntegrity("remove asynchronously retired ValueStore IDs");
+		readTransaction(env, (stack1, txn1) -> {
+			resizeMap(writeTxn, reserveRetiredIdRecordCapacity(stack1, txn1, ids.size(), ids.size()));
+			writeTransaction((stack, currentWriteTxn) -> {
+				retiredIdStore.removeCurrentRetirements(stack, currentWriteTxn, ids);
 				return null;
 			});
 			return null;
@@ -13144,7 +13577,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							// update buffer positions in MDBVal
 							keyVal.mv_data(keyBuf);
 
-							E(mdb_del(writeTxn, index.getDB(true), keyVal, null));
+							E(trackedDelete(writeTxn, index.getDB(true), keyVal, null));
 						}
 						retiredIds.add(id);
 					}
@@ -13170,6 +13603,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						stack.pop();
 					}
 
+					if (dataBuffer.get(0) == NAMESPACE_VALUE) {
+						// The reverse mapping can disappear while this writer is still active.
+						writerNamespaceIDCache.clear();
+						transactionNamespaceIds.clear();
+					}
+
 					// update ref count if literal or URI namespace is removed
 					if (dataBuffer.get(0) == LITERAL_VALUE || dataBuffer.get(0) == URI_VALUE) {
 						long refId = Varint.readUnsigned(dataBuffer, 1);
@@ -13180,9 +13619,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 					int dataLength = dataBuffer.remaining();
 					if (dataLength > MAX_KEY_SIZE) {
-						byte[] data = new byte[dataLength];
-						dataBuffer.get(data);
-						long dataHash = hash(data);
+						CRC32 checksum = new CRC32();
+						checksum.update(dataBuffer.duplicate());
+						long dataHash = checksum.getValue();
 
 						hashBb.clear();
 						hashBb.put(HASH_KEY);
@@ -13195,7 +13634,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						// delete HASH -> ID association
 						if (mdb_get(writeTxn, dbi, hashVal, ignoreVal) == MDB_SUCCESS
 								&& data2id(ignoreVal.mv_data()) == id) {
-							E(mdb_del(writeTxn, dbi, hashVal, null));
+							E(trackedDelete(writeTxn, dbi, hashVal, null));
 							// was first entry, find a possible next entry and make it the first
 							hashBb.put(0, HASHID_KEY);
 							hashBb.rewind();
@@ -13219,7 +13658,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 									// HASH -> ID
 									E(mdb_put(writeTxn, dbi, hashVal, idVal, 0));
 									// delete existing mapping
-									E(mdb_cursor_del(valuesCursor, 0));
+									E(trackedCursorDelete(valuesCursor, 0));
 								}
 							}
 						} else {
@@ -13232,12 +13671,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 							hashVal.mv_data(hashBb);
 							// delete HASH+ID -> [] association
-							mdb_del(writeTxn, dbi, hashVal, null);
+							trackedDelete(writeTxn, dbi, hashVal, null);
 						}
 					} else {
 						// delete value -> ID association
 						dataVal.mv_data(dataBuffer);
-						mdb_del(writeTxn, dbi, dataVal, null);
+						trackedDelete(writeTxn, dbi, dataVal, null);
 					}
 
 					// does not delete ID -> value association
@@ -13290,7 +13729,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				return false;
 			}
 			E(rc);
-			verifyOwnerRecordType(id, copyValue(data));
+			verifyOwnerRecordType(id, data.mv_data());
 			return true;
 		} finally {
 			stack.pop();
@@ -13306,12 +13745,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		freeUnusedIdsAndValues(stack, txn, revisionIds, livenessChecker, Integer.MAX_VALUE);
 	}
 
-	private int freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds,
+	private record UnusedReclamationPass(int visited, boolean progress) {
+	}
+
+	private UnusedReclamationPass freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds,
 			ValueIdLivenessChecker livenessChecker, int maxVisitedRecords) throws IOException {
-		if (!isValueReclamationEnabled()) {
-			return 0;
+		if (!isValueReclamationEnabled() || cleanupReservations != 0L) {
+			return new UnusedReclamationPass(0, false);
 		}
+		invalidateOverlayForAsyncCleanup();
 		int visited = 0;
+		boolean progress = false;
 		boolean retiringCohorts = revisionIds != null;
 		MDBVal idVal = MDBVal.calloc(stack);
 		MDBVal revIdVal = MDBVal.calloc(stack);
@@ -13349,6 +13793,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						if (revisionId == 0L || revisionOfId == revisionId) {
 							idVal.mv_data(keyBb);
 							long id = Varint.readUnsigned(keyBb, keyBb.position() + 1);
+							if (retiredIdStore.hasCurrentRetirement(stack, txn, id)) {
+								// Duplicate spool prefixes and protected-value continuations may re-record an already
+								// unused ID. Drain that exact current intent before permitting physical numeric reuse.
+								continue;
+							}
 							livenessCandidate.clear();
 							livenessCandidate.add(id);
 							livenessChecker.filterUsedIds(livenessCandidate);
@@ -13361,7 +13810,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 								// live. Remove
 								// only the obsolete hint. Missing records provide no proof that the ordinal is free:
 								// an old writer may already have reused it under a different reference type.
-								E(mdb_cursor_del(unusedIdsCursor, 0));
+								E(trackedCursorDelete(unusedIdsCursor, 0));
+								progress = true;
 								continue;
 							}
 
@@ -13409,17 +13859,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 								if (termRc == MDB_SUCCESS &&
 										tripleTermCspoIndex.createMatcher(-1, -1, -1, id).matches(keyVal.mv_data())) {
 									// delete id -> triple term association
-									E(mdb_cursor_del(termsCursor, 0));
+									E(trackedCursorDelete(termsCursor, 0));
 								}
 							} else {
 								// delete id -> value association
-								E(mdb_del(txn, dbi, idVal, null));
+								E(trackedDelete(txn, dbi, idVal, null));
 								recordCompressedValueChange(id);
 							}
 
 							clearStoredHash(id);
 							// delete id and value from unused list
-							E(mdb_cursor_del(unusedIdsCursor, 0));
+							E(trackedCursorDelete(unusedIdsCursor, 0));
+							progress = true;
 
 							freeIds = true;
 						} else {
@@ -13449,7 +13900,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			// checkpoint before this method must leave candidates eligible for its replacement writer.
 			reclaimedRevisionIds.addAll(revisionIds);
 		}
-		return visited;
+		return new UnusedReclamationPass(visited, progress);
 	}
 
 	public void startTransaction(boolean resize) throws IOException {
@@ -13527,7 +13978,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 			// delete unused IDs if required on a regular basis
 			// this is also run after opening the database
-			if (purpose == DictionaryTransactionPurpose.OWNER_MUTATION && hasTrustedReferenceCounts()
+			if (!asyncValueCleanup && purpose == DictionaryTransactionPurpose.OWNER_MUTATION
+					&& hasTrustedReferenceCounts()
 					&& lazyRevisions.nextValueEvictionTime >= 0
 					&& System.currentTimeMillis() >= lazyRevisions.nextValueEvictionTime) {
 				Set<Long> candidates;
@@ -13622,20 +14074,31 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			rethrowFailure(failure);
 		} finally {
-			synchronized (writerAdmission) {
-				if (publicationComplete && writerPublication == publication) {
-					replayDecision = null;
-					writerPublication = null;
-					if (!shuttingDown) {
-						// Only settled publication opens the global ready-value proof again, atomically with
-						// admitting the next writer after aborted IDs and caches have been invalidated.
-						endValueLookupMutation();
+			try {
+				synchronized (writerAdmission) {
+					boolean release = publicationComplete && writerPublication == publication;
+					try {
+						if (release && commit && terminalFailure == null && lastNativeCommitSucceeded
+								&& !publication.transaction.commitWasSkipped() && !shuttingDown) {
+							publishWriterNamespaces(publication);
+						}
+					} finally {
+						if (release) {
+							replayDecision = null;
+							writerPublication = null;
+							if (!shuttingDown) {
+								// Only settled publication opens the global ready-value proof again, atomically with
+								// admitting the next writer after aborted IDs and caches have been invalidated.
+								endValueLookupMutation();
+							}
+						}
+						writerAdmission.notifyAll();
 					}
 				}
-				writerAdmission.notifyAll();
-			}
-			if (!(commit && autoGrow) && (publicationComplete || terminalFailure != null)) {
-				closeLegacyValueIndex(terminalFailure);
+			} finally {
+				if (!(commit && autoGrow) && (publicationComplete || terminalFailure != null)) {
+					closeLegacyValueIndex(terminalFailure);
+				}
 			}
 		}
 	}
@@ -13657,6 +14120,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			associationGate.unlock();
 		}
 		if (writeTxn != 0) {
+			if (commit && publication.transaction.skipsUnchanged() && writerChangedNothing()) {
+				abortUnchangedWriter(publication);
+				return true;
+			}
 			if (commit) {
 				// Checkpoints publish dictionary mappings too: their component counts must be in the same commit.
 				try (MemoryStack stack = stackPush()) {
@@ -13689,6 +14156,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					flushPendingHashUpdates();
 				}
 			} else {
+				// A writer that assigned, reused or retired nothing could not have exposed an uncommitted ID, so its
+				// abort leaves the caches as valid as a skipped commit does.
+				boolean invalidatesCaches = !writerChangedNothing();
 				refCountsTxCache.clear();
 				Throwable rollbackFailure = null;
 				associationGate.lock();
@@ -13720,21 +14190,56 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				// IDs assigned during the aborted transaction may have been cached on input values and in valueIDCache.
 				// Reusing either cache would let a later transaction publish triples that point at dictionary IDs which
 				// were never committed.
-				try {
-					setNewRevision();
-				} catch (Throwable failure) {
-					rollbackFailure = appendFailure(rollbackFailure, failure);
-				}
-				try {
-					clearCaches();
-				} catch (Throwable failure) {
-					rollbackFailure = appendFailure(rollbackFailure, failure);
+				if (invalidatesCaches) {
+					try {
+						setNewRevision();
+					} catch (Throwable failure) {
+						rollbackFailure = appendFailure(rollbackFailure, failure);
+					}
+					try {
+						clearCaches();
+					} catch (Throwable failure) {
+						rollbackFailure = appendFailure(rollbackFailure, failure);
+					}
 				}
 				rethrowFailure(rollbackFailure);
 			}
 			releaseWriteTransactionState();
 		}
 		return true;
+	}
+
+	/**
+	 * True when the open writer assigned, reused, retired or recounted nothing and wrote nothing outside those paths.
+	 * Startup writers are never treated as unchanged: they create sub-databases, which an abort would discard. Nor is a
+	 * writer while a fresh value session is active: it assigns per-type ordinals that need not move nextId.
+	 */
+	private boolean writerChangedNothing() {
+		if (!valueStoreInitializationComplete || startupInitializationInProgress || nativeMutation
+				|| activeFreshValueSession != null
+				|| invalidateRevisionOnCommit || nextId != writerFirstAppendedId || !writerReusedIds.isEmpty()
+				|| !refCountsTxCache.isEmpty() || pendingValueAssociation != null || !reclaimedRevisionIds.isEmpty()
+				|| !droppedTermIndexDbis.isEmpty() || retiredIdStore.hasTransactionChanges()) {
+			return false;
+		}
+		synchronized (pendingHashUpdates) {
+			return pendingHashUpdates.isEmpty();
+		}
+	}
+
+	/** Releases an unchanged writer as if it had committed: the callers' dictionary state is already durable. */
+	private void abortUnchangedWriter(WriterPublication publication) throws IOException {
+		lastNativeCommitSucceeded = true;
+		publication.transaction.commitSkipped();
+		associationGate.lock();
+		try {
+			abortWriteTransaction(nativeWriteTransaction(publication));
+		} finally {
+			releaseNativeWriteTransactionOwnership(publication);
+			associationGate.unlock();
+		}
+		discardCompressedValueMutation();
+		releaseWriteTransactionState();
 	}
 
 	private long nativeWriteTransaction(WriterPublication publication) throws IOException {
@@ -13894,6 +14399,30 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		mdb_env_close(environment);
 	}
 
+	/**
+	 * Commits the dictionary writer, or aborts it when it changed nothing. A NONE transaction that only reuses existing
+	 * values then costs no dictionary commit at all; aborting such a writer publishes exactly what its commit would
+	 * have, because the next-ID record, reference counts and reference-count proof only change together with the
+	 * dictionary.
+	 */
+	void commitIfChanged() throws IOException {
+		WriterTransaction requested = WriterTransaction.current();
+		WriterTransaction transaction = requested == null ? currentWriterTransaction() : requested;
+		if (transaction == null) {
+			commit();
+			return;
+		}
+		// The request belongs to this thread and its writer, not to the store: other writers, such as term index
+		// maintenance, are admitted as soon as this one is released, while commit() still refreshes readers. A
+		// store-wide flag let them abort writers whose new sub-databases and staging rows no change counter records.
+		transaction.requestSkipIfUnchanged();
+		try {
+			commit();
+		} finally {
+			transaction.endSkipRequest();
+		}
+	}
+
 	public void commit() throws IOException {
 		long generationBefore = nativeCommitGeneration;
 		WriterTransaction requested = WriterTransaction.current();
@@ -13920,24 +14449,45 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			throw failure;
 		}
+		if (transaction.commitWasSkipped()) {
+			// Nothing was committed, so readers have no newer snapshot to move to.
+			endValueLookupMutation();
+			return;
+		}
 		resetReadTransactionsAfterCommit();
 	}
 
 	private void resetReadTransactionsAfterCommit() throws IOException {
 		var lockManager = txnManager.lockManager();
-		long stamp = 0;
+		// The caller has already ended its publication. A later writer may now own the environment;
+		// resetting committed readers must never consume that writer's native transaction.
+		long stamp = writeLockAfterCommit(lockManager);
 		try {
-			// The caller has already ended its publication. A later writer may now own the environment;
-			// resetting committed readers must never consume that writer's native transaction.
-			stamp = lockManager.writeLock();
 			txnManager.reset();
-		} catch (InterruptedException e) {
-			throw new IOException(e);
 		} finally {
-			if (stamp != 0) {
-				lockManager.unlockWrite(stamp);
-			}
+			lockManager.unlockWrite(stamp);
 			endValueLookupMutation();
+		}
+	}
+
+	/**
+	 * The native commit is durable, so its reader reset is not optional: an interrupt must not leave pooled readers on
+	 * the old dictionary. Waits uninterruptibly and restores the caller's interrupt afterwards.
+	 */
+	private static long writeLockAfterCommit(StampedLongAdderLockManager lockManager) {
+		boolean interrupted = Thread.interrupted();
+		try {
+			while (true) {
+				try {
+					return lockManager.writeLock();
+				} catch (InterruptedException e) {
+					interrupted = true;
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 
@@ -14398,6 +14948,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (closeInProgress) {
 					throw new IOException("Cannot clear ValueStore during shutdown");
 				}
+				// Clear destroys the generation: neither a pending request nor a prior close certificate survives.
+				durableCleanupCloseRequested = false;
+				durableCleanupClosedTransactionId = -1L;
 				if (!closeUnderMonitor()) {
 					continue;
 				}
@@ -14444,7 +14997,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	protected void clearCaches() {
-		valueCaches = new ValueCacheEpoch(valueIdentity.revision, valueCacheMask + 1);
+		valueCaches = new ValueCacheEpoch(valueIdentity.revision, valueCacheMask + 1, asyncValueCleanup);
 		Arrays.fill(valueCache, null);
 		Arrays.fill(valueCacheId, 0);
 		Arrays.fill(valueHashCacheId, 0);
@@ -14452,6 +15005,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		valueIDCache.clear();
 		namespaceCache.clear();
 		namespaceIDCache.clear();
+		writerNamespaceIDCache.clear();
 		commonVocabulary.clear();
 		PREVIOUS_NAMESPACE_HANDLE.setRelease(this, null);
 	}
@@ -14459,6 +15013,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	/** The paired store supplies only its last owned native triple commit, after its writers have drained. */
 	void prepareCleanClose(long tripleTransactionId) {
 		closingTripleTransactionId = tripleTransactionId;
+	}
+
+	/** Requests a forced final native flush solely for optional cleanup-spool recovery authority. */
+	synchronized void requestDurableCleanupClose() {
+		durableCleanupCloseRequested = true;
+		durableCleanupClosedTransactionId = -1L;
+	}
+
+	/** Exact final native transaction certified durable by a successful requested close; otherwise unknown. */
+	synchronized long durableCleanupClosedTransactionId() {
+		return durableCleanupClosedTransactionId;
 	}
 
 	void invalidateCleanCloseAfterUnknownTripleWriter() {
@@ -14472,15 +15037,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				: -1L;
 	}
 
-	private void writeCleanRefCountMarker() {
+	private long writeCleanRefCountMarker() {
 		if (bulkCompletionSynced || cleanCloseInvalidated) {
-			return;
+			return -1L;
 		}
 		if (!valueStoreInitializationComplete || !auxiliaryDatabasesInitialized
 				|| !refCountIntegrityEstablished
 				|| refCountRecoveryRequired
 				|| refCountRecoveryInProgress || writeTxn != 0 || lastTrustedNativeTransactionId < 0L) {
-			return;
+			return -1L;
 		}
 		try {
 			writeTransaction((stack, txn) -> {
@@ -14500,6 +15065,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				writeRefCountMarker(stack, txn, REFCOUNT_MARKER_CLEAN);
 				return null;
 			});
+			return trustedClosedTransactionId();
 		} catch (IOException | RuntimeException markerFailure) {
 			// A failed final marker is conservative: the next open remains UNKNOWN until explicit reconstruction.
 			// Preserve normal close/error
@@ -14508,6 +15074,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			logger.warn("Could not persist clean ValueStore ref-count marker; explicit reconstruction is required",
 					markerFailure);
 		}
+		return -1L;
 	}
 
 	private void writeRefCountMarker(MemoryStack stack, long txn, byte state) throws IOException {
@@ -14607,7 +15174,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			beginValueLookupMutation();
 			awaitAndStopValueOverlayWarmup();
-			writeCleanRefCountMarker();
+			durableCleanupClosedTransactionId = -1L;
+			long cleanMarkerTransactionId = writeCleanRefCountMarker();
+			long durableClosedTransactionId = -1L;
 			Throwable failure = null;
 			for (ValueResolutionScope scope : valueResolutionScopes) {
 				try {
@@ -14677,8 +15246,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
 				if (nativeQuiesced && env != 0) {
 					long environment = env;
+					long durableTransactionId = -1L;
+					try {
+						if (failure == null) {
+							durableTransactionId = syncDurableCleanupClose(cleanMarkerTransactionId);
+						}
+					} catch (Throwable syncFailure) {
+						failure = appendFailure(failure, syncFailure);
+					}
 					try {
 						closeEnvironment(environment);
+						durableClosedTransactionId = durableTransactionId;
 					} catch (Throwable closeFailure) {
 						failure = appendFailure(failure, closeFailure);
 					} finally {
@@ -14703,9 +15281,31 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 			rethrowFailure(failure);
+			durableCleanupClosedTransactionId = durableClosedTransactionId;
 			return true;
 		} finally {
 			closeInProgress = false;
+		}
+	}
+
+	/** Called under the final close barrier, after every possible native write and before freeing the environment. */
+	private long syncDurableCleanupClose(long cleanMarkerTransactionId) {
+		if (!durableCleanupCloseRequested || cleanCloseInvalidated || closingTripleTransactionId < 0L
+				|| cleanMarkerTransactionId < 0L || cleanMarkerTransactionId != trustedClosedTransactionId()) {
+			return -1L;
+		}
+		try {
+			if (lastTransactionId() != cleanMarkerTransactionId) {
+				return -1L;
+			}
+			syncEnvironment();
+			// The barrier excludes owned writers; an unowned native writer must never gain replay authority.
+			return lastTransactionId() == cleanMarkerTransactionId ? cleanMarkerTransactionId : -1L;
+		} catch (IOException | RuntimeException syncFailure) {
+			// Recovery hints are optional. A failed durability fence must not prevent native resource cleanup.
+			logger.warn("Could not durably close ValueStore for cleanup recovery; discarding cleanup spool",
+					syncFailure);
+			return -1L;
 		}
 	}
 
@@ -14881,14 +15481,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private byte[] uri2data(IRI uri, boolean create, ValueLookupContext lookup) throws IOException {
-		long nsID = getNamespaceID(uri.getNamespace(), create, lookup);
+		IriStorageEncoding.Split split = IriStorageEncoding.split(uri, format);
+		long nsID = getNamespaceID(split.namespace(), create, lookup);
 
 		if (nsID == -1) {
 			// Unknown namespace means unknown URI
 			return null;
 		}
 
-		return ValueStoreRecordCodec.iriData(uri, nsID);
+		return ValueStoreRecordCodec.iriData(split, nsID);
 	}
 
 	private byte[] bnode2data(BNode bNode, boolean create) {
@@ -15163,17 +15764,34 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private long getNamespaceID(String namespace, boolean create, ValueLookupContext lookup) throws IOException {
+		WriterPublication publication = null;
 		if (isWriteTransactionOwner()) {
+			publication = writerPublication;
 			long transactionId = transactionNamespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
 			if (transactionId != LmdbValue.UNKNOWN_ID) {
+				rememberWriterNamespace(publication, namespace, transactionId);
 				return transactionId;
 			}
 			FreshValueSession freshSession = activeFreshValueSession;
-			if (freshSession != null) {
+			if (isFreshValueSessionUsable(freshSession)) {
 				long freshId = freshSession.namespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
 				if (freshId != LmdbValue.UNKNOWN_ID) {
 					return freshId;
 				}
+			}
+			ReverseIdCache.State<NamespaceKey> writerState = writerNamespaceIDCache.state();
+			ValueStoreRevision writerRevision = revision;
+			ReverseIdCache.Entry<NamespaceKey> committed = writerNamespaceIDCache.get(writerState, namespace,
+					ValuePosition.NONE);
+			if (publication != null && writerPublication == publication && committed != null
+					&& sameRevision(committed.revision(), writerRevision) && sameRevision(writerRevision, revision)
+					&& writerNamespaceIDCache.isCurrent(writerState)) {
+				long id = committed.id();
+				if (transactionNamespaceIds.size() < transactionValueCacheLimit) {
+					transactionNamespaceIds.put(namespace, id);
+				}
+				rememberWriterNamespace(publication, namespace, id);
+				return id;
 			}
 		}
 
@@ -15206,12 +15824,74 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (isWriteTransactionOwner() && transactionNamespaceIds.size() < transactionValueCacheLimit) {
 				transactionNamespaceIds.put(namespace, id);
 			}
+			WriterPublication current = writerPublication;
+			if (publication != null && current != null && current.transaction == publication.transaction) {
+				// A capacity checkpoint can replace the native writer while retaining the logical transaction.
+				rememberWriterNamespace(current, namespace, id);
+			}
 			cacheNamespaceId(namespace, id, generation, cacheState);
 		} else if (lookup != null) {
 			lookup.missingNamespace(namespace, cacheState);
 		}
 
 		return id;
+	}
+
+	/** Keeps only namespace mappings observed or written by this native writer for possible commit publication. */
+	private void rememberWriterNamespace(WriterPublication publication, String namespace, long id) {
+		if (publication == null || id == LmdbValue.UNKNOWN_ID
+				|| namespace.length() > MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS) {
+			return;
+		}
+		synchronized (publication) {
+			if (publication != writerPublication || !isWriteTransactionOwner()) {
+				return;
+			}
+			ReverseIdCache.State<NamespaceKey> state = writerNamespaceIDCache.state();
+			ValueStoreRevision currentRevision = revision;
+			if (publication.namespaceCandidateState != state
+					|| !sameRevision(publication.namespaceCandidateRevision, currentRevision)
+					|| publication.namespaceCandidateEnvironment != environmentGeneration) {
+				if (publication.namespaceCandidates != null) {
+					publication.namespaceCandidates.clear();
+				}
+				publication.namespaceCandidateState = state;
+				publication.namespaceCandidateRevision = currentRevision;
+				publication.namespaceCandidateEnvironment = environmentGeneration;
+			}
+			Map<String, Long> candidates = publication.namespaceCandidates;
+			if (candidates == null) {
+				candidates = new LinkedHashMap<>(16, 0.75f, true);
+				publication.namespaceCandidates = candidates;
+			}
+			Long previous = candidates.get(namespace);
+			if (previous != null && previous.longValue() == id) {
+				return;
+			}
+			if (previous == null && !writerNamespaceIDCache.isUnbounded()
+					&& candidates.size() >= writerNamespaceIDCache.capacity()) {
+				Iterator<String> oldest = candidates.keySet().iterator();
+				oldest.next();
+				oldest.remove();
+			}
+			candidates.put(namespace, id);
+		}
+	}
+
+	/** Called with writer admission held, after native commit and revision handling have both succeeded. */
+	private void publishWriterNamespaces(WriterPublication publication) {
+		synchronized (publication) {
+			ReverseIdCache.State<NamespaceKey> state = publication.namespaceCandidateState;
+			if (state == null || publication.namespaceCandidates == null || !writerNamespaceIDCache.isCurrent(state)
+					|| !sameRevision(publication.namespaceCandidateRevision, revision)
+					|| publication.namespaceCandidateEnvironment != environmentGeneration) {
+				return;
+			}
+			for (Map.Entry<String, Long> candidate : publication.namespaceCandidates.entrySet()) {
+				writerNamespaceIDCache.put(state, NamespaceKey.of(candidate.getKey()), candidate.getValue(), revision,
+						null, ValuePosition.NONE);
+			}
+		}
 	}
 
 	static int calculateTransactionValueCacheLimit(long maxHeapBytes) {

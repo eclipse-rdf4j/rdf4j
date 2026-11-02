@@ -127,6 +127,22 @@ class WorkbenchHtmlShellTest {
 		verify(response).addHeader("Vary", "Accept");
 	}
 
+	/** The tab shows the Workbench's own icon wherever it is deployed, not whatever the server root's has. */
+	@Test
+	void namesTheWorkbenchIconBesideItsStylesheets() throws Exception {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		ServletConfig config = mock(ServletConfig.class);
+		StringWriter body = new StringWriter();
+		when(request.getContextPath()).thenReturn("/rdf4j-workbench");
+		when(response.getWriter()).thenReturn(new PrintWriter(body));
+
+		WorkbenchHtmlShell.write(request, response, config, "summary");
+
+		String head = body.toString().substring(0, body.toString().indexOf("</head>"));
+		assertThat(head).contains("<link rel=\"icon\" href=\"/rdf4j-workbench/favicon.ico\">");
+	}
+
 	@Test
 	void sharesTheValidatedDeploymentThemeAcrossEveryShellWriterBeforeStylesheets() throws Exception {
 		MockServletContext servletContext = new MockServletContext();

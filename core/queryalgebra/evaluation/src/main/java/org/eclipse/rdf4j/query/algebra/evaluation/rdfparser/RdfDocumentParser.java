@@ -20,7 +20,6 @@ import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
 
-import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -286,18 +285,14 @@ public final class RdfDocumentParser {
 	private static final class Budget {
 		private final long started = System.nanoTime();
 		private final long nanos;
-		private final QueryExecutionDeadline queryDeadline = QueryExecutionDeadline.current();
 
 		Budget(long millis) {
 			nanos = millis * 1_000_000;
 		}
 
 		void check() {
-			if (queryDeadline != null && queryDeadline.isExpired()) {
-				throw new QueryInterruptedException("Query deadline expired while parsing RDF");
-			}
 			if (Thread.currentThread().isInterrupted()) {
-				throw new QueryEvaluationException("RDF parsing interrupted");
+				throw new QueryInterruptedException("RDF parsing interrupted");
 			}
 			if (System.nanoTime() - started > nanos) {
 				throw new QueryEvaluationException("RDF parsing time limit exceeded");

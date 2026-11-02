@@ -393,6 +393,19 @@ test('saved query execute and edit preserve stored timeout and default legacy ro
     }
 });
 
+// Every saved query has the same buttons: each is described by its query's name, so a screen reader says which query an
+// Execute, Show details, Edit or Delete… belongs to.
+test('each saved query action is described by its query name', () => {
+    const page = savedQueryTemplate('17');
+    const headingIds = page.bindings.filter(binding => /<h2 id=$/.test(binding.before)).map(binding => binding.value);
+    assert.equal(headingIds.length, 1, 'the query name heading has an id');
+    // (Other fields of the page leave their optional description out: Lit's nothing.)
+    const described = page.bindings.filter(binding => /aria-describedby=$/.test(binding.before)
+        && typeof binding.value === 'string').map(binding => binding.value);
+    assert.deepEqual(described, [headingIds[0], headingIds[0], headingIds[0], headingIds[0]],
+        'Execute, Show details, Edit and Delete… name the query');
+});
+
 test('saved query values remain dynamic text and attribute bindings', () => {
     const payload = `</textarea><img src=x onerror="globalThis.rdf4jXss=true">`;
     const page = savedQueryTemplate('17', {

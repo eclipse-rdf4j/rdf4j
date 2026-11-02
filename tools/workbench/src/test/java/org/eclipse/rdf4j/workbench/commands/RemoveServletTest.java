@@ -34,7 +34,11 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.StreamSupport;
 
 import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -63,6 +67,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
@@ -71,11 +77,13 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockServletContext;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 
+import jakarta.servlet.ServletConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -442,6 +450,47 @@ public class RemoveServletTest {
 				.satisfies(row -> assertThat(row.get(0).path("value").asText()).isEqualTo("urn:test:g"));
 	}
 
+	/** The page names the repository's prefixes, so its preview shortens IRIs as the Query and Explore tables do. */
+	@Test
+	public void pageDataNamesTheRepositoryPrefixes() throws Exception {
+		Repository repository = store();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.setNamespace("test", "urn:test:");
+		}
+		List<JsonNode> records = request(repository, new MockHttpServletResponse());
+
+		assertThat(records.stream()
+				.filter(record -> "namespaces".equals(record.path("type").asText()))
+				.flatMap(record -> StreamSupport.stream(record.path("values").spliterator(), false))
+				.filter(namespace -> "test".equals(namespace.path("prefix").asText()))
+				.map(namespace -> namespace.path("name").asText()))
+						.containsExactly("urn:test:");
+	}
+
+	/** Namespaces configured in workbench.properties name IRIs as if the repository had stored them. */
+	@Test
+	public void pageDataNamesTheConfiguredPrefixesAfterTheRepositoryOwn() throws Exception {
+		Repository repository = store();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.setNamespace("test", "urn:test:");
+		}
+		Properties properties = new Properties();
+		properties.setProperty("namespaces", "test:urn:configured: acme:https://acme.example/vocab#");
+		MockServletContext context = new MockServletContext();
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
+				WorkbenchPolicy.fromProperties(properties, Set.of()));
+		List<JsonNode> records = request(repository,
+				new TestServletConfig("remove", context, Map.of("cookie-max-age", "300")),
+				new MockHttpServletResponse());
+
+		assertThat(records.stream()
+				.filter(record -> "namespaces".equals(record.path("type").asText()))
+				.flatMap(record -> StreamSupport.stream(record.path("values").spliterator(), false))
+				.filter(namespace -> List.of("test", "acme").contains(namespace.path("prefix").asText()))
+				.map(namespace -> namespace.path("prefix").asText() + "=" + namespace.path("name").asText()))
+						.containsExactly("test=urn:test:", "acme=https://acme.example/vocab#");
+	}
+
 	private static Repository store() {
 		Repository repository = new SailRepository(new MemoryStore());
 		repository.init();
@@ -564,10 +613,16 @@ public class RemoveServletTest {
 
 	private static List<JsonNode> request(Repository repository, MockHttpServletResponse response,
 			String... parameters) throws Exception {
+		return request(repository, TestServletConfig.withParams("remove", "cookie-max-age", "300"), response,
+				parameters);
+	}
+
+	private static List<JsonNode> request(Repository repository, ServletConfig config,
+			MockHttpServletResponse response, String... parameters) throws Exception {
 		RemoveServlet countingServlet = new RemoveServlet();
 		countingServlet.setRepository(repository);
 		countingServlet.setRepositoryManager(mock(RepositoryManager.class));
-		countingServlet.init(TestServletConfig.withParams("remove", "cookie-max-age", "300"));
+		countingServlet.init(config);
 		try {
 			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/remove");
 			request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);

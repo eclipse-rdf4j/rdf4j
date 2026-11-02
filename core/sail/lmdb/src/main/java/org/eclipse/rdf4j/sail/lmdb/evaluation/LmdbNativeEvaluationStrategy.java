@@ -28,6 +28,8 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
@@ -60,7 +62,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private final boolean nativeEnabled;
 	private final boolean forceRootGeneric;
 	private final String forcedExecutionStrategy;
-	private static final ThreadLocal<Boolean> KERNEL_SUBPLAN = new ThreadLocal<>();
+	// Keep only the inactive Boolean between callbacks: removing it would allocate a fresh entry for every row.
+	private static final ThreadLocal<Boolean> KERNEL_SUBPLAN = ThreadLocal.withInitial(() -> Boolean.FALSE);
 	private final EvaluationStatistics evaluationStatistics;
 	private final LmdbStableOrderPlanner stableOrderPlanner;
 	// Constructor inputs retained so the claim-suppressed sibling view can be built with identical configuration.
@@ -76,6 +79,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private volatile LmdbNativeEvaluationStrategy genericOnlyView;
 	private volatile NativeValuePositionAnalysis valuePositions;
 	private ThreadLocal<NativeValuePositionAnalysis> scopedValuePositions = new ThreadLocal<>();
+	/** The enclosing generic join owns this temporary input hint only while its children are prepared. */
+	private final ThreadLocal<NativeUniformValuesJoin.Hint> scopedUniformValues = new ThreadLocal<>();
 
 	NativeValuePositionAnalysis valuePositionSnapshot() {
 		NativeValuePositionAnalysis scoped = scopedValuePositions.get();
@@ -118,9 +123,14 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics statistics, BindingSet bindings) {
 		return withPreparedTupleExpr(expr, prepared -> {
+			NativeValuePositionAnalysis enclosing = valuePositionSnapshot();
 			NativeValuePositionAnalysis positions = NativeValuePositionAnalysis.analyze(prepared);
+			if (enclosing != null && enclosing.requiresFullAggregateValues()) {
+				positions = positions.fullAggregateValues();
+			}
 			setValuePositions(positions);
-			return withValuePositions(positions, () -> super.optimize(prepared, statistics, bindings));
+			NativeValuePositionAnalysis frozen = positions;
+			return withValuePositions(frozen, () -> super.optimize(prepared, statistics, bindings));
 		});
 	}
 
@@ -128,10 +138,23 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		return selectValuePositions(expr).masksFor(expr);
 	}
 
+	NativeAggregateResultDemand aggregateResultDemand(GroupElem element) {
+		NativeValuePositionAnalysis current = valuePositionSnapshot();
+		return current == null ? NativeAggregateResultDemand.FULL_VALUE : current.aggregateDemand(element);
+	}
+
+	Object aggregateDefinition(GroupElem element) {
+		NativeValuePositionAnalysis current = valuePositionSnapshot();
+		return current == null ? null : current.aggregateDefinition(element);
+	}
+
 	private NativeValuePositionAnalysis selectValuePositions(TupleExpr expr) {
 		NativeValuePositionAnalysis current = valuePositionSnapshot();
 		if (current == null || !current.containsContext(expr)) {
-			current = NativeValuePositionAnalysis.analyze(expr);
+			NativeValuePositionAnalysis analyzed = NativeValuePositionAnalysis.analyze(expr);
+			current = current != null && current.requiresFullAggregateValues()
+					? analyzed.fullAggregateValues()
+					: analyzed;
 			setValuePositions(current);
 		}
 		return current;
@@ -203,7 +226,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * {@link LmdbNativeForceableStrategies}), or {@code null} when the engine's own selection should decide as usual.
 	 */
 	String forcedExecutionStrategyName() {
-		return KERNEL_SUBPLAN.get() == null ? forcedExecutionStrategy : null;
+		return Boolean.TRUE.equals(KERNEL_SUBPLAN.get()) ? null : forcedExecutionStrategy;
 	}
 
 	/**
@@ -215,19 +238,19 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * point, exactly as if it had not been requested, rather than throwing or using a stale value.
 	 */
 	static String forcedExecutionStrategyForCurrentThread() {
-		return KERNEL_SUBPLAN.get() == null ? currentForcedExecutionStrategy() : null;
+		return Boolean.TRUE.equals(KERNEL_SUBPLAN.get()) ? null : currentForcedExecutionStrategy();
 	}
 
 	/** The enclosing kernel honors the forced strategy; its internal operators choose their own access paths. */
 	static boolean enterKernelSubplan() {
-		boolean nested = KERNEL_SUBPLAN.get() != null;
+		boolean nested = Boolean.TRUE.equals(KERNEL_SUBPLAN.get());
 		KERNEL_SUBPLAN.set(Boolean.TRUE);
 		return nested;
 	}
 
 	static void leaveKernelSubplan(boolean nested) {
 		if (!nested) {
-			KERNEL_SUBPLAN.remove();
+			KERNEL_SUBPLAN.set(Boolean.FALSE);
 		}
 	}
 
@@ -285,6 +308,27 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 
 	TripleSource graphTripleSource() {
 		return tripleSourceArg;
+	}
+
+	/** A source-confined sibling; only immutable configuration and the evaluation's scalar scope are shared. */
+	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source) {
+		return forWorker(source, valuePositionSnapshot());
+	}
+
+	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source, NativeValuePositionAnalysis positions) {
+		LmdbNativeEvaluationStrategy worker = new LmdbNativeEvaluationStrategy(
+				new NativeWorkerTripleSource(source, valueFactory()), datasetArg, serviceResolverShadow,
+				iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, nativeEnabled);
+		worker.setCollectionFactory(getCollectionFactory());
+		worker.setTrackTime(trackTimeShadow);
+		worker.setTrackResultSize(trackResultSizeShadow);
+		worker.setQueryEvaluationMode(getQueryEvaluationMode());
+		worker.setQueryExecutionPolicy(getQueryExecutionPolicy());
+		worker.valuePositions = positions;
+		if (optimizerPipelineShadow != null) {
+			worker.setOptimizerPipeline(optimizerPipelineShadow);
+		}
+		return worker;
 	}
 
 	@Override
@@ -354,7 +398,45 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep precompileTupleExpr(TupleExpr expr, QueryEvaluationContext context) {
 		NativeValuePositionAnalysis positions = selectValuePositions(expr);
-		return withValuePositions(positions, () -> precompileWithPreparedValues(expr, context));
+		return withValuePositions(positions, () -> {
+			NativeUniformValuesJoin.Hint hint = scopedUniformValues.get();
+			if (hint == null || hint.original() != expr) {
+				return precompileWithPreparedValues(expr, context);
+			}
+			// The hint is valid only for this exact child preparation. Suppress it while compiling either
+			// alternative, so a nested or standalone precompile never inherits its parent's sibling facts.
+			scopedUniformValues.remove();
+			try {
+				QueryEvaluationStep ordinary = precompileWithPreparedValues(expr, context);
+				QueryEvaluationStep restricted = withValuePositions(hint.positions(),
+						() -> LmdbNativeAggregateCompiler.tryCompile(hint.restricted(), context, this, nativeSource));
+				return restricted == null ? ordinary : NativeUniformValuesJoin.guard(hint, ordinary, restricted);
+			} finally {
+				scopedUniformValues.set(hint);
+			}
+		});
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(Join join, QueryEvaluationContext context) {
+		NativeUniformValuesJoin.Hint hint = nativeEnabled && nativeSource != null && !forceRootGeneric
+				&& !Boolean.TRUE.equals(KERNEL_SUBPLAN.get())
+						? NativeUniformValuesJoin.prepare(join, context, this, nativeSource)
+						: null;
+		if (hint == null) {
+			return super.prepare(join, context);
+		}
+		NativeUniformValuesJoin.Hint previous = scopedUniformValues.get();
+		scopedUniformValues.set(hint);
+		try {
+			return super.prepare(join, context);
+		} finally {
+			if (previous == null) {
+				scopedUniformValues.remove();
+			} else {
+				scopedUniformValues.set(previous);
+			}
+		}
 	}
 
 	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context) {
@@ -502,6 +584,9 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	private static NativeLmdbQuerySource extractNativeSource(TripleSource tripleSource) {
+		if (tripleSource instanceof NativeWorkerTripleSource worker) {
+			return worker.source;
+		}
 		if (tripleSource instanceof SailDatasetTripleTermSource) {
 			List<NativeLmdbQuerySource> sources = ((SailDatasetTripleTermSource) tripleSource)
 					.getDatasets(NativeLmdbQuerySource.class);

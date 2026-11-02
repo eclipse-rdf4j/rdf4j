@@ -247,14 +247,20 @@ test('Explore group navigation completes when resize changes the viewport during
 test('owned row regions initialize from preloaded summaries and stay isolated between mounts', () => {
     const { workbench, window } = loadWorkbench();
     const row = [
-        { kind: 'iri', value: 'urn:example:resource' },
+        { kind: 'iri', value: 'urn:example:other' },
         { kind: 'iri', value: 'http://www.w3.org/2000/01/rdf-schema#range' },
         { kind: 'iri', value: 'urn:range:initial' }
     ];
-    const model = modelFor('explore', [row]);
-    // A row about another resource keeps the windowed table (rows about the resource are grouped by role instead).
+    const unrelated = [
+        { kind: 'iri', value: 'urn:example:resource' },
+        { kind: 'iri', value: 'http://www.w3.org/2000/01/rdf-schema#label' },
+        { kind: 'literal', value: 'Another resource' }
+    ];
+    const model = modelFor('explore', [row, unrelated]);
+    // A row about another resource keeps the windowed table (rows about the resource are grouped by role instead);
+    // the explored resource's range is its Range group.
     model.metadata = { resource: '<urn:example:other>' };
-    model.rowStore = { async read() { return [row]; } };
+    model.rowStore = { async read() { return [row, unrelated]; } };
     const first = windowHarness(workbench, window, model);
     assert.doesNotThrow(() => workbench.views.render(first.mount, model, context, first.renderer),
         'the initial native render must support an already populated row window');
@@ -745,6 +751,82 @@ test('Explore lists each class and type once and leaves out the explored resourc
     assert.equal(links(card.substring(0, card.indexOf('</ul>')), '<' + rdfs + 'Class>'), 1, 'each type is shown once');
 });
 
+/** The rendered markup of an Explore page for rows about one explored resource. */
+function exploreGroupMarkup(workbench, rows, explored) {
+    const ex = 'http://example.org/';
+    const model = modelFor('explore', rows);
+    model.vars = ['subject', 'predicate', 'object', 'context'];
+    model.namespaceMap = { 'ex:': ex };
+    model.metadata = { resource: 'ex:' + explored, 'explore-resource': '<' + ex + explored + '>',
+        'total-result-count': rows.length };
+    const mount = {};
+    workbench.views.render(mount, model, context, runtime());
+    return { markup: flatten(routeTemplate(workbench, mount)) };
+}
+
+/** The class and property groups of an Explore page, keyed by group: the resources each one links to and the labels. */
+function exploreGroupLinks(workbench, rows, explored) {
+    const ex = 'http://example.org/';
+    const model = modelFor('explore', rows);
+    model.vars = ['subject', 'predicate', 'object', 'context'];
+    model.namespaceMap = { 'ex:': ex };
+    model.metadata = { resource: 'ex:' + explored, 'explore-resource': '<' + ex + explored + '>',
+        'total-result-count': rows.length };
+    const mount = {};
+    workbench.views.render(mount, model, context, runtime());
+    const markup = flatten(routeTemplate(workbench, mount));
+    const groups = {};
+    const labels = {};
+    const pattern = /data-workbench-explore-group=(\w+)/g;
+    let match;
+    while ((match = pattern.exec(markup)) !== null) {
+        const part = markup.substring(match.index, markup.indexOf('</section>', match.index));
+        groups[match[1]] = Array.from(part.matchAll(/explore\?resource=([^"\s>]+)/g))
+            .map(link => decodeURIComponent(link[1]).replace(ex, 'ex:'));
+        labels[match[1]] = Array.from(part.matchAll(/<a [^>]*>([^<]*)<\/a>/g)).map(link => link[1]);
+    }
+    return { groups, labels };
+}
+
+// A group lists the resources the explored one is related to, so a group it is the other end of stays away: a root
+// class has sub classes but no "Super Classes" heading over an empty list.
+test('Explore groups list only the explored resource\'s own super classes, sub classes and properties', () => {
+    const { workbench } = loadWorkbench();
+    const iri = value => ({ kind: 'iri', value });
+    const ex = 'http://example.org/';
+    const rdf = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+    const rdfs = 'http://www.w3.org/2000/01/rdf-schema#';
+    const graph = iri(ex + 'g');
+    const { groups: rootGroups, labels: rootLabels } = exploreGroupLinks(workbench, [
+        [iri(ex + 'Child1'), iri(rdfs + 'subClassOf'), iri(ex + 'Root'), graph],
+        [iri(ex + 'Child2'), iri(rdfs + 'subClassOf'), iri(ex + 'Root'), graph],
+        [iri(ex + 'prop'), iri(rdfs + 'domain'), iri(ex + 'Root'), graph],
+        [iri(ex + 'Root'), iri(rdf + 'type'), iri(rdfs + 'Class'), graph]
+    ], 'Root');
+    assert.deepEqual(Object.keys(rootGroups).sort(), ['properties', 'subClasses'],
+        'a root class has no super classes and no domain of its own');
+    assert.deepEqual(rootGroups.subClasses, ['<ex:Child1>', '<ex:Child2>']);
+    assert.deepEqual(rootGroups.properties, ['<ex:prop>']);
+    assert.deepEqual(rootLabels.subClasses, ['ex:Child1', 'ex:Child2'],
+        'group members use the repository prefixes, as the statement tables beside them do');
+
+    const { markup } = exploreGroupMarkup(workbench, [
+        [iri(ex + 'Child1'), iri(rdfs + 'subClassOf'), iri(ex + 'Root'), graph],
+        [iri(ex + 'Child2'), iri(rdfs + 'subClassOf'), iri(ex + 'Root'), graph]
+    ], 'Root');
+    assert.match(markup, /<h3>Sub Classes <span class="explore-group__count">2<\/span><\/h3>/,
+        'a group names how many members it has, as the statement groups do');
+
+    // A property without a domain still shows its super property and its range.
+    const { groups: propertyGroups } = exploreGroupLinks(workbench, [
+        [iri(ex + 'prop'), iri(rdfs + 'subPropertyOf'), iri(ex + 'superProp'), graph],
+        [iri(ex + 'prop'), iri(rdfs + 'range'), iri(ex + 'Range'), graph]
+    ], 'prop');
+    assert.deepEqual(Object.keys(propertyGroups).sort(), ['range', 'superProperties']);
+    assert.deepEqual(propertyGroups.superProperties, ['<ex:superProp>']);
+    assert.deepEqual(propertyGroups.range, ['<ex:Range>']);
+});
+
 
 /** Exercise real generated saved-query handlers against the virtual-card renderer. */
 async function savedActionHarness(rowCount = 300) {
@@ -909,4 +991,34 @@ test('saved deletion confirmation cannot submit a recycled card with the same ur
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(submitted.length, 0, 'disposed actions cannot submit a form');
     harness.disposeRows();
+});
+
+// A resource labelled in several languages still gets a heading: the label in the reader's language, else one without
+// a language, else the English one, else the first. The same choice names its description.
+test('Explore heads a resource labelled in several languages with the reader\'s label', () => {
+    const iri = value => ({ kind: 'iri', value });
+    const literal = (value, language) => (language ? { kind: 'literal', value, language } : { kind: 'literal', value });
+    const ex = 'http://example.org/';
+    const rdfs = 'http://www.w3.org/2000/01/rdf-schema#';
+    const heading = (labels, languages) => {
+        const { workbench, context: vmContext } = loadWorkbench();
+        vmContext.navigator = languages ? { languages, language: languages[0] } : undefined;
+        const rows = labels.map(([value, language]) => [iri(ex + 'cat'), iri(rdfs + 'label'), literal(value, language), null]);
+        rows.push([iri(ex + 'cat'), iri(rdfs + 'comment'), literal('Un chat', 'fr'), null]);
+        rows.push([iri(ex + 'cat'), iri(rdfs + 'comment'), literal('Eine Katze', 'de'), null]);
+        const model = modelFor('explore', rows);
+        model.vars = ['subject', 'predicate', 'object', 'context'];
+        model.metadata = { resource: '<' + ex + 'cat>', 'explore-resource': '<' + ex + 'cat>', 'total-result-count': rows.length };
+        const mount = {};
+        workbench.views.render(mount, model, context, runtime());
+        const markup = flatten(routeTemplate(workbench, mount));
+        const title = /<section id="explore-resource-card"[\s\S]*?<h2>([^<]*)<\/h2>/.exec(markup);
+        const comment = /class="explore-resource-card__comment workbench-prose">([^<]*)</.exec(markup);
+        return [title ? title[1] : null, comment ? comment[1] : null];
+    };
+    const labels = [['Chat', 'fr'], ['Cat', 'en'], ['Katze', 'de']];
+    assert.deepEqual(heading(labels, ['de-DE', 'en']), ['Katze', 'Eine Katze'], 'the reader\'s language first');
+    assert.deepEqual(heading(labels, ['fr-CA']), ['Chat', 'Un chat'], 'a regional reader gets the base language');
+    assert.deepEqual(heading(labels, null)[0], 'Cat', 'without a known language, English');
+    assert.deepEqual(heading(labels.concat([['Felis']]), null)[0], 'Felis', 'a label without a language before English');
 });

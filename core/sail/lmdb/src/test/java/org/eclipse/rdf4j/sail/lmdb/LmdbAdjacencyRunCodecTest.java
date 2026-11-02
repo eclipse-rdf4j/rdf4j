@@ -22,7 +22,9 @@ import java.util.Random;
 import java.util.TreeMap;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.MemoryKind;
+import org.eclipse.rdf4j.sail.lmdb.csf.CsfPageTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -674,6 +676,92 @@ class LmdbAdjacencyRunCodecTest {
 			baseArena.close();
 		}
 		assertThat(account.totalChargedBytes()).isZero();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void compositeCsfSlicesSkipDisjointPagesWithoutChangingSourceOrdinals(boolean persistent) {
+		LmdbAdjacencyArena arena = newArena(1 << 20);
+		ImmutablePagedQuadCsfIndex csf = csfRow(100, 200, 300, 400);
+		toClose.add(csf);
+		LmdbAdjacencyContextCatalog contexts = LmdbAdjacencyContextCatalog.base(arena, new long[] { 500 });
+		toClose.add(contexts);
+		LmdbAdjacencyArenaCatalog catalog = LmdbAdjacencyArenaCatalog.of(arena, csf);
+		toClose.add(catalog);
+		long reference = csf.findLocalReference(0, 0, 1);
+		long csfHandle = catalog.packCsfHandle(reference);
+		long insertedRef = LmdbAdjacencyRunCodec.encode(source(new long[][] { { 250, 500 } }), contexts, arena);
+		long handle;
+		if (persistent) {
+			LmdbAdjacencySourceRegistry registry = catalog.sourceRegistry();
+			int csfSource = registry.sourceIdForCsf(csf);
+			int arenaSource = registry.sourceIdForArena(arena);
+			List<LmdbAdjacencyRunCodec.PersistentChild> children = List.of(
+					new LmdbAdjacencyRunCodec.PersistentChild(200, 0, 1, 1, csfSource, reference,
+							LmdbAdjacencyRunCodec.LEAF_CSF_SLICE),
+					new LmdbAdjacencyRunCodec.PersistentChild(250, 500, 1, 0, arenaSource, insertedRef,
+							LmdbAdjacencyRunCodec.LEAF_RUN_SLICE),
+					new LmdbAdjacencyRunCodec.PersistentChild(300, 0, 1, 2, csfSource, reference,
+							LmdbAdjacencyRunCodec.LEAF_CSF_SLICE));
+			long child = LmdbAdjacencyRunCodec.writePersistentNode(arena, registry, 0, children, true, false);
+			long root = LmdbAdjacencyRunCodec.writePersistentSingletonNode(arena, registry, 1,
+					new LmdbAdjacencyRunCodec.PersistentChild(200, 0, 3, 0, arenaSource, child,
+							LmdbAdjacencyRunCodec.PERSISTENT_CHILD_NODE),
+					true, false);
+			handle = catalog.packHandle(0, root);
+		} else {
+			List<LmdbAdjacencyRunCodec.SourceSlice> leaves = List.of(
+					new LmdbAdjacencyRunCodec.SourceSlice(catalog, csfHandle, 1, 1, 200, 0,
+							LmdbAdjacencyRunCodec.LEAF_CSF_SLICE),
+					new LmdbAdjacencyRunCodec.SourceSlice(catalog, catalog.packHandle(0, insertedRef), 0, 1, 250, 500,
+							LmdbAdjacencyRunCodec.LEAF_RUN_SLICE),
+					new LmdbAdjacencyRunCodec.SourceSlice(catalog, csfHandle, 2, 1, 300, 0,
+							LmdbAdjacencyRunCodec.LEAF_CSF_SLICE));
+			handle = catalog.packHandle(0, LmdbAdjacencyRunCodec.writeComposite(arena, catalog, leaves, true, false));
+		}
+		LmdbAdjacencyRunCodec.RunCursor metadata = new LmdbAdjacencyRunCodec.RunCursor();
+		ContextSpan span = new ContextSpan();
+		long metadataBefore = CsfPageTestAccess.decodes();
+		LmdbAdjacencyRunCodec.resolveContextMetadata(catalog, handle, metadata);
+		assertThat(metadata.edgeCount()).isEqualTo(3L);
+		assertThat(LmdbAdjacencyRunCodec.countContext(contexts, metadata, 0L, false)).isEqualTo(2L);
+		assertThat(LmdbAdjacencyRunCodec.countContext(contexts, metadata, 500L, false)).isEqualTo(1L);
+		assertThat(LmdbAdjacencyRunCodec.countContext(contexts, metadata, 999L, true)).isZero();
+		LmdbAdjacencyRunCodec.contextSpan(metadata, 0L, span);
+		assertThat(span.end()).isEqualTo(1L);
+		assertThat(span.commonContext()).isZero();
+		LmdbAdjacencyRunCodec.contextSpan(metadata, 2L, span);
+		assertThat(span.end()).isEqualTo(3L);
+		assertThat(span.commonContext()).isZero();
+		assertThat(CsfPageTestAccess.decodes() - metadataBefore).isZero();
+		LmdbDirectAdjacencyIterator iterator = new LmdbDirectAdjacencyIterator();
+		long before = CsfPageTestAccess.decodes();
+		iterator.init(null, catalog, contexts, handle, 77, 88, 500, LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+		assertThat(iterator.next()).containsExactly(77, 88, 250, 500);
+		assertThat(iterator.next()).isNull();
+		iterator.init(null, catalog, contexts, handle, 77, 88, 500, LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+		long[] buffer = new long[12];
+		assertThat(iterator.fill(buffer, 3)).isEqualTo(1);
+		assertThat(buffer[TripleIndex.OBJ_IDX]).isEqualTo(250);
+		iterator.initBoundNeighbor(null, catalog, contexts, handle, 77, 88, 200, 500,
+				LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+		assertThat(iterator.next()).isNull();
+		iterator.init(null, catalog, contexts, handle, 77, 88, 500, LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+		assertThat(iterator.seekForward(77, 88, 300, 0)).isTrue();
+		assertThat(iterator.next()).isNull();
+		assertThat(CsfPageTestAccess.decodes() - before)
+				.as("context-disjoint CSF slices must remain unbound inside flat and persistent composites")
+				.isZero();
+
+		iterator.init(null, catalog, contexts, handle, 77, 88, 0, LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+		assertThat(iterator.next()).containsExactly(77, 88, 200, 0);
+		assertThat(iterator.next()).containsExactly(77, 88, 300, 0);
+		assertThat(iterator.next()).isNull();
+		iterator.init(null, catalog, contexts, handle, 77, 88, -1, LmdbDirectAdjacencyIterator.BY_SUBJECT, "direct");
+		assertThat(iterator.fill(buffer, 3)).isEqualTo(3);
+		assertThat(buffer[2]).isEqualTo(200);
+		assertThat(buffer[6]).isEqualTo(250);
+		assertThat(buffer[10]).isEqualTo(300);
 	}
 
 	private static ImmutablePagedQuadCsfIndex csfRow(long... neighbors) {

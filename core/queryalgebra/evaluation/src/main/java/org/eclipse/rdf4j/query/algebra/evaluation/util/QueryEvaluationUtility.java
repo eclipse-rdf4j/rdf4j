@@ -662,6 +662,8 @@ public class QueryEvaluationUtility {
 
 				@Override
 				public void meet(Graph graph) {
+					// Graph is a known lexical frame. Its selector depends on the current mapping, but a pure body
+					// remains repeatable on the same dataset snapshot; unknown-node safety is a separate question.
 					meetNode(graph);
 				}
 

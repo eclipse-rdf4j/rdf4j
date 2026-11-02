@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 
 /** Compilation-only physical exposure of proven positive GRAPH bodies to all existing native specialists. */
 final class NativeGraphFusion {
@@ -87,8 +89,20 @@ final class NativeGraphFusion {
 		LmdbNativeExplain.bindLogicalOrigin(lowered, graph);
 	}
 
-	private static void linkLogicalOrigins(QueryModelNode logical, QueryModelNode physical) {
-		if (logical instanceof TupleExpr logicalTuple && physical instanceof TupleExpr physicalTuple) {
+	static void linkLogicalOrigins(QueryModelNode logical, QueryModelNode physical) {
+		copyCompilationMetadata(logical, physical, true);
+	}
+
+	/** A detached lexical recipe must retain the condition input selected before its ancestors disappeared. */
+	static void preserveLexicalScopes(QueryModelNode logical, QueryModelNode physical) {
+		copyCompilationMetadata(logical, physical, false);
+	}
+
+	private static void copyCompilationMetadata(QueryModelNode logical, QueryModelNode physical, boolean origins) {
+		if (logical instanceof Filter original && physical instanceof Filter copied) {
+			FilterBindingScope.preserve(copied, FilterBindingScope.resolve(original));
+		}
+		if (origins && logical instanceof TupleExpr logicalTuple && physical instanceof TupleExpr physicalTuple) {
 			LmdbNativeExplain.bindLogicalOrigin(physicalTuple, logicalTuple);
 		}
 		if (logical instanceof StatementPattern && physical instanceof StatementPattern) {
@@ -101,7 +115,7 @@ final class NativeGraphFusion {
 			throw new IllegalArgumentException("physical algebra copy has a different child shape");
 		}
 		for (int i = 0; i < originals.size(); i++) {
-			linkLogicalOrigins(originals.get(i), copies.get(i));
+			copyCompilationMetadata(originals.get(i), copies.get(i), origins);
 		}
 	}
 

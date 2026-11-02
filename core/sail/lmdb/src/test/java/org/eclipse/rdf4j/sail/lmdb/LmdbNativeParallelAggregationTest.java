@@ -64,6 +64,7 @@ public class LmdbNativeParallelAggregationTest {
 	private static final String COST_EXPLORATION_FLAG = "rdf4j.lmdb.costCalibration.explore";
 	private static final String PARALLEL_STARTUP_WORK_FLAG = LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY;
 	private static final String PACKED_FTREE_FLAG = "rdf4j.lmdb.packedFtree.enabled";
+	private static final String FACTORIZED_TAIL_FLAG = "rdf4j.lmdb.factorizedTail.enabled";
 	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String KERNEL_INTERPRETER_FLAG = "rdf4j.lmdb.kernelInterpreter.enabled";
 	private static final String COUNTING_TRUE_FUNCTION = "urn:rdf4j:test:lmdb:counting-true";
@@ -78,7 +79,7 @@ public class LmdbNativeParallelAggregationTest {
 	public void setUp() {
 		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, THREADS_FLAG,
 				MAX_TASKS_FLAG, MERGE_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG, COST_CALIBRATION_FLAG,
-				COST_EXPLORATION_FLAG, PARALLEL_STARTUP_WORK_FLAG, PACKED_FTREE_FLAG, JANINO_FLAG,
+				COST_EXPLORATION_FLAG, PARALLEL_STARTUP_WORK_FLAG, PACKED_FTREE_FLAG, FACTORIZED_TAIL_FLAG, JANINO_FLAG,
 				KERNEL_INTERPRETER_FLAG);
 		System.setProperty(PARALLEL_FLAG, "true");
 		System.setProperty(THRESHOLD_FLAG, "0");
@@ -90,6 +91,9 @@ public class LmdbNativeParallelAggregationTest {
 		System.setProperty(COST_CALIBRATION_FLAG, "false");
 		System.setProperty(COST_EXPLORATION_FLAG, "false");
 		System.setProperty(PACKED_FTREE_FLAG, "false");
+		// DISTINCT value marginals are now also supported by the factorized tail. These operator tests isolate the
+		// ordinary parallel sink, including its external-root chunk implementation and exact worker merge contracts.
+		System.setProperty(FACTORIZED_TAIL_FLAG, "false");
 		System.setProperty(JANINO_FLAG, "false");
 		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		LmdbNativeCostCalibration.reset();
@@ -289,8 +293,30 @@ public class LmdbNativeParallelAggregationTest {
 
 	@Test
 	public void singlePatternPlainCountUsesParallelAggregation() {
-		assertParallelEngagesAndAllThreeAgree("PREFIX ex: <" + EX + ">\n"
-				+ "SELECT (COUNT(?s) AS ?c) WHERE { ?s ex:p1 ?a . }");
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE { ?s ex:p1 ?a . }";
+		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+		List<String> parallelRows = rows(query, "parallelAggregation");
+		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+				.as("the public forced route must execute parallel aggregation for:\n" + query)
+				.isGreaterThan(before);
+		assertThat(parallelRows).as("forced parallel vs sequential native for:\n" + query)
+				.isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
+		assertThat(parallelRows).as("forced parallel vs generic for:\n" + query)
+				.isEqualTo(rowsWithProperty(NATIVE_FLAG, "false", query));
+	}
+
+	@Test
+	public void singlePatternPlainCountDefaultsToExactIndexedCardinality() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE { ?s ex:p1 ?a . }";
+		GenericPlanNode plan = explain(query);
+		assertThat(findMetric(plan, "nativeExecutionPath"))
+				.as("default arbitration should use exact index cardinality instead of materializing rows")
+				.isEqualTo("indexedCount");
+		assertThat(findMetric(plan, "nativeStrategyProposalCosts")).contains("indexedCount=");
+		assertThat(findMetric(plan, "nativeAdaptiveCostDecision")).contains("winner=indexedCount");
+		assertAllThreeAgree(query);
 	}
 
 	@Test
@@ -318,6 +344,7 @@ public class LmdbNativeParallelAggregationTest {
 	public void smallFactorizedDistinctStarBeatsParallelStartupCost() {
 		String previousStartup = System.setProperty(PARALLEL_STARTUP_WORK_FLAG,
 				Double.toString(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST));
+		String previousTail = System.setProperty(FACTORIZED_TAIL_FLAG, "true");
 		try {
 			String query = star("(COUNT(DISTINCT ?b) AS ?d)", "");
 			long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
@@ -343,6 +370,7 @@ public class LmdbNativeParallelAggregationTest {
 				assertThat(reservation.grantedWorkers()).isEqualTo(4);
 			}
 		} finally {
+			restoreProperty(FACTORIZED_TAIL_FLAG, previousTail);
 			restoreProperty(PARALLEL_STARTUP_WORK_FLAG, previousStartup);
 		}
 	}
@@ -775,7 +803,7 @@ public class LmdbNativeParallelAggregationTest {
 
 		String controlQuery = speculativeCounterQuery("counterControl");
 		SpeculativeCounters beforeControl = SpeculativeCounters.snapshot();
-		rowsWithProperties(controlQuery, PARALLEL_FLAG, "false", MERGE_FLAG, "false");
+		rowsWithProperties(controlQuery, PARALLEL_FLAG, "false", MERGE_FLAG, "false", FACTORIZED_TAIL_FLAG, "true");
 		SpeculativeCounters afterControl = SpeculativeCounters.snapshot();
 		assertThat(afterControl.chunkEngaged()).isGreaterThan(beforeControl.chunkEngaged());
 		assertThat(afterControl.hashBuilds()).isGreaterThan(beforeControl.hashBuilds());
@@ -785,7 +813,8 @@ public class LmdbNativeParallelAggregationTest {
 
 		String fallbackQuery = speculativeCounterQuery("counterFallback");
 		SpeculativeCounters beforeFallback = SpeculativeCounters.snapshot();
-		List<String> actual = rowsWithProperties(fallbackQuery, PARALLEL_FLAG, "false", MERGE_FLAG, "false");
+		List<String> actual = rowsWithProperties(fallbackQuery, PARALLEL_FLAG, "false", MERGE_FLAG, "false",
+				FACTORIZED_TAIL_FLAG, "true");
 		assertThat(SpeculativeCounters.snapshot())
 				.as("discarded serial factorization must roll back chunk, hash, SIP, memo, and tail counters")
 				.isEqualTo(beforeFallback);

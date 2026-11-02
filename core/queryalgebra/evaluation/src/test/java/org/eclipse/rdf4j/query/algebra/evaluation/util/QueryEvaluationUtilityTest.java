@@ -80,6 +80,33 @@ import org.junit.jupiter.api.Test;
 public class QueryEvaluationUtilityTest {
 
 	@Test
+	void namedGraphInheritsBodyRepeatabilityAndKeepsItsInjectionBoundary() {
+		for (Var selector : List.of(Var.of("graph"), new Var("fixed", f.createIRI("urn:graph")))) {
+			Graph graph = new Graph(selector,
+					new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+			var snapshot = QueryEvaluationUtility.querySafetySnapshot(graph);
+			assertTrue(snapshot.isRepeatable(graph), "a named-graph frame can repeat its pure body on one snapshot");
+			assertFalse(snapshot.mayRaiseQueryFatalError(graph));
+			assertTrue(snapshot.usesMappingParameterizedEvaluation(graph));
+			assertFalse(snapshot.permitsBindingInjection(graph, Set.of("o")),
+					"repeatability is independent of binding injection through an active-graph frame");
+			Graph nested = new Graph(Var.of("outerGraph"), graph);
+			assertTrue(QueryEvaluationUtility.isRepeatable(nested));
+		}
+	}
+
+	@Test
+	void namedGraphRetainsVolatileAndFatalChildSafety() {
+		Graph volatileGraph = new Graph(Var.of("graph"), new Extension(new SingletonSet(),
+				new ExtensionElem(new BNodeGenerator(), "blank")));
+		assertFalse(QueryEvaluationUtility.isRepeatable(volatileGraph));
+		Service service = new Service(Var.of("service"), new SingletonSet(), "", Map.of(), "", false);
+		Graph remoteGraph = new Graph(Var.of("graph"), service);
+		assertFalse(QueryEvaluationUtility.isRepeatable(remoteGraph));
+		assertTrue(QueryEvaluationUtility.mayRaiseQueryFatalError(remoteGraph));
+	}
+
+	@Test
 	void numericOperatorsTreatNaNAsUnordered() {
 		assertNaNComparisons((left, right, operator) -> QueryEvaluationUtility
 				.compareLiterals(left, right, operator)

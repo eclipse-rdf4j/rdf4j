@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,21 +24,31 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.AggregateOutput;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.BindAlias;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Operand;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Failing memory regressions for the HASHED aggregate state in both IR execution tiers. The direct kernels use real
@@ -46,6 +58,179 @@ import org.junit.jupiter.params.provider.CsvSource;
 class LmdbNativeHashedKernelMemoryTest {
 
 	private static final long MEMORY_LIMIT = 1L << 20;
+	private static final int COMPLETION_ROWS = 16_384;
+
+	enum CompletionBoundary {
+		SORT,
+		TOP_K,
+		DISTINCT_GROWTH,
+		GROUP_GROWTH,
+		GROUP_ROW_GROWTH,
+		ROW_DISTINCT_GROWTH
+	}
+
+	static Stream<Arguments> completionBoundaries() {
+		return Stream.of(false, true)
+				.flatMap(compiled -> Stream.of(CompletionBoundary.values())
+						.flatMap(boundary -> Stream.of(false, true)
+								.map(probe -> Arguments.of(compiled, boundary, probe))));
+	}
+
+	@ParameterizedTest
+	@MethodSource("completionBoundaries")
+	void actualKernelCompletionPollsItsBoundOwner(boolean compiled, CompletionBoundary boundary, boolean probe)
+			throws Exception {
+		for (boolean interrupt : new boolean[] { false, true }) {
+			CompletionHooks hooks = new CompletionHooks(boundary, interrupt);
+			Kernel ir = completionKernel(boundary);
+			JaninoKernel execution = compiled ? KernelCompilationTestSupport.compile(ir)
+					: ir.terminal instanceof Emit ? LmdbNativeKernelInterpreter.forRows(ir)
+							: LmdbNativeKernelInterpreter.forAggregate(ir);
+			assertNotNull(execution, "the production tier must admit the completion fixture");
+			LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(64L << 20, 64L << 20);
+			List<long[]> output = new ArrayList<>();
+			Throwable failure = null;
+			try (LmdbQueryMemoryManager.QueryLedger ledger = manager.openQuery()) {
+				KernelCancellation cancellation = KernelCancellation.forOrdinaryExecution(
+						probe ? hooks.signalled::get : null, probe ? null : hooks.signalled::get, null);
+				KernelContext context = new KernelContext(new NativeAdjacency[0], new long[0], new long[0],
+						new long[][] { values(COMPLETION_ROWS, 1) }, hooks, null, 8_192)
+								.withMemoryLedger(ledger)
+								.withCancellation(cancellation);
+				try {
+					execution.bind(context);
+					long[] buffer = new long[256 * ir.stride()];
+					int filled;
+					while ((filled = execution.fill(buffer, 256)) != 0) {
+						for (int row = 0; row < filled; row++) {
+							output.add(Arrays.copyOfRange(buffer, row * ir.stride(), (row + 1) * ir.stride()));
+						}
+					}
+				} catch (Throwable problem) {
+					failure = problem;
+				} finally {
+					execution.close();
+				}
+				assertEquals(0L, ledger.usedBytes(),
+						"all kernel state must be released after completion or termination");
+			}
+			assertEquals(0L, manager.usedBytes());
+			assertTrue(hooks.boundaryReached, "the real comparison or resident-key rehash must execute");
+			if (!interrupt) {
+				assertNull(failure);
+				assertCompletionRows(boundary, output);
+			} else {
+				assertTrue(hooks.signalled.get());
+				assertTrue(hooks.afterSignal <= 2_048,
+						"completion callbacks after the owner signal must be bounded, observed=" + hooks.afterSignal);
+				assertSame(probe ? KernelCancelledException.INSTANCE : KernelQueryCancelledException.INSTANCE,
+						failure);
+				if (boundary != CompletionBoundary.ROW_DISTINCT_GROWTH) {
+					assertTrue(output.isEmpty(),
+							"a blocking terminal cannot publish a completed prefix after termination");
+				}
+			}
+		}
+	}
+
+	private static Kernel completionKernel(CompletionBoundary boundary) {
+		if (boundary == CompletionBoundary.GROUP_ROW_GROWTH || boundary == CompletionBoundary.ROW_DISTINCT_GROWTH) {
+			var pipeline = List.<LmdbNativeKernelIr.Node>of(new EnumerateDomain(0, 0),
+					new BindAlias(Operand.col(0), 1));
+			return new Kernel(2, pipeline, boundary == CompletionBoundary.GROUP_ROW_GROWTH
+					? new Aggregate(new int[] { 0, 1 }, new AggregateOutput[] { AggregateOutput.countStar() },
+							null, OutputMods.none())
+					: new Emit(new int[] { 0, 1 }, true, OutputMods.none()));
+		}
+		if (boundary == CompletionBoundary.SORT || boundary == CompletionBoundary.TOP_K) {
+			return new Kernel(1, List.of(new EnumerateDomain(0, 0)),
+					new Emit(new int[] { 0 }, false, new OutputMods(new int[] { 0 }, null, true,
+							boundary == CompletionBoundary.TOP_K ? 17L : -1L, 0L)));
+		}
+		return new Kernel(1, List.of(new EnumerateDomain(0, 0)),
+				new Aggregate(boundary == CompletionBoundary.GROUP_GROWTH ? new int[] { 0 } : new int[0],
+						new AggregateOutput[] { boundary == CompletionBoundary.GROUP_GROWTH
+								? AggregateOutput.countStar()
+								: AggregateOutput.countDistinct(0) },
+						null, OutputMods.none()));
+	}
+
+	private static void assertCompletionRows(CompletionBoundary boundary, List<long[]> rows) {
+		if (boundary == CompletionBoundary.DISTINCT_GROWTH) {
+			assertEquals(1, rows.size());
+			assertEquals(COMPLETION_ROWS, rows.getFirst()[0]);
+		} else if (boundary == CompletionBoundary.GROUP_GROWTH || boundary == CompletionBoundary.GROUP_ROW_GROWTH
+				|| boundary == CompletionBoundary.ROW_DISTINCT_GROWTH) {
+			assertEquals(COMPLETION_ROWS, rows.size());
+			Set<Long> keys = new HashSet<>();
+			for (long[] row : rows) {
+				assertTrue(row[0] >= 1L && row[0] <= COMPLETION_ROWS);
+				if (boundary == CompletionBoundary.GROUP_ROW_GROWTH) {
+					assertEquals(row[0], row[1]);
+					assertEquals(1L, row[2]);
+				} else {
+					assertEquals(boundary == CompletionBoundary.GROUP_GROWTH ? 1L : row[0], row[1]);
+				}
+				assertTrue(keys.add(row[0]));
+			}
+		} else {
+			assertEquals(boundary == CompletionBoundary.TOP_K ? 17 : COMPLETION_ROWS, rows.size());
+			for (int index = 0; index < rows.size(); index++) {
+				assertEquals(index + 1L, rows.get(index)[0]);
+			}
+		}
+	}
+
+	private static final class CompletionHooks extends AggregateHooks {
+		private final CompletionBoundary boundary;
+		private final boolean interrupt;
+		private final Set<Long> hashed = new HashSet<>();
+		private final AtomicBoolean signalled = new AtomicBoolean();
+		private boolean boundaryReached;
+		private int afterSignal;
+		private long greatestKey;
+
+		private CompletionHooks(CompletionBoundary boundary, boolean interrupt) {
+			this.boundary = boundary;
+			this.interrupt = interrupt;
+		}
+
+		@Override
+		public int compareValues(long left, long right) {
+			if (boundary == CompletionBoundary.SORT || boundary == CompletionBoundary.TOP_K) {
+				observe();
+			}
+			return super.compareValues(left, right);
+		}
+
+		@Override
+		public long termHashKey(long id) {
+			if (boundary != CompletionBoundary.SORT && boundary != CompletionBoundary.TOP_K) {
+				boolean fresh = hashed.add(id);
+				if (!fresh && id < greatestKey && hashed.size() >= 2_048) {
+					boundaryReached = true;
+					if (interrupt) {
+						signalled.set(true);
+					}
+				}
+				greatestKey = Math.max(greatestKey, id);
+				if (signalled.get()) {
+					afterSignal++;
+				}
+			}
+			return id;
+		}
+
+		private void observe() {
+			boundaryReached = true;
+			if (interrupt) {
+				signalled.set(true);
+			}
+			if (signalled.get()) {
+				afterSignal++;
+			}
+		}
+	}
 
 	@ParameterizedTest(name = "compiled={0}, groupWidth={1}")
 	@CsvSource({ "false, 1", "true, 1", "false, 2", "true, 2" })
@@ -292,7 +477,7 @@ class LmdbNativeHashedKernelMemoryTest {
 		}
 	}
 
-	private static final class AggregateHooks implements KernelHooks {
+	private static class AggregateHooks implements KernelHooks {
 		@Override
 		public boolean testFilter(int filterId, long a0, long a1, long a2) {
 			return true;

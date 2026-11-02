@@ -13,6 +13,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const {
+    chooseGraphView,
     deleteRepository,
     memoryRepositoryConfiguration,
     repositoryPageUrl,
@@ -307,7 +308,7 @@ test('an image exported from another view has the same colours as one exported f
         return Buffer.concat(chunks).toString().replace(/<path d="[^"]*"/g, '');
     };
     const fromGraph = await download();
-    await explorer.getByRole('tab', { name: 'Triples' }).click();
+    await chooseGraphView(explorer, 'table');
     const fromTable = await download();
     expect(fromTable).toBe(fromGraph);
     expect(fromTable).not.toContain('#888');
@@ -344,7 +345,7 @@ test('RDF 1.2 and blank nodes: badges count only drawable links, blank nodes hav
         await expect(node(page, 'Dave').locator('.node-more')).toHaveCount(0);
         await expect(node(page, 'address of Alice')).toBeAttached();
 
-        await explorer.getByRole('tab', { name: 'Triples' }).click();
+        await chooseGraphView(explorer, 'table');
         const ageRow = explorer.locator('.triple-table tr', { hasText: 'age' }).first();
         await expect(ageRow.locator('td').nth(2).locator('code')).toHaveText('xsd:integer');
         await expect(explorer.locator('.triple-table')).not.toContainText('__rdf_literal__');
@@ -424,13 +425,13 @@ test('RDF 1.2: a reifier and a reference are drawn to their statement, listed in
 test('with nodes selected every data view shows what concerns them; Triples lists statements about statements',
     async ({ page }) => {
         const explorer = await loadAll(page);
-        await explorer.getByRole('tab', { name: 'Triples' }).click();
+        await chooseGraphView(explorer, 'table');
         await expect(explorer.locator('.triple-table')).toContainText('<<( Alice knows Bob )>>');
         await expect(explorer.locator('.triple-table')).toContainText('Bergen');
 
-        await explorer.getByRole('tab', { name: 'Graph' }).click();
+        await chooseGraphView(explorer, 'graph');
         await node(page, 'Oslo').click({ modifiers: ['Shift'] });
-        await explorer.getByRole('tab', { name: 'Triples' }).click();
+        await chooseGraphView(explorer, 'table');
         await expect(explorer.locator('.data-view-title small')).toHaveText('1 selected nodes');
         await expect(explorer.locator('.triple-table')).toContainText('Oslo');
         await expect(explorer.locator('.triple-table')).not.toContainText('Bergen');

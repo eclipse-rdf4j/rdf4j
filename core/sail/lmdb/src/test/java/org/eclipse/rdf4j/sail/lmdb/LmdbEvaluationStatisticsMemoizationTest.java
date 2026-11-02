@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -89,6 +90,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class LmdbEvaluationStatisticsMemoizationTest {
 
@@ -1129,7 +1131,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void repeatedFilterSamplingNeedUsesSingleRuntimeRowsProbe() throws Exception {
+	void repeatedFilterSamplingNeedUsesSingleRuntimeRowsProbe(@TempDir Path directory) throws Exception {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI predicate = vf.createIRI("urn:test:follows");
 		IRI excludedObject = vf.createIRI("urn:test:user:0");
@@ -1139,7 +1141,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		when(tripleStore.cardinality(LmdbValue.UNKNOWN_ID, 7L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID))
 				.thenReturn(128.0d);
 		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
-				Files.createTempDirectory("lmdb-eval-stats-runtime-rows-cache").resolve("join-estimator.rjes"),
+				directory.resolve("join-estimator.rjes"),
 				tripleStore,
 				valueStore,
 				false,
@@ -1167,9 +1169,9 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	@Test
-	void optimizerSamplingBudgetScalesWithExpectedRuntimeAndBenefit() throws Exception {
+	void optimizerSamplingBudgetScalesWithExpectedRuntimeAndBenefit(@TempDir Path directory) throws Exception {
 		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
-				Files.createTempDirectory("lmdb-eval-stats-sampling-budget").resolve("join-estimator.rjes"),
+				directory.resolve("join-estimator.rjes"),
 				mock(TripleStore.class),
 				mock(ValueStore.class));
 		Method budgetMethod = LmdbFilterSelectivityStats.class.getDeclaredMethod(

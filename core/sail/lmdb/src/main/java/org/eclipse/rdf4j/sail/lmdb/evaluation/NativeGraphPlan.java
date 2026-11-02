@@ -14,11 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
  * Semantic GRAPH boundary. Selection follows the shared graph evaluator; the body is compiled under the selected
@@ -26,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQuer
  * only after the body has run. The native subquery replay owns captured values and keeps surrounding slots private.
  */
 final class NativeGraphPlan implements SlotPlan {
+	static final AtomicLong WORKER_BINDINGS = new AtomicLong();
 
 	private final Graph graph;
 	private final QueryEvaluationContext structural;
@@ -91,6 +94,19 @@ final class NativeGraphPlan implements SlotPlan {
 	void explainStrategies() {
 		LmdbNativeStrategyPreview.empty("GRAPH selection",
 				"The active graph must be selected before compiling its body");
+	}
+
+	boolean workerBindable() {
+		return QueryEvaluationUtility.isRepeatable(graph);
+	}
+
+	NativeGraphPlan forWorker(NativeScalarPlan.WorkerContext worker) {
+		Graph copy = graph.clone();
+		LmdbNativeEvaluationStrategy workerStrategy = strategy.forWorker(worker.source(),
+				strategy.copyValuePositions(graph, copy));
+		WORKER_BINDINGS.incrementAndGet();
+		return new NativeGraphPlan(copy, structural, workerStrategy, worker.source(), outSlots, outNames,
+				frameInputSlots, frameInputNames, inheritedFrameInputs, lateralFrameInputs);
 	}
 
 	@Override

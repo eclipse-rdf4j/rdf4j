@@ -12,6 +12,9 @@ package org.eclipse.rdf4j.workbench.base;
 
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 import javax.naming.InitialContext;
 import javax.naming.NamingException;
@@ -52,6 +55,15 @@ public abstract class AbstractRepositoryServlet extends AbstractServlet implemen
 	@Override
 	public void setRepositoryInfo(RepositoryInfo info) {
 		this.info = info;
+	}
+
+	/**
+	 * Every repository the manager knows, in ID order, as the Repositories list and the repository switcher show them.
+	 */
+	protected List<RepositoryInfo> getAllRepositoryInfosInIdOrder() throws RepositoryException {
+		List<RepositoryInfo> infos = new ArrayList<>(manager.getAllRepositoryInfos());
+		infos.sort(Comparator.comparing(RepositoryInfo::getId, Comparator.nullsFirst(String.CASE_INSENSITIVE_ORDER)));
+		return infos;
 	}
 
 	@Override

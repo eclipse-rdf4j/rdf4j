@@ -115,6 +115,8 @@ final class LmdbNativeAggregateCompiler {
 	static final AtomicLong ISLAND_HOISTS = new AtomicLong();
 	/** Test observability: roots compiled as ordered stage pipelines over a native inner source (M-A2). */
 	static final AtomicLong PIPELINE_ROOTS = new AtomicLong();
+	/** Test observability: pipeline roots whose ORDER BY + LIMIT ran as one bounded top-K stage. */
+	static final AtomicLong TOP_K_ROOTS = new AtomicLong();
 	/** Test observability: slot-starved roots rescued by internal-variable island demotion (M-A4). */
 	static final AtomicLong WIDE_QUERY_DEMOTIONS = new AtomicLong();
 	/**
@@ -513,6 +515,12 @@ final class LmdbNativeAggregateCompiler {
 	 * consult state outside declared slot masks.
 	 */
 	static long memoReadMask(SlotPlan plan) {
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return memoReadMask(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return memoReadMask(memo.original);
+		}
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
 			return memoReadMask(leaf.template);
 		if (plan instanceof PatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {

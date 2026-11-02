@@ -24,6 +24,12 @@ final class LmdbNativeStrategyCatalog {
 	static Set<String> names() {
 		Set<String> names = new LinkedHashSet<>(LmdbNativeForceableStrategies.names());
 		names.addAll(List.of(LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX,
+				LmdbNativeCensusAggregate.PATH,
+				LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM,
+				LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM,
+				LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS,
+				NativeTermDomainPlan.PATH,
+				NativeExpressionDomainPolicy.HASHED_PATH,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX,
@@ -42,6 +48,9 @@ final class LmdbNativeStrategyCatalog {
 
 	/** A strategy belonging to another dispatch site has an explicit structural prerequisite. */
 	static String otherSiteReason(String tag, String point) {
+		if (tag.equals(NativeExpressionDomainPolicy.HASHED_PATH) && point.contains("GROUP BY")) {
+			return "Requires a reusable scalar carrier at the native row-root decision";
+		}
 		if (tag.startsWith("typeMatrix(")) {
 			return "Requires the internal type-matrix morsel dispatch with prepared page statistics";
 		}

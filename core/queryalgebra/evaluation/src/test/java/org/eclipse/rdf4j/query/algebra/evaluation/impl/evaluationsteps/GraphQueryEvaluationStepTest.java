@@ -177,6 +177,29 @@ public class GraphQueryEvaluationStepTest {
 	}
 
 	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	public void nullNamedDatasetEntryDoesNotNameADefaultGraphOrBreakOtherNames(boolean includeNamedGraph,
+			boolean fixedSelection) {
+		Fixture fixture = new Fixture();
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.setExplicitReadDataset(true);
+		dataset.addNamedGraph((Resource) null);
+		if (includeNamedGraph) {
+			dataset.addNamedGraph(G1);
+		}
+		Var graph = fixedSelection ? Var.of("g", G1, true, true) : Var.of("g");
+		try (var result = fixture.step(dataset, graph).evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> rows = QueryResults.asList(result);
+			assertThat(rows).hasSize(includeNamedGraph ? 1 : 0);
+			if (includeNamedGraph && !fixedSelection) {
+				assertThat(rows.getFirst().getValue("g")).isEqualTo(G1);
+			}
+		}
+		assertThat(fixture.contextRequests).as("the declared dataset remains authoritative").isZero();
+		assertThat(fixture.prepared).hasSize(includeNamedGraph ? 1 : 0);
+	}
+
+	@ParameterizedTest
 	@CsvSource({ "true,false,false", "true,false,true", "true,true,false", "true,true,true",
 			"false,false,false", "false,false,true", "false,true,false", "false,true,true" })
 	public void blankNodeDatasetGraphsRetainNamedAndDefaultSelection(boolean named, boolean fixed, boolean emptyBody) {

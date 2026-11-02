@@ -13,11 +13,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.PriorityQueue;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -26,7 +28,9 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.DelayedIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
@@ -51,6 +55,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 final class NativeRootPipeline {
 
 	static final String ENABLED_FLAG = "rdf4j.lmdb.rootPipeline.enabled";
+	/**
+	 * Largest {@code OFFSET + LIMIT} that runs as a bounded top-K instead of a complete staged sort. The heap retains
+	 * that many rows; beyond it the complete sort's single pass over materialized rows is the cheaper, memory-equal
+	 * choice.
+	 */
+	static final long MAX_TOP_K_ROWS = 1L << 20;
 
 	private NativeRootPipeline() {
 	}
@@ -104,12 +114,25 @@ final class NativeRootPipeline {
 
 		StringBuilder stages = new StringBuilder();
 		boolean strict = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
+		boolean topK = false;
 		for (int i = wrappers.size() - 1; i >= 0; i--) {
 			TupleExpr wrapper = wrappers.get(i);
 			String description;
 			if (wrapper instanceof Slice slice) {
 				step = new NativeSliceStep(step, slice.getOffset(), slice.getLimit());
 				description = "Slice(offset=" + slice.getOffset() + ", limit=" + slice.getLimit() + ")";
+			} else if (wrapper instanceof Order order && i > 0 && wrappers.get(i - 1) instanceof Slice slice
+					&& boundedTopK(slice)) {
+				// ORDER BY directly under a bounded LIMIT: keep only the offset+limit best rows (stable among equal
+				// keys, exactly as the complete sort followed by the slice would) instead of staging every row.
+				long retained = Math.max(0L, slice.getOffset()) + slice.getLimit();
+				step = new NativeTopKStep(step, compiledOrderKeys.get(order), strict,
+						strategy.getQueryExecutionPolicy(), Math.max(0L, slice.getOffset()), slice.getLimit(),
+						retained);
+				description = "TopK(offset=" + Math.max(0L, slice.getOffset()) + ", limit=" + slice.getLimit()
+						+ ", keys=" + order.getElements().size() + ")";
+				topK = true;
+				i--;
 			} else if (wrapper instanceof Order order) {
 				step = new NativeOrderStep(step, compiledOrderKeys.get(order), strict,
 						strategy.getQueryExecutionPolicy());
@@ -128,9 +151,18 @@ final class NativeRootPipeline {
 			stages.insert(0, description);
 		}
 		LmdbNativeAggregateCompiler.PIPELINE_ROOTS.incrementAndGet();
+		if (topK) {
+			LmdbNativeAggregateCompiler.TOP_K_ROOTS.incrementAndGet();
+		}
 		String innerPlan = step instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
 				: step.getClass().getSimpleName();
 		return new PipelineStep(step, "RootPipeline(stages=[" + stages + "], plan=" + innerPlan + ")");
+	}
+
+	private static boolean boundedTopK(Slice slice) {
+		long limit = slice.getLimit();
+		long offset = Math.max(0L, slice.getOffset());
+		return limit >= 0L && limit <= MAX_TOP_K_ROWS - offset;
 	}
 
 	static QueryEvaluationStep order(QueryEvaluationStep arg, Order order, LmdbNativeEvaluationStrategy strategy,
@@ -179,6 +211,227 @@ final class NativeRootPipeline {
 		@Override
 		public String nativePhysicalPlan() {
 			return physicalPlan;
+		}
+	}
+
+	/** ORDER BY fused with its bounded LIMIT: a heap of the retained rows replaces staging the complete input. */
+	private static final class NativeTopKStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+		private final QueryEvaluationStep arg;
+		private final OrderKey[] keys;
+		private final boolean strict;
+		private final QueryExecutionPolicy policy;
+		private final long offset;
+		private final long limit;
+		private final long retained;
+
+		private NativeTopKStep(QueryEvaluationStep arg, OrderKey[] keys, boolean strict, QueryExecutionPolicy policy,
+				long offset, long limit, long retained) {
+			this.arg = arg;
+			this.keys = keys;
+			this.strict = strict;
+			this.policy = policy;
+			this.offset = offset;
+			this.limit = limit;
+			this.retained = retained;
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+			LmdbNativeStrategyArbiter.logDirect(null, "ORDER BY dispatch", LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K,
+					"Bounded top-K over the staged input");
+			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
+			return new TopKIteration(delegate, keys, strict, NativeExecutionContextCarrier.contextOf(delegate), policy,
+					offset, limit, retained);
+		}
+
+		@Override
+		public void explainStrategies() {
+			LmdbNativeStrategyPreview.direct("ORDER BY dispatch", LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K,
+					"Bounded top-K over the staged input", null);
+			LmdbNativeStrategyPreview.inspect(arg);
+		}
+
+		@Override
+		public String nativePhysicalPlan() {
+			return "NativeTopK(offset=" + offset + ", limit=" + limit + ", keys=" + keys.length + ")";
+		}
+	}
+
+	/**
+	 * One retained row with its order-key values evaluated once. Integer literals additionally carry their numeric
+	 * value so the dominant aggregate case (ORDER BY a COUNT) compares without reparsing labels; any other key pair
+	 * falls back to the exact {@link ValueComparator}.
+	 */
+	private static final class TopKEntry {
+		final BindingSet row;
+		final Value[] values;
+		final long[] integers;
+		final long integerMask;
+		final long sequence;
+
+		TopKEntry(BindingSet row, Value[] values, long sequence) {
+			this.row = row;
+			this.values = values;
+			this.sequence = sequence;
+			long[] integers = null;
+			long mask = 0L;
+			for (int i = 0; i < values.length && i < Long.SIZE; i++) {
+				if (values[i] instanceof Literal literal
+						&& literal.getCoreDatatype() == CoreDatatype.XSD.INTEGER) {
+					String label = literal.getLabel();
+					if (label.length() <= 18) {
+						try {
+							long parsed = Long.parseLong(label);
+							if (integers == null) {
+								integers = new long[values.length];
+							}
+							integers[i] = parsed;
+							mask |= 1L << i;
+						} catch (NumberFormatException ignored) {
+							// not a plain integer label: the exact comparator decides
+						}
+					}
+				}
+			}
+			this.integers = integers;
+			this.integerMask = mask;
+		}
+	}
+
+	private static final class TopKIteration extends DelayedIteration<BindingSet>
+			implements CooperativeCancellation, NativeExecutionContextCarrier {
+		private CloseableIteration<BindingSet> source;
+		private final OrderKey[] keys;
+		private final ValueComparator comparator;
+		private final NativeExecutionContext executionContext;
+		private final NativeExecutionContext.Lease lease;
+		private final long offset;
+		private final long limit;
+		private final int retained;
+		private volatile boolean cancellationRequested;
+
+		private TopKIteration(CloseableIteration<BindingSet> source, OrderKey[] keys, boolean strict,
+				NativeExecutionContext executionContext, QueryExecutionPolicy policy, long offset, long limit,
+				long retained) {
+			this.source = source;
+			this.keys = keys;
+			this.comparator = new ValueComparator(policy);
+			this.comparator.setStrict(strict);
+			this.executionContext = executionContext;
+			this.lease = NativeExecutionContextCarrier.retain(source);
+			this.offset = offset;
+			this.limit = limit;
+			this.retained = Math.toIntExact(retained);
+		}
+
+		@Override
+		protected CloseableIteration<? extends BindingSet> createIteration() {
+			try {
+				if (retained == 0 || limit == 0L) {
+					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+				}
+				// The heap head is the worst retained row: a candidate joins only when it sorts strictly before it,
+				// and later equal keys never displace an earlier row, so the retained set and its final order are
+				// exactly the first offset+limit rows of the stable complete sort.
+				Comparator<TopKEntry> order = this::compare;
+				PriorityQueue<TopKEntry> heap = new PriorityQueue<>(Math.min(retained, 1 << 16) + 1,
+						order.reversed());
+				long sequence = 0L;
+				while (!cancellationRequested && source.hasNext()) {
+					BindingSet row = source.next();
+					TopKEntry entry = new TopKEntry(row, keyValues(row), sequence++);
+					if (heap.size() < retained) {
+						heap.add(entry);
+					} else if (compare(entry, heap.peek()) < 0) {
+						heap.poll();
+						heap.add(entry);
+					}
+				}
+				if (cancellationRequested) {
+					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
+				}
+				List<TopKEntry> ordered = new ArrayList<>(heap);
+				ordered.sort(order);
+				List<BindingSet> rows = new ArrayList<>(
+						(int) Math.min(ordered.size(), Math.max(0L, ordered.size() - offset)));
+				for (int i = (int) Math.min(ordered.size(), offset); i < ordered.size(); i++) {
+					rows.add(ordered.get(i).row);
+				}
+				return new CloseableIteratorIteration<>(rows.iterator());
+			} finally {
+				try {
+					releaseSource();
+				} finally {
+					releaseLease();
+				}
+			}
+		}
+
+		private Value[] keyValues(BindingSet row) {
+			Value[] values = new Value[keys.length];
+			for (int i = 0; i < keys.length; i++) {
+				values[i] = keys[i].value(row, executionContext);
+			}
+			return values;
+		}
+
+		private int compare(TopKEntry left, TopKEntry right) {
+			if (cancellationRequested) {
+				return 0;
+			}
+			for (int i = 0; i < keys.length; i++) {
+				long bit = 1L << i;
+				int comparison = i < Long.SIZE && (left.integerMask & right.integerMask & bit) != 0L
+						? Long.compare(left.integers[i], right.integers[i])
+						: comparator.compare(left.values[i], right.values[i]);
+				if (comparison != 0) {
+					return keys[i].ascending() ? comparison : -comparison;
+				}
+			}
+			return Long.compare(left.sequence, right.sequence);
+		}
+
+		@Override
+		protected void handleClose() {
+			cancellationRequested = true;
+			try {
+				super.handleClose();
+			} finally {
+				try {
+					releaseSource();
+				} finally {
+					releaseLease();
+				}
+			}
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			if (isClosed()) {
+				return false;
+			}
+			cancellationRequested = true;
+			CloseableIteration<BindingSet> current = source;
+			return current instanceof CooperativeCancellation cancellation && cancellation.requestCancellation();
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return executionContext;
+		}
+
+		private void releaseSource() {
+			CloseableIteration<BindingSet> current = source;
+			source = null;
+			if (current != null) {
+				current.close();
+			}
+		}
+
+		private void releaseLease() {
+			if (lease != null) {
+				lease.close();
+			}
 		}
 	}
 

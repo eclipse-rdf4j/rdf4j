@@ -191,9 +191,8 @@ public final class SailWriteContinuation {
 			if (scopes == null || !scopes.remove(this)) {
 				throw new IllegalStateException("A write continuation was not registered on its owner");
 			}
-			if (scopes.isEmpty()) {
-				SCOPES.remove();
-			}
+			// The empty list stays registered: removing it would allocate a new list and thread-local entry on the
+			// next enter, once per write transaction.
 		}
 	}
 

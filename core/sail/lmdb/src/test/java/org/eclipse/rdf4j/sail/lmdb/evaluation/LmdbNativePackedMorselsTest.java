@@ -17,10 +17,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -50,6 +54,10 @@ import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 
 /** Real-LMDB differential tests. Separate from the dependency-free scheduler and explicit-seam pipeline checks. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -261,6 +269,190 @@ class LmdbNativePackedMorselsTest {
 		assertTrue(LmdbNativePackedMorsels.AGGREGATE_RUNS.get() > before, "forced packed aggregate stayed sequential");
 		assertTrue(LmdbNativePackedMorsels.MORSELS.get() - morsels > 16,
 				"work remained a fixed four ranges per worker");
+	}
+
+	@Test
+	void builtinSampleUsesPackedWorkersAndRetainsAnEligibleValue() {
+		String query = "SELECT ?s (SAMPLE(?v) AS ?sample) WHERE { ?s a ex:Root; ex:u ?u; ex:v ?v . } GROUP BY ?s";
+		long before = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
+		List<BindingSet> rows = evaluate(query, "packedFtreeAggregate", null);
+		assertEquals(128, rows.size());
+		for (BindingSet row : rows) {
+			assertEquals(row.getValue("s").stringValue().replace(EX + "s", EX + "v"),
+					row.getValue("sample").stringValue());
+		}
+		assertTrue(LmdbNativePackedMorsels.AGGREGATE_RUNS.get() > before,
+				"eligible SAMPLE reducer did not execute packed workers");
+	}
+
+	@Test
+	void packedWorkersCoalesceInputPhasesAcrossAllTheirMorsels(@TempDir Path recordingDirectory) throws Exception {
+		String eventName = "org.eclipse.rdf4j.lmdb.NativeExecutionPhase";
+		Path path = recordingDirectory.resolve("packed-input-phases.jfr");
+		long consumerThread = Thread.currentThread().threadId();
+		try (Recording recording = new Recording()) {
+			recording.enable(eventName).withThreshold(Duration.ZERO);
+			recording.start();
+			builtinConcatUsesPackedWorkersWithGlobalDistinctMembership();
+			recording.stop();
+			recording.dump(path);
+		}
+		List<RecordedEvent> workers = RecordingFile.readAllEvents(path)
+				.stream()
+				.filter(event -> eventName.equals(event.getEventType().getName())
+						&& event.getThread().getJavaThreadId() != consumerThread
+						&& List.of("scan", "expressions").contains(event.getString("phase")))
+				.toList();
+		for (String phase : List.of("scan", "expressions")) {
+			assertTrue(workers.stream().anyMatch(event -> phase.equals(event.getString("phase"))),
+					"actual packed workers must publish their " + phase + " lifetime");
+		}
+		Map<List<Object>, Long> owners = workers.stream()
+				.collect(Collectors.groupingBy(
+						event -> List.of(event.getLong("evaluationId"), event.getThread().getJavaThreadId(),
+								event.getString("phase")),
+						Collectors.counting()));
+		for (Map.Entry<List<Object>, Long> owner : owners.entrySet()) {
+			assertEquals(1L, owner.getValue(),
+					"input phases must coalesce all probes and morsels for " + owner.getKey());
+		}
+		for (RecordedEvent event : workers) {
+			assertEquals("COMPLETED", event.getString("outcome"));
+		}
+	}
+
+	@Test
+	void workerTasksQueuedBehindOneAnotherOnOnePoolThreadPublishOneInputLifetime(@TempDir Path recordingDirectory)
+			throws Exception {
+		// A warm pool hands a worker task to whichever thread is free. With one free thread, every worker of the
+		// query runs there in turn; the first drains all jobs and the later ones find no work left.
+		ExecutorService pool = LmdbNativeParallelPipelines.pool();
+		int occupied = LmdbNativeParallelPipelines.MAX_POOL_TASKS - 1;
+		CountDownLatch busy = new CountDownLatch(occupied);
+		CountDownLatch release = new CountDownLatch(1);
+		try {
+			for (int i = 0; i < occupied; i++) {
+				pool.execute(() -> {
+					busy.countDown();
+					try {
+						release.await();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+					}
+				});
+			}
+			assertTrue(busy.await(30, TimeUnit.SECONDS), "all but one pool thread are busy");
+			packedWorkersCoalesceInputPhasesAcrossAllTheirMorsels(recordingDirectory);
+		} finally {
+			release.countDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "packed", "wildcard", "path" })
+	void nativeSourceSpecializationsAttributeTheirActualScan(String family, @TempDir Path recordingDirectory)
+			throws Exception {
+		System.setProperty(MASTER, "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		String query;
+		String strategy;
+		switch (family) {
+		case "packed":
+			query = "SELECT ?s (GROUP_CONCAT(DISTINCT STR(?v); SEPARATOR=\"|\") AS ?text) WHERE { "
+					+ "?s a ex:Root; ex:p ?p; ex:u ?u; ex:v ?v . } GROUP BY ?s";
+			strategy = LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE;
+			break;
+		case "wildcard":
+			query = "SELECT ?s ?p ?o WHERE { VALUES ?s { ex:s0 ex:s1 } ?s ?p ?o }";
+			strategy = LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH;
+			break;
+		case "path":
+			query = "SELECT ?s ?v WHERE { ?s ex:u+ ?v }";
+			strategy = LmdbNativeAttemptMetrics.PATH_NESTED_LOOP;
+			break;
+		default:
+			throw new IllegalArgumentException(family);
+		}
+		List<BindingSet> expected = generic(query, null);
+		assertTrue(!expected.isEmpty(), "the fixture must have actual source input for " + family);
+		long batches = LmdbWildcardPredicateBatch.BATCHES.get();
+		long decoded = LmdbWildcardPredicateBatch.PAYLOAD_ROWS_DECODED.get();
+		long expansions = PathPlan.ADJACENCY_EXPANSIONS.get() + PathPlan.CURSOR_EXPANSIONS.get()
+				+ PathPlan.SWEEP_EXPANSIONS.get();
+		long workers = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
+		String eventName = "org.eclipse.rdf4j.lmdb.NativeExecutionPhase";
+		Path path = recordingDirectory.resolve("native-" + family + ".jfr");
+		try (Recording recording = new Recording()) {
+			recording.enable(eventName).withThreshold(Duration.ZERO);
+			recording.start();
+			List<BindingSet> actual = evaluate(query, strategy, null);
+			assertEquals(canonical(expected), canonical(actual), "the forced native family must preserve its input");
+			if (family.equals("wildcard")) {
+				assertTrue(LmdbWildcardPredicateBatch.BATCHES.get() > batches);
+				assertTrue(LmdbWildcardPredicateBatch.PAYLOAD_ROWS_DECODED.get() > decoded);
+			} else if (family.equals("path")) {
+				assertTrue(PathPlan.ADJACENCY_EXPANSIONS.get() + PathPlan.CURSOR_EXPANSIONS.get()
+						+ PathPlan.SWEEP_EXPANSIONS.get() > expansions, "the native path must actually expand edges");
+			} else {
+				assertEquals(128, actual.size());
+				assertEquals(workers, LmdbNativePackedMorsels.AGGREGATE_RUNS.get(),
+						"the packed scan must execute in the requested sequential family");
+			}
+			recording.stop();
+			recording.dump(path);
+		}
+		List<RecordedEvent> scans = RecordingFile.readAllEvents(path)
+				.stream()
+				.filter(event -> eventName.equals(event.getEventType().getName())
+						&& "scan".equals(event.getString("phase")))
+				.toList();
+		assertTrue(!scans.isEmpty(), "the admitted " + family + " source must publish its actual scan lifetime");
+		assertTrue(scans.stream().anyMatch(event -> "COMPLETED".equals(event.getString("outcome"))));
+	}
+
+	@Test
+	void builtinConcatUsesPackedWorkersWithGlobalDistinctMembership() {
+		String query = "SELECT ?s (GROUP_CONCAT(DISTINCT STR(?v); SEPARATOR=\"|\") AS ?text) WHERE { "
+				+ "?s a ex:Root; ex:p ?p; ex:u ?u; ex:v ?v . } GROUP BY ?s";
+		long before = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
+		List<BindingSet> rows = evaluate(query, "packedFtreeAggregate", null);
+		assertEquals(128, rows.size());
+		for (BindingSet row : rows) {
+			assertEquals(row.getValue("s").stringValue().replace(EX + "s", EX + "v"),
+					row.getValue("text").stringValue());
+		}
+		assertTrue(LmdbNativePackedMorsels.AGGREGATE_RUNS.get() > before,
+				"eligible GROUP_CONCAT reducer did not execute packed workers");
+	}
+
+	@Test
+	void orderedConcatReplaysDuplicatedOuterFactorsBeforeVaryingInnerTerms() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory values = connection.getValueFactory();
+			connection.begin();
+			for (int index = 0; index < 128; index++) {
+				IRI subject = values.createIRI(EX, "s" + index);
+				connection.add(subject, values.createIRI(EX, "outer"), values.createLiteral("outer"));
+				connection.add(subject, values.createIRI(EX, "letter"), values.createLiteral("a"));
+				connection.add(subject, values.createIRI(EX, "letter"), values.createLiteral("b"));
+			}
+			connection.commit();
+		}
+		String query = "SELECT ?s (GROUP_CONCAT(?letter; SEPARATOR=\"|\") AS ?text) WHERE { "
+				+ "?s a ex:Root; ex:u ?u . "
+				+ "OPTIONAL { { ?s ex:outer ?outer } UNION { ?s ex:outer ?outer } } "
+				+ "OPTIONAL { ?s ex:letter ?letter FILTER(BOUND(?outer)) } } GROUP BY ?s";
+		List<BindingSet> expected = generic(query, null);
+		assertEquals(128, expected.size());
+		for (BindingSet row : expected) {
+			assertEquals("a|b|a|b", row.getValue("text").stringValue(),
+					"the fixture must expose separated copies before exercising packed order");
+		}
+		long before = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
+		List<BindingSet> actual = evaluate(query, "packedFtreeAggregate", null);
+		assertEquals(canonical(expected), canonical(actual));
+		assertTrue(LmdbNativePackedMorsels.AGGREGATE_RUNS.get() > before,
+				"ordered full CONCAT must execute its replay inside packed workers");
 	}
 
 	@Test

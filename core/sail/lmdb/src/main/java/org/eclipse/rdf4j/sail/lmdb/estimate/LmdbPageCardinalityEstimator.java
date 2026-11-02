@@ -21,8 +21,10 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
@@ -94,6 +96,29 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 			int residualPilotProbeBudgetUsed,
 			int residualFinalProbeBudgetUsed,
 			int conditionalProbeBudgetUsed) {
+	}
+
+	/** Physical work performed by an exact page walk; no sampled estimate contributes to its answer. */
+	public record ExactWork(long branchPagesRead, long leafPagesRead, long leafHeadersRead,
+			long keyPrefixesRead, long pageCacheHits) {
+	}
+
+	/** Exact physical key cardinality in a plain bytewise-key database. */
+	public record ExactCount(long entries, ExactWork work) {
+	}
+
+	/** One complete leading-Varint run. The detached raw representative key belongs to the caller. */
+	public record PrefixRun(byte[] representativeKey, long entries) {
+	}
+
+	/** Thread-confined monotone cursor borrowing its creating ReadView's pinned snapshot. */
+	public interface ExactPrefixCursor extends AutoCloseable {
+		PrefixRun next() throws IOException;
+
+		ExactWork work();
+
+		@Override
+		void close();
 	}
 
 	/**
@@ -269,6 +294,73 @@ public final class LmdbPageCardinalityEstimator implements Closeable {
 				int maxKeyLength, GroupMatcher matcher, int residualFieldCount) throws IOException {
 			return asEstimate(estimateEntriesDetailed(openSnapshot(), dbName, minKey, minKeyLength, maxKey,
 					maxKeyLength, matcher, residualFieldCount));
+		}
+
+		/**
+		 * Counts physical keys exactly, using ordinary leaf cardinalities rather than decoding rows. Null bounds are
+		 * unbounded. Returns null when this view cannot certify the exact requested meta/root snapshot or the database
+		 * does not use plain bytewise keys. The caller must exclude residual predicates outside these raw key bounds.
+		 */
+		public ExactCount countEntriesExact(String dbName, byte[] lowerKey, int lowerLength, boolean lowerInclusive,
+				byte[] upperKey, int upperLength, boolean upperInclusive, BooleanSupplier cancelled)
+				throws IOException {
+			SnapshotCache current = openSnapshot();
+			Objects.requireNonNull(cancelled, "cancelled");
+			LmdbBtreeRangeCounter.checkCancelled(cancelled);
+			if (current.meta.txnId() != current.txnId) {
+				return null;
+			}
+			LmdbDb db = namedDb(current, dbName);
+			if (db != null && db.flags() != 0) {
+				return null;
+			}
+			return exactCounter(current, dbName).countEntriesExact(db, lowerKey, lowerLength, lowerInclusive,
+					upperKey, upperLength, upperInclusive, cancelled);
+		}
+
+		/**
+		 * Groups a plain bytewise statement index by its first one to four canonical unsigned Varints. The cursor
+		 * traverses leaves monotonically and borrows this scope, which must remain open until the cursor closes.
+		 * Unsupported comparator/duplicate flags or an older meta root return null; cancellation is never a decline.
+		 */
+		public ExactPrefixCursor prefixRunsExact(String dbName, byte[] lowerKey, int lowerLength,
+				boolean lowerInclusive, byte[] upperKey, int upperLength, boolean upperInclusive,
+				int leadingVarintFields, BooleanSupplier cancelled) throws IOException {
+			SnapshotCache current = openSnapshot();
+			Objects.requireNonNull(cancelled, "cancelled");
+			LmdbBtreeRangeCounter.checkCancelled(cancelled);
+			if (current.meta.txnId() != current.txnId) {
+				return null;
+			}
+			LmdbDb db = namedDb(current, dbName);
+			if (db != null && db.flags() != 0) {
+				return null;
+			}
+			ExactPrefixCursor cursor = exactCounter(current, dbName).prefixRunsExact(db, lowerKey, lowerLength,
+					lowerInclusive, upperKey, upperLength, upperInclusive, leadingVarintFields, cancelled);
+			return new ExactPrefixCursor() {
+				@Override
+				public PrefixRun next() throws IOException {
+					openSnapshot();
+					return cursor.next();
+				}
+
+				@Override
+				public ExactWork work() {
+					openSnapshot();
+					return cursor.work();
+				}
+
+				@Override
+				public void close() {
+					checkOwner();
+					cursor.close();
+				}
+			};
+		}
+
+		private LmdbBtreeRangeCounter exactCounter(SnapshotCache current, String dbName) {
+			return new LmdbBtreeRangeCounter(dataFile, current.meta, current.pageCache, stableDatabaseIdentity(dbName));
 		}
 
 		private SnapshotCache openSnapshot() {

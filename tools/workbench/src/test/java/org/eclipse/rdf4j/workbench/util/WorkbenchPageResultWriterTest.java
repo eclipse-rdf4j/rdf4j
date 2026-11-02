@@ -14,6 +14,7 @@
 package org.eclipse.rdf4j.workbench.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -216,40 +217,48 @@ class WorkbenchPageResultWriterTest {
 		QueryBindingSet row = new QueryBindingSet();
 		String lexical = "x".repeat(lexicalSize);
 		row.addBinding("value", SimpleValueFactory.getInstance().createLiteral(lexical));
-		AtomicReference<Throwable> failure = new AtomicReference<>();
-		Thread rows = Thread.startVirtualThread(() -> {
+		AtomicReference<Throwable> rowFailure = new AtomicReference<>();
+		AtomicReference<Throwable> progressFailure = new AtomicReference<>();
+		Thread rows = Thread.ofVirtual().unstarted(() -> {
 			try {
 				writer.handleSolution(row);
 				writer.flush();
 			} catch (Throwable exception) {
-				failure.set(exception);
+				rowFailure.set(exception);
 			}
 		});
-		assertThat(partialRow.await(5, TimeUnit.SECONDS)).isTrue();
 		CountDownLatch progressStarted = new CountDownLatch(1);
 		CountDownLatch progressDone = new CountDownLatch(1);
-		Thread progress = Thread.startVirtualThread(() -> {
+		Thread progress = Thread.ofVirtual().unstarted(() -> {
 			progressStarted.countDown();
 			try {
 				writer.progressMetadata(Map.of("result-evaluated-count", 1, "query-elapsed-ms", 3000,
 						"query-result-status", "evaluating"));
 			} catch (Throwable exception) {
-				failure.set(exception);
+				progressFailure.set(exception);
 			} finally {
 				progressDone.countDown();
 			}
 		});
 		try {
+			rows.start();
+			assertThat(partialRow.await(5, TimeUnit.SECONDS)).isTrue();
+			progress.start();
 			assertThat(progressStarted.await(5, TimeUnit.SECONDS)).isTrue();
 			assertThat(progressDone.await(50, TimeUnit.MILLISECONDS)).isFalse();
 		} finally {
 			releaseRow.countDown();
-			rows.join(5000);
-			progress.join(5000);
+			try {
+				rows.join(5000);
+			} finally {
+				progress.join(5000);
+			}
 		}
-		assertThat(rows.isAlive()).isFalse();
-		assertThat(progress.isAlive()).isFalse();
-		assertThat(failure.get()).isNull();
+		assertAll(
+				() -> assertThat(rows.isAlive()).as("row worker terminated").isFalse(),
+				() -> assertThat(progress.isAlive()).as("progress worker terminated").isFalse(),
+				() -> assertThat(rowFailure.get()).as("row worker failure").isNull(),
+				() -> assertThat(progressFailure.get()).as("progress worker failure").isNull());
 		writer.endQueryResult();
 		List<JsonNode> records = bytes.toString(StandardCharsets.UTF_8).lines().map(JSON_MAPPER::readTree).toList();
 		assertThat(records).extracting(record -> record.path("type").asText())

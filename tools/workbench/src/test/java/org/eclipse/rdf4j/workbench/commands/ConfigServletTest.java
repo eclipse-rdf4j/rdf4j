@@ -253,64 +253,65 @@ class ConfigServletTest {
 	void remoteEditorPreservesTypedMarkerFromGetThroughSave() throws Exception {
 		RepositoryFactory factory = customFactory();
 		RepositoryRegistry.getInstance().add(factory);
-		AtomicReference<byte[]> posted = new AtomicReference<>();
-		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-		String config = """
-				_:root <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <tag:rdf4j.org,2023:config/Repository> .
-				_:root <tag:rdf4j.org,2023:config/rep.id> "memory" .
-				_:root <tag:rdf4j.org,2023:config/rep.impl> _:impl .
-				_:impl <tag:rdf4j.org,2023:config/rep.type> "test:WorkbenchCustomConfiguration" .
-				_:impl <urn:custom:setting> "visible setting" .
-				_:impl <tag:rdf4j.org,2023:config/lucene.elasticsearch.http.password> "REDACTED"^^<tag:rdf4j.org,2023:config/redactedSecret> .
-				""";
-		server.createContext("/rdf4j-server", exchange -> {
-			String path = exchange.getRequestURI().getPath();
-			if ("/rdf4j-server/protocol".equals(path)) {
-				byte[] body = "13".getBytes(StandardCharsets.UTF_8);
-				exchange.sendResponseHeaders(200, body.length);
-				exchange.getResponseBody().write(body);
-			} else if ("/rdf4j-server/repositories/memory/config".equals(path)
-					&& "GET".equals(exchange.getRequestMethod())) {
-				byte[] body = config.getBytes(StandardCharsets.UTF_8);
-				exchange.getResponseHeaders().set("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType());
-				exchange.sendResponseHeaders(200, body.length);
-				exchange.getResponseBody().write(body);
-			} else if ("/rdf4j-server/repositories/memory/config".equals(path)
-					&& "POST".equals(exchange.getRequestMethod())) {
-				posted.set(exchange.getRequestBody().readAllBytes());
-				exchange.sendResponseHeaders(204, -1);
-			} else {
-				exchange.sendResponseHeaders(404, -1);
-			}
-			exchange.close();
-		});
-		server.start();
-		try {
-			RemoteRepositoryManager manager = new RemoteRepositoryManager(
-					"http://127.0.0.1:" + server.getAddress().getPort() + "/rdf4j-server") {
-				@Override
-				public boolean hasRepositoryConfig(String id) {
-					return "memory".equals(id);
-				}
-			};
-			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/memory/config");
-			request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
-			String turtle = column(run(manager, request), "configuration");
-			assertThat(turtle).contains("redactedSecret").doesNotContain("private-password-marker");
+		try (AutoCloseable removeFactory = () -> RepositoryRegistry.getInstance().remove(factory)) {
+			AtomicReference<byte[]> posted = new AtomicReference<>();
+			HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+			try (AutoCloseable stopServer = () -> server.stop(0)) {
+				String config = """
+						_:root <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <tag:rdf4j.org,2023:config/Repository> .
+						_:root <tag:rdf4j.org,2023:config/rep.id> "memory" .
+						_:root <tag:rdf4j.org,2023:config/rep.impl> _:impl .
+						_:impl <tag:rdf4j.org,2023:config/rep.type> "test:WorkbenchCustomConfiguration" .
+						_:impl <urn:custom:setting> "visible setting" .
+						_:impl <tag:rdf4j.org,2023:config/lucene.elasticsearch.http.password> "REDACTED"^^<tag:rdf4j.org,2023:config/redactedSecret> .
+						""";
+				server.createContext("/rdf4j-server", exchange -> {
+					String path = exchange.getRequestURI().getPath();
+					if ("/rdf4j-server/protocol".equals(path)) {
+						byte[] body = "13".getBytes(StandardCharsets.UTF_8);
+						exchange.sendResponseHeaders(200, body.length);
+						exchange.getResponseBody().write(body);
+					} else if ("/rdf4j-server/repositories/memory/config".equals(path)
+							&& "GET".equals(exchange.getRequestMethod())) {
+						byte[] body = config.getBytes(StandardCharsets.UTF_8);
+						exchange.getResponseHeaders().set("Content-Type", RDFFormat.NTRIPLES.getDefaultMIMEType());
+						exchange.sendResponseHeaders(200, body.length);
+						exchange.getResponseBody().write(body);
+					} else if ("/rdf4j-server/repositories/memory/config".equals(path)
+							&& "POST".equals(exchange.getRequestMethod())) {
+						posted.set(exchange.getRequestBody().readAllBytes());
+						exchange.sendResponseHeaders(204, -1);
+					} else {
+						exchange.sendResponseHeaders(404, -1);
+					}
+					exchange.close();
+				});
+				RemoteRepositoryManager manager = new RemoteRepositoryManager(
+						"http://127.0.0.1:" + server.getAddress().getPort() + "/rdf4j-server") {
+					@Override
+					public boolean hasRepositoryConfig(String id) {
+						return "memory".equals(id);
+					}
+				};
+				try (AutoCloseable closeManager = manager::shutDown) {
+					server.start();
+					MockHttpServletRequest request = new MockHttpServletRequest("GET", "/memory/config");
+					request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+					String turtle = column(run(manager, request), "configuration");
+					assertThat(turtle).contains("redactedSecret").doesNotContain("private-password-marker");
 
-			MockHttpServletResponse saved = run(manager, post(turtle, "save"));
-			assertThat(saved.getStatus()).isEqualTo(200);
-			assertThat(posted.get()).isNotNull();
-			Model sent = Rio.parse(new ByteArrayInputStream(posted.get()), "", RDFFormat.BINARY);
-			assertThat(sent.filter(null, CustomConfig.PASSWORD, null).objects()).singleElement()
-					.isInstanceOfSatisfying(Literal.class, value -> {
-						assertThat(value.getLabel()).isEqualTo("REDACTED");
-						assertThat(value.getDatatype()).isEqualTo(
-								SimpleValueFactory.getInstance().createIRI(CONFIG.NAMESPACE, "redactedSecret"));
-					});
-		} finally {
-			server.stop(0);
-			RepositoryRegistry.getInstance().remove(factory);
+					MockHttpServletResponse saved = run(manager, post(turtle, "save"));
+					assertThat(saved.getStatus()).isEqualTo(200);
+					assertThat(posted.get()).isNotNull();
+					Model sent = Rio.parse(new ByteArrayInputStream(posted.get()), "", RDFFormat.BINARY);
+					assertThat(sent.filter(null, CustomConfig.PASSWORD, null).objects()).singleElement()
+							.isInstanceOfSatisfying(Literal.class, value -> {
+								assertThat(value.getLabel()).isEqualTo("REDACTED");
+								assertThat(value.getDatatype()).isEqualTo(
+										SimpleValueFactory.getInstance().createIRI(CONFIG.NAMESPACE, "redactedSecret"));
+							});
+				}
+			}
 		}
 	}
 
