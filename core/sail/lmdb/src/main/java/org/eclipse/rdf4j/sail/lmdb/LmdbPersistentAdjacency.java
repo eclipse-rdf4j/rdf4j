@@ -30,15 +30,21 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -48,6 +54,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /**
@@ -183,6 +190,260 @@ final class LmdbPersistentAdjacency {
 
 	int deltasDbi() {
 		return deltasDbi;
+	}
+
+	@FunctionalInterface
+	interface InitialQuadConsumer {
+		void add(long subject, long predicate, long object, long context) throws IOException;
+	}
+
+	/** A fresh owner must not overwrite a logically empty generation containing old pages or tombstones. */
+	void requireInitialEmpty(long txn) throws IOException {
+		validateFormat(txn, metadataDbi);
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBStat stat = MDBStat.malloc(stack);
+			check(mdb_stat(txn, pagesDbi, stat));
+			long pages = stat.ms_entries();
+			check(mdb_stat(txn, deltasDbi, stat));
+			long deltas = stat.ms_entries();
+			check(mdb_stat(txn, metadataDbi, stat));
+			if (pages != 0 || deltas != 0 || stat.ms_entries() != 1) {
+				throw new IllegalStateException("Initial adjacency construction requires physically empty authority");
+			}
+		}
+	}
+
+	/**
+	 * Build the explicit final generation in the caller's writer. This method neither commits nor retries: retained
+	 * canonical inputs and paired dictionary publication remain the initial-import owner's responsibility.
+	 */
+	long writeInitialExplicit(long txn, LmdbSortedRuns.Runs outgoing, LmdbSortedRuns.Runs incoming,
+			Path scratchParent, InitialQuadConsumer added) throws IOException {
+		checkInitialInterrupted();
+		requireInitialEmpty(txn);
+		try (InitialCounts counts = new InitialCounts(scratchParent)) {
+			long total = writeInitialDirection(txn, outgoing, false, counts, added);
+			long reverseTotal = writeInitialDirection(txn, incoming, true, counts, added);
+			if (total != reverseTotal) {
+				throw new IOException("Initial adjacency directions contain different distinct statement counts");
+			}
+			counts.finish(txn);
+			if (total != 0) {
+				putInitialCount(txn, new byte[] { TOTAL, 0 }, total);
+			}
+			return total;
+		}
+	}
+
+	private static long addInitialCount(long left, long right) throws IOException {
+		try {
+			return Math.addExact(left, right);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("Initial adjacency count overflow", overflow);
+		}
+	}
+
+	private static void checkInitialInterrupted() throws InterruptedIOException {
+		if (Thread.currentThread().isInterrupted()) {
+			throw new InterruptedIOException("Interrupted while constructing initial adjacency");
+		}
+	}
+
+	private long writeInitialDirection(long txn, LmdbSortedRuns.Runs input, boolean incoming,
+			InitialCounts counts, InitialQuadConsumer added) throws IOException {
+		int plane = incoming ? 1 : 0;
+		int[] order = incoming ? new int[] { 1, 2, 0, 3 } : new int[] { 1, 0, 2, 3 };
+		long[] rows = new long[PAGE_QUADS];
+		long[] neighbors = new long[PAGE_QUADS];
+		long[] contexts = new long[PAGE_QUADS];
+		var encoding = new PersistentCsfPageCodec.EncodingWorkspace();
+		long predicate = 0, row = 0, previousNeighbor = 0, previousContext = 0;
+		long rowCount = 0, predicateCount = 0, total = 0;
+		int size = 0;
+		try (LmdbSortedRuns.Merge merge = new LmdbSortedRuns.Merge(input, order, true)) {
+			long[] quad = new long[4];
+			while (merge.next(quad)) {
+				if ((total & (PAGE_QUADS - 1)) == 0) {
+					checkInitialInterrupted();
+				}
+				if (quad[0] == -1 || quad[1] == -1 || quad[2] == -1 || quad[3] < 0) {
+					throw new IOException("Initial adjacency run contains an incomplete quad");
+				}
+				long nextPredicate = quad[1];
+				long nextRow = quad[incoming ? 2 : 0];
+				long neighbor = quad[incoming ? 0 : 2];
+				if (total != 0) {
+					int comparison = Long.compareUnsigned(predicate, nextPredicate);
+					if (comparison > 0 || comparison == 0 && compareTuple(row, previousNeighbor, previousContext,
+							nextRow, neighbor, quad[3]) >= 0) {
+						throw new IOException("Initial adjacency run is not strictly ordered");
+					}
+					if (predicate != nextPredicate || row != nextRow) {
+						putInitialRow(txn, plane, predicate, row, rowCount, counts);
+						rowCount = 0;
+					}
+					if (predicate != nextPredicate) {
+						writeInitialPage(txn, plane, predicate, rows, neighbors, contexts, size, encoding);
+						size = 0;
+						putInitialPredicate(txn, plane, predicate, predicateCount, counts);
+						predicateCount = 0;
+					}
+				}
+				predicate = nextPredicate;
+				row = nextRow;
+				previousNeighbor = neighbor;
+				previousContext = quad[3];
+				rowCount = addInitialCount(rowCount, 1);
+				predicateCount = addInitialCount(predicateCount, 1);
+				total = addInitialCount(total, 1);
+				rows[size] = row;
+				neighbors[size] = neighbor;
+				contexts[size++] = quad[3];
+				if (size == PAGE_QUADS) {
+					writeInitialPage(txn, plane, predicate, rows, neighbors, contexts, size, encoding);
+					size = 0;
+				}
+				if (!incoming) {
+					counts.add(CONTEXT, quad[3], 1);
+					if (quad[3] != 0) {
+						counts.add(REFERENCES, quad[3], 1);
+					}
+					added.add(quad[0], quad[1], quad[2], quad[3]);
+				}
+			}
+		}
+		if (total != 0) {
+			writeInitialPage(txn, plane, predicate, rows, neighbors, contexts, size, encoding);
+			putInitialRow(txn, plane, predicate, row, rowCount, counts);
+			putInitialPredicate(txn, plane, predicate, predicateCount, counts);
+		}
+		return total;
+	}
+
+	private void writeInitialPage(long txn, int plane, long predicate, long[] rows, long[] neighbors,
+			long[] contexts, int size, PersistentCsfPageCodec.EncodingWorkspace encoding) throws IOException {
+		if (size > 0) {
+			put(txn, pagesDbi, edgeKey(plane, predicate, rows[0], neighbors[0], contexts[0]),
+					PersistentCsfPageCodec.encode(encoding, rows, neighbors, contexts, 0, size));
+		}
+	}
+
+	private void putInitialRow(long txn, int plane, long predicate, long row, long count, InitialCounts counts)
+			throws IOException {
+		putInitialCount(txn, key(ROW, plane, predicate, row), count);
+		putInitialCount(txn, key(NODE_PREDICATE, plane, row, predicate), count);
+		counts.add(REFERENCES, row, count);
+	}
+
+	private void putInitialPredicate(long txn, int plane, long predicate, long count, InitialCounts counts)
+			throws IOException {
+		putInitialCount(txn, key(PREDICATE, plane, predicate), count);
+		if (plane == 0) {
+			counts.add(REFERENCES, predicate, count);
+		}
+	}
+
+	private void putInitialCount(long txn, byte[] key, long count) throws IOException {
+		if (count <= 0) {
+			throw new IOException("Initial adjacency count must be positive");
+		}
+		put(txn, metadataDbi, key, ByteBuffer.allocate(Long.BYTES).putLong(count).array());
+	}
+
+	/** Fixed-size partial aggregation; every spill record is committed immediately and every merge is bounded. */
+	private final class InitialCounts implements AutoCloseable {
+		private static final int MAX_KEYS = 1 << 14;
+		private static final int[] ORDER = { 0, 1, 2, 3 };
+		private final Map<InitialCountKey, Long> partials = new HashMap<>();
+		private final Path directory;
+		private final LmdbRunCollector runs;
+
+		InitialCounts(Path parent) throws IOException {
+			directory = Files.createTempDirectory(parent, "adjacency-counts-");
+			runs = new LmdbRunCollector("counts", directory, new int[][] { ORDER }, MAX_KEYS, 1, Runnable::run);
+		}
+
+		void add(byte type, long id, long amount) throws IOException {
+			InitialCountKey key = new InitialCountKey(type, id);
+			Long previous = partials.get(key);
+			if (previous == null && partials.size() == MAX_KEYS) {
+				spill();
+			}
+			partials.put(key, previous == null ? amount : addInitialCount(previous, amount));
+		}
+
+		private void spill() throws IOException {
+			int written = 0;
+			for (var entry : partials.entrySet()) {
+				if ((written++ & (PAGE_QUADS - 1)) == 0) {
+					checkInitialInterrupted();
+				}
+				runs.add(entry.getKey().type(), entry.getKey().id(), 0, entry.getValue());
+				runs.commit();
+			}
+			partials.clear();
+		}
+
+		void finish(long txn) throws IOException {
+			spill();
+			try (LmdbSortedRuns.Merge merge = new LmdbSortedRuns.Merge(runs.completeRuns().getFirst(), ORDER, false)) {
+				long[] record = new long[4];
+				byte type = 0;
+				long id = 0, count = 0;
+				int visited = 0;
+				while (merge.next(record)) {
+					if ((visited++ & (PAGE_QUADS - 1)) == 0) {
+						checkInitialInterrupted();
+					}
+					if ((record[0] != CONTEXT && record[0] != REFERENCES) || record[2] != 0 || record[3] <= 0) {
+						throw new IOException("Invalid initial adjacency reduction record");
+					}
+					if (count != 0
+							&& (record[0] < type || record[0] == type && Long.compareUnsigned(record[1], id) < 0)) {
+						throw new IOException("Invalid initial adjacency reduction record order");
+					}
+					if (count != 0 && (type != record[0] || id != record[1])) {
+						write(txn, type, id, count);
+						count = 0;
+					}
+					type = (byte) record[0];
+					id = record[1];
+					count = addInitialCount(count, record[3]);
+				}
+				if (count != 0) {
+					write(txn, type, id, count);
+				}
+			}
+		}
+
+		private void write(long txn, byte type, long id, long count) throws IOException {
+			if (type == CONTEXT) {
+				putInitialCount(txn, key(CONTEXT, 0, id), count);
+				putInitialCount(txn, key(CONTEXT_TOTAL_PREFIX, id), count);
+			} else if (type == REFERENCES) {
+				putInitialCount(txn, key(REFERENCES, id), count);
+			} else {
+				throw new IOException("Invalid initial adjacency count type");
+			}
+		}
+
+		@Override
+		public void close() throws IOException {
+			try {
+				runs.close();
+			} catch (IOException failure) {
+				try {
+					Files.deleteIfExists(directory);
+				} catch (IOException cleanup) {
+					failure.addSuppressed(cleanup);
+				}
+				throw failure;
+			}
+			Files.deleteIfExists(directory);
+		}
+	}
+
+	private record InitialCountKey(byte type, long id) {
 	}
 
 	static byte[] contextsPrefix() {

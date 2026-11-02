@@ -86,7 +86,7 @@ class LmdbPersistentAdjacencyBulkWorkTest {
 	}
 
 	@Test
-	void initialRunImportSortsOnlyTheOrderItConsumes() throws Exception {
+	void initialRunImportSortsBothConsumedDirections() throws Exception {
 		AtomicInteger sorts = new AtomicInteger();
 		Set<List<Long>> expected = Set.of(List.of(10L, 20L, 30L, 0L), List.of(11L, 21L, 31L, 7L),
 				List.of(12L, 20L, 32L, 7L), List.of(13L, 21L, 33L, 0L));
@@ -108,16 +108,16 @@ class LmdbPersistentAdjacencyBulkWorkTest {
 			List<LmdbSortedRuns.Runs> prepared = collector.completeRuns();
 			runOrders = prepared.size();
 			store.startTransaction();
-			assertThat(store.appendInitialImportRuns(prepared, 1L << 20)).isEqualTo(expected.size());
+			assertThat(store.appendInitialImportRuns(prepared, 1L << 20, runs)).isEqualTo(expected.size());
 			store.commit();
 			assertDirections(store, expected, true);
 		}
 		try (TripleStore store = new TripleStore(triples.toFile(), config, null)) {
 			assertDirections(store, expected, true);
 		}
-		assertThat(sorts.get()).as("one import chunk is sorted once despite additional logical query orders")
-				.isEqualTo(1);
-		assertThat(runOrders).as("only the consumed deduplication order is materialized").isEqualTo(1);
+		assertThat(sorts.get()).as("one sort per physical direction despite additional logical query orders")
+				.isEqualTo(2);
+		assertThat(runOrders).as("both consumed canonical directions are materialized").isEqualTo(2);
 	}
 
 	@ParameterizedTest

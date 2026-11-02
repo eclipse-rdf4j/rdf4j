@@ -3854,7 +3854,8 @@ class LmdbSailStore implements SailStore {
 	/**
 	 * The last native chunk of an initial run import. Its value half writes the merged lookup records into the chunk's
 	 * value transaction on the caller thread; its triple half, run by the TripleStore writer, inserts both adjacency
-	 * directions from one merged order. A capacity replay runs both halves again from the same run files.
+	 * directions directly from their two canonical orders. A capacity replay runs both halves again from the retained
+	 * runs.
 	 */
 	private final class InitialRunImportFinish implements Operation {
 		private final LmdbInitialRunImport runImport;
@@ -3873,7 +3874,8 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void execute() throws IOException {
-			tripleStore.appendInitialImportRuns(tripleRuns, runImport.projectedTripleBytes(tripleStore));
+			tripleStore.appendInitialImportRuns(tripleRuns, runImport.projectedTripleBytes(tripleStore),
+					runImport.scratchParent());
 		}
 	}
 

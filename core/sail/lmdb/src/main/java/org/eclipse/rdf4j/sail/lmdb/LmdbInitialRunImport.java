@@ -225,6 +225,11 @@ final class LmdbInitialRunImport implements Closeable {
 		return LmdbUtil.saturatedAdd(store.estimateWriteBytes(triples.committedRows()), 1L << 20);
 	}
 
+	/** Private child workspaces remain within this import owner's cleanup boundary. */
+	Path scratchParent() {
+		return runDirectory;
+	}
+
 	/** A generous estimate of the bytes the deferred lookup records need, written as sorted plain puts. */
 	long projectedValueBytes() {
 		return LmdbUtil.saturatedAdd(saturatedMultiply(values.committedRecords(), 80L), 1L << 20);

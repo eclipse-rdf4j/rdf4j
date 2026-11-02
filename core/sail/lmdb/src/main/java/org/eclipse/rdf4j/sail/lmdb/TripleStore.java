@@ -5051,9 +5051,9 @@ class TripleStore implements Closeable {
 		return added;
 	}
 
-	/** One canonical order deduplicates the import; each insertion maintains both adjacency directions. */
+	/** Two canonical streams directly construct the outgoing and incoming final pages. */
 	int[][] initialImportFieldOrders() {
-		return new int[][] { { 1, 0, 2, 3 } };
+		return new int[][] { { 1, 0, 2, 3 }, { 1, 2, 0, 3 } };
 	}
 
 	boolean hasStagingIndexes() {
@@ -5073,34 +5073,30 @@ class TripleStore implements Closeable {
 	}
 
 	/**
-	 * Streams one deduplicated run order into an empty adjacency generation in the existing write transaction. Both
-	 * directions, value references and context counts are maintained by the same insertion path as normal writes.
+	 * Streams both deduplicated canonical orders into final pages in the existing empty native writer. Exact metadata
+	 * is reduced once per key; derived events retain the ordinary writer publication and rollback ownership.
 	 *
 	 * @param runsByIndex the prepared run files in {@link #initialImportFieldOrders()} order
 	 * @return the number of distinct statements written
 	 */
-	long appendInitialImportRuns(List<LmdbSortedRuns.Runs> runsByIndex, long estimatedWriteBytes) throws IOException {
+	long appendInitialImportRuns(List<LmdbSortedRuns.Runs> runsByIndex, long estimatedWriteBytes, Path scratchParent)
+			throws IOException {
 		checkReplayFailure();
 		if (writeTxn == 0) {
 			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
 		}
-		if (runsByIndex.size() != 1) {
-			throw new IllegalStateException("Initial import requires one canonical adjacency run order");
+		if (runsByIndex.size() != 2) {
+			throw new IllegalStateException("Initial import requires both canonical adjacency run orders");
 		}
 		if (usesReplayJournal() || persistentAdjacency.count(writeTxn, true) != 0
 				|| persistentAdjacency.count(writeTxn, false) != 0) {
 			throw new IllegalStateException("An initial run import requires an empty native generation");
 		}
 		prepareForMutation(estimatedWriteBytes);
-		try (LmdbSortedRuns.Merge merge = new LmdbSortedRuns.Merge(runsByIndex.getFirst(),
-				initialImportFieldOrders()[0], true)) {
-			long added = 0;
-			long[] quad = new long[LmdbSortedRuns.ROW_LONGS];
-			while (merge.next(quad)) {
-				if (storeTripleDirect(quad[0], quad[1], quad[2], quad[3], true, false)) {
-					added++;
-				}
-			}
+		try {
+			long added = persistentAdjacency.writeInitialExplicit(writeTxn, runsByIndex.get(0), runsByIndex.get(1),
+					scratchParent, (subject, predicate, object, context) -> recordFanOutAdded(subject, predicate,
+							object, context, true));
 			if (added > 0) {
 				nativeMutation = true;
 				tripleMutation = true;
