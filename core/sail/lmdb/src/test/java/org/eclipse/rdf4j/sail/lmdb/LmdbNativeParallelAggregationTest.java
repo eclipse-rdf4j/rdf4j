@@ -293,8 +293,30 @@ public class LmdbNativeParallelAggregationTest {
 
 	@Test
 	public void singlePatternPlainCountUsesParallelAggregation() {
-		assertParallelEngagesAndAllThreeAgree("PREFIX ex: <" + EX + ">\n"
-				+ "SELECT (COUNT(?s) AS ?c) WHERE { ?s ex:p1 ?a . }");
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE { ?s ex:p1 ?a . }";
+		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+		List<String> parallelRows = rows(query, "parallelAggregation");
+		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+				.as("the public forced route must execute parallel aggregation for:\n" + query)
+				.isGreaterThan(before);
+		assertThat(parallelRows).as("forced parallel vs sequential native for:\n" + query)
+				.isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
+		assertThat(parallelRows).as("forced parallel vs generic for:\n" + query)
+				.isEqualTo(rowsWithProperty(NATIVE_FLAG, "false", query));
+	}
+
+	@Test
+	public void singlePatternPlainCountDefaultsToExactIndexedCardinality() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT (COUNT(?s) AS ?c) WHERE { ?s ex:p1 ?a . }";
+		GenericPlanNode plan = explain(query);
+		assertThat(findMetric(plan, "nativeExecutionPath"))
+				.as("default arbitration should use exact index cardinality instead of materializing rows")
+				.isEqualTo("indexedCount");
+		assertThat(findMetric(plan, "nativeStrategyProposalCosts")).contains("indexedCount=");
+		assertThat(findMetric(plan, "nativeAdaptiveCostDecision")).contains("winner=indexedCount");
+		assertAllThreeAgree(query);
 	}
 
 	@Test

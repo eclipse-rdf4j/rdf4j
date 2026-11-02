@@ -515,6 +515,12 @@ final class LmdbNativeAggregateCompiler {
 	 * consult state outside declared slot masks.
 	 */
 	static long memoReadMask(SlotPlan plan) {
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return memoReadMask(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return memoReadMask(memo.original);
+		}
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
 			return memoReadMask(leaf.template);
 		if (plan instanceof PatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {

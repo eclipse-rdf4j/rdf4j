@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
 import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
 
@@ -45,73 +46,135 @@ class BackgroundCancellationOrderRegressionTest {
 		CountDownLatch queryResponseStarted = new CountDownLatch(1);
 		CountDownLatch releaseQueryResponse = new CountDownLatch(1);
 		AtomicReference<Throwable> serverFailure = new AtomicReference<>();
-		ExecutorService serverExecutor = Executors.newCachedThreadPool();
-		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-		server.setExecutor(serverExecutor);
-		server.createContext("/protocol", exchange -> {
-			byte[] protocol = "12".getBytes(java.nio.charset.StandardCharsets.UTF_8);
-			exchange.sendResponseHeaders(200, protocol.length);
-			try (exchange; OutputStream body = exchange.getResponseBody()) {
-				body.write(protocol);
-			}
-		});
-		server.createContext("/repositories/repro", exchange -> handleRequest(exchange, queryResponseStarted,
-				releaseQueryResponse, serverFailure));
-		server.start();
-
-		HTTPRepository repository = new HTTPRepository("http://127.0.0.1:" + server.getAddress().getPort(), "repro");
-		RepositoryConnection connection = repository.getConnection();
-		ExecutorService cancelExecutor = Executors.newSingleThreadExecutor();
-		AtomicInteger remoteCancelCalls = new AtomicInteger();
 		AtomicReference<Throwable> remoteFailure = new AtomicReference<>();
-		AtomicReference<Object> resultReference = new AtomicReference<>();
-		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
-		CancellableOperationCoordinator.Handle handle = coordinator.register("query-id", () -> {
-			remoteCancelCalls.incrementAndGet();
-			try {
-				repository.cancelQuery("query-id");
-			} catch (Throwable e) {
-				remoteFailure.set(e);
-			}
-		});
+		CountDownLatch queryResponseFinished = new CountDownLatch(1);
+		try (FixtureCleanup cleanup = new FixtureCleanup(releaseQueryResponse)) {
+			cleanup.response = () -> {
+				if (queryResponseStarted.getCount() == 0) {
+					assertThat(queryResponseFinished.await(5, TimeUnit.SECONDS)).as("query response handler finished")
+							.isTrue();
+				}
+			};
+			ExecutorService serverExecutor = Executors.newCachedThreadPool();
+			cleanup.serverExecutor = () -> FixtureCleanup.stopExecutor(serverExecutor);
+			HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+			cleanup.server = () -> server.stop(0);
+			server.setExecutor(serverExecutor);
+			server.createContext("/protocol", exchange -> {
+				byte[] protocol = "12".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+				exchange.sendResponseHeaders(200, protocol.length);
+				try (exchange; OutputStream body = exchange.getResponseBody()) {
+					body.write(protocol);
+				}
+			});
+			server.createContext("/repositories/repro", exchange -> handleRequest(exchange, queryResponseStarted,
+					releaseQueryResponse, queryResponseFinished, serverFailure));
+			server.start();
 
-		Future<Boolean> cancelFuture = null;
-		try {
+			HTTPRepository repository = new HTTPRepository("http://127.0.0.1:" + server.getAddress().getPort(),
+					"repro");
+			cleanup.repository = repository::shutDown;
+			RepositoryConnection connection = repository.getConnection();
+			cleanup.connection = connection;
+			ExecutorService cancelExecutor = Executors.newSingleThreadExecutor();
+			cleanup.cancelExecutor = () -> FixtureCleanup.stopExecutor(cancelExecutor);
+			AtomicInteger remoteCancelCalls = new AtomicInteger();
+			AtomicReference<TupleQueryResult> resultReference = new AtomicReference<>();
+			CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+			cleanup.coordinator = coordinator::shutdown;
+			CancellableOperationCoordinator.Handle handle = coordinator.register("query-id", () -> {
+				remoteCancelCalls.incrementAndGet();
+				try {
+					repository.cancelQuery("query-id");
+				} catch (Throwable e) {
+					remoteFailure.set(e);
+				}
+			});
+
 			coordinator.execute(handle, connection, () -> {
 				try (QueryRequestContext.Activation ignored = QueryRequestContext.activate("query-id")) {
 					var result = connection.prepareTupleQuery(QueryLanguage.SPARQL,
 							"select * where { ?s ?p ?o }").evaluate();
+					cleanup.result = result;
 					resultReference.set(result);
 					return result;
 				}
 			});
 
 			assertThat(queryResponseStarted.await(5, TimeUnit.SECONDS)).isTrue();
-			assertThat(resultReference.get()).isNotNull();
+			assertThat((Object) resultReference.get()).isNotNull();
 
-			cancelFuture = cancelExecutor.submit(() -> coordinator.cancel("query-id"));
+			Future<Boolean> cancelFuture = cancelExecutor.submit(() -> coordinator.cancel("query-id"));
 			assertThat(cancelFuture.get(5, TimeUnit.SECONDS)).isTrue();
 			assertThat(releaseQueryResponse.getCount()).isEqualTo(1);
 			assertThat(remoteCancelCalls).hasValue(1);
 			releaseQueryResponse.countDown();
-		} finally {
-			releaseQueryResponse.countDown();
-			cancelExecutor.shutdownNow();
-			try {
-				connection.close();
-			} catch (Exception ignored) {
-			}
-			repository.shutDown();
-			server.stop(0);
-			serverExecutor.shutdownNow();
 		}
 
 		assertThat(serverFailure).hasValue(null);
 		assertThat(remoteFailure).hasValue(null);
 	}
 
+	static final class FixtureCleanup implements AutoCloseable {
+		private final CountDownLatch release;
+		AutoCloseable cancelExecutor;
+		AutoCloseable coordinator;
+		AutoCloseable response;
+		AutoCloseable result;
+		AutoCloseable connection;
+		AutoCloseable repository;
+		AutoCloseable server;
+		AutoCloseable serverExecutor;
+
+		FixtureCleanup(CountDownLatch release) {
+			this.release = release;
+		}
+
+		@Override
+		public void close() throws Exception {
+			try (AutoCloseable serverWorkers = serverExecutor;
+					AutoCloseable listener = server;
+					AutoCloseable httpRepository = repository;
+					AutoCloseable httpConnection = connection;
+					AutoCloseable queryResult = result;
+					AutoCloseable queryResponse = response;
+					AutoCloseable cancellationCoordinator = coordinator;
+					AutoCloseable cancellationWorker = cancelExecutor) {
+				// Unblock the actual response before waiting for workers or closing its result.
+				release.countDown();
+			}
+		}
+
+		static void stopExecutor(ExecutorService executor) {
+			boolean interrupted = Thread.interrupted();
+			try {
+				executor.shutdownNow();
+				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+				do {
+					try {
+						if (executor.awaitTermination(Math.max(0, deadline - System.nanoTime()),
+								TimeUnit.NANOSECONDS)) {
+							return;
+						}
+						throw new AssertionError("HTTP cancellation fixture worker must terminate");
+					} catch (InterruptedException e) {
+						interrupted = true;
+					}
+				} while (System.nanoTime() < deadline);
+				throw new AssertionError("HTTP cancellation fixture worker did not terminate after interruption");
+			} finally {
+				if (interrupted) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		}
+
+	}
+
 	private static void handleRequest(HttpExchange exchange, CountDownLatch queryResponseStarted,
-			CountDownLatch releaseQueryResponse, AtomicReference<Throwable> serverFailure) {
+			CountDownLatch releaseQueryResponse, CountDownLatch queryResponseFinished,
+			AtomicReference<Throwable> serverFailure) {
+		boolean queryResponse = false;
 		try (exchange) {
 			exchange.getRequestBody().readAllBytes();
 			String query = exchange.getRequestURI().getRawQuery();
@@ -120,6 +183,7 @@ class BackgroundCancellationOrderRegressionTest {
 				return;
 			}
 
+			queryResponse = true;
 			exchange.getResponseHeaders().set("Content-Type", "application/sparql-results+xml");
 			exchange.sendResponseHeaders(200, 0);
 			OutputStream body = exchange.getResponseBody();
@@ -133,6 +197,10 @@ class BackgroundCancellationOrderRegressionTest {
 			body.close();
 		} catch (Throwable e) {
 			serverFailure.compareAndSet(null, e);
+		} finally {
+			if (queryResponse) {
+				queryResponseFinished.countDown();
+			}
 		}
 	}
 }

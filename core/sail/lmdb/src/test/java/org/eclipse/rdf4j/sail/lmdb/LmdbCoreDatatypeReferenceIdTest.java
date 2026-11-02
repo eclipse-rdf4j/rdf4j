@@ -167,7 +167,7 @@ class LmdbCoreDatatypeReferenceIdTest {
 
 		StoreProperties properties = new StoreProperties(directory);
 		assertThat(properties.load()).isTrue();
-		assertThat(properties.getVersion()).isEqualTo("6");
+		assertThat(properties.getVersion()).isEqualTo("7");
 		Properties raw = new Properties();
 		try (var input = Files.newInputStream(new File(directory, StoreProperties.FILE_NAME).toPath())) {
 			raw.load(input);

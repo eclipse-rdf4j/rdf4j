@@ -267,7 +267,6 @@ final class LmdbNativeHashJoin {
 		}
 		double leftRows = left.estimateForBoundMask(row.boundMask(), row.source);
 		double rightRows = right.estimateForBoundMask(row.boundMask(), row.source);
-		double hashCost = LmdbNativeStrategyProposal.batchCost(leftRows, rightRows);
 		PatternPlan build;
 		PatternPlan probe;
 		double probeRows;
@@ -285,6 +284,7 @@ final class LmdbNativeHashJoin {
 			return reject(row, "below-min-rows");
 		}
 		double indexNestedLoopCost = leftRows * RuntimeBuildAdmission.SEEK_WORK_UNITS;
+		double hashCost = LmdbNativeStrategyProposal.batchCost(leftRows, rightRows);
 		if (!Double.isFinite(hashCost) || !(hashCost < indexNestedLoopCost)) {
 			return reject(row, "higher-cost");
 		}
@@ -304,9 +304,11 @@ final class LmdbNativeHashJoin {
 	 * enumeration, one lookup per probe row, and the build drain multiplied by the parallel rung's expected per-unit
 	 * build replays (the parallel row engine creates one kernel instance per work unit and each instance re-drains the
 	 * build preamble — see {@link LmdbNativeParallelKernelRows#expectedBuildReplays()}). Strict interval domination
-	 * decides; overlap keeps the probe chain, mirroring the join-order tie-break doctrine. When the chain cannot be
-	 * priced from measured statistics (structural pseudo-cardinalities would grossly overprice cheap bound probes), the
-	 * original {@code leftRows * SEEK_WORK_UNITS} gate is retained verbatim.
+	 * decides; overlap keeps the probe chain, mirroring the join-order tie-break doctrine. A chain link whose every
+	 * physical field is already bound (a membership probe on a fully-keyed lookup, such as the second pattern of
+	 * {@code ?a :p ?b . ?b :p ?a}) has no sampled fan-out, so it is priced as one seek per incoming row — the same cost
+	 * the former {@code leftRows * SEEK_WORK_UNITS} gate charged it. Any other unpriceable link declines hash
+	 * admission: structural pseudo-cardinalities would grossly overprice cheap bound probes.
 	 */
 	static KernelHashPlan tryPlanKernel(MultiJoinPlan multiJoin, PatternPlan left, PatternPlan right, RowState row) {
 		if (!Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"))) {
@@ -328,7 +330,6 @@ final class LmdbNativeHashJoin {
 		}
 		double leftRows = left.estimateForBoundMask(row.boundMask(), row.source);
 		double rightRows = right.estimateForBoundMask(row.boundMask(), row.source);
-		double hashCost = LmdbNativeStrategyProposal.batchCost(leftRows, rightRows);
 		PatternPlan build;
 		PatternPlan probe;
 		double probeRows;
@@ -345,20 +346,13 @@ final class LmdbNativeHashJoin {
 			return null;
 		}
 		long boundMask = row.boundMask();
-		LmdbNativeWork chain = directChainWork(multiJoin, row, boundMask);
-		if (chain != null) {
-			LmdbNativeWork hash = build.estimateWork(row, boundMask)
-					.times(LmdbNativeParallelKernelRows.expectedBuildReplays())
-					.plus(probe.estimateWork(row, boundMask))
-					.plus(LmdbNativeWork.exact(probeRows));
-			if (!hash.beats(chain)) {
-				return null;
-			}
-		} else {
-			double indexNestedLoopCost = leftRows * RuntimeBuildAdmission.SEEK_WORK_UNITS;
-			if (!Double.isFinite(hashCost) || !(hashCost < indexNestedLoopCost)) {
-				return null;
-			}
+		double chainExpected = directChainExpectedWork(multiJoin, row, boundMask);
+		double buildExpected = LmdbNativeWork.expectedWork(build, row, boundMask);
+		double probeExpected = LmdbNativeWork.expectedWork(probe, row, boundMask);
+		double hashExpected = buildExpected * LmdbNativeParallelKernelRows.expectedBuildReplays()
+				+ probeExpected + probeRows;
+		if (!Double.isFinite(chainExpected) || !Double.isFinite(hashExpected) || !(hashExpected < chainExpected)) {
+			return null;
 		}
 		return new KernelHashPlan(probe, build, slotsOf(keyMask),
 				Integer.getInteger(MAX_BUILD_ROWS_PROPERTY, DEFAULT_MAX_BUILD_ROWS),
@@ -366,21 +360,61 @@ final class LmdbNativeHashJoin {
 	}
 
 	/**
-	 * The derived-order probe-chain work, or null unless every link is priceable from measured statistics (a finite
-	 * uncorrelated static estimate, or a sampled mean fan-out once earlier links bound its slots). The structural
-	 * pseudo-cardinality fallback is deliberately excluded: it prices a cheap bound probe at thousands of rows and
-	 * would hand the hash plan wins it has not earned.
+	 * The derived-order probe-chain expected work, or NaN unless every link is priceable from source statistics: a
+	 * finite uncorrelated static estimate, a sampled mean fan-out once earlier links bind one end of a constant
+	 * predicate, or a fully-keyed membership probe (every physical field constant or bound by earlier links) that costs
+	 * one index seek per incoming row and emits at most one row per seek. This is an expected-cost comparison only; it
+	 * does not narrow the conservative work interval. Structural pseudo-cardinality is deliberately excluded, and an
+	 * unpriceable chain declines hash admission instead of falling back to a separate coarse cross-product heuristic.
 	 */
-	private static LmdbNativeWork directChainWork(MultiJoinPlan multiJoin, RowState row, long boundMask) {
+	private static double directChainExpectedWork(MultiJoinPlan multiJoin, RowState row, long boundMask) {
+		MultiJoinPlan.OrderedPlan derived = multiJoin.derivedPlan(boundMask);
 		long mask = boundMask;
-		for (SlotPlan child : multiJoin.derivedPlan(boundMask).order) {
-			if (!(child instanceof PatternPlan pattern) || !pattern.hasDirectEstimateForBoundMask(mask, row.source)) {
-				return null;
+		double expected = 0D;
+		double rowsIn = 1D;
+		for (SlotPlan child : derived.order) {
+			if (!(child instanceof PatternPlan pattern)) {
+				return Double.NaN;
 			}
+			double linkWork;
+			double linkRows;
+			if (pattern.hasDirectEstimateForBoundMask(mask, row.source)) {
+				linkWork = LmdbNativeWork.expectedWork(pattern, row, mask);
+				linkRows = pattern.workRowsForBoundMask(mask, row.source);
+			} else if (isMembershipProbe(pattern, mask)) {
+				linkWork = LmdbNativeWork.SEEK * membershipScans(pattern);
+				linkRows = 1D;
+			} else {
+				return Double.NaN;
+			}
+			if (!Double.isFinite(linkWork) || linkWork < 0D || !Double.isFinite(linkRows) || linkRows < 0D) {
+				return Double.NaN;
+			}
+			expected += rowsIn * linkWork;
+			rowsIn *= linkRows;
 			mask |= child.producedMask();
 		}
-		LmdbNativeWork chain = multiJoin.estimateWork(row, boundMask);
-		return chain.known() ? chain : null;
+		return Double.isFinite(expected) ? expected : Double.NaN;
+	}
+
+	/**
+	 * Whether every physical field of {@code pattern} is a constant or a slot bound under {@code mask} (its context may
+	 * stay free), so a probe is a positioned lookup on a complete key rather than a prefix scan. Such a link has no
+	 * fan-out statistic — {@link PatternPlan#hasDirectEstimateForBoundMask} needs exactly one free end — yet its cost
+	 * is bounded by the seek itself: it can match at most one quad per context.
+	 */
+	private static boolean isMembershipProbe(PatternPlan pattern, long mask) {
+		return pattern.range == null && termKnown(pattern.s, mask) && termKnown(pattern.p, mask)
+				&& termKnown(pattern.o, mask) && (pattern.c.isConstant() || !pattern.c.hasSlot()
+						|| termKnown(pattern.c, mask));
+	}
+
+	private static int membershipScans(PatternPlan pattern) {
+		return pattern.contexts.isFixed() ? Math.max(1, pattern.contexts.ids.length) : 1;
+	}
+
+	private static boolean termKnown(Term term, long mask) {
+		return term.isConstant() || term.slot >= 0 && (mask & (1L << term.slot)) != 0L;
 	}
 
 	/** The kernel lowering's slice of a hash-favored two-pattern plan (M8). */

@@ -18,31 +18,44 @@ import {
   predicateValuesQuery,
   statementsQuery,
   valueLabelQuery,
+  discoveryQuery,
+  typesQuery,
+  predicateProbeQuery,
 } from "../../../../main/frontend/graph-explorer/rdf-vocabulary.ts";
 import { statementAnnotationsQuery } from "../../../../main/frontend/graph-explorer/statement-details.ts";
 
 const request = JSON.parse(process.argv[2] === "--request-file" ? readFileSync(process.argv[3], "utf8") : process.argv[2]);
-let query;
-if (request.action === "facet") {
-  query = generatedFacetQuery(new Map(request.selection.map(([id, values]) => [id, new Set(values)])), {
-    wikidata: request.wikidata ?? false,
-    ranges: new Map(request.ranges ?? []),
-    scope: request.scope ?? "default",
-    modes: new Map(request.modes ?? []),
-  });
-} else if (request.action === "annotations") {
-  query = statementAnnotationsQuery(request.statement, request.scope, request.tripleTerms);
-} else if (request.action === "statements") {
-  query = statementsQuery(request.sources, request.scope ?? "default", request.cap ?? 101);
-} else if (request.action === "census") {
-  query = predicateCensusQuery(request.source, request.scope ?? "default");
-} else if (request.action === "values") {
-  query = predicateValuesQuery(request.source, request.predicates, request.scope ?? "default", request.cap ?? 1001);
-} else if (request.action === "exact") {
-  query = exactMatchQuery(request.sources, request.predicate, request.match, request.scope ?? "default");
-} else if (request.action === "value-labels") {
-  query = valueLabelQuery(request.values, request.properties ?? [], request.scope ?? "default");
-} else {
-  throw new Error(`Unknown generator request: ${request.action}`);
+function generate(request) {
+  let query;
+  if (request.action === "facet") {
+    query = generatedFacetQuery(new Map(request.selection.map(([id, values]) => [id, new Set(values)])), {
+      wikidata: request.wikidata ?? false,
+      ranges: new Map(request.ranges ?? []),
+      scope: request.scope ?? "default",
+      modes: new Map(request.modes ?? []),
+    });
+  } else if (request.action === "annotations") {
+    query = statementAnnotationsQuery(request.statement, request.scope, request.tripleTerms);
+  } else if (request.action === "statements") {
+    query = statementsQuery(request.sources, request.scope ?? "default", request.cap ?? 101);
+  } else if (request.action === "census") {
+    query = predicateCensusQuery(request.source, request.scope ?? "default");
+  } else if (request.action === "values") {
+    query = predicateValuesQuery(request.source, request.predicates, request.scope ?? "default", request.cap ?? 1001);
+  } else if (request.action === "exact") {
+    query = exactMatchQuery(request.sources, request.predicate, request.match, request.scope ?? "default");
+  } else if (request.action === "value-labels") {
+    query = valueLabelQuery(request.values, request.properties ?? [], request.scope ?? "default");
+  } else if (request.action === "discovery") {
+    query = discoveryQuery(request.sources, request.scope ?? "default", request.wikidata ?? false, request.fence ?? false);
+  } else if (request.action === "types") {
+    query = typesQuery(request.sources, request.scope ?? "default", request.wikidata ?? false, request.fence ?? false);
+  } else if (request.action === "probe") {
+    query = predicateProbeQuery(request.source, request.predicates, request.scope ?? "default");
+  } else {
+    throw new Error(`Unknown generator request: ${request.action}`);
+  }
+  return query;
 }
-process.stdout.write(query);
+// A batch keeps cross-store native coverage tied to the same producers without starting one Node process per variant.
+process.stdout.write(Array.isArray(request) ? JSON.stringify(request.map(generate)) : generate(request));

@@ -131,6 +131,8 @@ public final class LmdbNativeForceableStrategies {
 		d.put(LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K,
 				"Factorized ORDER BY + LIMIT, keeping only the top-K rows while scanning.");
 		// GROUP BY / aggregate dispatch (NativeGroupStep.evaluateArbitrated).
+		d.put(LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT,
+				"Scalar row counts over a statement pattern using exact source cardinalities.");
 		d.put(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
 				"Aggregation answered directly from the in-memory adjacency index.");
 		d.put(LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,

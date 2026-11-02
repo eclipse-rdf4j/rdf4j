@@ -122,9 +122,19 @@ final class LmdbStatementAccessArbiter {
 				adjacency);
 	}
 
+	/** Records actual source work without teaching the arbiter from a route that did not arbitrate. */
+	static RecordIterator observed(RecordIterator iterator, AdjacencyAccessObserver observer, boolean adjacency) {
+		return observer == null ? iterator
+				: new MeasuredRecordIterator(iterator, null, 0L, 0, 0L, Double.NaN, observer, adjacency);
+	}
+
 	/** Probe-owned measurement wrapper that preserves iterator reuse across repeated retained-probe opens. */
 	static final class ReusableMeasurement {
 		private final MeasuredRecordIterator measured = new MeasuredRecordIterator();
+
+		RecordIterator observe(RecordIterator iterator, AdjacencyAccessObserver observer, boolean adjacency) {
+			return observer == null ? iterator : wrap(iterator, null, 0L, 0, 0L, Double.NaN, observer, adjacency);
+		}
 
 		RecordIterator wrap(RecordIterator iterator, RuntimeEvidence evidence, int variantKey,
 				long openNanos, double estimatedWork) {
@@ -396,7 +406,7 @@ final class LmdbStatementAccessArbiter {
 				long actualScanned = scanned >= 0L ? scanned : rows;
 				long actualMatched = matched >= 0L ? matched : rows;
 				long actualFiltered = filtered >= 0L ? filtered : Math.max(0L, actualScanned - actualMatched);
-				if (exhausted) {
+				if (evidence != null && exhausted) {
 					// Calibrate the same work units used by choose(). Actual scan counts remain telemetry: using
 					// them here would penalize a selective index whenever the shared cardinality estimate is high,
 					// while an iterator without scan telemetry would be calibrated against the estimate instead.
@@ -404,13 +414,14 @@ final class LmdbStatementAccessArbiter {
 							? Math.max(1D, estimatedWork)
 							: Math.max(1L, actualScanned);
 					evidence.completed(regime, variantKey, activeNanos, calibrationWork);
-				} else {
+				} else if (evidence != null) {
 					evidence.censored(regime, variantKey);
 				}
 				AdjacencyAccessObserver completedObserver = observer;
 				observer = null;
 				if (completedObserver != null) {
-					completedObserver.measurement(adjacency, actualScanned, actualMatched, actualFiltered, !exhausted);
+					completedObserver.measurement(adjacency, actualScanned, actualMatched, actualFiltered, !exhausted,
+							scanned >= 0L);
 				}
 			}
 		}

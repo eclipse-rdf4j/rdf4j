@@ -70,6 +70,26 @@ final class Term {
 		}
 		return slot >= 0 ? slots[slot] : UNKNOWN;
 	}
+
+	/**
+	 * A bound-entry constant ({@link #constantSlot(int, long)}) always probes with its constant, never with whatever an
+	 * earlier producer (VALUES, another pattern) left in its slot. Row-at-a-time binding rejects such a quad through
+	 * {@code PatternPlan.bindTerm}; a batch tail that only copies fresh quad positions must ask this before probing,
+	 * otherwise a conflicting earlier binding survives into the emitted row. Equal ids agree directly; distinct ids
+	 * consult the evaluation's term authority (a plan-interned VALUES term versus the store id of the same term).
+	 */
+	boolean agreesWithBoundSlot(RowState row) {
+		if (!bindConstant || slot < 0 || row.slots[slot] == UNKNOWN) {
+			return true;
+		}
+		return row.bindOrCheckTerm(slot, constant);
+	}
+
+	/** Whether every bound-entry constant of {@code pattern} agrees with the slot the row already holds for it. */
+	static boolean boundConstantsAgree(PatternPlan pattern, RowState row) {
+		return pattern.s.agreesWithBoundSlot(row) && pattern.p.agreesWithBoundSlot(row)
+				&& pattern.o.agreesWithBoundSlot(row) && pattern.c.agreesWithBoundSlot(row);
+	}
 }
 
 @Experimental
@@ -116,7 +136,9 @@ final class PatternCursor implements AutoCloseable {
 	long[] contexts;
 	LmdbKeyRange range;
 	NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver;
+	NativeCancellationToken cancellation;
 	boolean encounterOrderRequired;
+	boolean directLmdbSweep;
 	int contextIndex;
 	RecordIterator current;
 	long[] syntheticRow;
@@ -158,6 +180,20 @@ final class PatternCursor implements AutoCloseable {
 	PatternCursor withResidualRange(LmdbKeyRange residualRange) {
 		if (this != EMPTY) {
 			this.range = residualRange;
+		}
+		return this;
+	}
+
+	PatternCursor withCancellation(NativeCancellationToken cancellation) {
+		if (this != EMPTY) {
+			this.cancellation = cancellation;
+		}
+		return this;
+	}
+
+	PatternCursor withDirectLmdbSweep(boolean direct) {
+		if (this != EMPTY) {
+			directLmdbSweep = direct;
 		}
 		return this;
 	}
@@ -222,7 +258,9 @@ final class PatternCursor implements AutoCloseable {
 		this.contexts = contexts;
 		this.range = range;
 		this.accessObserver = accessObserver;
+		this.cancellation = null;
 		this.encounterOrderRequired = encounterOrderRequired;
+		this.directLmdbSweep = false;
 		this.contextIndex = 0;
 		this.closed = false;
 		this.residualPollTick = 0;
@@ -262,6 +300,9 @@ final class PatternCursor implements AutoCloseable {
 	}
 
 	RecordIterator openIterator(long context) throws IOException {
+		if (directLmdbSweep) {
+			return source.lmdbStatements(subj, pred, obj, context, accessObserver);
+		}
 		if (range != null) {
 			return source.statements(subj, pred, obj, context, range, accessObserver);
 		}
@@ -284,6 +325,9 @@ final class PatternCursor implements AutoCloseable {
 		if (closed) {
 			return null;
 		}
+		if (range != null && residualPollTick == 0) {
+			pollResidualCancellationNow();
+		}
 		if (syntheticPending) {
 			syntheticPending = false;
 			if (range != null && !range.includes(syntheticRow, 0)) {
@@ -303,7 +347,7 @@ final class PatternCursor implements AutoCloseable {
 			long[] row = current.next();
 			if (row != null) {
 				if (range != null) {
-					LmdbNativeProbeDeadline.poll(++residualPollTick);
+					pollResidualFilter();
 					if (!range.includes(row, 0)) {
 						continue;
 					}
@@ -323,6 +367,9 @@ final class PatternCursor implements AutoCloseable {
 		if (closed) {
 			return 0;
 		}
+		if (residualPollTick == 0) {
+			pollResidualCancellationNow();
+		}
 		if (syntheticPending) {
 			if (range != null && !range.includes(syntheticRow, 0)) {
 				endOfInput();
@@ -340,16 +387,18 @@ final class PatternCursor implements AutoCloseable {
 				}
 				current = openIterator(contexts[contextIndex++]);
 			}
-			int rows = current.fill(buffer, maxRows);
+			int requestedRows = Math.min(maxRows, 1_024);
+			requestedRows = Math.min(requestedRows, 1_024 - (residualPollTick & 1_023));
+			int rows = current.fill(buffer, requestedRows);
 			if (rows > 0) {
-				if (rows < maxRows) {
+				if (rows < requestedRows) {
 					current.close();
 					current = null;
 				}
 				if (range != null) {
 					int retained = 0;
 					for (int i = 0; i < rows; i++) {
-						LmdbNativeProbeDeadline.poll(++residualPollTick);
+						pollResidualFilter();
 						if (range.includes(buffer, i * 4)) {
 							if (retained != i) {
 								System.arraycopy(buffer, i * 4, buffer, retained * 4, 4);
@@ -362,10 +411,39 @@ final class PatternCursor implements AutoCloseable {
 					}
 					return retained;
 				}
+				pollRawFillRows(rows);
 				return rows;
 			}
 			current.close();
 			current = null;
+		}
+	}
+
+	private void pollResidualFilter() {
+		int tick = ++residualPollTick;
+		LmdbNativeProbeDeadline.poll(tick);
+		if (cancellation != null) {
+			cancellation.poll(tick);
+		}
+	}
+
+	private void pollRawFillRows(int rows) {
+		int previousTick = residualPollTick;
+		int untilPoll = 1_024 - (previousTick & 1_023);
+		residualPollTick = previousTick + rows;
+		if (rows >= untilPoll) {
+			int tick = previousTick + untilPoll;
+			LmdbNativeProbeDeadline.poll(tick);
+			if (cancellation != null) {
+				cancellation.poll(tick);
+			}
+		}
+	}
+
+	private void pollResidualCancellationNow() {
+		LmdbNativeProbeDeadline.poll(0);
+		if (cancellation != null) {
+			cancellation.check();
 		}
 	}
 
@@ -406,5 +484,6 @@ final class PatternCursor implements AutoCloseable {
 			executionPhase.complete();
 		}
 		close();
+		pollResidualCancellationNow();
 	}
 }

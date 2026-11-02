@@ -1291,7 +1291,10 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	private static final int PARALLEL_INGEST_MIN_BATCH_SIZE = 4 * 1024;
 	private static final int PARALLEL_INGEST_MAX_BATCH_SIZE = INCREMENTAL_BATCH_SIZE;
 	private static final int REBUILD_BATCH_SIZE = PARALLEL_INGEST_MAX_BATCH_SIZE;
+	private static final long REBUILD_RETRY = -1L;
 	private final Object incrementalBufferLock = new Object();
+	/** Guarded by the queue lock; changes whenever a store mutation reaches the estimator. */
+	private long incrementalMutationVersion;
 	private final Object asyncIncrementalDrainLock = new Object();
 	private final AtomicReference<Throwable> asyncIncrementalFailure = new AtomicReference<>();
 	private final ExecutorService asyncIncrementalExecutor;
@@ -2067,7 +2070,15 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	 * @return number of statements scanned.
 	 */
 	public synchronized long rebuild() {
-		flushPendingIncremental();
+		long result;
+		do {
+			result = rebuildOnce();
+		} while (result == REBUILD_RETRY);
+		return result;
+	}
+
+	private long rebuildOnce() {
+		long mutationVersion = flushPendingIncrementalAndCaptureVersion();
 		clearEstimateCacheIfPopulated();
 		clearPositiveReadinessCache();
 		long requestVersion = rebuildRequestVersion.get();
@@ -2094,6 +2105,16 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 				targetBuffer, targetSlot, previousCurrentSlot, requestVersion);
 		try {
 			try (CloseableIteration<? extends Statement> it = statementSource.getStatements(null, null, null)) {
+				// Updates delivered before the snapshot was acquired may already be in the snapshot as well as the
+				// inactive buffer. Start again from a clean buffer; updates after this boundary remain incremental.
+				if (incrementalMutationVersionChanged(mutationVersion)) {
+					if (Thread.currentThread().isInterrupted() || !running && Thread.currentThread() == refresher
+							|| Thread.currentThread() == refresher && !isRebuildAllowed()) {
+						return stopRebuildEarly(tgt, targetBuffer, targetSlot, 0L, startNanos,
+								keepRebuildRequiredOnEarlyStop);
+					}
+					return REBUILD_RETRY;
+				}
 				IngestEvent[] rebuildBatch = new IngestEvent[Math.min(REBUILD_BATCH_SIZE, memoryMonitorCheckInterval)];
 				int rebuildBatchSize = 0;
 				int rebuildMemoryCheckCountdown = memoryMonitorCheckInterval;
@@ -2270,8 +2291,11 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 			return;
 		}
 		clearEstimateCacheIfPopulated();
-		approxStoreSize.updateAndGet(current -> applyStoreSizeDelta(current, additions, deletions));
-		markRebuildRequired();
+		synchronized (incrementalBufferLock) {
+			approxStoreSize.updateAndGet(current -> applyStoreSizeDelta(current, additions, deletions));
+			markRebuildRequired();
+			incrementalMutationVersion++;
+		}
 		notifyReadyWaiters();
 	}
 
@@ -2345,6 +2369,7 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		rethrowAsyncIncrementalFailure();
 		StatementUpdateBatch batch = null;
 		synchronized (incrementalBufferLock) {
+			incrementalMutationVersion++;
 			lastIncrementalStatementNanos = System.nanoTime();
 			if (exactIncrementalUpdatesDropped) {
 				markIncrementalRebuildRequiredLocked();
@@ -2403,6 +2428,25 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 					scKey, poKey, pcKey, ocKey);
 		} catch (NullPointerException npe) {
 			return null;
+		}
+	}
+
+	private boolean incrementalMutationVersionChanged(long expected) {
+		synchronized (incrementalBufferLock) {
+			return incrementalMutationVersion != expected;
+		}
+	}
+
+	private long flushPendingIncrementalAndCaptureVersion() {
+		while (true) {
+			flushPendingIncremental();
+			synchronized (incrementalBufferLock) {
+				// Do not miss an update queued between the final drain and this version capture.
+				if (activeStatementQueue().updates.isEmpty() && activeStatementQueue().isReusable()
+						&& otherStatementQueue().isReusable()) {
+					return incrementalMutationVersion;
+				}
+			}
 		}
 	}
 

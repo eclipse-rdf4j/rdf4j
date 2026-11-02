@@ -175,9 +175,12 @@ class LmdbForegroundFilterSamplingEpochTest {
 				awaitRevisionCollection(subjectRevisionCollected);
 				awaitRevisionCollection(nameRevisionCollected);
 			}
-			sail.valueStore().forceEvictionOfValues();
-			sail.valueStore().startTransaction(true);
-			sail.valueStore().commit();
+			// Direct dictionary maintenance must share publication ownership with the async cleanup worker.
+			try (SailClosable publication = sail.getBackingStore().getExplicitSailSource().beginPublication()) {
+				sail.valueStore().forceEvictionOfValues();
+				sail.valueStore().startTransaction(true);
+				sail.valueStore().commit();
+			}
 
 			IRI replacementSubject = valueFactory.createIRI("urn:test:replacement-subject");
 			Literal replacementName = valueFactory.createLiteral("replacement-value-" + "y".repeat(32));
@@ -232,15 +235,21 @@ class LmdbForegroundFilterSamplingEpochTest {
 				connection.remove(replacementSubject, NAME, replacementName);
 				connection.commit();
 			}
+			// The paired sample has closed; hand queued hints to the durable drain before checking retirement.
+			assertTrue(sail.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS));
+			LmdbGcTestMaintenance.drainRetirements(sail.getBackingStore());
 			assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(sampledSubject),
 					"After the paired sample closes and a later write advances the epoch, the deleted subject is retired");
 			assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(sampledName),
 					"After the paired sample closes and a later write advances the epoch, the deleted literal is retired");
 			awaitRevisionCollection(subjectRevisionCollected);
 			awaitRevisionCollection(nameRevisionCollected);
-			sail.valueStore().forceEvictionOfValues();
-			sail.valueStore().startTransaction(true);
-			sail.valueStore().commit();
+			// Direct dictionary maintenance must share publication ownership with the async cleanup worker.
+			try (SailClosable publication = sail.getBackingStore().getExplicitSailSource().beginPublication()) {
+				sail.valueStore().forceEvictionOfValues();
+				sail.valueStore().startTransaction(true);
+				sail.valueStore().commit();
+			}
 		} finally {
 			pause.release.countDown();
 			if (estimateFuture != null && !estimateFuture.isDone()) {
@@ -1001,9 +1010,14 @@ class LmdbForegroundFilterSamplingEpochTest {
 				}
 				connection.commit();
 			}
-			sail.valueStore().forceEvictionOfValues();
-			sail.valueStore().startTransaction(true);
-			sail.valueStore().commit();
+			// The sampler is paused before read-view admission, so no native pin prevents queue progress.
+			assertTrue(backing.asyncValueCleanupCoordinator().awaitEmpty(3, TimeUnit.SECONDS));
+			// Direct dictionary maintenance must share publication ownership with the async cleanup worker.
+			try (SailClosable publication = sail.getBackingStore().getExplicitSailSource().beginPublication()) {
+				sail.valueStore().forceEvictionOfValues();
+				sail.valueStore().startTransaction(true);
+				sail.valueStore().commit();
+			}
 			LmdbGcTestMaintenance.drainRetirements(backing);
 			assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(NAME),
 					"The old predicate is absent from the dictionary before the drained request acquires a view");
@@ -1054,6 +1068,24 @@ class LmdbForegroundFilterSamplingEpochTest {
 					"The background predicate sampler must terminate");
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDirectory.toFile());
+		}
+	}
+
+	@Test
+	void samplingReservationCountsExcludeOtherThreads() throws Exception {
+		SamplingPause pause = new SamplingPause();
+		ExecutorService background = Executors.newSingleThreadExecutor();
+		try {
+			int before = pause.readSnapshotReservationCount();
+			background.submit(pause::valueSnapshotReserved).get(10, TimeUnit.SECONDS);
+			assertEquals(before, pause.readSnapshotReservationCount(),
+					"A background admission must not be counted as the calling sampler's admission");
+			pause.valueSnapshotReserved();
+			assertEquals(before + 1, pause.readSnapshotReservationCount(),
+					"The calling sampler's own admission must still be counted");
+		} finally {
+			background.shutdownNow();
+			assertTrue(background.awaitTermination(10, TimeUnit.SECONDS));
 		}
 	}
 
@@ -1437,7 +1469,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		private final AtomicLong subjectId = new AtomicLong(Long.MIN_VALUE);
 		private final AtomicLong objectId = new AtomicLong(Long.MIN_VALUE);
 		private final AtomicInteger pairedLookupCount = new AtomicInteger();
-		private final AtomicInteger readSnapshotReservationCount = new AtomicInteger();
+		private final ThreadLocal<Integer> readSnapshotReservationCount = ThreadLocal.withInitial(() -> 0);
 		private final AtomicBoolean valueSnapshotReserved = new AtomicBoolean();
 		private final Map<Long, String> resolvedValues = new ConcurrentHashMap<>();
 		private final CountDownLatch rowRead = new CountDownLatch(1);
@@ -1452,7 +1484,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 		}
 
 		private void valueSnapshotReserved() {
-			readSnapshotReservationCount.incrementAndGet();
+			readSnapshotReservationCount.set(readSnapshotReservationCount.get() + 1);
 			if (Thread.currentThread() == samplingThread.get()) {
 				valueSnapshotReserved.set(true);
 			}

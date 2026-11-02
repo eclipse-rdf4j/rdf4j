@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -89,6 +90,7 @@ class LmdbNativeParallelQueryScopeTest {
 		}
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyBuildOnStart(false)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		LmdbStore store = new LmdbStore(dataDir, config);
@@ -102,8 +104,8 @@ class LmdbNativeParallelQueryScopeTest {
 			}
 			connection.commit();
 		}
-		// With range partitioning switched off, only an adjacency root can be split for the parallel kernels; the
-		// adjacency index is built in the background after the commit.
+		// With range partitioning switched off, only an adjacency root can be split for the parallel kernels.
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
 		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
 		set("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		set("rdf4j.lmdb.janinoCodegen.enabled", "true");

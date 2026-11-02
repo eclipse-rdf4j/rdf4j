@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -41,13 +42,22 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LmdbStoreFormatCompatibilityTest {
 
 	@TempDir
+	Path temporaryRoot;
+
 	Path directory;
 
+	@BeforeEach
+	void setUpDirectory() throws IOException {
+		// The bulk-loader lock and external configuration fixtures are siblings of the store.
+		// Own their common parent so JUnit removes them too, after store handles have closed.
+		directory = Files.createDirectory(temporaryRoot.resolve("store"));
+	}
+
 	@Test
-	void newStoreAuthorsFormatSix() throws Exception {
+	void newStoreAuthorsFormatSeven() throws Exception {
 		openAndClose(true);
 		Properties properties = readProperties();
-		assertThat(properties.getProperty("version")).isEqualTo("6");
+		assertThat(properties.getProperty("version")).isEqualTo("7");
 		assertThat(properties.getProperty("literal-reference-encoding")).isEqualTo("core-v1");
 		assertThat(Files.readString(directory.resolve("lmdbrdf.ver")))
 				.isEqualTo(LmdbStore.CORE_LITERAL_REFERENCE_MARKER);
@@ -58,7 +68,7 @@ class LmdbStoreFormatCompatibilityTest {
 		Path config = directory.resolve("config.ttl");
 		Files.writeString(config, "repository manager configuration");
 		openAndClose(true);
-		assertThat(readProperties().getProperty("version")).isEqualTo("6");
+		assertThat(readProperties().getProperty("version")).isEqualTo("7");
 		assertThat(Files.readString(config)).isEqualTo("repository manager configuration");
 	}
 
@@ -93,6 +103,30 @@ class LmdbStoreFormatCompatibilityTest {
 		assertThatThrownBy(store::init).isInstanceOf(SailException.class);
 		assertThat(directory.resolve("store.properties")).doesNotExist();
 		assertThat(directory.resolve("lmdbrdf.ver")).doesNotExist();
+	}
+
+	@Test
+	void externalConfigurationTargetStaysInsideOwnedTemporaryRoot() throws Exception {
+		Path target = directory.resolveSibling(directory.getFileName() + "-configuration");
+		try {
+			repositoryConfigurationMustBeARegularFile(true);
+			assertThat(Files.readString(target)).isEqualTo("external owner metadata");
+			assertThat(directory.resolve("config.ttl").toRealPath())
+					.as("external-to-store fixture metadata still belongs to the test's temporary root")
+					.startsWith(temporaryRoot);
+		} finally {
+			// Also clean up the deliberately red baseline, where the target escapes the JUnit-owned root.
+			Files.deleteIfExists(target);
+		}
+	}
+
+	@Test
+	void bulkLoaderLockStaysInsideOwnedTemporaryRoot() throws Exception {
+		standaloneBulkLoaderCannotReplaceExistingOrClearedLegacyStore(false);
+		Path lock = directory.resolveSibling("." + directory.getFileName() + ".lmdb-bulk-load.lock");
+		assertThat(lock).isRegularFile();
+		assertThat(lock).as("the retained lock inode must remain inside the test's owned temporary root")
+				.startsWith(temporaryRoot);
 	}
 
 	@Test
@@ -201,7 +235,7 @@ class LmdbStoreFormatCompatibilityTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "1", "3", "4", "5", "7", "-1", "garbage" })
+	@ValueSource(strings = { "1", "3", "4", "5", "6", "8", "-1", "garbage" })
 	void unsupportedVersionRejectsBeforeCreatingEnvironments(String version) throws Exception {
 		Properties properties = legacyProperties();
 		properties.setProperty("version", version);

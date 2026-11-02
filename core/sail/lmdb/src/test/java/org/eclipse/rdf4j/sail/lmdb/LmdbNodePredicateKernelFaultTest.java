@@ -214,6 +214,7 @@ class LmdbNodePredicateKernelFaultTest {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,cspo")
 				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyBuildOnStart(false)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		sail = new LmdbStore(dataDir, config);
@@ -260,13 +261,8 @@ class LmdbNodePredicateKernelFaultTest {
 		} catch (Exception e) {
 			throw new IllegalStateException("could not resolve the IDs to corrupt", e);
 		}
-		if (corrupt) {
-			// Startup/commit maintenance may already have published a healthy base before IDs were available.
-			// Apply the structural fault to a real fresh build, rather than reusing that earlier publication.
-			assertThat(sail.getBackingStore().directAdjacencyStore().rebuildNowForTest()).isTrue();
-		} else {
-			assertThat(AdjacencyEngagementTestAccess.buildNow(sail)).isTrue();
-		}
+		// The fixture owns the first build, so the injected fault is present in the published base.
+		assertThat(AdjacencyEngagementTestAccess.buildNow(sail)).isTrue();
 	}
 
 	private List<String> run(String query) {

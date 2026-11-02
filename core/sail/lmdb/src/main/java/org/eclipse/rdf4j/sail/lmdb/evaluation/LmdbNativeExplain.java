@@ -195,6 +195,10 @@ final class LmdbNativeExplain {
 		}
 	}
 
+	static void adoptRuntimePlan(TupleExpr expr, LmdbNativeRuntimePlan.Invocation completed) {
+		LmdbNativeRuntimePlan.adopt(logicalOrigin(expr), completed);
+	}
+
 	static void setRuntimeMetric(TupleExpr expr, String metricName, long value) {
 		expr = logicalOrigin(expr);
 		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
@@ -335,6 +339,15 @@ final class LmdbNativeExplain {
 				sb.append(", filterDepths=").append(Arrays.toString(ordered.filterDepth));
 			}
 			return sb.append(")").toString();
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return "AliasJoin(original=" + describe(alias.original, slotNames, boundMask)
+					+ ", guardedRightDriven=" + (alias.inverted == null ? "<unavailable:correlated-input>"
+							: describe(alias.inverted, slotNames, boundMask))
+					+ ", originalOrderMemo=" + describe(alias.memoized, slotNames, boundMask) + ")";
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return "CorrelatedFragmentMemo(" + describe(memo.original, slotNames, boundMask) + ")";
 		}
 		if (plan instanceof JoinPlan) {
 			JoinPlan join = (JoinPlan) plan;

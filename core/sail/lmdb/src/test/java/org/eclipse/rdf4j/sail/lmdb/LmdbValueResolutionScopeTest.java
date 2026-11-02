@@ -109,7 +109,7 @@ class LmdbValueResolutionScopeTest {
 			store.storeValue(expected.getObject());
 			store.commit();
 			long parentId;
-			long childEpoch;
+			ValueStoreRevision.Lazy childEpoch;
 			try (ValueResolutionScope creator = store.openValueResolutionScope();
 					SailClosable activation = creator.activate()) {
 				store.startTransaction(true);
@@ -118,12 +118,12 @@ class LmdbValueResolutionScopeTest {
 				parent.init();
 				LmdbValue child = (LmdbValue) ((TripleTerm) parent).getObject();
 				assertInstanceOf(ValueStoreRevision.Lazy.class, child.getValueStoreRevision());
-				childEpoch = child.getValueStoreRevision().getRevisionId();
-				assertTrue(childEpoch != parent.getValueStoreRevision().getRevisionId(),
+				childEpoch = (ValueStoreRevision.Lazy) child.getValueStoreRevision();
+				assertTrue(childEpoch.getRevisionId() != parent.getValueStoreRevision().getRevisionId(),
 						"the pending parent must actually contain a predecessor child capability");
 				store.commit();
 			}
-			assertTrue(store.unusedRevisionIds.contains(childEpoch),
+			assertFalse(isEpochProtected(store, childEpoch),
 					"the unexported predecessor has no remaining logical owner after commit");
 			try (ValueResolutionScope next = store.openValueResolutionScope();
 					SailClosable activation = next.activate()) {
@@ -323,7 +323,7 @@ class LmdbValueResolutionScopeTest {
 			try (SailClosable activation = creator.activate()) {
 				child = store.getLazyValue(childId);
 			}
-			long olderEpoch = child.getValueStoreRevision().getRevisionId();
+			ValueStoreRevision.Lazy olderEpoch = (ValueStoreRevision.Lazy) child.getValueStoreRevision();
 			// Only a rollback that assigned an ID retires the revision.
 			store.startTransaction(true);
 			store.storeValue(vf.createBNode("older-cold-rollback-assigned"));
@@ -336,7 +336,7 @@ class LmdbValueResolutionScopeTest {
 			assertSame(ready, store.getLazyValue(parentId));
 			assertInstanceOf(ValueStoreRevision.Lazy.class, child.getValueStoreRevision());
 			creator.close();
-			assertFalse(store.unusedRevisionIds.contains(olderEpoch),
+			assertTrue(isEpochProtected(store, olderEpoch),
 					"cold composite exposure must pin the child's actual older capability");
 			store.close();
 			assertEquals("older-cold-child", ready.getObject().stringValue());
@@ -411,22 +411,22 @@ class LmdbValueResolutionScopeTest {
 	void earlyReservationProtectsManyRetiredCohortsUntilItsRelease(@TempDir File dataDir) throws Exception {
 		try (HookValueStore store = new HookValueStore(dataDir);
 				ValueResolutionScope scope = store.openValueResolutionScope()) {
-			List<Long> revisions = new ArrayList<>();
+			List<ValueStoreRevision.Lazy> revisions = new ArrayList<>();
 			for (int i = 0; i < 64; i++) {
 				long id = commitValue(store, SimpleValueFactory.getInstance().createBNode("retired-cohort-" + i));
 				try (SailClosable activation = scope.activate()) {
-					revisions.add(store.getLazyValue(id).getValueStoreRevision().getRevisionId());
+					revisions.add((ValueStoreRevision.Lazy) store.getLazyValue(id).getValueStoreRevision());
 				}
 				store.startTransaction(true);
 				store.gcIds(Set.of(id), new HashSet<>());
 				store.commit();
 			}
-			for (long revision : revisions) {
-				assertFalse(store.unusedRevisionIds.contains(revision));
+			for (ValueStoreRevision.Lazy revision : revisions) {
+				assertTrue(isEpochProtected(store, revision));
 			}
 			scope.close();
-			for (long revision : revisions) {
-				assertTrue(store.unusedRevisionIds.contains(revision));
+			for (ValueStoreRevision.Lazy revision : revisions) {
+				assertFalse(isEpochProtected(store, revision));
 			}
 		}
 	}
@@ -482,11 +482,11 @@ class LmdbValueResolutionScopeTest {
 					held = store.getLazyValue(id, capability);
 				}
 				older.close();
-				assertFalse(store.unusedRevisionIds.contains(capability.getRevisionId()),
+				assertTrue(isEpochProtected(store, capability),
 						"the new scope must retain an earlier encountered capability after its original owner closes");
 				assertEquals("older-capability", ((BNode) held).getID());
 			}
-			assertTrue(store.unusedRevisionIds.contains(capability.getRevisionId()));
+			assertFalse(isEpochProtected(store, capability));
 		}
 	}
 
@@ -500,7 +500,7 @@ class LmdbValueResolutionScopeTest {
 			try (SailClosable activation = scope.activate()) {
 				held = store.getLazyValue(id);
 			}
-			long epoch = held.getValueStoreRevision().getRevisionId();
+			ValueStoreRevision.Lazy epoch = (ValueStoreRevision.Lazy) held.getValueStoreRevision();
 			List<TxnManager.Txn> ordinary = new ArrayList<>();
 			for (int i = 0; i < TxnManager.POOL_SIZE - 1; i++) {
 				ordinary.add(store.getTxnManager().createReadTxnUntracked());
@@ -528,7 +528,7 @@ class LmdbValueResolutionScopeTest {
 				});
 				assertTrue(writerPublished.await(10, TimeUnit.SECONDS),
 						"writer publication must finish before its native-reader reset waits on decode");
-				assertFalse(store.unusedRevisionIds.contains(epoch),
+				assertTrue(isEpochProtected(store, epoch),
 						"the borrowed callback must keep its epoch pinned after native start and creator close");
 			} finally {
 				releaseNative.countDown();
@@ -538,7 +538,7 @@ class LmdbValueResolutionScopeTest {
 			getter.get(10, TimeUnit.SECONDS);
 			writer.get(10, TimeUnit.SECONDS);
 			assertEquals("borrowed-epoch", held.stringValue());
-			assertTrue(store.unusedRevisionIds.contains(epoch));
+			assertFalse(isEpochProtected(store, epoch));
 		}
 	}
 
@@ -613,15 +613,15 @@ class LmdbValueResolutionScopeTest {
 			try (SailClosable activation = scope.activate()) {
 				held = store.getLazyValue(id);
 			}
-			long epoch = held.getValueStoreRevision().getRevisionId();
+			ValueStoreRevision.Lazy epoch = (ValueStoreRevision.Lazy) held.getValueStoreRevision();
 			store.startTransaction(true);
 			store.gcIds(Set.of(id), new HashSet<>());
 			store.commit();
-			assertFalse(store.unusedRevisionIds.contains(epoch), "the active scope must protect its deletion epoch");
+			assertTrue(isEpochProtected(store, epoch), "the active scope must protect its deletion epoch");
 			scope.close();
-			assertTrue(store.unusedRevisionIds.contains(epoch),
+			assertFalse(isEpochProtected(store, epoch),
 					"closing the final explicit owner must release its epoch without waiting for model GC");
-			assertEquals(epoch, held.getValueStoreRevision().getRevisionId(),
+			assertEquals(epoch.getRevisionId(), held.getValueStoreRevision().getRevisionId(),
 					"the test must keep the internal model and its immutable metadata reachable");
 		}
 	}
@@ -1229,6 +1229,16 @@ class LmdbValueResolutionScopeTest {
 	@FunctionalInterface
 	private interface ReadHook {
 		void read(long id) throws IOException;
+	}
+
+	/** Probe the actual epoch capability; async cleanup intentionally does not retain timed-eviction hint sets. */
+	private static boolean isEpochProtected(ValueStore store, ValueStoreRevision.Lazy revision) {
+		try (ValueStore.EpochReservation ignored = store.reserveValueEpoch(revision)) {
+			return true;
+		} catch (SailException released) {
+			assertEquals("The lazy dictionary epoch was already released", released.getMessage());
+			return false;
+		}
 	}
 
 	private static final class HookValueStore extends ValueStore implements AutoCloseable {

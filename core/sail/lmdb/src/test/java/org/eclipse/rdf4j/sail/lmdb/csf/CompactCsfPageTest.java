@@ -241,6 +241,69 @@ class CompactCsfPageTest {
 	}
 
 	@Test
+	void ordinalLookupsMatchAllPairsAcrossRowsAndPageLayouts() {
+		assertOrdinalLookups(false, false);
+		assertOrdinalLookups(false, true);
+		assertOrdinalLookups(true, true);
+	}
+
+	private static void assertOrdinalLookups(boolean multipleContexts, boolean distinctContexts) {
+		CsfPageData data = new CsfPageData();
+		int[] rowSizes = { 1, 520, 17 };
+		for (int row = 0; row < rowSizes.length; row++) {
+			int fibers = rowSizes[row];
+			long[] neighbors = new long[fibers];
+			int[] starts = new int[fibers];
+			int[] counts = new int[fibers];
+			long[] contexts = new long[fibers * (multipleContexts ? 3 : 1)];
+			int contextCount = 0;
+			for (int fiber = 0; fiber < fibers; fiber++) {
+				long neighbor = id(1, 1_000L + row * 2_000L + fiber * 3L);
+				neighbors[fiber] = fiber < 260 ? neighbor : Long.MIN_VALUE + neighbor;
+				starts[fiber] = contextCount;
+				counts[fiber] = multipleContexts && fiber % 4 == 0 ? 3 : 1;
+				for (int context = 0; context < counts[fiber]; context++) {
+					contexts[contextCount++] = distinctContexts
+							? id(1, 100_000L + row * 10_000L + fiber * 4L + context)
+							: 0;
+				}
+			}
+			data.appendRow(id(1, row + 1L), neighbors, starts, counts, contexts, fibers, contextCount);
+		}
+		CompactCsfPageEncoder.PageImage image = new CompactCsfPageEncoder().tryEncode(data, false, 16);
+		assertThat(image).isNotNull();
+		int flags = LeBytes.getUnsignedShort(image.bytes(), CompactCsfPageFormat.FLAGS_AT);
+		assertThat((flags & CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE) != 0).isEqualTo(!multipleContexts);
+		assertThat((flags & CompactCsfPageFormat.FLAG_COMMON_CONTEXT) != 0).isEqualTo(!distinctContexts);
+		long address = UnsafeAccess.allocateZeroed(image.capacity() + PackedLongVector.READ_TAIL_PADDING);
+		try {
+			UnsafeAccess.copyFromArray(image.bytes(), 0, address, image.bytes().length);
+			CompactCsfPageReader reader = new CompactCsfPageReader(address);
+			for (int row = 0; row < data.rowCount; row++) {
+				int firstFiber = data.rowFiberStarts[row];
+				int ordinal = 0;
+				for (int localFiber = 0; localFiber < data.rowFiberCounts[row]; localFiber++) {
+					int fiber = firstFiber + localFiber;
+					for (int context = 0; context < data.fiberContextCounts[fiber]; context++) {
+						assertThat(reader.neighborAtOrdinal(row, ordinal)).isEqualTo(data.neighbors[fiber]);
+						assertThat(reader.contextAtOrdinal(row, ordinal))
+								.isEqualTo(data.contexts[data.fiberContextStarts[fiber] + context]);
+						ordinal++;
+					}
+				}
+				int invalidOrdinal = ordinal;
+				int currentRow = row;
+				assertThatThrownBy(() -> reader.neighborAtOrdinal(currentRow, -1))
+						.isInstanceOf(IllegalArgumentException.class);
+				assertThatThrownBy(() -> reader.contextAtOrdinal(currentRow, invalidOrdinal))
+						.isInstanceOf(IllegalArgumentException.class);
+			}
+		} finally {
+			UnsafeAccess.free(address);
+		}
+	}
+
+	@Test
 	void bindTrustedDecodesIdenticallyToFullResolve() {
 		CsfPageData data = new CsfPageData();
 		data.appendRow(id(1, 1), new long[] { id(1, 10), id(1, 20) }, new int[] { 0, 1 },

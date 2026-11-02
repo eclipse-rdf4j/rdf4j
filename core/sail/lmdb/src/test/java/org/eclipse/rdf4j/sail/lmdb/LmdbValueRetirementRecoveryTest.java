@@ -122,6 +122,7 @@ class LmdbValueRetirementRecoveryTest {
 		}
 		CountDownLatch termWriter = new CountDownLatch(1);
 		CountDownLatch release = new CountDownLatch(1);
+		CountDownLatch applicationCancelled = new CountDownLatch(1);
 		AtomicLong observedNativeId = new AtomicLong();
 		CompletableFuture<Boolean> sameWriter = new CompletableFuture<>();
 		AtomicReference<ValueStore> values = new AtomicReference<>();
@@ -169,6 +170,10 @@ class LmdbValueRetirementRecoveryTest {
 									sameWriter.complete(retained);
 									if (!retained) {
 										throw new IllegalStateException("Namespace cleanup consumed the TERM writer");
+									}
+									if (asyncTermGrowth) {
+										assertTrue(applicationCancelled.await(10L, TimeUnit.SECONDS),
+												"the TERM writer must stay admitted until the waiting application is cancelled");
 									}
 								} catch (IOException | InterruptedException failure) {
 									sameWriter.completeExceptionally(failure);
@@ -243,6 +248,7 @@ class LmdbValueRetirementRecoveryTest {
 					assertTrue(cancelled.get(10L, TimeUnit.SECONDS) instanceof SailException,
 							"cancellation must fail the partial statement transaction");
 				} finally {
+					applicationCancelled.countDown();
 					writer.interrupt();
 					writer.join(10_000L);
 				}
@@ -270,6 +276,7 @@ class LmdbValueRetirementRecoveryTest {
 			}
 		} finally {
 			release.countDown();
+			applicationCancelled.countDown();
 			reopened.shutDown();
 		}
 	}
@@ -280,7 +287,9 @@ class LmdbValueRetirementRecoveryTest {
 	void readOnlyRollbackOrCloseCannotAbortPostReadyRetirement(boolean close, @TempDir File dataDir)
 			throws Exception {
 		var factory = SimpleValueFactory.getInstance();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true);
+		// Exercise the durable PostReady writer, not the async coordinator's differently locked drain.
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true)
+				.setAsyncValueCleanup(false);
 		IRI subject = factory.createIRI("urn:retirement:owned-post-ready-subject");
 		TripleTerm quoted = factory.createTripleTerm(subject, PREDICATE, factory.createLiteral("live inner value"));
 		TripleTerm nested = factory.createTripleTerm(subject, PREDICATE, quoted);
@@ -463,7 +472,8 @@ class LmdbValueRetirementRecoveryTest {
 
 	@Test
 	void failedTripleCommitPreservesLiveQuotedValuesAcrossReopen(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true)
+				.setAsyncValueCleanup(false);
 		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:retirement:failed-commit-subject");
 		TripleTerm quoted = SimpleValueFactory.getInstance()
 				.createTripleTerm(subject, PREDICATE,
@@ -474,6 +484,8 @@ class LmdbValueRetirementRecoveryTest {
 		FailingTripleCommitStore store = new FailingTripleCommitStore(dataDir, config);
 		store.init();
 		try {
+			// This test needs the failed commit's intent to be recovered on the subsequent reopen.
+			LmdbGcTestMaintenance.awaitPostReady(store);
 			try (SailConnection connection = store.getConnection()) {
 				connection.begin(IsolationLevels.SNAPSHOT);
 				connection.addStatement(subject, PREDICATE, nestedQuoted);

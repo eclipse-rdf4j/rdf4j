@@ -18,11 +18,15 @@ import java.io.File;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.assertj.core.api.SoftAssertions;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -33,10 +37,14 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
@@ -47,9 +55,11 @@ import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRe
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -58,6 +68,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Differential coverage for native custom aggregates (M5): the shipped stdev/variance factories plus a bespoke
@@ -65,6 +77,7 @@ import org.junit.jupiter.api.io.TempDir;
  * DISTINCT, grouped/global, mixed with built-in aggregates, and the empty-input global group.
  */
 @Timeout(value = 120, unit = TimeUnit.SECONDS)
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbNativeCustomAggregateTest {
 
 	private static final String EX = "http://example.com/";
@@ -72,6 +85,41 @@ public class LmdbNativeCustomAggregateTest {
 	private static final String PREFIX = "PREFIX ex: <" + EX + ">\n";
 	private static final String NARY_IRI = "http://example.com/aggregate#weightedSum";
 	private static final String NOW_IRI = "http://example.com/aggregate#recordNow";
+	private static final String CALLBACK_IRI = "http://example.com/aggregate#recordCallback";
+	private static final AtomicInteger CALLBACK_INVOCATIONS = new AtomicInteger();
+
+	private static final AggregateFunctionFactory RECORD_CALLBACK = new AggregateFunctionFactory() {
+		@Override
+		public String getIri() {
+			return CALLBACK_IRI;
+		}
+
+		@Override
+		public AggregateFunction<CallbackCollector, Value> buildFunction(Function<BindingSet, Value> evaluationStep) {
+			return new AggregateFunction<>(evaluationStep) {
+				@Override
+				public void processAggregate(BindingSet bindingSet, Predicate<Value> distinctValue,
+						CallbackCollector collector) {
+					CALLBACK_INVOCATIONS.incrementAndGet();
+					collector.invocations++;
+				}
+			};
+		}
+
+		@Override
+		public AggregateCollector getCollector() {
+			return new CallbackCollector();
+		}
+	};
+
+	private static final class CallbackCollector implements AggregateCollector {
+		private int invocations;
+
+		@Override
+		public Value getFinalValue() {
+			return SimpleValueFactory.getInstance().createLiteral(invocations);
+		}
+	}
 
 	private static final AggregateFunctionFactory RECORD_NOW = new AggregateFunctionFactory() {
 		@Override
@@ -169,12 +217,14 @@ public class LmdbNativeCustomAggregateTest {
 	public static void registerNAry() {
 		CustomAggregateNAryFunctionRegistry.getInstance().add(WEIGHTED_SUM);
 		CustomAggregateFunctionRegistry.getInstance().add(RECORD_NOW);
+		CustomAggregateFunctionRegistry.getInstance().add(RECORD_CALLBACK);
 	}
 
 	@AfterAll
 	public static void unregisterNAry() {
 		CustomAggregateNAryFunctionRegistry.getInstance().remove(WEIGHTED_SUM);
 		CustomAggregateFunctionRegistry.getInstance().remove(RECORD_NOW);
+		CustomAggregateFunctionRegistry.getInstance().remove(RECORD_CALLBACK);
 	}
 
 	@TempDir
@@ -359,6 +409,284 @@ public class LmdbNativeCustomAggregateTest {
 	}
 
 	@Test
+	public void nativeCustomAggregateOnlyReceivesActualRowsWithAndWithoutAdjacency() {
+		String query = "SELECT (<" + CALLBACK_IRI + ">( ?v) AS ?calls) WHERE { VALUES ?v { UNDEF 1 } }";
+		for (boolean adjacencyEnabled : List.of(false, true)) {
+			assertNativeCallbackCount(adjacencyEnabled, query, 2);
+		}
+	}
+
+	private void assertNativeCallbackCount(boolean adjacencyEnabled, String query, int expectedCallbacks) {
+		File storeDirectory = new File(dataDir, "callback-adjacency-" + adjacencyEnabled);
+		LmdbStore store = new LmdbStore(storeDirectory,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(adjacencyEnabled));
+		SailRepository nativeRepository = new SailRepository(store);
+		try {
+			try (SailRepositoryConnection connection = nativeRepository.getConnection()) {
+				ValueFactory valueFactory = connection.getValueFactory();
+				connection.add(valueFactory.createIRI(EX, "stored-subject"),
+						valueFactory.createIRI(EX, "stored-predicate"), valueFactory.createLiteral("stored-value"));
+			}
+
+			CALLBACK_INVOCATIONS.set(0);
+			TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			enableRuntimeTelemetry(root);
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(nativeRepository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				LmdbNativeAggregateCompiler.CompileOutcome outcome = LmdbNativeAggregateCompiler.compileRoot(root,
+						new QueryEvaluationContext.Minimal((Dataset) null), strategy,
+						(NativeLmdbQuerySource) dataset);
+				assertThat(outcome.isSupported())
+						.as("custom aggregate must compile natively with adjacency=%s: %s", adjacencyEnabled, query)
+						.isTrue();
+				assertThat(outcome.step()).isInstanceOf(LmdbNativePhysicalPlan.class);
+				LmdbNativePhysicalPlan plan = (LmdbNativePhysicalPlan) outcome.step();
+				assertThat(plan.nativePhysicalPlan())
+						.as("the executed plan must contain the native group operator")
+						.contains("NativeGroup(");
+
+				List<BindingSet> rows = evaluate(outcome.step());
+				assertThat(rows).hasSize(1);
+				assertThat(rows.getFirst().getValue("calls").stringValue()).isEqualTo("" + expectedCallbacks);
+				assertThat(CALLBACK_INVOCATIONS.get())
+						.as("native custom callback count for adjacency=%s: %s", adjacencyEnabled, query)
+						.isEqualTo(expectedCallbacks);
+				assertThat(nativeInvocationCount(root))
+						.as("the native group must execute for adjacency=%s: %s", adjacencyEnabled, query)
+						.isEqualTo(1L);
+			}
+		} finally {
+			nativeRepository.shutDown();
+		}
+	}
+
+	private static long nativeInvocationCount(TupleExpr root) {
+		AtomicInteger count = new AtomicInteger();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tupleExpr) {
+					long invocations = tupleExpr.getLongMetricActual("nativeInvocationsActual");
+					if (invocations > 0L) {
+						count.addAndGet(Math.toIntExact(invocations));
+					}
+				}
+				super.meetNode(node);
+			}
+		});
+		return count.get();
+	}
+
+	private static void enableRuntimeTelemetry(TupleExpr root) {
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tupleExpr) {
+					tupleExpr.setRuntimeTelemetryEnabled(true);
+					tupleExpr.setExecutionSummaryEnabled(true);
+				}
+				super.meetNode(node);
+			}
+		});
+	}
+
+	@Test
+	public void nativeCustomAggregateEmptySequentialStateDoesNotSynthesizeAInputCallback() {
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean adjacencyEnabled : List.of(false, true)) {
+			assertNativeEmptySequentialStateCallbackRoute(softly, adjacencyEnabled);
+		}
+		softly.assertAll();
+	}
+
+	private void assertNativeEmptySequentialStateCallbackRoute(SoftAssertions softly, boolean adjacencyEnabled) {
+		assertPublicCallbackRoute(softly, "empty-sequential-aggregate", adjacencyEnabled, callbackQuery(),
+				"known-no-match", LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
+				"nativeExecutionPath=" + LmdbNativeAttemptMetrics.PATH_AGG_STATE, 0);
+	}
+
+	@Test
+	public void nativeCustomAggregateKernelEmptyStateDoesNotSynthesizeAInputCallback() {
+		withCompiledAggregateKernel(() -> {
+			SoftAssertions softly = new SoftAssertions();
+			for (boolean adjacencyEnabled : List.of(false, true)) {
+				assertPublicCallbackRoute(softly, "kernel-empty-state", adjacencyEnabled, callbackQuery(),
+						"known-no-match", LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+						"nativeExecutionPath=" + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 0);
+			}
+			softly.assertAll();
+		});
+	}
+
+	@Test
+	public void nativeCustomAggregateInterpretedKernelEmptyStateDoesNotSynthesizeAInputCallback() {
+		withInterpretedAggregateKernel(() -> {
+			SoftAssertions softly = new SoftAssertions();
+			for (boolean adjacencyEnabled : List.of(false, true)) {
+				assertPublicCallbackRoute(softly, "interpreted-kernel-empty-state", adjacencyEnabled, callbackQuery(),
+						"known-no-match", LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+						"nativeExecutionPath=" + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, 0);
+			}
+			softly.assertAll();
+		});
+	}
+
+	private static String callbackQuery() {
+		return "SELECT (<" + CALLBACK_IRI + ">( ?v) AS ?calls) WHERE { ?s <" + EX + "callback-source> ?v }";
+	}
+
+	private void assertPublicCallbackRoute(SoftAssertions softly, String scenario, boolean adjacencyEnabled,
+			String query, String subjectBinding, String forcedStrategy, String expectedRoute, int expectedCallbacks) {
+		File storeDirectory = new File(dataDir, "callback-" + scenario + "-adjacency-" + adjacencyEnabled);
+		LmdbStoreConfig storeConfig = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(adjacencyEnabled);
+		if (adjacencyEnabled) {
+			storeConfig.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER);
+		}
+		SailRepository nativeRepository = new SailRepository(new LmdbStore(storeDirectory, storeConfig));
+		String previousNative = System.getProperty(NATIVE_FLAG);
+		System.setProperty(NATIVE_FLAG, "true");
+		try {
+			try (SailRepositoryConnection connection = nativeRepository.getConnection()) {
+				ValueFactory valueFactory = connection.getValueFactory();
+				IRI sourcePredicate = valueFactory.createIRI(EX, "callback-source");
+				IRI otherPredicate = valueFactory.createIRI(EX, "callback-other");
+				connection.add(valueFactory.createIRI(EX, "stored-subject"), sourcePredicate,
+						valueFactory.createLiteral("stored-value"));
+				connection.add(valueFactory.createIRI(EX, "known-no-match"), otherPredicate,
+						valueFactory.createLiteral("other-value"));
+				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+				prepared.setBinding("s", valueFactory.createIRI(EX, subjectBinding));
+				if (forcedStrategy != null) {
+					prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+				}
+				String telemetry = prepared.explain(Explanation.Level.Telemetry).toString();
+				boolean executedRouteObserved = telemetry.contains(expectedRoute);
+				List<String> routeEvidence = telemetry.lines()
+						.filter(line -> line.contains("nativePhysicalPlan=")
+								|| line.contains("nativeExecutionPath=")
+								|| line.contains("nativeAdaptiveCostDecision=")
+								|| line.contains("nativeInvocationsActual=")
+								|| line.contains("rowsScannedActual:")
+								|| line.contains("rowsMatchedActual:")
+								|| line.contains("rowsFilteredActual:")
+								|| line.contains("route: irAggregate")
+								|| line.contains("route: irAggregateInterpreted")
+								|| line.contains("IrKernel_"))
+						.toList();
+				softly.assertThat(telemetry)
+						.as("expected executed route for adjacency=%s and query:\n%s", adjacencyEnabled, query)
+						.contains("nativePhysicalPlan=NativeProjection(arg=NativeGroup(", expectedRoute);
+				if (expectedRoute.equals("nativeExecutionPath=" + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)) {
+					softly.assertThat(telemetry)
+							.as("the forced compiled route must execute a generated aggregate kernel")
+							.contains("route: irAggregate", "IrKernel_");
+				}
+				if (expectedRoute.equals("nativeExecutionPath="
+						+ LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED)) {
+					softly.assertThat(telemetry)
+							.as("the forced interpreted route must record an actual native invocation")
+							.contains(expectedRoute, "nativeInvocationsActual=1");
+				}
+				if (expectedRoute.equals("nativeExecutionPath=" + LmdbNativeAttemptMetrics.PATH_AGG_STATE)) {
+					softly.assertThat(telemetry)
+							.as("the forced sequential route must reach native aggregate state")
+							.contains("nativeAdaptiveCostDecision=winner=nestedLoop", "nativeInvocationsActual=1");
+					if (adjacencyEnabled) {
+						softly.assertThat(telemetry).contains("actualOrder:\n      <not opened; entryPlan=Empty>");
+					} else {
+						softly.assertThat(telemetry).contains("rowsScannedActual: 1", "rowsMatchedActual: 0");
+					}
+				}
+				if (!executedRouteObserved) {
+					return;
+				}
+
+				CALLBACK_INVOCATIONS.set(0);
+				List<BindingSet> rows;
+				try (TupleQueryResult result = prepared.evaluate()) {
+					rows = QueryResults.asList(result);
+				}
+				softly.assertThat(rows)
+						.as("the implicit global group emits one row for adjacency=%s", adjacencyEnabled)
+						.hasSize(1);
+				softly.assertThat(CALLBACK_INVOCATIONS.get())
+						.as("custom callback count for adjacency=%s and query:\n%s\nroute evidence: %s",
+								adjacencyEnabled,
+								query, routeEvidence)
+						.isEqualTo(expectedCallbacks);
+				if (rows.size() == 1) {
+					softly.assertThat(rows.getFirst().getValue("calls").stringValue())
+							.as("collector result for adjacency=%s and query:\n%s", adjacencyEnabled, query)
+							.isEqualTo(Integer.toString(expectedCallbacks));
+				}
+			}
+		} finally {
+			nativeRepository.shutDown();
+			if (previousNative == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previousNative);
+			}
+		}
+	}
+
+	private void withCompiledAggregateKernel(Runnable operation) {
+		List<String> properties = List.of(LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
+				LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY,
+				LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "rdf4j.lmdb.parallel.enabled");
+		Map<String, String> previous = new TreeMap<>();
+		for (String property : properties) {
+			previous.put(property, System.getProperty(property));
+		}
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
+		System.setProperty(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		try {
+			operation.run();
+		} finally {
+			previous.forEach((property, value) -> {
+				if (value == null) {
+					System.clearProperty(property);
+				} else {
+					System.setProperty(property, value);
+				}
+			});
+		}
+	}
+
+	private void withInterpretedAggregateKernel(Runnable operation) {
+		List<String> properties = List.of(LmdbNativeJaninoCodegen.ENABLED_PROPERTY,
+				LmdbNativeKernelInterpreter.ENABLED_PROPERTY,
+				LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "rdf4j.lmdb.parallel.enabled");
+		Map<String, String> previous = new TreeMap<>();
+		for (String property : properties) {
+			previous.put(property, System.getProperty(property));
+		}
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "false");
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
+		try {
+			operation.run();
+		} finally {
+			previous.forEach((property, value) -> {
+				if (value == null) {
+					System.clearProperty(property);
+				} else {
+					System.setProperty(property, value);
+				}
+			});
+		}
+	}
+
+	@Test
 	public void typeErrorInputsMatchGeneric() {
 		// the "not numeric" literal reaches the statistical aggregate; both engines must agree on the outcome
 		assertSameRows(PREFIX + "SELECT ?g (<http://rdf4j.org/aggregate#stdev>(?v) AS ?sd) WHERE { "
@@ -380,4 +708,5 @@ public class LmdbNativeCustomAggregateTest {
 			return QueryResults.asList(result);
 		}
 	}
+
 }

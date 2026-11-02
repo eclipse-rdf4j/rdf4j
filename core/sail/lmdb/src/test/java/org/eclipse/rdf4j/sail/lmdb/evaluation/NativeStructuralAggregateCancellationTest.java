@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -33,8 +34,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.RunnableFuture;
@@ -54,6 +57,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -337,6 +341,111 @@ class NativeStructuralAggregateCancellationTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
+	void probeDeadlineSurvivesEarlierJoinedPeerCancellation(boolean datatype) throws Exception {
+		Map<String, String> properties = new HashMap<>();
+		for (String key : List.of("rdf4j.lmdb.parallel.enabled", "rdf4j.lmdb.parallel.threads",
+				"rdf4j.lmdb.parallel.maxTasks", LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY)) {
+			properties.put(key, System.getProperty(key));
+		}
+		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		try {
+			for (RuntimeException deadline : List.of(KernelCancelledException.INSTANCE,
+					LmdbNativeProbeDeadlineExceeded.INSTANCE)) {
+				CountDownLatch entered = new CountDownLatch(2), failingWorkerFinished = new CountDownLatch(1);
+				OrderedFailureExecutor executor = new OrderedFailureExecutor(failingWorkerFinished);
+				try {
+					Fixture fixture = new Fixture();
+					NativeAggregateAlternative step = fixture.step(datatype);
+					var sources = new NativeLmdbQuerySource.ParallelSource[] {
+							mock(NativeLmdbQuerySource.ParallelSource.class),
+							mock(NativeLmdbQuerySource.ParallelSource.class) };
+					when(fixture.source.openParallelSources(2)).thenReturn(sources);
+					when(fixture.source.prefixRunSplitValues(eq(fixture.plan), anyLong(), anyLong(), anyLong(),
+							anyLong(), anyInt(), anyInt())).thenReturn(new long[][] { { 1L }, { 2L } });
+					LmdbPrefixRunCursor first = fixture.cursor(), second = fixture.cursor();
+					fixture.prefix(sources[0], first);
+					fixture.prefix(sources[1], second);
+					when(first.next()).thenAnswer(call -> {
+						entered.countDown();
+						assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+						assertThat(failingWorkerFinished.await(5, TimeUnit.SECONDS)).isTrue();
+						return true;
+					});
+					when(second.next()).thenAnswer(call -> {
+						entered.countDown();
+						assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+						throw deadline;
+					});
+					try (var pipelines = mockStatic(LmdbNativeParallelPipelines.class, CALLS_REAL_METHODS)) {
+						pipelines.when(LmdbNativeParallelPipelines::pool).thenReturn(executor);
+						Throwable failure = catchThrowable(
+								() -> step.evaluate(EmptyBindingSet.getInstance(), new NativeCancellationToken()));
+						assertThat(failure).as("the initiating probe deadline must not become a peer cancellation")
+								.isSameAs(deadline);
+					}
+					verify(sources[0]).close();
+					verify(sources[1]).close();
+				} finally {
+					failingWorkerFinished.countDown();
+					executor.shutdownNow();
+					executor.awaitTermination(5, TimeUnit.SECONDS);
+				}
+			}
+		} finally {
+			properties.forEach((key, value) -> {
+				if (value == null) {
+					System.clearProperty(key);
+				} else {
+					System.setProperty(key, value);
+				}
+			});
+		}
+	}
+
+	@Test
+	void queryCancellationOutranksProbeAndLocalPeerCancellation() {
+		NativeCancellationToken query = new NativeCancellationToken();
+		NativeCancellationToken workers = new NativeCancellationToken(query);
+		workers.requestCancellation();
+		KernelQueryCancelledException peer = assertThrows(KernelQueryCancelledException.class, workers::check);
+		query.requestCancellation();
+		KernelQueryCancelledException cancelledQuery = assertThrows(KernelQueryCancelledException.class, query::check);
+		Throwable retained = NativeStructuralWorkers.drain(List.of(
+				CompletableFuture.failedFuture(KernelCancelledException.INSTANCE),
+				CompletableFuture.failedFuture(cancelledQuery)), null, workers, peer);
+		assertThat(retained).isSameAs(cancelledQuery);
+	}
+
+	@Test
+	void unattributedWorkerInterruptionRemainsVisibleAfterProbeDeadline() {
+		NativeCancellationToken workers = new NativeCancellationToken();
+		KernelQueryCancelledException unexpected = new KernelQueryCancelledException(workers, null);
+		Throwable retained = NativeStructuralWorkers.drain(List.of(CompletableFuture.failedFuture(unexpected)),
+				null, workers, KernelCancelledException.INSTANCE);
+		assertThat(retained).isSameAs(unexpected);
+	}
+
+	@Test
+	void cleanupFailureRemainsVisibleAfterPeerAndProbeCancellation() {
+		NativeCancellationToken workers = new NativeCancellationToken();
+		workers.requestCancellation();
+		KernelQueryCancelledException peer = assertThrows(KernelQueryCancelledException.class, workers::check);
+		NativeLmdbQuerySource.ParallelSource source = mock(NativeLmdbQuerySource.ParallelSource.class);
+		IllegalStateException cleanup = new IllegalStateException("source cleanup failed");
+		doThrow(cleanup).when(source).close();
+		Throwable retained = NativeStructuralWorkers.drain(
+				List.of(CompletableFuture.failedFuture(KernelCancelledException.INSTANCE)),
+				new NativeLmdbQuerySource.ParallelSource[] { source }, workers, peer);
+		assertThat(retained).isSameAs(cleanup);
+		assertThat(retained.getSuppressed()).contains(KernelCancelledException.INSTANCE);
+		verify(source).close();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void failedHistogramWorkerDrainsEveryAcceptedSiblingBeforeClosingSources(boolean datatype) throws Exception {
 		Map<String, String> properties = new HashMap<>();
 		for (String key : List.of("rdf4j.lmdb.parallel.enabled", "rdf4j.lmdb.parallel.threads",
@@ -410,6 +519,56 @@ class NativeStructuralAggregateCancellationTest {
 					System.setProperty(key, value);
 				}
 			});
+		}
+	}
+
+	/** The first submitted worker resumes only after the second has published its failure. */
+	private static final class OrderedFailureExecutor extends AbstractExecutorService {
+		private final CountDownLatch failingWorkerFinished;
+		private final AtomicInteger submitted = new AtomicInteger();
+		private final ExecutorService delegate = Executors.newFixedThreadPool(2);
+
+		OrderedFailureExecutor(CountDownLatch failingWorkerFinished) {
+			this.failingWorkerFinished = failingWorkerFinished;
+		}
+
+		@Override
+		public void execute(Runnable command) {
+			int task = submitted.getAndIncrement();
+			delegate.execute(() -> {
+				try {
+					command.run();
+				} finally {
+					if (task == 1) {
+						failingWorkerFinished.countDown();
+					}
+				}
+			});
+		}
+
+		@Override
+		public void shutdown() {
+			delegate.shutdown();
+		}
+
+		@Override
+		public List<Runnable> shutdownNow() {
+			return delegate.shutdownNow();
+		}
+
+		@Override
+		public boolean isShutdown() {
+			return delegate.isShutdown();
+		}
+
+		@Override
+		public boolean isTerminated() {
+			return delegate.isTerminated();
+		}
+
+		@Override
+		public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+			return delegate.awaitTermination(timeout, unit);
 		}
 	}
 

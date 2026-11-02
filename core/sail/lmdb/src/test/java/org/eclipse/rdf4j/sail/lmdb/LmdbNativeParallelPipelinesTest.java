@@ -24,6 +24,7 @@ import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -54,6 +55,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
@@ -837,7 +839,38 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(60)
+	void closingResultHandlesReuseOfTheCompletedWorkerThread(boolean failWorker) throws Exception {
+		int occupied = LmdbNativeParallelPipelines.MAX_POOL_TASKS - 3;
+		CountDownLatch entered = new CountDownLatch(occupied);
+		CountDownLatch release = new CountDownLatch(1);
+		List<Future<?>> occupiedTasks = new ArrayList<>();
+		try {
+			for (int i = 0; i < occupied; i++) {
+				occupiedTasks.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+					entered.countDown();
+					try {
+						release.await();
+					} catch (InterruptedException failure) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError(failure);
+					}
+				}));
+			}
+			assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+			closingResultCancelsWorkersDeniedBeforeNativeDelegateClose(failWorker, false);
+		} finally {
+			release.countDown();
+			for (Future<?> task : occupiedTasks) {
+				task.get(10, TimeUnit.SECONDS);
+			}
+		}
+	}
+
+	@ParameterizedTest
 	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	@Timeout(60)
 	void closingResultCancelsWorkersDeniedBeforeNativeDelegateClose(boolean failWorker, boolean outputBackpressure)
 			throws Exception {
 		CountDownLatch workersEntered = new CountDownLatch(3);
@@ -845,6 +878,11 @@ public class LmdbNativeParallelPipelinesTest {
 		CountDownLatch delegateCloseEntered = new CountDownLatch(1);
 		CountDownLatch releaseDelegateClose = new CountDownLatch(1);
 		CountDownLatch workerScopesClosed = new CountDownLatch(4);
+		CountDownLatch activeScopeClosed = new CountDownLatch(1);
+		AutoCloseable releaseCloseGates = () -> {
+			releaseWorkers.countDown();
+			releaseDelegateClose.countDown();
+		};
 		AtomicBoolean gateRegistration = new AtomicBoolean();
 		AtomicInteger activations = new AtomicInteger();
 		AtomicReference<Thread> activeWorker = new AtomicReference<>();
@@ -870,7 +908,7 @@ public class LmdbNativeParallelPipelinesTest {
 							protected void handleClose() {
 								delegateCloses.incrementAndGet();
 								delegateCloseEntered.countDown();
-								awaitCloseOrdering(releaseDelegateClose);
+								awaitOwnedCloseGate(releaseDelegateClose);
 								super.handleClose();
 							}
 						});
@@ -902,7 +940,7 @@ public class LmdbNativeParallelPipelinesTest {
 						}
 						if (activation > 1) {
 							workersEntered.countDown();
-							awaitCloseOrdering(releaseWorkers);
+							awaitOwnedCloseGate(releaseWorkers);
 						}
 						if (failWorker && activation == 2) {
 							// The denied sibling must finish its task (and publish owner cancellation) first.
@@ -910,13 +948,20 @@ public class LmdbNativeParallelPipelinesTest {
 							workerScopesClosed.countDown();
 							throw workerFailure;
 						}
-						return workerScopesClosed::countDown;
-					})) {
+						return () -> {
+							workerScopesClosed.countDown();
+							if (activation == 1) {
+								activeScopeClosed.countDown();
+							}
+						};
+					});
+					AutoCloseable setupGateOwner = releaseCloseGates) {
 				gateRegistration.set(true);
 				SailTupleQuery query = (SailTupleQuery) connection
 						.prepareTupleQuery(outputBackpressure ? highFanoutChain() : chain(""));
 				query.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
-				try (TupleQueryResult result = query.evaluate()) {
+				try (TupleQueryResult result = query.evaluate();
+						AutoCloseable resultGateOwner = releaseCloseGates) {
 					assertThat(result.hasNext()).isTrue();
 					assertThat(result.next().getBindingNames()).containsExactlyInAnyOrderElementsOf(outputBackpressure
 							? List.of("subject", "value", "value2", "value3")
@@ -925,7 +970,8 @@ public class LmdbNativeParallelPipelinesTest {
 					if (outputBackpressure) {
 						awaitNativeOutputBackpressure(activeWorker.get());
 					} else {
-						awaitWorkerReturnedToPool(activeWorker.get());
+						// Scope close follows native cleanup, even if this thread immediately runs another task.
+						awaitCloseOrdering(activeScopeClosed);
 					}
 					closer.set(new Thread(() -> {
 						try {
@@ -987,8 +1033,18 @@ public class LmdbNativeParallelPipelinesTest {
 		}
 	}
 
+	/** Test-owned phase gates are released by their scope, never by an unrelated wait budget expiring. */
+	private static void awaitOwnedCloseGate(CountDownLatch gate) {
+		try {
+			gate.await();
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(failure);
+		}
+	}
+
 	@Test
-	@org.junit.jupiter.api.Timeout(60)
+	@Timeout(60)
 	void connectionShutdownInterruptAfterResultCloseDrainsBackpressuredWorkers() throws Exception {
 		CountDownLatch workersEntered = new CountDownLatch(3);
 		CountDownLatch releaseWorkers = new CountDownLatch(1);

@@ -49,7 +49,8 @@ class ScopedUnionFilterStoreTest {
 		lmdb.setDefaultQueryEvaluationMode(mode);
 		SailRepository expectedStore = new SailRepository(memory);
 		SailRepository actualStore = new SailRepository(lmdb);
-		try {
+		try (var secondCleanup = LmdbTestUtil.onClose(expectedStore::shutDown);
+				var firstCleanup = LmdbTestUtil.onClose(actualStore::shutDown)) {
 			for (String body : List.of(
 					"{ VALUES ?x { 1 1 2 UNDEF } } UNION { VALUES ?y { 3 } } FILTER(BOUND(?x))",
 					"{ { VALUES ?x { 1 1 } } UNION { VALUES ?y { 2 } } FILTER(BOUND(?x)) } UNION { VALUES ?z { 3 } } FILTER(BOUND(?x))",
@@ -62,9 +63,6 @@ class ScopedUnionFilterStoreTest {
 				assertThat(rows(actualStore, query)).as("%s: %s", mode, body)
 						.containsExactlyInAnyOrderElementsOf(rows(expectedStore, query));
 			}
-		} finally {
-			actualStore.shutDown();
-			expectedStore.shutDown();
 		}
 	}
 
@@ -110,7 +108,8 @@ class ScopedUnionFilterStoreTest {
 				new Composition("SELECT ?x ?y WHERE { { VALUES ?y { 4 } } UNION "
 						+ "{ { VALUES ?y { 3 } } UNION { BIND(2 AS ?x) } } FILTER(?x = 1) }",
 						List.of(), true));
-		try {
+		try (var secondCleanup = LmdbTestUtil.onClose(memoryRepository::shutDown);
+				var firstCleanup = LmdbTestUtil.onClose(lmdbRepository::shutDown)) {
 			for (SailRepository repository : List.of(memoryRepository, lmdbRepository)) {
 				seedGraphs(repository);
 				for (Composition test : cases) {
@@ -119,9 +118,6 @@ class ScopedUnionFilterStoreTest {
 							.containsExactlyInAnyOrderElementsOf(test.expected());
 				}
 			}
-		} finally {
-			lmdbRepository.shutDown();
-			memoryRepository.shutDown();
 		}
 	}
 
@@ -313,7 +309,8 @@ class ScopedUnionFilterStoreTest {
 		SailRepository lmdbRepository = new SailRepository(lmdb);
 		String previousNativeSetting = System.getProperty(NATIVE_FLAG);
 		System.setProperty(NATIVE_FLAG, "false");
-		try {
+		try (var memoryCleanup = LmdbTestUtil.onClose(memoryRepository::shutDown);
+				var lmdbCleanup = LmdbTestUtil.onClose(lmdbRepository::shutDown)) {
 			seedCorrelatedSubqueryData(memoryRepository);
 			seedCorrelatedSubqueryData(lmdbRepository);
 			List<BindingSet> expected = List.of(row("x", "1"), row("x", "1"));
@@ -336,8 +333,6 @@ class ScopedUnionFilterStoreTest {
 					.as("native execution must be visible in the executed plan")
 					.contains("LMDB native physical plan (executed)");
 		} finally {
-			lmdbRepository.shutDown();
-			memoryRepository.shutDown();
 			if (previousNativeSetting == null) {
 				System.clearProperty(NATIVE_FLAG);
 			} else {
@@ -381,7 +376,8 @@ class ScopedUnionFilterStoreTest {
 								}
 						""", List.of(rowWithBoolean("1", true), rowWithBoolean("1", true),
 						rowWithBoolean("2", false), rowWithBoolean(null, false)), false)));
-		try {
+		try (var memoryCleanup = LmdbTestUtil.onClose(memoryRepository::shutDown);
+				var lmdbCleanup = LmdbTestUtil.onClose(lmdbRepository::shutDown)) {
 			seedCorrelatedSubqueryData(memoryRepository);
 			seedCorrelatedSubqueryData(lmdbRepository);
 			for (CorrelatedSubquery test : cases) {
@@ -403,8 +399,6 @@ class ScopedUnionFilterStoreTest {
 						.containsExactlyInAnyOrderElementsOf(test.expected());
 			}
 		} finally {
-			lmdbRepository.shutDown();
-			memoryRepository.shutDown();
 			if (previousNativeSetting == null) {
 				System.clearProperty(NATIVE_FLAG);
 			} else {
@@ -438,7 +432,8 @@ class ScopedUnionFilterStoreTest {
 				new CorrelatedSubquery("{ SELECT ?z WHERE { ?z <urn:q> ?v FILTER(?x = 1) } }",
 						List.of(), false));
 		SoftAssertions assertions = new SoftAssertions();
-		try {
+		try (var memoryCleanup = LmdbTestUtil.onClose(memoryRepository::shutDown);
+				var lmdbCleanup = LmdbTestUtil.onClose(lmdbRepository::shutDown)) {
 			seedCorrelatedSubqueryData(memoryRepository);
 			seedCorrelatedSubqueryData(lmdbRepository);
 			for (String version : List.of("1.1", "1.2")) {
@@ -462,8 +457,6 @@ class ScopedUnionFilterStoreTest {
 			}
 			assertions.assertAll();
 		} finally {
-			lmdbRepository.shutDown();
-			memoryRepository.shutDown();
 			if (previousNativeSetting == null) {
 				System.clearProperty(NATIVE_FLAG);
 			} else {
@@ -491,7 +484,8 @@ class ScopedUnionFilterStoreTest {
 						+ "FILTER(?x = 1)",
 				"{ VALUES ?z { 1 } } UNION { VALUES ?w { 2 } } OPTIONAL { VALUES ?opt { 3 } } "
 						+ "MINUS { VALUES ?none { 4 } } FILTER(?x = 1)");
-		try {
+		try (var memoryCleanup = LmdbTestUtil.onClose(memoryRepository::shutDown);
+				var lmdbCleanup = LmdbTestUtil.onClose(lmdbRepository::shutDown)) {
 			seedCorrelatedSubqueryData(memoryRepository);
 			seedCorrelatedSubqueryData(lmdbRepository);
 			List<BindingSet> expected = List.of(row("x", "1"), row("x", "1"));
@@ -514,8 +508,6 @@ class ScopedUnionFilterStoreTest {
 						.containsExactlyInAnyOrderElementsOf(expected);
 			}
 		} finally {
-			lmdbRepository.shutDown();
-			memoryRepository.shutDown();
 			if (previousNativeSetting == null) {
 				System.clearProperty(NATIVE_FLAG);
 			} else {

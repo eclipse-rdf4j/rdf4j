@@ -1621,7 +1621,7 @@ final class LmdbNativeKernelLowering {
 					physicalTerms[3],
 					original.contexts, original.namedContextScope, original.statementOrder, original.indexName,
 					original.range,
-					original.staticEstimate);
+					original.staticEstimate, original.accessProfile);
 			return new PhysicalPattern(physical, java.util.Arrays.copyOf(slots, count),
 					java.util.Arrays.copyOf(ids, count));
 		}
@@ -2363,11 +2363,29 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private boolean lowerJoinOperand(SlotPlan plan, List<MaskedFilter> filters, RowState row, boolean top) {
+			if (plan instanceof NativeAliasJoinPlan alias) {
+				long occupied = 0L;
+				for (long remaining = alias.freshMask; remaining != 0L; remaining &= remaining - 1) {
+					int slot = Long.numberOfTrailingZeros(remaining);
+					if (!slotFresh(slot)) {
+						occupied |= 1L << slot;
+					}
+				}
+				// Aggregate kernels retain their existing encounter-order decisions. Row kernels select the same
+				// guarded alternative as the scalar cursor at this exact lexical entry frame.
+				plan = alias.select(row, availableBindings(), occupied,
+						row.encounterOrderRequired || !reasonPrefix.isEmpty());
+			}
 			// A SERVICE, volatile expression, lexical subquery, or future unknown operator must not be
 			// flattened into the reorderable bag. Keep its evaluation boundary, not the whole query,
 			// on the semantic cursor. The same boundary is consumed by both kernel tiers.
 			if (!SlotPlan.encounterOrderReplaySafe(plan)) {
 				return lowerOrderedOperand(plan, row);
+			}
+			if (plan instanceof NativeAliasJoinMemoPlan) {
+				// The fragment owns its complete-key replay and query-ledger lifetime; keep it as one native
+				// producer rather than lowering its correlated right side into repeated kernel probes.
+				return lowerNativeOperator(plan);
 			}
 			if (plan == EmptyPlan.INSTANCE) {
 				lowerPlanRows(plan, 0L);

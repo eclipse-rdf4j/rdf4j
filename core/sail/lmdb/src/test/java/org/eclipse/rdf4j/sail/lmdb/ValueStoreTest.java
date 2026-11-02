@@ -157,6 +157,12 @@ public class ValueStoreTest {
 		return new ValueStore(new File(dataDir, "values"), config);
 	}
 
+	/** These focused cases require the durable policy's automatic reclamation on writer admission. */
+	private void useWriterDrivenReclamation() throws IOException {
+		valueStore.close();
+		valueStore = createValueStore(new LmdbStoreConfig().setAsyncValueCleanup(false));
+	}
+
 	private LmdbStoreConfig hashCacheEnabledConfig() {
 		return new LmdbStoreConfig().setValueHashCacheEnabled(true);
 	}
@@ -527,6 +533,7 @@ public class ValueStoreTest {
 
 	@Test
 	public void testGcValues() throws Exception {
+		useWriterDrivenReclamation();
 		Value[] values = new Value[] {
 				RDF.TYPE, RDFS.CLASS,
 				Values.iri("some:iri"),
@@ -657,6 +664,7 @@ public class ValueStoreTest {
 
 	@Test
 	public void testRetiredIdsBecomeReusableAfterAllLazyValuesAreCollected() throws Exception {
+		useWriterDrivenReclamation();
 		long id = storeBNodes("collectable-held")[0];
 		LmdbValue held = valueStore.getLazyValue(id);
 		RevisionCollection revisionCollected = trackRevisionCollection(held);
@@ -675,6 +683,7 @@ public class ValueStoreTest {
 
 	@Test
 	public void testRolledBackEvictionKeepsRetiredIdsEligibleForReclamation() throws Exception {
+		useWriterDrivenReclamation();
 		long id = storeBNodes("eviction-rollback")[0];
 		RevisionCollection revisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
@@ -693,6 +702,7 @@ public class ValueStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void testDirectDictionarySnapshotKeepsRetiredAndReusedIdSemantics(boolean rollbackFirst) throws Exception {
+		useWriterDrivenReclamation();
 		long id = storeBNodes("strict-original")[0];
 		Value original = Values.bnode("strict-original");
 		Value replacement = Values.bnode("strict-replacement");
@@ -1431,7 +1441,7 @@ public class ValueStoreTest {
 		CountDownLatch nativeAbortStarted = new CountDownLatch(1);
 		AtomicBoolean pauseMaintenance = new AtomicBoolean();
 		AtomicInteger environmentsClosed = new AtomicInteger();
-		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig()) {
+		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig().setAsyncValueCleanup(false)) {
 			@Override
 			protected void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds)
 					throws IOException {
@@ -1525,7 +1535,7 @@ public class ValueStoreTest {
 		CountDownLatch releaseMaintenance = new CountDownLatch(1);
 		CountDownLatch clearStarted = new CountDownLatch(1);
 		AtomicBoolean armed = new AtomicBoolean();
-		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig()) {
+		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig().setAsyncValueCleanup(false)) {
 			@Override
 			protected void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds)
 					throws IOException {
@@ -1592,7 +1602,7 @@ public class ValueStoreTest {
 		valueStore.close();
 		AtomicBoolean restartArmed = new AtomicBoolean();
 		AtomicBoolean checkpointed = new AtomicBoolean();
-		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig()) {
+		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig().setAsyncValueCleanup(false)) {
 			@Override
 			protected void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds)
 					throws IOException {
@@ -1634,7 +1644,7 @@ public class ValueStoreTest {
 		CountDownLatch nativeCommitted = new CountDownLatch(1);
 		CountDownLatch releaseSettlement = new CountDownLatch(1);
 		AtomicBoolean pauseCommit = new AtomicBoolean();
-		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig()) {
+		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig().setAsyncValueCleanup(false)) {
 			@Override
 			int commitWriteTransaction(long transaction) {
 				int result = super.commitWriteTransaction(transaction);
@@ -2451,7 +2461,7 @@ public class ValueStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void testLazyBorrowDoesNotReadReusedIdFromOlderDictionary(boolean rollback) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig();
+		LmdbStoreConfig config = new LmdbStoreConfig().setAsyncValueCleanup(false);
 		valueStore.close();
 		CountingValueStore observed = new CountingValueStore(new File(dataDir, "values"), config);
 		valueStore = observed;
@@ -2503,7 +2513,7 @@ public class ValueStoreTest {
 	@Test
 	public void testLateValueCompletionDoesNotRestoreRetiredCacheAssociation() throws Exception {
 		valueStore.close();
-		valueStore = createValueStore(hashCacheEnabledConfig());
+		valueStore = createValueStore(hashCacheEnabledConfig().setAsyncValueCleanup(false));
 		long id = storeBNodes("late-completion-original")[0];
 		LmdbValue original = valueStore.getLazyValue(id);
 		RevisionCollection collected = trackRevisionCollection(original);
@@ -2537,7 +2547,7 @@ public class ValueStoreTest {
 		CountDownLatch releaseHashAccess = new CountDownLatch(1);
 		AtomicReference<Thread> hashThread = new AtomicReference<>();
 		AtomicBoolean pauseHash = new AtomicBoolean();
-		valueStore = new ValueStore(new File(dataDir, "values"), hashCacheEnabledConfig()) {
+		valueStore = new ValueStore(new File(dataDir, "values"), hashCacheEnabledConfig().setAsyncValueCleanup(false)) {
 			private void pauseRevisionHash(String operation) {
 				if (operation.equals(hashOperation) && Thread.currentThread() == hashThread.get()
 						&& pauseHash.compareAndSet(true, false)) {
@@ -2678,6 +2688,7 @@ public class ValueStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void testEscapedValuesResolveWithOnlyOlderPairedReadersAtCapacity(boolean nested) throws Exception {
+		useWriterDrivenReclamation();
 		LmdbStoreConfig config = new LmdbStoreConfig();
 		List<ValueStore.ReadSnapshot> snapshots = new ArrayList<>();
 		ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -2739,9 +2750,15 @@ public class ValueStoreTest {
 			"false,false,checkpoint", "false,true,checkpoint", "true,false,checkpoint", "true,true,checkpoint" })
 	public void testWriterLazyAssociationSettlesWithItsNativeTransaction(boolean reclaim, boolean nested,
 			String settlement) throws Exception {
+		// Only the reuse cases require automatic writer-side reclamation; other settlement cases keep defaults.
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		if (reclaim) {
+			config.setAsyncValueCleanup(false);
+		}
+
 		valueStore.close();
 		AtomicBoolean failCommit = new AtomicBoolean();
-		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig()) {
+		valueStore = new ValueStore(new File(dataDir, "values"), config) {
 			@Override
 			int commitWriteTransaction(long transaction) {
 				if (failCommit.compareAndSet(true, false)) {
@@ -3161,6 +3178,7 @@ public class ValueStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void testUncommittedWriterLazyDoesNotBorrowCommittedAssociation(boolean nested) throws Exception {
+		useWriterDrivenReclamation();
 		long id = storeBNodes("uncommitted-retired")[0];
 		try (ValueResolutionScope scope = valueStore.openValueResolutionScope();
 				SailClosable ignored = scope.activate()) {
@@ -3391,7 +3409,8 @@ public class ValueStoreTest {
 	public void testRetiredIdsRemainReclaimableWhenGrowthCheckpointsBeforeFreeingThem(
 			boolean rollbackReclamationBeforeRetry) throws Exception {
 		valueStore.close();
-		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(8L * 1024 * 1024)
+		LmdbStoreConfig config = new LmdbStoreConfig().setAsyncValueCleanup(false)
+				.setValueDBSize(8L * 1024 * 1024)
 				.setAutoGrow(true)
 				.setInlineLiterals(false);
 		valueStore = createValueStore(config);
@@ -3926,6 +3945,7 @@ public class ValueStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void testRepeatedRetirementCannotDeleteReusedId(boolean tripleTerm) throws Exception {
+		useWriterDrivenReclamation();
 		Value original = tripleTerm ? Values.tripleTerm(RDF.TYPE, RDF.TYPE, Values.literal(1))
 				: Values.bnode("original");
 		Value replacement = tripleTerm ? Values.tripleTerm(RDF.TYPE, RDF.TYPE, Values.literal(2))
@@ -4801,7 +4821,7 @@ public class ValueStoreTest {
 	@Test
 	public void testStaleBNodeHashCodeIgnoresReusedIdAfterClear() throws Exception {
 		valueStore.close();
-		valueStore = createValueStore(hashCacheEnabledConfig());
+		valueStore = createValueStore(hashCacheEnabledConfig().setAsyncValueCleanup(false));
 
 		LmdbBNode first = valueStore.createBNode("hash-first");
 		int firstHash = first.hashCode();

@@ -18,6 +18,8 @@ import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -74,9 +76,18 @@ class SummaryServletRemoteConfigUnavailableTest {
 	@ParameterizedTest
 	@ValueSource(ints = { 404, 405, 501 })
 	void summaryRendersAndLogsNoWarningWhenTheServerCannotServeTheConfiguration(int status) throws Exception {
-		// Sockets cannot be bound in every build sandbox, so the manager fails the way the HTTP session does when the
-		// server answers /repositories/remote/config with the given status.
+		RepositoryInfo info = new RepositoryInfo();
+		info.setId("remote");
+		info.setDescription("Remote repo");
+		// Sockets cannot be bound in every build sandbox, so the manager answers like such a server: it lists the
+		// repository, and fails the way the HTTP session does when the server answers /repositories/remote/config
+		// with the given status.
 		RemoteRepositoryManager manager = new RemoteRepositoryManager("http://localhost/rdf4j-server") {
+			@Override
+			public Collection<RepositoryInfo> getAllRepositoryInfos() {
+				return List.of(info);
+			}
+
 			@Override
 			public RepositoryConfig getRepositoryConfig(String id) {
 				throw new RepositoryException(
@@ -85,9 +96,6 @@ class SummaryServletRemoteConfigUnavailableTest {
 			}
 		};
 		try {
-			RepositoryInfo info = new RepositoryInfo();
-			info.setId("remote");
-			info.setDescription("Remote repo");
 			SummaryServlet servlet = new SummaryServlet();
 			servlet.setRepositoryManager(manager);
 			servlet.setRepositoryInfo(info);

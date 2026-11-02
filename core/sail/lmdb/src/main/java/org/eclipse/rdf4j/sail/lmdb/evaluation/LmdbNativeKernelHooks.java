@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
@@ -779,17 +778,12 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	}
 
 	Value rowAggregateResult(int aggregateId, int groupId) {
-		boolean empty = groupId >= rowStates[aggregateId].length || rowStates[aggregateId][groupId] == null;
 		AggState state = rowState(aggregateId, groupId);
 		return switch (state.specs[0].kind) {
 		case COUNT -> AggContext.integerLiteral(state.count(0));
 		case SAMPLE -> state.extremeValue(0);
 		case GROUP_CONCAT -> SimpleValueFactory.getInstance().createLiteral(state.concatValue(0));
 		case CUSTOM -> {
-			if (empty) {
-				state.specs[0].custom.process(EmptyBindingSet.getInstance(), state.customPredicates[0],
-						state.customCollectors[0], state.ctx);
-			}
 			try {
 				yield state.customCollectors[0].getFinalValue();
 			} catch (ValueExprEvaluationException error) {

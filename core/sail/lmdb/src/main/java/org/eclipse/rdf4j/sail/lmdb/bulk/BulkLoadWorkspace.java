@@ -35,6 +35,9 @@ import java.util.Objects;
 import java.util.Properties;
 import java.util.UUID;
 
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+
 /**
  * Persistent loader-owned state and artifact directory.
  */
@@ -44,10 +47,11 @@ final class BulkLoadWorkspace implements AutoCloseable {
 	private static final String STATE_FILE_NAME = "state.properties";
 	private static final String PREVIOUS_STATE_FILE_NAME = "state.previous.properties";
 	/**
-	 * Version 2 stages statement components per partition instead of one statement file with a size sidecar and digest;
-	 * a version 1 workspace cannot be resumed.
+	 * Version 3 records the persisted store format so older loaders cannot resume canonical-IRI workspaces while
+	 * ignoring their encoding policy. Earlier workspaces produced unsupported stores and cannot be resumed.
 	 */
-	private static final String STATE_VERSION = "2";
+	private static final String STATE_VERSION = "3";
+	private static final String STORE_FORMAT_VERSION_KEY = "store.format.version";
 	private static final String COMPRESSION_KEY = "compression";
 	/**
 	 * Marks how the recorded {@link #COMPRESSION_KEY} token is to be read. Version 2 is the per-artifact grammar, where
@@ -141,6 +145,7 @@ final class BulkLoadWorkspace implements AutoCloseable {
 		}
 		Properties state = new Properties();
 		state.setProperty("version", STATE_VERSION);
+		state.setProperty(STORE_FORMAT_VERSION_KEY, Integer.toString(LmdbStoreFormat.CURRENT_VERSION));
 		state.setProperty("run.id", UUID.randomUUID().toString());
 		state.setProperty("target", normalizedTarget.toString());
 		state.setProperty("lifecycle", "ACTIVE");
@@ -191,6 +196,42 @@ final class BulkLoadWorkspace implements AutoCloseable {
 
 	BulkLoadSettings recordedSettings() {
 		return BulkLoadSettings.restore(state);
+	}
+
+	/** Resolves every encoding stage from the admitted canonical-format workspace. */
+	LmdbStoreFormat format(LmdbStoreConfig config) throws IOException {
+		return LmdbStoreFormat.forBulkGeneration(storeFormatVersion(state), config);
+	}
+
+	private static int storeFormatVersion(Properties properties) throws IOException {
+		String encoded = properties.getProperty(STORE_FORMAT_VERSION_KEY);
+		if (encoded == null) {
+			throw new IOException("Missing LMDB bulk-load store format in version "
+					+ properties.getProperty("version") + " workspace");
+		}
+		int version;
+		try {
+			version = Integer.parseInt(encoded);
+		} catch (NumberFormatException failure) {
+			throw new IOException("Invalid LMDB bulk-load store format: " + encoded, failure);
+		}
+		if (!Integer.toString(version).equals(encoded) || !LmdbStoreFormat.isSupportedModernVersion(version)) {
+			throw new IOException("Unsupported LMDB bulk-load store format: " + encoded);
+		}
+		return version;
+	}
+
+	/** Runs under target ownership before recovery may discard or publish any native artifacts. */
+	static void requireCompatibleRecovery(Path target, BulkLoadSettings requested) throws IOException {
+		Properties recorded = inspect(controlDirectory(target));
+		int version = recorded == null ? LmdbStoreFormat.CURRENT_VERSION : storeFormatVersion(recorded);
+		if (recorded != null) {
+			requireSameConfiguration(recorded, requested, target, controlDirectory(target));
+		}
+		LmdbBulkLoadGeneration.requireStoreFormat(target, version);
+		if (Files.exists(target.resolve(LmdbBulkLoadGeneration.MANIFEST_FILE_NAME))) {
+			requireCapacityPreparedPublication(target, requested);
+		}
 	}
 
 	long maximumCanonicalValueBytes() throws IOException {
@@ -625,13 +666,13 @@ final class BulkLoadWorkspace implements AutoCloseable {
 	private static StateRevision loadNewest(Path stateFile, Path previousStateFile) throws IOException {
 		StateRevision current = load(stateFile);
 		StateRevision previous = load(previousStateFile);
-		if (current == null) {
-			return previous;
+		StateRevision newest = current == null ? previous
+				: previous == null || current.revision() >= previous.revision() ? current : previous;
+		if (newest != null) {
+			// An unsupported but intact policy is not corruption: never fall back to an older encoding.
+			storeFormatVersion(newest.properties());
 		}
-		if (previous == null || current.revision() >= previous.revision()) {
-			return current;
-		}
-		return previous;
+		return newest;
 	}
 
 	private static StateRevision load(Path path) throws IOException {
@@ -643,6 +684,11 @@ final class BulkLoadWorkspace implements AutoCloseable {
 			properties.load(input);
 		}
 		String version = properties.getProperty("version");
+		if ("2".equals(version)) {
+			// This schema belongs to the unreleased format-6 writer. Refuse it before considering checksums or
+			// another state revision: staged records must never be reinterpreted as canonical format-7 output.
+			throw new IOException("Unsupported LMDB bulk-load store format 6 workspace: " + path.getParent());
+		}
 		if (version != null && !STATE_VERSION.equals(version)) {
 			throw new IOException("LMDB bulk-load workspace " + path.getParent() + " was created by an incompatible "
 					+ "loader version (state version " + version + ", expected " + STATE_VERSION
