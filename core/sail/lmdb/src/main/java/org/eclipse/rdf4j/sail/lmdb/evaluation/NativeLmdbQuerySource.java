@@ -514,6 +514,39 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/**
+		 * The exact per-context statement counts of this probe's complete visible snapshot, read from the store's
+		 * context catalog, or {@code null} when no catalog is exact for precisely this source's statements (for example
+		 * while the opposite explicit/inferred plane is populated, or for a composite of several planes). The returned
+		 * cursor is owned by its consumer and must be closed before the probe closes.
+		 */
+		default ContextStatementCounts contextStatementCounts() throws IOException {
+			return null;
+		}
+
+		/**
+		 * One pass over an exact context census: every catalogued context with its exact statement multiplicity. The
+		 * default graph is catalogued as raw context zero while it holds statements.
+		 */
+		@Experimental
+		interface ContextStatementCounts extends java.io.Closeable {
+
+			/** The exact number of catalogued contexts, known before iteration. */
+			long size();
+
+			/** Advances to the next catalogued context; {@code false} once exhausted. */
+			boolean next() throws IOException;
+
+			/** The current context's raw ID. */
+			long context();
+
+			/** The exact number of statements stored in the current context. */
+			long count();
+
+			@Override
+			void close();
+		}
+
+		/**
 		 * Observer-aware form of {@link #adjacency(long, boolean)}. Implementations with richer eligibility state
 		 * should override this method and publish the exact reason the complete view was served or declined.
 		 */

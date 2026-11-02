@@ -701,6 +701,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			}
 
 			@Override
+			public ContextStatementCounts contextStatementCounts() throws IOException {
+				return inner.contextStatementCounts();
+			}
+
+			@Override
 			public void close() {
 				inner.close();
 			}

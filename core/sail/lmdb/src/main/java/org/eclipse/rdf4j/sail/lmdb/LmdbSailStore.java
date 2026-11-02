@@ -14318,6 +14318,16 @@ class LmdbSailStore implements SailStore {
 					return result;
 				}
 
+				@Override
+				public ContextStatementCounts contextStatementCounts() throws IOException {
+					checkOpen();
+					if (!hasStatementsInSource() || !tripleStore.contextCatalogExact(txn, explicit)) {
+						return null;
+					}
+					return new LmdbContextStatementCounts(tripleStore.getContexts(txn),
+							tripleStore.contextCatalogSize(txn));
+				}
+
 				private LmdbAdjacencyReadView variablePredicateView() throws IOException {
 					return !hasStatementsInSource() || directAdjacency == null ? null : exactAdjacencyView(false);
 				}
@@ -15907,6 +15917,28 @@ class LmdbSailStore implements SailStore {
 					ownedWildcardAdjacencies = direct.attachToProbe(ownedWildcardAdjacencies);
 				}
 				return result;
+			}
+
+			@Override
+			public ContextStatementCounts contextStatementCounts() throws IOException {
+				if (closed) {
+					throw new SailException("Probe has been closed");
+				}
+				if (!stampHeld) {
+					readStamp = acquireNativeSourceReadLock();
+					stampHeld = true;
+				}
+				try {
+					assertNativeSourceOpen();
+					if (!hasStatementsInSource() || !tripleStore.contextCatalogExact(txn, explicit)) {
+						return null;
+					}
+					return new LmdbContextStatementCounts(tripleStore.getContexts(txn),
+							tripleStore.contextCatalogSize(txn));
+				} catch (RuntimeException | Error failure) {
+					close();
+					throw failure;
+				}
 			}
 
 			/**

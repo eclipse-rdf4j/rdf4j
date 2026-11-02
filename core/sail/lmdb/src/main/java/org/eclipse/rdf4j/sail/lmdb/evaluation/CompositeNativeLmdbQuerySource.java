@@ -1475,6 +1475,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public ContextStatementCounts contextStatementCounts() throws IOException {
+			if (closed) {
+				throw new IOException("composite probe already closed");
+			}
+			// The catalog combines every plane: it is exact for one member only while all other members are empty,
+			// and this probe exists only when more than one member holds statements.
+			return probes.length == 1 ? probes[0].contextStatementCounts() : null;
+		}
+
+		@Override
 		public NodeDomainIntersection nodeDomainIntersection(boolean leftBySubject, boolean rightBySubject)
 				throws IOException {
 			if (closed) {

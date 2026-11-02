@@ -69,6 +69,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe.ContextStatementCounts;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -106,6 +107,8 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 	private final int kindMask;
 	private final int idMask;
 	private final boolean[] distinctFields;
+	/** Whether every answer is a whole-row count per context, so the context catalog alone is the exact input. */
+	private final boolean catalogEligible;
 	private QueryEvaluationStep fallback;
 
 	@Override
@@ -133,12 +136,17 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		kindMask = original.kindMask;
 		idMask = original.idMask;
 		distinctFields = original.distinctFields;
+		catalogEligible = original.catalogEligible;
 	}
 
 	private record RecipeQuote(NativeAggregatePhysicalPlan.Work physical, LmdbNativeWork work, boolean reduced,
-			String unavailable) {
+			boolean catalog, String unavailable) {
+		RecipeQuote(NativeAggregatePhysicalPlan.Work physical, LmdbNativeWork work, boolean reduced) {
+			this(physical, work, reduced, false, null);
+		}
+
 		static RecipeQuote unavailable(String reason) {
-			return new RecipeQuote(null, LmdbNativeWork.UNKNOWN, false, reason);
+			return new RecipeQuote(null, LmdbNativeWork.UNKNOWN, false, false, reason);
 		}
 	}
 
@@ -152,10 +160,62 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		return true;
 	}
 
+	/**
+	 * The catalog's exact per-context counts are the complete input when every channel is a whole-row count and the
+	 * only grouping is the context: one catalog entry per group, no payload, no page headers.
+	 */
+	private static boolean catalogEligible(long[] constants, int[] groupFields, Channel[] channels, int kindMask,
+			boolean[] acceptedKinds) {
+		if (constants[S] != UNKNOWN || constants[P] != UNKNOWN || constants[O] != UNKNOWN || kindMask != 0) {
+			return false;
+		}
+		for (boolean accepted : acceptedKinds) {
+			if (!accepted) {
+				return false;
+			}
+		}
+		for (int field : groupFields) {
+			if (field != C) {
+				return false;
+			}
+		}
+		for (Channel channel : channels) {
+			if (channel.sum || channel.distinct || channel.expression != null) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** An exact O(#contexts) quote: one catalog entry per context feeds bounded per-context reducers. */
+	private RecipeQuote catalogQuote(ContextStatementCounts catalog) {
+		double contexts = catalog.size();
+		LmdbNativeWork work = LmdbNativeWork.between(1D + contexts, 1D + contexts * (channels.length + 3D));
+		NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(contexts, contexts, 1D,
+				contexts, 0D, contexts, contexts, LmdbNativeCostVector.zero());
+		NativeAggregatePhysicalPlan.Work physical = new NativeAggregatePhysicalPlan.Work(input,
+				LmdbNativeCostVector.zero(), groupFields.length == 0 ? 1D : contexts);
+		return new RecipeQuote(physical, work, groupFields.length == 0, true, null);
+	}
+
 	/** Metadata inspection never opens payload rows and owns no native view after the quote returns. */
 	private RecipeQuote inspectRecipe() throws IOException {
 		NativeCancellationToken cancellation = NativeCancellationToken.forSource(source);
-		try (NativeProbe probe = source.newProbe(); WildcardAdjacency wildcard = probe.wildcardAdjacency(true)) {
+		try (NativeProbe probe = source.newProbe()) {
+			if (catalogEligible) {
+				try (ContextStatementCounts catalog = probe.contextStatementCounts()) {
+					if (catalog != null) {
+						return catalogQuote(catalog);
+					}
+				}
+			}
+			return inspectPageRecipe(probe, cancellation);
+		}
+	}
+
+	private RecipeQuote inspectPageRecipe(NativeProbe probe, NativeCancellationToken cancellation)
+			throws IOException {
+		try (WildcardAdjacency wildcard = probe.wildcardAdjacency(true)) {
 			if (wildcard == null) {
 				return RecipeQuote.unavailable("wildcard adjacency unavailable");
 			}
@@ -225,7 +285,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			// features meanwhile. Grouping by context alone is different: every page or quad contribution priced
 			// above touches at most one context, so the per-context reducers are bounded by those contributions.
 			if (distinct || !groupedByContextOnly()) {
-				return new RecipeQuote(null, work, false, null);
+				return new RecipeQuote(null, work, false);
 			}
 			NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(contributions,
 					planes + headers + contributions, planes, contributions, decoded, 0D, contributions,
@@ -235,7 +295,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			// A partially compressed recipe can still require a large payload sweep. Keep that legal work quoted,
 			// but only use this cold anchor when the entire selected recipe avoids neighbor/context expansion and
 			// reduces to one global row.
-			return new RecipeQuote(physical, work, groupFields.length == 0 && reduced && !payload, null);
+			return new RecipeQuote(physical, work, groupFields.length == 0 && reduced && !payload);
 		}
 	}
 
@@ -268,6 +328,11 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			if (!quote.reduced || work != quote.physical || quote(row) != work) {
 				return null;
 			}
+			if (quote.catalog) {
+				return new NativeAggregatePhysicalPlan.ColdAnchor(
+						"same-snapshot context catalog entries carry exact per-context statement multiplicity",
+						"query ledger owns one catalog cursor, one bounded global reducer and bounded output replay");
+			}
 			return new NativeAggregatePhysicalPlan.ColdAnchor(
 					"same-snapshot common-context page/root contributions carry exact quad multiplicity",
 					"query ledger owns catalog, page buffers, finite argument IDs, one bounded global reducer and bounded output replay");
@@ -291,7 +356,9 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 
 		@Override
 		public String properties() {
-			return "CENSUS[coverage=PAGE_HEADERS,reduction=WEIGHTED_KIND_CONTRIBUTIONS,output=BOUNDED_REPLAY]";
+			return quote.catalog
+					? "CENSUS[coverage=CONTEXT_CATALOG,reduction=EXACT_CONTEXT_COUNTS,output=BOUNDED_REPLAY]"
+					: "CENSUS[coverage=PAGE_HEADERS,reduction=WEIGHTED_KIND_CONTRIBUTIONS,output=BOUNDED_REPLAY]";
 		}
 
 		@Override
@@ -334,7 +401,21 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 	@Override
 	public LmdbNativeWork estimateWork(NativeLmdbQuerySource source) throws IOException {
 		NativeCancellationToken cancellation = NativeCancellationToken.forSource(source);
-		try (NativeProbe probe = source.newProbe(); WildcardAdjacency wildcard = probe.wildcardAdjacency(true)) {
+		try (NativeProbe probe = source.newProbe()) {
+			if (catalogEligible) {
+				try (ContextStatementCounts catalog = probe.contextStatementCounts()) {
+					if (catalog != null) {
+						return catalogQuote(catalog).work;
+					}
+				}
+			}
+			return estimatePageWork(probe, cancellation);
+		}
+	}
+
+	private LmdbNativeWork estimatePageWork(NativeProbe probe, NativeCancellationToken cancellation)
+			throws IOException {
+		try (WildcardAdjacency wildcard = probe.wildcardAdjacency(true)) {
 			if (wildcard == null) {
 				return LmdbNativeWork.UNKNOWN;
 			}
@@ -435,6 +516,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		}
 		this.kindMask = kinds;
 		this.idMask = ids;
+		this.catalogEligible = catalogEligible(constants, groupFields, channels, kinds, acceptedKinds);
 	}
 
 	static QueryEvaluationStep tryCreate(Group group, NativeLmdbQuerySource source,
@@ -543,11 +625,14 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			}
 		}
 		// Closed kind predicates need the census coefficients even when every consumer is COUNT. Other COUNT-only
-		// demands retain the existing root/domain alternatives; admission never makes this algorithm mandatory.
+		// demands retain the existing root/domain alternatives; admission never makes this algorithm mandatory. A
+		// named-graph whole-row count is the exception: its exact answer is a sum of context catalog entries.
 		boolean needsCensus = Arrays.stream(channels).anyMatch(channel -> channel.sum || channel.field == C)
 				|| Arrays.stream(groups).anyMatch(field -> field == C) || filter.mask != 0
 				|| Arrays.stream(channels)
-						.anyMatch(channel -> channel.expression != null && channel.expression.mask != 0);
+						.anyMatch(channel -> channel.expression != null && channel.expression.mask != 0)
+				|| pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS
+						&& catalogEligible(constants, groups, channels, filter.mask, filter.acceptedKinds());
 		if (!needsCensus) {
 			return null;
 		}
@@ -703,10 +788,20 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		NativeResultCursor rows = null;
 		try {
 			try (NativeProbe probe = source.newProbe();
-					WildcardAdjacency wildcard = probe.wildcardAdjacency(true);
+					ContextStatementCounts catalog = catalogEligible ? probe.contextStatementCounts() : null;
+					WildcardAdjacency wildcard = catalog == null ? probe.wildcardAdjacency(true) : null;
 					KernelRuntime.AggregateMemory workspace = KernelRuntime.AggregateMemory
 							.forLedger(evaluation.executionContext().memoryLedger())) {
-				if (wildcard == null) {
+				if (catalog != null) {
+					// One retained catalog cursor; the per-context reducers are admitted by the collector itself.
+					if (!workspace.tryReserve(1024L)) {
+						throw new QueryEvaluationException("Census catalog workspace refused by query memory ledger");
+					}
+					if (telemetry != null) {
+						telemetry.source("CONTEXT_CATALOG");
+					}
+					rows = collectCatalog(catalog, telemetry, cancellation, evaluation);
+				} else if (wildcard == null) {
 					rows = unavailable(exact, "wildcard adjacency unavailable");
 				} else {
 					// Page payload arrays, the retained view catalog, and temporary root-domain arrays/merge
@@ -735,6 +830,40 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			}
 			NativeContextClosingIteration.throwFailure(problem);
 			throw new AssertionError("unreachable");
+		}
+	}
+
+	/** Every catalog entry is one exact per-context contribution: no plane, page or payload is opened. */
+	private NativeResultCursor collectCatalog(ContextStatementCounts catalog,
+			LmdbAdjacencyOptimizationTelemetry telemetry, NativeCancellationToken cancellation,
+			SyntheticValueSource evaluation) throws IOException {
+		Collector collector = new Collector(new long[] { -1L, -1L, -1L, -1L }, evaluation, cancellation);
+		boolean transferred = false;
+		Throwable failure = null;
+		try {
+			while (catalog.next()) {
+				checkCancelled(cancellation);
+				if (telemetry != null) {
+					telemetry.planeMetadataRead();
+				}
+				long context = catalog.context();
+				if (acceptsContext(context)) {
+					collector.acceptContext(context, catalog.count());
+				}
+			}
+			NativeResultCursor results = collector.results();
+			transferred = true;
+			return results;
+		} catch (IOException | RuntimeException | Error problem) {
+			failure = problem;
+			throw problem;
+		} finally {
+			if (!transferred) {
+				Throwable cleanup = KernelRuntime.closeResource(collector, failure);
+				if (cleanup != failure) {
+					NativeContextClosingIteration.throwFailure(cleanup);
+				}
+			}
 		}
 	}
 
@@ -1299,6 +1428,36 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 					argument = constantIds[index];
 				}
 				row.slots[ARGUMENT] = argument;
+				row.recomputeBoundMask();
+				if (global != null) {
+					global.addProjected(row, multiplicity, selected[index], NONE);
+				} else {
+					table.addProjected(row, multiplicity, selected[index], NONE);
+				}
+			}
+		}
+
+		/**
+		 * One exact per-context contribution for a catalog-eligible recipe: every channel is a whole-row count, so the
+		 * only reducer argument is the context itself and no term kinds are inspected.
+		 */
+		void acceptContext(long context, long multiplicity) {
+			if (multiplicity == 0L) {
+				return;
+			}
+			sawRow = true;
+			long contextArgument = context == NULL_CONTEXT_ID ? UNKNOWN : context;
+			for (int key : keys) {
+				row.slots[key] = contextArgument;
+			}
+			row.recomputeBoundMask();
+			if (table != null) {
+				table.addProjected(row, 1L, NONE, NONE);
+			}
+			for (int index = 0; index < channels.length; index++) {
+				cancellation.poll(index);
+				LmdbNativeProbeDeadline.poll(index);
+				row.slots[ARGUMENT] = channels[index].field == C ? contextArgument : UNKNOWN;
 				row.recomputeBoundMask();
 				if (global != null) {
 					global.addProjected(row, multiplicity, selected[index], NONE);

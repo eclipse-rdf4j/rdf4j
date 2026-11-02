@@ -56,6 +56,8 @@ class LmdbContextIdIterator implements Closeable {
 
 	private final long[] record = new long[1];
 
+	private long count;
+
 	private boolean fetchNext = false;
 
 	private final StampedLongAdderLockManager txnLockManager;
@@ -165,6 +167,7 @@ class LmdbContextIdIterator implements Closeable {
 
 				while (lastResult == MDB_SUCCESS) {
 					record[0] = Varint.readUnsigned(keyData.mv_data());
+					count = Varint.readUnsigned(valueData.mv_data());
 					// fetch next value
 					fetchNext = true;
 					return record;
@@ -181,6 +184,14 @@ class LmdbContextIdIterator implements Closeable {
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
+	}
+
+	/**
+	 * The catalogued statement count of the context most recently returned by {@link #next()}: the exact number of
+	 * statements (explicit and inferred planes combined) stored in that context at this transaction's snapshot.
+	 */
+	public long count() {
+		return count;
 	}
 
 	private void closeInternal(boolean maybeCalledAsync) {

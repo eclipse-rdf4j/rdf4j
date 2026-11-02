@@ -3867,6 +3867,32 @@ class TripleStore implements Closeable {
 		});
 	}
 
+	/**
+	 * Whether the context catalog's combined-plane counts are exactly this plane's counts: true when the opposite plane
+	 * holds no statements at all. The catalog is then an O(#contexts) exact answer for per-context counts.
+	 */
+	boolean contextCatalogExact(Txn txnRef, boolean explicit) throws IOException {
+		return !hasAnyTriples(txnRef, !explicit);
+	}
+
+	/** The number of catalogued contexts (the default graph included while it holds statements), from LMDB stats. */
+	long contextCatalogSize(Txn txnRef) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txnRef.get(), contextsDbi, stat));
+			return stat.ms_entries();
+		} finally {
+			txnRef.lockManager().unlockRead(readStamp);
+		}
+	}
+
 	private long contextStatementCount(Txn txnRef, long context) throws IOException {
 		long readStamp;
 		try {
