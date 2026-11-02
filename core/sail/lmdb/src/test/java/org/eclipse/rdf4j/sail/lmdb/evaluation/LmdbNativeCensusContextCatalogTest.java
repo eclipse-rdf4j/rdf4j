@@ -202,11 +202,10 @@ class LmdbNativeCensusContextCatalogTest {
 			assertThat(counts(connection, GRAPH_COUNTS, true)).containsExactlyInAnyOrderEntriesOf(withInferred);
 			assertThat(telemetry(connection, GRAPH_COUNTS, true)).doesNotContain(CATALOG);
 
+			// Which exact non-catalog strategy wins is arbitration's call (learned evidence may outrank the sweep).
 			assertParity(connection, GRAPH_COUNTS, false);
 			assertThat(counts(connection, GRAPH_COUNTS, false)).containsExactlyInAnyOrderEntriesOf(expected);
-			assertThat(telemetry(connection, GRAPH_COUNTS, false))
-					.contains("nativeExecutionPath=adjacencyCensus", SWEEP)
-					.doesNotContain(CATALOG);
+			assertThat(telemetry(connection, GRAPH_COUNTS, false)).doesNotContain(CATALOG);
 		}
 	}
 
