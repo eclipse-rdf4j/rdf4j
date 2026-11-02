@@ -138,18 +138,24 @@ public interface LmdbPrefixRunCursor extends AutoCloseable {
 }
 
 /**
- * Prefix-run scan implemented on the ordinary seekable range iterator (Phase 4 unification): one
- * {@link LmdbRecordIterator} does the positioning, match filtering, and transaction-renew handling, while this wrapper
- * detects prefix runs and — when run rows are not being counted — skips to the successor prefix with
- * {@link RecordIterator#seekForward}, keeping the historical sub-linear behavior ("one representative per prefix"
- * without visiting the run's remaining rows).
+ * Prefix-run scan over a seekable logical statement order. The delegate handles positioning, match filtering, and
+ * transaction renewal. An optional transaction-scoped metadata counter answers complete run counts after reading one
+ * representative; the cursor then seeks directly to the successor prefix. Partial ranges and unsupported count shapes
+ * retain the row-counting path.
  */
 final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
+
+	/** Counts the complete matching run in the same transaction, or returns -1 when metadata cannot prove it. */
+	@FunctionalInterface
+	interface MetadataRunCount {
+		long count(long[] representative) throws IOException;
+	}
 
 	private final LmdbPrefixRunPlan plan;
 	private final TripleIndex index;
 	private final boolean countRunRows;
-	private final LmdbRecordIterator delegate;
+	private final RecordIterator delegate;
+	private final MetadataRunCount metadataRunCount;
 	private final long[] quad = new long[4];
 	private final long[] targetQuad = new long[4];
 	private final long matchSubj;
@@ -179,18 +185,31 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 	private boolean metricsFlushed;
 	/** Exclusive prefix-tuple upper bound (key order), or null for an unbounded scan. */
 	private long[] stopPrefix;
+	/** A full-key lower bound may start inside the next run, whose complete metadata count would overcount. */
+	private boolean partialFirstRun;
 
 	LmdbPrefixRunIterator(LmdbPrefixRunPlan plan, Txn txnRef, long subj, long pred, long obj, long context,
 			boolean explicit, boolean countRunRows) throws IOException {
+		this(plan, new LmdbRecordIterator(plan.index(), plan.index().getPatternScore(subj, pred, obj, context) > 0,
+				subj, pred, obj, context, explicit, txnRef), subj, pred, obj, context, countRunRows);
+	}
+
+	LmdbPrefixRunIterator(LmdbPrefixRunPlan plan, RecordIterator delegate, long subj, long pred, long obj,
+			long context, boolean countRunRows) {
+		this(plan, delegate, subj, pred, obj, context, countRunRows, null);
+	}
+
+	LmdbPrefixRunIterator(LmdbPrefixRunPlan plan, RecordIterator delegate, long subj, long pred, long obj,
+			long context, boolean countRunRows, MetadataRunCount metadataRunCount) {
 		this.plan = plan;
 		this.index = plan.index();
-		this.matchSubj = subj > 0 ? subj : -1;
-		this.matchPred = pred > 0 ? pred : -1;
-		this.matchObj = obj > 0 ? obj : -1;
-		this.matchContext = context >= 0 ? context : -1;
+		this.matchSubj = subj;
+		this.matchPred = pred;
+		this.matchObj = obj;
+		this.matchContext = context;
 		this.countRunRows = countRunRows;
-		boolean rangeSearch = index.getPatternScore(subj, pred, obj, context) > 0;
-		this.delegate = new LmdbRecordIterator(index, rangeSearch, subj, pred, obj, context, explicit, txnRef);
+		this.delegate = delegate;
+		this.metadataRunCount = metadataRunCount;
 		LmdbPrefixRunPlan.OPENED.incrementAndGet();
 	}
 
@@ -209,9 +228,21 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 			exhausted = true;
 			return false;
 		}
+		boolean completeRun = !partialFirstRun
+				&& (stopPrefix == null || stopPrefix.length <= plan.prefixLength());
+		partialFirstRun = false;
 		runRowCount = 1;
 		if (countRunRows) {
-			countCurrentRun();
+			long metadataCount = metadataRunCount != null && completeRun ? countFromMetadata() : -1;
+			if (metadataCount >= 0) {
+				runRowCount = metadataCount;
+				seekPastCurrentRun();
+			} else {
+				countCurrentRun();
+			}
+		} else if (metadataRunCount != null) {
+			// A single representative suffices for distinct runs, even when a range truncates the run.
+			seekPastCurrentRun();
 		} else {
 			advancePastCurrentRun();
 		}
@@ -222,18 +253,40 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 		return true;
 	}
 
+	private long countFromMetadata() throws IOException {
+		try {
+			long count = metadataRunCount.count(quad);
+			if (count == 0 || count < -1) {
+				throw new IOException("Persisted prefix count disagrees with its representative statement");
+			}
+			return count;
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				closeInternal();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
+	}
+
 	/** Offset of the next unconsumed row in {@link #batch}, refilling from the delegate, or -1 when exhausted. */
 	private int nextRowOffset() {
+		// Complete metadata-counted runs need just their representative until the count shape is known.
+		return nextRowOffset(metadataRunCount == null ? BATCH_ROWS : 1);
+	}
+
+	private int nextRowOffset(int requestedRows) {
 		if (batchIndex >= batchCount) {
 			if (delegateExhausted) {
 				return -1;
 			}
-			if (batch == null) {
-				batch = new long[BATCH_ROWS * 4];
+			if (batch == null || batch.length < requestedRows * 4) {
+				batch = new long[requestedRows * 4];
 			}
-			batchCount = delegate.fill(batch, BATCH_ROWS);
+			batchCount = delegate.fill(batch, requestedRows);
 			batchIndex = 0;
-			if (batchCount < BATCH_ROWS) {
+			if (batchCount < requestedRows) {
 				delegateExhausted = true;
 			}
 			if (batchCount <= 0) {
@@ -257,7 +310,8 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 	private void countCurrentRun() {
 		boolean rowLevelStop = stopPrefix != null && stopPrefix.length > plan.prefixLength();
 		while (true) {
-			int offset = nextRowOffset();
+			// A truncated or unsupported run needs its members, so retain bulk snapshot locking for that scan.
+			int offset = nextRowOffset(BATCH_ROWS);
 			if (offset < 0) {
 				exhausted = true;
 				return;
@@ -347,12 +401,9 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 			closeInternal();
 			return;
 		}
-		discardBatch();
-		if (!delegate.seekForward(targetQuad[TripleIndex.SUBJ_IDX], targetQuad[TripleIndex.PRED_IDX],
-				targetQuad[TripleIndex.OBJ_IDX], targetQuad[TripleIndex.CONTEXT_IDX])) {
-			// the delegate exhausted itself (nothing at or after the target): terminal, not an error
-			exhausted = true;
-		}
+		// A preceding partial run can have prefetched several complete successor runs, even through EOF.
+		// Preserve those buffered representatives before asking the delegate to advance any farther.
+		seekToTargetQuad();
 	}
 
 	/** Invalidates buffered rows after a reposition; the delegate produces rows from the new position again. */
@@ -386,6 +437,8 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 		if (exhausted) {
 			return false;
 		}
+		// Successive forward seeks cannot undo a lower bound that already entered a run.
+		partialFirstRun |= prefixValues.length > plan.prefixLength();
 		char[] fieldSeq = index.getFieldSeq();
 		for (int i = 0; i < fieldSeq.length; i++) {
 			int field = fieldIndex(fieldSeq[i]);
@@ -490,7 +543,7 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 		int carry = -1;
 		for (int i = plan.prefixLength() - 1; i >= 0; i--) {
 			int field = fieldIndex(fieldSeq[i]);
-			if (boundValue(field) == -1 && quad[field] != Long.MAX_VALUE) {
+			if (boundValue(field) == -1 && quad[field] != -1L) {
 				carry = i;
 				break;
 			}

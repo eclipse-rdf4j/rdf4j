@@ -14,6 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.lwjgl.util.lmdb.LMDB.MDB_GET_CURRENT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -43,6 +47,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.lwjgl.util.lmdb.LMDB;
+import org.mockito.MockedStatic;
 
 /** Real-store controls for physical work quoted by LMDB pattern plans. */
 class LmdbPhysicalWorkPricingRegressionTest {
@@ -434,7 +440,7 @@ class LmdbPhysicalWorkPricingRegressionTest {
 				NativeLmdbQuerySource.IndexAccessProfile profile = source.indexAccessProfile();
 				assertThat(profile.entries()).isEqualTo(PREDICATE_COUNT * 2L + 1L);
 				assertThat(profile.prefixMask(null, 1 | 4))
-						.as("with only spoc, an object residual follows the subject-leading prefix")
+						.as("the preferred subject-leading access leaves the object beyond its prefix")
 						.isEqualTo(1);
 
 				PatternPlan pattern = pattern(Term.constant(subjectId), Term.slot(0), Term.constant(objectId),
@@ -443,25 +449,32 @@ class LmdbPhysicalWorkPricingRegressionTest {
 				LmdbNativeWork quote = pattern.estimateWork(row, 0L);
 				SourceMeasurements measurements = new SourceMeasurements();
 				long resultRows = 0L;
-				try (RecordIterator cursor = source.statements(subjectId, NativeLmdbQuerySource.UNKNOWN_ID, objectId,
-						NativeLmdbQuerySource.UNKNOWN_ID, measurements)) {
-					while (cursor.next() != null) {
-						resultRows++;
+				long nativeSeeks;
+				long nativeAdvances;
+				try (NativeSeekMeasurements nativeWork = new NativeSeekMeasurements()) {
+					try (RecordIterator cursor = source.statements(subjectId, NativeLmdbQuerySource.UNKNOWN_ID,
+							objectId, NativeLmdbQuerySource.UNKNOWN_ID, measurements)) {
+						while (cursor.next() != null) {
+							resultRows++;
+						}
 					}
+					nativeSeeks = nativeWork.seeks;
+					nativeAdvances = nativeWork.advances;
 				}
 				assertThat(resultRows).isZero();
 				assertThat(measurements.scans).hasSize(1);
 				long scanned = measurements.scans.get(0).scanned();
-				assertThat(scanned).isPositive().isLessThanOrEqualTo(PREDICATE_COUNT * 2L);
-				long skippedStoredKeys = PREDICATE_COUNT * 2L - scanned;
-				assertThat(skippedStoredKeys)
-						.as("two stored keys per predicate force the residual probe to skip real key entries")
-						.isPositive();
-				double minimum = scanned + (skippedStoredKeys + 1D) * LmdbNativeWork.SEEK;
+				assertThat(scanned)
+						.as("each predicate's neighbor seek can prove absence before visiting a quad")
+						.isZero();
+				assertThat(nativeSeeks)
+						.as("an empty result still performs real per-predicate native seeks")
+						.isGreaterThanOrEqualTo(PREDICATE_COUNT);
+				double minimum = scanned + nativeSeeks * LmdbNativeWork.SEEK;
 				assertThat(quote.high())
-						.as("each skipped stored key requires a seek beyond the initial prefix open; quote=%s, "
-								+ "minimum=%s, profile=%s, completed source work=%s", quote, minimum, profile,
-								measurements.scans)
+						.as("the quote must cover observed random native reads, not infer work from skipped quads; "
+								+ "quote=%s, minimum=%s, seeks=%s, advances=%s, profile=%s, completed source work=%s",
+								quote, minimum, nativeSeeks, nativeAdvances, profile, measurements.scans)
 						.isGreaterThanOrEqualTo(minimum);
 			}
 		} finally {
@@ -1987,6 +2000,44 @@ class LmdbPhysicalWorkPricingRegressionTest {
 	}
 
 	private record ScanMeasurement(boolean adjacency, long scanned, long matched, long filtered, boolean censored) {
+	}
+
+	/** Observe real native calls only while opening and draining the source; do not replace their behavior. */
+	private static final class NativeSeekMeasurements implements AutoCloseable {
+		private final MockedStatic<LMDB> nativeCalls;
+		private int depth;
+		private long seeks;
+		private long advances;
+
+		NativeSeekMeasurements() {
+			nativeCalls = mockStatic(LMDB.class, invocation -> {
+				boolean outermost = depth++ == 0;
+				try {
+					if (outermost) {
+						String method = invocation.getMethod().getName();
+						if (method.equals("mdb_get")) {
+							seeks++;
+						} else if (method.equals("mdb_cursor_get")) {
+							int operation = invocation.getArgument(3);
+							if (operation == MDB_NEXT || operation == MDB_PREV || operation == MDB_GET_CURRENT) {
+								advances++;
+							} else {
+								// SET/SET_RANGE and FIRST/LAST position a tree cursor, even when the key is absent.
+								seeks++;
+							}
+						}
+					}
+					return invocation.callRealMethod();
+				} finally {
+					depth--;
+				}
+			});
+		}
+
+		@Override
+		public void close() {
+			nativeCalls.close();
+		}
 	}
 
 	private static final class SourceMeasurements implements NativeLmdbQuerySource.AdjacencyAccessObserver {

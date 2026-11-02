@@ -85,6 +85,7 @@ class NativeCensusPhysicalPlanTest {
 	private static final String EVENT = "org.eclipse.rdf4j.lmdb.NativeStrategyDecision";
 	private static final String NATIVE = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String CENSUS = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
+	private static final String BUILD_THREADS = "rdf4j.lmdb.directAdjacency.buildThreads";
 	@TempDir
 	Path directory;
 	private final Map<String, String> savedProperties = new HashMap<>();
@@ -95,6 +96,8 @@ class NativeCensusPhysicalPlanTest {
 			savedProperties.put(property, System.getProperty(property));
 			System.setProperty(property, "true");
 		}
+		// The reduced recipe needs pages containing several quads, not CPU-count-dependent singleton fragments.
+		savedProperties.put(BUILD_THREADS, System.setProperty(BUILD_THREADS, "1"));
 	}
 
 	@AfterEach
@@ -356,6 +359,7 @@ class NativeCensusPhysicalPlanTest {
 		void assertPageFacts(boolean common) throws IOException {
 			long quads = 0L;
 			boolean sawMixed = false;
+			boolean sawReducedPage = false;
 			try (NativeProbe probe = original.newProbe(); var wildcard = probe.wildcardAdjacency(true)) {
 				assertThat(wildcard).isNotNull();
 				assertThat(wildcard.predicateCount()).isEqualTo(1);
@@ -367,6 +371,7 @@ class NativeCensusPhysicalPlanTest {
 						assertThat(pages.uniformNeighborTermKind()).isTrue();
 						if (common) {
 							assertThat(pages.hasCommonContext()).isTrue();
+							sawReducedPage |= pages.quadCount() > 1;
 						}
 						sawMixed |= !pages.hasCommonContext();
 						quads += pages.quadCount();
@@ -375,6 +380,11 @@ class NativeCensusPhysicalPlanTest {
 			}
 			assertThat(quads).isEqualTo(common ? 12L : 13L);
 			assertThat(sawMixed).isEqualTo(!common);
+			if (common) {
+				assertThat(sawReducedPage)
+						.as("at least one common-context page replaces multiple quad contributions with one update")
+						.isTrue();
+			}
 		}
 
 		NativeProbe guardedProbe(NativeProbe probe) throws IOException {

@@ -96,6 +96,18 @@ public final class LmdbKeyRange {
 		return decodedBounds;
 	}
 
+	/** A canonical lower prefix extended with unsigned minima, or null when raw residual filtering is required. */
+	long[] lowerBoundQuad() {
+		if (decodedBounds == null || decodedBounds.lowPrefix == null) {
+			return null;
+		}
+		long[] quad = new long[4];
+		for (int ordinal = 0; ordinal < decodedBounds.lowPrefix.length; ordinal++) {
+			quad[component(indexFieldSeq.charAt(ordinal))] = decodedBounds.lowPrefix[ordinal];
+		}
+		return quad;
+	}
+
 	/** True when evaluating this range may inspect the supplied decoded quad field. */
 	boolean usesField(int field) {
 		if (decodedBounds == null) {

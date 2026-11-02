@@ -82,7 +82,7 @@ final class PreparedBulkStore {
 			boolean hashCache, boolean pendingUnused, boolean pendingRetired) {
 	}
 
-	private record Captured(Snapshot snapshot, boolean tripleTransactionBound) {
+	private record Captured(Snapshot snapshot, boolean tripleTransactionBound, boolean persistentAdjacency) {
 	}
 
 	private PreparedBulkStore() {
@@ -224,11 +224,9 @@ final class PreparedBulkStore {
 					return null;
 				}
 			}
-			if (!compatible(expected, properties, config)) {
-				return null;
-			}
-			Snapshot actual = capture(directory, properties, config).snapshot;
-			if (!expected.equals(actual)) {
+			Captured captured = capture(directory, properties, config);
+			Snapshot actual = captured.snapshot;
+			if (!compatible(expected, properties, config, captured.persistentAdjacency) || !expected.equals(actual)) {
 				return null;
 			}
 			admit(properties, actual);
@@ -251,7 +249,7 @@ final class PreparedBulkStore {
 			Captured captured = capture(directory, properties, config);
 			Snapshot snapshot = captured.snapshot;
 			if ((!captured.tripleTransactionBound && !snapshot.values.generation.isEmpty())
-					|| !compatible(snapshot, properties, config)) {
+					|| !compatible(snapshot, properties, config, captured.persistentAdjacency)) {
 				return null;
 			}
 			admit(properties, snapshot);
@@ -291,7 +289,8 @@ final class PreparedBulkStore {
 		}
 	}
 
-	private static boolean compatible(Snapshot snapshot, StoreProperties properties, LmdbStoreConfig config) {
+	private static boolean compatible(Snapshot snapshot, StoreProperties properties, LmdbStoreConfig config,
+			boolean persistentAdjacency) {
 		// Growth threshold and hash-cache policy do not change native dictionary authority. A strict seal includes
 		// both; native-only capture records the requested policies and lets normal bounded reservations honor them.
 		return snapshot.properties.equals(propertiesFingerprint(properties))
@@ -299,9 +298,20 @@ final class PreparedBulkStore {
 				&& snapshot.hashCache == config.getValueHashCacheEnabled()
 				&& config.getValueDBSize() <= snapshot.values.mapSize
 				&& config.getTripleDBSize() <= snapshot.triples.mapSize
-				&& compatibleIndexes(config.getTripleIndexes(), properties.getTripleIndexes(), Set.of())
+				&& compatibleStatementIndexes(config.getTripleIndexes(), properties.getTripleIndexes(),
+						persistentAdjacency)
 				&& compatibleIndexes(config.getTripleTermIndexes(), properties.getTripleTermIndexes(),
 						Set.of("spoc", "cspo"));
+	}
+
+	private static boolean compatibleStatementIndexes(String requested, String actual, boolean persistentAdjacency) {
+		if (persistentAdjacency) {
+			// The legacy option remains syntactically validated, but adjacency always provides both directions. Its
+			// physical schema no longer changes when a caller supplies a different permutation preference.
+			TripleIndex.parseIndexSpecList(requested);
+			return true;
+		}
+		return compatibleIndexes(requested, actual, Set.of());
 	}
 
 	private static boolean compatibleIndexes(String requested, String actual, Set<String> mandatory) {
@@ -380,7 +390,7 @@ final class PreparedBulkStore {
 			// free_ids is a legitimate reusable pool and carries no outstanding reclamation obligation.
 			Snapshot snapshot = new Snapshot(values, triples, propertiesFingerprint(properties),
 					config.getMapGrowthThreshold(), config.getValueHashCacheEnabled(), pendingUnused, pendingRetired);
-			return new Captured(snapshot, binding != null);
+			return new Captured(snapshot, binding != null, LmdbPersistentAdjacency.exists(triplesTxn));
 		} finally {
 			if (triplesTxn != 0L) {
 				mdb_txn_abort(triplesTxn);

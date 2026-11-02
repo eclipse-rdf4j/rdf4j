@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
@@ -66,13 +67,23 @@ class LmdbNativeIndexedContextCancellationTest {
 				}
 				connection.commit();
 			}
-			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			try (InferencerConnection connection = (InferencerConnection) store.getConnection()) {
+				connection.begin();
+				connection.addInferredStatement(values.createIRI("urn:indexed-context:inferred"), predicate, subject,
+						graphs[0]);
+				connection.commit();
+			}
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+					var inferredDataset = NativeQuerySourceAccess.openInferredDataset(store)) {
 				NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+				NativeLmdbQuerySource inferredSource = (NativeLmdbQuerySource) inferredDataset;
 				long[] contexts = new long[graphs.length];
 				for (int index = 0; index < graphs.length; index++) {
 					contexts[index] = source.idOf(graphs[index]);
 					assertTrue(contexts[index] > 0L, "the fixed context belongs to this real source");
 				}
+				assertEquals(1L, inferredSource.count(UNKNOWN, UNKNOWN, UNKNOWN, contexts[0]),
+						"the same graph is populated in the opposite statement plane");
 				PatternPlan pattern = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
 						new ContextConstraint(contexts), false, contextCount);
 				LmdbNativeIndexedCount indexed = LmdbNativeIndexedCount.tryCreate(pattern, new int[0],
@@ -133,10 +144,10 @@ class LmdbNativeIndexedContextCancellationTest {
 								"the first completed count signals cancellation; at most 1024 more may run; actual="
 										+ observed.countCalls),
 						() -> assertTrue(metadataGets.get() > 0, "the real context metadata must be read"),
-						() -> assertTrue(stats.get() > 0, "the opposite plane's real emptiness must be checked"),
+						() -> assertEquals(0, stats.get(),
+								"per-plane context metadata needs no opposite-plane physical statistics"),
 						() -> assertEquals(0, cursorGets.get(),
-								"default SPOC/POSC needs a scan for context-only constraints; zero cursor pulls"
-										+ " and real metadata reads prove the metadata route"));
+								"zero cursor pulls and real metadata reads prove the per-plane metadata route"));
 			}
 		} finally {
 			repository.shutDown();

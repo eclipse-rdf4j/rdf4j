@@ -13,9 +13,12 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.Arrays;
 
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.AfterEach;
@@ -30,33 +33,36 @@ class LegacyCardinalityEstimatorCompatibilityTest {
 	private TripleStore tripleStore;
 
 	@Test
-	void disablingPageWalkingUsesRdf4j532Estimates(@TempDir File dataDir) throws Exception {
+	void disablingPageWalkingUsesBoundedPersistentEstimates(@TempDir File dataDir) throws Exception {
 		openStore(dataDir, true, true);
 		loadReferenceData();
 
-		assertRdf4j532Estimates();
+		assertPersistentEstimates();
 	}
 
 	@Test
-	void disablingPageCardinalityEstimatorUsesRdf4j532Estimates(@TempDir File dataDir) throws Exception {
+	void disablingPageCardinalityEstimatorUsesBoundedPersistentEstimates(@TempDir File dataDir) throws Exception {
 		openStore(dataDir, false, false);
 		loadReferenceData();
 
-		assertRdf4j532Estimates();
+		assertPersistentEstimates();
 	}
 
-	private void assertRdf4j532Estimates() {
+	/**
+	 * Removed tuple trees cannot preserve their old biased numeric samples; retain truth and bounded-mode contracts.
+	 */
+	private void assertPersistentEstimates() {
 		long unknown = LmdbValue.UNKNOWN_ID;
-		assertAll("RDF4J 5.3.2 cardinality estimates",
-				() -> assertEstimate(5_000.0d, unknown, unknown, unknown, unknown),
-				() -> assertEstimate(52.0d, 1L, unknown, unknown, unknown),
-				() -> assertEstimate(274.0d, unknown, 1_000L, unknown, unknown),
-				() -> assertEstimate(5_000.0d, unknown, unknown, 2_000L, unknown),
-				() -> assertEstimate(5_000.0d, unknown, unknown, unknown, 3_000L),
-				() -> assertEstimate(2.0d, 1L, 1_000L, unknown, unknown),
-				() -> assertEstimate(52.0d, 1L, unknown, 2_000L, unknown),
-				() -> assertEstimate(274.0d, unknown, 1_000L, unknown, 3_000L),
-				() -> assertEstimate(5_000.0d, unknown, unknown, 2_000L, 3_000L));
+		assertAll("format-native metadata and representative residual estimates",
+				() -> assertEstimate(true, unknown, unknown, unknown, unknown),
+				() -> assertEstimate(true, 1L, unknown, unknown, unknown),
+				() -> assertEstimate(true, unknown, 1_000L, unknown, unknown),
+				() -> assertEstimate(true, unknown, unknown, 2_000L, unknown),
+				() -> assertEstimate(true, unknown, unknown, unknown, 3_000L),
+				() -> assertEstimate(true, 1L, 1_000L, unknown, unknown),
+				() -> assertEstimate(false, 1L, unknown, 2_000L, unknown),
+				() -> assertEstimate(false, unknown, 1_000L, unknown, 3_000L),
+				() -> assertEstimate(false, unknown, unknown, 2_000L, 3_000L));
 	}
 
 	@Test
@@ -64,8 +70,7 @@ class LegacyCardinalityEstimatorCompatibilityTest {
 		openStore(dataDir, false, true);
 		loadReferenceData();
 
-		assertEstimate(455.0d, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, 2_000L,
-				LmdbValue.UNKNOWN_ID);
+		assertPersistentEstimates();
 	}
 
 	private void openStore(File dataDir, boolean disablePageWalking, boolean estimatorConfigured) throws Exception {
@@ -85,9 +90,38 @@ class LegacyCardinalityEstimatorCompatibilityTest {
 		tripleStore.commit();
 	}
 
-	private void assertEstimate(double expected, long subject, long predicate, long object, long context)
+	private void assertEstimate(boolean exactDomain, long subject, long predicate, long object, long context)
 			throws Exception {
-		assertEquals(expected, tripleStore.cardinality(subject, predicate, object, context), 0.0d);
+		long[] pattern = { subject, predicate, object, context };
+		long expected = 0;
+		for (int index = 0; index < 5_000; index++) {
+			if ((subject == -1 || subject == index % 97 + 1L)
+					&& (predicate == -1 || predicate == index % 31 + 1_000L)
+					&& (object == -1 || object == index % 11 + 2_000L)
+					&& (context == -1 || context == index % 7 + 3_000L)) {
+				expected++;
+			}
+		}
+		long actual = 0;
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			for (boolean explicit : new boolean[] { true, false }) {
+				try (RecordIterator rows = tripleStore.getTriples(txn, subject, predicate, object, context, explicit)) {
+					while (rows.next() != null) {
+						actual++;
+					}
+				}
+			}
+		}
+		assertEquals(expected, actual, "independent reference model " + Arrays.toString(pattern));
+		double estimate = tripleStore.cardinality(subject, predicate, object, context);
+		if (exactDomain) {
+			// Scalar metadata and these small, fully exhausted node directories are exact in every mode.
+			assertEquals((double) expected, estimate, 0D);
+		} else {
+			assertTrue(Double.isFinite(estimate) && estimate >= expected * 0.5 && estimate <= expected * 1.5,
+					"Representative residual " + Arrays.toString(pattern) + ": exact=" + expected + ", estimate="
+							+ estimate);
+		}
 	}
 
 	@AfterEach

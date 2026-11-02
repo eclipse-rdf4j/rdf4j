@@ -41,7 +41,9 @@ import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -56,6 +58,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -192,18 +195,96 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 
 			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
 			JoinFactorCostModel.FactorCostEstimate filteredNameCost = costModel
-					.estimateFactorCost(filteredNameListMemberPattern(), Set.of())
+					.estimateFactorCost(residualNamePattern(), Set.of())
 					.orElseThrow();
 
 			assertEquals("[P]",
 					filteredNameCost.getStringMetrics().get(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
-					"An unbound filter value must not be counted as a physical lookup component: "
+					"A residual string expression must not be counted as a physical lookup component: "
 							+ filteredNameCost.getStringMetrics() + filteredNameCost.getDoubleMetrics());
 			double plannedAccessRows = filteredNameCost.getDoubleMetrics()
 					.get(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
 			assertTrue(filteredNameCost.getWorkRows() >= plannedAccessRows,
 					"Work should track rows accessed before local filtering: "
 							+ filteredNameCost.getDoubleMetrics());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void finiteInFilterUsesObjectLookupAndExecutesExactValueProbes(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc,ospc,psoc"));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+
+		try {
+			loadSyntheticTransformerData(repository);
+			rebuildSketchesForPlanning(store);
+			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
+			JoinFactorCostModel.FactorCostEstimate cost = costModel
+					.estimateFactorCost(filteredNameListMemberPattern(), Set.of())
+					.orElseThrow();
+			assertEquals("[P, O]", cost.getStringMetrics().get(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
+					"The finite constant domain supplies real predicate/object probes: " + cost.getStringMetrics());
+			assertEquals("directLookup", cost.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
+			assertTrue(cost.getWorkRows() < cost.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_ACCESS_ROWS),
+					"Only an access-bound finite domain may reduce physical access work: " + cost.getDoubleMetrics());
+
+			String query = "SELECT ?substation ?name WHERE { ?substation <" + GRID_NAME + "> ?name . "
+					+ "FILTER(?name IN (\"Substation 0\", \"Substation 1\", \"Substation 2\")) }";
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+				prepared.setForcedLmdbExecutionStrategy("nestedLoop");
+				prepared.setLmdbResultCacheRequested(false);
+				String telemetry = prepared.explain(Explanation.Level.Telemetry).toString();
+				String normalized = String.join("\n", telemetry.lines().map(String::stripLeading).toList());
+				int orderStart = normalized.indexOf("\nactualOrder:\n");
+				int orderEnd = normalized.indexOf("\njanino:", orderStart);
+				assertTrue(orderStart >= 0 && orderEnd > orderStart, telemetry);
+				assertTrue(normalized.substring(orderStart, orderEnd).contains(": Values(rows=3)"), telemetry);
+				assertTrue(telemetry.contains("nativeExecutionPath=nestedLoop"), telemetry);
+				assertTrue(telemetry.contains("nativeInvocationsActual=1"), telemetry);
+				int accessStart = normalized.indexOf("\nadjacencyAccess:\n");
+				int measuredStart = normalized.indexOf("\nmeasurements:", accessStart);
+				assertTrue(accessStart >= 0 && measuredStart > accessStart, telemetry);
+				long selectedOpens = 0L;
+				// VALUES may drive one aggregated Pattern access, or ExactDomainDrive may open one literal probe
+				// per value before joining VALUES. Both must perform exactly three real bound P/O source opens.
+				for (String attempt : normalized.substring(accessStart, measuredStart).split("(?m)^\\d+:\\n")) {
+					if (!attempt.contains("\noutcome: SELECTED\n")) {
+						continue;
+					}
+					assertTrue(attempt.startsWith("source: LMDB\noutcome: SELECTED\n"), attempt);
+					assertTrue(attempt.matches("(?s).*\nsubject: UNBOUND\npredicate: BOUND\\[\\d+\\]\n"
+							+ "object: BOUND\\[\\d+\\]\ncontext: UNBOUND\n.*"), attempt);
+					List<String> opens = attempt.lines().filter(line -> line.startsWith("opens: ")).toList();
+					assertEquals(1, opens.size(), attempt);
+					selectedOpens += Long.parseLong(opens.get(0).substring("opens: ".length()));
+				}
+				assertEquals(3L, selectedOpens, telemetry);
+				assertTrue(normalized.substring(measuredStart)
+						.startsWith("\nmeasurements:\nLMDB:\ncompleted: 3\n"
+								+ "censored: 0\nrowsScannedActual: 3\nrowsMatchedActual: 3\nrowsFilteredActual: 0\n"),
+						telemetry);
+
+				List<BindingSet> expected = new ArrayList<>();
+				for (int i = 0; i < 3; i++) {
+					QueryBindingSet binding = new QueryBindingSet();
+					binding.addBinding("substation", VF.createIRI("urn:test:substation:" + i));
+					binding.addBinding("name", VF.createLiteral("Substation " + i));
+					expected.add(binding);
+				}
+				List<BindingSet> actual = new ArrayList<>();
+				try (TupleQueryResult rows = prepared.evaluate()) {
+					while (rows.hasNext()) {
+						actual.add(rows.next());
+					}
+				}
+				assertEquals(expected.size(), actual.size(), "The finite-domain rewrite preserves bag cardinality");
+				assertEquals(Set.copyOf(expected), Set.copyOf(actual),
+						"Every expected binding must survive the probes");
+			}
 		} finally {
 			repository.shutDown();
 		}
@@ -627,6 +708,14 @@ class LmdbIndexAwareJoinOrderPlanningTest {
 		condition.addArgument(new ValueConstant(VF.createLiteral("Substation 1")));
 		condition.addArgument(new ValueConstant(VF.createLiteral("Substation 2")));
 		return new Filter(namePattern, condition);
+	}
+
+	private static Filter residualNamePattern() {
+		StatementPattern namePattern = new StatementPattern(Var.of("substation"), Var.of("namePredicate", GRID_NAME),
+				Var.of("name"));
+		// Unlike a finite IN domain, a string expression cannot become an object-id lookup prefix.
+		return new Filter(namePattern,
+				new Regex(new Str(Var.of("name")), new ValueConstant(VF.createLiteral("^Substation [012]$")), null));
 	}
 
 	private static BindingSetAssignment targetBindings() {

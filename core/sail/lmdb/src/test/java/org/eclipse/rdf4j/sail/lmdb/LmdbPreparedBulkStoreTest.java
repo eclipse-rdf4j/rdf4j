@@ -776,12 +776,14 @@ class LmdbPreparedBulkStoreTest {
 	}
 
 	@Test
-	void changedIndexesUseOrdinaryReindexing() throws Exception {
+	void changedLogicalOrdersRetainPreparedAdjacencyAuthority() throws Exception {
 		Path target = directory.resolve("changed-indexes");
 		load(target, new LmdbStoreConfig("spoc,posc"), "<urn:s> <urn:p> <urn:o> .\n");
 		List<LmdbStartupDiagnostics.Operation> operations = new ArrayList<>();
-		openAndObserve(target, new LmdbStoreConfig("spoc,posc,ospc"), 1L, operations);
-		assertTrue(operations.contains(LmdbStartupDiagnostics.Operation.DISCOVERY));
+		StartupReadCounts reads = openAndObserve(target, new LmdbStoreConfig("spoc,posc,ospc"), 1L, operations);
+		assertFalse(operations.contains(LmdbStartupDiagnostics.Operation.DISCOVERY),
+				"a logical scan-order preference does not invalidate the prepared adjacency generation");
+		assertEquals(0L, reads.treeDrops(), "changing logical order must not rebuild native statement trees");
 		assertPreparedOpening(target, new LmdbStoreConfig("spoc,posc,ospc"), 1L);
 	}
 

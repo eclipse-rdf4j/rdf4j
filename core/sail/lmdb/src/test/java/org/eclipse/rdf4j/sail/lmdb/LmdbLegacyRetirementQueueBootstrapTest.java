@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -178,10 +180,23 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 				: LmdbCompatibilityFixtures.unsigned(epoch);
 		LmdbCompatibilityFixtures.nativePut(store, "gc_meta", new byte[] { 1 }, encodedEpoch);
 
-		if (epoch < 0) {
-			assertRejectedWithoutMutationWithCauseMessage(store, "Malformed varint in LMDB native metadata");
-		} else {
-			assertRejectedWithoutMutation(store, "Malformed ValueStore retirement boot epoch");
+		// Nine FF bytes are canonical uint64 MAX, but are not a positive signed retirement epoch.
+		assertCanonicalEpoch(encodedEpoch, epoch);
+		assertRejectedWithoutMutation(store, "Malformed ValueStore retirement boot epoch");
+	}
+
+	@Test
+	void rejectsExhaustedBootEpochWithoutMutation() throws Exception {
+		Path store = copyReleasedStore("exhausted-epoch");
+		createDatabasePrefix(store.resolve("values"), "retired_ids", "retired_ids_seq", "gc_meta");
+		byte[] maximum = new byte[] { (byte) 0xff, (byte) 0x7f, (byte) 0xff, (byte) 0xff, (byte) 0xff,
+				(byte) 0xff, (byte) 0xff, (byte) 0xff, (byte) 0xff };
+		assertCanonicalEpoch(maximum, Long.MAX_VALUE);
+		LmdbCompatibilityFixtures.nativePut(store, "gc_meta", new byte[] { 1 }, maximum);
+		for (int attempt = 0; attempt < 2; attempt++) {
+			assertRejectedWithoutMutation(store, "ValueStore retirement boot epoch exhausted");
+			assertThat(LmdbCompatibilityFixtures.nativeGet(store, "gc_meta", new byte[] { 1 }))
+					.containsExactly(maximum);
 		}
 	}
 
@@ -259,9 +274,18 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 				LmdbCompatibilityFixtures.idKey(originalId))).isEqualTo(originalCount);
 	}
 
-	private static void assertRejectedWithoutMutationWithCauseMessage(Path storeDirectory, String message)
-			throws Exception {
-		assertRejectedWithoutMutation(storeDirectory, failure -> assertThat(failure.getCause()).hasMessage(message));
+	private static void assertCanonicalEpoch(byte[] encoded, long epoch) {
+		ByteBuffer decoded = ByteBuffer.wrap(encoded);
+		assertThat(Varint.readUnsigned(decoded)).isEqualTo(epoch);
+		assertThat(decoded.hasRemaining()).isFalse();
+		ByteBuffer scalar = ByteBuffer.allocate(9);
+		Varint.writeUnsigned(scalar, epoch);
+		assertThat(scalar.position()).isEqualTo(encoded.length);
+		assertThat(Arrays.copyOf(scalar.array(), scalar.position())).containsExactly(encoded);
+		ByteBuffer list = ByteBuffer.allocate(9);
+		Varint.writeListUnsigned(list, new long[] { epoch });
+		assertThat(list.position()).isEqualTo(encoded.length);
+		assertThat(Arrays.copyOf(list.array(), list.position())).containsExactly(encoded);
 	}
 
 	private static void assertRejectedWithoutMutation(Path storeDirectory, Consumer<SailException> failureAssertion)
@@ -269,14 +293,17 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 		Map<String, String> before = LmdbCompatibilityFixtures.snapshot(storeDirectory);
 
 		LmdbStore store = newStore(storeDirectory);
-		try {
-			SailException failure = assertThrows(SailException.class, store::init);
-			failureAssertion.accept(failure);
-		} finally {
-			store.shutDown();
-		}
-
-		assertThat(LmdbCompatibilityFixtures.snapshot(storeDirectory)).isEqualTo(before);
+		assertAll("failed admission preserves every nonvolatile file",
+				() -> {
+					try {
+						SailException failure = assertThrows(SailException.class, store::init);
+						failureAssertion.accept(failure);
+					} finally {
+						store.shutDown();
+					}
+				},
+				// This oracle still executes when the exception class or exact diagnostic is wrong.
+				() -> assertThat(LmdbCompatibilityFixtures.snapshot(storeDirectory)).isEqualTo(before));
 	}
 
 	private Path copyReleasedStore(String name) throws IOException {

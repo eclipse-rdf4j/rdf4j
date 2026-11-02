@@ -131,6 +131,8 @@ final class TxnManager {
 
 	private final Pool[] pools = new Pool[CACHED_POOLS];
 	private final NativeBarrier lockManager = new NativeBarrier();
+	/** Distinguishes immutable native snapshots without retaining this manager in detached page caches. */
+	private final Object snapshotOwner = new Object();
 
 	private volatile boolean managerClosed;
 	private volatile Runnable readerRetirementListener;
@@ -1391,6 +1393,11 @@ final class TxnManager {
 		/** The native transaction ID captured at the last activation; meaningful while {@link #isNativeActive()}. */
 		long nativeTransactionId() {
 			return nativeTransactionId;
+		}
+
+		/** Stable identity for this manager's environment lifetime, including recycled reader leases. */
+		Object snapshotOwner() {
+			return TxnManager.this.snapshotOwner;
 		}
 
 		// Record-iterator buffers of this reader are handed back and forth under this monitor; the shared

@@ -13,16 +13,16 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -40,42 +40,59 @@ class LmdbBackgroundIndexGenerationTest {
 	Path directory;
 
 	@Test
-	void heldDatasetPlansWithItsCommittedGenerationAfterBackgroundCutover() throws Exception {
+	void heldDatasetPlansAgainstItsPinnedSnapshotAfterAnOrdinaryCommit() throws Exception {
 		String previousPrefix = System.getProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY);
 		System.setProperty(LmdbPrefixRunPlan.ENABLED_PROPERTY, "true");
 		try {
 			seedRepository();
-			DeferredStore sail = new DeferredStore(directory.toFile());
+			LmdbStore sail = new LmdbStore(directory.toFile(), configuration("posc"));
 			SailRepository repository = new SailRepository(sail);
 			try {
 				repository.init();
 				LmdbSailStore backing = sail.getBackingStore();
 				try (SailDataset old = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT)) {
 					NativeLmdbQuerySource oldSource = (NativeLmdbQuerySource) old;
-					assertEquals("spoc", oldSource.indexName(-1, -1, -1, -1));
-					backing.getTripleStore().startBackgroundIndexRebuild();
-					assertTrue(sail.published.await(30, TimeUnit.SECONDS),
-							() -> "query generation was not published: "
-									+ backing.getTripleStore().indexRebuildStatus());
-					assertAll("held source and SailDataset must plan against their original generation",
-							() -> assertSourceGeneration(oldSource, "spoc", TripleIndex.SUBJ_IDX),
-							() -> assertEquals(Set.of(StatementOrder.S), old.getSupportedOrders(null, null, null)),
+					assertEquals(50, countStatements(old), "materialize the protected snapshot before publication");
+					SourcePlans oldPlans = capturePlans(oldSource);
+					long revision = backing.getTripleStore().getDataRevision();
+					var values = SimpleValueFactory.getInstance();
+					var addedSubject = values.createIRI("urn:generation:subject:50");
+					try (var connection = repository.getConnection()) {
+						connection.begin();
+						connection.add(addedSubject, values.createIRI("urn:generation:predicate"),
+								values.createIRI("urn:generation:object:50"));
+						connection.commit();
+					}
+					assertEquals(revision + 1, backing.getTripleStore().getDataRevision());
+					assertAll("held plans and SailDataset retain their original committed snapshot",
+							() -> assertSourceSnapshot(oldSource, oldPlans, 50),
+							() -> assertEquals(Set.of(StatementOrder.S, StatementOrder.P, StatementOrder.O),
+									old.getSupportedOrders(null, null, null)),
 							() -> assertEquals(50, countStatements(old)),
 							() -> assertNull(oldSource.openParallelSources(1),
-									"a fresh sibling cannot reproduce an old native snapshot after publication"));
+									"a fresh sibling cannot reproduce the old native snapshot after publication"));
+					try (var statements = old.getStatements(addedSubject, null, null)) {
+						assertFalse(statements.hasNext(), "the protected snapshot excludes the committed addition");
+					}
 					try (SailDataset current = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT)) {
 						NativeLmdbQuerySource currentSource = (NativeLmdbQuerySource) current;
-						assertSourceGeneration(currentSource, "posc", TripleIndex.PRED_IDX);
-						assertEquals(Set.of(StatementOrder.P), current.getSupportedOrders(null, null, null));
+						assertSourceSnapshot(currentSource, capturePlans(currentSource), 51);
+						assertEquals(51, countStatements(current));
+						assertEquals(Set.of(StatementOrder.S, StatementOrder.P, StatementOrder.O),
+								current.getSupportedOrders(null, null, null));
+						try (var statements = current.getStatements(addedSubject, null, null)) {
+							assertTrue(statements.hasNext(), "the current snapshot includes the committed addition");
+							statements.next();
+							assertFalse(statements.hasNext());
+						}
 						NativeLmdbQuerySource.ParallelSource[] siblings = currentSource.openParallelSources(1);
 						assertNotNull(siblings, "current committed snapshots support parallel sources");
+						assertEquals(1, siblings.length);
 						try (NativeLmdbQuerySource.ParallelSource sibling = siblings[0]) {
-							assertSourceGeneration(sibling, "posc", TripleIndex.PRED_IDX);
+							assertSourceSnapshot(sibling, capturePlans(sibling), 51);
 						}
 					}
 				}
-				assertTrue(backing.getTripleStore().awaitIndexRebuild(30, TimeUnit.SECONDS),
-						backing.getTripleStore().indexRebuildStatus());
 			} finally {
 				repository.shutDown();
 			}
@@ -113,39 +130,46 @@ class LmdbBackgroundIndexGenerationTest {
 		return config;
 	}
 
-	private static void assertSourceGeneration(NativeLmdbQuerySource source, String specification, int prefixField)
+	private static SourcePlans capturePlans(NativeLmdbQuerySource source) throws IOException {
+		LmdbPrefixRunPlan prefix = source.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, -1, -1, -1, -1);
+		assertNotNull(prefix, "the current logical leading field supports prefix runs");
+		assertEquals("posc", new String(prefix.fieldSequence()));
+		LmdbRootScanPartition[] partitions = source.planRootScanPartitions(-1, -1, -1, -1, 4);
+		assertNotNull(partitions);
+		assertTrue(partitions.length > 0);
+		return new SourcePlans(prefix, partitions);
+	}
+
+	private static void assertSourceSnapshot(NativeLmdbQuerySource source, SourcePlans plans, int expectedRows)
 			throws IOException {
-		assertAll(specification + " planner and cursor generation",
-				() -> assertEquals(specification, source.indexName(-1, -1, -1, -1)),
-				() -> assertEquals(specification, source.indexName(
-						prefixField == TripleIndex.SUBJ_IDX ? StatementOrder.S : StatementOrder.P, -1, -1, -1, -1)),
+		assertAll("snapshot-local planner and cursor results",
+				() -> assertEquals("posc", source.indexName(-1, -1, -1, -1)),
+				() -> assertEquals("posc", source.indexName(StatementOrder.P, -1, -1, -1, -1)),
 				() -> {
-					LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { prefixField }, -1, -1, -1, -1);
-					assertNotNull(plan, "the snapshot's leading field supports prefix runs");
-					assertEquals(specification, new String(plan.fieldSequence()));
 					long rows = 0;
-					try (LmdbPrefixRunCursor runs = source.prefixRuns(plan, -1, -1, -1, -1, true)) {
+					try (LmdbPrefixRunCursor runs = source.prefixRuns(plans.prefix(), -1, -1, -1, -1, true)) {
 						while (runs.next()) {
 							rows += runs.runRowCount();
 						}
 					}
-					assertEquals(50, rows);
+					assertEquals(expectedRows, rows);
 				},
 				() -> {
-					LmdbRootScanPartition[] partitions = source.planRootScanPartitions(-1, -1, -1, -1, 4);
-					assertNotNull(partitions);
-					assertTrue(partitions.length > 0);
-					long rows = 0;
-					for (LmdbRootScanPartition partition : partitions) {
-						assertEquals(specification, partition.range().indexFieldSeq());
+					Set<List<Long>> rows = new HashSet<>();
+					for (LmdbRootScanPartition partition : plans.partitions()) {
+						assertEquals("posc", partition.range().indexFieldSeq());
 						try (RecordIterator statements = source.statements(-1, -1, -1, -1, partition)) {
-							while (statements.next() != null) {
-								rows++;
+							for (long[] row; (row = statements.next()) != null;) {
+								assertTrue(rows.add(List.of(row[0], row[1], row[2], row[3])),
+										"root partitions must be disjoint");
 							}
 						}
 					}
-					assertEquals(50, rows);
+					assertEquals(expectedRows, rows.size());
 				});
+	}
+
+	private record SourcePlans(LmdbPrefixRunPlan prefix, LmdbRootScanPartition[] partitions) {
 	}
 
 	private static long countStatements(SailDataset dataset) {
@@ -157,33 +181,5 @@ class LmdbBackgroundIndexGenerationTest {
 			}
 		}
 		return rows;
-	}
-
-	private static final class DeferredStore extends LmdbStore {
-		private final CountDownLatch published = new CountDownLatch(1);
-
-		private DeferredStore(File directory) {
-			super(directory, configuration("posc"));
-		}
-
-		@Override
-		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
-				boolean sketches) throws IOException {
-			return new LmdbSailStore(directory, properties, config, sketches, (LmdbSailStore.ValueStoreFactory) null,
-					(tripleDirectory, tripleProperties, tripleConfig, values) -> new TripleStore(tripleDirectory,
-							tripleProperties, tripleConfig, values) {
-						@Override
-						protected void afterIndexRebuildBatch() {
-							if ("posc".equals(getIndexName(-1, -1, -1, -1))) {
-								published.countDown();
-							}
-						}
-					}) {
-				@Override
-				void startBackgroundMaintenanceAfterInitialization() {
-					// The test admits and pins the original reader before opening the maintenance gate.
-				}
-			};
-		}
 	}
 }

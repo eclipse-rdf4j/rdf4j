@@ -794,7 +794,9 @@ class LmdbSnapshotValueLifetimeTest {
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void softGrowthAllowsFrozenCommitBeforeTheWritingSnapshotRetires(LmdbSailStore.MapResizeKind kind,
 			@TempDir File dataDir) throws Exception {
-		long pressuredMap = (kind == LmdbSailStore.MapResizeKind.VALUE_STORE ? 8L : 4L) * 1024 * 1024;
+		// The persistent adjacency control occupies 3,891,200 bytes for this input. Five MiB retains the
+		// unchanged 512 KiB hard reserve while crossing the 10% soft watermark; four MiB cannot do both.
+		long pressuredMap = (kind == LmdbSailStore.MapResizeKind.VALUE_STORE ? 8L : 5L) * 1024 * 1024;
 		SoftPressureStore store = new SoftPressureStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(kind == LmdbSailStore.MapResizeKind.TRIPLE_STORE ? pressuredMap
@@ -2248,9 +2250,11 @@ class LmdbSnapshotValueLifetimeTest {
 		}
 	}
 
-	@Test
+	@ParameterizedTest
+	@EnumSource(value = IsolationLevels.class, names = { "SNAPSHOT_READ", "READ_COMMITTED" })
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
-	void activeTermIteratorReportsDictionaryResizeConflict(@TempDir File dataDir) throws Exception {
+	void activeTermIteratorReportsDictionaryResizeConflict(IsolationLevels level, @TempDir File dataDir)
+			throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(64L * 1024 * 1024)
@@ -2274,7 +2278,7 @@ class LmdbSnapshotValueLifetimeTest {
 			long initialValueMapSize = mapSize(valueStoreOf(store));
 			try (SailDataset reader = store.getBackingStore()
 					.getExplicitSailSource()
-					.dataset(IsolationLevels.SNAPSHOT_READ);
+					.dataset(level);
 					CloseableIteration<? extends TripleTerm> terms = reader.getTriples(null, PREDICATE, null)) {
 				assertTrue(terms.hasNext());
 				TripleTerm escaped = terms.next();

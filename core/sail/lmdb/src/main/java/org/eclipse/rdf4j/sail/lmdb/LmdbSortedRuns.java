@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -57,7 +58,7 @@ final class LmdbSortedRuns {
 	static void sortAndSpill(long[] rows, int from, int to, int[] fieldOrder, Path file) throws IOException {
 		int n = to - from;
 		int[] order = sortedOrder(rows, from, to, fieldOrder);
-		ByteBuffer out = ByteBuffer.allocateDirect(WRITE_BUFFER_BYTES);
+		ByteBuffer out = ByteBuffer.allocate(WRITE_BUFFER_BYTES);
 		try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE, StandardOpenOption.WRITE,
 				StandardOpenOption.TRUNCATE_EXISTING)) {
 			for (int i = 0; i < n; i++) {
@@ -68,6 +69,34 @@ final class LmdbSortedRuns {
 				out.putLong(rows[base]).putLong(rows[base + 1]).putLong(rows[base + 2]).putLong(rows[base + 3]);
 			}
 			drain(out, channel);
+		}
+	}
+
+	/** Writes every input row, including duplicates, through a bounded merge selected by the owner. */
+	static void mergeToFile(List<Path> inputs, int[] fieldOrder, Path file) throws IOException {
+		checkMergeInterrupted();
+		if (inputs.size() > LmdbRunCollector.MAX_MERGE_FILES) {
+			throw new IllegalArgumentException("Consolidation exceeds the bounded merge fan-in");
+		}
+		ByteBuffer out = ByteBuffer.allocate(WRITE_BUFFER_BYTES);
+		try (Merge merge = new Merge(inputs, fieldOrder, false);
+				FileChannel channel = FileChannel.open(file, StandardOpenOption.WRITE,
+						StandardOpenOption.TRUNCATE_EXISTING)) {
+			long[] row = new long[ROW_LONGS];
+			while (merge.next(row)) {
+				if (out.remaining() < ROW_BYTES) {
+					checkMergeInterrupted();
+					drain(out, channel);
+				}
+				out.putLong(row[0]).putLong(row[1]).putLong(row[2]).putLong(row[3]);
+			}
+			drain(out, channel);
+		}
+	}
+
+	private static void checkMergeInterrupted() throws InterruptedIOException {
+		if (Thread.currentThread().isInterrupted()) {
+			throw new InterruptedIOException("Interrupted while consolidating initial import runs");
 		}
 	}
 
@@ -113,6 +142,7 @@ final class LmdbSortedRuns {
 		private final long[] previous = new long[ROW_LONGS];
 		private boolean hasPrevious;
 		private long duplicates;
+		private long physicalRows;
 
 		/**
 		 * @param distinct when true, a row equal to the previous one is skipped and counted in {@link #duplicates()}
@@ -133,13 +163,31 @@ final class LmdbSortedRuns {
 					add(new FileSource(file));
 				}
 			} catch (IOException | RuntimeException | Error failure) {
-				close();
+				closeSuppressing(this, failure);
 				throw failure;
 			}
 		}
 
+		private static void closeSuppressing(Closeable resource, Throwable failure) {
+			try {
+				resource.close();
+			} catch (IOException | RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+		}
+
 		private void add(Source source) throws IOException {
-			if (source.next()) {
+			boolean hasRow;
+			try {
+				hasRow = source.next();
+			} catch (IOException | RuntimeException | Error failure) {
+				// The heap does not own this input until its first row has been read successfully.
+				closeSuppressing(source, failure);
+				throw failure;
+			}
+			if (hasRow) {
 				heap[size] = source;
 				siftUp(size++);
 			} else {
@@ -149,7 +197,12 @@ final class LmdbSortedRuns {
 
 		/** Copies the next row, in its original field layout, into {@code row}; false when every run is exhausted. */
 		boolean next(long[] row) throws IOException {
+			checkMergeInterrupted();
 			while (size > 0) {
+				// Count physical inputs, not emitted rows: one duplicate run can span the entire merge.
+				if ((physicalRows++ & 1023L) == 0L) {
+					checkMergeInterrupted();
+				}
 				Source top = heap[0];
 				System.arraycopy(top.row, 0, row, 0, ROW_LONGS);
 				if (top.next()) {
@@ -275,7 +328,7 @@ final class LmdbSortedRuns {
 
 	private static final class FileSource extends Source {
 		private final FileChannel channel;
-		private final ByteBuffer buffer = ByteBuffer.allocateDirect(READ_BUFFER_BYTES);
+		private final ByteBuffer buffer = ByteBuffer.allocate(READ_BUFFER_BYTES);
 
 		FileSource(Path file) throws IOException {
 			this.channel = FileChannel.open(file, StandardOpenOption.READ);

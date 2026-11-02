@@ -2677,9 +2677,6 @@ class LmdbSailStore implements SailStore {
 	private int nextPreparedBatchCapacity = PREPARED_BATCH_MIN_STATEMENTS;
 
 	private final ExecutorService tripleStoreExecutor = createTripleStoreExecutor();
-	private final ExecutorService indexPreparationExecutor = Executors.newFixedThreadPool(
-			Math.min(3, Math.max(1, Runtime.getRuntime().availableProcessors() - 1)),
-			Thread.ofPlatform().daemon().name("LmdbIndexPrepare-", 0).factory());
 	private final ConcurrentLinkedQueue<PreparedQuadArrays> preparedQuadArrayPool = new ConcurrentLinkedQueue<>();
 	private final AtomicInteger preparedQuadArrayPoolSize = new AtomicInteger();
 	private final CircularBuffer<Operation> opQueue;
@@ -3243,20 +3240,27 @@ class LmdbSailStore implements SailStore {
 	 */
 	private void endInitialRunImport(LmdbInitialRunImport runImport, boolean finished, Throwable failure) {
 		valueStore.stopDeferringLookupRecords();
+		Throwable originalFailure = failure;
+		Throwable cleanupFailure = null;
 		try {
 			if (finished) {
 				runImport.finished();
 			} else {
 				runImport.close();
 			}
-		} catch (IOException cleanup) {
+		} catch (IOException | RuntimeException | Error cleanup) {
+			// A surviving marker still authorizes reset on restart. Native commits alone therefore cannot
+			// acknowledge a completed import: publish failure before waking any waiting reader or writer.
+			finished = false;
+			cleanupFailure = cleanup;
+			if (failure == null) {
+				failure = cleanup;
+			} else if (failure != cleanup) {
+				failure.addSuppressed(cleanup);
+			}
 			logger.warn("Unable to clean up the initial LMDB run import files", cleanup);
 		}
 		synchronized (initialRunImportMonitor) {
-			if (initialRunImport == runImport) {
-				initialRunImport = null;
-				initialRunImportThread = null;
-			}
 			if (finished) {
 				initialRunImportsCompleted++;
 			} else if (initialRunImportFailure == null) {
@@ -3264,11 +3268,26 @@ class LmdbSailStore implements SailStore {
 						? new IllegalStateException("The initial run import ended without completing")
 						: failure;
 			}
+			// Admission reads the active owner before the failure without taking this monitor. Publish failure
+			// first: observing the volatile owner clear must also expose the terminal failure to a new peer.
+			if (initialRunImport == runImport) {
+				initialRunImport = null;
+				initialRunImportThread = null;
+			}
 			initialRunImportMonitor.notifyAll();
 		}
 		if (finished && sketchBasedJoinEstimator != null) {
 			// The import never fed the estimator; rebuild it from the store, which is authoritative.
 			sketchBasedJoinEstimator.discardAndMarkForRebuild();
+		}
+		if (cleanupFailure != null && originalFailure == null) {
+			if (cleanupFailure instanceof Error error) {
+				throw error;
+			}
+			if (cleanupFailure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			throw new SailException("Unable to complete initial LMDB run import cleanup", cleanupFailure);
 		}
 	}
 
@@ -3437,7 +3456,6 @@ class LmdbSailStore implements SailStore {
 		private final boolean lexicalBatch;
 		private final AtomicBoolean reservationReleased = new AtomicBoolean(false);
 		Consumer<Statement> estimatorCallback;
-		Future<TripleStore.PreparedSecondaryIndexes> preparedSecondaryIndexes;
 		int size;
 
 		BulkAddQuadsOperation(boolean explicit, int capacity) {
@@ -3468,19 +3486,6 @@ class LmdbSailStore implements SailStore {
 			if (estimatorCallback != null && statements == null) {
 				statements = new Statement[capacity];
 			}
-		}
-
-		void prepareSecondaryIndexes() {
-			if (hasLegacySemanticBatch()) {
-				// Semantic filtering must finish before preparing index keys for the retained rows.
-				return;
-			}
-			prepareRetainedSecondaryIndexes();
-		}
-
-		private void prepareRetainedSecondaryIndexes() {
-			preparedSecondaryIndexes = indexPreparationExecutor.submit(
-					() -> tripleStore.prepareSecondaryIndexes(subjects, predicates, objects, contexts, size));
 		}
 
 		long estimatedStorageBytes() {
@@ -3571,9 +3576,6 @@ class LmdbSailStore implements SailStore {
 					if (size == 0) {
 						return;
 					}
-					if (size > 1) {
-						prepareRetainedSecondaryIndexes();
-					}
 				}
 				Set<Long> unusedIds = mutationUnusedIds();
 				if (!unusedIds.isEmpty()) {
@@ -3601,11 +3603,7 @@ class LmdbSailStore implements SailStore {
 						estimatorCallback.accept(statements[statementIndex]);
 					}
 				};
-				if (preparedSecondaryIndexes != null) {
-					tripleStore.storePreparedTriples(subjects, predicates, objects, contexts, size, explicit,
-							LmdbSailStore.this.mayHaveInferred, addedIndexConsumer, null,
-							this::awaitPreparedSecondaryIndexes);
-				} else if (lexicalBatch) {
+				if (lexicalBatch) {
 					// Configured lexical chunks preserve their exact operation boundary, including the scalar tail.
 					tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
 							addedIndexConsumer);
@@ -3620,31 +3618,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void cancel() {
-			if (preparedSecondaryIndexes != null) {
-				preparedSecondaryIndexes.cancel(true);
-			}
 			releaseReservation();
-		}
-
-		private TripleStore.PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
-			try {
-				return preparedSecondaryIndexes.get();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException("Interrupted while preparing secondary LMDB index keys", e);
-			} catch (ExecutionException e) {
-				Throwable cause = e.getCause();
-				if (cause instanceof IOException ioException) {
-					throw ioException;
-				}
-				if (cause instanceof RuntimeException runtimeException) {
-					throw runtimeException;
-				}
-				if (cause instanceof Error error) {
-					throw error;
-				}
-				throw new IOException("Failed to prepare secondary LMDB index keys", cause);
-			}
 		}
 
 		private void releaseReservation() {
@@ -3775,7 +3749,6 @@ class LmdbSailStore implements SailStore {
 		private final long[] contexts;
 		private final int statementCount;
 		private final AtomicBoolean arraysReleased = new AtomicBoolean();
-		private TripleStore.PreparedSecondaryIndexesTask preparedSecondaryIndexes;
 
 		private PreparedImportOperation(int statementCount) {
 			this.statementCount = statementCount;
@@ -3786,36 +3759,19 @@ class LmdbSailStore implements SailStore {
 			contexts = arrays.contexts;
 		}
 
-		private void prepareSecondaryIndexes() {
-			preparedSecondaryIndexes = tripleStore.prepareSecondaryIndexesAsync(indexPreparationExecutor, subjects,
-					predicates, objects, contexts, statementCount);
-		}
-
 		@Override
 		public void execute() throws IOException {
 			try {
-				TripleStore.EncodedIndexKeys preparedMainIndex = preparedSecondaryIndexes.awaitMain();
 				tripleStore.storePreparedTriples(subjects, predicates, objects, contexts, statementCount, true,
-						mayHaveInferred, null, preparedMainIndex,
-						this::awaitPreparedSecondaryIndexes);
+						mayHaveInferred, null, null, null);
 			} finally {
-				try {
-					preparedSecondaryIndexes.cancel();
-				} finally {
-					releaseArrays();
-				}
+				releaseArrays();
 			}
 		}
 
 		@Override
 		public void cancel() {
-			try {
-				if (preparedSecondaryIndexes != null) {
-					preparedSecondaryIndexes.cancel();
-				}
-			} finally {
-				releaseArrays();
-			}
+			releaseArrays();
 		}
 
 		private void releaseArrays() {
@@ -3828,9 +3784,6 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private TripleStore.PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
-			return preparedSecondaryIndexes.await();
-		}
 	}
 
 	private GlobalPreparedImportOperation newGlobalPreparedImportOperation(int[] quads, long[] valueIds,
@@ -3856,38 +3809,26 @@ class LmdbSailStore implements SailStore {
 		private final int statementCount;
 		private final int reservation;
 		private final AtomicBoolean reservationReleased = new AtomicBoolean();
-		private final TripleStore.GlobalPreparedIndexOrdersTask preparedOrders;
 
 		private GlobalPreparedImportOperation(int[] quads, long[] valueIds, int statementCount, int reservation) {
 			this.quads = quads;
 			this.valueIds = valueIds;
 			this.statementCount = statementCount;
 			this.reservation = reservation;
-			preparedOrders = tripleStore.prepareGlobalIndexOrdersAsync(indexPreparationExecutor, quads, valueIds,
-					statementCount);
 		}
 
 		@Override
 		public void execute() throws IOException {
 			try {
-				int added = tripleStore.storeGloballyOrderedFreshTriples(quads, valueIds, statementCount,
-						preparedOrders, indexPreparationExecutor);
+				tripleStore.storeGloballyOrderedFreshTriples(quads, valueIds, statementCount, null, null);
 			} finally {
-				try {
-					preparedOrders.cancel();
-				} finally {
-					releaseReservation();
-				}
+				releaseReservation();
 			}
 		}
 
 		@Override
 		public void cancel() {
-			try {
-				preparedOrders.cancel();
-			} finally {
-				releaseReservation();
-			}
+			releaseReservation();
 		}
 
 		private void releaseReservation() {
@@ -3912,8 +3853,9 @@ class LmdbSailStore implements SailStore {
 
 	/**
 	 * The last native chunk of an initial run import. Its value half writes the merged lookup records into the chunk's
-	 * value transaction on the caller thread; its triple half, run by the TripleStore writer, appends every index from
-	 * the merged runs. A capacity replay runs both halves again from the same run files.
+	 * value transaction on the caller thread; its triple half, run by the TripleStore writer, inserts both adjacency
+	 * directions directly from their two canonical orders. A capacity replay runs both halves again from the retained
+	 * runs.
 	 */
 	private final class InitialRunImportFinish implements Operation {
 		private final LmdbInitialRunImport runImport;
@@ -3932,7 +3874,8 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void execute() throws IOException {
-			tripleStore.appendInitialImportRuns(tripleRuns, runImport.projectedTripleBytes());
+			tripleStore.appendInitialImportRuns(tripleRuns, runImport.projectedTripleBytes(tripleStore),
+					runImport.scratchParent());
 		}
 	}
 
@@ -8735,7 +8678,6 @@ class LmdbSailStore implements SailStore {
 		if (directAdjacency != null) {
 			failure = attemptClose(failure, directAdjacency::close);
 		}
-		failure = attemptClose(failure, this::shutdownAndAwaitIndexPreparationExecutor);
 		failure = attemptClose(failure, this::cancelAndDrainScheduledBackgroundSampling);
 		failure = attemptClose(failure, this::cancelAndDrainScheduledEstimatorPersist);
 		failure = attemptClose(failure, this::shutdownAndAwaitEstimatorPersistExecutor);
@@ -8892,18 +8834,6 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 		return failure;
-	}
-
-	private void shutdownAndAwaitIndexPreparationExecutor() {
-		indexPreparationExecutor.shutdown();
-		try {
-			while (!indexPreparationExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-				logger.warn("Waiting for index preparation executor to terminate");
-			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new InterruptedSailException(e);
-		}
 	}
 
 	private void shutdownAndAwaitTripleStoreExecutor() {
@@ -11628,7 +11558,8 @@ class LmdbSailStore implements SailStore {
 			List<Statement> statements = Arrays.asList(batch.statements).subList(0, batch.size);
 			long valueEstimate = valueStore.estimateWriteBytes(statements);
 			// An initial run import writes no triple index entry until it completes.
-			long tripleEstimate = runImport != null ? 0L : tripleStore.estimateWriteBytes(statements);
+			// This sink's batch belongs to exactly one explicit/inferred plane, unlike a merged preflight.
+			long tripleEstimate = runImport != null ? 0L : tripleStore.estimateSinglePlaneWriteBytes(statements);
 			long bytes = LmdbUtil.saturatedAdd(valueEstimate, tripleEstimate);
 			// Reserve deferred native bookkeeping separately from batch payload. A chunk's size is bounded
 			// even when the maps are large enough that a percentage alone would allow unbounded dirty pages.
@@ -11768,7 +11699,7 @@ class LmdbSailStore implements SailStore {
 				}
 				runImport.markMerging();
 				InitialRunImportFinish finish = new InitialRunImportFinish(runImport);
-				growNoneMaps(runImport.projectedValueBytes(), runImport.projectedTripleBytes(), null);
+				growNoneMaps(runImport.projectedValueBytes(), runImport.projectedTripleBytes(tripleStore), null);
 				state.work.add(finish);
 				state.containsAdds = true;
 				try {
@@ -12717,13 +12648,6 @@ class LmdbSailStore implements SailStore {
 			Value[] valuesToResolve = new Value[maxResolvedValues];
 			long[] resolvedIds = new long[maxResolvedValues];
 			int[] resolvedIndexes = new int[maxResolvedValues];
-			int[] statementOrder = new int[MAX_BULK_OPERATION_CAPACITY];
-			int[] scratchOrder = new int[MAX_BULK_OPERATION_CAPACITY];
-			long[] sortValues = new long[MAX_BULK_OPERATION_CAPACITY];
-			long[] scratchValues = new long[MAX_BULK_OPERATION_CAPACITY];
-			int[] radixCounts = new int[256];
-			int[] radixOffsets = new int[256];
-			char[] mainIndexFieldSequence = tripleStore.mainIndexFieldSequence();
 
 			int[] quads = prepared.quads();
 			int statementCount = prepared.size();
@@ -12762,9 +12686,6 @@ class LmdbSailStore implements SailStore {
 									contextId < 0 ? null : (Resource) values[contextId]);
 						}
 					}
-					sortForIndex(operation, mainIndexFieldSequence, statementOrder, scratchOrder, sortValues,
-							scratchValues, radixCounts, radixOffsets);
-					operation.prepareSecondaryIndexes();
 					submitOperation(operation);
 				} catch (IOException | RuntimeException e) {
 					operation.cancel();
@@ -12824,7 +12745,6 @@ class LmdbSailStore implements SailStore {
 						operation.objects[i] = valueIds[quads[quadOffset + 2]];
 						operation.contexts[i] = contextId < 0 ? 0 : valueIds[contextId];
 					}
-					operation.prepareSecondaryIndexes();
 					submitOperation(operation);
 					submitted = true;
 				} finally {
@@ -13328,6 +13248,15 @@ class LmdbSailStore implements SailStore {
 		if (index.isEmpty() || !Double.isFinite(expectedRows) || expectedRows < 0D) {
 			return Double.NaN;
 		}
+		if (!TripleStore.isStreamingAdjacencyOrder(index)) {
+			// A configured order without a matching adjacency traversal requires the complete matching
+			// input and a bounded external sort. It has no physical permutation-tree prefix to seek.
+			String sourceOrder = subj == -1 && obj != -1 ? "posc" : "psoc";
+			double scan = lmdbStatementWork(sourceOrder, subj, pred, obj, context, expectedRows);
+			double sorting = expectedRows * (Math.log(Math.max(2D, expectedRows)) / Math.log(2D));
+			double total = scan + sorting;
+			return Double.isFinite(total) ? total : Double.NaN;
+		}
 		int prefix = 0;
 		while (prefix < index.length() && bound(index.charAt(prefix), subj, pred, obj, context)) {
 			prefix++;
@@ -13348,7 +13277,8 @@ class LmdbSailStore implements SailStore {
 	private double lmdbRangeWork(long subj, long pred, long obj, long context, LmdbKeyRange range,
 			double expectedRows) {
 		double complete = lmdbStatementWork(range.indexFieldSeq(), subj, pred, obj, context, expectedRows);
-		if (!Double.isFinite(complete)) {
+		if (!Double.isFinite(complete) || !TripleStore.isStreamingAdjacencyOrder(range.indexFieldSeq())) {
+			// Sorted fallbacks must consume their whole input before applying the output range.
 			return complete;
 		}
 		return 8D + Math.max(0D, complete - 8D) * range.selectivityHint();

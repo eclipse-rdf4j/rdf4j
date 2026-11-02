@@ -92,10 +92,7 @@ class LmdbNativeScopedUnionValuesTest {
 		try {
 			load(nativeRepository);
 			load(genericRepository);
-			assertThat(nativeStore.getLmdbStats().tripleDatabases().keySet())
-					.as("the scope control uses the default spoc,posc index pair")
-					.contains("spocspoc", "poscposc")
-					.doesNotContain("ospcospc");
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(nativeStore, 4, 0);
 			if (adjacency) {
 				assertThat(nativeStore.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
 						.as(nativeStore.getDirectAdjacencyReadinessDescription())

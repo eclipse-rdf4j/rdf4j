@@ -1,0 +1,904 @@
+{
+  "phase_b": {
+    "base": "06f778b1d0a2caaba4ec160ce2c6e7c91b5ef8e8",
+    "patch": "retired-phase-b13-tests-06f778.patch",
+    "patch_sha256": "0a885093af3ccd94084ceec6823bdcbe8df1e8de66059535eec3e2fa48376a9e",
+    "scope": "TEST ONLY: 3 existing files, 13 prior CI cases; immutable additive five-case patch is unchanged and not included. No JVM/Maven/formatter/commit/push.",
+    "validation": "Static diff/check/line-length only; owner must run all 13 replacement cases.",
+    "hit_proof": {
+      "liveness": "Real mdb_get is counted, DBI must be adjacency metadata and key exactly type 7 + 8-byte ID. Any native cursor method fails. Each nonsentinel candidate must cause exactly one read, independent of PO budget; all four positions, duplicate logical writes, cross-plane/cross-row reference multiplicity, rollback and final deletion are asserted.",
+      "snapshot": "A real SailDataset is materialized and prefix/root plans captured before a distinct statement commit. Exact RDF revision +1, old 50/new 51, absent/present new subject, disjoint root partitions, prefix counts, supported orders and parallel-source admission are asserted.",
+      "preferences": "Every one of 24 preferences reopens the same nonempty explicit/inferred store. Exact native DB names and raw pages/metadata/deltas maps must remain unchanged; RDF revision begins at zero with no mutation. Namespace-native commits are allowed across constructors; only repeated compatibility scheduling must not invent a native commit. Exact independent unsigned-ordered rows and both-direction/count/reference helper are checked.",
+      "corruption": "Actual native format value overwritten with 3 or 8192 bytes, normal constructor must throw. Entire nonvolatile directory snapshot must remain unchanged (shared fixture excludes lock and lock.mdb); actual valid bytes restored, full raw authority and both-plane model required on fresh reopen."
+    },
+    "mapping": [
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "predicateLeadingButNotPoIndexCannotProveObjectAbsence",
+        "replacement_method": "referenceMetadataProvesObjectLivenessWithoutPoPreference",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#predicateLeadingButNotPoIndexCannotProveObjectAbsence"
+        ],
+        "preserved_guarantee": "Predicate-leading but non-PO order cannot manufacture proof of object absence.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:96"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "missingSubjectProofStillRetainsIrisButNotAbsentLiterals",
+        "replacement_method": "referenceMetadataRetainsLiveSubjectsWithoutSubjectPreference",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#missingSubjectProofStillRetainsIrisButNotAbsentLiterals"
+        ],
+        "preserved_guarantee": "An IRI potentially used as subject cannot be reclaimed without subject proof; absent literals can be reclaimed.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:109"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "missingPredicateProofStillRetainsIrisWithDirectObjectIndex",
+        "replacement_method": "referenceMetadataRetainsLivePredicatesWithoutPredicatePreference",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#missingPredicateProofStillRetainsIrisWithDirectObjectIndex"
+        ],
+        "preserved_guarantee": "An IRI potentially used as predicate cannot be reclaimed without predicate proof; absent literal can be reclaimed.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:123"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "budgetMustCoverBothPlanesBeforeAbsenceIsProven",
+        "replacement_method": "referenceMetadataCoversBothPlanesWithoutFallbackBudget",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#budgetMustCoverBothPlanesBeforeAbsenceIsProven"
+        ],
+        "preserved_guarantee": "An inferred-only live object must never be called unused just because explicit-plane probe consumed budget.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:137"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "seekCountDependsOnDistinctPredicatesNotStatementMultiplicity",
+        "replacement_method": "referenceLookupWorkDoesNotDependOnStatementMultiplicity",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#seekCountDependsOnDistinctPredicatesNotStatementMultiplicity"
+        ],
+        "preserved_guarantee": "Liveness work is bounded rather than proportional to statement multiplicity.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:153"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "highPredicateCardinalityStillMakesPartialBatchProgressWithinDefaultBudget",
+        "replacement_method": "highPredicateCardinalityUsesOneReferenceLookupPerCandidate",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#highPredicateCardinalityStillMakesPartialBatchProgressWithinDefaultBudget"
+        ],
+        "preserved_guarantee": "High predicate cardinality cannot cause unbounded scans or lose unresolved backlog; finite batches make safe progress.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:172"
+      },
+      {
+        "class": "TripleStorePoLivenessTest",
+        "old_method": "budgetExhaustionAndNoUnresolvedCollectorCannotReturnFalseUnused",
+        "replacement_method": "zeroBudgetAndNoUnresolvedCollectorKeepOnlyActuallyUnusedDuplicates",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStorePoLivenessTest#budgetExhaustionAndNoUnresolvedCollectorCannotReturnFalseUnused"
+        ],
+        "preserved_guarantee": "A budget-exhausted probe without an UNKNOWN collector must fail conservatively rather than reclaim a live ID.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStorePoLivenessTest.java:190"
+      },
+      {
+        "class": "TripleStoreBackgroundReindexTest",
+        "old_method": "constructionRetainsCommittedIndexesUntilBackgroundMaintenanceStarts",
+        "replacement_method": "logicalPreferenceChangesPreserveAdjacencyAuthorityBeforeMaintenance",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStoreBackgroundReindexTest#constructionRetainsCommittedIndexesUntilBackgroundMaintenanceStarts(Path)"
+        ],
+        "preserved_guarantee": "Opening with changed preferences must not prematurely replace/drop durable data before a safe authority transition.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreBackgroundReindexTest.java:274"
+      },
+      {
+        "class": "TripleStoreBackgroundReindexTest",
+        "old_method": "boundedLivenessRetainsUnresolvedCandidatesWithoutScanning",
+        "replacement_method": "boundedReferenceMetadataPreservesAllPositionsMultiplicityAndRollback",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStoreBackgroundReindexTest#boundedLivenessRetainsUnresolvedCandidatesWithoutScanning(Path)"
+        ],
+        "preserved_guarantee": "Unknown liveness must not return an ID as safely unused, and proof must avoid unbounded statement scans.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreBackgroundReindexTest.java:393"
+      },
+      {
+        "class": "TripleStoreBackgroundReindexTest",
+        "old_method": "invalidDescriptorResetsOnlyInactiveTreesAndCoalescesRepeatedStarts",
+        "replacement_method": "malformedFormatCertificateFailsClosedWithoutChangingAuthority",
+        "cases": 2,
+        "ci_identities": [
+          "TripleStoreBackgroundReindexTest#invalidDescriptorResetsOnlyInactiveTreesAndCoalescesRepeatedStarts(int, Path)[1]",
+          "TripleStoreBackgroundReindexTest#invalidDescriptorResetsOnlyInactiveTreesAndCoalescesRepeatedStarts(int, Path)[2]"
+        ],
+        "preserved_guarantee": "Corrupt/oversized build descriptor must not destroy active authoritative trees; repeated starts cannot spawn duplicate writers.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreBackgroundReindexTest.java:511"
+      },
+      {
+        "class": "TripleStoreBackgroundReindexTest",
+        "old_method": "canonicalPermutationsBoundPhysicalSchemaAcrossRepeatedReconfiguration",
+        "replacement_method": "allLogicalPermutationsPreserveTheFixedNativeSchemaAndEveryRow",
+        "cases": 1,
+        "ci_identities": [
+          "TripleStoreBackgroundReindexTest#canonicalPermutationsBoundPhysicalSchemaAcrossRepeatedReconfiguration(Path)"
+        ],
+        "preserved_guarantee": "Repeated use of all 24 permutations preserves exact rows and bounds native DBI count without leaking physical generations.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreBackgroundReindexTest.java:745"
+      },
+      {
+        "class": "LmdbBackgroundIndexGenerationTest",
+        "old_method": "heldDatasetPlansWithItsCommittedGenerationAfterBackgroundCutover",
+        "replacement_method": "heldDatasetPlansAgainstItsPinnedSnapshotAfterAnOrdinaryCommit",
+        "cases": 1,
+        "ci_identities": [
+          "LmdbBackgroundIndexGenerationTest#heldDatasetPlansWithItsCommittedGenerationAfterBackgroundCutover"
+        ],
+        "preserved_guarantee": "Held SailDataset uses its own original generation for supported orders, prefix runs, root partitions and parallel-source admission while fresh readers see current generation.",
+        "source": "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbBackgroundIndexGenerationTest.java:43"
+      }
+    ]
+  },
+  "pinned_gc": {
+    "patch": "retired-phase-b-gc2-dedup-after-additive.patch",
+    "sha256": "4b41dbad9cb550ad57e01dbd015773fd2a2dcee4e1fc3b46e180bfb802b6d6e1",
+    "precondition": "Apply ONLY AFTER reindex-contract-tests-06f778.patch SHA256 e3669e0f7593d4dbbf8632875c05a7ed6873bec31e460191dfc387e5b820ad6d. Separate from the nonoverlapping phase-B13 patch.",
+    "authorization": "Owner reported both new pinned-before-clear cases passing via parent on 2026-11-01; approved retirement of only the two delayed-object-index cases. No JVM was run by this reviewer.",
+    "mapping": [
+      {
+        "old": "LmdbValueGcOwnershipTest#legacyCloseRetainsUnusedTermsWhileObjectIndexBuildIsDelayed(boolean)[1]",
+        "replacement": "LmdbValueGcOwnershipTest#legacyPinnedSnapshotBeforeClearRetainsTermsUntilRetirement(boolean)[1]",
+        "inline": false
+      },
+      {
+        "old": "LmdbValueGcOwnershipTest#legacyCloseRetainsUnusedTermsWhileObjectIndexBuildIsDelayed(boolean)[2]",
+        "replacement": "LmdbValueGcOwnershipTest#legacyPinnedSnapshotBeforeClearRetainsTermsUntilRetirement(boolean)[2]",
+        "inline": true
+      }
+    ],
+    "preserved_contracts": [
+      "Protected old statement/dictionary IDs cannot be published unused while a real pre-clear snapshot remains pinned; new test additionally verifies old materialized rows and prevents ID reuse.",
+      "Once the protection ends, finite retirement work progresses into durable unused IDs.",
+      "Store shutdown retains that durable unused backlog for the next bounded post-ready cleanup.",
+      "After reopen, the finite backlog is consumed without changing retained triple-term or shared-component IDs/values.",
+      "Both literal-inlining settings remain exercised.",
+      "The existing non-delayed legacyCloseRetainsUnusedTermsForPostReadyCleanupAndPreservesLiveDependencies parameter pair and every assertion remain; its helper is only specialized to the already-selected false branch."
+    ],
+    "removed_obsolete_mechanism": [
+      "Deleted two-case delayed-index wrapper, now-unreachable delayed worker factory, and delayIndex/releaseIndex branch from shared helper. No production no-op worker restoration.",
+      "No claim that absent preferred object/predicate ordering implies UNKNOWN: exact persisted references now prove liveness. Phase B13 independently tests that proof in all positions, both planes, bounded native work and reference multiplicity."
+    ],
+    "validation": "Static diff-check and apply-check against base + immutable additive patch pass. New replacement body is byte-for-byte unchanged by this patch. Owner should rerun the existing non-delayed pair plus the proven pinned pair after integration."
+  },
+  "runtime_validation": "Phase B liveness11, held-generation1, authority/config/corruption5 and GC4 pass; two malformed-format cases rerun after asserting their distinct existing rejection reasons. Test-only replacements, no remaining retired-worker family waived.",
+  "phase_c": {
+    "title": "Approved phase C9 test-only current-contract retargeting",
+    "patch": "retired-phase-c9-tests-after-b0683562.patch",
+    "sha256": "5973b9ffa76505f70b06d6543f0734942aab3b1636ed064514c6d7648784c843",
+    "diff_base": "b0683562d4d34115788993efbdf7997494bd4ac8",
+    "base_note": "Incremental after the published native-fault retarget. Its AutoGrow helper and assertions are preserved byte-for-byte; earlier additive/B13/GC2 paths are excluded.",
+    "scope": [
+      "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbIndexRebuildGrowthTest.java",
+      "core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/TripleStoreAutoGrowTest.java"
+    ],
+    "runtime": "Owner gate31/31 passed; all nine mapped replacements executed with exact native hit proof.",
+    "static_checks": [
+      "git diff --check passed",
+      "temporary-index git apply --cached --check against b0683562 passed",
+      "all changed lines <=120 columns",
+      "AutoGrow diff contains only imports, the one replaced method and its retired helper replacement"
+    ],
+    "next_runtime_selection": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow,TripleStoreAutoGrowTest#testAdjacencySetupRetryReopensDroppedDbiAfterAbort",
+    "remaining_old20": "Publication/mutation 15 and process-crash 5 remain unresolved and unchanged; this patch does not waive or delete them.",
+    "mappings": [
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[1]",
+        "matrix_id": 3,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[1]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[2]",
+        "matrix_id": 4,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[2]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[3]",
+        "matrix_id": 5,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[3]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[4]",
+        "matrix_id": 6,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[4]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[5]",
+        "matrix_id": 7,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[5]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[6]",
+        "matrix_id": 8,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[6]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[7]",
+        "matrix_id": 9,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[7]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "LmdbIndexRebuildGrowthTest#capacityDerivedStatementRebuildKeepsEverySourceRow(int, boolean, boolean)[8]",
+        "matrix_id": 10,
+        "old_guarantee": "Across formats 2/7, inline false/true and explicit/inferred, actual native growth must never invalidate source ownership or lose/duplicate rows; cold reopen preserves exact row IDs.",
+        "replacement": "LmdbIndexRebuildGrowthTest#capacityDerivedAdjacencyGrowthKeepsEverySourceRow(int, boolean, boolean)[8]",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "All eight format 2/7, inline false/true, explicit/inferred parameter combinations remain unchanged.",
+          "Actual initial map capacity is measured after a committed two-plane prefix; distinct subjects = capacity/17 + 1.",
+          "Native map must actually grow; pinned pre-growth reader must reject its invalidated mapping.",
+          "Independent full subject sets and complete quad/value IDs checked in outgoing PSOC and incoming POSC, both planes.",
+          "Exact plane/predicate/row/context metadata, context catalog, first/middle/last bound-prefix queries.",
+          "Rollback of committed-prefix and boundary-row removals plus phantom addition leaves revision/model unchanged.",
+          "Cold reopen verifies exact model and saved format/inline settings.",
+          "Owned child retains timeout/forced cleanup and now caps heap at 384 MiB and active processors at 2."
+        ],
+        "hit_proof_marker": "ACTUAL_ADJACENCY_GROWTH= / EXACT_GROWN_ROWS=",
+        "retired_assumption": "24 configurable physical tuple trees and equal seed capacity",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.LmdbIndexRebuildGrowthTest.xml"
+      },
+      {
+        "old_ci_identity": "TripleStoreAutoGrowTest#testReindexRetryReopensDroppedDbiAfterAbort",
+        "matrix_id": 13,
+        "old_guarantee": "After dropping native DBIs and aborting a capacity-limited writer, retry must reopen valid handles and preserve exact pattern/context rows through reopen.",
+        "replacement": "TripleStoreAutoGrowTest#testAdjacencySetupRetryReopensDroppedDbiAfterAbort",
+        "status": "PASSED_OWNER_RUNTIME",
+        "preserved_assertions": [
+          "Actual raw legacy DBIs, four distinct quads across explicit/inferred and default/named contexts.",
+          "Same-environment successful reads of all four populated source trees and all five native legacy drops.",
+          "Exact real metadata format-key mdb_put receives one MDB_MAP_FULL after copied native plane totals are verified.",
+          "All writer cursors close before abort, no closed cursor operation/double-close, abort before same-environment resize.",
+          "Replacement writer epoch is later; successful new DBI opens are proven without requiring changed integer/pointer values.",
+          "Only complete format write and successful native commit finish recovery; exact event and attempt counts.",
+          "Full both-direction/both-plane membership/value IDs, row/context/reference metadata, bound queries, rollback and cold reopen."
+        ],
+        "hit_proof_marker": "ACTUAL_SETUP_DBI_RETRY=[fault, abort, grow, reopen, format, commit]",
+        "retired_assumption": "no-op background reindex callback",
+        "runtime_evidence": "repair-evidence/estimate-soft-growth-final-reports/TEST-org.eclipse.rdf4j.sail.lmdb.TripleStoreAutoGrowTest.xml"
+      }
+    ]
+  },
+  "phase_d_e": {
+    "production_baseline": "e0bf4b75936aaf983bf65225e9247ff05823c107",
+    "scope": "Retire exactly20 unreachable worker/physical-generation invocations only after real authority replacements pass;24 retained methods stay unchanged. No production changes or skipped tests.",
+    "mappings": [
+      {
+        "original_id": 2,
+        "phase": "E",
+        "original_test": "LmdbCrashRecoveryTest#nativeIndexRewriteSurvivesCrashBeforePropertiesSave(Path)",
+        "former_guarantee": "Native committed authority is recoverable even if a crash occurs before the property sidecar is saved.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCertifiedCrashTest#onlyCompleteNativeAuthoritySurvivesCertifiedProcessDeath",
+            "argument": "NATIVE_SUCCESS_BEFORE_SIDECAR_SAVE",
+            "observed_testcase": "onlyCompleteNativeAuthoritySurvivesCertifiedProcessDeath(Cut)[5]",
+            "evidence_key": "crash",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Actual native success with changed logical preferences and byte-identical old sidecar; complete authority after two reopen cycles. Not an obsolete physical-index manifest claim.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 14,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#explicitStartCanRetryAFailedWorkerWithoutAutomaticRetry(boolean, Path)[1]",
+        "former_guarantee": "A failed source-read worker (IOException or AssertionError) stops after one attempt, retains authority and succeeds only after explicit retry.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCompactionFailureTest#compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors",
+            "argument": "NATIVE_NON_CAPACITY",
+            "observed_testcase": "compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors(FaultSite)[4]",
+            "evidence_key": "compaction",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Actual non-capacity page put after real delta deletion; no automatic writer restart/resize/native commit; explicit retry restores the full model.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 15,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#explicitStartCanRetryAFailedWorkerWithoutAutomaticRetry(boolean, Path)[2]",
+        "former_guarantee": "A failed source-read worker (IOException or AssertionError) stops after one attempt, retains authority and succeeds only after explicit retry.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCompactionFailureTest#compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors",
+            "argument": "FATAL_CODEC",
+            "observed_testcase": "compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors(FaultSite)[5]",
+            "evidence_key": "compaction",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Same compaction boundary with identical fatal Error preserved and all native cursors closed before abort.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 16,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#committedCopyProgressResumesAndForegroundClearRemainsAuthoritative(Path)",
+        "former_guarantee": "A reopened in-progress transformation never resurrects rows cleared by a later committed foreground transaction; inferred rows and context counts remain exact.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyMutationBoundaryTest#clearAndReplacementOverrideCompactedBaseAndCommittedDeltasAcrossReopen",
+            "argument": null,
+            "observed_testcase": "clearAndReplacementOverrideCompactedBaseAndCommittedDeltasAcrossReopen",
+            "evidence_key": "mutation",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Both-plane clear/replacement over proved compacted base plus committed deltas; pin remains old and reopen cannot resurrect rows.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 17,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#awaitIncludesFinalNativeCommitAndTerminalCallback(Path)",
+        "former_guarantee": "Completion cannot be reported before final native commit and admitted terminal callback; repeated start requests coalesce.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyPublicationTest#completionIncludesNativeCommitAndPublicationWithoutRetiringPinnedPlans",
+            "argument": "SUCCESS",
+            "observed_testcase": "completionIncludesNativeCommitAndPublicationWithoutRetiringPinnedPlans(Outcome)[1]",
+            "evidence_key": "publication",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Real pre-native and post-native completion barriers plus certified blocked fresh-reader admission; exact old/new models, plans, next write and reopen.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 18,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#globalPreparedOrdersDualWriteAndSurviveAChangedIndexGeneration(Path)",
+        "former_guarantee": "Globally prepared input remains correct across generation publication; foreground/staging updates agree, duplicate/lost rows impossible.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyMutationBoundaryTest#retainedGlobalInputsAndRawBulkOrdersDoNotDuplicateCountsOrNativeCommits",
+            "argument": null,
+            "observed_testcase": "retainedGlobalInputsAndRawBulkOrdersDoNotDuplicateCountsOrNativeCommits",
+            "evidence_key": "mutation",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Real current global-input entry point passes null obsolete permutation plans; retained arrays, duplicate/promotion counts, rollback and raw bulk ownership/no extra commits remain asserted.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 19,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#explicitRetryPublishesDurableManifestBeforeRetiringOldReaders(boolean, Path)[1]",
+        "former_guarantee": "After durable native commit but before in-memory publication failure (fatal/nonfatal), old/gap readers retain consistent authority; retry admits new cohort and eventually releases old cohort.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyPublicationTest#completionIncludesNativeCommitAndPublicationWithoutRetiringPinnedPlans",
+            "argument": "STRICT_NONFATAL",
+            "observed_testcase": "completionIncludesNativeCommitAndPublicationWithoutRetiringPinnedPlans(Outcome)[2]",
+            "evidence_key": "publication",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Strict nonfatal post-native publication error with original throwable identity, old pinned plans and complete fresh authority, later write and reopen.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 20,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#explicitRetryPublishesDurableManifestBeforeRetiringOldReaders(boolean, Path)[2]",
+        "former_guarantee": "After durable native commit but before in-memory publication failure (fatal/nonfatal), old/gap readers retain consistent authority; retry admits new cohort and eventually releases old cohort.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyPublicationTest#completionIncludesNativeCommitAndPublicationWithoutRetiringPinnedPlans",
+            "argument": "FATAL",
+            "observed_testcase": "completionIncludesNativeCommitAndPublicationWithoutRetiringPinnedPlans(Outcome)[3]",
+            "evidence_key": "publication",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Fatal post-native publication error with identical Error plus the same pinned/current authority and ownership checks.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 21,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#descriptorPutCapacityFailureUsesTheAdmittedCommitRecovery(CommitMode, Path)[1]",
+        "former_guarantee": "Commit-time metadata MAP_FULL uses the admitted JOURNAL/FROZEN/NATIVE_CHUNK policy; no partial rows, correct exception ownership and exact retry/reopen.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCompactionFailureTest#compactionCapacityFailureRespectsAdmittedRecoveryMode",
+            "argument": "JOURNAL",
+            "observed_testcase": "compactionCapacityFailureRespectsAdmittedRecoveryMode(RecoveryMode)[1]",
+            "evidence_key": "compaction",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Actual compaction MAP_FULL with JOURNAL replay, not a nonexistent descriptor put.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 22,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#descriptorPutCapacityFailureUsesTheAdmittedCommitRecovery(CommitMode, Path)[2]",
+        "former_guarantee": "Commit-time metadata MAP_FULL uses the admitted JOURNAL/FROZEN/NATIVE_CHUNK policy; no partial rows, correct exception ownership and exact retry/reopen.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCompactionFailureTest#compactionCapacityFailureRespectsAdmittedRecoveryMode",
+            "argument": "FROZEN",
+            "observed_testcase": "compactionCapacityFailureRespectsAdmittedRecoveryMode(RecoveryMode)[2]",
+            "evidence_key": "compaction",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Actual compaction MAP_FULL with frozen decision identity, no autonomous resize; rollback then explicit full resubmission.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 23,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#descriptorPutCapacityFailureUsesTheAdmittedCommitRecovery(CommitMode, Path)[3]",
+        "former_guarantee": "Commit-time metadata MAP_FULL uses the admitted JOURNAL/FROZEN/NATIVE_CHUNK policy; no partial rows, correct exception ownership and exact retry/reopen.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCompactionFailureTest#compactionCapacityFailureRespectsAdmittedRecoveryMode",
+            "argument": "NATIVE_CHUNK",
+            "observed_testcase": "compactionCapacityFailureRespectsAdmittedRecoveryMode(RecoveryMode)[3]",
+            "evidence_key": "compaction",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Actual compaction MAP_FULL with native-checkpoint environment/ownership, no autonomous resize; explicit full resubmission.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 24,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#copyRechecksMembershipAndDoesNotSkipDeletedContinuationOrLoseSnapshot(Path)",
+        "former_guarantee": "Concurrent deletes, below-continuation insertions, inferred promotion, aligned writes and rollback cannot skip/duplicate rows or alter held old snapshot.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyMutationBoundaryTest#deletedPageFenceResumesExactlyWhilePinnedIteratorKeepsItsOldContinuation",
+            "argument": null,
+            "observed_testcase": "deletedPageFenceResumesExactlyWhilePinnedIteratorKeepsItsOldContinuation",
+            "evidence_key": "mutation",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Actual persisted page fence, pinned and renewed continuation, deletion of the fence, below/above inserts, promotion/duplicates/abort, compaction and reopen.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 25,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#retirementNotificationSurvivesBlockingWorkBeforeTheStatementWait(Path)",
+        "former_guarantee": "Reader-retirement signal cannot be lost if intervening work consumes a thread permit; old reader remains valid until retirement and job finishes.",
+        "replacement_cases": [
+          {
+            "test": "LmdbValueGcOwnershipTest#legacyPinnedSnapshotBeforeClearRetainsTermsUntilRetirement",
+            "argument": "false",
+            "observed_testcase": "legacyPinnedSnapshotBeforeClearRetainsTermsUntilRetirement(boolean)[1]",
+            "evidence_key": "gc",
+            "observed_result": "PASS"
+          },
+          {
+            "test": "LmdbValueGcOwnershipTest#legacyPinnedSnapshotBeforeClearRetainsTermsUntilRetirement",
+            "argument": "true",
+            "observed_testcase": "legacyPinnedSnapshotBeforeClearRetainsTermsUntilRetirement(boolean)[2]",
+            "evidence_key": "gc",
+            "observed_result": "PASS"
+          },
+          {
+            "test": "TripleStoreBackgroundReindexTest#logicalPreferenceChangesPreserveAdjacencyAuthorityBeforeMaintenance",
+            "argument": null,
+            "observed_testcase": "logicalPreferenceChangesPreserveAdjacencyAuthorityBeforeMaintenance(Path)",
+            "evidence_key": "retained_controls",
+            "observed_result": "PASS"
+          },
+          {
+            "test": "TripleStoreBackgroundReindexTest#allLogicalPermutationsPreserveTheFixedNativeSchemaAndEveryRow",
+            "argument": null,
+            "observed_testcase": "allLogicalPermutationsPreserveTheFixedNativeSchemaAndEveryRow(Path)",
+            "evidence_key": "retained_controls",
+            "observed_result": "PASS"
+          },
+          {
+            "test": "TripleStoreBackgroundReindexTest#malformedFormatCertificateFailsClosedWithoutChangingAuthority",
+            "argument": "3",
+            "observed_testcase": "malformedFormatCertificateFailsClosedWithoutChangingAuthority(int, Path)[1]",
+            "evidence_key": "retained_controls",
+            "observed_result": "PASS"
+          },
+          {
+            "test": "TripleStoreBackgroundReindexTest#malformedFormatCertificateFailsClosedWithoutChangingAuthority",
+            "argument": "8192",
+            "observed_testcase": "malformedFormatCertificateFailsClosedWithoutChangingAuthority(int, Path)[2]",
+            "evidence_key": "retained_controls",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "The retired LockSupport worker no longer exists. Keep genuine reader-retirement/GC ownership and no-op maintenance byte/native-ID/revision checks; no synthetic worker recreated.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 27,
+        "phase": "E",
+        "original_test": "TripleStoreBackgroundReindexTest#nativeProcessCrashResumesTheAuthoritativeGeneration(CrashCut, Path)[1]",
+        "former_guarantee": "Dedicated child process death at dual-write registration, copy commit, foreground commit or cutover commit resumes one complete durable generation; no lost inferred/promotion/clear data.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCertifiedCrashTest#onlyCompleteNativeAuthoritySurvivesCertifiedProcessDeath",
+            "argument": "STAGED_BEFORE_COMPACTION",
+            "observed_testcase": "onlyCompleteNativeAuthoritySurvivesCertifiedProcessDeath(Cut)[1]",
+            "evidence_key": "crash",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Certified process halt after staged real mutation but before compaction; old durable authority only.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 28,
+        "phase": "E",
+        "original_test": "TripleStoreBackgroundReindexTest#nativeProcessCrashResumesTheAuthoritativeGeneration(CrashCut, Path)[2]",
+        "former_guarantee": "Dedicated child process death at dual-write registration, copy commit, foreground commit or cutover commit resumes one complete durable generation; no lost inferred/promotion/clear data.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCertifiedCrashTest#onlyCompleteNativeAuthoritySurvivesCertifiedProcessDeath",
+            "argument": "DELTAS_DELETED_BEFORE_PAGE_PUT",
+            "observed_testcase": "onlyCompleteNativeAuthoritySurvivesCertifiedProcessDeath(Cut)[2]",
+            "evidence_key": "crash",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Certified process halt after successful writer delta deletes and before replacement page put; old durable authority only.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 29,
+        "phase": "E",
+        "original_test": "TripleStoreBackgroundReindexTest#nativeProcessCrashResumesTheAuthoritativeGeneration(CrashCut, Path)[3]",
+        "former_guarantee": "Dedicated child process death at dual-write registration, copy commit, foreground commit or cutover commit resumes one complete durable generation; no lost inferred/promotion/clear data.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCertifiedCrashTest#onlyCompleteNativeAuthoritySurvivesCertifiedProcessDeath",
+            "argument": "COMPACTED_BEFORE_NATIVE_COMMIT",
+            "observed_testcase": "onlyCompleteNativeAuthoritySurvivesCertifiedProcessDeath(Cut)[3]",
+            "evidence_key": "crash",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Certified process halt after real compaction but before native commit; old durable authority only.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 30,
+        "phase": "E",
+        "original_test": "TripleStoreBackgroundReindexTest#nativeProcessCrashResumesTheAuthoritativeGeneration(CrashCut, Path)[4]",
+        "former_guarantee": "Dedicated child process death at dual-write registration, copy commit, foreground commit or cutover commit resumes one complete durable generation; no lost inferred/promotion/clear data.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCertifiedCrashTest#onlyCompleteNativeAuthoritySurvivesCertifiedProcessDeath",
+            "argument": "NATIVE_SUCCESS_BEFORE_PUBLICATION",
+            "observed_testcase": "onlyCompleteNativeAuthoritySurvivesCertifiedProcessDeath(Cut)[4]",
+            "evidence_key": "crash",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Certified process halt after native commit success and before publication; complete new durable authority.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 34,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#preparedNativeChunkAndRawBulkMutationsMaintainStagingAndReencodeOldPlans(Path)",
+        "former_guarantee": "Prepared, native-chunk, scalar and raw bulk routes preserve all rows/contexts, reject rolled-back work, and tolerate stale prepared generation.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyMutationBoundaryTest#retainedColumnInputsAndNativeCheckpointMutationsStayExactAcrossRealCompaction",
+            "argument": null,
+            "observed_testcase": "retainedColumnInputsAndNativeCheckpointMutationsStayExactAcrossRealCompaction",
+            "evidence_key": "mutation",
+            "observed_result": "PASS"
+          },
+          {
+            "test": "LmdbPersistentAdjacencyMutationBoundaryTest#retainedGlobalInputsAndRawBulkOrdersDoNotDuplicateCountsOrNativeCommits",
+            "argument": null,
+            "observed_testcase": "retainedGlobalInputsAndRawBulkOrdersDoNotDuplicateCountsOrNativeCommits",
+            "evidence_key": "mutation",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Both retained column/native-checkpoint routes and raw bulk/global routes: callbacks, unchanged input arrays, rollback, owner consumption and no duplicate logical/native commits.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 35,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#failedCutoverKeepsTheOldManifestAndResumesAfterReopen(Path)",
+        "former_guarantee": "Failure before authoritative cutover leaves old authority intact; later writes/reopen preserve all explicit/inferred data.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCompactionFailureTest#compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors",
+            "argument": "NATIVE_NON_CAPACITY",
+            "observed_testcase": "compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors(FaultSite)[4]",
+            "evidence_key": "compaction",
+            "observed_result": "PASS"
+          },
+          {
+            "test": "LmdbPersistentAdjacencyCompactionFailureTest#compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors",
+            "argument": "FATAL_CODEC",
+            "observed_testcase": "compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors(FaultSite)[5]",
+            "evidence_key": "compaction",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Abort preserves byte-exact prior native authority; no partial cutover; explicit retry and cold reopen remain exact.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      },
+      {
+        "original_id": 37,
+        "phase": "D",
+        "original_test": "TripleStoreBackgroundReindexTest#failedBuildKeepsCommittedGenerationReadableAndWritable(Path)",
+        "former_guarantee": "Failed background transformation must leave old data readable/writable and preserve a subsequent write after reopen.",
+        "replacement_cases": [
+          {
+            "test": "LmdbPersistentAdjacencyCompactionFailureTest#compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors",
+            "argument": "NATIVE_NON_CAPACITY",
+            "observed_testcase": "compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors(FaultSite)[4]",
+            "evidence_key": "compaction",
+            "observed_result": "PASS"
+          },
+          {
+            "test": "LmdbPersistentAdjacencyCompactionFailureTest#compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors",
+            "argument": "FATAL_CODEC",
+            "observed_testcase": "compactionFailureAbortsOrReplaysEveryMutationAndClosesItsCursors(FaultSite)[5]",
+            "evidence_key": "compaction",
+            "observed_result": "PASS"
+          }
+        ],
+        "mapping_note": "Abort leaves the committed snapshot readable and a new admitted writer can resubmit; exact model and reopen.",
+        "retirement_status": "REPLACEMENTS_AND_RETAINED_CONTROLS_PASSED"
+      }
+    ],
+    "validation": {
+      "compaction": 8,
+      "mutation": 4,
+      "certified_process_crashes": 5,
+      "publication": 3,
+      "retained_classes": 33,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    "caveats": [
+      "Process-death tests are not host power-loss simulations.",
+      "Old worker LockSupport notifications are retired mechanics, not claimed equivalent to current pinned-GC/no-op authority evidence.",
+      "Global-ID primitive coverage does not claim the separately gated Sail large-batch fast path engages."
+    ]
+  },
+  "canonical_authority_contracts": [
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyBuildTxnFamilyTest",
+      "test": "selectedCoverageOnDefaultIndexesSeeksAcrossUncoveredSubjectPredicateRuns(File)",
+      "replacement_test": "selectedCoverageBuildsCanonicalRangesWithoutReadingUncoveredRows(File)",
+      "repair_basis": "Actual canonical scanners/builds, exact both-direction models and unchanged native work after doubling unrelated rows replace retired SPOC skip/unsupported premises."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.LmdbApproximatePredicateCountsTest",
+      "test": "noEstimateWithoutAPredicateLeadingIndex",
+      "replacement_test": "exactMetadataWeightsDoNotRequireAPredicateLeadingPreference",
+      "repair_basis": "Canonical persistent authority replaces unavailable legacy-order premise with exact results and actual route/native metadata proof."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.LmdbApproximatePredicateCountsTest",
+      "test": "noEstimateWithoutThePageCardinalityEstimator(boolean)[1]",
+      "replacement_test": "exactMetadataWeightsDoNotRequireThePageCardinalityEstimator(boolean)[1]",
+      "repair_basis": "Canonical persistent authority replaces unavailable legacy-order premise with exact results and actual route/native metadata proof."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.LmdbApproximatePredicateCountsTest",
+      "test": "noEstimateWithoutThePageCardinalityEstimator(boolean)[2]",
+      "replacement_test": "exactMetadataWeightsDoNotRequireThePageCardinalityEstimator(boolean)[2]",
+      "repair_basis": "Canonical persistent authority replaces unavailable legacy-order premise with exact results and actual route/native metadata proof."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyEphemeralTest",
+      "test": "selectedScansEmitOnlyCoveredPredicateRunsOnDefaultIndexes",
+      "replacement_test": "selectedScansEmitOnlyCoveredPredicateRunsOnDefaultIndexes",
+      "repair_basis": "Actual canonical scanners/builds, exact both-direction models and unchanged native work after doubling unrelated rows replace retired SPOC skip/unsupported premises."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyEphemeralTest",
+      "test": "missingPredicateLeadingIndexRefusesTheIncomingDirection",
+      "replacement_test": "canonicalIncomingDirectionWorksWithSubjectOnlyPreference",
+      "repair_basis": "Actual canonical scanners/builds, exact both-direction models and unchanged native work after doubling unrelated rows replace retired SPOC skip/unsupported premises."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunQueryTest",
+      "test": "distinctSubjectObjectWithBoundPredicateFallsBackWhenPredicateIsInterleaved",
+      "replacement_test": "boundPredicateMakesCanonicalSubjectObjectPrefixContiguous",
+      "repair_basis": "Canonical persistent authority replaces unavailable legacy-order premise with exact results and actual route/native metadata proof."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunQueryTest",
+      "test": "missingPrefixIndexFallsBackToExistingEvaluation",
+      "replacement_test": "canonicalPredicateOrderSupportsPrefixRunsWithSubjectOnlyPreference",
+      "repair_basis": "Canonical persistent authority replaces unavailable legacy-order premise with exact results and actual route/native metadata proof."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunQueryTest",
+      "test": "distinctObjectPredicateFallsBackWithoutObjectPredicateIndex",
+      "replacement_test": "canonicalObjectPredicateOrderSupportsPrefixRunsWithoutExplicitPreference",
+      "repair_basis": "Canonical persistent authority replaces unavailable legacy-order premise with exact results and actual route/native metadata proof."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.TripleStoreTest",
+      "test": "globalPreparedFourIndexOrdersAndDuplicateFilteringAreExact",
+      "replacement_test": "globalIdBatchWritesPersistentDirectionsWithoutPreparedIndexWork",
+      "repair_basis": "Explicit current-authority contract mapping; private dead four-sort preparation retired only against stronger passed persistent global-ID primitive, not Sail route engagement."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoaderDefaultIndexesTest",
+      "test": "aBulkLoadWithoutConfiguredIndexesBuildsOspc",
+      "replacement_test": "aDefaultBulkLoadKeepsExactObjectLookupsAndPersistentAuthorityAfterReopen",
+      "repair_basis": "Actual persistent authority, exact logical query results and cold reopen replace removed physical DB-name precondition."
+    },
+    {
+      "classname": "org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbExistsIntersectionQueryTest",
+      "test": "missingSupportingIndexFallsBackAndStaysCorrect",
+      "replacement_test": "canonicalOrdersSupportIntersectionWithSubjectOnlyPreference",
+      "repair_basis": "Canonical persistent authority replaces unavailable legacy-order premise with exact results and actual route/native metadata proof."
+    }
+  ],
+  "bounded_cardinality": {
+    "original_to_replacement": {
+      "disablingPageWalkingUsesRdf4j532Estimates(File)": "disablingPageWalkingUsesBoundedPersistentEstimates(File)",
+      "disablingPageCardinalityEstimatorUsesRdf4j532Estimates(File)": "disablingPageCardinalityEstimatorUsesBoundedPersistentEstimates(File)"
+    },
+    "contract": "Independent generated rows plus exact both-plane scans; exact scalar facts and \u00b150% residual accuracy. No physical bias floating goldens. Four real structural/native flag-path controls preserve mode selection. Exact membership/count APIs unchanged.",
+    "runtime_evidence": "repair-evidence/weighted-cardinality-reference-green-reports/",
+    "gate": {
+      "tests": 111,
+      "failures": 0,
+      "errors": 0,
+      "skips": 0
+    },
+    "scope": "Focused gates, not a full-suite claim. Full original ledger 288 passed using explicit replacement mappings.",
+    "new_reds": "15 public quality/work cases:11 failures; physical4:4 failures; unchanged large-SO quality failed before combined-plane reference-incidence cap.",
+    "bounded_work": "Whole-call budgets include both planes, metadata discovery, raw page/key visits and native complete-value projections; signed base-relative deltas; explicit incomplete-sample fallback.",
+    "limits": "Weighted estimates are approximate; enabled mode plus fallback/capping is not claimed globally unbiased or universally accurate. Disabled native prefix is a bounded compatibility heuristic."
+  },
+  "workbench_persistent_authority": {
+    "scope": "One test file, no production changes; exact same two methods times adjacency=false/true retained.",
+    "methods": [
+      "fixedBlankAllFacetIndexWorkDoesNotGrowQuadratically(boolean)",
+      "skewedAliasRangeWorkDoesNotGrowQuadratically(boolean)"
+    ],
+    "red": "repair-evidence/workbench-authority-native-red-reports:4 cases,4 physical-name failures,0errors/0skips; current481 CI1020/4/0/1 independently matches.",
+    "replacement": "Persisted default spoc,posc logical preferences; actual MDB_stat-backed populated adjacency pages/deltas/metadata. No claim of catalog enumeration. Complete explicit context-bearing statement bag equals independent fixture population only after measured query observations.",
+    "preserved": "Every native/generic result, selected route, source-work/candidate/filter metric and original N-to-2N scaling threshold unchanged.",
+    "green": "Focused4/0/0/0; full GraphExplorerNativeVariantsTest1020/0/0/1 on unchanged481 production, private one3GiB fork and exact pinnedNode22.23.3.",
+    "evidence": "repair-evidence/workbench-authority-full-reports and workbench-authority-full-summary.json"
+  }
+}

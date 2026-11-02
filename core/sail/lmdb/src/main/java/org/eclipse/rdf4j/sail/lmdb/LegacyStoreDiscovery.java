@@ -40,14 +40,17 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -61,6 +64,8 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.csf.PersistentCsfPageCodec;
+import org.eclipse.rdf4j.sail.lmdb.csf.PersistentCsfPageCodec.DecodedPage;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -87,6 +92,9 @@ final class LegacyStoreDiscovery {
 			"unused_ids",
 			"retired_ids", "retired_ids_seq");
 	private static final List<String> INDEX_SPECS = indexSpecs();
+	private static final Set<String> ADJACENCY_DATABASES = Set.of(LmdbPersistentAdjacency.PAGES_DATABASE,
+			LmdbPersistentAdjacency.METADATA_DATABASE, LmdbPersistentAdjacency.DELTAS_DATABASE);
+	private static final Set<String> ADJACENCY_ORDERS = new LinkedHashSet<>(List.of("psoc", "posc"));
 	private static final byte[] STATEMENT_BUILD_KEY = "triple-index-build".getBytes(StandardCharsets.US_ASCII);
 	private static final byte[] TERM_BUILD_KEY = "term-index-build".getBytes(StandardCharsets.US_ASCII);
 
@@ -161,20 +169,28 @@ final class LegacyStoreDiscovery {
 							? valuesDatabases.get(TripleIndex.nativeDatabaseName("term-spoc", true))
 							: -1;
 					verifier.validateDictionary(stack, valuesTxn, valuesMain, valuesDatabases);
-					verifier.validateContexts(stack, triplesTxn, triplesDatabases.get("contexts"), valuesTxn,
-							valuesMain,
-							termCspoDatabase);
-					verifier.validateStatementIndexes(stack, triplesTxn, triplesDatabases, statementIndexes, valuesTxn,
-							valuesMain, triplesDatabases.get("contexts"), termCspoDatabase, termSpocDatabase, true);
-					verifier.validateStatementIndexes(stack, triplesTxn, triplesDatabases, statementIndexes, valuesTxn,
-							valuesMain, triplesDatabases.get("contexts"), termCspoDatabase, termSpocDatabase, false);
+					if (hasPersistentAdjacency(triplesDatabases)) {
+						verifier.validatePersistentAdjacency(stack, triplesTxn, valuesTxn, valuesMain,
+								termCspoDatabase, termSpocDatabase);
+					} else {
+						verifier.validateContexts(stack, triplesTxn, triplesDatabases.get("contexts"), valuesTxn,
+								valuesMain, termCspoDatabase);
+						verifier.validateStatementIndexes(stack, triplesTxn, triplesDatabases, statementIndexes,
+								valuesTxn,
+								valuesMain, triplesDatabases.get("contexts"), termCspoDatabase, termSpocDatabase, true);
+						verifier.validateStatementIndexes(stack, triplesTxn, triplesDatabases, statementIndexes,
+								valuesTxn,
+								valuesMain, triplesDatabases.get("contexts"), termCspoDatabase, termSpocDatabase,
+								false);
+					}
 					verifier.validateTermIndexes(stack, valuesTxn, valuesDatabases, termIndexes, valuesMain,
 							valuesDatabases.get("unused_ids"), termCspoDatabase, termSpocDatabase);
 					if (termCspoDatabase >= 0 && termSpocDatabase >= 0) {
 						TermOwnerGraphVerifier.verify(valuesTxn, termSpocDatabase, termCspoDatabase);
 					}
 				}
-				validateDescriptors(properties, statementIndexes, termIndexes, legacy, statementManifest, termManifest);
+				validateDescriptors(properties, statementIndexes, termIndexes, legacy, statementManifest, termManifest,
+						hasPersistentAdjacency(triplesDatabases));
 				properties.statementIndexCleanupPending = !statementIndexes.containsAll(physicalStatementIndexes);
 				properties.verifiedValueTransactionId = mdb_txn_id(valuesTxn);
 				properties.verifiedTripleTransactionId = mdb_txn_id(triplesTxn);
@@ -209,7 +225,14 @@ final class LegacyStoreDiscovery {
 			openKnownDatabase(stack, valuesTxn, name, valueDatabases, true);
 		}
 		openKnownDatabase(stack, valuesTxn, ValueStore.TERM_INDEX_MANIFEST_DATABASE, valueDatabases, true);
-		openKnownDatabase(stack, triplesTxn, "contexts", tripleDatabases, true);
+		boolean persistentAdjacency = LmdbPersistentAdjacency.exists(triplesTxn);
+		if (persistentAdjacency) {
+			for (String name : ADJACENCY_DATABASES) {
+				openKnownDatabase(stack, triplesTxn, name, tripleDatabases, true);
+			}
+		} else {
+			openKnownDatabase(stack, triplesTxn, "contexts", tripleDatabases, true);
+		}
 		openKnownDatabase(stack, triplesTxn, TripleStore.NAMESPACE_DATABASE_NAME, tripleDatabases, true);
 		// Every legal permutation is probed, including absent indexes, so incomplete pairs and staged term indexes
 		// force ordinary recovery. This fixed work is independent of the number of dictionary or statement entries.
@@ -235,9 +258,12 @@ final class LegacyStoreDiscovery {
 			throw new IOException("ValueStore native format fence disagrees with persisted LmdbStore format");
 		}
 		ByteBuffer epoch = ByteBuffer.wrap(getBoundedValue(valuesTxn, metadata, new byte[] { 1 }, 1, 9));
-		if (readCanonicalUnsigned(epoch) <= 0L || epoch.hasRemaining()) {
+		long currentEpoch = readCanonicalUnsigned(epoch);
+		if (currentEpoch <= 0L || epoch.hasRemaining()) {
 			throw new IOException("Malformed ValueStore retirement boot epoch");
 		}
+		// Admission must reject exhaustion before any startup writer or compatibility metadata changes.
+		RetiredValueIdStore.nextBootEpoch(currentEpoch);
 
 		int namespaces = tripleDatabases.get(TripleStore.NAMESPACE_DATABASE_NAME);
 		validateMetadataVersion(getBoundedValue(triplesTxn, namespaces, TripleStore.NAMESPACE_FORMAT_KEY,
@@ -260,7 +286,8 @@ final class LegacyStoreDiscovery {
 		String descriptor = new String(specs, StandardCharsets.UTF_8);
 		Set<String> activeStatements = TripleIndex.parseIndexSpecList(descriptor);
 		validateDescriptor("native triple index", descriptor, activeStatements, true, false);
-		if (activeStatements.isEmpty() || !statementIndexes.containsAll(activeStatements)) {
+		if (activeStatements.isEmpty() || !statementIndexes.containsAll(activeStatements)
+				|| (persistentAdjacency && !activeStatements.equals(ADJACENCY_ORDERS))) {
 			throw new IOException("Native triple index metadata disagrees with named index databases");
 		}
 		long namespaceEntries = 4L;
@@ -298,11 +325,12 @@ final class LegacyStoreDiscovery {
 		validateDescriptor(StoreProperties.INDEXES_KEY, properties.getTripleIndexes(), activeStatements, true, true);
 		validateDescriptor(StoreProperties.TRIPLE_TERM_INDEXES_KEY, properties.getTripleTermIndexes(), activeTerms,
 				true, true);
-		if (!TripleIndex.parseIndexSpecList(properties.getTripleIndexes()).equals(activeStatements)
+		if ((!persistentAdjacency
+				&& !TripleIndex.parseIndexSpecList(properties.getTripleIndexes()).equals(activeStatements))
 				|| !TripleIndex.parseIndexSpecList(properties.getTripleTermIndexes()).equals(activeTerms)) {
 			// Preserve exact matching text for the strict publication seal. Only an actual lagging set needs the
 			// existing native-manifest reconciliation and a subsequent properties save.
-			validateDescriptors(properties, activeStatements, activeTerms, false, true, true);
+			validateDescriptors(properties, activeStatements, activeTerms, false, true, true, persistentAdjacency);
 		}
 		properties.statementIndexCleanupPending = !activeStatements.containsAll(statementIndexes);
 	}
@@ -388,15 +416,23 @@ final class LegacyStoreDiscovery {
 	private static void validateActiveIndexCounts(MemoryStack stack, long valuesTxn, long triplesTxn,
 			Map<String, Integer> values, Map<String, Integer> triples, Set<String> statements, Set<String> terms)
 			throws IOException {
-		for (boolean explicit : new boolean[] { false, true }) {
-			Long expected = null;
-			for (String spec : statements) {
-				long count = databaseEntries(stack, triplesTxn,
-						triples.get(TripleIndex.nativeDatabaseName(spec, explicit)));
-				if (expected != null && count != expected) {
-					throw new IOException("Statement indexes contain different record counts");
+		if (hasPersistentAdjacency(triples)) {
+			LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(triplesTxn);
+			// Ordinary admission stays independent of graph size. The backend validates the format and fixed count
+			// records; explicit exhaustive verification below compares them with both directional streams.
+			adjacency.count(triplesTxn, true);
+			adjacency.count(triplesTxn, false);
+		} else {
+			for (boolean explicit : new boolean[] { false, true }) {
+				Long expected = null;
+				for (String spec : statements) {
+					long count = databaseEntries(stack, triplesTxn,
+							triples.get(TripleIndex.nativeDatabaseName(spec, explicit)));
+					if (expected != null && count != expected) {
+						throw new IOException("Statement indexes contain different record counts");
+					}
+					expected = count;
 				}
-				expected = count;
 			}
 		}
 		long forwardCount = databaseEntries(stack, valuesTxn,
@@ -413,9 +449,12 @@ final class LegacyStoreDiscovery {
 
 	private static boolean isLegacyGeneration(File directory, StoreProperties properties) throws IOException {
 		if (!properties.isLoaded()) {
-			if (new File(directory, "lmdbrdf.ver").exists()) {
+			if (Files.exists(new File(directory, LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE).toPath(),
+					LinkOption.NOFOLLOW_LINKS) && !LmdbPersistentAdjacencyFence.matches(directory.toPath())) {
 				throw new IOException("Missing store.properties for a fenced LmdbStore");
 			}
+			// A fence can precede the first properties save during migration of an unversioned v2 store.
+			// It grants no native authority: dictionary format, catalogs and manifests are still validated below.
 			return true;
 		}
 		String version = properties.getVersion();
@@ -536,7 +575,27 @@ final class LegacyStoreDiscovery {
 		}
 	}
 
+	private static boolean hasPersistentAdjacency(Map<String, Integer> databases) throws IOException {
+		boolean present = ADJACENCY_DATABASES.stream().anyMatch(databases::containsKey);
+		if (present && !databases.keySet().containsAll(ADJACENCY_DATABASES)) {
+			throw new IOException("Incomplete persistent adjacency database set");
+		}
+		return present;
+	}
+
 	private static Set<String> classifyStatementIndexes(Map<String, Integer> databases) throws IOException {
+		if (hasPersistentAdjacency(databases)) {
+			if (databases.containsKey("contexts")) {
+				throw new IOException("Persistent adjacency and legacy contexts are both present");
+			}
+			for (String spec : INDEX_SPECS) {
+				if (databases.containsKey(TripleIndex.nativeDatabaseName(spec, true))
+						|| databases.containsKey(TripleIndex.nativeDatabaseName(spec, false))) {
+					throw new IOException("Persistent adjacency and legacy statement indexes are both present");
+				}
+			}
+			return ADJACENCY_ORDERS;
+		}
 		if (!databases.containsKey("contexts")) {
 			throw new IOException("Missing contexts database in legacy LmdbStore");
 		}
@@ -575,13 +634,17 @@ final class LegacyStoreDiscovery {
 			Map<String, Integer> tripleDatabases, Set<String> statementIndexes, Set<String> termIndexes,
 			StoreProperties properties, boolean legacy, LegacyRetirementQueue retirementQueue) throws IOException {
 		Set<String> expectedTriples = new LinkedHashSet<>();
-		expectedTriples.add("contexts");
+		if (hasPersistentAdjacency(tripleDatabases)) {
+			expectedTriples.addAll(ADJACENCY_DATABASES);
+		} else {
+			expectedTriples.add("contexts");
+			for (String spec : statementIndexes) {
+				expectedTriples.add(TripleIndex.nativeDatabaseName(spec, true));
+				expectedTriples.add(TripleIndex.nativeDatabaseName(spec, false));
+			}
+		}
 		if (tripleDatabases.containsKey(TripleStore.NAMESPACE_DATABASE_NAME)) {
 			expectedTriples.add(TripleStore.NAMESPACE_DATABASE_NAME);
-		}
-		for (String spec : statementIndexes) {
-			expectedTriples.add(TripleIndex.nativeDatabaseName(spec, true));
-			expectedTriples.add(TripleIndex.nativeDatabaseName(spec, false));
 		}
 		if (!tripleDatabases.keySet().equals(expectedTriples)) {
 			Set<String> unknown = new TreeSet<>(tripleDatabases.keySet());
@@ -659,7 +722,8 @@ final class LegacyStoreDiscovery {
 			validateMetadataVersion(indexFormat, TripleStore.INDEX_DATABASE_VERSION, "native triple index");
 			validateUtf8(ByteBuffer.wrap(indexSpecs), "native triple index specifications");
 			active = TripleIndex.parseIndexSpecList(new String(indexSpecs, StandardCharsets.UTF_8));
-			if (active.isEmpty() || !statementIndexes.containsAll(active)) {
+			if (active.isEmpty() || !statementIndexes.containsAll(active)
+					|| (hasPersistentAdjacency(databases) && !active.equals(ADJACENCY_ORDERS))) {
 				throw new IOException("Native triple index metadata disagrees with named index databases");
 			}
 		}
@@ -823,9 +887,11 @@ final class LegacyStoreDiscovery {
 			return;
 		}
 		ByteBuffer encodedEpoch = ByteBuffer.wrap(bootEpoch);
-		if (readCanonicalUnsigned(encodedEpoch) <= 0 || encodedEpoch.hasRemaining()) {
+		long currentEpoch = readCanonicalUnsigned(encodedEpoch);
+		if (currentEpoch <= 0 || encodedEpoch.hasRemaining()) {
 			throw new IOException("Malformed ValueStore retirement boot epoch");
 		}
+		RetiredValueIdStore.nextBootEpoch(currentEpoch);
 	}
 
 	/** Validates both queue indexes with fixed cursor state; stale sequence hints remain valid and recoverable. */
@@ -932,13 +998,15 @@ final class LegacyStoreDiscovery {
 	}
 
 	private static void validateDescriptors(StoreProperties properties, Set<String> statements, Set<String> terms,
-			boolean legacy, boolean statementManifest, boolean termManifest) {
+			boolean legacy, boolean statementManifest, boolean termManifest, boolean persistentAdjacency) {
 		validateDescriptor(StoreProperties.INDEXES_KEY, properties.getTripleIndexes(), statements, !legacy,
-				statementManifest);
+				statementManifest || persistentAdjacency);
 		validateDescriptor(StoreProperties.TRIPLE_TERM_INDEXES_KEY, properties.getTripleTermIndexes(), terms,
 				!legacy, termManifest);
-		// Each manifest is committed with its own native indexes. A valid sidecar may lag that commit after a crash.
-		if (statementManifest || properties.getTripleIndexes() == null || properties.getTripleIndexes().isBlank()) {
+		// A legacy permutation manifest can recover a lagging sidecar. Adjacency's native manifest names storage
+		// directions; a valid sidecar instead retains the caller's logical scan-order preferences.
+		if ((!persistentAdjacency && statementManifest)
+				|| properties.getTripleIndexes() == null || properties.getTripleIndexes().isBlank()) {
 			properties.setTripleIndexes(String.join(",", new TreeSet<>(statements)));
 		}
 		if (termManifest || properties.getTripleTermIndexes() == null || properties.getTripleTermIndexes().isBlank()) {
@@ -1160,7 +1228,7 @@ final class LegacyStoreDiscovery {
 			if (dependency != 0) {
 				long dependencyId = dependency;
 				int expectedIdType = dependencyType;
-				if (ValueIds.getIdType(dependencyId) != expectedIdType) {
+				if (dependencyId < 0 || ValueIds.getIdType(dependencyId) != expectedIdType) {
 					throw new IOException("ValueStore owner has an invalid forward dependency");
 				}
 				if (requireLive) {
@@ -1200,6 +1268,257 @@ final class LegacyStoreDiscovery {
 			}
 		}
 
+		private void validatePersistentAdjacency(MemoryStack stack, long transaction, long valuesTxn,
+				int valuesMain, int termCspoDatabase, int termSpocDatabase) throws IOException {
+			LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(transaction);
+			try (CollectionFactory counts = new MapDb3CollectionFactory(RETIREMENT_HINT_SPILL_THRESHOLD)) {
+				Map<String, Long> expected = counts.createMap();
+				Set<String> effectiveEdges = counts.createSet();
+				Set<String> basePartitions = counts.createSet();
+				Set<String> candidateKeys = counts.createSet();
+				// Read the physical authority independently of row directories: a missing directory must not hide
+				// orphan pages or deltas from exhaustive verification. Large generations spill to disk.
+				validatePersistentPages(stack, transaction, adjacency.pagesDbi(), effectiveEdges, basePartitions);
+				validatePersistentDeltas(stack, transaction, adjacency.deltasDbi(), effectiveEdges, expected,
+						candidateKeys);
+				for (String encoded : effectiveEdges) {
+					ByteBuffer edge = ByteBuffer.wrap(HexFormat.of().parseHex(encoded));
+					int plane = Byte.toUnsignedInt(edge.get());
+					long predicate = edge.getLong();
+					long row = edge.getLong();
+					long neighbor = edge.getLong();
+					long context = edge.getLong();
+					String opposite = HexFormat.of()
+							.formatHex(persistentEdgeKey(plane ^ 1, predicate, neighbor,
+									row, context));
+					if (!effectiveEdges.contains(opposite)) {
+						throw new IOException("Persistent adjacency directions contain different quads");
+					}
+					if ((plane & 1) != 0) {
+						continue;
+					}
+					validateResourceId(stack, valuesTxn, valuesMain, row, termCspoDatabase);
+					validateUriId(stack, valuesTxn, valuesMain, predicate);
+					validateObjectId(stack, valuesTxn, valuesMain, neighbor, termCspoDatabase, termSpocDatabase);
+					if (context != 0) {
+						validateResourceId(stack, valuesTxn, valuesMain, context, termCspoDatabase);
+					}
+					countPersistentMetadata(expected, new long[] { row, predicate, neighbor, context }, plane == 0);
+				}
+				for (String candidate : candidateKeys) {
+					String partition = candidate.substring(2);
+					long pending = expected.get("09" + partition);
+					if (pending >= LmdbPersistentAdjacency.COMPACTION_THRESHOLD
+							|| !basePartitions.contains(partition)) {
+						expected.put(candidate, 1L);
+					}
+				}
+				validatePersistentMetadata(stack, transaction, adjacency.metadataDbi(), expected, candidateKeys);
+			} catch (ArithmeticException overflow) {
+				throw new IOException("Persistent adjacency metadata count overflow", overflow);
+			}
+		}
+
+		private static void validatePersistentPages(MemoryStack stack, long transaction, int pages,
+				Set<String> effectiveEdges, Set<String> basePartitions) throws IOException {
+			stack.push();
+			try {
+				PointerBuffer cursorHandle = stack.mallocPointer(1);
+				E(mdb_cursor_open(transaction, pages, cursorHandle));
+				long cursor = cursorHandle.get(0);
+				try {
+					MDBVal key = MDBVal.calloc(stack);
+					MDBVal value = MDBVal.calloc(stack);
+					byte[] previous = null;
+					int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+					while (result == MDB_SUCCESS) {
+						byte[] pageKey = copy(key.mv_data());
+						validatePersistentEdge(pageKey);
+						if (value.mv_size() == 0) {
+							throw new IOException("Malformed persistent adjacency page");
+						}
+						DecodedPage page;
+						try {
+							page = PersistentCsfPageCodec.decode(value.mv_data());
+						} catch (IllegalArgumentException invalid) {
+							throw new IOException("Malformed persistent adjacency page", invalid);
+						}
+						int plane = Byte.toUnsignedInt(pageKey[0]);
+						long predicate = ByteBuffer.wrap(pageKey).getLong(1);
+						for (int pair = 0; pair < page.size(); pair++) {
+							byte[] edge = persistentEdgeKey(plane, predicate, page.rowAt(pair), page.neighborAt(pair),
+									page.contextAt(pair));
+							validatePersistentEdge(edge);
+							if (pair == 0 && !Arrays.equals(edge, pageKey)
+									|| previous != null && Arrays.compareUnsigned(previous, edge) >= 0
+									|| !effectiveEdges.add(HexFormat.of().formatHex(edge))) {
+								throw new IOException(
+										"Persistent adjacency page boundaries overlap or disagree with their key");
+							}
+							previous = edge;
+						}
+						basePartitions.add(HexFormat.of().formatHex(pageKey, 0, 1 + Long.BYTES));
+						result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+					}
+					if (result != MDB_NOTFOUND) {
+						E(result);
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+			} finally {
+				stack.pop();
+			}
+		}
+
+		private static byte[] persistentEdgeKey(int plane, long predicate, long row, long neighbor, long context) {
+			return ByteBuffer.allocate(1 + 4 * Long.BYTES)
+					.put((byte) plane)
+					.putLong(predicate)
+					.putLong(row)
+					.putLong(neighbor)
+					.putLong(context)
+					.array();
+		}
+
+		private static void validatePersistentEdge(byte[] encoded) throws IOException {
+			if (encoded.length != 1 + 4 * Long.BYTES) {
+				throw new IOException("Malformed persistent adjacency edge key");
+			}
+			ByteBuffer key = ByteBuffer.wrap(encoded);
+			if (Byte.toUnsignedInt(key.get()) > 3 || key.getLong() == -1 || key.getLong() == -1
+					|| key.getLong() == -1 || key.getLong() < 0) {
+				throw new IOException("Malformed persistent adjacency edge key");
+			}
+		}
+
+		private static void countPersistentMetadata(Map<String, Long> expected, long[] quad, boolean explicit) {
+			int plane = explicit ? 0 : 2;
+			incrementMetadata(expected, persistentMetadataKey(1, plane));
+			incrementMetadata(expected, persistentMetadataKey(2, plane, quad[1]));
+			incrementMetadata(expected, persistentMetadataKey(2, plane + 1, quad[1]));
+			incrementMetadata(expected, persistentMetadataKey(3, plane, quad[1], quad[0]));
+			incrementMetadata(expected, persistentMetadataKey(3, plane + 1, quad[1], quad[2]));
+			incrementMetadata(expected, persistentMetadataKey(4, plane, quad[0], quad[1]));
+			incrementMetadata(expected, persistentMetadataKey(4, plane + 1, quad[2], quad[1]));
+			incrementMetadata(expected, persistentMetadataKey(5, plane, quad[3]));
+			incrementMetadata(expected, persistentMetadataKey(6, -1, quad[3]));
+			for (int i = 0; i < quad.length; i++) {
+				if (i != TripleIndex.CONTEXT_IDX || quad[i] != 0) {
+					incrementMetadata(expected, persistentMetadataKey(7, -1, quad[i]));
+				}
+			}
+		}
+
+		private static byte[] persistentMetadataKey(int type, int plane, long... ids) {
+			ByteBuffer key = ByteBuffer.allocate((plane < 0 ? 1 : 2) + ids.length * Long.BYTES);
+			key.put((byte) type);
+			if (plane >= 0) {
+				key.put((byte) plane);
+			}
+			for (long id : ids) {
+				key.putLong(id);
+			}
+			return key.array();
+		}
+
+		private static void incrementMetadata(Map<String, Long> expected, byte[] key) {
+			expected.merge(HexFormat.of().formatHex(key), 1L, Math::addExact);
+		}
+
+		private static void validatePersistentDeltas(MemoryStack stack, long transaction, int deltas,
+				Set<String> effectiveEdges, Map<String, Long> expected, Set<String> candidateKeys) throws IOException {
+			stack.push();
+			try {
+				PointerBuffer cursorHandle = stack.mallocPointer(1);
+				E(mdb_cursor_open(transaction, deltas, cursorHandle));
+				long cursor = cursorHandle.get(0);
+				try {
+					MDBVal key = MDBVal.calloc(stack);
+					MDBVal value = MDBVal.calloc(stack);
+					int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+					while (result == MDB_SUCCESS) {
+						if (value.mv_size() != 1) {
+							throw new IOException("Malformed persistent adjacency delta");
+						}
+						byte[] encoded = copy(key.mv_data());
+						validatePersistentEdge(encoded);
+						ByteBuffer edge = ByteBuffer.wrap(encoded);
+						int plane = Byte.toUnsignedInt(edge.get());
+						long predicate = edge.getLong();
+						long row = edge.getLong();
+						byte operation = value.mv_data().get(0);
+						if (operation != 0 && operation != 1) {
+							throw new IOException("Malformed persistent adjacency delta");
+						}
+						String encodedKey = HexFormat.of().formatHex(encoded);
+						boolean changed = operation == 1 ? effectiveEdges.add(encodedKey)
+								: effectiveEdges.remove(encodedKey);
+						if (!changed) {
+							throw new IOException("Persistent adjacency delta duplicates its base state");
+						}
+						incrementMetadata(expected, persistentMetadataKey(8, plane, predicate, row));
+						incrementMetadata(expected, persistentMetadataKey(9, plane, predicate));
+						candidateKeys.add(HexFormat.of().formatHex(persistentMetadataKey(10, plane, predicate)));
+						result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+					}
+					if (result != MDB_NOTFOUND) {
+						E(result);
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+			} finally {
+				stack.pop();
+			}
+		}
+
+		private static void validatePersistentMetadata(MemoryStack stack, long transaction, int metadata,
+				Map<String, Long> expected, Set<String> candidateKeys) throws IOException {
+			stack.push();
+			try {
+				PointerBuffer cursorHandle = stack.mallocPointer(1);
+				E(mdb_cursor_open(transaction, metadata, cursorHandle));
+				long cursor = cursorHandle.get(0);
+				try {
+					MDBVal key = MDBVal.calloc(stack);
+					MDBVal value = MDBVal.calloc(stack);
+					int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+					while (result == MDB_SUCCESS) {
+						byte[] encodedKey = copy(key.mv_data());
+						if (encodedKey.length == 1 && encodedKey[0] == 0) {
+							validateMetadataVersion(copy(value.mv_data()), LmdbPersistentAdjacency.FORMAT_VERSION,
+									"persistent adjacency");
+						} else {
+							String encoded = HexFormat.of().formatHex(encodedKey);
+							Long counted = expected.remove(encoded);
+							if (counted == null && candidateKeys.contains(encoded)) {
+								// Below the threshold a candidate may remain latched until compaction. It must
+								// still refer to a partition with pending deltas and have the single flag value.
+								counted = 1L;
+							}
+							if (value.mv_size() != Long.BYTES || counted == null || counted <= 0
+									|| value.mv_data().duplicate().order(ByteOrder.BIG_ENDIAN).getLong() != counted) {
+								throw new IOException(
+										"Persistent adjacency metadata disagrees with statements or deltas");
+							}
+						}
+						result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+					}
+					if (result != MDB_NOTFOUND) {
+						E(result);
+					}
+					if (!expected.isEmpty()) {
+						throw new IOException("Persistent adjacency metadata is missing");
+					}
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+			} finally {
+				stack.pop();
+			}
+		}
+
 		private void validateContexts(MemoryStack stack, long transaction, int contextDatabase, long valuesTxn,
 				int valuesMain, int termCspoDatabase) throws IOException {
 			if (contextDatabase < 0) {
@@ -1217,7 +1536,7 @@ final class LegacyStoreDiscovery {
 					long context = readCanonicalUnsigned(contextKey);
 					ByteBuffer count = value.mv_data().duplicate();
 					long references = readCanonicalUnsigned(count);
-					if (context < 0 || references == 0 || contextKey.hasRemaining() || count.hasRemaining()) {
+					if (context < 0 || references <= 0 || contextKey.hasRemaining() || count.hasRemaining()) {
 						throw new IOException("Malformed context reference record");
 					}
 					if (context != 0) {
@@ -1319,7 +1638,7 @@ final class LegacyStoreDiscovery {
 					}
 					E(rc);
 					ByteBuffer references = value.mv_data().duplicate();
-					if (readCanonicalUnsigned(references) == 0 || references.hasRemaining()) {
+					if (readCanonicalUnsigned(references) <= 0 || references.hasRemaining()) {
 						throw new IOException("Malformed context reference record");
 					}
 				} finally {

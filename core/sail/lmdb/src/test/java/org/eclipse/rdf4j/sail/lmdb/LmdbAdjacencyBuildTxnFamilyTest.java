@@ -182,7 +182,7 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 	}
 
 	@Test
-	void selectedCoverageOnDefaultIndexesSeeksAcrossUncoveredSubjectPredicateRuns(@TempDir File dataDir)
+	void selectedCoverageBuildsCanonicalRangesWithoutReadingUncoveredRows(@TempDir File dataDir)
 			throws Exception {
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 		long selectedPredicate = uri(14);
@@ -204,17 +204,76 @@ class LmdbAdjacencyBuildTxnFamilyTest {
 			LmdbAdjacencyMetrics.Snapshot snapshot = metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 					0, 0, 0, 0, 0, 0, 0);
 			assertThat(snapshot.lastBuildThreads).isGreaterThan(4);
-			assertThat(snapshot.cursorRowsSkipped).isPositive();
-			assertThat(snapshot.cursorSeeks).isGreaterThan(256);
+			assertThat(snapshot.cursorRowsSkipped).as("canonical predicate scans need not visit unrelated rows")
+					.isZero();
+			assertThat(snapshot.cursorSeeks).isPositive();
 			assertThat(snapshot.cursorRowsScanned)
-					.as("spoc should touch bounded run sentinels, not all eight predicates in every subject")
+					.as("canonical ranges should not decode all eight predicates in every subject")
 					.isLessThan(2_300);
 			assertThat(index.statementCount()).isEqualTo(256);
 			assertThat(index.incidenceCount()).isEqualTo(512);
-			assertThat(index.findRun(uri(1_255), LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT,
-					selectedPredicate)).isPositive();
+			assertSelectedModel(index, selectedPredicate);
 		}
 		assertThat(account.totalChargedBytes()).isZero();
+
+		// Keep the eight-predicate catalog and all selected rows fixed: Pass 0 deliberately visits the catalog.
+		LmdbAdjacencyNativeReadWork.Counts small = selectedBuildWork(selectedPredicate);
+		tripleStore.startTransaction();
+		for (int subject = 256; subject < 512; subject++) {
+			for (int predicate = 0; predicate < 8; predicate++) {
+				if (uri(10 + predicate) != selectedPredicate) {
+					tripleStore.storeTriple(uri(1_000 + subject), uri(10 + predicate),
+							uri(100_000 + subject * 8L + predicate), 0, true);
+				}
+			}
+		}
+		tripleStore.commit();
+		LmdbAdjacencyNativeReadWork.Counts large = selectedBuildWork(selectedPredicate);
+		System.out.printf("selected-builder-native small=%s large=%s%n", small, large);
+		large.assertBoundedBy(small);
+	}
+
+	private LmdbAdjacencyNativeReadWork.Counts selectedBuildWork(long selectedPredicate) throws Exception {
+		LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
+		LmdbAdjacencyMetrics metrics = new LmdbAdjacencyMetrics();
+		LmdbAdjacencyNativeReadWork.Counts result;
+		// One worker uses runRangeTasks' calling-thread branch, so every actual read enters the observer.
+		try (LmdbAdjacencyBuildTxnFamily family = new LmdbAdjacencyBuildTxnFamily(tripleStore, 1);
+				LmdbAdjacencyNativeReadWork work = new LmdbAdjacencyNativeReadWork();
+				LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(family,
+						LmdbAdjacencyCoverage.selected(new long[] { selectedPredicate }, Set.of()), account,
+						1L << 20, 1L << 16, 1, metrics)) {
+			assertThat(metrics.snapshot("test", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0).lastBuildThreads)
+					.isEqualTo(1);
+			assertThat(index.statementCount()).isEqualTo(256);
+			assertThat(index.incidenceCount()).isEqualTo(512);
+			assertSelectedModel(index, selectedPredicate);
+			result = work.counts();
+		}
+		assertThat(account.totalChargedBytes()).isZero();
+		return result;
+	}
+
+	private static void assertSelectedModel(LmdbInMemoryAdjacencyIndex index, long predicate) {
+		for (int subject = 0; subject < 256; subject++) {
+			long s = uri(1_000 + subject);
+			long o = uri(100_000 + subject * 8L + 4);
+			for (int plane : new int[] { LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT,
+					LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT }) {
+				boolean outgoing = plane == LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT;
+				long handle = index.findRun(outgoing ? s : o, plane, predicate);
+				assertThat(handle).isPositive();
+				assertThat(LmdbAdjacencyRunCodec.edgeCount(index.arenaCatalog(), handle)).isEqualTo(1);
+				assertThat(LmdbAdjacencyRunCodec.neighborAt(index.arenaCatalog(), handle, 0))
+						.isEqualTo(outgoing ? o : s);
+				assertThat(LmdbAdjacencyRunCodec.contextAt(index.arenaCatalog(), index.contextCatalog(), handle, 0))
+						.isZero();
+			}
+			assertThat(index.findRun(s, LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT, uri(10)))
+					.isEqualTo(LmdbInMemoryAdjacencyIndex.NOT_COVERED);
+			assertThat(index.findRun(uri(100_000 + subject * 8L), LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT, uri(10)))
+					.isEqualTo(LmdbInMemoryAdjacencyIndex.NOT_COVERED);
+		}
 	}
 
 	private static void assertPlanes(AdjacencySourceScanner scanner, boolean outgoing, boolean explicit,

@@ -531,6 +531,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			} else if (properties.getVersion() == null) {
 				properties.setVersion(Integer.toString(format.getVersion()));
 			}
+			if (format.isLegacy()) {
+				// Older v2 writers recreate absent tuple indexes. Fence them only after read-only admission has
+				// succeeded, but before adjacency migration can remove the committed permutation generation.
+				LmdbPersistentAdjacencyFence.install(dataDir.toPath());
+			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
@@ -1140,13 +1145,17 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * that a newly created directory entry survives power loss.
 	 */
 	static void writeCoreLiteralReferenceMarker(Path directory) throws IOException {
+		writeCompatibilityMarker(directory, CORE_LITERAL_REFERENCE_MARKER);
+	}
+
+	static void writeCompatibilityMarker(Path directory, String markerContents) throws IOException {
 		Path marker = directory.resolve(CORE_LITERAL_REFERENCE_MARKER_FILE);
 		FileChannel channel;
 		try {
 			channel = FileChannel.open(marker, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
 		} catch (FileAlreadyExistsException e) {
 			String existing = Files.readString(marker, StandardCharsets.UTF_8);
-			if (!CORE_LITERAL_REFERENCE_MARKER.equals(existing)) {
+			if (!markerContents.equals(existing)) {
 				throw new IOException("Refusing to overwrite an incompatible LmdbStore marker at " + marker, e);
 			}
 			try (FileChannel existingChannel = FileChannel.open(marker, StandardOpenOption.WRITE)) {
@@ -1156,7 +1165,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			return;
 		}
 		try (channel) {
-			ByteBuffer contents = StandardCharsets.UTF_8.encode(CORE_LITERAL_REFERENCE_MARKER);
+			ByteBuffer contents = StandardCharsets.UTF_8.encode(markerContents);
 			while (contents.hasRemaining()) {
 				channel.write(contents);
 			}

@@ -65,6 +65,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LmdbDevelopBaselineCompatibilityTest {
 
 	private static final String BASELINE_COMMIT = "a7b7cedd1c954dc55fa8265f7e6fc4d215fdb1aa";
+	private static final String ADJACENCY_MARKER = "rdf4j-lmdb-persistent-adjacency-v1\n";
 	private static final String UNVERSIONED_PROPERTIES_BEHAVIOR = "The pinned writer initializes StoreProperties "
 			+ "with version 2, then ValueStore.initTermIndexes writes the configured default indexes and "
 			+ "TripleStore.init writes the same triple-index value again, resetting dirty=false before save; "
@@ -100,7 +101,7 @@ class LmdbDevelopBaselineCompatibilityTest {
 	@ParameterizedTest(name = "inlineLiterals={0}")
 	@ValueSource(booleans = { true, false })
 	@EnabledIfSystemProperty(named = BASELINE_CLASSPATH_PROPERTY, matches = ".+")
-	void actualDevelopVersionedStoreSurvivesAlternatingOldAndCurrentProcesses(boolean inlineLiterals) throws Exception {
+	void actualDevelopVersionedStoreMigratesAndRejectsOldWriters(boolean inlineLiterals) throws Exception {
 		Path fixtureRoot = Path.of(System.getProperty(FIXTURE_ROOT_PROPERTY));
 		Files.createDirectories(fixtureRoot);
 
@@ -142,18 +143,16 @@ class LmdbDevelopBaselineCompatibilityTest {
 			repository.shutDown();
 		}
 
-		runBaselineProcess("mutate", storeDirectory, fixtureMetadata, inlineLiterals);
-		metadata = loadProperties(fixtureMetadata);
-		assertEquals(Long.toString(ValueIds.getValue(oldValueId)), metadata.getProperty("reused.gc.ordinal"));
+		assertPinnedBaselineCannotChangeAdjacency("mutate", storeDirectory, fixtureMetadata, inlineLiterals);
 
 		repository = openRepository(storeDirectory, inlineLiterals);
 		try (RepositoryConnection connection = repository.getConnection()) {
-			assertFalse(hasPattern(connection, null, GC_PREDICATE, GC_OLD_VALUE, false));
-			assertTrue(hasPattern(connection, null, REUSED_PREDICATE, GC_NEW_VALUE, false));
+			assertFixtureReadable(connection);
+			assertTrue(hasPattern(connection, null, GC_PREDICATE, GC_OLD_VALUE, false));
+			assertFalse(hasPattern(connection, null, REUSED_PREDICATE, GC_NEW_VALUE, false));
 			assertTrue(hasPattern(connection, null, CURRENT_PREDICATE, CURRENT_VALUE, false));
-			assertEquals(ValueIds.getValue(oldValueId), ValueIds.getValue(valueId(repository, GC_NEW_VALUE)));
+			assertEquals(oldValueId, valueId(repository, GC_OLD_VALUE));
 			assertBranchLiteralsReadable(connection);
-			assertPatternAndPreparedQuery(connection, REUSED_PREDICATE, GC_NEW_VALUE);
 			assertPatternAndPreparedQuery(connection, CURRENT_PREDICATE, CURRENT_VALUE);
 			assertNamespace(connection);
 		} finally {
@@ -161,8 +160,7 @@ class LmdbDevelopBaselineCompatibilityTest {
 		}
 		assertStoreProperties(storeDirectory);
 
-		// Exercise a clear followed by writes on the current branch, then read and rewrite that data with
-		// the pinned writer before the final current-branch reopen.
+		// Clearing and repopulating adjacency must not make the directory acceptable to an older writer.
 		repository = openRepository(storeDirectory, inlineLiterals);
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.clear();
@@ -178,14 +176,15 @@ class LmdbDevelopBaselineCompatibilityTest {
 			repository.shutDown();
 		}
 
-		runBaselineProcess("rewrite-after-clear", storeDirectory, fixtureMetadata, inlineLiterals);
+		assertPinnedBaselineCannotChangeAdjacency("rewrite-after-clear", storeDirectory, fixtureMetadata,
+				inlineLiterals);
 		repository = openRepository(storeDirectory, inlineLiterals);
 		try (RepositoryConnection connection = repository.getConnection()) {
 			assertFalse(hasPattern(connection, null, EXPLICIT_PREDICATE, EXPLICIT_OBJECT, true));
 			assertTrue(hasPattern(connection, null, CURRENT_PREDICATE, CURRENT_VALUE, false));
-			assertTrue(hasPattern(connection, null, OLD_AFTER_CLEAR_PREDICATE, OLD_AFTER_CLEAR_VALUE, false));
+			assertFalse(hasPattern(connection, null, OLD_AFTER_CLEAR_PREDICATE, OLD_AFTER_CLEAR_VALUE, false));
 			assertBranchLiteralsReadable(connection);
-			assertPatternAndPreparedQuery(connection, OLD_AFTER_CLEAR_PREDICATE, OLD_AFTER_CLEAR_VALUE);
+			assertPatternAndPreparedQuery(connection, CURRENT_PREDICATE, CURRENT_VALUE);
 			assertNamespace(connection);
 		} finally {
 			repository.shutDown();
@@ -269,17 +268,28 @@ class LmdbDevelopBaselineCompatibilityTest {
 			repository.shutDown();
 		}
 
-		runBaselineProcess("verify-empty-versioned", storeDirectory, fixtureMetadata, false);
+		assertPinnedBaselineCannotChangeAdjacency("verify-empty-versioned", storeDirectory, fixtureMetadata, false);
 		repository = openRepository(storeDirectory, false);
 		try (RepositoryConnection connection = repository.getConnection()) {
 			assertTrue(hasPattern(connection, null, CURRENT_PREDICATE, CURRENT_VALUE, false));
-			assertTrue(hasPattern(connection, null, OLD_AFTER_CLEAR_PREDICATE, OLD_AFTER_CLEAR_VALUE, false));
-			assertPatternAndPreparedQuery(connection, OLD_AFTER_CLEAR_PREDICATE, OLD_AFTER_CLEAR_VALUE);
+			assertFalse(hasPattern(connection, null, OLD_AFTER_CLEAR_PREDICATE, OLD_AFTER_CLEAR_VALUE, false));
+			assertPatternAndPreparedQuery(connection, CURRENT_PREDICATE, CURRENT_VALUE);
 		} finally {
 			repository.shutDown();
 		}
 		assertStoreProperties(storeDirectory);
 		assertBaselinePropertiesSnapshot(storeDirectory, metadata);
+	}
+
+	private static void assertPinnedBaselineCannotChangeAdjacency(String phase, Path storeDirectory,
+			Path metadataFile, boolean inlineLiterals) throws Exception {
+		assertEquals(ADJACENCY_MARKER,
+				Files.readString(storeDirectory.resolve("lmdbrdf.ver")));
+		Map<String, String> before = snapshotStoreBytes(storeDirectory);
+		runBaselineProcessExpectingFailure(phase, storeDirectory, metadataFile, inlineLiterals,
+				"Directory contains data from an older unsupported version of LmdbStore");
+		assertEquals(before, snapshotStoreBytes(storeDirectory),
+				"The pinned writer must reject adjacency without changing native data, namespace or property bytes");
 	}
 
 	private static void assertPinnedBaselineReaderRejectsCurrentFormatSeven(Path fixtureRoot) throws Exception {
@@ -374,7 +384,7 @@ class LmdbDevelopBaselineCompatibilityTest {
 		assertTrue(exited, "Pinned baseline rejection probe did not exit: phase=" + phase
 				+ ", inlineLiterals=" + inlineLiterals);
 		assertTrue(process.exitValue() != 0,
-				"Pinned baseline reader unexpectedly accepted current format 7: phase=" + phase
+				"Pinned baseline reader unexpectedly accepted a fenced store: phase=" + phase
 						+ ", inlineLiterals=" + inlineLiterals);
 		assertTrue(processOutput.contains(expectedError), "Unexpected pinned-reader rejection: phase=" + phase
 				+ ", inlineLiterals=" + inlineLiterals + ":\n" + processOutput);

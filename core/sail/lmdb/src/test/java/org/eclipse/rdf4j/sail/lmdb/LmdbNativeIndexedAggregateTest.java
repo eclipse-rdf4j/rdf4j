@@ -14,8 +14,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -33,8 +35,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.lwjgl.util.lmdb.LMDB;
 
-/** Raw index cardinalities and group boundaries must replace one JNI/quad read per statement when exact. */
+/** Persisted counts and group boundaries replace one JNI/quad read per statement when exact. */
 class LmdbNativeIndexedAggregateTest {
 
 	@TempDir
@@ -99,10 +102,28 @@ class LmdbNativeIndexedAggregateTest {
 		Map<String, Long> large = groupedQueryWork("large-query", 1024);
 		assertThat(small.get("representativeQuads")).isEqualTo(2L);
 		assertThat(large.get("representativeQuads")).isEqualTo(2L);
-		assertThat(large.get("keyPrefixesRead")).isLessThan(2048L);
-		assertThat(large.get("leafPagesRead") + large.get("leafHeadersRead") + large.get("pageCacheHits"))
-				.as("executed prefix grouping reads validated index pages, including reuse from query planning")
-				.isPositive();
+		assertThat(large.get("adjacency_count_get")).isPositive().isEqualTo(small.get("adjacency_count_get"));
+		for (String operation : List.of("mdb_cursor_get", "mdb_cursor_open", "mdb_get")) {
+			long smallExecution = small.getOrDefault(operation, 0L)
+					- small.getOrDefault(LmdbStartupReadCounter.RANGE_PLANNING_PREFIX + operation, 0L);
+			long largeExecution = large.getOrDefault(operation, 0L)
+					- large.getOrDefault(LmdbStartupReadCounter.RANGE_PLANNING_PREFIX + operation, 0L);
+			assertThat(largeExecution)
+					.as("metadata grouping has the same execution %s work as group membership grows", operation)
+					.isPositive()
+					.isEqualTo(smallExecution);
+		}
+		// At 2,048 rows the arbiter may quote a parallel alternative before choosing prefix-run grouping.
+		// Its root estimate allows at most two partitions, whose shared cursor/point-read budget is 256.
+		for (Map<String, Long> work : List.of(small, large)) {
+			long planningReads = work.getOrDefault(LmdbStartupReadCounter.RANGE_PLANNING_PREFIX + "mdb_cursor_get", 0L)
+					+ work.getOrDefault(LmdbStartupReadCounter.RANGE_PLANNING_PREFIX + "mdb_get", 0L);
+			assertThat(planningReads).as("alternative range planning remains bounded independently of group size")
+					.isBetween(0L, 256L);
+			assertThat(work.getOrDefault(LmdbStartupReadCounter.RANGE_PLANNING_PREFIX + "mdb_cursor_open", 0L))
+					.as("range planning opens exactly its directory, page, and delta cursors when present")
+					.isEqualTo(planningReads == 0 ? 0L : 3L);
+		}
 	}
 
 	private Map<String, Long> groupedQueryWork(String name, int runSize) throws Exception {
@@ -129,7 +150,7 @@ class LmdbNativeIndexedAggregateTest {
 						.as("grouped predicate counts over an unbound pattern consume exact index runs:%n%s", telemetry)
 						.isEqualTo("prefixRunGroups");
 				LmdbPrefixRunPlan.resetMetrics();
-				try (LmdbStartupReadCounter reads = new LmdbStartupReadCounter()) {
+				try (LmdbStartupReadCounter reads = adjacencyReads(store)) {
 					var rows = QueryResults.asList(query.evaluate());
 					assertThat(rows).hasSize(2);
 					for (var row : rows) {
@@ -182,12 +203,15 @@ class LmdbNativeIndexedAggregateTest {
 						+ "?s <urn:index-query:p> ?o }");
 				((SailQuery) query).setLmdbResultCacheRequested(false);
 				LmdbPrefixRunPlan.resetMetrics();
-				var results = QueryResults.asList(query.evaluate());
-				assertThat(results).hasSize(1);
-				assertThat(((Literal) results.getFirst().getValue("c")).longValue()).isEqualTo(1024L);
-				assertThat(LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.get())
-						.as("native scalar aggregation must consume an exact ordinary-index cardinality")
-						.isPositive();
+				try (LmdbStartupReadCounter reads = adjacencyReads(store)) {
+					var results = QueryResults.asList(query.evaluate());
+					assertThat(results).hasSize(1);
+					assertThat(((Literal) results.getFirst().getValue("c")).longValue()).isEqualTo(1024L);
+					assertThat(reads.operations().getOrDefault("adjacency_count_get", 0L))
+							.as("native scalar aggregation consumes exact persisted metadata cardinalities")
+							.isPositive();
+					assertThat(reads.operations().getOrDefault("mdb_cursor_get", 0L)).isLessThan(1024L);
+				}
 			}
 		} finally {
 			repository.shutDown();
@@ -215,25 +239,28 @@ class LmdbNativeIndexedAggregateTest {
 			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
 				NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
 				long predicateId = source.idOf(predicate);
-				LmdbPrefixRunPlan.resetMetrics();
-				assertThat(source.count(-1L, predicateId, -1L, -1L)).isEqualTo(1024L);
-				assertThat(LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.get())
-						.as("the control count must enter the real exact-index path")
-						.isPositive();
-
-				LmdbPrefixRunPlan.resetMetrics();
-				assertThrows(KernelQueryCancelledException.class,
-						() -> NativeCancellationTestAccess.withCancelledNativeToken(
-								() -> source.count(-1L, predicateId, -1L, -1L)));
-				assertThat(LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.get())
-						.as("a cancelled exact count must not publish a partial cardinality")
-						.isZero();
+				try (LmdbStartupReadCounter reads = adjacencyReads(store)) {
+					assertThat(source.count(-1L, predicateId, -1L, -1L)).isEqualTo(1024L);
+					assertThat(reads.operations().getOrDefault("adjacency_count_get", 0L))
+							.as("the control count reads one persisted predicate counter")
+							.isEqualTo(1L);
+				}
+				try (LmdbStartupReadCounter reads = adjacencyReads(store)) {
+					assertThrows(KernelQueryCancelledException.class,
+							() -> NativeCancellationTestAccess.withCancelledNativeToken(
+									() -> source.count(-1L, predicateId, -1L, -1L)));
+					assertThat(reads.operations().getOrDefault("adjacency_count_get", 0L))
+							.as("cancellation is checked before accessing persisted count data")
+							.isZero();
+				}
 
 				assertThat(source.hasStatementsInSource()).isTrue();
-				assertThat(source.count(-1L, predicateId, -1L, -1L)).isEqualTo(1024L);
-				assertThat(LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.get())
-						.as("the same owner and its read view remain usable after cancellation")
-						.isPositive();
+				try (LmdbStartupReadCounter reads = adjacencyReads(store)) {
+					assertThat(source.count(-1L, predicateId, -1L, -1L)).isEqualTo(1024L);
+					assertThat(reads.operations().getOrDefault("adjacency_count_get", 0L))
+							.as("the same owner and its read view remain usable after cancellation")
+							.isEqualTo(1L);
+				}
 			}
 		} finally {
 			repository.shutDown();
@@ -249,8 +276,9 @@ class LmdbNativeIndexedAggregateTest {
 				.as("a contiguous predicate prefix has exact index cardinality; native quad pulls must not grow "
 						+ "with the run: small=%s, large=%s", small, large)
 				.isEqualTo(small.getOrDefault("mdb_cursor_get", 0L));
-		assertThat(large.get("exactCounts")).isPositive();
-		assertThat(large.get("keyPrefixesRead")).isLessThan(1024L);
+		assertThat(large.get("adjacency_count_get")).isEqualTo(1L);
+		assertThat(small.get("adjacency_count_get")).isEqualTo(1L);
+		assertThat(large.getOrDefault("mdb_cursor_get", 0L)).isZero();
 	}
 
 	@ParameterizedTest(name = "grouped prefix counts, indexes={0}")
@@ -262,16 +290,16 @@ class LmdbNativeIndexedAggregateTest {
 				.as("the same predicate groups require the same native cursor boundaries independent of group size; "
 						+ "small=%s, large=%s", small, large)
 				.isEqualTo(small.getOrDefault("mdb_cursor_get", 0L));
-		assertThat(large.get("leafHeadersRead") + large.get("leafPagesRead")).isPositive();
-		assertThat(large.get("keyPrefixesRead")).isLessThan(2048L);
+		assertThat(large.get("adjacency_count_get")).isEqualTo(2L);
+		assertThat(small.get("adjacency_count_get")).isEqualTo(2L);
 	}
 
 	@ParameterizedTest(name = "distinct successor seeks, indexes={0}")
 	@ValueSource(strings = { "default", "posc" })
 	void distinctOnlyRunsKeepSuccessorSeeksInsteadOfCountingLeafHeaders(String indexes) throws Exception {
 		Map<String, Long> work = sourceWork("distinct", indexes, 8192, true, false);
-		assertThat(work.get("leafHeadersRead"))
-				.as("a distinct-only prefix must jump past a large run without walking its leaf cardinalities")
+		assertThat(work.get("adjacency_count_get"))
+				.as("a distinct-only prefix must jump past a large run without fetching unused cardinalities")
 				.isZero();
 		assertThat(work.get("mdb_cursor_get")).isLessThan(8192L);
 	}
@@ -309,7 +337,7 @@ class LmdbNativeIndexedAggregateTest {
 				long firstId = source.idOf(first);
 				if (!grouped) {
 					LmdbPrefixRunPlan.resetMetrics();
-					try (LmdbStartupReadCounter reads = new LmdbStartupReadCounter()) {
+					try (LmdbStartupReadCounter reads = adjacencyReads(store)) {
 						assertThat(source.count(-1L, firstId, -1L, -1L)).isEqualTo(runSize);
 						return work(indexes, name, runSize, grouped, countRunRows, reads.operations());
 					}
@@ -318,7 +346,7 @@ class LmdbNativeIndexedAggregateTest {
 				assertThat(plan).as("the configured predicate-leading index can enumerate grouped prefixes")
 						.isNotNull();
 				LmdbPrefixRunPlan.resetMetrics();
-				try (LmdbStartupReadCounter reads = new LmdbStartupReadCounter();
+				try (LmdbStartupReadCounter reads = adjacencyReads(store);
 						LmdbPrefixRunCursor runs = source.prefixRuns(plan, -1L, -1L, -1L, -1L, countRunRows)) {
 					int groups = 0;
 					while (runs.next()) {
@@ -335,15 +363,19 @@ class LmdbNativeIndexedAggregateTest {
 		}
 	}
 
+	private static LmdbStartupReadCounter adjacencyReads(LmdbStore store) throws IOException {
+		return store.getBackingStore()
+				.getTripleStore()
+				.getTxnManager()
+				.doWith((stack, txn) -> new LmdbStartupReadCounter(LMDB.mdb_txn_env(txn),
+						LmdbPersistentAdjacency.openExisting(txn).metadataDbi()));
+	}
+
 	private static Map<String, Long> work(String indexes, String name, int runSize, boolean grouped,
 			boolean countRunRows, Map<String, Long> reads) {
 		Map<String, Long> work = new HashMap<>(reads);
-		work.put("exactCounts", LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.get());
-		work.put("leafHeadersRead", LmdbPrefixRunPlan.INDEX_LEAF_HEADERS_READ.get());
-		work.put("leafPagesRead", LmdbPrefixRunPlan.INDEX_LEAF_PAGES_READ.get());
-		work.put("keyPrefixesRead", LmdbPrefixRunPlan.INDEX_KEY_PREFIXES_READ.get());
-		work.put("pageCacheHits", LmdbPrefixRunPlan.INDEX_PAGE_CACHE_HITS.get());
-		System.out.printf("INDEX_AGGREGATE_WORK indexes=%s fixture=%s runSize=%d grouped=%s counting=%s work=%s%n",
+		work.put("adjacency_count_get", reads.getOrDefault("adjacency_count_get", 0L));
+		System.out.printf("PERSISTENT_AGGREGATE_WORK indexes=%s fixture=%s runSize=%d grouped=%s counting=%s work=%s%n",
 				indexes, name, runSize, grouped, countRunRows, work);
 		return work;
 	}

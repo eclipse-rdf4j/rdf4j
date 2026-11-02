@@ -119,7 +119,7 @@ class LmdbLegacySemanticStoreTest {
 					.containsExactlyInAnyOrderElementsOf(expectedStatements());
 		}
 		repository.shutDown();
-		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(inferredDirectory, "spocspoc-inf"))
+		assertThat(LmdbCompatibilityFixtures.persistentStatementCount(inferredDirectory, false))
 				.as("Explicit approval must retire all inferred aliases even when the explicit row already exists")
 				.isEqualTo(2);
 	}
@@ -355,8 +355,8 @@ class LmdbLegacySemanticStoreTest {
 			sink.flush();
 		}
 		repository.shutDown();
-		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, "spocspoc"))
-				.as("each newly approved RDF quad has exactly one physical record")
+		assertThat(LmdbCompatibilityFixtures.persistentStatementCount(directory, true))
+				.as("each newly approved RDF quad adds exactly one stored occurrence")
 				.isEqualTo(28);
 		open(128);
 	}
@@ -575,10 +575,9 @@ class LmdbLegacySemanticStoreTest {
 			sink.flush();
 		}
 		repository.shutDown();
-		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory,
-				inferred ? "spocspoc-inf" : "spocspoc"))
-						.as("aligned inserts must update the same writer index used by the later alias batch")
-						.isEqualTo(inferred ? 128 : 136);
+		assertThat(LmdbCompatibilityFixtures.persistentStatementCount(directory, !inferred))
+				.as("aligned inserts must be visible to the later alias batch in the same statement plane")
+				.isEqualTo(inferred ? 128 : 136);
 		open(128, nativeEnabled, adjacency);
 		try (var connection = repository.getConnection()) {
 			for (int index = 0; index < 128; index++) {
@@ -665,9 +664,8 @@ class LmdbLegacySemanticStoreTest {
 			open(2);
 			storeDirectory = directory;
 		}
-		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(storeDirectory, "spocspoc"))
-				.as("immutable fixture establishes the untouched explicit plane")
-				.isEqualTo(inferred ? 4 : 8);
+		LmdbCompatibilityFixtures.assertPersistentStatementAuthority((LmdbStore) repository.getSail(),
+				inferred ? 4 : 8, inferred ? 4 : 0);
 		Value object = VALUES.createLiteral("language value", "eN");
 		if (nested) {
 			TripleTerm inner = VALUES.createTripleTerm(VALUES.createIRI("urn:legacy:inner"), LABEL, object);
@@ -685,19 +683,18 @@ class LmdbLegacySemanticStoreTest {
 			connection.commit();
 		}
 		repository.shutDown();
-		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(storeDirectory,
-				inferred ? "spocspoc-inf" : "spocspoc"))
-						.as("remove every physical alias in the selected plane and context across bounded native chunks")
-						.isEqualTo(inferred ? nested ? 3 : 2 : nested ? 6 : 4);
+		assertThat(LmdbCompatibilityFixtures.persistentStatementCount(storeDirectory, !inferred))
+				.as("remove every physical alias in the selected plane and context across bounded native chunks")
+				.isEqualTo(inferred ? nested ? 3 : 2 : nested ? 6 : 4);
 		if (inferred) {
-			assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(storeDirectory, "spocspoc")).isEqualTo(4);
+			assertThat(LmdbCompatibilityFixtures.persistentStatementCount(storeDirectory, true)).isEqualTo(4);
 		}
 	}
 
 	@Test
 	void addingAliasAfterColdReopenDoesNotAddLogicalOrPhysicalDuplicates() throws Exception {
 		repository.shutDown();
-		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, "spocspoc")).isEqualTo(8);
+		assertThat(LmdbCompatibilityFixtures.persistentStatementCount(directory, true)).isEqualTo(8);
 		open(0);
 		try (var connection = repository.getConnection()) {
 			connection.add(VALUES.createIRI("urn:legacy:subject"), LABEL,
@@ -705,7 +702,7 @@ class LmdbLegacySemanticStoreTest {
 			assertThat(connection.size()).isEqualTo(5);
 		}
 		repository.shutDown();
-		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory, "spocspoc")).isEqualTo(8);
+		assertThat(LmdbCompatibilityFixtures.persistentStatementCount(directory, true)).isEqualTo(8);
 		open(2);
 		try (var connection = repository.getConnection()) {
 			connection.begin();
