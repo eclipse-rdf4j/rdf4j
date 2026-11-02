@@ -180,14 +180,19 @@ final class LmdbNativeMachineCostModel {
 		set(result, LmdbNativeCostVector.Feature.DECODED_ROW, 18.0);
 		set(result, LmdbNativeCostVector.Feature.INTERPRETED_ROW, 65.0);
 		set(result, LmdbNativeCostVector.Feature.BATCH_ROW, 12.0);
-		set(result, LmdbNativeCostVector.Feature.GENERATED_ROW, 4.0);
+		// measured 2026-11-02: a "compiled" tier runs on the interpreter warm-up tier while Janino compiles, so its
+		// per-row cost in a cold decision equals the interpreted tier's (irAggregateWildcard: 62 ns per row over
+		// 51k rows); 4 ns is the steady state of a warm kernel, which a cold selector must not assume
+		set(result, LmdbNativeCostVector.Feature.GENERATED_ROW, 40.0);
 		set(result, LmdbNativeCostVector.Feature.MEMBERSHIP_TEST, 14.0);
 		set(result, LmdbNativeCostVector.Feature.HASH_BUILD_ROW, 45.0);
 		set(result, LmdbNativeCostVector.Feature.HASH_PROBE, 18.0);
 		set(result, LmdbNativeCostVector.Feature.GROUP_UPDATE, 40.0);
 		set(result, LmdbNativeCostVector.Feature.DISTINCT_UPDATE, 35.0);
 		set(result, LmdbNativeCostVector.Feature.SORT_N_LOG2_N, 22.0);
-		set(result, LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, 25.0);
+		// measured 2026-11-02 (regret harness, 3000-person FOAF stores): 226 to 262 ns per materialised output row
+		// end to end, consistently across strategies; the earlier 25 ns was a guess
+		set(result, LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, 250.0);
 		set(result, LmdbNativeCostVector.Feature.GENERATED_SOURCE_BYTE_CACHE_MISS, 1.5);
 		return result;
 	}

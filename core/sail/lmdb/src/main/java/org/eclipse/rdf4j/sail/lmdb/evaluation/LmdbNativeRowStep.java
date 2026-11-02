@@ -901,7 +901,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		// the best-sorted one.
 		long topK = safeTopKCapacity(emitCap, sortLayout.liveToPlan.length) && topKDistinctSafe() ? emitCap : -1L;
 		if (topK >= 0) {
-			LmdbNativeStrategyArbiter.logDirect(originalExpr, "ORDER BY dispatch",
+			LmdbNativeDispatchLoop.logDirect(originalExpr, "ORDER BY dispatch",
 					LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K,
 					"Bounded top-K capacity and DISTINCT ordering are safe");
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K);
@@ -911,7 +911,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					: evaluateReducingTopK(row, values, comparator, (int) topK, emitCap, sortMetrics);
 		}
 
-		LmdbNativeStrategyArbiter.logDirect(originalExpr, "ORDER BY dispatch",
+		LmdbNativeDispatchLoop.logDirect(originalExpr, "ORDER BY dispatch",
 				LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT, "The complete input must be sorted");
 		LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT);
 		LmdbNativeAttemptMetrics sortMetrics = explainSortMetrics();
@@ -1463,7 +1463,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		String forcedStrategy = forcedExecutionStrategyName();
 		if (LmdbNativeFactorAlgebra.candidate(arg) && !SlotPlan.encounterOrderReplaySafe(arg)
 				&& LmdbNativeAttemptMetrics.PATH_PACKED_FTREE.equals(forcedStrategy)) {
-			LmdbNativeStrategyArbiter.logDirect(originalExpr, "row/join serial dispatch",
+			LmdbNativeDispatchLoop.logDirect(originalExpr, "row/join serial dispatch",
 					LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 					"Effectful bag algebra is evaluated once, without speculative replay");
 			try (LmdbNativeStrategyProposal<NativeUnorderedInput> proposal = LmdbNativePackedFtree.proposeRows(
@@ -1478,7 +1478,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcardExists = proposeBatch(row, null, false);
 			if (wildcardExists != null) {
 				try {
-					LmdbNativeStrategyArbiter.logDirect(originalExpr, "row/join dispatch", wildcardExists.tag,
+					LmdbNativeDispatchLoop.logDirect(originalExpr, "row/join dispatch", wildcardExists.tag,
 							"Wildcard existence owns the parallel round");
 					NativeUnorderedInput opened = openDirectScalarFilterAttempt(row, wildcardExists);
 					if (opened != null) {
@@ -1498,7 +1498,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcard = proposeBatch(row, wildcardJoin, false);
 			if (wildcard != null) {
 				try {
-					LmdbNativeStrategyArbiter.logDirect(originalExpr, "row/join dispatch", wildcard.tag,
+					LmdbNativeDispatchLoop.logDirect(originalExpr, "row/join dispatch", wildcard.tag,
 							"Wildcard predicate owns the parallel round");
 					NativeUnorderedInput opened = openDirectScalarFilterAttempt(row, wildcard);
 					if (opened != null) {
@@ -1509,21 +1509,20 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				}
 			}
 		}
-		// Withholding rows does not undo expression effects. A discarded trial may reopen only a repeatable plan.
-		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
-				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), row.source)
-				.probeHarness(replaySafe ? new NativeProbeBufferHarness() : null)
-				.sharedRow(row)
-				.forcing(forcedStrategy, "row/join dispatch")) {
-			offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, arbiter);
-
-			long startedNanos = System.nanoTime();
-			LmdbNativeStrategySelection<NativeUnorderedInput> selection = arbiter.selectWithObservation();
+		LmdbNativeOfferBridge<NativeUnorderedInput> offers = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.ROW);
+		offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, offers);
+		{
+			LmdbNativeDispatchLoop.Selection<NativeUnorderedInput> selection = new LmdbNativeDispatchLoop<>(
+					LmdbNativeDecisionPoint.ROW, offers.strategies(), originalExpr)
+							.slice(consumableRows())
+							.sharedRow(row)
+							.forcing(forcedStrategy)
+							.dispatch(null);
 			if (selection == null) {
 				throw new IllegalStateException("native nested-loop fallback declined");
 			}
 			NativeUnorderedInput selected = selection.value();
-			String winningTag = arbiter.winningTag();
+			String winningTag = selection.id();
 			if (LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT.equals(winningTag)) {
 				if (distinctPlan == null) {
 					throw new IllegalStateException("ordered DISTINCT won without its selected input plan");
@@ -1535,8 +1534,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					row.runtimePlan.activate(winningTag, new SlotPlan[] { distinctPlan.arg });
 				}
 			}
-			selected.observeOnClose(selection);
-			selected.calibrateOnClose(winningTag, arbiter.winningPredictedWork(), startedNanos);
+			selected.acceptScalarFilterAttempt();
 			return selected;
 		}
 	}
@@ -1593,7 +1591,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	}
 
 	private void offerUnorderedStrategies(RowState row, NativeTupleDistinctPlan distinctPlan, MultiJoinPlan multiJoin,
-			boolean correlatedEntry, int[] retainedSlots, LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter)
+			boolean correlatedEntry, int[] retainedSlots, LmdbNativeCandidateOffers<NativeUnorderedInput> arbiter)
 			throws IOException {
 		if (orderSlots.length == 0) {
 			// Emission strategy, never a sort input (the ORDER BY materializer callers all carry orderSlots).
@@ -1607,10 +1605,14 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT, distinctPlan.arg, row));
 		}
 		if (LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask())) {
+			// Leapfrog walks each relation once and intersects: priced set-at-a-time, not as a probe chain.
 			arbiter.offer(() -> inputProposal(
 					() -> acceptWcoj(row, LmdbNativeLeapfrogJoin.tryOpen(arg, row), multiJoin),
 					LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN,
-					estimatedRows(row)));
+					estimatedRows(row))
+							.withCostQuote(LmdbNativeCostQuote.streaming(LmdbNativeCostVectors.setAtATime(arg, row,
+									row.boundMask(), LmdbNativeCostVector.Feature.INTERPRETED_ROW),
+									estimatedRows(row))));
 		}
 		// Automatic packed rows are priced only for direct MultiJoinPlan inputs. A composed factor tree remains
 		// available
@@ -1665,7 +1667,13 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			// Existing complete-execution arbitration can price this distinct physical variant independently.
 			arbiter.offer(() -> inputProposal(
 					() -> acceptNested(row, NativeExpressionDomainPolicy.openHashed(arg, row), multiJoin),
-					NativeExpressionDomainPolicy.HASHED_TAG, LmdbNativeWork.UNKNOWN, estimatedRows(row)));
+					NativeExpressionDomainPolicy.HASHED_TAG, LmdbNativeWork.UNKNOWN, estimatedRows(row))
+							.withCostQuote(LmdbNativeCostQuote.streaming(
+									LmdbNativeCostVectors.plan(arg, row, row.boundMask(),
+											LmdbNativeCostVector.Feature.INTERPRETED_ROW)
+											.plus(LmdbNativeCostVectors.perRow(
+													LmdbNativeCostVector.Feature.HASH_BUILD_ROW, estimatedRows(row))),
+									estimatedRows(row))));
 		}
 
 	}
@@ -1725,14 +1733,13 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					null);
 		}
 		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan join && join.children.length > 0 ? join : null;
-		try (LmdbNativeStrategyArbiter<NativeUnorderedInput> arbiter = LmdbNativeStrategyArbiter
-				.<NativeUnorderedInput>forSlice(originalExpr, consumableRows(), source)
-				.probeHarness(replaySafe ? new NativeProbeBufferHarness() : null)
-				.forcing(forcedExecutionStrategyName(), "row/join dispatch")) {
+		try {
+			LmdbNativeOfferBridge<NativeUnorderedInput> offers = new LmdbNativeOfferBridge<>(
+					LmdbNativeDecisionPoint.ROW);
 			NativeTupleDistinctPlan distinctPlan = distinct ? LmdbNativeOrderPlanner.tuple(arg, sourceSlots, row)
 					: null;
 			offerUnorderedStrategies(row, distinctPlan, multiJoin, (arg.producedMask() & row.boundMask()) != 0L,
-					orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan, arbiter);
+					orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan, offers);
 			String directTag = null;
 			String directReason = null;
 			if (forcedExecutionStrategyName() == null && (arg.producedMask() & row.boundMask()) == 0L) {
@@ -1751,9 +1758,11 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					}
 				}
 			}
-			arbiter.preview(
-					orderSlots.length == 0 ? "row/join dispatch" : "row/join dispatch (ORDER BY fallback input)",
-					directTag, directReason);
+			new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW, offers.strategies(), originalExpr)
+					.slice(consumableRows())
+					.label(orderSlots.length == 0 ? "row/join dispatch" : "row/join dispatch (ORDER BY fallback input)")
+					.forcing(forcedExecutionStrategyName())
+					.preview(null, directTag, directReason);
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -1786,7 +1795,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		}
 		double cost = factorized.proposalCost(row);
 		return inputProposal(() -> acceptFactorized(row, factorized, metrics),
-				LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, workEstimate(cost), estimatedRows(row));
+				LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, workEstimate(cost), estimatedRows(row))
+						.withCostQuote(LmdbNativeCostQuote.streaming(factorized.costVector(row), estimatedRows(row)));
 	}
 
 	private LmdbNativeStrategyProposal<NativeUnorderedInput> proposeBatch(RowState row, MultiJoinPlan multiJoin,
@@ -1811,7 +1821,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 						row, capacity, distinct, sourceSlots, orderSlots);
 		if (proposal == null && multiJoin == null) {
 			return planProposal(() -> openDirectBatch(row, capacity), LmdbNativeAttemptMetrics.PATH_BATCH, arg,
-					row);
+					row, LmdbNativeCostVector.Feature.BATCH_ROW);
 		}
 		if (proposal == null) {
 			proposal = multiJoin.proposeBatch(row, capacity);
@@ -1915,8 +1925,14 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					"wildcard-predicate-round-owner");
 			return null;
 		}
+		double runs = estimatedRows(row);
 		return inputProposal(() -> acceptPrefixRun(row, openPrefixRunCursor(row)),
-				LmdbNativeAttemptMetrics.PATH_PREFIX_RUN, LmdbNativeWork.UNKNOWN, estimatedRows(row));
+				LmdbNativeAttemptMetrics.PATH_PREFIX_RUN, LmdbNativeWork.UNKNOWN, runs)
+						.withCostQuote(LmdbNativeCostQuote.streaming(
+								LmdbNativeCostVectors.pattern(prefixPattern, row, row.boundMask())
+										.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.DECODED_ROW,
+												runs)),
+								runs));
 	}
 
 	private NativeUnorderedInput acceptPrefixRun(RowState row, RowCursor cursor) {
@@ -1964,7 +1980,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				proposal.close();
 			}
 		}, proposal.work, proposal.startupWork, proposal.estRows, proposal.tag, proposal::close)
-				.withOptionalPlanningWork(proposal.planningWork());
+				.withOptionalPlanningWork(proposal.planningWork())
+				.withCostQuote(proposal.costQuote() != null ? proposal.costQuote() : cursorQuote(proposal.tag, row));
 	}
 
 	private static LmdbNativeStrategyProposal<NativeUnorderedInput> inputProposal(
@@ -1977,10 +1994,45 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	/** A proposal that runs {@code plan} once: priced by its conservative quote, ranked by its planning quote. */
 	private static LmdbNativeStrategyProposal<NativeUnorderedInput> planProposal(
 			LmdbNativeStrategyProposal.Opener<NativeUnorderedInput> opener, String tag, SlotPlan plan, RowState row) {
+		return planProposal(opener, tag, plan, row, LmdbNativeCostVector.Feature.INTERPRETED_ROW);
+	}
+
+	/** A proposal priced as the plan's shared access features plus {@code rowFeature} per intermediate row. */
+	private static LmdbNativeStrategyProposal<NativeUnorderedInput> planProposal(
+			LmdbNativeStrategyProposal.Opener<NativeUnorderedInput> opener, String tag, SlotPlan plan, RowState row,
+			LmdbNativeCostVector.Feature rowFeature) {
 		long boundMask = row.boundMask();
-		return inputProposal(opener, tag, plan.estimateWork(row, boundMask),
-				LmdbNativeWork.rowsOut(plan, row, boundMask))
-						.withPlanningWork(LmdbNativeWork.planning(plan, row, boundMask));
+		double rows = LmdbNativeWork.rowsOut(plan, row, boundMask);
+		return inputProposal(opener, tag, plan.estimateWork(row, boundMask), rows)
+				.withPlanningWork(LmdbNativeWork.planning(plan, row, boundMask))
+				.withCostQuote(LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVectors.plan(plan, row, boundMask, rowFeature), rows));
+	}
+
+	/**
+	 * Feature quote of a kernel or pipeline cursor proposal, derived from its tag: compiled tiers pay a generated row,
+	 * interpreted tiers an interpreted row, pipelines a batch row; parallel variants divide the streaming part by the
+	 * worker count and pay one worker start per worker; DISTINCT-sinking variants pay a distinct update per row.
+	 */
+	private LmdbNativeCostQuote cursorQuote(String tag, RowState row) {
+		long boundMask = row.boundMask();
+		boolean pipelines = LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES.equals(tag);
+		LmdbNativeCostVector.Feature rowFeature = pipelines ? LmdbNativeCostVector.Feature.BATCH_ROW
+				: tag.contains("Interpreted") ? LmdbNativeCostVector.Feature.INTERPRETED_ROW
+						: LmdbNativeCostVector.Feature.GENERATED_ROW;
+		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
+		LmdbNativeCostVector streaming = LmdbNativeCostVectors.plan(arg, row, boundMask, rowFeature);
+		if (tag.contains("Distinct")) {
+			streaming = streaming
+					.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.DISTINCT_UPDATE, rows));
+		}
+		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D);
+		if (pipelines || tag.contains("Parallel")) {
+			int workers = Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers());
+			streaming = streaming.scale(1D / LmdbNativeStaticPrior.measuredParallelSpeedup(tag, workers));
+			startup = startup.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers));
+		}
+		return new LmdbNativeCostQuote(startup, streaming, rows, false, false);
 	}
 
 	private static LmdbNativeWork workEstimate(double estimate) {
@@ -2309,7 +2361,7 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout,
 				row.boundMask());
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
-		LmdbNativeStrategyArbiter.logDirect(step.originalExpr, "EXISTS dispatch",
+		LmdbNativeDispatchLoop.logDirect(step.originalExpr, "EXISTS dispatch",
 				LmdbNativeAttemptMetrics.PATH_BARE_EXISTS, "Boolean existence probe");
 		LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_EXISTS);
 		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
@@ -2726,7 +2778,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 			// usually a single scan every rival structurally declines. The aggregated nanos/rows evidence recorded
 			// at close keeps the route auditable for a future memoized arbitration.
 			startedNanos = System.nanoTime();
-			LmdbNativeStrategyArbiter.logDirect(step.originalExpr, "bound BGP dispatch",
+			LmdbNativeDispatchLoop.logDirect(step.originalExpr, "bound BGP dispatch",
 					LmdbNativeAttemptMetrics.PATH_BARE_DIRECT, "Direct cursor for a bound basic graph pattern");
 			row.startScalarFilterAttempt();
 			scalarFilterAttempt = row.scalarFilterAttempt;

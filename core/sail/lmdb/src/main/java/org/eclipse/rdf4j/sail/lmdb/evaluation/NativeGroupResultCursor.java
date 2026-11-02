@@ -118,9 +118,6 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			cancellation().check();
 			if (result == null) {
 				completed = true;
-			} else if (selection != null && selection.selected().observation() != null) {
-				selection.selected().observation().firstOutput();
-				selection.selected().observation().addProducedRow();
 			}
 		} catch (Throwable problem) {
 			failure = problem;
@@ -212,7 +209,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		boolean seeded = iteration.initialize(row);
 		if (owner != null && seeded) {
 			selection = NativePhysicalGroupArbitration.select(owner, this, iteration, row);
-			results = selection.selected().value();
+			results = selection.selected();
 			return;
 		}
 		GroupingPlan plan = fixedPlan;
@@ -443,16 +440,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 	/** Active leases and every accepted producer resource finish before a sample can be marked complete. */
 	private Throwable finishSelection(Throwable failure) {
 		if (selection != null) {
-			if (completed && failure == null) {
-				selection.selected().exhausted();
-			} else if (failure != null) {
-				selection.selected().failed(failure);
-			}
 			failure = KernelRuntime.closeResource(selection.selected(), failure);
-			if (completed && failure == null) {
-				LmdbNativeCostCalibration.record(selection.tag(), selection.predictedWork(),
-						System.nanoTime() - selection.startedNanos());
-			}
 			selection = null;
 		}
 		return failure;

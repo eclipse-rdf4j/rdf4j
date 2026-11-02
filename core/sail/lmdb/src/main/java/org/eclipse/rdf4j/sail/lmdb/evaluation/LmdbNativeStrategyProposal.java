@@ -114,6 +114,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private NativeAggregateExecutionEvent.Descriptor aggregateExecution;
 	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
 	private LmdbNativeStrategyProposal<?> mappedOrigin;
+	private LmdbNativeCostQuote costQuote;
 
 	/** Changes only the result carrier; the original opener, quote, dominance and unopened release remain owned. */
 	<R> LmdbNativeStrategyProposal<R> map(Function<? super T, ? extends R> mapper, String mappedTag) {
@@ -139,7 +140,18 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		result.estCost = estCost;
 		result.executionResourceWitness = executionResourceWitness;
 		result.mappedOrigin = this;
+		result.costQuote = costQuote;
 		return result;
+	}
+
+	/** Attaches the feature-count quote the selector prices; it takes precedence over every legacy interval. */
+	LmdbNativeStrategyProposal<T> withCostQuote(LmdbNativeCostQuote quote) {
+		this.costQuote = quote;
+		return this;
+	}
+
+	LmdbNativeCostQuote costQuote() {
+		return costQuote;
 	}
 
 	/**

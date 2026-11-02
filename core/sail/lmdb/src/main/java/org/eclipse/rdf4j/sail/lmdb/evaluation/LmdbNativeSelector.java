@@ -45,15 +45,23 @@ final class LmdbNativeSelector {
 			return new Ranking(-1, nanos, expected, eliminatedBy, "No strategy was admitted at this decision point");
 		}
 		boolean ordinary = false;
+		boolean bounded = false;
 		for (int i = 0; i < n; i++) {
 			LmdbNativeCostVector vector = candidates.get(i).quote().forSlice(sliceRows);
-			nanos[i] = prior.price(vector);
-			expected[i] = prior.expected(vector);
+			double fixed = LmdbNativeStaticPrior.fixedNanos(candidates.get(i).id());
+			LmdbNativeWork priced = prior.price(vector);
+			nanos[i] = LmdbNativeWork.between(priced.low() + fixed, priced.high() + fixed);
+			expected[i] = prior.expected(vector) + fixed;
 			ordinary |= !candidates.get(i).lastResort();
+			bounded |= !candidates.get(i).lastResort() && nanos[i].known();
 		}
 		for (int i = 0; i < n; i++) {
 			if (ordinary && candidates.get(i).lastResort()) {
 				eliminatedBy[i] = "Last resort: considered only when no ordinary candidate is admitted";
+			} else if (bounded && !nanos[i].known()) {
+				// An unbounded quote has no ceiling to compare; its floor is not a price. It competes only when no
+				// candidate could price itself at all.
+				eliminatedBy[i] = "Unpriced: quotes no finite ceiling while priced candidates exist";
 			}
 		}
 		// structural dominance: declared by the strategies, independent of price

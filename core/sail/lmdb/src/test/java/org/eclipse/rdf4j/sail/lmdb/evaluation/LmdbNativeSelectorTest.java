@@ -124,12 +124,16 @@ class LmdbNativeSelectorTest {
 	}
 
 	@Test
-	void anUnboundedQuoteNeitherDominatesNorIsDominated() {
+	void anUnboundedQuoteCompetesOnlyWhenNothingIsPriced() {
 		LmdbNativeCandidate<String> unknown = LmdbNativeCandidate.of("wcoj",
 				LmdbNativeCostQuote.ofWork(LmdbNativeWork.UNKNOWN, Double.NaN), () -> "wcoj");
 		List<LmdbNativeCandidate<String>> candidates = List.of(candidate("kernel", 10, 20, 30), unknown);
 		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(candidates, PRIOR, -1D);
-		assertThat(ranking.eliminatedBy()).containsOnlyNulls();
+		// its floor of zero is not a price: the priced kernel wins even though the kernel costs more than zero
+		assertThat(ranking.winner()).isZero();
+		assertThat(ranking.eliminatedBy()[1]).startsWith("Unpriced");
 		assertThat(ranking.nanos()[1].known()).isFalse();
+		LmdbNativeSelector.Ranking alone = LmdbNativeSelector.rank(List.of(unknown), PRIOR, -1D);
+		assertThat(alone.winner()).isZero();
 	}
 }

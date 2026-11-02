@@ -169,7 +169,9 @@ final class LmdbNativePackedFtree {
 			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
 			return NativeUnorderedInput.rows(row, rows);
 		}, input.estimateWork(row, row.boundMask()), LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, () -> {
-		});
+		}).withCostQuote(LmdbNativeCostQuote.streaming(
+				LmdbNativeCostVectors.plan(input, row, row.boundMask(), LmdbNativeCostVector.Feature.GENERATED_ROW),
+				LmdbNativeWork.rowsOut(input, row, row.boundMask())));
 	}
 
 	static List<BindingSet> tryEvaluateAggregate(SlotPlan input, RowState row, int[] groups,
@@ -232,7 +234,12 @@ final class LmdbNativePackedFtree {
 			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
 			return NativeUnorderedInput.rows(row, cursor);
 		}, work, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, () -> {
-		});
+		}).withCostQuote(LmdbNativeCostQuote.streaming(
+				// every relation is packed once and tree edges are expanded as child vectors: set-at-a-time access
+				// with generated rows
+				LmdbNativeCostVectors.setAtATime(multiJoin, row, row.boundMask(),
+						LmdbNativeCostVector.Feature.GENERATED_ROW),
+				LmdbNativeWork.rowsOut(multiJoin, row, row.boundMask())));
 	}
 
 	/** Export the existing f-tree's borrowed leaves without collapsing them to scalar weights. */

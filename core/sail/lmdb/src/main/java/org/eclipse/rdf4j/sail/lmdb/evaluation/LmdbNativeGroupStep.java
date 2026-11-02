@@ -271,10 +271,10 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			}
 			NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row, null, false);
 			Map<LmdbNativeStrategyProposal<NativeGroupResultCursor.GroupingPlan>, NativeGroupResultCursor.GroupingPlan> plans = new IdentityHashMap<>();
-			try (LmdbNativeStrategyArbiter<NativeGroupResultCursor.GroupingPlan> arbiter = LmdbNativeStrategyArbiter.<NativeGroupResultCursor.GroupingPlan>forExpr(
-					originalExpr, planningSource)
-					.diagnostics(iteration.cancellation, iteration.diagnosticBoundaryId, "GROUP BY physical quote")
-					.forcing(forcedExecutionStrategyName(), "GROUP BY physical quote")) {
+			Map<String, LmdbNativeStrategyProposal<NativeGroupResultCursor.GroupingPlan>> proposalsByTag = new HashMap<>();
+			LmdbNativeOfferBridge<NativeGroupResultCursor.GroupingPlan> offers = new LmdbNativeOfferBridge<>(
+					LmdbNativeDecisionPoint.GROUP_PHYSICAL);
+			{
 				NativeGroupResultCursor.GroupingPlan ordered = NativeGroupResultCursor.orderedPlan(iteration, row);
 				NativeGroupResultCursor.GroupingPlan table = NativeGroupResultCursor.tablePlan(iteration);
 				for (NativeGroupResultCursor.GroupingPlan candidate : ordered == null ? List.of(table)
@@ -292,9 +292,15 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 									}).withAggregatePhysicalPlan(
 											NativeAggregatePhysicalPlan.typed(bound, iteration)));
 					plans.put(proposal, bound);
-					arbiter.offer(() -> proposal);
+					proposalsByTag.put(proposal.tag, proposal);
+					offers.offer(proposal.tag, () -> proposal);
 				}
-				LmdbNativeStrategyProposal<NativeGroupResultCursor.GroupingPlan> chosen = arbiter.quotedChoice();
+				LmdbNativeCandidate<NativeGroupResultCursor.GroupingPlan> choice = new LmdbNativeDispatchLoop<>(
+						LmdbNativeDecisionPoint.GROUP_PHYSICAL, offers.strategies(), originalExpr)
+								.forcing(forcedExecutionStrategyName())
+								.quotedChoice(null);
+				LmdbNativeStrategyProposal<NativeGroupResultCursor.GroupingPlan> chosen = choice == null ? null
+						: proposalsByTag.get(choice.id());
 				if (chosen == null) {
 					return null;
 				}
@@ -1309,7 +1315,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			arbiter.offer(() -> estimatedProposal(() -> evaluateTermDomain(row, metrics), NativeTermDomainPlan.PATH,
 					termDomain.estimateWork(row, row.boundMask())));
 		}
-		if (adjacencyAggregate != null && adjacencyAggregate.handles(row)) {
+		// Measured (regret harness, 2026-11-02): with the adjacency index serving, the metadata path answers counts
+		// in 0.1 to 0.3 ms and is the fastest strategy; without it the same strategy falls back to scans and is 2 to
+		// 16 times slower than prefix runs or the indexed count while still quoting near zero. Admit it only when the
+		// adjacency index can serve this source.
+		NativeLmdbQuerySource.IndexAccessProfile adjacencyProfile = adjacencyAggregate != null
+				&& adjacencyAggregate.handles(row) ? row.source.indexAccessProfile() : null;
+		if (adjacencyProfile != null && !adjacencyProfile.adjacencyPossible()) {
+			LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
+					"The adjacency index is not serving this source; the metadata path would fall back to scans");
+		}
+		if (adjacencyProfile != null && adjacencyProfile.adjacencyPossible()) {
 			arbiter.offer(() -> estimatedProposal(() -> {
 				List<BindingSet> result = adjacencyAggregate.evaluate(this, row);
 				if (result != null) {
@@ -1345,7 +1361,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}
 				return result;
 			}, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
-					prefixPattern.estimateWork(row, row.boundMask())));
+					prefixPattern.estimateWork(row, row.boundMask()))
+							// a prefix-run scan walks index keys without decoding or interpreting rows (measured 13 ns
+							// per statement) and updates one group per run
+							.withCostQuote(LmdbNativeCostQuote.streaming(
+									LmdbNativeCostVectors.pattern(prefixPattern, row, row.boundMask())
+											.plus(LmdbNativeCostVectors.perRow(
+													LmdbNativeCostVector.Feature.GROUP_UPDATE,
+													groupSlots.length == 0 ? 1D
+															: LmdbNativeCostVectors.rows(prefixPattern, row,
+																	row.boundMask()) / 16D)),
+									groupSlots.length == 0 ? 1D : Double.NaN)));
 		}
 		NativeGroupResultCursor.GroupingPlan encounterOrdered = !typeMatrixOwned
 				&& !NativeGroupResultCursor.allowsReorderedGrouping(this)
@@ -1386,7 +1412,14 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		}
 		if (!typeMatrixOwned && wcojHandlesRow(row)) {
 			arbiter.offer(() -> estimatedProposal(() -> evaluateWcoj(row),
-					LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN));
+					LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN)
+							.withCostQuote(LmdbNativeCostQuote.streaming(
+									LmdbNativeCostVectors.setAtATime(arg, row, row.boundMask(),
+											LmdbNativeCostVector.Feature.INTERPRETED_ROW)
+											.plus(LmdbNativeCostVectors.perRow(
+													LmdbNativeCostVector.Feature.GROUP_UPDATE,
+													LmdbNativeWork.rowsOut(arg, row, row.boundMask()))),
+									groupSlots.length == 0 ? 1D : Double.NaN)));
 		}
 		// The composed factor algebra is independently legal. Its own structural estimate (or UNKNOWN work)
 		// participates in the same inventory as a direct packed join; forcing changes selection, not admission.
@@ -1639,38 +1672,42 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	List<BindingSet> evaluateArbitrated(RowState row, LmdbNativeAttemptMetrics metrics, SlotPlan originalArg) {
 		NativeAggregateCostQuotes costQuotes = new NativeAggregateCostQuotes(this, row);
-		boolean replaySafe = !requiresSerialDispatch() && SlotPlan.encounterOrderReplaySafe(arg);
-		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
-				.<List<BindingSet>>forExpr(explainTarget, source)
-				.diagnostics(cancellation, diagnosticBoundaryId, decisionPoint())
-				.estimateWith(costQuotes::attach)
-				.probeHarness(replaySafe ? LmdbNativeProbeHarness.blocking() : null)
-				.hedgeSupport(replaySafe && !requiresOpaqueEncounterOrder() ? hedgeSupport() : null)
-				.sharedRow(row)
-				.forcing(forcedExecutionStrategy, decisionPoint())) {
-			offerCandidates(row, metrics, originalArg, arbiter);
-
+		LmdbNativeOfferBridge<List<BindingSet>> offers = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.GROUP,
+				costQuotes::attach);
+		try {
+			offerCandidates(row, metrics, originalArg, offers);
+			LmdbNativeDispatchLoop<Void, List<BindingSet>> loop = new LmdbNativeDispatchLoop<>(
+					LmdbNativeDecisionPoint.GROUP, offers.strategies(), explainTarget)
+							.label(decisionPoint())
+							.sharedRow(row)
+							.forcing(forcedExecutionStrategy);
 			if (LmdbNativeStrategyPreview.active()) {
 				if (existsIntersection != null) {
 					QueryExplanationContext.withRuntimeCondition(
 							"Node-domain intersection pricing requires execution-time synopsis preparation",
-							() -> arbiter.preview(decisionPoint()));
+							() -> previewQuietly(loop));
 				} else {
-					arbiter.preview(decisionPoint());
+					loop.preview(null);
 				}
 				return List.of();
 			}
-			long startedMillis = System.currentTimeMillis();
-			List<BindingSet> selected = arbiter.select();
+			LmdbNativeDispatchLoop.Selection<List<BindingSet>> selection = loop.dispatch(null);
 			cancellation.check();
-			if (selected != null) {
-				LmdbNativeCostCalibration.record(arbiter.winningTag(), arbiter.winningPredictedWork(),
-						TimeUnit.MILLISECONDS.toNanos(System.currentTimeMillis() - startedMillis));
-				if (LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION.equals(arbiter.winningTag())) {
-					recordParallelStrategy(metrics);
-				}
+			if (selection == null) {
+				return null;
 			}
-			return selected;
+			if (LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION.equals(selection.id())) {
+				recordParallelStrategy(metrics);
+			}
+			return selection.value();
+		} catch (IOException e) {
+			throw new QueryEvaluationException(e);
+		}
+	}
+
+	private static LmdbNativeDecisionRecord previewQuietly(LmdbNativeDispatchLoop<Void, List<BindingSet>> loop) {
+		try {
+			return loop.preview(null);
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
@@ -1919,7 +1956,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			return noInputResult();
 		}
 		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
-		LmdbNativeStrategyArbiter.logDirect(explainTarget, "GROUP BY fallback",
+		LmdbNativeDispatchLoop.logDirect(explainTarget, "GROUP BY fallback",
 				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
 				reason == null ? "Selected candidates declined" : reason.name());
 		List<BindingSet> results = evaluateSequential(row, new AggContext(source, strictCompare), metrics);

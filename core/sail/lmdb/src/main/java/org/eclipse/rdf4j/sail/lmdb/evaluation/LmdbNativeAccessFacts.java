@@ -89,13 +89,31 @@ final class LmdbNativeAccessFacts {
 			return (selected.low() + selected.high()) / 2D;
 		}
 
-		/** Physical features of the LMDB path: seeks, scanned rows and decoded output rows. */
-		LmdbNativeCostVector lmdbCostVector(int sources, int scans) {
-			return LmdbNativeCostVector.builder()
-					.add(LmdbNativeCostVector.Feature.INDEX_SEEK, (double) sources * scans)
-					.add(LmdbNativeCostVector.Feature.SCANNED_ROW, scannedRows)
-					.add(LmdbNativeCostVector.Feature.DECODED_ROW, outputRows)
-					.build();
+		/**
+		 * Physical features of the access the statement-access arbiter will open, with bounds that carry the same
+		 * uncertainty as the work interval: the index seeks are certain; the rows visited range from none (the estimate
+		 * may be empty) to the scanned range, and every skipped key of a residual walk may cost a seek; the matches are
+		 * decoded. When adjacency serves the pattern its rows are decoded directly and its directory walk is scanned.
+		 */
+		LmdbNativeCostVector vector(int sources, int scans) {
+			LmdbNativeCostVector.Builder builder = LmdbNativeCostVector.builder();
+			double seeks = (double) sources * scans;
+			if (selectedSource() == Source.ADJACENCY) {
+				double rows = Math.max(0D, outputRows);
+				double directory = Math.max(0D, adjacency.high() - rows);
+				builder.add(LmdbNativeCostVector.Feature.INDEX_SEEK, seeks)
+						.add(LmdbNativeCostVector.Feature.DECODED_ROW, 0D, rows, rows)
+						.add(LmdbNativeCostVector.Feature.SCANNED_ROW, 0D, directory / 2D, directory);
+				return builder.build();
+			}
+			boolean sweep = prefixMask <= 0;
+			double scannedLow = sweep ? scannedRows : 0D;
+			double scannedExpected = residualFields > 0 || sweep ? scannedRows : outputRows;
+			builder.add(LmdbNativeCostVector.Feature.INDEX_SEEK, seeks, seeks,
+					seeks + (residualFields > 0 ? scannedRows : 0D));
+			builder.add(LmdbNativeCostVector.Feature.SCANNED_ROW, scannedLow, scannedExpected, scannedRows);
+			builder.add(LmdbNativeCostVector.Feature.DECODED_ROW, 0D, outputRows, outputRows);
+			return builder.build();
 		}
 	}
 

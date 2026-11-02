@@ -93,10 +93,22 @@ record LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector st
 	 * by the share of the output the slice consumes. Without a finite slice or a usable row estimate it is the total.
 	 */
 	LmdbNativeCostVector forSlice(double sliceRows) {
-		if (!(sliceRows >= 0D) || Double.isNaN(outputRows) || outputRows <= 0D || sliceRows >= outputRows) {
-			return total();
+		boolean sliced = sliceRows >= 0D && !Double.isNaN(outputRows) && outputRows > 0D && sliceRows < outputRows;
+		LmdbNativeCostVector vector = sliced ? startup.plus(streaming.scale(sliceRows / outputRows)) : total();
+		return withOutputMaterialization(vector, sliced ? sliceRows : outputRows);
+	}
+
+	/**
+	 * Every produced row is materialised for the consumer whatever strategy produced it (measured at about 0.7 µs per
+	 * row end to end). A quote that did not price it gets it here, so that strategies which shrink the output, such as
+	 * aggregates and DISTINCT, are credited for that.
+	 */
+	private static LmdbNativeCostVector withOutputMaterialization(LmdbNativeCostVector vector, double rows) {
+		if (!(rows > 0D) || !Double.isFinite(rows)
+				|| vector.high(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION) > 0D) {
+			return vector;
 		}
-		return startup.plus(streaming.scale(sliceRows / outputRows));
+		return vector.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, rows));
 	}
 
 	/** Whether the quote has a finite ceiling. */

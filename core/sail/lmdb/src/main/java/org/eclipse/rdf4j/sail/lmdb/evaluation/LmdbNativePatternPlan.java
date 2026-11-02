@@ -596,8 +596,31 @@ final class PatternPlan implements SlotPlan {
 		}
 		boolean subjectKnown = termKnown(s, boundMask);
 		boolean objectKnown = termKnown(o, boundMask);
+		if (subjectKnown && objectKnown) {
+			return edgeProbability(source, p.constant);
+		}
 		return subjectKnown == objectKnown ? OptionalDouble.empty()
 				: validFanOut(source.meanFanOut(p.constant, subjectKnown));
+	}
+
+	/**
+	 * Expected rows of a probe with subject, predicate and object all known: the probability that this particular edge
+	 * exists, {@code triples(p) / (distinctSubjects(p) × distinctObjects(p))}, computed as the subject fan-out over the
+	 * distinct object keys. Measured on the triangle query: the old estimate of one row per probe (or 256 with an
+	 * unbound context) inflated the chain by two orders of magnitude.
+	 */
+	private static OptionalDouble edgeProbability(NativeLmdbQuerySource source, long predicate) {
+		OptionalDouble fanOut = source.meanFanOut(predicate, true);
+		if (fanOut.isEmpty() || !Double.isFinite(fanOut.getAsDouble())) {
+			return OptionalDouble.empty();
+		}
+		java.util.OptionalLong exactObjects = source.adjacencyKeyDomainCardinality(predicate, false);
+		double objects = exactObjects.isPresent() ? exactObjects.getAsLong()
+				: source.distinctFanOutKeys(predicate, false).orElse(Double.NaN);
+		if (!Double.isFinite(objects) || objects <= 0D) {
+			return OptionalDouble.of(Math.min(1D, fanOut.getAsDouble()));
+		}
+		return OptionalDouble.of(Math.min(1D, fanOut.getAsDouble() / objects));
 	}
 
 	private long structuralEstimate(long boundMask) {
@@ -623,7 +646,9 @@ final class PatternPlan implements SlotPlan {
 		}
 		return switch (field) {
 		case PREDICATE -> 64L;
-		case CONTEXT -> 256L;
+		// a pattern matches statements, and the statement count already spans every context: the context position
+		// never multiplies rows (a fixed context list is applied separately)
+		case CONTEXT -> 1L;
 		case SUBJECT, OBJECT -> 4_096L;
 		};
 	}
@@ -662,6 +687,9 @@ final class PatternPlan implements SlotPlan {
 		long object = o.lookup(row.slots);
 		boolean subjectKnown = subject != UNKNOWN;
 		boolean objectKnown = object != UNKNOWN;
+		if (subjectKnown && objectKnown) {
+			return edgeProbability(row.source, predicate);
+		}
 		if (subjectKnown == objectKnown) {
 			return OptionalDouble.empty();
 		}
@@ -706,7 +734,9 @@ final class PatternPlan implements SlotPlan {
 		}
 		return switch (field) {
 		case PREDICATE -> 64L;
-		case CONTEXT -> 256L;
+		// a pattern matches statements, and the statement count already spans every context: the context position
+		// never multiplies rows (a fixed context list is applied separately)
+		case CONTEXT -> 1L;
 		case SUBJECT, OBJECT -> 4_096L;
 		};
 	}

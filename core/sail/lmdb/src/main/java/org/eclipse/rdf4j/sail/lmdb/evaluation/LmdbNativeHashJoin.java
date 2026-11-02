@@ -231,9 +231,25 @@ final class LmdbNativeHashJoin {
 
 	static LmdbNativeStrategyProposal<BatchCursor> propose(MultiJoinPlan plan, RowState row, int capacity) {
 		Candidate candidate = tryPlan(plan, row);
-		return candidate == null ? null
-				: new LmdbNativeStrategyProposal<>(() -> candidate.open(plan, row, capacity), candidate.estCost,
-						LmdbNativeAttemptMetrics.PATH_BATCH);
+		if (candidate == null) {
+			return null;
+		}
+		// Both sides are scanned once (shared access features); the build side is hashed, every probe row probes,
+		// and each joined row is a batch row.
+		long boundMask = row.boundMask();
+		double probeRows = LmdbNativeCostVectors.rows(candidate.probe, row, boundMask);
+		double outputRows = LmdbNativeWork.rowsOut(plan, row, boundMask);
+		LmdbNativeCostVector startup = LmdbNativeCostVectors
+				.plan(candidate.build, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_BUILD_ROW,
+						candidate.buildRowsEstimate));
+		LmdbNativeCostVector streaming = LmdbNativeCostVectors
+				.plan(candidate.probe, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_PROBE, probeRows))
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.BATCH_ROW, outputRows));
+		return new LmdbNativeStrategyProposal<>(() -> candidate.open(plan, row, capacity), candidate.estCost,
+				LmdbNativeAttemptMetrics.PATH_BATCH)
+						.withCostQuote(new LmdbNativeCostQuote(startup, streaming, outputRows, false, false));
 	}
 
 	private static Candidate tryPlan(MultiJoinPlan plan, RowState row) {

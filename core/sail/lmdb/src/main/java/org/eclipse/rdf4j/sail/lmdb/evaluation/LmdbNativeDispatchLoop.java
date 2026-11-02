@@ -154,7 +154,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 					winner = entries.size();
 				}
 				entries.add(new LmdbNativeDecisionRecord.Entry(candidates.get(i).id(), true, null,
-						ranking.nanos()[i], ranking.expectedNanos()[i], ranking.eliminatedBy()[i]));
+						ranking.nanos()[i], ranking.expectedNanos()[i], ranking.eliminatedBy()[i],
+						candidates.get(i).quote().forSlice(sliceRows)));
 			}
 			for (String id : asked) {
 				if (declines.containsKey(id)) {
@@ -172,6 +173,14 @@ final class LmdbNativeDispatchLoop<C, T> {
 
 	/** Explains the decision without opening anything; only legal inside an Optimized explanation scope. */
 	LmdbNativeDecisionRecord preview(C context) throws IOException {
+		return preview(context, null, null);
+	}
+
+	/**
+	 * As {@link #preview(Object)}, but when the site would take {@code directTag} without ranking (a shortcut it owns),
+	 * the record names that candidate as the direct choice with {@code directReason}.
+	 */
+	LmdbNativeDecisionRecord preview(C context, String directTag, String directReason) throws IOException {
 		if (!LmdbNativeStrategyPreview.active()) {
 			throw new IllegalStateException("strategy preview requires an Optimized explanation scope");
 		}
@@ -180,11 +189,50 @@ final class LmdbNativeDispatchLoop<C, T> {
 			admitted.admit(context);
 			admitted.applyForcing();
 			LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(admitted.candidates, prior, sliceRows);
-			LmdbNativeDecisionRecord record = admitted.record(ranking, forcedTag == null ? "normal" : "forced");
+			String mode = forcedTag == null ? "normal" : "forced";
+			if (directTag != null) {
+				for (int i = 0; i < admitted.candidates.size(); i++) {
+					if (directTag.equals(admitted.candidates.get(i).id())) {
+						ranking = new LmdbNativeSelector.Ranking(i, ranking.nanos(), ranking.expectedNanos(),
+								new String[admitted.candidates.size()], directReason);
+						mode = "direct";
+						break;
+					}
+				}
+			}
+			LmdbNativeDecisionRecord record = admitted.record(ranking, mode);
 			LmdbNativeStrategyPreview.record(explainTarget, record.toStrategyDecision(label));
+			observe(record, label);
 			return record;
 		} finally {
 			admitted.releaseAll();
+		}
+	}
+
+	/**
+	 * Ranks without opening and returns the winning candidate, or null. The caller owns the returned candidate's
+	 * release; every other candidate is released here. Used by sites that quote a witness rather than execute.
+	 */
+	LmdbNativeCandidate<T> quotedChoice(C context) throws IOException {
+		Admitted admitted = new Admitted();
+		admitted.admit(context);
+		if (!admitted.applyForcing()) {
+			admitted.releaseAll();
+			return null;
+		}
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(admitted.candidates, prior, sliceRows);
+		LmdbNativeCandidate<T> chosen = ranking.winner() < 0 ? null : admitted.candidates.get(ranking.winner());
+		if (chosen != null) {
+			admitted.candidates.remove(ranking.winner());
+		}
+		admitted.releaseAll();
+		return chosen;
+	}
+
+	/** Logs a choice a site made without ranking, under the same format as a ranked selection. */
+	static void logDirect(TupleExpr target, String point, String tag, String reason) {
+		if (!LmdbNativeStrategyPreview.active()) {
+			logSelected(target, DECISIONS.incrementAndGet(), point, tag, "direct", reason);
 		}
 	}
 
@@ -217,6 +265,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 				}
 				LmdbNativeCandidate<T> chosen = admitted.candidates.get(ranking.winner());
 				LmdbNativeDecisionRecord record = admitted.record(ranking, retry ? "retry " + mode : mode);
+				observe(record, label);
 				logSelected(explainTarget, decisionId, label, chosen.id(), retry ? "retry " + mode : mode,
 						ranking.reason());
 				retry = true;
@@ -243,6 +292,20 @@ final class LmdbNativeDispatchLoop<C, T> {
 			throw forcedUnavailable(admitted.declines.get(forcedTag), forcedReturnedNull);
 		}
 		return null;
+	}
+
+	/** A test-only observer of every decision record, with the label the site used; null when nothing listens. */
+	private static volatile java.util.function.BiConsumer<LmdbNativeDecisionRecord, String> observer;
+
+	static void observeDecisions(java.util.function.BiConsumer<LmdbNativeDecisionRecord, String> listener) {
+		observer = listener;
+	}
+
+	private static void observe(LmdbNativeDecisionRecord record, String label) {
+		java.util.function.BiConsumer<LmdbNativeDecisionRecord, String> listener = observer;
+		if (listener != null) {
+			listener.accept(record, label);
+		}
 	}
 
 	private QueryEvaluationException forcedUnavailable(String declineReason, boolean returnedNull) {

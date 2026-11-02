@@ -22,8 +22,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 /** One legal inventory for summary producers and their independently compiled full-value alternatives. */
 final class NativePhysicalGroupArbitration {
 
-	record Selection(LmdbNativeStrategySelection<NativeResultCursor> selected, String tag, double predictedWork,
-			long startedNanos) {
+	record Selection(NativeResultCursor selected, String tag, double predictedWork, long startedNanos) {
 	}
 
 	private NativePhysicalGroupArbitration() {
@@ -43,54 +42,48 @@ final class NativePhysicalGroupArbitration {
 			NativeGroupIteration iteration, RowState row, boolean preview) throws IOException {
 		StringBuilder telemetry = new StringBuilder("[");
 		NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row, telemetry);
-		LmdbNativeStrategySelection<NativeResultCursor> selected = null;
-		try (LmdbNativeStrategyArbiter<NativeResultCursor> arbiter = LmdbNativeStrategyArbiter
-				.<NativeResultCursor>forExpr(iteration.explainTarget, iteration.source)
-				.forcing(iteration.forcedExecutionStrategy, iteration.decisionPoint())) {
-			// A streaming producer must never be drained by a blocking probe merely to choose its representation.
-			offerTyped(arbiter, quotes, NativeGroupResultCursor.tablePlan(iteration), iteration, row, owner);
-			NativeGroupResultCursor.GroupingPlan ordered = NativeGroupResultCursor.orderedPlan(iteration, row);
-			if (ordered != null) {
-				offerTyped(arbiter, quotes, ordered, iteration, row, owner);
-			}
-			NativeGroupStep full = step.fullValueAlternative();
-			FullAttempt fullAttempt = null;
-			if (full != null) {
-				fullAttempt = new FullAttempt(full, iteration);
-				owner.ownAlternative(fullAttempt);
-				fullAttempt.offer(arbiter, telemetry);
-			}
-			if (preview) {
-				arbiter.preview(iteration.decisionPoint());
-				if (fullAttempt != null) {
-					LmdbNativeStrategyPreview.inspect(fullAttempt.iteration.arg);
-				}
-				return null;
-			}
-			long started = System.nanoTime();
-			selected = arbiter.selectWithObservation();
-			iteration.cancellation.check();
-			if (selected == null) {
-				throw new QueryEvaluationException("No legal native physical aggregate candidate could open");
-			}
-			return new Selection(selected, arbiter.winningTag(), arbiter.winningPredictedWork(), started);
-		} catch (IOException | RuntimeException | Error failure) {
-			if (selected != null) {
-				selected.failed(failure);
-				KernelRuntime.closeResource(selected.value(), failure);
-				KernelRuntime.closeResource(selected, failure);
-			}
-			throw failure;
+		LmdbNativeOfferBridge<NativeResultCursor> offers = new LmdbNativeOfferBridge<>(
+				LmdbNativeDecisionPoint.GROUP_PHYSICAL);
+		// A streaming producer must never be drained merely to choose its representation.
+		offerTyped(offers, quotes, NativeGroupResultCursor.tablePlan(iteration), iteration, row, owner);
+		NativeGroupResultCursor.GroupingPlan ordered = NativeGroupResultCursor.orderedPlan(iteration, row);
+		if (ordered != null) {
+			offerTyped(offers, quotes, ordered, iteration, row, owner);
 		}
+		NativeGroupStep full = step.fullValueAlternative();
+		FullAttempt fullAttempt = null;
+		if (full != null) {
+			fullAttempt = new FullAttempt(full, iteration);
+			owner.ownAlternative(fullAttempt);
+			fullAttempt.offer(offers, telemetry);
+		}
+		LmdbNativeDispatchLoop<Void, NativeResultCursor> loop = new LmdbNativeDispatchLoop<>(
+				LmdbNativeDecisionPoint.GROUP_PHYSICAL, offers.strategies(), iteration.explainTarget)
+						.label(iteration.decisionPoint())
+						.forcing(iteration.forcedExecutionStrategy);
+		if (preview) {
+			loop.preview(null);
+			if (fullAttempt != null) {
+				LmdbNativeStrategyPreview.inspect(fullAttempt.iteration.arg);
+			}
+			return null;
+		}
+		long started = System.nanoTime();
+		LmdbNativeDispatchLoop.Selection<NativeResultCursor> selected = loop.dispatch(null);
+		iteration.cancellation.check();
+		if (selected == null) {
+			throw new QueryEvaluationException("No legal native physical aggregate candidate could open");
+		}
+		return new Selection(selected.value(), selected.id(), selected.expectedNanos(), started);
 	}
 
-	private static void offerTyped(LmdbNativeStrategyArbiter<NativeResultCursor> arbiter,
+	private static void offerTyped(LmdbNativeOfferBridge<NativeResultCursor> arbiter,
 			NativeAggregateCostQuotes quotes, NativeGroupResultCursor.GroupingPlan plan, NativeGroupIteration iteration,
 			RowState row, NativeGroupResultCursor owner) throws IOException {
 		SlotPlan quotedInput = NativeAggregatePhysicalPlan.bindLexicalInputs(plan.input(), row);
 		NativeGroupResultCursor.GroupingPlan actual = quotedInput == null ? plan
 				: new NativeGroupResultCursor.GroupingPlan(quotedInput, plan.channels(), plan.streaming(), plan.tag());
-		arbiter.offer(() -> quotes.attach(new LmdbNativeStrategyProposal<NativeResultCursor>(
+		arbiter.offer(actual.tag(), () -> quotes.attach(new LmdbNativeStrategyProposal<NativeResultCursor>(
 				() -> actual.open(iteration, owner.executionContext()),
 				actual.input().estimateWork(row, row.boundMask()), LmdbNativeWork.ZERO,
 				iteration.groupSlots.length == 0 && iteration.havingCondition == null ? 1D : Double.NaN,
@@ -151,7 +144,7 @@ final class NativePhysicalGroupArbitration {
 			}
 		}
 
-		void offer(LmdbNativeStrategyArbiter<NativeResultCursor> arbiter, StringBuilder telemetry) throws IOException {
+		void offer(LmdbNativeOfferBridge<NativeResultCursor> arbiter, StringBuilder telemetry) throws IOException {
 			if (!seeded) {
 				return;
 			}

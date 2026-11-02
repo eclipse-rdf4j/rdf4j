@@ -39,12 +39,13 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 	 * @param nanos         the priced interval of the candidate, or null when declined
 	 * @param expectedNanos the expected price, or NaN
 	 * @param eliminatedBy  what removed the candidate from the frontier, or null when it stayed eligible
+	 * @param features      the priced feature vector (after slice proration), or null when declined
 	 */
 	record Entry(String id, boolean admitted, String declineReason, LmdbNativeWork nanos, double expectedNanos,
-			String eliminatedBy) {
+			String eliminatedBy, LmdbNativeCostVector features) {
 
 		static Entry declined(String id, String reason) {
-			return new Entry(id, false, reason, null, Double.NaN, null);
+			return new Entry(id, false, reason, null, Double.NaN, null, null);
 		}
 	}
 
