@@ -12,11 +12,18 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 
+import java.lang.reflect.Field;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -40,6 +47,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
@@ -49,7 +58,8 @@ import ch.qos.logback.core.read.ListAppender;
 
 /**
  * Keeps the original single-transaction quoted-data workload as an enabled autogrow regression. The paired tests differ
- * only by whether a read-committed triple-term cursor is held while the identical writer transaction commits.
+ * only by whether a direct read-committed dataset's triple-term cursor is held while the identical writer transaction
+ * commits. That observed membership view must report a resize conflict; a fresh dataset retries the complete read.
  */
 @ResourceLock("lmdb-resize-loggers")
 class LmdbAutogrowSingleCommitIT {
@@ -216,6 +226,15 @@ class LmdbAutogrowSingleCommitIT {
 	}
 
 	private void exerciseSingleQuotedCommit(boolean holdReader) throws Exception {
+		Model expectedRows = expectedSingleQuotedCommitRows();
+		Set<TripleTerm> expectedTerms = new HashSet<>();
+		expectedRows.forEach(statement -> {
+			if (statement.getObject() instanceof TripleTerm term) {
+				expectedTerms.add(term);
+			}
+		});
+		assertThat(expectedRows).hasSize(2 * ROWS);
+		assertThat(expectedTerms).hasSize(ROWS);
 		LmdbStore store = new LmdbStore(dataDir.toFile(), autoGrowConfig());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -227,6 +246,8 @@ class LmdbAutogrowSingleCommitIT {
 				List<String> beforeGrowth = resizeLogs.resizeMessages();
 				resizeLogs.clear();
 				if (holdReader) {
+					TripleTerm escaped;
+					long escapedId;
 					try (SailDataset dataset = store.getBackingStore()
 							.getExplicitSailSource()
 							.dataset(IsolationLevels.READ_COMMITTED);
@@ -234,16 +255,27 @@ class LmdbAutogrowSingleCommitIT {
 									null);
 							SailRepositoryConnection writer = repository.getConnection()) {
 						assertThat(triples.hasNext()).as("preloaded quoted triples must be visible").isTrue();
-						triples.next();
+						escaped = triples.next();
+						// Do not resolve the lazy components before growth: the escaped value must survive retirement.
+						escapedId = ((LmdbValue) escaped).getInternalID();
+						MapState before = MapState.capture(store.getBackingStore());
 						commitSingleGrowth(writer, repository, initialRows, beforeGrowth, resizeLogs);
-						int remaining = 0;
-						while (triples.hasNext()) {
-							triples.next();
-							remaining++;
-						}
-						assertThat(remaining).as("the held read-committed cursor must retain the preloaded quoted rows")
-								.isEqualTo(initialRows - 1);
+						MapState after = MapState.capture(store.getBackingStore());
+						Set<LmdbSailStore.MapResizeKind> changedKinds = before.resizedKinds(after, resizeLogs.growth);
+						assertThat(changedKinds)
+								.as("the successful single commit must actually grow a map while the cursor is held")
+								.isNotEmpty();
+						LmdbSailStore.MapResizeConflictException conflict = assertThrows(
+								LmdbSailStore.MapResizeConflictException.class, triples::hasNext);
+						assertThat(changedKinds).as("the typed conflict must identify an actually resized environment")
+								.contains(conflict.kind());
 					}
+					// Close the entire old dataset before retrying. Never concatenate an old prefix with a new suffix.
+					assertThat(((LmdbValue) escaped).getInternalID()).isEqualTo(escapedId);
+					assertThat(escapedId).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+					assertThat(expectedTerms)
+							.as("the consumed lazy term retains its complete independent expected value")
+							.contains(escaped);
 				} else {
 					try (SailRepositoryConnection writer = repository.getConnection()) {
 						commitSingleGrowth(writer, repository, initialRows, beforeGrowth, resizeLogs);
@@ -255,9 +287,98 @@ class LmdbAutogrowSingleCommitIT {
 						.isPositive();
 				assertThat(countRows(repository)).as("a successful single commit must preserve every input row")
 						.isEqualTo(initialRows + ROWS);
+				assertThat(readRows(repository)).as("the one commit preserves exact quoted and ordinary statements")
+						.isEqualTo(expectedRows);
+				assertDatasetTripleTerms(store, expectedTerms,
+						"a fresh dataset retries all quoted rows from the beginning");
 			}
 		} finally {
 			repository.shutDown();
+		}
+
+		LmdbStore reopenedStore = new LmdbStore(dataDir.toFile(), autoGrowConfig());
+		SailRepository reopened = new SailRepository(reopenedStore);
+		reopened.init();
+		try {
+			assertThat(countRows(reopened)).as("cold reopen preserves every committed row").isEqualTo(2 * ROWS);
+			assertThat(readRows(reopened)).as("cold reopen preserves exact statement values")
+					.isEqualTo(expectedRows);
+			assertDatasetTripleTerms(reopenedStore, expectedTerms, "cold reopen preserves exact term membership");
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	private static Model expectedSingleQuotedCommitRows() {
+		Model expected = new LinkedHashModel();
+		for (int i = 0; i < ROWS; i++) {
+			TripleTerm quoted = VF.createTripleTerm(VF.createIRI("urn:lmdb-autogrow:quoted-subject:" + i), PREDICATE,
+					VF.createLiteral("quoted-object-" + i + "-" + "q".repeat(VALUE_LENGTH)));
+			expected.add(VF.createIRI("urn:lmdb-autogrow:quoted-owner:" + i), PREDICATE, quoted);
+			expected.add(VF.createIRI("urn:lmdb-autogrow:quoted-growth-subject:" + i), PREDICATE,
+					VF.createLiteral("quoted-growth-value:" + i + "-" + "x".repeat(VALUE_LENGTH)));
+		}
+		return expected;
+	}
+
+	private static void assertDatasetTripleTerms(LmdbStore store, Set<TripleTerm> expected, String description) {
+		List<TripleTerm> actual = readDatasetTripleTerms(store);
+		// Cardinality plus set equality proves the exact bag without quadratic pairwise matching.
+		assertThat(actual).as(description).hasSize(ROWS);
+		assertThat(new HashSet<>(actual)).as(description).isEqualTo(expected);
+	}
+
+	private static List<TripleTerm> readDatasetTripleTerms(LmdbStore store) {
+		List<TripleTerm> terms = new ArrayList<>();
+		try (SailDataset dataset = store.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.READ_COMMITTED);
+				CloseableIteration<? extends TripleTerm> rows = dataset.getTriples(null, PREDICATE, null)) {
+			while (rows.hasNext()) {
+				terms.add(rows.next());
+			}
+		}
+		return terms;
+	}
+
+	/** Observes real map bounds and remap generations without modifying native or Java state. */
+	private record MapState(long tripleBytes, long valueBytes, long tripleGeneration, long valueGeneration) {
+		static MapState capture(LmdbSailStore store) throws ReflectiveOperationException {
+			TripleStore triples = store.getTripleStore();
+			ValueStore values = (ValueStore) store.getValueFactory();
+			Field generation = TripleStore.class.getDeclaredField("mappingGeneration");
+			generation.setAccessible(true);
+			Field environment = ValueStore.class.getDeclaredField("env");
+			environment.setAccessible(true);
+			return new MapState(mapSize(triples.env), mapSize(environment.getLong(values)),
+					((AtomicLong) generation.get(triples)).get(), values.nativeMapGeneration());
+		}
+
+		Set<LmdbSailStore.MapResizeKind> resizedKinds(MapState after, LmdbMapGrowthCapture growth) {
+			Set<LmdbSailStore.MapResizeKind> changed = EnumSet.noneOf(LmdbSailStore.MapResizeKind.class);
+			if (growth.tripleResizes() > 0) {
+				assertThat(after.tripleBytes).as("reported TripleStore growth changes the real map size")
+						.isGreaterThan(tripleBytes);
+				assertThat(after.tripleGeneration).as("TripleStore growth advances the mapping generation")
+						.isGreaterThan(tripleGeneration);
+				changed.add(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+			}
+			if (growth.valueResizes() > 0) {
+				assertThat(after.valueBytes).as("reported ValueStore growth changes the real map size")
+						.isGreaterThan(valueBytes);
+				assertThat(after.valueGeneration).as("ValueStore growth advances the mapping generation")
+						.isGreaterThan(valueGeneration);
+				changed.add(LmdbSailStore.MapResizeKind.VALUE_STORE);
+			}
+			return changed;
+		}
+
+		private static long mapSize(long environment) {
+			try (MemoryStack stack = MemoryStack.stackPush()) {
+				MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+				assertThat(mdb_env_info(environment, info)).isEqualTo(MDB_SUCCESS);
+				return info.me_mapsize();
+			}
 		}
 	}
 

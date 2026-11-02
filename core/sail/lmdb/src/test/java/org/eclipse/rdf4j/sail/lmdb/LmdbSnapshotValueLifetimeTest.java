@@ -2250,9 +2250,11 @@ class LmdbSnapshotValueLifetimeTest {
 		}
 	}
 
-	@Test
+	@ParameterizedTest
+	@EnumSource(value = IsolationLevels.class, names = { "SNAPSHOT_READ", "READ_COMMITTED" })
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
-	void activeTermIteratorReportsDictionaryResizeConflict(@TempDir File dataDir) throws Exception {
+	void activeTermIteratorReportsDictionaryResizeConflict(IsolationLevels level, @TempDir File dataDir)
+			throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(64L * 1024 * 1024)
@@ -2276,7 +2278,7 @@ class LmdbSnapshotValueLifetimeTest {
 			long initialValueMapSize = mapSize(valueStoreOf(store));
 			try (SailDataset reader = store.getBackingStore()
 					.getExplicitSailSource()
-					.dataset(IsolationLevels.SNAPSHOT_READ);
+					.dataset(level);
 					CloseableIteration<? extends TripleTerm> terms = reader.getTriples(null, PREDICATE, null)) {
 				assertTrue(terms.hasNext());
 				TripleTerm escaped = terms.next();
