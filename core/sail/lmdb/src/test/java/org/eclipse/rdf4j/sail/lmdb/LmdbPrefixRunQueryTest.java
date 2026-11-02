@@ -15,8 +15,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -25,8 +27,12 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
@@ -34,10 +40,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Query-level tests for prefix-run planning over single statement patterns.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbPrefixRunQueryTest {
 
 	private static final String EX = "http://example.com/";
@@ -375,15 +384,11 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	@Test
-	public void distinctObjectPredicateFallsBackWithoutObjectPredicateIndex() {
+	public void canonicalObjectPredicateOrderSupportsPrefixRunsWithoutExplicitPreference() {
 		openRepository("spoc,posc,ospc");
-
-		long before = LmdbPrefixRunPlan.OPENED.get();
-		assertThat(pairs("SELECT DISTINCT ?o ?p WHERE { ?s ?p ?o }", "o", "p"))
-				.containsExactly(EX + "alice/" + EX + "knows", EX + "bob/" + EX + "knows",
-						EX + "carol/" + EX + "likes", EX + "dave/" + EX + "tag");
-
-		assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(before);
+		assertPrefixRoute("SELECT DISTINCT ?o ?p WHERE { ?s ?p ?o }", List.of("o", "p"),
+				List.of(EX + "alice/" + EX + "knows", EX + "bob/" + EX + "knows",
+						EX + "carol/" + EX + "likes", EX + "dave/" + EX + "tag"));
 	}
 
 	@Test
@@ -421,15 +426,10 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	@Test
-	public void distinctSubjectObjectWithBoundPredicateFallsBackWhenPredicateIsInterleaved() {
+	public void boundPredicateMakesCanonicalSubjectObjectPrefixContiguous() {
 		openRepository("spoc,posc,ospc");
-
-		long before = LmdbPrefixRunPlan.OPENED.get();
-		assertThat(subjectObjectPairs("SELECT DISTINCT ?s ?o WHERE { ?s <" + EX + "knows> ?o }"))
-				.containsExactly(EX + "s1/" + EX + "alice", EX + "s2/" + EX + "alice",
-						EX + "s3/" + EX + "bob");
-
-		assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(before);
+		assertPrefixRoute("SELECT DISTINCT ?s ?o WHERE { ?s <" + EX + "knows> ?o }", List.of("s", "o"),
+				List.of(EX + "s1/" + EX + "alice", EX + "s2/" + EX + "alice", EX + "s3/" + EX + "bob"));
 	}
 
 	@Test
@@ -460,14 +460,66 @@ public class LmdbPrefixRunQueryTest {
 	}
 
 	@Test
-	public void missingPrefixIndexFallsBackToExistingEvaluation() {
+	public void canonicalPredicateOrderSupportsPrefixRunsWithSubjectOnlyPreference() {
 		openRepository("spoc");
+		assertPrefixRoute("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", List.of("p"),
+				List.of(EX + "knows", EX + "likes", EX + "tag"));
+	}
 
+	@Test
+	public void unboundInterveningPredicateReallyPreventsSubjectObjectPrefixRuns() throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc").setNativeEvaluationEnabled(true));
+		repository = new SailRepository(store);
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			conn.begin();
+			for (int subject = 0; subject < 2; subject++) {
+				for (int predicate = 0; predicate < 2; predicate++) {
+					for (int object = 0; object < 2; object++) {
+						conn.add(vf.createIRI(EX, "s" + subject), vf.createIRI(EX, "p" + predicate),
+								vf.createIRI(EX, "o" + object));
+					}
+				}
+			}
+			conn.commit();
+		}
+		TripleStore triples = store.getBackingStore().getTripleStore();
+		try (Txn txn = triples.getTxnManager().createReadTxn()) {
+			assertThat(triples.prefixRunPlan(txn, new int[] { TripleIndex.SUBJ_IDX, TripleIndex.OBJ_IDX },
+					-1, -1, -1, -1)).isNull();
+			assertThat(triples.prefixRunPlan(txn, new int[] { TripleIndex.OBJ_IDX, TripleIndex.SUBJ_IDX },
+					-1, -1, -1, -1)).isNull();
+			for (String order : List.of("spoc", "psoc", "posc", "opsc")) {
+				Set<List<Long>> seen = new HashSet<>();
+				List<Long> previous = null;
+				boolean separatedDuplicate = false;
+				int rows = 0;
+				try (RecordIterator records = triples.getTriplesInAdjacencyOrder(txn, order, -1, -1, -1, -1, true)) {
+					for (long[] row; (row = records.next()) != null;) {
+						List<Long> pair = List.of(row[0], row[2]);
+						separatedDuplicate |= seen.contains(pair) && !pair.equals(previous);
+						seen.add(pair);
+						previous = pair;
+						rows++;
+					}
+				}
+				assertThat(rows).isEqualTo(8);
+				assertThat(seen).hasSize(4);
+				assertThat(separatedDuplicate).as("actual %s stream revisits a separated S/O pair", order).isTrue();
+			}
+		}
+		String query = "SELECT DISTINCT ?s ?o WHERE { ?s ?p ?o }";
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			assertThat(KernelExecutionTestAccess.eligibleStrategies(conn.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode())).doesNotContain("prefixRun");
+		}
 		long before = LmdbPrefixRunPlan.OPENED.get();
-		assertThat(values("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", "p")).containsExactly(EX + "knows",
-				EX + "likes", EX + "tag");
-
+		List<String> actual = routeRows(query, List.of("s", "o"), null);
+		assertThat(actual).containsExactly(EX + "s0/" + EX + "o0", EX + "s0/" + EX + "o1",
+				EX + "s1/" + EX + "o0", EX + "s1/" + EX + "o1");
 		assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(before);
+		assertThat(actual).isEqualTo(genericRouteRows(query, List.of("s", "o")));
 	}
 
 	@Test
@@ -480,6 +532,81 @@ public class LmdbPrefixRunQueryTest {
 				EX + "likes", EX + "tag");
 
 		assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(before);
+	}
+
+	private void assertPrefixRoute(String query, List<String> names, List<String> expected) {
+		assertThat(routeRows(query, names, null)).containsExactlyElementsOf(expected);
+		assertThat(routeRows(query, names, "prefixRun")).containsExactlyElementsOf(expected);
+		assertThat(genericRouteRows(query, names)).containsExactlyElementsOf(expected);
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			assertThat(KernelExecutionTestAccess.eligibleStrategies(conn.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode())).contains("prefixRun");
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy("prefixRun");
+			prepared.setLmdbResultCacheRequested(false);
+			long before = LmdbPrefixRunPlan.OPENED.get();
+			GenericPlanNode executed = prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode();
+			assertThat(findRoute(executed)).as("actual route: %s", executed).isEqualTo("prefixRun");
+			assertThat(invocations(executed)).isEqualTo(1L);
+			assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+		}
+	}
+
+	private List<String> routeRows(String query, List<String> names, String strategy) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(strategy);
+			prepared.setLmdbResultCacheRequested(false);
+			return QueryResults.asList(prepared.evaluate())
+					.stream()
+					.map(row -> names.stream()
+							.map(name -> row.getValue(name).stringValue())
+							.collect(Collectors.joining("/")))
+					.sorted()
+					.toList();
+		}
+	}
+
+	private List<String> genericRouteRows(String query, List<String> names) {
+		String property = "rdf4j.lmdb.nativeQueryEngine.enabled";
+		String old = System.setProperty(property, "false");
+		try {
+			return routeRows(query, names, null);
+		} finally {
+			if (old == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, old);
+			}
+		}
+	}
+
+	private static String findRoute(GenericPlanNode node) {
+		String own = node.getStringMetricActual("nativeExecutionPath");
+		if (own != null) {
+			return own;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String found = findRoute(child);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static long invocations(GenericPlanNode node) {
+		long count = node.getLongMetricsActual() == null ? 0L
+				: node.getLongMetricsActual().getOrDefault("nativeInvocationsActual", 0L);
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				count += invocations(child);
+			}
+		}
+		return count;
 	}
 
 	private void openRepository(String indexes) {

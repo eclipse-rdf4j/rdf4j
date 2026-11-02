@@ -379,14 +379,27 @@ class LmdbQueryReadyBulkLoadTest {
 			throws IOException {
 		LmdbSailStore backingStore = store.getBackingStore();
 		Map<String, Long> indexCounts = backingStore.explicitIndexEntryCounts();
-		for (String index : List.of("spoc", "ospc", "psoc", "posc")) {
-			assertEquals(expectedStatementCount, indexCounts.get(index), index + " must be complete at commit");
-		}
+		assertEquals(Map.of("psoc", expectedStatementCount, "posc", expectedStatementCount), indexCounts,
+				"both persistent adjacency directions must be complete at commit");
+		backingStore.getTripleStore().getTxnManager().doWith((stack, txn) -> {
+			LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn);
+			for (boolean incoming : new boolean[] { false, true }) {
+				long rows = 0L;
+				try (RecordIterator iterator = adjacency.scan(txn, -1, -1, -1, -1, true, incoming)) {
+					while (iterator.next() != null) {
+						rows++;
+					}
+				}
+				assertEquals(expectedStatementCount, rows,
+						(incoming ? "incoming" : "outgoing") + " persisted rows must match the committed count");
+			}
+			return null;
+		});
 		awaitStartupWriters(store);
 		long tripleTransactionId = backingStore.tripleStoreTransactionId();
 		long valueTransactionId = backingStore.valueStoreTransactionId();
 		try (TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
-			assertTrue(result.hasNext(), "the first SPARQL query must produce a row from the committed indexes");
+			assertTrue(result.hasNext(), "the first SPARQL query must produce a row from committed adjacency data");
 			result.next();
 		}
 		assertEquals(tripleTransactionId, backingStore.tripleStoreTransactionId(),

@@ -18,22 +18,30 @@ import java.util.Map;
 import java.util.Set;
 
 import org.lwjgl.util.lmdb.LMDB;
+import org.lwjgl.util.lmdb.MDBVal;
 import org.mockito.MockedStatic;
 
 /** Real-call native accounting on the thread that constructs and initializes the repository. */
 final class LmdbStartupReadCounter implements AutoCloseable {
 
+	static final String RANGE_PLANNING_PREFIX = "adjacency_range_planning_";
+	private static final StackWalker STACK_WALKER = StackWalker.getInstance();
 	private static final Set<String> READ_OPERATIONS = Set.of("mdb_get", "mdb_cursor_get", "mdb_dbi_open",
 			"mdb_dbi_flags", "mdb_stat", "mdb_env_stat", "mdb_env_info", "mdb_txn_id", "mdb_env_get_maxreaders",
 			"mdb_env_get_flags", "mdb_env_get_maxkeysize", "mdb_env_get_fd", "mdb_env_get_path", "mdb_reader_check",
 			"mdb_env_open", "mdb_txn_begin", "mdb_cursor_open", "mdb_cursor_count");
 	private final Map<String, Long> operations = new LinkedHashMap<>();
+	private final Map<String, Long> rangePlanningOperations = new LinkedHashMap<>();
 	private final MockedStatic<LMDB> nativeCalls;
 	private final MockedStatic<LmdbUtil> transactionHeaders;
 	private int depth;
 	private long drops;
 
 	LmdbStartupReadCounter() {
+		this(0L, -1);
+	}
+
+	LmdbStartupReadCounter(long adjacencyEnvironment, int adjacencyMetadataDbi) {
 		nativeCalls = mockStatic(LMDB.class, invocation -> {
 			boolean outermost = depth++ == 0;
 			try {
@@ -43,6 +51,23 @@ final class LmdbStartupReadCounter implements AutoCloseable {
 						operations.merge(name, 1L, Long::sum);
 					} else if (name.equals("mdb_drop")) {
 						drops++;
+					}
+					if (adjacencyEnvironment != 0L && (name.equals("mdb_get") || name.equals("mdb_cursor_get")
+							|| name.equals("mdb_cursor_open")) && inRangePlanner()) {
+						// Keep total native accounting intact while identifying a bounded alternative-plan proposal.
+						rangePlanningOperations.merge(RANGE_PLANNING_PREFIX + name, 1L, Long::sum);
+					}
+					if (adjacencyEnvironment != 0L && name.equals("mdb_get")) {
+						long transaction = invocation.getArgument(0);
+						int database = invocation.getArgument(1);
+						MDBVal key = invocation.getArgument(2);
+						if (database == adjacencyMetadataDbi && LMDB.mdb_txn_env(transaction) == adjacencyEnvironment
+								&& key.mv_size() > 0) {
+							int type = Byte.toUnsignedInt(key.mv_data().get(0));
+							if (type >= 1 && type <= 6) {
+								operations.merge("adjacency_count_get", 1L, Long::sum);
+							}
+						}
 					}
 				}
 				return invocation.callRealMethod();
@@ -72,6 +97,12 @@ final class LmdbStartupReadCounter implements AutoCloseable {
 		}
 	}
 
+	private static boolean inRangePlanner() {
+		String plannerClass = LmdbAdjacencyRangePlanner.class.getName();
+		return STACK_WALKER.walk(frames -> frames.anyMatch(frame -> frame.getClassName().equals(plannerClass)
+				|| frame.getClassName().startsWith(plannerClass + "$")));
+	}
+
 	long total() {
 		return operations.values().stream().mapToLong(Long::longValue).sum();
 	}
@@ -81,7 +112,9 @@ final class LmdbStartupReadCounter implements AutoCloseable {
 	}
 
 	Map<String, Long> operations() {
-		return Map.copyOf(operations);
+		Map<String, Long> result = new LinkedHashMap<>(operations);
+		result.putAll(rangePlanningOperations);
+		return Map.copyOf(result);
 	}
 
 	@Override

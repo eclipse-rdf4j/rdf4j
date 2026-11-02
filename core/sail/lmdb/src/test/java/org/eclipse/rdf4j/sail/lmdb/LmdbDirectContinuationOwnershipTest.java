@@ -30,6 +30,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Resource;
@@ -48,7 +49,6 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.lwjgl.system.MemoryStack;
 
 class LmdbDirectContinuationOwnershipTest {
 
@@ -120,7 +120,7 @@ class LmdbDirectContinuationOwnershipTest {
 					applicationMutations.incrementAndGet();
 					approve(sink, suffix);
 					sink.setNamespace("tail", "urn:direct-continuation:tail:");
-					store.triples.failNextContextIncrement.set(1);
+					store.triples.mutationFault.armMapFull(1);
 					applicationMutations.incrementAndGet();
 					sink.approveAll(Set.of(trigger, triggerCompanion), Set.of());
 					sink.flush();
@@ -134,7 +134,8 @@ class LmdbDirectContinuationOwnershipTest {
 					"the injected MAP_FULL must park the direct writer in emergency reader coordination");
 			assertTrue(backing.growthMetricsSnapshot().emergencyAttempts() > before.emergencyAttempts(),
 					"the suspension must come from a genuine native capacity failure");
-			assertSame(writerThread.get(), store.triples.injectedFailureThread.get(),
+			store.triples.mutationFault.assertInjectedOnce(1, 1);
+			assertSame(writerThread.get(), store.triples.mutationFault.injectedThread(),
 					"the original native write must remain on its owner thread");
 
 			Future<Throwable> aliasResult = aliasExecutor.submit(() -> {
@@ -160,6 +161,7 @@ class LmdbDirectContinuationOwnershipTest {
 			resumeObserver.countDown();
 			writer.get(10, TimeUnit.SECONDS);
 			writer = null;
+			store.triples.mutationFault.assertResizedAfterAbort();
 			assertNull(observerFailure.get(), "the emergency observer must release the exact reader owner");
 			assertEquals(3, applicationMutations.get(), "native replay must not rerun application mutations");
 			assertCommittedState(repository, prefix, trigger, triggerCompanion, suffix, null);
@@ -266,7 +268,7 @@ class LmdbDirectContinuationOwnershipTest {
 					applicationMutations.incrementAndGet();
 					approve(writerSink, suffix);
 					writerSink.setNamespace("tail", "urn:direct-continuation:tail:");
-					store.triples.failNextContextIncrement.set(1);
+					store.triples.mutationFault.armMapFull(1);
 					applicationMutations.incrementAndGet();
 					writerSink.approveAll(Set.of(trigger, triggerCompanion), Set.of());
 					writerSink.flush();
@@ -280,7 +282,8 @@ class LmdbDirectContinuationOwnershipTest {
 					"the injected MAP_FULL must park the direct writer in emergency reader coordination");
 			assertTrue(backing.growthMetricsSnapshot().emergencyAttempts() > before.emergencyAttempts(),
 					"the suspension must come from a genuine native capacity failure");
-			assertSame(writerThread.get(), store.triples.injectedFailureThread.get(),
+			store.triples.mutationFault.assertInjectedOnce(1, 1);
+			assertSame(writerThread.get(), store.triples.mutationFault.injectedThread(),
 					"the original native write must remain on its owner thread");
 
 			SailSink competingSink = aliasSink;
@@ -318,6 +321,7 @@ class LmdbDirectContinuationOwnershipTest {
 			resumeObserver.countDown();
 			writer.get(10, TimeUnit.SECONDS);
 			writer = null;
+			store.triples.mutationFault.assertResizedAfterAbort();
 			assertNull(observerFailure.get(), "the emergency observer must release the exact reader owner");
 			assertEquals(3, applicationMutations.get(), "native replay must not rerun application mutations");
 			assertCommittedState(repository, prefix, trigger, triggerCompanion, suffix, null);
@@ -467,8 +471,7 @@ class LmdbDirectContinuationOwnershipTest {
 	}
 
 	private static final class FaultyTripleStore extends TripleStore {
-		private final AtomicInteger failNextContextIncrement = new AtomicInteger();
-		private final AtomicReference<Thread> injectedFailureThread = new AtomicReference<>();
+		private final LmdbPersistentMutationFault mutationFault = new LmdbPersistentMutationFault();
 
 		private FaultyTripleStore(File directory, StoreProperties properties, LmdbStoreConfig config, ValueStore values)
 				throws IOException {
@@ -476,11 +479,31 @@ class LmdbDirectContinuationOwnershipTest {
 		}
 
 		@Override
-		void incrementAlignedContext(MemoryStack stack, long context, int amount) throws IOException {
-			super.incrementAlignedContext(stack, context, amount);
-			if (failNextContextIncrement.get() > 0 && failNextContextIncrement.decrementAndGet() == 0) {
-				injectedFailureThread.set(Thread.currentThread());
-				throw new MapFullException();
+		public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
+				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
+			try (var ignored = mutationFault.injectInto(this)) {
+				super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
+			}
+		}
+
+		@Override
+		public void commit() throws IOException {
+			try (var ignored = mutationFault == null ? null : mutationFault.observe(this)) {
+				super.commit();
+			}
+		}
+
+		@Override
+		public void rollback() throws IOException {
+			try (var ignored = mutationFault == null ? null : mutationFault.observe(this)) {
+				super.rollback();
+			}
+		}
+
+		@Override
+		boolean growMapForEstimatedWrite(long bytes, LmdbSailStore.MapGrowthAttempt attempt) throws IOException {
+			try (var ignored = mutationFault == null ? null : mutationFault.observe(this)) {
+				return super.growMapForEstimatedWrite(bytes, attempt);
 			}
 		}
 	}

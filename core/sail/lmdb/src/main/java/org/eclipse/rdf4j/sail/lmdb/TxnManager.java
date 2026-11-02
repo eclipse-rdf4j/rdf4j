@@ -31,6 +31,7 @@ import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
@@ -131,10 +132,38 @@ final class TxnManager {
 
 	private final Pool[] pools = new Pool[CACHED_POOLS];
 	private final NativeBarrier lockManager = new NativeBarrier();
+	/** Distinguishes immutable native snapshots without retaining this manager in detached page caches. */
+	private final Object snapshotOwner = new Object();
 
 	private volatile boolean managerClosed;
 	private volatile Runnable readerRetirementListener;
 	private volatile Consumer<Txn> admissionObserverForTest;
+	private volatile SnapshotLifecycle snapshotLifecycle;
+
+	/** Ownership of state paired with the actual native snapshot, not its outward pooled lease. */
+	interface SnapshotLifecycle {
+		void started(long transaction) throws IOException;
+
+		void ended(long transaction);
+	}
+
+	/** Installed before application admission, after internal setup readers have been reset. */
+	void setSnapshotLifecycle(SnapshotLifecycle lifecycle) {
+		if (mode == Mode.NONE) {
+			throw new IllegalStateException("Transferred native readers cannot own managed snapshot state");
+		}
+		for (Txn reader : open) {
+			if (reader.active) {
+				throw new IllegalStateException("Reset setup readers before installing snapshot lifecycle");
+			}
+		}
+		snapshotLifecycle = Objects.requireNonNull(lifecycle);
+	}
+
+	/** Package-level ownership diagnostic; does not expose or mutate the retained callback. */
+	boolean hasSnapshotLifecycle() {
+		return snapshotLifecycle != null;
+	}
 
 	/** Listener must only signal its maintenance worker; native work belongs outside the notification. */
 	void setReaderRetirementListener(Runnable listener) {
@@ -401,6 +430,12 @@ final class TxnManager {
 
 			checkNotClosed();
 			Txn txn = new Txn(startReadTxn(), /* owned= */ true, resetOnWrite, readerPermit);
+			try {
+				txn.attachSnapshot();
+			} catch (IOException | RuntimeException | Error failure) {
+				txn.abortAndMarkClosed();
+				throw failure;
+			}
 			open.add(txn);
 			if (managerClosed) {
 				// lost the race against close(): do not leak the native transaction
@@ -874,8 +909,11 @@ final class TxnManager {
 
 		for (Txn txn : open) {
 			try {
-				if (open.remove(txn)) {
-					txn.abortAndMarkClosed();
+				// Join an outward close before claiming its native handle or detaching snapshot ownership.
+				synchronized (txn) {
+					if (open.remove(txn)) {
+						txn.abortAndMarkClosed();
+					}
 				}
 			} catch (Throwable cleanupFailure) {
 				failure = appendCloseFailure(failure, cleanupFailure);
@@ -890,10 +928,11 @@ final class TxnManager {
 			}
 		}
 		// Closed cursor entries can remain in a caller's thread-local pool. Their transaction manager must not retain
-		// the maintenance owner through either callback after its last reader has retired, even when native cleanup
+		// the maintenance owner through any callback after its last reader has retired, even when native cleanup
 		// failed.
 		readerRetirementListener = null;
 		admissionObserverForTest = null;
+		snapshotLifecycle = null;
 		rethrowCloseFailure(failure);
 	}
 
@@ -1341,6 +1380,7 @@ final class TxnManager {
 		// The native snapshot identity only changes when the reader is (re)activated; cache it so hot compatibility
 		// checks need no JNI call.
 		private volatile long nativeTransactionId;
+		private boolean snapshotAttached;
 		// Advances whenever this pooled handle changes owner, so a record iterator of a previous owner cannot pass
 		// the snapshot check on a recycled reader.
 		private volatile long lease;
@@ -1391,6 +1431,11 @@ final class TxnManager {
 		/** The native transaction ID captured at the last activation; meaningful while {@link #isNativeActive()}. */
 		long nativeTransactionId() {
 			return nativeTransactionId;
+		}
+
+		/** Stable identity for this manager's environment lifetime, including recycled reader leases. */
+		Object snapshotOwner() {
+			return TxnManager.this.snapshotOwner;
 		}
 
 		// Record-iterator buffers of this reader are handed back and forth under this monitor; the shared
@@ -1557,23 +1602,33 @@ final class TxnManager {
 			if (!owned) {
 				return; // foreign transaction: not ours to abort, no permit involved
 			}
-			boolean releasePermit;
-			Semaphore permit;
-			synchronized (this) {
-				if (closed || idle) {
-					return;
+			boolean releasePermit = false;
+			Semaphore permit = null;
+			try {
+				synchronized (this) {
+					if (closed || idle) {
+						return;
+					}
+					permit = readerPermit;
+					valueLookupScope = null;
+					dictionaryLookupScope = null;
+					idleReaderReclaimer = null;
+					snapshotRevision = -1;
+					try {
+						releasePermit = release();
+					} catch (RuntimeException | Error failure) {
+						// A snapshot-end callback can fail after abort/reset already ended this outward lease.
+						// Capture before a pooled shell can be reused; semaphore release stays outside its monitor.
+						releasePermit = (closed || idle) && !managerClosed;
+						throw failure;
+					}
 				}
-				permit = readerPermit;
-				valueLookupScope = null;
-				dictionaryLookupScope = null;
-				idleReaderReclaimer = null;
-				snapshotRevision = -1;
-				releasePermit = release();
-			}
-			if (releasePermit) {
-				releaseReaderPermit(permit);
-			} else {
-				signalReaderInactive();
+			} finally {
+				if (releasePermit) {
+					releaseReaderPermit(permit);
+				} else if (permit != null) {
+					signalReaderInactive();
+				}
 			}
 			Runnable listener = readerRetirementListener;
 			if (listener != null) {
@@ -1649,10 +1704,31 @@ final class TxnManager {
 			activate();
 		}
 
+		private void attachSnapshot() throws IOException {
+			SnapshotLifecycle lifecycle = snapshotLifecycle;
+			if (owned && lifecycle != null) {
+				lifecycle.started(txn);
+				snapshotAttached = true;
+			}
+		}
+
+		private void releaseSnapshot() {
+			if (snapshotAttached) {
+				snapshotAttached = false;
+				snapshotLifecycle.ended(txn);
+			}
+		}
+
 		private void activate() throws IOException {
 			if (!active && !closed) {
 				renewReadTxn(txn);
 				nativeTransactionId = mdb_txn_id(txn);
+				try {
+					attachSnapshot();
+				} catch (IOException | RuntimeException | Error failure) {
+					mdb_txn_reset(txn);
+					throw failure;
+				}
 				active = true;
 				valueLookupScope = new Object();
 			}
@@ -1673,6 +1749,7 @@ final class TxnManager {
 			if (active) {
 				mdb_txn_reset(txn);
 				active = false;
+				releaseSnapshot();
 				signalReaderInactive();
 			}
 		}
@@ -1701,12 +1778,17 @@ final class TxnManager {
 				idle = false;
 				// fall through: pool full or manager closing -> abort
 			case ABORT:
-				if (open.remove(this)) {
-					abortAndMarkClosed();
-					return true;
+				if (open.contains(this)) {
+					boolean removed;
+					try {
+						abortAndMarkClosed();
+					} finally {
+						// Keep retirement visible until native abort and metadata release have finished.
+						removed = closed && open.remove(this);
+					}
+					return removed;
 				}
 				// already reclaimed by close(); permit accounting is done there
-				closed = true;
 				return false;
 			case NONE:
 				// the caller takes over responsibility for the native transaction
@@ -1730,6 +1812,8 @@ final class TxnManager {
 			dictionaryLookupScope = null;
 			lease++;
 			snapshotRevision = -1;
+			// Native abort is irrevocable even if the ownership callback reports a cleanup failure.
+			releaseSnapshot();
 		}
 
 		@Override

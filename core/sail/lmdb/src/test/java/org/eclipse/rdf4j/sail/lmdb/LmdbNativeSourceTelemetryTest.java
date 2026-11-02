@@ -43,11 +43,14 @@ class LmdbNativeSourceTelemetryTest {
 			repository.init();
 			var values = repository.getValueFactory();
 			var wanted = values.createLiteral("wanted");
+			var wantedContext = values.createIRI("urn:graph:wanted");
+			var filteredContext = values.createIRI("urn:graph:filtered");
 			try (var connection = repository.getConnection()) {
 				connection.begin();
-				connection.add(values.createIRI("urn:subject:one"), values.createIRI("urn:predicate"), wanted);
+				connection.add(values.createIRI("urn:subject:one"), values.createIRI("urn:predicate"), wanted,
+						wantedContext);
 				connection.add(values.createIRI("urn:subject:two"), values.createIRI("urn:predicate"),
-						values.createLiteral("filtered"));
+						values.createLiteral("filtered"), filteredContext);
 				connection.commit();
 			}
 			List<long[]> observations = new ArrayList<>();
@@ -67,7 +70,9 @@ class LmdbNativeSourceTelemetryTest {
 			};
 			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
 				NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
-				try (RecordIterator rows = source.statements(-1L, -1L, source.idOf(wanted), -1L, observer)) {
+				// Object bounds can seek directly within an adjacency row. Context remains residual when the
+				// preceding components are unbound, so both physical candidates must reach the matcher.
+				try (RecordIterator rows = source.statements(-1L, -1L, -1L, source.idOf(wantedContext), observer)) {
 					if (bulk) {
 						assertThat(rows.fill(new long[16], 4)).isEqualTo(1);
 					} else {
@@ -148,14 +153,15 @@ class LmdbNativeSourceTelemetryTest {
 					assertThat(missingReused).isEqualTo(missingIndependent);
 
 					MeasurementObserver filteredObserver = new MeasurementObserver();
-					try (RecordIterator filtered = reused.open(-1L, -1L, matchingObjectId, -1L, filteredObserver)) {
+					try (RecordIterator filtered = reused.open(-1L, -1L, -1L, secondContextId, filteredObserver)) {
 						assertThat(filtered.next()).isNotNull();
 						assertThat(filtered.next()).isNull();
 					}
 					Measurement filteredReused = filteredObserver.onlyMeasurement();
-					Measurement filteredIndependent = independentlyMeasure(source, -1L, -1L, matchingObjectId, -1L);
+					Measurement filteredIndependent = independentlyMeasure(source, -1L, -1L, -1L, secondContextId);
 					assertThat(filteredReused).isEqualTo(filteredIndependent);
 					assertThat(filteredReused.filtered()).isPositive();
+					assertThat(filteredReused).isEqualTo(new Measurement(false, 3L, 1L, 2L, false));
 				}
 			}
 		} finally {

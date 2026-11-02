@@ -74,11 +74,8 @@ final class LmdbInitialRunImport implements Closeable {
 	private final ExecutorService sorter;
 	private final LmdbRunCollector triples;
 	private final LmdbDeferredValueLookups values;
-	private final int indexCount;
 	private final boolean syncsCommits;
 	private volatile Future<?> markerSync;
-	private long committedKeyBytes;
-	private long provisionalKeyBytes;
 	private volatile boolean completing;
 	private volatile boolean merging;
 
@@ -89,7 +86,6 @@ final class LmdbInitialRunImport implements Closeable {
 		this.dataDir = dataDir;
 		this.marker = marker;
 		this.runDirectory = dataDir.resolve(RUN_DIRECTORY_NAME);
-		this.indexCount = fieldOrders.length;
 		int processors = Math.max(1, Runtime.getRuntime().availableProcessors());
 		AtomicInteger threads = new AtomicInteger();
 		this.sorter = Executors.newFixedThreadPool(processors, task -> {
@@ -185,22 +181,17 @@ final class LmdbInitialRunImport implements Closeable {
 			long o = objects[i];
 			long c = contexts[i];
 			triples.add(s, p, o, c);
-			provisionalKeyBytes += Varint.calcLengthUnsigned(s) + Varint.calcLengthUnsigned(p)
-					+ Varint.calcLengthUnsigned(o) + Varint.calcLengthUnsigned(c);
 		}
 	}
 
 	/** The open native chunk committed: its rows survive a later rollback. */
 	void commitChunk() {
 		triples.commit();
-		committedKeyBytes += provisionalKeyBytes;
-		provisionalKeyBytes = 0;
 	}
 
 	/** The open native chunk rolled back: its rows are dropped. */
 	void rollbackChunk() {
 		triples.rollback();
-		provisionalKeyBytes = 0;
 	}
 
 	/** True once completion started; completion is not re-entered. */
@@ -227,13 +218,16 @@ final class LmdbInitialRunImport implements Closeable {
 	}
 
 	/**
-	 * A generous estimate of the bytes the triple indexes need: every committed row once per index, with LMDB's node
-	 * header and page slack.
+	 * Uses the same directional-delta and metadata estimate as ordinary writes. Temporary sort orders do not determine
+	 * the space required by the persisted adjacency structures.
 	 */
-	long projectedTripleBytes() {
-		long rows = triples.committedRows();
-		long perIndex = LmdbUtil.saturatedAdd(committedKeyBytes, saturatedMultiply(rows, 16L));
-		return LmdbUtil.saturatedAdd(saturatedMultiply(perIndex, indexCount + 1L), 1L << 20);
+	long projectedTripleBytes(TripleStore store) {
+		return LmdbUtil.saturatedAdd(store.estimateWriteBytes(triples.committedRows()), 1L << 20);
+	}
+
+	/** Private child workspaces remain within this import owner's cleanup boundary. */
+	Path scratchParent() {
+		return runDirectory;
 	}
 
 	/** A generous estimate of the bytes the deferred lookup records need, written as sorted plain puts. */

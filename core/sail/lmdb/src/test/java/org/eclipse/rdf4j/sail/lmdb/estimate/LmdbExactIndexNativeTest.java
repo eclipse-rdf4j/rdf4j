@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
@@ -28,14 +29,17 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
+import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.concurrent.CancellationException;
@@ -46,16 +50,279 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.Varint;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.KeySampleStatus;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.PrefixRun;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.SamplingBudget;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.util.lmdb.MDBVal;
 
 /** Real LMDB page-layout, pinned-root, cursor-lifetime, and cancellation contracts for exact index primitives. */
 class LmdbExactIndexNativeTest {
+
+	@Test
+	void weightedAdmissionRejectsForeignEnvironmentBeforeUnavailableMeta(@TempDir Path directory) throws Exception {
+		try (Environment own = new Environment(Files.createDirectory(directory.resolve("own")), 0);
+				Environment foreign = new Environment(Files.createDirectory(directory.resolve("foreign")), 0)) {
+			own.write(0, 10);
+			foreign.write(0, 10);
+			long foreignTxn = foreign.begin(MDB_RDONLY);
+			long ownTxn = own.begin(MDB_RDONLY);
+			try {
+				assertEquals(mdb_txn_id(ownTxn), mdb_txn_id(foreignTxn),
+						"native txn IDs are not environment identities");
+			} finally {
+				mdb_txn_abort(ownTxn);
+			}
+			try {
+				own.write(10, 20);
+				own.write(20, 30);
+				WeightedBudget budget = new WeightedBudget();
+				assertThrows(IOException.class, () -> {
+					try (var unexpected = own.estimator.readTransaction(foreignTxn, budget)) {
+					}
+				});
+				assertEquals(0, budget.pages, "wrong native owner is rejected before unavailable-meta discovery");
+			} finally {
+				mdb_txn_abort(foreignTxn);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 8 })
+	void weightedDiscoveryRecertifiesDescriptorsCachedByLegacyApi(int extraBytes, @TempDir Path directory)
+			throws Exception {
+		try (Environment env = new Environment(directory, 0); var stack = stackPush()) {
+			env.write(0, 10);
+			long writer = env.begin(0);
+			try {
+				MDBVal descriptor = MDBVal.malloc(stack);
+				check(mdb_get(writer, env.main, MDBVal.malloc(stack).mv_data(stack.UTF8("records", false)),
+						descriptor));
+				assertEquals(LmdbFormat.META_DB_SIZE, descriptor.mv_size());
+				ByteBuffer forged = stack.calloc(LmdbFormat.META_DB_SIZE + extraBytes);
+				forged.put(0, descriptor.mv_data(), 0, LmdbFormat.META_DB_SIZE);
+				// Ordinary main-DB data, not an MDB_node carrying F_SUBDATA; native MDB_db bytes alone are
+				// insufficient.
+				check(mdb_put(writer, env.main, MDBVal.malloc(stack).mv_data(stack.UTF8("forged", false)),
+						MDBVal.malloc(stack).mv_data(forged), 0));
+				check(mdb_txn_commit(writer));
+				writer = NULL;
+			} finally {
+				if (writer != NULL) {
+					mdb_txn_abort(writer);
+				}
+			}
+			long txn = env.begin(MDB_RDONLY);
+			try {
+				try (var legacy = env.estimator.readTransaction(txn, 1L)) {
+					assertEquals(10, legacy.totalEntries("forged"), "old API behavior remains unchanged");
+					assertThrows(IllegalStateException.class,
+							() -> legacy.sampleWeightedKeys("records", null, null, 1, 0L));
+				}
+				try (var weighted = env.estimator.readTransaction(txn, 1L, new WeightedBudget())) {
+					assertThrows(IOException.class,
+							() -> weighted.sampleWeightedKeys("forged", null, null, 1, 0L));
+					assertEquals(KeySampleStatus.SAMPLED,
+							weighted.sampleWeightedKeys("records", null, null, 1, 0L).status());
+				}
+			} finally {
+				mdb_txn_abort(txn);
+			}
+		}
+	}
+
+	@Test
+	void weightedRawHandleScopeSharesBudgetAndReturnsNativeVisibleKeys(@TempDir Path directory) throws Exception {
+		try (Environment env = new Environment(directory, 0)) {
+			env.write(0, 2_000);
+			long txn = env.begin(MDB_RDONLY);
+			try {
+				WeightedBudget refused = new WeightedBudget();
+				refused.nativeLimit = 0;
+				assertSame(refused.exhausted, assertThrows(IllegalStateException.class,
+						() -> {
+							try (var unexpected = env.estimator.readTransaction(txn, refused)) {
+							}
+						}));
+				WeightedBudget budget = new WeightedBudget();
+				try (var view = env.estimator.readTransaction(txn, budget); var stack = stackPush()) {
+					assertTrue(budget.pages >= 2, "cold meta discovery is inside the shared budget");
+					assertTrue(budget.nativeReads > 0, "native identity/mapping discovery is charged");
+					var selected = view.sampleWeightedKeys("records", key(0), key(1), 3, 27L);
+					assertEquals(KeySampleStatus.SAMPLED, selected.status());
+					assertEquals(3, selected.draws().size());
+					for (var draw : selected.draws()) {
+						MDBVal nativeKey = MDBVal.malloc(stack).mv_data(stack.bytes(draw.key()));
+						MDBVal value = MDBVal.malloc(stack);
+						budget.nativeRead();
+						check(mdb_get(txn, env.records, nativeKey, value));
+						assertEquals(1, value.mv_size());
+						assertEquals(0, value.mv_data().get(0));
+					}
+					int consumed = budget.pages;
+					budget.pageLimit = consumed;
+					assertSame(budget.exhausted, assertThrows(IllegalStateException.class,
+							() -> view.sampleWeightedKeys("records", key(1), key(2), 3, 28L)));
+					budget.pageLimit = 512;
+					assertEquals(KeySampleStatus.SAMPLED,
+							view.sampleWeightedKeys("records", key(1), key(2), 3, 28L).status());
+					assertTrue(budget.pages > consumed, "a second domain never receives a reset budget");
+					assertThrows(IOException.class,
+							() -> view.sampleWeightedKeys("missing-authority", null, null, 3, 1L));
+				}
+			} finally {
+				mdb_txn_abort(txn);
+			}
+		}
+	}
+
+	@Test
+	void weightedKeysLeaveOverflowValuesToTheSameNativeTransaction(@TempDir Path directory) throws Exception {
+		try (Environment env = new Environment(directory, 0); var stack = stackPush()) {
+			byte[] detachedKey = key(7, 8, 9, 10);
+			long writeTxn = env.begin(0);
+			try {
+				ByteBuffer payload = stack.malloc(16_384);
+				for (int index = 0; index < payload.capacity(); index++) {
+					payload.put(index, (byte) (index * 17));
+				}
+				check(mdb_put(writeTxn, env.records, MDBVal.malloc(stack).mv_data(stack.bytes(detachedKey)),
+						MDBVal.malloc(stack).mv_data(payload), 0));
+				check(mdb_txn_commit(writeTxn));
+				writeTxn = NULL;
+			} finally {
+				if (writeTxn != NULL) {
+					mdb_txn_abort(writeTxn);
+				}
+			}
+			long txn = env.begin(MDB_RDONLY);
+			try (var view = env.estimator.readTransaction(txn, new WeightedBudget())) {
+				var result = view.sampleWeightedKeys("records", null, null, 1, 3L);
+				assertEquals(KeySampleStatus.EXHAUSTIVE, result.status());
+				assertEquals(1, result.draws().size());
+				assertTrue(Arrays.equals(detachedKey, result.draws().get(0).key()));
+				MDBVal value = MDBVal.malloc(stack);
+				check(mdb_get(txn, env.records,
+						MDBVal.malloc(stack).mv_data(stack.bytes(result.draws().get(0).key())), value));
+				assertEquals(16_384, value.mv_size(),
+						"native lookup delivers payload, not the 8-byte overflow pointer");
+				assertEquals((byte) (16_383 * 17), value.mv_data().get(16_383));
+			} finally {
+				mdb_txn_abort(txn);
+			}
+		}
+	}
+
+	@Test
+	void overwrittenMetaPagesDeclineWithoutInventingAnOlderRoot(@TempDir Path directory) throws Exception {
+		try (Environment env = new Environment(directory, 0)) {
+			env.write(0, 10);
+			long oldTxn = env.begin(MDB_RDONLY);
+			long oldId = mdb_txn_id(oldTxn);
+			try {
+				env.write(10, 20);
+				env.write(20, 30);
+				try (var unavailable = env.estimator.readTransaction(oldTxn, new WeightedBudget())) {
+					var result = unavailable.sampleWeightedKeys("records", null, null, 3, 1L);
+					assertEquals(KeySampleStatus.UNSUPPORTED_SNAPSHOT, result.status());
+					assertTrue(result.draws().isEmpty());
+				}
+				assertEquals(oldId, mdb_txn_id(oldTxn));
+				assertThrows(IOException.class, () -> {
+					try (var unexpected = env.estimator.readTransaction(oldTxn)) {
+					}
+				},
+						"the old API keeps its previous unavailable-meta behavior");
+				long current = env.begin(MDB_RDONLY);
+				try (var view = env.estimator.readTransaction(current, new WeightedBudget())) {
+					assertEquals(KeySampleStatus.EXHAUSTIVE,
+							view.sampleWeightedKeys("records", null, null, 30, 1L).status());
+				} finally {
+					mdb_txn_abort(current);
+				}
+			} finally {
+				mdb_txn_abort(oldTxn);
+			}
+		}
+	}
+
+	@Test
+	void unsupportedComparatorIsNotAnEmptyWeightedResult(@TempDir Path directory) throws Exception {
+		try (Environment env = new Environment(directory, MDB_DUPSORT)) {
+			env.write(0, 10);
+			long txn = env.begin(MDB_RDONLY);
+			try (var view = env.estimator.readTransaction(txn, new WeightedBudget())) {
+				var result = view.sampleWeightedKeys("records", null, null, 3, 1L);
+				assertEquals(KeySampleStatus.UNSUPPORTED_COMPARATOR, result.status());
+				assertTrue(result.draws().isEmpty());
+			} finally {
+				mdb_txn_abort(txn);
+			}
+		}
+	}
+
+	@Test
+	void corruptMetadataIsNotUnsupportedSnapshotAndColdIoIsBudgeted(@TempDir Path directory) throws Exception {
+		try (Environment env = new Environment(directory, 0)) {
+			env.write(0, 1);
+			Path copy = directory.resolve("metadata-copy.mdb");
+			Files.copy(directory.resolve("data.mdb"), copy);
+			try (LmdbDataFile file = new LmdbDataFile(copy.toFile())) {
+				// Mutate only an independent test copy, never an open native environment's meta pages.
+				Files.write(copy, new byte[2 * file.pageSize()]);
+				WeightedBudget empty = new WeightedBudget();
+				empty.pageLimit = 0;
+				assertSame(empty.exhausted, assertThrows(IllegalStateException.class,
+						() -> file.readMetaForTxn(Long.MAX_VALUE, empty, true)));
+				assertThrows(IOException.class,
+						() -> file.readMetaForTxn(Long.MAX_VALUE, new WeightedBudget(), true));
+			}
+		}
+	}
+
+	private static final class WeightedBudget implements SamplingBudget {
+		final IllegalStateException exhausted = new IllegalStateException("native weighted test work limit");
+		int pageLimit = 512;
+		int nativeLimit = 256;
+		int pages;
+		int nativeReads;
+		int keys;
+
+		@Override
+		public void checkpoint() {
+		}
+
+		@Override
+		public void nativeRead() {
+			if (nativeReads == nativeLimit) {
+				throw exhausted;
+			}
+			nativeReads++;
+		}
+
+		@Override
+		public void pageAccess() {
+			if (pages == pageLimit) {
+				throw exhausted;
+			}
+			pages++;
+		}
+
+		@Override
+		public void keyAccess() {
+			if (keys == 8_192) {
+				throw exhausted;
+			}
+			keys++;
+		}
+	}
 
 	@Test
 	void nativeCountAndPrefixRunsAreExactAcrossBoundaryPages(@TempDir Path directory) throws Exception {
@@ -310,6 +577,7 @@ class LmdbExactIndexNativeTest {
 
 	private static final class Environment implements AutoCloseable {
 		private final long handle;
+		private final int main;
 		private final int records;
 		private final LmdbPageCardinalityEstimator estimator;
 
@@ -325,7 +593,7 @@ class LmdbExactIndexNativeTest {
 				try {
 					var dbi = stack.mallocInt(1);
 					check(mdb_dbi_open(txn, (ByteBuffer) null, 0, dbi));
-					int main = dbi.get(0);
+					main = dbi.get(0);
 					check(mdb_dbi_open(txn, "records", MDB_CREATE | flags, dbi));
 					records = dbi.get(0);
 					check(mdb_txn_commit(txn));

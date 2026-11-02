@@ -559,6 +559,14 @@ public class LmdbNativeCustomAggregateTest {
 						valueFactory.createLiteral("stored-value"));
 				connection.add(valueFactory.createIRI(EX, "known-no-match"), otherPredicate,
 						valueFactory.createLiteral("other-value"));
+				softly.assertThat(connection.hasStatement(valueFactory.createIRI(EX, "known-no-match"),
+						otherPredicate, null, false))
+						.as("the empty-input binding is a stored subject, not an unknown dictionary value")
+						.isTrue();
+				softly.assertThat(connection.hasStatement(valueFactory.createIRI(EX, "known-no-match"),
+						sourcePredicate, null, false))
+						.as("the bound subject/predicate row is exactly absent")
+						.isFalse();
 				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
 				prepared.setBinding("s", valueFactory.createIRI(EX, subjectBinding));
 				if (forcedStrategy != null) {
@@ -599,7 +607,12 @@ public class LmdbNativeCustomAggregateTest {
 					if (adjacencyEnabled) {
 						softly.assertThat(telemetry).contains("actualOrder:\n      <not opened; entryPlan=Empty>");
 					} else {
-						softly.assertThat(telemetry).contains("rowsScannedActual: 1", "rowsMatchedActual: 0");
+						String normalizedTelemetry = String.join("\n",
+								telemetry.lines().map(String::stripLeading).toList());
+						softly.assertThat(normalizedTelemetry)
+								.as("persistent row metadata proves the empty input without scanning another predicate")
+								.contains("measurements:\nLMDB:\ncompleted: 1\ncensored: 0\nrowsScannedActual: 0\n"
+										+ "rowsMatchedActual: 0\nrowsFilteredActual: 0");
 					}
 				}
 				if (!executedRouteObserved) {

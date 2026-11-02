@@ -94,8 +94,13 @@ public final class LmdbStoreFormat {
 		LmdbStoreFormat format = fromProperties(properties, config);
 		File marker = new File(directory, LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE);
 		if (format.isLegacy()) {
-			if (marker.exists()) {
-				throw new SailException("Compatibility marker is inconsistent with LmdbStore format 2");
+			try {
+				if (Files.exists(marker.toPath(), LinkOption.NOFOLLOW_LINKS)
+						&& !LmdbPersistentAdjacencyFence.matches(directory.toPath())) {
+					throw new SailException("Compatibility marker is inconsistent with LmdbStore format 2");
+				}
+			} catch (IOException exception) {
+				throw new SailException("Unable to read LmdbStore compatibility marker", exception);
 			}
 			return format;
 		}

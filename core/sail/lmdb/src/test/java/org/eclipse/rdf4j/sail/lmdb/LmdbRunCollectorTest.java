@@ -17,7 +17,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Stream;
@@ -25,6 +27,8 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbRunCollectorTest {
 
@@ -39,6 +43,60 @@ class LmdbRunCollectorTest {
 	@AfterEach
 	void shutDown() {
 		executor.shutdownNow();
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 520, 4110 })
+	void completedRunsBoundFanInWithoutConcealingDuplicateRecords(int inputRows) throws Exception {
+		try (LmdbRunCollector collector = new LmdbRunCollector("bounded", directory,
+				new int[][] { SPOC, OSPC }, 4, 1, Runnable::run)) {
+			Map<List<Long>, Integer> expected = new HashMap<>();
+			for (int i = 0; i < inputRows; i++) {
+				long object = i % 2 == 0 ? Long.MIN_VALUE + 1 : 19;
+				collector.add(i % 13, 7, object, 0);
+				expected.merge(List.of((long) (i % 13), 7L, object, 0L), 1, Integer::sum);
+				collector.commit();
+			}
+			List<LmdbSortedRuns.Runs> completed = collector.completeRuns();
+			assertThat(collector.completeRuns()).isEqualTo(completed);
+			for (int order = 0; order < completed.size(); order++) {
+				int[] fields = order == 0 ? SPOC : OSPC;
+				for (int replay = 0; replay < 2; replay++) {
+					int count = 0;
+					Map<List<Long>, Integer> actual = new HashMap<>();
+					long[] previous = null;
+					try (LmdbSortedRuns.Merge merge = new LmdbSortedRuns.Merge(completed.get(order), fields, false)) {
+						long[] row = new long[4];
+						while (merge.next(row)) {
+							assertThat(row[0]).isBetween(0L, 12L);
+							assertThat(row[1]).isEqualTo(7);
+							assertThat(row[2]).isIn(Long.MIN_VALUE + 1, 19L);
+							assertThat(row[3]).isZero();
+							actual.merge(List.of(row[0], row[1], row[2], row[3]), 1, Integer::sum);
+							if (previous != null) {
+								for (int field : fields) {
+									int comparison = Long.compareUnsigned(previous[field], row[field]);
+									assertThat(comparison).isLessThanOrEqualTo(0);
+									if (comparison != 0) {
+										break;
+									}
+								}
+							}
+							previous = row.clone();
+							count++;
+						}
+					}
+					assertThat(actual).isEqualTo(expected);
+					assertThat(count).as("value-run duplicate records must remain visible on every replay")
+							.isEqualTo(inputRows);
+				}
+				assertThat(completed.get(order).files()).as("final merge has at most32 file readers")
+						.hasSizeLessThanOrEqualTo(32);
+			}
+		}
+		try (var files = Files.list(directory)) {
+			assertThat(files).isEmpty();
+		}
 	}
 
 	@Test

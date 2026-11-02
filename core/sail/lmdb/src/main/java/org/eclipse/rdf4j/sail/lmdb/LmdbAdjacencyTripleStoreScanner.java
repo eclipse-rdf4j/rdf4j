@@ -21,7 +21,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.LongAdder;
 
-import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.slf4j.Logger;
@@ -32,8 +31,9 @@ import org.slf4j.LoggerFactory;
  * <p>
  * Outgoing groups stream from an {@code sp}-prefixed index ({@code spoc}), incoming groups from a {@code po}-prefixed
  * index ({@code posc}); the existing order-preserving unsigned key encoding makes both group keys and in-group pairs
- * strictly unsigned ascending without any sort. If no configured index provides a required prefix, that direction is
- * {@code NOT_BUILDABLE_WITH_INDEX_CONFIG}. The scanner is thread-confined and never mutates the store.
+ * strictly unsigned ascending without any sort. Selection uses the complete streaming order in this scanner's pinned
+ * transaction, not a query preference for a single leading field. Configured logical orders must not interleave groups
+ * or put contexts before neighbors. The scanner is thread-confined and never mutates the store.
  * <p>
  * Snapshot validity has two guards: the transaction's map-resize version must not change (a renewal silently rebinds to
  * a newer snapshot), and — until the Milestone-6 commit collector supplies online catch-up — the process-local data
@@ -99,14 +99,12 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 	@Override
 	public boolean supportsOrderedScan(boolean outgoing) {
-		String indexName = tripleStore.getIndexName(outgoing ? StatementOrder.S : StatementOrder.P, -1, -1, -1, -1);
-		return indexName.startsWith(outgoing ? "sp" : "po");
+		return tripleStore.supportsAdjacencyScanOrder(txn, outgoing ? "spoc" : "posc");
 	}
 
 	@Override
 	public boolean supportsPredicatePartitionedScan(boolean outgoing) {
-		String indexName = tripleStore.getIndexName(outgoing ? StatementOrder.S : StatementOrder.P, -1, 0, -1, -1);
-		return indexName.startsWith(outgoing ? "ps" : "po");
+		return tripleStore.supportsAdjacencyScanOrder(txn, outgoing ? "psoc" : "posc");
 	}
 
 	@Override
@@ -164,7 +162,8 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 		int[] preferred = outgoing ? OUTGOING_PREDICATE_ROW_FIELDS : INCOMING_PREDICATE_ROW_FIELDS;
 		int[] fallback = outgoing ? OUTGOING_ROW_PREDICATE_FIELDS : INCOMING_ROW_PREDICATE_FIELDS;
-		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlan(preferred, -1, -1, -1, -1);
+		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlanForAdjacencyOrder(txn, outgoing ? "psoc" : "posc",
+				preferred);
 		if (!coverage.isFull()) {
 			return planSelectedPredicateRanges(prefixPlan, coverage, explicit, outgoing, targetRanges);
 		}
@@ -179,7 +178,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 			}
 		}
 		if (prefixPlan == null) {
-			prefixPlan = tripleStore.prefixRunPlan(fallback, -1, -1, -1, -1);
+			prefixPlan = tripleStore.prefixRunPlanForAdjacencyOrder(txn, outgoing ? "spoc" : "opsc", fallback);
 		}
 		if (prefixPlan == null) {
 			return NO_SCAN_RANGES;
@@ -513,7 +512,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 	private long[] distinctPredicates(boolean explicit) throws IOException {
 		long[] buffer = new long[16];
 		int size = 0;
-		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlan(PREDICATE_PREFIX_FIELDS, -1, -1, -1, -1);
+		LmdbPrefixRunPlan prefixPlan = tripleStore.prefixRunPlanForAdjacencyOrder(txn, "posc", PREDICATE_PREFIX_FIELDS);
 		if (prefixPlan != null) {
 			// Pass 0 only needs one row per predicate. A predicate-leading index lets LMDB skip the remaining rows in
 			// each predicate run instead of decoding every statement in the incoming stream.
@@ -576,7 +575,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 	@Override
 	public void scanOutgoing(boolean explicit, GroupConsumer consumer) throws IOException {
 		cursorSeeks++;
-		try (RecordIterator it = tripleStore.getTriples(txn, StatementOrder.S, -1, -1, -1, -1, explicit)) {
+		try (RecordIterator it = tripleStore.getTriplesInAdjacencyOrder(txn, "spoc", -1, -1, -1, -1, explicit)) {
 			scanBatched(it, true, explicit, consumer);
 		}
 	}
@@ -591,13 +590,11 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 		if (coverage.selectedPredicateCount() == 0) {
 			return;
 		}
-		long firstPredicate = coverage.selectedPredicateAt(0);
-		String selectedIndex = tripleStore.getIndexName(StatementOrder.S, -1, firstPredicate, -1, -1);
-		if (selectedIndex.startsWith("ps")) {
+		if (supportsPredicatePartitionedScan(true)) {
 			for (int i = 0; i < coverage.selectedPredicateCount(); i++) {
 				long predicate = coverage.selectedPredicateAt(i);
 				cursorSeeks++;
-				try (RecordIterator it = tripleStore.getTriples(txn, StatementOrder.S, -1, predicate, -1, -1,
+				try (RecordIterator it = tripleStore.getTriplesInAdjacencyOrder(txn, "psoc", -1, predicate, -1, -1,
 						explicit)) {
 					scanBatched(it, true, explicit, consumer);
 				}
@@ -624,7 +621,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 		for (int i = 0; i < coverage.selectedPredicateCount(); i++) {
 			long predicate = coverage.selectedPredicateAt(i);
 			cursorSeeks++;
-			try (RecordIterator it = tripleStore.getTriples(txn, StatementOrder.P, -1, predicate, -1, -1,
+			try (RecordIterator it = tripleStore.getTriplesInAdjacencyOrder(txn, "posc", -1, predicate, -1, -1,
 					explicit)) {
 				scanBatched(it, false, explicit, consumer);
 			}
@@ -634,7 +631,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 	private void scanSelectedOutgoingFromSubjectIndex(boolean explicit, LmdbAdjacencyCoverage coverage,
 			GroupConsumer consumer) throws IOException {
 		cursorSeeks++;
-		try (RecordIterator it = tripleStore.getTriples(txn, StatementOrder.S, -1, -1, -1, -1, explicit)) {
+		try (RecordIterator it = tripleStore.getTriplesInAdjacencyOrder(txn, "spoc", -1, -1, -1, -1, explicit)) {
 			boolean inGroup = false;
 			long groupSubject = 0;
 			long groupPredicate = 0;
@@ -789,7 +786,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 
 	private RecordIterator incomingIterator(boolean explicit) throws IOException {
 		cursorSeeks++;
-		return tripleStore.getTriples(txn, StatementOrder.P, -1, -1, -1, -1, explicit);
+		return tripleStore.getTriplesInAdjacencyOrder(txn, "posc", -1, -1, -1, -1, explicit);
 	}
 
 	private long[] quadBatch() {

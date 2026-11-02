@@ -988,7 +988,7 @@ public class LmdbSailStoreTest {
 				.storePreparedTriples(any(long[].class), any(long[].class), any(long[].class), any(long[].class),
 						anyInt(), anyBoolean(), anyBoolean(), nullable(IntConsumer.class),
 						nullable(TripleStore.EncodedIndexKeys.class),
-						any(TripleStore.PreparedSecondaryIndexesSupplier.class));
+						nullable(TripleStore.PreparedSecondaryIndexesSupplier.class));
 
 		tripleStoreField.set(backingStore, tripleStoreSpy);
 		try {

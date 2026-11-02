@@ -134,6 +134,18 @@ class LmdbAdjacencyRunCodecTest {
 	}
 
 	@Test
+	void smallRunsRetainUnsignedBasesAndDeltas() {
+		for (long[][] pairs : new long[][][] {
+				{ { Long.MIN_VALUE, 0 }, { Long.MIN_VALUE + 1, 7 }, { -2, 7 } },
+				{ { 1, 0 }, { -2, 7 } } }) {
+			LmdbAdjacencyArena arena = newArena(1 << 20);
+			LmdbAdjacencyArenaCatalog catalog = newCatalog(arena);
+			LmdbAdjacencyContextCatalog contexts = catalogFor(arena, pairs);
+			encodeAndVerify(arena, catalog, contexts, pairs);
+		}
+	}
+
+	@Test
 	void preparedRunReplaysExactAllocationWithoutReencodingPairs() {
 		LmdbAdjacencyArena contextArena = newArena(1 << 20);
 		long[][] pairs = new long[4_096][2];

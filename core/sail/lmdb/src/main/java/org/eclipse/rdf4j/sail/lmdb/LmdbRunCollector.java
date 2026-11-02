@@ -42,6 +42,7 @@ final class LmdbRunCollector implements Closeable {
 	private final int slices;
 	private final Executor executor;
 	private static final int INITIAL_ROWS = 1 << 14;
+	static final int MAX_MERGE_FILES = 32;
 
 	private final int chunkRows;
 	private final BlockingQueue<long[]> freeBuffers = new LinkedBlockingQueue<>();
@@ -134,6 +135,7 @@ final class LmdbRunCollector implements Closeable {
 				}
 			}
 			awaitPending();
+			consolidateRuns();
 			completed = true;
 		}
 		List<LmdbSortedRuns.Runs> result = new ArrayList<>(runs.size());
@@ -141,6 +143,30 @@ final class LmdbRunCollector implements Closeable {
 			result.add(new LmdbSortedRuns.Runs(runs.get(order), memoryRuns == null ? null : memoryRuns[order]));
 		}
 		return result;
+	}
+
+	/**
+	 * Keep at most32 file buffers/handles per final merge. Install a whole replacement pass before retiring its
+	 * sources; partial outputs remain collector-owned for terminal cleanup. Values deliberately retain duplicates.
+	 */
+	private void consolidateRuns() throws IOException {
+		for (int order = 0; order < runs.size(); order++) {
+			while (runs.get(order).size() > MAX_MERGE_FILES) {
+				List<Path> previous = runs.get(order);
+				List<Path> next = new ArrayList<>();
+				for (int from = 0; from < previous.size(); from += MAX_MERGE_FILES) {
+					Path output = Files.createTempFile(directory, name + "-merge-", ".run");
+					files.add(output);
+					LmdbSortedRuns.mergeToFile(previous.subList(from,
+							Math.min(previous.size(), from + MAX_MERGE_FILES)), fieldOrders[order], output);
+					next.add(output);
+				}
+				runs.set(order, next);
+				for (Path source : previous) {
+					Files.deleteIfExists(source);
+				}
+			}
+		}
 	}
 
 	private static <T> T await(CompletableFuture<T> task) throws IOException {

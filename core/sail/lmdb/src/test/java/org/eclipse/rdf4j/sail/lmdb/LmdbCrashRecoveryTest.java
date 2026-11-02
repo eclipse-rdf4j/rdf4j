@@ -20,7 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
-import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -96,7 +95,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.Version;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
-import org.lwjgl.util.lmdb.MDBVal;
 import org.mockito.Mockito;
 
 /** Process-death coverage for durable LMDB commits; it does not simulate host power loss. */
@@ -293,16 +291,17 @@ class LmdbCrashRecoveryTest {
 		LmdbStore reindexed = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("posc").setForceSync(true));
 		SailRepository reindexedRepository = new SailRepository(reindexed);
 		reindexedRepository.init();
-		assertTrue(reindexed.awaitIndexRebuild(30, TimeUnit.SECONDS), "the replacement index must publish");
+		assertTrue(reindexed.awaitIndexRebuild(30, TimeUnit.SECONDS),
+				"query-preference compatibility maintenance must finish");
 		try (RepositoryConnection connection = reindexedRepository.getConnection()) {
-			assertEquals(1, reindexed.getLmdbStats().tripleDatabases().get("poscposc").entries());
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(reindexed, 1, 0);
 			assertTrue(connection.hasStatement(subject, PREDICATE, object, false));
 			try (RepositoryResult<Statement> statements = connection.getStatements(subject, PREDICATE, object, false)) {
 				assertTrue(statements.hasNext());
 				assertEquals(GRAPH, statements.next().getContext());
 			}
 			assertTrue(connection.hasStatement(subject, PREDICATE, object, false, GRAPH),
-					"the replacement index must resolve the record before the clean close");
+					"the configured query order must resolve persistent authority before the clean close");
 		} finally {
 			reindexedRepository.shutDown();
 		}
@@ -311,9 +310,9 @@ class LmdbCrashRecoveryTest {
 		SailRepository reopenedRepository = new SailRepository(reopened);
 		reopenedRepository.init();
 		try (RepositoryConnection connection = reopenedRepository.getConnection()) {
-			assertEquals(1, reopened.getLmdbStats().tripleDatabases().get("poscposc").entries());
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(reopened, 1, 0);
 			assertTrue(connection.hasStatement(subject, PREDICATE, object, false, GRAPH),
-					"the replacement index must resolve the record after the clean close and reopen");
+					"persistent authority must resolve the record after the clean close and reopen");
 		} finally {
 			reopenedRepository.shutDown();
 		}
@@ -583,90 +582,6 @@ class LmdbCrashRecoveryTest {
 					"the native commit must remain authoritative after a post-commit exception");
 		} finally {
 			reopened.shutDown();
-		}
-	}
-
-	@Test
-	@Timeout(value = 120, unit = TimeUnit.SECONDS)
-	void nativeIndexRewriteSurvivesCrashBeforePropertiesSave(@TempDir Path storeDir) throws Exception {
-		LmdbStoreConfig oldConfig = new LmdbStoreConfig("spoc").setForceSync(true);
-		IRI subject = VF.createIRI("urn:index-rewrite:subject:17");
-		IRI object = VF.createIRI("urn:index-rewrite:object:17");
-		LmdbStore store = new LmdbStore(storeDir.toFile(), oldConfig);
-		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try (RepositoryConnection connection = repository.getConnection()) {
-			for (int i = 0; i < 128; i++) {
-				connection.add(VF.createIRI("urn:index-rewrite:subject:" + i), PREDICATE,
-						VF.createIRI("urn:index-rewrite:object:" + i), GRAPH);
-			}
-		} finally {
-			repository.shutDown();
-		}
-		// Ensure this cut targets a persisted, pre-existing store even while the separate dirty-flag regression is red.
-		StoreProperties properties = new StoreProperties(storeDir.toFile());
-		assertTrue(properties.load(), "the initialized format-7 properties must remain the crash baseline");
-		properties.setVersion(String.valueOf(LmdbStore.VERSION))
-				.setTripleIndexes("spoc")
-				.setTripleTermIndexes("spoc,cspo")
-				.save();
-
-		Path childOutputFile = storeDir.resolve("index-rewrite-child-output.log");
-		Process child = startIndexRewriteCrashChild(storeDir, "posc", childOutputFile);
-		try {
-			assertTrue(child.waitFor(90, TimeUnit.SECONDS), "the reindex crash child must reach its cut point");
-			String output = Files.readString(childOutputFile, StandardCharsets.UTF_8);
-			assertEquals(86, child.exitValue(), "the child must halt after native reindex publication: " + output);
-			assertTrue(output.contains("INDEX_REWRITE_NATIVE_COMMITTED"),
-					"the process stop must occur after reindex returned from the native commit");
-			assertTrue(output.contains("INDEX_REWRITE_OLD_PROPERTIES_STILL_ON_DISK"),
-					"the crash must precede the sidecar index-spec save");
-			assertTrue(output.contains("INDEX_REWRITE_REQUESTED=posc"),
-					"the child must actually request a different native index set");
-			assertTrue(output.contains("INDEX_REWRITE_NATIVE_DATABASES="),
-					"the child must report the native index set at the crash boundary");
-			assertTrue(output.contains("INDEX_REWRITE_POSC_ENTRIES=128"),
-					"the committed replacement index must contain the complete source data");
-		} finally {
-			if (child.isAlive()) {
-				child.destroyForcibly();
-				assertTrue(child.waitFor(10, TimeUnit.SECONDS), "the owned reindex child must terminate");
-			}
-		}
-
-		// The reopened store deliberately has no explicit index override: a caller-supplied `spoc` setting would
-		// correctly request a second reindex, hiding whether the native manifest survived the stale sidecar.
-		LmdbStore reopened = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig().setForceSync(true));
-		SailRepository reopenedRepository = new SailRepository(reopened);
-		reopenedRepository.init();
-		try (RepositoryConnection connection = reopenedRepository.getConnection()) {
-			assertEquals(128, reopened.getLmdbStats().tripleDatabases().get("poscposc").entries(),
-					"the native replacement index must retain every entry after recovery");
-			int recoveredStatements = 0;
-			try (RepositoryResult<Statement> statements = connection.getStatements(null, null, null, false)) {
-				while (statements.hasNext()) {
-					statements.next();
-					recoveredStatements++;
-				}
-			}
-			assertEquals(128, recoveredStatements,
-					"a full index scan must expose all records in the committed replacement index");
-			assertTrue(connection.hasStatement(subject, null, null, false, GRAPH),
-					"a filtered subject scan must find the recovered statement");
-			assertTrue(connection.hasStatement(null, PREDICATE, null, false, GRAPH),
-					"a predicate-prefixed replacement-index scan must find the recovered statement");
-			assertTrue(connection.hasStatement(subject, PREDICATE, object, false),
-					"a three-field replacement-index scan must find the recovered statement");
-			try (RepositoryResult<Statement> statements = connection.getStatements(subject, PREDICATE, object, false)) {
-				assertTrue(statements.hasNext(),
-						"the recovered subject/predicate/object match must return its context");
-				assertEquals(GRAPH, statements.next().getContext(),
-						"reindex must preserve the context ID associated with each statement");
-			}
-			assertTrue(connection.hasStatement(subject, PREDICATE, object, false, GRAPH),
-					"the native replacement index must resolve data after a pre-properties-save crash");
-		} finally {
-			reopenedRepository.shutDown();
 		}
 	}
 
@@ -1168,63 +1083,6 @@ class LmdbCrashRecoveryTest {
 		Runtime.getRuntime().halt(86);
 	}
 
-	public static final class IndexRewriteCrashChildMain {
-
-		public static void main(String[] args) throws Exception {
-			File dataDir = Path.of(args[0]).toFile();
-			Path propertiesFile = new File(dataDir, StoreProperties.FILE_NAME).toPath();
-			byte[] oldProperties = Files.readAllBytes(propertiesFile);
-			StoreProperties properties = new StoreProperties(dataDir);
-			if (!properties.load()) {
-				throw new AssertionError("The crash child requires the persisted old properties");
-			}
-			LegacyStoreDiscovery.discover(dataDir, properties);
-			LmdbStoreConfig config = new LmdbStoreConfig(args[1]).setForceSync(true);
-			Set<String> target = TripleIndex.parseIndexSpecList(args[1]);
-			AtomicReference<LmdbSailStore> owner = new AtomicReference<>();
-			try (LmdbSailStore backingStore = new LmdbSailStore(dataDir, properties, config, false, ValueStore::new,
-					(dir, nativeProperties, settings, values) -> new TripleStore(dir, nativeProperties, settings,
-							values) {
-						@Override
-						protected void afterIndexRebuildBatch() throws IOException {
-							Map<String, Long> active = explicitIndexEntryCounts();
-							if (!active.keySet().equals(target)) {
-								return;
-							}
-							Set<String> committed = getTxnManager().doWith((stack, txn) -> {
-								int metadata = LmdbUtil.openDatabaseWithTxn(txn, NAMESPACE_DATABASE_NAME, 0);
-								MDBVal key = MDBVal.calloc(stack).mv_data(stack.bytes(INDEX_SPECS_KEY));
-								MDBVal value = MDBVal.calloc(stack);
-								LmdbUtil.E(mdb_get(txn, metadata, key, value));
-								byte[] encoded = new byte[Math.toIntExact(value.mv_size())];
-								value.mv_data().get(encoded);
-								return TripleIndex.parseIndexSpecList(new String(encoded, StandardCharsets.UTF_8));
-							});
-							if (!committed.equals(target) || active.get("posc") != 128L) {
-								throw new AssertionError("Incomplete committed target: " + committed + " " + active);
-							}
-							if (!MessageDigest.isEqual(oldProperties, Files.readAllBytes(propertiesFile))) {
-								throw new AssertionError("The crash cut must precede any sidecar property update");
-							}
-							System.out.println("CRASHLAB:INDEX_REWRITE_NATIVE_COMMITTED");
-							System.out.println("CRASHLAB:INDEX_REWRITE_REQUESTED=" + args[1]);
-							System.out.println("CRASHLAB:INDEX_REWRITE_NATIVE_DATABASES="
-									+ owner.get().getLmdbStats().tripleDatabases().keySet());
-							System.out.println("CRASHLAB:INDEX_REWRITE_POSC_ENTRIES=" + active.get("posc"));
-							System.out.println("CRASHLAB:INDEX_REWRITE_OLD_PROPERTIES_STILL_ON_DISK");
-							System.out.flush();
-							Runtime.getRuntime().halt(86);
-						}
-					})) {
-				owner.set(backingStore);
-				backingStore.startBackgroundMaintenanceAfterInitialization();
-				backingStore.getTripleStore().awaitIndexRebuild(30, TimeUnit.SECONDS);
-				throw new AssertionError("The index rewrite crash point was not reached: "
-						+ backingStore.getTripleStore().indexRebuildStatus());
-			}
-		}
-	}
-
 	private static Process startWriter(Path storeDir, PausePoint pausePoint, LmdbStoreConfig config)
 			throws IOException {
 		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
@@ -1232,16 +1090,6 @@ class LmdbCrashRecoveryTest {
 				CrashWriterMain.class.getName(), storeDir.toAbsolutePath().toString(), pausePoint.name(),
 				Long.toString(config.getTripleDBSize()));
 		return new ProcessBuilder(command).redirectErrorStream(true).start();
-	}
-
-	private static Process startIndexRewriteCrashChild(Path storeDir, String indexSpecs, Path outputFile)
-			throws IOException {
-		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-		return new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
-				IndexRewriteCrashChildMain.class.getName(), storeDir.toAbsolutePath().toString(), indexSpecs)
-						.redirectErrorStream(true)
-						.redirectOutput(outputFile.toFile())
-						.start();
 	}
 
 	private static Process startMissingMarkerChild() throws IOException {

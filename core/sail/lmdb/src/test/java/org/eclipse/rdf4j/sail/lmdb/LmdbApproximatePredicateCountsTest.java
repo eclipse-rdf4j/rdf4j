@@ -14,8 +14,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -24,6 +29,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.lwjgl.util.lmdb.LMDB;
+import org.lwjgl.util.lmdb.MDBVal;
+import org.mockito.MockedStatic;
 
 /**
  * Tests {@link TripleStore#approximatePredicateStatementCounts}: a per-predicate statement estimate cheap enough to
@@ -93,24 +101,16 @@ class LmdbApproximatePredicateCountsTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
-	void noEstimateWithoutThePageCardinalityEstimator(boolean nativeEvaluation) throws Exception {
+	void exactMetadataWeightsDoNotRequireThePageCardinalityEstimator(boolean nativeEvaluation) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		config.setPageCardinalityEstimator(false);
 		config.setNativeEvaluationEnabled(nativeEvaluation);
-		tripleStore = skewedStore(config);
-
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			assertThat(tripleStore.approximatePredicateStatementCounts(txn, true, PREDICATES)).isNull();
-		}
+		assertMetadataSnapshots(config);
 	}
 
 	@Test
-	void noEstimateWithoutAPredicateLeadingIndex() throws Exception {
-		tripleStore = skewedStore(new LmdbStoreConfig("spoc"));
-
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			assertThat(tripleStore.approximatePredicateStatementCounts(txn, true, PREDICATES)).isNull();
-		}
+	void exactMetadataWeightsDoNotRequireAPredicateLeadingPreference() throws Exception {
+		assertMetadataSnapshots(new LmdbStoreConfig("spoc"));
 	}
 
 	@Test
@@ -120,6 +120,79 @@ class LmdbApproximatePredicateCountsTest {
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			assertThat(tripleStore.approximatePredicateStatementCounts(txn, true, new long[0])).isNull();
 		}
+	}
+
+	private void assertMetadataSnapshots(LmdbStoreConfig config) throws Exception {
+		tripleStore = skewedStore(config);
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(90, PREDICATES[0], 91, 0, false);
+		tripleStore.storeTriple(92, PREDICATES[0], 93, 0, false);
+		tripleStore.commit();
+		long[] explicitBefore = { LIGHT_STATEMENTS, LIGHT_STATEMENTS, HEAVY_STATEMENTS,
+				LIGHT_STATEMENTS, LIGHT_STATEMENTS };
+		long[] inferredBefore = { 2, 0, 0, 0, 0 };
+		long[] explicitAfter = explicitBefore.clone();
+		explicitAfter[0]++;
+		explicitAfter[1]--;
+		long[] inferredAfter = { 1, 0, 0, 0, 0 };
+		try (Txn pinned = tripleStore.getTxnManager().createReadTxnPinned(tripleStore::getDataRevision)) {
+			int metadata = LmdbPersistentAdjacency.openExisting(pinned.get()).metadataDbi();
+			assertPointWeights(pinned, metadata, true, explicitBefore);
+			assertPointWeights(pinned, metadata, false, inferredBefore);
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(90, PREDICATES[0], 91, 0, true);
+			tripleStore.removeTriplesByContext(1_000 + LIGHT_STATEMENTS, PREDICATES[1], 5_000_000, 1, true, removed -> {
+			});
+			tripleStore.commit();
+			assertPointWeights(pinned, metadata, true, explicitBefore);
+			assertPointWeights(pinned, metadata, false, inferredBefore);
+			try (Txn fresh = tripleStore.getTxnManager().createReadTxn()) {
+				fresh.get(); // Prime the native lease outside the point-read-only observer.
+				assertPointWeights(fresh, metadata, true, explicitAfter);
+				assertPointWeights(fresh, metadata, false, inferredAfter);
+			}
+		}
+		tripleStore.close();
+		tripleStore = new TripleStore(dataDir, config, null);
+		try (Txn reopened = tripleStore.getTxnManager().createReadTxn()) {
+			int metadata = LmdbPersistentAdjacency.openExisting(reopened.get()).metadataDbi();
+			assertPointWeights(reopened, metadata, true, explicitAfter);
+			assertPointWeights(reopened, metadata, false, inferredAfter);
+		}
+	}
+
+	private void assertPointWeights(Txn txn, int metadata, boolean explicit, long[] expected) {
+		List<Long> predicatesRead = new ArrayList<>();
+		int[] depth = { 0 };
+		try (MockedStatic<LMDB> ignored = mockStatic(LMDB.class, invocation -> {
+			boolean outermost = depth[0]++ == 0;
+			try {
+				if (outermost) {
+					String method = invocation.getMethod().getName();
+					assertThat(method.startsWith("mdb_cursor_"))
+							.as("exact predicate weights must not enumerate any physical records")
+							.isFalse();
+					if (method.equals("mdb_get")) {
+						assertThat((long) invocation.getArgument(0)).isEqualTo(txn.get());
+						assertThat((int) invocation.getArgument(1)).isEqualTo(metadata);
+						MDBVal key = invocation.getArgument(2);
+						assertThat(key.mv_size()).isEqualTo(10L);
+						ByteBuffer bytes = key.mv_data().duplicate();
+						assertThat(bytes.get()).as("PREDICATE count key").isEqualTo((byte) 2);
+						assertThat(bytes.get()).as("outgoing plane, not the opposite or other statement set")
+								.isEqualTo((byte) (explicit ? 0 : 2));
+						predicatesRead.add(bytes.getLong());
+					}
+				}
+				return invocation.callRealMethod();
+			} finally {
+				depth[0]--;
+			}
+		})) {
+			assertThat(tripleStore.approximatePredicateStatementCounts(txn, explicit, PREDICATES))
+					.containsExactly(expected);
+		}
+		assertThat(predicatesRead).containsExactlyElementsOf(Arrays.stream(PREDICATES).boxed().toList());
 	}
 
 	private TripleStore skewedStore(LmdbStoreConfig config) throws Exception {

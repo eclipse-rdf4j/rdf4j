@@ -18,7 +18,6 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures.properties;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures.save;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbCompatibilityFixtures.snapshot;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.lwjgl.system.MemoryUtil.NULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
@@ -86,18 +85,22 @@ class LmdbLegacyIndexDiscoveryTest {
 
 	static Stream<Arguments> profiles() {
 		return Stream.of(
-				Arguments.of("v2-610-default.zip", Set.of("spoc", "posc"), Set.of("spoc", "cspo")),
-				Arguments.of("v2-610-explicit-statements.zip", Set.of("spoc", "posc", "ospc"),
+				Arguments.of("v2-610-default.zip", true, Set.of("spoc", "posc"), Set.of("spoc", "cspo")),
+				Arguments.of("v2-610-explicit-statements.zip", false, Set.of("spoc", "posc", "ospc"),
 						Set.of("spoc", "cspo")),
-				Arguments.of("v2-610-explicit-terms.zip", Set.of("spoc", "posc"), Set.of("spoc", "cspo")),
-				Arguments.of("v2-610-custom.zip", Set.of("cspo", "pocs"), Set.of("spoc", "cspo", "posc")));
+				Arguments.of("v2-610-explicit-terms.zip", true, Set.of("spoc", "posc"), Set.of("spoc", "cspo")),
+				Arguments.of("v2-610-custom.zip", false, Set.of("cspo", "pocs"), Set.of("spoc", "cspo", "posc")));
 	}
 
 	@ParameterizedTest
 	@MethodSource("profiles")
-	void actualLegacyIndexesAreRecoveredWithoutDefaultReinterpretation(String fixture, Set<String> statements,
-			Set<String> terms) throws Exception {
+	void actualLegacyIndexesAreRecoveredWithoutDefaultReinterpretation(String fixture, boolean hasProperties,
+			Set<String> statements, Set<String> terms) throws Exception {
 		LmdbCompatibilityFixtures.extract(fixture, directory);
+		StoreProperties discovered = new StoreProperties(directory.toFile());
+		assertThat(discovered.load()).as("the authentic fixture's persisted sidecar presence").isEqualTo(hasProperties);
+		LegacyStoreDiscovery.discover(directory.toFile(), discovered);
+		assertThat(TripleIndex.parseIndexSpecList(discovered.getTripleIndexes())).isEqualTo(statements);
 		for (int reopen = 0; reopen < 2; reopen++) {
 			SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(),
 					new LmdbStoreConfig().setInlineLiterals(false)));
@@ -119,7 +122,7 @@ class LmdbLegacyIndexDiscoveryTest {
 					.isEqualTo(statements);
 			assertThat(TripleIndex.parseIndexSpecList(properties.getProperty("triple-term-indexes")))
 					.isEqualTo(terms);
-			assertThat(directory.resolve("lmdbrdf.ver")).doesNotExist();
+			assertThat(directory.resolve("lmdbrdf.ver")).hasContent(LmdbPersistentAdjacencyFence.MARKER);
 			assertThat(properties.getProperty("canonical-language-tags")).isNull();
 		}
 	}
@@ -250,9 +253,13 @@ class LmdbLegacyIndexDiscoveryTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
-	void capturedInactiveStatementTreesStayPendingBeforeScheduling(boolean legacy) throws Exception {
+	void capturedLegacyStatementTreesAreRemovedBeforeBackgroundScheduling(boolean legacy) throws Exception {
 		if (legacy) {
 			extract("v2-610-default.zip", directory);
+			installMatchingManifest(true);
+			putNamespaceMetadata(TripleStore.INDEX_SPECS_KEY, "spoc".getBytes(StandardCharsets.UTF_8));
+			assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory,
+					TripleIndex.nativeDatabaseName("posc", true))).isEqualTo(4L);
 		}
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(false);
 		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(), config));
@@ -266,22 +273,28 @@ class LmdbLegacyIndexDiscoveryTest {
 		} finally {
 			repository.shutDown();
 		}
-		putNamespaceMetadata(TripleStore.INDEX_SPECS_KEY, "spoc".getBytes(StandardCharsets.UTF_8));
 		StoreProperties properties = new StoreProperties(directory.toFile());
 		assertThat(properties.load()).isTrue();
 		LegacyStoreDiscovery.discover(directory.toFile(), properties);
 		try (TripleStore store = new TripleStore(directory.resolve("triples").toFile(), properties,
 				new LmdbStoreConfig("spoc").setInlineLiterals(false), null)) {
-			assertThat(store.explicitIndexEntryCounts()).containsOnlyKeys("spoc");
-			long expected = store.explicitIndexEntryCounts().get("spoc");
-			assertFalse(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS),
-					"captured inactive physical trees remain registered cleanup before the worker starts");
+			long expected = legacy ? 5L : 1L;
+			assertThat(store.explicitIndexEntryCounts()).containsExactlyInAnyOrderEntriesOf(
+					Map.of("psoc", expected, "posc", expected));
+			assertThat(store.awaitIndexRebuild(0L, TimeUnit.NANOSECONDS))
+					.as("migration removes active and inactive permutation trees in its commit")
+					.isTrue();
 			store.startBackgroundIndexRebuild();
 			assertThat(store.awaitIndexRebuild(10L, TimeUnit.SECONDS)).isTrue();
-			assertThat(store.explicitIndexEntryCounts().get("spoc")).isEqualTo(expected);
+			assertThat(store.explicitIndexEntryCounts()).containsExactlyInAnyOrderEntriesOf(
+					Map.of("psoc", expected, "posc", expected));
 		}
-		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(directory,
-				TripleIndex.nativeDatabaseName("posc", true))).isZero();
+		assertThat(readNativeKeys(directory.resolve("triples"), null).stream()
+				.map(key -> new String(key, StandardCharsets.US_ASCII))
+				.toList())
+						.containsExactlyInAnyOrder(LmdbPersistentAdjacency.PAGES_DATABASE,
+								LmdbPersistentAdjacency.METADATA_DATABASE, LmdbPersistentAdjacency.DELTAS_DATABASE,
+								TripleStore.NAMESPACE_DATABASE_NAME);
 	}
 
 	@ParameterizedTest
@@ -797,15 +810,7 @@ class LmdbLegacyIndexDiscoveryTest {
 			addUnusedMarker(owner, 10);
 			addUnusedMarker(owner, 11);
 		}
-		Set<String> statementIndexes = TripleIndex.parseIndexSpecList(descriptors.getProperty("triple-indexes"));
-		for (String spec : statementIndexes) {
-			for (boolean explicit : new boolean[] { false, true }) {
-				String database = TripleIndex.nativeDatabaseName(spec, explicit);
-				for (byte[] key : readNativeKeys(directory.resolve("triples"), database)) {
-					nativeDeleteTriple(directory.resolve("triples"), database, key);
-				}
-			}
-		}
+		clearPersistentStatements();
 		LmdbCompatibilityFixtures.nativePut(directory, TripleIndex.nativeDatabaseName("term-cspo", true),
 				encodeIndexKey("cspo", childQuad), null);
 
@@ -1000,7 +1005,7 @@ class LmdbLegacyIndexDiscoveryTest {
 	}
 
 	@Test
-	void reindexesOnlyAfterValidatingTheAuthoritativeLegacyIndexes() throws Exception {
+	void migratesOnlyAfterValidatingTheAuthoritativeLegacyIndexes() throws Exception {
 		extract("v2-610-default.zip", directory);
 		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(),
 				new LmdbStoreConfig("spoc,ospc").setInlineLiterals(false)));
@@ -1143,15 +1148,7 @@ class LmdbLegacyIndexDiscoveryTest {
 			}
 		}
 		if (removeStatements) {
-			Set<String> statementIndexes = TripleIndex.parseIndexSpecList(descriptors.getProperty("triple-indexes"));
-			for (String spec : statementIndexes) {
-				for (boolean explicit : new boolean[] { false, true }) {
-					String database = TripleIndex.nativeDatabaseName(spec, explicit);
-					for (byte[] key : readNativeKeys(directory.resolve("triples"), database)) {
-						nativeDeleteTriple(directory.resolve("triples"), database, key);
-					}
-				}
-			}
+			clearPersistentStatements();
 		}
 	}
 
@@ -1262,19 +1259,30 @@ class LmdbLegacyIndexDiscoveryTest {
 		return key;
 	}
 
-	private static void nativeDeleteTriple(Path environment, String database, byte[] keyBytes) throws Exception {
+	private void clearPersistentStatements() throws Exception {
+		// Preserve the intentionally retained dictionary owners while removing statement authority consistently.
 		long env = NULL;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer handle = stack.mallocPointer(1);
 			E(mdb_env_create(handle));
 			env = handle.get(0);
 			E(mdb_env_set_maxdbs(env, 49));
-			E(mdb_env_open(env, environment.toString(), MDB_NOTLS, 0664));
+			E(mdb_env_open(env, directory.resolve("triples").toString(), MDB_NOTLS, 0664));
 			LmdbUtil.writeTransaction(env, (inner, txn) -> {
-				var databaseHandle = inner.mallocInt(1);
-				E(mdb_dbi_open(txn, database, 0, databaseHandle));
-				MDBVal key = MDBVal.calloc(inner).mv_data(inner.bytes(keyBytes));
-				E(mdb_del(txn, databaseHandle.get(0), key, null));
+				LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn);
+				for (boolean explicit : new boolean[] { false, true }) {
+					List<long[]> rows = new ArrayList<>();
+					try (RecordIterator iterator = adjacency.scan(txn, -1, -1, -1, -1, explicit)) {
+						long[] row;
+						while ((row = iterator.next()) != null) {
+							rows.add(Arrays.copyOf(row, row.length));
+						}
+					}
+					for (long[] row : rows) {
+						assertThat(adjacency.remove(txn, row[0], row[1], row[2], row[3], explicit)).isTrue();
+					}
+				}
+				adjacency.compact(txn, true);
 				return null;
 			});
 		} finally {

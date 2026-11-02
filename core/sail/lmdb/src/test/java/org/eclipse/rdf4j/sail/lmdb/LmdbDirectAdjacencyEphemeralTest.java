@@ -140,22 +140,39 @@ class LmdbDirectAdjacencyEphemeralTest {
 		}
 		tripleStore.commit();
 
+		LmdbAdjacencyNativeReadWork.Counts small = selectedScanWork(selected);
+		tripleStore.startTransaction();
+		for (int subject = 1; subject <= 4; subject++) {
+			for (int object = 8; object < 16; object++) {
+				tripleStore.storeTriple(uri(subject), uri(10), uri(10_000 + subject * 20 + object), 0, true);
+				tripleStore.storeTriple(uri(subject), uri(30), uri(30_000 + subject * 20 + object), 0, true);
+			}
+		}
+		tripleStore.commit();
+		LmdbAdjacencyNativeReadWork.Counts large = selectedScanWork(selected);
+		System.out.printf("selected-scanner-native small=%s large=%s%n", small, large);
+		large.assertBoundedBy(small);
+	}
+
+	private LmdbAdjacencyNativeReadWork.Counts selectedScanWork(long selected) throws Exception {
 		LmdbAdjacencyCoverage coverage = LmdbAdjacencyCoverage.selected(new long[] { selected }, Set.of());
 		try (Txn txn = tripleStore.getTxnManager().createReadTxnPinned(tripleStore::getDataRevision)) {
 			LmdbAdjacencyTripleStoreScanner scanner = new LmdbAdjacencyTripleStoreScanner(tripleStore, txn,
 					tripleStore.getDataRevision());
-			List<Long> outgoingPredicates = new ArrayList<>();
-			List<Long> incomingPredicates = new ArrayList<>();
-			scanner.scanOutgoing(true, coverage, collectingPredicates(outgoingPredicates));
-			scanner.scanIncoming(true, coverage, collectingPredicates(incomingPredicates));
-
-			assertThat(outgoingPredicates).containsExactly(selected, selected, selected, selected);
-			assertThat(incomingPredicates).containsExactly(selected, selected, selected, selected);
-			Object telemetry = scanner.getClass().getDeclaredMethod("telemetry").invoke(scanner);
-			assertThat(invokeLong(telemetry, "cursorRowsScanned")).isLessThanOrEqualTo(16);
-			assertThat(invokeLong(telemetry, "cursorRowsMatched")).isEqualTo(8);
-			assertThat(invokeLong(telemetry, "cursorRowsSkipped")).isEqualTo(8);
-			assertThat(invokeLong(telemetry, "cursorSeeks")).isGreaterThanOrEqualTo(9);
+			try (LmdbAdjacencyNativeReadWork work = new LmdbAdjacencyNativeReadWork()) {
+				List<Long> outgoingPredicates = new ArrayList<>();
+				List<Long> incomingPredicates = new ArrayList<>();
+				scanner.scanOutgoing(true, coverage, collectingPredicates(outgoingPredicates));
+				scanner.scanIncoming(true, coverage, collectingPredicates(incomingPredicates));
+				assertThat(outgoingPredicates).containsExactly(selected, selected, selected, selected);
+				assertThat(incomingPredicates).containsExactly(selected, selected, selected, selected);
+				Object telemetry = scanner.getClass().getDeclaredMethod("telemetry").invoke(scanner);
+				assertThat(invokeLong(telemetry, "cursorRowsScanned")).isLessThanOrEqualTo(16);
+				assertThat(invokeLong(telemetry, "cursorRowsMatched")).isEqualTo(8);
+				assertThat(invokeLong(telemetry, "cursorRowsSkipped")).isZero();
+				assertThat(invokeLong(telemetry, "cursorSeeks")).isPositive();
+				return work.counts();
+			}
 		}
 	}
 
@@ -257,6 +274,7 @@ class LmdbDirectAdjacencyEphemeralTest {
 
 	private void verifyRow(LmdbInMemoryAdjacencyIndex index, long key, int plane, long predicate,
 			List<long[]> expected) {
+		expected = new ArrayList<>(expected);
 		expected.sort((a, b) -> {
 			int cmp = Long.compareUnsigned(a[0], b[0]);
 			return cmp != 0 ? cmp : Long.compareUnsigned(a[1], b[1]);
@@ -290,15 +308,42 @@ class LmdbDirectAdjacencyEphemeralTest {
 	}
 
 	@Test
-	void missingPredicateLeadingIndexRefusesTheIncomingDirection() throws Exception {
+	void canonicalIncomingDirectionWorksWithSubjectOnlyPreference() throws Exception {
 		try (TripleStore spocOnly = new TripleStore(new File(dataDir, "spoc-only"), new LmdbStoreConfig("spoc"),
 				null)) {
+			spocOnly.startTransaction();
+			for (boolean explicit : new boolean[] { true, false }) {
+				long offset = explicit ? 0 : 100;
+				spocOnly.storeTriple(uri(1 + offset), uri(20), uri(3 + offset), 0, explicit);
+				spocOnly.storeTriple(uri(2 + offset), uri(20), uri(3 + offset), uri(50), explicit);
+			}
+			spocOnly.commit();
+			LmdbAdjacencyMemoryAccount account = new LmdbAdjacencyMemoryAccount(1L << 30);
 			try (Txn txn = spocOnly.getTxnManager().createReadTxnPinned(spocOnly::getDataRevision)) {
 				LmdbAdjacencyTripleStoreScanner scanner = new LmdbAdjacencyTripleStoreScanner(spocOnly, txn,
 						spocOnly.getDataRevision());
 				assertThat(scanner.supportsOrderedScan(true)).isTrue();
-				assertThat(scanner.supportsOrderedScan(false)).isFalse();
+				assertThat(scanner.supportsOrderedScan(false)).isTrue();
+				try (LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(scanner,
+						LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 17)) {
+					assertThat(index.statementCount()).isEqualTo(4);
+					assertThat(index.incidenceCount()).isEqualTo(8);
+					for (boolean explicit : new boolean[] { true, false }) {
+						long offset = explicit ? 0 : 100;
+						int outgoing = explicit ? LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT
+								: LmdbAdjacencyPlane.PLANE_OUTGOING_INFERRED;
+						int incoming = explicit ? LmdbAdjacencyPlane.PLANE_INCOMING_EXPLICIT
+								: LmdbAdjacencyPlane.PLANE_INCOMING_INFERRED;
+						verifyRow(index, uri(3 + offset), incoming, uri(20), List.of(new long[] { uri(1 + offset), 0 },
+								new long[] { uri(2 + offset), uri(50) }));
+						verifyRow(index, uri(1 + offset), outgoing, uri(20),
+								List.of(new long[] { uri(3 + offset), 0 }));
+						verifyRow(index, uri(2 + offset), outgoing, uri(20),
+								List.of(new long[] { uri(3 + offset), uri(50) }));
+					}
+				}
 			}
+			assertThat(account.totalChargedBytes()).isZero();
 		}
 	}
 }

@@ -639,9 +639,10 @@ class LmdbDirectAdjacencyQueryTest {
 		assertThat(rows).hasSize(8)
 				.isSortedAccordingTo((left, right) -> Long.compareUnsigned(
 						left[TripleIndex.CONTEXT_IDX], right[TripleIndex.CONTEXT_IDX]));
+		// The configured context order scans all eight matching rows, then sorts them: 8 + 8 + 8*log2(8).
 		assertThat(outcomes).as(readiness)
 				.anyMatch(reason -> reason.startsWith("CANDIDATE_LMDB[")
-						&& reason.contains("cost=102.0..170.0"));
+						&& reason.contains("cost=30.0..50.0"));
 		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
 	}
 
@@ -661,8 +662,9 @@ class LmdbDirectAdjacencyQueryTest {
 		assertThat(rows).hasSize(8)
 				.isSortedAccordingTo((left, right) -> Long.compareUnsigned(
 						left[TripleIndex.CONTEXT_IDX], right[TripleIndex.CONTEXT_IDX]));
+		// A range in a sorted fallback order still consumes and sorts the full matching input.
 		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_LMDB[")
-				&& reason.contains("cost=102.0..170.0"));
+				&& reason.contains("cost=30.0..50.0"));
 		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY"));
 	}
 
@@ -682,7 +684,7 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
-	void exactFullUsesUniversalAdjacencyWhenLmdbCannotHonorTheRequestedOrder() throws Exception {
+	void exactFullArbitratesObjectOrderAndUsesUniversalAdjacencyForContextOrder() throws Exception {
 		openPreferStore();
 		try (LmdbStoreConnection connection = (LmdbStoreConnection) sail.getConnection()) {
 			connection.begin();
@@ -692,11 +694,11 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 		direct.pauseApplierForTest(false);
 
-		assertThat(backing.getTripleStore().getIndexName(StatementOrder.O, -1, -1, -1, -1)).isEmpty();
+		assertThat(backing.getTripleStore().getIndexName(StatementOrder.O, -1, -1, -1, -1)).isEqualTo("opsc");
 		assertThat(backing.getTripleStore().getIndexName(StatementOrder.C, s1, -1, -1, -1)).isEmpty();
 		try (CloseableDataset explicit = dataset(); CloseableDataset inferred = inferredDataset()) {
-			assertDirectOnlyOrder(explicit.source, StatementOrder.O, -1, -1, -1, -1, 5);
-			assertDirectOnlyOrder(inferred.source, StatementOrder.O, -1, -1, -1, -1, 2);
+			assertArbitratedObjectOrder(explicit.source, 5);
+			assertArbitratedObjectOrder(inferred.source, 2);
 			assertDirectOnlyOrder(explicit.source, StatementOrder.C, s1, -1, -1, -1, 4);
 			assertDirectOnlyOrder(inferred.source, StatementOrder.C, s1, -1, -1, -1, 2);
 
@@ -706,6 +708,20 @@ class LmdbDirectAdjacencyQueryTest {
 				assertDirectOnlyOrder(parallel, StatementOrder.C, s1, -1, -1, -1, 4);
 			}
 		}
+	}
+
+	private static void assertArbitratedObjectOrder(NativeLmdbQuerySource source, int expectedRows) throws IOException {
+		List<String> outcomes = new ArrayList<>();
+		assertThat(source.indexName(StatementOrder.O, -1, -1, -1, -1)).isEqualTo("arbitrated-o");
+		List<long[]> rows = CloseableDataset.collect(source.statements(StatementOrder.O, -1, -1, -1, -1,
+				recordingObserver(outcomes)));
+		assertThat(rows).hasSize(expectedRows)
+				.isSortedAccordingTo(
+						(left, right) -> Long.compareUnsigned(left[TripleIndex.OBJ_IDX], right[TripleIndex.OBJ_IDX]));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_ADJACENCY"));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("CANDIDATE_LMDB"));
+		assertThat(outcomes).anyMatch(reason -> reason.startsWith("SELECTED_ADJACENCY")
+				|| reason.startsWith("SELECTED_LMDB"));
 	}
 
 	private static void assertDirectOnlyOrder(NativeLmdbQuerySource source, StatementOrder order, long subject,
@@ -2862,7 +2878,7 @@ class LmdbDirectAdjacencyQueryTest {
 			assertThat(dataset.source.indexName(StatementOrder.S, -1, -1, -1, -1))
 					.isEqualTo("arbitrated-s");
 			assertThat(dataset.source.indexName(StatementOrder.O, -1, -1, -1, -1))
-					.isEqualTo("direct-o");
+					.isEqualTo("arbitrated-o");
 			assertThat(dataset.source.indexName(StatementOrder.C, -1, -1, -1, -1))
 					.isEqualTo("direct-c");
 			assertThat(dataset.source.indexName(StatementOrder.O, -1, p1, -1, -1))
@@ -2874,7 +2890,7 @@ class LmdbDirectAdjacencyQueryTest {
 			assertThat(dataset.source.indexName(s1, -1, -1, g1)).isEqualTo("arbitrated-po");
 			assertThat(dataset.source.indexName(-1, p1, -1, -1)).isEmpty();
 			assertThat(dataset.source.indexName(s1, p1, -1, -1)).isEqualTo("arbitrated-oc");
-			assertThat(dataset.source.indexName(-1, -1, o1, -1)).isEmpty();
+			assertThat(dataset.source.indexName(-1, -1, o1, -1)).isEqualTo("arbitrated-psc");
 		}
 	}
 

@@ -1418,7 +1418,7 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void strictValidationKeepsUnbuildableIndexConfigurationAsSupportedFallback(@TempDir File dataDir)
+	void strictValidationBuildsFromPersistentDirectionsWithLegacyIndexConfiguration(@TempDir File dataDir)
 			throws Exception {
 		store.close();
 		store = null;
@@ -1433,16 +1433,21 @@ class LmdbDirectAdjacencyCommitTest {
 				LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "true",
 				LmdbDirectAdjacencyOptions.FAIL_ON_MAINTENANCE_ERROR_PROPERTY, "true");
 		tripleStore = new TripleStore(dataDir, config, null);
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(S1, P1, O1, 0, true);
+		tripleStore.commit();
 		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(config, 8L << 30, properties::get, 4);
 		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
 
 		store.triggerBuild();
 		assertThat(store.awaitApplierIdleForTest(10, TimeUnit.SECONDS)).isTrue();
 
-		assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.EMPTY);
+		assertThat(store.maintenanceState()).isEqualTo(LmdbDirectAdjacencyStore.MaintenanceState.ACTIVE);
 		try (LmdbAdjacencyReadView view = store.acquire(tripleStore.getDataRevision())) {
-			assertThat(view.isExact()).isFalse();
-			assertThat(view.fallbackReason()).isEqualTo(FallbackReason.BUILDING);
+			assertThat(view.isExact()).isTrue();
+			assertThat(view.fallbackReason()).isNull();
+			assertThat(probe(view, S1, P1, O1, 0, true)).hasSize(1);
+			assertThat(probe(view, -1, P1, O1, 0, true)).hasSize(1);
 		}
 	}
 

@@ -153,7 +153,7 @@ final class RetiredValueIdStore {
 			if (mdb_get(txn, metaDbi, keyVal, dataVal) == MDB_SUCCESS) {
 				lastEpoch = Varint.readUnsigned(dataVal.mv_data());
 			}
-			bootEpoch = lastEpoch + 1;
+			bootEpoch = nextBootEpoch(lastEpoch);
 
 			writeBootEpoch(stack, txn, keyVal, dataVal);
 
@@ -214,7 +214,7 @@ final class RetiredValueIdStore {
 				} else if (rc != org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND) {
 					E(rc);
 				}
-				bootEpoch = lastEpoch + 1L;
+				bootEpoch = nextBootEpoch(lastEpoch);
 			}
 
 			writeBootEpoch(stack, txn, keyVal, dataVal);
@@ -223,6 +223,17 @@ final class RetiredValueIdStore {
 			pendingCount = freshBulkLoad ? 0L : stat.ms_entries();
 			pendingChangeCount = 0L;
 		}
+	}
+
+	/** Zero represents an absent bootstrap record, never a wrapped signed epoch. */
+	static long nextBootEpoch(long previous) throws IOException {
+		if (previous < 0L) {
+			throw new IOException("Malformed ValueStore retirement boot epoch");
+		}
+		if (previous == Long.MAX_VALUE) {
+			throw new IOException("ValueStore retirement boot epoch exhausted");
+		}
+		return previous + 1L;
 	}
 
 	/** Forces the boot epoch durable after an outer startup transaction has committed. */

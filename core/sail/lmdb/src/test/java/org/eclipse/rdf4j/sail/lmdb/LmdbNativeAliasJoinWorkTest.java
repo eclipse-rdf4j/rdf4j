@@ -12,6 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.lwjgl.util.lmdb.LMDB.MDB_GET_CURRENT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_PREV;
+import static org.mockito.Mockito.mockStatic;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,6 +28,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import org.assertj.core.api.SoftAssertions;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -38,6 +43,7 @@ import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
@@ -45,6 +51,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.lwjgl.util.lmdb.LMDB;
+import org.mockito.MockedStatic;
 
 /** Checks correlated BIND aliases for exact results and bounded physical source work. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -175,7 +183,7 @@ class LmdbNativeAliasJoinWorkTest {
 	void fixedObjectAlias16KeysDoNotScanUnrelatedData(boolean adjacency, String indexConfiguration) throws Exception {
 		FixedKeyAliasMeasurement smaller = measureFixedKeyObjectAlias(adjacency, indexConfiguration, 16, 128);
 		FixedKeyAliasMeasurement larger = measureFixedKeyObjectAlias(adjacency, indexConfiguration, 16, 256);
-		boolean boundedLookup = adjacency || indexConfiguration.equals("rich-spoc-posc-ospc");
+		assertBoundedNativeWork(smaller.sourceWork(), larger.sourceWork(), "fixed 16 object keys");
 		for (String route : List.of("automatic", "nestedLoop", "irKernelInterpreted")) {
 			ObjectBoundSourceWork small = smaller.route(route);
 			ObjectBoundSourceWork large = larger.route(route);
@@ -207,21 +215,28 @@ class LmdbNativeAliasJoinWorkTest {
 			assertThat(large.metricKind())
 					.as("%s reports the same physical work unit at both sizes", route)
 					.isEqualTo(small.metricKind());
-			long allowed = boundedLookup ? small.work() + 4 : small.work() * 3;
 			assertThat(large.work())
-					.as("%s selected %s work remains %s as only unrelated rows double; small=%s, large=%s",
-							route, small.metricKind(), boundedLookup ? "bounded" : "measurable",
+					.as("%s selected %s work remains bounded as only unrelated rows double; small=%s, large=%s",
+							route, small.metricKind(),
 							small.summary(), large.summary())
-					.isLessThanOrEqualTo(allowed);
+					.isLessThanOrEqualTo(small.work() + 4);
 		}
 	}
 
 	@ParameterizedTest(name = "direct bound-object source control: adjacency={0}, indexes={1}")
 	@MethodSource("objectBoundAliasConfigurations")
 	void directBoundObjectUsesAvailableLeadingSource(boolean adjacency, String indexConfiguration) throws Exception {
+		NativeSourceWork smaller = measureDirectBoundObject(adjacency, indexConfiguration, 16);
+		NativeSourceWork larger = measureDirectBoundObject(adjacency, indexConfiguration, 32);
+		assertBoundedNativeWork(smaller, larger, "one fixed object as unrelated focus populations double");
+	}
+
+	private NativeSourceWork measureDirectBoundObject(boolean adjacency, String indexConfiguration, int values)
+			throws Exception {
 		String indexLabel = indexConfiguration.equals("default-spoc-posc") ? "default" : "rich-ospc";
-		Path actualPath = directory.resolve("direct-object-actual-" + adjacency + "-" + indexLabel);
-		Path genericPath = directory.resolve("direct-object-generic-" + adjacency + "-" + indexLabel);
+		String suffix = adjacency + "-" + indexLabel + "-size-" + values;
+		Path actualPath = directory.resolve("direct-object-actual-" + suffix);
+		Path genericPath = directory.resolve("direct-object-generic-" + suffix);
 		LmdbStoreConfig actualConfig = indexLabel.equals("rich-ospc")
 				? new LmdbStoreConfig("spoc,posc,ospc")
 				: new LmdbStoreConfig();
@@ -234,13 +249,14 @@ class LmdbNativeAliasJoinWorkTest {
 		actual.init();
 		generic.init();
 		try {
-			loadObjectBoundAlias(actual, 16, 1);
-			loadObjectBoundAlias(generic, 16, 1);
+			loadObjectBoundAlias(actual, values, 1);
+			loadObjectBoundAlias(generic, values, 1);
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
 						.isTrue();
 			}
+			NativeSourceWork sourceWork;
 			List<BindingSet> expected = List.of(
 					expectedRow("right", iri("urn:object-alias:left:0"), "predicate", OBJECT_LEFT_PREDICATE),
 					expectedRow("right", iri("urn:object-alias:right:0:0"), "predicate", OBJECT_MATCH_PREDICATE));
@@ -272,29 +288,32 @@ class LmdbNativeAliasJoinWorkTest {
 						.isPositive();
 				assertThat(sourceRowsMatched).as("source matches are counted separately from scans\n%s", telemetry)
 						.isEqualTo(expected.size());
-				if (!adjacency && indexLabel.equals("default")) {
-					assertThat(sourceRowsScanned).as("default spoc/posc scans this entire fixture")
-							.isEqualTo(16L * (1 + 1 + 8));
-				} else if (!adjacency) {
-					assertThat(sourceRowsScanned)
-							.as("the configured object-leading control reduces source scans; indexName is descriptive metadata")
-							.isLessThan(16L * (1 + 1 + 8));
-				} else if (adjacency) {
+				assertThat(sourceRowsScanned).as("object-keyed access visits exactly its two matching statements")
+						.isEqualTo(sourceRowsMatched);
+				if (adjacency) {
 					assertThat(selected)
 							.as("the adjacency control used its object-keyed in-memory source\n%s", telemetry)
 							.contains("source: IN_MEMORY_ADJACENCY");
-					assertThat(sourceRowsScanned).as("object-keyed adjacency scans only its exact matches")
-							.isEqualTo(sourceRowsMatched);
+				} else {
+					assertThat(selected)
+							.as("persistent object-bound access is selected under either configured preference")
+							.contains("source: LMDB");
 				}
+				// Observe native calls only after the query checks: instrumentation overhead must not train their
+				// adaptive source selection. The raw control measures the same bound-object access independently.
+				sourceWork = measureBoundObjectSource(actualStore,
+						List.of(iri("urn:object-alias:focus:0")), adjacency);
 				Path evidence = Files.createDirectories(Path.of("logs", "workbench-native-fast-paths",
 						"physical-prefix-merged-20261027", "object-alias", "direct-bound-control",
-						"adjacency-" + adjacency + "-" + indexLabel));
+						"adjacency-" + adjacency + "-" + indexLabel, "size-" + values));
 				Files.writeString(evidence.resolve("query.rq"), DIRECT_OBJECT_LOOKUP_QUERY);
 				Files.writeString(evidence.resolve("expected.rows.txt"), canonicalRows(expected).toString());
 				Files.writeString(evidence.resolve("generic.rows.txt"), canonicalRows(genericRows).toString());
 				Files.writeString(evidence.resolve("native.rows.txt"), canonicalRows(nativeRows).toString());
 				Files.writeString(evidence.resolve("telemetry.txt"), telemetry);
+				Files.writeString(evidence.resolve("native-source-work.txt"), sourceWork.toString());
 			}
+			return sourceWork;
 		} finally {
 			actual.shutDown();
 			generic.shutDown();
@@ -359,10 +378,7 @@ class LmdbNativeAliasJoinWorkTest {
 		try {
 			loadUnion(actual, values);
 			loadUnion(generic, values);
-			assertThat(actualStore.getLmdbStats().tripleDatabases().keySet())
-					.as("the UNION skew fixture uses the ordinary default spoc,posc indexes")
-					.contains("spocspoc", "poscposc")
-					.doesNotContain("ospcospc");
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(actualStore, 8L * values + 3, 0);
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
@@ -456,10 +472,7 @@ class LmdbNativeAliasJoinWorkTest {
 		try {
 			load(actual, values);
 			load(generic, values);
-			assertThat(actualStore.getLmdbStats().tripleDatabases().keySet())
-					.as("the native store uses the ordinary default spoc,posc indexes")
-					.contains("spocspoc", "poscposc")
-					.doesNotContain("ospcospc");
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(actualStore, 2L * values + 3, 0);
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
@@ -552,16 +565,9 @@ class LmdbNativeAliasJoinWorkTest {
 		try {
 			loadObjectBoundAlias(actual, values, matchesPerFocus);
 			loadObjectBoundAlias(generic, values, matchesPerFocus);
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(actualStore,
+					(long) values * (matchesPerFocus + 9), 0);
 			var indexes = actualStore.getLmdbStats().tripleDatabases().keySet();
-			assertThat(indexes).as("object-alias configuration %s", indexConfiguration)
-					.contains("spocspoc", "poscposc");
-			if (indexLabel.equals("rich-ospc")) {
-				assertThat(indexes).as("the rich control has the object-leading index")
-						.contains("ospcospc");
-			} else {
-				assertThat(indexes).as("the ordinary control lacks an object-leading index")
-						.doesNotContain("ospcospc");
-			}
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
@@ -638,19 +644,16 @@ class LmdbNativeAliasJoinWorkTest {
 			loadFixedKeyObjectAlias(actual, keyCount, unrelatedRows);
 			loadFixedKeyObjectAlias(generic, keyCount, unrelatedRows);
 			var indexes = actualStore.getLmdbStats().tripleDatabases().keySet();
-			assertThat(indexes).as("the fixture uses its declared native index set")
-					.contains("spocspoc", "poscposc");
-			if (indexLabel.equals("rich-ospc")) {
-				assertThat(indexes).as("the physical lookup control includes a real object-leading index")
-						.contains("ospcospc");
-			} else {
-				assertThat(indexes).as("default indexes provide no object-leading lookup")
-						.doesNotContain("ospcospc");
-			}
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(actualStore,
+					2L * keyCount + unrelatedRows, 0);
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
 						.isTrue();
+			}
+			List<IRI> focusKeys = new ArrayList<>();
+			for (int key = 0; key < keyCount; key++) {
+				focusKeys.add(iri("urn:fixed-object-alias:focus:" + key));
 			}
 
 			List<BindingSet> expected = fixedKeyObjectAliasRows(keyCount);
@@ -686,11 +689,13 @@ class LmdbNativeAliasJoinWorkTest {
 								.contains("source: IN_MEMORY_ADJACENCY");
 					}
 				}
-				if (indexLabel.equals("rich-ospc") && !adjacency) {
+				if (!adjacency) {
 					assertThat(nestedLoop.selectedSourceAccesses())
 							.as("forced nested-loop object-bound probes select the LMDB source")
 							.contains("source: LMDB", "object: BOUND");
 				}
+				// Keep real-call instrumentation from influencing the adaptive timing evidence of the routes above.
+				NativeSourceWork sourceWork = measureBoundObjectSource(actualStore, focusKeys, adjacency);
 
 				Files.writeString(evidence.resolve("routes.txt"), "indexes=" + indexes + "\n"
 						+ "keyCount=" + keyCount + "\nunrelatedRows=" + unrelatedRows + "\nexpectedRows="
@@ -700,7 +705,8 @@ class LmdbNativeAliasJoinWorkTest {
 				Files.writeString(evidence.resolve("automatic.telemetry.txt"), automatic.telemetry());
 				Files.writeString(evidence.resolve("nestedLoop.telemetry.txt"), nestedLoop.telemetry());
 				Files.writeString(evidence.resolve("irKernelInterpreted.telemetry.txt"), kernel.telemetry());
-				return new FixedKeyAliasMeasurement(automatic, nestedLoop, kernel);
+				Files.writeString(evidence.resolve("native-source-work.txt"), sourceWork.toString());
+				return new FixedKeyAliasMeasurement(automatic, nestedLoop, kernel, sourceWork);
 			}
 		} finally {
 			actual.shutDown();
@@ -989,10 +995,7 @@ class LmdbNativeAliasJoinWorkTest {
 		try {
 			loadAdverse(actual, broadPredicates);
 			loadAdverse(generic, broadPredicates);
-			assertThat(actualStore.getLmdbStats().tripleDatabases().keySet())
-					.as("the adversarial native store uses the ordinary default spoc,posc indexes")
-					.contains("spocspoc", "poscposc")
-					.doesNotContain("ospcospc");
+			LmdbCompatibilityFixtures.assertPersistentStatementAuthority(actualStore, broadPredicates + 2L, 0);
 			if (adjacency) {
 				assertThat(actualStore.awaitDirectAdjacencyReady(60, java.util.concurrent.TimeUnit.SECONDS))
 						.as(actualStore.getDirectAdjacencyReadinessDescription())
@@ -1863,6 +1866,148 @@ class LmdbNativeAliasJoinWorkTest {
 		return SimpleValueFactory.getInstance().createIRI(value);
 	}
 
+	/**
+	 * Counts the actual statement-source native calls, excluding planning, dictionary resolution and materialization.
+	 */
+	private static NativeSourceWork measureBoundObjectSource(LmdbStore store, List<IRI> focuses, boolean adjacency)
+			throws Exception {
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			long[] objectIds = new long[focuses.size()];
+			for (int i = 0; i < objectIds.length; i++) {
+				objectIds[i] = source.idOf(focuses.get(i));
+				assertThat(objectIds[i]).as("the fixed object exists before measuring source work")
+						.isNotEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+			}
+			BoundObjectMeasurements measurements = new BoundObjectMeasurements();
+			long rows = 0L;
+			long seeks;
+			long advances;
+			try (NativeReadMeasurements nativeCalls = new NativeReadMeasurements()) {
+				for (long object : objectIds) {
+					long objectRows = 0L;
+					try (RecordIterator cursor = source.statements(NativeLmdbQuerySource.UNKNOWN_ID,
+							NativeLmdbQuerySource.UNKNOWN_ID, object, NativeLmdbQuerySource.UNKNOWN_ID, measurements)) {
+						for (long[] quad = cursor.next(); quad != null; quad = cursor.next()) {
+							assertThat(quad[2]).as("a bound-object source never returns an unrelated object")
+									.isEqualTo(object);
+							assertThat(quad[3]).as("the fixture has only default-context statements").isZero();
+							objectRows++;
+						}
+					}
+					assertThat(objectRows).as("each fixed focus has exactly two incoming statements").isEqualTo(2L);
+					rows += objectRows;
+				}
+				seeks = nativeCalls.seeks;
+				advances = nativeCalls.advances;
+			}
+			assertThat(measurements.selectedAdjacency).as("each probe records the source actually opened")
+					.hasSize(focuses.size())
+					.containsOnly(adjacency);
+			assertThat(measurements.scans).as("every source probe completed with uncensored actual measurements")
+					.hasSize(focuses.size())
+					.allSatisfy(scan -> {
+						assertThat(scan.adjacency()).isEqualTo(adjacency);
+						assertThat(scan.censored()).isFalse();
+						assertThat(scan.scanned()).isEqualTo(2L);
+						assertThat(scan.matched()).isEqualTo(2L);
+						assertThat(scan.filtered()).isZero();
+						if (!adjacency) {
+							assertThat(scan.physicalScanCount())
+									.as("LMDB reports physical visits, not a returned-row fallback")
+									.isTrue();
+						}
+					});
+			if (!adjacency) {
+				assertThat(seeks).as("the raw persistent source performs real native gets or cursor seeks")
+						.isPositive();
+			}
+			return new NativeSourceWork(seeks, advances, rows, measurements.scans.size());
+		}
+	}
+
+	private static void assertBoundedNativeWork(NativeSourceWork smaller, NativeSourceWork larger, String description) {
+		assertThat(larger.rows()).isEqualTo(smaller.rows());
+		assertThat(larger.probes()).isEqualTo(smaller.probes());
+		assertThat(larger.seeks()).as("%s: native gets/seeks remain bounded; smaller=%s, larger=%s",
+				description, smaller, larger).isLessThanOrEqualTo(smaller.seeks() + 4L);
+		assertThat(larger.advances()).as("%s: native cursor advances remain bounded; smaller=%s, larger=%s",
+				description, smaller, larger).isLessThanOrEqualTo(smaller.advances() + 4L);
+		assertThat(larger.seeks() + larger.advances())
+				.as("%s: total native read operations remain bounded as only unrelated data doubles", description)
+				.isLessThanOrEqualTo(smaller.seeks() + smaller.advances() + 4L);
+	}
+
+	private static final class BoundObjectMeasurements implements NativeLmdbQuerySource.AdjacencyAccessObserver {
+		private final List<Boolean> selectedAdjacency = new ArrayList<>();
+		private final List<NativeSourceScan> scans = new ArrayList<>();
+
+		@Override
+		public void access(boolean used, String reason, StatementOrder order, long subject, long predicate,
+				long object, long context) {
+		}
+
+		@Override
+		public void selected(boolean adjacency, String reason, StatementOrder order, long subject, long predicate,
+				long object, long context) {
+			assertThat(subject).isEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+			assertThat(predicate).isEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+			assertThat(object).isNotEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+			assertThat(context).isEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+			selectedAdjacency.add(adjacency);
+		}
+
+		@Override
+		public void measurement(boolean adjacency, long scanned, long matched, long filtered, boolean censored,
+				boolean physicalScanCount) {
+			scans.add(new NativeSourceScan(adjacency, scanned, matched, filtered, censored, physicalScanCount));
+		}
+	}
+
+	/** Thread-local observer only: every intercepted native method executes its real implementation. */
+	private static final class NativeReadMeasurements implements AutoCloseable {
+		private final MockedStatic<LMDB> nativeCalls;
+		private int depth;
+		private long seeks;
+		private long advances;
+
+		NativeReadMeasurements() {
+			nativeCalls = mockStatic(LMDB.class, invocation -> {
+				boolean outermost = depth++ == 0;
+				try {
+					if (outermost) {
+						String method = invocation.getMethod().getName();
+						if (method.equals("mdb_get")) {
+							seeks++;
+						} else if (method.equals("mdb_cursor_get")) {
+							int operation = invocation.getArgument(3);
+							if (operation == MDB_NEXT || operation == MDB_PREV || operation == MDB_GET_CURRENT) {
+								advances++;
+							} else {
+								seeks++;
+							}
+						}
+					}
+					return invocation.callRealMethod();
+				} finally {
+					depth--;
+				}
+			});
+		}
+
+		@Override
+		public void close() {
+			nativeCalls.close();
+		}
+	}
+
+	private record NativeSourceWork(long seeks, long advances, long rows, long probes) {
+	}
+
+	private record NativeSourceScan(boolean adjacency, long scanned, long matched, long filtered, boolean censored,
+			boolean physicalScanCount) {
+	}
+
 	private record Measurement(long candidateRows, long automaticScannedRows, long automaticWork,
 			String automaticWorkMetric, long scannedRows, String nativeTelemetry, String nestedLoopTelemetry) {
 	}
@@ -1874,7 +2019,7 @@ class LmdbNativeAliasJoinWorkTest {
 	}
 
 	private record FixedKeyAliasMeasurement(ObjectBoundSourceWork automatic, ObjectBoundSourceWork nestedLoop,
-			ObjectBoundSourceWork kernel) {
+			ObjectBoundSourceWork kernel, NativeSourceWork sourceWork) {
 		private ObjectBoundSourceWork route(String name) {
 			return switch (name) {
 			case "automatic" -> automatic;

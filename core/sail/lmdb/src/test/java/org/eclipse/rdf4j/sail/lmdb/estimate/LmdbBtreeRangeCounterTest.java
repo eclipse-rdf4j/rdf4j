@@ -13,8 +13,13 @@ package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.spy;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -23,13 +28,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntFunction;
 
 import org.eclipse.rdf4j.sail.lmdb.Varint;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.KeySampleStatus;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.PrefixRun;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.SamplingBudget;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -38,6 +47,259 @@ class LmdbBtreeRangeCounterTest {
 
 	private static final int PAGE_SIZE = 4096;
 	private static final int LARGE_RANGE_LEAVES = 128;
+
+	@Test
+	void weightedWholeDatabaseProjectsEverySmallKeyInsteadOfReturningEntryCount(@TempDir Path directory)
+			throws Exception {
+		TreeFile tree = writeSingleBranchTree(directory.resolve("weighted.mdb"), 1, 2,
+				LmdbBtreeRangeCounterTest::ordinalKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			var result = new LmdbBtreeRangeCounter(file, tree.meta, new LmdbPageCache(0, 0), 1L,
+					new KeyBudget(64, 256)).sampleWeightedKeys(tree.db, null, null, 2, 7L);
+			assertEquals(KeySampleStatus.EXHAUSTIVE, result.status());
+			assertEquals(2, result.draws().size());
+			double mass = 0D;
+			for (var draw : result.draws()) {
+				assertEquals(1D, draw.coefficient());
+				mass += draw.coefficient() * (ordinal(draw.key()) == 0 ? 1_024 : 1);
+			}
+			assertEquals(1_025D, mass, "packed logical mass is not the two physical-key count");
+		}
+	}
+
+	@Test
+	void weightedWithinLeafSelectionIsBoundedStratifiedAndRepeatable(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeSingleBranchTree(directory.resolve("leaf.mdb"), 1, 64,
+				LmdbBtreeRangeCounterTest::ordinalKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			var counter = new LmdbBtreeRangeCounter(file, tree.meta, new LmdbPageCache(64, 64), 1L,
+					new KeyBudget(256, 2_048));
+			var first = counter.sampleWeightedKeys(tree.db, ordinalKey(8), ordinalKey(56), 3, 19L);
+			var repeated = counter.sampleWeightedKeys(tree.db, ordinalKey(8), ordinalKey(56), 3, 19L);
+			assertEquals(KeySampleStatus.SAMPLED, first.status());
+			assertEquals(3, first.draws().size(), "a boundary leaf cannot bypass the projection limit");
+			Set<Integer> positions = new HashSet<>();
+			double mass = 0D;
+			for (int index = 0; index < first.draws().size(); index++) {
+				var draw = first.draws().get(index);
+				int key = ordinal(draw.key());
+				positions.add(key);
+				assertTrue(key >= 8 + index * 16 && key < 8 + (index + 1) * 16);
+				assertEquals(16D, draw.coefficient());
+				assertTrue(Arrays.equals(draw.key(), repeated.draws().get(index).key()));
+				mass += draw.coefficient() * 1_024D;
+			}
+			assertEquals(3, positions.size());
+			assertEquals(48D * 1_024, mass);
+		}
+	}
+
+	@Test
+	void independentEntryStrataDoNotAliasEveryFifthKey(@TempDir Path directory) throws Exception {
+		int[] entries = new int[50];
+		Arrays.fill(entries, 100);
+		TreeFile tree = writeUnequalLeafTree(directory.resolve("periodic.mdb"), entries);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			int representative = 0;
+			for (int stream = 0; stream < 32; stream++) {
+				var result = new LmdbBtreeRangeCounter(file, tree.meta, new LmdbPageCache(64, 64), 1L,
+						new KeyBudget(128, 512)).sampleWeightedKeys(tree.db, null, null, 10, stream);
+				double estimate = result.draws()
+						.stream()
+						.filter(draw -> ordinal(draw.key()) % 5 == 0)
+						.mapToDouble(LmdbPageCardinalityEstimator.WeightedKey::coefficient)
+						.sum();
+				if (estimate >= 500D && estimate <= 1_500D) {
+					representative++;
+				}
+			}
+			assertTrue(representative >= 8,
+					"one shared structural/entry offset aliases this fixture to only0 or5000; no seed tuning");
+		}
+	}
+
+	@Test
+	void missingAuthorityAndImpossibleDepthAreNotEmptyOrBudgetExhaustion(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeSingleBranchTree(directory.resolve("metadata.mdb"), 2, 2,
+				LmdbBtreeRangeCounterTest::ordinalKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			var counter = new LmdbBtreeRangeCounter(file, tree.meta, new LmdbPageCache(0, 0), 1L,
+					new KeyBudget(0, 0));
+			assertThrows(IOException.class, () -> counter.sampleWeightedKeys(null, null, null, 1, 0L));
+			LmdbDb invalid = new LmdbDb(tree.db.pad(), 0, 65, 1, 2, 0, 4, tree.db.rootPgno());
+			assertThrows(IOException.class, () -> counter.sampleWeightedKeys(invalid, null, null, 1, 0L));
+		}
+	}
+
+	@Test
+	void unequalLeafOccupancyHasTheRequiredEntryExpansionWeight(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeUnequalLeafTree(directory.resolve("unequal.mdb"), new int[] { 1, 32 });
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			Set<Integer> visitedLeaves = new HashSet<>();
+			for (int stream = 0; stream < 64; stream++) {
+				var result = new LmdbBtreeRangeCounter(file, tree.meta, new LmdbPageCache(8, 8), 1L,
+						new KeyBudget(64, 256)).sampleWeightedKeys(tree.db, null, null, 1, stream);
+				assertEquals(1, result.draws().size());
+				var draw = result.draws().get(0);
+				int leaf = ordinal(draw.key()) == 0 ? 0 : 1;
+				visitedLeaves.add(leaf);
+				int entries = leaf == 0 ? 1 : 32;
+				assertEquals(2D * entries, draw.coefficient());
+				assertEquals(2D, draw.coefficient() / entries,
+						"each leaf has unit projected mass despite unequal numbers of outer keys");
+			}
+			assertEquals(Set.of(0, 1), visitedLeaves);
+		}
+	}
+
+	@Test
+	void oneDrawStillHasSupportAcrossTheWholeDisjointForest(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeTwoBranchLevelTree(directory.resolve("forest.mdb"), 4, 8,
+				LmdbBtreeRangeCounterTest::ordinalKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			Set<Integer> covered = new HashSet<>();
+			for (int stream = 0; stream < 256; stream++) {
+				KeyBudget budget = new KeyBudget(64, 256);
+				var result = new LmdbBtreeRangeCounter(file, tree.meta, new LmdbPageCache(64, 64), 1L, budget)
+						.sampleWeightedKeys(tree.db, ordinalKey(2), new byte[] { 0, 29, 1 }, 1, stream);
+				assertEquals(KeySampleStatus.SAMPLED, result.status());
+				assertEquals(1, result.draws().size(), "forest width must never raise the global draw limit");
+				int ordinal = ordinal(result.draws().get(0).key());
+				assertTrue(ordinal >= 2 && ordinal < 30);
+				covered.add(ordinal == 2 ? 0 : ordinal < 8 ? 1 : ordinal < 24 ? 2 : ordinal < 29 ? 3 : 4);
+			}
+			assertEquals(Set.of(0, 1, 2, 3, 4), covered,
+					"both boundary slices and every interior sibling span have nonzero sampling support");
+		}
+	}
+
+	@Test
+	void samplingBudgetPrecedesRealReadsAndCachedTraversal(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeSingleBranchTree(directory.resolve("budget.mdb"), 8, 8,
+				LmdbBtreeRangeCounterTest::ordinalKey);
+		try (LmdbDataFile file = spy(new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE))) {
+			AtomicInteger reads = new AtomicInteger();
+			doAnswer(invocation -> {
+				reads.incrementAndGet();
+				return invocation.callRealMethod();
+			}).when(file).readPage(anyLong(), any(LmdbMeta.class));
+			LmdbPageCache cache = new LmdbPageCache(64, 64);
+			KeyBudget cold = new KeyBudget(0, 256);
+			assertSame(cold.exhausted, assertThrows(IllegalStateException.class,
+					() -> new LmdbBtreeRangeCounter(file, tree.meta, cache, 1L, cold)
+							.sampleWeightedKeys(tree.db, null, null, 3, 1L)));
+			assertEquals(0, reads.get(), "zero budget refuses the actual file read before execution");
+			new LmdbBtreeRangeCounter(file, tree.meta, cache, 1L, new KeyBudget(64, 256))
+					.sampleWeightedKeys(tree.db, null, null, 3, 1L);
+			int populatedReads = reads.get();
+			assertTrue(populatedReads > 0);
+			KeyBudget warm = new KeyBudget(0, 256);
+			assertSame(warm.exhausted, assertThrows(IllegalStateException.class,
+					() -> new LmdbBtreeRangeCounter(file, tree.meta, cache, 1L, warm)
+							.sampleWeightedKeys(tree.db, null, null, 3, 1L)));
+			assertEquals(populatedReads, reads.get(), "cached page traversal is charged too");
+		}
+	}
+
+	@Test
+	void samplingPropagatesCancellationAndCorruptDepthWithoutPartialEvidence(@TempDir Path directory)
+			throws Exception {
+		TreeFile tree = writeSingleBranchTree(directory.resolve("invalid.mdb"), 8, 8,
+				LmdbBtreeRangeCounterTest::ordinalKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			KeyBudget budget = new KeyBudget(64, 256);
+			budget.cancelled = new CancellationException("weighted test cancellation");
+			var cancelled = new LmdbBtreeRangeCounter(file, tree.meta, new LmdbPageCache(0, 0), 1L, budget);
+			assertSame(budget.cancelled, assertThrows(CancellationException.class,
+					() -> cancelled.sampleWeightedKeys(tree.db, null, null, 3, 1L)));
+			LmdbDb wrongDepth = new LmdbDb(tree.db.pad(), 0, 1, tree.db.branchPages(), tree.db.leafPages(),
+					0, tree.db.entries(), tree.db.rootPgno());
+			assertThrows(IOException.class, () -> new LmdbBtreeRangeCounter(file, tree.meta,
+					new LmdbPageCache(0, 0), 1L, new KeyBudget(64, 256))
+							.sampleWeightedKeys(wrongDepth, null, null, 3, 1L));
+			assertEquals(KeySampleStatus.SAMPLED, new LmdbBtreeRangeCounter(file, tree.meta,
+					new LmdbPageCache(0, 0), 1L, new KeyBudget(64, 256))
+							.sampleWeightedKeys(tree.db, null, null, 3, 1L)
+							.status());
+		}
+	}
+
+	@Test
+	void budgetedNamedDatabaseDiscoveryRejectsNonDescriptorValues(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeSingleBranchTree(directory.resolve("descriptor.mdb"), 1, 1,
+				LmdbBtreeRangeCounterTest::ordinalKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			byte[] key = ordinalKey(0);
+			assertEquals(0, new LmdbBtreeRangeCounter(file, tree.meta)
+					.findValueByExactKey(tree.db, key, key.length, new RangeCountResult()).length,
+					"the unbudgeted legacy value primitive retains its old behavior");
+			assertThrows(IOException.class, () -> new LmdbBtreeRangeCounter(file, tree.meta,
+					new LmdbPageCache(0, 0), 1L, new KeyBudget(64, 256))
+							.findValueByExactKey(tree.db, key, key.length, new RangeCountResult()));
+		}
+	}
+
+	private static int ordinal(byte[] key) {
+		return Byte.toUnsignedInt(key[0]) << 8 | Byte.toUnsignedInt(key[1]);
+	}
+
+	private static final class KeyBudget implements SamplingBudget {
+		final IllegalStateException exhausted = new IllegalStateException("weighted test work limit");
+		final int pageLimit;
+		final int keyLimit;
+		int pages;
+		int keys;
+		CancellationException cancelled;
+
+		KeyBudget(int pageLimit, int keyLimit) {
+			this.pageLimit = pageLimit;
+			this.keyLimit = keyLimit;
+		}
+
+		@Override
+		public void checkpoint() {
+			if (cancelled != null) {
+				throw cancelled;
+			}
+		}
+
+		@Override
+		public void nativeRead() {
+		}
+
+		@Override
+		public void pageAccess() {
+			if (pages == pageLimit) {
+				throw exhausted;
+			}
+			pages++;
+		}
+
+		@Override
+		public void keyAccess() {
+			if (keys == keyLimit) {
+				throw exhausted;
+			}
+			keys++;
+		}
+	}
+
+	private static TreeFile writeUnequalLeafTree(Path dataPath, int[] entriesPerLeaf) throws IOException {
+		ByteBuffer file = ByteBuffer.allocate((entriesPerLeaf.length + 1) * PAGE_SIZE).order(ByteOrder.LITTLE_ENDIAN);
+		long[] leaves = new long[entriesPerLeaf.length];
+		byte[][] separators = new byte[entriesPerLeaf.length][];
+		int ordinal = 0;
+		for (int leaf = 0; leaf < entriesPerLeaf.length; leaf++) {
+			leaves[leaf] = leaf + 1;
+			separators[leaf] = leaf == 0 ? new byte[0] : ordinalKey(ordinal);
+			writeLeafPage(page(file, leaf + 1), leaf + 1, ordinal, entriesPerLeaf[leaf],
+					LmdbBtreeRangeCounterTest::ordinalKey);
+			ordinal += entriesPerLeaf[leaf];
+		}
+		writeBranchPage(page(file, 0), 0, leaves, separators);
+		Files.write(dataPath, file.array());
+		return treeFile(dataPath, new LmdbDb(PAGE_SIZE, 0, 2, 1, leaves.length, 0, ordinal, 0), leaves.length);
+	}
 
 	@Test
 	void boundsLeafReadsForLargeRanges(@TempDir Path tempDir) throws Exception {

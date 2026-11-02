@@ -40,7 +40,10 @@ import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.HashSet;
+import java.util.Set;
 
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.SamplingBudget;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -134,7 +137,16 @@ final class LmdbDataFile implements Closeable {
 	 * the newest older meta is accepted because read-only transactions can legitimately outlive later commits.
 	 */
 	LmdbMeta readMetaForTxn(long pinnedTxnId) throws IOException {
+		return readMetaForTxn(pinnedTxnId, LmdbPageCardinalityEstimator.NO_SAMPLING_LIMITS, false);
+	}
+
+	/** Only newer valid meta pages may decline; unreadable or wholly invalid metadata remains an error. */
+	LmdbMeta readMetaForTxn(long pinnedTxnId, SamplingBudget budget, boolean allowUnavailable) throws IOException {
+		budget.checkpoint();
+		budget.pageAccess();
 		LmdbMeta meta0 = readMetaPage(0);
+		budget.checkpoint();
+		budget.pageAccess();
 		LmdbMeta meta1 = readMetaPage(1);
 
 		LmdbMeta selected = null;
@@ -151,10 +163,37 @@ final class LmdbDataFile implements Closeable {
 			}
 		}
 		if (selected == null) {
+			if (allowUnavailable && (meta0 != null || meta1 != null)) {
+				return null;
+			}
 			throw new IOException("No valid LMDB meta page for pinned txn " + pinnedTxnId + " in " + dataFile);
+		}
+		if (allowUnavailable) {
+			validateSamplingMeta(selected);
 		}
 
 		return selected;
+	}
+
+	private void validateSamplingMeta(LmdbMeta meta) throws IOException {
+		LmdbDb main = meta.mainDb();
+		if (meta.lastPage() < 1 || meta.mapSize() < 2L * pageSize
+				|| meta.lastPage() >= meta.mapSize() / pageSize || main.entries() < 0
+				|| main.branchPages() < 0 || main.leafPages() < 0 || main.overflowPages() < 0
+				|| main.depth() > LmdbBtreeRangeCounter.MAX_SAMPLING_DEPTH) {
+			throw new IOException("Invalid committed metadata for weighted LMDB sampling");
+		}
+		if (main.entries() == 0) {
+			if (main.rootPgno() != LmdbFormat.P_INVALID || main.depth() != 0 || main.branchPages() != 0
+					|| main.leafPages() != 0 || main.overflowPages() != 0) {
+				throw new IOException("Inconsistent empty main database in committed LMDB metadata");
+			}
+		} else if (main.depth() <= 0 || main.leafPages() == 0 || main.rootPgno() < 2
+				|| main.rootPgno() > meta.lastPage()
+				|| main.depth() == 1 && main.branchPages() != 0
+				|| main.depth() > 1 && main.branchPages() == 0) {
+			throw new IOException("Invalid main database root in committed LMDB metadata");
+		}
 	}
 
 	/**
@@ -212,6 +251,19 @@ final class LmdbDataFile implements Closeable {
 		return pageSize;
 	}
 
+	boolean hasNativeEnvironment() {
+		return env != NO_NATIVE_MAP;
+	}
+
+	/** Validate native ownership before metadata unavailability can be mistaken for an ordinary capability decline. */
+	void validateSamplingTransaction(long readTxn, SamplingBudget budget) throws IOException {
+		budget.checkpoint();
+		budget.nativeRead();
+		if (readTxn == 0L || env == NO_NATIVE_MAP || mdb_txn_env(readTxn) != env) {
+			throw new IOException("Read transaction does not belong to the estimator's LMDB environment");
+		}
+	}
+
 	ByteOrder byteOrder() {
 		return byteOrder;
 	}
@@ -239,14 +291,26 @@ final class LmdbDataFile implements Closeable {
 	 * native page. No assumption is made about OS allocation alignment or database comparator order.
 	 */
 	MappingAnchor mappingAnchor(LmdbMeta meta) throws IOException {
+		return mappingAnchor(meta, LmdbPageCardinalityEstimator.NO_SAMPLING_LIMITS);
+	}
+
+	MappingAnchor mappingAnchor(LmdbMeta meta, SamplingBudget budget) throws IOException {
+		budget.checkpoint();
 		if (mainDbi == NO_MAIN_DBI || meta.mainDb().isEmpty()) {
 			return null;
 		}
 		LmdbMeta fileMeta = withMap(meta, 0L, 0L);
 		long pageNumber = meta.mainDb().rootPgno();
+		Set<Long> visited = budget == LmdbPageCardinalityEstimator.NO_SAMPLING_LIMITS ? null : new HashSet<>();
 		for (int depth = meta.mainDb().depth(); depth > 0; depth--) {
+			budget.checkpoint();
+			if (visited != null && !visited.add(pageNumber)) {
+				throw new IOException("Cycle in LMDB main database mapping discovery");
+			}
+			budget.pageAccess();
 			LmdbPage page = readPage(pageNumber, fileMeta);
 			if (page.isBranch() && depth > 1) {
+				budget.keyAccess();
 				pageNumber = page.branchPgnoAt(page.nodeOffset(0));
 				continue;
 			}
@@ -255,6 +319,7 @@ final class LmdbDataFile implements Closeable {
 			}
 			int keyOffset;
 			int keySize;
+			budget.keyAccess();
 			if (page.isLeaf2()) {
 				keyOffset = LmdbFormat.PAGE_HEADER_SIZE;
 				keySize = page.pad;
@@ -290,26 +355,38 @@ final class LmdbDataFile implements Closeable {
 	}
 
 	LmdbMeta withNativeMap(LmdbMeta meta, MappingAnchor anchor, long readTxn, long txnId) throws IOException {
+		return withNativeMap(meta, anchor, readTxn, txnId, LmdbPageCardinalityEstimator.NO_SAMPLING_LIMITS);
+	}
+
+	LmdbMeta withNativeMap(LmdbMeta meta, MappingAnchor anchor, long readTxn, long txnId,
+			SamplingBudget budget) throws IOException {
+		budget.checkpoint();
 		if (env == NO_NATIVE_MAP) {
 			return withMap(meta, 0L, 0L);
 		}
+		budget.nativeRead();
 		validateBorrowedTransaction(meta, readTxn, txnId);
 		if (mainDbi == NO_MAIN_DBI || anchor == null) {
 			return withMap(meta, 0L, 0L);
 		}
 		try (MemoryStack stack = stackPush()) {
+			budget.nativeRead();
 			long size = validateMappingBounds(meta, anchor, stack);
 			PointerBuffer cursorPointer = stack.mallocPointer(1);
+			budget.nativeRead();
 			check(mdb_cursor_open(readTxn, mainDbi, cursorPointer));
 			long cursor = cursorPointer.get(0);
 			try {
 				MDBVal key = MDBVal.malloc(stack);
 				MDBVal value = MDBVal.malloc(stack);
+				budget.checkpoint();
+				budget.nativeRead();
 				check(mdb_cursor_get(cursor, key, value, MDB_FIRST));
 				if (key.mv_size() != anchor.key.length) {
 					throw new IOException("LMDB cursor key does not match snapshot key size");
 				}
 				ByteBuffer mappedKey = key.mv_data();
+				budget.keyAccess();
 				for (int index = 0; index < anchor.key.length; index++) {
 					if (mappedKey.get(index) != anchor.key[index]) {
 						throw new IOException("LMDB cursor key does not match snapshot key");
@@ -323,6 +400,8 @@ final class LmdbDataFile implements Closeable {
 				// Read at most one page backwards from a mapped outer key, stopping before the key itself.
 				// This stays inside LMDB's mapping even if the file offset is stale: two metadata pages precede
 				// every data page. Check the page number before constructing or dereferencing the mapping base.
+				budget.checkpoint();
+				budget.pageAccess();
 				ByteBuffer header = memByteBuffer(memAddress(mappedKey) - keyOffset, LmdbFormat.PAGE_HEADER_SIZE)
 						.order(meta.byteOrder());
 				if (header.getLong(0) != pageNumber

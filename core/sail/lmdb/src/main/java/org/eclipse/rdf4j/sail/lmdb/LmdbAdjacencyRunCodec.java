@@ -868,20 +868,17 @@ final class LmdbAdjacencyRunCodec {
 		}
 
 		private static long writeUnsigned(MemorySegment target, long at, long value) {
-			if (value < 0) {
-				throw new IllegalArgumentException("negative value cannot be encoded as varint: " + value);
-			}
-			if (value <= 240) {
+			if (Long.compareUnsigned(value, 240) <= 0) {
 				target.set(LmdbAdjacencyArena.U8, at, (byte) value);
 				return at + 1;
 			}
-			if (value <= 2_287) {
+			if (Long.compareUnsigned(value, 2_287) <= 0) {
 				long adjusted = value - 240;
 				target.set(LmdbAdjacencyArena.U8, at, (byte) ((adjusted >>> 8) + 241));
 				target.set(LmdbAdjacencyArena.U8, at + 1, (byte) adjusted);
 				return at + 2;
 			}
-			if (value <= 67_823) {
+			if (Long.compareUnsigned(value, 67_823) <= 0) {
 				long adjusted = value - 2_288;
 				target.set(LmdbAdjacencyArena.U8, at, (byte) 249);
 				target.set(LmdbAdjacencyArena.U8, at + 1, (byte) (adjusted >>> 8));

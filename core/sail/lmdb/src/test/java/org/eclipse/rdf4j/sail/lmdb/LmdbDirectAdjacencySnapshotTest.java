@@ -196,10 +196,11 @@ class LmdbDirectAdjacencySnapshotTest {
 		assertThat(metrics.activeBuildThreads).isZero();
 		long desiredWorkers = Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
 		assertThat(metrics.desiredBuildThreads).isEqualTo(desiredWorkers);
-		assertThat(metrics.lastBuildThreads).isEqualTo(Math.min(2, desiredWorkers));
+		// Each direction has two nonempty ranges; sizing and materialization visit every range.
+		assertThat(metrics.plannedBuildRanges).isEqualTo(4);
+		assertThat(metrics.lastBuildThreads).isEqualTo(Math.min(metrics.plannedBuildRanges, desiredWorkers));
 		assertThat(metrics.maximumBuildConcurrency).isBetween(1L, metrics.lastBuildThreads);
-		assertThat(metrics.plannedBuildRanges).isEqualTo(2);
-		assertThat(metrics.completedBuildRanges).isEqualTo(4);
+		assertThat(metrics.completedBuildRanges).isEqualTo(2 * metrics.plannedBuildRanges);
 		assertThat(metrics.buildScratchHighWaterBytes).isPositive();
 		assertThat(metrics.cursorRowsScanned).isPositive();
 		assertThat(metrics.cursorRowsMatched).isPositive();

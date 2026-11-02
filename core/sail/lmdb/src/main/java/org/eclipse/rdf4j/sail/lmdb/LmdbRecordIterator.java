@@ -28,6 +28,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
@@ -126,6 +127,64 @@ class LmdbRecordIterator implements RecordIterator {
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
 	private int cancellationPollTick;
+	/**
+	 * Adjacency scans own their transaction guards and native cursors; this adapter owns only their logical lifetime.
+	 */
+	private RecordIterator delegate;
+	private long[] delegateSeekTarget;
+	private boolean delegateSeekExclusive;
+
+	LmdbRecordIterator(RecordIterator delegate, Txn txnRef, TripleIndex index, boolean retainOnClose)
+			throws IOException {
+		this(delegate, txnRef, index, retainOnClose, null);
+	}
+
+	LmdbRecordIterator(RecordIterator delegate, Txn txnRef, TripleIndex index, boolean retainOnClose,
+			ValueStore.ReadSnapshot readSnapshot) throws IOException {
+		this.delegate = Objects.requireNonNull(delegate, "delegate");
+		this.txnRef = Objects.requireNonNull(txnRef, "txnRef");
+		this.index = Objects.requireNonNull(index, "index");
+		this.retainOnClose = retainOnClose;
+		this.readSnapshot = readSnapshot;
+		this.txnLockManager = txnRef.lockManager();
+		this.cursorPool = null;
+		this.keyData = null;
+		this.valueData = null;
+		this.quad = new long[4];
+		long stamp;
+		try {
+			stamp = txnLockManager.readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			delegate.close();
+			throw new SailException(e);
+		}
+		try {
+			synchronized (txnRef) {
+				txnRef.ensureSnapshotValid();
+				if (readSnapshot != null) {
+					readSnapshot.ensureValid();
+				}
+				this.txnLease = txnRef.lease();
+				this.txnRefVersion = txnRef.version();
+				this.txn = txnRef.get();
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			// Release the guard before closing a delegate, which obtains its own transaction guard.
+			txnLockManager.unlockRead(stamp);
+			stamp = 0;
+			try {
+				delegate.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		} finally {
+			if (stamp != 0) {
+				txnLockManager.unlockRead(stamp);
+			}
+		}
+	}
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
@@ -299,6 +358,21 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	void resumeAfter(long[] lastQuad) {
+		if (delegate != null) {
+			synchronized (this) {
+				if (fetchNext || closed) {
+					throw new IllegalStateException("A bounded scan must set its continuation before reading");
+				}
+				validateSnapshot();
+				if (lastQuad.length != 4) {
+					throw new IllegalArgumentException("A continuation must contain four values");
+				}
+				delegateSeekTarget = lastQuad.clone();
+				delegateSeekExclusive = true;
+				delegate.seekForward(lastQuad[0], lastQuad[1], lastQuad[2], lastQuad[3]);
+			}
+			return;
+		}
 		synchronized (txnRef) {
 			if (fetchNext || closed) {
 				throw new IllegalStateException("A bounded scan must set its continuation before reading");
@@ -316,6 +390,9 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public long[] next() {
+		if (delegate != null) {
+			return nextDelegated();
+		}
 
 		long readStamp;
 		try {
@@ -444,6 +521,9 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public int fill(long[] buffer, int maxRows) {
+		if (delegate != null) {
+			return fillDelegated(buffer, maxRows);
+		}
 
 		long readStamp;
 		try {
@@ -586,6 +666,19 @@ class LmdbRecordIterator implements RecordIterator {
 	 */
 	@Override
 	public boolean seekForward(long subj, long pred, long obj, long context) {
+		if (delegate != null) {
+			synchronized (this) {
+				if (closed) {
+					return false;
+				}
+				validateSnapshot();
+				delegateSeekTarget = new long[] { subj, pred, obj, context };
+				delegateSeekExclusive = false;
+				// The streaming comparison below also supports delegates without a native seek implementation.
+				delegate.seekForward(subj, pred, obj, context);
+				return true;
+			}
+		}
 		synchronized (txnRef) {
 			if (closed || exactKeySearch) {
 				return false;
@@ -691,6 +784,13 @@ class LmdbRecordIterator implements RecordIterator {
 
 	/** Releases all resources of a retained iterator. Idempotent; must be called by the retaining owner. */
 	void dispose() {
+		if (delegate != null) {
+			synchronized (this) {
+				disposed = true;
+				closeDelegated();
+			}
+			return;
+		}
 		long stamp;
 		try {
 			stamp = txnLockManager.readLock();
@@ -709,6 +809,135 @@ class LmdbRecordIterator implements RecordIterator {
 			}
 		} finally {
 			txnLockManager.unlockRead(stamp);
+		}
+	}
+
+	/** Reuses a retained adapter with a newly opened adjacency scan in the same transaction lease. */
+	void reset(RecordIterator replacement, Txn txnRef, TripleIndex index) {
+		Objects.requireNonNull(replacement, "replacement");
+		synchronized (this) {
+			try {
+				if (delegate == null || !retainOnClose || disposed || this.txnRef != txnRef) {
+					throw new IllegalStateException("Cannot reset this adjacency iterator");
+				}
+				validateSnapshot();
+				Objects.requireNonNull(index, "index");
+				closeDelegated();
+				this.delegate = replacement;
+				this.index = index;
+				this.delegateSeekTarget = null;
+				this.delegateSeekExclusive = false;
+				this.fetchNext = false;
+				this.sourceRowsScannedActual = 0;
+				this.sourceRowsMatchedActual = 0;
+				this.sourceRowsFilteredActual = 0;
+				this.cancellationPollTick = 0;
+				this.resourcesFreed = false;
+				this.closed = false;
+			} catch (RuntimeException | Error failure) {
+				try {
+					replacement.close();
+				} catch (RuntimeException | Error closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+				throw failure;
+			}
+		}
+	}
+
+	private synchronized long[] nextDelegated() {
+		if (closed) {
+			return null;
+		}
+		try {
+			validateSnapshot();
+			pollCancellationAtEntry();
+			long[] next;
+			while ((next = delegate.next()) != null) {
+				pollCancellationCandidate();
+				fetchNext = true;
+				if (delegateSeekTarget != null) {
+					int compared = compareDelegated(next, delegateSeekTarget);
+					if (compared < 0 || compared == 0 && delegateSeekExclusive) {
+						sourceRowsFilteredActual++;
+						continue;
+					}
+					delegateSeekTarget = null;
+				}
+				sourceRowsMatchedActual++;
+				return next;
+			}
+			pollCancellationAtExhaustion();
+			closeDelegated();
+			return null;
+		} catch (RuntimeException | Error failure) {
+			closeDelegatedPreservingFailure(failure);
+			throw failure;
+		}
+	}
+
+	private synchronized int fillDelegated(long[] buffer, int maxRows) {
+		if (maxRows < 0 || maxRows > buffer.length / 4) {
+			throw new IllegalArgumentException("Invalid quad buffer capacity");
+		}
+		if (closed || maxRows == 0) {
+			return 0;
+		}
+		if (delegateSeekTarget != null) {
+			return RecordIterator.super.fill(buffer, maxRows);
+		}
+		try {
+			validateSnapshot();
+			pollCancellationAtEntry();
+			int rows = delegate.fill(buffer, maxRows);
+			if (rows < 0 || rows > maxRows) {
+				throw new IllegalStateException("Adjacency scan returned an invalid batch size");
+			}
+			fetchNext |= rows > 0;
+			sourceRowsMatchedActual += rows;
+			cancellationPollTick += rows;
+			if (rows < maxRows) {
+				pollCancellationAtExhaustion();
+				closeDelegated();
+			}
+			return rows;
+		} catch (RuntimeException | Error failure) {
+			closeDelegatedPreservingFailure(failure);
+			throw failure;
+		}
+	}
+
+	private int compareDelegated(long[] left, long[] right) {
+		for (char field : index.getFieldSeq()) {
+			int position = switch (field) {
+			case 's' -> 0;
+			case 'p' -> 1;
+			case 'o' -> 2;
+			case 'c' -> 3;
+			default -> throw new IllegalStateException("Unknown adjacency order field: " + field);
+			};
+			int compared = Long.compareUnsigned(left[position], right[position]);
+			if (compared != 0) {
+				return compared;
+			}
+		}
+		return 0;
+	}
+
+	private synchronized void closeDelegated() {
+		if (resourcesFreed) {
+			return;
+		}
+		resourcesFreed = true;
+		closed = true;
+		delegate.close();
+	}
+
+	private void closeDelegatedPreservingFailure(Throwable failure) {
+		try {
+			closeDelegated();
+		} catch (RuntimeException | Error closeFailure) {
+			failure.addSuppressed(closeFailure);
 		}
 	}
 
@@ -869,6 +1098,10 @@ class LmdbRecordIterator implements RecordIterator {
 	}
 
 	private void closeInternal(boolean maybeCalledAsync, boolean currentThreadHasReadLock) {
+		if (delegate != null) {
+			closeDelegated();
+			return;
+		}
 		long stamp = 0;
 		if (!currentThreadHasReadLock) {
 			try {
@@ -909,6 +1142,10 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public long getSourceRowsScannedActual() {
+		if (delegate != null) {
+			long scanned = delegate.getSourceRowsScannedActual();
+			return scanned >= 0 ? scanned : sourceRowsMatchedActual + sourceRowsFilteredActual;
+		}
 		return sourceRowsScannedActual;
 	}
 
@@ -919,6 +1156,10 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public long getSourceRowsFilteredActual() {
+		if (delegate != null) {
+			long filtered = delegate.getSourceRowsFilteredActual();
+			return Math.max(0, filtered) + sourceRowsFilteredActual;
+		}
 		return sourceRowsFilteredActual;
 	}
 }

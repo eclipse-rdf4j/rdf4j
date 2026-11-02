@@ -151,6 +151,54 @@ public class CardinalityTest {
 		}
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void sparseSubjectObjectResidualKeepsRepresentativeAccuracy(boolean pageEstimator) throws Exception {
+		tripleStore.close();
+		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc")
+				.setPageCardinalityEstimator(pageEstimator), null);
+		tripleStore.startTransaction();
+		for (int index = 0; index < 5_000; index++) {
+			tripleStore.storeTriple(index % 97 + 1L, index % 31 + 1_000L, index % 11 + 2_000L,
+					index % 7 + 3_000L, true);
+		}
+		tripleStore.commit();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			int exact = countBoth(txn, 1, -1, 2_000, -1);
+			assertEquals(5, exact);
+			double estimate = tripleStore.cardinality(1, -1, 2_000, -1);
+			System.out.printf("sparse-cardinality enabled=%s exact=%d estimate=%s%n", pageEstimator, exact, estimate);
+			assertTrue("Expected representative sparse residual estimate, got " + estimate,
+					estimate >= exact * 0.5 && estimate <= exact * 1.5);
+		}
+	}
+
+	@Test
+	void roleIncidencesBoundCombinedPlanesWithoutBecomingNodeMarginals() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(7, 7, 7, 7, true);
+		tripleStore.storeTriple(7, 7, 7, 7, false);
+		tripleStore.storeTriple(7, 10, 8, 0, true);
+		tripleStore.storeTriple(8, 10, 7, 0, false);
+		tripleStore.storeTriple(11, 12, Long.MIN_VALUE, 0, true);
+		tripleStore.storeTriple(13, 12, Long.MIN_VALUE, 0, false);
+		tripleStore.commit();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			LmdbPersistentAdjacency authority = LmdbPersistentAdjacency.openExisting(txn.get());
+			assertEquals(10L, authority.referenceCount(txn.get(), 7));
+			assertEquals(2L, authority.referenceCount(txn.get(), Long.MIN_VALUE));
+			assertEquals(2, countBoth(txn, 7, -1, 7, -1));
+			assertEquals(3, countBoth(txn, 7, -1, -1, -1));
+			assertEquals(3, countBoth(txn, -1, -1, 7, -1));
+			assertEquals(2, countBoth(txn, -1, -1, Long.MIN_VALUE, 0));
+		}
+		assertEquals(2D, tripleStore.cardinality(7, -1, 7, -1), 0D);
+		assertEquals(3D, tripleStore.cardinality(7, -1, -1, -1), 0D);
+		assertEquals(3D, tripleStore.cardinality(-1, -1, 7, -1), 0D);
+		assertEquals(2D, tripleStore.cardinality(-1, -1, Long.MIN_VALUE, 0), 0D);
+		assertEquals(0D, tripleStore.cardinality(777, -1, 7, -1), 0D);
+	}
+
 	@Test
 	public void testUnboundPatternReturnsTotalExplicitAndInferredEntries() throws Exception {
 		tripleStore.startTransaction();

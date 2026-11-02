@@ -778,7 +778,16 @@ public class ThemeQueryBenchmark {
 
 	private void loadData() throws IOException {
 		StopWatch started = StopWatch.createStarted();
-		datasetLoader.load(repository);
+		try (ThemeLoadDiagnostics diagnostics = ThemeLoadDiagnostics.start(storeDirectory().toPath(),
+				storeConfig.getValueDBSize(), storeConfig.getTripleDBSize(), store::getMapGrowthCount)) {
+			try {
+				datasetLoader.load(repository);
+				ThemeLoadDiagnostics.phase("LOAD_RETURNED");
+			} catch (IOException | RuntimeException | Error failure) {
+				ThemeLoadDiagnostics.phase("LOAD_THREW " + failure.getClass().getName());
+				throw failure;
+			}
+		}
 		started.stop();
 
 		System.out.println("Loaded theme datasets in " + started);
@@ -794,7 +803,15 @@ public class ThemeQueryBenchmark {
 				System.out.println("Loading theme dataset: " + themeDataset);
 				ThemeDataSetGenerator.generate(themeDataset, inserter);
 			}
-			connection.commit();
+			ThemeLoadDiagnostics.phase("FINAL_COMMIT_BEGIN");
+			try {
+				connection.commit();
+				// This marker precedes connection.close(), so a close stall cannot masquerade as a commit stall.
+				ThemeLoadDiagnostics.phase("FINAL_COMMIT_RETURNED");
+			} catch (RuntimeException | Error failure) {
+				ThemeLoadDiagnostics.phase("FINAL_COMMIT_THREW " + failure.getClass().getName());
+				throw failure;
+			}
 		}
 	}
 

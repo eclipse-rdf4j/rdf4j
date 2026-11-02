@@ -39,6 +39,7 @@ public final class LmdbPrefixRunPlan {
 	static final AtomicLong ROOTS_VISITED = new AtomicLong();
 	static final AtomicLong RUNS_VISITED = new AtomicLong();
 	static final AtomicLong METADATA_COUNTS = new AtomicLong();
+	static final AtomicLong PERSISTED_METADATA_COUNTS = new AtomicLong();
 	static final AtomicLong OUTGOING_METADATA_COUNTS = new AtomicLong();
 	static final AtomicLong INCOMING_METADATA_COUNTS = new AtomicLong();
 	static final AtomicLong NEIGHBOR_VALUES_DECODED = new AtomicLong();
@@ -189,6 +190,7 @@ public final class LmdbPrefixRunPlan {
 		ROOTS_VISITED.set(0);
 		RUNS_VISITED.set(0);
 		METADATA_COUNTS.set(0);
+		PERSISTED_METADATA_COUNTS.set(0);
 		OUTGOING_METADATA_COUNTS.set(0);
 		INCOMING_METADATA_COUNTS.set(0);
 		NEIGHBOR_VALUES_DECODED.set(0);
@@ -221,6 +223,12 @@ public final class LmdbPrefixRunPlan {
 	@InternalUseOnly
 	public static void recordMetadataCount() {
 		METADATA_COUNTS.incrementAndGet();
+	}
+
+	/** Records one exact count answered by transactionally persisted adjacency metadata. */
+	@InternalUseOnly
+	public static void recordPersistedMetadataCount() {
+		PERSISTED_METADATA_COUNTS.incrementAndGet();
 	}
 
 	/** Records one exact SOC/OSC root-domain cardinality answered without opening a payload cursor. */

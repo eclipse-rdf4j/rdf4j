@@ -12,14 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
-import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
-import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 
 import java.io.File;
 import java.io.IOException;
@@ -32,7 +24,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.lwjgl.util.lmdb.MDBVal;
 
 class LmdbStoreConnectionAdjacencyBatchTest {
 
@@ -117,24 +108,16 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 		long[] subjects = { values.getId(vf.createIRI(inferredSubject)), values.getId(vf.createIRI(explicitSubject)) };
 		long[] objects = { values.getId(vf.createIRI(inferredObject)), values.getId(vf.createIRI(explicitObject)) };
 		LmdbUtil.readTransaction(store.getBackingStore().getTripleStore().env, (stack, transaction) -> {
+			// This must remain an independent native snapshot: derived publication still owns its managed barriers.
+			LmdbPersistentAdjacency authority = LmdbPersistentAdjacency.openExisting(transaction);
 			for (int plane = 0; plane < 2; plane++) {
-				var database = stack.mallocInt(1);
-				E(mdb_dbi_open(transaction, TripleIndex.nativeDatabaseName("spoc", plane == 1), 0, database));
-				var handle = stack.mallocPointer(1);
-				E(mdb_cursor_open(transaction, database.get(0), handle));
-				long cursor = handle.get(0);
-				try {
-					MDBVal key = MDBVal.calloc(stack), value = MDBVal.calloc(stack);
-					E(mdb_cursor_get(cursor, key, value, MDB_FIRST));
-					var encoded = key.mv_data().duplicate();
-					assertThat(Varint.readUnsigned(encoded)).isEqualTo(subjects[plane]);
-					assertThat(Varint.readUnsigned(encoded)).isEqualTo(predicateId);
-					assertThat(Varint.readUnsigned(encoded)).isEqualTo(objects[plane]);
-					assertThat(Varint.readUnsigned(encoded)).isZero();
-					assertThat(encoded.hasRemaining()).isFalse();
-					assertThat(mdb_cursor_get(cursor, key, value, MDB_NEXT)).isEqualTo(MDB_NOTFOUND);
-				} finally {
-					mdb_cursor_close(cursor);
+				boolean explicit = plane == 1;
+				assertThat(authority.count(transaction, explicit)).isEqualTo(1);
+				for (String order : new String[] { "spoc", "posc" }) {
+					try (RecordIterator rows = authority.scan(transaction, -1, -1, -1, -1, explicit, order)) {
+						assertThat(rows.next()).containsExactly(subjects[plane], predicateId, objects[plane], 0);
+						assertThat(rows.next()).isNull();
+					}
 				}
 			}
 			return null;

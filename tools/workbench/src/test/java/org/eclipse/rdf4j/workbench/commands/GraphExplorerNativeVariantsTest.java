@@ -30,6 +30,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
@@ -44,6 +45,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -738,10 +740,7 @@ class GraphExplorerNativeVariantsTest {
 						fixture)) {
 			String queryText = blankQueries(BLANK_IDS.get(0), "all", List.of()).path("facets").asText();
 			List<BindingSet> expected = expectedFixedBlankAllFacetRows();
-			assertThat(nativeBackend.store.getLmdbStats().tripleDatabases().keySet())
-					.as("the fixed blank regression uses default spoc,posc indexes")
-					.contains("spocspoc", "poscposc")
-					.doesNotContain("ospcospc");
+			assertPersistentAuthorityWithDefaultOrderPreferences(nativeBackend);
 			List<BindingSet> genericRows = evaluate(generic.repository, queryText, null);
 			assertThat(bag(genericRows)).as("independent generic bag at decoy fanout %s", decoyFanout)
 					.containsExactlyInAnyOrderEntriesOf(bag(expected));
@@ -809,6 +808,7 @@ class GraphExplorerNativeVariantsTest {
 						.isPositive();
 			}
 			assertEfficientExecutedPlan(explanation, "fixed-blank-all-facets / decoy fanout " + decoyFanout);
+			assertExactFixtureMembership(nativeBackend, fixture, 3 * (decoyFanout + 5 * BLANK_IDS.size()));
 			return new FixedBlankWorkMeasurement(decoyFanout, fixture.size(), actual.size(), scanned, matched, route,
 					selectedBoundShapes);
 		}
@@ -1839,10 +1839,7 @@ class GraphExplorerNativeVariantsTest {
 				Backend nativeBackend = backend("skewed-alias-native-" + adjacency + "-" + hubFanout + "-" + shape,
 						true, adjacency, data)) {
 			String queryText = skewedAliasRangeQuery(shape);
-			assertThat(nativeBackend.store.getLmdbStats().tripleDatabases().keySet())
-					.as("the skewed regression uses the ordinary default spoc,posc indexes")
-					.contains("spocspoc", "poscposc")
-					.doesNotContain("ospcospc");
+			assertPersistentAuthorityWithDefaultOrderPreferences(nativeBackend);
 			try (RepositoryConnection connection = nativeBackend.repository.getConnection()) {
 				TupleQuery query = prepare(connection, queryText, null);
 				if (shape.equals("source-only")) {
@@ -1913,6 +1910,7 @@ class GraphExplorerNativeVariantsTest {
 				assertThat(sourceWork).as("native source work telemetry\n%s", explanation).isPositive();
 				assertThat(candidateRows).as("native candidate telemetry\n%s", explanation).isPositive();
 				assertThat(filterEvaluations).as("native facet filter telemetry\n%s", explanation).isPositive();
+				assertExactFixtureMembership(nativeBackend, data, 15 * hubFanout);
 				return measured;
 			}
 		}
@@ -2482,6 +2480,39 @@ class GraphExplorerNativeVariantsTest {
 			assertThat(process.exitValue()).as(Files.readString(errors)).isZero();
 			return Files.readString(output);
 		}
+	}
+
+	private static void assertPersistentAuthorityWithDefaultOrderPreferences(Backend backend) throws IOException {
+		Properties properties = new Properties();
+		try (var input = Files.newInputStream(backend.store.getDataDir().toPath().resolve("store.properties"))) {
+			properties.load(input);
+		}
+		assertThat(properties.getProperty("triple-indexes"))
+				.as("the regression retains the ordinary default logical order preferences")
+				.isEqualTo("spoc,posc");
+		var databases = backend.store.getLmdbStats().tripleDatabases();
+		assertThat(databases).as("native statistics are available for the persistent statement authority")
+				.containsKeys("adjacency-pages", "adjacency-metadata", "adjacency-deltas");
+		assertThat(databases.get("adjacency-metadata").entries()).as("persistent metadata is populated").isPositive();
+		assertThat(databases.get("adjacency-pages").entries() + databases.get("adjacency-deltas").entries())
+				.as("the nonempty fixture has native persistent pages or deltas")
+				.isPositive();
+		// These are actual MDB_stat values, not a catalog enumeration or logical statement counts.
+	}
+
+	/** Run only after route/work capture, so the extra public reads cannot train the measured query. */
+	private static void assertExactFixtureMembership(Backend backend, Model expected, int expectedStatementCount) {
+		assertThat(expected).as("independently derived full fixture population").hasSize(expectedStatementCount);
+		List<Statement> actual = new ArrayList<>();
+		try (RepositoryConnection connection = backend.repository.getConnection();
+				var statements = connection.getStatements(null, null, null, false)) {
+			while (statements.hasNext()) {
+				actual.add(statements.next());
+			}
+		}
+		// A list retains unexpected duplicates; this is public statement membership, not a native-cursor work metric.
+		assertThat(actual).as("every explicit fixture statement and context remains present after measured execution")
+				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	private Backend backend(String name, boolean nativeEvaluation, boolean adjacency, Model data) throws Exception {

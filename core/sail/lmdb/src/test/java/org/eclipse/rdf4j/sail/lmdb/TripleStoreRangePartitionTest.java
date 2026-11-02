@@ -75,6 +75,25 @@ public class TripleStoreRangePartitionTest {
 	}
 
 	@Test
+	public void latePartitionSeeksToItsLowerBoundWithoutReadingEarlierRows() throws Exception {
+		tripleStore.startTransaction();
+		for (long subject = 1000; subject < 2000; subject++) {
+			store(subject, 10, 5000 + subject, 1, true);
+		}
+		tripleStore.commit();
+		String order = tripleStore.getIndexName(-1, 10, -1, -1);
+		LmdbKeyRange range = new LmdbKeyRange(TripleIndex.encodeKey(order, 1900, 10, 6900, 1), null, order);
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				LmdbStartupReadCounter reads = new LmdbStartupReadCounter();
+				RecordIterator iterator = tripleStore.getTriplesRange(txn, -1, 10, -1, -1, true, range)) {
+			assertThat(iterator.next()).containsExactly(1900, 10, 6900, 1);
+			assertThat(reads.operations().getOrDefault("mdb_cursor_get", 0L))
+					.as("a late partition should seek, rather than scan the preceding 900 rows")
+					.isLessThan(128L);
+		}
+	}
+
+	@Test
 	public void uniformIdsYieldBalancedSortedSplits() throws Exception {
 		tripleStore.startTransaction();
 		for (long subj = 1000; subj < 2000; subj++) {

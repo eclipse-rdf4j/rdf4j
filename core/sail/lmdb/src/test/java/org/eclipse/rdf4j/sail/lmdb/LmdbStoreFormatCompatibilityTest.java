@@ -153,7 +153,7 @@ class LmdbStoreFormatCompatibilityTest {
 		assertThat(properties.getProperty("version")).isEqualTo("2");
 		assertThat(properties).doesNotContainKeys("inline-literals", "literal-reference-encoding",
 				"numeric-id-encoding", "date-time-id-encoding", "canonical-language-tags");
-		assertThat(directory.resolve("lmdbrdf.ver")).doesNotExist();
+		assertThat(directory.resolve("lmdbrdf.ver")).hasContent(LmdbPersistentAdjacencyFence.MARKER);
 	}
 
 	@ParameterizedTest
@@ -231,7 +231,7 @@ class LmdbStoreFormatCompatibilityTest {
 		assertThat(Files.readAllBytes(directory.resolve("values/data.mdb"))).isEqualTo(values);
 		assertThat(Files.readAllBytes(directory.resolve("triples/data.mdb"))).isEqualTo(triples);
 		assertThat(readProperties().getProperty("version")).isEqualTo("2");
-		assertThat(directory.resolve("lmdbrdf.ver")).doesNotExist();
+		assertThat(directory.resolve("lmdbrdf.ver")).hasContent(LmdbPersistentAdjacencyFence.MARKER);
 	}
 
 	@ParameterizedTest

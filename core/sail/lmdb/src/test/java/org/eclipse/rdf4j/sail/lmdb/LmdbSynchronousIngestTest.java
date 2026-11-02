@@ -77,7 +77,6 @@ import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.lwjgl.system.MemoryStack;
 
 class LmdbSynchronousIngestTest {
 
@@ -924,7 +923,7 @@ class LmdbSynchronousIngestTest {
 			Set<Statement> prior = statements("prior", 2);
 			write(fixture, prior);
 			fixture.events.clearWrites();
-			fixture.events.failContextCall.set(prefix ? 2 : 1);
+			fixture.events.mutationFault.armMapFull(prefix ? 2 : 1);
 			Set<Statement> input = statements("aligned-capacity", 4);
 			Set<Statement> earlier = prefix ? statements("earlier", 4) : Set.of();
 			try (RepositoryConnection writer = fixture.repository.getConnection()) {
@@ -934,6 +933,9 @@ class LmdbSynchronousIngestTest {
 				writer.setNamespace("abandoned", "urn:complete:");
 				if (policy == Policy.TRACKED) {
 					writer.commit();
+					fixture.events.mutationFault.assertInjectedOnce(prefix ? 2 : 1, prefix ? 2 : 1);
+					fixture.events.mutationFault.assertResizedAfterAbort();
+					assertSame(fixture.events.starts.getFirst(), fixture.events.mutationFault.injectedThread());
 					assertLegacyRootPath(fixture);
 					assertEquals(!prefix, fixture.events.starts.getFirst() == Thread.currentThread());
 					assertTrue(fixture.events.decisions.getFirst().track);
@@ -945,6 +947,12 @@ class LmdbSynchronousIngestTest {
 					}
 				} else {
 					RepositoryException failure = assertThrows(RepositoryException.class, writer::commit);
+					fixture.events.mutationFault.assertInjectedOnce(prefix ? 2 : 1, prefix ? 2 : 1);
+					fixture.events.mutationFault.assertAborted();
+					if (policy == Policy.DISABLED) {
+						fixture.events.mutationFault.assertNotResized();
+					}
+					assertSame(fixture.events.starts.getFirst(), fixture.events.mutationFault.injectedThread());
 					assertLegacyRootPath(fixture);
 					assertEquals(!prefix, fixture.events.starts.getFirst() == Thread.currentThread());
 					assertFalse(fixture.events.decisions.getFirst().track);
@@ -1184,7 +1192,7 @@ class LmdbSynchronousIngestTest {
 	void capacityRetryNestedInOperationErrorPoisonsBeforeDecisionCleanup(@TempDir Path directory) throws Exception {
 		try (Fixture fixture = new Fixture(directory, config(Policy.OMITTED), true)) {
 			warmIfOmitted(fixture, Policy.OMITTED);
-			fixture.events.failContextCall.set(1);
+			fixture.events.mutationFault.armMapFull(1);
 			fixture.events.wrapCapacityError.set(true);
 			Set<Statement> input = statements("wrapped-capacity", 4);
 			try (RepositoryConnection writer = fixture.repository.getConnection()) {
@@ -1192,6 +1200,9 @@ class LmdbSynchronousIngestTest {
 				writer.add(input);
 				writer.setNamespace("abandoned", "urn:complete:");
 				AssertionError failure = assertThrows(AssertionError.class, writer::commit);
+				fixture.events.mutationFault.assertInjectedOnce(1, 1);
+				fixture.events.mutationFault.assertAborted();
+				assertSame(fixture.events.starts.getFirst(), fixture.events.mutationFault.injectedThread());
 				assertLegacyRootPath(fixture);
 				assertPoisoned(writer, failure);
 				assertEquals(0, fixture.store.triples.writeTxn);
@@ -1994,7 +2005,7 @@ class LmdbSynchronousIngestTest {
 		private final AtomicReference<Throwable> valuePutFailure = new AtomicReference<>();
 		private final AtomicReference<Throwable> valueCommitError = new AtomicReference<>();
 		private final AtomicReference<Throwable> tripleCommitError = new AtomicReference<>();
-		private final AtomicInteger failContextCall = new AtomicInteger();
+		private final LmdbPersistentMutationFault mutationFault = new LmdbPersistentMutationFault();
 		private final AtomicBoolean wrapCapacityError = new AtomicBoolean();
 		private final AtomicBoolean failValueCommit = new AtomicBoolean();
 		private final AtomicBoolean failTripleCommit = new AtomicBoolean();
@@ -2176,7 +2187,7 @@ class LmdbSynchronousIngestTest {
 		@Override
 		public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
 				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
-			try {
+			try (var ignored = events.mutationFault.injectInto(this)) {
 				super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
 			} catch (LmdbTransactionRetryException retry) {
 				if (events.wrapCapacityError.getAndSet(false)) {
@@ -2206,7 +2217,9 @@ class LmdbSynchronousIngestTest {
 
 		@Override
 		public void rollback() throws IOException {
-			super.rollback();
+			try (var ignored = events == null ? null : events.mutationFault.observe(this)) {
+				super.rollback();
+			}
 			if (events != null) {
 				throwFailure(events.tripleRollbackFailure.getAndSet(null));
 				throwFailure(events.tripleRecoveryRollbackFailure.getAndSet(null));
@@ -2215,7 +2228,7 @@ class LmdbSynchronousIngestTest {
 
 		@Override
 		public void commit() throws IOException {
-			try {
+			try (var ignored = events == null ? null : events.mutationFault.observe(this)) {
 				super.commit();
 			} catch (IOException failure) {
 				AssertionError error = events == null ? null : events.commitFailureError.getAndSet(null);
@@ -2234,10 +2247,9 @@ class LmdbSynchronousIngestTest {
 		}
 
 		@Override
-		void incrementAlignedContext(MemoryStack stack, long context, int amount) throws IOException {
-			super.incrementAlignedContext(stack, context, amount);
-			if (events != null && events.failContextCall.get() > 0 && events.failContextCall.decrementAndGet() == 0) {
-				throw new MapFullException();
+		boolean growMapForEstimatedWrite(long bytes, LmdbSailStore.MapGrowthAttempt attempt) throws IOException {
+			try (var ignored = events == null ? null : events.mutationFault.observe(this)) {
+				return super.growMapForEstimatedWrite(bytes, attempt);
 			}
 		}
 

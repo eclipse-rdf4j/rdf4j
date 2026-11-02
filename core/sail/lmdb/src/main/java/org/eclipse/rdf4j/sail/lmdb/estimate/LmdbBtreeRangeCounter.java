@@ -17,8 +17,11 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.function.BooleanSupplier;
 
@@ -26,7 +29,11 @@ import org.eclipse.rdf4j.sail.lmdb.Varint;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.ExactCount;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.ExactPrefixCursor;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.ExactWork;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.KeySampleStatus;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.PrefixRun;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.SamplingBudget;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.WeightedKey;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.WeightedKeySample;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 
 /**
@@ -64,6 +71,7 @@ import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
  * </p>
  */
 final class LmdbBtreeRangeCounter {
+	static final int MAX_SAMPLING_DEPTH = 64;
 
 	/**
 	 * Upper bound on pages retained by {@link #estimateRankFraction}. Ascending keys descend along neighbouring
@@ -124,6 +132,7 @@ final class LmdbBtreeRangeCounter {
 	private final LmdbMeta meta;
 	private final LmdbPageCache sharedCache;
 	private final long databaseIdentity;
+	private final SamplingBudget samplingBudget;
 	private final Map<Long, LmdbPage> rankPageCache = new HashMap<>();
 
 	LmdbBtreeRangeCounter(LmdbDataFile dataFile, LmdbMeta meta) {
@@ -132,10 +141,307 @@ final class LmdbBtreeRangeCounter {
 
 	LmdbBtreeRangeCounter(LmdbDataFile dataFile, LmdbMeta meta, LmdbPageCache sharedCache,
 			long databaseIdentity) {
+		this(dataFile, meta, sharedCache, databaseIdentity, LmdbPageCardinalityEstimator.NO_SAMPLING_LIMITS);
+	}
+
+	LmdbBtreeRangeCounter(LmdbDataFile dataFile, LmdbMeta meta, LmdbPageCache sharedCache,
+			long databaseIdentity, SamplingBudget samplingBudget) {
 		this.dataFile = dataFile;
 		this.meta = meta;
 		this.sharedCache = sharedCache;
 		this.databaseIdentity = databaseIdentity;
+		this.samplingBudget = Objects.requireNonNull(samplingBudget, "samplingBudget");
+	}
+
+	/**
+	 * Probability-weighted physical keys, deliberately independent of all logical-entry count shortcuts. Independently
+	 * jittered global strata cover the complete boundary/interior forest even when it has more components than draws.
+	 * Conditional on the selected leaf slices, a separate stream stratifies entries among their assigned draws. This
+	 * avoids both a fixed entry prefix and shared-offset aliasing of periodic predicates. Conditional strata are not a
+	 * claim of independent observations or a universal confidence bound.
+	 */
+	WeightedKeySample sampleWeightedKeys(LmdbDb db, byte[] lower, byte[] upper, int maxDraws, long streamId)
+			throws IOException {
+		samplingBudget.checkpoint();
+		if (maxDraws <= 0) {
+			throw new IllegalArgumentException("A weighted key sample requires a positive draw limit");
+		}
+		if (db == null) {
+			throw new IOException("The weighted-sampling authority database is absent");
+		}
+		validateWeightedDatabase(db);
+		if (db.flags() != 0) {
+			return new WeightedKeySample(KeySampleStatus.UNSUPPORTED_COMPARATOR, List.of());
+		}
+		if (db.isEmpty()) {
+			return new WeightedKeySample(KeySampleStatus.EXHAUSTIVE, List.of());
+		}
+		LocalPageCache pages = new LocalPageCache(localCacheCapacity(db.depth()));
+		RangeCountResult work = new RangeCountResult();
+		SeekCursor first = seekWeighted(db, lower, false, pages, work);
+		SeekCursor last = seekWeighted(db, upper, true, pages, work);
+		RangePlan range = rangePlan(first, last);
+		if (range.empty) {
+			return new WeightedKeySample(KeySampleStatus.EXHAUSTIVE, List.of());
+		}
+
+		List<WeightedKey> exact = new ArrayList<>(Math.min(maxDraws, 64));
+		if (collectSmallKeyRange(range, maxDraws, exact, pages, work)) {
+			for (WeightedKey key : exact) {
+				checkWeightedKeyBounds(key.key(), lower, upper);
+			}
+			return new WeightedKeySample(KeySampleStatus.EXHAUSTIVE, exact);
+		}
+		List<KeyComponent> components = new ArrayList<>(range.spans.size() + 2);
+		if (range.sameLeaf) {
+			components.add(new KeyComponent(first.leafPage, first.leafIndex, last.leafIndex, null, 1D));
+		} else {
+			addKeyBoundary(components, first.leafPage, first.leafIndex, first.leafPage.numKeys);
+			for (SiblingSpan span : range.spans) {
+				components.add(new KeyComponent(null, 0, 0, span, modeledLeafMass(db, span, false)));
+			}
+			addKeyBoundary(components, last.leafPage, 0, last.leafIndex);
+		}
+		double largest = components.stream().mapToDouble(KeyComponent::proposalMass).max().orElseThrow();
+		double[] masses = new double[components.size()];
+		double total = 0D;
+		for (int index = 0; index < masses.length; index++) {
+			// A proposal is not a cardinality claim. Limit its dynamic range so every component retains positive
+			// representable CDF width, including a tiny boundary beside a very deep interior subtree.
+			masses[index] = Math.max(0x1.0p-20, components.get(index).proposalMass / largest);
+			total += masses[index];
+		}
+		long seed = samplingSeed(db, lower == null ? new byte[0] : lower, lower == null ? 0 : lower.length,
+				upper == null ? new byte[0] : upper, upper == null ? 0 : upper.length) ^ mix64(streamId);
+		List<PendingKey> pending = new ArrayList<>(Math.min(maxDraws, 64));
+		Map<KeySlice, Integer> assigned = new HashMap<>();
+		for (int draw = 0; draw < maxDraws; draw++) {
+			samplingBudget.checkpoint();
+			double offset = unitCoordinate(mix64(seed ^ 0x4b45595354525543L ^ (draw + 1L) * 0x9e3779b97f4a7c15L));
+			double coordinate = Math.min(Math.nextDown(1D), (draw + offset) / maxDraws);
+			double selected = coordinate * total;
+			double before = 0D;
+			int componentIndex = 0;
+			while (componentIndex + 1 < masses.length && selected >= before + masses[componentIndex]) {
+				before += masses[componentIndex++];
+			}
+			double local = Math.max(0D, Math.min(Math.nextDown(1D),
+					(selected - before) / masses[componentIndex]));
+			KeyLeaf leaf = sampleKeyComponent(components.get(componentIndex), local, pages, work);
+			int eligible = leaf.to - leaf.from;
+			double coefficient = (total / masses[componentIndex]) * leaf.inversePath * eligible / maxDraws;
+			if (!Double.isFinite(coefficient) || coefficient <= 0D) {
+				throw new IOException("Invalid weighted-key contribution coefficient");
+			}
+			KeySlice slice = new KeySlice(leaf.page.expectedPgno, leaf.from, leaf.to);
+			assigned.merge(slice, 1, Integer::sum);
+			pending.add(new PendingKey(leaf, slice, coefficient, draw));
+		}
+		Map<KeySlice, Integer> visited = new HashMap<>();
+		List<WeightedKey> draws = new ArrayList<>(Math.min(maxDraws, 64));
+		for (PendingKey selected : pending) {
+			samplingBudget.checkpoint();
+			KeyLeaf leaf = selected.leaf;
+			int visit = visited.merge(selected.slice, 1, Integer::sum) - 1;
+			double jitter = unitCoordinate(mix64(seed ^ 0x4b4559454e545259L
+					^ (selected.stratumId + 1L) * 0xd1b54a32d192ed03L));
+			double entryCoordinate = Math.min(Math.nextDown(1D), (visit + jitter) / assigned.get(selected.slice));
+			int eligible = leaf.to - leaf.from;
+			int position = leaf.from + Math.min(eligible - 1, (int) (entryCoordinate * eligible));
+			byte[] key = copyWeightedKey(leaf.page, position);
+			checkWeightedKeyBounds(key, lower, upper);
+			draws.add(new WeightedKey(key, selected.coefficient, selected.stratumId));
+		}
+		return new WeightedKeySample(KeySampleStatus.SAMPLED, draws);
+	}
+
+	private static double unitCoordinate(long bits) {
+		return (bits >>> 11) * 0x1.0p-53;
+	}
+
+	private void checkWeightedKeyBounds(byte[] key, byte[] lower, byte[] upper) throws IOException {
+		samplingBudget.checkpoint();
+		samplingBudget.keyAccess();
+		if (lower != null && Arrays.compareUnsigned(key, lower) < 0
+				|| upper != null && Arrays.compareUnsigned(key, upper) >= 0) {
+			throw new IOException("Selected LMDB key lies outside its certified range");
+		}
+	}
+
+	private void validateWeightedDatabase(LmdbDb db) throws IOException {
+		if (db.entries() < 0 || db.branchPages() < 0 || db.leafPages() < 0 || db.overflowPages() < 0
+				|| db.depth() > MAX_SAMPLING_DEPTH) {
+			throw new IOException("Invalid weighted-sampling database metadata: " + db);
+		}
+		if (db.entries() == 0) {
+			if (db.rootPgno() != LmdbFormat.P_INVALID || db.depth() != 0 || db.branchPages() != 0
+					|| db.leafPages() != 0 || db.overflowPages() != 0) {
+				throw new IOException("Inconsistent empty LMDB database metadata: " + db);
+			}
+		} else {
+			validateDatabase(db);
+		}
+	}
+
+	/** Strict-depth/cycle validation applies to the new selector without changing legacy estimator traversal. */
+	private SeekCursor seekWeighted(LmdbDb db, byte[] key, boolean unboundedEnd, LocalPageCache pages,
+			RangeCountResult work) throws IOException {
+		List<BranchFrame> path = new ArrayList<>(Math.min(64, Math.max(0, db.depth() - 1)));
+		Set<Long> visited = new HashSet<>();
+		long pageNumber = db.rootPgno();
+		while (true) {
+			samplingBudget.checkpoint();
+			if (!visited.add(pageNumber)) {
+				throw new IOException("Cycle in weighted LMDB key descent at page " + pageNumber);
+			}
+			LmdbPage page = readPage(pageNumber, pages, work);
+			if (!page.isBranch()) {
+				ensureOuterLeaf(page);
+				if (path.size() != db.depth() - 1 || page.numKeys == 0) {
+					throw new IOException("Weighted leaf depth/count disagrees with database metadata");
+				}
+				int position = key == null ? (unboundedEnd ? page.numKeys : 0)
+						: findFirstGreaterOrEqual(page, key, key.length, true, db.flags()).index;
+				return new SeekCursor(page, position, path);
+			}
+			if (page.numKeys == 0 || path.size() >= db.depth() - 1) {
+				throw new IOException("Invalid weighted B-tree depth/branch on page " + pageNumber);
+			}
+			int child;
+			if (key == null) {
+				child = unboundedEnd ? page.numKeys - 1 : 0;
+			} else {
+				SearchResult search = findFirstGreaterOrEqual(page, key, key.length, false, db.flags());
+				child = search.index >= page.numKeys ? page.numKeys - 1
+						: search.exact ? search.index : search.index - 1;
+			}
+			path.add(new BranchFrame(page, child));
+			pageNumber = branchChildPage(page, child);
+		}
+	}
+
+	private boolean collectSmallKeyRange(RangePlan range, int limit, List<WeightedKey> keys,
+			LocalPageCache pages, RangeCountResult work) throws IOException {
+		if (range.sameLeaf) {
+			return appendExactKeys(range.lower.leafPage, range.lower.leafIndex, range.upper.leafIndex, limit, keys);
+		}
+		if (!appendExactKeys(range.lower.leafPage, range.lower.leafIndex, range.lower.leafPage.numKeys, limit, keys)) {
+			return false;
+		}
+		Set<Long> seen = new HashSet<>();
+		seen.add(range.lower.leafPage.expectedPgno);
+		seen.add(range.upper.leafPage.expectedPgno);
+		for (SiblingSpan span : range.spans) {
+			for (int child = span.fromInclusive; child < span.toExclusive; child++) {
+				if (!collectSmallKeySubtree(branchChildPage(span.parent, child), span.remainingBranchLevels, limit,
+						keys, seen, pages, work)) {
+					return false;
+				}
+			}
+		}
+		return appendExactKeys(range.upper.leafPage, 0, range.upper.leafIndex, limit, keys);
+	}
+
+	private boolean collectSmallKeySubtree(long pageNumber, int branchLevels, int limit, List<WeightedKey> keys,
+			Set<Long> seen, LocalPageCache pages, RangeCountResult work) throws IOException {
+		samplingBudget.checkpoint();
+		if (!seen.add(pageNumber)) {
+			throw new IOException("Repeated page in weighted exact-key range: " + pageNumber);
+		}
+		LmdbPage page = readPage(pageNumber, pages, work);
+		if (branchLevels == 0) {
+			ensureOuterLeaf(page);
+			if (page.numKeys == 0) {
+				throw new IOException("Empty leaf in nonempty weighted-key range");
+			}
+			return appendExactKeys(page, 0, page.numKeys, limit, keys);
+		}
+		if (!page.isBranch() || page.numKeys == 0) {
+			throw new IOException("Invalid branch in weighted exact-key range: " + pageNumber);
+		}
+		for (int child = 0; child < page.numKeys; child++) {
+			if (!collectSmallKeySubtree(branchChildPage(page, child), branchLevels - 1, limit, keys, seen, pages,
+					work)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean appendExactKeys(LmdbPage page, int from, int to, int limit, List<WeightedKey> keys)
+			throws IOException {
+		if (to - from > limit - keys.size()) {
+			return false;
+		}
+		for (int index = from; index < to; index++) {
+			keys.add(new WeightedKey(copyWeightedKey(page, index), 1D, -1));
+		}
+		return true;
+	}
+
+	private byte[] copyWeightedKey(LmdbPage page, int position) throws IOException {
+		samplingBudget.checkpoint();
+		samplingBudget.keyAccess();
+		int node = page.nodeOffset(position);
+		byte[] key = new byte[page.keySizeAt(node)];
+		page.buffer.get(page.keyOffsetAt(node), key);
+		return key;
+	}
+
+	private void addKeyBoundary(List<KeyComponent> components, LmdbPage page, int from, int to) {
+		if (to > from) {
+			components.add(new KeyComponent(page, from, to, null, (double) (to - from) / page.numKeys));
+		}
+	}
+
+	private KeyLeaf sampleKeyComponent(KeyComponent component, double coordinate, LocalPageCache pages,
+			RangeCountResult work) throws IOException {
+		if (component.leaf != null) {
+			samplingBudget.pageAccess();
+			return new KeyLeaf(component.leaf, component.from, component.to, 1D);
+		}
+		SiblingSpan span = component.span;
+		double scaled = coordinate * span.width();
+		int child = Math.min(span.width() - 1, (int) scaled);
+		double local = scaled - child;
+		double inverse = span.width();
+		long pageNumber = branchChildPage(span.parent, span.fromInclusive + child);
+		Set<Long> seen = new HashSet<>();
+		seen.add(span.parent.expectedPgno);
+		for (int level = span.remainingBranchLevels; level >= 0; level--) {
+			if (!seen.add(pageNumber)) {
+				throw new IOException("Cycle in weighted subtree descent: " + pageNumber);
+			}
+			LmdbPage page = readPage(pageNumber, pages, work);
+			if (level == 0) {
+				ensureOuterLeaf(page);
+				if (page.numKeys == 0) {
+					throw new IOException("Empty sampled leaf in nonempty weighted-key range");
+				}
+				return new KeyLeaf(page, 0, page.numKeys, inverse);
+			}
+			if (!page.isBranch() || page.numKeys == 0) {
+				throw new IOException("Invalid sampled weighted-key branch: " + pageNumber);
+			}
+			scaled = local * page.numKeys;
+			child = Math.min(page.numKeys - 1, (int) scaled);
+			local = scaled - child;
+			inverse *= page.numKeys;
+			pageNumber = branchChildPage(page, child);
+		}
+		throw new IOException("Incomplete weighted subtree descent");
+	}
+
+	private record KeyComponent(LmdbPage leaf, int from, int to, SiblingSpan span, double proposalMass) {
+	}
+
+	private record KeyLeaf(LmdbPage page, int from, int to, double inversePath) {
+	}
+
+	private record KeySlice(long pageNumber, int from, int to) {
+	}
+
+	private record PendingKey(KeyLeaf leaf, KeySlice slice, double coefficient, int stratumId) {
 	}
 
 	ExactCount countEntriesExact(LmdbDb db, byte[] lowerKey, int lowerLength, boolean lowerInclusive,
@@ -592,17 +898,24 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	byte[] findValueByExactKey(LmdbDb db, byte[] key, int keyLength, RangeCountResult ioStats) throws IOException {
+		if (samplingBudget != LmdbPageCardinalityEstimator.NO_SAMPLING_LIMITS) {
+			validateWeightedDatabase(db);
+		}
 		if (db.isEmpty()) {
 			return null;
 		}
 		validateDatabase(db);
 		validateKey(key, keyLength, "lookup");
 		LocalPageCache localPages = new LocalPageCache(localCacheCapacity(db.depth()));
-		SeekCursor cursor = seekRaw(db, key, keyLength, false, localPages, ioStats);
+		SeekCursor cursor = samplingBudget == LmdbPageCardinalityEstimator.NO_SAMPLING_LIMITS
+				? seekRaw(db, key, keyLength, false, localPages, ioStats)
+				: seekWeighted(db, Arrays.copyOf(key, keyLength), false, localPages, ioStats);
 		if (cursor.leafIndex >= cursor.leafPage.numKeys) {
 			return null;
 		}
 
+		samplingBudget.checkpoint();
+		samplingBudget.keyAccess();
 		int nodeOffset = cursor.leafPage.nodeOffset(cursor.leafIndex);
 		int keySize = cursor.leafPage.keySizeAt(nodeOffset);
 		int comparison = LmdbKeyComparator.compare(key, keyLength, cursor.leafPage.buffer,
@@ -613,6 +926,10 @@ final class LmdbBtreeRangeCounter {
 
 		int nodeFlags = cursor.leafPage.nodeFlagsAt(nodeOffset);
 		int logicalValueSize = cursor.leafPage.valueSizeAt(nodeOffset);
+		if (samplingBudget != LmdbPageCardinalityEstimator.NO_SAMPLING_LIMITS
+				&& (nodeFlags != LmdbFormat.F_SUBDATA || logicalValueSize != LmdbFormat.META_DB_SIZE)) {
+			throw new IOException("Invalid named-database descriptor in weighted-sampling discovery");
+		}
 		int storedValueSize = (nodeFlags & LmdbFormat.F_BIGDATA) != 0 ? Long.BYTES : logicalValueSize;
 		int valueOffset = cursor.leafPage.valueOffsetAt(nodeOffset, keySize);
 		if (storedValueSize < 0 || valueOffset < 0 || storedValueSize > cursor.leafPage.pageSize - valueOffset) {
@@ -1514,6 +1831,8 @@ final class LmdbBtreeRangeCounter {
 		int low = leafSearch || page.isLeaf() ? 0 : 1;
 		int high = page.numKeys - 1;
 		while (low <= high) {
+			samplingBudget.checkpoint();
+			samplingBudget.keyAccess();
 			int index = (low + high) >>> 1;
 			int nodeOffset = page.nodeOffset(index);
 			int keySize = page.keySizeAt(nodeOffset);
@@ -1566,6 +1885,8 @@ final class LmdbBtreeRangeCounter {
 	}
 
 	private long branchChildPage(LmdbPage branch, int childIndex) throws IOException {
+		samplingBudget.checkpoint();
+		samplingBudget.keyAccess();
 		if (!branch.isBranch()) {
 			throw new IOException("Expected branch page, flags=0x" + Integer.toHexString(branch.flags)
 					+ ", page=" + branch.expectedPgno);
@@ -1600,6 +1921,8 @@ final class LmdbBtreeRangeCounter {
 
 	private LmdbPage readPage(long pageNumber, LocalPageCache localPages, RangeCountResult stats)
 			throws IOException {
+		samplingBudget.checkpoint();
+		samplingBudget.pageAccess();
 		LmdbPage page = localPages.get(pageNumber);
 		if (page != null) {
 			stats.pageCacheHits++;
@@ -1626,6 +1949,8 @@ final class LmdbBtreeRangeCounter {
 
 	private int readLeafEntryCount(long pageNumber, LocalPageCache localPages, RangeCountResult stats)
 			throws IOException {
+		samplingBudget.checkpoint();
+		samplingBudget.pageAccess();
 		LmdbPage fullPage = localPages.get(pageNumber);
 		if (fullPage != null) {
 			stats.pageCacheHits++;

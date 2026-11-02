@@ -311,6 +311,59 @@ final class PackedLongVector {
 		return decodeNative(address + blockAt, ordinal & (BLOCK_SIZE - 1));
 	}
 
+	/**
+	 * Forward-only access to an already validated immutable native vector. Block directory, header and base loads occur
+	 * once per block; delta blocks retain their un-restored payload value between lanes. This reader owns no memory and
+	 * must remain inside the lifetime of the validated vector's owner.
+	 */
+	static final class NativeSequentialReader {
+		private final long address;
+		private final int size;
+		private int ordinal;
+		private int blockEnd;
+		private int mode;
+		private int type;
+		private int width;
+		private long base;
+		private long payload;
+		private long current;
+
+		NativeSequentialReader(long address) {
+			this.address = address;
+			this.size = UnsafeAccess.getIntLE(address);
+		}
+
+		long next() {
+			if (ordinal >= size) {
+				throw new IllegalStateException("packed vector sequential reader is exhausted");
+			}
+			if (ordinal == blockEnd) {
+				int block = ordinal >>> 8;
+				long blockAddress = address
+						+ UnsafeAccess.getIntLE(address + HEADER_BYTES + (long) block * Integer.BYTES);
+				int header = UnsafeAccess.getIntLE(blockAddress);
+				mode = header & MODE_MASK;
+				type = header >>> TYPE_SHIFT & 0x3f;
+				width = header >>> Byte.SIZE & 0xff;
+				base = UnsafeAccess.getLongLE(blockAddress + Integer.BYTES);
+				payload = blockAddress + BLOCK_HEADER_BYTES;
+				current = base;
+				blockEnd = ordinal + (header >>> Short.SIZE);
+			}
+			int lane = ordinal++ & (BLOCK_SIZE - 1);
+			long value;
+			if ((mode & MODE_DELTA_RAW) != 0) {
+				if (lane != 0 && width != 0) {
+					current += readBits(payload, (lane - 1) * width, width);
+				}
+				value = current;
+			} else {
+				value = width == 0 ? base : base + readBits(payload, lane * width, width);
+			}
+			return (mode & MODE_FOR_TYPED_PAYLOAD) == 0 ? value : restoreTypedId(value, type);
+		}
+	}
+
 	/** Allocation-free range decode for an already validated native vector. */
 	static int nativeCopy(long address, int size, int fromOrdinal, int length, long[] target, int targetOffset) {
 		int remaining = length;
