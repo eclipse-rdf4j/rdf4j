@@ -792,24 +792,17 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				? morselWork(sidewaysWorkRows(sidewaysRoots, typeRootCount.getAsLong(), pageAdmission))
 				: LmdbNativeWork.UNKNOWN;
 		LmdbNativeWork pageWork = morselWork(pageWorkRows(pageAdmission));
-		String winner;
-		List<BindingSet> selected;
-		try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
-				.<List<BindingSet>>forExpr(originalExpr)
-				.forcing(null, "type-matrix morsel dispatch")) {
-			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
-					() -> tryParallelSidewaysTypeMorselAdjacencyScan(eligiblePredicates, predicateCatalog,
-							sidewaysRoots, reverseLinkage, optimization),
-					sidewaysWork, SIDEWAYS_MORSEL_CANDIDATE, () -> {
-					}));
-			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
-					() -> tryParallelPageMorselAdjacencyScan(probe, eligiblePredicates, predicateCatalog,
-							acceptedRoots, optimization),
-					pageWork, PAGE_MORSEL_CANDIDATE, () -> {
-					}));
-			selected = arbiter.select();
-			winner = arbiter.winningTag();
-		}
+		// Two morsel schedules compete on their quoted work; the cheaper opens, a declined one yields to the other.
+		LmdbNativeStrategy<Void, List<BindingSet>> sideways = morselStrategy(SIDEWAYS_MORSEL_CANDIDATE, sidewaysWork,
+				() -> tryParallelSidewaysTypeMorselAdjacencyScan(eligiblePredicates, predicateCatalog,
+						sidewaysRoots, reverseLinkage, optimization));
+		LmdbNativeStrategy<Void, List<BindingSet>> page = morselStrategy(PAGE_MORSEL_CANDIDATE, pageWork,
+				() -> tryParallelPageMorselAdjacencyScan(probe, eligiblePredicates, predicateCatalog, acceptedRoots,
+						optimization));
+		LmdbNativeDispatchLoop.Selection<List<BindingSet>> selection = new LmdbNativeDispatchLoop<>(
+				LmdbNativeDecisionPoint.TYPE_MATRIX_MORSEL, List.of(sideways, page), originalExpr).dispatch(null);
+		List<BindingSet> selected = selection == null ? null : selection.value();
+		String winner = selection == null ? null : selection.id();
 		if (SIDEWAYS_MORSEL_CANDIDATE.equals(winner)) {
 			SIDEWAYS_ARBITER_WINS.incrementAndGet();
 		} else if (PAGE_MORSEL_CANDIDATE.equals(winner)) {
@@ -817,6 +810,27 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		}
 		recordMorselArbitration(winner, sidewaysWork, pageWork, pageAdmission);
 		return selected;
+	}
+
+	private static LmdbNativeStrategy<Void, List<BindingSet>> morselStrategy(String id, LmdbNativeWork work,
+			LmdbNativeCandidate.Opener<List<BindingSet>> opener) {
+		return new LmdbNativeStrategy<>() {
+			@Override
+			public String id() {
+				return id;
+			}
+
+			@Override
+			public LmdbNativeDecisionPoint point() {
+				return LmdbNativeDecisionPoint.TYPE_MATRIX_MORSEL;
+			}
+
+			@Override
+			public LmdbNativeAdmission<List<BindingSet>> admit(Void context) {
+				return LmdbNativeAdmission.of(LmdbNativeCandidate.of(id,
+						LmdbNativeCostQuote.ofWork(work, Double.NaN), opener));
+			}
+		};
 	}
 
 	private void recordMorselArbitration(String winner, LmdbNativeWork sidewaysWork, LmdbNativeWork pageWork,

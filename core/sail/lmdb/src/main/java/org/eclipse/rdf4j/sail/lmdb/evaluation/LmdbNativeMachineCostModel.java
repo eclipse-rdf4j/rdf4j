@@ -165,6 +165,11 @@ final class LmdbNativeMachineCostModel {
 				snapshot.sampleCount >= MINIMUM_ADAPTIVE_SAMPLES, snapshot.sampleCount);
 	}
 
+	/** The process-wide starting coefficients, nanoseconds per feature; also the selector's static prior. */
+	static double[] defaultPriorCoefficients() {
+		return defaultPrior();
+	}
+
 	private static double[] defaultPrior() {
 		double[] result = new double[FEATURE_COUNT];
 		set(result, LmdbNativeCostVector.Feature.OPEN, 5_000.0);

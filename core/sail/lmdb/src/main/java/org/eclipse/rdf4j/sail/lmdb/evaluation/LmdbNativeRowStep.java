@@ -877,16 +877,16 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		if (orderSlots.length != 0 && !distinct && !NativeGroupIteration.containsComputedValueCopy(arg)) {
 			// computed sort keys (M-F5) intern through the single serial value source, so the ordered kernel and
 			// factorized specialists — which produce rows on their own sources — must not intercept such plans
-			try (LmdbNativeStrategyArbiter<List<BindingSet>> arbiter = LmdbNativeStrategyArbiter
-					.<List<BindingSet>>forExpr(originalExpr, row.source)
-					.probeHarness(replaySafe ? LmdbNativeProbeHarness.blocking() : null)
-					.sharedRow(row)
-					.forcingWhereApplicable(forcedExecutionStrategyName(), "ORDER BY dispatch")) {
-				offerOrderedStrategies(row, base, values, comparator, emitCap, arbiter);
-				List<BindingSet> ordered = arbiter.select();
+			try {
+				LmdbNativeDispatchLoop.Selection<List<BindingSet>> ordered = new LmdbNativeDispatchLoop<>(
+						LmdbNativeDecisionPoint.ORDER, orderedStrategies(row, base, values, comparator, emitCap),
+						originalExpr)
+								.sharedRow(row)
+								.forcing(forcedExecutionStrategyName())
+								.dispatch(null);
 				if (ordered != null) {
 					row.acceptScalarFilterAttempt();
-					return ordered;
+					return ordered.value();
 				}
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
@@ -1559,18 +1559,18 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		}
 	}
 
-	private void offerOrderedStrategies(RowState row, BindingSet base, AggContext values,
-			PackedRowComparator comparator, long emitCap, LmdbNativeStrategyArbiter<List<BindingSet>> arbiter)
-			throws IOException {
+	/**
+	 * ORDER BY specialists that produce sorted rows on their own. The kernel is listed first so that an exact price tie
+	 * keeps today's preference; a priced difference decides otherwise.
+	 */
+	private List<LmdbNativeStrategy<Void, List<BindingSet>>> orderedStrategies(RowState row, BindingSet base,
+			AggContext values, PackedRowComparator comparator, long emitCap) {
 		LmdbNativeWork work = arg.estimateWork(row, row.boundMask());
 		LmdbNativeWork planning = LmdbNativeWork.planning(arg, row, row.boundMask());
-		String factorizedTag = emitCap == Long.MAX_VALUE
-				? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
-				: LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K;
-		arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
-				() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap), work,
-				factorizedTag, () -> {
-				}).withPlanningWork(planning));
+		double rows = LmdbNativeWork.rowsOut(arg, row, row.boundMask());
+		LmdbNativeCostQuote quote = LmdbNativeCostQuote.ofWork(planning.known() ? planning : work, rows)
+				.ordered(true);
+		List<LmdbNativeStrategy<Void, List<BindingSet>>> strategies = new ArrayList<>(2);
 		// Exactly ONE of the two IR-kernel tags (kernel-interpreter plan, D1/M4): compiled when janino is
 		// enabled, interpreted when only the interpreter tier is available, neither when both are off.
 		String orderedKernelTag = LmdbNativeJaninoCodegen.enabled()
@@ -1579,10 +1579,17 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 						? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
 						: null;
 		if (orderedKernelTag != null) {
-			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> tryEvaluateOrderedKernel(row, values),
-					work, orderedKernelTag, () -> {
-					}).withPlanningWork(planning));
+			strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, orderedKernelTag,
+					context -> LmdbNativeAdmission.of(LmdbNativeCandidate.of(orderedKernelTag, quote,
+							() -> tryEvaluateOrderedKernel(row, values)))));
 		}
+		String factorizedTag = emitCap == Long.MAX_VALUE
+				? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
+				: LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K;
+		strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, factorizedTag,
+				context -> LmdbNativeAdmission.of(LmdbNativeCandidate.of(factorizedTag, quote,
+						() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap)))));
+		return strategies;
 	}
 
 	private void offerUnorderedStrategies(RowState row, NativeTupleDistinctPlan distinctPlan, MultiJoinPlan multiJoin,
@@ -1695,13 +1702,13 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			return;
 		}
 		if (orderSlots.length != 0 && !distinct && !NativeGroupIteration.containsComputedValueCopy(arg)) {
-			try (LmdbNativeStrategyArbiter<List<BindingSet>> ordered = LmdbNativeStrategyArbiter
-					.<List<BindingSet>>forExpr(originalExpr, row.source)
-					.probeHarness(replaySafe ? LmdbNativeProbeHarness.blocking() : null)
-					.forcingWhereApplicable(forcedExecutionStrategyName(), "ORDER BY dispatch")) {
-				offerOrderedStrategies(row, row.base, null, null,
-						NativeSliceMath.limitPlusOffset(limit, Math.max(0L, offset)), ordered);
-				ordered.preview("ORDER BY dispatch");
+			try {
+				new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ORDER,
+						orderedStrategies(row, row.base, null, null,
+								NativeSliceMath.limitPlusOffset(limit, Math.max(0L, offset))),
+						originalExpr)
+								.forcing(forcedExecutionStrategyName())
+								.preview(null);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
