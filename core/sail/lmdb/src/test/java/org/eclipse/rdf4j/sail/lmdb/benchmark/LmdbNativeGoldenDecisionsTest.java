@@ -178,6 +178,15 @@ class LmdbNativeGoldenDecisionsTest {
 		return line.replaceAll("\\([^)]*\\)", "");
 	}
 
+	/**
+	 * The executed kernel tier is not deterministic: a compiled kernel whose Janino compilation does not complete in
+	 * time falls back to the interpreted tier at bind time, so the same query records {@code irAggregate} on one run
+	 * and {@code irAggregateInterpreted} on the next. The fixture records the route without its tier suffix.
+	 */
+	static String normalizeExecuted(String path) {
+		return normalize(path).replace("Interpreted", "");
+	}
+
 	private static List<String> header(List<String> lines) {
 		List<String> out = new ArrayList<>(lines.size() + 1);
 		out.add("# query\tindexes\tadjacency\tnodePath\tdecisionPoint\tmode\tselected\tfallback\toffered\tdeclined");
@@ -257,8 +266,8 @@ class LmdbNativeGoldenDecisionsTest {
 				lines.add(rowPrefix + "\t" + normalize(line));
 			}
 			for (Map.Entry<String, String> path : ExplainPath.executionPathsByNode(executed).entrySet()) {
-				lines.add(rowPrefix + "\t" + path.getKey() + "\texecutionPath\t-\t" + normalize(path.getValue())
-						+ "\t-\t-\t-");
+				lines.add(rowPrefix + "\t" + path.getKey() + "\texecutionPath\t-\t"
+						+ normalizeExecuted(path.getValue()) + "\t-\t-\t-");
 			}
 			return lines;
 		}

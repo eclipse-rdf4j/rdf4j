@@ -534,6 +534,12 @@ record LmdbNativeWork(double low, double high) {
 		if (quote.equals(ZERO)) {
 			return ZERO;
 		}
+		// The planning quote sees the index set: a probe that no index covers is priced as the sweep it will run,
+		// and the adjacency path is priced when it can serve the shape.
+		LmdbNativeAccessFacts facts = row == null ? null : LmdbNativeAccessFacts.forPattern(pattern, row.source);
+		if (facts != null) {
+			return exact(facts.quote(pattern.physicalMask(boundMask)).expected());
+		}
 		double rows = planningRows(pattern, row, boundMask);
 		if (Double.isNaN(rows)) {
 			// The seek is paid whatever the scan turns out to be, so the floor is still measured.

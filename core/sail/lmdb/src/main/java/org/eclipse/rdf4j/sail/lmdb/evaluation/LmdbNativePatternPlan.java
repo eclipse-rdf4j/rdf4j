@@ -473,20 +473,15 @@ final class PatternPlan implements SlotPlan {
 		boolean hypotheticalSynthetic = row != null && row.source instanceof SyntheticValueSource
 				&& (producedMask & boundMask & ~row.boundMask()) != 0L;
 		double rows = workRowsForBoundMask(boundMask, row == null ? null : row.source);
-		if (!Double.isFinite(rows) || rows < 0D) {
-			return LmdbNativeWork.atLeast(hypotheticalSynthetic
-					|| row != null && accessProfile != null && accessProfile.adjacencyPossible()
-							? 0D
-							: LmdbNativeWork.SEEK);
-		}
 		if (row == null) {
-			return LmdbNativeWork.exact(LmdbNativeWork.SEEK + rows);
+			return Double.isFinite(rows) && rows >= 0D ? LmdbNativeWork.exact(LmdbNativeWork.SEEK + rows)
+					: LmdbNativeWork.atLeast(LmdbNativeWork.SEEK);
 		}
 		if (accessProfile == null) {
 			return LmdbNativeWork.atLeast(hypotheticalSynthetic ? 0D : LmdbNativeWork.SEEK);
 		}
-		int mask = (termKnown(s, boundMask) ? 1 : 0) | (termKnown(p, boundMask) ? 2 : 0)
-				| (termKnown(o, boundMask) ? 4 : 0) | (termKnown(c, boundMask) ? 8 : 0);
+		LmdbNativeAccessFacts facts = LmdbNativeAccessFacts.forPattern(this, row.source);
+		int mask = physicalMask(boundMask);
 		// The entry row supplies concrete bindings; slots added while costing an upstream producer might be
 		// unbound on some of its rows (VALUES UNDEF, UNION, OPTIONAL, and expression errors). Enumerate the
 		// at-most-four physical fields rather than treating the producer's union mask as a guarantee.
@@ -497,7 +492,11 @@ final class PatternPlan implements SlotPlan {
 		double high = 0D;
 		int subset = varying;
 		while (true) {
-			LmdbNativeWork alternative = physicalWorkForMask((mask & ~varying) | subset, hypotheticalSynthetic);
+			LmdbNativeWork alternative = facts.quote((mask & ~varying) | subset).combined();
+			if (hypotheticalSynthetic) {
+				// a hypothetical synthetic binding can make the probe empty before the source is opened
+				alternative = LmdbNativeWork.between(0D, alternative.high());
+			}
 			low = Math.min(low, alternative.low());
 			high = Math.max(high, alternative.high());
 			if (subset == 0) {
@@ -512,61 +511,10 @@ final class PatternPlan implements SlotPlan {
 		return !term.isConstant() && term.slot >= 0 && (hypothetical & (1L << term.slot)) != 0L;
 	}
 
-	private LmdbNativeWork physicalWorkForMask(int mask, boolean hypotheticalSynthetic) {
-		int scans = contexts.isFixed() && (mask & 8) == 0 ? contexts.ids.length : 1;
-		if (contexts.isFixed()) {
-			mask |= 8;
-		}
-		int prefix = accessProfile.prefixMask(statementOrder, mask);
-		double seek = LmdbNativeWork.SEEK * accessProfile.sources() * scans;
-		if (prefix < 0) {
-			return LmdbNativeWork.atLeast(accessProfile.adjacencyPossible() || hypotheticalSynthetic ? 0D : seek);
-		}
-		double sourceRows = (double) accessProfile.entries() * scans;
-		boolean universalAdjacency = accessProfile.adjacencyPredicateWork() != -1L;
-		if (universalAdjacency && (range != null || statementOrder != null)) {
-			// The alternate source can sort a whole range or merge predicate streams. Its selected cost is not
-			// bounded by one unsorted LMDB pass, and the arbitration may choose either source.
-			return LmdbNativeWork.atLeast(0D);
-		}
-		if (range == null && mask == 0 && !universalAdjacency) {
-			return LmdbNativeWork.exact(seek + sourceRows);
-		}
-		if (range == null && (mask & 7) == 0 && universalAdjacency) {
-			// An adjacency root also walks its predicate catalog, including retained zero-count predicates.
-			// A context restriction can remove every row, so only an unrestricted root has a row floor.
-			double lower = mask == 0 ? sourceRows : 0D;
-			if (accessProfile.adjacencyPredicateWork() == -2L) {
-				return LmdbNativeWork.atLeast(lower);
-			}
-			double directory = (double) accessProfile.adjacencyPredicateWork() * scans;
-			return LmdbNativeWork.between(lower, seek + (sourceRows + directory) * (1D + LmdbNativeWork.SEEK));
-		}
-		boolean nodeAdjacency = range == null
-				&& (statementOrder == null || statementOrder == StatementOrder.P) && (mask & 2) == 0
-				&& (((mask & 1) != 0 && accessProfile.outgoingAdjacencyWork() >= 0L)
-						|| ((mask & 4) != 0 && accessProfile.incomingAdjacencyWork() >= 0L));
-		boolean mayUseAdjacency = accessProfile.adjacencyPossible() && (mask & 7) != 0;
-		if (mayUseAdjacency && !nodeAdjacency) {
-			// A partial or fixed-predicate adjacency row may be selected independently of LMDB. Without a
-			// bound for its lookup and overlay work, retain an unknown ceiling rather than claiming dominance.
-			return LmdbNativeWork.atLeast(0D);
-		}
-		// A residual field can skip index ranges, while a complete node adjacency candidate can inspect its
-		// node-to-predicate projection as well as edge rows. The arbiter can still select LMDB for a particular key,
-		// so do not price the candidate as a guaranteed direct lookup.
-		double projectionWork = 0D;
-		if (nodeAdjacency && (mask & 1) != 0 && accessProfile.outgoingAdjacencyWork() >= 0L) {
-			projectionWork += accessProfile.outgoingAdjacencyWork();
-		}
-		if (nodeAdjacency && (mask & 4) != 0 && accessProfile.incomingAdjacencyWork() >= 0L) {
-			projectionWork += accessProfile.incomingAdjacencyWork();
-		}
-		double scanWork = sourceRows * ((mask & ~prefix) != 0 || range != null ? 1D + LmdbNativeWork.SEEK : 1D);
-		// A future binding can be an evaluation-scoped value. The synthetic wrapper returns an empty iterator
-		// before opening the backing source, so such a hypothetical probe has no guaranteed seek cost.
-		double lower = mayUseAdjacency || hypotheticalSynthetic ? 0D : seek;
-		return LmdbNativeWork.between(lower, seek + scanWork + projectionWork * scans);
+	/** Physical binding bits (s=1, p=2, o=4, c=8) with the given slots bound; constants count as bound. */
+	int physicalMask(long boundMask) {
+		return (termKnown(s, boundMask) ? 1 : 0) | (termKnown(p, boundMask) ? 2 : 0)
+				| (termKnown(o, boundMask) ? 4 : 0) | (termKnown(c, boundMask) ? 8 : 0);
 	}
 
 	/** A concrete synthetic term makes this exact probe empty before the backing source is opened. */

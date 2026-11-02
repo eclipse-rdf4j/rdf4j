@@ -780,7 +780,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			if (i == 0 && depth0RowsOverride >= 0D && Double.isFinite(depth0RowsOverride)) {
 				rowsPerProbe = Math.min(rowsPerProbe, depth0RowsOverride);
 			}
-			work += prefixRows * (1D + rowsPerProbe);
+			work += prefixRows * probeWork(order[i], entryMask, source, row, rowsPerProbe);
 			prefixRows *= rowsPerProbe;
 			if (!Double.isFinite(work) || !Double.isFinite(prefixRows)) {
 				return Double.POSITIVE_INFINITY;
@@ -796,13 +796,29 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			if (!(rowsPerProbe >= 0D) || !Double.isFinite(rowsPerProbe)) {
 				return Double.POSITIVE_INFINITY;
 			}
-			branchWork += 1D + rowsPerProbe;
+			branchWork += probeWork(order[i], entryMask, source, row, rowsPerProbe);
 			if (!Double.isFinite(branchWork)) {
 				return Double.POSITIVE_INFINITY;
 			}
 		}
 		double cost = work + prefixRows * branchWork;
 		return Double.isFinite(cost) ? cost : Double.POSITIVE_INFINITY;
+	}
+
+	/**
+	 * Work of one probe of {@code child} under {@code entryMask}: the access facts' expected price for a statement
+	 * pattern (it sees the index set and the adjacency path), otherwise one seek plus the rows the probe yields. This
+	 * keeps the factorized quote in the same units as the planning quotes of the strategies it competes with.
+	 */
+	private static double probeWork(SlotPlan child, long entryMask, NativeLmdbQuerySource source, RowState row,
+			double rowsPerProbe) {
+		if (child instanceof PatternPlan pattern) {
+			LmdbNativeAccessFacts facts = LmdbNativeAccessFacts.forPattern(pattern, source);
+			if (facts != null) {
+				return facts.quote(pattern.physicalMask(entryMask)).expected();
+			}
+		}
+		return LmdbNativeWork.SEEK + rowsPerProbe;
 	}
 
 	private static double childEstimate(SlotPlan child, long entryMask, NativeLmdbQuerySource source, RowState row) {
