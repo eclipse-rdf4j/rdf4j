@@ -1,0 +1,248 @@
+# Rewrite the LMDB native engine's strategy selection as one declarative selector
+
+This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds. It must be maintained in accordance with `.agent/PLANS.md` at the repository root. When implementation starts, copy this file to `.agent/plans/lmdb-native-selector-rewrite.md` (create the directory) and keep that copy as the source of truth.
+
+## Purpose / Big Picture
+
+The LMDB native query engine (the code under `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation`, enabled by `LmdbStoreConfig.setNativeEvaluationEnabled(true)` or the system property `rdf4j.lmdb.nativeQueryEngine.enabled`) answers a SPARQL query by picking one of roughly sixty physical "strategies" at each decision point (a join, an ORDER BY, a GROUP BY). Today the picking is done by a 2306-line arbiter whose cold decision is mostly a hand-ordered ladder, whose cost quotes have five incompatible shapes, whose learned prices are keyed by neither index set nor access source, and whose strategy vocabulary has many entries that share one quote and so can never be told apart. The user-visible symptom is that the engine sometimes runs a slower strategy (an IR kernel) when a faster one (a packed f-tree) was available and admissible, and nobody can say from the explain output why.
+
+After this change a user can run any query against an LMDB store with native evaluation on and (1) get the same results as before, (2) see in the explain output one record per decision listing every admitted strategy, its cost interval with provenance, the dominance edges that eliminated losers and the single reason the winner won, (3) observe on the theme-query regression suite that no query is slower than before and that the f-tree-vs-kernel misroutes are gone, and (4) add a new strategy by writing one descriptor class, with no edits to any dispatch site.
+
+Scope, as decided with the user on 2026-11-02: the selection machinery is replaced outright (no backward compatibility for forceable names, explain keys, JFR fields or system properties); the strategy inventory is consolidated so that strategies which cannot be told apart by cost become variant axes of one strategy; the learned-price layer is rebuilt as advisory only; delivery is a single big-bang replacement on one branch with the existing suite, ported, as the safety net.
+
+## Progress
+
+- [x] (2026-11-02 18:45Z) M0 harness: `DecisionRecorder` and `ExplainPath` under `src/test/.../evaluation/select/`, `LmdbNativeGoldenDecisionsTest` under `src/test/.../benchmark/` (it needs the package-private FOAF clique generator), fixture `src/test/resources/lmdb-native/golden-decisions.tsv` generated: 23 queries (9 catalogue, 14 shape) × 5 store configurations, 150 structured decisions plus 115 execution paths.
+- [x] (2026-11-02 19:10Z) M0 fixture verified: with the static-decision properties two consecutive cold captures are identical (compare mode passes, 0 differing lines; modes are now normal 120, direct 30). `FakeQuerySource` deferred to the milestone that first needs it (M1 tests use real small stores instead; see Decision Log). Phase 0 ports of ladder/arbiter-API tests happen when the new API exists (M2/M3).
+- [ ] M1 Shared per-dispatch facts: access, cardinality, cost vector with provenance
+- [ ] M2 Strategy descriptors, registry, variant axes, inventory consolidation
+- [ ] M3 Selector pipeline, dispatch loop, decision points; old arbiter deleted
+- [ ] M4 Pricer: checked-in static prior plus advisory learner with corrected keys
+- [ ] M5 Decision record drives explain, JFR, forceable vocabulary; external callers updated
+- [ ] M6 Delete remaining old code, full module verify, benchmark gate, docs
+
+## Surprises & Discoveries
+
+- Observation: The direct-adjacency index does not reach SERVING on a store whose only index is `spoc`; `AdjacencyEngagementTestAccess.buildNow` returns false within a second while the same data with `spoc,posc` builds fine. Memory was not refused (1 GiB cap). The golden fixture therefore captures the single-index cell LMDB-only; the cause is to be identified in M1 when `AccessFacts` models adjacency availability.
+  Evidence: `LmdbNativeGoldenDecisionsTest.decisionsMatchGoldenFixture: failure: [adjacency index built for spoc] Expecting value to be true but was false` (surefire, 2026-11-02 19:42).
+- Observation: Structured `StrategyDecision` records are attached to the plan only while `QueryExplanationContext.isPreview()` is true, which the `Optimized` explain level enables; the `Executed` level carries only the `nativeExecutionPath` string metric. The fixture captures both levels.
+  Evidence: first fixture run had 115 execution-path rows and 0 structured rows; after adding the `Optimized` capture, 150 structured rows appeared.
+- Observation: On a fresh (cold) store the old arbiter already reports modes `trial` (16 of 150 decisions) and `hedged trial` (13), so what the existing engine calls a cold decision already includes speculative execution. The rewrite's selector must be compared against these as "cold" baselines.
+  Evidence: mode column of `golden-decisions.tsv`: normal 91, direct 30, trial 16, hedged trial 13.
+- Observation: The existing engine's cold decision is not reproducible. Two consecutive runs of the fixture capture on identical fresh stores differed in 21 of 150 structured decisions: `trial`/`hedged trial` modes appearing or not, and parallel versus serial kernel tiers flipping under `normal` mode (for example `filterAge` on `spoc`: `irKernel` then `irKernelParallelInterpreted`). The adaptive probe and hedge policies are time based, and tier choice depends on timing too. The fixture therefore pins the static decision with `rdf4j.lmdb.adaptiveProbe.enabled=false`, `rdf4j.lmdb.adaptiveHedge.enabled=false`, `rdf4j.lmdb.costCalibration.enabled=false` and `rdf4j.lmdb.costModel.persist.enabled=false`. This is also direct evidence for the rewrite's premise: a decision that depends on wall-clock timing cannot be explained or regression tested.
+  Evidence: surefire report of `LmdbNativeGoldenDecisionsTest` (compare mode, 2026-11-02 19:58): 21 `-` and 21 `+` lines.
+- Observation: The `parallelAggregation` tag embeds the worker count and partitioning (`parallelAggregation(workers=15,rangePartitioned=2)`), which is machine dependent. The fixture strips parenthesised parameters from every tag.
+
+## Decision Log
+
+- Decision: Replace, do not evolve. The arbiter, the preference ladder, the adaptive arbitration and the five quote conventions are deleted rather than refactored.
+  Rationale: The user chose big-bang replacement with no compatibility constraints. The existing structure (ranking split across `rankLegacy`, `adaptiveDecision` and `chooseCaptured`, with position in a 60-entry ladder deciding most cold cases) cannot be made uniform incrementally without carrying both models for months.
+  Date/Author: 2026-11-02, planning session.
+- Decision: The learned layer is advisory. It may narrow a strategy's cost interval inside the bounds that the static quote's provenance allows; it may never promote a strategy over one that structurally dominates it, nor widen an interval.
+  Rationale: User choice. Also, learned prices today mix runs across index generations and access sources, so they have been a source of wrong decisions rather than a corrector of them.
+  Date/Author: 2026-11-02.
+- Decision: Probes and hedges (speculatively starting a rival strategy) are removed in this rewrite. The dispatch loop keeps the cheap decline-and-rerank path.
+  Rationale: Both exist to repair a bad cold decision by spending extra work; the rewrite's goal is to make the cold decision right. They can return later as an advisory exploration policy on top of the new `Selector` without touching strategies.
+  Date/Author: 2026-11-02.
+- Decision: Strategies that today share one quote function become variant axes (execution tier, parallelism, distinctness, wildcard shape) of a single strategy, and a strategy's quote must distinguish its variants by features the pricer can price. A strategy that cannot be priced apart from another is not a separate strategy.
+  Rationale: Today `nestedLoop`, `batch`, `adaptiveFilterPlacement`, `orderedDistinct`, every IR kernel tier, `existsIntersection` and `orderedSinglePatternGroups` are quoted by the same `planProposal`/`estimatedProposal` path, so the ladder position, not cost, decides between them.
+  Date/Author: 2026-11-02.
+- Decision: Keep two existing seams despite the no-compatibility mandate: `SailQuery.setForcedLmdbExecutionStrategy` and the `nativeExecutionPath` / `nativeStrategyDeclines` explain metrics, re-pointed at registry ids.
+  Rationale: 61 and about 60 test files respectively depend on them; they are the characterization suite's observation channel, and replacing them would cost 120 mechanical edits with no design benefit.
+  Date/Author: 2026-11-02, after the test survey.
+- Decision: New production classes live in `org.eclipse.rdf4j.sail.lmdb.evaluation` itself (names prefixed `LmdbNative`), not in a `select` subpackage, because `PatternPlan`, `Term`, `LmdbNativeWork` and the other types they build on are package-private and widening them to public is out of scope. Only the test harness uses the `evaluation.select` test package.
+  Rationale: Keeps visibility unchanged; a subpackage would have forced a dozen public APIs.
+  Date/Author: 2026-11-02, M0.
+- Decision: M1 tests price real small LMDB stores opened through `NativeQuerySourceAccess.openExplicitDataset` with the index set under test, instead of a hand-written `NativeLmdbQuerySource` fake. `FakeQuerySource` is built only when a later milestone needs a shape no real store can produce.
+  Rationale: The source interface has about 145 methods; a real store with a chosen index set exercises the actual `TripleStore.indexAccessProfile` code, which is what the facts must agree with.
+  Date/Author: 2026-11-02, M0.
+- Decision: No admitted strategy may quote an unbounded interval. A strategy whose cost is unknown must either decline or quote the ceiling of the fallback it would degrade to (a full index sweep plus residual filtering).
+  Rationale: `UNKNOWN` intervals dominate nothing and are dominated by nothing, so every comparison involving one falls back to the ladder. Four strategies (prefixRun, wcoj at both sites, typeMatrix/census without adjacency) quote `UNKNOWN` today.
+  Date/Author: 2026-11-02.
+
+## Outcomes & Retrospective
+
+(write at each milestone completion)
+
+## Context and Orientation
+
+All paths below are relative to the repository root `/Users/havardottestad/Documents/Programming/rdf4j7`. The module is `core/sail/lmdb`. The package is `org.eclipse.rdf4j.sail.lmdb.evaluation`, directory `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/` (abbreviated `evaluation/` below). Tests are in `core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/` and its `evaluation/` and `benchmark/` subdirectories.
+
+Terms used in this plan:
+
+A *strategy* is one way of executing a decision point: for a join, for example, index nested loop, hash join, packed f-tree, IR kernel. Each has a string tag such as `packedFtree`; the tags are declared as `PATH_*` constants in `evaluation/LmdbNativeAttemptMetrics.java` (64 of them) plus five more in `LmdbNativeCensusAggregate`, `NativeExpressionDomainPolicy`, `LmdbNativeTypeMatrix` and `NativeTermDomainPlan`.
+
+A *decision point* (also called dispatch site) is a place in the engine where several strategies are offered and one is chosen. There are six today: row/join dispatch in `evaluation/LmdbNativeRowStep.java` near line 1513 with strategies registered in `offerUnorderedStrategies` near line 1588; ORDER BY dispatch in the same file near lines 880 and 1698; GROUP BY dispatch in `evaluation/LmdbNativeGroupStep.java` near line 1643 with strategies registered in `offerCandidates` near line 1223; the GROUP BY physical quote near line 274 of the same file; `evaluation/NativePhysicalGroupArbitration.java` line 47; and the internal morsel dispatch in `evaluation/LmdbNativeTypeMatrix.java` near line 797.
+
+The *arbiter* is `evaluation/LmdbNativeStrategyArbiter.java`. A dispatch site creates one with `forExpr`, `forSlice` or `forModel`, calls `offer(tag, proposerLambda)` once per strategy, then `dispatch()`. Each proposer lambda returns an `evaluation/LmdbNativeStrategyProposal.java` or null to decline. The arbiter ranks proposals (legacy ranking in `rankLegacy`, or adaptive ranking in `adaptiveDecision` which delegates to `evaluation/LmdbNativeAdaptiveArbitration.chooseCaptured`), opens the winner, and on a bind-time decline re-ranks the rest. The static tie-breaker is the ladder in `evaluation/LmdbNativeStrategyPreference.java` (`ORDER`, a list of tags where earlier wins).
+
+A *work interval* is `evaluation/LmdbNativeWork.java`: a `[low, high]` pair in abstract units where `SEEK` is one index seek; `UNKNOWN` is `[0, +inf)`. A *cost vector* is `evaluation/LmdbNativeCostVector.java`: counts per `Feature` (OPEN, INDEX_SEEK, SCANNED_ROW, DECODED_ROW, INTERPRETED_ROW, GENERATED_ROW, HASH_BUILD_ROW, GROUP_UPDATE, SORT_N_LOG2_N, OUTPUT_MATERIALIZATION and others). The *machine prior* in `evaluation/LmdbNativeMachineCostModel.java` (`defaultPrior`) maps each feature to nanoseconds. The *learned layer* is `evaluation/LmdbNativeAdaptiveCostModel.java` with `LmdbNativeCostPosteriorStore`, `LmdbNativeCostModelPersistence` (a sidecar file in the data directory), `LmdbNativeLatestObservedLedger`, keyed by `LmdbNativeRegimeKey` (phase, adjacencyEpoch, kernelReady, dataGeneration) and `LmdbNativePhysicalVariantKey` (seventeen fields, none naming an index or access source).
+
+The *index access profile* is the record `IndexAccessProfile` in `evaluation/NativeLmdbQuerySource.java`, built by `TripleStore.indexAccessProfile` (`core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/TripleStore.java` near line 3449) and filled with adjacency numbers by `LmdbSailStore.indexAccessProfile` (near line 13935). It carries, per statement order and 16-way binding mask, the longest key prefix any configured LMDB index covers (-1 if none), plus whether the *adjacency index* (the separate node-centric structure under `directAdjacency`) may serve statements and three upper bounds for its work. `evaluation/LmdbNativePatternPlan.physicalWorkForMask` turns that into a work interval, and `LmdbNativePatternPlan.estimateForBoundMask` estimates rows independently of indexes. Which source actually serves a pattern is decided later, per statement open, by `core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStatementAccessArbiter.java`.
+
+The *explain* surface is `evaluation/LmdbNativeExplain.java` (string metrics on the `TupleExpr`, keys `nativeStrategyDeclines`, `nativeStrategyProposalCosts`, `nativeAdaptiveCostDecision`, `nativePhysicalPlan` and others), `evaluation/LmdbNativeStrategyPreview.java`, and the JFR event `evaluation/NativeStrategyDecisionEvent.java` (38 fields). The *forceable vocabulary* is `evaluation/LmdbNativeForceableStrategies.java` (public), listed by `tools/server-spring/src/main/java/org/eclipse/rdf4j/common/webapp/system/LmdbForceableStrategiesController.java` and `tools/workbench/src/main/java/org/eclipse/rdf4j/workbench/util/LmdbStrategies.java`. `scripts/lmdb-regret-scorer.py` consumes JFR output. Documentation lives under `docs/LMDB Native Query Engine and Adjacency Index/`, notably `query-arbitration-and-explanation.md` and `query-strategy-families.md`.
+
+Build and test conventions from `CLAUDE.md` apply: always `-o -Dmaven.repo.local=.m2_repo`; run tests through `/opt/homebrew/bin/python3 .codex/skills/mvnf/scripts/mvnf.py <selection>` (never `-am` or `-q` with tests); run the root quick install before manual test runs; format with `mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C process-resources`; every new Java file carries the exact copyright header from `CLAUDE.md` with year 2026 followed by `// Some portions generated by Claude Code` ... (use the agent signature wording appropriate to the agent running the plan).
+
+## Plan of Work
+
+The new design has seven parts. They are introduced in milestone order so that the module compiles at every milestone, but nothing old survives M6.
+
+Part one, shared facts. A new final class `evaluation/select/DecisionFacts.java` is computed once per dispatch and handed to every strategy. It holds: the pattern plans and the current bound mask; the slice (row limit) if any; `AccessFacts`, which for each pattern and binding mask prices the LMDB path from the pinned index generation (prefix coverage from `IndexAccessProfile.prefixMask`; a missing index priced as a sweep of the smallest index, `entries()`, with residual fields charged as `DECODED_ROW` not as seeks) and separately prices the adjacency path (from the three adjacency work uppers), and records which source gives the lower bound; `CardinalityFacts`, a memoizing wrapper around `LmdbNativePatternPlan.estimateForBoundMask` so that every strategy at a dispatch sees identical row estimates and identical fan-outs; and `Regime`, a record of index generation, adjacency epoch and kernel readiness taken from `NativeLmdbQuerySource`. The two store-side numbers that `LmdbSailStore` already computes for `LmdbStatementAccessArbiter` (adjacency estimate and LMDB statement work) are exposed through a new method on `NativeLmdbQuerySource` so `AccessFacts` and the access arbiter price from the same inputs.
+
+Part two, one quote shape. `evaluation/select/CostQuote.java` is a `LmdbNativeCostVector` where every feature count carries a `Provenance` enum: `EXACT` (counted from a materialized structure, e.g. plane count), `STATISTICAL` (from predicate fan-out statistics), `STRUCTURAL` (pseudo-cardinality), `BOUNDED` (an upper bound only, e.g. a sweep). The interval is derived from provenance, not chosen per strategy: `EXACT` is a point, `STATISTICAL` is a fixed relative band, `STRUCTURAL` is a wider band, `BOUNDED` is `[fraction, 1]` of the bound. The quote also states its benefit side: expected output rows, whether output is ordered on the requested keys, whether it is distinct, and the fraction of input consumed when a slice applies. `LmdbNativeWork` survives only as the arithmetic helper for intervals.
+
+Part three, strategy descriptors. `evaluation/select/NativeStrategy.java` is an interface: `id()` (the tag), `family()`, `appliesTo(DecisionPoint)`, `variants(DecisionFacts)` returning the admissible `Variant` set (tier janino/interpreted, serial/parallel, distinct, wildcard shape) each with its own `CostQuote`, `admit(DecisionFacts)` returning `Admission.ADMIT` or `Admission.decline(reason)`, `dominates(NativeStrategy other, DecisionFacts)` for the declared partial order (for example indexedCount dominates every row-producing count; a kernel dominates the interpreted tier of the same shape), `open(DecisionFacts, Variant)` returning the executable, and flags `answersWholeQuery`, `lastResort`, `mustTry`. `evaluation/select/NativeStrategyRegistry.java` lists every descriptor once; dispatch sites no longer build rung lists. Enable knobs (`rdf4j.lmdb.<strategy>.enabled`) are read in one place from the descriptor's `id`. The consolidated inventory is given in the Interfaces section.
+
+Part four, the pricer. `evaluation/select/Pricer.java` maps a `CostQuote` to a nanosecond interval. The static prior is a checked-in calibrated vector `evaluation/select/StaticPrior.java` replacing `LmdbNativeMachineCostModel.defaultPrior`; its values are produced by one run of the calibration benchmark in M4 and committed. The advisory learner `evaluation/select/AdvisoryLearner.java` keeps per-key observed ratios of actual to predicted nanos where the key is `(strategy id, variant, index generation, access source, bound-mask class, cardinality bucket)`; it may shrink an interval toward its observed centre within the provenance band and no further. Persistence keeps the sidecar file approach of `LmdbNativeCostModelPersistence` but with the new key.
+
+Part five, the selector. `evaluation/select/Selector.java` is one pipeline with no alternative rankers: forced filter by registry id; admission; structural dominance edges from `dominates`; interval dominance (a candidate whose high is below another's low eliminates it); then among the survivors the lowest expected nanos, with the registry order as the deterministic final tie-break only. It returns `DecisionRecord` listing every candidate with admission result, quote, interval, eliminated-by edge, and the winner's single reason. `evaluation/select/DispatchLoop.java` is generic over the executable type: open the winner, on decline remove and re-select, release losers, run the last-resort strategy if nothing opens. The six decision points become instances of `evaluation/select/DecisionPoint.java` (ROW, ORDER, GROUP, GROUP_PHYSICAL, TYPE_MATRIX_MORSEL, plus the internal physical-group arbitration folded into GROUP_PHYSICAL).
+
+Part six, explain and telemetry from the record. `LmdbNativeExplain` writes one metric `nativeDecision.<point>.<n>` whose value is the rendered `DecisionRecord`; `LmdbNativeStrategyPreview` renders the same record for the Workbench; `NativeStrategyDecisionEvent` is regenerated with one event per candidate carrying the record fields. `LmdbNativeForceableStrategies.list()` returns registry ids and descriptions. The server controller, Workbench `LmdbStrategies`, `scripts/lmdb-regret-scorer.py` and the docs are updated to the new names.
+
+Part seven, deletion. `LmdbNativeStrategyArbiter`, `LmdbNativeStrategyProposal`, `LmdbNativeStrategyPreference`, `LmdbNativeAdaptiveArbitration`, `LmdbNativeStrategyCatalog`, `LmdbNativeStrategySelection`, `LmdbNativeCostEstimate`, `LmdbNativeCostPrediction`, `LmdbNativeCostPosteriorStore`, `LmdbNativeLatestObservedLedger`, `LmdbNativeRegimeKey`, `LmdbNativeRegimeTracker`, `LmdbNativePhysicalVariantKey`, `LmdbNativeCostCalibration`, `NativeAggregateCostQuotes`, `NativePhysicalGroupArbitration`, and the `chunkPipeline` strategy are deleted. `LmdbNativeCostObservation` is kept but reduced to a counter sink feeding the learner.
+
+### Milestone M0: Characterization harness and golden decision fixture
+
+Goal: before touching production code, capture what the engine decides today so the rewrite can be judged. Add `core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/select/FakeQuerySource.java`, a `NativeLmdbQuerySource` whose index profile (configured index names), adjacency availability and per-pattern cardinalities are set by the test; and `DecisionRecorder.java`, which captures every decision via the explain metrics (today) and via `DecisionRecord` (after M3). Add `LmdbNativeGoldenDecisionsTest.java` that runs the query catalogues already in the test tree (`benchmark/FoafCliqueQueryCatalog.java`, the theme queries used by `benchmark/LmdbThemeQueryRegressionIT.java`, and the shape queries in `benchmark/AdjacencyQueryShapeBenchmark.java`) against small generated stores under three index configurations (`spoc,posc` default; `spoc` only; `spoc,posc,ospc,cspo`) with adjacency on and off, and writes `src/test/resources/lmdb-native/golden-decisions.tsv` (query id, index set, adjacency flag, decision point, chosen tag). Commit that file. Port the behavioural tests named in the test-migration section to the recorder so they no longer read internal classes. Result: a fixture that the rewritten selector is diffed against in M3 and M6, where every difference must be justified in the Decision Log as an improvement.
+
+Acceptance: `mvnf LmdbNativeGoldenDecisionsTest` passes and the TSV has one line per (query, config, decision point) with no blank tags.
+
+### Milestone M1: Shared facts
+
+Goal: make every strategy at a dispatch see the same access prices and cardinalities. Create `DecisionFacts`, `AccessFacts`, `CardinalityFacts`, `Regime` and `CostQuote` with `Provenance` under `evaluation/select/`. Add `NativeLmdbQuerySource.accessEstimates(pattern, mask)` returning both source intervals (implemented in `LmdbSailStore` by reusing the computation at the access-arbiter call site near line 14445, and in `FakeQuerySource` from test configuration). Rewrite `LmdbNativePatternPlan.physicalWorkForMask` to delegate to `AccessFacts`, removing the `atLeast(0)` branches: a pattern is priced as `min` over sources, a missing prefix as a sweep, residual fields as decoded-row comparisons. Convert the existing tests `evaluation/LmdbPhysicalWorkPricingRegressionTest.java` and `evaluation/NativePhysicalGroupingCostTest.java` into tests of `AccessFacts` with the `FakeQuerySource`; the assertions that encoded today's unbounded floors are rewritten with the new finite ceilings and each rewrite is noted in Surprises.
+
+Acceptance: a new test `AccessFactsTest` shows, for a two-pattern join with `spoc,posc`, that a pattern bound on object only is priced as a `posc`-less sweep with a finite high (not `+inf`), and that adding `ospc` to the fake source's index list lowers the high to the prefix-seek price. With adjacency enabled for the same pattern the low becomes the adjacency estimate and the high stays the LMDB ceiling.
+
+### Milestone M2: Strategy descriptors, registry, inventory consolidation
+
+Goal: every executor is reachable only through a descriptor. Create `NativeStrategy`, `Variant`, `Admission`, `NativeStrategyRegistry`, `DecisionPoint`. Write one descriptor per consolidated strategy (list in Interfaces). Each descriptor's `admit` is the structural check that today lives in the proposer lambda (for example `LmdbNativeAdaptiveFilterPlacement.canAttempt`), its `variants` enumerate tiers and parallelism and attach a `CostQuote` built from `DecisionFacts` and the executor's own exact counts (plane counts for `predicatePlaneGroups`, worker count and startup for parallel variants, build rows for hash join, prefix rows and branch work for factorized), and its `open` calls the existing executor entry point (`LmdbNativePackedFtree.proposeRows` becomes `open`, and so on). The quote for the packed f-tree includes its benefit: `GENERATED_ROW` per emitted row and `BATCH_ROW` per prefix row rather than `INTERPRETED_ROW` per logical row, which is the 16x handicap found in analysis. The `rowFeature` default in `LmdbNativeStrategyProposal` disappears with that class. Delete `chunkPipeline` (unreachable today) and `LmdbNativeAttemptMetrics.PATH_*` constants for merged tags; keep counters keyed by `(id, variant)`.
+
+Acceptance: `NativeStrategyRegistry.all()` returns the consolidated list; a new `NativeStrategyRegistryTest` asserts every descriptor declares at least one decision point, that no two descriptors at the same point and variant produce identical quotes for a representative `DecisionFacts` (this is the test that enforces the consolidation decision), and that every enable knob name equals `rdf4j.lmdb.<id>.enabled`.
+
+### Milestone M3: Selector, dispatch loop, decision points; old arbiter deleted
+
+Goal: one ranking pipeline at every site. Implement `Selector`, `DecisionRecord`, `DispatchLoop`. Replace the six dispatch sites: `LmdbNativeRowStep` row dispatch, both ORDER BY sites, `LmdbNativeGroupStep` group dispatch and physical quote, `NativePhysicalGroupArbitration` (folded into GROUP_PHYSICAL), and the `LmdbNativeTypeMatrix` morsel dispatch, each becoming `DispatchLoop.run(point, facts, registry, forced)`. Forcing (`LmdbNativeExplain` forced-strategy entry) filters by registry id with the same mandatory/where-applicable distinction as today (`forcing` vs `forcingWhereApplicable` in the old arbiter): mandatory at ROW and GROUP, where-applicable at ORDER. Delete `LmdbNativeStrategyArbiter`, `LmdbNativeStrategyProposal`, `LmdbNativeStrategyPreference`, `LmdbNativeAdaptiveArbitration`, `LmdbNativeStrategyCatalog`, `LmdbNativeStrategySelection`, `NativeAggregateCostQuotes`, `NativePhysicalGroupArbitration`. Until M4 the pricer is the static prior only.
+
+Acceptance: the whole `core/sail/lmdb` module passes except the tests scheduled for deletion in the migration section; `LmdbNativeGoldenDecisionsTest` is re-run in diff mode and every changed line is reviewed: expected changes are kernel-to-f-tree flips on star shapes with fan-out above the prior's crossover, and ladder-only decisions becoming cost decisions. Each unexpected change is either a bug fixed in the quote or a Decision Log entry.
+
+### Milestone M4: Pricer with checked-in prior and advisory learner
+
+Goal: nanos from features, calibrated once, narrowed advisorily. Implement `StaticPrior` by running the existing calibration path (`LmdbNativeCostCalibration`, system property `rdf4j.lmdb.costCalibration.enabled`) once on the developer machine and committing the resulting vector as constants with the machine description in a comment; then delete `LmdbNativeCostCalibration`. Implement `AdvisoryLearner` with the key `(id, variant, indexGeneration, accessSource, boundMaskClass, cardinalityBucket)` and the narrowing rule; replace `LmdbNativeAdaptiveCostModel`, `LmdbNativeCostPosteriorStore`, `LmdbNativeLatestObservedLedger`, `LmdbNativeRegimeKey`, `LmdbNativeRegimeTracker`, `LmdbNativePhysicalVariantKey`, `LmdbNativeCostEstimate`, `LmdbNativeCostPrediction`. Rewrite `LmdbNativeCostModelPersistence` for the new key and keep the atomic temp-file write. `LmdbNativeCostObservation` becomes a counter sink that reports actual nanos and feature counts to the learner at close.
+
+Acceptance: `AdvisoryLearnerTest` shows that after N observed runs of strategy A at 3x its predicted cost its interval narrows toward 3x but never crosses the provenance band's edge, and that a strategy B which structurally dominates A still wins when A's learned price is lower. A persistence round-trip test shows observations recorded under index generation 1 are not consulted under generation 2.
+
+### Milestone M5: Decision record drives explain, JFR, forceable vocabulary; callers updated
+
+Goal: explain says why. Rewrite `LmdbNativeExplain` strategy metrics to render `DecisionRecord` (one line per candidate: id, variant, admission or decline reason, interval, provenance, eliminated-by, and `WINNER <reason>`). Rewrite `LmdbNativeStrategyPreview` on the same renderer. Regenerate `NativeStrategyDecisionEvent` with fields `decisionId, point, candidate, variant, admitted, declineReason, lowNanos, highNanos, expectedNanos, provenance, eliminatedBy, winner, reason, indexGeneration, accessSource`. `LmdbNativeForceableStrategies.list()` returns registry ids; update `LmdbForceableStrategiesController`, Workbench `LmdbStrategies`, `e2e/tests/workbench-explain.spec.js` if it asserts on old text, and `scripts/lmdb-regret-scorer.py` field names. Update `docs/LMDB Native Query Engine and Adjacency Index/query-arbitration-and-explanation.md`, `query-strategy-families.md`, `query-configuration.md`.
+
+Acceptance: running `SELECT ?s ?o WHERE { ?s <p> ?o . ?o <q> ?x }` with explain on a small store prints one `nativeDecision.ROW.0` metric listing packedFtree, irKernel, hashJoin, indexNestedLoop with intervals and a winner reason; `NativeStrategyDecisionDiagnosticsTest` (ported) asserts the JFR event per candidate.
+
+### Milestone M6: Delete remaining old code, full module verify, benchmark gate, docs
+
+Goal: nothing old left, no regression. `rg` for every deleted class name returns no hits in `src/main`, `src/test`, `tools/`, `docs/`, `scripts/`. Run the full module (`mvnf core/sail/lmdb --retain-logs`) and the Failsafe suites `LmdbThemeQueryRegressionIT`, `LmdbDevelopPlanParityIT`, `LmdbThemeFastestRunSnapshotIT`, `FoafCliqueDispatchCensusTest`. Run `scripts/run-single-benchmark.sh` on `FoafCliqueQueryBenchmark` and `AggregationBenchmark` before (from the merge base, in a separate worktree) and after, and compare with the `jmh-benchmark-compare` skill. Write the Outcomes section.
+
+Acceptance: module green; no theme query slower than baseline by more than measurement noise (use the compare skill's threshold); the golden-decision diff contains no unreviewed lines.
+
+## Concrete Steps
+
+All commands run from the repository root.
+
+Before any work, and before any manual test run:
+
+    mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install 2>&1 | tee maven-build.log | awk '/\[WARNING\]/ { next } /\[ERROR\]/ { print; next } /Reactor Summary/ { summary=1 } summary { print }'
+
+Run a single test class or method (mvnf does the root quick install itself):
+
+    /opt/homebrew/bin/python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativeGoldenDecisionsTest --retain-logs
+    /opt/homebrew/bin/python3 .codex/skills/mvnf/scripts/mvnf.py AccessFactsTest#missingIndexIsPricedAsSweep
+
+Run the module:
+
+    /opt/homebrew/bin/python3 .codex/skills/mvnf/scripts/mvnf.py core/sail/lmdb --retain-logs
+
+Run an integration test:
+
+    /opt/homebrew/bin/python3 .codex/skills/mvnf/scripts/mvnf.py --it LmdbThemeQueryRegressionIT --module core/sail/lmdb
+
+Format and header check before each commit:
+
+    (cd scripts && ./checkCopyrightPresent.sh)
+    mvn -o -Dmaven.repo.local=.m2_repo -q -T 2C process-resources
+
+Benchmark gate (M6), once on the baseline worktree and once on the branch:
+
+    scripts/run-single-benchmark.sh --module core/sail/lmdb --benchmark FoafCliqueQueryBenchmark.<method> 
+
+Branch and commits use the `GH-0000` prefix unless an issue number is supplied (none was given in planning; call this out in the handoff).
+
+## Validation and Acceptance
+
+The change is accepted when: the module test suite is green; `LmdbNativeGoldenDecisionsTest` in diff mode reports only reviewed changes; the explain output for any query with native evaluation contains one decision record per decision point with every candidate's interval and the winner's reason; `NativeStrategyRegistryTest` proves no two strategies at one point quote identically; `AccessFactsTest` proves a missing index is priced finite and an extra index lowers the price; `AdvisoryLearnerTest` proves the learner cannot override structural dominance and does not mix index generations; the theme-query integration tests pass; and the JMH comparison shows no regression beyond noise on the FOAF clique and aggregation benchmarks.
+
+## Idempotence and Recovery
+
+Every milestone ends with a commit on the branch. M0 is additive and safe to re-run (the golden TSV is regenerated deterministically from generated stores with fixed seeds). M1 and M2 are additive until their final step, which rewires one call site; if the suite breaks, revert that commit only. M3 is the destructive step; take it as one commit after M2 is green so `git revert` of one commit restores the old arbiter. The learner sidecar file format changes in M4; the loader must ignore files with an unknown header rather than fail, so old stores keep working with an empty learner.
+
+## Artifacts and Notes
+
+Keep `initial-evidence.txt` at the repository root from the first full module run on the branch, per `CLAUDE.md`. Keep `logs/mvnf/*` for the M3 and M6 module runs and the two JMH result files from M6 under `core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/` following the existing naming pattern.
+
+## Interfaces and Dependencies
+
+No new third-party dependencies. All new code is in package `org.eclipse.rdf4j.sail.lmdb.evaluation.select`.
+
+In `evaluation/select/NativeStrategy.java`:
+
+    interface NativeStrategy<T> {
+        String id();
+        StrategyFamily family();
+        Set<DecisionPoint> appliesTo();
+        Admission admit(DecisionFacts facts);
+        List<Variant> variants(DecisionFacts facts);   // each Variant carries its CostQuote
+        boolean dominates(NativeStrategy<?> other, DecisionFacts facts);
+        T open(DecisionFacts facts, Variant variant);   // returns null to decline at bind time
+        default boolean answersWholeQuery() { return false; }
+        default boolean lastResort() { return false; }
+        default boolean mustTry() { return false; }
+    }
+
+In `evaluation/select/CostQuote.java`:
+
+    record CostQuote(EnumMap<Feature, Count> features, double outputRows, boolean ordered, boolean distinct, double consumedFraction) {
+        record Count(double value, Provenance provenance) {}
+        enum Provenance { EXACT, STATISTICAL, STRUCTURAL, BOUNDED }
+        Interval interval(StaticPrior prior);   // derived, never hand-picked
+    }
+
+In `evaluation/select/Selector.java`:
+
+    final class Selector {
+        <T> DecisionRecord<T> select(DecisionPoint point, DecisionFacts facts, List<NativeStrategy<T>> candidates, Forcing forcing, Pricer pricer);
+    }
+
+In `evaluation/select/DecisionRecord.java`:
+
+    record DecisionRecord<T>(DecisionPoint point, List<Candidate<T>> candidates, int winner, String reason) {
+        record Candidate<T>(NativeStrategy<T> strategy, Variant variant, Admission admission, Interval nanos, String eliminatedBy) {}
+    }
+
+Consolidated strategy inventory (ids; variant axes in brackets). ROW: `indexNestedLoop` [filterPlacement: eager|adaptive] absorbing `nestedLoop` and `adaptiveFilterPlacement`; `hashJoin` [build: hash|merge] absorbing `batch`; `factorizedRows`; `packedFtree` [serial|parallel]; `irKernel` [tier: janino|interpreted; serial|parallel; distinct; wildcard] absorbing twelve `PATH_IR_KERNEL_*` tags; `parallelPipelines`; `prefixRun`; `orderedDistinct`; `wildcardPredicateBatch` [full|reduced]; `wcoj`; `bareDirect`, `bareExists`, `bareBulk` as entry strategies; `genericFallback` as last resort. ORDER: `orderedTopK`, `orderedFullSort`, `orderedFactorized` [topK|sort], `orderedKernel`. GROUP: `irAggregate` [tier; serial|parallel; wildcard; nodeDomainIntersection; typeMatrix] absorbing sixteen `PATH_IR_AGGREGATE_*` tags; `janinoAggregate`; `packedFtreeAggregate`; `parallelAggregation`; `indexedCount`; `adjacencyAggregate`; `adjacencyCensus`; `termDomain`; `rowTermDomainHash`; `typeMatrix`; `runCountHistogram`; `datatypeHistogram`; `predicatePlaneGroups`; `prefixRunGroups`; `orderedDistinctGroups`; `orderedSinglePatternGroups`; `existsIntersection`; `factorizedTail`; `wcoj`; `sequentialGroups` as last resort. `hashGroups`, `primitiveTupleGroups`, `singleSlotGroups`, `aggState` are group-table representations chosen inside `sequentialGroups`/`irAggregate`, not strategies. TYPE_MATRIX_MORSEL: `typeMatrixMorsels` [sideways|page]. Deleted: `chunkPipeline`. Counters (`emptySeed`, `limitZero`, `constantFalseFilter`, `nativeEntryBindingVariant`) stay in `LmdbNativeAttemptMetrics` as counters, not strategies. M2 must confirm each merger by reading the executor pair's open paths; if two merged tags open genuinely different executors with different cost shapes, keep them separate and record it in the Decision Log.
+
+## Test migration
+
+The survey of `core/sail/lmdb/src/test` (2026-11-02) found 58 test files that touch selection internals and about 100 more that assert which strategy ran without touching internals. Test paths below are relative to `core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/`.
+
+Two seams carry almost the entire behavioural suite and are kept on purpose even though compatibility was not required: `SailQuery.setForcedLmdbExecutionStrategy(String)` (61 files, 119 call sites; it flows through `SlowQueryContextHolder` to `LmdbNativeEvaluationStrategy.forcedExecutionStrategyName()`) and the explain metric `nativeExecutionPath` (`LmdbNativeExplain.EXECUTION_PATH`, about 60 files) together with `nativeStrategyDeclines` (6 files). Both are re-pointed at the registry: a forced string must be a registry id or `id/variant`, and the execution-path value is the chosen id with the variant in brackets. Rewriting 120 call sites for no gain would be waste; the Decision Log records this as a deliberate exception.
+
+Phase 0, the characterization suite, is ported in M0 before anything is deleted and must pass on the old and the new engine: `evaluation/LmdbNativeForcedExecutionStrategyTest` (forcing contract, including the sweep that forces every tag and requires it to run or explain itself), `LmdbNativeQueryExplanationTest` (explain shape), `evaluation/LmdbNativeStrategyPreferenceOrderTest` and `evaluation/LmdbNativeIrStrategyOrderTest` rewritten as assertions over the registry's declared dominance edges rather than ladder positions, `evaluation/LmdbNativeGeneratedQueryCoverageTest` and `LmdbNativeDifferentialFuzzTest` (result parity under every forced strategy, which catches registration mistakes), the shape-pins `LmdbNativeStrategyPriorityTest`, `evaluation/LmdbNativeAggregateExplanationRouteTest`, `evaluation/LmdbNativeAliasJoinEncounterOrderTest`, `LmdbNativeDeepOptionalStrategyTest`, and the lifecycle invariants in `evaluation/LmdbNativeArbiterExecutionConsistencyTest` (losers closed exactly once, forced rejection releases candidates, cancellation never trains) and the lifecycle half of `evaluation/NativeStrategyDecisionDiagnosticsTest`.
+
+Phase 1, mechanical port of behavioural files, is a search-and-replace done in M3: the `@BeforeEach`/`@AfterEach` blocks that set `LmdbNativeCostCalibration.ENABLED_PROPERTY`, call `LmdbNativeCostCalibration.reset()`, or set `LmdbNativeAdaptiveCostModel.RECORD_PROPERTY`/`ENABLED_PROPERTY` and `LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY` (about 35 files, for example `LmdbNativeRowStepIterationTest`, `LmdbNativeParallelAggregationTest`, `evaluation/LmdbNativeKernelAggregateTest`) are replaced by the single new property `rdf4j.lmdb.advisoryLearner.enabled`; renamed `PATH_*` constants and metric keys are updated. Benchmark harnesses under `benchmark/` need only the same renames.
+
+Phase 2, deletions in M4 once Phase 0 is green on the new engine: the learned-layer and speculation tests `evaluation/LmdbNativeAdaptiveArbitrationTest`, `LmdbNativeAdaptiveCostModelTest`, `LmdbNativeAdaptiveLaneTransitionTest`, `LmdbNativePosteriorStoreTest`, `LmdbNativeCostModelPersistenceTest`, `LmdbNativeCostModelSimulationTest`, `LmdbNativeLatestObservedPricingTest`, `LmdbNativeRegimeTrackerTest`, `LmdbNativeChangeDetectorTest`, `LmdbNativeProbeSchedulerTest`, `LmdbNativeHedgePolicyTest`, `LmdbNativeHedgeEvidenceTest`, `LmdbNativeHedgeExecutionTest`, `LmdbNativeProbeExecutionTest`, `LmdbNativeProbeLivenessRegressionTest`, `LmdbNativeFastRunLatchTest`, `LmdbNativeSpeculationSafetyTest`, `LmdbNativeArbiterConsistencyTest`, `LmdbNativeArbiterInvariantTest`, `LmdbNativeArbitrationTimingTest`, `LmdbNativeRealEstateProbeRecoveryTest`; and the pricing halves of `LmdbNativeStrategyArbiterTest` (90 tests, two thirds pricing), `NativePhysicalGroupingCostTest` (69 tests, half pricing), `LmdbPhysicalWorkPricingRegressionTest`, `LmdbNativeStartupCostTest`, `LmdbNativeCostCalibrationTest`, `LmdbNativeStrategyProposalTest`, `LmdbNativeFactorizedCostTest`. The two intents worth keeping from `LmdbNativeStartupCostTest` (a small LIMIT picks the streaming strategy over a cheaper front-loaded one; a large LIMIT picks the cheaper total) become behavioural tests on `Selector` with `CostQuote.consumedFraction`. The two cursor-semantics tests in `LmdbPhysicalWorkPricingRegressionTest` move to an executor test.
+
+Phase 3, rewrites on the new harness in M3 and M5: `evaluation/NativeCensusPhysicalPlanTest`, `NativeAggregateAlternativeDeclineTest`, `LmdbAdjacencyAggregateMetadataTest`, `NativeAggregateMetadataCostTest`, `NativeScalarFilterAttemptOwnershipTest`, `LmdbNativeGroupArbitrationFallbackTest`, the structural third of `LmdbNativeStrategyArbiterTest` (declaration order never decides, forced tag handling, decline-once re-rank) and the ownership/replay half of `NativePhysicalGroupingCostTest`, which survive as executor tests.
+
+The new harness, under `evaluation/select/` in test scope, is: `FakeQuerySource` (named `FakeNativeSource` in the survey), one builder-configured `NativeLmdbQuerySource` replacing fourteen ad-hoc inner-class fakes such as `LmdbNativeRowStepIterationTest.RecordingNativeSource` and about twenty Mockito `CALLS_REAL_METHODS` partials; it configures index names, adjacency presence, per-pattern cardinality and work bounds, key-enumeration and context flags, and a parallel-source toggle, and every unconfigured method throws so an unexpected seam fails loudly. `DecisionRecorder` captures `DecisionRecord`s in-process with `assertSelected(point, id)`, `assertDeclined(id, reasonContains)`, `assertOffered(...)`; the nine JFR-based tests port onto it and one JFR smoke test guards the event. `ExplainPath` centralises the four private `executionPaths` helpers found in `LmdbNativeDeepOptionalStrategyTest`, `LmdbNativeKernelDeclineCensusTest`, `LmdbPredicatePlaneGroupingTest` and `LmdbNativeGeneratedQueryCoverageTest`. `ForcedStrategies.all()` iterates registry ids for the forcing sweeps.
+
+Integration tests: only `benchmark/ThemeQueryBenchmarkSmokeIT` and `benchmark/LmdbThemeQueryRegressionIT` (60 tests asserting explain paths) touch selection seams, and both need the multi-gigabyte theme store; they are the M6 gate, not part of the per-milestone loop. There are no `@Tag("slow")` markers in the module; isolation is by `@Isolated` and `@ResourceLock`.
