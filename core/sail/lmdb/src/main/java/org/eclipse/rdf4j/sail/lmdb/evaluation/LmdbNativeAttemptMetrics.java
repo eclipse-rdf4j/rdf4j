@@ -285,12 +285,12 @@ public final class LmdbNativeAttemptMetrics {
 		Map<String, String> capture = DECLINE_CAPTURE.get();
 		if (LmdbNativeStrategyPreview.active()) {
 			if (capture != null && strategy != null && reason != null) {
-				capture.put(LmdbNativeStrategyPreference.baseTag(strategy), reason);
+				capture.put(LmdbNativeCandidate.baseId(strategy), reason);
 			}
 			return;
 		}
 		if (capture != null && strategy != null && reason != null) {
-			capture.put(LmdbNativeStrategyPreference.baseTag(strategy), reason);
+			capture.put(LmdbNativeCandidate.baseId(strategy), reason);
 			if (logger.isInfoEnabled()) {
 				logger.info("LMDB forced strategy candidate declined: strategy={}, operator={}, reason={}", strategy,
 						target == null ? "?" : target.getClass().getSimpleName(), reason);
@@ -311,7 +311,7 @@ public final class LmdbNativeAttemptMetrics {
 	static void captureDecline(String strategy, String reason) {
 		Map<String, String> capture = DECLINE_CAPTURE.get();
 		if (capture != null) {
-			capture.put(LmdbNativeStrategyPreference.baseTag(strategy), reason);
+			capture.put(LmdbNativeCandidate.baseId(strategy), reason);
 		}
 	}
 

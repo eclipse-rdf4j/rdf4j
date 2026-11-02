@@ -77,7 +77,7 @@ final class NativeAggregateCostQuotes {
 		}
 
 		boolean canAttempt(String strategy) {
-			return forcedTag == null || forcedTag.equals(LmdbNativeStrategyPreference.baseTag(strategy));
+			return forcedTag == null || forcedTag.equals(LmdbNativeCandidate.baseId(strategy));
 		}
 	}
 

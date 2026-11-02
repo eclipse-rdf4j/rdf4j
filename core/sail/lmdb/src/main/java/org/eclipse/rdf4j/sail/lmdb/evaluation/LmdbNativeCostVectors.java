@@ -176,10 +176,10 @@ final class LmdbNativeCostVectors {
 	}
 
 	/**
-	 * A set-at-a-time evaluation of a join (leapfrog triejoin, packed factor tree): every pattern's relation is
-	 * walked once, not once per prefix row, and each visited relation row plus each output row costs
-	 * {@code rowFeature}. Measured on the cycle queries (2026-11-02): the nested-loop chain price overstated
-	 * {@code wcoj} twelve-fold and the per-root-row expansion overstated the packed f-tree thirty-fold.
+	 * A set-at-a-time evaluation of a join (leapfrog triejoin, packed factor tree): every pattern's relation is walked
+	 * once, not once per prefix row, and each visited relation row plus each output row costs {@code rowFeature}.
+	 * Measured on the cycle queries (2026-11-02): the nested-loop chain price overstated {@code wcoj} twelve-fold and
+	 * the per-root-row expansion overstated the packed f-tree thirty-fold.
 	 */
 	static LmdbNativeCostVector setAtATime(SlotPlan plan, RowState row, long boundMask, Feature rowFeature) {
 		if (!(plan instanceof MultiJoinPlan multiJoin)) {
@@ -187,6 +187,10 @@ final class LmdbNativeCostVectors {
 		}
 		LmdbNativeCostVector total = LmdbNativeCostVector.zero();
 		double visited = 0D;
+		long produced = 0L;
+		for (SlotPlan child : multiJoin.children) {
+			produced |= child.producedMask();
+		}
 		for (SlotPlan child : multiJoin.children) {
 			// each relation is read with the entry bindings only; later patterns are intersected, not probed
 			total = total.plus(plan(child, row, boundMask, rowFeature));
@@ -195,9 +199,50 @@ final class LmdbNativeCostVectors {
 				return total.plus(unbounded());
 			}
 			visited += rows;
+			long others = 0L;
+			for (SlotPlan other : multiJoin.children) {
+				others |= other == child ? 0L : other.producedMask();
+			}
+			total = total.plus(intersectionSeekPenalty(child, row, boundMask, others, rows));
 		}
 		double output = LmdbNativeWork.rowsOut(multiJoin, row, boundMask);
 		return total.plus(perRow(rowFeature, Double.isNaN(output) ? visited : output));
+	}
+
+	/**
+	 * A set-at-a-time join seeks each relation by the join variable it intersects on. When no index of the store leads
+	 * with that variable (for example a predicate-bound pattern intersected on its object with only {@code spoc}
+	 * configured), each seek is a walk of the pattern's whole range instead. Measured 2026-11-02 on {@code spoc}-only
+	 * stores: the leapfrog join was 17 to 78 times slower than a probe chain while its quote saw nothing.
+	 */
+	private static LmdbNativeCostVector intersectionSeekPenalty(SlotPlan child, RowState row, long boundMask,
+			long producedByOthers, double rows) {
+		if (!(child instanceof PatternPlan pattern) || pattern.accessProfile == null || !(rows > 0D)) {
+			return LmdbNativeCostVector.zero();
+		}
+		LmdbNativeAccessFacts facts = LmdbNativeAccessFacts.forPattern(pattern, row == null ? null : row.source);
+		if (facts == null) {
+			return LmdbNativeCostVector.zero();
+		}
+		LmdbNativeCostVector penalty = LmdbNativeCostVector.zero();
+		for (Term term : new Term[] { pattern.s, pattern.o }) {
+			if (!term.hasSlot() || (boundMask & (1L << term.slot)) != 0L) {
+				continue;
+			}
+			// only a slot another pattern also produces is a join variable this relation is intersected on
+			if ((producedByOthers & (1L << term.slot)) == 0L) {
+				continue;
+			}
+			LmdbNativeAccessFacts.Quote keyed = facts.quote(pattern.physicalMask(boundMask | (1L << term.slot)));
+			if (keyed.selectedSource() == LmdbNativeAccessFacts.Source.ADJACENCY) {
+				continue;
+			}
+			if (keyed.prefixMask() <= 0 || keyed.residualFields() > 0) {
+				// every intersection step re-walks the range the index cannot seek into
+				penalty = penalty.plus(perRow(Feature.SCANNED_ROW, rows * keyed.scannedRows()));
+			}
+		}
+		return penalty;
 	}
 
 	/** {@code count} occurrences of {@code feature}; an unknown count makes the vector unbounded. */

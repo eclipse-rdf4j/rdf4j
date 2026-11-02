@@ -2958,10 +2958,6 @@ final class NativeUnorderedInput implements AutoCloseable {
 	}
 
 	DedupMode dedupMode = DedupMode.HASH;
-	String calibrationTag;
-	double calibrationWork = Double.NaN;
-	long calibrationStartedNanos;
-	LmdbNativeStrategySelection<NativeUnorderedInput> adaptiveSelection;
 
 	private NativeUnorderedInput(RowState row) {
 		this.row = row;
@@ -2997,25 +2993,6 @@ final class NativeUnorderedInput implements AutoCloseable {
 		}
 		materializedRowsClaimed = true;
 		return new MaterializedUnorderedRowCursor(this);
-	}
-
-	/**
-	 * Arms close-time calibration: a streaming winner's elapsed time is only known once this input closes, so the
-	 * dispatch site hands over what the model predicted and close() supplies the measurement.
-	 */
-	void calibrateOnClose(String tag, double predictedWork, long startedNanos) {
-		this.calibrationTag = tag;
-		this.calibrationWork = predictedWork;
-		this.calibrationStartedNanos = startedNanos;
-	}
-
-	/** Transfers ownership of the selected strategy's observation to this streaming input. */
-	void observeOnClose(LmdbNativeStrategySelection<NativeUnorderedInput> selection) {
-		if (adaptiveSelection != null) {
-			throw new IllegalStateException("adaptive observation already attached");
-		}
-		adaptiveSelection = selection;
-		acceptScalarFilterAttempt();
 	}
 
 	/** Explicit accepted-winner handoff, including paths without scalar telemetry or a selection object. */
@@ -3054,14 +3031,7 @@ final class NativeUnorderedInput implements AutoCloseable {
 	}
 
 	void firstOutput() {
-		LmdbNativeStrategySelection<NativeUnorderedInput> selection = adaptiveSelection;
-		if (selection != null && selection.observation() != null) {
-			LmdbNativeCostObservation observation = selection.observation();
-			observation.firstOutput();
-			// every drain path calls this once per physical producer emission, so it doubles as the universal
-			// produced-rows counter feeding the adaptive model's actual feature vector (gap-analysis G4)
-			observation.addProducedRow();
-		}
+		// the adaptive observation that used to be notified here is gone; the regret harness measures end to end
 	}
 
 	/** Reports a LIMIT-satisfied close so the observation stays eligible for its consumed fraction (G5). */
@@ -3095,8 +3065,6 @@ final class NativeUnorderedInput implements AutoCloseable {
 			return;
 		}
 		closed = true;
-		LmdbNativeStrategySelection<NativeUnorderedInput> selection = adaptiveSelection;
-		adaptiveSelection = null;
 		Throwable failure = KernelRuntime.closeResource(batchCursor, null);
 		batchCursor = null;
 		failure = KernelRuntime.closeResource(cursor, failure);
@@ -3120,30 +3088,6 @@ final class NativeUnorderedInput implements AutoCloseable {
 				}, failure);
 			}
 		}
-		if (selection != null && failure == null && producerCleanupSucceeded && selectedInputAccepted) {
-			try {
-				if (!Double.isNaN(expectedEarlyCloseRows)) {
-					LmdbNativeCostObservation observation = selection.observation();
-					if (observation != null) {
-						observation.expectedEarlyCloseAfterRows(expectedEarlyCloseRows);
-					}
-				} else if (completed) {
-					selection.exhausted();
-				}
-			} catch (RuntimeException | Error problem) {
-				failure = KernelRuntime.closeResource(() -> {
-					throw problem;
-				}, failure);
-			}
-		}
-		if (selection != null && failure != null) {
-			selection.failed(failure);
-		}
-		failure = KernelRuntime.closeResource(selection, failure);
-		boolean selectionCloseSucceeded = failure == null;
-		if (selection != null && !selectionCloseSucceeded) {
-			selection.failed(failure);
-		}
 		batch = null;
 		if (failure != null) {
 			failScalarFilterAttempt(failure, true);
@@ -3152,16 +3096,6 @@ final class NativeUnorderedInput implements AutoCloseable {
 		}
 		if (scalarFilterAttempt != null && row.scalarFilterAttempt == scalarFilterAttempt) {
 			row.scalarFilterAttempt = scalarFilterAttempt.parent();
-		}
-		if (calibrationTag != null) {
-			// only a completed run is calibration evidence (gap-analysis C6): a LIMIT or early close
-			// spans a fraction of the predicted work, and charging the full prediction against the
-			// shorter elapsed time deflates nanos-per-unit for often-truncated strategies
-			if (completed && failure == null && producerCleanupSucceeded && selectionCloseSucceeded) {
-				LmdbNativeCostCalibration.record(calibrationTag, calibrationWork,
-						System.nanoTime() - calibrationStartedNanos);
-			}
-			calibrationTag = null;
 		}
 		KernelRuntime.rethrowCloseFailure(failure);
 	}
@@ -3249,130 +3183,6 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 		if (active != null) {
 			active.close(active.exhausted);
 		}
-	}
-}
-
-/**
- * Probe discipline for the streaming row site: the trial's logical rows are drained privately into a bounded arena
- * under the ambient deadline — completion (including empty exhaustion, a valid milestone) publishes a replay input over
- * the buffer, while deadline expiry or buffer exhaustion abandons the trial with zero rows ever exposed. Both abandon
- * through the same exception, but exhaustion reports itself with {@link LmdbNativeProbeDeadline#tripCapacity()} rather
- * than {@code trip()} so the arbiter can tell "this strategy is slow" from "this answer is bigger than the buffer". Row
- * state is snapshotted before the drain and restored around both outcomes, because batch-backed trials overwrite slots
- * outside the binding trail.
- */
-final class NativeProbeBufferHarness implements LmdbNativeProbeHarness<NativeUnorderedInput> {
-
-	@Override
-	public NativeUnorderedInput drainBounded(NativeUnorderedInput input, LmdbNativeCostObservation observation,
-			int rowCap) throws IOException {
-		RowState row = input.row;
-		int slotCount = row.slots.length;
-		int mark = row.mark();
-		long[] entrySnapshot = row.slots.clone();
-		RowCursor rows = input.materializedRows();
-		boolean closeAttempted = false;
-		try {
-			long[] arena = new long[Math.max(slotCount, Math.min(rowCap, 256) * slotCount)];
-			int buffered = 0;
-			int tick = 0;
-			while (rows.next()) {
-				if (buffered == 0) {
-					observation.firstOutput();
-				}
-				observation.addProducedRow();
-				if (buffered >= rowCap) {
-					// buffer exhaustion unwinds through the timeout exception so the abort path stays single, but it
-					// is reported as capacity: the answer simply has more rows than the probe may withhold, which says
-					// nothing about how fast this strategy is, and the arbiter must not charge it a timeout
-					throw LmdbNativeProbeDeadline.capacityExhausted();
-				}
-				int offset = buffered * slotCount;
-				if (offset + slotCount > arena.length) {
-					int target = (int) Math.min((long) rowCap * slotCount, Math.max((long) arena.length * 2L,
-							(long) offset + slotCount));
-					long[] bigger = new long[target];
-					System.arraycopy(arena, 0, bigger, 0, offset);
-					arena = bigger;
-				}
-				System.arraycopy(row.slots, 0, arena, offset, slotCount);
-				buffered++;
-				LmdbNativeProbeDeadline.poll(++tick);
-			}
-			// natural exhaustion: close the trial's native resources; the probe observation is not attached to the
-			// input, so this cannot double-record, and legacy calibration was never armed on a probe
-			closeAttempted = true;
-			rows.close();
-			NativeUnorderedInput replay = NativeUnorderedInput.rows(row,
-					new NativeProbeReplayCursor(row, arena, buffered, slotCount));
-			replay.scalarFilterAttempt = input.scalarFilterAttempt;
-			return replay;
-		} catch (IOException | RuntimeException | Error failure) {
-			Throwable retained = closeAttempted ? failure : KernelRuntime.closeResource(rows, failure);
-			if (retained instanceof IOException ioException) {
-				throw ioException;
-			}
-			if (retained instanceof RuntimeException runtimeException) {
-				throw runtimeException;
-			}
-			if (retained instanceof Error error) {
-				throw error;
-			}
-			throw new IOException("bounded native probe cleanup failed", retained);
-		} finally {
-			restore(row, mark, entrySnapshot);
-		}
-	}
-
-	@Override
-	public void discard(NativeUnorderedInput input) {
-		RowState row = input.row;
-		int mark = row.mark();
-		long[] entrySnapshot = row.slots.clone();
-		try {
-			input.close(false);
-		} finally {
-			restore(row, mark, entrySnapshot);
-		}
-	}
-
-	private static void restore(RowState row, int mark, long[] entrySnapshot) {
-		row.rollback(mark);
-		System.arraycopy(entrySnapshot, 0, row.slots, 0, entrySnapshot.length);
-		row.recomputeBoundMask();
-	}
-}
-
-/** Replays privately buffered probe rows exactly like the batch path: raw slot copy plus mask recompute. */
-final class NativeProbeReplayCursor implements RowCursor {
-
-	private final RowState row;
-	private final long[] arena;
-	private final int rowCount;
-	private final int slotCount;
-	private int position;
-
-	NativeProbeReplayCursor(RowState row, long[] arena, int rowCount, int slotCount) {
-		this.row = row;
-		this.arena = arena;
-		this.rowCount = rowCount;
-		this.slotCount = slotCount;
-	}
-
-	@Override
-	public boolean next() {
-		if (position >= rowCount) {
-			return false;
-		}
-		System.arraycopy(arena, position * slotCount, row.slots, 0, slotCount);
-		row.recomputeBoundMask();
-		position++;
-		return true;
-	}
-
-	@Override
-	public void close() {
-		position = rowCount;
 	}
 }
 

@@ -75,10 +75,10 @@ final class LmdbNativeSafetyLedger {
 	 * counts).
 	 * <p>
 	 * This covers an arm's first trial and, when the arm's own measurements price it below the incumbent, its
-	 * confirmation trials up to {@link LmdbNativeAdaptiveArbitration#CONFIRMATION_FLOOR} completed measurements per
-	 * exact variant per regime. The cap is enforced by the completed count, which only rises on an actual completion,
-	 * so incomplete attempts do NOT imply a finite total-debt bound. Never use this for repeat probes of an arm that
-	 * has already settled, or of one its own measurements price no better than the incumbent.
+	 * confirmation trials up to the former adaptive arbitration's confirmation floor completed measurements per exact
+	 * variant per regime. The cap is enforced by the completed count, which only rises on an actual completion, so
+	 * incomplete attempts do NOT imply a finite total-debt bound. Never use this for repeat probes of an arm that has
+	 * already settled, or of one its own measurements price no better than the incumbent.
 	 */
 	synchronized Reservation reserveMandatory(long worstCaseNanos) {
 		outstandingNanos += Math.max(0L, worstCaseNanos);

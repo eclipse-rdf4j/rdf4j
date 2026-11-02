@@ -512,6 +512,29 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public OptionalDouble distinctFanOutKeys(long predicate, boolean bySubject) {
+		// Without this the default (empty) made every fully bound probe's edge probability fall back to one row,
+		// which inflated a 5-cycle's output estimate from 260 to 4.7 million rows (measured 2026-11-02).
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.distinctFanOutKeys(predicate, bySubject);
+		}
+		if (activeSources.isEmpty()) {
+			return OptionalDouble.empty();
+		}
+		double keys = 0D;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalDouble sourceKeys = source.distinctFanOutKeys(predicate, bySubject);
+			if (sourceKeys.isEmpty()) {
+				return OptionalDouble.empty();
+			}
+			// planes rarely share keys exactly; the sum is an upper bound on the distinct union
+			keys += sourceKeys.getAsDouble();
+		}
+		return OptionalDouble.of(keys);
+	}
+
+	@Override
 	public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
 		if (activeSources.isEmpty()) {
 			return OptionalLong.of(0L);

@@ -556,14 +556,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				return selected;
 			}
 		} else {
-			LmdbNativeStrategyArbiter.logDirect(originalExpr, "type-matrix morsel dispatch", SIDEWAYS_MORSEL_CANDIDATE,
+			LmdbNativeDispatchLoop.logDirect(originalExpr, "type-matrix morsel dispatch", SIDEWAYS_MORSEL_CANDIDATE,
 					"Sideways traversal precedes page traversal when complete linkage page statistics are unavailable");
 			List<BindingSet> sidewaysMorsels = tryParallelSidewaysTypeMorselAdjacencyScan(eligiblePredicates,
 					predicateCatalog, sidewaysRoots, reverseLinkage, optimization);
 			if (sidewaysMorsels != null) {
 				return sidewaysMorsels;
 			}
-			LmdbNativeStrategyArbiter.logDirect(originalExpr, "type-matrix morsel fallback", PAGE_MORSEL_CANDIDATE,
+			LmdbNativeDispatchLoop.logDirect(originalExpr, "type-matrix morsel fallback", PAGE_MORSEL_CANDIDATE,
 					"Sideways traversal could not bind");
 			List<BindingSet> pageMorsels = tryParallelPageMorselAdjacencyScan(probe, eligiblePredicates,
 					predicateCatalog, acceptedRoots, optimization);

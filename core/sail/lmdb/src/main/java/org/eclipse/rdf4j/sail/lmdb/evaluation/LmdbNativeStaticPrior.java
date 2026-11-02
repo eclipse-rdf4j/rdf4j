@@ -33,29 +33,28 @@ final class LmdbNativeStaticPrior {
 	}
 
 	/**
-	 * Speed-up a parallel variant achieves over its serial tier, as measured by the regret harness on 3000-person
-	 * FOAF stores (2026-11-02, medians over 15 to 42 decisions): row kernels 1.0 to 1.3, parallel pipelines 1.8,
-	 * parallel aggregates 0.6 to 0.7 (slower than serial). Dividing by the worker count (15 here) overstated the
-	 * gain by an order of magnitude and made the parallel tier win every priced decision. The 30000-person run
-	 * decides whether these grow with input size; until then the measured medians stand.
+	 * Speed-up a parallel variant achieves over its serial tier, as measured by the regret harness on 3000-person FOAF
+	 * stores (2026-11-02, medians over 15 to 42 decisions): row kernels 1.0 to 1.3, parallel pipelines 1.8, parallel
+	 * aggregates 0.6 to 0.7 (slower than serial). Dividing by the worker count (15 here) overstated the gain by an
+	 * order of magnitude and made the parallel tier win every priced decision. The 30000-person run decides whether
+	 * these grow with input size; until then the measured medians stand.
 	 */
 	static double measuredParallelSpeedup(String tag, int workers) {
 		String base = LmdbNativeCandidate.baseId(tag);
-		double speedup;
-		if (LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES.equals(base)) {
-			speedup = 1.8D;
-		} else if (base.contains("Aggregate") || base.contains("Aggregation")) {
-			speedup = 0.7D;
-		} else {
-			speedup = 1.25D;
+		if (base.contains("Aggregate") || base.contains("Aggregation")) {
+			// parallel aggregates measured 0.38 to 0.70 of serial speed at both 3000 and 15000 people
+			return 0.5D;
 		}
-		return Math.max(0.1D, Math.min(workers, speedup));
+		// Row kernels and pipelines: at 15000 people a 3 s serial join ran in 460 ms in parallel (6.5x on fifteen
+		// workers) while sub-50 ms joins gained nothing; the per-worker start below carries the fixed part, so the
+		// streaming part scales by about 0.44 of the worker count.
+		return Math.max(1D, 0.44D * workers);
 	}
 
 	/**
-	 * Fixed cost a strategy pays before its first row beyond the common query overhead, in nanoseconds, measured by
-	 * the regret harness on 3000-person stores (2026-11-02) as the minimum median of decisions with at most twenty
-	 * output rows, less the 50 µs the cheapest strategy pays: compilation for the Janino aggregate, factor-tree and
+	 * Fixed cost a strategy pays before its first row beyond the common query overhead, in nanoseconds, measured by the
+	 * regret harness on 3000-person stores (2026-11-02) as the minimum median of decisions with at most twenty output
+	 * rows, less the 50 µs the cheapest strategy pays: compilation for the Janino aggregate, factor-tree and
 	 * factorized-tail construction, kernel lowering for the IR aggregates. Strategies not listed pay nothing extra.
 	 */
 	static double fixedNanos(String tag) {
@@ -67,10 +66,14 @@ final class LmdbNativeStaticPrior {
 		case LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED -> 2_700_000D;
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
-				LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS -> 600_000D;
-		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED -> 300_000D;
-		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT -> 140_000D;
-		case LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS -> 90_000D;
+				LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS ->
+			600_000D;
+		// compiled and interpreted aggregate tiers measured 0.95 of each other end to end at both sizes
+		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE ->
+			200_000D;
+		case LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT -> 140_000D;
+		case LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS ->
+			90_000D;
 		default -> 0D;
 		};
 	}

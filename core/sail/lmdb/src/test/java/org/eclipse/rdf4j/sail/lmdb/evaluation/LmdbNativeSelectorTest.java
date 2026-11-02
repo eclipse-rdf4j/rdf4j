@@ -110,14 +110,15 @@ class LmdbNativeSelectorTest {
 	@Test
 	void aSliceProratesStreamingWorkButNotStartupWork() {
 		LmdbNativeCostQuote frontLoaded = new LmdbNativeCostQuote(
-				LmdbNativeCostVector.point(Feature.HASH_BUILD_ROW, 1_000D),
+				LmdbNativeCostVector.point(Feature.HASH_BUILD_ROW, 500D),
 				LmdbNativeCostVector.point(Feature.SCANNED_ROW, 1_000D), 1_000D, false, false);
 		LmdbNativeCostQuote streaming = LmdbNativeCostQuote.streaming(
 				LmdbNativeCostVector.point(Feature.INTERPRETED_ROW, 1_000D), 1_000D);
 		List<LmdbNativeCandidate<String>> candidates = List.of(
 				LmdbNativeCandidate.of("hash", frontLoaded, () -> "hash"),
 				LmdbNativeCandidate.of("stream", streaming, () -> "stream"));
-		// whole result: hash build 45k + scan 6k = 51k ns versus 65k ns interpreted
+		// whole result: hash build 500 × 45 ns + 1000 scanned rows beats 1000 interpreted rows at 44 ns; both pay
+		// the same output materialisation
 		assertThat(LmdbNativeSelector.rank(candidates, PRIOR, -1D).winner()).isZero();
 		// first ten rows: the hash build is still paid in full, the streaming candidate pays one percent
 		assertThat(LmdbNativeSelector.rank(candidates, PRIOR, 10D).winner()).isEqualTo(1);

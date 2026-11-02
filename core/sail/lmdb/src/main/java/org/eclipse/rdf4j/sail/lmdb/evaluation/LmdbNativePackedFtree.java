@@ -236,9 +236,13 @@ final class LmdbNativePackedFtree {
 		}, work, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, () -> {
 		}).withCostQuote(LmdbNativeCostQuote.streaming(
 				// every relation is packed once and tree edges are expanded as child vectors: set-at-a-time access
-				// with generated rows
+				// where each row is packed (a batch row) and later generated (measured 1.5 to 2.4 times the leapfrog
+				// join's per-row cost on the cycle queries)
 				LmdbNativeCostVectors.setAtATime(multiJoin, row, row.boundMask(),
-						LmdbNativeCostVector.Feature.GENERATED_ROW),
+						LmdbNativeCostVector.Feature.GENERATED_ROW)
+						.plus(LmdbNativeCostVectors.setAtATime(multiJoin, row, row.boundMask(),
+								LmdbNativeCostVector.Feature.BATCH_ROW)
+								.scale(0.6D)),
 				LmdbNativeWork.rowsOut(multiJoin, row, row.boundMask())));
 	}
 

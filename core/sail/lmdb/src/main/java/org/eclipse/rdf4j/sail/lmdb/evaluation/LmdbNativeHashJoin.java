@@ -234,8 +234,9 @@ final class LmdbNativeHashJoin {
 		if (candidate == null) {
 			return null;
 		}
-		// Both sides are scanned once (shared access features); the build side is hashed, every probe row probes,
-		// and each joined row is a batch row.
+		// Measured (2026-11-02, both store sizes): a hash-join batch ran at 0.98 to 1.03 times the probe chain it
+		// replaces, while a "scan both sides once" quote priced it at 0.04 of the chain. It is therefore priced as the
+		// chain with batch rows, plus the hash build and probes it adds; the build is paid before the first row.
 		long boundMask = row.boundMask();
 		double probeRows = LmdbNativeCostVectors.rows(candidate.probe, row, boundMask);
 		double outputRows = LmdbNativeWork.rowsOut(plan, row, boundMask);
@@ -244,9 +245,8 @@ final class LmdbNativeHashJoin {
 				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_BUILD_ROW,
 						candidate.buildRowsEstimate));
 		LmdbNativeCostVector streaming = LmdbNativeCostVectors
-				.plan(candidate.probe, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
-				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_PROBE, probeRows))
-				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.BATCH_ROW, outputRows));
+				.plan(plan, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_PROBE, probeRows));
 		return new LmdbNativeStrategyProposal<>(() -> candidate.open(plan, row, capacity), candidate.estCost,
 				LmdbNativeAttemptMetrics.PATH_BATCH)
 						.withCostQuote(new LmdbNativeCostQuote(startup, streaming, outputRows, false, false));

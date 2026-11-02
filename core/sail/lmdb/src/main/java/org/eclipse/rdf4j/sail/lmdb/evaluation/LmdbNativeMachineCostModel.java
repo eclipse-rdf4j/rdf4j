@@ -173,17 +173,23 @@ final class LmdbNativeMachineCostModel {
 	private static double[] defaultPrior() {
 		double[] result = new double[FEATURE_COUNT];
 		set(result, LmdbNativeCostVector.Feature.OPEN, 5_000.0);
-		set(result, LmdbNativeCostVector.Feature.WORKER_START, 50_000.0);
-		set(result, LmdbNativeCostVector.Feature.INDEX_SEEK, 250.0);
+		// measured 2026-11-02 (15000-person FOAF stores): parallel row strategies pay about 8 ms before the first
+		// row on fifteen workers, i.e. about 0.5 ms per worker, not 50 µs
+		set(result, LmdbNativeCostVector.Feature.WORKER_START, 500_000.0);
+		// per-feature values below marked "measured" come from the regret harness fits on 3000- and 15000-person
+		// FOAF stores (2026-11-02, scripts/lmdb-fit-prior.py); the rest are the original hand prior
+		set(result, LmdbNativeCostVector.Feature.INDEX_SEEK, 200.0); // measured 130 to 230
 		set(result, LmdbNativeCostVector.Feature.BRANCH_OPEN, 100.0);
-		set(result, LmdbNativeCostVector.Feature.SCANNED_ROW, 6.0);
-		set(result, LmdbNativeCostVector.Feature.DECODED_ROW, 18.0);
-		set(result, LmdbNativeCostVector.Feature.INTERPRETED_ROW, 65.0);
-		set(result, LmdbNativeCostVector.Feature.BATCH_ROW, 12.0);
+		set(result, LmdbNativeCostVector.Feature.SCANNED_ROW, 1.0); // measured 0.3 to 0.5
+		set(result, LmdbNativeCostVector.Feature.DECODED_ROW, 2.0); // measured 0 to 0.2
+		set(result, LmdbNativeCostVector.Feature.INTERPRETED_ROW, 44.0); // measured 43.7
+		// measured 34 to 39 as a slope; batch, factorized and pipeline rows measured 1.0 to 1.1 times an interpreted
+		// nested-loop row end to end at both sizes
+		set(result, LmdbNativeCostVector.Feature.BATCH_ROW, 40.0);
 		// measured 2026-11-02: a "compiled" tier runs on the interpreter warm-up tier while Janino compiles, so its
 		// per-row cost in a cold decision equals the interpreted tier's (irAggregateWildcard: 62 ns per row over
 		// 51k rows); 4 ns is the steady state of a warm kernel, which a cold selector must not assume
-		set(result, LmdbNativeCostVector.Feature.GENERATED_ROW, 40.0);
+		set(result, LmdbNativeCostVector.Feature.GENERATED_ROW, 42.0); // measured 0.95 of an interpreted row
 		set(result, LmdbNativeCostVector.Feature.MEMBERSHIP_TEST, 14.0);
 		set(result, LmdbNativeCostVector.Feature.HASH_BUILD_ROW, 45.0);
 		set(result, LmdbNativeCostVector.Feature.HASH_PROBE, 18.0);

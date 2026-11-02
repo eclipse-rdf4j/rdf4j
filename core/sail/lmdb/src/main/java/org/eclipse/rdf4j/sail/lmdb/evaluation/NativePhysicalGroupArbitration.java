@@ -152,14 +152,14 @@ final class NativePhysicalGroupArbitration {
 			iteration.offerCandidates(row, metrics, originalArg, new LmdbNativeCandidateOffers<>() {
 				@Override
 				LmdbNativeCandidateOffers<List<BindingSet>> offer(
-						LmdbNativeStrategyArbiter.Proposer<List<BindingSet>> proposer) throws IOException {
+						LmdbNativeCandidateOffers.Proposer<List<BindingSet>> proposer) throws IOException {
 					arbiter.offer(() -> map(proposer.propose(), quotes));
 					return this;
 				}
 
 				@Override
 				LmdbNativeCandidateOffers<List<BindingSet>> terminalFallback(
-						LmdbNativeStrategyArbiter.Proposer<List<BindingSet>> proposer) {
+						LmdbNativeCandidateOffers.Proposer<List<BindingSet>> proposer) {
 					arbiter.terminalFallback(() -> map(proposer.propose(), quotes));
 					return this;
 				}

@@ -986,10 +986,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
 			List<BindingSet> result = evaluateInitialized(row);
 			cancellation.check();
-			if (!(result instanceof HedgeAggregateResult)) {
-				// An adopted backup already owns this materialization in its private session.
-				session.recordMaterializationBoundary(result.size());
-			}
+			session.recordMaterializationBoundary(result.size());
 			completed = true;
 			return result;
 		} finally {
@@ -1335,7 +1332,16 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				return result;
 			}, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, adjacencyAggregate.estimateWork(row))
 					.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(arg,
-							NativeAggregatePhysicalPlan.Retention.STREAMING, adjacencyAggregate)));
+							NativeAggregatePhysicalPlan.Retention.STREAMING, adjacencyAggregate))
+					// measured (2026-11-02, both sizes): the metadata walk costs 1.13 to 1.15 times a prefix-run
+					// scan of the same pattern, while its metadata-lookup quote was 0.1 to 0.4 of it
+					.withCostQuote(LmdbNativeCostQuote.streaming(
+							LmdbNativeCostVectors.plan(arg, row, row.boundMask(),
+									LmdbNativeCostVector.Feature.SCANNED_ROW)
+									.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+											LmdbNativeWork.rowsOut(arg, row, row.boundMask()) / 16D))
+									.scale(1.15D),
+							groupSlots.length == 0 ? 1D : Double.NaN)));
 		}
 		if (typeMatrix != null && base.isEmpty()) {
 			arbiter.offer(() -> estimatedProposal(this::evaluateTypeMatrixFallback,
@@ -1430,7 +1436,21 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 								this,
 								explainTarget),
 						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
-						LmdbNativePackedFtree.estimateAggregateWork(packedPlan, row, groupSlots, aggregates)));
+						LmdbNativePackedFtree.estimateAggregateWork(packedPlan, row, groupSlots, aggregates))
+								// priced like the packed row f-tree (set-at-a-time, packed then generated rows) plus
+								// a group update per joined row; the shared facts make a missing index visible
+								// (measured 2026-11-02: 5.8x slower than the factorized tail on a spoc-only store
+								// while its own estimate saw no difference)
+								.withCostQuote(LmdbNativeCostQuote.streaming(
+										LmdbNativeCostVectors.setAtATime(packedPlan, row, row.boundMask(),
+												LmdbNativeCostVector.Feature.GENERATED_ROW)
+												.plus(LmdbNativeCostVectors.setAtATime(packedPlan, row,
+														row.boundMask(), LmdbNativeCostVector.Feature.BATCH_ROW)
+														.scale(0.6D))
+												.plus(LmdbNativeCostVectors.perRow(
+														LmdbNativeCostVector.Feature.GROUP_UPDATE,
+														LmdbNativeWork.rowsOut(packedPlan, row, row.boundMask()))),
+										groupSlots.length == 0 ? 1D : Double.NaN)));
 			} else if (LmdbNativeFactorAlgebra.candidate(arg)) {
 				arbiter.offer(() -> estimatedProposal(
 						() -> LmdbNativePackedFtree.tryEvaluateAggregate(arg, row, groupSlots, aggregates, this,
@@ -1810,124 +1830,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		}
 	}
 
-	/**
-	 * Hedge-backup support for this blocking site: the backup arm reruns ONE pinned strategy on a sibling snapshot
-	 * source with a fresh shadow row (the {@link #evaluateSequentialFallback} rerun pattern), fully materialized on the
-	 * pool thread. v1 pins the sequential family only — the trusted incumbent/runner-up in practice; other tags return
-	 * null and the race degrades to the serial path. Shadow observations remain private until the consumer adopts the
-	 * winning result; a losing arm never publishes attempt counters or an execution-path witness.
-	 */
-	LmdbNativeHedgeSupport<List<BindingSet>> hedgeSupport() {
-		return new LmdbNativeHedgeSupport<>() {
-
-			@Override
-			public LmdbNativeHedgeSupport.ShadowContext openShadowContext() throws IOException {
-				NativeLmdbQuerySource.ParallelSource[] siblings = source.openParallelSources(1);
-				if (siblings == null || siblings.length != 1) {
-					return null;
-				}
-				RowState shadowRow = new RowState(siblings[0], layout, base, explainTarget, cancellation);
-				return new LmdbNativeHedgeSupport.ShadowContext(siblings[0], shadowRow);
-			}
-
-			@Override
-			public List<BindingSet> produceBackup(LmdbNativeHedgeSupport.ShadowContext context, String pinnedTag,
-					LmdbNativeCostObservation observation) {
-				if (!supportsTag(pinnedTag)) {
-					return null;
-				}
-				RowState shadowRow = context.shadowRow;
-				LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
-				if (!initialize(shadowRow)) {
-					metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
-					return new HedgeAggregateResult(noInputResult(), metrics, null);
-				}
-				if (explainTarget != null && explainTarget.isRuntimeTelemetryEnabled()) {
-					shadowRow.runtimePlan = LmdbNativeRuntimePlan.deferred(arg, layout, shadowRow.boundMask());
-					shadowRow.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, new SlotPlan[] { arg });
-				}
-				try (LmdbFusedSipFactorizedRuntime.Session session = LmdbFusedSipFactorizedRuntime
-						.create(System.identityHashCode(arg), shadowRow.runtimePlan != null);
-						LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
-					List<BindingSet> result = evaluateSequential(shadowRow,
-							new AggContext(context.sibling, strictCompare, true), metrics);
-					session.recordMaterializationBoundary(result.size());
-					if (shadowRow.runtimePlan != null) {
-						shadowRow.runtimePlan.fusedTelemetry(session.telemetry());
-					}
-					shadowRow.completeRuntimePlan();
-					return new HedgeAggregateResult(result, metrics, shadowRow.runtimePlan);
-				}
-			}
-
-			@Override
-			public List<BindingSet> adopt(List<BindingSet> result) {
-				if (result instanceof HedgeAggregateResult completed) {
-					completed.publish(explainTarget);
-				}
-				return result;
-			}
-
-			@Override
-			public void discard(List<BindingSet> result) {
-				LmdbNativeProbeHarness.discardBlocking(result);
-			}
-
-			@Override
-			public boolean supportsTag(String pinnedTag) {
-				return LmdbNativeAttemptMetrics.PATH_NESTED_LOOP.equals(pinnedTag);
-			}
-		};
-	}
-
-	/** A materialized arm result owns its private observations through the arbiter's selection boundary. */
-	private static final class HedgeAggregateResult extends AbstractList<BindingSet> implements AutoCloseable {
-		private final List<BindingSet> rows;
-		private final LmdbNativeAttemptMetrics metrics;
-		private final LmdbNativeRuntimePlan.Invocation runtimePlan;
-		private boolean published;
-		private boolean closed;
-
-		private HedgeAggregateResult(List<BindingSet> rows, LmdbNativeAttemptMetrics metrics,
-				LmdbNativeRuntimePlan.Invocation runtimePlan) {
-			this.rows = rows;
-			this.metrics = metrics;
-			this.runtimePlan = runtimePlan;
-		}
-
-		private synchronized void publish(TupleExpr target) {
-			if (!published) {
-				published = true;
-				metrics.commitToParent();
-				LmdbNativeExplain.adoptRuntimePlan(target, runtimePlan);
-			}
-		}
-
-		@Override
-		public BindingSet get(int index) {
-			return rows.get(index);
-		}
-
-		@Override
-		public int size() {
-			return rows.size();
-		}
-
-		@Override
-		public Iterator<BindingSet> iterator() {
-			return rows.iterator();
-		}
-
-		@Override
-		public Spliterator<BindingSet> spliterator() {
-			return rows.spliterator();
-		}
-
-		@Override
-		public synchronized void close() {
-			if (!closed) {
-				closed = true;
-				LmdbNativeProbeHarness.discardBlocking(rows);
+	/** Closes a materialised result that owns native resources; a plain list needs nothing. */
+	private static void discardBlocking(Object value) {
+		if (value instanceof AutoCloseable resource) {
+			Throwable failure = KernelRuntime.closeResource(resource, null);
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
 			}
 		}
 	}
@@ -2286,7 +2194,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	 * regressed from ~0.16ms to ~10ms, and how HIGHLY_CONNECTED q8 regressed from ~110ms to ~241ms once the kernel
 	 * learned to compile a JoinPlan.
 	 * <p>
-	 * This is deliberately independent of {@link LmdbNativeStrategyPreference}. That table orders comparable admitted
+	 * This is deliberately independent of the former preference ladder. That table orders comparable admitted
 	 * candidates and now puts the parallel IR tiers first, but changing a tie-break order must not erase an asymptotic
 	 * capability boundary. These recognizers are kept in lock-step with the corresponding proposal guards above.
 	 */

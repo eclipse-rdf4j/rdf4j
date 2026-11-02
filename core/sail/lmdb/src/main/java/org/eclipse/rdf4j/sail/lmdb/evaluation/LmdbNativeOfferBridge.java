@@ -42,18 +42,18 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 	}
 
 	@Override
-	LmdbNativeCandidateOffers<T> offer(LmdbNativeStrategyArbiter.Proposer<T> proposer) {
+	LmdbNativeCandidateOffers<T> offer(LmdbNativeCandidateOffers.Proposer<T> proposer) {
 		return offer(null, proposer);
 	}
 
 	/** Offers a proposal under the strategy id it will carry, so a decline is reported under that id. */
-	LmdbNativeOfferBridge<T> offer(String id, LmdbNativeStrategyArbiter.Proposer<T> proposer) {
+	LmdbNativeOfferBridge<T> offer(String id, LmdbNativeCandidateOffers.Proposer<T> proposer) {
 		strategies.add(strategy(id == null ? "offer#" + (++anonymous) : id, proposer, false));
 		return this;
 	}
 
 	@Override
-	LmdbNativeCandidateOffers<T> terminalFallback(LmdbNativeStrategyArbiter.Proposer<T> proposer) {
+	LmdbNativeCandidateOffers<T> terminalFallback(LmdbNativeCandidateOffers.Proposer<T> proposer) {
 		strategies.add(strategy("terminalFallback#" + (++anonymous), proposer, true));
 		return this;
 	}
@@ -62,7 +62,7 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 		return List.copyOf(strategies);
 	}
 
-	private LmdbNativeStrategy<Void, T> strategy(String id, LmdbNativeStrategyArbiter.Proposer<T> proposer,
+	private LmdbNativeStrategy<Void, T> strategy(String id, LmdbNativeCandidateOffers.Proposer<T> proposer,
 			boolean lastResort) {
 		return new LmdbNativeStrategy<>() {
 			@Override

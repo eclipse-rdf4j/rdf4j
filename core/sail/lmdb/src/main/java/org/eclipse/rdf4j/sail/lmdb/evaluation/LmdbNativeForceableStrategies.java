@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.sail.StackableSail;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 
 /**
- * The catalogue of execution-strategy names a caller may legally force onto {@link LmdbNativeStrategyArbiter} via
- * {@link LmdbNativeStrategyArbiter#forcing(String, String)}, together with a short human-readable description of each.
+ * The catalogue of execution-strategy names a caller may legally force onto the dispatch loop via
+ * {@code LmdbNativeDispatchLoop#forcing(String)}, together with a short human-readable description of each.
  * <p>
  * This is a curated subset of {@link LmdbNativeAttemptMetrics#EXECUTION_PATH_VOCABULARY}, not the whole vocabulary.
  * Many vocabulary entries are internal, structural terminals recorded by a direct
@@ -39,13 +39,13 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
  * deliberately excluded from the public vocabulary itself: they are an internal sub-decision made inside
  * {@code LmdbWildcardPredicateBatch}/multi-join batch proposal building, never independently offered as a candidate at
  * a top-level arbiter site, so forcing them could only ever coincidentally match rather than actually override
- * anything. {@code chunkPipeline} is listed in the vocabulary and in {@link LmdbNativeStrategyPreference}'s
- * specialization order, but as of this writing no code path ever tags a proposal with it — it is unreachable, and is
- * excluded here until (if ever) a real candidate uses it again.
+ * anything. {@code chunkPipeline} is listed in the vocabulary and in the former preference ladder's specialization
+ * order, but as of this writing no code path ever tags a proposal with it — it is unreachable, and is excluded here
+ * until (if ever) a real candidate uses it again.
  * <p>
- * Every entry below was confirmed by reading the three call sites that actually construct an
- * {@link LmdbNativeStrategyArbiter} for a real, user-reachable query: {@code NativeRowsStep.openUnorderedInput} (row
- * and join dispatch), {@code NativeRowsStep.evaluateAllInitialized} (the {@code ORDER BY} fusion decision), and
+ * Every entry below was confirmed by reading the three call sites that actually construct an the dispatch loop for a
+ * real, user-reachable query: {@code NativeRowsStep.openUnorderedInput} (row and join dispatch),
+ * {@code NativeRowsStep.evaluateAllInitialized} (the {@code ORDER BY} fusion decision), and
  * {@code NativeGroupStep.evaluateArbitrated} ({@code GROUP BY}/aggregate dispatch). A fourth site,
  * {@code LmdbNativeTypeMatrix.arbitrateLinkageMorselKernel}, also builds an arbiter, but its candidates are internal
  * parameterized morsel-scheduling tags that are never part of this public vocabulary; forcing never applies there.
@@ -198,10 +198,9 @@ public final class LmdbNativeForceableStrategies {
 	}
 
 	/**
-	 * Whether {@code tag} is a name a caller may legally pass to
-	 * {@link LmdbNativeStrategyArbiter#forcing(String, String)}. The spellings that mean "do not force anything" are
-	 * not themselves forceable, so they are not included here; callers must rule them out with
-	 * {@link #isNoForcing(String)} before calling this method.
+	 * Whether {@code tag} is a name a caller may legally pass to {@code LmdbNativeDispatchLoop#forcing(String)}. The
+	 * spellings that mean "do not force anything" are not themselves forceable, so they are not included here; callers
+	 * must rule them out with {@link #isNoForcing(String)} before calling this method.
 	 */
 	public static boolean isForceable(String tag) {
 		return tag != null && DESCRIPTIONS.containsKey(tag);
