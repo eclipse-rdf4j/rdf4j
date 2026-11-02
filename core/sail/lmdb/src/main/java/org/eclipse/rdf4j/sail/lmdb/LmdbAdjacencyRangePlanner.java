@@ -85,7 +85,7 @@ final class LmdbAdjacencyRangePlanner {
 		}
 		int partitions = Math.min(targetPartitions, MAX_PARTITIONS);
 		Budget budget = new Budget(partitions);
-		try (Cursor directories = new Cursor(txn, adjacency.metadataDbi(), budget);
+		try (LmdbPersistentAdjacency.MetadataDirectoryCursor directories = adjacency.metadataCursor(txn, budget::read);
 				Cursor pages = new Cursor(txn, adjacency.pagesDbi(), budget);
 				Cursor deltas = new Cursor(txn, adjacency.deltasDbi(), budget)) {
 			return new Search(txn, order, new long[] { subject, predicate, object, context }, explicit,
@@ -108,13 +108,13 @@ final class LmdbAdjacencyRangePlanner {
 		private final int neighborComponent;
 		private final byte directoryType;
 		private final Budget budget;
-		private final Cursor directories;
+		private final LmdbPersistentAdjacency.MetadataDirectoryCursor directories;
 		private final Cursor pages;
 		private final Cursor deltas;
 		private final LinkedHashMap<PageFence, DecodedPage> decodedPages = new LinkedHashMap<>(16, 0.75f, true);
 
 		Search(long txn, int[] order, long[] pattern, boolean explicit, Budget budget,
-				Cursor directories, Cursor pages, Cursor deltas) {
+				LmdbPersistentAdjacency.MetadataDirectoryCursor directories, Cursor pages, Cursor deltas) {
 			this.txn = txn;
 			this.order = order;
 			this.pattern = pattern;
@@ -269,8 +269,7 @@ final class LmdbAdjacencyRangePlanner {
 				if (found.length < 2 || found[0] != directoryType || found[1] != plane) {
 					return null;
 				}
-				if (found.length != 18 || directories.value().remaining() != Long.BYTES
-						|| directories.value().getLong() <= 0) {
+				if (found.length != 18 || directories.value() <= 0) {
 					throw new IOException("Invalid persisted adjacency directory entry while planning ranges");
 				}
 				long[] row = extreme(forward);

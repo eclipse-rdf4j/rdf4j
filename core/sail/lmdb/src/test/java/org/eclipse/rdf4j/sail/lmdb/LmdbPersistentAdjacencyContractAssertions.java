@@ -34,13 +34,29 @@ final class LmdbPersistentAdjacencyContractAssertions {
 
 	static void assertState(TripleStore store, Set<Quad> expected, Set<Quad> universe) throws IOException {
 		store.getTxnManager().doWith((stack, txn) -> {
-			assertSnapshot(txn, expected, universe);
+			assertSnapshot(store, txn, expected, universe);
 			return null;
 		});
 	}
 
-	static void assertSnapshot(long txn, Set<Quad> expected, Set<Quad> universe) throws IOException {
+	static LmdbPersistentAdjacency ownerAdjacency(TripleStore store, long txn) throws IOException {
 		LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn);
+		adjacency.attachMetadataCheckpoint(store.metadataCheckpoint());
+		return adjacency;
+	}
+
+	static void assertSnapshot(TripleStore store, long txn, Set<Quad> expected, Set<Quad> universe)
+			throws IOException {
+		assertSnapshot(ownerAdjacency(store, txn), txn, expected, universe);
+	}
+
+	/** Native-only recovery/certificate fixtures have no live RAM owner. */
+	static void assertSnapshot(long txn, Set<Quad> expected, Set<Quad> universe) throws IOException {
+		assertSnapshot(LmdbPersistentAdjacency.openExisting(txn), txn, expected, universe);
+	}
+
+	private static void assertSnapshot(LmdbPersistentAdjacency adjacency, long txn, Set<Quad> expected,
+			Set<Quad> universe) throws IOException {
 		LmdbPersistentAdjacencyCompactionWorkTest.assertModel(adjacency, txn, expected);
 		int main = LmdbUtil.openDatabaseWithTxn(txn, null, 0);
 		Set<String> names = records(txn, main).keySet()
@@ -51,7 +67,7 @@ final class LmdbPersistentAdjacencyContractAssertions {
 				LmdbPersistentAdjacency.METADATA_DATABASE, LmdbPersistentAdjacency.DELTAS_DATABASE);
 		assertThat(names).noneMatch(name -> name.matches("([spoc]{4})\\1(?:-inf)?"));
 
-		// Types 1..7 are all persisted scalar counts. Comparing the complete map also detects stale counts
+		// Types 1..7 are logical scalar counts. Comparing the complete merged map also detects stale counts
 		// for removed predicates/rows/contexts/IDs that no longer appear in the expected model.
 		Map<String, Long> expectedCounts = new TreeMap<>();
 		for (Quad quad : expected) {
@@ -73,14 +89,19 @@ final class LmdbPersistentAdjacencyContractAssertions {
 			}
 		}
 		Map<String, Long> actualCounts = new TreeMap<>();
-		records(txn, adjacency.metadataDbi()).forEach((key, value) -> {
-			int type = Byte.toUnsignedInt(HexFormat.of().parseHex(key)[0]);
-			if (type >= 1 && type <= 7) {
-				byte[] bytes = HexFormat.of().parseHex(value);
-				assertThat(bytes).hasSize(Long.BYTES);
-				actualCounts.put(key, ByteBuffer.wrap(bytes).getLong());
+		// On a live writer, opening this directory switches metadata to native-exact before any cursor opens.
+		// Scalar assertions start against the private view; dedicated checkpoint tests cover writer deferral.
+		try (LmdbPersistentAdjacency.MetadataDirectoryCursor cursor = adjacency.metadataCursor(txn)) {
+			for (boolean present = cursor.seek(new byte[] { 1 }); present; present = cursor.next()) {
+				byte[] key = cursor.key();
+				int type = Byte.toUnsignedInt(key[0]);
+				if (type > 7) {
+					break;
+				}
+				assertThat(type).isBetween(1, 7);
+				assertThat(actualCounts.put(HexFormat.of().formatHex(key), cursor.value())).isNull();
 			}
-		});
+		}
 		assertThat(actualCounts).as("all scalar metadata including exact per-occurrence references")
 				.isEqualTo(expectedCounts);
 		Set<Long> ids = new HashSet<>(Set.of(88_888L));

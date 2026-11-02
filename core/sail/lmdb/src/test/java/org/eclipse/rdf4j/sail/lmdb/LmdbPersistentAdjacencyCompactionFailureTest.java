@@ -69,13 +69,15 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 				assertThat(store.storeTriple(quad.subject(), quad.predicate(), quad.object(), quad.context(),
 						quad.explicit())).isTrue();
 			}
-			LmdbPersistentAdjacency.openExisting(store.writeTxn).compact(store.writeTxn, true);
+			LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store, store.writeTxn)
+					.compact(store.writeTxn, true);
 			store.commit();
 			long revision = store.getDataRevision();
 			long mapSize = store.mapSizeBytes();
 			try (Txn pinned = store.getTxnManager().createReadTxnPinned(store::getDataRevision);
 					RecordIterator oldRows = store.getTriples(pinned, -1, -1, -1, -1, true)) {
-				LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(pinned.get());
+				LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store,
+						pinned.get());
 				Map<String, Map<String, String>> originalAuthority = authority(pinned.get(), adjacency);
 				assertThat(oldRows.next()).containsExactly(10, 20, 1000, 0);
 				store.startTransaction();
@@ -131,7 +133,7 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 					store.getTxnManager().doWith((stack, txn) -> {
 						assertModel(adjacency, txn, original);
 						assertThat(authority(txn, adjacency)).isEqualTo(originalAuthority);
-						LmdbPersistentAdjacencyContractAssertions.assertSnapshot(txn, original,
+						LmdbPersistentAdjacencyContractAssertions.assertSnapshot(store, txn, original,
 								LmdbPersistentAdjacencyContractAssertions.union(original, changes.expected));
 						return null;
 					});
@@ -177,13 +179,15 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 				assertThat(store.storeTriple(quad.subject(), quad.predicate(), quad.object(), quad.context(),
 						quad.explicit())).isTrue();
 			}
-			LmdbPersistentAdjacency.openExisting(store.writeTxn).compact(store.writeTxn, true);
+			LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store, store.writeTxn)
+					.compact(store.writeTxn, true);
 			store.commit();
 			long revision = store.getDataRevision();
 			long mapSize = store.mapSizeBytes();
 			try (Txn pinned = store.getTxnManager().createReadTxnPinned(store::getDataRevision);
 					RecordIterator oldRows = store.getTriples(pinned, -1, -1, -1, -1, true)) {
-				LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(pinned.get());
+				LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store,
+						pinned.get());
 				Map<String, Map<String, String>> originalAuthority = authority(pinned.get(), adjacency);
 				assertThat(oldRows.next()).containsExactly(10, 20, 1000, 0);
 				TxnReplayPolicy.Decision admission = store.prepareReplayDecision();
@@ -246,7 +250,7 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 					store.getTxnManager().doWith((stack, txn) -> {
 						assertModel(adjacency, txn, original);
 						assertThat(authority(txn, adjacency)).isEqualTo(originalAuthority);
-						LmdbPersistentAdjacencyContractAssertions.assertSnapshot(txn, original,
+						LmdbPersistentAdjacencyContractAssertions.assertSnapshot(store, txn, original,
 								LmdbPersistentAdjacencyContractAssertions.union(original, changes.expected));
 						return null;
 					});
@@ -277,7 +281,7 @@ class LmdbPersistentAdjacencyCompactionFailureTest {
 
 	private static void assertCommittedState(TripleStore store, Set<Quad> expected) throws IOException {
 		store.getTxnManager().doWith((stack, txn) -> {
-			LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn);
+			LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store, txn);
 			assertModel(adjacency, txn, expected);
 			assertThat(records(txn, adjacency.deltasDbi())).isEmpty();
 			return null;

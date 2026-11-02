@@ -41,7 +41,7 @@ class LmdbAdjacencyRangePlannerTest {
 				for (long context : new long[] { -1, 7 }) {
 					long stamp = txn.lockManager().readLock();
 					try {
-						LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn.get());
+						LmdbPersistentAdjacency adjacency = adjacency(store, txn);
 						List<Split> splits = new LmdbAdjacencyRangePlanner(adjacency)
 								.plan(txn.get(), order, -1, -1, -1, context, true, 8, 4);
 						assertThat(splits).as("order=%s, context=%s", order, context).hasSizeBetween(2, 7);
@@ -67,7 +67,7 @@ class LmdbAdjacencyRangePlannerTest {
 			try (Txn txn = store.getTxnManager().createReadTxn()) {
 				long stamp = txn.lockManager().readLock();
 				try {
-					LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn.get());
+					LmdbPersistentAdjacency adjacency = adjacency(store, txn);
 					LmdbAdjacencyRangePlanner planner = new LmdbAdjacencyRangePlanner(adjacency);
 					assertThat(planner.plan(txn.get(), "psoc", -1, 20, -1, -1, true, 8, 2)).isEmpty();
 					List<Split> splits = planner.plan(txn.get(), "psoc", -1, 20, -1, -1, true, 8, 4);
@@ -88,7 +88,7 @@ class LmdbAdjacencyRangePlannerTest {
 			try (Txn txn = store.getTxnManager().createReadTxn()) {
 				long stamp = txn.lockManager().readLock();
 				try {
-					LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn.get());
+					LmdbPersistentAdjacency adjacency = adjacency(store, txn);
 					LmdbAdjacencyRangePlanner planner = new LmdbAdjacencyRangePlanner(adjacency);
 					List<Split> predicates = planner.plan(txn.get(), "psoc", -1, -1, -1, -1, true, 8, 1);
 					assertThat(predicates).hasSize(1);
@@ -110,17 +110,51 @@ class LmdbAdjacencyRangePlannerTest {
 		try (TripleStore store = store()) {
 			seed(store);
 			try (Txn txn = store.getTxnManager().createReadTxnPinned(store::getDataRevision)) {
-				List<String> before = planStrings(txn);
+				List<String> before = planStrings(store, txn);
 				mutate(store);
-				assertThat(planStrings(txn)).containsExactlyElementsOf(before);
+				assertThat(planStrings(store, txn)).containsExactlyElementsOf(before);
 			}
 		}
 	}
 
-	private static List<String> planStrings(Txn txn) throws Exception {
+	@ParameterizedTest
+	@ValueSource(ints = { 32, 320 })
+	void invisibleMetadataTombstonesConsumeTheSameNativeProbeBudget(int tombstones) throws Exception {
+		try (TripleStore store = store()) {
+			store.startTransaction();
+			for (int row = 1; row <= tombstones; row++) {
+				store.storeTriple(row, 20, 30, 0, true);
+			}
+			store.storeTriple(1000, 20, 30, 0, true);
+			store.storeTriple(2000, 20, 30, 0, true);
+			store.commit();
+			store.startTransaction();
+			for (int row = 1; row <= tombstones; row++) {
+				store.removeTriplesByContext(row, 20, 30, 0, true, ignored -> {
+				});
+			}
+			store.commit();
+			assertThat(store.metadataCheckpoint().pendingSegments()).isGreaterThanOrEqualTo(2);
+			try (Txn txn = store.getTxnManager().createReadTxn()) {
+				long stamp = txn.lockManager().readLock();
+				try {
+					LmdbPersistentAdjacency adjacency = adjacency(store, txn);
+					assertThat(read(adjacency, txn, "psoc", -1, 20, -1, -1)).hasSize(2);
+					List<Split> splits = new LmdbAdjacencyRangePlanner(adjacency)
+							.plan(txn.get(), "psoc", -1, 20, -1, -1, true, 2, 4);
+					assertThat(splits).as("two partitions allow only 256 native probes, including hidden tombstones")
+							.hasSize(tombstones < 256 ? 1 : 0);
+				} finally {
+					txn.lockManager().unlockRead(stamp);
+				}
+			}
+		}
+	}
+
+	private static List<String> planStrings(TripleStore store, Txn txn) throws Exception {
 		long stamp = txn.lockManager().readLock();
 		try {
-			LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn.get());
+			LmdbPersistentAdjacency adjacency = adjacency(store, txn);
 			return new LmdbAdjacencyRangePlanner(adjacency).plan(txn.get(), "posc", -1, -1, -1, -1, true, 8, 4)
 					.stream()
 					.map(split -> Arrays.toString(split.quad()) + "/" + split.startsWithContinuation())
@@ -128,6 +162,13 @@ class LmdbAdjacencyRangePlannerTest {
 		} finally {
 			txn.lockManager().unlockRead(stamp);
 		}
+	}
+
+	private static LmdbPersistentAdjacency adjacency(TripleStore store, Txn txn) throws Exception {
+		LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn.get());
+		// A fresh handle wrapper is not an independent metadata owner for a live production snapshot.
+		adjacency.attachMetadataCheckpoint(store.metadataCheckpoint());
+		return adjacency;
 	}
 
 	private static List<long[]> read(LmdbPersistentAdjacency adjacency, Txn txn, String order,

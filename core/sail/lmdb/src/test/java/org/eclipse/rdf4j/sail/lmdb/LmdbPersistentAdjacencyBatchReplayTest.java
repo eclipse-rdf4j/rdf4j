@@ -174,7 +174,8 @@ class LmdbPersistentAdjacencyBatchReplayTest {
 				assertThat(events).containsSubsequence("fault", "metadata-cursor-close", "abort", "map-resize");
 				assertThat(store.mapSizeBytes()).isGreaterThan(originalMapSize);
 				assertThat(added).containsExactly(0, 1, 2, 3, 4, 6);
-				assertState(LmdbPersistentAdjacency.openExisting(store.writeTxn), store.writeTxn, expected);
+				assertState(LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store, store.writeTxn),
+						store.writeTxn, expected);
 				assertThatThrownBy(oldRows::next).isInstanceOf(LmdbSailStore.MapResizeConflictException.class)
 						.hasMessageContaining("memory map was resized");
 				store.commit();
@@ -207,7 +208,7 @@ class LmdbPersistentAdjacencyBatchReplayTest {
 
 	private static void assertCommittedState(TripleStore store, Set<List<Long>> expected) throws IOException {
 		store.getTxnManager().doWith((stack, txn) -> {
-			assertState(LmdbPersistentAdjacency.openExisting(txn), txn, expected);
+			assertState(LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store, txn), txn, expected);
 			return null;
 		});
 	}

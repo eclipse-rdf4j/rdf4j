@@ -41,6 +41,8 @@ class LmdbContextIdIterator implements Closeable {
 	private final Pool pool;
 
 	private final long cursor;
+	private final LmdbPersistentAdjacency adjacency;
+	private LmdbPersistentAdjacency.MetadataDirectoryCursor metadataCursor;
 
 	private final Txn txnRef;
 
@@ -68,14 +70,20 @@ class LmdbContextIdIterator implements Closeable {
 	private final Thread ownerThread = Thread.currentThread();
 
 	LmdbContextIdIterator(int dbi, Txn txnRef) throws IOException {
-		this(dbi, txnRef, -1);
+		this(dbi, txnRef, -1, null);
 	}
 
 	LmdbContextIdIterator(int dbi, Txn txnRef, byte metadataPrefix) throws IOException {
-		this(dbi, txnRef, Byte.toUnsignedInt(metadataPrefix));
+		this(dbi, txnRef, Byte.toUnsignedInt(metadataPrefix), null);
 	}
 
-	private LmdbContextIdIterator(int dbi, Txn txnRef, int metadataPrefix) throws IOException {
+	LmdbContextIdIterator(LmdbPersistentAdjacency adjacency, Txn txnRef) throws IOException {
+		this(adjacency.metadataDbi(), txnRef, LmdbPersistentAdjacency.CONTEXT_TOTAL_PREFIX, adjacency);
+	}
+
+	private LmdbContextIdIterator(int dbi, Txn txnRef, int metadataPrefix, LmdbPersistentAdjacency adjacency)
+			throws IOException {
+		this.adjacency = adjacency;
 		this.metadataPrefix = metadataPrefix;
 		this.pool = txnRef.getValuePool();
 		this.keyData = pool.getVal();
@@ -104,16 +112,24 @@ class LmdbContextIdIterator implements Closeable {
 					minKeyBuf.clear().put((byte) metadataPrefix).flip();
 				}
 
-				try (MemoryStack stack = MemoryStack.stackPush()) {
-					PointerBuffer pp = stack.mallocPointer(1);
-					E(mdb_cursor_open(txn, dbi, pp));
-					cursor = pp.get(0);
-					openedCursor = cursor;
+				if (adjacency != null) {
+					metadataCursor = adjacency.metadataCursor(txn);
+					cursor = 0;
+				} else {
+					try (MemoryStack stack = MemoryStack.stackPush()) {
+						PointerBuffer pp = stack.mallocPointer(1);
+						E(mdb_cursor_open(txn, dbi, pp));
+						cursor = pp.get(0);
+						openedCursor = cursor;
+					}
 				}
 			}
 		} catch (IOException | RuntimeException | Error e) {
 			if (openedCursor != 0) {
 				mdb_cursor_close(openedCursor);
+			}
+			if (metadataCursor != null) {
+				metadataCursor.close();
 			}
 			freeBuffers();
 			throw e;
@@ -136,6 +152,9 @@ class LmdbContextIdIterator implements Closeable {
 					return null;
 				}
 				txnRef.ensureSnapshotValid(txnLease);
+				if (adjacency != null) {
+					return nextMetadata();
+				}
 
 				int lastResult;
 				if (txnRefVersion != txnRef.version()) {
@@ -233,6 +252,46 @@ class LmdbContextIdIterator implements Closeable {
 		}
 	}
 
+	/** Called with the existing native read barrier and lease monitor held. */
+	private long[] nextMetadata() throws IOException {
+		boolean found;
+		if (txnRefVersion != txnRef.version()) {
+			// Renewal replaces both the native snapshot and its immutable metadata root as one admitted view.
+			metadataCursor.close();
+			metadataCursor = null;
+			metadataCursor = adjacency.metadataCursor(txnRef.get());
+			if (fetchNext) {
+				byte[] resume = ByteBuffer.allocate(1 + Long.BYTES)
+						.put((byte) metadataPrefix)
+						.putLong(record[0])
+						.array();
+				found = metadataCursor.seek(resume);
+				if (found && java.util.Arrays.equals(metadataCursor.key(), resume)) {
+					found = metadataCursor.next();
+				}
+			} else {
+				found = metadataCursor.seek(new byte[] { (byte) metadataPrefix });
+			}
+			txnRefVersion = txnRef.version();
+		} else {
+			found = fetchNext ? metadataCursor.next()
+					: metadataCursor.seek(new byte[] { (byte) metadataPrefix });
+		}
+		if (found) {
+			byte[] key = metadataCursor.key();
+			if (key.length > 0 && Byte.toUnsignedInt(key[0]) == metadataPrefix) {
+				if (key.length != 1 + Long.BYTES || metadataCursor.value() <= 0) {
+					throw new IOException("Malformed persistent adjacency context metadata");
+				}
+				record[0] = ByteBuffer.wrap(key).getLong(1);
+				fetchNext = true;
+				return record;
+			}
+		}
+		closeInternalUnderCurrentReadLock();
+		return null;
+	}
+
 	private void closeInternal(boolean maybeCalledAsync) {
 		closeInternal(maybeCalledAsync, false);
 	}
@@ -259,7 +318,13 @@ class LmdbContextIdIterator implements Closeable {
 				synchronized (txnRef) {
 					if (!closed) {
 						try {
-							mdb_cursor_close(cursor);
+							if (metadataCursor != null) {
+								metadataCursor.close();
+								metadataCursor = null;
+							}
+							if (cursor != 0) {
+								mdb_cursor_close(cursor);
+							}
 						} finally {
 							freeBuffers();
 							closed = true;

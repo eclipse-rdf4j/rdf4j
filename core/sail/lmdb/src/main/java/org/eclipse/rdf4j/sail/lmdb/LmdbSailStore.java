@@ -6772,6 +6772,7 @@ class LmdbSailStore implements SailStore {
 			tripleStore.setMapGrowthAttemptSupplier(
 					() -> beginMapGrowthAttemptForCurrentWriter(MapResizeKind.TRIPLE_STORE));
 			tripleStore.setMapGrowthRequestListener(this::requestMapGrowthForCurrentWriter);
+			tripleStore.setMetadataCheckpointWriter(this::runMetadataCheckpointWithWriterAdmission);
 			tripleStore.setIndexRebuildWriter(work -> {
 				Object owner = new Object();
 				try (SailClosable publication = beginPublicationScope(owner)) {
@@ -6779,7 +6780,7 @@ class LmdbSailStore implements SailStore {
 				}
 			});
 			if (properties.preparedBulkStore != null
-					&& tripleStore.trustedTransactionId() != properties.verifiedTripleTransactionId) {
+					&& !tripleStore.matchesStartupNativeAuthority(properties.verifiedTripleTransactionId)) {
 				throw new IOException("Clean native triple generation changed during startup");
 			}
 			namespaceStore = new NamespaceStore(dataDir, tripleStore);
@@ -6888,6 +6889,7 @@ class LmdbSailStore implements SailStore {
 	private void initializePostReadyMaintenance(LmdbStoreConfig config, FilterSelectivityStatsFactory statsFactory,
 			boolean buildAdjacency) {
 		tripleStore.startBackgroundIndexRebuild();
+		tripleStore.startBackgroundMetadataCheckpoint();
 		valueStore.startIndexRebuildAfterStoreInitialization();
 		if (initialImportClosing) {
 			return;
@@ -7882,6 +7884,46 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/** Deterministic entry point using exactly the same admission path as the maintenance worker. */
+	void checkpointMetadataWithWriterAdmissionForTest(int maxEntries) throws IOException {
+		runMetadataCheckpointWithWriterAdmission(() -> tripleStore.checkpointMetadata(maxEntries));
+	}
+
+	/** Metadata work shares actual store writer admission, but does not publish a statement revision. */
+	private void runMetadataCheckpointWithWriterAdmission(TripleStore.MetadataCheckpointWork work)
+			throws IOException {
+		if (initialImportClosing) {
+			return;
+		}
+		Object owner = new Object();
+		MapGrowthToken retryGrowth = null;
+		long initialMapSize = mapSizeBytesWithNativeReadBarrier(MapResizeKind.TRIPLE_STORE);
+		try (SailClosable publication = beginPublicationScope(owner)) {
+			sinkStoreAccessLock.lock();
+			try {
+				if (initialImportClosing || storeTxnStarted.get() || namespaceTransactionOwner != null) {
+					return;
+				}
+				try {
+					work.run();
+				} catch (TripleStore.MapFullException | LmdbUtil.MapFullException capacity) {
+					if (!autoGrow || capacity.getSuppressed().length != 0) {
+						throw capacity;
+					}
+					// The whole metadata attempt has aborted. Retry a freshly selected prefix only after growth.
+					retryGrowth = requestMaintenanceGrowth(owner, MapResizeKind.TRIPLE_STORE);
+				}
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+		}
+		if (retryGrowth != null) {
+			awaitGrowthEnd(retryGrowth);
+		} else {
+			finishMaintenanceGrowth(owner, MapResizeKind.TRIPLE_STORE, initialMapSize);
+		}
+	}
+
 	/** One complete maintenance transaction; the worker calls this without holding its queue lock or a read view. */
 	private boolean processAsyncValueCleanup(long[] ids, int size, ValueStore.CleanupReservation identity)
 			throws IOException {
@@ -8654,6 +8696,11 @@ class LmdbSailStore implements SailStore {
 		}
 		// Do not put this in attemptClose: a timeout must retain both native environments and the directory lock.
 		stopAsyncValueCleanupForShutdown();
+		try {
+			tripleStore.stopMetadataCheckpointWorker();
+		} catch (IOException failure) {
+			throw new SailException(failure);
+		}
 		initialImportClosing = true;
 		synchronized (initialRunImportMonitor) {
 			initialRunImportMonitor.notifyAll();
@@ -8697,6 +8744,9 @@ class LmdbSailStore implements SailStore {
 			}
 			if (namespaceStore != null) {
 				failure = attemptClose(failure, namespaceStore::close);
+			}
+			if (tripleStore != null) {
+				failure = attemptClose(failure, tripleStore::finishMetadataCheckpointForShutdown);
 			}
 			if (failure == null && valueStore != null && tripleStore != null && tripleStore.tracksNativeOwnership()) {
 				try {

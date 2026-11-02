@@ -306,6 +306,9 @@ final class LegacyStoreDiscovery {
 		if (getOptionalBoundedValue(triplesTxn, namespaces, STATEMENT_BUILD_KEY, 4096) != null) {
 			namespaceEntries++;
 		}
+		if (hasMetadataCheckpointManifest(triplesTxn, namespaces)) {
+			namespaceEntries++;
+		}
 		if (databaseEntries(stack, triplesTxn, namespaces) != namespaceEntries) {
 			throw new IOException("Unrecognized namespace database metadata key");
 		}
@@ -419,9 +422,14 @@ final class LegacyStoreDiscovery {
 		if (hasPersistentAdjacency(triples)) {
 			LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(triplesTxn);
 			// Ordinary admission stays independent of graph size. The backend validates the format and fixed count
-			// records; explicit exhaustive verification below compares them with both directional streams.
-			adjacency.count(triplesTxn, true);
-			adjacency.count(triplesTxn, false);
+			// records only when their checkpoint covers this exact native snapshot. Missing, malformed or dirty
+			// checkpoint metadata is rebuilt from raw pages/deltas by the owning TripleStore before dependent
+			// admission. Decoding those incomplete records here could prevent that recovery from starting.
+			Integer namespaces = triples.get(TripleStore.NAMESPACE_DATABASE_NAME);
+			if (namespaces != null && LmdbMetadataCheckpoint.inspect(triplesTxn, namespaces).clean()) {
+				adjacency.count(triplesTxn, true);
+				adjacency.count(triplesTxn, false);
+			}
 		} else {
 			for (boolean explicit : new boolean[] { false, true }) {
 				Long expected = null;
@@ -736,7 +744,7 @@ final class LegacyStoreDiscovery {
 			int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
 			int entries = 0;
 			while (result == MDB_SUCCESS) {
-				if (++entries > 6) {
+				if (++entries > 7) {
 					throw new IOException("Namespace database exceeds its supported metadata schema");
 				}
 				byte[] bytes = copy(key.mv_data());
@@ -745,7 +753,8 @@ final class LegacyStoreDiscovery {
 						&& !Arrays.equals(bytes, TripleStore.INDEX_FORMAT_KEY)
 						&& !Arrays.equals(bytes, TripleStore.INDEX_SPECS_KEY)
 						&& !Arrays.equals(bytes, PreparedBulkStore.GENERATION_KEY)
-						&& !Arrays.equals(bytes, STATEMENT_BUILD_KEY)) {
+						&& !Arrays.equals(bytes, STATEMENT_BUILD_KEY)
+						&& !LmdbMetadataCheckpoint.isManifestKey(bytes)) {
 					throw new IOException("Unrecognized namespace database metadata key: " + printablePrefix(bytes));
 				}
 				result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
@@ -757,6 +766,20 @@ final class LegacyStoreDiscovery {
 			mdb_cursor_close(cursor);
 		}
 		return active;
+	}
+
+	/** Only record presence is needed here: malformed checkpoint contents deliberately request raw recovery. */
+	private static boolean hasMetadataCheckpointManifest(long transaction, int namespaces) throws IOException {
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.malloc(stack).mv_data(stack.bytes(LmdbMetadataCheckpoint.MANIFEST_KEY));
+			MDBVal value = MDBVal.malloc(stack);
+			int result = mdb_get(transaction, namespaces, key, value);
+			if (result == MDB_NOTFOUND) {
+				return false;
+			}
+			E(result);
+			return true;
+		}
 	}
 
 	/** Validates committed authority while admitting recognized staged indexes for the owner's orphan cleanup. */

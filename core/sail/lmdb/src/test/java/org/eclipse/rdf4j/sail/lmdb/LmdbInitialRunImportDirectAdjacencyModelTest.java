@@ -162,7 +162,8 @@ class LmdbInitialRunImportDirectAdjacencyModelTest {
 			store.startTransaction();
 			try {
 				long txn = store.writeTxn;
-				LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(txn);
+				LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store,
+						txn);
 				assertThat(adjacency.count(txn, true)).isZero();
 				assertThat(adjacency.count(txn, false)).isZero();
 				Map<String, Map<String, String>> before = authority(txn, adjacency);
@@ -181,7 +182,8 @@ class LmdbInitialRunImportDirectAdjacencyModelTest {
 			assertThat(store.storeTriple(11, 21, 31, 0, true)).isTrue();
 			store.commit();
 			store.getTxnManager().doWith((stack, txn) -> {
-				assertLogicalRows(LmdbPersistentAdjacency.openExisting(txn), txn, Set.of(new Quad(11, 21, 31, 0)));
+				assertLogicalRows(LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store, txn), txn,
+						Set.of(new Quad(11, 21, 31, 0)));
 				return null;
 			});
 		}
@@ -311,7 +313,8 @@ class LmdbInitialRunImportDirectAdjacencyModelTest {
 		assertThat(ValueIds.isInlined(values.getId(VF.createLiteral(-3.5D)))).isTrue();
 		assertThat(ValueIds.isInlined(values.getId(VF.createLiteral(3.5D)))).isTrue();
 		backing.getTripleStore().getTxnManager().doWith((stack, txn) -> {
-			assertNativeModel(LmdbPersistentAdjacency.openExisting(txn), txn, nativeExpected);
+			assertNativeModel(LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(backing.getTripleStore(), txn),
+					txn, nativeExpected);
 			return null;
 		});
 		assertDerivedRows(backing, nativeExpected);

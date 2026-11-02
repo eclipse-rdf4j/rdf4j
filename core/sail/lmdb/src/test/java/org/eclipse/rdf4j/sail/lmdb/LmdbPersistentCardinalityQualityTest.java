@@ -71,6 +71,39 @@ class LmdbPersistentCardinalityQualityTest {
 	@TempDir
 	Path directory;
 
+	@Test
+	void invisibleMetadataTombstonesRemainInsideTheNativeReadCeiling() throws Exception {
+		try (TripleStore store = new TripleStore(directory.toFile(), config(EstimatorMode.DISABLED_BY_CONFIG), null)) {
+			for (int batch = 0; batch < 25; batch++) {
+				store.startTransaction();
+				for (int offset = 0; offset < 200; offset++) {
+					store.storeTriple(10, 100 + batch * 200L + offset, 30, 0, true);
+				}
+				store.commit();
+			}
+			store.startTransaction();
+			store.storeTriple(10, 10_000, 30, 0, true);
+			store.storeTriple(10, 20_000, 30, 0, true);
+			store.commit();
+			for (int batch = 0; batch < 25; batch++) {
+				store.startTransaction();
+				for (int offset = 0; offset < 200; offset++) {
+					store.removeTriplesByContext(10, 100 + batch * 200L + offset, 30, 0, true, ignored -> {
+					});
+				}
+				store.commit();
+			}
+			assertThat(store.metadataCheckpoint().pendingSegments()).isGreaterThan(25);
+			try (Txn txn = store.getTxnManager().createReadTxn()) {
+				assertThat(store.countTriples(txn, 10, -1, -1, -1, true)).isEqualTo(2);
+			}
+			Observation estimate = observe(store, 10, -1, -1, -1);
+			assertBounded(estimate, 2);
+			assertThat(estimate.estimate()).as("budget fallback must not misreport unmeasured live mass as zero")
+					.isPositive();
+		}
+	}
+
 	@ParameterizedTest
 	@EnumSource(value = EstimatorMode.class, names = { "ENABLED", "DISABLED_BY_CONFIG" })
 	void exhaustedUnequalPackedPagesCountTuplesRatherThanPhysicalKeys(EstimatorMode mode) throws Exception {

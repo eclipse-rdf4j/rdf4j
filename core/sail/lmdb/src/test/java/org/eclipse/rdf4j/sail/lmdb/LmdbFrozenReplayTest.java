@@ -2136,6 +2136,8 @@ class LmdbFrozenReplayTest {
 
 		assertPersisted(directory, config, statements);
 		assertAll("the recovered commit uses a new physical attempt without a mutation journal",
+				() -> assertTrue(store.probe.metadataTransactionStarts.get() > 0,
+						"the separately counted checkpoint must not masquerade as a data replay"),
 				() -> assertEquals(2, store.probe.transactionStarts.get(),
 						"the failed commit and retry must each start through the public-attempt entry point"),
 				() -> assertEquals(0, store.probe.journalAllocations.get(),
@@ -4393,7 +4395,9 @@ class LmdbFrozenReplayTest {
 		RuntimeException marker = new IllegalStateException("injected failure before native commit receipt");
 		Throwable commitFailure = null;
 		Throwable connectionCleanupFailure = null;
+		Set<Statement> recoveredStatements = Set.of();
 		Set<Statement> persistedStatements = Set.of();
+		boolean metadataFenced = false;
 		boolean followupCommitted = false;
 		RepositoryException followupFailure = null;
 		int nativeCommitsBeforeReceipt = -1;
@@ -4429,6 +4433,7 @@ class LmdbFrozenReplayTest {
 				journalAllocationsForOriginalCommit = store.probe.journalAllocations.get();
 				tripleMapAfterCommit = tripleStore.mapSizeBytes();
 				valueMapAfterCommit = tripleStore.valueStore.mapSizeBytes();
+				metadataFenced = tripleStore.metadataCheckpoint().isFenced();
 			} catch (Throwable failure) {
 				connectionCleanupFailure = failure;
 			}
@@ -4452,8 +4457,12 @@ class LmdbFrozenReplayTest {
 		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
 		try {
 			reopened.init();
-			try (RepositoryConnection reader = reopened.getConnection()) {
-				persistedStatements = readAllStatements(reader);
+			try (RepositoryConnection writer = reopened.getConnection()) {
+				recoveredStatements = readAllStatements(writer);
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(followup);
+				writer.commit();
+				persistedStatements = readAllStatements(writer);
 			}
 		} finally {
 			reopened.shutDown();
@@ -4462,6 +4471,18 @@ class LmdbFrozenReplayTest {
 		Set<Statement> expectedOriginal = Set.copyOf(statements);
 		Set<Statement> expectedPersisted = new HashSet<>(expectedOriginal);
 		expectedPersisted.add(followup);
+		SailRepository verified = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			verified.init();
+			try (RepositoryConnection reader = verified.getConnection()) {
+				assertEquals(expectedPersisted, readAllStatements(reader),
+						"the post-recovery follow-up and original data must survive a second reopen exactly");
+			}
+		} finally {
+			verified.shutDown();
+		}
+		Set<Statement> observedRecoveredStatements = recoveredStatements;
+		boolean observedMetadataFenced = metadataFenced;
 		Throwable observedCommitFailure = commitFailure;
 		Throwable observedConnectionCleanupFailure = connectionCleanupFailure;
 		Set<Statement> observedPersistedStatements = persistedStatements;
@@ -4489,9 +4510,13 @@ class LmdbFrozenReplayTest {
 						"an uncertain native outcome must not resize the triple map"),
 				() -> assertEquals(observedInitialValueMapSize, observedValueMapAfterCommit,
 						"an uncertain native outcome must not resize the value map"),
-				() -> assertTrue(observedFollowupCommitted,
-						"a fresh writer must be admitted after the uncertain commit is cleaned up"),
-				() -> assertNull(observedFollowupFailure, "the follow-up writer must complete"),
+				() -> assertTrue(observedMetadataFenced,
+						"native success without matching RAM publication must fence the metadata owner"),
+				() -> assertFalse(observedFollowupCommitted,
+						"the fenced process cannot admit a fresh data commit before reopening"),
+				() -> assertNotNull(observedFollowupFailure, "the same-process follow-up must be rejected"),
+				() -> assertEquals(expectedOriginal, observedRecoveredStatements,
+						"recovery must retain the exact committed original data and no rejected follow-up"),
 				() -> assertEquals(expectedPersisted, observedPersistedStatements,
 						"the exact native result and follow-up must survive reopening"));
 	}
@@ -5255,6 +5280,7 @@ class LmdbFrozenReplayTest {
 		private final AtomicInteger valueAllocationCapacityFailures = new AtomicInteger();
 		private final AtomicInteger journalAllocations = new AtomicInteger();
 		private final AtomicInteger transactionStarts = new AtomicInteger();
+		private final AtomicInteger metadataTransactionStarts = new AtomicInteger();
 		private final AtomicInteger ordinaryDecisionStarts = new AtomicInteger();
 		private final AtomicInteger frozenReplayDecisionStarts = new AtomicInteger();
 		private final AtomicInteger checkpointDecisionStarts = new AtomicInteger();
@@ -5335,6 +5361,7 @@ class LmdbFrozenReplayTest {
 			valueAllocationCapacityFailures.set(0);
 			journalAllocations.set(0);
 			transactionStarts.set(0);
+			metadataTransactionStarts.set(0);
 			ordinaryDecisionStarts.set(0);
 			frozenReplayDecisionStarts.set(0);
 			checkpointDecisionStarts.set(0);
@@ -5450,6 +5477,7 @@ class LmdbFrozenReplayTest {
 		private final RetryProbe probe;
 		private final ValueStore valueStore;
 		private boolean applyingAligned;
+		private boolean metadataCheckpointAttempt;
 
 		private CountingTripleStore(File directory, LmdbStoreConfig config, RetryProbe probe)
 				throws IOException, SailException {
@@ -5532,7 +5560,26 @@ class LmdbFrozenReplayTest {
 		}
 
 		@Override
+		int checkpointMetadata(int maxEntries) throws IOException {
+			// Maintenance owns the same writer admission, but is not another application/replay attempt.
+			boolean previous = metadataCheckpointAttempt;
+			metadataCheckpointAttempt = true;
+			try {
+				return super.checkpointMetadata(maxEntries);
+			} finally {
+				metadataCheckpointAttempt = previous;
+			}
+		}
+
+		@Override
 		void startTransaction(TxnReplayPolicy.Decision decision) throws IOException {
+			if (metadataCheckpointAttempt) {
+				super.startTransaction(decision);
+				if (probe != null) {
+					probe.metadataTransactionStarts.incrementAndGet();
+				}
+				return;
+			}
 			if (probe != null && probe.transactionStarts.get() > 0) {
 				CountDownLatch published = probe.requireNativeFailurePublication.get();
 				if (published != null) {
@@ -5569,6 +5616,9 @@ class LmdbFrozenReplayTest {
 
 		@Override
 		int commitWriteTransaction(long transaction) {
+			if (metadataCheckpointAttempt) {
+				return super.commitWriteTransaction(transaction);
+			}
 			RetryProbe currentProbe = probe;
 			int remainingFailures = currentProbe == null ? 0
 					: currentProbe.nativeCommitCapacityFailureBudget

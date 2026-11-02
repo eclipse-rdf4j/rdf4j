@@ -6,7 +6,7 @@ The statement authority is stored in three named databases in the existing `trip
 | --- | --- |
 | `adjacency-pages` | Bounded, compressed CSF pages for outgoing and incoming adjacency. |
 | `adjacency-deltas` | Insertions and tombstones relative to the visible base pages. |
-| `adjacency-metadata` | The format marker, exact counts, row directories, value references, and compaction work. |
+| `adjacency-metadata` | The format marker, checkpointed counts/directories/references, and current compaction work. |
 
 The existing `namespaces` database remains auxiliary metadata in that environment. The old statement permutation
 databases and `contexts` database are removed during migration. Value dictionary records and triple-term indexes
@@ -83,6 +83,43 @@ A compaction candidate is required when a partition has pending deltas and no ba
 reaches 128. Once set, the candidate may remain set if later mutations reduce the count below 128. A partition with
 no pending deltas has no candidate. These records make compaction work discoverable after reopening the store.
 
+### Bounded RAM metadata and native checkpoints
+
+While the store is open, types `1` through `7` are read through `LmdbMetadataCheckpoint`: the caller's native
+metadata snapshot plus immutable, sorted RAM segments containing absolute values and zero tombstones. Newest
+overrides win. The native metadata database alone is not necessarily current. Types `0` and `8` through `10`
+remain native; in particular, the historical compaction candidate latch is not reconstructed from live counts.
+
+The default owned-overlay capacity is 16 MiB, including private mutation arrays, retained segment arrays, root
+descriptors, reader slots and reserved cursor/publication workspaces. This is not a bound on total JVM heap, mapped
+LMDB pages, or native MVCC growth. Old snapshots can retain both old segments and old LMDB pages. Before private
+or committed overlay capacity is exhausted, the writer folds the committed overrides and its private changes into
+its own uncommitted native transaction, then stays native-exact for the rest of that attempt. Opening a writer
+metadata directory cursor also requires native-exact mode. This introduces no extra user-data commit. Native
+`MDB_MAP_FULL` remains distinct from overlay pressure and follows the existing abort/growth/replay protocol.
+
+The first deferred metadata change commits a DIRTY manifest in `namespaces` atomically with the authoritative
+page/delta changes. Prepared RAM state is published before new readers are admitted. A failed native commit
+publishes no RAM state; a confirmed native commit followed by failed RAM publication fences the store rather than
+pretending the commit was rolled back. A reader's metadata root is retained for its actual native snapshot
+lifetime, including a pooled reader whose outward handle has closed but whose native transaction has not reset.
+
+Maintenance checkpoints an oldest whole-segment prefix through normal writer admission, preserving newer
+overrides and old readers. Each background turn writes at most 4,096 entries. It checks every 250 ms and becomes
+eligible after one second without a metadata write, 30 seconds of dirty age, or 64 pending segments. Metadata-only
+commits update native transaction accounting without advancing the RDF data revision. Shutdown first quiesces the
+worker, then attempts to finish checkpoints before writing the dictionary's paired clean-close certificate. Its
+five-second drain deadline is checked between transactions, not a hard bound on a native operation; unfinished
+work safely remains DIRTY.
+
+A CLEAN manifest identifies the native transaction and checkpoint coverage. Startup validates it before any
+housekeeping write. Missing, dirty, malformed or mismatched coverage triggers bounded reconstruction from the raw
+ordered pages and deltas before queries or value cleanup are admitted. Reconstruction does not use the potentially
+stale row directories; it checks both authoritative directions and preserves types `0` and `8` through `10`.
+This is crash recovery for this unmerged feature, not an old-binary compatibility protocol. Existing `forceSync`
+semantics are unchanged: process-crash tests do not establish stronger power-loss durability for unsynchronized
+LMDB environments.
+
 ## Mutations and persisted deltas
 
 A delta value is exactly one byte: `1` makes the edge present and `0` makes it absent. Each delta represents the
@@ -91,7 +128,9 @@ the delta. For example, adding and then removing an edge absent from the base le
 restoring a base edge also leaves no delta.
 
 Every logical insertion or removal updates both directions, all exact counts, context metadata, value references,
-and the compaction directories in the caller's write transaction. Explicit/inferred promotion remains a
+and the compaction directories in the caller's logical write transaction. Covered metadata may remain private in
+the bounded overlay until publication; native pages, deltas and compaction work remain in the native writer.
+Explicit/inferred promotion remains a
 `TripleStore` operation and changes the two statement kinds in that same transaction. Duplicate insertion and
 removal of an absent quad do not change counts.
 
@@ -136,8 +175,9 @@ collection cursor crosses those transaction boundaries.
 
 ### Publication and recovery
 
-The LMDB commit therefore publishes outgoing pages, incoming pages, deltas, counts, contexts, and namespace changes
-atomically. Abort discards all these changes. Map-full failures during mutation or compaction enter the existing
+The native commit and guarded RAM-root publication therefore expose outgoing pages, incoming pages, deltas,
+counts, contexts, and namespace changes as one logical generation. Abort discards the uncommitted native and
+private RAM changes. Map-full failures during mutation or compaction enter the existing
 transaction ownership, abort, growth, and replay paths; an aborted attempt cannot publish only one adjacency
 direction or its metadata.
 
@@ -154,7 +194,7 @@ cross-environment transaction protocol or change the dictionary's durability pol
 
 LMDB provides versioned pages for readers. A retained reader observes its original base pages, deltas, and metadata
 even when a newer writer compacts or removes them. The reader must use the same native transaction for all three
-databases and for both adjacency directions.
+databases and both adjacency directions, together with the metadata root bound to that native snapshot.
 
 The `Txn` iterator adapter uses the existing map-resize barrier, transaction wrapper lease, and snapshot validity
 checks for iteration, batch reads, and seeking. A valid pinned view keeps its original version. An invalid pinned
@@ -168,8 +208,9 @@ and exact point reads can also reuse private columns from the separate snapshot-
 Managed writer-side scans use neither cache.
 
 Planner statistics, direct-adjacency accelerators, decoded pages, revision notifications, and other derived caches
-remain process-local. Their availability does not establish the durable statement authority. Exact persisted
-metadata and base-plus-delta reads remain available independently of these caches.
+remain process-local. Their availability does not establish the durable statement authority. Exact
+checkpoint-plus-overlay metadata and base-plus-delta reads remain available independently of these caches; stale
+checkpoint metadata is rebuilt from that authority during recovery.
 
 ### Reuse within one operation
 

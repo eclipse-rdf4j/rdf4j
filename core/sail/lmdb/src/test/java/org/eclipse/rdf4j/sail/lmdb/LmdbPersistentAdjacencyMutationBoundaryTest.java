@@ -70,9 +70,10 @@ class LmdbPersistentAdjacencyMutationBoundaryTest {
 		Set<Quad> universe = union(oldModel, replacement);
 		try (TripleStore store = open(); Txn old = store.getTxnManager().createReadTxnPinned(store::getDataRevision)) {
 			long mapSize = store.mapSizeBytes();
-			LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(old.get());
+			LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store,
+					old.get());
 			Map<String, Map<String, String>> oldAuthority = authority(old.get(), adjacency);
-			assertSnapshot(old.get(), oldModel, universe);
+			assertSnapshot(store, old.get(), oldModel, universe);
 			store.startTransaction();
 			for (boolean explicit : new boolean[] { true, false }) {
 				Set<Quad> removed = new HashSet<>();
@@ -85,10 +86,10 @@ class LmdbPersistentAdjacencyMutationBoundaryTest {
 				add(store, quad);
 			}
 			compactChangedWriter(store);
-			assertSnapshot(store.writeTxn, replacement, universe);
+			assertSnapshot(store, store.writeTxn, replacement, universe);
 			store.commit();
 			assertThat(store.mapSizeBytes()).isEqualTo(mapSize);
-			assertSnapshot(old.get(), oldModel, universe);
+			assertSnapshot(store, old.get(), oldModel, universe);
 			assertThat(authority(old.get(), adjacency)).isEqualTo(oldAuthority);
 			assertState(store, replacement, universe);
 		}
@@ -150,7 +151,7 @@ class LmdbPersistentAdjacencyMutationBoundaryTest {
 				assertThat(read(renewedRows)).containsExactlyElementsOf(hotRows(expected).stream()
 						.filter(quad -> Long.compareUnsigned(quad.object(), fence.object()) > 0)
 						.toList());
-				assertSnapshot(pinned.get(), original, universe);
+				assertSnapshot(store, pinned.get(), original, universe);
 				assertState(store, expected, universe);
 				assertThat(store.mapSizeBytes()).isEqualTo(mapSize);
 				try (Txn fresh = store.getTxnManager().createReadTxn();
@@ -187,7 +188,7 @@ class LmdbPersistentAdjacencyMutationBoundaryTest {
 			assertThat(additions).containsExactly(0, 1);
 			expected.remove(inferred);
 			expected.addAll(Set.of(added, promoted));
-			assertSnapshot(store.writeTxn, expected, universe);
+			assertSnapshot(store, store.writeTxn, expected, universe);
 			compactChangedWriter(store);
 			store.commit();
 			for (int field = 0; field < 4; field++) {
@@ -247,7 +248,7 @@ class LmdbPersistentAdjacencyMutationBoundaryTest {
 			afterGlobal.addAll(Set.of(added, promoted));
 			store.startTransaction();
 			assertThat(store.storeGloballyOrderedFreshTriples(quads, values, 3, null, null)).isEqualTo(2);
-			assertSnapshot(store.writeTxn, afterGlobal, universe);
+			assertSnapshot(store, store.writeTxn, afterGlobal, universe);
 			store.rollback();
 			assertState(store, expected, universe);
 			store.startTransaction();
@@ -342,7 +343,8 @@ class LmdbPersistentAdjacencyMutationBoundaryTest {
 
 	private static void compactChangedWriter(TripleStore store) throws IOException {
 		assertThat(store.writeTxn).isNotZero();
-		LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacency.openExisting(store.writeTxn);
+		LmdbPersistentAdjacency adjacency = LmdbPersistentAdjacencyContractAssertions.ownerAdjacency(store,
+				store.writeTxn);
 		Map<String, String> pages = records(store.writeTxn, adjacency.pagesDbi());
 		assertThat(records(store.writeTxn, adjacency.deltasDbi())).as("the real compactor has pending work")
 				.isNotEmpty();

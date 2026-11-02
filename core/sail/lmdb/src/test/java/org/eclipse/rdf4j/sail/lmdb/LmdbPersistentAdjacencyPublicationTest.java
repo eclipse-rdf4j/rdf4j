@@ -116,7 +116,7 @@ class LmdbPersistentAdjacencyPublicationTest {
 				Set<Quad> originalQuads = rawModel(oldSource, original);
 				Plans oldPlans = capturePlans(oldSource);
 				assertPlans(oldSource, oldPlans, originalQuads);
-				assertSnapshot(rawOld.get(), originalQuads, originalQuads);
+				assertSnapshot(triples, rawOld.get(), originalQuads, originalQuads);
 				triples.beforePhysicalCommitForTest = physical::block;
 				triples.setDirectAdjacencyCommitHooks((delta, nextRevision) -> {
 					if (delegate != null) {
@@ -184,7 +184,7 @@ class LmdbPersistentAdjacencyPublicationTest {
 					assertPlans(source, capturePlans(source), committedQuads);
 					assertParallelSnapshot(source, committedQuads, true);
 				}
-				assertSnapshot(rawOld.get(), originalQuads, union(originalQuads, committedQuads));
+				assertSnapshot(triples, rawOld.get(), originalQuads, union(originalQuads, committedQuads));
 				assertState(triples, committedQuads, union(originalQuads, committedQuads));
 				write(backing, Set.of(statement(51)));
 				committed.add(statement(51));
@@ -195,7 +195,7 @@ class LmdbPersistentAdjacencyPublicationTest {
 					committedQuads = rawModel((NativeLmdbQuerySource) fresh, committed);
 				}
 				assertState(triples, committedQuads, union(originalQuads, committedQuads));
-				assertSnapshot(rawOld.get(), originalQuads, union(originalQuads, committedQuads));
+				assertSnapshot(triples, rawOld.get(), originalQuads, union(originalQuads, committedQuads));
 				assertThat(triples.mapSizeBytes()).isEqualTo(mapSize);
 			} finally {
 				physical.release.countDown();

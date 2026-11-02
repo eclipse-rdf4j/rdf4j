@@ -642,6 +642,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		// environments and the directory lock until a later shutdown can safely finish.
 		if (backingStore != null) {
 			backingStore.stopAsyncValueCleanupForShutdown();
+			try {
+				backingStore.getTripleStore().stopMetadataCheckpointWorker();
+			} catch (IOException failure) {
+				throw new SailException(failure);
+			}
 		}
 	}
 

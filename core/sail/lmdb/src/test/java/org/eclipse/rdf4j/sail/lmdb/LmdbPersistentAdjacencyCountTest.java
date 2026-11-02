@@ -32,24 +32,39 @@ class LmdbPersistentAdjacencyCountTest {
 	Path directory;
 
 	@ParameterizedTest
-	@CsvSource({ "0,4", "2,3", "3,2", "6,2", "8,3" })
-	void preparedCountQuotesOneMetadataDescentAndDoesNotScanStatements(int mask, long expected) throws Exception {
-		try (TripleStore store = seededStore(); Txn snapshot = store.getTxnManager().createReadTxn()) {
-			long subject = (mask & 1) == 0 ? -1 : 10;
-			long predicate = (mask & 2) == 0 ? -1 : 20;
-			long object = (mask & 4) == 0 ? -1 : 30;
-			long context = (mask & 8) == 0 ? -1 : 7;
-			TripleStore.PreparedIndexCount count = store.prepareExactIndexCount(snapshot,
-					subject, predicate, object, context, true);
-			assertThat(count).isNotNull();
-			assertThat(count.lowPageReads()).isGreaterThanOrEqualTo(1D);
-			assertThat(count.highPageReads()).as("one metadata key has one root-to-leaf descent")
-					.isEqualTo(count.lowPageReads());
-			try (LmdbStartupReadCounter reads = new LmdbStartupReadCounter()) {
-				assertThat(count.execute()).hasValue(expected);
-				assertThat(reads.operations().getOrDefault("mdb_get", 0L)).isEqualTo(1L);
-				assertThat(reads.operations().getOrDefault("mdb_cursor_get", 0L)).isZero();
-				assertThat(reads.operations().getOrDefault("mdb_cursor_open", 0L)).isZero();
+	@CsvSource({ "0,4,false", "2,3,false", "3,2,false", "6,2,false", "8,3,false",
+			"0,4,true", "2,3,true", "3,2,true", "6,2,true", "8,3,true" })
+	void preparedCountQuotesAtMostOneMetadataDescentAndDoesNotScanStatements(int mask, long expected,
+			boolean checkpointed) throws Exception {
+		try (TripleStore store = seededStore()) {
+			if (checkpointed) {
+				store.checkpointMetadata(Integer.MAX_VALUE);
+				assertThat(store.metadataCheckpoint().pendingSegments()).isZero();
+			} else {
+				assertThat(store.metadataCheckpoint().pendingSegments()).isPositive();
+			}
+			try (Txn snapshot = store.getTxnManager().createReadTxn()) {
+				long subject = (mask & 1) == 0 ? -1 : 10;
+				long predicate = (mask & 2) == 0 ? -1 : 20;
+				long object = (mask & 4) == 0 ? -1 : 30;
+				long context = (mask & 8) == 0 ? -1 : 7;
+				TripleStore.PreparedIndexCount count = store.prepareExactIndexCount(snapshot,
+						subject, predicate, object, context, true);
+				assertThat(count).isNotNull();
+				assertThat(count.lowPageReads()).isGreaterThanOrEqualTo(1D);
+				assertThat(count.highPageReads()).as("one metadata key has one root-to-leaf descent")
+						.isEqualTo(count.lowPageReads());
+				try (LmdbStartupReadCounter reads = new LmdbStartupReadCounter()) {
+					assertThat(count.execute()).hasValue(expected);
+					assertThat(reads.operations().getOrDefault("mdb_get", 0L))
+							.as("one metadata probe is an upper bound")
+							.isLessThanOrEqualTo(1L);
+					assertThat(reads.operations().getOrDefault("mdb_get", 0L))
+							.as("RAM hits avoid the native probe; checkpointed hits use exactly one")
+							.isEqualTo(checkpointed ? 1L : 0L);
+					assertThat(reads.operations().getOrDefault("mdb_cursor_get", 0L)).isZero();
+					assertThat(reads.operations().getOrDefault("mdb_cursor_open", 0L)).isZero();
+				}
 			}
 		}
 	}

@@ -60,7 +60,8 @@ import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * Authoritative statement storage in the existing TripleStore environment. Every method uses the supplied LMDB
- * transaction: there is no current-state cache, independently committed delta log, or asynchronous correctness state.
+ * transaction. Production metadata pairs that native snapshot with its attached immutable checkpoint view; standalone
+ * and offline owners use the exact native metadata directly.
  *
  * <p>
  * Pages and edge deltas share unsigned lexicographic keys: plane (one byte), raw predicate, row, neighbor, context
@@ -136,6 +137,7 @@ final class LmdbPersistentAdjacency {
 	private final int metadataDbi;
 	private final int deltasDbi;
 	private final PointPageCache pointPages = new PointPageCache();
+	private LmdbMetadataCheckpoint metadataCheckpoint;
 
 	private LmdbPersistentAdjacency(int pagesDbi, int metadataDbi, int deltasDbi) {
 		this.pagesDbi = pagesDbi;
@@ -181,6 +183,88 @@ final class LmdbPersistentAdjacency {
 		put(txn, metadataDbi, FORMAT_KEY, ByteBuffer.allocate(Integer.BYTES).putInt(FORMAT_VERSION).array());
 	}
 
+	/** Production ownership attaches the checkpoint view; standalone/offline owners remain native-exact. */
+	void attachMetadataCheckpoint(LmdbMetadataCheckpoint checkpoint) {
+		if (metadataCheckpoint != null) {
+			throw new IllegalStateException("Persistent adjacency metadata owner is already attached");
+		}
+		metadataCheckpoint = java.util.Objects.requireNonNull(checkpoint);
+	}
+
+	private static boolean checkpointFamily(byte[] key) {
+		return key.length > 0 && key[0] >= TOTAL && key[0] <= REFERENCES;
+	}
+
+	/** A writer's first directory cursor makes its metadata native-exact before any native cursor opens. */
+	MetadataDirectoryCursor metadataCursor(long txn) throws IOException {
+		return metadataCursor(txn, NativeLmdbQuerySource::checkpointCancellation);
+	}
+
+	/** Charge each native operation, including seeks hidden by tombstones or a backwards fallback. */
+	MetadataDirectoryCursor metadataCursor(long txn, Runnable beforeNativeRead) throws IOException {
+		return metadataCheckpoint == null
+				? new MetadataDirectoryCursor(new Cursor(txn, metadataDbi, beforeNativeRead))
+				: new MetadataDirectoryCursor(metadataCheckpoint.cursor(txn, beforeNativeRead));
+	}
+
+	void prepareMetadataCursor(long txn) throws IOException {
+		if (metadataCheckpoint != null) {
+			metadataCheckpoint.forceNativeWriter(txn);
+		}
+	}
+
+	boolean hasDeferredMetadata(long txn) throws IOException {
+		return metadataCheckpoint != null && metadataCheckpoint.hasDeferredMetadata(txn);
+	}
+
+	long metadataCount(long txn, byte[] key) throws IOException {
+		return readCount(txn, key);
+	}
+
+	static final class MetadataDirectoryCursor implements AutoCloseable {
+		private final Cursor nativeCursor;
+		private final LmdbMetadataCheckpoint.MetadataCursor merged;
+
+		private MetadataDirectoryCursor(Cursor cursor) {
+			nativeCursor = cursor;
+			merged = null;
+		}
+
+		private MetadataDirectoryCursor(LmdbMetadataCheckpoint.MetadataCursor cursor) {
+			nativeCursor = null;
+			merged = cursor;
+		}
+
+		boolean seek(byte[] key) throws IOException {
+			return merged == null ? nativeCursor.seek(key) : merged.seek(key);
+		}
+
+		boolean floor(byte[] key) throws IOException {
+			return merged == null ? nativeCursor.floor(key) : merged.floor(key);
+		}
+
+		boolean next() throws IOException {
+			return merged == null ? nativeCursor.next() : merged.next();
+		}
+
+		byte[] key() throws IOException {
+			return merged == null ? nativeCursor.key() : merged.key();
+		}
+
+		long value() throws IOException {
+			return merged == null ? countValue(nativeCursor.value()) : merged.value();
+		}
+
+		@Override
+		public void close() {
+			if (merged == null) {
+				nativeCursor.close();
+			} else {
+				merged.close();
+			}
+		}
+	}
+
 	int pagesDbi() {
 		return pagesDbi;
 	}
@@ -191,6 +275,112 @@ final class LmdbPersistentAdjacency {
 
 	int deltasDbi() {
 		return deltasDbi;
+	}
+
+	/**
+	 * Deletes only checkpoint-covered metadata. Startup owns admission and keeps authoritative pages/deltas frozen;
+	 * every invocation is one bounded native transaction and may safely be restarted after an interrupted rebuild.
+	 *
+	 * @return true when no covered key remains
+	 */
+	boolean clearCheckpointMetadataChunk(long txn, int limit) throws IOException {
+		if (limit < 1) {
+			throw new IllegalArgumentException("Metadata recovery chunk must be positive");
+		}
+		try (Cursor cursor = new Cursor(txn, metadataDbi)) {
+			for (int deleted = 0; deleted < limit; deleted++) {
+				checkInitialInterrupted();
+				if (!cursor.seek(new byte[] { TOTAL }) || !checkpointFamily(cursor.key())) {
+					return true;
+				}
+				check(mdb_cursor_del(cursor.cursor, 0));
+			}
+			return !cursor.seek(new byte[] { TOTAL }) || !checkpointFamily(cursor.key());
+		}
+	}
+
+	/**
+	 * Reconstructs covered counts without consulting any metadata directory. The exclusive continuation is the full
+	 * unsigned physical edge key, including its plane. Outgoing edges contribute counts; every plane validates exact
+	 * counterpart membership so an extra incoming edge is corruption, even when the two plane totals happen to match.
+	 * Masked base/delta candidates count against the chunk limit too. The caller commits this transaction and passes
+	 * the returned key into the next frozen-authority chunk. Null starts at the beginning and is returned only once all
+	 * four planes have been exhausted.
+	 */
+	byte[] rebuildCheckpointMetadataChunk(long txn, byte[] after, int limit) throws IOException {
+		if (limit < 1 || after != null && (after.length != EDGE_KEY_BYTES || after[0] < 0 || after[0] > 3)) {
+			throw new IllegalArgumentException("Invalid metadata recovery continuation or chunk limit");
+		}
+		int processed = 0;
+		for (int plane = after == null ? 0 : after[0]; plane < 4; plane++) {
+			byte[] start = after != null && after[0] == plane ? after : edgeKey(plane, 0, 0, 0, 0);
+			if (after == null || after[0] != plane) {
+				try (Cursor pages = new Cursor(txn, pagesDbi); Cursor deltas = new Cursor(txn, deltasDbi)) {
+					byte[] prefix = { (byte) plane };
+					if (pages.seek(prefix) && startsWith(pages.key(), prefix) && pages.key().length != EDGE_KEY_BYTES
+							|| deltas.seek(prefix) && startsWith(deltas.key(), prefix)
+									&& deltas.key().length != EDGE_KEY_BYTES) {
+						throw new IOException("Invalid persistent adjacency key during metadata recovery");
+					}
+				}
+			}
+			try (OrderedMerge source = new OrderedMerge(txn, plane, -1, start, null);
+					Cursor reversePages = new Cursor(txn, pagesDbi)) {
+				ReadPageCache reverseCache = new ReadPageCache();
+				source.verifyCanonical = true;
+				while (source.nextCandidate()) {
+					checkInitialInterrupted();
+					byte[] edge = edgeKey(plane, source.predicate, source.row, source.neighbor, source.context);
+					if (after != null && Arrays.compareUnsigned(edge, after) <= 0) {
+						continue;
+					}
+					if (source.predicate == -1 || source.row == -1 || source.neighbor == -1 || source.context < 0) {
+						throw new IOException("Invalid persistent adjacency identifier during metadata recovery");
+					}
+					if (source.logicalPresent) {
+						byte[] reverse = edgeKey(plane ^ 1, source.predicate, source.neighbor, source.row,
+								source.context);
+						int delta = readDelta(txn, reverse);
+						boolean present = delta < 0 ? baseContains(reversePages, reverse, reverseCache) : delta == 1;
+						if (!present) {
+							throw new IOException("Persistent adjacency directions disagree during metadata recovery");
+						}
+					}
+					if (source.logicalPresent && (plane & 1) == 0) {
+						rebuildQuadCounts(txn, plane, source.row, source.predicate, source.neighbor, source.context);
+					}
+					if (++processed == limit) {
+						return edge;
+					}
+				}
+			}
+		}
+		// A malformed plane must not be silently omitted from the four valid plane prefixes.
+		try (Cursor pages = new Cursor(txn, pagesDbi); Cursor deltas = new Cursor(txn, deltasDbi)) {
+			if (pages.seek(new byte[] { 4 }) || deltas.seek(new byte[] { 4 })) {
+				throw new IOException("Invalid persistent adjacency plane during metadata recovery");
+			}
+		}
+		return null;
+	}
+
+	private void rebuildQuadCounts(long txn, int outgoing, long subject, long predicate, long object, long context)
+			throws IOException {
+		adjustNative(txn, new byte[] { TOTAL, (byte) outgoing }, 1);
+		adjustNative(txn, key(PREDICATE, outgoing, predicate), 1);
+		adjustNative(txn, key(PREDICATE, outgoing + 1, predicate), 1);
+		adjustNative(txn, key(ROW, outgoing, predicate, subject), 1);
+		adjustNative(txn, key(NODE_PREDICATE, outgoing, subject, predicate), 1);
+		adjustNative(txn, key(ROW, outgoing + 1, predicate, object), 1);
+		adjustNative(txn, key(NODE_PREDICATE, outgoing + 1, object, predicate), 1);
+		adjustNative(txn, key(CONTEXT, outgoing, context), 1);
+		adjustNative(txn, key(CONTEXT_TOTAL_PREFIX, context), 1);
+		adjustNative(txn, key(REFERENCES, subject), 1);
+		adjustNative(txn, key(REFERENCES, predicate), 1);
+		adjustNative(txn, key(REFERENCES, object), 1);
+		if (context != 0) {
+			adjustNative(txn, key(REFERENCES, context), 1);
+		}
 	}
 
 	@FunctionalInterface
@@ -221,6 +411,9 @@ final class LmdbPersistentAdjacency {
 	long writeInitialExplicit(long txn, LmdbSortedRuns.Runs outgoing, LmdbSortedRuns.Runs incoming,
 			Path scratchParent, InitialQuadConsumer added) throws IOException {
 		checkInitialInterrupted();
+		if (metadataCheckpoint != null) {
+			metadataCheckpoint.forceNativeWriter(txn);
+		}
 		requireInitialEmpty(txn);
 		try (InitialCounts counts = new InitialCounts(scratchParent)) {
 			long total = writeInitialDirection(txn, outgoing, false, counts, added);
@@ -832,7 +1025,7 @@ final class LmdbPersistentAdjacency {
 		private final long txn;
 		private final ReadPageCache cache = new ReadPageCache();
 		private Cursor pages;
-		private MetadataCursor metadata;
+		private NativeCountCursor metadata;
 		private boolean closed;
 
 		private MutationBatch(long txn) {
@@ -858,8 +1051,11 @@ final class LmdbPersistentAdjacency {
 		}
 
 		private long adjust(byte[] key, long amount) throws IOException {
+			if (metadataCheckpoint != null && checkpointFamily(key)) {
+				return metadataCheckpoint.adjust(txn, key, amount);
+			}
 			if (metadata == null) {
-				metadata = new MetadataCursor(txn);
+				metadata = new NativeCountCursor(txn);
 			}
 			return metadata.adjust(key, amount);
 		}
@@ -894,12 +1090,13 @@ final class LmdbPersistentAdjacency {
 	}
 
 	/**
-	 * Retains only a native cursor; each adjustment reads the current writer and owns all temporary key/value bytes.
+	 * Retains only a native exact-seek mutation cursor; attached checkpoints route families 1–7 before reaching it.
+	 * Only native families 8–10 use this cursor in production, so it has no deferred-directory continuation state.
 	 */
-	private final class MetadataCursor implements AutoCloseable {
+	private final class NativeCountCursor implements AutoCloseable {
 		private long cursor;
 
-		MetadataCursor(long txn) throws IOException {
+		NativeCountCursor(long txn) throws IOException {
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer handle = stack.mallocPointer(1);
 				check(mdb_cursor_open(txn, metadataDbi, handle));
@@ -962,7 +1159,7 @@ final class LmdbPersistentAdjacency {
 		byte[] prefix = key(NODE_PREDICATE, plane(explicit, incoming), node);
 		long result = 0;
 		int visited = 0;
-		try (Cursor directory = new Cursor(txn, metadataDbi)) {
+		try (MetadataDirectoryCursor directory = metadataCursor(txn)) {
 			for (boolean found = directory.seek(prefix); found; found = directory.next()) {
 				if ((visited++ & 1023) == 0) {
 					NativeLmdbQuerySource.checkpointCancellation();
@@ -974,7 +1171,7 @@ final class LmdbPersistentAdjacency {
 				if (entry.length != 18) {
 					throw new IOException("Invalid persistent adjacency node/predicate directory key");
 				}
-				long count = countValue(directory.value());
+				long count = directory.value();
 				if (Long.MAX_VALUE - result < count) {
 					throw new IOException("Persistent adjacency node cardinality overflow");
 				}
@@ -1249,6 +1446,13 @@ final class LmdbPersistentAdjacency {
 	}
 
 	private long adjust(long txn, byte[] key, long amount) throws IOException {
+		if (metadataCheckpoint != null && checkpointFamily(key)) {
+			return metadataCheckpoint.adjust(txn, key, amount);
+		}
+		return adjustNative(txn, key, amount);
+	}
+
+	private long adjustNative(long txn, byte[] key, long amount) throws IOException {
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal keyVal = MDBVal.malloc(stack).mv_data(stack.bytes(key));
 			MDBVal value = MDBVal.malloc(stack);
@@ -1287,6 +1491,9 @@ final class LmdbPersistentAdjacency {
 	}
 
 	private long readCount(long txn, byte[] key) throws IOException {
+		if (metadataCheckpoint != null && checkpointFamily(key)) {
+			return metadataCheckpoint.readCount(txn, key);
+		}
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			MDBVal value = MDBVal.malloc(stack);
 			int result = mdb_get(txn, metadataDbi, MDBVal.malloc(stack).mv_data(stack.bytes(key)), value);
@@ -1508,10 +1715,19 @@ final class LmdbPersistentAdjacency {
 		private final MDBVal key;
 		private final MDBVal value;
 		private final ByteBuffer seek;
+		private final Runnable beforeNativeRead;
 
 		Cursor(long txn, int dbi) throws IOException {
+			this(txn, dbi, null);
+		}
+
+		Cursor(long txn, int dbi, Runnable beforeNativeRead) throws IOException {
+			this.beforeNativeRead = beforeNativeRead;
 			try (MemoryStack stack = MemoryStack.stackPush()) {
 				PointerBuffer handle = stack.mallocPointer(1);
+				if (beforeNativeRead != null) {
+					beforeNativeRead.run();
+				}
 				check(mdb_cursor_open(txn, dbi, handle));
 				cursor = handle.get(0);
 			}
@@ -1551,6 +1767,9 @@ final class LmdbPersistentAdjacency {
 		}
 
 		private boolean move(int operation) throws IOException {
+			if (beforeNativeRead != null) {
+				beforeNativeRead.run();
+			}
 			int result = mdb_cursor_get(cursor, key, value, operation);
 			if (result == MDB_NOTFOUND) {
 				return false;
@@ -1600,7 +1819,7 @@ final class LmdbPersistentAdjacency {
 		private final long predicateFilter;
 		private final long rowFilter;
 		private final byte[] prefix;
-		private final Cursor cursor;
+		private final MetadataDirectoryCursor cursor;
 		private boolean available;
 		private boolean first = true;
 		private final boolean nodeOrder;
@@ -1621,7 +1840,7 @@ final class LmdbPersistentAdjacency {
 			prefix = nodeOrder
 					? row == -1 ? new byte[] { NODE_PREDICATE, (byte) plane } : key(NODE_PREDICATE, plane, row)
 					: predicate == -1 ? new byte[] { ROW, (byte) plane } : key(ROW, plane, predicate);
-			Cursor allocated = new Cursor(txn, metadataDbi);
+			MetadataDirectoryCursor allocated = metadataCursor(txn);
 			try {
 				byte[] start = prefix;
 				if (minimum != null) {
@@ -1674,7 +1893,7 @@ final class LmdbPersistentAdjacency {
 			if (key.length != 18 || key[1] != plane) {
 				throw new IOException("Invalid persistent adjacency row directory key");
 			}
-			countValue(cursor.value());
+			cursor.value();
 			predicate = readLong(key, nodeOrder ? 10 : 2);
 			row = readLong(key, nodeOrder ? 2 : 10);
 			return true;
@@ -1698,7 +1917,7 @@ final class LmdbPersistentAdjacency {
 				if (key.length != 10) {
 					throw new IOException("Invalid persistent adjacency predicate directory key");
 				}
-				long live = countValue(cursor.value());
+				long live = cursor.value();
 				if (count == predicates.length) {
 					restoreRow(resume);
 					return null;
@@ -2421,6 +2640,8 @@ final class LmdbPersistentAdjacency {
 		private long deltaContext;
 		private boolean deltaPresent;
 		private int cancellationTicks;
+		private boolean verifyCanonical;
+		private boolean logicalPresent;
 
 		OrderedMerge(long txn, int plane, long predicate, byte[] start, ReadPageCache cache) throws IOException {
 			this(txn, plane, predicate, start, cache, null, null, 0, PAGE_QUADS);
@@ -2475,47 +2696,64 @@ final class LmdbPersistentAdjacency {
 
 		@Override
 		boolean next() throws IOException {
-			while (true) {
-				if ((cancellationTicks++ & 1023) == 0) {
-					NativeLmdbQuerySource.checkpointCancellation();
-				}
-				if (advanceBase) {
-					baseReady = base.next();
-					advanceBase = false;
-				}
-				if (advanceDelta) {
-					if (!ownsDeltas && (!deltas.seek(deltaFence) || !Arrays.equals(deltas.key(), deltaFence))) {
-						throw new IOException("Persistent adjacency delta changed during a stable read");
-					}
-					deltaReady = deltas.next();
-					loadDelta();
-					advanceDelta = false;
-				}
-				if (!baseReady && !deltaReady) {
-					return false;
-				}
-				int comparison = !baseReady ? 1
-						: !deltaReady ? -1
-								: compareEdge(base.predicate, base.row, base.neighbor, base.context,
-										deltaPredicate, deltaRow, deltaNeighbor, deltaContext);
-				if (comparison < 0) {
-					predicate = base.predicate;
-					row = base.row;
-					neighbor = base.neighbor;
-					context = base.context;
-					advanceBase = true;
-					return true;
-				}
-				advanceBase = comparison == 0;
-				advanceDelta = true;
-				if (deltaPresent) {
-					predicate = deltaPredicate;
-					row = deltaRow;
-					neighbor = deltaNeighbor;
-					context = deltaContext;
+			while (nextCandidate()) {
+				if (logicalPresent) {
 					return true;
 				}
 			}
+			return false;
+		}
+
+		/** Recovery counts absent candidates toward its work bound, not just surviving logical statements. */
+		private boolean nextCandidate() throws IOException {
+			if ((cancellationTicks++ & 1023) == 0) {
+				NativeLmdbQuerySource.checkpointCancellation();
+			}
+			if (advanceBase) {
+				baseReady = base.next();
+				advanceBase = false;
+			}
+			if (advanceDelta) {
+				if (!ownsDeltas && (!deltas.seek(deltaFence) || !Arrays.equals(deltas.key(), deltaFence))) {
+					throw new IOException("Persistent adjacency delta changed during a stable read");
+				}
+				deltaReady = deltas.next();
+				loadDelta();
+				advanceDelta = false;
+			}
+			if (!baseReady && !deltaReady) {
+				return false;
+			}
+			if (verifyCanonical && (baseReady && (base.predicate == -1 || base.row == -1
+					|| base.neighbor == -1 || base.context < 0)
+					|| deltaReady && (deltaPredicate == -1 || deltaRow == -1 || deltaNeighbor == -1
+							|| deltaContext < 0))) {
+				throw new IOException("Invalid persistent adjacency identifier during metadata recovery");
+			}
+			int comparison = !baseReady ? 1
+					: !deltaReady ? -1
+							: compareEdge(base.predicate, base.row, base.neighbor, base.context,
+									deltaPredicate, deltaRow, deltaNeighbor, deltaContext);
+			if (comparison < 0) {
+				predicate = base.predicate;
+				row = base.row;
+				neighbor = base.neighbor;
+				context = base.context;
+				advanceBase = true;
+				logicalPresent = true;
+				return true;
+			}
+			if (verifyCanonical && deltaPresent == (comparison == 0)) {
+				throw new IOException("Noncanonical persistent adjacency delta during metadata recovery");
+			}
+			advanceBase = comparison == 0;
+			advanceDelta = true;
+			predicate = deltaPredicate;
+			row = deltaRow;
+			neighbor = deltaNeighbor;
+			context = deltaContext;
+			logicalPresent = deltaPresent;
+			return true;
 		}
 
 		@Override

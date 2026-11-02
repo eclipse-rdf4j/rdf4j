@@ -26,7 +26,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -108,6 +107,10 @@ final class LmdbPersistentCardinalityEstimator {
 		int baseDraws = BASE_DRAWS / active;
 		int scalarDraws = SCALAR_DRAWS / active;
 		try {
+			if (plans[0].nodeOnly || plans[1].nodeOnly) {
+				// A structural read view must be captured after any writer exact-native transition.
+				adjacency.prepareMetadataCursor(txn);
+			}
 			if (structural == null) {
 				return applyReferenceUpper(estimatePlanes(txn, plans, baseDraws, scalarDraws, budget, null),
 						referenceUpper);
@@ -265,6 +268,24 @@ final class LmdbPersistentCardinalityEstimator {
 		if (draws < 1) {
 			throw new BudgetExhausted();
 		}
+		if (dbi == adjacency.metadataDbi() && adjacency.hasDeferredMetadata(txn)) {
+			// Physical B-tree sampling cannot assign valid weights to a logical union with RAM overrides.
+			// Keep the existing bounded-prefix fallback, but sample its exact pinned merged directory instead.
+			List<WeightedKey> keys = new ArrayList<>(draws);
+			try (LmdbPersistentAdjacency.MetadataDirectoryCursor cursor = adjacency.metadataCursor(txn,
+					budget::nativeRead)) {
+				boolean present = cursor.seek(prefix);
+				while (present && startsWith(cursor.key(), prefix)) {
+					budget.keyAccess();
+					if (keys.size() == draws) {
+						return new Selection(List.copyOf(keys), false, false);
+					}
+					keys.add(new WeightedKey(cursor.key(), 1D, 0));
+					present = cursor.next();
+				}
+			}
+			return new Selection(List.copyOf(keys), true, false);
+		}
 		if (view != null) {
 			WeightedKeySample sample = view.sampleWeightedKeys(name, prefix, successor(prefix), draws, stream);
 			if (sample.status() == KeySampleStatus.EXHAUSTIVE || sample.status() == KeySampleStatus.SAMPLED) {
@@ -313,6 +334,30 @@ final class LmdbPersistentCardinalityEstimator {
 				throw new IOException("Invalid weighted-key expansion coefficient");
 			}
 			byte[] key = draw.key();
+			if (channel == Channel.DIRECTORY) {
+				budget.nativeRead();
+				budget.payload(Long.BYTES, false);
+				if (key.length != 18 || key[0] != 4 || key[1] != plan.plane) {
+					throw new IOException("Malformed node-predicate cardinality key");
+				}
+				long count = adjacency.metadataCount(txn, key);
+				if (count <= 0) {
+					throw new IOException("Invalid node-predicate cardinality in its pinned metadata snapshot");
+				}
+				if (exhaustive) {
+					if (draw.coefficient() != 1D) {
+						throw new IOException("Non-unit exhaustive key coefficient");
+					}
+					try {
+						exactDirectoryCount = Math.addExact(exactDirectoryCount, count);
+					} catch (ArithmeticException overflow) {
+						throw new IOException("Node cardinality overflow", overflow);
+					}
+				}
+				matches += draw.coefficient() * count;
+				rows += draw.coefficient();
+				continue;
+			}
 			try (MemoryStack stack = stackPush()) {
 				MDBVal value = MDBVal.malloc(stack);
 				budget.nativeRead();
@@ -322,35 +367,13 @@ final class LmdbPersistentCardinalityEstimator {
 				}
 				E(rc);
 				long size = value.mv_size();
-				long maximum = channel == Channel.BASE ? PersistentCsfPageCodec.MAX_ENCODED_BYTES
-						: channel == Channel.DIRECTORY ? Long.BYTES : 1;
+				long maximum = channel == Channel.BASE ? PersistentCsfPageCodec.MAX_ENCODED_BYTES : 1;
 				if (size <= 0 || size > maximum || channel != Channel.BASE && size != maximum) {
 					throw new IOException("Malformed persistent cardinality value size: " + size);
 				}
 				budget.payload(size, channel == Channel.BASE);
 				ByteBuffer bytes = value.mv_data();
-				if (channel == Channel.DIRECTORY) {
-					if (key.length != 18 || key[0] != 4 || key[1] != plan.plane) {
-						throw new IOException("Malformed node-predicate cardinality key");
-					}
-					long count = bytes.order(ByteOrder.BIG_ENDIAN).getLong(0);
-					if (count <= 0) {
-						throw new IOException("Invalid node-predicate cardinality");
-					}
-					if (exhaustive) {
-						if (draw.coefficient() != 1D) {
-							throw new IOException("Non-unit exhaustive key coefficient");
-						}
-						try {
-							exactDirectoryCount = Math.addExact(exactDirectoryCount, count);
-						} catch (ArithmeticException overflow) {
-							throw new IOException("Node cardinality overflow", overflow);
-						}
-					}
-					matches += draw.coefficient() * count;
-					rows += draw.coefficient();
-					continue;
-				}
+
 				if (key.length != 33 || key[0] != plan.plane) {
 					throw new IOException("Malformed persistent adjacency cardinality key");
 				}

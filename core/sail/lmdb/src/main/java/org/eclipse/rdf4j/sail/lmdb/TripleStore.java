@@ -90,7 +90,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -218,6 +220,16 @@ class TripleStore implements Closeable {
 	@FunctionalInterface
 	interface IndexRebuildWriter {
 		void execute(IndexRebuildWork work) throws IOException;
+	}
+
+	@FunctionalInterface
+	interface MetadataCheckpointWork {
+		void run() throws IOException;
+	}
+
+	@FunctionalInterface
+	interface MetadataCheckpointWriter {
+		void execute(MetadataCheckpointWork work) throws IOException;
 	}
 
 	private static final class IndexGeneration {
@@ -464,6 +476,20 @@ class TripleStore implements Closeable {
 	private final int mainDbi;
 	/** Authoritative statement pages, deltas and catalogs, all owned by the native transaction. */
 	private LmdbPersistentAdjacency persistentAdjacency;
+	private LmdbMetadataCheckpoint metadataCheckpoint;
+	private boolean metadataMaintenance;
+	private boolean initializingMetadata = true;
+	private boolean metadataShutdownFinalized;
+	private long startupNativeTransactionId;
+	private boolean startupMetadataRecovery;
+	private static final long DEFAULT_METADATA_BUDGET = 16L << 20;
+	private static final int METADATA_CHECKPOINT_ENTRIES = 4096;
+	private volatile MetadataCheckpointWriter metadataCheckpointWriter;
+	private ScheduledExecutorService metadataCheckpointExecutor;
+	private volatile boolean metadataCheckpointClosing;
+	private volatile long metadataLastMutationNanos;
+	private volatile long metadataDirtySinceNanos;
+
 	private final int namespacesDbi;
 	private int pageSize;
 	private final boolean autoGrow;
@@ -591,9 +617,21 @@ class TripleStore implements Closeable {
 		this(dir, properties, config, valueStore, legacyCollections, DEFAULT_ENVIRONMENT_LIFECYCLE);
 	}
 
+	TripleStore(File dir, LmdbStoreConfig config, ValueStore valueStore, long metadataBudgetBytes)
+			throws IOException, SailException {
+		this(dir, new StoreProperties(dir), config, valueStore, null, DEFAULT_ENVIRONMENT_LIFECYCLE,
+				metadataBudgetBytes);
+	}
+
 	private TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore,
 			Supplier<? extends CollectionFactory> legacyCollections, EnvironmentLifecycle environmentLifecycle)
 			throws IOException, SailException {
+		this(dir, properties, config, valueStore, legacyCollections, environmentLifecycle, DEFAULT_METADATA_BUDGET);
+	}
+
+	private TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore,
+			Supplier<? extends CollectionFactory> legacyCollections, EnvironmentLifecycle environmentLifecycle,
+			long metadataBudgetBytes) throws IOException, SailException {
 		// Legacy order preferences remain valid configuration, even though adjacency owns the physical schema.
 		Set<String> configuredOrders = TripleIndex.parseIndexSpecList(config.getTripleIndexes());
 		String logicalOrderPreferences;
@@ -624,6 +662,7 @@ class TripleStore implements Closeable {
 		// create directory if it not exists
 		this.dir.mkdirs();
 
+		LmdbMetadataCheckpoint.StartupState metadataStartup;
 		try {
 			try (MemoryStack stack = stackPush()) {
 				PointerBuffer pp = stack.mallocPointer(1);
@@ -645,6 +684,9 @@ class TripleStore implements Closeable {
 			}
 			E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
 			environmentLifecycle.afterOpen(env);
+			// Read the clean stamp before DBI/schema housekeeping can advance the native generation.
+			metadataStartup = LmdbMetadataCheckpoint.inspect(env);
+			startupNativeTransactionId = metadataStartup.nativeTxnId();
 			applyConfiguredMapSizeBeforeInitialization(config.getTripleDBSize());
 			// Open the unnamed main database and contexts database in one serialized setup transaction. The main DBI is
 			// retained for page-estimator read scopes; opening it again while readers are active mutates LMDB's shared
@@ -718,6 +760,14 @@ class TripleStore implements Closeable {
 					growMapForIndexInitialization();
 				}
 			}
+			if (!metadataStartup.clean()) {
+				startupMetadataRecovery = true;
+				rebuildMetadataCheckpoint();
+			} else if (lastTransactionId() != metadataStartup.nativeTxnId()) {
+				// Only owned setup work preceded this point; metadata is still exact.
+				startupMetadataRecovery = true;
+				writeStartupMetadataCheckpoint(false);
+			}
 			initializePageAndMapSize(config.getTripleDBSize());
 			queryGeneration = new IndexGeneration(indexes);
 			indexes = queryGeneration.indexes;
@@ -732,9 +782,224 @@ class TripleStore implements Closeable {
 					: null;
 			persistentCardinalityEstimator = new LmdbPersistentCardinalityEstimator(persistentAdjacency,
 					persistentPageEstimator);
+			// Internal setup reads may be parked with a native snapshot; reset before installing pin ownership.
+			txnManager.reset();
+			metadataCheckpoint = new LmdbMetadataCheckpoint(persistentAdjacency.metadataDbi(), namespacesDbi,
+					lastTransactionId(), metadataBudgetBytes);
+			persistentAdjacency.attachMetadataCheckpoint(metadataCheckpoint);
+			txnManager.setSnapshotLifecycle(new TxnManager.SnapshotLifecycle() {
+				@Override
+				public void started(long transaction) throws IOException {
+					metadataCheckpoint.bindSnapshot(transaction);
+				}
+
+				@Override
+				public void ended(long transaction) {
+					metadataCheckpoint.releaseSnapshot(transaction);
+				}
+			});
+			initializingMetadata = false;
 		} catch (IOException | RuntimeException | Error failure) {
 			cleanupAfterInitializationFailure(failure);
 			throw failure;
+		}
+	}
+
+	@FunctionalInterface
+	private interface MetadataStartupWork<T> {
+		T run(long transaction) throws IOException;
+	}
+
+	/** Startup owns the environment exclusively; a failed bounded chunk is retried from its last committed token. */
+	private <T> T metadataStartupTransaction(MetadataStartupWork<T> work) throws IOException {
+		while (true) {
+			startTransaction();
+			try {
+				setupCommitWithoutNativeWrites = false;
+				T result = work.run(writeTxn);
+				nativeMutation = true;
+				unjournaledMutation = true;
+				endTransaction(true, false);
+				return result;
+			} catch (MapFullException | LmdbUtil.MapFullException capacity) {
+				endTransaction(false);
+				if (!autoGrow) {
+					throw new IOException("LMDB map is full while rebuilding adjacency metadata", capacity);
+				}
+				growMapForIndexInitialization();
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					endTransaction(false);
+				} catch (IOException | RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+				throw failure;
+			}
+		}
+	}
+
+	private void writeStartupMetadataCheckpoint(boolean dirty) throws IOException {
+		metadataStartupTransaction(transaction -> {
+			if (dirty) {
+				LmdbMetadataCheckpoint.writeDirty(transaction, namespacesDbi);
+			} else {
+				LmdbMetadataCheckpoint.writeClean(transaction, namespacesDbi);
+			}
+			return null;
+		});
+	}
+
+	private void rebuildMetadataCheckpoint() throws IOException {
+		// A restart at any intermediate boundary repeats the covered-family rebuild; pages/deltas remain frozen.
+		writeStartupMetadataCheckpoint(true);
+		while (!metadataStartupTransaction(transaction -> {
+			LmdbMetadataCheckpoint.writeDirty(transaction, namespacesDbi);
+			return persistentAdjacency.clearCheckpointMetadataChunk(transaction, METADATA_CHECKPOINT_ENTRIES);
+		})) {
+			// Each native transaction deletes at most the configured number of covered entries.
+		}
+		byte[] after = null;
+		do {
+			byte[] continuation = after;
+			after = metadataStartupTransaction(transaction -> {
+				LmdbMetadataCheckpoint.writeDirty(transaction, namespacesDbi);
+				return persistentAdjacency.rebuildCheckpointMetadataChunk(transaction, continuation, 256);
+			});
+		} while (after != null);
+		writeStartupMetadataCheckpoint(false);
+	}
+
+	/** Validates a pre-housekeeping certificate without rewriting its independently verified identity. */
+	boolean matchesStartupNativeAuthority(long verifiedTransactionId) throws IOException {
+		long current = trustedTransactionId();
+		return current == verifiedTransactionId || startupMetadataRecovery
+				&& startupNativeTransactionId == verifiedTransactionId;
+	}
+
+	LmdbMetadataCheckpoint metadataCheckpoint() {
+		return metadataCheckpoint;
+	}
+
+	/** Caller owns normal store writer/publication admission; this method does not acquire it recursively. */
+	int checkpointMetadata(int maxEntries) throws IOException {
+		if (metadataCheckpoint == null || !metadataCheckpoint.hasPending()) {
+			return 0;
+		}
+		if (writeTxn != 0 || writerTransaction != null) {
+			throw new IOException("Cannot checkpoint metadata while a data writer owns the native transaction");
+		}
+		boolean previousMaintenance = metadataMaintenance;
+		metadataMaintenance = true;
+		try {
+			startTransaction();
+			int drained = metadataCheckpoint.stageCheckpoint(writeTxn, maxEntries);
+			if (drained == 0 && metadataCheckpoint.pendingSegments() != 0) {
+				endTransaction(false);
+				return 0;
+			}
+			nativeMutation = true;
+			unjournaledMutation = true;
+			endTransaction(true, false);
+			return drained;
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				endTransaction(false);
+			} catch (IOException | RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		} finally {
+			metadataMaintenance = previousMaintenance;
+		}
+	}
+
+	void setMetadataCheckpointWriter(MetadataCheckpointWriter writer) {
+		metadataCheckpointWriter = Objects.requireNonNull(writer);
+	}
+
+	synchronized void startBackgroundMetadataCheckpoint() {
+		if (metadataCheckpointExecutor != null || metadataCheckpointClosing || metadataCheckpointWriter == null) {
+			return;
+		}
+		metadataCheckpointExecutor = Executors.newSingleThreadScheduledExecutor(task -> {
+			Thread worker = new Thread(task, "rdf4j-lmdb-metadata-checkpoint");
+			worker.setDaemon(true);
+			return worker;
+		});
+		metadataCheckpointExecutor.scheduleWithFixedDelay(this::runMetadataCheckpointMaintenance, 250, 250,
+				TimeUnit.MILLISECONDS);
+	}
+
+	/** Never invoked while a native/accounting lock or physical data writer is owned by this thread. */
+	void runMetadataCheckpointMaintenance() {
+		LmdbMetadataCheckpoint checkpoint = metadataCheckpoint;
+		MetadataCheckpointWriter admission = metadataCheckpointWriter;
+		if (metadataCheckpointClosing || checkpoint == null || admission == null || checkpoint.isFenced()
+				|| !checkpoint.hasPending()) {
+			return;
+		}
+		long now = System.nanoTime();
+		boolean idle = now - metadataLastMutationNanos >= TimeUnit.SECONDS.toNanos(1);
+		boolean aged = metadataDirtySinceNanos != 0
+				&& now - metadataDirtySinceNanos >= TimeUnit.SECONDS.toNanos(30);
+		if (!idle && !aged && checkpoint.pendingSegments() < 64) {
+			return;
+		}
+		try {
+			admission.execute(() -> {
+				if (!metadataCheckpointClosing) {
+					checkpointMetadata(METADATA_CHECKPOINT_ENTRIES);
+				}
+			});
+		} catch (IOException | RuntimeException failure) {
+			if (!metadataCheckpointClosing) {
+				logger.warn("Adjacency metadata checkpoint deferred; native data remains authoritative", failure);
+			}
+		}
+	}
+
+	/** Stop outside writer/publication/native locks; a live worker must not race environment teardown. */
+	void stopMetadataCheckpointWorker() throws IOException {
+		ScheduledExecutorService executor;
+		synchronized (this) {
+			metadataCheckpointClosing = true;
+			executor = metadataCheckpointExecutor;
+		}
+		if (executor == null) {
+			return;
+		}
+		executor.shutdownNow();
+		try {
+			if (!executor.awaitTermination(30, TimeUnit.SECONDS)) {
+				throw new IOException("Metadata checkpoint worker did not stop; native environment remains open");
+			}
+			synchronized (this) {
+				if (metadataCheckpointExecutor == executor) {
+					metadataCheckpointExecutor = null;
+				}
+			}
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while stopping metadata checkpoint worker", interrupted);
+		}
+	}
+
+	/** Owning Sail calls this before certifying the paired dictionary/triple close generation. */
+	void finishMetadataCheckpointForShutdown() throws IOException {
+		if (metadataShutdownFinalized) {
+			return;
+		}
+		metadataShutdownFinalized = true;
+		if (metadataCheckpoint != null && metadataCheckpoint.isFenced()) {
+			return; // Native outcome was already reported; do not invent another writer while RAM is unavailable.
+		}
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (metadataCheckpoint != null && metadataCheckpoint.hasPending() && System.nanoTime() < deadline) {
+			checkpointMetadata(METADATA_CHECKPOINT_ENTRIES);
 		}
 	}
 
@@ -1132,6 +1397,9 @@ class TripleStore implements Closeable {
 			startTransaction();
 			unjournaledMutation = true;
 			try {
+				// Prepared bulk generations certify native counts. Keep every batch exact, including a small
+				// final batch, and retain this method's existing capacity-growth/abort/replay boundary.
+				metadataCheckpoint.forceNativeWriter(writeTxn);
 				byte[] finalKey = appendBulkIndexBatchInTransaction(index, specification, batch, count,
 						lastCommittedKey);
 				endTransaction(true);
@@ -1262,6 +1530,9 @@ class TripleStore implements Closeable {
 		reserveWriteCapacity(PreparedBulkStore.GENERATION_KEY.length + generation.length);
 		startTransaction();
 		try (MemoryStack stack = stackPush()) {
+			// The paired dictionary certificate binds this final native transaction. A later close must not
+			// discover a deferred metadata suffix and advance the certified generation.
+			metadataCheckpoint.forceNativeWriter(writeTxn);
 			writeNamespaceDatabaseValue(stack, writeTxn, PreparedBulkStore.GENERATION_KEY, generation);
 			nativeMutation = true;
 			unjournaledMutation = true;
@@ -2702,12 +2973,22 @@ class TripleStore implements Closeable {
 
 	@Override
 	public void close() throws IOException {
+		stopMetadataCheckpointWorker();
+		IOException checkpointFailure = null;
+		if (!metadataShutdownFinalized && env != 0) {
+			try {
+				endTransaction(false);
+				finishMetadataCheckpointForShutdown();
+			} catch (IOException failure) {
+				checkpointFailure = failure;
+			}
+		}
 		try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
 			if (env == 0) {
 				return;
 			}
 
-			Throwable failure = null;
+			Throwable failure = checkpointFailure;
 			try {
 				cursorPool.close();
 			} catch (Throwable e) {
@@ -2748,6 +3029,13 @@ class TripleStore implements Closeable {
 				}
 			}
 
+			if (metadataCheckpoint != null) {
+				try {
+					metadataCheckpoint.close();
+				} catch (Throwable closeFailure) {
+					failure = appendCloseFailure(failure, closeFailure);
+				}
+			}
 			try {
 				environmentLifecycle.close(environment);
 			} catch (Throwable closeFailure) {
@@ -2806,7 +3094,7 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 */
 	public LmdbContextIdIterator getContexts(Txn txn) throws IOException {
-		return new LmdbContextIdIterator(persistentAdjacency.metadataDbi(), txn, (byte) 6);
+		return new LmdbContextIdIterator(persistentAdjacency, txn);
 	}
 
 	/**
@@ -3724,8 +4012,17 @@ class TripleStore implements Closeable {
 	/** Owning-store shutdown has drained public readers/writers but still retains this native environment. */
 	void filterUsedIdsAtClose(Collection<Long> ids) throws IOException {
 		LmdbUtil.readTransaction(env, (stack, txn) -> {
-			filterUsedIds(stack, txn, ids);
-			return null;
+			if (metadataCheckpoint != null) {
+				metadataCheckpoint.bindSnapshot(txn);
+			}
+			try {
+				filterUsedIds(stack, txn, ids);
+				return null;
+			} finally {
+				if (metadataCheckpoint != null) {
+					metadataCheckpoint.releaseSnapshot(txn);
+				}
+			}
 		});
 	}
 
@@ -4152,7 +4449,7 @@ class TripleStore implements Closeable {
 			try {
 				closeAlignedWriteCursors();
 				if (writeTxn != 0) {
-					mdb_txn_abort(writeTxn);
+					abortNativeWriteTransaction(writeTxn);
 					writeTxn = 0;
 				}
 				mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.TRIPLE_STORE, projectedBytes, true);
@@ -4164,7 +4461,7 @@ class TripleStore implements Closeable {
 		try {
 			closeAlignedWriteCursors();
 			if (writeTxn != 0) {
-				mdb_txn_abort(writeTxn);
+				abortNativeWriteTransaction(writeTxn);
 				writeTxn = 0;
 			}
 			try (LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt()) {
@@ -4279,7 +4576,7 @@ class TripleStore implements Closeable {
 			if (writeTxn != 0) {
 				replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
 						LmdbUtil.getNewSize(pageSize, writeTxn, 0L));
-				mdb_txn_abort(writeTxn);
+				abortNativeWriteTransaction(writeTxn);
 				writeTxn = 0;
 			}
 			while (true) {
@@ -4332,7 +4629,7 @@ class TripleStore implements Closeable {
 					long replayedUse = LmdbUtil.getNewSize(pageSize, writeTxn, 0L);
 					replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes, replayedUse);
 					if (!growthPolicy.retainsGrowthReserve(mapSize, replayedUse)) {
-						mdb_txn_abort(writeTxn);
+						abortNativeWriteTransaction(writeTxn);
 						writeTxn = 0L;
 						continue;
 					}
@@ -4341,14 +4638,14 @@ class TripleStore implements Closeable {
 				} catch (MapFullException mapFull) {
 					replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
 							LmdbUtil.getNewSize(pageSize, writeTxn, 0L));
-					mdb_txn_abort(writeTxn);
+					abortNativeWriteTransaction(writeTxn);
 					writeTxn = 0;
 				}
 			}
 		} catch (IOException | RuntimeException | Error e) {
 			failure = e;
 			if (writeTxn != 0) {
-				mdb_txn_abort(writeTxn);
+				abortNativeWriteTransaction(writeTxn);
 				writeTxn = 0;
 			}
 			markMutationFailure(e);
@@ -4414,11 +4711,27 @@ class TripleStore implements Closeable {
 			writeTxn = pp.get(0);
 			try {
 				validateNativeWriterTransaction(writeTxn);
-			} catch (IOException failure) {
-				mdb_txn_abort(writeTxn);
+				if (metadataCheckpoint != null) {
+					metadataCheckpoint.beginWriter(writeTxn);
+				}
+			} catch (IOException | RuntimeException | Error failure) {
+				abortNativeWriteTransaction(writeTxn);
 				writeTxn = 0L;
 				throw failure;
 			}
+		}
+	}
+
+	private void abortNativeWriteTransaction(long transaction) {
+		if (writeTxn == transaction) {
+			writeTxn = 0;
+		}
+		try {
+			if (metadataCheckpoint != null) {
+				metadataCheckpoint.aborted();
+			}
+		} finally {
+			mdb_txn_abort(transaction);
 		}
 	}
 
@@ -5483,6 +5796,7 @@ class TripleStore implements Closeable {
 		if (writeTxn != 0 || mutationJournal != null || mutationFailure != null || replayDecision != null) {
 			Throwable failure = null;
 			boolean committed = false;
+			long nativeGenerationBefore = nativeCommitGeneration.get();
 			DerivedCommit preparedDirect = null;
 			try {
 				if (commit && replayDecision != null) {
@@ -5495,7 +5809,7 @@ class TripleStore implements Closeable {
 								mutationFailure);
 					}
 					if (!commit || !nativeMutation) {
-						mdb_txn_abort(writeTxn);
+						abortNativeWriteTransaction(writeTxn);
 						writeTxn = 0;
 					} else {
 						while (true) {
@@ -5519,7 +5833,6 @@ class TripleStore implements Closeable {
 								}
 								result = commitWriteTransactionWithIndexBuildAuthority();
 								if (result == MDB_SUCCESS) {
-									nativeCommitGeneration.incrementAndGet();
 									committed = true;
 									completeCommittedTransaction(preparedDirect, advanceDataRevision);
 								}
@@ -5550,10 +5863,11 @@ class TripleStore implements Closeable {
 							mutationFailure);
 				}
 			} catch (IOException | RuntimeException | Error e) {
+				committed |= nativeCommitGeneration.get() > nativeGenerationBefore;
 				failure = e;
 			} finally {
 				if (writeTxn != 0 && (!commit || !committed)) {
-					mdb_txn_abort(writeTxn);
+					abortNativeWriteTransaction(writeTxn);
 				}
 				writeTxn = 0;
 				if (preparedDirect != null && preparedDirect.prepared != null
@@ -5638,27 +5952,67 @@ class TripleStore implements Closeable {
 		replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
 				LmdbUtil.getNewSize(pageSize, transaction, 0L));
 		try {
-			if (persistentAdjacency != null) {
+			if (persistentAdjacency != null && !metadataMaintenance && !initializingMetadata) {
 				persistentAdjacency.compact(transaction);
 			}
+			if (metadataCheckpoint != null) {
+				metadataCheckpoint.beforeCommit(transaction);
+			}
 		} catch (MapFullException | LmdbUtil.MapFullException capacity) {
-			// A failed metadata put leaves ownership with us; a failed native commit consumes the transaction.
-			// Normalize both outcomes before applying the admitted journal/frozen/native-chunk recovery policy.
-			writeTxn = 0;
-			mdb_txn_abort(transaction);
+			abortNativeWriteTransaction(transaction);
 			return MDB_MAP_FULL;
+		} catch (IOException | RuntimeException | Error failure) {
+			abortNativeWriteTransaction(transaction);
+			throw failure;
 		}
+		long nativeId = mdb_txn_id(transaction);
+		// The native API consumes the handle on both success and error.
 		writeTxn = 0;
-		return commitWriteTransaction(transaction);
+		try {
+			int result = commitWriteTransaction(transaction);
+			if (metadataCheckpoint != null) {
+				if (result == MDB_SUCCESS) {
+					afterMetadataNativeCommitBeforePublication();
+					metadataCheckpoint.committed(transaction, nativeId);
+					long now = System.nanoTime();
+					if (!metadataMaintenance) {
+						metadataLastMutationNanos = now;
+					}
+					if (metadataCheckpoint.hasPending()) {
+						if (metadataDirtySinceNanos == 0) {
+							metadataDirtySinceNanos = now;
+						}
+					} else {
+						metadataDirtySinceNanos = 0;
+					}
+				} else {
+					metadataCheckpoint.aborted();
+				}
+			}
+			return result;
+		} catch (IOException | RuntimeException | Error failure) {
+			if (metadataCheckpoint != null) {
+				metadataCheckpoint.fence();
+			}
+			throw failure;
+		}
 	}
 
+	/** Native-success receipt is recorded before any Java publication or overridable caller can fail. */
 	int commitWriteTransaction(long transaction) {
 		long transactionId = expectedNativeTransactionId >= 0L ? mdb_txn_id(transaction) : -1L;
 		int result = mdb_txn_commit(transaction);
-		if (result == MDB_SUCCESS && expectedNativeTransactionId >= 0L && !setupCommitWithoutNativeWrites) {
-			expectedNativeTransactionId = transactionId;
+		if (result == MDB_SUCCESS) {
+			nativeCommitGeneration.incrementAndGet();
+			if (expectedNativeTransactionId >= 0L && !setupCommitWithoutNativeWrites) {
+				expectedNativeTransactionId = transactionId;
+			}
 		}
 		return result;
+	}
+
+	/** Deterministic fault seam: native success is already irrevocable at this boundary. */
+	protected void afterMetadataNativeCommitBeforePublication() throws IOException {
 	}
 
 	private void commit(boolean advanceDataRevision) throws IOException {
