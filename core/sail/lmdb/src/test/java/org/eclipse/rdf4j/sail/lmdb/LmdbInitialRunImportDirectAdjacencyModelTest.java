@@ -239,6 +239,34 @@ class LmdbInitialRunImportDirectAdjacencyModelTest {
 		}
 	}
 
+	@Test
+	@Timeout(120)
+	void metadataSpillsReduceRepeatedRolesAcrossUnsignedIdsAndReopenExactly() throws Exception {
+		Set<Quad> expected = new LinkedHashSet<>();
+		for (int i = 0; i < 17_000; i++) {
+			long object = i % 2 == 0 ? Long.MIN_VALUE + i + 1 : 100_000 + i;
+			expected.add(new Quad(1_000 + i, 42, object, i % 3 == 0 ? 0 : 42));
+		}
+		expected.add(new Quad(42, 42, 42, 42));
+		List<Quad> inputs = new ArrayList<>(expected);
+		List<Quad> duplicates = new ArrayList<>(expected);
+		Collections.reverse(duplicates);
+		inputs.addAll(duplicates);
+		Path nativeDirectory = Files.createDirectory(directory.resolve("metadata-spills"));
+		try (OwnedRuns runs = new OwnedRuns(directory.resolve("metadata-inputs"), inputs, 1024);
+				NativeFixture fixture = new NativeFixture(nativeDirectory)) {
+			fixture.mutate(txn -> {
+				assertThat(fixture.adjacency.writeInitialExplicit(txn, runs.orders.get(0), runs.orders.get(1),
+						runs.directory, (s, p, o, c) -> {
+						})).isEqualTo(expected.size());
+				assertNativeModel(fixture.adjacency, txn, expected);
+			});
+		}
+		try (NativeFixture reopened = new NativeFixture(nativeDirectory)) {
+			reopened.read(txn -> assertNativeModel(reopened.adjacency, txn, expected));
+		}
+	}
+
 	private static Set<Statement> publicModel() {
 		Set<Statement> result = new LinkedHashSet<>();
 		for (int i = 0; i < 1_025; i++) {
@@ -529,8 +557,12 @@ class LmdbInitialRunImportDirectAdjacencyModelTest {
 		final List<LmdbSortedRuns.Runs> orders;
 
 		OwnedRuns(Path directory, List<Quad> rows) throws IOException {
+			this(directory, rows, 16);
+		}
+
+		OwnedRuns(Path directory, List<Quad> rows, int chunkRows) throws IOException {
 			this.directory = Files.createDirectory(directory);
-			collector = new LmdbRunCollector("model", directory, ORDERS, 16, 1, Runnable::run);
+			collector = new LmdbRunCollector("model", directory, ORDERS, chunkRows, 1, Runnable::run);
 			try {
 				for (int index = 0; index < rows.size(); index++) {
 					Quad quad = rows.get(index);

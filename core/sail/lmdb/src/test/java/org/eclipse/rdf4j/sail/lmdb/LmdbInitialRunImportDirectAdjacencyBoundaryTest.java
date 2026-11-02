@@ -84,7 +84,7 @@ class LmdbInitialRunImportDirectAdjacencyBoundaryTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "0,261", "8,9223372036854775807", "16,1", "24,0", "24,-1" })
+	@CsvSource({ "0,261", "0,512", "8,9223372036854775807", "16,9223372036854775807", "24,0", "24,-1" })
 	@Timeout(60)
 	void malformedPrivateReductionRecordsAbortInsteadOfAliasingOrDroppingMass(int offset, long replacement)
 			throws Exception {
@@ -116,8 +116,9 @@ class LmdbInitialRunImportDirectAdjacencyBoundaryTest {
 											throw new IOException("Missing real spill record");
 										}
 									}
-									assertThat(record.getLong(0)).isIn(5L, 7L);
-									assertThat(record.getLong(16)).isZero();
+									// The first sorted chunk begins with outgoing ROW(type3, plane0) metadata.
+									assertThat(record.getLong(0)).isEqualTo(3L << 8);
+									assertThat(record.getLong(16)).isPositive();
 									assertThat(record.getLong(24)).isPositive();
 									ByteBuffer bytes = ByteBuffer.allocate(8).putLong(replacement).flip();
 									channel.position(offset);
@@ -128,7 +129,7 @@ class LmdbInitialRunImportDirectAdjacencyBoundaryTest {
 								}
 							}
 						})).isInstanceOf(IOException.class)
-								.hasMessageContaining("Invalid initial adjacency reduction record");
+								.hasMessageContaining("Invalid initial adjacency");
 				assertThat(corrupted).isTrue();
 			} finally {
 				store.rollback();

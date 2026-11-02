@@ -16,6 +16,7 @@ import static org.mockito.Mockito.mockStatic;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -132,6 +133,10 @@ class LmdbInitialRunImportDirectAdjacencyWorkTest {
 		// 1 total + 2P + 2(Rout+Rin) + 2C + V = 1+4+256+4+67.
 		assertThat(work.metadata.get()).as("one put per reduced non-format metadata key").isEqualTo(332);
 		assertThat(work.metadataKeys).hasSize(332);
+		assertThat(work.unorderedMetadata.get()).as("final metadata keys are emitted in global unsigned order")
+				.isZero();
+		assertThat(work.appendMetadata.get()).as("each metadata key uses the sequential native append path")
+				.isEqualTo(332);
 		assertThat(work.metadataKeys.values()).allSatisfy(count -> assertThat(count.get()).isEqualTo(1));
 		assertThat(work.metadataGets.get()).as("constant admission checks, not per-edge read-modify-write")
 				.isLessThanOrEqualTo(16);
@@ -160,6 +165,9 @@ class LmdbInitialRunImportDirectAdjacencyWorkTest {
 		final Map<String, AtomicInteger> metadataKeys = new ConcurrentHashMap<>();
 		final AtomicLong pages = new AtomicLong();
 		final AtomicLong metadata = new AtomicLong();
+		final AtomicLong unorderedMetadata = new AtomicLong();
+		final AtomicLong appendMetadata = new AtomicLong();
+		byte[] previousMetadata;
 		final AtomicLong deltaPuts = new AtomicLong();
 		final AtomicLong deltaDeletes = new AtomicLong();
 		final AtomicLong metadataGets = new AtomicLong();
@@ -219,6 +227,14 @@ class LmdbInitialRunImportDirectAdjacencyWorkTest {
 							metadata.incrementAndGet();
 							byte[] bytes = new byte[(int) key.mv_size()];
 							key.mv_data().duplicate().get(bytes);
+							if (previousMetadata != null && Arrays.compareUnsigned(previousMetadata, bytes) >= 0) {
+								unorderedMetadata.incrementAndGet();
+							}
+							previousMetadata = bytes;
+							int flags = call.getArgument(method.equals("mdb_put") ? 4 : 3);
+							if ((flags & LMDB.MDB_APPEND) != 0) {
+								appendMetadata.incrementAndGet();
+							}
 							metadataKeys
 									.computeIfAbsent(HexFormat.of().formatHex(bytes), ignored -> new AtomicInteger())
 									.incrementAndGet();
