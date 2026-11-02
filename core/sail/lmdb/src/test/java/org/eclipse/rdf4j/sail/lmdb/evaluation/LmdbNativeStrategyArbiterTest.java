@@ -131,8 +131,9 @@ public class LmdbNativeStrategyArbiterTest {
 		assertThat(LmdbNativeStrategyArbiter.rankAdaptive(List.of(
 				proposal("irAggregateParallel", 1_000D),
 				proposal("adjacencyAggregate", 1_000D).withColdAnchor(coldWitness())), -1D, disabled))
-						.as("explicitly disabled learned dispatch retains its ordinary structural rule")
-						.isZero();
+						.as("explicitly disabled learned dispatch retains its ordinary structural rule: the ladder "
+								+ "seats the adjacency aggregate ahead of the kernel")
+						.isEqualTo(1);
 	}
 
 	@Test
@@ -756,7 +757,9 @@ public class LmdbNativeStrategyArbiterTest {
 			}
 			LmdbNativeCostEstimate anchorEstimate = completedColdAnchor(new AtomicInteger()).adaptiveEstimate(-1D);
 			assertThat(model.predict(anchorEstimate).exactCompletedCount()).isEqualTo(5L);
-			LmdbNativeCostEstimate rivalEstimate = proposal("irAggregateParallel", 100D).adaptiveEstimate(-1D);
+			// a must-try family the ladder still seats ahead of the completed adjacency fallback
+			LmdbNativeCostEstimate rivalEstimate = proposal(LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS, 100D)
+					.adaptiveEstimate(-1D);
 			assertThat(model.predict(rivalEstimate).evidenceSource())
 					.as("global backoff is not evidence that the exact rival has executed")
 					.isNotEqualTo(LmdbNativeCostPrediction.EvidenceSource.EXACT_VARIANT);
@@ -776,7 +779,7 @@ public class LmdbNativeStrategyArbiterTest {
 						while (true) {
 							LmdbNativeProbeDeadline.poll(0);
 						}
-					}, 100D, "irAggregateParallel"));
+					}, 100D, LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS));
 					assertThat(arbiter.select()).isEqualTo("root");
 				}
 				LmdbNativeCostPrediction censored = model.predict(rivalEstimate);
@@ -813,8 +816,10 @@ public class LmdbNativeStrategyArbiterTest {
 								model.store().regimeTracker().epoch());
 				assertThat(model.predict(root.adaptiveEstimate(-1D)).quarantined()).isTrue();
 			}
-			assertThat(LmdbNativeStrategyArbiter.rankAdaptive(List.of(proposal("irAggregateParallel", 100D), root),
-					-1D, model)).as("one completion needs a current physical witness and a nonquarantined price")
+			// an unmeasured arm the ladder still seats ahead of the adjacency aggregate
+			assertThat(LmdbNativeStrategyArbiter.rankAdaptive(
+					List.of(proposal(LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS, 100D), root), -1D, model))
+							.as("one completion needs a current physical witness and a nonquarantined price")
 							.isZero();
 		}
 	}
@@ -2006,10 +2011,10 @@ public class LmdbNativeStrategyArbiterTest {
 	public void overlappingIntervalsFallBackToSpecializationOrder() {
 		List<LmdbNativeStrategyProposal<String>> candidates = List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeWork.between(10D, 200D)),
-				proposal(LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.between(50D, 300D)));
+				proposal(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, LmdbNativeWork.between(50D, 300D)));
 
 		assertThat(winner(candidates))
-				.as("overlapping costs cannot displace the explicit IR-first specialization order")
+				.as("overlapping costs cannot displace the explicit specialization order")
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
 	}
 
@@ -2028,7 +2033,7 @@ public class LmdbNativeStrategyArbiterTest {
 	public void aPricedCandidateCannotDisplaceAnUnpricedOneOnCost() {
 		List<LmdbNativeStrategyProposal<String>> candidates = List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeWork.exact(1D)),
-				proposal(LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN));
+				proposal(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, LmdbNativeWork.UNKNOWN));
 
 		assertThat(winner(candidates))
 				.as("an unknown rival could be cheaper for all we know, so a cheap-looking candidate has not "
@@ -2090,15 +2095,15 @@ public class LmdbNativeStrategyArbiterTest {
 	}
 
 	@Test
-	public void aggregateIrHeadsPrefixRunsAndWcojOnTies() {
+	public void algorithmicSpecialistsHeadAggregateIrOnTies() {
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS, 100D),
 				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 100D))))
-						.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
 		assertThat(winner(List.of(
 				proposal(LmdbNativeAttemptMetrics.PATH_WCOJ, 100D),
 				proposal(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 100D))))
-						.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_WCOJ);
 	}
 
 	@Test
@@ -2273,10 +2278,13 @@ public class LmdbNativeStrategyArbiterTest {
 
 	@Test
 	public void irKernelsOutrankTheRemainingStrategyFamilies() {
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-				LmdbNativeAttemptMetrics.PATH_WCOJ)).isTrue();
-		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-				LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_WCOJ,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)).isTrue();
+		// run and root-metadata specialists precede the row-enumerating aggregate kernels
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)).isTrue();
+		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)).isTrue();
 		assertThat(LmdbNativeStrategyPreference.prefers(LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
 				LmdbNativeAttemptMetrics.PATH_BATCH)).isTrue();
 	}

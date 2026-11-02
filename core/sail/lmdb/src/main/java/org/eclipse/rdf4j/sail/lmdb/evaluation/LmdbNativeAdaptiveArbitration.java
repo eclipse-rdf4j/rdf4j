@@ -228,8 +228,11 @@ final class LmdbNativeAdaptiveArbitration {
 		if (!model.configuration().enabled()) {
 			return new DispatchPlan.Normal<>(incumbent, incumbentPrediction, "adaptive dispatch disabled");
 		}
+		// The structural exemption follows the producer's proof, not its label: a variant that must hash per-group
+		// membership state is input-sized work again and competes like any other arm.
 		if (LmdbNativeStrategyPreference
-				.answersWholeQueryStructurally(incumbent.estimate.variantKey().strategyFamily())) {
+				.answersWholeQueryStructurally(incumbent.estimate.variantKey().strategyFamily())
+				&& !incumbent.estimate.variantKey().requiresHashing()) {
 			return new DispatchPlan.Normal<>(incumbent, incumbentPrediction,
 					"authoritative whole-query structural answer");
 		}

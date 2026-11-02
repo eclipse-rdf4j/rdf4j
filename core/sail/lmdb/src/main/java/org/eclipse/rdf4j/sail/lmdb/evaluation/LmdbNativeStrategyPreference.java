@@ -88,6 +88,18 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM,
 			LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM,
 			LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS,
+			// Algorithmic specialists that answer a one-pattern aggregate from run headers or root metadata precede the
+			// row-enumerating kernel tiers: the kernels hash-dedup every statement the specialists never read, and the
+			// ladder decides whenever the specialists are unpriced (see
+			// NativeGroupIteration.algorithmicSpecialistHandlesRow). The exact indexed count stays ahead of the
+			// adjacency aggregate: both answer a global COUNT from metadata and the prepared count is the cheaper read.
+			LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT,
+			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+			// The row-side prefix run (one index position per distinct value) and the worst-case-optimal join (offered
+			// for cyclic shapes only) are the same kind of specialist on the row and join side.
+			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
+			LmdbNativeAttemptMetrics.PATH_WCOJ,
 			// Keep each IR strategy's variants together rather than interleaving strategies by execution tier.
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL,
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED,
@@ -120,14 +132,9 @@ final class LmdbNativeStrategyPreference {
 
 			LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
 			LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX,
-			LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT,
 			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
-			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
-			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
 			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
 			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_BATCH,
-			LmdbNativeAttemptMetrics.PATH_WCOJ,
 			LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT,

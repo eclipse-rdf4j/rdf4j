@@ -30,10 +30,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -61,6 +63,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.slf4j.Logger;
@@ -1325,27 +1328,50 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			arbiter.offer(() -> estimatedProposal(this::evaluateTypeMatrixFallback,
 					LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX, typeMatrixWork, typeMatrixOwned));
 		}
+		// The EXISTS node-domain intersection walks two distinct-value domains; the prefix-filter run over the same
+		// outer scan probes the EXISTS once per run. The run stays in the inventory as the intersection's fallback but
+		// never heads the frontier while the intersection is legal, whichever of the two the arbiter materializes
+		// first.
+		AtomicReference<LmdbNativeStrategyProposal<List<BindingSet>>> intersectionArm = new AtomicReference<>();
+		AtomicReference<LmdbNativeStrategyProposal<List<BindingSet>>> prefixRunArm = new AtomicReference<>();
 		if (existsIntersection != null) {
-			arbiter.offer(() -> estimatedProposal(() -> {
-				List<BindingSet> result = existsIntersection.evaluate(source, row);
-				if (result != null) {
-					LmdbNativeExplain.recordExecutionPath(explainTarget,
-							LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION);
+			arbiter.offer(() -> {
+				LmdbNativeStrategyProposal<List<BindingSet>> proposal = estimatedProposal(() -> {
+					List<BindingSet> result = existsIntersection.evaluate(source, row);
+					if (result != null) {
+						LmdbNativeExplain.recordExecutionPath(explainTarget,
+								LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION);
+					}
+					return result;
+				}, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
+						arg.estimateWork(row, row.boundMask()))
+								.withPlanningWork(LmdbNativeWork.planning(arg, row, row.boundMask()));
+				intersectionArm.set(proposal);
+				LmdbNativeStrategyProposal<List<BindingSet>> prefixRuns = prefixRunArm.get();
+				if (prefixRuns != null) {
+					prefixRuns.physicallyDominatedBy(proposal, PREFIX_FILTER_RUN_DOMINANCE_PROOF);
 				}
-				return result;
-			}, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
-					arg.estimateWork(row, row.boundMask()))
-							.withPlanningWork(LmdbNativeWork.planning(arg, row, row.boundMask())));
+				return proposal;
+			});
 		}
 		if (prefixRunHandlesRow(row)) {
-			arbiter.offer(() -> estimatedProposal(() -> {
-				List<BindingSet> result = evaluatePrefixRuns(row);
-				if (result != null) {
-					metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
+			arbiter.offer(() -> {
+				LmdbNativeStrategyProposal<List<BindingSet>> proposal = estimatedProposal(() -> {
+					List<BindingSet> result = evaluatePrefixRuns(row);
+					if (result != null) {
+						metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
+					}
+					return result;
+				}, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+						prefixPattern.estimateWork(row, row.boundMask()))
+								.withOptionalPlanningWork(prefixRunRootDomainPlanningWork());
+				prefixRunArm.set(proposal);
+				LmdbNativeStrategyProposal<List<BindingSet>> intersection = intersectionArm.get();
+				if (intersection != null) {
+					proposal.physicallyDominatedBy(intersection, PREFIX_FILTER_RUN_DOMINANCE_PROOF);
 				}
-				return result;
-			}, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
-					prefixPattern.estimateWork(row, row.boundMask())));
+				return proposal;
+			});
 		}
 		NativeGroupResultCursor.GroupingPlan encounterOrdered = !typeMatrixOwned
 				&& !NativeGroupResultCursor.allowsReorderedGrouping(this)
@@ -2230,6 +2256,29 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	 */
 	boolean prefixRunHandlesRow(RowState row) {
 		return prefixRunPlan != null && prefixPattern != null && !prefixPattern.hasRuntimeBoundSlot(row);
+	}
+
+	private static final String PREFIX_FILTER_RUN_DOMINANCE_PROOF = "the node-domain intersection walks two "
+			+ "distinct-value domains instead of probing the EXISTS once per prefix run of the same outer scan";
+
+	/**
+	 * Planning quote for the root-domain prefix-run shape: one group key over an adjacency plan with a fixed predicate
+	 * reads one run header per root, so its price is the exact key-domain cardinality rather than the row scan the hard
+	 * interval cannot bound. Every other prefix shape keeps its structural admission without a quote: a row-sized point
+	 * price would let a parallel kernel's divided quote cull it statically.
+	 */
+	private LmdbNativeWork prefixRunRootDomainPlanningWork() {
+		if (prefixRunPlan == null || !prefixRunPlan.usesAdjacency() || prefixDistinctRuns
+				|| prefixRunPlan.prefixLength() != 1 || !prefixPattern.p.isConstant()) {
+			return null;
+		}
+		int field = prefixRunPlan.prefixFields()[0];
+		if (field != TripleIndex.SUBJ_IDX && field != TripleIndex.OBJ_IDX) {
+			return null;
+		}
+		OptionalLong roots = source.adjacencyKeyDomainCardinality(prefixPattern.p.constant,
+				field == TripleIndex.SUBJ_IDX);
+		return roots.isPresent() ? LmdbNativeWork.exact(LmdbNativeWork.SEEK + roots.getAsLong()) : null;
 	}
 
 	/** True when a worst-case-optimal join could serve this row. Recognition only: it opens nothing. */

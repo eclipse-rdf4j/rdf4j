@@ -120,6 +120,42 @@ class LmdbNativeStrategyPreferenceOrderTest {
 		}
 	}
 
+	/**
+	 * Algorithmic specialists that answer a one-pattern GROUP BY from run headers or root metadata (the adjacency
+	 * aggregate, prefix runs) must outrank the row-enumerating aggregate kernels. The ladder decides whenever cost does
+	 * not separate the arms, and the specialists are frequently unpriced while the kernels quote their full row scan:
+	 * ranking the kernels first sent the Workbench Types count ({@code COUNT(DISTINCT ?s) ... GROUP BY ?type}) through
+	 * a hash-dedup of every rdf:type row (hundreds of milliseconds) instead of 46 run headers (milliseconds).
+	 */
+	@Test
+	void algorithmicSpecialistsOutrankRowEnumeratingAggregateTiers() {
+		assertRanksAscending(
+				LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED);
+	}
+
+	/**
+	 * The same rule on the row side and for cyclic joins: the single-pattern prefix run (one index position per
+	 * distinct value) outranks the DISTINCT-sinking and plain row kernels, and the worst-case-optimal join, which is
+	 * only offered for cyclic shapes, outranks the kernels that would re-enumerate the join (HIGHLY_CONNECTED q8: 110
+	 * ms to 241 ms the day the kernel learned to compile a JoinPlan and captured the row by ladder position alone).
+	 */
+	@Test
+	void rowAndJoinSpecialistsOutrankRowEnumeratingKernelTiers() {
+		assertRanksAscending(
+				LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+		assertRanksAscending(
+				LmdbNativeAttemptMetrics.PATH_WCOJ,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL);
+	}
+
 	private static void assertRanksAscending(String... tags) {
 		for (int i = 1; i < tags.length; i++) {
 			int higher = LmdbNativeStrategyPreference.rank(tags[i - 1]);

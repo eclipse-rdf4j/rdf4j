@@ -38,8 +38,9 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * A cyclic {@code COUNT} join — a triangle — exercises the worst-case-optimal join alongside independently legal
  * aggregate kernels. This fixture pins the exact answer, requires the common strategy inventory to retain those
- * kernels, and proves WCOJ remains reachable when explicitly selected. The default optimizer may choose a legal
- * alternative, so an unforced route is not part of this regression's contract.
+ * kernels, proves WCOJ remains reachable when explicitly selected, and pins the unforced route: the specialist ladder
+ * seats the worst-case-optimal join ahead of the row-enumerating kernels, so a cold dispatch must not re-enumerate the
+ * cyclic join through a kernel.
  * <p>
  * This is the HIGHLY_CONNECTED q8 regression in miniature. That query went from 110.68ms to 241.06ms the day the kernel
  * learned to compile a {@code JoinPlan}: the decline {@code irKernel:agg:unsupported:JoinPlan} disappeared, the kernel
@@ -109,6 +110,9 @@ public class LmdbNativeKernelWcojGuardTest {
 		assertThat(evaluateCount(query, null))
 				.as("the default optimizer returns each of the 8 triangles once per starting vertex")
 				.isEqualTo(24L);
+		assertThat(executionPath(query))
+				.as("a cold cyclic COUNT must take the worst-case-optimal join, not a kernel that re-enumerates it")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_WCOJ);
 
 		assertThat(forcedExecutionPath(query, LmdbNativeAttemptMetrics.PATH_WCOJ))
 				.as("WCOJ remains executable even when the default optimizer prefers another legal route")
