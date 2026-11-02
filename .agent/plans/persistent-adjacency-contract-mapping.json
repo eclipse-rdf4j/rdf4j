@@ -888,5 +888,17 @@
     "new_reds": "15 public quality/work cases:11 failures; physical4:4 failures; unchanged large-SO quality failed before combined-plane reference-incidence cap.",
     "bounded_work": "Whole-call budgets include both planes, metadata discovery, raw page/key visits and native complete-value projections; signed base-relative deltas; explicit incomplete-sample fallback.",
     "limits": "Weighted estimates are approximate; enabled mode plus fallback/capping is not claimed globally unbiased or universally accurate. Disabled native prefix is a bounded compatibility heuristic."
+  },
+  "workbench_persistent_authority": {
+    "scope": "One test file, no production changes; exact same two methods times adjacency=false/true retained.",
+    "methods": [
+      "fixedBlankAllFacetIndexWorkDoesNotGrowQuadratically(boolean)",
+      "skewedAliasRangeWorkDoesNotGrowQuadratically(boolean)"
+    ],
+    "red": "repair-evidence/workbench-authority-native-red-reports:4 cases,4 physical-name failures,0errors/0skips; current481 CI1020/4/0/1 independently matches.",
+    "replacement": "Persisted default spoc,posc logical preferences; actual MDB_stat-backed populated adjacency pages/deltas/metadata. No claim of catalog enumeration. Complete explicit context-bearing statement bag equals independent fixture population only after measured query observations.",
+    "preserved": "Every native/generic result, selected route, source-work/candidate/filter metric and original N-to-2N scaling threshold unchanged.",
+    "green": "Focused4/0/0/0; full GraphExplorerNativeVariantsTest1020/0/0/1 on unchanged481 production, private one3GiB fork and exact pinnedNode22.23.3.",
+    "evidence": "repair-evidence/workbench-authority-full-reports and workbench-authority-full-summary.json"
   }
 }
