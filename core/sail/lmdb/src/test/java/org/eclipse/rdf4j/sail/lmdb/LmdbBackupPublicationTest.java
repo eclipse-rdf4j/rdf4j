@@ -13,20 +13,102 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbBackupPublicationTest {
+
+	@Test
+	void replayedOverflowIsPublishedByTheAuthoritativeStore(@TempDir Path directory) throws Exception {
+		LmdbStore store = new LmdbStore(directory.resolve("repository").toFile());
+		store.init();
+		Path overflowDirectory = Files.createDirectory(directory.resolve("overflow"));
+		try (LmdbSailStore overflow = store.createOverflowStore(overflowDirectory.toFile(), false);
+				SailSourceModel model = new SailSourceModel(overflow)) {
+			List<Commit> commits = capture(store);
+			var vf = SimpleValueFactory.getInstance();
+			var statement = vf.createStatement(vf.createIRI("urn:replayed"), vf.createIRI("urn:p"),
+					vf.createLiteral("value"));
+			model.add(statement);
+			model.setNamespace("spill", "urn:spill:");
+			try (var connection = store.getConnection()) {
+				connection.begin(IsolationLevels.SNAPSHOT);
+				for (var row : model) {
+					connection.addStatement(row.getSubject(), row.getPredicate(), row.getObject(), row.getContext());
+				}
+				for (var namespace : model.getNamespaces()) {
+					connection.setNamespace(namespace.getPrefix(), namespace.getName());
+				}
+				connection.commit();
+			}
+			assertEquals(1, commits.size(), "only the authoritative replay must publish a logical backup commit");
+			var records = commits.getFirst().records();
+			assertEquals(2, records.size(), "the authoritative backup must retain the statement and namespace");
+			var addition = records.stream()
+					.filter(LmdbBackupDeltaCodec.Record::isStatementOperation)
+					.findFirst()
+					.orElseThrow();
+			assertTrue(addition.isAddition());
+			assertTrue(addition.isExplicit());
+			assertEquals(statement, addition.getStatement());
+			var namespace = records.stream()
+					.filter(LmdbBackupDeltaCodec.Record::isNamespaceOperation)
+					.findFirst()
+					.orElseThrow();
+			assertEquals("spill", namespace.getNamespacePrefix());
+			assertEquals("urn:spill:", namespace.getNamespaceName());
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void disposableOverflowDoesNotCreateDurableBackupStages(boolean asyncCleanup, @TempDir Path directory)
+			throws Exception {
+		LmdbStore store = new LmdbStore(directory.resolve("repository").toFile(),
+				new LmdbStoreConfig().setAsyncValueCleanup(asyncCleanup));
+		store.init();
+		Path overflowDirectory = Files.createDirectory(directory.resolve("overflow"));
+		try (LmdbSailStore overflow = store.createOverflowStore(overflowDirectory.toFile(), false)) {
+			long baseline = overflow.getTripleStore().getRequiredBackupTxnId();
+			var vf = SimpleValueFactory.getInstance();
+			var first = vf.createStatement(vf.createIRI("urn:first"), vf.createIRI("urn:p"), vf.createLiteral("one"));
+			var second = vf.createStatement(vf.createIRI("urn:second"), vf.createIRI("urn:p"), vf.createLiteral("two"));
+			try (SailSourceModel model = new SailSourceModel(overflow)) {
+				assertTrue(model.add(first));
+				assertTrue(model.contains(first));
+				assertTrue(model.add(second));
+				assertTrue(model.contains(second));
+				assertTrue(model.remove(first));
+				assertFalse(model.contains(first));
+				model.setNamespace("spill", "urn:spill:");
+				assertEquals("urn:spill:", model.getNamespace("spill").orElseThrow().getName());
+			}
+			assertEquals(baseline, overflow.getTripleStore().getRequiredBackupTxnId(),
+					"disposable transaction input must not advance a durable backup chain");
+			assertNull(overflow.backupPublisher(), "only persistent stores need a durable backup publisher");
+			assertFalse(Files.exists(overflowDirectory.resolve(PostCommitBackupPublisher.DIRECTORY)),
+					"per-row spill checkpoints must not create forced backup stages");
+		} finally {
+			store.shutDown();
+		}
+	}
 
 	private record Commit(long transactionId, long previousTransactionId, List<LmdbBackupDeltaCodec.Record> records) {
 	}

@@ -12,11 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.List;
+import java.util.stream.Stream;
 import java.util.zip.ZipFile;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -33,7 +35,8 @@ import org.eclipse.rdf4j.sail.backup.SailBackupService;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class LmdbBackupMetadataTest {
 
@@ -42,18 +45,27 @@ class LmdbBackupMetadataTest {
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
+	private static Stream<Arguments> formatCases() {
+		return Stream.of(
+				arguments(LmdbStoreFormat.LEGACY_VERSION, BackupCompression.NONE),
+				arguments(LmdbStoreFormat.LEGACY_VERSION, BackupCompression.ZIP),
+				arguments(LmdbStoreFormat.CURRENT_VERSION, BackupCompression.NONE),
+				arguments(LmdbStoreFormat.CURRENT_VERSION, BackupCompression.ZIP));
+	}
+
 	@ParameterizedTest
-	@CsvSource({ "2,NONE", "2,ZIP", "6,NONE", "6,ZIP" })
+	@MethodSource("formatCases")
 	void preservesPersistedMetadataAcrossSnapshotBackupAndRestore(int version, BackupCompression compression)
 			throws Exception {
 		Path source = Files.createDirectory(directory.resolve("store"));
 		if (version == LmdbStoreFormat.LEGACY_VERSION) {
-			// Select the legacy writer before creating either native environment, never relabel format-6 IDs.
-			new StoreProperties(source.toFile()).setVersion("2")
+			// Select the legacy writer before creating either native environment, never relabel modern-format IDs.
+			new StoreProperties(source.toFile()).setVersion(Integer.toString(LmdbStoreFormat.LEGACY_VERSION))
 					.setTripleIndexes("spoc,posc")
 					.setTripleTermIndexes("spoc,cspo")
 					.save();
 		}
+
 		LmdbStore store = new LmdbStore(source.toFile(), config());
 		store.init();
 		try {

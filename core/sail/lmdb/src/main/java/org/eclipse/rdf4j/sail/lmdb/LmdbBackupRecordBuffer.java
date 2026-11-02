@@ -98,6 +98,12 @@ final class LmdbBackupRecordBuffer implements Closeable {
 		}
 	}
 
+	void addAll(Iterable<Record> additions) {
+		for (Record record : additions) {
+			add(record);
+		}
+	}
+
 	private OutputStream destination(int length) throws IOException {
 		if (fileOutput == null && length > memoryLimit - memory.size()) {
 			path = Files.createTempFile(directory, "backup-records-", ".bin");

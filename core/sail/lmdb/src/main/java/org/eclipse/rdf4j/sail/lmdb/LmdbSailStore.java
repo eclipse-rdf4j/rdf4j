@@ -2863,6 +2863,7 @@ class LmdbSailStore implements SailStore {
 	private final long backgroundRawSamplingMaxMillisPerCycle;
 	private volatile CommitListener commitListener;
 	private PostCommitBackupPublisher postCommitBackupPublisher;
+	private final boolean backupPublicationEnabled;
 	private PostCommitBackupPublisher.Stage preparedBackupStage;
 	private long lastBackupPublicationAttempt = -1L;
 	private final LmdbBackupRecordBuffer pendingBackupRecords;
@@ -3951,10 +3952,13 @@ class LmdbSailStore implements SailStore {
 	 */
 	private final class InitialRunImportFinish implements Operation {
 		private final LmdbInitialRunImport runImport;
+		private final LmdbSailSink sink;
 		private final List<LmdbSortedRuns.Runs> tripleRuns;
+		private boolean backupRecordsQueued;
 
-		private InitialRunImportFinish(LmdbInitialRunImport runImport) throws IOException {
+		private InitialRunImportFinish(LmdbInitialRunImport runImport, LmdbSailSink sink) throws IOException {
 			this.runImport = runImport;
+			this.sink = sink;
 			this.tripleRuns = runImport.tripleRuns();
 		}
 
@@ -3967,6 +3971,25 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void execute() throws IOException {
 			tripleStore.appendInitialImportRuns(tripleRuns, runImport.projectedTripleBytes());
+		}
+
+		void queueBackupRecords() throws IOException {
+			if (backupRecordsQueued || !backupPublicationEnabled) {
+				return;
+			}
+			try (LmdbBackupRecordBuffer importedRecords = new LmdbBackupRecordBuffer(
+					Path.of(System.getProperty("java.io.tmpdir")));
+					LmdbSortedRuns.Merge merge = new LmdbSortedRuns.Merge(tripleRuns.getFirst(),
+							tripleStore.initialImportFieldOrders()[0], true)) {
+				long[] quad = new long[LmdbSortedRuns.ROW_LONGS];
+				while (merge.next(quad)) {
+					Statement statement = valueStore.withWriterCaptureContext(
+							(stack, txn) -> captureBackupStatement(sink.quadToStatement(quad)));
+					importedRecords.add(new LmdbBackupDeltaCodec.Record(true, sink.explicit, statement));
+				}
+				pendingBackupRecords.addAll(importedRecords.snapshot(List.of()));
+			}
+			backupRecordsQueued = true;
 		}
 	}
 
@@ -6754,7 +6777,7 @@ class LmdbSailStore implements SailStore {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy, null);
 	}
 
-	/** Internal transaction deltas own a disposable directory, so async mode reclaims them as one whole store. */
+	/** Internal transaction deltas are disposable input, not independently recoverable backup generations. */
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy,
 			boolean temporaryOverflow) throws IOException, SailException {
@@ -6789,11 +6812,19 @@ class LmdbSailStore implements SailStore {
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled, ValueStoreFactory valueStoreFactory,
 			TripleStoreFactory tripleStoreFactory, int asyncQueueCapacity) throws IOException, SailException {
+		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, valueStoreFactory, tripleStoreFactory,
+				asyncQueueCapacity, false);
+	}
+
+	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled, ValueStoreFactory valueStoreFactory,
+			TripleStoreFactory tripleStoreFactory, int asyncQueueCapacity, boolean temporaryOverflow)
+			throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
 				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
 				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()), null, null,
 				valueStoreFactory, tripleStoreFactory, PersistentSetFactory::new, LmdbFilterSelectivityStats::new,
-				asyncQueueCapacity);
+				asyncQueueCapacity, temporaryOverflow);
 	}
 
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
@@ -6835,6 +6866,7 @@ class LmdbSailStore implements SailStore {
 			PersistentSetFactoryFactory setFactoryFactory, FilterSelectivityStatsFactory statsFactory,
 			int asyncQueueCapacity, boolean temporaryOverflow) throws IOException, SailException {
 		this.opQueue = new CircularBuffer<>(asyncQueueCapacity);
+		this.backupPublicationEnabled = !temporaryOverflow;
 		this.queryExecutionPolicy = Objects.requireNonNull(queryExecutionPolicy);
 		this.learnedFilterSelectivity = queryExecutionPolicy.experimentalQueryOptimizations()
 				? new LmdbLearnedFilterSelectivity()
@@ -6940,8 +6972,11 @@ class LmdbSailStore implements SailStore {
 					directAdjacencyOptions.buildOnStart());
 			valueStore.setStartupValueOverlayScheduling(valueOverlayStartupScheduling);
 			logLmdbStats(Level.INFO, "on startup");
-			// Direct SailSource users commit the same durable chain as owning LmdbStore connections.
-			setPostCommitBackupPublisher(new PostCommitBackupPublisher(this, null));
+			if (backupPublicationEnabled) {
+				// Direct SailSource users need the same durable chain as owning LmdbStore connections.
+				// Disposable overflow input is backed up only when replayed into the authoritative store.
+				setPostCommitBackupPublisher(new PostCommitBackupPublisher(this, null));
+			}
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
 				close();
@@ -7154,7 +7189,7 @@ class LmdbSailStore implements SailStore {
 		try {
 			sinkStoreAccessLock.lock();
 			try {
-				mapGrowthCoordinator.checkAdmission(QueryExecutionDeadline.current());
+				mapGrowthCoordinator.checkAdmission();
 				long transactionId = getCurrentCommittedTxnId();
 				afterTransactionIdCaptured.run();
 				Files.createDirectories(targetDir);
@@ -7765,7 +7800,7 @@ class LmdbSailStore implements SailStore {
 					prepareBackupStage(previousRequiredTxn, backupRecords);
 					tripleStore.commitNamespaceSnapshot(currentNamespaces,
 							storeReplayDecision == null ? tripleStore.prepareReplayDecision() : storeReplayDecision,
-							true);
+							backupPublicationEnabled);
 					nativeCommitted = true;
 					publishCommittedDelta(previousRequiredTxn, backupRecords);
 				}
@@ -7946,18 +7981,24 @@ class LmdbSailStore implements SailStore {
 
 	private List<LmdbBackupDeltaCodec.Record> collectBackupRecords(Map<String, String> previousNamespaces,
 			Map<String, String> currentNamespaces) {
-		List<LmdbBackupDeltaCodec.Record> records = new ArrayList<>();
-		for (String prefix : previousNamespaces.keySet()) {
-			if (!currentNamespaces.containsKey(prefix)) {
-				records.add(new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.REMOVE, prefix,
-						null));
-			}
+		if (!backupPublicationEnabled) {
+			return List.of();
 		}
-		currentNamespaces.forEach((prefix, name) -> {
-			if (!name.equals(previousNamespaces.get(prefix))) {
-				records.add(new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.SET, prefix, name));
+		List<LmdbBackupDeltaCodec.Record> records = new ArrayList<>();
+		if (previousNamespaces != currentNamespaces) {
+			for (String prefix : previousNamespaces.keySet()) {
+				if (!currentNamespaces.containsKey(prefix)) {
+					records.add(new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.REMOVE, prefix,
+							null));
+				}
 			}
-		});
+			currentNamespaces.forEach((prefix, name) -> {
+				if (!name.equals(previousNamespaces.get(prefix))) {
+					records.add(
+							new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.SET, prefix, name));
+				}
+			});
+		}
 		return pendingBackupRecords.snapshot(records);
 	}
 
@@ -10766,11 +10807,15 @@ class LmdbSailStore implements SailStore {
 
 		private void queueBackupAdd(Statement st) {
 			// Add work already owns lexical values captured before native admission; never open another writer epoch.
-			pendingBackupRecords.add(new LmdbBackupDeltaCodec.Record(true, explicit, captureMutationStatement(st)));
+			if (backupPublicationEnabled) {
+				pendingBackupRecords.add(new LmdbBackupDeltaCodec.Record(true, explicit, captureMutationStatement(st)));
+			}
 		}
 
 		private void queueBackupRemove(Statement st) {
-			pendingBackupRecords.add(new LmdbBackupDeltaCodec.Record(false, explicit, st));
+			if (backupPublicationEnabled) {
+				pendingBackupRecords.add(new LmdbBackupDeltaCodec.Record(false, explicit, st));
+			}
 		}
 
 		private void discardEstimatorUpdatesIfTouched() {
@@ -11988,6 +12033,16 @@ class LmdbSailStore implements SailStore {
 			batch.cancel();
 		}
 
+		private void submitInitialRunImportFinish(InitialRunImportFinish finish) throws IOException {
+			if (multiThreadingActive) {
+				submitOperation(finish);
+				finish.writeValues();
+			} else {
+				finish.writeValues();
+				submitOperation(finish);
+			}
+		}
+
 		/** Discards the unflushed batch and the open chunk, then completes the import from the checkpointed chunks. */
 		private void rollbackOpenChunkAndCompleteInitialRunImport() throws IOException {
 			NoneWriteState state = noneState();
@@ -12020,15 +12075,16 @@ class LmdbSailStore implements SailStore {
 					checkpointNoneChunk();
 				}
 				runImport.markMerging();
-				InitialRunImportFinish finish = new InitialRunImportFinish(runImport);
+				InitialRunImportFinish finish = new InitialRunImportFinish(runImport, this);
 				growNoneMaps(runImport.projectedValueBytes(), runImport.projectedTripleBytes(), null);
 				state.work.add(finish);
 				state.containsAdds = true;
 				try {
 					startTransaction(true);
 					// The TripleStore writer appends the indexes while this thread writes the lookup records.
-					submitOperation(finish);
-					finish.writeValues();
+					submitInitialRunImportFinish(finish);
+					drainAsyncOperations();
+					finish.queueBackupRecords();
 				} catch (IOException | RuntimeException capacity) {
 					if (!recoverNoneCapacity(capacity)) {
 						throw capacity;
@@ -12116,8 +12172,7 @@ class LmdbSailStore implements SailStore {
 							} else if (operation instanceof NoneRemoveOperation removal) {
 								removal.resolve();
 							} else if (operation instanceof InitialRunImportFinish finish) {
-								submitOperation(finish);
-								finish.writeValues();
+								submitInitialRunImportFinish(finish);
 								continue;
 							} else if (operation instanceof PreparedNoneAddOperation prepared) {
 								prepared.store();
@@ -12126,6 +12181,11 @@ class LmdbSailStore implements SailStore {
 							submitOperation(operation);
 						}
 						drainAsyncOperations();
+						for (Operation operation : state.work) {
+							if (operation instanceof InitialRunImportFinish finish) {
+								finish.queueBackupRecords();
+							}
+						}
 						state.dictionaryCommitted = dictionaryCommitted;
 						return true;
 					} catch (IOException | RuntimeException | Error retryFailure) {
@@ -12464,10 +12524,19 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private Statement quadToStatement(long[] quad) throws IOException {
-			Resource subj = (Resource) valueStore.getValue(quad[0]);
-			IRI pred = (IRI) valueStore.getValue(quad[1]);
-			Value obj = valueStore.getValue(quad[2]);
-			long ctxId = quad[3];
+			return quadToStatement(quad[0], quad[1], quad[2], quad[3]);
+		}
+
+		private Statement quadToStatement(long[] quad, int offset) throws IOException {
+			return quadToStatement(quad[offset], quad[offset + 1], quad[offset + 2], quad[offset + 3]);
+		}
+
+		private Statement quadToStatement(long subjectId, long predicateId, long objectId, long contextId)
+				throws IOException {
+			Resource subj = (Resource) valueStore.getValue(subjectId);
+			IRI pred = (IRI) valueStore.getValue(predicateId);
+			Value obj = valueStore.getValue(objectId);
+			long ctxId = contextId;
 			Resource ctx = (ctxId == 0L || ctxId == LmdbValue.UNKNOWN_ID) ? null
 					: (Resource) valueStore.getValue(ctxId);
 			return valueStore.createStatement(subj, pred, obj, ctx);

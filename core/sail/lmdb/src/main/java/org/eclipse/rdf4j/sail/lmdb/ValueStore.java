@@ -5036,11 +5036,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private ValueResolutionScope openValueResolutionScope(boolean oldestProtected, boolean admittedWriter) {
-		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		boolean borrowedRevision = readContext.get().borrowedRevision != null;
 		if (!admittedWriter) {
 			try {
-				acquireAssociationGate(deadline);
+				acquireAssociationGate();
 			} catch (IOException failure) {
 				throw new SailException(failure);
 			}

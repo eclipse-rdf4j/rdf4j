@@ -90,6 +90,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -8167,10 +8168,10 @@ class TripleStore implements Closeable {
 								if (beforePhysicalCommit != null) {
 									beforePhysicalCommit.run();
 								}
-								long transaction = writeTxn;
-								long committedTxnId = mdb_txn_id(transaction);
+								long writeTxnHandle = writeTxn;
+								long committedTxnId = mdb_txn_id(writeTxnHandle);
 								replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
-										LmdbUtil.getNewSize(pageSize, transaction, 0L));
+										LmdbUtil.getNewSize(pageSize, writeTxnHandle, 0L));
 								result = commitWriteTransactionWithIndexBuildAuthority();
 								if (result == MDB_SUCCESS) {
 									nativeCommitGeneration.incrementAndGet();
