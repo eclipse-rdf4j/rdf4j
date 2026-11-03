@@ -535,6 +535,20 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public OptionalLong predicateDomainCardinality() {
+		// the sources (explicit and inferred planes) may share predicates: their catalogs' sum bounds the domain
+		long total = 0L;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalLong cardinality = source.predicateDomainCardinality();
+			if (cardinality.isEmpty()) {
+				return OptionalLong.empty();
+			}
+			total += cardinality.getAsLong();
+		}
+		return OptionalLong.of(total);
+	}
+
+	@Override
 	public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
 		if (activeSources.isEmpty()) {
 			return OptionalLong.of(0L);
@@ -1393,6 +1407,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
 			return delegate.adjacencyKeyDomainCardinality(predicate, bySubject);
+		}
+
+		@Override
+		public OptionalLong predicateDomainCardinality() {
+			return delegate.predicateDomainCardinality();
 		}
 
 		@Override

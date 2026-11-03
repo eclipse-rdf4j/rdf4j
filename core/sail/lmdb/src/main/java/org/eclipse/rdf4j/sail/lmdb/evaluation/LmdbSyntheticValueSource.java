@@ -755,6 +755,12 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public OptionalLong predicateDomainCardinality() {
+		// synthetic ids stand for query constants absent from the store: they add no predicate to the catalog
+		return delegate.predicateDomainCardinality();
+	}
+
+	@Override
 	public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 		return synthetic(predicate) || synthetic(key) ? OptionalLong.empty()
 				: delegate.exactDegree(predicate, key, bySubject);

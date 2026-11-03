@@ -154,7 +154,7 @@ final class LmdbNativeParallelAggregation {
 		// parallel speed-up and every worker is started up front
 		long boundMask = row.boundMask();
 		LmdbNativeStaticPrior.ParallelShape shape = LmdbNativeStaticPrior.ParallelShape.aggregate(plan, row,
-				boundMask, it.groupSlots.length);
+				boundMask, it.groupSlots);
 		LmdbNativeCostVector streaming = LmdbNativeCostVectors
 				.chain(derived.order, derived.order.length, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
 				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,

@@ -2408,6 +2408,15 @@ public interface NativeLmdbQuerySource {
 		return OptionalLong.empty();
 	}
 
+	/**
+	 * The number of distinct predicates the snapshot's complete adjacency plane catalog holds, for pricing the group
+	 * domain of a variable-predicate slot before any plane is opened; empty when no exact full-coverage view serves the
+	 * snapshot.
+	 */
+	default OptionalLong predicateDomainCardinality() {
+		return OptionalLong.empty();
+	}
+
 	/** Exact degree when a revision-valid adjacency entry contains the requested predicate direction. */
 	default OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 		return OptionalLong.empty();

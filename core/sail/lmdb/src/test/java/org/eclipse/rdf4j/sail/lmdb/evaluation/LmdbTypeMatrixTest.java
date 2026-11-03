@@ -53,6 +53,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeProposalFeatures;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -438,6 +439,28 @@ public class LmdbTypeMatrixTest {
 					.contains("nativeIrParallelMorselsPerWorkerActual=")
 					.contains("nativeIrParallelRowsPerWorkerActual=");
 		}
+	}
+
+	@Test
+	public void parallelTypeMatrixMergeIsPricedByTheGroupDomainNotTheJoinedRows() {
+		enableTypeMatrixIr(true);
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
+		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "4");
+		openRepository(4000, true);
+		Map<String, Map<String, Double>> features;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			features = NativeProposalFeatures.offering(prepare(connection, USAGE_MATRIX, null)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode(), "irAggregateTypeMatrixParallel");
+		}
+		Map<String, Double> parallel = features.get("irAggregateTypeMatrixParallel");
+		// the workers' partial tables hold at most one group per (type, predicate) pair: ten types (Person, Employee,
+		// Place, T0..T6) by ten predicates, merged from three of the four workers. The merge used to be priced per
+		// joined row (the analytics theme's usage matrix quoted 44 billion group updates and lost to the serial
+		// kernel at 8x, 2026-11-03)
+		assertThat(parallel.getOrDefault("GROUP_UPDATE", 0D)).as("parallel merge: %s", features)
+				.isLessThanOrEqualTo(10D * 10D * 3D);
 	}
 
 	private static void enableTypeMatrixIr(boolean janinoEnabled) {

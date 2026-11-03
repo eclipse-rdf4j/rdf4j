@@ -3765,6 +3765,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return OptionalLong.of(view.state().planeStatistics().keyCount(predicate, plane(bySubject, explicit)));
 	}
 
+	/** The predicate plane catalog's size when {@code view} is an exact, fully covering snapshot; else empty. */
+	OptionalLong predicateDomainCardinality(LmdbAdjacencyReadView view) {
+		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
+				|| writeTransactionBlocksAdjacency() || view.snapshotRevision() != view.state().appliedRevision()
+				|| !view.state().base().coverage().isFull()) {
+			return OptionalLong.empty();
+		}
+		return OptionalLong.of(view.state().planeStatistics().predicateDomain().size());
+	}
+
 	@Override
 	public int tryHas(LmdbAdjacencyReadView view, long subject, long predicate, long object, long context,
 			boolean explicit) {

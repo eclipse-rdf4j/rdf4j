@@ -1460,7 +1460,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			arbiter.offer(() -> estimatedProposal(
 					() -> evaluateWildcardWeighted(row, new AggContext(source, strictCompare, true), metrics),
 					LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
-					LmdbWildcardPredicateBatch.estimateWeightedAggregateWork(arg, row, groupSlots, aggregates)));
+					LmdbWildcardPredicateBatch.estimateWeightedAggregateWork(arg, row, groupSlots, aggregates))
+							// it sweeps the predicate planes and folds every delivered row into the group table: the
+							// input's sequential access plus a group update per row (its legacy work interval, bridged
+							// as scanned rows, priced the analytics theme's in-degree query at 17 ms where it ran
+							// 7.6 s and prefix-run groups 37 ms, 2026-11-03)
+							.withCostQuote(sequentialQuote(arg, row)));
 		}
 		if (!typeMatrixOwned && wcojHandlesRow(row)) {
 			arbiter.offer(() -> estimatedProposal(() -> evaluateWcoj(row),
@@ -1652,7 +1657,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 									.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, true))
 									.withOptionalCostQuote(kernelQuote(arg, row, compiledParallelTag))
 									.withParallelShape(LmdbNativeStaticPrior.ParallelShape.aggregate(arg, row,
-											row.boundMask(), groupSlots.length)));
+											row.boundMask(), groupSlots)));
 				}
 				if (interpretedIr) {
 					arbiter.offer(() -> estimatedProposal(
@@ -1670,7 +1675,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 											interpretedAdmission.physicalPlan(arg, row, true))
 									.withOptionalCostQuote(kernelQuote(arg, row, interpretedParallelTag))
 									.withParallelShape(LmdbNativeStaticPrior.ParallelShape.aggregate(arg, row,
-											row.boundMask(), groupSlots.length)));
+											row.boundMask(), groupSlots)));
 				}
 			}
 			if (compiledIr) {
@@ -1906,7 +1911,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		if (tag.contains("Parallel")) {
 			int workers = Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers());
 			LmdbNativeStaticPrior.ParallelShape shape = LmdbNativeStaticPrior.ParallelShape.aggregate(input, row,
-					boundMask, groupSlots.length);
+					boundMask, groupSlots);
 			streaming = streaming.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(shape, workers));
 			startup = startup.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers))
 					.plus(LmdbNativeStaticPrior.parallelMerge(shape, workers));

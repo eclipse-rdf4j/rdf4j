@@ -14531,6 +14531,16 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public OptionalLong predicateDomainCardinality() {
+			checkOpen();
+			if (!hasStatementsInSource() || directAdjacency == null) {
+				return OptionalLong.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(false);
+			return view == null ? OptionalLong.empty() : directAdjacency.predicateDomainCardinality(view);
+		}
+
+		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			checkOpen();
 			if (!hasStatementsInSource()) {
@@ -16177,6 +16187,16 @@ class LmdbSailStore implements SailStore {
 					return OptionalLong.empty();
 				}
 				return directAdjacency.keyDomainCardinality(adjacencyView, predicate, bySubject, explicit);
+			});
+		}
+
+		@Override
+		public OptionalLong predicateDomainCardinality() {
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()) {
+					return OptionalLong.empty();
+				}
+				return directAdjacency.predicateDomainCardinality(adjacencyView);
 			});
 		}
 
