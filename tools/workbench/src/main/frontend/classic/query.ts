@@ -4865,6 +4865,7 @@ namespace workbench {
                 if (!response.available || strategies.length === 0) {
                     return;
                 }
+                strategies.sort(function(left, right) { return left.name.localeCompare(right.name); });
                 $.each(strategies, function(index: number, strategy: LmdbForceableStrategy) {
                     select.append($('<option></option>')
                         .attr('value', strategy.name)

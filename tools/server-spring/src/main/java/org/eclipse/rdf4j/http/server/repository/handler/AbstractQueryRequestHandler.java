@@ -722,7 +722,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 				break;
 			}
 
-			logger.debug("query {} = {}", queryHashCode, queryString);
+			logger.info("query {} = {}", queryHashCode, queryString);
 		}
 	}
 
