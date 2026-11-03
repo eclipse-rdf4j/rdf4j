@@ -503,16 +503,30 @@ final class ProofAwarePackedCostSession implements PackedCostSession {
 	}
 
 	private final PackedQuery query;
+	private final PackedQueryView replayQuery;
 	private final PackedCostSession delegate;
 
 	ProofAwarePackedCostSession(PackedQuery query, PackedCostSession delegate) {
 		this.query = Objects.requireNonNull(query, "query");
+		this.replayQuery = null;
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
+	}
+
+	/** Replay has the current bound read-only query view and retains ownership of its provider. */
+	ProofAwarePackedCostSession(PackedQueryView query, PackedCostSession delegate) {
+		this.query = null;
+		this.replayQuery = Objects.requireNonNull(query, "query");
+		this.delegate = Objects.requireNonNull(delegate, "delegate");
+	}
+
+	private boolean isKeylessGroup(int relationId) {
+		return query == null ? replayQuery.isKeylessGroup(relationId) : query.isKeylessGroup(relationId);
 	}
 
 	@Override
 	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		delegate.estimateLeaf(relationId, context, output);
+		constrainIsolatedKeylessGroup(isKeylessGroup(relationId), context, output, "Estimate");
 	}
 
 	@Override
@@ -522,12 +536,42 @@ final class ProofAwarePackedCostSession implements PackedCostSession {
 
 	@Override
 	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
-		if (query.relOperator(relationId) == PackedRelOp.FILTER
+		if (query != null && query.relOperator(relationId) == PackedRelOp.FILTER
 				&& (query.relSemanticFlags(relationId)
 						& PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER) != 0) {
 			output.putPlannedStringMetric("optimizer.semiAntiKind", "minus-assured-shared");
 		}
 		delegate.refineOperator(relationId, context, output);
+		constrainIsolatedKeylessGroup(isKeylessGroup(relationId), context, output, "Refinement");
+	}
+
+	/**
+	 * Only an isolated single invocation has this cardinality. A retained prefix is not a proved invocation population.
+	 * This runs inside EventSourcing, before completed output and evidence are snapshotted.
+	 */
+	static void constrainIsolatedKeylessGroup(boolean keyless, PackedCostContext context, PackedCostEstimate output,
+			String providerPhase) {
+		if (!keyless || context.prefixRelationCount() != 0 || Double.compare(context.prefixRows(), 1.0d) != 0) {
+			return;
+		}
+		double providerRows = output.outputRows();
+		if (Double.compare(providerRows, 1.0d) != 0) {
+			if (providerPhase != null && Double.isFinite(providerRows) && providerRows >= 0.0d) {
+				output.putPlannedDoubleMetric("optimizer.keylessGroupProvider" + providerPhase + "Rows", providerRows);
+			}
+			// An output state tied to the replaced point cannot certify the semantic singleton.
+			output.setEvidenceStateId(0);
+			output.setEvidenceGuarantee(null);
+			output.setEvidenceDisposition(null);
+		}
+		// Row-scope flags and independently declared resource/price scope are not interchangeable.
+		if (output.hasComponentOutputRows()) {
+			output.setComponentOutputRowsPreservingPhysicalCost(1.0d);
+		} else if (output.hasContextualOutputRows()) {
+			output.setContextualOutputRowsPreservingPhysicalCost(1.0d);
+		} else {
+			output.setOutputRowsPreservingPhysicalCost(1.0d);
+		}
 	}
 
 	@Override

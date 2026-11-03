@@ -716,6 +716,11 @@ public final class PackedQueryView {
 		return relationId < canonical.length ? canonical[relationId] : relationId;
 	}
 
+	/** Planner-internal semantic law, also used by isolated costing replay. */
+	boolean isKeylessGroup(int relationId) {
+		return query.isKeylessGroup(relationId);
+	}
+
 	public int operatorTag(int relationId) {
 		return query.relOperator(relationId);
 	}

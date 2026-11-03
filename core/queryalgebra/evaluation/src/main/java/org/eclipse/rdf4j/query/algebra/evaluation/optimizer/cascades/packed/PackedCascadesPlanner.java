@@ -25,6 +25,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
@@ -893,6 +894,14 @@ public final class PackedCascadesPlanner {
 	}
 
 	private static double certifiedRootRows(PackedCostModel costModel, TupleExpr selectedPlan, double packedRows,
+			EvidenceStateSummary rootEvidence) {
+		double certifiedRows = evidenceOrProviderRootRows(costModel, selectedPlan, packedRows, rootEvidence);
+		// Preserve certificate evaluation/validation before applying the isolated root's output law.
+		return selectedPlan instanceof Group group && group.getGroupBindingNames().isEmpty() ? 1.0d : certifiedRows;
+	}
+
+	private static double evidenceOrProviderRootRows(PackedCostModel costModel, TupleExpr selectedPlan,
+			double packedRows,
 			EvidenceStateSummary rootEvidence) {
 		if (rootEvidence != null) {
 			if (rootEvidence.guarantee() == EvidenceGuarantee.DATABASE_EXACT) {

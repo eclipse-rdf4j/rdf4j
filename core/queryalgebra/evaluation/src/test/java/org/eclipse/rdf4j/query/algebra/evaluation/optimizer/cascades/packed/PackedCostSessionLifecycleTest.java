@@ -282,6 +282,10 @@ class PackedCostSessionLifecycleTest {
 	private static PackedCostingTrace replayProtocolTrace(PackedCostingTrace trace) {
 		// This protocol fixture supplies a genuine recorded trace; it has no plan candidates or native leases.
 		PackedPlanValidationRequest request = mock(PackedPlanValidationRequest.class);
+		PackedQueryView queryView = new PackedQueryView(PackedQueryCodec.encodeForPlanning(query()));
+		assertEquals(PackedRelOp.STATEMENT_PATTERN, queryView.operatorTag(2),
+				"the recorded PREFIX_EXTENSION event's relation 2 must exist and not be a Group");
+		when(request.query()).thenReturn(queryView);
 		when(request.costingTrace()).thenReturn(trace);
 		when(request.evidenceBundle()).thenReturn(FrontierEvidenceBundle.empty(trace.stateReferenceCount()));
 		try (PackedCostSession provider = prefixProtocolProvider()) {

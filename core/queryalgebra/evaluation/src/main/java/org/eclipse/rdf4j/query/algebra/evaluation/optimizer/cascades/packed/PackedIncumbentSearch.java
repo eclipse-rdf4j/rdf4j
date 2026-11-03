@@ -1603,6 +1603,9 @@ final class PackedIncumbentSearch {
 
 	private double outputRows(int logicalExpressionId, int childCount) {
 		int operator = query.relOperator(logicalExpressionId);
+		if (query.isKeylessGroup(logicalExpressionId)) {
+			return 1.0d;
+		}
 		if (operator == PackedRelOp.LEFT_JOIN && childCount == 2
 				&& memo.winnerHasContextualOutputRows(childWinnerIds[1])
 				&& !memo.winnerHasComponentOutputRows(childWinnerIds[1])) {
@@ -1657,10 +1660,6 @@ final class PackedIncumbentSearch {
 		if (operator == PackedRelOp.GROUP && childCount == 1) {
 			double inputRows = childRows(0);
 			int keyCount = query.payloadChildCount(query.payloadPrimary(query.relPayload(logicalExpressionId)));
-			if (keyCount == 0) {
-				// Aggregation without GROUP BY always yields exactly one row.
-				return inputRows > 0.0d ? 1.0d : 0.0d;
-			}
 			if (inputRows == 0.0d) {
 				return 0.0d;
 			}
@@ -1749,7 +1748,12 @@ final class PackedIncumbentSearch {
 	private void estimate(int logicalExpressionId) {
 		costEstimate.clear();
 		costContext.reset(EMPTY_PREFIX, 0, 0, 1.0d);
+		ProofAwarePackedCostSession.constrainIsolatedKeylessGroup(query.isKeylessGroup(logicalExpressionId),
+				costContext, costEstimate, null);
 		costSession.estimate(logicalExpressionId, costContext, costEstimate);
+		// Also covers the direct scalar-only incumbent test seam, which has no session adapter/trace.
+		ProofAwarePackedCostSession.constrainIsolatedKeylessGroup(query.isKeylessGroup(logicalExpressionId),
+				costContext, costEstimate, "Estimate");
 	}
 
 	private void refineOperator(int logicalExpressionId, int childCount, double outputRows, double totalWorkRows) {
@@ -1766,6 +1770,8 @@ final class PackedIncumbentSearch {
 		PackedDependentSubqueryCosting.publishDefaultPlanInputs(
 				query, memo, logicalExpressionId, costEstimate);
 		costSession.refineOperator(logicalExpressionId, costContext, costEstimate);
+		ProofAwarePackedCostSession.constrainIsolatedKeylessGroup(query.isKeylessGroup(logicalExpressionId),
+				costContext, costEstimate, "Refinement");
 	}
 
 	private long contextualizeOptionalRight(int logicalExpressionId, int leftWinnerId) {

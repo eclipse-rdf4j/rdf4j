@@ -761,6 +761,12 @@ final class PackedQuery {
 		return relations.operatorTag(relId);
 	}
 
+	/** Whether this relation produces one aggregate row for one isolated invocation. */
+	boolean isKeylessGroup(int relationId) {
+		return relOperator(relationId) == PackedRelOp.GROUP
+				&& payloadChildCount(payloadPrimary(relPayload(relationId))) == 0;
+	}
+
 	int relGroup(int relId) {
 		return relations.groupId(relId);
 	}

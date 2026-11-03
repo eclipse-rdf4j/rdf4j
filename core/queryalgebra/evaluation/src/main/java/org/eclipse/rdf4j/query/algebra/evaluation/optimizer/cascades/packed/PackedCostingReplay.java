@@ -34,7 +34,8 @@ public final class PackedCostingReplay {
 			throw new IllegalStateException("cached plan has no costing events to replay");
 		}
 		int stateHandleCount = trace.stateHandleCount(cachedEvidence.stateCount());
-		EventSourcingPackedCostSession replaySession = EventSourcingPackedCostSession.replaying(currentSession);
+		PackedCostSession proofAware = new ProofAwarePackedCostSession(request.query(), currentSession);
+		EventSourcingPackedCostSession replaySession = EventSourcingPackedCostSession.replaying(proofAware);
 		try {
 			int[] currentStateByCachedOrdinal = new int[stateHandleCount + 1];
 			double[] currentRowsByCachedOrdinal = new double[currentStateByCachedOrdinal.length];
