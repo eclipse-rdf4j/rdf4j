@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.lmdb;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
@@ -19,7 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.Arrays;
 import java.util.List;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
@@ -27,6 +32,8 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class LmdbBackupDeltaCodecTest {
 
@@ -100,5 +107,91 @@ class LmdbBackupDeltaCodecTest {
 	void rejectsUnknownHeader() {
 		assertThrows(IOException.class,
 				() -> LmdbBackupDeltaCodec.read(new ByteArrayInputStream(new byte[] { 0, 0, 0, 1, 7 })));
+	}
+
+	@ParameterizedTest
+	@EnumSource(JournalFormat.class)
+	void acceptsHealthyGzipJournal(JournalFormat format) throws IOException {
+		byte[] compressed = compressedJournal(format, false);
+		try (InputStream input = gzipInput(compressed)) {
+			assertTrue(input.readAllBytes().length > 0);
+		}
+
+		LmdbBackupDeltaCodec.Journal journal = LmdbBackupDeltaCodec
+				.readJournal(gzipInput(compressed));
+		assertEquals(format.previousTransactionId, journal.previousTransactionId());
+		assertEquals(1, journal.records().size());
+		assertEquals(format.previousTransactionId,
+				LmdbBackupDeltaCodec.validateJournal(gzipInput(compressed)));
+	}
+
+	@ParameterizedTest
+	@EnumSource(JournalFormat.class)
+	void rejectsCorruptGzipCrcThroughBothJournalReaders(JournalFormat format) throws IOException {
+		byte[] compressed = compressedJournal(format, false);
+		compressed[compressed.length - 8] ^= 1;
+
+		assertInvalidJournal(compressed);
+	}
+
+	@ParameterizedTest
+	@EnumSource(JournalFormat.class)
+	void rejectsTruncatedGzipTrailerThroughBothJournalReaders(JournalFormat format) throws IOException {
+		byte[] compressed = compressedJournal(format, false);
+		byte[] truncated = Arrays.copyOf(compressed, compressed.length - 8);
+
+		assertInvalidJournal(truncated);
+	}
+
+	@ParameterizedTest
+	@EnumSource(JournalFormat.class)
+	void rejectsTrailingUncompressedBytesThroughBothJournalReaders(JournalFormat format) throws IOException {
+		byte[] compressed = compressedJournal(format, true);
+
+		assertInvalidJournal(compressed);
+	}
+
+	private void assertInvalidJournal(byte[] compressed) {
+		assertAll(
+				() -> assertThrows(IOException.class, () -> LmdbBackupDeltaCodec.readJournal(gzipInput(compressed))),
+				() -> assertThrows(IOException.class,
+						() -> LmdbBackupDeltaCodec.validateJournal(gzipInput(compressed))));
+	}
+
+	private byte[] compressedJournal(JournalFormat format, boolean trailingByte) throws IOException {
+		ByteArrayOutputStream journal = new ByteArrayOutputStream();
+		List<LmdbBackupDeltaCodec.Record> records = List.of(
+				new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.SET, "p", "urn:p:"));
+		if (format.chained) {
+			LmdbBackupDeltaCodec.write(journal, records, format.previousTransactionId);
+		} else {
+			LmdbBackupDeltaCodec.write(journal, records);
+		}
+
+		ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+		try (GZIPOutputStream gzip = new GZIPOutputStream(compressed)) {
+			gzip.write(journal.toByteArray());
+			if (trailingByte) {
+				gzip.write(0);
+			}
+		}
+		return compressed.toByteArray();
+	}
+
+	private InputStream gzipInput(byte[] compressed) throws IOException {
+		return new GZIPInputStream(new ByteArrayInputStream(compressed));
+	}
+
+	private enum JournalFormat {
+		LEGACY(false, -1L),
+		CHAINED(true, 37L);
+
+		private final boolean chained;
+		private final long previousTransactionId;
+
+		JournalFormat(boolean chained, long previousTransactionId) {
+			this.chained = chained;
+			this.previousTransactionId = previousTransactionId;
+		}
 	}
 }

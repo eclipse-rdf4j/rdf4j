@@ -142,6 +142,10 @@ final class LmdbBackupDeltaCodec {
 					records.add(record);
 				}
 			}
+			// Reaching EOF also validates the trailer when the journal is wrapped in a GZIPInputStream.
+			if (in.read() != -1) {
+				throw new IOException("Trailing bytes in LMDB backup delta");
+			}
 			return new Journal(previousTransactionId, records);
 		}
 	}

@@ -3811,6 +3811,7 @@ class LmdbSailStore implements SailStore {
 		private final int statementCount;
 		private final AtomicBoolean arraysReleased = new AtomicBoolean();
 		private TripleStore.PreparedSecondaryIndexesTask preparedSecondaryIndexes;
+		private IntConsumer backupCallback;
 
 		private PreparedImportOperation(int statementCount) {
 			this.statementCount = statementCount;
@@ -3831,7 +3832,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				TripleStore.EncodedIndexKeys preparedMainIndex = preparedSecondaryIndexes.awaitMain();
 				tripleStore.storePreparedTriples(subjects, predicates, objects, contexts, statementCount, true,
-						mayHaveInferred, null, preparedMainIndex,
+						mayHaveInferred, backupCallback, preparedMainIndex,
 						this::awaitPreparedSecondaryIndexes);
 			} finally {
 				try {
@@ -3892,6 +3893,7 @@ class LmdbSailStore implements SailStore {
 		private final int reservation;
 		private final AtomicBoolean reservationReleased = new AtomicBoolean();
 		private final TripleStore.GlobalPreparedIndexOrdersTask preparedOrders;
+		private IntConsumer backupCallback;
 
 		private GlobalPreparedImportOperation(int[] quads, long[] valueIds, int statementCount, int reservation) {
 			this.quads = quads;
@@ -3905,8 +3907,8 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void execute() throws IOException {
 			try {
-				int added = tripleStore.storeGloballyOrderedFreshTriples(quads, valueIds, statementCount,
-						preparedOrders, indexPreparationExecutor);
+				tripleStore.storeGloballyOrderedFreshTriples(quads, valueIds, statementCount,
+						preparedOrders, indexPreparationExecutor, backupCallback);
 			} finally {
 				try {
 					preparedOrders.cancel();
@@ -3954,7 +3956,7 @@ class LmdbSailStore implements SailStore {
 		private final LmdbInitialRunImport runImport;
 		private final LmdbSailSink sink;
 		private final List<LmdbSortedRuns.Runs> tripleRuns;
-		private boolean backupRecordsQueued;
+		private long backupRecordsGeneration = -1;
 
 		private InitialRunImportFinish(LmdbInitialRunImport runImport, LmdbSailSink sink) throws IOException {
 			this.runImport = runImport;
@@ -3974,7 +3976,8 @@ class LmdbSailStore implements SailStore {
 		}
 
 		void queueBackupRecords() throws IOException {
-			if (backupRecordsQueued || !backupPublicationEnabled) {
+			// A physical rollback clears the buffer, but retains this finish operation for capacity replay.
+			if (!backupPublicationEnabled || backupRecordsGeneration == pendingBackupRecords.generation()) {
 				return;
 			}
 			try (LmdbBackupRecordBuffer importedRecords = new LmdbBackupRecordBuffer(
@@ -3989,7 +3992,7 @@ class LmdbSailStore implements SailStore {
 				}
 				pendingBackupRecords.addAll(importedRecords.snapshot(List.of()));
 			}
-			backupRecordsQueued = true;
+			backupRecordsGeneration = pendingBackupRecords.generation();
 		}
 	}
 
@@ -13142,6 +13145,10 @@ class LmdbSailStore implements SailStore {
 				PreparedImportOperation operation = newPreparedImportOperation(operationSize);
 				boolean submitted = false;
 				try {
+					if (backupPublicationEnabled) {
+						int offset = statementOffset;
+						operation.backupCallback = index -> queueBackupAdd(prepared.get(offset + index));
+					}
 					for (int i = 0; i < operationSize; i++) {
 						int quadOffset = Math.multiplyExact(statementOffset + i, 4);
 						int contextId = quads[quadOffset + 3];
@@ -13188,6 +13195,9 @@ class LmdbSailStore implements SailStore {
 					prepared.size());
 			boolean submitted = false;
 			try {
+				if (backupPublicationEnabled) {
+					operation.backupCallback = index -> queueBackupAdd(prepared.get(index));
+				}
 				submitOperation(operation);
 				submitted = true;
 				pendingFreshValueBatches.add(assignment.publication());

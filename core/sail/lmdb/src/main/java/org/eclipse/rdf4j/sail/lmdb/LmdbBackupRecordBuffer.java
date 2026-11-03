@@ -253,6 +253,10 @@ final class LmdbBackupRecordBuffer implements Closeable {
 		}
 	}
 
+	synchronized long generation() {
+		return generation;
+	}
+
 	synchronized void clear() throws IOException {
 		generation++;
 		IOException failure = null;

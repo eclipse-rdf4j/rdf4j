@@ -6897,7 +6897,13 @@ class TripleStore implements Closeable {
 
 	int storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
 			GlobalPreparedIndexOrdersTask orders, ExecutorService executor) throws IOException {
-		return writeLogicalAlignedBatch(new GlobalInput(quads, valueIds), count, true, null,
+		return storeGloballyOrderedFreshTriples(quads, valueIds, count, orders, executor, null);
+	}
+
+	int storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
+			GlobalPreparedIndexOrdersTask orders, ExecutorService executor, IntConsumer addedConsumer)
+			throws IOException {
+		return writeLogicalAlignedBatch(new GlobalInput(quads, valueIds), count, true, addedConsumer,
 				added -> storeGloballyOrderedFreshTriplesDirect(quads, valueIds, count, orders, executor, added));
 	}
 
