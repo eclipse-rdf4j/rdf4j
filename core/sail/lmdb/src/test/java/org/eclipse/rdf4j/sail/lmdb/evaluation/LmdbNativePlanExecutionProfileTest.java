@@ -98,12 +98,13 @@ class LmdbNativePlanExecutionProfileTest {
 				new MaskedFilter[] { new MaskedFilter(acceptAll(), 1L << A) });
 		LmdbNativeCostVector quote = LmdbNativePlanExecutionProfile.profile(join, row, 0L, Mode.SEQUENTIAL);
 		// the chain's 9000 and 27000 interpreted rows, then the filter: it reads ?a only, so it runs once per prefix
-		// row after the first pattern (9000), not per joined row (27000)
-		assertThat(quote.expected(Feature.INTERPRETED_ROW)).isEqualTo(9_000D + 27_000D + 9_000D);
+		// row after the first pattern (9000), not per joined row (27000); every generic row at the premium
+		double premium = LmdbNativePlanExecutionProfile.GENERIC_ROW_PREMIUM;
+		assertThat(quote.expected(Feature.INTERPRETED_ROW)).isEqualTo((9_000D + 27_000D + 9_000D) * premium);
 		MultiJoinPlan late = new MultiJoinPlan(new SlotPlan[] { star(), edge(S, P2, B, 9_000D) },
 				new MaskedFilter[] { new MaskedFilter(acceptAll(), 1L << B) });
 		assertThat(LmdbNativePlanExecutionProfile.profile(late, row, 0L, Mode.SEQUENTIAL)
-				.expected(Feature.INTERPRETED_ROW)).isEqualTo(9_000D + 27_000D + 27_000D);
+				.expected(Feature.INTERPRETED_ROW)).isEqualTo((9_000D + 27_000D + 27_000D) * premium);
 	}
 
 	@Test
@@ -135,6 +136,9 @@ class LmdbNativePlanExecutionProfileTest {
 		// of the batch rows the prefix produces
 		assertThat(quote.expected(Feature.INTERPRETED_ROW)).isEqualTo(9_000D);
 		assertThat(quote.expected(Feature.BATCH_ROW)).isEqualTo(9_000D + 9_000D);
+		// the premium belongs to the generic chain alone
+		assertThat(LmdbNativePlanExecutionProfile.profile(minus, row, 0L, Mode.SEQUENTIAL)
+				.expected(Feature.INTERPRETED_ROW)).isGreaterThan(9_000D);
 	}
 
 	@Test
@@ -148,5 +152,51 @@ class LmdbNativePlanExecutionProfileTest {
 		assertThat(kernel.expected(Feature.INDEX_SEEK)).isLessThanOrEqualTo(sequential.expected(Feature.INDEX_SEEK));
 		assertThat(kernel.expected(Feature.INDEX_SEEK))
 				.isEqualTo(prefix(row).expected(Feature.INDEX_SEEK) + 2D * 9_000D);
+	}
+
+	@Test
+	void aMultiValuePatternIsPricedAsItsAlternativesUnderTheBoundMask() {
+		StatsSource source = stats().predicateByObject(P3, 3D, 3_000L);
+		RowState row = row(source);
+		// ?a p3 ?b with ?b IN (7, 8): two alternatives, each a lookup with both ends known once ?a is bound
+		PatternPlan[] alternatives = {
+				new PatternPlan(Term.slot(A), Term.constant(P3), Term.constantSlot(B, 7L), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, null, "", null, 1_000D,
+						LmdbNativeFactorizedQuoteTest.coveringProfile(100_000L)),
+				new PatternPlan(Term.slot(A), Term.constant(P3), Term.constantSlot(B, 8L), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, null, "", null, 1_000D,
+						LmdbNativeFactorizedQuoteTest.coveringProfile(100_000L)) };
+		MultiValuePatternPlan multi = new MultiValuePatternPlan(source, B, new long[] { 7L, 8L }, alternatives,
+				null);
+		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { star(), multi }, new MaskedFilter[0]);
+		// 9000 prefix rows, each probing two edges of probability 3 / 3000: 18 rows, not 9000 x 2000
+		assertThat(LmdbNativeWork.rowsOut(join, row, 0L)).isCloseTo(18D, org.assertj.core.data.Offset.offset(1e-6));
+		LmdbNativeCostVector quote = LmdbNativePlanExecutionProfile.profile(join, row, 0L, Mode.SEQUENTIAL);
+		// two seeks per prefix row (medical q4 and q7, 2026-11-03: the static 66k rows of the unbound drive were
+		// charged per prefix row, two billion rows for every strategy)
+		assertThat(quote.expected(Feature.INDEX_SEEK))
+				.isEqualTo(prefix(row).expected(Feature.INDEX_SEEK) + 2D * 9_000D);
+		assertThat(quote.expected(Feature.SCANNED_ROW)).isLessThan(100_000D);
+	}
+
+	@Test
+	void aWitnessOverAnInputOfUnknownSizeIsPricedAsTheSweepNotAFailure() {
+		RowState row = row(stats());
+		SlotPlan unpriced = new SlotPlan() {
+			@Override
+			public RowCursor open(RowState row) {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public long producedMask() {
+				return 1L << S;
+			}
+		};
+		// EXISTS over a pattern, but the filter's own input has no row estimate (module run 2026-11-03: four tests
+		// died on "factor must be finite and non-negative: NaN")
+		FilterPlan filter = new FilterPlan(unpriced, new ExistsFilter(edge(S, P2, B, 9_000D)), 1L << S);
+		LmdbNativeCostVector quote = LmdbNativePlanExecutionProfile.profile(filter, row, 0L, Mode.SEQUENTIAL);
+		assertThat(quote.expected(Feature.SCANNED_ROW)).isGreaterThan(0D);
 	}
 }

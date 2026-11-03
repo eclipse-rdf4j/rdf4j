@@ -126,6 +126,8 @@ public class LmdbNativeCorrelatedBodyQuoteTest {
 		}
 		Map<String, Map<String, Double>> features = NativeProposalFeatures.offering(plan, "nestedLoop");
 		Map<String, Double> costs = NativeProposalFeatures.costs(plan, "nestedLoop");
+		System.out.println("CORRELATED-COUNT " + plan.toString().replace('\n', ' ').substring(0, 1500));
+		System.out.println("CORRELATED-COUNT " + features);
 		String kernel = features.containsKey("irAggregate") ? "irAggregate" : "irAggregateInterpreted";
 		assertThat(features).as("an aggregate kernel at the same decision: %s", features).containsKey(kernel);
 		// the kernel's witness: seeks, no cursor opens, no memo; and it carries the join's access work at all
@@ -133,5 +135,11 @@ public class LmdbNativeCorrelatedBodyQuoteTest {
 				.isGreaterThan(0D);
 		assertThat(features.get(kernel).getOrDefault("BRANCH_OPEN", 0D)).isZero();
 		assertThat(costs.get("nestedLoop")).as("prices: %s", costs).isGreaterThanOrEqualTo(1.2D * costs.get(kernel));
+		// the ordered DISTINCT groups, where offered, drain the same input sequentially: never a flat row count
+		// without its access work
+		if (features.containsKey("orderedDistinctGroups")) {
+			assertThat(features.get("orderedDistinctGroups").getOrDefault("INDEX_SEEK", 0D)).as("%s", features)
+					.isGreaterThan(0D);
+		}
 	}
 }

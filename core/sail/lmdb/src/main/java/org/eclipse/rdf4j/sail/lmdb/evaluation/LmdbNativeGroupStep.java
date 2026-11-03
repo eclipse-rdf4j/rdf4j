@@ -1449,7 +1449,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				return result;
 			}, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
 					orderedDistinct.arg.estimateWork(row, row.boundMask()))
-							.withPlanningWork(LmdbNativeWork.planning(orderedDistinct.arg, row, row.boundMask())));
+							.withPlanningWork(LmdbNativeWork.planning(orderedDistinct.arg, row, row.boundMask()))
+							// it drains its input sequentially in index order: the input's access work and a group
+							// update per row, exactly as the sequential path (medical q3 and q7, 2026-11-03: a flat
+							// interpreted-row quote put it 4x below its 77 ms while the kernels were quoted 5x above
+							// their 8 ms)
+							.withCostQuote(sequentialQuote(orderedDistinct.arg, row)));
 		}
 		if (!typeMatrixOwned && LmdbWildcardPredicateBatch.weightedAggregateCandidate(arg, aggregates)) {
 			arbiter.offer(() -> estimatedProposal(
@@ -1885,8 +1890,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	 */
 	private LmdbNativeCostQuote kernelQuote(SlotPlan input, RowState row, String tag) {
 		if (!LmdbNativePlanExecutionProfile.hasCorrelatedBody(input)) {
-			// plain joins keep the physical quote with its exact facts (the kernel's vectorised adjacency runs
-			// measure far below a probe chain: cycle5ValuesCountMailboxHomepage 55 ms against the chain's 380 ms)
+			// plain joins keep the physical quote: pricing them from the kernel profile's probe chain made the
+			// 3000-person harness worse (run l, 2026-11-03: interestJoin with adjacency chose nestedLoop at 2.6 to
+			// 3.3x), because the kernel's adjacency runs cost far less per row than a probe chain, even though the
+			// physical quote itself misses access work on some joins (groupedFanOut: 0.46 ms quoted, 3.85 ms run)
 			return null;
 		}
 		long boundMask = row.boundMask();

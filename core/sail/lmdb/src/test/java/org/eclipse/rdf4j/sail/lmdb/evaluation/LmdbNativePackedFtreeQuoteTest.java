@@ -106,4 +106,20 @@ class LmdbNativePackedFtreeQuoteTest {
 		assertThat(quote.expected(Feature.MEMBERSHIP_TEST)).isEqualTo(27_000D);
 		assertThat(quote.expected(Feature.BATCH_ROW)).isEqualTo(2D * (3_000D + 9_000D + 27D));
 	}
+
+	@Test
+	void aValueSetFilterOnTheRootKeepsOneLanePerAcceptedValue() {
+		StatsSource source = star(true);
+		RowState row = row(source);
+		MultiJoinPlan join = new MultiJoinPlan(new PatternPlan[] { edge(S, P1, A, 9_000D), edge(S, P2, B, 9_000D) },
+				new MaskedFilter[] { new MaskedFilter(new ValueSetFilter(source, S, new long[] { 11L, 12L }),
+						1L << S) });
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, new int[] { S, A, B });
+		assertThat(plan).isNotNull();
+		assertThat(plan.root.slot).isEqualTo(S);
+		LmdbNativeCostVector quote = LmdbNativePackedFtreeQuote.quote(plan, row, Site.ROWS, 0L, 18D).total();
+		// the root's key walk is paid, but only two lanes survive the filter: each edge binds twice, not 3000 times
+		assertThat(quote.expected(Feature.INDEX_SEEK)).isEqualTo(4D);
+		assertThat(quote.expected(Feature.SCANNED_ROW)).isEqualTo(3_000D + 2D * 2D * 3D);
+	}
 }

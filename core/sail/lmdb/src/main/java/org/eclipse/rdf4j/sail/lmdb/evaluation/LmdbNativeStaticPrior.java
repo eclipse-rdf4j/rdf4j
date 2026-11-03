@@ -190,10 +190,10 @@ final class LmdbNativeStaticPrior {
 		return switch (LmdbNativeCandidate.baseId(tag)) {
 		case LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE -> 2_500_000D;
 		case LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL -> 2_300_000D;
-		// kept with the lane quote (2026-11-03): the 3000-person harness still measures this aggregate slowest on
-		// interestJoin (4.6 to 7.4 ms against 1.7 to 3.0 ms for the factorized tail) while medical q2 runs it in
-		// 0.9 ms; the theme-mode fit (M3c-9) decides what of it is real
-		case LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE -> 4_900_000D;
+		// with the lane quote (2026-11-03): the 3000-person harness measures this aggregate at 4.6 to 7.6 ms on
+		// interestJoin where its lanes quote 2 to 3 ms, while medical q2 runs it in 0.96 ms end to end; 2 ms is
+		// the residual both can bear
+		case LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE -> 2_000_000D;
 		case LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS -> 3_900_000D;
 		case LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED -> 2_700_000D;
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,

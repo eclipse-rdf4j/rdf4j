@@ -56,10 +56,12 @@ final class LmdbNativePackedFtreeQuote {
 			return null;
 		}
 		double[] lanes = new double[plan.nodes.length];
-		lanes[plan.root.ordinal] = roots.count;
 		LmdbNativeCostVector total = roots.access.plus(LmdbNativeCostVectors.perRow(Feature.BATCH_ROW, roots.count))
 				.plus(checks(plan.root, roots.count, row, boundMask));
-		total = expand(plan.root, roots.count, lanes, total, row, boundMask);
+		// a value-set filter on the root keeps one lane per accepted value
+		double rootLanes = Math.min(roots.count, acceptedValues(plan.root, roots.count));
+		lanes[plan.root.ordinal] = rootLanes;
+		total = expand(plan.root, rootLanes, lanes, total, row, boundMask);
 		if (total == null) {
 			return null;
 		}
@@ -182,6 +184,15 @@ final class LmdbNativePackedFtreeQuote {
 			}
 			total = total.plus(checks(child, accepted, row, boundMask))
 					.plus(LmdbNativeCostVectors.perRow(Feature.BATCH_ROW, accepted));
+			// a value-set filter on this node keeps the lanes whose value is accepted: its share of the slot's
+			// domain (medical q2, 2026-11-03: a two-date filter at the root left 280 lanes of 50000)
+			double values = acceptedValues(child, Double.NaN);
+			if (!Double.isNaN(values)) {
+				double domain = LmdbNativeFanOutFacts.keyDomain(source, primary.pattern.p.constant,
+						!primary.keyIsSubject);
+				accepted = Double.isFinite(domain) && domain > 0D ? accepted * Math.min(1D, values / domain)
+						: Math.min(accepted, values);
+			}
 			lanes[child.ordinal] = accepted;
 			total = expand(child, accepted, lanes, total, row, boundMask);
 			if (total == null) {
@@ -189,6 +200,21 @@ final class LmdbNativePackedFtreeQuote {
 			}
 		}
 		return total;
+	}
+
+	/** The number of values a value-set filter on {@code node}'s own slot accepts, else {@code fallback}. */
+	private static double acceptedValues(NodePlan node, double fallback) {
+		double values = Double.NaN;
+		for (MaskedFilter masked : node.filters) {
+			NativeBooleanFilter filter = masked.filter;
+			if (filter instanceof RecordingNativeBooleanFilter recording) {
+				filter = recording.delegate;
+			}
+			if (filter instanceof ValueSetFilter valueSet && valueSet.slot == node.slot) {
+				values = Double.isNaN(values) ? valueSet.accepted.length : Math.min(values, valueSet.accepted.length);
+			}
+		}
+		return Double.isNaN(values) ? fallback : values;
 	}
 
 	/** Witness probes and filters of a node, once per lane. */

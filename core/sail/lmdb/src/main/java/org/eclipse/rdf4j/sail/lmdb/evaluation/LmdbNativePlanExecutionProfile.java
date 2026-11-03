@@ -53,8 +53,33 @@ final class LmdbNativePlanExecutionProfile {
 		this.mode = mode;
 	}
 
+	/**
+	 * The generic cursor chain's row against an interpreted kernel row: fitted 2026-11-03 on the 3000-person regret
+	 * harness (runs j and k, physical prices pinned) at 200 to 435 ns against 118 to 126 ns. The user's rule for
+	 * {@code nestedLoop}: the honest price plus a measured premium for the path with the fewest optimisations.
+	 */
+	static final double GENERIC_ROW_PREMIUM = 1.65D;
+
 	static LmdbNativeCostVector profile(SlotPlan plan, RowState row, long boundMask, Mode mode) {
-		return new LmdbNativePlanExecutionProfile(row, mode).price(plan, boundMask);
+		LmdbNativeCostVector priced = new LmdbNativePlanExecutionProfile(row, mode).price(plan, boundMask);
+		return mode == Mode.SEQUENTIAL ? withPremium(priced) : priced;
+	}
+
+	/** Every interpreted row of the generic chain at the premium. */
+	private static LmdbNativeCostVector withPremium(LmdbNativeCostVector vector) {
+		if (vector.high(Feature.INTERPRETED_ROW) <= 0D) {
+			return vector;
+		}
+		LmdbNativeCostVector.Builder builder = LmdbNativeCostVector.builder();
+		for (Feature feature : Feature.values()) {
+			if (vector.high(feature) <= 0D) {
+				continue;
+			}
+			double factor = feature == Feature.INTERPRETED_ROW ? GENERIC_ROW_PREMIUM : 1D;
+			builder.add(feature, vector.low(feature) * factor, vector.expected(feature) * factor,
+					vector.high(feature) * factor);
+		}
+		return builder.build();
 	}
 
 	/**
@@ -265,6 +290,10 @@ final class LmdbNativePlanExecutionProfile {
 
 	/** The access work an EXISTS witness in {@code filter} does over {@code rows} rows bound by {@code mask}. */
 	private LmdbNativeCostVector witness(NativeBooleanFilter filter, double rows, long mask) {
+		if (Double.isNaN(rows) && witnessOf(filter)) {
+			// an unknown row count under a witness: the sweep ceiling, never a NaN factor
+			return sweep();
+		}
 		if (filter instanceof RecordingNativeBooleanFilter recording) {
 			return witness(recording.delegate, rows, mask);
 		}

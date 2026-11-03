@@ -110,6 +110,16 @@ final class LmdbNativeCostVectors {
 		if (plan instanceof ValuesPlan values) {
 			return perRow(rowFeature, values.rows.length);
 		}
+		if (plan instanceof MultiValuePatternPlan multi && multi.alternatives.length > 0) {
+			// every alternative is positioned on its own: their access adds up, one row feature per row
+			LmdbNativeCostVector total = LmdbNativeCostVector.zero();
+			for (PatternPlan alternative : multi.alternatives) {
+				total = total.plus(pattern(alternative, row, boundMask));
+			}
+			boolean selected = multi.constrainedSlot >= 0 && (boundMask & (1L << multi.constrainedSlot)) != 0L;
+			return (selected ? total.scale(1D / multi.alternatives.length) : total)
+					.plus(perRow(rowFeature, rows(plan, row, boundMask), row));
+		}
 		if (plan instanceof UnionPlan union) {
 			return plan(union.left, row, boundMask, rowFeature).plus(plan(union.right, row, boundMask, rowFeature));
 		}

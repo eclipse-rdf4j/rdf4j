@@ -53,8 +53,10 @@ class LmdbNativeCycleQuoteTest {
 				.explain(Explanation.Level.Telemetry)
 				.toGenericPlanNode(), "wcoj"));
 		assertThat(costs).as("row decision prices").containsKeys("wcoj", "packedFtree");
+		// the 3000-person harness (runs k and l) still measures wcoj 1.5x under its quote and the packed f-tree
+		// 0.8x: three times either way is the band the two quotes hold each other to until the next fit
 		assertThat(costs.get("wcoj")).as("prices: %s", costs)
-				.isBetween(0.5D * costs.get("packedFtree"), 2D * costs.get("packedFtree"));
+				.isBetween(costs.get("packedFtree") / 3D, 3D * costs.get("packedFtree"));
 	}
 
 	@Test

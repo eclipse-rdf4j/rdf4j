@@ -182,18 +182,18 @@ final class LmdbNativeMachineCostModel {
 		set(result, LmdbNativeCostVector.Feature.BRANCH_OPEN, 100.0);
 		set(result, LmdbNativeCostVector.Feature.SCANNED_ROW, 1.0); // measured 0.3 to 0.5
 		set(result, LmdbNativeCostVector.Feature.DECODED_ROW, 2.0); // measured 0 to 0.2
-		set(result, LmdbNativeCostVector.Feature.INTERPRETED_ROW, 44.0); // measured 43.7
-		// measured 34 to 39 as a slope; batch, factorized and pipeline rows measured 1.0 to 1.1 times an interpreted
-		// nested-loop row end to end at both sizes
-		set(result, LmdbNativeCostVector.Feature.BATCH_ROW, 40.0);
-		// measured 2026-11-02: a "compiled" tier runs on the interpreter warm-up tier while Janino compiles, so its
-		// per-row cost in a cold decision equals the interpreted tier's (irAggregateWildcard: 62 ns per row over
-		// 51k rows); 4 ns is the steady state of a warm kernel, which a cold selector must not assume
-		set(result, LmdbNativeCostVector.Feature.GENERATED_ROW, 42.0); // measured 0.95 of an interpreted row
+		// per-row prices re-fitted 2026-11-03 (regret harness runs j and k, 3000 people, scripts/lmdb-fit-prior.py
+		// with the physical prices above pinned): an interpreted kernel row 118 to 126 ns, a compiled kernel row
+		// 93 to 131 ns (the IR aggregates 86 to 87), a batch or factorized row 124 to 249 ns, a group update 105 to
+		// 455 ns, a hash probe 74 ns; the generic cursor chain's row measured 200 to 435 ns and is priced through
+		// LmdbNativePlanExecutionProfile.GENERIC_ROW_PREMIUM on top of the interpreted row
+		set(result, LmdbNativeCostVector.Feature.INTERPRETED_ROW, 120.0);
+		set(result, LmdbNativeCostVector.Feature.BATCH_ROW, 150.0);
+		set(result, LmdbNativeCostVector.Feature.GENERATED_ROW, 110.0);
 		set(result, LmdbNativeCostVector.Feature.MEMBERSHIP_TEST, 14.0);
 		set(result, LmdbNativeCostVector.Feature.HASH_BUILD_ROW, 45.0);
-		set(result, LmdbNativeCostVector.Feature.HASH_PROBE, 18.0);
-		set(result, LmdbNativeCostVector.Feature.GROUP_UPDATE, 40.0);
+		set(result, LmdbNativeCostVector.Feature.HASH_PROBE, 40.0);
+		set(result, LmdbNativeCostVector.Feature.GROUP_UPDATE, 150.0);
 		set(result, LmdbNativeCostVector.Feature.DISTINCT_UPDATE, 35.0);
 		set(result, LmdbNativeCostVector.Feature.SORT_N_LOG2_N, 22.0);
 		// measured 2026-11-02 (regret harness, 3000-person FOAF stores): 226 to 262 ns per materialised output row

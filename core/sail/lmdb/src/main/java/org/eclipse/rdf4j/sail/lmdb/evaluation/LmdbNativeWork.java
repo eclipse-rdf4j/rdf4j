@@ -209,6 +209,25 @@ record LmdbNativeWork(double low, double high) {
 			MultiJoinPlan.OrderedPlan ordered = multiJoin.derivedPlan(boundMask);
 			return rowsOnlyChain(ordered.order, ordered.order.length, row, boundMask);
 		}
+		if (plan instanceof MultiValuePatternPlan multi && multi.alternatives.length > 0) {
+			// each alternative is one pattern with its constant in place: their rows add up under the bound mask
+			// (the plan's own estimate reports its unbound static size whatever is bound: medical q4 and q7 quoted
+			// two billion rows for every strategy, 2026-11-03); a bound constrained slot selects one of them
+			double sum = 0D;
+			for (PatternPlan alternative : multi.alternatives) {
+				double rows = rowsOut(alternative, row, boundMask);
+				if (Double.isNaN(rows)) {
+					sum = Double.NaN;
+					break;
+				}
+				sum += rows;
+			}
+			if (!Double.isNaN(sum)) {
+				return multi.constrainedSlot >= 0 && (boundMask & (1L << multi.constrainedSlot)) != 0L
+						? sum / multi.alternatives.length
+						: sum;
+			}
+		}
 		// The dedicated channel first: it uses NaN for unknown, so it can distinguish "no idea" from "very many".
 		double declared = plan.estimateRows(row, boundMask);
 		if (Double.isFinite(declared) && declared >= 0D) {
