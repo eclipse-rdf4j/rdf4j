@@ -1488,16 +1488,15 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					() -> evaluateFactorized(row, factorizedPlan, factorizedDerived, factorized),
 					estimatedWork(factorizedCost), LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
 					factorized::discardUnopenedProbe)
-							// the join's access work (seeks, decodes, a batch row per intermediate row), exactly as the
-							// row site prices the factorized join, plus a group update per joined row: measured
+							// the join's access work per distinct probe key (the branches are memoised), the memo
+							// lookups and the aggregate updates per prefix row rather than per joined row (measured
 							// 2026-11-03 on 15000 people, the tail quoted 6 ms and ran 120 ms when only the batch rows
-							// were counted
+							// were counted; a group update per joined row then over-quoted the 3000-hub star 3x)
 							.withCostQuote(LmdbNativeCostQuote.streaming(
-									LmdbNativeCostVectors.factorized(factorizedDerived.order, factorizedPrefix, row,
-											row.boundMask(), LmdbNativeCostVector.Feature.BATCH_ROW)
-											.plus(LmdbNativeCostVectors.perRow(
-													LmdbNativeCostVector.Feature.GROUP_UPDATE,
-													LmdbNativeWork.rowsOut(arg, row, row.boundMask()), row)),
+									LmdbNativeCostVectors.factorizedTail(factorizedDerived.order, factorizedPrefix,
+											factorized.costBranches(), factorized.rowSpecs(),
+											groupSlots.length > 0 || factorized.groupsByTail(),
+											LmdbNativeWork.rowsOut(arg, row, row.boundMask()), row, row.boundMask()),
 									groupSlots.length == 0 && havingCondition == null ? 1D : Double.NaN)));
 		}
 		if (parallelPlan != null) {

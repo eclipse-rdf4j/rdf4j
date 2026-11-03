@@ -33,12 +33,12 @@ class LmdbNativeFactorizedQuoteTest {
 	private static final long P1 = 1L, P2 = 2L;
 	private static final int S = 0, A = 1, B = 2;
 
-	/** Every binding mask is fully covered by an index, so a probe is one seek over its own rows. */
+	/** Every binding mask is fully covered by an index prefix, so a probe is one seek over its own rows. */
 	private static NativeLmdbQuerySource.IndexAccessProfile coveringProfile(long entries) {
 		int[][] prefixes = new int[StatementOrder.values().length + 1][16];
 		for (int[] row : prefixes) {
 			for (int mask = 0; mask < 16; mask++) {
-				row[mask] = Integer.bitCount(mask);
+				row[mask] = mask;
 			}
 		}
 		return new NativeLmdbQuerySource.IndexAccessProfile(entries, 1, prefixes, false, -1L, -1L, -1L);
@@ -140,5 +140,70 @@ class LmdbNativeFactorizedQuoteTest {
 		LmdbNativeCostVector quote = LmdbNativeCostVectors.factorizedRows(order, 1,
 				new BranchRole[] { BranchRole.COUNT }, Double.NaN, row(stats()), 0L);
 		assertThat(quote.high(Feature.SCANNED_ROW)).isGreaterThanOrEqualTo(9_000D * 100_000D);
+	}
+
+	private static final long P3 = 3L;
+
+	private static LmdbNativeCostVectors.TailBranch tail(BranchRole role, int scanOnceSlot, int valueSpecs,
+			int distinctSpecs) {
+		return new LmdbNativeCostVectors.TailBranch(role, scanOnceSlot, valueSpecs, distinctSpecs);
+	}
+
+	private static LmdbNativeCostVector tailQuote(StatsSource source, SlotPlan branch,
+			LmdbNativeCostVectors.TailBranch consumer, int rowSpecs) {
+		SlotPlan[] order = { star(P1, A, 9_000D), branch };
+		return LmdbNativeCostVectors.factorizedTail(order, 1, new LmdbNativeCostVectors.TailBranch[] { consumer },
+				rowSpecs, false, 27_000D, row(source), 0L);
+	}
+
+	@Test
+	void aCountingTailChargesOneGroupUpdatePerPrefixRow() {
+		LmdbNativeCostVector quote = tailQuote(stats(), star(P2, B, 9_000D), tail(BranchRole.COUNT, -1, 0, 0), 1);
+		// COUNT(*) over 9000 prefix rows × 3 branch rows: one weighted update per prefix row, not 27000
+		assertThat(quote.expected(Feature.GROUP_UPDATE)).isEqualTo(9_000D);
+		// nothing is emitted: the batch row per prefix row is the only one
+		assertThat(quote.expected(Feature.BATCH_ROW)).isEqualTo(9_000D);
+		assertThat(quote.expected(Feature.INDEX_SEEK))
+				.isEqualTo(prefix().expected(Feature.INDEX_SEEK) + 3_000D * probe().expected(Feature.INDEX_SEEK));
+		assertThat(quote.expected(Feature.HASH_PROBE)).isEqualTo(9_000D);
+	}
+
+	@Test
+	void aValueSpecChargesAnUpdatePerBranchValuePerPrefixRow() {
+		LmdbNativeCostVector quote = tailQuote(stats(), star(P2, B, 9_000D), tail(BranchRole.ENUM, -1, 1, 1), 0);
+		// SUM(?b) and COUNT(DISTINCT ?b): the 3 memoised values of a key are replayed for each of its prefix rows
+		assertThat(quote.expected(Feature.GROUP_UPDATE)).isEqualTo(27_000D);
+		assertThat(quote.expected(Feature.DISTINCT_UPDATE)).isEqualTo(27_000D);
+		// the values are decoded once per key
+		assertThat(quote.expected(Feature.DECODED_ROW))
+				.isEqualTo(prefix().expected(Feature.DECODED_ROW) + 3_000D * probe().expected(Feature.DECODED_ROW));
+	}
+
+	@Test
+	void scanOnceCapsTheSeeksWhenTheBranchPlaneIsCheaperThanProbing() {
+		LmdbNativeCostVector memo = tailQuote(stats(), star(P2, B, 9_000D), tail(BranchRole.COUNT, -1, 0, 0), 1);
+		LmdbNativeCostVector quote = tailQuote(stats(), star(P2, B, 9_000D), tail(BranchRole.COUNT, S, 0, 0), 1);
+		// 1024 paid probes (8 work units each plus 3 rows) admit a sweep of up to 22528 rows: the 9000-row plane
+		// is swept once instead of probing the remaining keys
+		assertThat(quote.expected(Feature.INDEX_SEEK)).isEqualTo(
+				prefix().expected(Feature.INDEX_SEEK) + 1_024D * probe().expected(Feature.INDEX_SEEK) + 1D);
+		assertThat(quote.expected(Feature.SCANNED_ROW)).isEqualTo(prefix().expected(Feature.SCANNED_ROW)
+				+ 1_024D * probe().expected(Feature.SCANNED_ROW) + 9_000D);
+		// the admission may still refuse: the memo form stays the ceiling
+		assertThat(quote.high(Feature.INDEX_SEEK)).isGreaterThanOrEqualTo(memo.high(Feature.INDEX_SEEK));
+		assertThat(quote.expected(Feature.HASH_PROBE)).isEqualTo(memo.expected(Feature.HASH_PROBE));
+		assertThat(quote.expected(Feature.GROUP_UPDATE)).isEqualTo(memo.expected(Feature.GROUP_UPDATE));
+	}
+
+	@Test
+	void scanOnceIsAbandonedWhenThePlaneExceedsTwiceTheProbeWork() {
+		StatsSource source = new StatsSource(1_000_000L).predicate(P1, 3D, 3_000L).predicate(P3, 3D, 50_000L);
+		LmdbNativeCostVector memo = tailQuote(source, star(P3, B, 150_000D), tail(BranchRole.COUNT, -1, 0, 0), 1);
+		LmdbNativeCostVector quote = tailQuote(source, star(P3, B, 150_000D), tail(BranchRole.COUNT, S, 0, 0), 1);
+		// the 150000-row plane exceeds twice the work of the 1024 paid probes: the executor abandons the sweep at
+		// that limit and keeps probing per key
+		assertThat(quote.expected(Feature.INDEX_SEEK)).isEqualTo(memo.expected(Feature.INDEX_SEEK));
+		assertThat(quote.expected(Feature.SCANNED_ROW))
+				.isEqualTo(memo.expected(Feature.SCANNED_ROW) + 2D * (1_024D * 8D + 1_024D * 3D));
 	}
 }

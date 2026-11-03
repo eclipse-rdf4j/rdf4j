@@ -243,28 +243,126 @@ final class LmdbNativeCostVectors {
 			BranchRole role = roles[b - prefixLength];
 			double keys = depth.distinctKeys();
 			double hitting = depth.hittingKeys();
-			LmdbNativeCostVector probe = order[b] instanceof PatternPlan pattern
-					? pattern(pattern, row, depth.maskBefore())
-					: plan(order[b], row, depth.maskBefore(), Feature.SCANNED_ROW);
-			// seeks once per distinct key, rows once per key that has any; at worst once per prefix row
-			total = total.plus(scaled(probe, Feature.INDEX_SEEK, keys, prefixRows));
-			if (role == BranchRole.EXISTS) {
-				total = total.plus(LmdbNativeCostVector.bounds(Feature.SCANNED_ROW, 0D,
-						Math.min(1D, probe.expected(Feature.SCANNED_ROW)) * hitting,
-						Math.max(hitting, Math.min(1D, probe.high(Feature.SCANNED_ROW)) * prefixRows)));
-			} else {
-				total = total.plus(scaled(probe, Feature.SCANNED_ROW, hitting, prefixRows));
-				if (role == BranchRole.ENUM) {
-					total = total.plus(scaled(probe, Feature.DECODED_ROW, hitting, prefixRows));
-					double rowsPerKey = depth.rowsPerKey();
-					total = total.plus(LmdbNativeCostVector.bounds(Feature.BATCH_ROW, 0D, hitting * rowsPerKey,
-							Math.max(hitting, prefixRows) * rowsPerKey));
-					emitted *= rowsPerKey;
-				}
+			LmdbNativeCostVector probe = branchProbe(order[b], row, depth.maskBefore());
+			total = total.plus(branchAccess(probe, role, keys, hitting, prefixRows));
+			if (role == BranchRole.ENUM) {
+				double rowsPerKey = depth.rowsPerKey();
+				total = total.plus(LmdbNativeCostVector.bounds(Feature.BATCH_ROW, 0D, hitting * rowsPerKey,
+						Math.max(hitting, prefixRows) * rowsPerKey));
+				emitted *= rowsPerKey;
 			}
 			total = total.plus(perRow(Feature.HASH_PROBE, prefixRows));
 		}
 		return total.plus(perRow(Feature.BATCH_ROW, emitted));
+	}
+
+	private static LmdbNativeCostVector branchProbe(SlotPlan branch, RowState row, long maskBefore) {
+		return branch instanceof PatternPlan pattern ? pattern(pattern, row, maskBefore)
+				: plan(branch, row, maskBefore, Feature.SCANNED_ROW);
+	}
+
+	/**
+	 * One memoised branch's access: seeks once per distinct key and rows once per key that has any (expected), at worst
+	 * once per prefix row; an EXISTS branch reads one record per hitting key, an ENUM branch also decodes.
+	 */
+	private static LmdbNativeCostVector branchAccess(LmdbNativeCostVector probe, BranchRole role, double keys,
+			double hitting, double prefixRows) {
+		LmdbNativeCostVector access = scaled(probe, Feature.INDEX_SEEK, keys, prefixRows);
+		if (role == BranchRole.EXISTS) {
+			return access.plus(LmdbNativeCostVector.bounds(Feature.SCANNED_ROW, 0D,
+					Math.min(1D, probe.expected(Feature.SCANNED_ROW)) * hitting,
+					Math.max(hitting, Math.min(1D, probe.high(Feature.SCANNED_ROW)) * prefixRows)));
+		}
+		access = access.plus(scaled(probe, Feature.SCANNED_ROW, hitting, prefixRows));
+		if (role == BranchRole.ENUM) {
+			access = access.plus(scaled(probe, Feature.DECODED_ROW, hitting, prefixRows));
+		}
+		return access;
+	}
+
+	/**
+	 * How the factorized tail consumes one branch: its role, the single row-varying key slot when the branch may switch
+	 * to scan-once mode (else -1), and how many aggregate specs replay its memoised values once per prefix row (plain
+	 * ones, and DISTINCT ones that only touch the membership set).
+	 */
+	record TailBranch(BranchRole role, int scanOnceSlot, int valueSpecs, int distinctSpecs) {
+	}
+
+	/**
+	 * A factorized tail aggregation as its executor runs it ({@code LmdbNativeFactorizedTail}): the prefix chain and
+	 * per-key branch access of {@link #factorizedRows}, but nothing is emitted; instead each prefix row costs one memo
+	 * lookup per branch, {@code rowSpecs} weighted updates (counts fold the branch multiplicities arithmetically) and,
+	 * per value-reading spec, one update per memoised branch value; a grouped site also looks its group up once per
+	 * prefix row. A count-only branch with one row-varying key may switch to scan-once mode after
+	 * {@link Branch#SCAN_ONCE_MIN_MISSES} paid probes when its executor's admission would let it (the plane's sweep
+	 * within twice the paid probes' work): one sweep of the branch's plane replaces the remaining probes, with the memo
+	 * form kept as the ceiling; a sweep the admission abandons is charged up to its work limit on top of the probes.
+	 */
+	static LmdbNativeCostVector factorizedTail(SlotPlan[] order, int prefixLength, TailBranch[] branches,
+			int rowSpecs, boolean grouped, double rowsOut, RowState row, long boundMask) {
+		if (prefixLength < 0 || prefixLength > order.length || branches.length != order.length - prefixLength) {
+			return unbounded();
+		}
+		LmdbNativeFanOutFacts facts = LmdbNativeFanOutFacts.forFactorized(order, order.length, prefixLength, row,
+				boundMask, Double.NaN);
+		if (!facts.priceable()) {
+			return factorized(order, prefixLength, row, boundMask, Feature.BATCH_ROW)
+					.plus(perRow(Feature.GROUP_UPDATE, rowsOut, row));
+		}
+		LmdbNativeCostVector total = LmdbNativeCostVector.zero();
+		for (int i = 0; i < prefixLength; i++) {
+			LmdbNativeFanOutFacts.Depth depth = facts.depth(i);
+			total = total
+					.plus(plan(order[i], row, depth.maskBefore(), Feature.BATCH_ROW).scale(depth.prefixRows()));
+		}
+		double prefixRows = facts.prefixRowsAfterPrefix();
+		for (int b = prefixLength; b < order.length; b++) {
+			LmdbNativeFanOutFacts.Depth depth = facts.depth(b);
+			TailBranch consumer = branches[b - prefixLength];
+			double keys = depth.distinctKeys();
+			LmdbNativeCostVector probe = branchProbe(order[b], row, depth.maskBefore());
+			LmdbNativeCostVector memoForm = branchAccess(probe, consumer.role(), keys, depth.hittingKeys(),
+					prefixRows);
+			LmdbNativeCostVector access = memoForm;
+			if (consumer.scanOnceSlot() >= 0 && consumer.role() == BranchRole.COUNT
+					&& keys > Branch.SCAN_ONCE_MIN_MISSES && order[b] instanceof PatternPlan pattern) {
+				double paidKeys = Branch.SCAN_ONCE_MIN_MISSES;
+				double rowsPerPaidProbe = probe.expected(Feature.SCANNED_ROW) * depth.hitProbability();
+				double probeWork = paidKeys
+						* (probe.expected(Feature.INDEX_SEEK) * RuntimeBuildAdmission.SEEK_WORK_UNITS
+								+ rowsPerPaidProbe);
+				LmdbNativeCostVector plane = pattern(pattern, row,
+						depth.maskBefore() & ~(1L << consumer.scanOnceSlot()));
+				double planeWork = plane.expected(Feature.SCANNED_ROW)
+						+ plane.expected(Feature.INDEX_SEEK) * RuntimeBuildAdmission.SEEK_WORK_UNITS;
+				if (planeWork <= 2D * probeWork) {
+					LmdbNativeCostVector paid = scaled(probe, Feature.INDEX_SEEK, paidKeys, paidKeys)
+							.plus(scaled(probe, Feature.SCANNED_ROW, paidKeys * depth.hitProbability(), paidKeys));
+					access = withCeilingOf(paid.plus(plane), memoForm);
+				} else {
+					access = memoForm.plus(perRow(Feature.SCANNED_ROW,
+							Math.min(plane.expected(Feature.SCANNED_ROW), 2D * probeWork)));
+				}
+			}
+			total = total.plus(access).plus(perRow(Feature.HASH_PROBE, prefixRows));
+			double replayed = prefixRows * depth.rowsPerKey();
+			total = total.plus(perRow(Feature.GROUP_UPDATE, replayed * consumer.valueSpecs()))
+					.plus(perRow(Feature.DISTINCT_UPDATE, replayed * consumer.distinctSpecs()));
+		}
+		total = total.plus(perRow(Feature.GROUP_UPDATE, prefixRows * rowSpecs));
+		return grouped ? total.plus(perRow(Feature.HASH_PROBE, prefixRows)) : total;
+	}
+
+	/** {@code vector} with every feature's high raised to at least {@code ceiling}'s. */
+	private static LmdbNativeCostVector withCeilingOf(LmdbNativeCostVector vector, LmdbNativeCostVector ceiling) {
+		LmdbNativeCostVector.Builder builder = LmdbNativeCostVector.builder();
+		for (Feature feature : Feature.values()) {
+			double high = Math.max(vector.high(feature), ceiling.high(feature));
+			if (high > 0D) {
+				builder.add(feature, vector.low(feature), vector.expected(feature), high);
+			}
+		}
+		return builder.build();
 	}
 
 	/** One feature of {@code vector} scaled by {@code expectedScale} (low and expected) and {@code highScale}. */

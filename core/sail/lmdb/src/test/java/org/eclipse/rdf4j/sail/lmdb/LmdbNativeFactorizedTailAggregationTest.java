@@ -577,17 +577,31 @@ public class LmdbNativeFactorizedTailAggregationTest {
 		}
 		assertThat(groupFeatures).containsKeys("nestedLoop", "factorizedTail");
 		assertThat(rowFeatures).containsKeys("nestedLoop", "factorizedRows");
-		for (String feature : List.of("INDEX_SEEK", "SCANNED_ROW", "DECODED_ROW")) {
+		List<String> access = List.of("INDEX_SEEK", "SCANNED_ROW", "DECODED_ROW");
+		for (String feature : access) {
 			assertThat(groupFeatures.get("nestedLoop").getOrDefault(feature, 0D))
 					.as("sequential groups %s: %s against the row-site join %s", feature, groupFeatures, rowFeatures)
 					.isGreaterThanOrEqualTo(rowFeatures.get("nestedLoop").getOrDefault(feature, 0D));
-			assertThat(groupFeatures.get("factorizedTail").getOrDefault(feature, 0D))
-					.as("factorized tail %s: %s against the row-site factorized join %s", feature, groupFeatures,
-							rowFeatures)
-					.isGreaterThanOrEqualTo(rowFeatures.get("factorizedRows").getOrDefault(feature, 0D));
 		}
+		// the tail's counting branch may trade its per-key probes for one sweep of the predicate plane (scan-once
+		// after 1024 paid probes), so its access is compared as a whole, not seek for seek
+		assertThat(access.stream().mapToDouble(f -> groupFeatures.get("factorizedTail").getOrDefault(f, 0D)).sum())
+				.as("factorized tail access: %s against the row-site factorized join %s", groupFeatures, rowFeatures)
+				.isGreaterThanOrEqualTo(
+						access.stream().mapToDouble(f -> rowFeatures.get("factorizedRows").getOrDefault(f, 0D)).sum());
 		assertThat(groupFeatures.get("nestedLoop").getOrDefault("GROUP_UPDATE", 0D)).isGreaterThan(0D);
 		assertThat(groupFeatures.get("factorizedTail").getOrDefault("GROUP_UPDATE", 0D)).isGreaterThan(0D);
+		// the factorized strategies memoise the second pattern per hub (3000 keys for 9000 prefix rows) and the
+		// tail folds the 3 matches per hub into one weighted update per prefix row (9000, not 27000)
+		assertThat(rowFeatures.get("factorizedRows").getOrDefault("INDEX_SEEK", 0D))
+				.as("factorized rows seeks: %s", rowFeatures)
+				.isLessThanOrEqualTo(0.5D * rowFeatures.get("nestedLoop").getOrDefault("INDEX_SEEK", 0D));
+		assertThat(groupFeatures.get("factorizedTail").getOrDefault("INDEX_SEEK", 0D))
+				.as("factorized tail seeks: %s", groupFeatures)
+				.isLessThanOrEqualTo(0.5D * groupFeatures.get("nestedLoop").getOrDefault("INDEX_SEEK", 0D));
+		assertThat(groupFeatures.get("factorizedTail").getOrDefault("GROUP_UPDATE", 0D))
+				.as("factorized tail group updates: %s", groupFeatures)
+				.isLessThanOrEqualTo(0.5D * groupFeatures.get("nestedLoop").getOrDefault("GROUP_UPDATE", 0D));
 		// the parallel aggregation runs the same join on its workers; the row-site batch (merge or hash join) reads
 		// both relations: neither may quote rows without the access work that produces them
 		assertThat(groupFeatures).containsKey("parallelAggregation");
