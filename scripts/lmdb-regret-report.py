@@ -40,6 +40,7 @@ def main(argv):
         decisions[(row["query"], row["indexes"], row["adjacency"], row["point"])].append(row)
     fastest_count = defaultdict(int)
     chosen_count = defaultdict(int)
+    ratios = defaultdict(list)
     agree, total, bad = 0, 0, []
     rank_pairs_ok, rank_pairs = 0, 0
     for key, entries in sorted(decisions.items()):
@@ -57,6 +58,8 @@ def main(argv):
         for e in entries:
             if e["median"] is None:
                 print(f"    {e['strategy']:32s}   declined  {e['note']}")
+            elif e["expected"] is not None and e["expected"] > 0:
+                ratios[e["strategy"]].append(e["median"] / e["expected"])
         # pairwise agreement between quoted expected price and measured median
         priced = [e for e in measured if e["expected"] is not None]
         for i in range(len(priced)):
@@ -84,7 +87,23 @@ def main(argv):
     print(f"\n=== regret above {threshold}x ===")
     for regret, key, chosen, fastest in sorted(bad, reverse=True):
         print(f"  {regret:6.2f}x  {key[0]} [{key[1]} {key[2]}] {key[3]}: chose {chosen}, fastest {fastest}")
+    ratio_table(ratios)
     return 0
+
+
+
+def ratio_table(entries_by_strategy):
+    """Per strategy: the median, lower and upper quartile of measured over quoted time (1.0 is an exact quote)."""
+    print("\n=== measured / quoted per strategy (median, p25, p75, n) ===")
+    rows = []
+    for strategy, ratios in entries_by_strategy.items():
+        ratios = sorted(ratios)
+        if not ratios:
+            continue
+        rows.append((ratios[len(ratios) // 2], ratios[len(ratios) // 4], ratios[3 * len(ratios) // 4],
+                     len(ratios), strategy))
+    for median, p25, p75, n, strategy in sorted(rows, reverse=True):
+        print(f"    {strategy:34s} median={median:6.2f} p25={p25:6.2f} p75={p75:6.2f} n={n}")
 
 
 if __name__ == "__main__":

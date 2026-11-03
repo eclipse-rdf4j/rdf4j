@@ -19,29 +19,21 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.io.FileUtils;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.FoafCliqueQueryCatalog.QueryScenario;
+import org.eclipse.rdf4j.sail.lmdb.benchmark.LmdbNativeRegretHarness.Timing;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeDecisionTestAccess;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeDecisionTestAccess.Captured;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -67,12 +59,6 @@ class LmdbNativeStrategyRegretHarnessTest {
 	private static final int WARMUPS = 2;
 	private static final long SEED = 12345L;
 
-	/** One strategy's measurement at one decision of one query on one store. */
-	private record Timing(String query, String indexes, String adjacency, String point, String id, boolean chosen,
-			boolean admitted, double medianNanos, double minNanos, long rows, double expectedNanos, double lowNanos,
-			double highNanos, double[] features, String note) {
-	}
-
 	/** Index sets to measure; default the fixture's three. */
 	private static final List<String> INDEX_SETS = List.of(System
 			.getProperty("rdf4j.lmdb.regret.indexes", String.join(";", LmdbNativeGoldenDecisionsTest.INDEX_SETS))
@@ -96,12 +82,12 @@ class LmdbNativeStrategyRegretHarnessTest {
 			for (String indexes : INDEX_SETS) {
 				if (ADJACENCY_MODES.contains("lmdbOnly")) {
 					timings.addAll(measureConfiguration(indexes, false));
-					Files.write(output, render(timings), StandardCharsets.UTF_8);
+					Files.write(output, LmdbNativeRegretHarness.render(timings), StandardCharsets.UTF_8);
 				}
 				if (ADJACENCY_MODES.contains("adjacency")
 						&& LmdbNativeGoldenDecisionsTest.ADJACENCY_INDEX_SETS.contains(indexes)) {
 					timings.addAll(measureConfiguration(indexes, true));
-					Files.write(output, render(timings), StandardCharsets.UTF_8);
+					Files.write(output, LmdbNativeRegretHarness.render(timings), StandardCharsets.UTF_8);
 				}
 			}
 		} finally {
@@ -113,8 +99,8 @@ class LmdbNativeStrategyRegretHarnessTest {
 				}
 			});
 		}
-		Files.write(output, render(timings), StandardCharsets.UTF_8);
-		System.out.println(summary(timings));
+		Files.write(output, LmdbNativeRegretHarness.render(timings), StandardCharsets.UTF_8);
+		System.out.println(LmdbNativeRegretHarness.summary(timings));
 		assertThat(timings).isNotEmpty();
 	}
 
@@ -156,163 +142,7 @@ class LmdbNativeStrategyRegretHarnessTest {
 
 	private List<Timing> measureQuery(SailRepository repository, String queryId, String indexes, String adjacency,
 			String query) throws Exception {
-		// 1. the decision the selector makes, with every admitted candidate's priced features
-		List<Captured> captured = new ArrayList<>();
-		try (AutoCloseable ignored = LmdbNativeDecisionTestAccess.capture(captured);
-				SailRepositoryConnection connection = repository.getConnection()) {
-			connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-		}
-		Map<String, List<Captured>> byPoint = new LinkedHashMap<>();
-		for (Captured entry : captured) {
-			byPoint.computeIfAbsent(entry.decisionPoint(), key -> new ArrayList<>()).add(entry);
-		}
-		List<Timing> timings = new ArrayList<>();
-		// 2. the unforced choice, measured
-		Measurement unforced = measure(repository, query, null);
-		for (Map.Entry<String, List<Captured>> point : byPoint.entrySet()) {
-			Set<String> admitted = new LinkedHashSet<>();
-			Captured winner = null;
-			for (Captured entry : point.getValue()) {
-				if (entry.admitted()) {
-					admitted.add(baseId(entry.id()));
-				}
-				if (entry.winner()) {
-					winner = entry;
-				}
-			}
-			// 3. every admitted strategy, forced
-			for (String id : admitted) {
-				Captured quote = point.getValue()
-						.stream()
-						.filter(entry -> entry.admitted() && baseId(entry.id()).equals(id))
-						.findFirst()
-						.orElse(null);
-				boolean chosen = winner != null && baseId(winner.id()).equals(id);
-				Measurement measurement = chosen ? unforced : measure(repository, query, id);
-				timings.add(new Timing(queryId, indexes, adjacency, point.getKey(), id, chosen, true,
-						measurement.medianNanos, measurement.minNanos, measurement.rows,
-						quote == null ? Double.NaN : quote.expectedNanos(),
-						quote == null ? Double.NaN : quote.lowNanos(), quote == null ? Double.NaN : quote.highNanos(),
-						quote == null ? null : quote.expectedFeatures(), measurement.note));
-			}
-		}
-		return timings;
-	}
-
-	private record Measurement(double medianNanos, double minNanos, long rows, String note) {
-	}
-
-	private static Measurement measure(SailRepository repository, String query, String forced) {
-		double[] samples = new double[MEASUREMENTS];
-		long rows = -1L;
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			for (int i = 0; i < WARMUPS + MEASUREMENTS; i++) {
-				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
-				if (forced != null) {
-					prepared.setForcedLmdbExecutionStrategy(forced);
-				}
-				long started = System.nanoTime();
-				long count = 0L;
-				try (TupleQueryResult result = prepared.evaluate()) {
-					while (result.hasNext()) {
-						result.next();
-						count++;
-					}
-				}
-				long elapsed = System.nanoTime() - started;
-				rows = count;
-				if (i >= WARMUPS) {
-					samples[i - WARMUPS] = elapsed;
-				}
-			}
-		} catch (QueryEvaluationException e) {
-			return new Measurement(Double.NaN, Double.NaN, -1L, "declined: " + firstLine(e.getMessage()));
-		}
-		Arrays.sort(samples);
-		return new Measurement(samples[samples.length / 2], samples[0], rows, "");
-	}
-
-	private static String firstLine(String message) {
-		if (message == null) {
-			return "";
-		}
-		int end = message.indexOf('\n');
-		return (end < 0 ? message : message.substring(0, end)).replace('\t', ' ');
-	}
-
-	private static String baseId(String id) {
-		int paren = id.indexOf('(');
-		return paren > 0 ? id.substring(0, paren) : id;
-	}
-
-	private static List<String> render(List<Timing> timings) {
-		List<String> lines = new ArrayList<>();
-		lines.add("# query\tindexes\tadjacency\tpoint\tstrategy\tchosen\tmedianNanos\tminNanos\trows\texpectedNanos"
-				+ "\tlowNanos\thighNanos\tnote\tfeatures("
-				+ String.join(",", LmdbNativeDecisionTestAccess.featureNames())
-				+ ")");
-		for (Timing timing : timings) {
-			StringBuilder features = new StringBuilder();
-			if (timing.features != null) {
-				for (int i = 0; i < timing.features.length; i++) {
-					if (i > 0) {
-						features.append(',');
-					}
-					features.append(String.format(Locale.ROOT, "%.3f", timing.features[i]));
-				}
-			}
-			lines.add(String.join("\t", timing.query, timing.indexes, timing.adjacency, timing.point, timing.id,
-					timing.chosen ? "chosen" : "-", number(timing.medianNanos), number(timing.minNanos),
-					Long.toString(timing.rows), number(timing.expectedNanos), number(timing.lowNanos),
-					number(timing.highNanos), timing.note, features.toString()));
-		}
-		return lines;
-	}
-
-	private static String number(double value) {
-		return Double.isNaN(value) ? "NaN" : String.format(Locale.ROOT, "%.0f", value);
-	}
-
-	/** Per decision: the chosen strategy's median over the fastest measured median (1.0 is a perfect choice). */
-	private static String summary(List<Timing> timings) {
-		Map<String, List<Timing>> decisions = new LinkedHashMap<>();
-		for (Timing timing : timings) {
-			decisions.computeIfAbsent(timing.query + "\t" + timing.indexes + "\t" + timing.adjacency + "\t"
-					+ timing.point, key -> new ArrayList<>()).add(timing);
-		}
-		StringBuilder out = new StringBuilder("\nstrategy regret (chosen median / fastest median)\n");
-		double worst = 1D;
-		int decided = 0;
-		int optimal = 0;
-		for (Map.Entry<String, List<Timing>> decision : decisions.entrySet()) {
-			Timing chosen = null;
-			Timing fastest = null;
-			for (Timing timing : decision.getValue()) {
-				if (Double.isNaN(timing.medianNanos)) {
-					continue;
-				}
-				if (timing.chosen) {
-					chosen = timing;
-				}
-				if (fastest == null || timing.medianNanos < fastest.medianNanos) {
-					fastest = timing;
-				}
-			}
-			if (chosen == null || fastest == null) {
-				continue;
-			}
-			double regret = chosen.medianNanos / fastest.medianNanos;
-			decided++;
-			if (regret <= 1.05D) {
-				optimal++;
-			}
-			worst = Math.max(worst, regret);
-			out.append(String.format(Locale.ROOT, "%-80s chosen=%-28s %8.2f ms  fastest=%-28s %8.2f ms  regret=%.2f%n",
-					decision.getKey().replace('\t', ' '), chosen.id, chosen.medianNanos / 1e6, fastest.id,
-					fastest.medianNanos / 1e6, regret));
-		}
-		out.append(String.format(Locale.ROOT, "decisions=%d optimalWithin5pct=%d worstRegret=%.2f%n", decided, optimal,
-				worst));
-		return out.toString();
+		return LmdbNativeRegretHarness.measureQuery(repository, queryId, indexes, adjacency, query, WARMUPS,
+				MEASUREMENTS);
 	}
 }
