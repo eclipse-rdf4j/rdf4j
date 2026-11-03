@@ -125,7 +125,11 @@ class LmdbNativeGoldenDecisionsTest {
 			"rdf4j.lmdb.costCalibration.enabled", "false",
 			"rdf4j.lmdb.costModel.persist.enabled", "false",
 			// compiled readiness must not depend on background compile timing between runs
-			"rdf4j.lmdb.janinoCodegen.synchronous", "true");
+			"rdf4j.lmdb.janinoCodegen.synchronous", "true",
+			// parallel strategies are priced per worker, so the decision must not depend on the machine's core count
+			// (a 4-core CI runner prices irKernelParallel above wcoj on cycle5 where a 16-core laptop does not)
+			"rdf4j.lmdb.parallel.threads", "4",
+			"rdf4j.lmdb.parallel.maxTasks", "4");
 
 	@Test
 	void decisionsMatchGoldenFixture() throws IOException {
