@@ -53,6 +53,121 @@ final class LmdbNativeStaticPrior {
 		return percent / 100D;
 	}
 
+	/**
+	 * The shape of the work a parallel strategy splits: whether its root can be partitioned at all (a pattern or a join
+	 * chain can, a UNION, OPTIONAL or island root cannot), how many root rows the workers share, and for an aggregate
+	 * how many groups each partial table holds and how many rows it folds.
+	 */
+	record ParallelShape(boolean partitionable, double rootRows, boolean aggregate, double groups, double rowsOut) {
+
+		/** No shape known: the flat rule of {@link #measuredParallelSpeedup} applies. */
+		static final ParallelShape UNKNOWN = new ParallelShape(true, Double.NaN, false, Double.NaN, Double.NaN);
+
+		/** The rows of {@code plan} as the workers would split them. */
+		static ParallelShape rows(SlotPlan plan, RowState row, long boundMask) {
+			return new ParallelShape(partitionable(plan), rootRows(plan, row, boundMask), false, 1D,
+					LmdbNativeWork.rowsOut(plan, row, boundMask));
+		}
+
+		/** The rows of {@code plan} folded into {@code groupSlots == 0 ? 1 : up to rowsOut} groups per worker. */
+		static ParallelShape aggregate(SlotPlan plan, RowState row, long boundMask, int groupSlots) {
+			double rowsOut = LmdbNativeWork.rowsOut(plan, row, boundMask);
+			return new ParallelShape(partitionable(plan), rootRows(plan, row, boundMask), true,
+					groupSlots == 0 ? 1D : rowsOut, rowsOut);
+		}
+
+		private static boolean partitionable(SlotPlan plan) {
+			if (plan instanceof PatternPlan || plan instanceof MultiJoinPlan) {
+				return true;
+			}
+			if (plan instanceof FilterPlan filter) {
+				return partitionable(filter.arg);
+			}
+			if (plan instanceof ExtensionPlan extension) {
+				return partitionable(extension.arg);
+			}
+			if (plan instanceof RowDistinctPlan distinct) {
+				return partitionable(distinct.arg);
+			}
+			if (plan instanceof JoinPlan join) {
+				return partitionable(join.left);
+			}
+			if (plan instanceof MinusPlan minus) {
+				return partitionable(minus.left);
+			}
+			if (plan instanceof NativeAliasJoinPlan alias) {
+				return partitionable(alias.original);
+			}
+			return false;
+		}
+
+		private static double rootRows(SlotPlan plan, RowState row, long boundMask) {
+			if (plan instanceof MultiJoinPlan multiJoin) {
+				SlotPlan[] order = multiJoin.derivedPlan(boundMask).order;
+				return order.length == 0 ? Double.NaN : LmdbNativeCostVectors.rows(order[0], row, boundMask);
+			}
+			if (plan instanceof FilterPlan filter) {
+				return rootRows(filter.arg, row, boundMask);
+			}
+			if (plan instanceof ExtensionPlan extension) {
+				return rootRows(extension.arg, row, boundMask);
+			}
+			if (plan instanceof RowDistinctPlan distinct) {
+				return rootRows(distinct.arg, row, boundMask);
+			}
+			if (plan instanceof JoinPlan join) {
+				return rootRows(join.left, row, boundMask);
+			}
+			if (plan instanceof MinusPlan minus) {
+				return rootRows(minus.left, row, boundMask);
+			}
+			if (plan instanceof NativeAliasJoinPlan alias) {
+				return rootRows(alias.original, row, boundMask);
+			}
+			return LmdbNativeCostVectors.rows(plan, row, boundMask);
+		}
+	}
+
+	/** Root rows below which the workers' shares are too small for the pipelines to gain anything. */
+	static final double PARALLEL_ROWS_PER_WORKER_FLOOR = 5_000D;
+
+	/**
+	 * The streaming speed-up a parallel strategy earns on {@code shape} with {@code workers}: nothing when the root
+	 * cannot be partitioned (medical q12's UNION root ran at 0.63x serial speed in parallel, 2026-11-03) or holds fewer
+	 * rows than the workers can share (sub-50 ms joins gained nothing at 15000 people), else 0.44 of the worker count
+	 * capped by the root rows per 5000 (a 3 s serial join ran in 460 ms on fifteen workers). Aggregates scale like
+	 * rows; their merge is priced by {@link #parallelMerge}. An unknown shape keeps the flat rule.
+	 */
+	static double parallelSpeedup(ParallelShape shape, int workers) {
+		if (shape == null || Double.isNaN(shape.rootRows())) {
+			return measuredParallelSpeedup(shape != null && shape.aggregate()
+					? LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL
+					: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL, workers);
+		}
+		if (!shape.partitionable()) {
+			return 1D;
+		}
+		double byRows = shape.rootRows() / PARALLEL_ROWS_PER_WORKER_FLOOR;
+		return Math.max(1D, Math.min(0.44D * workers, byRows));
+	}
+
+	/**
+	 * The merge of the workers' partial tables an aggregate pays before its first group: one group update per group of
+	 * every partial table but the first; the parallel aggregates measured 0.38 to 0.70x serial speed on the FOAF stores
+	 * where every row is its own group, and nothing on a global count.
+	 */
+	static LmdbNativeCostVector parallelMerge(ParallelShape shape, int workers) {
+		if (shape == null || !shape.aggregate() || workers < 2) {
+			return LmdbNativeCostVector.zero();
+		}
+		double groups = Double.isNaN(shape.groups()) ? shape.rowsOut() : shape.groups();
+		double perTable = Double.isNaN(shape.rowsOut()) ? groups : Math.min(groups, shape.rowsOut());
+		if (Double.isNaN(perTable)) {
+			return LmdbNativeCostVector.zero();
+		}
+		return LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE, perTable * (workers - 1));
+	}
+
 	static double measuredParallelSpeedup(String tag, int workers) {
 		String base = LmdbNativeCandidate.baseId(tag);
 		if (base.contains("Aggregate") || base.contains("Aggregation")) {

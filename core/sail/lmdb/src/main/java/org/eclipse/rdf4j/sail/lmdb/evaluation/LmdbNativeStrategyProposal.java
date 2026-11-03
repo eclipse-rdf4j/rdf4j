@@ -158,6 +158,16 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		return quote == null ? this : withCostQuote(quote);
 	}
 
+	/**
+	 * The shape a parallel variant's speed-up and merge are priced from when its quote comes from the typed estimate.
+	 */
+	LmdbNativeStaticPrior.ParallelShape parallelShape;
+
+	LmdbNativeStrategyProposal<T> withParallelShape(LmdbNativeStaticPrior.ParallelShape shape) {
+		this.parallelShape = shape;
+		return this;
+	}
+
 	LmdbNativeCostQuote costQuote() {
 		return costQuote;
 	}

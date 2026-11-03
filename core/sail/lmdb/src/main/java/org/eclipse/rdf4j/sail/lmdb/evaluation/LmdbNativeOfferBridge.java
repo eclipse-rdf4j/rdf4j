@@ -148,8 +148,15 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 				int workers = Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers());
 				startup = startup.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START,
 						workers - workerStarts));
-				streaming = streaming.scale(workers / LmdbNativeStaticPrior.measuredParallelSpeedup(proposal.tag,
-						workers));
+				// the speed-up by the shape of the work when the proposal declares it (root rows, partitionable
+				// root, the partial tables an aggregate merges), else the flat measured rule
+				double speedup = proposal.parallelShape != null
+						? LmdbNativeStaticPrior.parallelSpeedup(proposal.parallelShape, workers)
+						: LmdbNativeStaticPrior.measuredParallelSpeedup(proposal.tag, workers);
+				streaming = streaming.scale(workers / speedup);
+				if (proposal.parallelShape != null) {
+					startup = startup.plus(LmdbNativeStaticPrior.parallelMerge(proposal.parallelShape, workers));
+				}
 			}
 			return new LmdbNativeCostQuote(startup, streaming, typed.estimatedOutputRows(), false, false);
 		}

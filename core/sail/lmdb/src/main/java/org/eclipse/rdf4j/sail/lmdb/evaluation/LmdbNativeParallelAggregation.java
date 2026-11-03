@@ -153,14 +153,16 @@ final class LmdbNativeParallelAggregation {
 		// the row site prices it) and update a group per joined row; the streaming part scales by the measured
 		// parallel speed-up and every worker is started up front
 		long boundMask = row.boundMask();
+		LmdbNativeStaticPrior.ParallelShape shape = LmdbNativeStaticPrior.ParallelShape.aggregate(plan, row,
+				boundMask, it.groupSlots.length);
 		LmdbNativeCostVector streaming = LmdbNativeCostVectors
 				.chain(derived.order, derived.order.length, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
 				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
 						LmdbNativeWork.rowsOut(plan, row, boundMask), row))
-				.scale(1D / LmdbNativeStaticPrior.measuredParallelSpeedup(
-						LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads));
+				.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(shape, threads));
 		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D)
-				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, threads));
+				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, threads))
+				.plus(LmdbNativeStaticPrior.parallelMerge(shape, threads));
 		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
 				LmdbNativeWork.exact(LmdbNativeStrategyProposal.parallelStartupCost()), Double.NaN,
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close)

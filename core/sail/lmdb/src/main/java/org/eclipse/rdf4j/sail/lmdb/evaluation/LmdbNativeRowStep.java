@@ -2079,7 +2079,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D);
 		if (pipelines || tag.contains("Parallel")) {
 			int workers = Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers());
-			streaming = streaming.scale(1D / LmdbNativeStaticPrior.measuredParallelSpeedup(tag, workers));
+			streaming = streaming.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(
+					LmdbNativeStaticPrior.ParallelShape.rows(arg, row, boundMask), workers));
 			startup = startup.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers));
 		}
 		return new LmdbNativeCostQuote(startup, streaming, rows, false, false);

@@ -1645,7 +1645,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 									.withOptionalExecutionResourceWitness(
 											witnessIr ? compiledAdmission.executionResourceWitness(row, true) : null)
 									.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, true))
-									.withOptionalCostQuote(kernelQuote(arg, row, compiledParallelTag)));
+									.withOptionalCostQuote(kernelQuote(arg, row, compiledParallelTag))
+									.withParallelShape(LmdbNativeStaticPrior.ParallelShape.aggregate(arg, row,
+											row.boundMask(), groupSlots.length)));
 				}
 				if (interpretedIr) {
 					arbiter.offer(() -> estimatedProposal(
@@ -1661,7 +1663,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 											witnessIr ? interpretedAdmission.executionResourceWitness(row, true) : null)
 									.withOptionalAggregatePhysicalPlan(
 											interpretedAdmission.physicalPlan(arg, row, true))
-									.withOptionalCostQuote(kernelQuote(arg, row, interpretedParallelTag)));
+									.withOptionalCostQuote(kernelQuote(arg, row, interpretedParallelTag))
+									.withParallelShape(LmdbNativeStaticPrior.ParallelShape.aggregate(arg, row,
+											row.boundMask(), groupSlots.length)));
 				}
 			}
 			if (compiledIr) {
@@ -1881,6 +1885,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	 */
 	private LmdbNativeCostQuote kernelQuote(SlotPlan input, RowState row, String tag) {
 		if (!LmdbNativePlanExecutionProfile.hasCorrelatedBody(input)) {
+			// plain joins keep the physical quote with its exact facts (the kernel's vectorised adjacency runs
+			// measure far below a probe chain: cycle5ValuesCountMailboxHomepage 55 ms against the chain's 380 ms)
 			return null;
 		}
 		long boundMask = row.boundMask();
@@ -1892,8 +1898,11 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D);
 		if (tag.contains("Parallel")) {
 			int workers = Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers());
-			streaming = streaming.scale(1D / LmdbNativeStaticPrior.measuredParallelSpeedup(tag, workers));
-			startup = startup.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers));
+			LmdbNativeStaticPrior.ParallelShape shape = LmdbNativeStaticPrior.ParallelShape.aggregate(input, row,
+					boundMask, groupSlots.length);
+			streaming = streaming.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(shape, workers));
+			startup = startup.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers))
+					.plus(LmdbNativeStaticPrior.parallelMerge(shape, workers));
 		}
 		return new LmdbNativeCostQuote(startup, streaming, groupSlots.length == 0 && havingCondition == null ? 1D
 				: Double.NaN, false, false);
