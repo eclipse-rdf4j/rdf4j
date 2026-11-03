@@ -282,7 +282,25 @@ final class LmdbNativeDispatchLoop<C, T> {
 	 * Selects and opens a strategy. Returns null when nothing was admitted, nothing could bind, or a non-mandatory
 	 * forced strategy was not admitted here; throws when a mandatory forced strategy cannot be honoured.
 	 */
+	/** The forced value of the dispatch running on this thread, for strategies asked during admission or open. */
+	private static final ThreadLocal<String> ACTIVE_FORCING = new ThreadLocal<>();
+
+	/** The forced strategy value of the dispatch currently admitting or opening on this thread, or null. */
+	static String activeForcing() {
+		return ACTIVE_FORCING.get();
+	}
+
 	Selection<T> dispatch(C context) throws IOException {
+		String previousForcing = ACTIVE_FORCING.get();
+		ACTIVE_FORCING.set(forcedTag);
+		try {
+			return dispatchForced(context);
+		} finally {
+			ACTIVE_FORCING.set(previousForcing);
+		}
+	}
+
+	private Selection<T> dispatchForced(C context) throws IOException {
 		long decisionId = DECISIONS.incrementAndGet();
 		Admitted admitted = new Admitted();
 		admitted.admit(context);

@@ -236,4 +236,24 @@ public final class LmdbNativeForceableStrategies {
 	public static boolean isForceable(String tag) {
 		return tag != null && DESCRIPTIONS.containsKey(tag);
 	}
+
+	/**
+	 * Whether a forced value (one name, or a comma-separated preference list) names any of {@code tags}. Admission
+	 * heuristics such as minimum-work thresholds are selection aids, not capabilities, so a strategy that is forced by
+	 * name is offered regardless of them.
+	 */
+	public static boolean forces(String requested, String... tags) {
+		if (isNoForcing(requested)) {
+			return false;
+		}
+		for (String option : requested.split(",")) {
+			String trimmed = option.trim();
+			for (String tag : tags) {
+				if (trimmed.equals(tag)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
 }

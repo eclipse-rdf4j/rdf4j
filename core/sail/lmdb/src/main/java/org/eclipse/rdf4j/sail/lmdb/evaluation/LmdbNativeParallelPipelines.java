@@ -238,7 +238,9 @@ final class LmdbNativeParallelPipelines {
 		}
 		PatternPlan root = (PatternPlan) derived.order[0];
 		double totalWork = plan.estimate(consumerRow);
-		if (!(totalWork >= minimumWorkEstimate())) {
+		if (!(totalWork >= minimumWorkEstimate()) && !LmdbNativeForceableStrategies.forces(
+				LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES)) {
 			return reject(step, "below-threshold");
 		}
 		if (!parallelWorkerForkable(plan.filters)) {

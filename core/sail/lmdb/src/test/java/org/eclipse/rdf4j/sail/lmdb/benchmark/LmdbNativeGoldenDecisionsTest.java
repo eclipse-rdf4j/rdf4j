@@ -123,7 +123,9 @@ class LmdbNativeGoldenDecisionsTest {
 			"rdf4j.lmdb.adaptiveProbe.enabled", "false",
 			"rdf4j.lmdb.adaptiveHedge.enabled", "false",
 			"rdf4j.lmdb.costCalibration.enabled", "false",
-			"rdf4j.lmdb.costModel.persist.enabled", "false");
+			"rdf4j.lmdb.costModel.persist.enabled", "false",
+			// compiled readiness must not depend on background compile timing between runs
+			"rdf4j.lmdb.janinoCodegen.synchronous", "true");
 
 	@Test
 	void decisionsMatchGoldenFixture() throws IOException {

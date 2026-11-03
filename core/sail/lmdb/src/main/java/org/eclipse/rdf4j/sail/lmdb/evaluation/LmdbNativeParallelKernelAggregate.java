@@ -324,7 +324,10 @@ final class LmdbNativeParallelKernelAggregate {
 		double totalWork = rootNodeDomainIntersection >= 0
 				? queryNodeDomainIntersections[rootNodeDomainIntersection].estimatedWork()
 				: arg.estimate(row);
-		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
+		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate()) && !LmdbNativeForceableStrategies
+				.forces(LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED)) {
 			return debugDecline(explainTarget, "below-threshold");
 		}
 		long rootKeys = 0L;
@@ -547,7 +550,11 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 		long threshold = Long.getLong(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
 				LmdbNativeParallelPrefixRuns.DEFAULT_PARALLEL_MIN_ESTIMATE);
-		if (threshold > 0L && estimatedWork < threshold || typeRoots < 2L) {
+		boolean forcedTypeMatrix = LmdbNativeForceableStrategies.forces(
+				LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED);
+		if (threshold > 0L && estimatedWork < threshold && !forcedTypeMatrix || typeRoots < 2L) {
 			return debugDecline(explainTarget, "below-threshold");
 		}
 		long targetTasks = Math.max(2L, (long) desiredWorkers * RANGES_PER_WORKER);

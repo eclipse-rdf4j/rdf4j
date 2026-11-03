@@ -246,6 +246,17 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		return Boolean.TRUE.equals(KERNEL_SUBPLAN.get()) ? null : currentForcedExecutionStrategy();
 	}
 
+	/**
+	 * The strategy the query requested, whether or not the current thread is inside a kernel sub-plan. Admission
+	 * heuristics of a strategy that is itself being forced (a parallel rung's minimum-work threshold) consult this,
+	 * because the kernel-sub-plan mask exists to free the kernel's internal operators, not to hide the request from the
+	 * strategy being asked to run.
+	 */
+	static String requestedForcedExecutionStrategy() {
+		String active = LmdbNativeDispatchLoop.activeForcing();
+		return active != null ? active : currentForcedExecutionStrategy();
+	}
+
 	/** The enclosing kernel honors the forced strategy; its internal operators choose their own access paths. */
 	static boolean enterKernelSubplan() {
 		boolean nested = Boolean.TRUE.equals(KERNEL_SUBPLAN.get());

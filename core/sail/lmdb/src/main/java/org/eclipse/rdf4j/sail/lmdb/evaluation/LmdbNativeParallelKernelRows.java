@@ -185,7 +185,10 @@ final class LmdbNativeParallelKernelRows {
 			return debugDecline(explainTarget, "single-thread");
 		}
 		double totalWork = arg.estimate(row);
-		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
+		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate()) && !LmdbNativeForceableStrategies
+				.forces(LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED)) {
 			return debugDecline(explainTarget, "below-threshold");
 		}
 		long rootKeys = 0L;

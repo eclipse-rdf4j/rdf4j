@@ -265,11 +265,14 @@ class LmdbNativeVariablePredicateKernelTest {
 			assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
 			for (int attempt = 0; attempt < 20
 					&& JaninoPipelineTestAccess.openedAny() == rowCompiledBefore; attempt++) {
-				assertThat(run(rowQuery, "irKernel,irKernelInterpreted")).containsExactlyElementsOf(expectedRows);
+				assertThat(run(rowQuery, "irKernel,irKernelInterpreted,irKernelWildcard,irKernelWildcardInterpreted"))
+						.containsExactlyElementsOf(expectedRows);
 				Thread.onSpinWait();
 			}
 			try (RepositoryConnection conn = repo.getConnection()) {
-				executed = explain(conn, rowQuery, "irKernel,irKernelInterpreted", Explanation.Level.Telemetry);
+				executed = explain(conn, rowQuery,
+						"irKernel,irKernelInterpreted,irKernelWildcard,irKernelWildcardInterpreted",
+						Explanation.Level.Telemetry);
 			}
 		} finally {
 			if (previousSynchronous == null) {

@@ -108,7 +108,8 @@ final class LmdbNativeParallelAggregation {
 			return reject(it, "single-thread");
 		}
 		double totalWork = plan.estimate(row);
-		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
+		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate()) && !LmdbNativeForceableStrategies
+				.forces(it.forcedExecutionStrategy, LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION)) {
 			return reject(it, "below-threshold");
 		}
 		// commit to the same order the workers will select: sunk only when the tail engages, so a declined or
