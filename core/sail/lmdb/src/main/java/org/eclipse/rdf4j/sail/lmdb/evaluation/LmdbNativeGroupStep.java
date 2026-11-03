@@ -1644,7 +1644,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 									.withOptionalExpectedPlanningPrior(irParallelExpectedPrior)
 									.withOptionalExecutionResourceWitness(
 											witnessIr ? compiledAdmission.executionResourceWitness(row, true) : null)
-									.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, true)));
+									.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, true))
+									.withOptionalCostQuote(kernelQuote(arg, row, compiledParallelTag)));
 				}
 				if (interpretedIr) {
 					arbiter.offer(() -> estimatedProposal(
@@ -1659,7 +1660,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 									.withOptionalExecutionResourceWitness(
 											witnessIr ? interpretedAdmission.executionResourceWitness(row, true) : null)
 									.withOptionalAggregatePhysicalPlan(
-											interpretedAdmission.physicalPlan(arg, row, true)));
+											interpretedAdmission.physicalPlan(arg, row, true))
+									.withOptionalCostQuote(kernelQuote(arg, row, interpretedParallelTag)));
 				}
 			}
 			if (compiledIr) {
@@ -1672,7 +1674,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 						.withOptionalExpectedPlanningPrior(irSerialExpectedPrior)
 						.withOptionalExecutionResourceWitness(
 								witnessIr ? compiledAdmission.executionResourceWitness(row, false) : null)
-						.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, false)));
+						.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, false))
+						.withOptionalCostQuote(kernelQuote(arg, row, compiledSerialTag)));
 			}
 			if (interpretedIr) {
 				arbiter.offer(() -> estimatedProposal(() -> {
@@ -1684,7 +1687,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 						.withOptionalExpectedPlanningPrior(irSerialExpectedPrior)
 						.withOptionalExecutionResourceWitness(
 								witnessIr ? interpretedAdmission.executionResourceWitness(row, false) : null)
-						.withOptionalAggregatePhysicalPlan(interpretedAdmission.physicalPlan(arg, row, false)));
+						.withOptionalAggregatePhysicalPlan(interpretedAdmission.physicalPlan(arg, row, false))
+						.withOptionalCostQuote(kernelQuote(arg, row, interpretedSerialTag)));
 			}
 		}
 		if (!typeMatrixOwned && replaySafe && !opaque && orderedSinglePatternHandlesRow()) {
@@ -1863,10 +1867,36 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	private LmdbNativeCostQuote sequentialQuote(SlotPlan input, RowState row) {
 		long boundMask = row.boundMask();
 		return LmdbNativeCostQuote.streaming(
-				LmdbNativeCostVectors.plan(input, row, boundMask, LmdbNativeCostVector.Feature.INTERPRETED_ROW)
+				LmdbNativePlanExecutionProfile.profile(input, row, boundMask,
+						LmdbNativePlanExecutionProfile.Mode.SEQUENTIAL)
 						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
 								LmdbNativeWork.rowsOut(input, row, boundMask), row)),
 				groupSlots.length == 0 && havingCondition == null ? 1D : Double.NaN);
+	}
+
+	/**
+	 * The IR aggregates' quote for an input with a MINUS, EXISTS, OPTIONAL or island body: the plan in kernel form
+	 * (witnesses, correlated probes) plus a group update per row; parallel tiers pay a worker start per worker and
+	 * stream at the measured speed-up. Null for inputs the physical quote already prices (plain joins), which keep it.
+	 */
+	private LmdbNativeCostQuote kernelQuote(SlotPlan input, RowState row, String tag) {
+		if (!LmdbNativePlanExecutionProfile.hasCorrelatedBody(input)) {
+			return null;
+		}
+		long boundMask = row.boundMask();
+		double rows = LmdbNativeWork.rowsOut(input, row, boundMask);
+		LmdbNativeCostVector streaming = LmdbNativePlanExecutionProfile.kernelVector(input, row, boundMask,
+				tag.contains("Interpreted") ? LmdbNativeCostVector.Feature.INTERPRETED_ROW
+						: LmdbNativeCostVector.Feature.GENERATED_ROW)
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE, rows, row));
+		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D);
+		if (tag.contains("Parallel")) {
+			int workers = Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers());
+			streaming = streaming.scale(1D / LmdbNativeStaticPrior.measuredParallelSpeedup(tag, workers));
+			startup = startup.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers));
+		}
+		return new LmdbNativeCostQuote(startup, streaming, groupSlots.length == 0 && havingCondition == null ? 1D
+				: Double.NaN, false, false);
 	}
 
 	private static LmdbNativeWork estimatedWork(double estimate) {

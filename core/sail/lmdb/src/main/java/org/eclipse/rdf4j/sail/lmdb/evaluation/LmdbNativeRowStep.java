@@ -2044,10 +2044,14 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			LmdbNativeCostVector.Feature rowFeature) {
 		long boundMask = row.boundMask();
 		double rows = LmdbNativeWork.rowsOut(plan, row, boundMask);
+		// priced as the cursor runs it (MINUS, OPTIONAL, EXISTS and filters by their executors' gates)
+		LmdbNativePlanExecutionProfile.Mode mode = rowFeature == LmdbNativeCostVector.Feature.BATCH_ROW
+				? LmdbNativePlanExecutionProfile.Mode.BATCH
+				: LmdbNativePlanExecutionProfile.Mode.SEQUENTIAL;
 		return inputProposal(opener, tag, plan.estimateWork(row, boundMask), rows)
 				.withPlanningWork(LmdbNativeWork.planning(plan, row, boundMask))
 				.withCostQuote(LmdbNativeCostQuote.streaming(
-						LmdbNativeCostVectors.plan(plan, row, boundMask, rowFeature), rows));
+						LmdbNativePlanExecutionProfile.profile(plan, row, boundMask, mode), rows));
 	}
 
 	/**
@@ -2062,7 +2066,12 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				: tag.contains("Interpreted") ? LmdbNativeCostVector.Feature.INTERPRETED_ROW
 						: LmdbNativeCostVector.Feature.GENERATED_ROW;
 		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
-		LmdbNativeCostVector streaming = LmdbNativeCostVectors.plan(arg, row, boundMask, rowFeature);
+		// a kernel lowers EXISTS and MINUS bodies to witnesses and OPTIONAL to correlated probes; a pipeline runs
+		// the batch cursors; the interpreted tier walks the same IR as the compiled one
+		LmdbNativeCostVector streaming = pipelines
+				? LmdbNativePlanExecutionProfile.profile(arg, row, boundMask,
+						LmdbNativePlanExecutionProfile.Mode.BATCH)
+				: LmdbNativePlanExecutionProfile.kernelVector(arg, row, boundMask, rowFeature);
 		if (tag.contains("Distinct")) {
 			streaming = streaming
 					.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.DISTINCT_UPDATE, rows));

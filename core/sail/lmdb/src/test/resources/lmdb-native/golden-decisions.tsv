@@ -105,10 +105,10 @@ interestJoin	spoc,posc	adjacency	Projection	Decision 1: GROUP BY dispatch	normal
 interestJoin	spoc,posc	adjacency	Projection/Extension/Group (i)	executionPath	-	singleSlotGroups	-	-	-
 existsKnows	spoc,posc	adjacency	Projection	Decision 1: row/join dispatch	normal	batch	-	batch,nestedLoop	prefixRun,factorizedRows,parallelPipelines,irKernel,irKernelParallel,irKernelParallelInterpreted,offer#7,irKernelInterpreted,adaptiveFilterPlacement
 existsKnows	spoc,posc	adjacency	Projection	executionPath	-	batch	-	-	-
-cycle3	spoc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	irKernel	-	irKernel,wcoj,packedFtree,factorizedRows,irKernelParallel,irKernelParallelInterpreted,irKernelInterpreted,adaptiveFilterPlacement,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines
-cycle3	spoc	lmdbOnly	Projection	executionPath	-	irKernel	-	-	-
-cycle4	spoc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	irKernel	-	irKernel,wcoj,packedFtree,factorizedRows,irKernelParallel,irKernelParallelInterpreted,irKernelInterpreted,adaptiveFilterPlacement,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines
-cycle4	spoc	lmdbOnly	Projection	executionPath	-	irKernel	-	-	-
+cycle3	spoc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	factorizedRows	-	factorizedRows,wcoj,packedFtree,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,adaptiveFilterPlacement,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines
+cycle3	spoc	lmdbOnly	Projection	executionPath	-	chunkPipeline	-	-	-
+cycle4	spoc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	factorizedRows	-	factorizedRows,wcoj,packedFtree,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,adaptiveFilterPlacement,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines
+cycle4	spoc	lmdbOnly	Projection	executionPath	-	chunkPipeline	-	-	-
 cycle5	spoc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	wcoj	-	wcoj,packedFtree,factorizedRows,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,adaptiveFilterPlacement,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines
 cycle5	spoc	lmdbOnly	Projection	executionPath	-	wcoj	-	-	-
 cycle3CountCityInterest	spoc	lmdbOnly	Projection	Decision 1: GROUP BY dispatch	normal	nestedLoop	-	nestedLoop,wcoj,packedFtreeAggregate,factorizedTail,irAggregateParallel,irAggregateParallelInterpreted,irAggregate,irAggregateInterpreted	parallelAggregation,janinoAggregate

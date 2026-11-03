@@ -153,6 +153,11 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		return this;
 	}
 
+	/** {@link #withCostQuote} when {@code quote} is not null; otherwise the proposal keeps its current quote. */
+	LmdbNativeStrategyProposal<T> withOptionalCostQuote(LmdbNativeCostQuote quote) {
+		return quote == null ? this : withCostQuote(quote);
+	}
+
 	LmdbNativeCostQuote costQuote() {
 		return costQuote;
 	}
