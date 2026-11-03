@@ -755,14 +755,25 @@ final class LmdbNativeFactorizedRows {
 	 */
 	/** The executor's own work: prefix chain, memoised branches per distinct key, a batch row per emitted row. */
 	LmdbNativeCostVector costVector(RowState row) {
+		return LmdbNativeCostVectors.factorizedRows(derived.order, flatCount, branchRoles(),
+				keysOnlyRoot == null ? Double.NaN : keysOnlyRoot.distinctKeyEstimate(row), row, row.boundMask());
+	}
+
+	/** The ordered consumer's quote: the access, a packed and sorted prefix row each, the emitted rows expanded. */
+	LmdbNativeCostVector orderedCostVector(RowState row, long emitCap, double outputRows) {
+		return LmdbNativeCostVectors.orderedFactorized(derived.order, flatCount, branchRoles(),
+				keysOnlyRoot == null ? Double.NaN : keysOnlyRoot.distinctKeyEstimate(row), row, row.boundMask(),
+				emitCap, outputRows);
+	}
+
+	private LmdbNativeCostVectors.BranchRole[] branchRoles() {
 		LmdbNativeCostVectors.BranchRole[] roles = new LmdbNativeCostVectors.BranchRole[branches.length];
 		for (int b = 0; b < branches.length; b++) {
 			roles[b] = branches[b].role == ROLE_ENUM ? LmdbNativeCostVectors.BranchRole.ENUM
 					: branches[b].role == ROLE_EXISTS ? LmdbNativeCostVectors.BranchRole.EXISTS
 							: LmdbNativeCostVectors.BranchRole.COUNT;
 		}
-		return LmdbNativeCostVectors.factorizedRows(derived.order, flatCount, roles,
-				keysOnlyRoot == null ? Double.NaN : keysOnlyRoot.distinctKeyEstimate(row), row, row.boundMask());
+		return roles;
 	}
 
 	double proposalCost(RowState row) {

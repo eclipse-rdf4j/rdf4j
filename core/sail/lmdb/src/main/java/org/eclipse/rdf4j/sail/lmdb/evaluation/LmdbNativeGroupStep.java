@@ -1164,6 +1164,27 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		return false;
 	}
 
+	/**
+	 * The leapfrog join priced level by level ({@link LmdbNativeLeapfrogQuote}) with a group update per core row; the
+	 * set-at-a-time form with an update per joined row stays the ceiling when a frontier size is unknown.
+	 */
+	private LmdbNativeCostQuote wcojQuote(RowState row) {
+		double groups = groupSlots.length == 0 ? 1D : Double.NaN;
+		LmdbNativeLeapfrogQuote.Quote quote = LmdbNativeLeapfrogQuote
+				.quote(LmdbNativeLeapfrogJoin.shape(arg, row.boundMask()), row, row.boundMask());
+		if (quote != null) {
+			return LmdbNativeCostQuote.streaming(quote.vector()
+					.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE, quote.rows())),
+					groups);
+		}
+		return LmdbNativeCostQuote.streaming(
+				LmdbNativeCostVectors.setAtATime(arg, row, row.boundMask(),
+						LmdbNativeCostVector.Feature.INTERPRETED_ROW)
+						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+								LmdbNativeWork.rowsOut(arg, row, row.boundMask()))),
+				groups);
+	}
+
 	private List<BindingSet> evaluateWcoj(RowState row) {
 		RowCursor cursor;
 		try {
@@ -1439,13 +1460,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		if (!typeMatrixOwned && wcojHandlesRow(row)) {
 			arbiter.offer(() -> estimatedProposal(() -> evaluateWcoj(row),
 					LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN)
-							.withCostQuote(LmdbNativeCostQuote.streaming(
-									LmdbNativeCostVectors.setAtATime(arg, row, row.boundMask(),
-											LmdbNativeCostVector.Feature.INTERPRETED_ROW)
-											.plus(LmdbNativeCostVectors.perRow(
-													LmdbNativeCostVector.Feature.GROUP_UPDATE,
-													LmdbNativeWork.rowsOut(arg, row, row.boundMask()))),
-									groupSlots.length == 0 ? 1D : Double.NaN)));
+							.withCostQuote(wcojQuote(row)));
 		}
 		// The composed factor algebra is independently legal. Its own structural estimate (or UNKNOWN work)
 		// participates in the same inventory as a direct packed join; forcing changes selection, not admission.
@@ -1457,26 +1472,28 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 								explainTarget),
 						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
 						LmdbNativePackedFtree.estimateAggregateWork(packedPlan, row, groupSlots, aggregates))
-								// priced like the packed row f-tree (set-at-a-time, packed then generated rows) plus
-								// a group update per joined row; the shared facts make a missing index visible
-								// (measured 2026-11-02: 5.8x slower than the factorized tail on a spoc-only store
-								// while its own estimate saw no difference)
-								.withCostQuote(LmdbNativeCostQuote.streaming(
-										LmdbNativeCostVectors.setAtATime(packedPlan, row, row.boundMask(),
-												LmdbNativeCostVector.Feature.GENERATED_ROW)
-												.plus(LmdbNativeCostVectors.setAtATime(packedPlan, row,
-														row.boundMask(), LmdbNativeCostVector.Feature.BATCH_ROW)
-														.scale(0.6D))
-												.plus(LmdbNativeCostVectors.perRow(
-														LmdbNativeCostVector.Feature.GROUP_UPDATE,
-														LmdbNativeWork.rowsOut(packedPlan, row, row.boundMask()))),
-										groupSlots.length == 0 ? 1D : Double.NaN)));
+								// the f-tree lane by lane (edges bound per parent lane, lanes packed and folded,
+								// one update per demanded lane): a group update per joined row over-quoted the
+								// medical q2 aggregate ten-fold (quoted 10 ms, ran 0.9 ms, 2026-11-03), while the
+								// shared access facts still make a missing index visible (measured 2026-11-02:
+								// 5.8x slower than the factorized tail on a spoc-only store)
+								.withCostQuote(LmdbNativePackedFtree.aggregateQuote(packedPlan, row, groupSlots,
+										aggregates)));
 			} else if (LmdbNativeFactorAlgebra.candidate(arg)) {
 				arbiter.offer(() -> estimatedProposal(
 						() -> LmdbNativePackedFtree.tryEvaluateAggregate(arg, row, groupSlots, aggregates, this,
 								explainTarget),
 						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
-						LmdbNativePackedFtree.estimateAggregateWork(arg, row, groupSlots, aggregates)));
+						LmdbNativePackedFtree.estimateAggregateWork(arg, row, groupSlots, aggregates))
+								// composed factor algebra: priced as its pipeline with a group update per row until
+								// it has a lane quote of its own
+								.withCostQuote(LmdbNativeCostQuote.streaming(
+										LmdbNativeCostVectors.plan(arg, row, row.boundMask(),
+												LmdbNativeCostVector.Feature.GENERATED_ROW)
+												.plus(LmdbNativeCostVectors.perRow(
+														LmdbNativeCostVector.Feature.GROUP_UPDATE,
+														LmdbNativeWork.rowsOut(arg, row, row.boundMask()), row)),
+										groupSlots.length == 0 ? 1D : Double.NaN)));
 			}
 		}
 		if (!typeMatrixOwned && factorized != null) {

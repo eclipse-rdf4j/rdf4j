@@ -87,6 +87,27 @@ class LmdbNativeAccessFactsTest {
 	}
 
 	/**
+	 * A residual-filtered walk skips stored keys with a seek per skipped key: measured 2026-11-03 on the 3000-person
+	 * FOAF store at about 16 ns per scanned row against the 1 ns of a plain scan, so the expected seeks carry that
+	 * share (16 of the 200 ns of a seek) per scanned row, not only the ceiling.
+	 */
+	@Test
+	void residualWalkChargesAnExpectedSeekSharePerScannedRow() throws IOException {
+		try (Fixture single = Fixture.open(directory.resolve("residual"), "spoc", false)) {
+			LmdbNativeAccessFacts.Quote sweep = single
+					.quote(LmdbNativeAccessFacts.PREDICATE | LmdbNativeAccessFacts.OBJECT);
+			LmdbNativeCostVector vector = sweep.vector(1, 1);
+			assertThat(sweep.residualFields()).isEqualTo(2);
+			assertThat(vector.expected(LmdbNativeCostVector.Feature.INDEX_SEEK))
+					.as("one seek plus the residual share of every scanned row: %s", sweep)
+					.isCloseTo(1D + LmdbNativeAccessFacts.RESIDUAL_SEEK_SHARE * sweep.scannedRows(),
+							org.assertj.core.data.Offset.offset(1e-9));
+			assertThat(vector.high(LmdbNativeCostVector.Feature.INDEX_SEEK))
+					.isGreaterThanOrEqualTo(vector.expected(LmdbNativeCostVector.Feature.INDEX_SEEK));
+		}
+	}
+
+	/**
 	 * Adding an object-led index turns the sweep into a prefix-range walk. Without node-degree statistics the range
 	 * size is bounded only by the source, so the floor drops to a seek while the ceiling cannot yet improve; adding the
 	 * index that covers the predicate as well (posc) lowers the ceiling too.

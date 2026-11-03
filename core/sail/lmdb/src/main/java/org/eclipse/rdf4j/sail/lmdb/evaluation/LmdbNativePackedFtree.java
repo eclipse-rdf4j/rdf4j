@@ -234,16 +234,53 @@ final class LmdbNativePackedFtree {
 			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
 			return NativeUnorderedInput.rows(row, cursor);
 		}, work, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, () -> {
-		}).withCostQuote(LmdbNativeCostQuote.streaming(
-				// every relation is packed once and tree edges are expanded as child vectors: set-at-a-time access
-				// where each row is packed (a batch row) and later generated (measured 1.5 to 2.4 times the leapfrog
-				// join's per-row cost on the cycle queries)
+		}).withCostQuote(rowQuote(plan, multiJoin, row));
+	}
+
+	/**
+	 * The f-tree priced lane by lane ({@link LmdbNativePackedFtreeQuote}); when an edge's fan-out is unknown, the
+	 * set-at-a-time ceiling (every relation read once, each row packed and generated).
+	 */
+	private static LmdbNativeCostQuote rowQuote(Plan plan, MultiJoinPlan multiJoin, RowState row) {
+		double outputRows = LmdbNativeWork.rowsOut(multiJoin, row, row.boundMask());
+		LmdbNativeCostQuote quote = LmdbNativePackedFtreeQuote.quote(plan, row, LmdbNativePackedFtreeQuote.Site.ROWS,
+				0L, outputRows);
+		if (quote != null) {
+			return quote;
+		}
+		return LmdbNativeCostQuote.streaming(
 				LmdbNativeCostVectors.setAtATime(multiJoin, row, row.boundMask(),
 						LmdbNativeCostVector.Feature.GENERATED_ROW)
 						.plus(LmdbNativeCostVectors.setAtATime(multiJoin, row, row.boundMask(),
-								LmdbNativeCostVector.Feature.BATCH_ROW)
-								.scale(0.6D)),
-				LmdbNativeWork.rowsOut(multiJoin, row, row.boundMask())));
+								LmdbNativeCostVector.Feature.BATCH_ROW)),
+				outputRows);
+	}
+
+	/**
+	 * The aggregate site's quote: the f-tree lane by lane with one update per demanded lane, or the set-at-a-time
+	 * ceiling with a group update per joined row when the plan or a fan-out is unknown.
+	 */
+	static LmdbNativeCostQuote aggregateQuote(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates) {
+		double outputRows = LmdbNativeWork.rowsOut(multiJoin, row, row.boundMask());
+		double groups = groupSlots.length == 0 ? 1D : Double.NaN;
+		Plan plan = enabled() ? Planner.plan(multiJoin, row, aggregateDemandedSlots(groupSlots, aggregates)) : null;
+		if (plan != null && (plan.variableMask & row.boundMask()) == 0L) {
+			LmdbNativeCostQuote quote = LmdbNativePackedFtreeQuote.quote(plan, row,
+					LmdbNativePackedFtreeQuote.Site.AGGREGATE,
+					localDemandedMask(plan, aggregateDemandedSlots(groupSlots, aggregates)), outputRows);
+			if (quote != null) {
+				return quote.withOutputRows(groups);
+			}
+		}
+		return LmdbNativeCostQuote.streaming(
+				LmdbNativeCostVectors.setAtATime(multiJoin, row, row.boundMask(),
+						LmdbNativeCostVector.Feature.GENERATED_ROW)
+						.plus(LmdbNativeCostVectors.setAtATime(multiJoin, row, row.boundMask(),
+								LmdbNativeCostVector.Feature.BATCH_ROW))
+						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE, outputRows,
+								row)),
+				groups);
 	}
 
 	/** Export the existing f-tree's borrowed leaves without collapsing them to scalar weights. */

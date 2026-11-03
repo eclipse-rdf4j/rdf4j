@@ -146,19 +146,36 @@ class LmdbNativeFanOutFactsTest {
 
 	/** A source with per-predicate fan-out, distinct-key and key-domain statistics. */
 	static final class StatsSource implements NativeLmdbQuerySource {
-		private record Stats(double fanOutBySubject, long subjects) {
+		private record Stats(double fanOut, long keys) {
 		}
 
 		private final long entries;
-		private final java.util.Map<Long, Stats> stats = new java.util.HashMap<>();
+		private final java.util.Map<Long, Stats> bySubject = new java.util.HashMap<>();
+		private final java.util.Map<Long, Stats> byObject = new java.util.HashMap<>();
+		private boolean adjacencyServed;
 
 		StatsSource(long entries) {
 			this.entries = entries;
 		}
 
 		StatsSource predicate(long predicate, double fanOutBySubject, long subjects) {
-			stats.put(predicate, new Stats(fanOutBySubject, subjects));
+			bySubject.put(predicate, new Stats(fanOutBySubject, subjects));
 			return this;
+		}
+
+		StatsSource predicateByObject(long predicate, double fanOutByObject, long objects) {
+			byObject.put(predicate, new Stats(fanOutByObject, objects));
+			return this;
+		}
+
+		/** Whether the direct-adjacency index serves every predicate with statistics (its key domains are exact). */
+		StatsSource adjacencyServed(boolean served) {
+			this.adjacencyServed = served;
+			return this;
+		}
+
+		private Stats stats(long predicate, boolean bySubject) {
+			return (bySubject ? this.bySubject : byObject).get(predicate);
 		}
 
 		@Override
@@ -172,26 +189,27 @@ class LmdbNativeFanOutFactsTest {
 
 		@Override
 		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
-			Stats found = stats.get(predicate);
-			return found == null || !bySubject ? OptionalDouble.empty() : OptionalDouble.of(found.fanOutBySubject);
+			Stats found = stats(predicate, bySubject);
+			return found == null ? OptionalDouble.empty() : OptionalDouble.of(found.fanOut);
 		}
 
 		@Override
 		public OptionalDouble distinctFanOutKeys(long predicate, boolean bySubject) {
-			Stats found = stats.get(predicate);
-			return found == null || !bySubject ? OptionalDouble.empty() : OptionalDouble.of(found.subjects);
+			Stats found = stats(predicate, bySubject);
+			return found == null ? OptionalDouble.empty() : OptionalDouble.of(found.keys);
 		}
 
 		@Override
 		public OptionalDouble matchProbability(long predicate, boolean bySubject, double candidateKeys) {
-			Stats found = stats.get(predicate);
-			return found == null || !bySubject || !(candidateKeys > 0D) ? OptionalDouble.empty()
-					: OptionalDouble.of(Math.min(1D, found.subjects / candidateKeys));
+			Stats found = stats(predicate, bySubject);
+			return found == null || !(candidateKeys > 0D) ? OptionalDouble.empty()
+					: OptionalDouble.of(Math.min(1D, found.keys / candidateKeys));
 		}
 
 		@Override
 		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
-			return OptionalLong.empty();
+			Stats found = stats(predicate, bySubject);
+			return found == null || !adjacencyServed ? OptionalLong.empty() : OptionalLong.of(found.keys);
 		}
 
 		@Override

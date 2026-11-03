@@ -34,7 +34,7 @@ class LmdbNativeFactorizedQuoteTest {
 	private static final int S = 0, A = 1, B = 2;
 
 	/** Every binding mask is fully covered by an index prefix, so a probe is one seek over its own rows. */
-	private static NativeLmdbQuerySource.IndexAccessProfile coveringProfile(long entries) {
+	static NativeLmdbQuerySource.IndexAccessProfile coveringProfile(long entries) {
 		int[][] prefixes = new int[StatementOrder.values().length + 1][16];
 		for (int[] row : prefixes) {
 			for (int mask = 0; mask < 16; mask++) {
@@ -45,11 +45,16 @@ class LmdbNativeFactorizedQuoteTest {
 	}
 
 	private static PatternPlan star(long predicate, int objectSlot, double staticEstimate) {
-		return new PatternPlan(Term.slot(S), Term.constant(predicate), Term.slot(objectSlot), Term.unbound(),
+		return edge(S, predicate, objectSlot, staticEstimate);
+	}
+
+	/** {@code ?subjectSlot <predicate> ?objectSlot} with a covering index profile. */
+	static PatternPlan edge(int subjectSlot, long predicate, int objectSlot, double staticEstimate) {
+		return new PatternPlan(Term.slot(subjectSlot), Term.constant(predicate), Term.slot(objectSlot), Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, null, "", null, staticEstimate, coveringProfile(100_000L));
 	}
 
-	private static RowState row(NativeLmdbQuerySource source) {
+	static RowState row(NativeLmdbQuerySource source) {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", S, "a", A, "b", B), null);
 		layout.freeze(List.of("s", "a", "b"));
 		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
@@ -205,5 +210,32 @@ class LmdbNativeFactorizedQuoteTest {
 		assertThat(quote.expected(Feature.INDEX_SEEK)).isEqualTo(memo.expected(Feature.INDEX_SEEK));
 		assertThat(quote.expected(Feature.SCANNED_ROW))
 				.isEqualTo(memo.expected(Feature.SCANNED_ROW) + 2D * (1_024D * 8D + 1_024D * 3D));
+	}
+
+	private static LmdbNativeCostVector orderedQuote(long emitCap) {
+		SlotPlan[] order = { star(P1, A, 9_000D), star(P2, B, 9_000D) };
+		return LmdbNativeCostVectors.orderedFactorized(order, 1, new BranchRole[] { BranchRole.ENUM }, Double.NaN,
+				row(stats()), 0L, emitCap, 27_000D);
+	}
+
+	@Test
+	void anOrderedFactorizedSortPacksAndSortsThePrefixRowsThenExpandsEveryRow() {
+		LmdbNativeCostVector quote = orderedQuote(Long.MAX_VALUE);
+		// a batch row per prefix row from the chain, the branch values packed per key, and every prefix row packed
+		// into the sort buffer; nothing per joined row
+		assertThat(quote.expected(Feature.BATCH_ROW)).isEqualTo(9_000D + 3_000D * 3D + 9_000D);
+		assertThat(quote.expected(Feature.SORT_N_LOG2_N)).isEqualTo(9_000D * (Math.log(9_000D) / Math.log(2D)));
+		// every logical row is generated from the sorted prefix
+		assertThat(quote.expected(Feature.GENERATED_ROW)).isEqualTo(27_000D);
+		assertThat(quote.expected(Feature.INDEX_SEEK))
+				.isEqualTo(prefix().expected(Feature.INDEX_SEEK) + 3_000D * probe().expected(Feature.INDEX_SEEK));
+	}
+
+	@Test
+	void anOrderedFactorizedTopKAdmitsIntoABoundedHeapAndExpandsOnlyTheLimit() {
+		LmdbNativeCostVector quote = orderedQuote(10L);
+		assertThat(quote.expected(Feature.SORT_N_LOG2_N)).isEqualTo(9_000D * (Math.log(10D) / Math.log(2D)));
+		assertThat(quote.expected(Feature.GENERATED_ROW)).isEqualTo(10D);
+		assertThat(quote.expected(Feature.BATCH_ROW)).isEqualTo(9_000D + 3_000D * 3D + 9_000D);
 	}
 }

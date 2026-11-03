@@ -616,26 +616,38 @@ public class LmdbNativeFactorizedTailAggregationTest {
 						.isGreaterThan(0D);
 	}
 
+	@Test
+	public void orderedFactorizedTopKQuotesItsSortAndOnlyTheLimitedExpansion() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?a ?b WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b . } ORDER BY ?s LIMIT 10";
+		Map<String, Map<String, Double>> features;
+		// the ORDER BY decision records its quotes only with a rival: the interpreted ordered kernel
+		String previousInterpreter = System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "true");
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			features = NativeProposalFeatures.offering(conn.prepareTupleQuery(query)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode(), "orderedFactorizedTopK");
+		} finally {
+			restoreProperty("rdf4j.lmdb.kernelInterpreter.enabled", previousInterpreter);
+		}
+		Map<String, Double> topK = features.get("orderedFactorizedTopK");
+		Map<String, Double> kernel = features.get("irKernelInterpreted");
+		assertThat(kernel).as("the ordered kernel at the same decision: %s", features).isNotNull();
+		// the kernel still carries the input's plain work interval (no sort of its own yet)
+		assertThat(kernel.getOrDefault("SORT_N_LOG2_N", 0D)).isZero();
+		// the prefix rows are admitted into a bounded heap and only the first 10 rows are expanded; the quote used
+		// to be the input's plain work interval, identical for every ordered strategy
+		assertThat(topK.getOrDefault("SORT_N_LOG2_N", 0D)).as("top-k sort: %s", features).isGreaterThan(0D);
+		assertThat(topK.getOrDefault("GENERATED_ROW", 0D)).as("top-k expansion: %s", features)
+				.isLessThanOrEqualTo(10D);
+		assertThat(topK.getOrDefault("INDEX_SEEK", 0D) + topK.getOrDefault("SCANNED_ROW", 0D))
+				.as("top-k access: %s", features)
+				.isGreaterThan(0D);
+	}
+
 	/** {@code strategy -> feature -> expected count} from the explain metric. */
 	private static Map<String, Map<String, Double>> proposalFeatures(GenericPlanNode plan) {
-		String metric = findMetric(plan, "nativeStrategyProposalFeatures");
-		assertThat(metric).as("proposal features").isNotNull();
-		Map<String, Map<String, Double>> features = new java.util.LinkedHashMap<>();
-		for (String entry : metric.split(",")) {
-			int eq = entry.indexOf('=');
-			if (eq <= 0) {
-				continue;
-			}
-			Map<String, Double> counts = new java.util.LinkedHashMap<>();
-			for (String count : entry.substring(eq + 1).split("\\|")) {
-				int colon = count.indexOf(':');
-				if (colon > 0) {
-					counts.put(count.substring(0, colon), Double.parseDouble(count.substring(colon + 1)));
-				}
-			}
-			features.put(entry.substring(0, eq).trim(), counts);
-		}
-		return features;
+		return NativeProposalFeatures.first(plan);
 	}
 
 	@Test

@@ -1589,10 +1589,40 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		String factorizedTag = emitCap == Long.MAX_VALUE
 				? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
 				: LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K;
+		LmdbNativeCostQuote factorizedQuote = orderedFactorizedQuote(row, emitCap, rows, quote);
 		strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, factorizedTag,
-				context -> LmdbNativeAdmission.of(LmdbNativeCandidate.of(factorizedTag, quote,
+				context -> LmdbNativeAdmission.of(LmdbNativeCandidate.of(factorizedTag, factorizedQuote,
 						() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap)))));
 		return strategies;
+	}
+
+	/**
+	 * The ordered factorized strategies' own quote, from the factorization {@link #tryEvaluateOrderedFactorized} would
+	 * run: the prefix's access per distinct probe key, a packed prefix row each, the sort (or the bounded heap of a
+	 * LIMIT) over the prefix rows and the expansion of the emitted rows only. Where that attempt would decline, the
+	 * input's work interval stays the quote.
+	 */
+	private LmdbNativeCostQuote orderedFactorizedQuote(RowState row, long emitCap, double rows,
+			LmdbNativeCostQuote fallback) {
+		MultiJoinPlan input = orderedFactorizedInput();
+		if (!orderedFactorizedEnabled() || distinct || snapshotRows || input == null || input.children.length == 0
+				|| !SlotPlan.encounterOrderReplaySafe(arg) || SlotPlan.requiresPhysicalCells(arg)
+				|| (arg.producedMask() & row.boundMask()) != 0L) {
+			return fallback;
+		}
+		long requiredPrefixMask = 0L;
+		for (int orderSlot : orderSlots) {
+			requiredPrefixMask |= 1L << orderSlot;
+		}
+		MultiJoinPlan.OrderedPlan order = arg instanceof MultiJoinPlan
+				? LmdbNativeFactorizedRows.selectFactorizedOrder(input, row.boundMask(), requiredPrefixMask, 0)
+				: new MultiJoinPlan.OrderedPlan(input.children, new int[0]);
+		LmdbNativeFactorizedRows factorized = LmdbNativeFactorizedRows.tryCreate(input, order, row, row.boundMask(),
+				sourceSlots, false, requiredPrefixMask, LmdbNativeAttemptMetrics.root(originalExpr));
+		if (factorized == null || (factorized.branchFreshMask() & requiredPrefixMask) != 0L) {
+			return fallback;
+		}
+		return LmdbNativeCostQuote.streaming(factorized.orderedCostVector(row, emitCap, rows), rows).ordered(true);
 	}
 
 	private void offerUnorderedStrategies(RowState row, NativeTupleDistinctPlan distinctPlan, MultiJoinPlan multiJoin,
@@ -1609,15 +1639,19 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			arbiter.offer(() -> planProposal(() -> acceptOrderedDistinct(row, distinctPlan.arg.open(row)),
 					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT, distinctPlan.arg, row));
 		}
-		if (LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask())) {
-			// Leapfrog walks each relation once and intersects: priced set-at-a-time, not as a probe chain.
+		LmdbNativeLeapfrogJoin.Shape leapfrog = LmdbNativeLeapfrogJoin.shape(arg, row.boundMask());
+		if (leapfrog != null) {
+			// priced level by level as the cursor searches (frontiers per distinct prefix, galloping merges); the
+			// set-at-a-time form stays the ceiling when a frontier size is unknown
+			LmdbNativeLeapfrogQuote.Quote quote = LmdbNativeLeapfrogQuote.quote(leapfrog, row, row.boundMask());
+			LmdbNativeCostQuote costQuote = quote != null
+					? LmdbNativeCostQuote.streaming(quote.vector(), estimatedRows(row))
+					: LmdbNativeCostQuote.streaming(LmdbNativeCostVectors.setAtATime(arg, row, row.boundMask(),
+							LmdbNativeCostVector.Feature.INTERPRETED_ROW), estimatedRows(row));
 			arbiter.offer(() -> inputProposal(
 					() -> acceptWcoj(row, LmdbNativeLeapfrogJoin.tryOpen(arg, row), multiJoin),
 					LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeWork.UNKNOWN,
-					estimatedRows(row))
-							.withCostQuote(LmdbNativeCostQuote.streaming(LmdbNativeCostVectors.setAtATime(arg, row,
-									row.boundMask(), LmdbNativeCostVector.Feature.INTERPRETED_ROW),
-									estimatedRows(row))));
+					estimatedRows(row)).withCostQuote(costQuote));
 		}
 		// Automatic packed rows are priced only for direct MultiJoinPlan inputs. A composed factor tree remains
 		// available

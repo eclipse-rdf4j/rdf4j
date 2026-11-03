@@ -213,6 +213,32 @@ final class LmdbNativeCostVectors {
 	 */
 	static LmdbNativeCostVector factorizedRows(SlotPlan[] order, int prefixLength, BranchRole[] roles,
 			double depth0Keys, RowState row, long boundMask) {
+		return factorizedRows(order, prefixLength, roles, depth0Keys, row, boundMask, true);
+	}
+
+	/**
+	 * The ordered variant ({@code orderedFactorizedSort}/{@code TopK}): the same access, then every prefix row is
+	 * packed into the sort buffer, the prefix rows are sorted (a full sort, or admission into a heap bounded by
+	 * {@code emitCap}) and only the emitted rows are expanded from the sorted prefix.
+	 */
+	static LmdbNativeCostVector orderedFactorized(SlotPlan[] order, int prefixLength, BranchRole[] roles,
+			double depth0Keys, RowState row, long boundMask, long emitCap, double outputRows) {
+		LmdbNativeCostVector access = factorizedRows(order, prefixLength, roles, depth0Keys, row, boundMask, false);
+		LmdbNativeFanOutFacts facts = LmdbNativeFanOutFacts.forFactorized(order, order.length, prefixLength, row,
+				boundMask, depth0Keys);
+		double prefixRows = facts.priceable() ? facts.prefixRowsAfterPrefix() : Double.NaN;
+		double emitted = emitCap == Long.MAX_VALUE ? outputRows
+				: Double.isNaN(outputRows) ? emitCap : Math.min(emitCap, outputRows);
+		double bound = emitCap == Long.MAX_VALUE ? prefixRows : emitCap;
+		double sortUnits = Double.isNaN(prefixRows) ? Double.NaN
+				: prefixRows * (Math.log(Math.max(2D, bound)) / Math.log(2D));
+		return access.plus(perRow(Feature.BATCH_ROW, prefixRows, row))
+				.plus(perRow(Feature.SORT_N_LOG2_N, sortUnits, row))
+				.plus(perRow(Feature.GENERATED_ROW, emitted, row));
+	}
+
+	private static LmdbNativeCostVector factorizedRows(SlotPlan[] order, int prefixLength, BranchRole[] roles,
+			double depth0Keys, RowState row, long boundMask, boolean emitRows) {
 		if (prefixLength < 0 || prefixLength > order.length || roles.length != order.length - prefixLength) {
 			return unbounded();
 		}
@@ -253,7 +279,7 @@ final class LmdbNativeCostVectors {
 			}
 			total = total.plus(perRow(Feature.HASH_PROBE, prefixRows));
 		}
-		return total.plus(perRow(Feature.BATCH_ROW, emitted));
+		return emitRows ? total.plus(perRow(Feature.BATCH_ROW, emitted)) : total;
 	}
 
 	private static LmdbNativeCostVector branchProbe(SlotPlan branch, RowState row, long maskBefore) {
