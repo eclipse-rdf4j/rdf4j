@@ -614,6 +614,21 @@ class LmdbNativeCensusAggregateTest {
 	}
 
 	@Test
+	void countOnlyGraphCountsComeFromTheContextMetadata() {
+		// COUNT(*) over one constant graph (the default graph included) is a lookup in the store's per-context
+		// counts: no plane or page is visited. With no named graphs that entry is the whole store.
+		for (String graph : new String[] { RDF4J.NIL.stringValue(), EX + "g1", EX + "g2" }) {
+			String count = "SELECT (COUNT(*) AS ?quads) WHERE { GRAPH <" + graph + "> { ?s ?p ?o } }";
+			assertParity(count, LmdbNativeCensusAggregate.PATH);
+			// a visited page would publish its counter; the metadata read is the only adjacency access
+			assertThat(telemetry(count, LmdbNativeCensusAggregate.PATH)).as(graph)
+					.contains("nativeExecutionPath=adjacencyCensus")
+					.contains("nativeAdjacencyPlaneMetadataReadsActual=1")
+					.doesNotContain("nativeAdjacencyPagesVisitedActual=");
+		}
+	}
+
+	@Test
 	void globalCensusIsSelectedUnforcedWhenHeadersAndMetadataAnswerIt() {
 		// 24000 quads on homogeneous pages: the census answers COUNT(DISTINCT ?s/?o) from node metadata and the rest
 		// from page headers, so it must out-price the sequential path instead of quoting a payload decode per quad

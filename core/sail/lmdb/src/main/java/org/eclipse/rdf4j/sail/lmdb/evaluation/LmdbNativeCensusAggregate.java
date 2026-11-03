@@ -165,8 +165,35 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 	 * accumulates the page work under both hypotheses (DISTINCT ?s / ?o answered from the node domain, or decoded from
 	 * payload) because the executor's choice depends on the graph coverage that pass establishes.
 	 */
+	/**
+	 * Plain COUNT(*) over one constant graph (the default graph through rdf4j:nil included) with nothing else to
+	 * reduce: the store's per-context statement count answers it without visiting a plane or page. With no named graphs
+	 * the default graph's entry is the whole store.
+	 */
+	private boolean metadataCountOnly() {
+		// the context constant itself needs the context id and nothing else may
+		if (groupFields.length != 0 || kindMask != 0 || (idMask & ~(1 << C)) != 0 || constants[S] != UNKNOWN
+				|| constants[P] != UNKNOWN || constants[O] != UNKNOWN || constants[C] == UNKNOWN) {
+			return false;
+		}
+		for (boolean accepted : acceptedKinds) {
+			if (!accepted) {
+				return false;
+			}
+		}
+		for (Channel channel : channels) {
+			if (channel.distinct || channel.sum || channel.field >= 0 || channel.expression != null) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private RecipeCount countRecipe(NativeProbe probe, WildcardAdjacency wildcard,
 			NativeCancellationToken cancellation) throws IOException {
+		if (metadataCountOnly()) {
+			return new RecipeCount(1D, 1D, 0D, 0D, 0D, false, true, null);
+		}
 		int requiredIds = idMask;
 		int distinctNodeIds = 0;
 		for (int field = 0; field < 4; field++) {
@@ -796,6 +823,19 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		boolean transferred = false;
 		Throwable failure = null;
 		try {
+			if (metadataCountOnly()) {
+				long count = acceptsContext(constants[C])
+						? source.count(UNKNOWN, UNKNOWN, UNKNOWN, constants[C])
+						: 0L;
+				if (telemetry != null) {
+					telemetry.planeMetadataRead();
+				}
+				collector = new Collector(new long[] { -1L, -1L, -1L, -1L }, evaluation, cancellation);
+				collector.accept(new long[] { UNKNOWN, UNKNOWN, UNKNOWN, constants[C] }, count);
+				NativeResultCursor results = collector.results();
+				transferred = true;
+				return results;
+			}
 			int predicates = wildcard.predicateCount();
 			NativeAdjacency[] views = new NativeAdjacency[predicates];
 			boolean allRowsSelected = constants[S] == UNKNOWN && constants[P] == UNKNOWN && constants[O] == UNKNOWN;
