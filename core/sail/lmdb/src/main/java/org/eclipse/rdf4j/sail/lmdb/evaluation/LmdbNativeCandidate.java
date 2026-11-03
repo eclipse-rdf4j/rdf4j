@@ -62,6 +62,15 @@ record LmdbNativeCandidate<T>(String id, LmdbNativeCostQuote quote, Opener<T> op
 	}
 
 	/** The id without a parenthesised variant suffix, which is what a forced strategy name refers to. */
+	/** Whether a strategy id names a multi-threaded strategy or variant (parallel kernels, pipelines, aggregation). */
+	static boolean isParallel(String id) {
+		String base = baseId(id);
+		return base != null && (base.contains("Parallel")
+				|| base.equals(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES)
+				|| base.equals(LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE)
+				|| base.equals(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION));
+	}
+
 	static String baseId(String id) {
 		if (id == null) {
 			return null;

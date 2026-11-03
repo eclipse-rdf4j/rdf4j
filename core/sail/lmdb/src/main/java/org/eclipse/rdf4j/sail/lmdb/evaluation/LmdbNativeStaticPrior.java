@@ -39,6 +39,20 @@ final class LmdbNativeStaticPrior {
 	 * order of magnitude and made the parallel tier win every priced decision. The 30000-person run decides whether
 	 * these grow with input size; until then the measured medians stand.
 	 */
+	/**
+	 * The fraction of the best serial candidate's expected price a parallel candidate must stay within to be worth its
+	 * threads (policy set 2026-11-03): a 30 % cut on four workers, a 50 % cut on eight, linear in between and from one
+	 * worker, and no stricter beyond eight. A parallel strategy that only shaves a little off the serial time is not
+	 * worth occupying the cores.
+	 */
+	static double requiredParallelFraction(int workers) {
+		if (workers <= 1) {
+			return 1D;
+		}
+		int percent = workers <= 4 ? 100 - 10 * (workers - 1) : workers <= 8 ? 70 - 5 * (workers - 4) : 50;
+		return percent / 100D;
+	}
+
 	static double measuredParallelSpeedup(String tag, int workers) {
 		String base = LmdbNativeCandidate.baseId(tag);
 		if (base.contains("Aggregate") || base.contains("Aggregation")) {

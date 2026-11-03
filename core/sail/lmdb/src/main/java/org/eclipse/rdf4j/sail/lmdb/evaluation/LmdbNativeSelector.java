@@ -37,6 +37,11 @@ final class LmdbNativeSelector {
 
 	static <T> Ranking rank(List<LmdbNativeCandidate<T>> candidates, LmdbNativeStaticPrior prior,
 			double sliceRows) {
+		return rank(candidates, prior, sliceRows, Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers()));
+	}
+
+	static <T> Ranking rank(List<LmdbNativeCandidate<T>> candidates, LmdbNativeStaticPrior prior,
+			double sliceRows, int parallelWorkers) {
 		int n = candidates.size();
 		LmdbNativeWork[] nanos = new LmdbNativeWork[n];
 		double[] expected = new double[n];
@@ -78,6 +83,26 @@ final class LmdbNativeSelector {
 				if (candidates.get(j).dominates().contains(id) || candidates.get(j).dominates().contains(base)) {
 					eliminatedBy[i] = "Structurally dominated by " + candidates.get(j).id();
 					break;
+				}
+			}
+		}
+		// parallel cut: a multi-threaded candidate must cut the best serial candidate's expected price by the share
+		// its worker count demands (30 % on four workers, 50 % on eight), or the serial candidate keeps the cores
+		double serialBest = Double.POSITIVE_INFINITY;
+		for (int i = 0; i < n; i++) {
+			if (eliminatedBy[i] == null && nanos[i].known()
+					&& !LmdbNativeCandidate.isParallel(candidates.get(i).id())) {
+				serialBest = Math.min(serialBest, expected[i]);
+			}
+		}
+		if (Double.isFinite(serialBest)) {
+			double fraction = LmdbNativeStaticPrior.requiredParallelFraction(parallelWorkers);
+			for (int i = 0; i < n; i++) {
+				if (eliminatedBy[i] == null && LmdbNativeCandidate.isParallel(candidates.get(i).id())
+						&& expected[i] > fraction * serialBest) {
+					eliminatedBy[i] = String.format(
+							"Parallel: expected %.0f ns is %.0f %% of the best serial price (%.0f ns), above the %.0f %% cut required on %d workers",
+							expected[i], 100D * expected[i] / serialBest, serialBest, 100D * fraction, parallelWorkers);
 				}
 			}
 		}

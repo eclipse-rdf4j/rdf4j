@@ -137,4 +137,60 @@ class LmdbNativeSelectorTest {
 		LmdbNativeSelector.Ranking alone = LmdbNativeSelector.rank(List.of(unknown), PRIOR, -1D);
 		assertThat(alone.winner()).isZero();
 	}
+
+	@Test
+	void aParallelCandidateNeedsAThirtyPercentCutOnFourWorkers() {
+		List<LmdbNativeCandidate<String>> notEnough = List.of(
+				candidate("irKernel", 100_000_000, 100_000_000, 100_000_000),
+				candidate("irKernelParallel", 75_000_000, 75_000_000, 75_000_000));
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(notEnough, PRIOR, -1D, 4);
+		assertThat(ranking.winner()).isZero();
+		assertThat(ranking.eliminatedBy()[1]).startsWith("Parallel");
+
+		List<LmdbNativeCandidate<String>> enough = List.of(
+				candidate("irKernel", 100_000_000, 100_000_000, 100_000_000),
+				candidate("irKernelParallel", 65_000_000, 65_000_000, 65_000_000));
+		assertThat(LmdbNativeSelector.rank(enough, PRIOR, -1D, 4).winner()).isEqualTo(1);
+	}
+
+	@Test
+	void aParallelCandidateNeedsAFiftyPercentCutOnEightWorkers() {
+		List<LmdbNativeCandidate<String>> notEnough = List.of(
+				candidate("nestedLoop", 100_000_000, 100_000_000, 100_000_000),
+				candidate("parallelPipelines", 60_000_000, 60_000_000, 60_000_000));
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(notEnough, PRIOR, -1D, 8);
+		assertThat(ranking.winner()).isZero();
+		assertThat(ranking.eliminatedBy()[1]).startsWith("Parallel");
+
+		List<LmdbNativeCandidate<String>> enough = List.of(
+				candidate("nestedLoop", 100_000_000, 100_000_000, 100_000_000),
+				candidate("parallelPipelines(workers=8)", 45_000_000, 45_000_000, 45_000_000));
+		assertThat(LmdbNativeSelector.rank(enough, PRIOR, -1D, 8).winner()).isEqualTo(1);
+	}
+
+	@Test
+	void theParallelCutIsMeasuredAgainstTheBestEligibleSerialCandidate() {
+		// the parallel candidate cuts the dominated serial candidate by half but not the surviving one
+		List<LmdbNativeCandidate<String>> candidates = List.of(
+				candidate("wcoj", 70_000_000, 70_000_000, 70_000_000),
+				candidate("nestedLoop", 100_000_000, 100_000_000, 100_000_000),
+				candidate("irAggregateParallel", 50_000_000, 50_000_000, 50_000_000));
+		LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(candidates, PRIOR, -1D, 4);
+		assertThat(ranking.winner()).isZero();
+		assertThat(ranking.eliminatedBy()[2]).startsWith("Parallel");
+		// with no serial rival at all the parallel candidate stands
+		assertThat(LmdbNativeSelector
+				.rank(List.of(candidate("irAggregateParallel", 50_000_000, 50_000_000, 50_000_000)), PRIOR, -1D, 4)
+				.winner()).isZero();
+	}
+
+	@Test
+	void theRequiredParallelCutGrowsWithTheWorkerCount() {
+		assertThat(LmdbNativeStaticPrior.requiredParallelFraction(1)).isEqualTo(1D);
+		assertThat(LmdbNativeStaticPrior.requiredParallelFraction(2)).isEqualTo(0.9D);
+		assertThat(LmdbNativeStaticPrior.requiredParallelFraction(4)).isEqualTo(0.7D);
+		assertThat(LmdbNativeStaticPrior.requiredParallelFraction(6)).isEqualTo(0.6D);
+		assertThat(LmdbNativeStaticPrior.requiredParallelFraction(8)).isEqualTo(0.5D);
+		assertThat(LmdbNativeStaticPrior.requiredParallelFraction(16)).isEqualTo(0.5D);
+	}
 }
