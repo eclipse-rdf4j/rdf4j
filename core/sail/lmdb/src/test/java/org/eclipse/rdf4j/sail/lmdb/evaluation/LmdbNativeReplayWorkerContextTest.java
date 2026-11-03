@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -44,6 +45,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
+import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
@@ -181,11 +183,16 @@ class LmdbNativeReplayWorkerContextTest {
 						throw injected;
 					}
 				}, opened);
+				String query = dispatch.grouped ? "SELECT (COUNT(?o) AS ?count) WHERE { " + PATTERNS + " }"
+						: "SELECT ?s ?o WHERE { " + PATTERNS + " }";
+				// the test is about the parallel workers' replay ownership, so the parallel operators are forced:
+				// on a fixture this small the measured selector prices the serial paths below them. The strategy
+				// reads the forced name when it is constructed, so the context is set first.
+				SlowQueryContextHolder.SlowQueryContext previousContext = SlowQueryContextHolder.set(query,
+						Query.QueryType.TUPLE, dispatch.grouped ? "parallelAggregation" : "parallelPipelines");
 				var strategy = new LmdbNativeEvaluationStrategy(
 						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset),
 						null, null, 0L, new EvaluationStatistics(), false);
-				String query = dispatch.grouped ? "SELECT (COUNT(?o) AS ?count) WHERE { " + PATTERNS + " }"
-						: "SELECT ?s ?o WHERE { " + PATTERNS + " }";
 				var root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
 				var compiled = LmdbNativeAggregateCompiler.compileRoot(root,
 						new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
@@ -215,6 +222,8 @@ class LmdbNativeReplayWorkerContextTest {
 					}
 				} catch (Throwable problem) {
 					failure = problem;
+				} finally {
+					SlowQueryContextHolder.restore(previousContext);
 				}
 				assertThat(workerCalls.get()).as("production dispatch (failure=%s, row rejection=%s)", failure,
 						LmdbNativeParallelPipelines.LAST_REJECTION.get()).isPositive();

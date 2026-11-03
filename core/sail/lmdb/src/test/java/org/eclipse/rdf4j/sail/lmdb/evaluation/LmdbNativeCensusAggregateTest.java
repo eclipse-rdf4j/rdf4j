@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -597,6 +598,19 @@ class LmdbNativeCensusAggregateTest {
 				.allSatisfy(binding -> assertThat(((Literal) binding.getValue()).longValue()).isZero());
 		assertParity("SELECT ?g (COUNT(*) AS ?n) (SUM(IF(isIRI(?o), 1, 0)) AS ?sum) "
 				+ "WHERE { GRAPH ?g { ?s ?p ?o } } GROUP BY ?g");
+	}
+
+	@Test
+	void defaultGraphCountIsAnsweredByTheCensus() {
+		// GRAPH rdf4j:nil names the default (null) context: the Workbench's named-graph page counts it this way and
+		// fell to a full scan (6.8 s on a 14.6M-quad store, 2026-11-03) because no specialist accepted the shape
+		String count = "SELECT (COUNT(*) AS ?quads) (COUNT(DISTINCT ?s) AS ?subjects) "
+				+ "WHERE { GRAPH <" + RDF4J.NIL + "> { ?s ?p ?o } }";
+		assertParity(count, LmdbNativeCensusAggregate.PATH);
+		assertThat(telemetry(count, LmdbNativeCensusAggregate.PATH)).contains("nativeExecutionPath=adjacencyCensus");
+		// and a named graph by constant still counts only that graph
+		String named = "SELECT (COUNT(*) AS ?quads) WHERE { GRAPH <" + EX + "g1> { ?s ?p ?o } }";
+		assertParity(named, LmdbNativeCensusAggregate.PATH);
 	}
 
 	@Test

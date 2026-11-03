@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -161,7 +162,10 @@ public class LmdbNativeFactorizedOverflowTest {
 				+ "}";
 		assertThatThrownBy(() -> {
 			try (SailRepositoryConnection conn = repository.getConnection()) {
-				QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+				// the test is about the factorized tail's overflow check, so that operator is forced
+				SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+				prepared.setForcedLmdbExecutionStrategy("factorizedTail");
+				QueryResults.asList(prepared.evaluate());
 			}
 		}).isInstanceOf(QueryEvaluationException.class)
 				// the message pins that the FACTORIZED path threw — proof the strategy actually engaged

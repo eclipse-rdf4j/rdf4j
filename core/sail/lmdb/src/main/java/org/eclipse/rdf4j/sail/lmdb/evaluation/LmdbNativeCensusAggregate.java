@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.If;
@@ -491,11 +492,18 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 				input = filter.getArg();
 			}
 		}
+		// GRAPH <g> { ?s ?p ?o } and GRAPH rdf4j:nil { ... } reach the group as a Graph node over the pattern
+		Var graphContext = null;
+		if (input instanceof Graph graph && graph.getGraphName() != null && graph.getGraphName().hasValue()
+				&& graph.getArg() instanceof StatementPattern) {
+			graphContext = graph.getGraphName();
+			input = graph.getArg();
+		}
 		if (!(input instanceof StatementPattern pattern)) {
 			return null;
 		}
 		Var[] vars = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),
-				pattern.getContextVar() };
+				pattern.getContextVar() != null ? pattern.getContextVar() : graphContext };
 		Map<String, Integer> fields = new HashMap<>();
 		long[] constants = { UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN };
 		for (int field = 0; field < vars.length; field++) {
@@ -512,6 +520,11 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 				// source with aliases can otherwise hide other rows for the exact same RDF constant.
 				if (!canonicalPatternIds(source)) {
 					return null;
+				}
+				if (field == C && LmdbNativeAggregateCompiler.isNullContextValue(var.getValue())) {
+					// GRAPH rdf4j:nil names the default (null) context, which no stored value identifies
+					constants[field] = NULL_CONTEXT_ID;
+					continue;
 				}
 				constants[field] = source.idOf(var.getValue(), 1 << field);
 				if (constants[field] == UNKNOWN) {
@@ -578,8 +591,11 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		}
 		// Closed kind predicates need the census coefficients even when every consumer is COUNT. Other COUNT-only
 		// demands retain the existing root/domain alternatives; admission never makes this algorithm mandatory.
+		// A context-restricted count (GRAPH <g> or GRAPH rdf4j:nil) is a header census too: the root/domain
+		// alternatives refuse any context restriction, so without the census it fell to a full scan.
 		boolean needsCensus = Arrays.stream(channels).anyMatch(channel -> channel.sum || channel.field == C)
 				|| Arrays.stream(groups).anyMatch(field -> field == C) || filter.mask != 0
+				|| constants[C] != UNKNOWN
 				|| Arrays.stream(channels)
 						.anyMatch(channel -> channel.expression != null && channel.expression.mask != 0);
 		if (!needsCensus) {
@@ -1148,7 +1164,8 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 	}
 
 	private boolean acceptsContext(long id) {
-		return (!named || id != NULL_CONTEXT_ID) && contexts.contains(id)
+		// GRAPH ?g never matches the null context, but GRAPH rdf4j:nil names exactly that context
+		return (!named || id != NULL_CONTEXT_ID || constants[C] == NULL_CONTEXT_ID) && contexts.contains(id)
 				&& (constants[C] == UNKNOWN || constants[C] == id);
 	}
 

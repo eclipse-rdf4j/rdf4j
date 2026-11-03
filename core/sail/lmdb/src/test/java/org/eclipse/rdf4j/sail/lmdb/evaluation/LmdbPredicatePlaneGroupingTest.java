@@ -72,15 +72,19 @@ public class LmdbPredicatePlaneGroupingTest {
 		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+			// seven statements price the sequential path below the plane traversal; this test is about the plane
+			// traversal, so it forces the operator (policy 2026-11-03)
 			List<String> rows = new ArrayList<>();
-			for (BindingSet row : QueryResults.asList(connection.prepareTupleQuery(NAMESPACE_COUNTS).evaluate())) {
+			for (BindingSet row : QueryResults.asList(planeQuery(connection, NAMESPACE_COUNTS).evaluate())) {
 				rows.add(row.getValue("ns").stringValue() + "="
 						+ ((Literal) row.getValue("statements")).longValue() + "="
 						+ ((Literal) row.getValue("predicates")).longValue());
 			}
 			assertThat(rows).containsExactly(EX + "a/=4=2", EX + "b#=2=1", EX + "end/=1=1");
-			assertThat(executionPath(connection, NAMESPACE_COUNTS)).isEqualTo("predicatePlaneGroups");
-			assertThat(connection.prepareTupleQuery(NAMESPACE_COUNTS)
+			assertThat(findExecutionPath(planeQuery(connection, NAMESPACE_COUNTS)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode())).isEqualTo("predicatePlaneGroups");
+			assertThat(planeQuery(connection, NAMESPACE_COUNTS)
 					.explain(Explanation.Level.Telemetry)
 					.toString())
 							.contains(
@@ -159,6 +163,12 @@ public class LmdbPredicatePlaneGroupingTest {
 			connection.commit();
 		}
 		return store;
+	}
+
+	private static SailTupleQuery planeQuery(SailRepositoryConnection connection, String query) {
+		SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+		prepared.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS);
+		return prepared;
 	}
 
 	private static String executionPath(SailRepositoryConnection connection, String query) {
