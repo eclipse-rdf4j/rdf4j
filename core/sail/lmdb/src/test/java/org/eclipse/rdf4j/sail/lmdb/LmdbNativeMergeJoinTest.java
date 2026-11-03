@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -412,7 +413,9 @@ class LmdbNativeMergeJoinTest {
 
 		assertThat(explain(query)).contains("distinctStrategy=ADJACENT")
 				.contains("MergeOrderedJoin(keySlots=[?a#0, ?p#1]");
-		assertThat(rows(query)).isEqualTo(generic);
+		// the ordered DISTINCT route owns the merge join; on this fixture the hash-join batch is priced below it,
+		// so the test of the merge join forces the route that executes it
+		assertThat(rows(query, "orderedDistinct")).isEqualTo(generic);
 		assertThat(LmdbNativeMergeJoin.JOINS.get()).isOne();
 	}
 
@@ -485,8 +488,16 @@ class LmdbNativeMergeJoinTest {
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(LmdbNativeMergeJoinTest::canonical)
 					.sorted()

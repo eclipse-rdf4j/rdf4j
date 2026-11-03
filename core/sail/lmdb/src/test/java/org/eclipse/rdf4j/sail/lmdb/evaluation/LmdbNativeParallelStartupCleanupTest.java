@@ -113,10 +113,12 @@ class LmdbNativeParallelStartupCleanupTest {
 					return cursor;
 				}, LmdbNativeWork.exact(0D), LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
 				}));
+				// the parallel candidate is priced with one worker start per worker (measured 0.5 ms each), so the
+				// fallback must quote far more than that for the parallel pipeline to be the one opened
 				offers.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
 					fallbackOpens.incrementAndGet();
 					throw new AssertionError("failed startup must not open a fallback");
-				}, LmdbNativeWork.exact(1_000D), LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+				}, LmdbNativeWork.exact(1_000_000_000D), LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
 				}));
 				startupFailure = catchThrowable(() -> new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
 						offers.strategies(), null).dispatch(null));

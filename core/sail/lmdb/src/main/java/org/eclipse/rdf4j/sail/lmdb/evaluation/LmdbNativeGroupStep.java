@@ -1284,6 +1284,15 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT);
 					return List.of(toBindingSet(null, state, count > 0L));
 				}, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT, indexedCountWork);
+				// an exact index cardinality answers the count without producing a row, so every row-producing
+				// count is dominated by construction (measured fastest at 3000 and 15000 people, 2026-11-02)
+				proposal = proposal.withDominates(Set.of(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
+						LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION));
 				proposal = proposal.withOptionalAggregatePhysicalPlan(indexedCount.physicalPlan(preparedCount));
 				NativeAggregatePhysicalPlan.ColdAnchor coldAnchor = indexedCount.coldAnchor(preparedCount);
 				return coldAnchor == null ? proposal : proposal.withColdAnchor(coldAnchor);
@@ -1341,7 +1350,13 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 									.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
 											LmdbNativeWork.rowsOut(arg, row, row.boundMask()) / 16D))
 									.scale(1.15D),
-							groupSlots.length == 0 ? 1D : Double.NaN)));
+							groupSlots.length == 0 ? 1D : Double.NaN))
+					// the metadata summaries answer without walking index keys or decoding rows; measured faster
+					// than prefix runs on every shape where both were admitted (3000 people, 2026-11-02: 251 vs 572,
+					// 287 vs 314, 315 vs 1237, 1694 vs 2342 µs)
+					.withDominates(Set.of(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+							LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
+							LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS)));
 		}
 		if (typeMatrix != null && base.isEmpty()) {
 			arbiter.offer(() -> estimatedProposal(this::evaluateTypeMatrixFallback,
@@ -1377,7 +1392,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 													groupSlots.length == 0 ? 1D
 															: LmdbNativeCostVectors.rows(prefixPattern, row,
 																	row.boundMask()) / 16D)),
-									groupSlots.length == 0 ? 1D : Double.NaN)));
+									groupSlots.length == 0 ? 1D : Double.NaN))
+							// walking index runs never decodes a row, so the row-decoding sequential paths are
+							// dominated by construction (measured 1.5-2.6x faster in every lmdb-only config,
+							// 2026-11-02)
+							.withDominates(Set.of(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
+									LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS)));
 		}
 		NativeGroupResultCursor.GroupingPlan encounterOrdered = !typeMatrixOwned
 				&& !NativeGroupResultCursor.allowsReorderedGrouping(this)

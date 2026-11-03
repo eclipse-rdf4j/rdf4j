@@ -57,6 +57,30 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 		return winner < 0 ? null : entries.get(winner).id();
 	}
 
+	/** Every entry on one line each: the trace form written when {@code rdf4j.lmdb.nativeDecisions.trace} is set. */
+	String describe(String label) {
+		StringBuilder out = new StringBuilder("native decision ").append(label)
+				.append(" [")
+				.append(mode)
+				.append("] winner=")
+				.append(winnerId())
+				.append(" reason=")
+				.append(reason);
+		for (int i = 0; i < entries.size(); i++) {
+			Entry entry = entries.get(i);
+			out.append("\n  ").append(i == winner ? "* " : "  ").append(entry.id());
+			if (!entry.admitted()) {
+				out.append(" declined: ").append(entry.declineReason());
+			} else {
+				out.append(' ').append(render(entry));
+				if (entry.eliminatedBy() != null) {
+					out.append(" eliminated: ").append(entry.eliminatedBy());
+				}
+			}
+		}
+		return out.toString();
+	}
+
 	/** The public explain record: the winner first, then the eligible and eliminated candidates, then the declined. */
 	StrategyDecision toStrategyDecision(String decisionPointLabel) {
 		List<StrategyDecision.Candidate> candidates = new ArrayList<>(entries.size());

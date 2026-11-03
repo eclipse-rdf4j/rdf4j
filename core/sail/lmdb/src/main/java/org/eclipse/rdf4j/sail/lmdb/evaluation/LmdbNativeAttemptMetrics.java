@@ -291,10 +291,6 @@ public final class LmdbNativeAttemptMetrics {
 		}
 		if (capture != null && strategy != null && reason != null) {
 			capture.put(LmdbNativeCandidate.baseId(strategy), reason);
-			if (logger.isInfoEnabled()) {
-				logger.info("LMDB forced strategy candidate declined: strategy={}, operator={}, reason={}", strategy,
-						target == null ? "?" : target.getClass().getSimpleName(), reason);
-			}
 		}
 		LmdbNativeExplain.recordStrategyDecline(target, strategy, reason);
 		if (JANINO_STRATEGIES.contains(strategy) && logger.isInfoEnabled()) {

@@ -566,10 +566,18 @@ public class LmdbNativeFactorizedTailAggregationTest {
 					.as("all eligible aggregate strategies must reach the common arbiter")
 					.contains("factorizedTail=")
 					.contains("irAggregate=");
-			assertThat(findStrategy(plan)).satisfiesAnyOf(
-					path -> assertThat(path).startsWith("factorizedTail("),
-					path -> assertThat(path).startsWith("irAggregate"));
+			// On this 20-statement fixture the measured selector prices the sequential group path (about 9 us)
+			// below the compiled aggregate kernel (about 0.2 ms) and the factorized tail (about 2.3 ms), so the
+			// free run executes the sequential path, whose execution path is its physical group representation.
+			assertThat(findStrategy(plan))
+					.as("the free run must select the sequential group path on a fixture this small")
+					.isEqualTo("singleSlotGroups");
 			assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
+			// Both specialists stay admitted and executable: forcing each one must run it.
+			assertSameAsGeneric(query, "factorizedTail");
+			assertThat(strategy(query, "factorizedTail")).startsWith("factorizedTail(");
+			assertSameAsGeneric(query, "irAggregate");
+			assertThat(strategy(query, "irAggregate")).startsWith("irAggregate");
 		} finally {
 			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", previousEnabled);
 			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", previousThreshold);

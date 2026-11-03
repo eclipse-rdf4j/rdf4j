@@ -1613,8 +1613,11 @@ class LmdbDirectAdjacencyQueryTest {
 		KernelExecutionTestAccess.resetMetrics();
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
 
+		// the IR aggregate is the operator under test: prefer its compiled tier, then the interpreted tier while the
+		// compilation is still pending (the measured selector prices both above the nested loop on this fixture)
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0; round++) {
-			List<String> actual = queryRows(IR_AGGREGATE_QUERY);
+			List<String> actual = queryRowsVia(IR_AGGREGATE_QUERY, "irAggregate,irAggregateInterpreted", "patient",
+					"medCount");
 			long activeViews = direct.snapshotMetrics().activeViews;
 			assertThat(actual).containsExactlyElementsOf(expected);
 			assertThat(activeViews).isZero();
@@ -1997,12 +2000,17 @@ class LmdbDirectAdjacencyQueryTest {
 					.toString();
 		}
 
+		assertThat(queryRows(queryText, "count")).as("AUTO parity for the exact plane total").containsExactly("3");
+
+		// The indexed count route is the operator under test; the measured selector prices the adjacency aggregate
+		// below it on this five-statement fixture, so force it for the physical-counter assertions.
 		LmdbPrefixRunPlan.resetMetrics();
 		long hitsBefore = direct.snapshotMetrics().lookupHits;
 		Explanation telemetry;
 		List<String> actual = new ArrayList<>();
 		try (RepositoryConnection connection = repo.getConnection()) {
 			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(queryText);
+			query.setForcedLmdbExecutionStrategy("indexedCount");
 			telemetry = query.explain(Explanation.Level.Telemetry);
 			try (TupleQueryResult result = query.evaluate()) {
 				while (result.hasNext()) {
@@ -2017,7 +2025,7 @@ class LmdbDirectAdjacencyQueryTest {
 				.contains("indexedCount=")
 				.doesNotContain("indexedCount=Infinity");
 		assertThat(findMetric(telemetry.toGenericPlanNode(), "nativeExecutionPath"))
-				.as("exact predicate-plane COUNT(*) should use the indexed count route:%n%s", telemetry)
+				.as("the forced exact predicate-plane COUNT(*) must execute the indexed count route:%n%s", telemetry)
 				.isEqualTo("indexedCount");
 		assertThat(direct.snapshotMetrics().lookupHits)
 				.as("the scalar count is answered from exact predicate-plane metadata; optimized plan:%n%s", plan)
@@ -2777,11 +2785,14 @@ class LmdbDirectAdjacencyQueryTest {
 			assertThat(predicateCounts).containsExactlyInAnyOrderEntriesOf(Map.of(p1, 3L, p2, 1L, p3, 1L));
 		}
 
+		assertThat(queryRows(fixedQuery, "count")).as("AUTO answers the scalar count exactly").containsExactly("3");
+		// AUTO may pick the adjacency metadata walk here (measured within noise of the exact index count); the
+		// physical assertions are about the exact index count route, so it is forced for them
 		LmdbPrefixRunPlan.resetMetrics();
 		long hitsBeforeScalar = direct.snapshotMetrics().lookupHits;
-		assertThat(queryRows(fixedQuery, "count")).containsExactly("3");
+		assertThat(queryRowsVia(fixedQuery, "indexedCount", "count")).containsExactly("3");
 		assertThat(direct.snapshotMetrics().lookupHits)
-				.as("AUTO serves the scalar count from exact plane metadata")
+				.as("the exact index count serves the scalar count from exact plane metadata")
 				.isGreaterThan(hitsBeforeScalar);
 		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
 				.as("the exact scalar total does not open a payload cursor")

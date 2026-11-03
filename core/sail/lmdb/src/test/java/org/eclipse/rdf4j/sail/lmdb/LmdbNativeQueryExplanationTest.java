@@ -232,8 +232,13 @@ public class LmdbNativeQueryExplanationTest {
 				"?s a ex:Item FILTER NOT EXISTS { " + nested + " FILTER(?n < 0) }",
 				"?s a ex:Item OPTIONAL { " + nested + " MINUS { ?s ex:missing ?x } }")) {
 			String text = "PREFIX ex: <" + EX + "> SELECT DISTINCT ?s WHERE { " + body + " } LIMIT 3";
-			assertThat(explain(Explanation.Level.Optimized, text).toJson()).as(text)
-					.contains("strategyDecisions", "GROUP BY", "capturedAtMillis");
+			String json = explain(Explanation.Level.Optimized, text).toJson();
+			assertThat(json).as(text).contains("strategyDecisions", "capturedAtMillis");
+			// a decision record names only the strategies its own point asked; a nested GROUP BY decision appears
+			// when the subquery is dispatched, which the duplicate-insensitive OPTIONAL prune skips entirely
+			if (!body.startsWith("?s a ex:Item OPTIONAL")) {
+				assertThat(json).as(text).contains("GROUP BY");
+			}
 		}
 	}
 
@@ -602,7 +607,9 @@ public class LmdbNativeQueryExplanationTest {
 				+ "SELECT (COUNT(DISTINCT ?price) AS ?count) WHERE { "
 				+ "{ ?s ex:price ?price } UNION { ?s ex:price ?price } }";
 
-		String rendered = explain(Explanation.Level.Telemetry, query).toString();
+		// the O-ordered root scan belongs to the ordered DISTINCT groups operator, which the measured selector
+		// prices above the sequential path on four rows
+		String rendered = explain(Explanation.Level.Telemetry, query, "orderedDistinctGroups").toString();
 		String accesses = planSection(rendered, "    adjacencyAccess:\n", "    adjacencySIP:\n");
 
 		assertThat(accesses)
@@ -653,7 +660,9 @@ public class LmdbNativeQueryExplanationTest {
 			System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
 			System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 
-			String rendered = explain(Explanation.Level.Telemetry, rowQuery()).toString();
+			// the threshold reason is recorded when the kernel is attempted at bind time; prefer the kernel, then
+			// let the nested loop run once it has declined
+			String rendered = explain(Explanation.Level.Telemetry, rowQuery(), "irKernel,nestedLoop").toString();
 
 			assertThat(rendered)
 					.contains("    janino:\n      used: false\n      reason: BELOW_THRESHOLD[")
@@ -680,7 +689,8 @@ public class LmdbNativeQueryExplanationTest {
 			System.setProperty("rdf4j.lmdb.factorizedTail.enabled", "false");
 			System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 
-			String rendered = explain(Explanation.Level.Telemetry, aggregateQuery()).toString();
+			String rendered = explain(Explanation.Level.Telemetry, aggregateQuery(), "irAggregate,nestedLoop")
+					.toString();
 
 			assertThat(rendered)
 					.contains("    janino:\n      used: false\n      reason: BELOW_THRESHOLD[")
@@ -714,8 +724,9 @@ public class LmdbNativeQueryExplanationTest {
 			String query = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT ?s ?price WHERE { ?s ex:price ?price . ?s a ex:Item }";
 			String rendered = "";
+			// prefer the compiled kernel; while its compilation is pending the nested loop runs and the loop retries
 			for (int attempt = 0; attempt < 100 && !rendered.contains("nativeExecutionPath=irKernel"); attempt++) {
-				rendered = explain(Explanation.Level.Telemetry, query).toString();
+				rendered = explain(Explanation.Level.Telemetry, query, "irKernel,nestedLoop").toString();
 			}
 
 			assertThat(JaninoPipelineTestAccess.opened()).isPositive();
@@ -902,7 +913,7 @@ public class LmdbNativeQueryExplanationTest {
 		try {
 			String query = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT (COUNT(?price) AS ?c) WHERE { ?s a ex:Item . ?s ex:price ?price }";
-			Explanation explanation = explain(Explanation.Level.Telemetry, query);
+			Explanation explanation = explain(Explanation.Level.Telemetry, query, "factorizedTail");
 
 			assertThat(explanation.toString()).contains("nativeExecutionPath=factorizedTail");
 		} finally {
@@ -982,8 +993,21 @@ public class LmdbNativeQueryExplanationTest {
 	}
 
 	private Explanation explain(Explanation.Level level, String query) {
+		return explain(level, query, null);
+	}
+
+	/**
+	 * Explains with a forced execution strategy. The measured selector prices every specialist above the sequential
+	 * path on this four-item fixture, so a test about one operator's telemetry forces that operator (a comma-separated
+	 * value is a soft preference list, see {@code LmdbNativeDispatchLoop}).
+	 */
+	private Explanation explain(Explanation.Level level, String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			return conn.prepareTupleQuery(query).explain(level);
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return prepared.explain(level);
 		}
 	}
 

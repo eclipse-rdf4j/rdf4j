@@ -423,7 +423,13 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 	static QueryEvaluationStep tryCreate(Group group, NativeLmdbQuerySource source,
 			LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context, TupleExpr explainTarget,
 			Function<StatementPattern, ContextConstraint> contextCompiler) {
-		if (group.getGroupElements().isEmpty() || strategy.forcedExecutionStrategyName() != null
+		// a forced strategy other than the census itself bypasses this alternative; a forced census (alone or in a
+		// preference list) must still be offered so the dispatch loop can honour it
+		String forced = strategy.forcedExecutionStrategyName();
+		boolean forcedElsewhere = forced != null && Arrays.stream(forced.split(","))
+				.map(String::trim)
+				.noneMatch(PATH::equals);
+		if (group.getGroupElements().isEmpty() || forcedElsewhere
 				|| !Boolean.parseBoolean(
 						System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true"))) {
 			return null;

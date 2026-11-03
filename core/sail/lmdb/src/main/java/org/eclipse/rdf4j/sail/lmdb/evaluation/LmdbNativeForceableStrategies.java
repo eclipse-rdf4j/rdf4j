@@ -161,6 +161,37 @@ public final class LmdbNativeForceableStrategies {
 				"Morsel-parallel rung of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE + ".");
 		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
 				"Morsel-parallel rung of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED + ".");
+		// Structural specialists of the GROUP BY dispatch. They were catalogued but not forceable while the ladder
+		// placed them above every priced rival; a priced selector may pass them over on small stores, so their tests
+		// (and operators) must be able to name them.
+		d.put(LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX,
+				"Type usage and linkage matrices answered from adjacency metadata without enumerating statements.");
+		d.put(LmdbNativeCensusAggregate.PATH,
+				"Global census counts answered from adjacency page summaries and exact term domains.");
+		d.put(LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM,
+				"Histogram of run lengths read from index run metadata.");
+		d.put(LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM,
+				"Datatype histogram read from the value dictionary instead of every statement.");
+		d.put(LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS,
+				"Grouped counts answered per predicate plane of the adjacency index.");
+		d.put(NativeTermDomainPlan.PATH,
+				"Scalar aggregate answered from an exact term domain without producing rows.");
+		d.put(NativeExpressionDomainPolicy.HASHED_PATH,
+				"Row-root term-domain hash carrier for scalar expressions over a reusable domain.");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION,
+				"Compiled aggregation kernel rooted on a node-domain intersection.");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION_INTERPRETED,
+				"Interpreted execution of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION
+						+ ".");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX,
+				"Compiled aggregation kernel for the type-matrix algorithm.");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED,
+				"Interpreted execution of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX + ".");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL,
+				"Morsel-parallel rung of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX + ".");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED,
+				"Morsel-parallel rung of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED
+						+ ".");
 		return Collections.unmodifiableMap(d);
 	}
 

@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -67,11 +68,29 @@ import org.junit.jupiter.api.parallel.Resources;
  * Guards byte admission for retained aggregate worker state. The test budget is deliberately between the historical
  * undercounted {@code long[]} footprint and the actual footprint, so a worker group must decline before opening its
  * buffers and the exact serial aggregate must still return the answer.
+ * <p>
+ * The store-backed cases force the parallel IR rung ({@code irAggregateParallel}): on this 320-statement fixture the
+ * measured selector prices the sequential path below every kernel, and byte admission is a property of the rung, not of
+ * the selection. Constrained budgets use the soft preference list {@code irAggregateParallel,irAggregate}: the parallel
+ * rung is still attempted first, and when it declines at admission the compiled serial rung is forced next.
  */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeParallelKernelAggregateMemoryTest {
 
 	private static final String EX = "http://example.com/ir-memory/";
+	private static final String PARALLEL_RUNG = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL;
+	private static final String PARALLEL_THEN_SERIAL_RUNG = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL + ","
+			+ LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE;
+	/**
+	 * The large-numeric budget case: every kernel rung declines the 512 KB budget at admission, and so does the
+	 * sequential path (it raises {@code AllocationDeniedException} instead of declining, which a free run would let
+	 * escape); the ordered single-pattern group walk is the exact candidate that fits, so the soft list ends on it.
+	 */
+	private static final String BUDGET_DECLINING_RUNGS_THEN_ORDERED_GROUPS = String.join(",",
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS);
 	private static final String QUERY = "SELECT (COUNT(?o) AS ?count) WHERE { ?s <" + EX + "p> ?o }";
 	private static final String DISTINCT_QUERY = "SELECT (COUNT(DISTINCT ?o) AS ?count) WHERE { ?s <" + EX
 			+ "p> ?o }";
@@ -183,7 +202,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 
-		assertCount(QUERY);
+		assertCount(QUERY, PARALLEL_RUNG);
 
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("the unconstrained count fixture must reach the parallel IR route")
@@ -197,13 +216,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 
-		try (SailRepositoryConnection connection = repository.getConnection();
-				var result = connection.prepareTupleQuery(QUERY).evaluate()) {
-			assertThat(result.hasNext()).isTrue();
-			BindingSet row = result.next();
-			assertThat(row.getValue("count").stringValue()).isEqualTo(Integer.toString(ROWS));
-			assertThat(result.hasNext()).isFalse();
-		}
+		assertCount(QUERY, PARALLEL_THEN_SERIAL_RUNG);
 
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("the physical long buffer does not fit this query budget, so the exact serial route must answer")
@@ -221,7 +234,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 
-		assertCount(DISTINCT_QUERY);
+		assertCount(DISTINCT_QUERY, PARALLEL_RUNG);
 
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("the unconstrained DISTINCT fixture must reach the parallel IR route")
@@ -344,7 +357,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(15_000L, 15_000L);
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
 
-		assertCount(LONG_INPUT_QUERY);
+		assertCount(LONG_INPUT_QUERY, PARALLEL_THEN_SERIAL_RUNG);
 
 		assertThat(manager.usedBytes())
 				.as("decoded scalar values and every fallback reservation must be released with the query")
@@ -362,7 +375,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		LmdbNativeHashJoin.queryMemoryOverride = ample;
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 
-		List<BindingSet> expected = numericAggregates();
+		List<BindingSet> expected = numericAggregates(PARALLEL_RUNG);
 
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("the large numeric fixture must first prove that the aggregate worker route is reachable")
@@ -376,7 +389,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		LmdbNativeHashJoin.queryMemoryOverride = constrained;
 		long constrainedBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 
-		assertThat(numericAggregates())
+		assertThat(numericAggregates(BUDGET_DECLINING_RUNGS_THEN_ORDERED_GROUPS))
 				.as("the budget fallback must preserve every exact numeric aggregate binding")
 				.containsExactlyInAnyOrderElementsOf(expected);
 
@@ -502,9 +515,9 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		assertThat(manager.usedBytes()).isZero();
 	}
 
-	private void assertCount(String query) {
+	private void assertCount(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection();
-				var result = connection.prepareTupleQuery(query).evaluate()) {
+				var result = forced(connection, query, forcedStrategy).evaluate()) {
 			assertThat(result.hasNext()).isTrue();
 			BindingSet row = result.next();
 			assertThat(row.getValue("count").stringValue()).isEqualTo(Integer.toString(ROWS));
@@ -567,10 +580,16 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		assertThat(result.get(0).getValue("count").stringValue()).isEqualTo("1");
 	}
 
-	private List<BindingSet> numericAggregates() {
+	private static SailTupleQuery forced(SailRepositoryConnection connection, String query, String forcedStrategy) {
+		SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+		prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+		return prepared;
+	}
+
+	private List<BindingSet> numericAggregates(String forcedStrategy) {
 		List<BindingSet> rows = new ArrayList<>();
 		try (SailRepositoryConnection connection = repository.getConnection();
-				var result = connection.prepareTupleQuery(NUMERIC_QUERY).evaluate()) {
+				var result = forced(connection, NUMERIC_QUERY, forcedStrategy).evaluate()) {
 			while (result.hasNext()) {
 				BindingSet row = result.next();
 				assertThat(row.getValue("sum")).as("SUM result").isNotNull();

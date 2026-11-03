@@ -246,8 +246,23 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	private List<String> evaluate(String query) {
+		return evaluate(query, null);
+	}
+
+	/**
+	 * Evaluates with a forced execution strategy. A comma-separated value is a soft preference list: at every decision
+	 * point the first listed operator that is a candidate is forced, a bind-time decline (for example a pending
+	 * compilation) moves on to the next listed one, and a decision point where none applies is left to the selector.
+	 * The forced-on rounds use this to put their rung on the native side of the differential, which the measured
+	 * selector would otherwise price above the sequential path on this 500-statement store.
+	 */
+	private List<String> evaluate(String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = lmdb.getConnection()) {
-			List<BindingSet> rows = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			List<BindingSet> rows = QueryResults.asList(prepared.evaluate());
 			List<String> canonical = new ArrayList<>(rows.size());
 			for (BindingSet bs : rows) {
 				TreeMap<String, String> sorted = new TreeMap<>();
@@ -261,11 +276,17 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	private void assertSameResults(String query) {
+		assertSameResults(query, null);
+	}
+
+	/** Compares the native evaluation under {@code forcedStrategy} with the generic evaluation. */
+	private void assertSameResults(String query, String forcedStrategy) {
 		List<String> actual;
 		try {
-			actual = evaluate(query);
+			actual = evaluate(query, forcedStrategy);
 		} catch (RuntimeException e) {
-			throw new AssertionError("native evaluation failed for query (seed " + SEED + "):\n" + query, e);
+			throw new AssertionError("native evaluation failed for query (seed " + SEED + ", forced "
+					+ forcedStrategy + "):\n" + query, e);
 		}
 		String previous = System.getProperty(NATIVE_FLAG);
 		List<String> expected;
@@ -429,11 +450,12 @@ public class LmdbNativeDifferentialFuzzTest {
 					+ EX + "s10> } ?a " + edge + " ?g . ?a " + edge + " ?b . ?b " + edge + " ?a . } GROUP BY ?g");
 			queries.add("SELECT ?g (COUNT(DISTINCT ?a) AS ?n) WHERE { VALUES ?g { <" + EX + "s8> <" + EX + "s15> } "
 					+ "?a <" + EX + "p1> ?g . ?a " + edge + " ?b . } GROUP BY ?g HAVING (COUNT(DISTINCT ?a) >= 1)");
+			String forced = "irKernel,irAggregate";
 			for (String query : queries) {
 				for (int warm = 0; warm < 3; warm++) {
-					evaluate(query);
+					evaluate(query, forced);
 				}
-				assertSameResults(query);
+				assertSameResults(query, forced);
 			}
 			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess.openedAny())
 					.as("the Janino kernel rung never engaged during the forced-on round")
@@ -497,11 +519,12 @@ public class LmdbNativeDifferentialFuzzTest {
 				String distinct = random.nextBoolean() ? "DISTINCT " : "";
 				queries.add("SELECT " + distinct + "* WHERE { " + where + "}");
 			}
+			String forced = "irKernel,irKernelInterpreted";
 			for (String query : queries) {
 				for (int warm = 0; warm < 3; warm++) {
-					evaluate(query);
+					evaluate(query, forced);
 				}
-				assertSameResults(query);
+				assertSameResults(query, forced);
 			}
 			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.opened())
 					.as("the IR kernel rung never engaged during the forced-on round")
@@ -545,11 +568,12 @@ public class LmdbNativeDifferentialFuzzTest {
 			queries.add("SELECT (SUM(?o) AS ?total) (MIN(?o) AS ?lo) (MAX(?o) AS ?hi) WHERE { ?s " + p1 + " ?o }");
 			queries.add("SELECT ?a (COUNT(?b) AS ?n) WHERE { ?a " + edge + " ?b . "
 					+ "FILTER NOT EXISTS { ?b " + edge + " ?a } } GROUP BY ?a");
+			String forced = "irAggregate,irAggregateInterpreted";
 			for (String query : queries) {
 				for (int warm = 0; warm < 3; warm++) {
-					evaluate(query);
+					evaluate(query, forced);
 				}
-				assertSameResults(query);
+				assertSameResults(query, forced);
 			}
 			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.aggPlanned())
 					.as("the IR aggregate lowering never recognized a shape during the forced-on round")
@@ -1116,8 +1140,9 @@ public class LmdbNativeDifferentialFuzzTest {
 						+ " ?o . FILTER(isLiteral(?o)) } UNION { ?s " + p2 + " ?o } }",
 		};
 		try {
+			String forced = "irAggregate,irAggregateInterpreted";
 			for (String query : queries) {
-				assertSameResults(query);
+				assertSameResults(query, forced);
 			}
 			assertThat(org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess.aggPlanned())
 					.as("the IR aggregate rung must actually have planned these shapes; a green round with a zero "

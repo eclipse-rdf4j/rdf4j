@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -243,11 +244,11 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 				assertThat(genericOrdered.rows()).as("generic ordered aggregate returns one scalar row").hasSize(1);
 				String genericSequence = genericOrdered.rows().getFirst().getValue("sequence").stringValue();
 				String expectedSequence = String.join(",", CORRELATED_NATIVE_ORDER);
-				for (String route : List.of("automatic", "nestedLoop")) {
-					Observed ordered = "automatic".equals(route)
-							? evaluateWithStrategyEvents(repository, orderedQuery,
+				for (String route : List.of(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, "nestedLoop")) {
+					Observed ordered = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(route)
+							? withSynchronousJanino(() -> evaluateWithStrategyEvents(repository, orderedQuery,
 									"correlated-memo-ordered-adjacency-" + adjacency + "-factor-" + factorMode,
-									true, null)
+									true, route))
 							: evaluate(repository, orderedQuery, true, route);
 					String actualSequence = ordered.rows().getFirst().getValue("sequence").stringValue();
 					writeEvidence("correlated-memo-ordered-adjacency-" + adjacency + "-route-" + route,
@@ -256,7 +257,7 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 									+ actualSequence + "\nfacetSourceOpens="
 									+ correlatedFacetSourceOpens(ordered.telemetry()) + "\ntelemetry:\n"
 									+ ordered.telemetry());
-					if ("automatic".equals(route)) {
+					if (LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(route)) {
 						softly.assertThat(ordered.telemetry())
 								.as("ordered query executes the generated aggregate route, adjacency=%s", adjacency)
 								.contains("nativeInvocationsActual=1", "nativeExecutionPath=irAggregate",
@@ -271,7 +272,11 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 							.as("ordered custom aggregate matches generic encounter order, adjacency=%s, route=%s",
 									adjacency, route)
 							.isEqualTo(expectedSequence);
-					long expectedFacetOpens = "automatic".equals(route) && adjacency ? 2L : 10L;
+					// one forced generated-kernel execution captures the adjacency fragment once; the former
+					// automatic figure of two came from the deleted arbiter's speculative second execution
+					long expectedFacetOpens = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(route) && adjacency
+							? 1L
+							: 10L;
 					softly.assertThat(correlatedFacetSourceOpens(ordered.telemetry()))
 							.as("ordered boundary retains the original per-left-row fragment route, adjacency=%s, route=%s",
 									adjacency, route)
@@ -398,9 +403,10 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 			Observed generic = evaluate(repository, query, false, null);
 			String genericSequence = generic.rows().getFirst().getValue("sequence").stringValue();
 			String routeSequence = null;
-			for (String route : List.of("automatic", "nestedLoop")) {
-				Observed nativeResult = evaluate(repository, query, true,
-						"automatic".equals(route) ? null : route);
+			for (String route : List.of(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, "nestedLoop")) {
+				Observed nativeResult = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(route)
+						? evaluateForcedIrAggregate(repository, query)
+						: evaluate(repository, query, true, route);
 				String sequence = nativeResult.rows().getFirst().getValue("sequence").stringValue();
 				long sourceOpens = correlatedFacetSourceOpens(nativeResult.telemetry());
 				writeEvidence("correlated-original-plan-adjacency-" + adjacency + "-route-" + route,
@@ -413,7 +419,10 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 								adjacency, route)
 						.contains("guardedRightDriven=<unavailable:correlated-input>",
 								"originalOrderMemo=CorrelatedFragmentMemo(");
-				long expectedFacetOpens = "automatic".equals(route) && adjacency ? 2L : 10L;
+				// one forced generated-kernel execution captures the adjacency fragment once (see
+				// correlatedMemoRetainsOrderedAndOccupiedEntryBoundaries)
+				long expectedFacetOpens = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(route) && adjacency ? 1L
+						: 10L;
 				softly.assertThat(sourceOpens)
 						.as("the original route opens the right fragment once per left row, adjacency=%s, route=%s",
 								adjacency, route)
@@ -422,9 +431,9 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 						.as("the original native query and route establish the expected encounter order, adjacency=%s, route=%s",
 								adjacency, route)
 						.isEqualTo(String.join(",", CORRELATED_NATIVE_ORDER));
-				if ("automatic".equals(route)) {
+				if (LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE.equals(route)) {
 					softly.assertThat(nativeResult.telemetry())
-							.as("the automatic route executes the generated aggregate kernel")
+							.as("the forced route executes the generated aggregate kernel")
 							.contains("nativeExecutionPath=irAggregate", "route: irAggregate");
 				} else {
 					softly.assertThat(nativeResult.telemetry())
@@ -637,27 +646,22 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 	}
 
 	@Test
-	void forcedNestedLoopDeclinesUnsupportedCustomAggregateOrder() throws Exception {
+	void forcedNestedLoopReplaysUnsupportedCustomAggregateOrderExactly() throws Exception {
+		// The order-changing sequential candidate refuses an opaque custom aggregate at bind time; the dispatch loop
+		// then reruns the group in encounter order (the same exact fallback an unforced query takes), so a forced
+		// nested loop answers the query instead of surfacing the internal fallback signal.
 		String query = physicalAggregateQuery(true);
 		SoftAssertions softly = new SoftAssertions();
 		for (boolean adjacency : List.of(false, true)) {
 			SailRepository repository = openRepository("forced-unsupported-adjacency-" + adjacency, adjacency);
-			EncounterOrderFallback failure = null;
-			try {
-				evaluate(repository, query, true, "nestedLoop");
-			} catch (EncounterOrderFallback expected) {
-				failure = expected;
-			}
+			List<BindingSet> expected = evaluate(repository, query, false, null).rows();
+			Observed forced = evaluate(repository, query, true, "nestedLoop");
 			writeEvidence("forced-nested-loop-custom-order-adjacency-" + adjacency,
-					query + "\nexpected=EncounterOrderFallback:CUSTOM_AGGREGATE_ORDER\nactual="
-							+ (failure == null ? "success"
-									: failure.getClass().getSimpleName() + ":" + failure.getMessage())
-							+ "\n");
-			softly.assertThat(failure)
-					.as("forced nested-loop aggregate route declines custom encounter order, adjacency=%s", adjacency)
-					.isNotNull()
-					.isInstanceOf(EncounterOrderFallback.class)
-					.hasMessage("CUSTOM_AGGREGATE_ORDER");
+					query + "\nexpected=exact replay of the generic result\nactual=" + forced.rows() + "\n");
+			softly.assertThat(forced.rows())
+					.as("forced nested-loop aggregate route replays custom encounter order exactly, adjacency=%s",
+							adjacency)
+					.containsExactlyElementsOf(expected);
 		}
 		softly.assertAll();
 	}
@@ -672,7 +676,9 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 				String name = "automatic-physical-adjacency-" + adjacency + (alias ? "-alias" : "-original-join");
 				List<String> expectedOrder = alias || adjacency ? SOURCE_ORDER : ORIGINAL_JOIN_NO_ADJACENCY_ORDER;
 				try {
-					Observed observed = evaluate(repository, query, true, null);
+					// the generated aggregate kernel is the operator under test; the measured selector prices it
+					// above the nested loop on this fixture, so force it
+					Observed observed = evaluateForcedIrAggregate(repository, query);
 					String sequence = observed.rows().isEmpty() ? "<no-row>"
 							: observed.rows().getFirst().getValue("sequence").stringValue();
 					writeEvidence(name, query + "\nexpected=" + String.join(",", expectedOrder)
@@ -1148,6 +1154,26 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 					aggregateCallbacks);
 		} finally {
 			restoreProperty(NATIVE_FLAG, previous);
+		}
+	}
+
+	/** Forces the compiled serial aggregate kernel, compiling synchronously so the forced tag cannot stay pending. */
+	private static Observed evaluateForcedIrAggregate(SailRepository repository, String queryText) {
+		return withSynchronousJanino(
+				() -> evaluate(repository, queryText, true, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE));
+	}
+
+	private static <T> T withSynchronousJanino(Callable<T> action) {
+		String previousSynchronous = System.getProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY);
+		System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
+		try {
+			return action.call();
+		} catch (RuntimeException | Error failure) {
+			throw failure;
+		} catch (Exception failure) {
+			throw new IllegalStateException(failure);
+		} finally {
+			restoreProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, previousSynchronous);
 		}
 	}
 

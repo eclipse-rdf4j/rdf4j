@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -41,7 +42,9 @@ import org.junit.jupiter.api.io.TempDir;
  * one half of the HC:10 33-second excursion incident. Each test warms the compiled kernel once, then re-runs the same
  * query inside a PRE-TRIPPED deadline scope: the kernel must abort (the stackless {@link KernelCancelledException} or
  * {@link LmdbNativeProbeDeadlineExceeded} surfacing through the query) instead of running to completion. Fixture sizing
- * keeps every targeted loop above the 1024-iteration poll mask window.
+ * keeps every targeted loop above the 1024-iteration poll mask window. Both passes force the compiled rung
+ * ({@code irAggregate}): the 4500-statement fixture is small enough for the measured selector to price the sequential
+ * path below the kernel, and the poll contract belongs to the kernel, not to the selection.
  */
 class LmdbNativeKernelAggregatePollPointTest {
 
@@ -161,7 +164,7 @@ class LmdbNativeKernelAggregatePollPointTest {
 		long openedBefore = KernelExecutionTestAccess.aggOpened();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			// Warm pass: compiles the kernel synchronously and proves the compiled rung actually serves this query.
-			QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			QueryResults.asList(compiledAggregate(conn, query).evaluate());
 		}
 		assertThat(KernelExecutionTestAccess.aggOpened())
 				.as("the compiled aggregate rung must serve this query for the poll assertion to be meaningful")
@@ -173,7 +176,7 @@ class LmdbNativeKernelAggregatePollPointTest {
 		boolean completed = false;
 		try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
 			try (SailRepositoryConnection conn = repository.getConnection()) {
-				QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+				QueryResults.asList(compiledAggregate(conn, query).evaluate());
 				completed = true;
 			} catch (KernelCancelledException | LmdbNativeProbeDeadlineExceeded | QueryEvaluationException abort) {
 				surfaced = abort;
@@ -185,6 +188,13 @@ class LmdbNativeKernelAggregatePollPointTest {
 		assertThat(causeChainAborts(surfaced))
 				.as("the abort must be the cooperative cancellation, was: " + surfaced)
 				.isTrue();
+	}
+
+	/** The query with the compiled aggregate rung forced, so the kernel under test is what the deadline trips. */
+	private static SailTupleQuery compiledAggregate(SailRepositoryConnection conn, String query) {
+		SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+		prepared.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
+		return prepared;
 	}
 
 	private static boolean causeChainAborts(Throwable surfaced) {

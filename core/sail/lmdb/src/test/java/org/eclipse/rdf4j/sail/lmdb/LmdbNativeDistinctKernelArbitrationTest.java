@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -180,11 +181,13 @@ public class LmdbNativeDistinctKernelArbitrationTest {
 		System.setProperty("rdf4j.lmdb.prefixRun.enabled", "false");
 		System.setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
 		String query = distinctFanoutQuery();
-		GenericPlanNode plan = explain(query);
+		// the ordered-distinct plan and the plain nested loop quote the same price as the distinct kernel here, so
+		// the kernel is forced under its own interpreted tag rather than left to the tie-break
+		GenericPlanNode plan = explain(query, "irKernelDistinctInterpreted");
 		assertThat(findMetric(plan, "nativeExecutionPath"))
-				.as("with every rival disabled the distinct kernel wins under its own interpreted tag")
+				.as("the distinct kernel runs under its own interpreted tag")
 				.isEqualTo("irKernelDistinctInterpreted");
-		assertThat(rows(query)).containsExactlyElementsOf(genericRows(query));
+		assertThat(rows(query, "irKernelDistinctInterpreted")).containsExactlyElementsOf(genericRows(query));
 	}
 
 	@Test
@@ -202,12 +205,12 @@ public class LmdbNativeDistinctKernelArbitrationTest {
 		System.setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
 
 		String query = distinctFanoutQuery();
-		GenericPlanNode plan = explain(query);
+		GenericPlanNode plan = explain(query, "irKernelDistinctParallelInterpreted");
 		assertThat(findMetric(plan, STRATEGY_PROPOSAL_COSTS_METRIC))
 				.contains("irKernelDistinctParallelInterpreted=")
 				.contains("irKernelDistinctInterpreted=");
 		assertThat(findMetric(plan, "nativeExecutionPath")).contains("irKernelDistinctParallelInterpreted");
-		assertThat(rows(query)).containsExactlyElementsOf(genericRows(query));
+		assertThat(rows(query, "irKernelDistinctParallelInterpreted")).containsExactlyElementsOf(genericRows(query));
 	}
 
 	/**
@@ -242,16 +245,26 @@ public class LmdbNativeDistinctKernelArbitrationTest {
 	}
 
 	private GenericPlanNode explain(String query) {
+		return explain(query, null);
+	}
+
+	private GenericPlanNode explain(String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			return conn.prepareTupleQuery(query)
-					.explain(Explanation.Level.Telemetry)
-					.toGenericPlanNode();
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			return prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode();
 		}
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(Object::toString)
 					.sorted()

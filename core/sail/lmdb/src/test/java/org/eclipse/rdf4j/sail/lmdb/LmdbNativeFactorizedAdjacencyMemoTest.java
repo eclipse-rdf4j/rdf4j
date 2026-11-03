@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
@@ -185,9 +186,11 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 			System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 
+			// 192 rows do not amortise the kernel's fixed cost against the nested loop, so the compiled kernel is
+			// forced: this test is about the kernel executing the shape and the factorized path standing aside
 			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
 			JaninoPipelineTestAccess.resetAll();
-			List<String> compiledOnlyRows = queryRows(query);
+			List<String> compiledOnlyRows = queryRows(query, "irKernel");
 			assertThat(compiledOnlyRows).containsExactlyElementsOf(factorizedRows);
 			assertThat(JaninoPipelineTestAccess.opened())
 					.as("fixture must be executable by the generated row kernel")
@@ -196,10 +199,10 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
 			JaninoPipelineTestAccess.resetAll();
 			long factorizedBeforeBoth = JoinDispatchTestAccess.factorizedEngaged();
-			List<String> bothRows = queryRows(query);
+			List<String> bothRows = queryRows(query, "irKernel");
 			assertThat(bothRows).containsExactlyElementsOf(factorizedRows);
 			assertThat(JoinDispatchTestAccess.factorizedEngaged())
-					.as("the higher-ranked compiled kernel must win the shared arbiter")
+					.as("the forced compiled kernel must win the shared dispatch over the eligible factorized rows")
 					.isEqualTo(factorizedBeforeBoth);
 			assertThat(JaninoPipelineTestAccess.opened())
 					.as("the selected compiled kernel must open")
@@ -215,8 +218,16 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 	}
 
 	private List<String> queryRows(String query) {
+		return queryRows(query, null);
+	}
+
+	private List<String> queryRows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(LmdbNativeFactorizedAdjacencyMemoTest::canonical)
 					.sorted()

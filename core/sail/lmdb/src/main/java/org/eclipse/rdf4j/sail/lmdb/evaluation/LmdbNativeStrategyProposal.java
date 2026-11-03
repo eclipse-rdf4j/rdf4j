@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -115,6 +116,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
 	private LmdbNativeStrategyProposal<?> mappedOrigin;
 	private LmdbNativeCostQuote costQuote;
+	private Set<String> dominates = Set.of();
 
 	/** Changes only the result carrier; the original opener, quote, dominance and unopened release remain owned. */
 	<R> LmdbNativeStrategyProposal<R> map(Function<? super T, ? extends R> mapper, String mappedTag) {
@@ -141,6 +143,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		result.executionResourceWitness = executionResourceWitness;
 		result.mappedOrigin = this;
 		result.costQuote = costQuote;
+		result.dominates = dominates;
 		return result;
 	}
 
@@ -152,6 +155,20 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	LmdbNativeCostQuote costQuote() {
 		return costQuote;
+	}
+
+	/**
+	 * Declares the strategies this proposal structurally dominates: whenever one of them is admitted at the same
+	 * decision it is eliminated regardless of price. Only for relationships that hold by construction (an exact index
+	 * count against any row-producing count), never as a pricing shortcut.
+	 */
+	LmdbNativeStrategyProposal<T> withDominates(Set<String> ids) {
+		this.dominates = Set.copyOf(ids);
+		return this;
+	}
+
+	Set<String> dominates() {
+		return dominates;
 	}
 
 	/**

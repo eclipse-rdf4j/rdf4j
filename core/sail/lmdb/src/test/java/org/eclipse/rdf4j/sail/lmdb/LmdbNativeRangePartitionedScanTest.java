@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -241,7 +242,10 @@ public class LmdbNativeRangePartitionedScanTest {
 	private List<String> rows(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ArrayList<String> rows = new ArrayList<>();
-			for (BindingSet row : QueryResults.asList(connection.prepareTupleQuery(query).evaluate())) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			// this suite tests the range-partitioned parallel pipelines, so that operator is forced while enabled
+			prepared.setForcedLmdbExecutionStrategy(parallelEnabled() ? "parallelPipelines" : null);
+			for (BindingSet row : QueryResults.asList(prepared.evaluate())) {
 				rows.add(row.getValue("subject") + "|" + row.getValue("value"));
 			}
 			rows.sort(String::compareTo);
@@ -249,10 +253,16 @@ public class LmdbNativeRangePartitionedScanTest {
 		}
 	}
 
+	private static boolean parallelEnabled() {
+		return !"false".equals(System.getProperty(PARALLEL_FLAG));
+	}
+
 	private List<String> groupRows(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ArrayList<String> rows = new ArrayList<>();
-			for (BindingSet row : QueryResults.asList(connection.prepareTupleQuery(query).evaluate())) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(parallelEnabled() ? "parallelAggregation" : null);
+			for (BindingSet row : QueryResults.asList(prepared.evaluate())) {
 				rows.add(row.getValue("subject") + "|" + row.getValue("count") + "|" + row.getValue("min"));
 			}
 			rows.sort(String::compareTo);

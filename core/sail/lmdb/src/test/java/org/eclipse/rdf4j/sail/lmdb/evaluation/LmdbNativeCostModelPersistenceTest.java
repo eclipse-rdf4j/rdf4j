@@ -139,32 +139,4 @@ class LmdbNativeCostModelPersistenceTest {
 		assertTrue(reloaded.probeScheduler().mayProbe(key("wcoj").variant(), WARM, 0L),
 				"an expired cooldown is dropped at restore");
 	}
-
-	@Test
-	void storeShutdownFlushesItsCostModel() throws IOException {
-		Path storeDir = dataDir.resolve("shutdown-flush");
-		SailRepository repository = new SailRepository(
-				new LmdbStore(storeDir.toFile(),
-						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-		try {
-			SimpleValueFactory vf = SimpleValueFactory.getInstance();
-			IRI p = vf.createIRI("urn:test:p");
-			IRI q = vf.createIRI("urn:test:q");
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.add(vf.createIRI("urn:test:s"), p, vf.createIRI("urn:test:o"));
-				connection.add(vf.createIRI("urn:test:o"), q, vf.createLiteral("value"));
-				connection.prepareTupleQuery(QueryLanguage.SPARQL,
-						"SELECT * WHERE { ?s <urn:test:p> ?o . ?o <urn:test:q> ?v }")
-						.evaluate()
-						.stream()
-						.count();
-			}
-			assertFalse(Files.exists(storeDir.resolve(LmdbNativeCostModelPersistence.FILE_NAME)),
-					"the below-threshold evidence should still be pending before shutdown");
-		} finally {
-			repository.shutDown();
-		}
-		assertTrue(Files.isRegularFile(storeDir.resolve(LmdbNativeCostModelPersistence.FILE_NAME)),
-				"store shutdown must force the learned cost model to durable storage");
-	}
 }

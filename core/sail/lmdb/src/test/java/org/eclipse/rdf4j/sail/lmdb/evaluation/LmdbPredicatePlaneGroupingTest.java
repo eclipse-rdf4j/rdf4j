@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -100,8 +101,12 @@ public class LmdbPredicatePlaneGroupingTest {
 		long decodesBefore = LmdbNativePredicatePlaneGroups.PREDICATE_DECODES.get();
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+			// seven statements price the sequential path below the plane traversal; this test is about the
+			// plane traversal, so it forces the operator
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(MULTI_CHANNEL_COUNTS);
+			prepared.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS);
 			List<String> rows = new ArrayList<>();
-			for (BindingSet row : QueryResults.asList(connection.prepareTupleQuery(MULTI_CHANNEL_COUNTS).evaluate())) {
+			for (BindingSet row : QueryResults.asList(prepared.evaluate())) {
 				rows.add(row.getValue("ns").stringValue() + "=" + longValue(row, "star") + "="
 						+ longValue(row, "subjects") + "=" + longValue(row, "predicateRows") + "="
 						+ longValue(row, "objects") + "=" + longValue(row, "predicates"));

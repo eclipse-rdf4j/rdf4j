@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -67,6 +68,9 @@ import org.openjdk.jmh.annotations.Warmup;
  * Trial setup verifies result parity and query-local execution paths. Under the current complete-group scheduler, a
  * {@code parallelPipelines} path means exactly the configured worker group was admitted; the engagement record exposes
  * that count so an elastic scheduler can replace it with granted-worker telemetry without changing benchmark methods.
+ * Each selector forces its operator ({@code parallelPipelines} or {@code batch}) onto the query: the harness isolates
+ * the operators themselves, and the measured selector would otherwise price the sequential path below the parallel one
+ * on the small fixture the unit test uses.
  */
 @Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
@@ -275,7 +279,7 @@ public class ParallelismBenchmark {
 			long rows = 0L;
 			long digest = 0L;
 			try (SailRepositoryConnection connection = repository.getConnection();
-					TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
+					TupleQueryResult result = prepare(connection).evaluate()) {
 				while (result.hasNext()) {
 					BindingSet bindings = result.next();
 					long left = literalLong(bindings.getValue("left"), "left");
@@ -310,9 +314,19 @@ public class ParallelismBenchmark {
 			return observed;
 		}
 
+		/** The benchmark query with the selector's operator forced ({@link Selector#forcedStrategy()}). */
+		private SailTupleQuery prepare(SailRepositoryConnection connection) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(QUERY);
+			String forced = selector().forcedStrategy();
+			if (forced != null) {
+				query.setForcedLmdbExecutionStrategy(forced);
+			}
+			return query;
+		}
+
 		private String executionPath() {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				GenericPlanNode plan = connection.prepareTupleQuery(QUERY)
+				GenericPlanNode plan = prepare(connection)
 						.explain(Explanation.Level.Telemetry)
 						.toGenericPlanNode();
 				String path = findExecutionPath(plan);
@@ -511,6 +525,19 @@ public class ParallelismBenchmark {
 			this.parallelEnabled = parallelEnabled;
 			this.batchEnabled = batchEnabled;
 			this.queryCount = queryCount;
+		}
+
+		/**
+		 * The operator this selector isolates, forced onto every query; {@code null} leaves the sequential path free.
+		 */
+		String forcedStrategy() {
+			if (parallelEnabled) {
+				return "parallelPipelines";
+			}
+			if (batchEnabled) {
+				return "batch";
+			}
+			return null;
 		}
 	}
 }

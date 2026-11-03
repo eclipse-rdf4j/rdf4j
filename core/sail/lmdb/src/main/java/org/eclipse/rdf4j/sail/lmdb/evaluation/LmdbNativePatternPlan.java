@@ -573,7 +573,18 @@ final class PatternPlan implements SlotPlan {
 			return Math.max(0D, staticEstimate);
 		}
 		OptionalDouble fanOut = fanOutForBoundMask(boundMask, source);
-		return fanOut.isPresent() ? fanOut.getAsDouble() : structuralEstimate(boundMask);
+		return fanOut.isPresent() ? fanOut.getAsDouble() : capAtStatementCount(structuralEstimate(boundMask), source);
+	}
+
+	/**
+	 * A pattern cannot match more statements than the store holds: the pseudo-cardinalities of an unbound predicate (64
+	 * predicates × 4096 objects per bound subject, a billion rows all unbound) are capped at the pinned snapshot's
+	 * statement count when the source can state it. Measured 2026-11-03: without the cap a two-row VALUES join against
+	 * {@code ?a ?p ?v} quoted its non-wildcard rivals at 2.6e14 ns.
+	 */
+	private static double capAtStatementCount(double rows, NativeLmdbQuerySource source) {
+		NativeLmdbQuerySource.IndexAccessProfile profile = source == null ? null : source.indexAccessProfile();
+		return profile == null ? rows : Math.min(rows, profile.entries());
 	}
 
 	/** A binding can restrict a relation's result, but must not cap the physical work of finding it. */

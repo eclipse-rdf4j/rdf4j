@@ -100,45 +100,85 @@ final class LmdbNativeDispatchLoop<C, T> {
 		final Map<String, String> declines = new HashMap<>();
 		/** Strategy ids in registry order, for the record. */
 		final List<String> asked = new ArrayList<>();
+		/** False when a forced preference list names no candidate here, so this site decides freely. */
+		boolean forcingApplies = true;
+		/** Candidates a preference list set aside; they return when the forced one declines at bind time. */
+		final List<LmdbNativeCandidate<T>> deferred = new ArrayList<>();
 
 		void admit(C context) throws IOException {
-			Map<String, String> captured = forcedTag == null ? null : new HashMap<>();
-			Map<String, String> previous = captured == null ? null
-					: LmdbNativeAttemptMetrics.installDeclineCapture(captured);
+			// every decline a proposer records while it is asked is captured, so a strategy that declines before it
+			// has a candidate (and so a tag) still appears in the record under its own name and reason
+			Map<String, String> captured = new HashMap<>();
+			Map<String, String> previous = LmdbNativeAttemptMetrics.installDeclineCapture(captured);
 			try {
 				for (LmdbNativeStrategy<C, T> strategy : strategies) {
-					asked.add(strategy.id());
+					int before = captured.size();
 					LmdbNativeAdmission<T> admission = strategy.admit(context);
 					if (admission.admitted()) {
+						asked.add(strategy.id());
 						candidates.addAll(admission.candidates());
-					} else {
-						declines.put(strategy.id(), admission.declineReason());
-						LmdbNativeAttemptMetrics.recordDecline(explainTarget, strategy.id(),
-								admission.declineReason());
+						continue;
 					}
+					if (captured.size() > before && !LmdbNativeForceableStrategies.isForceable(strategy.id())) {
+						// an anonymous offer that named itself through its decline record
+						for (Map.Entry<String, String> decline : captured.entrySet()) {
+							if (!declines.containsKey(decline.getKey()) && !asked.contains(decline.getKey())) {
+								asked.add(decline.getKey());
+								declines.put(decline.getKey(), decline.getValue());
+							}
+						}
+						continue;
+					}
+					asked.add(strategy.id());
+					declines.put(strategy.id(), admission.declineReason());
+					LmdbNativeAttemptMetrics.recordDecline(explainTarget, strategy.id(), admission.declineReason());
 				}
 			} finally {
-				if (captured != null) {
-					LmdbNativeAttemptMetrics.installDeclineCapture(previous);
-					captured.forEach(declines::putIfAbsent);
-				}
+				LmdbNativeAttemptMetrics.installDeclineCapture(previous);
+				captured.forEach(declines::putIfAbsent);
 			}
 		}
 
-		/** Keeps only the forced strategy's candidates; returns false when it was not admitted. */
+		/**
+		 * Keeps only the forced strategy's candidates; returns false when it was not admitted. A comma-separated forced
+		 * value is a preference list: the first listed strategy that is admitted at this point is forced, so one
+		 * request can force a family across decision points (for example {@code irAggregateInterpreted,
+		 * irKernelInterpreted} forces the interpreted tier wherever a kernel applies).
+		 */
 		boolean applyForcing() {
 			if (forcedTag == null) {
 				return true;
 			}
+			String effective = null;
+			for (String option : forcedTag.split(",")) {
+				String trimmed = option.trim();
+				if (candidates.stream().anyMatch(c -> trimmed.equals(LmdbNativeCandidate.baseId(c.id())))) {
+					effective = trimmed;
+					break;
+				}
+			}
+			if (effective == null && forcedTag.indexOf(',') >= 0) {
+				// a preference list forces its operators wherever one of them applies; a decision point none of
+				// them reaches is left to the selector
+				forcingApplies = false;
+				return true;
+			}
+			final String forced = effective == null ? forcedTag : effective;
+			boolean soft = forcedTag.indexOf(',') >= 0;
 			List<LmdbNativeCandidate<T>> rejected = new ArrayList<>();
 			candidates.removeIf(candidate -> {
-				boolean keep = forcedTag.equals(LmdbNativeCandidate.baseId(candidate.id()));
+				boolean keep = forced.equals(LmdbNativeCandidate.baseId(candidate.id()));
 				if (!keep) {
 					rejected.add(candidate);
 				}
 				return !keep;
 			});
-			rejected.forEach(candidate -> candidate.release().run());
+			if (soft) {
+				// a preference list is soft: the rivals wait in case the forced operator declines at bind time
+				deferred.addAll(rejected);
+			} else {
+				rejected.forEach(candidate -> candidate.release().run());
+			}
 			if (logger.isInfoEnabled()) {
 				logger.info("LMDB forced strategy candidates: requested={}, decisionPoint={}, offered={}", forcedTag,
 						label, candidates.stream().map(LmdbNativeCandidate::id).toList());
@@ -166,6 +206,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 		}
 
 		void releaseAll() {
+			candidates.addAll(deferred);
+			deferred.clear();
 			candidates.forEach(candidate -> candidate.release().run());
 			candidates.clear();
 		}
@@ -244,14 +286,15 @@ final class LmdbNativeDispatchLoop<C, T> {
 		long decisionId = DECISIONS.incrementAndGet();
 		Admitted admitted = new Admitted();
 		admitted.admit(context);
+		recordProposalCosts(admitted);
 		if (!admitted.applyForcing()) {
 			admitted.releaseAll();
 			if (point.forcedMandatory()) {
-				throw forcedUnavailable(admitted.declines.get(forcedTag), false);
+				throw forcedUnavailable(forcedDecline(admitted), false);
 			}
 			return null;
 		}
-		String mode = forcedTag == null ? "normal" : "forced";
+		String mode = forcedTag == null || !admitted.forcingApplies ? "normal" : "forced";
 		boolean retry = false;
 		boolean forcedReturnedNull = false;
 		try {
@@ -266,30 +309,72 @@ final class LmdbNativeDispatchLoop<C, T> {
 				LmdbNativeCandidate<T> chosen = admitted.candidates.get(ranking.winner());
 				LmdbNativeDecisionRecord record = admitted.record(ranking, retry ? "retry " + mode : mode);
 				observe(record, label);
+				if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
+					LmdbNativeExplain.recordAdaptiveCostDecision(explainTarget, "winner=" + chosen.id() + ";reason="
+							+ ranking.reason() + ";kind=" + (retry ? "RETRY" : "NORMAL") + ";expectedNanos="
+							+ String.format(java.util.Locale.ROOT, "%.0f", ranking.expectedNanos()[ranking.winner()]));
+				}
 				logSelected(explainTarget, decisionId, label, chosen.id(), retry ? "retry " + mode : mode,
 						ranking.reason());
 				retry = true;
 				startAttemptOnSharedRow();
-				T value = chosen.opener().open();
+				T value = forcedTag == null || !admitted.forcingApplies ? chosen.opener().open()
+						: openCapturingDeclines(chosen, admitted);
 				if (value != null) {
 					admitted.candidates.remove(ranking.winner());
 					admitted.releaseAll();
 					return new Selection<>(value, chosen.id(), ranking.expectedNanos()[ranking.winner()], record);
 				}
 				// bind-time decline: the strategy has recorded its own reason; drop it and re-rank the rest
-				if (forcedTag != null && forcedTag.equals(LmdbNativeCandidate.baseId(chosen.id()))) {
+				if (forcedTag != null && forcedTagMatches(chosen.id())) {
 					forcedReturnedNull = true;
 				}
 				admitted.candidates.remove(ranking.winner());
 				chosen.release().run();
+				if (forcedTag != null && admitted.forcingApplies && !admitted.deferred.isEmpty()) {
+					// a soft preference list: the next listed operator that applies is forced, else the site is free
+					admitted.candidates.addAll(admitted.deferred);
+					admitted.deferred.clear();
+					admitted.applyForcing();
+				}
 			}
 		} catch (IOException | RuntimeException | Error failure) {
 			admitted.releaseAll();
 			throw failure;
 		}
 		restoreSharedRow();
-		if (forcedTag != null && point.forcedMandatory()) {
-			throw forcedUnavailable(admitted.declines.get(forcedTag), forcedReturnedNull);
+		if (forcedTag != null && admitted.forcingApplies && point.forcedMandatory()) {
+			throw forcedUnavailable(forcedDecline(admitted), forcedReturnedNull);
+		}
+		return null;
+	}
+
+	/** Opens a candidate under forcing with its own decline record captured, so a forced failure can quote it. */
+	private T openCapturingDeclines(LmdbNativeCandidate<T> chosen, Admitted admitted) throws IOException {
+		Map<String, String> previous = LmdbNativeAttemptMetrics.installDeclineCapture(admitted.declines);
+		try {
+			return chosen.opener().open();
+		} finally {
+			LmdbNativeAttemptMetrics.installDeclineCapture(previous);
+		}
+	}
+
+	private boolean forcedTagMatches(String candidateId) {
+		String base = LmdbNativeCandidate.baseId(candidateId);
+		for (String option : forcedTag.split(",")) {
+			if (option.trim().equals(base)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private String forcedDecline(Admitted admitted) {
+		for (String option : forcedTag.split(",")) {
+			String reason = admitted.declines.get(option.trim());
+			if (reason != null) {
+				return reason;
+			}
 		}
 		return null;
 	}
@@ -301,11 +386,36 @@ final class LmdbNativeDispatchLoop<C, T> {
 		observer = listener;
 	}
 
+	/** When {@code true}, every decision record is written to standard error as it is taken. */
+	static final String TRACE_PROPERTY = "rdf4j.lmdb.nativeDecisions.trace";
+
 	private static void observe(LmdbNativeDecisionRecord record, String label) {
+		if (Boolean.getBoolean(TRACE_PROPERTY)) {
+			System.err.println(record.describe(label));
+		}
 		java.util.function.BiConsumer<LmdbNativeDecisionRecord, String> listener = observer;
 		if (listener != null) {
 			listener.accept(record, label);
 		}
+	}
+
+	/** The explain metric listing every admitted candidate with its expected price, as telemetry consumers read it. */
+	private void recordProposalCosts(Admitted admitted) {
+		if (admitted.candidates.size() < 2 || !LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
+			return;
+		}
+		StringBuilder rendered = new StringBuilder();
+		for (LmdbNativeCandidate<T> candidate : admitted.candidates) {
+			if (rendered.length() > 0) {
+				rendered.append(',');
+			}
+			LmdbNativeCostVector vector = candidate.quote().forSlice(sliceRows);
+			rendered.append(candidate.id())
+					.append('=')
+					.append(String.format(java.util.Locale.ROOT, "%.0f",
+							prior.expected(vector) + LmdbNativeStaticPrior.fixedNanos(candidate.id())));
+		}
+		LmdbNativeExplain.recordStrategyProposalCosts(explainTarget, rendered.toString());
 	}
 
 	private QueryEvaluationException forcedUnavailable(String declineReason, boolean returnedNull) {

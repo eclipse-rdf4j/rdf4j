@@ -455,9 +455,11 @@ class LmdbNativeAggregateExplanationRouteTest {
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 
 		GenericPlanNode unforcedTelemetry = explain(PURE_WILDCARD_QUERY, null, Explanation.Level.Telemetry);
+		// disabling wildcard codegen does not touch the unforced selection: an exact COUNT(*) over one pattern is
+		// answered by the index cardinality, which structurally dominates every row-producing count
 		assertThat(findMetric(unforcedTelemetry, LmdbNativeExplain.EXECUTION_PATH))
-				.as("the unforced query may still select the interpreter's wildcard specialization")
-				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED);
+				.as("the unforced exact count selects the indexed count regardless of wildcard codegen")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT);
 	}
 
 	@Test

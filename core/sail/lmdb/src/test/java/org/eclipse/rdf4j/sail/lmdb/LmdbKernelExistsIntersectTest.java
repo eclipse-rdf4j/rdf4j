@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -129,10 +130,13 @@ class LmdbKernelExistsIntersectTest {
 					}
 					Assertions.assertEquals(REFERENCED_ENTITY_COUNT, intersectionCount);
 				}
+				// The parallel rung is priced at one worker start per worker, which no 512-entity fixture amortises
+				// against the serial intersection; the parallel arm is about that rung, so it forces it.
+				String forcedStrategy = parallelEnabled ? "irAggregateParallel" : null;
 				// The referrers themselves are subjects too, and none of them is referenced: expected distinct nodes
 				// with at least one outgoing triple AND at least one incoming reference are the first three quarters.
 				try (SailRepositoryConnection connection = repository.getConnection();
-						TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
+						TupleQueryResult result = prepare(connection, forcedStrategy).evaluate()) {
 					long count = ((org.eclipse.rdf4j.model.Literal) result.next().getValue("count")).longValue();
 					Assertions.assertEquals(REFERENCED_ENTITY_COUNT, count,
 							"distinct referenced subjects, janinoEnabled=" + janinoEnabled
@@ -141,7 +145,7 @@ class LmdbKernelExistsIntersectTest {
 				}
 				KernelExecutionTestAccess.resetCostCalibration();
 				try (SailRepositoryConnection connection = repository.getConnection()) {
-					String plan = connection.prepareTupleQuery(QUERY)
+					String plan = prepare(connection, forcedStrategy)
 							.explain(Explanation.Level.Telemetry)
 							.toString();
 					Assertions.assertTrue(
@@ -199,6 +203,14 @@ class LmdbKernelExistsIntersectTest {
 			restore("rdf4j.lmdb.costCalibration.enabled", previousAdaptiveCost);
 			restore("rdf4j.lmdb.adaptiveProbe.enabled", previousAdaptiveProbe);
 		}
+	}
+
+	private static SailTupleQuery prepare(SailRepositoryConnection connection, String forcedStrategy) {
+		SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QUERY);
+		if (forcedStrategy != null) {
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+		}
+		return prepared;
 	}
 
 	private static void restore(String property, String previousValue) {

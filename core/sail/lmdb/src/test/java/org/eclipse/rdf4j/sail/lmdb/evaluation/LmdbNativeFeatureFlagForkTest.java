@@ -32,12 +32,22 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Verifies startup-frozen native execution flags in a fresh JVM for every scenario. */
+/**
+ * Verifies startup-frozen native execution flags in a fresh JVM for every scenario.
+ * <p>
+ * Where a scenario asserts that a surviving specialist still serves (the factorized tail with the chunk substrate off,
+ * the parallel owners with factorization off, sequential factorization with parallelism off), the probe forces that
+ * specialist: the 84-statement fixture is far below the point where the measured selector prices any specialist below
+ * the sequential path, and the flag contract is "still offered and working", not "cheapest". Forcing throws when the
+ * flag has removed the operator, so the switch under test is still observed. Scenarios that assert the plain fallback
+ * itself stay unforced.
+ */
 class LmdbNativeFeatureFlagForkTest {
 
 	private static final long PROBE_TIMEOUT_SECONDS = 60L;
@@ -126,6 +136,11 @@ class LmdbNativeFeatureFlagForkTest {
 		private static final String FACTORIZED_TAIL_FLAG = "rdf4j.lmdb.factorizedTail.enabled";
 		private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
 		private static final String ORDERED_FACTORIZED_FLAG = "rdf4j.lmdb.orderedFactorizedRows.enabled";
+		// Forced-strategy tags (LmdbNativeForceableStrategies); the probe runs in a child JVM, so spell them out.
+		private static final String FACTORIZED_ROWS = "factorizedRows";
+		private static final String FACTORIZED_TAIL = "factorizedTail";
+		private static final String PARALLEL_PIPELINES = "parallelPipelines";
+		private static final String PARALLEL_AGGREGATION = "parallelAggregation";
 
 		private static final String SELECT_QUERY = "SELECT ?subject ?tail WHERE { "
 				+ "?subject <" + EX + "p1> ?middle . "
@@ -248,10 +263,10 @@ class LmdbNativeFeatureFlagForkTest {
 			long parallelRowsBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
 			long parallelAggregatesBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 
-			String serialSelectStrategy = strategy(repository, SELECT_QUERY);
-			String serialAggregateStrategy = strategy(repository, AGGREGATE_QUERY);
-			List<String> serialSelect = nativeRows(repository, SELECT_QUERY, false);
-			List<String> serialAggregate = nativeRows(repository, AGGREGATE_QUERY, false);
+			String serialSelectStrategy = strategy(repository, SELECT_QUERY, FACTORIZED_ROWS);
+			String serialAggregateStrategy = strategy(repository, AGGREGATE_QUERY, FACTORIZED_TAIL);
+			List<String> serialSelect = nativeRows(repository, SELECT_QUERY, false, FACTORIZED_ROWS);
+			List<String> serialAggregate = nativeRows(repository, AGGREGATE_QUERY, false, FACTORIZED_TAIL);
 
 			checkEquals(expectedSelect, serialSelect, "chunk-off serial SELECT result parity");
 			checkEquals(expectedSerialAggregate, serialAggregate, "chunk-off serial aggregate result parity");
@@ -279,10 +294,11 @@ class LmdbNativeFeatureFlagForkTest {
 			System.setProperty(FACTORIZED_ROWS_FLAG, "false");
 			System.setProperty(FACTORIZED_TAIL_FLAG, "false");
 			System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "0");
-			String parallelSelectStrategy = strategy(repository, SELECT_QUERY);
-			String parallelAggregateStrategy = strategy(repository, PARALLEL_AGGREGATE_QUERY);
-			List<String> parallelSelect = nativeRows(repository, SELECT_QUERY, false);
-			List<String> parallelAggregate = nativeRows(repository, PARALLEL_AGGREGATE_QUERY, false);
+			String parallelSelectStrategy = strategy(repository, SELECT_QUERY, PARALLEL_PIPELINES);
+			String parallelAggregateStrategy = strategy(repository, PARALLEL_AGGREGATE_QUERY, PARALLEL_AGGREGATION);
+			List<String> parallelSelect = nativeRows(repository, SELECT_QUERY, false, PARALLEL_PIPELINES);
+			List<String> parallelAggregate = nativeRows(repository, PARALLEL_AGGREGATE_QUERY, false,
+					PARALLEL_AGGREGATION);
 
 			checkEquals(expectedSelect, parallelSelect, "chunk-off parallel SELECT result parity");
 			checkEquals(expectedParallelAggregate, parallelAggregate, "chunk-off parallel aggregate result parity");
@@ -339,9 +355,9 @@ class LmdbNativeFeatureFlagForkTest {
 			long factorizedTailBefore = FactorizedTail.ENGAGED.get();
 
 			String selectStrategy = strategy(repository, SELECT_QUERY);
-			String aggregateStrategy = strategy(repository, AGGREGATE_QUERY);
+			String aggregateStrategy = strategy(repository, AGGREGATE_QUERY, FACTORIZED_TAIL);
 			List<String> actualSelect = nativeRows(repository, SELECT_QUERY, false);
-			List<String> actualAggregate = nativeRows(repository, AGGREGATE_QUERY, false);
+			List<String> actualAggregate = nativeRows(repository, AGGREGATE_QUERY, false, FACTORIZED_TAIL);
 
 			checkEquals(expectedSelect, actualSelect, "parallel-off SELECT result parity");
 			checkEquals(expectedAggregate, actualAggregate, "parallel-off aggregate result parity");
@@ -395,13 +411,24 @@ class LmdbNativeFeatureFlagForkTest {
 		}
 
 		private static List<String> nativeRows(SailRepository repository, String query, boolean preserveOrder) {
+			return nativeRows(repository, query, preserveOrder, null);
+		}
+
+		/** Native rows with {@code forcedStrategy} forced wherever it is a candidate ({@code null} leaves it free). */
+		private static List<String> nativeRows(SailRepository repository, String query, boolean preserveOrder,
+				String forcedStrategy) {
 			System.setProperty(NATIVE_FLAG, "true");
-			return rows(repository, query, preserveOrder);
+			return rows(repository, query, preserveOrder, forcedStrategy);
 		}
 
 		private static List<String> rows(SailRepository repository, String query, boolean preserveOrder) {
+			return rows(repository, query, preserveOrder, null);
+		}
+
+		private static List<String> rows(SailRepository repository, String query, boolean preserveOrder,
+				String forcedStrategy) {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				List<String> rows = QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+				List<String> rows = QueryResults.asList(prepare(connection, query, forcedStrategy).evaluate())
 						.stream()
 						.map(FeatureFlagProbe::canonicalize)
 						.collect(Collectors.toCollection(ArrayList::new));
@@ -421,14 +448,27 @@ class LmdbNativeFeatureFlagForkTest {
 		}
 
 		private static String strategy(SailRepository repository, String query) {
+			return strategy(repository, query, null);
+		}
+
+		private static String strategy(SailRepository repository, String query, String forcedStrategy) {
 			System.setProperty(NATIVE_FLAG, "true");
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				String strategy = findStrategy(connection.prepareTupleQuery(query)
+				String strategy = findStrategy(prepare(connection, query, forcedStrategy)
 						.explain(Explanation.Level.Telemetry)
 						.toGenericPlanNode());
 				check(strategy != null, "expected nativeExecutionPath telemetry for " + query);
 				return strategy;
 			}
+		}
+
+		private static SailTupleQuery prepare(SailRepositoryConnection connection, String query,
+				String forcedStrategy) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return prepared;
 		}
 
 		private static String findStrategy(GenericPlanNode node) {

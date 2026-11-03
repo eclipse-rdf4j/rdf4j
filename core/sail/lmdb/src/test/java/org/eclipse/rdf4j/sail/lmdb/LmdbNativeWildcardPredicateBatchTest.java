@@ -1040,9 +1040,8 @@ class LmdbNativeWildcardPredicateBatchTest {
 			long folded = LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded();
 			try (RepositoryConnection connection = repository.getConnection()) {
 				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
-				if (strategy != null) {
-					prepared.setForcedLmdbExecutionStrategy(strategy);
-				}
+				prepared.setForcedLmdbExecutionStrategy(strategy != null ? strategy
+						: "wildcardPredicateBatch,wildcardPredicateReduced");
 				List<BindingSet> result = QueryResults.asList(prepared.evaluate());
 				List<String> actual = result.stream()
 						.map(bindings -> bindings.getBindingNames()
@@ -1096,9 +1095,9 @@ class LmdbNativeWildcardPredicateBatchTest {
 	private List<String> executeComputedWildcardQuery(String query, String strategy) {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
-			if (!"withoutIr".equals(strategy)) {
-				prepared.setForcedLmdbExecutionStrategy(strategy);
-			}
+			prepared.setForcedLmdbExecutionStrategy("withoutIr".equals(strategy)
+					? "wildcardPredicateBatch,wildcardPredicateReduced"
+					: strategy);
 			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
@@ -1261,7 +1260,7 @@ class LmdbNativeWildcardPredicateBatchTest {
 
 	private List<String> rows(String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			return QueryResults.asList(wildcardQuery(connection, query).evaluate())
 					.stream()
 					.map(LmdbNativeWildcardPredicateBatchTest::canonical)
 					.sorted()
@@ -1271,7 +1270,7 @@ class LmdbNativeWildcardPredicateBatchTest {
 
 	private List<String> allRows(String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			return QueryResults.asList(wildcardQuery(connection, query).evaluate())
 					.stream()
 					.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
 					.sorted()
@@ -1299,11 +1298,22 @@ class LmdbNativeWildcardPredicateBatchTest {
 
 	private String explain(String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
+			return wildcardQuery(connection, query).explain(Explanation.Level.Optimized).toString();
 		}
 	}
 
 	private static String canonical(BindingSet row) {
 		return row.getValue("p").stringValue();
 	}
+
+	/**
+	 * This suite tests the wildcard-predicate batch operator; the measured selector may prefer a rival on these small
+	 * stores, so the shared helpers force whichever wildcard form applies at each decision point.
+	 */
+	private static SailTupleQuery wildcardQuery(RepositoryConnection connection, String query) {
+		SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+		prepared.setForcedLmdbExecutionStrategy("wildcardPredicateBatch,wildcardPredicateReduced");
+		return prepared;
+	}
+
 }

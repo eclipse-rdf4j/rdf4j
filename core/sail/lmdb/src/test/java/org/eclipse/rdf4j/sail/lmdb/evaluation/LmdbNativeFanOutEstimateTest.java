@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -37,7 +38,8 @@ class LmdbNativeFanOutEstimateTest {
 
 		assertThat(pattern.estimateForBoundMask(1L, measured)).isEqualTo(3D);
 		assertThat(pattern.estimateForBoundMask(1L << 1, measured)).isEqualTo(5D);
-		assertThat(pattern.estimateForBoundMask(1L, absent)).isEqualTo(4_096D * 256D);
+		// the context position never multiplies rows (a statement count already spans every context)
+		assertThat(pattern.estimateForBoundMask(1L, absent)).isEqualTo(4_096D);
 	}
 
 	@Test
@@ -70,6 +72,20 @@ class LmdbNativeFanOutEstimateTest {
 		assertThat(plan.estimate(row)).isEqualTo(200D);
 	}
 
+	@Test
+	void structuralEstimateNeverExceedsTheStoreStatementCount() {
+		// an unbound predicate has no fan-out statistics, so the estimate is structural; a store of 500 statements
+		// cannot answer a pattern with more than 500 rows, bound subject or not
+		FanOutSource small = new FanOutSource(7L, Double.NaN, Double.NaN, OptionalLong.empty(), 500L);
+		PatternPlan wildcard = new PatternPlan(Term.slot(0), Term.slot(2), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, Double.NaN);
+		assertThat(wildcard.estimateForBoundMask(1L, small)).isLessThanOrEqualTo(500D);
+		assertThat(wildcard.estimateForBoundMask(0L, small)).isLessThanOrEqualTo(500D);
+		// without a profile the pseudo-cardinalities stand (64 predicates × 4096 objects per bound subject)
+		FanOutSource unknown = new FanOutSource(7L, Double.NaN, Double.NaN, OptionalLong.empty());
+		assertThat(wildcard.estimateForBoundMask(1L, unknown)).isEqualTo(64D * 4_096D);
+	}
+
 	private static PatternPlan pattern(long predicate, double staticEstimate) {
 		return new PatternPlan(Term.slot(0), Term.constant(predicate), Term.slot(1), Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, staticEstimate);
@@ -81,11 +97,31 @@ class LmdbNativeFanOutEstimateTest {
 		private final double byObject;
 		private final OptionalLong exactDegree;
 
+		private final long entries;
+
 		private FanOutSource(long predicate, double bySubject, double byObject, OptionalLong exactDegree) {
+			this(predicate, bySubject, byObject, exactDegree, -1L);
+		}
+
+		private FanOutSource(long predicate, double bySubject, double byObject, OptionalLong exactDegree,
+				long entries) {
 			this.predicate = predicate;
 			this.bySubject = bySubject;
 			this.byObject = byObject;
 			this.exactDegree = exactDegree;
+			this.entries = entries;
+		}
+
+		@Override
+		public IndexAccessProfile indexAccessProfile() {
+			if (entries < 0L) {
+				return null;
+			}
+			int[][] prefixes = new int[StatementOrder.values().length + 1][16];
+			for (int[] row : prefixes) {
+				Arrays.fill(row, -1);
+			}
+			return new IndexAccessProfile(entries, 1, prefixes, false, -1L, -1L, -1L);
 		}
 
 		@Override

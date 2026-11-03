@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
@@ -352,8 +353,12 @@ class LmdbNativeCompatibilityRegressionTest {
 					+ "BIND(TZ(?date) AS ?tz) }";
 			List<BindingSet> expected = rows(repository, query, false);
 			assertThat(expected).hasSize(8).allSatisfy(binding -> assertThat(binding.getBindingNames()).hasSize(4));
-			KernelExecutionTestAccess.resetMetrics();
 			assertThat(rows(repository, query, true)).containsExactlyInAnyOrderElementsOf(expected);
+			// The measured selector prices the generated kernel above the nested loop on eight rows; the generated
+			// row kernel is the operator under test, so force it for the engagement assertion.
+			KernelExecutionTestAccess.resetMetrics();
+			assertThat(rows(repository, query, true, LmdbNativeAttemptMetrics.PATH_IR_KERNEL))
+					.containsExactlyInAnyOrderElementsOf(expected);
 			assertThat(KernelExecutionTestAccess.opened())
 					.as("computed calendar bindings must execute through the generated row kernel")
 					.isPositive();
@@ -386,10 +391,19 @@ class LmdbNativeCompatibilityRegressionTest {
 	}
 
 	private List<BindingSet> rows(SailRepository repository, String query, boolean nativeEnabled) {
+		return rows(repository, query, nativeEnabled, null);
+	}
+
+	private List<BindingSet> rows(SailRepository repository, String query, boolean nativeEnabled,
+			String forcedStrategy) {
 		String previous = System.getProperty(NATIVE_PROPERTY);
 		System.setProperty(NATIVE_PROPERTY, Boolean.toString(nativeEnabled));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return QueryResults.asList(prepared.evaluate());
 		} finally {
 			restoreNativeProperty(previous);
 		}

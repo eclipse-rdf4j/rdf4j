@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -41,12 +42,15 @@ import org.junit.jupiter.api.io.TempDir;
  * compiled worker variant that cannot exist yet and decline every open with {@code worker-kernel-pending}. The fixture
  * pins codegen enabled with an unreachable compile threshold, so the sequential open is warm-up-interpreted
  * deterministically, and a {@code COUNT(DISTINCT)} aggregate forces the hook-distinct worker VARIANT (the shape whose
- * compile can never be available here).
+ * compile can never be available here). The parallel interpreted rung is forced ({@code
+ * irAggregateParallelInterpreted}): on this 640-statement fixture the measured selector prices the sequential path
+ * below every parallel rung, and the contract under test is the rung's worker tier, not the selection.
  */
 public class LmdbNativeAggregateParallelWarmupTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String STRATEGY_DECLINES_METRIC = "nativeStrategyDeclines";
+	private static final String PARALLEL_INTERPRETED_RUNG = "irAggregateParallelInterpreted";
 
 	private static final String[] PROPERTIES = {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
@@ -162,20 +166,28 @@ public class LmdbNativeAggregateParallelWarmupTest {
 		assertThat(plan.toString())
 				.as("the parallel rung must engage with interpreter-backed workers while the compile is pending")
 				.contains("irAggregateInterpretedParallel");
-		assertThat(rows(query)).containsExactlyElementsOf(genericRows(query));
+		assertThat(rows(query, PARALLEL_INTERPRETED_RUNG)).containsExactlyElementsOf(genericRows(query));
 	}
 
 	private GenericPlanNode explain(String query) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			return conn.prepareTupleQuery(query)
-					.explain(Explanation.Level.Telemetry)
-					.toGenericPlanNode();
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(PARALLEL_INTERPRETED_RUNG);
+			return prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode();
 		}
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(Object::toString)
 					.sorted()

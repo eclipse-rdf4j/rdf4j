@@ -233,11 +233,13 @@ class NativeAggregateMetadataCostTest {
 		assertEquals(generic, rows(query, null), "the indexed-count result must preserve exact SPARQL semantics");
 
 		GenericPlanNode telemetry = explain(query, null);
-		assertEquals(LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT,
+		// With the adjacency index serving, the exact count is answered from the index catalog, which is priced
+		// below the LMDB cardinality lookup; the indexed count stays admitted and quoted.
+		assertEquals(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
 				metric(telemetry, LmdbNativeExplain.EXECUTION_PATH),
-				"the natural scalar route must execute the prepared exact count");
+				"the natural scalar route must execute an exact metadata count");
 		JsonNode quote = candidate(quotes(telemetry), LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT);
-		assertNotNull(quote, "the selected indexed-count proposal must remain in the quote inventory");
+		assertNotNull(quote, "the admitted indexed-count proposal must remain in the quote inventory");
 		boolean physicalFeaturesKnown = quote.path("physicalFeaturesKnown").asBoolean();
 		assertTrue(physicalFeaturesKnown || !quote.path("workEvidenceComplete").asBoolean(),
 				() -> "metadata work cannot be advertised as a complete row-cost vector without physical evidence: "

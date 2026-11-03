@@ -62,6 +62,13 @@ public class LmdbNativeKernelAggregateTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String WCOJ_FLAG = "rdf4j.lmdb.wcoj.enabled";
 	private static final String EX = "http://example.org/";
+	// Soft preference lists (see LmdbNativeDispatchLoop): the compiled tier is forced where it is a candidate and the
+	// interpreted tier takes over when the compile is still pending. On this 150-statement fixture the measured
+	// selector prices the sequential path below every kernel, so engagement must be requested, not inferred.
+	private static final String ROW_KERNEL_TIERS = LmdbNativeAttemptMetrics.PATH_IR_KERNEL + ","
+			+ LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED;
+	private static final String AGGREGATE_KERNEL_TIERS = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE + ","
+			+ LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED;
 
 	// HC-q10 shape: candidates with a NOT EXISTS witness, counted distinct.
 	private static final String NOT_EXISTS_COUNT_QUERY = "PREFIX ex: <" + EX + ">\n"
@@ -498,7 +505,7 @@ public class LmdbNativeKernelAggregateTest {
 	private void awaitColdAggregateEngagement(String query) {
 		warmAggregateSeeds();
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0L; round++) {
-			rows(query);
+			rows(query, AGGREGATE_KERNEL_TIERS);
 		}
 	}
 
@@ -873,7 +880,7 @@ public class LmdbNativeKernelAggregateTest {
 		assertFalse(expected.isEmpty(), "fixture must join knows into labels");
 		warmRowSeeds();
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.opened() == 0L; round++) {
-			rows(HASH_JOIN_QUERY);
+			rows(HASH_JOIN_QUERY, ROW_KERNEL_TIERS);
 		}
 		assertTrue(KernelExecutionTestAccess.opened() > 0L,
 				"row rung never engaged for the two-pattern join (planned="
@@ -891,16 +898,20 @@ public class LmdbNativeKernelAggregateTest {
 		String parallel = System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		String packed = System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 		String interpreter = System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
+		// The interpreter is off, so the compiled tier is the only kernel candidate; compile synchronously so that
+		// forcing it does not meet a pending compile on the first open.
+		String synchronous = System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
 		try {
 			List<String> expected = genericRows(HASH_JOIN_TWO_KEY_QUERY);
 			warmRowSeeds();
 			for (int round = 0; round < 300 && KernelExecutionTestAccess.hashJoinLowerings() == 0L; round++) {
-				rows(HASH_JOIN_TWO_KEY_QUERY);
+				rows(HASH_JOIN_TWO_KEY_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
 			}
 			assertTrue(KernelExecutionTestAccess.hashJoinLowerings() > 0L,
 					"the two-key join was not lowered through HashBuild/HashProbe");
 			assertEquals(expected, rows(HASH_JOIN_TWO_KEY_QUERY));
 		} finally {
+			restoreProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, synchronous);
 			restoreProperty("rdf4j.lmdb.nativeHashJoin.minRows", hashRows);
 			restoreProperty(LmdbNativeHashJoin.ENABLED_PROPERTY, hashEnabled);
 			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", factorized);
@@ -963,7 +974,7 @@ public class LmdbNativeKernelAggregateTest {
 		for (int round = 0; round < 300
 				&& (KernelExecutionTestAccess.opened() == 0L
 						|| KernelExecutionTestAccess.rowExistsLowerings() == 0L); round++) {
-			rows(ROW_EXISTS_QUERY);
+			rows(ROW_EXISTS_QUERY, ROW_KERNEL_TIERS);
 		}
 		assertTrue(KernelExecutionTestAccess.rowExistsLowerings() > 0L,
 				"the sticky EXISTS filter was not lowered to an in-kernel witness on the row rung");
@@ -979,7 +990,7 @@ public class LmdbNativeKernelAggregateTest {
 		for (int round = 0; round < 300
 				&& (KernelExecutionTestAccess.opened() == 0L
 						|| KernelExecutionTestAccess.wcojLowerings() == 0L); round++) {
-			rows(TRIANGLE_QUERY);
+			rows(TRIANGLE_QUERY, ROW_KERNEL_TIERS);
 		}
 		assertTrue(KernelExecutionTestAccess.wcojLowerings() > 0L,
 				"the triangle was not lowered through the kernel Intersect seam");

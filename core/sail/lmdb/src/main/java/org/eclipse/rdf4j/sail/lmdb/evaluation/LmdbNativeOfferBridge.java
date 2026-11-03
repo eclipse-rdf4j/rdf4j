@@ -99,7 +99,9 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 
 	/** Bridges one proposal: its tag is the candidate id and its quotes become feature counts. */
 	static <T> LmdbNativeCandidate<T> candidate(LmdbNativeStrategyProposal<T> proposal) {
-		return LmdbNativeCandidate.of(proposal.tag, quote(proposal), proposal::open, proposal::close);
+		LmdbNativeCandidate<T> candidate = LmdbNativeCandidate.of(proposal.tag, quote(proposal), proposal::open,
+				proposal::close);
+		return proposal.dominates().isEmpty() ? candidate : candidate.dominating(proposal.dominates());
 	}
 
 	static LmdbNativeCostQuote quote(LmdbNativeStrategyProposal<?> proposal) {
