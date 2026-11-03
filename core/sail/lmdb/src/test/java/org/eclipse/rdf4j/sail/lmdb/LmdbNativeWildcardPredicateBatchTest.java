@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -611,6 +613,56 @@ class LmdbNativeWildcardPredicateBatchTest {
 		assertThat(LmdbNativeKernelIrTestAccess.variablePredicateLowerings())
 				.as("each wildcard access in the join should own a predicate-plane batch stage")
 				.isGreaterThanOrEqualTo(loweringsBefore + 2L);
+	}
+
+	@Test
+	void payloadBatchBehindAPrefixIsPricedAsPlaneProbesPerPrefixRow(@TempDir File dataDir) {
+		// the wildcard batch at a row site carried only its legacy work interval, bridged as scanned rows (5.2 ms
+		// here), so once nestedLoop's rows were honest (120 µs) it lost the small-store decisions this suite's
+		// subquery and UNION shapes rely on (2026-11-03); the executor probes the six predicate planes once per
+		// prefix row and delivers the statements in batch form without interpreting a row
+		open(dataDir);
+		String query = "SELECT ?s ?p ?o WHERE { ?s a <" + NS + "SomeClass> . ?s ?p ?o }";
+		GenericPlanNode plan;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			plan = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toGenericPlanNode();
+		}
+		Map<String, Double> batch = NativeProposalFeatures.offering(plan, "wildcardPredicateBatch")
+				.get("wildcardPredicateBatch");
+		Map<String, Double> costs = NativeProposalFeatures.costs(plan, "wildcardPredicateBatch");
+		assertThat(batch.getOrDefault("INTERPRETED_ROW", 0D)).as("batch quote: %s", batch).isZero();
+		assertThat(batch.getOrDefault("HASH_PROBE", 0D)).as("one plane probe per prefix row and plane: %s", batch)
+				.isGreaterThanOrEqualTo(96D * 6D);
+		assertThat(batch.getOrDefault("BATCH_ROW", 0D)).as("the prefix rows and the delivered statements: %s", batch)
+				.isGreaterThan(96D);
+		assertThat(costs.get("wildcardPredicateBatch"))
+				.as("the batch never interprets the rows the sequential path does: %s", costs)
+				.isLessThan(costs.get("nestedLoop"));
+	}
+
+	@Test
+	void hashedExpressionDomainIsPricedAboveTheRowsItHashes(@TempDir File dataDir) {
+		// BIND(STR(?p)) over the UNION offers the hashed expression-domain variant of the row path: it runs the same
+		// nested cursors as nestedLoop and hashes every row on top, yet it was quoted from the plain plan vector
+		// without the generic-row premium, 18 % below nestedLoop and 1 % below batch, and took the root from the
+		// batch (measured warm minima of 500 runs, 2026-11-03: batch 642 µs, nestedLoop 704 µs, hashed 732 µs)
+		open(dataDir);
+		String query = "SELECT ?s ?p ?o ?label WHERE { "
+				+ "{ ?s a <" + NS + "SomeClass> . ?s ?p ?o } UNION "
+				+ "{ ?s a <" + NS + "SomeClass> . ?s ?p ?o . FILTER(?p = <" + NS + "common>) } "
+				+ "BIND(STR(?p) AS ?label) }";
+		GenericPlanNode plan;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			plan = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toGenericPlanNode();
+		}
+		Map<String, Double> costs = NativeProposalFeatures.costs(plan, "nestedLoop");
+		String hashed = costs.keySet()
+				.stream()
+				.filter(tag -> tag.startsWith("rowTermDomainHash"))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("no hashed expression-domain candidate in " + costs));
+		assertThat(costs.get(hashed)).as("quotes: %s", costs).isGreaterThan(costs.get("nestedLoop"));
+		assertThat(costs.get("batch")).as("quotes: %s", costs).isLessThan(costs.get(hashed));
 	}
 
 	@Test

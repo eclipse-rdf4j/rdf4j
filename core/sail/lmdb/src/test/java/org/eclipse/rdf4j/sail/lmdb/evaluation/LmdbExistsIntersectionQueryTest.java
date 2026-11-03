@@ -111,8 +111,11 @@ public class LmdbExistsIntersectionQueryTest {
 	public void subjectsAlsoObjectsUsesIntersection() {
 		openRepository("spoc,ospc,psoc,posc");
 
+		// this suite tests the intersection operator; on an eight-statement store every strategy runs within noise of
+		// the sequential path and the plane-metadata aggregates' re-fitted intercepts (2026-11-03) price
+		// prefixRunGroups below it, so the operator is forced as the padded variants already do
 		long before = LmdbNativeExistsIntersection.OPENED.get();
-		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(6L);
+		assertThat(count(SUBJECTS_ALSO_OBJECTS, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION)).isEqualTo(6L);
 		assertThat(LmdbNativeExistsIntersection.OPENED.get()).isGreaterThan(before);
 	}
 
@@ -189,7 +192,7 @@ public class LmdbExistsIntersectionQueryTest {
 		openRepository("spoc,ospc,psoc,posc");
 
 		long before = LmdbNativeExistsIntersection.OPENED.get();
-		assertThat(count(OBJECTS_ALSO_SUBJECTS)).isEqualTo(6L);
+		assertThat(count(OBJECTS_ALSO_SUBJECTS, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION)).isEqualTo(6L);
 		assertThat(LmdbNativeExistsIntersection.OPENED.get()).isGreaterThan(before);
 	}
 
@@ -201,7 +204,7 @@ public class LmdbExistsIntersectionQueryTest {
 		assertThat(count("SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {\n"
 				+ "  ?node ?p ?o .\n"
 				+ "  FILTER EXISTS { ?s <" + EX + "knows> ?node . }\n"
-				+ "}")).isEqualTo(4L);
+				+ "}", LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION)).isEqualTo(4L);
 		assertThat(LmdbNativeExistsIntersection.OPENED.get()).isGreaterThan(before);
 	}
 

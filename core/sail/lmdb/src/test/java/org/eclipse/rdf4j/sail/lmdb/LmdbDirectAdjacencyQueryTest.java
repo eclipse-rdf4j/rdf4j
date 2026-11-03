@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 import java.io.File;
 import java.io.IOException;
@@ -1925,6 +1926,30 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
+	void plannerNodeDegreeComesFromThePlaneStatistics() throws Exception {
+		System.setProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY, "true");
+		openPreferStore();
+		assertThat(sail.awaitDirectAdjacencyReady(0, TimeUnit.MILLISECONDS)).isTrue();
+
+		// five explicit quads; by subject P1 keys {S1, S2}, P2 {S1}, P3 {S1}: four (node, predicate) pairs, the
+		// largest plane holds two keys, so the node count is estimated at sqrt(4 * 2) (two subjects in truth); by
+		// object P1 keys {O1, O2}, P2 {O1}, P3 {42}: the same counts (three objects in truth)
+		double nodes = Math.sqrt(4D * 2D);
+		try (var pinned = dataset()) {
+			assertThat(pinned.source.meanNodeDegree(true).orElseThrow()).isCloseTo(5D / nodes, within(1e-9));
+			assertThat(pinned.source.meanNodeDegree(false).orElseThrow()).isCloseTo(5D / nodes, within(1e-9));
+			assertThat(pinned.source.meanNodePredicates(true).orElseThrow()).isCloseTo(4D / nodes, within(1e-9));
+			assertThat(pinned.source.meanNodePredicates(false).orElseThrow()).isCloseTo(4D / nodes, within(1e-9));
+		}
+
+		System.setProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY, "false");
+		try (var disabled = dataset()) {
+			assertThat(disabled.source.meanNodeDegree(true)).isEmpty();
+			assertThat(disabled.source.meanNodePredicates(false)).isEmpty();
+		}
+	}
+
+	@Test
 	void flaggedPlannerFanOutUsesExactPlaneCounts() throws Exception {
 		System.setProperty(LmdbDirectAdjacencyStore.PLANNER_STATS_PROPERTY, "true");
 		openPreferStore();
@@ -2312,8 +2337,10 @@ class LmdbDirectAdjacencyQueryTest {
 		String query = "SELECT (COUNT(DISTINCT ?p) AS ?predicates) WHERE { ?s ?p ?o }";
 		assertAdjacencyCapability(query, "predicates");
 
+		// the physical assertions are about the metadata route: on a five-quad store every strategy runs within
+		// 20 µs of the sequential path (measured 2026-11-03), so AUTO's pick is noise and the route is forced
 		LmdbPrefixRunPlan.resetMetrics();
-		assertThat(queryRows(query, "predicates"))
+		assertThat(queryRowsVia(query, "adjacencyAggregate", "predicates"))
 				.containsExactly("3");
 		assertThat(LmdbPrefixRunPlan.ROOTS_VISITED.get())
 				.as("COUNT(DISTINCT P) is the nonempty predicate-plane count and must not traverse SOC/OSC roots")
@@ -2412,8 +2439,9 @@ class LmdbDirectAdjacencyQueryTest {
 		LmdbPrefixRunPlan.resetMetrics();
 		assertThat(queryRows("SELECT DISTINCT ?p WHERE { ?s ?p ?o }", "p"))
 				.containsExactly(P1.stringValue(), P3.stringValue(), p4Value.stringValue());
+		// the plane-catalog route is forced for its physical counters: on this store AUTO's pick is within noise
 		LmdbPrefixRunPlan.resetMetrics();
-		assertThat(queryRows(query, "p", "count"))
+		assertThat(queryRowsVia(query, "adjacencyAggregate", "p", "count"))
 				.containsExactly(P1.stringValue() + "=3", P3.stringValue() + "=1", p4Value.stringValue() + "=2");
 		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
 		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(6);
@@ -2799,8 +2827,12 @@ class LmdbDirectAdjacencyQueryTest {
 				.isZero();
 		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isZero();
 
+		// likewise for the grouped walk: AUTO's pick on five quads is within noise of every rival
 		LmdbPrefixRunPlan.resetMetrics();
 		assertThat(queryRows(predicateQuery, "p", "count"))
+				.containsExactly(P1.stringValue() + "=3", P2.stringValue() + "=1", P3.stringValue() + "=1");
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRowsVia(predicateQuery, "adjacencyAggregate", "p", "count"))
 				.containsExactly(P1.stringValue() + "=3", P2.stringValue() + "=1", P3.stringValue() + "=1");
 		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
 		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get())

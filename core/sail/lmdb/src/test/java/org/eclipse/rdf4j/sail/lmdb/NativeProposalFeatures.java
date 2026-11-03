@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 public final class NativeProposalFeatures {
 
 	static final String METRIC = "nativeStrategyProposalFeatures";
+	private static final java.util.regex.Pattern COST_ENTRY = java.util.regex.Pattern
+			.compile("((?:[^,=()]|\\([^)]*\\))+)=(-?[0-9.]+(?:[Ee][+-]?[0-9]+)?)(?:,|$)");
 
 	private NativeProposalFeatures() {
 	}
@@ -56,11 +58,10 @@ public final class NativeProposalFeatures {
 		collect(plan, "nativeStrategyProposalCosts", metrics);
 		for (String metric : metrics) {
 			Map<String, Double> costs = new LinkedHashMap<>();
-			for (String entry : metric.split(",")) {
-				int eq = entry.indexOf('=');
-				if (eq > 0) {
-					costs.put(entry.substring(0, eq).trim(), Double.parseDouble(entry.substring(eq + 1).trim()));
-				}
+			// a tag may carry a parenthesised variant key with commas of its own (rowTermDomainHash(...))
+			java.util.regex.Matcher entry = COST_ENTRY.matcher(metric);
+			while (entry.find()) {
+				costs.put(entry.group(1).trim(), Double.parseDouble(entry.group(2)));
 			}
 			if (costs.containsKey(strategy)) {
 				return costs;

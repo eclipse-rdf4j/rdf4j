@@ -1461,11 +1461,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					() -> evaluateWildcardWeighted(row, new AggContext(source, strictCompare, true), metrics),
 					LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
 					LmdbWildcardPredicateBatch.estimateWeightedAggregateWork(arg, row, groupSlots, aggregates))
-							// it sweeps the predicate planes and folds every delivered row into the group table: the
-							// input's sequential access plus a group update per row (its legacy work interval, bridged
-							// as scanned rows, priced the analytics theme's in-degree query at 17 ms where it ran
-							// 7.6 s and prefix-run groups 37 ms, 2026-11-03)
-							.withCostQuote(sequentialQuote(arg, row)));
+							.withCostQuote(wildcardWeightedQuote(arg, row)));
 		}
 		if (!typeMatrixOwned && wcojHandlesRow(row)) {
 			arbiter.offer(() -> estimatedProposal(() -> evaluateWcoj(row),
@@ -1885,6 +1881,23 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 						LmdbNativePlanExecutionProfile.Mode.SEQUENTIAL)
 						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
 								LmdbNativeWork.rowsOut(input, row, boundMask), row)),
+				groupSlots.length == 0 && havingCondition == null ? 1D : Double.NaN);
+	}
+
+	/**
+	 * The reduced wildcard aggregate's quote: behind a prefix, the plane probes per prefix row and a group update per
+	 * delivered (node, predicate) pair ({@link LmdbWildcardPredicateBatch#weightedAggregateVector}); the single-pattern
+	 * sweep keeps the sequential profile, which its predicate-major scan costs per statement (its legacy work interval,
+	 * bridged as scanned rows, priced the analytics theme's in-degree query at 17 ms where it ran 7.6 s and prefix-run
+	 * groups 37 ms, 2026-11-03).
+	 */
+	private LmdbNativeCostQuote wildcardWeightedQuote(SlotPlan input, RowState row) {
+		LmdbNativeCostVector streaming = LmdbWildcardPredicateBatch.weightedAggregateVector(input, row, groupSlots,
+				aggregates);
+		if (streaming == null) {
+			return sequentialQuote(input, row);
+		}
+		return LmdbNativeCostQuote.streaming(streaming,
 				groupSlots.length == 0 && havingCondition == null ? 1D : Double.NaN);
 	}
 

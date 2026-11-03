@@ -602,11 +602,19 @@ final class PatternPlan implements SlotPlan {
 	}
 
 	private OptionalDouble fanOutForBoundMask(long boundMask, NativeLmdbQuerySource source) {
-		if (source == null || !p.isConstant()) {
+		if (source == null) {
 			return OptionalDouble.empty();
 		}
 		boolean subjectKnown = termKnown(s, boundMask);
 		boolean objectKnown = termKnown(o, boundMask);
+		if (!p.isConstant()) {
+			// a variable-predicate probe from one bound end reaches that node's statements across every plane: the
+			// side's mean node degree when the plane statistics know it (the 64 × 16 pseudo-domain below priced the
+			// 600-person census fixture's 10,665-row class-predicate join at 279,711 rows, 2026-11-03)
+			return subjectKnown != objectKnown && !termKnown(p, boundMask)
+					? validFanOut(source.meanNodeDegree(subjectKnown))
+					: OptionalDouble.empty();
+		}
 		if (subjectKnown && objectKnown) {
 			return edgeProbability(source, p.constant);
 		}

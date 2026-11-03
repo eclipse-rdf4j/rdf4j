@@ -1704,15 +1704,23 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			// Hash key construction, payload retention and possible spill I/O are not priced by the scalar
 			// compiler. Keep the complete alternative UNKNOWN; ordinary execution wins the static ladder.
 			// Existing complete-execution arbitration can price this distinct physical variant independently.
-			arbiter.offer(() -> inputProposal(
-					() -> acceptNested(row, NativeExpressionDomainPolicy.openHashed(arg, row), multiJoin),
-					NativeExpressionDomainPolicy.HASHED_TAG, LmdbNativeWork.UNKNOWN, estimatedRows(row))
-							.withCostQuote(LmdbNativeCostQuote.streaming(
-									LmdbNativeCostVectors.plan(arg, row, row.boundMask(),
-											LmdbNativeCostVector.Feature.INTERPRETED_ROW)
-											.plus(LmdbNativeCostVectors.perRow(
-													LmdbNativeCostVector.Feature.HASH_BUILD_ROW, estimatedRows(row))),
-									estimatedRows(row))));
+			// It runs the same nested cursors as nestedLoop and hashes every row on top (a probe per row; the
+			// entries it retains are at most the rows), so it is priced as that path plus the probes: quoted from
+			// the plain plan vector it undercut nestedLoop by 18 % and took a UNION root from the batch it loses
+			// to by 14 % (warm minima, 2026-11-03: batch 642 µs, nestedLoop 704 µs, this variant 732 µs)
+			arbiter.offer(() -> {
+				long boundMask = row.boundMask();
+				double rows = estimatedRows(row);
+				return inputProposal(
+						() -> acceptNested(row, NativeExpressionDomainPolicy.openHashed(arg, row), multiJoin),
+						NativeExpressionDomainPolicy.HASHED_TAG, LmdbNativeWork.UNKNOWN, rows)
+								.withCostQuote(LmdbNativeCostQuote.streaming(
+										LmdbNativePlanExecutionProfile.profile(arg, row, boundMask,
+												LmdbNativePlanExecutionProfile.Mode.SEQUENTIAL)
+												.plus(LmdbNativeCostVectors.perRow(
+														LmdbNativeCostVector.Feature.HASH_PROBE, rows)),
+										rows));
+			});
 		}
 
 	}

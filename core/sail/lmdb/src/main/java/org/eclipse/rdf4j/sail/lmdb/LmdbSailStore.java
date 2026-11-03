@@ -14541,6 +14541,27 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public OptionalDouble meanNodeDegree(boolean bySubject) {
+			checkOpen();
+			if (!hasStatementsInSource() || directAdjacency == null) {
+				return OptionalDouble.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(false);
+			return view == null ? OptionalDouble.empty() : directAdjacency.meanNodeDegree(view, bySubject, explicit);
+		}
+
+		@Override
+		public OptionalDouble meanNodePredicates(boolean bySubject) {
+			checkOpen();
+			if (!hasStatementsInSource() || directAdjacency == null) {
+				return OptionalDouble.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(false);
+			return view == null ? OptionalDouble.empty()
+					: directAdjacency.meanNodePredicates(view, bySubject, explicit);
+		}
+
+		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			checkOpen();
 			if (!hasStatementsInSource()) {
@@ -16197,6 +16218,26 @@ class LmdbSailStore implements SailStore {
 					return OptionalLong.empty();
 				}
 				return directAdjacency.predicateDomainCardinality(adjacencyView);
+			});
+		}
+
+		@Override
+		public OptionalDouble meanNodeDegree(boolean bySubject) {
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()) {
+					return OptionalDouble.empty();
+				}
+				return directAdjacency.meanNodeDegree(adjacencyView, bySubject, explicit);
+			});
+		}
+
+		@Override
+		public OptionalDouble meanNodePredicates(boolean bySubject) {
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()) {
+					return OptionalDouble.empty();
+				}
+				return directAdjacency.meanNodePredicates(adjacencyView, bySubject, explicit);
 			});
 		}
 

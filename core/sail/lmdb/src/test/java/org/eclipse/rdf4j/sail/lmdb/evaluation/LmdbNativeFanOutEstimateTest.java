@@ -56,6 +56,23 @@ class LmdbNativeFanOutEstimateTest {
 	}
 
 	@Test
+	void aVariablePredicateProbeFromOneBoundEndUsesTheMeanNodeDegreeWhenTheSourceKnowsIt() {
+		// ?s ?p ?o with ?s bound reaches one node's statements: the plane statistics' mean out-degree, not 64 planes
+		// times a fan-out of 16 (the 600-person FOAF census fixture priced a 10,665-row join at 279,711 rows that way
+		// and lost the measured fastest strategy, 2026-11-03)
+		PatternPlan wildcard = new PatternPlan(Term.slot(0), Term.slot(2), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, Double.NaN);
+		FanOutSource known = new FanOutSource(7L, Double.NaN, Double.NaN, OptionalLong.empty(), 150_000L)
+				.nodeDegree(3.5D, 1.7D);
+		assertThat(wildcard.estimateForBoundMask(1L, known)).isEqualTo(3.5D);
+		assertThat(wildcard.estimateForBoundMask(1L << 1, known)).isEqualTo(1.7D);
+		assertThat(wildcard.hasDirectEstimateForBoundMask(1L, known)).isTrue();
+		// both ends bound, or the predicate bound as well, is not a node probe
+		assertThat(wildcard.estimateForBoundMask(1L | 1L << 1, known)).isEqualTo(64D);
+		assertThat(wildcard.estimateForBoundMask(0L, known)).isEqualTo(150_000D);
+	}
+
+	@Test
 	void materializedRowPrefersExactAdjacencyDegree() {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("subject", 0, "object", 1), null);
 		layout.freeze(List.of("subject", "object"));
@@ -111,6 +128,8 @@ class LmdbNativeFanOutEstimateTest {
 		private final OptionalLong exactDegree;
 
 		private final long entries;
+		private double nodeDegreeBySubject = Double.NaN;
+		private double nodeDegreeByObject = Double.NaN;
 
 		private FanOutSource(long predicate, double bySubject, double byObject, OptionalLong exactDegree) {
 			this(predicate, bySubject, byObject, exactDegree, -1L);
@@ -149,6 +168,18 @@ class LmdbNativeFanOutEstimateTest {
 		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			return predicate == this.predicate && key == 42L && bySubject ? exactDegree : OptionalLong.empty();
+		}
+
+		FanOutSource nodeDegree(double bySubject, double byObject) {
+			this.nodeDegreeBySubject = bySubject;
+			this.nodeDegreeByObject = byObject;
+			return this;
+		}
+
+		@Override
+		public OptionalDouble meanNodeDegree(boolean bySubject) {
+			double degree = bySubject ? nodeDegreeBySubject : nodeDegreeByObject;
+			return Double.isFinite(degree) ? OptionalDouble.of(degree) : OptionalDouble.empty();
 		}
 
 		@Override

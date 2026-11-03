@@ -265,7 +265,11 @@ final class LmdbNativeStaticPrior {
 		// the residual both can bear
 		case LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE -> 2_000_000D;
 		case LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS -> 3_900_000D;
-		case LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED -> 2_700_000D;
+		// the reduced wildcard aggregate carried 2.7 ms from the 3000-person predicate histogram, a single-pattern
+		// sweep whose plane scan its streaming quote now prices; on a six-quad store it runs 15 µs behind the
+		// sequential path (warm minima of 500 runs: 104.5 against 90.1 µs grouped, 104.1 against 88.6 µs for a
+		// distinct count, 2026-11-03), which is its view, probe and memory claim
+		case LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED -> 15_000D;
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS ->
@@ -274,8 +278,12 @@ final class LmdbNativeStaticPrior {
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE ->
 			200_000D;
 		case LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT -> 140_000D;
-		case LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS ->
-			90_000D;
+		// the plane-metadata aggregates carried 90 µs from the 3000-person fit, which absorbed run-walking work their
+		// streaming quotes now price; on a six-quad store they run within noise of the sequential path (warm minima
+		// of 500 runs against nestedLoop's 90.1 and 88.6 µs: adjacencyAggregate 111.5 and 88.4, prefixRunGroups 98.7
+		// and 84.8, 2026-11-03), so each keeps the middle of what it measured
+		case LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE -> 10_000D;
+		case LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS -> 5_000D;
 		default -> 0D;
 		};
 	}

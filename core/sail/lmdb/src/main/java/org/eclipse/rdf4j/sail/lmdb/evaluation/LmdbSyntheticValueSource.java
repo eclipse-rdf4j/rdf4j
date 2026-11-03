@@ -761,6 +761,16 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public OptionalDouble meanNodeDegree(boolean bySubject) {
+		return delegate.meanNodeDegree(bySubject);
+	}
+
+	@Override
+	public OptionalDouble meanNodePredicates(boolean bySubject) {
+		return delegate.meanNodePredicates(bySubject);
+	}
+
+	@Override
 	public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 		return synthetic(predicate) || synthetic(key) ? OptionalLong.empty()
 				: delegate.exactDegree(predicate, key, bySubject);

@@ -2417,6 +2417,26 @@ public interface NativeLmdbQuerySource {
 		return OptionalLong.empty();
 	}
 
+	/**
+	 * Advisory mean number of statements one node carries across every predicate on its subject (or object) side: the
+	 * expected rows of a variable-predicate probe from that bound end. Known when an exact full-coverage adjacency
+	 * snapshot serves the read: the side's quads over its node count, the node count taken as the geometric mean of its
+	 * bounds (the largest single predicate's key domain below, the sum of the key domains above). Measured 2026-11-03
+	 * on the three-tier FOAF fixtures (600 and 5000 people): true out-degree 3.5, estimated 3.9; true in-degree 1.7,
+	 * estimated 3.8; the sum alone halves the out-degree and the maximum alone more than doubles it.
+	 */
+	default OptionalDouble meanNodeDegree(boolean bySubject) {
+		return OptionalDouble.empty();
+	}
+
+	/**
+	 * Advisory mean number of distinct predicates one node carries on its subject (or object) side: the (node,
+	 * predicate) pairs a predicate-plane sweep delivers per node, from the same statistics as {@link #meanNodeDegree}.
+	 */
+	default OptionalDouble meanNodePredicates(boolean bySubject) {
+		return OptionalDouble.empty();
+	}
+
 	/** Exact degree when a revision-valid adjacency entry contains the requested predicate direction. */
 	default OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 		return OptionalLong.empty();

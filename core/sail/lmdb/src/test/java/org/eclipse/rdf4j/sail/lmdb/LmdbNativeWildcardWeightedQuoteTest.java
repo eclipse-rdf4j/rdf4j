@@ -107,6 +107,38 @@ public class LmdbNativeWildcardWeightedQuoteTest {
 	}
 
 	@Test
+	public void theReducedWildcardAggregateBehindAPrefixIsPricedAsPlaneProbesPerPrefixRow() {
+		// 3000 subjects bound by ex:p0, then ?s ?p ?o grouped by ?p: the executor probes every predicate plane once
+		// per prefix row (3 planes, batched sorted lookups) and folds one (node, predicate) pair per hit with its run
+		// size as the multiplicity; it never decodes a neighbour. The sequential profile it was quoted with charged
+		// a decoded and an interpreted row per statement, 77x the measured time on the 600-person census fixture
+		// (100.7 ms quoted, 1.3 ms run, 2026-11-03), and lost the cell to the kernel it beats by 1.6x.
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?p (COUNT(*) AS ?n) WHERE { ?s ex:p0 ?x . ?s ?p ?o } GROUP BY ?p";
+		Map<String, Map<String, Double>> features;
+		Map<String, Double> costs;
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			GenericPlanNode plan = conn.prepareTupleQuery(query)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode();
+			features = NativeProposalFeatures.offering(plan, "wildcardPredicateReduced");
+			costs = NativeProposalFeatures.costs(plan, "wildcardPredicateReduced");
+		}
+		Map<String, Double> reduced = features.get("wildcardPredicateReduced");
+		// the prefix decodes its own 3000 rows in batch form; the 9000 wildcard statements are never decoded
+		assertThat(reduced.getOrDefault("DECODED_ROW", 0D)).as("reduced quote: %s", reduced)
+				.isLessThanOrEqualTo(3000D);
+		assertThat(reduced.getOrDefault("INTERPRETED_ROW", 0D)).as("reduced quote: %s", reduced).isZero();
+		assertThat(reduced.getOrDefault("HASH_PROBE", 0D)).as("one plane probe per prefix row and plane: %s", reduced)
+				.isGreaterThanOrEqualTo(3000D * 3D);
+		assertThat(reduced.getOrDefault("GROUP_UPDATE", 0D)).as("one update per delivered pair: %s", reduced)
+				.isBetween(3000D, 9000D);
+		assertThat(costs.get("wildcardPredicateReduced"))
+				.as("the reduced aggregate never decodes the rows the sequential path interprets: %s", costs)
+				.isLessThan(costs.get("nestedLoop"));
+	}
+
+	@Test
 	public void theReducedWildcardAggregateQuotesAGroupUpdatePerDeliveredRow() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?o (COUNT(?s) AS ?n) WHERE { ?s ?p ?o } GROUP BY ?o";

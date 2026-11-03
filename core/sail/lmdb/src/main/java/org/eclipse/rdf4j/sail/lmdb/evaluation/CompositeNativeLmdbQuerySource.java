@@ -535,6 +535,19 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public OptionalDouble meanNodeDegree(boolean bySubject) {
+		// a mean over two planes' nodes is not the sum of two means: only a lone active source can state it
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? OptionalDouble.empty() : active.meanNodeDegree(bySubject);
+	}
+
+	@Override
+	public OptionalDouble meanNodePredicates(boolean bySubject) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? OptionalDouble.empty() : active.meanNodePredicates(bySubject);
+	}
+
+	@Override
 	public OptionalLong predicateDomainCardinality() {
 		// the sources (explicit and inferred planes) may share predicates: their catalogs' sum bounds the domain
 		long total = 0L;
@@ -1412,6 +1425,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalLong predicateDomainCardinality() {
 			return delegate.predicateDomainCardinality();
+		}
+
+		@Override
+		public OptionalDouble meanNodeDegree(boolean bySubject) {
+			return delegate.meanNodeDegree(bySubject);
+		}
+
+		@Override
+		public OptionalDouble meanNodePredicates(boolean bySubject) {
+			return delegate.meanNodePredicates(bySubject);
 		}
 
 		@Override
