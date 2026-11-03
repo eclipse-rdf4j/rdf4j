@@ -126,8 +126,10 @@ final class LmdbNativeCostVector {
 			resultLow[i] = saturatedMultiply(low[i], factor);
 			resultExpected[i] = saturatedMultiply(expected[i], factor);
 			// an unknown ceiling stays unknown: dividing it by a speed-up must not make it a finite price
-			resultHigh[i] = high[i] >= LmdbNativeCostQuote.UNBOUNDED_COUNT ? high[i]
-					: saturatedMultiply(high[i], factor);
+			double scaledHigh = saturatedMultiply(high[i], factor);
+			resultHigh[i] = high[i] >= LmdbNativeCostQuote.UNBOUNDED_COUNT
+					? Math.max(scaledHigh, LmdbNativeCostQuote.UNBOUNDED_COUNT)
+					: scaledHigh;
 		}
 		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh, false);
 	}

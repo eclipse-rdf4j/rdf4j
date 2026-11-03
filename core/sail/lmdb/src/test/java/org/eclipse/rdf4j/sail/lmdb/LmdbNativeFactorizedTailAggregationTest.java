@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -539,6 +540,88 @@ public class LmdbNativeFactorizedTailAggregationTest {
 		assertThat(strategy(query, "factorizedTail"))
 				.as("prefix-slot value aggregates should use the serial chunk prefix and factorized counting branches")
 				.startsWith("factorizedTail(prefix=chunkPipeline,");
+	}
+
+	@Test
+	public void groupSiteQuotesIncludeTheInputJoinAccessWork() {
+		// The GROUP BY site's sequential and factorized-tail quotes must carry the join's access work (seeks,
+		// decodes) that the row site charges for the same join, plus the aggregation; they used to count only
+		// rows (measured 2026-11-03 on 15000 people: factorizedTail quoted 6 ms, ran 120 ms; nestedLoop quoted
+		// 16 ms, ran 120 ms; wcoj quoted and ran 18 ms).
+		String grouped = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s (COUNT(*) AS ?c) WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b . } GROUP BY ?s";
+		String plain = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?a ?b WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b . }";
+		Map<String, Map<String, Double>> groupFeatures;
+		Map<String, Map<String, Double>> rowFeatures;
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			// enough hubs that the join's access work outweighs the strategies' fixed costs
+			ValueFactory vf = conn.getValueFactory();
+			IRI p1 = vf.createIRI(EX, "p1");
+			IRI p2 = vf.createIRI(EX, "p2");
+			conn.begin();
+			for (int hub = 0; hub < 3000; hub++) {
+				IRI s = vf.createIRI(EX, "bulk" + hub);
+				for (int i = 0; i < 3; i++) {
+					conn.add(s, p1, vf.createIRI(EX, "a" + hub + "_" + i));
+					conn.add(s, p2, vf.createIRI(EX, "b" + hub + "_" + i));
+				}
+			}
+			conn.commit();
+			groupFeatures = proposalFeatures(conn.prepareTupleQuery(grouped)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode());
+			rowFeatures = proposalFeatures(conn.prepareTupleQuery(plain)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode());
+		}
+		assertThat(groupFeatures).containsKeys("nestedLoop", "factorizedTail");
+		assertThat(rowFeatures).containsKeys("nestedLoop", "factorizedRows");
+		for (String feature : List.of("INDEX_SEEK", "SCANNED_ROW", "DECODED_ROW")) {
+			assertThat(groupFeatures.get("nestedLoop").getOrDefault(feature, 0D))
+					.as("sequential groups %s: %s against the row-site join %s", feature, groupFeatures, rowFeatures)
+					.isGreaterThanOrEqualTo(rowFeatures.get("nestedLoop").getOrDefault(feature, 0D));
+			assertThat(groupFeatures.get("factorizedTail").getOrDefault(feature, 0D))
+					.as("factorized tail %s: %s against the row-site factorized join %s", feature, groupFeatures,
+							rowFeatures)
+					.isGreaterThanOrEqualTo(rowFeatures.get("factorizedRows").getOrDefault(feature, 0D));
+		}
+		assertThat(groupFeatures.get("nestedLoop").getOrDefault("GROUP_UPDATE", 0D)).isGreaterThan(0D);
+		assertThat(groupFeatures.get("factorizedTail").getOrDefault("GROUP_UPDATE", 0D)).isGreaterThan(0D);
+		// the parallel aggregation runs the same join on its workers; the row-site batch (merge or hash join) reads
+		// both relations: neither may quote rows without the access work that produces them
+		assertThat(groupFeatures).containsKey("parallelAggregation");
+		assertThat(groupFeatures.get("parallelAggregation").getOrDefault("SCANNED_ROW", 0D)
+				+ groupFeatures.get("parallelAggregation").getOrDefault("INDEX_SEEK", 0D))
+						.as("parallel aggregation access work: %s", groupFeatures)
+						.isGreaterThan(0D);
+		assertThat(rowFeatures).containsKey("batch");
+		assertThat(rowFeatures.get("batch").getOrDefault("SCANNED_ROW", 0D)
+				+ rowFeatures.get("batch").getOrDefault("INDEX_SEEK", 0D))
+						.as("batch access work: %s", rowFeatures)
+						.isGreaterThan(0D);
+	}
+
+	/** {@code strategy -> feature -> expected count} from the explain metric. */
+	private static Map<String, Map<String, Double>> proposalFeatures(GenericPlanNode plan) {
+		String metric = findMetric(plan, "nativeStrategyProposalFeatures");
+		assertThat(metric).as("proposal features").isNotNull();
+		Map<String, Map<String, Double>> features = new java.util.LinkedHashMap<>();
+		for (String entry : metric.split(",")) {
+			int eq = entry.indexOf('=');
+			if (eq <= 0) {
+				continue;
+			}
+			Map<String, Double> counts = new java.util.LinkedHashMap<>();
+			for (String count : entry.substring(eq + 1).split("\\|")) {
+				int colon = count.indexOf(':');
+				if (colon > 0) {
+					counts.put(count.substring(0, colon), Double.parseDouble(count.substring(colon + 1)));
+				}
+			}
+			features.put(entry.substring(0, eq).trim(), counts);
+		}
+		return features;
 	}
 
 	@Test

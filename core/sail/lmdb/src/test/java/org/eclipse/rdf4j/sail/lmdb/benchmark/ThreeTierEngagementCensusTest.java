@@ -156,8 +156,13 @@ class ThreeTierEngagementCensusTest {
 		// The flagship: a bounded type lookup joined to an unbound-predicate dump of each matching instance. The type
 		// half engages the planes either way, so the route alone says nothing here — what moves is the decline count,
 		// which is one per matching instance while the switches are off and zero once they are on.
+		// Measured 2026-11-03 on this fixture (warm, forced): wildcardPredicateReduced 7 to 8 ms, the wildcard kernels
+		// 9 to 11 ms, the plain kernels 12 ms, nestedLoop 20 ms. The measured selector therefore routes the cell
+		// through
+		// the wildcard specialist, which asks the planes for the instances' predicates and records the decline while
+		// the projection switches are off; the compiled kernel it used to take did not ask.
 		ledger.put(ThreeTierParityCorpus.CLASS_PREDICATE_MATRIX,
-				new Ledger(Route.ADJACENCY, Route.ADJACENCY, false));
+				new Ledger(Route.ADJACENCY, Route.ADJACENCY, true));
 		ledger.put(ThreeTierParityCorpus.REPEATED_NODE_DUMP,
 				new Ledger(Route.ADJACENCY, Route.ADJACENCY, true));
 		ledger.put(ThreeTierParityCorpus.VARIABLE_PREDICATE_JOIN,

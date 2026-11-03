@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -430,7 +431,9 @@ class LmdbNativeHashJoinBatchTest {
 		System.setProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "true");
 		System.setProperty(NATIVE_FLAG, "true");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (var result = connection.prepareTupleQuery(QUERY).evaluate()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QUERY);
+			prepared.setForcedLmdbExecutionStrategy("batch,nestedLoop");
+			try (var result = prepared.evaluate()) {
 				assertThat(result.hasNext()).isTrue();
 				result.next();
 				// Abandon the rest: closing must release every reservation the admitted build holds.
@@ -502,7 +505,8 @@ class LmdbNativeHashJoinBatchTest {
 		System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
 		assertThat(rows()).isEqualTo(genericNarrow);
 		long wildcardBatchesBefore = LmdbWildcardPredicateBatch.BATCHES.get();
-		assertThat(rows(wideQuery)).isEqualTo(genericWide);
+		// the wide query is about the wildcard batch specialist, so that family is forced
+		assertThat(rows(wideQuery, "wildcardPredicateBatch,wildcardPredicateReduced")).isEqualTo(genericWide);
 		assertThat(LmdbWildcardPredicateBatch.BATCHES.get())
 				.as("variable-predicate query keeps its specialist execution path")
 				.isGreaterThan(wildcardBatchesBefore);
@@ -608,9 +612,16 @@ class LmdbNativeHashJoinBatchTest {
 		return rows(QUERY);
 	}
 
+	/** The hash join is the operator under test: the batch strategy that carries it is forced (policy 2026-11-03). */
 	private List<String> rows(String query) {
+		return rows(query, "batch,nestedLoop");
+	}
+
+	private List<String> rows(String query, String forced) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forced);
+			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(LmdbNativeHashJoinBatchTest::canonical)
 					.sorted()

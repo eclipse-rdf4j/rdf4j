@@ -423,17 +423,32 @@ final class LmdbNativeDispatchLoop<C, T> {
 			return;
 		}
 		StringBuilder rendered = new StringBuilder();
+		StringBuilder features = new StringBuilder();
 		for (LmdbNativeCandidate<T> candidate : admitted.candidates) {
 			if (rendered.length() > 0) {
 				rendered.append(',');
+				features.append(',');
 			}
 			LmdbNativeCostVector vector = candidate.quote().forSlice(sliceRows);
 			rendered.append(candidate.id())
 					.append('=')
 					.append(String.format(java.util.Locale.ROOT, "%.0f",
 							prior.expected(vector) + LmdbNativeStaticPrior.fixedNanos(candidate.id())));
+			features.append(candidate.id()).append('=');
+			boolean first = true;
+			for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+				double expected = vector.expected(feature);
+				if (expected > 0D) {
+					features.append(first ? "" : "|")
+							.append(feature)
+							.append(':')
+							.append(String.format(java.util.Locale.ROOT, "%.0f", expected));
+					first = false;
+				}
+			}
 		}
 		LmdbNativeExplain.recordStrategyProposalCosts(explainTarget, rendered.toString());
+		LmdbNativeExplain.recordStrategyProposalFeatures(explainTarget, features.toString());
 	}
 
 	private QueryEvaluationException forcedUnavailable(String declineReason, boolean returnedNull) {

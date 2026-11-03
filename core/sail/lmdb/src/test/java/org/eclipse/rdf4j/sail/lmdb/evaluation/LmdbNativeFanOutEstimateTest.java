@@ -38,8 +38,21 @@ class LmdbNativeFanOutEstimateTest {
 
 		assertThat(pattern.estimateForBoundMask(1L, measured)).isEqualTo(3D);
 		assertThat(pattern.estimateForBoundMask(1L << 1, measured)).isEqualTo(5D);
-		// the context position never multiplies rows (a statement count already spans every context)
-		assertThat(pattern.estimateForBoundMask(1L, absent)).isEqualTo(4_096D);
+		// without a statistic a probe from one bound end yields a node's fan-out (pseudo 16), not the node domain
+		// (4096): the domain is what an unbound end enumerates, the fan-out what a bound end reaches
+		assertThat(pattern.estimateForBoundMask(1L, absent)).isEqualTo(16D);
+	}
+
+	@Test
+	void aVariablePredicateProbeFromOneBoundEndYieldsTheNodeDegreeAcrossPredicates() {
+		// ?s ?p ?o with ?s bound: 64 predicate pseudo-planes times a fan-out of 16 per plane, never the node domain
+		PatternPlan wildcard = new PatternPlan(Term.slot(0), Term.slot(2), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, Double.NaN);
+		FanOutSource absent = new FanOutSource(7L, Double.NaN, Double.NaN, OptionalLong.empty(), 150_000L);
+		assertThat(wildcard.estimateForBoundMask(1L, absent)).isEqualTo(64D * 16D);
+		assertThat(wildcard.estimateForBoundMask(1L << 1, absent)).isEqualTo(64D * 16D);
+		// unbound at both ends it is the sweep, capped at the store's statement count
+		assertThat(wildcard.estimateForBoundMask(0L, absent)).isEqualTo(150_000D);
 	}
 
 	@Test
@@ -81,9 +94,9 @@ class LmdbNativeFanOutEstimateTest {
 				ContextConstraint.UNRESTRICTED, false, Double.NaN);
 		assertThat(wildcard.estimateForBoundMask(1L, small)).isLessThanOrEqualTo(500D);
 		assertThat(wildcard.estimateForBoundMask(0L, small)).isLessThanOrEqualTo(500D);
-		// without a profile the pseudo-cardinalities stand (64 predicates × 4096 objects per bound subject)
+		// without a profile the pseudo-cardinalities stand (64 predicates × a fan-out of 16 per bound subject)
 		FanOutSource unknown = new FanOutSource(7L, Double.NaN, Double.NaN, OptionalLong.empty());
-		assertThat(wildcard.estimateForBoundMask(1L, unknown)).isEqualTo(64D * 4_096D);
+		assertThat(wildcard.estimateForBoundMask(1L, unknown)).isEqualTo(64D * 16D);
 	}
 
 	private static PatternPlan pattern(long predicate, double staticEstimate) {

@@ -634,11 +634,26 @@ final class PatternPlan implements SlotPlan {
 		return OptionalDouble.of(Math.min(1D, fanOut.getAsDouble() / objects));
 	}
 
+	/** Nodes an unbound end enumerates when nothing narrows it. */
+	private static final long NODE_DOMAIN_PSEUDO = 4_096L;
+	/**
+	 * Rows a probe from one bound end reaches on the other end per predicate when no fan-out statistic exists: a node's
+	 * degree, not the node domain. The domain priced a bound-subject wildcard probe at 64 × 4096 rows per instance (a
+	 * 150,000-statement store's whole sweep after the cap), 2026-11-03.
+	 */
+	private static final long NODE_FAN_OUT_PSEUDO = 16L;
+
+	private static long nodePseudoCardinality(boolean thisEndKnown, boolean otherEndKnown) {
+		return thisEndKnown ? 1L : otherEndKnown ? NODE_FAN_OUT_PSEUDO : NODE_DOMAIN_PSEUDO;
+	}
+
 	private long structuralEstimate(long boundMask) {
 		long estimate = 1L;
-		estimate = multiplyEstimate(estimate, termPseudoCardinality(s, boundMask, NativePatternField.SUBJECT));
+		boolean subjectKnown = termKnown(s, boundMask);
+		boolean objectKnown = termKnown(o, boundMask);
+		estimate = multiplyEstimate(estimate, nodePseudoCardinality(subjectKnown, objectKnown));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(p, boundMask, NativePatternField.PREDICATE));
-		estimate = multiplyEstimate(estimate, termPseudoCardinality(o, boundMask, NativePatternField.OBJECT));
+		estimate = multiplyEstimate(estimate, nodePseudoCardinality(objectKnown, subjectKnown));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(c, boundMask, NativePatternField.CONTEXT));
 		if (contexts.isFixed()) {
 			if (contexts.ids.length == 0) {
@@ -660,7 +675,7 @@ final class PatternPlan implements SlotPlan {
 		// a pattern matches statements, and the statement count already spans every context: the context position
 		// never multiplies rows (a fixed context list is applied separately)
 		case CONTEXT -> 1L;
-		case SUBJECT, OBJECT -> 4_096L;
+		case SUBJECT, OBJECT -> NODE_DOMAIN_PSEUDO;
 		};
 	}
 
@@ -674,9 +689,11 @@ final class PatternPlan implements SlotPlan {
 			return fanOut.getAsDouble();
 		}
 		long estimate = 1L;
-		estimate = multiplyEstimate(estimate, termPseudoCardinality(s, row.slots, NativePatternField.SUBJECT));
+		boolean subjectKnown = termPseudoCardinality(s, row.slots, NativePatternField.SUBJECT) == 1L;
+		boolean objectKnown = termPseudoCardinality(o, row.slots, NativePatternField.OBJECT) == 1L;
+		estimate = multiplyEstimate(estimate, nodePseudoCardinality(subjectKnown, objectKnown));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(p, row.slots, NativePatternField.PREDICATE));
-		estimate = multiplyEstimate(estimate, termPseudoCardinality(o, row.slots, NativePatternField.OBJECT));
+		estimate = multiplyEstimate(estimate, nodePseudoCardinality(objectKnown, subjectKnown));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(c, row.slots, NativePatternField.CONTEXT));
 		if (contexts.isFixed()) {
 			if (contexts.ids.length == 0) {
@@ -748,7 +765,7 @@ final class PatternPlan implements SlotPlan {
 		// a pattern matches statements, and the statement count already spans every context: the context position
 		// never multiplies rows (a fixed context list is applied separately)
 		case CONTEXT -> 1L;
-		case SUBJECT, OBJECT -> 4_096L;
+		case SUBJECT, OBJECT -> NODE_DOMAIN_PSEUDO;
 		};
 	}
 

@@ -1838,7 +1838,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		}
 		LmdbNativeStrategyProposal<BatchCursor> selectedProposal = proposal;
 		String strategy = selectedProposal.tag;
-		return new LmdbNativeStrategyProposal<>(() -> {
+		LmdbNativeStrategyProposal<NativeUnorderedInput> wrapped = new LmdbNativeStrategyProposal<>(() -> {
 			try {
 				return acceptBatch(row, selectedProposal.open(), capacity, strategy);
 			} finally {
@@ -1846,6 +1846,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			}
 		}, selectedProposal.work, selectedProposal.startupWork, selectedProposal.estRows, selectedProposal.tag,
 				selectedProposal::close).withOptionalPlanningWork(selectedProposal.planningWork());
+		// the merge and hash joins quote their own access work; the wrapper must carry it, not re-derive rows
+		return selectedProposal.costQuote() == null ? wrapped : wrapped.withCostQuote(selectedProposal.costQuote());
 	}
 
 	private NativeUnorderedInput openDirectBatch(RowState row, int capacity) throws IOException {

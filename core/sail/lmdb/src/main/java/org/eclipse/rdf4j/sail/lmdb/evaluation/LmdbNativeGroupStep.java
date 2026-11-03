@@ -1483,10 +1483,22 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			MultiJoinPlan.OrderedPlan factorizedDerived = factorizedSelection.derived;
 			double factorizedCost = LmdbNativeStrategyProposal.factorizedCost(factorizedDerived,
 					factorizedDerived.order.length - factorized.branchCount(), row);
+			int factorizedPrefix = factorizedDerived.order.length - factorized.branchCount();
 			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
 					() -> evaluateFactorized(row, factorizedPlan, factorizedDerived, factorized),
 					estimatedWork(factorizedCost), LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
-					factorized::discardUnopenedProbe));
+					factorized::discardUnopenedProbe)
+							// the join's access work (seeks, decodes, a batch row per intermediate row), exactly as the
+							// row site prices the factorized join, plus a group update per joined row: measured
+							// 2026-11-03 on 15000 people, the tail quoted 6 ms and ran 120 ms when only the batch rows
+							// were counted
+							.withCostQuote(LmdbNativeCostQuote.streaming(
+									LmdbNativeCostVectors.factorized(factorizedDerived.order, factorizedPrefix, row,
+											row.boundMask(), LmdbNativeCostVector.Feature.BATCH_ROW)
+											.plus(LmdbNativeCostVectors.perRow(
+													LmdbNativeCostVector.Feature.GROUP_UPDATE,
+													LmdbNativeWork.rowsOut(arg, row, row.boundMask()), row)),
+									groupSlots.length == 0 && havingCondition == null ? 1D : Double.NaN)));
 		}
 		if (parallelPlan != null) {
 			arbiter.offer(() -> LmdbNativeParallelAggregation.propose(this, parallelPlan, row, metrics));
@@ -1685,6 +1697,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					() -> evaluateSequential(row, sequentialContext, metrics, quotedInput),
 					LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, quotedInput.estimateWork(row, row.boundMask()))
 							.withPlanningWork(LmdbNativeWork.planning(quotedInput, row, row.boundMask()))
+							// the input join's access work as the row site prices it, plus a group update per
+							// row (measured 2026-11-03: quoted 16 ms, ran 120 ms when only rows were counted)
+							.withCostQuote(sequentialQuote(quotedInput, row))
 							.withOptionalAggregatePhysicalPlan(quotedInput instanceof PatternPlan || quotedInput != arg
 									? new NativeAggregatePhysicalPlan(quotedInput,
 											NativeGroupTable.usesTypedEvents(groupSlots, aggregates)
@@ -1695,7 +1710,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				arbiter.offer(() -> estimatedProposal(() -> evaluateSequential(row, sequentialContext, metrics),
 						LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(autoChild)",
 						arg.estimateWork(row, row.boundMask()))
-								.withPlanningWork(LmdbNativeWork.planning(arg, row, row.boundMask())));
+								.withPlanningWork(LmdbNativeWork.planning(arg, row, row.boundMask()))
+								.withCostQuote(sequentialQuote(arg, row)));
 			}
 		} else if (typeMatrixOwned) {
 			/*
@@ -1825,6 +1841,16 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			cancellation.check();
 			return result;
 		};
+	}
+
+	/** The sequential group path: the input evaluated as a left-deep pipeline plus one group update per row. */
+	private LmdbNativeCostQuote sequentialQuote(SlotPlan input, RowState row) {
+		long boundMask = row.boundMask();
+		return LmdbNativeCostQuote.streaming(
+				LmdbNativeCostVectors.plan(input, row, boundMask, LmdbNativeCostVector.Feature.INTERPRETED_ROW)
+						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+								LmdbNativeWork.rowsOut(input, row, boundMask), row)),
+				groupSlots.length == 0 && havingCondition == null ? 1D : Double.NaN);
 	}
 
 	private static LmdbNativeWork estimatedWork(double estimate) {

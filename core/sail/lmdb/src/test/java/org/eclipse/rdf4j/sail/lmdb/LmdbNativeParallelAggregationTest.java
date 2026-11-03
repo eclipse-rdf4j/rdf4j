@@ -489,7 +489,9 @@ public class LmdbNativeParallelAggregationTest {
 		long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-		List<String> parallel = rows(query);
+		// the test is about the parallel aggregation's refill, so it forces the operator: on a fixture this small
+		// the measured selector prices the serial paths below it (the parallel cut rule, 2026-11-03)
+		List<String> parallel = rows(query, "parallelAggregation");
 
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("the refill regression must exercise parallel aggregation")

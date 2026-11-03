@@ -239,7 +239,8 @@ class LmdbNativeMergeJoinTest {
 		resetCounters();
 		System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
 
-		assertThat(rows(MANY_TO_MANY_QUERY)).isEqualTo(generic).hasSize(2000);
+		// the batch strategy is forced so the test observes which join carries it once the merge join is off
+		assertThat(rows(MANY_TO_MANY_QUERY, "batch")).isEqualTo(generic).hasSize(2000);
 		assertThat(LmdbNativeMergeJoin.JOINS.get()).isZero();
 		assertThat(LmdbNativeHashJoin.BUILDS.get()).isOne();
 	}
