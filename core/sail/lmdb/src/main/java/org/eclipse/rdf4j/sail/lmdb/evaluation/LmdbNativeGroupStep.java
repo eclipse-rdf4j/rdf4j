@@ -272,8 +272,8 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row, null, false);
 			Map<LmdbNativeStrategyProposal<NativeGroupResultCursor.GroupingPlan>, NativeGroupResultCursor.GroupingPlan> plans = new IdentityHashMap<>();
 			Map<String, LmdbNativeStrategyProposal<NativeGroupResultCursor.GroupingPlan>> proposalsByTag = new HashMap<>();
-			LmdbNativeOfferBridge<NativeGroupResultCursor.GroupingPlan> offers = new LmdbNativeOfferBridge<>(
-					LmdbNativeDecisionPoint.GROUP_PHYSICAL);
+			LmdbNativeOfferBridge<NativeGroupResultCursor.GroupingPlan> offers = new LmdbNativeOfferBridge<NativeGroupResultCursor.GroupingPlan>(
+					LmdbNativeDecisionPoint.GROUP_PHYSICAL).ceiling(LmdbNativeCostVectors.sweepWork(row));
 			{
 				NativeGroupResultCursor.GroupingPlan ordered = NativeGroupResultCursor.orderedPlan(iteration, row);
 				NativeGroupResultCursor.GroupingPlan table = NativeGroupResultCursor.tablePlan(iteration);
@@ -1712,8 +1712,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	List<BindingSet> evaluateArbitrated(RowState row, LmdbNativeAttemptMetrics metrics, SlotPlan originalArg) {
 		NativeAggregateCostQuotes costQuotes = new NativeAggregateCostQuotes(this, row);
-		LmdbNativeOfferBridge<List<BindingSet>> offers = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.GROUP,
-				costQuotes::attach);
+		LmdbNativeOfferBridge<List<BindingSet>> offers = new LmdbNativeOfferBridge<List<BindingSet>>(
+				LmdbNativeDecisionPoint.GROUP, costQuotes::attach).ceiling(LmdbNativeCostVectors.sweepWork(row));
 		try {
 			offerCandidates(row, metrics, originalArg, offers);
 			LmdbNativeDispatchLoop<Void, List<BindingSet>> loop = new LmdbNativeDispatchLoop<>(

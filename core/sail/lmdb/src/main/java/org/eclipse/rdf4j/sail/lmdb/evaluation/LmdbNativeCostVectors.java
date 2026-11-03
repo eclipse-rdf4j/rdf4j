@@ -30,6 +30,45 @@ final class LmdbNativeCostVectors {
 		return LmdbNativeCostVector.bounds(Feature.SCANNED_ROW, 0D, 0D, LmdbNativeCostQuote.UNBOUNDED_COUNT);
 	}
 
+	/** The store's statement count from the row's source profile, or NaN when no profile is available. */
+	static double statementCount(RowState row) {
+		NativeLmdbQuerySource.IndexAccessProfile profile = row == null || row.source == null ? null
+				: row.source.indexAccessProfile();
+		return profile != null && profile.entries() >= 0L ? profile.entries() : Double.NaN;
+	}
+
+	/**
+	 * The ceiling of the fallback an unpriceable plan degrades to: a sweep of the store's smallest index with one
+	 * {@code rowFeature} per statement. Unbounded when the source cannot say how many statements it holds.
+	 */
+	static LmdbNativeCostVector sweep(RowState row, Feature rowFeature) {
+		double entries = statementCount(row);
+		if (Double.isNaN(entries)) {
+			return unbounded();
+		}
+		LmdbNativeCostVector scan = LmdbNativeCostVector.bounds(Feature.SCANNED_ROW, 0D, entries / 2D, entries);
+		return rowFeature == null || rowFeature == Feature.SCANNED_ROW ? scan
+				: scan.plus(perRow(rowFeature, Double.NaN, row));
+	}
+
+	/**
+	 * {@code count} occurrences of {@code feature}; an unknown count is bounded by the store's statement count (no
+	 * single plan emits more rows than a sweep of the store) when the row's source can say it, else unbounded.
+	 */
+	static LmdbNativeCostVector perRow(Feature feature, double count, RowState row) {
+		if (!Double.isNaN(count)) {
+			return perRow(feature, count);
+		}
+		double entries = statementCount(row);
+		return Double.isNaN(entries) ? unbounded() : LmdbNativeCostVector.bounds(feature, 0D, entries / 2D, entries);
+	}
+
+	/** The same ceiling as a work interval, for proposals that still quote intervals. */
+	static LmdbNativeWork sweepWork(RowState row) {
+		double entries = statementCount(row);
+		return Double.isNaN(entries) ? LmdbNativeWork.UNKNOWN : LmdbNativeWork.between(0D, 2D * entries);
+	}
+
 	/** Rows a plan emits under a bound mask for planning purposes, or NaN when unknown. */
 	static double rows(SlotPlan plan, RowState row, long boundMask) {
 		if (plan instanceof PatternPlan pattern) {
@@ -47,7 +86,7 @@ final class LmdbNativeCostVectors {
 			return work.known()
 					? LmdbNativeCostVector.bounds(Feature.SCANNED_ROW, work.low(), (work.low() + work.high()) / 2D,
 							work.high())
-					: unbounded();
+					: sweep(row, null);
 		}
 		LmdbNativeAccessFacts.Quote quote = facts.quote(pattern.physicalMask(boundMask));
 		int scans = pattern.contexts.isFixed() && (quote.physicalMask() & LmdbNativeAccessFacts.CONTEXT) == 0
@@ -66,7 +105,7 @@ final class LmdbNativeCostVectors {
 		}
 		if (plan instanceof PatternPlan pattern) {
 			double rows = rows(pattern, row, boundMask);
-			return pattern(pattern, row, boundMask).plus(perRow(rowFeature, rows));
+			return pattern(pattern, row, boundMask).plus(perRow(rowFeature, rows, row));
 		}
 		if (plan instanceof ValuesPlan values) {
 			return perRow(rowFeature, values.rows.length);
@@ -76,16 +115,16 @@ final class LmdbNativeCostVectors {
 		}
 		if (plan instanceof FilterPlan filter) {
 			return plan(filter.arg, row, boundMask, rowFeature)
-					.plus(perRow(Feature.INTERPRETED_ROW, rows(filter.arg, row, boundMask)));
+					.plus(perRow(Feature.INTERPRETED_ROW, rows(filter.arg, row, boundMask), row));
 		}
 		if (plan instanceof ExtensionPlan extension) {
 			double rows = rows(extension.arg, row, boundMask);
 			return plan(extension.arg, row, boundMask, rowFeature)
-					.plus(perRow(Feature.INTERPRETED_ROW, multiply(rows, extension.copies.length)));
+					.plus(perRow(Feature.INTERPRETED_ROW, multiply(rows, extension.copies.length), row));
 		}
 		if (plan instanceof RowDistinctPlan distinct) {
 			return plan(distinct.arg, row, boundMask, rowFeature)
-					.plus(perRow(Feature.MEMBERSHIP_TEST, rows(distinct.arg, row, boundMask)));
+					.plus(perRow(Feature.MEMBERSHIP_TEST, rows(distinct.arg, row, boundMask), row));
 		}
 		if (plan instanceof JoinPlan join) {
 			return probe(join.left, join.right, row, boundMask, rowFeature);
@@ -113,7 +152,7 @@ final class LmdbNativeCostVectors {
 		return work.known()
 				? LmdbNativeCostVector.bounds(Feature.SCANNED_ROW, work.low(), (work.low() + work.high()) / 2D,
 						work.high())
-				: unbounded();
+				: sweep(row, rowFeature);
 	}
 
 	/** Left side once, right side once per left row. */
@@ -122,7 +161,7 @@ final class LmdbNativeCostVectors {
 		LmdbNativeCostVector leftVector = plan(left, row, boundMask, rowFeature);
 		double leftRows = rows(left, row, boundMask);
 		if (Double.isNaN(leftRows)) {
-			return leftVector.plus(unbounded());
+			return leftVector.plus(sweep(row, rowFeature));
 		}
 		LmdbNativeCostVector rightVector = plan(right, row, boundMask | left.producedMask(), rowFeature);
 		return leftVector.plus(rightVector.scale(leftRows));
@@ -139,7 +178,12 @@ final class LmdbNativeCostVectors {
 			total = total.plus(child.scale(prefixRows));
 			double childRows = rows(children[i], row, mask);
 			if (Double.isNaN(childRows)) {
-				return total.plus(unbounded());
+				// this child is already priced (as a sweep when unpriceable); every later child loses its
+				// multiplier and degrades to one sweep per prefix row
+				for (int j = i + 1; j < length; j++) {
+					total = total.plus(sweep(row, rowFeature).scale(prefixRows));
+				}
+				return total;
 			}
 			prefixRows *= childRows;
 			mask |= children[i].producedMask();
@@ -163,7 +207,10 @@ final class LmdbNativeCostVectors {
 			total = total.plus(plan(order[i], row, mask, rowFeature).scale(prefixRows));
 			double childRows = rows(order[i], row, mask);
 			if (Double.isNaN(childRows)) {
-				return total.plus(unbounded());
+				for (int j = i + 1; j < order.length; j++) {
+					total = total.plus(sweep(row, rowFeature).scale(prefixRows));
+				}
+				return total;
 			}
 			prefixRows *= childRows;
 			mask |= order[i].producedMask();
@@ -196,7 +243,7 @@ final class LmdbNativeCostVectors {
 			total = total.plus(plan(child, row, boundMask, rowFeature));
 			double rows = rows(child, row, boundMask);
 			if (Double.isNaN(rows)) {
-				return total.plus(unbounded());
+				return total.plus(sweep(row, rowFeature));
 			}
 			visited += rows;
 			long others = 0L;

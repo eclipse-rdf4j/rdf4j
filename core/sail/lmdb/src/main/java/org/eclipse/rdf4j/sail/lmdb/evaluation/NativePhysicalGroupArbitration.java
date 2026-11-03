@@ -42,8 +42,8 @@ final class NativePhysicalGroupArbitration {
 			NativeGroupIteration iteration, RowState row, boolean preview) throws IOException {
 		StringBuilder telemetry = new StringBuilder("[");
 		NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row, telemetry);
-		LmdbNativeOfferBridge<NativeResultCursor> offers = new LmdbNativeOfferBridge<>(
-				LmdbNativeDecisionPoint.GROUP_PHYSICAL);
+		LmdbNativeOfferBridge<NativeResultCursor> offers = new LmdbNativeOfferBridge<NativeResultCursor>(
+				LmdbNativeDecisionPoint.GROUP_PHYSICAL).ceiling(LmdbNativeCostVectors.sweepWork(row));
 		// A streaming producer must never be drained merely to choose its representation.
 		offerTyped(offers, quotes, NativeGroupResultCursor.tablePlan(iteration), iteration, row, owner);
 		NativeGroupResultCursor.GroupingPlan ordered = NativeGroupResultCursor.orderedPlan(iteration, row);

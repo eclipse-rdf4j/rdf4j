@@ -29,6 +29,7 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 	private final LmdbNativeDecisionPoint point;
 	private final List<LmdbNativeStrategy<Void, T>> strategies = new ArrayList<>();
 	private final UnaryOperator<LmdbNativeStrategyProposal<T>> attach;
+	private LmdbNativeWork ceiling;
 	private int anonymous;
 
 	LmdbNativeOfferBridge(LmdbNativeDecisionPoint point) {
@@ -39,6 +40,15 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 	LmdbNativeOfferBridge(LmdbNativeDecisionPoint point, UnaryOperator<LmdbNativeStrategyProposal<T>> attach) {
 		this.point = point;
 		this.attach = attach;
+	}
+
+	/**
+	 * The ceiling a proposal without a finite interval is priced at: the sweep the site's strategies degrade to. No
+	 * admitted strategy may quote an unbounded interval while the store can say how many statements it holds.
+	 */
+	LmdbNativeOfferBridge<T> ceiling(LmdbNativeWork ceiling) {
+		this.ceiling = ceiling != null && ceiling.known() ? ceiling : null;
+		return this;
 	}
 
 	@Override
@@ -86,7 +96,7 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 				if (attach != null) {
 					proposal = attach.apply(proposal);
 				}
-				LmdbNativeCandidate<T> candidate = candidate(proposal);
+				LmdbNativeCandidate<T> candidate = candidate(proposal, ceiling);
 				return LmdbNativeAdmission.of(lastResort ? candidate.asLastResort() : candidate);
 			}
 
@@ -99,12 +109,29 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 
 	/** Bridges one proposal: its tag is the candidate id and its quotes become feature counts. */
 	static <T> LmdbNativeCandidate<T> candidate(LmdbNativeStrategyProposal<T> proposal) {
-		LmdbNativeCandidate<T> candidate = LmdbNativeCandidate.of(proposal.tag, quote(proposal), proposal::open,
-				proposal::close);
+		return candidate(proposal, null);
+	}
+
+	/** Bridges one proposal; an interval without a finite ceiling is priced at {@code ceiling} when one is known. */
+	static <T> LmdbNativeCandidate<T> candidate(LmdbNativeStrategyProposal<T> proposal, LmdbNativeWork ceiling) {
+		LmdbNativeCandidate<T> candidate = LmdbNativeCandidate.of(proposal.tag, quote(proposal, ceiling),
+				proposal::open, proposal::close);
 		return proposal.dominates().isEmpty() ? candidate : candidate.dominating(proposal.dominates());
 	}
 
 	static LmdbNativeCostQuote quote(LmdbNativeStrategyProposal<?> proposal) {
+		return quote(proposal, null);
+	}
+
+	/** {@code work} itself when it has a ceiling, else {@code ceiling} raised to the work's floor, else unknown. */
+	private static LmdbNativeWork bounded(LmdbNativeWork work, LmdbNativeWork ceiling) {
+		if (work.known() || ceiling == null || !ceiling.known()) {
+			return work;
+		}
+		return LmdbNativeWork.between(work.low(), Math.max(work.low(), ceiling.high()));
+	}
+
+	static LmdbNativeCostQuote quote(LmdbNativeStrategyProposal<?> proposal, LmdbNativeWork ceiling) {
 		if (proposal.costQuote() != null) {
 			return proposal.costQuote();
 		}
@@ -127,8 +154,9 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 			return new LmdbNativeCostQuote(startup, streaming, typed.estimatedOutputRows(), false, false);
 		}
 		LmdbNativeWork comparable = proposal.planningWork() != null ? proposal.planningWork() : proposal.work;
-		LmdbNativeWork startup = proposal.startupWork == null ? LmdbNativeWork.ZERO : proposal.startupWork;
-		LmdbNativeWork streaming = subtract(comparable, startup);
+		LmdbNativeWork startup = bounded(proposal.startupWork == null ? LmdbNativeWork.ZERO : proposal.startupWork,
+				ceiling);
+		LmdbNativeWork streaming = bounded(subtract(comparable, startup), ceiling);
 		return LmdbNativeCostQuote.ofWork(startup, streaming, proposal.estRows);
 	}
 

@@ -113,8 +113,21 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 		if (entry.nanos() == null) {
 			return "unpriced";
 		}
-		return String.format("%.0f..%s ns (expected %.0f)", entry.nanos().low(),
+		String rendered = String.format("%.0f..%s ns (expected %.0f)", entry.nanos().low(),
 				entry.nanos().known() ? String.format("%.0f", entry.nanos().high()) : "unbounded",
 				entry.expectedNanos());
+		if (!entry.nanos().known() && entry.features() != null) {
+			// name the feature counts that have no ceiling, so an unbounded quote can be traced to its source
+			StringBuilder unbounded = new StringBuilder();
+			for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+				if (entry.features().high(feature) >= LmdbNativeCostQuote.UNBOUNDED_COUNT) {
+					unbounded.append(unbounded.isEmpty() ? " [no ceiling on " : ", ").append(feature);
+				}
+			}
+			if (!unbounded.isEmpty()) {
+				rendered += unbounded.append(']');
+			}
+		}
+		return rendered;
 	}
 }

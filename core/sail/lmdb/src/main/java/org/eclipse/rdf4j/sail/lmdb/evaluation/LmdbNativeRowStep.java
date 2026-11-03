@@ -1509,7 +1509,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				}
 			}
 		}
-		LmdbNativeOfferBridge<NativeUnorderedInput> offers = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.ROW);
+		LmdbNativeOfferBridge<NativeUnorderedInput> offers = new LmdbNativeOfferBridge<NativeUnorderedInput>(
+				LmdbNativeDecisionPoint.ROW).ceiling(LmdbNativeCostVectors.sweepWork(row));
 		offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, offers);
 		{
 			LmdbNativeDispatchLoop.Selection<NativeUnorderedInput> selection = new LmdbNativeDispatchLoop<>(
@@ -1566,7 +1567,11 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		LmdbNativeWork work = arg.estimateWork(row, row.boundMask());
 		LmdbNativeWork planning = LmdbNativeWork.planning(arg, row, row.boundMask());
 		double rows = LmdbNativeWork.rowsOut(arg, row, row.boundMask());
-		LmdbNativeCostQuote quote = LmdbNativeCostQuote.ofWork(planning.known() ? planning : work, rows)
+		// an input nobody can price is quoted at the sweep it degrades to, never without a ceiling
+		LmdbNativeCostQuote quote = LmdbNativeCostQuote.ofWork(planning.known() ? planning
+				: work.known() ? work
+						: LmdbNativeCostVectors.sweepWork(row),
+				rows)
 				.ordered(true);
 		List<LmdbNativeStrategy<Void, List<BindingSet>>> strategies = new ArrayList<>(2);
 		// Exactly ONE of the two IR-kernel tags (kernel-interpreter plan, D1/M4): compiled when janino is
@@ -1734,8 +1739,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		}
 		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan join && join.children.length > 0 ? join : null;
 		try {
-			LmdbNativeOfferBridge<NativeUnorderedInput> offers = new LmdbNativeOfferBridge<>(
-					LmdbNativeDecisionPoint.ROW);
+			LmdbNativeOfferBridge<NativeUnorderedInput> offers = new LmdbNativeOfferBridge<NativeUnorderedInput>(
+					LmdbNativeDecisionPoint.ROW).ceiling(LmdbNativeCostVectors.sweepWork(row));
 			NativeTupleDistinctPlan distinctPlan = distinct ? LmdbNativeOrderPlanner.tuple(arg, sourceSlots, row)
 					: null;
 			offerUnorderedStrategies(row, distinctPlan, multiJoin, (arg.producedMask() & row.boundMask()) != 0L,
