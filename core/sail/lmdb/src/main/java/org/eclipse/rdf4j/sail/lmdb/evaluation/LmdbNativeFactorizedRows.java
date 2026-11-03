@@ -753,10 +753,16 @@ final class LmdbNativeFactorizedRows {
 	 * Proposal price: the ordinary factorized cost, with depth 0 capped by the distinct-key estimate when the keys-only
 	 * root applies.
 	 */
-	/** Shared access features of the prefix chain and summed branches, with a batch row per intermediate row. */
+	/** The executor's own work: prefix chain, memoised branches per distinct key, a batch row per emitted row. */
 	LmdbNativeCostVector costVector(RowState row) {
-		return LmdbNativeCostVectors.factorized(derived.order, flatCount, row, row.boundMask(),
-				LmdbNativeCostVector.Feature.BATCH_ROW);
+		LmdbNativeCostVectors.BranchRole[] roles = new LmdbNativeCostVectors.BranchRole[branches.length];
+		for (int b = 0; b < branches.length; b++) {
+			roles[b] = branches[b].role == ROLE_ENUM ? LmdbNativeCostVectors.BranchRole.ENUM
+					: branches[b].role == ROLE_EXISTS ? LmdbNativeCostVectors.BranchRole.EXISTS
+							: LmdbNativeCostVectors.BranchRole.COUNT;
+		}
+		return LmdbNativeCostVectors.factorizedRows(derived.order, flatCount, roles,
+				keysOnlyRoot == null ? Double.NaN : keysOnlyRoot.distinctKeyEstimate(row), row, row.boundMask());
 	}
 
 	double proposalCost(RowState row) {

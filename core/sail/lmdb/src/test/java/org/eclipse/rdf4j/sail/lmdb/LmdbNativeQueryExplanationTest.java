@@ -422,7 +422,7 @@ public class LmdbNativeQueryExplanationTest {
 
 	@Test
 	public void executedExplanationShowsConciseNativeRuntimeStrategy() {
-		Explanation explanation = explain(Explanation.Level.Executed, rowQuery());
+		Explanation explanation = explain(Explanation.Level.Executed, rowQuery(), "factorizedRows");
 		String rendered = explanation.toString();
 
 		assertThat(rendered).contains(NATIVE_EXECUTION_PATH + "=");
@@ -439,7 +439,7 @@ public class LmdbNativeQueryExplanationTest {
 	public void telemetryExplanationShowsVerbosePerQueryNativeRuntimeDetails() {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s a ex:Item . ?s ex:price ?price }";
-		Explanation explanation = explain(Explanation.Level.Telemetry, query);
+		Explanation explanation = explain(Explanation.Level.Telemetry, query, "factorizedRows");
 		String rendered = explanation.toString();
 
 		assertThat(rendered)
@@ -464,7 +464,7 @@ public class LmdbNativeQueryExplanationTest {
 		String rendered;
 		try {
 			System.setProperty(property, "false");
-			rendered = explain(Explanation.Level.Telemetry, query).toString();
+			rendered = explain(Explanation.Level.Telemetry, query, "factorizedRows").toString();
 		} finally {
 			restoreProperty(previous, property);
 		}
@@ -898,7 +898,7 @@ public class LmdbNativeQueryExplanationTest {
 		// (generic actual string metrics surface at the Telemetry level by framework design)
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s WHERE { ?s a ex:Item . ?s ex:price ?price }";
-		Explanation explanation = explain(Explanation.Level.Telemetry, query);
+		Explanation explanation = explain(Explanation.Level.Telemetry, query, "factorizedRows");
 
 		assertThat(explanation.toString())
 				.contains("nativeExecutionPath=chunkPipeline(")

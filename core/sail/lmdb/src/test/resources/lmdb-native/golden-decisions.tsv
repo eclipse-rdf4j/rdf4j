@@ -27,8 +27,8 @@ typeCount	spoc,posc	lmdbOnly	Projection	Decision 1: GROUP BY dispatch	normal	pre
 typeCount	spoc,posc	lmdbOnly	Projection/Extension/Group (type)	executionPath	-	prefixRunGroups	-	-	-
 predicateHistogram	spoc,posc	lmdbOnly	Projection	Decision 1: GROUP BY dispatch	normal	prefixRunGroups	-	prefixRunGroups,wildcardPredicateReduced,parallelAggregation,irAggregateParallel,irAggregateParallelInterpreted,irAggregateWildcard,irAggregateWildcardInterpreted,orderedSinglePatternGroups,nestedLoop	
 predicateHistogram	spoc,posc	lmdbOnly	Projection/Extension/Group (p)	executionPath	-	prefixRunGroups	-	-	-
-starTwoHop	spoc,posc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	factorizedRows	-	factorizedRows,packedFtree,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines,adaptiveFilterPlacement
-starTwoHop	spoc,posc	lmdbOnly	Projection	executionPath	-	chunkPipeline	-	-	-
+starTwoHop	spoc,posc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	nestedLoop	-	nestedLoop,packedFtree,factorizedRows,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines,adaptiveFilterPlacement
+starTwoHop	spoc,posc	lmdbOnly	Projection	executionPath	-	nestedLoop	-	-	-
 starThreeProps	spoc,posc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	batch	-	batch,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,factorizedRows,parallelPipelines,adaptiveFilterPlacement
 starThreeProps	spoc,posc	lmdbOnly	Projection	executionPath	-	nestedLoop	-	-	-
 chainThree	spoc,posc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	batch	-	batch,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,factorizedRows,parallelPipelines,adaptiveFilterPlacement
@@ -80,8 +80,8 @@ typeCount	spoc,posc	adjacency	Projection	Decision 1: GROUP BY dispatch	normal	ad
 typeCount	spoc,posc	adjacency	Projection/Extension/Group (type)	executionPath	-	adjacencyAggregate	-	-	-
 predicateHistogram	spoc,posc	adjacency	Projection	Decision 1: GROUP BY dispatch	normal	adjacencyAggregate	-	adjacencyAggregate,prefixRunGroups,wildcardPredicateReduced,parallelAggregation,irAggregateParallel,irAggregateParallelInterpreted,irAggregateWildcard,irAggregateWildcardInterpreted,orderedSinglePatternGroups,nestedLoop	
 predicateHistogram	spoc,posc	adjacency	Projection/Extension/Group (p)	executionPath	-	adjacencyAggregate	-	-	-
-starTwoHop	spoc,posc	adjacency	Projection	Decision 1: row/join dispatch	normal	factorizedRows	-	factorizedRows,packedFtree,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines,adaptiveFilterPlacement
-starTwoHop	spoc,posc	adjacency	Projection	executionPath	-	chunkPipeline	-	-	-
+starTwoHop	spoc,posc	adjacency	Projection	Decision 1: row/join dispatch	normal	nestedLoop	-	nestedLoop,packedFtree,factorizedRows,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines,adaptiveFilterPlacement
+starTwoHop	spoc,posc	adjacency	Projection	executionPath	-	nestedLoop	-	-	-
 starThreeProps	spoc,posc	adjacency	Projection	Decision 1: row/join dispatch	normal	batch	-	batch,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,factorizedRows,parallelPipelines,adaptiveFilterPlacement
 starThreeProps	spoc,posc	adjacency	Projection	executionPath	-	nestedLoop	-	-	-
 chainThree	spoc,posc	adjacency	Projection	Decision 1: row/join dispatch	normal	batch	-	batch,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,factorizedRows,parallelPipelines,adaptiveFilterPlacement
@@ -105,10 +105,10 @@ interestJoin	spoc,posc	adjacency	Projection	Decision 1: GROUP BY dispatch	normal
 interestJoin	spoc,posc	adjacency	Projection/Extension/Group (i)	executionPath	-	singleSlotGroups	-	-	-
 existsKnows	spoc,posc	adjacency	Projection	Decision 1: row/join dispatch	normal	batch	-	batch,nestedLoop	prefixRun,factorizedRows,parallelPipelines,irKernel,irKernelParallel,irKernelParallelInterpreted,offer#7,irKernelInterpreted,adaptiveFilterPlacement
 existsKnows	spoc,posc	adjacency	Projection	executionPath	-	batch	-	-	-
-cycle3	spoc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	factorizedRows	-	factorizedRows,wcoj,packedFtree,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,adaptiveFilterPlacement,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines
-cycle3	spoc	lmdbOnly	Projection	executionPath	-	chunkPipeline	-	-	-
-cycle4	spoc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	factorizedRows	-	factorizedRows,wcoj,packedFtree,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,adaptiveFilterPlacement,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines
-cycle4	spoc	lmdbOnly	Projection	executionPath	-	chunkPipeline	-	-	-
+cycle3	spoc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	irKernel	-	irKernel,wcoj,packedFtree,factorizedRows,irKernelParallel,irKernelParallelInterpreted,irKernelInterpreted,adaptiveFilterPlacement,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines
+cycle3	spoc	lmdbOnly	Projection	executionPath	-	irKernel	-	-	-
+cycle4	spoc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	irKernel	-	irKernel,wcoj,packedFtree,factorizedRows,irKernelParallel,irKernelParallelInterpreted,irKernelInterpreted,adaptiveFilterPlacement,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines
+cycle4	spoc	lmdbOnly	Projection	executionPath	-	irKernel	-	-	-
 cycle5	spoc	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	wcoj	-	wcoj,packedFtree,factorizedRows,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,adaptiveFilterPlacement,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines
 cycle5	spoc	lmdbOnly	Projection	executionPath	-	wcoj	-	-	-
 cycle3CountCityInterest	spoc	lmdbOnly	Projection	Decision 1: GROUP BY dispatch	normal	nestedLoop	-	nestedLoop,wcoj,packedFtreeAggregate,factorizedTail,irAggregateParallel,irAggregateParallelInterpreted,irAggregate,irAggregateInterpreted	parallelAggregation,janinoAggregate
@@ -186,8 +186,8 @@ typeCount	spoc,posc,ospc,cspo	lmdbOnly	Projection	Decision 1: GROUP BY dispatch	
 typeCount	spoc,posc,ospc,cspo	lmdbOnly	Projection/Extension/Group (type)	executionPath	-	prefixRunGroups	-	-	-
 predicateHistogram	spoc,posc,ospc,cspo	lmdbOnly	Projection	Decision 1: GROUP BY dispatch	normal	prefixRunGroups	-	prefixRunGroups,wildcardPredicateReduced,parallelAggregation,irAggregateParallel,irAggregateParallelInterpreted,irAggregateWildcard,irAggregateWildcardInterpreted,orderedSinglePatternGroups,nestedLoop	
 predicateHistogram	spoc,posc,ospc,cspo	lmdbOnly	Projection/Extension/Group (p)	executionPath	-	prefixRunGroups	-	-	-
-starTwoHop	spoc,posc,ospc,cspo	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	factorizedRows	-	factorizedRows,packedFtree,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines,adaptiveFilterPlacement
-starTwoHop	spoc,posc,ospc,cspo	lmdbOnly	Projection	executionPath	-	chunkPipeline	-	-	-
+starTwoHop	spoc,posc,ospc,cspo	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	nestedLoop	-	nestedLoop,packedFtree,factorizedRows,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines,adaptiveFilterPlacement
+starTwoHop	spoc,posc,ospc,cspo	lmdbOnly	Projection	executionPath	-	nestedLoop	-	-	-
 starThreeProps	spoc,posc,ospc,cspo	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	batch	-	batch,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,factorizedRows,parallelPipelines,adaptiveFilterPlacement
 starThreeProps	spoc,posc,ospc,cspo	lmdbOnly	Projection	executionPath	-	nestedLoop	-	-	-
 chainThree	spoc,posc,ospc,cspo	lmdbOnly	Projection	Decision 1: row/join dispatch	normal	batch	-	batch,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,factorizedRows,parallelPipelines,adaptiveFilterPlacement
@@ -239,8 +239,8 @@ typeCount	spoc,posc,ospc,cspo	adjacency	Projection	Decision 1: GROUP BY dispatch
 typeCount	spoc,posc,ospc,cspo	adjacency	Projection/Extension/Group (type)	executionPath	-	adjacencyAggregate	-	-	-
 predicateHistogram	spoc,posc,ospc,cspo	adjacency	Projection	Decision 1: GROUP BY dispatch	normal	adjacencyAggregate	-	adjacencyAggregate,prefixRunGroups,wildcardPredicateReduced,parallelAggregation,irAggregateParallel,irAggregateParallelInterpreted,irAggregateWildcard,irAggregateWildcardInterpreted,orderedSinglePatternGroups,nestedLoop	
 predicateHistogram	spoc,posc,ospc,cspo	adjacency	Projection/Extension/Group (p)	executionPath	-	adjacencyAggregate	-	-	-
-starTwoHop	spoc,posc,ospc,cspo	adjacency	Projection	Decision 1: row/join dispatch	normal	factorizedRows	-	factorizedRows,packedFtree,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines,adaptiveFilterPlacement
-starTwoHop	spoc,posc,ospc,cspo	adjacency	Projection	executionPath	-	chunkPipeline	-	-	-
+starTwoHop	spoc,posc,ospc,cspo	adjacency	Projection	Decision 1: row/join dispatch	normal	nestedLoop	-	nestedLoop,packedFtree,factorizedRows,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted	prefixRun,mergeJoin,hashJoin,batch,parallelPipelines,adaptiveFilterPlacement
+starTwoHop	spoc,posc,ospc,cspo	adjacency	Projection	executionPath	-	nestedLoop	-	-	-
 starThreeProps	spoc,posc,ospc,cspo	adjacency	Projection	Decision 1: row/join dispatch	normal	batch	-	batch,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,factorizedRows,parallelPipelines,adaptiveFilterPlacement
 starThreeProps	spoc,posc,ospc,cspo	adjacency	Projection	executionPath	-	nestedLoop	-	-	-
 chainThree	spoc,posc,ospc,cspo	adjacency	Projection	Decision 1: row/join dispatch	normal	batch	-	batch,irKernelParallel,irKernelParallelInterpreted,irKernel,irKernelInterpreted,nestedLoop	prefixRun,factorizedRows,parallelPipelines,adaptiveFilterPlacement

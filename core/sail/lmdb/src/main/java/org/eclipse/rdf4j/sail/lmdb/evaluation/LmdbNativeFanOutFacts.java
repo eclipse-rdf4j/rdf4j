@@ -42,15 +42,29 @@ final class LmdbNativeFanOutFacts {
 	}
 
 	private final Depth[] depths;
+	private final int prefixLength;
+	private final double prefixRowsAfterPrefix;
 	private final boolean priceable;
 
-	private LmdbNativeFanOutFacts(Depth[] depths, boolean priceable) {
+	private LmdbNativeFanOutFacts(Depth[] depths, int prefixLength, double prefixRowsAfterPrefix,
+			boolean priceable) {
 		this.depths = depths;
+		this.prefixLength = prefixLength;
+		this.prefixRowsAfterPrefix = prefixRowsAfterPrefix;
 		this.priceable = priceable;
 	}
 
 	static LmdbNativeFanOutFacts forOrder(SlotPlan[] order, int length, RowState row, long boundMask,
 			double depth0RowsOverride) {
+		return forFactorized(order, length, length, row, boundMask, depth0RowsOverride);
+	}
+
+	/**
+	 * The facts of a factorized order: the first {@code prefixLength} depths form a chain, every later depth is a
+	 * branch entered once per prefix row with only the prefix bound (branches neither see nor multiply each other).
+	 */
+	static LmdbNativeFanOutFacts forFactorized(SlotPlan[] order, int length, int prefixLength, RowState row,
+			long boundMask, double depth0RowsOverride) {
 		Depth[] depths = new Depth[length];
 		double prefixRows = 1D;
 		long mask = boundMask;
@@ -84,13 +98,18 @@ final class LmdbNativeFanOutFacts {
 			depths[i] = new Depth(child, mask, prefixRows, keySlots, distinctKeys, hitProbability, rowsPerKey);
 			if (Double.isNaN(rowsPerKey)) {
 				priceable = false;
-				prefixRows = Double.NaN;
-			} else {
-				prefixRows *= rowsPerKey;
 			}
-			mask |= child.producedMask();
+			if (i < prefixLength) {
+				prefixRows = Double.isNaN(rowsPerKey) ? Double.NaN : prefixRows * rowsPerKey;
+				mask |= child.producedMask();
+			}
 		}
-		return new LmdbNativeFanOutFacts(depths, priceable);
+		return new LmdbNativeFanOutFacts(depths, prefixLength, prefixRows, priceable);
+	}
+
+	/** Rows leaving the prefix: what every branch is entered with. */
+	double prefixRowsAfterPrefix() {
+		return prefixRowsAfterPrefix;
 	}
 
 	/**
@@ -139,13 +158,17 @@ final class LmdbNativeFanOutFacts {
 		return depths.length;
 	}
 
-	/** The full enumerated product of the order, NaN when a depth is unpriceable. */
+	/** The full enumerated product of the order (prefix times every branch), NaN when a depth is unpriceable. */
 	double enumeratedRows() {
 		double rows = 1D;
 		for (Depth depth : depths) {
 			rows *= depth.rowsPerKey();
 		}
 		return rows;
+	}
+
+	int prefixLength() {
+		return prefixLength;
 	}
 
 	boolean priceable() {

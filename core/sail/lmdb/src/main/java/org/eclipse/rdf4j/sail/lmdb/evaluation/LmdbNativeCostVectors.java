@@ -195,6 +195,87 @@ final class LmdbNativeCostVectors {
 	 * A factorized evaluation: the first {@code prefixLength} children form a nested-loop chain; the remaining children
 	 * are branches probed side by side once per prefix row, summed rather than multiplied.
 	 */
+	/** What a factorized branch does with its rows: enumerates them, counts them, or checks that one exists. */
+	enum BranchRole {
+		ENUM,
+		COUNT,
+		EXISTS
+	}
+
+	/**
+	 * A factorized row join as its executor runs it ({@code LmdbNativeFactorizedRows}): the prefix is a nested-loop
+	 * chain with a batch row per intermediate row; each branch result is memoised per probe key, so a branch is
+	 * accessed once per DISTINCT key the prefix carries into it (expected) and at worst once per prefix row (high, when
+	 * the memo refuses); a COUNT branch counts its rows without decoding them, an EXISTS branch reads one record per
+	 * key, an ENUM branch decodes and packs its rows once per key; the memo is consulted once per prefix row; and one
+	 * batch row is emitted per logical output row (counts become the row's multiplicity). A keys-only root walks
+	 * {@code depth0Keys} keys without decoding a run.
+	 */
+	static LmdbNativeCostVector factorizedRows(SlotPlan[] order, int prefixLength, BranchRole[] roles,
+			double depth0Keys, RowState row, long boundMask) {
+		if (prefixLength < 0 || prefixLength > order.length || roles.length != order.length - prefixLength) {
+			return unbounded();
+		}
+		LmdbNativeFanOutFacts facts = LmdbNativeFanOutFacts.forFactorized(order, order.length, prefixLength, row,
+				boundMask, depth0Keys);
+		if (!facts.priceable()) {
+			// an unpriceable child keeps the sweep ceiling of the chain form
+			return factorized(order, prefixLength, row, boundMask, Feature.BATCH_ROW);
+		}
+		LmdbNativeCostVector total = LmdbNativeCostVector.zero();
+		for (int i = 0; i < prefixLength; i++) {
+			LmdbNativeFanOutFacts.Depth depth = facts.depth(i);
+			LmdbNativeCostVector access;
+			if (i == 0 && Double.isFinite(depth0Keys) && depth0Keys >= 0D && order[0] instanceof PatternPlan) {
+				double keys = Math.min(depth0Keys, depth.rowsPerKey());
+				access = LmdbNativeCostVector.point(Feature.INDEX_SEEK, 1D)
+						.plus(perRow(Feature.SCANNED_ROW, keys))
+						.plus(perRow(Feature.BATCH_ROW, keys));
+			} else {
+				access = plan(order[i], row, depth.maskBefore(), Feature.BATCH_ROW);
+			}
+			total = total.plus(access.scale(depth.prefixRows()));
+		}
+		double prefixRows = facts.prefixRowsAfterPrefix();
+		double emitted = prefixRows;
+		for (int b = prefixLength; b < order.length; b++) {
+			LmdbNativeFanOutFacts.Depth depth = facts.depth(b);
+			BranchRole role = roles[b - prefixLength];
+			double keys = depth.distinctKeys();
+			double hitting = depth.hittingKeys();
+			LmdbNativeCostVector probe = order[b] instanceof PatternPlan pattern
+					? pattern(pattern, row, depth.maskBefore())
+					: plan(order[b], row, depth.maskBefore(), Feature.SCANNED_ROW);
+			// seeks once per distinct key, rows once per key that has any; at worst once per prefix row
+			total = total.plus(scaled(probe, Feature.INDEX_SEEK, keys, prefixRows));
+			if (role == BranchRole.EXISTS) {
+				total = total.plus(LmdbNativeCostVector.bounds(Feature.SCANNED_ROW, 0D,
+						Math.min(1D, probe.expected(Feature.SCANNED_ROW)) * hitting,
+						Math.max(hitting, Math.min(1D, probe.high(Feature.SCANNED_ROW)) * prefixRows)));
+			} else {
+				total = total.plus(scaled(probe, Feature.SCANNED_ROW, hitting, prefixRows));
+				if (role == BranchRole.ENUM) {
+					total = total.plus(scaled(probe, Feature.DECODED_ROW, hitting, prefixRows));
+					double rowsPerKey = depth.rowsPerKey();
+					total = total.plus(LmdbNativeCostVector.bounds(Feature.BATCH_ROW, 0D, hitting * rowsPerKey,
+							Math.max(hitting, prefixRows) * rowsPerKey));
+					emitted *= rowsPerKey;
+				}
+			}
+			total = total.plus(perRow(Feature.HASH_PROBE, prefixRows));
+		}
+		return total.plus(perRow(Feature.BATCH_ROW, emitted));
+	}
+
+	/** One feature of {@code vector} scaled by {@code expectedScale} (low and expected) and {@code highScale}. */
+	private static LmdbNativeCostVector scaled(LmdbNativeCostVector vector, Feature feature, double expectedScale,
+			double highScale) {
+		double low = vector.low(feature) * expectedScale;
+		double expected = Math.max(low, vector.expected(feature) * expectedScale);
+		double high = Math.max(expected, vector.high(feature) * Math.max(expectedScale, highScale));
+		return high > 0D ? LmdbNativeCostVector.bounds(feature, low, expected, high) : LmdbNativeCostVector.zero();
+	}
+
 	static LmdbNativeCostVector factorized(SlotPlan[] order, int prefixLength, RowState row, long boundMask,
 			Feature rowFeature) {
 		if (prefixLength < 0 || prefixLength > order.length) {
