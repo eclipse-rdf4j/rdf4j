@@ -404,6 +404,32 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	}
 
 	/**
+	 * The operator a forced value names first: a comma-separated value is a preference list whose first admitted
+	 * operator is forced, so a fast path that bypasses the arbiter for one operator applies when that operator leads
+	 * the list (comparing the whole value skipped it for {@code packedFtree,nestedLoop}, 2026-11-03).
+	 */
+	private static String forcedLeader(String forced) {
+		if (forced == null) {
+			return null;
+		}
+		int comma = forced.indexOf(',');
+		return (comma < 0 ? forced : forced.substring(0, comma)).trim();
+	}
+
+	/** Whether a forced value, alone or as a preference list, names {@code tag} anywhere. */
+	private static boolean forcedIncludes(String forced, String tag) {
+		if (forced == null) {
+			return false;
+		}
+		for (String option : forced.split(",")) {
+			if (tag.equals(option.trim())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Constant-false guards on the plan's conjunctive spine: FilterPlan wrappers and MultiJoin filters, where an
 	 * always-empty filter empties the whole fragment. Union branches and optional arms are deliberately not walked — a
 	 * constant-false filter there empties only its own branch.
@@ -1462,7 +1488,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		// possibility of an alternative winning, so honoring a forced strategy requires skipping them.
 		String forcedStrategy = forcedExecutionStrategyName();
 		if (LmdbNativeFactorAlgebra.candidate(arg) && !SlotPlan.encounterOrderReplaySafe(arg)
-				&& LmdbNativeAttemptMetrics.PATH_PACKED_FTREE.equals(forcedStrategy)) {
+				&& LmdbNativeAttemptMetrics.PATH_PACKED_FTREE.equals(forcedLeader(forcedStrategy))) {
 			LmdbNativeDispatchLoop.logDirect(originalExpr, "row/join serial dispatch",
 					LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 					"Effectful bag algebra is evaluated once, without speculative replay");
@@ -1659,7 +1685,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		if (multiJoin != null) {
 			arbiter.offer(
 					() -> LmdbNativePackedFtree.proposeRows(multiJoin, row, retainedSlots, distinct, originalExpr));
-		} else if (LmdbNativeAttemptMetrics.PATH_PACKED_FTREE.equals(forcedExecutionStrategyName())) {
+		} else if (forcedIncludes(forcedExecutionStrategyName(), LmdbNativeAttemptMetrics.PATH_PACKED_FTREE)) {
 			arbiter.offer(
 					() -> LmdbNativePackedFtree.proposeRows(arg, row, retainedSlots, distinct, originalExpr));
 		}

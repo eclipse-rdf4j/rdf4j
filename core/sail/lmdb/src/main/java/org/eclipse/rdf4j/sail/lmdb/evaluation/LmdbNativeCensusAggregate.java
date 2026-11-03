@@ -30,11 +30,13 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.ThreadSafeDelayedIteration;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Count;
@@ -450,8 +452,8 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 
 	private LmdbNativeCensusAggregate(NativeLmdbQuerySource source, LmdbNativeEvaluationStrategy strategy,
 			QueryEvaluationContext context, Group group, TupleExpr explainTarget, StatementPattern pattern,
-			ContextConstraint contexts, long[] constants, String[] groupNames, int[] groupFields, Channel[] channels,
-			BooleanExpression filter) {
+			ContextConstraint contexts, long[] constants, boolean named, String[] groupNames, int[] groupFields,
+			Channel[] channels, BooleanExpression filter) {
 		this.source = source;
 		this.strategy = strategy;
 		this.valuePositions = strategy.valuePositionSnapshot();
@@ -460,7 +462,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		this.explainTarget = explainTarget;
 		this.contexts = contexts;
 		this.constants = constants;
-		this.named = pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS;
+		this.named = named;
 		this.groupNames = groupNames;
 		this.groupPositionMasks = new int[groupNames.length];
 		Map<String, Integer> positions = strategy.valuePositionMasks(group.getArg());
@@ -531,6 +533,10 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		}
 		Var[] vars = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),
 				pattern.getContextVar() != null ? pattern.getContextVar() : graphContext };
+		// a Graph node the fusion pass kept (the dataset names rdf4j:nil, or the graph is rdf4j:nil itself) scopes
+		// its pattern to the named graphs exactly as a fused NAMED_CONTEXTS pattern does
+		boolean named = graphContext != null || pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS;
+		ContextConstraint boundGraph = null;
 		Map<String, Integer> fields = new HashMap<>();
 		long[] constants = { UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN };
 		for (int field = 0; field < vars.length; field++) {
@@ -547,6 +553,19 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 				// source with aliases can otherwise hide other rows for the exact same RDF constant.
 				if (!canonicalPatternIds(source)) {
 					return null;
+				}
+				if (field == C && named) {
+					// GRAPH <g> follows the generic evaluator's dataset rules: with named graphs in the dataset the
+					// graph must be one of them and is read as the physical context it names (rdf4j:nil included,
+					// which then is the context named rdf4j:nil, not the default context); with none, rdf4j:nil is
+					// the default (null) context; a dataset with default graphs but no named ones selects nothing
+					// (measured against the generic evaluator on eight dataset forms, 2026-11-03)
+					Dataset dataset = context == null ? null : context.getDataset();
+					boundGraph = boundGraphConstraint(source, var.getValue(), dataset, constants);
+					if (boundGraph == null) {
+						return null;
+					}
+					continue;
 				}
 				if (field == C && LmdbNativeAggregateCompiler.isNullContextValue(var.getValue())) {
 					// GRAPH rdf4j:nil names the default (null) context, which no stored value identifies
@@ -629,7 +648,40 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			return null;
 		}
 		return new LmdbNativeCensusAggregate(source, strategy, context, group, explainTarget, pattern,
-				contextCompiler.apply(pattern), constants, names, groups, channels, filter);
+				boundGraph != null ? boundGraph : contextCompiler.apply(pattern), constants, named, names, groups,
+				channels, filter);
+	}
+
+	/**
+	 * The context id and constraint of a constant named graph under {@code dataset}, mirroring
+	 * {@code StatementPatternQueryEvaluationStep.extractContextsFromDatasets}: null when the graph is absent from the
+	 * store, so the generic path answers.
+	 */
+	private static ContextConstraint boundGraphConstraint(NativeLmdbQuerySource source, Value graph, Dataset dataset,
+			long[] constants) {
+		Set<Resource> namedGraphs = dataset == null ? Set.of() : dataset.getNamedGraphResources();
+		boolean emptyGraph = dataset != null && namedGraphs.isEmpty()
+				&& (dataset.isExplicitReadDataset() || !dataset.getDefaultGraphResources().isEmpty());
+		if (emptyGraph) {
+			constants[C] = LmdbNativeAggregateCompiler.isNullContextValue(graph) ? NULL_CONTEXT_ID
+					: source.idOf(graph, 1 << C);
+			return ContextConstraint.EMPTY;
+		}
+		if (namedGraphs.isEmpty()) {
+			if (LmdbNativeAggregateCompiler.isNullContextValue(graph)) {
+				constants[C] = NULL_CONTEXT_ID;
+				return ContextConstraint.UNRESTRICTED;
+			}
+			constants[C] = source.idOf(graph, 1 << C);
+			return constants[C] == UNKNOWN ? null : ContextConstraint.UNRESTRICTED;
+		}
+		if (!graph.isResource() || !namedGraphs.contains((Resource) graph)) {
+			constants[C] = LmdbNativeAggregateCompiler.isNullContextValue(graph) ? NULL_CONTEXT_ID
+					: source.idOf(graph, 1 << C);
+			return ContextConstraint.EMPTY;
+		}
+		constants[C] = source.idOf(graph, 1 << C);
+		return constants[C] == UNKNOWN ? null : new ContextConstraint(new long[] { constants[C] });
 	}
 
 	@Override

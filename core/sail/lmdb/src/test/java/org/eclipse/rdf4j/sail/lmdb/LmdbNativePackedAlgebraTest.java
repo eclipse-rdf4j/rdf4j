@@ -271,6 +271,44 @@ class LmdbNativePackedAlgebraTest {
 	}
 
 	@Test
+	void aPreferenceListLedByPackedFtreeTakesTheEffectfulFastPathLikeForcingItAlone() {
+		// the effectful bag algebra (UUID below a UNION) is admitted only through the forced fast path; that path
+		// compared the whole forced value against "packedFtree", so a preference list led by it fell through to
+		// the ordinary ladder and nestedLoop ran instead (source-validated review finding, 2026-11-03)
+		String query = "SELECT ?u WHERE { { ?s ex:p ?p } UNION { ?s ex:p ?p } BIND(UUID() AS ?u) }";
+		assertEquals("packedFtree", executionPath(query, "packedFtree"));
+		assertEquals("packedFtree", executionPath(query, "packedFtree,nestedLoop"));
+		List<BindingSet> rows = evaluate(query, "packedFtree,nestedLoop", null);
+		assertEquals(20, rows.size());
+		assertEquals(20, rows.stream().map(r -> r.getValue("u")).collect(Collectors.toSet()).size());
+	}
+
+	private String executionPath(String query, String forced) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(PREFIX + query);
+			prepared.setForcedLmdbExecutionStrategy(forced);
+			return executionPath(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode());
+		}
+	}
+
+	private static String executionPath(GenericPlanNode node) {
+		if (node == null) {
+			return null;
+		}
+		String path = node.getStringMetricActual("nativeExecutionPath");
+		if (path != null) {
+			return path;
+		}
+		for (GenericPlanNode child : node.getPlans()) {
+			String found = executionPath(child);
+			if (found != null) {
+				return found;
+			}
+		}
+		return null;
+	}
+
+	@Test
 	void groupConcatPreservesAllLogicalCopiesWithoutAssumingAnUnspecifiedOrder() {
 		String query = "SELECT (GROUP_CONCAT(?tag; separator=',') AS ?tags) WHERE { "
 				+ "{ ?s ex:tag ?tag } UNION { ?s ex:tag ?tag } OPTIONAL { ?s ex:r ?r } }";
