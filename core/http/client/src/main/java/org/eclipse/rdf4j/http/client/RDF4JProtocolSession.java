@@ -359,6 +359,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			} else {
 				method = applyAdditionalHeaders(HttpRequests.get(url.build())).build();
 			}
+			addBNodeOriginHeader(method);
 
 			try (HttpResponse response = executeOK(method)) {
 				String responseText = HttpUtils.toString(response);
@@ -990,7 +991,21 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		HttpRequest cancelMethod = applyAdditionalHeaders(HttpRequests.post(getQueryURL())).build();
 		cancelMethod = withQueryParam(cancelMethod, Protocol.CANCEL_QUERY_PARAM_NAME, Boolean.TRUE.toString());
 		cancelMethod = withQueryParam(cancelMethod, Protocol.QUERY_REQUEST_ID_PARAM_NAME, normalizedQueryRequestId);
-		executeNoContent(cancelMethod);
+		try (HttpResponse response = execute(cancelMethod)) {
+			if (response.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+				throw new QueryCancellationNotFoundException();
+			}
+		}
+	}
+
+	/** The server returned HTTP 404 to a query cancellation request; the query or repository may be absent. */
+	@InternalUseOnly
+	public static final class QueryCancellationNotFoundException extends RepositoryException {
+		private static final long serialVersionUID = 1L;
+
+		private QueryCancellationNotFoundException() {
+			super("Query cancellation returned HTTP 404");
+		}
 	}
 
 	public Explanation sendQueryExplanation(QueryLanguage ql, String query, String baseURI, Dataset dataset,

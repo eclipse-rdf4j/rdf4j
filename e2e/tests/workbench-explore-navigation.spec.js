@@ -13,7 +13,7 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
-const { evidencePath, evidenceScreenshots, waitForRoute } = require('./workbench-test-helpers');
+const { evidencePath, evidenceScreenshots, openQueryPage, runQuery, waitForRoute } = require('./workbench-test-helpers');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -27,8 +27,9 @@ const LARGE_RESOURCE_IRI = 'http://example.org/explore-large-resource';
 // Screenshots go to WORKBENCH_EXPLORE_EVIDENCE_DIR when it is set, otherwise to each test's output directory; the
 // evidence summary is written only to that directory. The fixture repository is deleted after the run unless
 // WORKBENCH_EXPLORE_RETAIN_FIXTURE=true keeps it for debugging.
-const EVIDENCE_DIR = process.env.WORKBENCH_EXPLORE_EVIDENCE_DIR || '';
+const EVIDENCE_DIR = process.env.WORKBENCH_EXPLORE_EVIDENCE_DIR || '/private/tmp/explore-qa';
 const RETAIN_FIXTURE = process.env.WORKBENCH_EXPLORE_RETAIN_FIXTURE === 'true';
+let fixtureCreated = false;
 
 const evidence = {
 	browserPlugin: 'Browser plugin not available; used the installed Playwright runner.',
@@ -63,15 +64,16 @@ function fixtureStatements() {
 		`<urn:explore:record> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <urn:explore:Class> ${graph} .`,
 		`<urn:explore:record> <urn:explore:note> "Bonjour"@fr ${graph} .`
 	];
-	for (let index = 0; index < 300; index++) {
-		const suffix = String(index).padStart(3, '0');
+	lines.push('<urn:explore:self> <urn:explore:self> <urn:explore:self> <urn:explore:self> .');
+	for (let index = 0; index < 10005; index++) {
+		const suffix = String(index).padStart(5, '0');
 		lines.push(`<${LARGE_RESOURCE_IRI}> <http://example.org/explore-property/${suffix}> "large row ${suffix}" <urn:explore:large-graph> .`);
 	}
 	return lines.join('\n');
 }
 
 function monitorPage(page) {
-	const health = { pageErrors: [], consoleErrors: [], failedRequests: [] };
+	const health = { pageErrors: [], consoleErrors: [], failedRequests: [], errorResponses: [] };
 	page.on('pageerror', error => health.pageErrors.push(error.message));
 	page.on('console', message => {
 		if (message.type() === 'error') {
@@ -85,31 +87,41 @@ function monitorPage(page) {
 			health.failedRequests.push({ url, error });
 		}
 	});
+	page.on('response', response => {
+		if (response.status() >= 400) health.errorResponses.push({ url: response.url(), status: response.status() });
+	});
 	return health;
 }
 
 async function assertPageHealth(page, health, route) {
 	await expect(page).toHaveTitle(/RDF4J Workbench/);
-	await expect(page.locator('#workbench-page-surface')).toBeVisible();
-	await expect(page.locator('#title_heading')).not.toBeEmpty();
+	const surface = page.locator('#workbench-outlet #workbench-page-surface');
+	await expect(surface).toBeVisible();
+	await expect(page.locator('#workbench-outlet #title_heading')).not.toBeEmpty();
 	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', route);
 	await expect(page.locator('nextjs-portal, vite-error-overlay, #webpack-dev-server-client-overlay, [data-nextjs-error]'))
 		.toHaveCount(0);
 	expect(health.pageErrors, `uncaught browser errors on ${page.url()}`).toEqual([]);
 	expect(health.consoleErrors, `browser console errors on ${page.url()}`).toEqual([]);
 	expect(health.failedRequests, `failed browser requests on ${page.url()}`).toEqual([]);
-	const surfaceText = await page.locator('#workbench-page-surface').innerText();
+	expect(health.errorResponses, `HTTP errors on ${page.url()}`).toEqual([]);
+	const surfaceText = await surface.innerText();
 	expect(surfaceText.trim(), `meaningful Workbench content on ${page.url()}`).not.toBe('');
 }
 
 async function assertFailurePageHealth(page, health) {
 	expect(new URL(page.url()).pathname).toContain('/explore');
-	const content = await page.locator('body').innerText();
-	expect(content.trim()).not.toBe('');
 	// The error answer is shown inside the shell, as in-page navigation shows it (plan task M13.6), so the console
 	// has nothing to report beyond, perhaps, the message itself.
 	await expect(page.locator('#workbench-outlet .workbench-callout--error')).toContainText('Malformed value:');
-	expect(health.consoleErrors.filter(message => !/Malformed value:/.test(message))).toEqual([]);
+	const content = await page.locator('body').innerText();
+	expect(content.trim()).not.toBe('');
+	expect(health.errorResponses).toHaveLength(1);
+	expect(health.errorResponses[0].status).toBe(400);
+	expect(new URL(health.errorResponses[0].url).searchParams.get('resource')).toBe('"unterminated');
+	expect(health.consoleErrors).toEqual([expect.stringMatching(/^Failed to load resource: the server responded with a status of 400/)]);
+	health.consoleErrors.length = 0;
+	health.errorResponses.length = 0;
 	expect(health.pageErrors).toEqual([]);
 	expect(health.failedRequests).toEqual([]);
 	await expect(page.locator('nextjs-portal, vite-error-overlay, #webpack-dev-server-client-overlay, [data-nextjs-error]'))
@@ -132,31 +144,45 @@ async function capture(page, name, health, details = {}) {
 		pageErrors: [...health.pageErrors],
 		consoleErrors: [...health.consoleErrors],
 		failedRequests: [...health.failedRequests],
+		errorResponses: [...health.errorResponses],
 		screenshot,
 		...details
 	});
 }
 
-/**
- * Rows of Explore's shared result tables (.agent/execplans/workbench-shared-result-table.md): table rows, or records
- * where the columns do not fit the screen. Like the Query page they keep only the rows near the screen in the page.
- */
-function exploreRows(page) {
-	return page.locator('#explore-results :is(.query-result-table-wrap:not([hidden]) table.data tbody tr, '
+/** Visible rows for a single independently paged role. */
+function exploreRows(page, role) {
+	return page.locator(`[data-explore-role="${role}"] :is(.query-result-table-wrap:not([hidden]) table.data tbody tr, `
 		+ '.query-result-records:not([hidden]) .query-result-record)[data-workbench-row-index]');
 }
 
-/** Explore shows count statements: each shared table's aria-rowcount counts its rows (and its header row). */
-async function expectExploreRows(page, count) {
-	const rows = exploreRows(page);
-	await expect.poll(() => page.locator('#explore-results .query-result-table-wrap > table.data').evaluateAll(
-		tables => tables.reduce((total, table) => total + Number(table.getAttribute('aria-rowcount') || 1) - 1, 0)),
-	{ timeout: 30_000 }).toBe(count);
-	if (count) {
-		await expect(rows.first()).toBeVisible();
-	}
-	await expect(page.locator('#explore-results .workbench-pending-row')).toHaveCount(0);
+async function expectRoleRows(page, role, count) {
+	const rows = exploreRows(page, role);
+	await expect.poll(() => rows.count(), { timeout: 30000 }).toBe(count);
+	if (count) await expect(rows.first()).toBeVisible();
 	return rows;
+}
+
+/** Count HTTP intervals from CDP events, whose timestamps share a monotonic clock. */
+function peakHttpRequests(events, kind) {
+	const points = [];
+	for (const event of events.filter(item => item.url.searchParams.get('kind') === kind)) {
+		const { start, end } = event;
+		expect(start).toBeGreaterThan(0);
+		expect(end).toBeGreaterThanOrEqual(start);
+		if (end > start) {
+			points.push({ time: start, change: 1 });
+			points.push({ time: end, change: -1 });
+		}
+	}
+	points.sort((a, b) => a.time - b.time || a.change - b.change);
+	let running = 0;
+	let peak = 0;
+	for (const point of points) {
+		running += point.change;
+		peak = Math.max(peak, running);
+	}
+	return peak;
 }
 
 test.setTimeout(120_000);
@@ -171,14 +197,19 @@ test.beforeAll(async ({ request }) => {
 		data: repositoryConfig(REPOSITORY_ID)
 	});
 	expect([200, 201, 204]).toContain(created.status());
+	fixtureCreated = true;
+	const namespace = await request.put(`${REPOSITORY_URL}/namespaces/ex`, {
+		headers: { 'Content-Type': 'text/plain' }, data: 'http://example.org/'
+	});
+	expect([200, 201, 204]).toContain(namespace.status());
 	const loaded = await request.post(`${REPOSITORY_URL}/statements`, {
 		headers: { 'Content-Type': 'application/n-quads' },
 		data: fixtureStatements()
 	});
 	expect([200, 201, 204]).toContain(loaded.status());
 	const size = await request.get(`${REPOSITORY_URL}/size`);
-	expect(size.ok(), `the disposable fixture should contain all 308 statements; got ${size.status()}`).toBe(true);
-	expect(Number(await size.text())).toBe(308);
+	expect(size.ok(), `the disposable fixture should contain all 10014 statements; got ${size.status()}`).toBe(true);
+	expect(Number(await size.text())).toBe(10014);
 	const namedGraph = await request.get(`${REPOSITORY_URL}/statements`, {
 		params: { context: `<${CONTEXT_IRI}>` },
 		headers: { Accept: 'application/n-quads' }
@@ -188,7 +219,7 @@ test.beforeAll(async ({ request }) => {
 });
 
 test.afterAll(async ({ request }) => {
-	if (!RETAIN_FIXTURE) {
+	if (fixtureCreated && !RETAIN_FIXTURE) {
 		const removed = await request.delete(REPOSITORY_URL);
 		expect([200, 204, 404], 'the fixture repository is deleted after the run').toContain(removed.status());
 	}
@@ -202,302 +233,242 @@ test.afterAll(async ({ request }) => {
 	}
 });
 
-test('Contexts links the named graph into Explore and RDF term links remain navigable', async ({ page }) => {
+test('Contexts and result terms navigate through independently loaded Explore roles', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	const health = monitorPage(page);
 	const contextsUrl = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/contexts`;
 	await page.goto(contextsUrl, { waitUntil: 'domcontentloaded' });
-	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'contexts');
-	await expect(page.locator('#contexts-results table.data')).toBeVisible();
-	await assertPageHealth(page, health, 'contexts');
-	await capture(page, 'contexts-desktop-ready', health);
-
+	await waitForRoute(page, 'contexts');
 	const graphLink = page.locator('#contexts-results table.data a').filter({ hasText: CONTEXT_IRI }).first();
 	await expect(graphLink).toBeVisible();
-	const graphHref = await graphLink.getAttribute('href');
-	expect(new URL(graphHref, contextsUrl).searchParams.get('resource')).toBe(`<${CONTEXT_IRI}>`);
-	await page.context().addCookies([{ name: 'total_result_count', value: '1', url: WORKBENCH_BASE_URL }]);
-	expect(await page.evaluate(() => document.cookie)).toContain('total_result_count=1');
 	await graphLink.click();
-	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'explore');
-	const graphRows = await expectExploreRows(page, 8);
+	await waitForRoute(page, 'explore');
+	const graphRows = await expectRoleRows(page, 'graph', 8);
+	await expect(page.locator('[data-explore-role="graph"] .explore-group__count')).toHaveText('8');
 	await assertPageHealth(page, health, 'explore');
-	await expect(page.locator('#explore-result-count')).toHaveText('Rows 1–8 of 8');
-	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(8);
-	await capture(page, 'explore-eight-records-desktop', health, { rowCount: await graphRows.count() });
+	await capture(page, 'explore-graph-desktop', health, { rowCount: await graphRows.count() });
 
-	const bnodeLink = page.locator('#explore-results td[data-label="Object"] a')
+	const graphUrl = page.url();
+	const blank = page.locator('[data-explore-role="graph"] a[href^="explore?resource="]')
 		.filter({ hasText: /^<_:.*>$/ }).first();
-	await expect(bnodeLink).toBeVisible();
-	const bnodeText = (await bnodeLink.innerText()).trim();
-	expect(bnodeText).toMatch(/^<_:.*>$/);
-	const bnodeHref = await bnodeLink.getAttribute('href');
-	const bnodeResource = new URL(bnodeHref, page.url()).searchParams.get('resource');
-	expect(bnodeResource).toBe(bnodeText);
-	const graphExploreUrl = page.url();
-	await bnodeLink.click();
-	await expectExploreRows(page, 2);
-	await expect(page.locator('#resource')).toHaveValue(bnodeResource);
+	await expect(blank).toBeVisible();
+	const blankResource = new URL(await blank.getAttribute('href'), page.url()).searchParams.get('resource');
+	await blank.click();
+	await waitForRoute(page, 'explore', { url: url => url.searchParams.get('resource') === blankResource });
+	await expect(page.locator('#resource')).toHaveValue(blankResource);
+	await expectRoleRows(page, 'outgoing', 1);
 	await page.goBack();
-	await waitForRoute(page, 'explore', { url: graphExploreUrl });
-	await expectExploreRows(page, 8);
-
-	const literalLink = page.locator('#explore-results td[data-label="Object"] a')
+	await waitForRoute(page, 'explore', { url: graphUrl });
+	await expectRoleRows(page, 'graph', 8);
+	const literal = page.locator('[data-explore-role="graph"] a[href^="explore?resource="]')
 		.filter({ hasText: 'Literal target' }).first();
-	await expect(literalLink).toBeVisible();
-	const literalHref = await literalLink.getAttribute('href');
-	const literalResource = '"Literal target"';
-	expect(new URL(literalHref, page.url()).searchParams.get('resource')).toBe(literalResource);
-	await literalLink.click();
-	await expectExploreRows(page, 1);
-	await expect(page.locator('#resource')).toHaveValue(literalResource);
-	await capture(page, 'explore-literal-resource-desktop', health, { rowCount: 1 });
+	await expect(literal).toBeVisible();
+	await literal.click();
+	await waitForRoute(page, 'explore', { url: url => url.searchParams.get('resource') === '"Literal target"' });
+	await expectRoleRows(page, 'incoming', 1);
 	await assertPageHealth(page, health, 'explore');
-
-	const mobilePage = await page.context().newPage();
-	const mobileHealth = monitorPage(mobilePage);
-	await mobilePage.setViewportSize({ width: 390, height: 900 });
-	await mobilePage.goto(contextsUrl, { waitUntil: 'domcontentloaded' });
-	await expect(mobilePage.locator('#contexts-results table.data')).toBeVisible();
-	const mobileGraphLink = mobilePage.locator('#contexts-results table.data a').filter({ hasText: CONTEXT_IRI }).first();
-	await expect(mobileGraphLink).toBeVisible();
-	await mobileGraphLink.click();
-	const mobileRows = await expectExploreRows(mobilePage, 8);
-	await assertPageHealth(mobilePage, mobileHealth, 'explore');
-	await capture(mobilePage, 'contexts-mobile-to-explore-ready', mobileHealth, { rowCount: await mobileRows.count() });
-	await mobilePage.close();
 });
 
-test('invalid and empty resources render useful states and browser Back recovers despite stale counts', async ({ page }) => {
-	await page.setViewportSize({ width: 1440, height: 1000 });
+test('invalid and empty resources remain recoverable', async ({ page }) => {
 	const health = monitorPage(page);
 	const contextsUrl = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/contexts`;
 	await page.goto(contextsUrl, { waitUntil: 'domcontentloaded' });
-	await expect(page.locator('#contexts-results table.data')).toBeVisible();
-
-	const malformedValue = '"unterminated';
-	const invalidUrl = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore?resource=${encodeURIComponent(malformedValue)}`;
-	await page.goto(invalidUrl, { waitUntil: 'domcontentloaded' });
-	const alert = page.locator('#workbench-app [role="alert"]').first();
-	await expect(alert).toBeVisible();
-	const errorText = (await alert.innerText()).trim();
-	expect(errorText).toContain('Malformed value:');
-	expect(errorText).not.toContain('head may appear only once');
-	expect(errorText).not.toMatch(/duplicate\s+head|head.{0,20}duplicate|framing|content[- ]length/i);
+	await waitForRoute(page, 'contexts');
+	const invalid = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore?resource=${encodeURIComponent('"unterminated')}`;
+	await page.goto(invalid, { waitUntil: 'domcontentloaded' });
 	await assertFailurePageHealth(page, health);
-	await capture(page, 'explore-invalid-resource-error', health, { errorText });
-
-	const recoveryHealth = monitorPage(page);
+	await capture(page, 'explore-invalid-resource', health);
 	await page.goBack();
 	await waitForRoute(page, 'contexts', { url: contextsUrl });
-	await expect(page).toHaveURL(contextsUrl);
-	const graphLink = page.locator('#contexts-results table.data a').filter({ hasText: CONTEXT_IRI }).first();
-	await graphLink.click();
-	await expectExploreRows(page, 8);
-	await expect(page.locator('#workbench-app [role="alert"]')).toHaveCount(0);
-	await assertPageHealth(page, recoveryHealth, 'explore');
-
-	await page.context().addCookies([{ name: 'total_result_count', value: '1', url: WORKBENCH_BASE_URL }]);
-	expect(await page.evaluate(() => document.cookie)).toContain('total_result_count=1');
-	const emptyResource = '<urn:explore:no-such-resource>';
-	await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore?resource=${encodeURIComponent(emptyResource)}`,
-		{ waitUntil: 'domcontentloaded' });
-	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'explore');
-	await expect(page.locator('#explore-results .workbench-empty')).toHaveText('No results to display.');
-	await expect(exploreRows(page)).toHaveCount(0);
-	await expect(page.locator('#explore-result-count')).toHaveText('No rows');
-	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(0);
-	await assertPageHealth(page, recoveryHealth, 'explore');
-	await capture(page, 'explore-empty-resource-desktop', recoveryHealth, { emptyResource });
+	const empty = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore?resource=${encodeURIComponent('<urn:explore:missing>')}`;
+	await page.goto(empty, { waitUntil: 'domcontentloaded' });
+	await waitForRoute(page, 'explore');
+	await expect(page.locator('#explore-results > .workbench-empty')).toHaveText('No results to display.');
+	await expect(exploreRows(page, 'outgoing')).toHaveCount(0);
+	await assertPageHealth(page, health, 'explore');
 });
 
-test('finite Explore pages retain the true total through the final window', async ({ page }) => {
+test('10,005-row listing uses independent requests, local pages, and one explicit expansion', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	const health = monitorPage(page);
-	await page.context().addCookies([{ name: 'total_result_count', value: '1', url: WORKBENCH_BASE_URL }]);
-	const initialUrl = new URL(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore`);
-	initialUrl.searchParams.set('resource', `<${LARGE_RESOURCE_IRI}>`);
-	initialUrl.searchParams.set('limit_explore', '100');
-	await page.goto(initialUrl.toString(), { waitUntil: 'domcontentloaded' });
-	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'explore');
-	const rows = exploreRows(page);
-	await expect.poll(() => rows.count(), { timeout: 30_000 }).toBeGreaterThan(0);
-	await expect(page.locator('#explore-results .workbench-pending-row')).toHaveCount(0);
-	await expect(page.locator('#explore-result-count')).toHaveText('Rows 1–100 of 300');
-	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(300);
-	await expect(page.locator('#previousX')).toBeDisabled();
-	await expect(page.locator('#nextX')).toBeEnabled();
-	let indices = await rows.evaluateAll(elements => elements.map(row => Number(row.getAttribute('data-workbench-row-index'))));
-	expect(indices[0]).toBe(0);
-	expect(indices.length).toBeLessThanOrEqual(80);
-	await expect(rows.first()).toContainText('large row 000');
-	await assertPageHealth(page, health, 'explore');
-	await capture(page, 'explore-large-limit-100-page-one', health, {
-		rowCount: indices.length,
-		firstVisibleIndex: Math.min(...indices),
-		lastVisibleIndex: Math.max(...indices)
+	const seen = [];
+	const http = new Map();
+	const cdp = await page.context().newCDPSession(page);
+	await cdp.send('Network.enable');
+	cdp.on('Network.requestWillBeSent', event => {
+		const url = new URL(event.request.url);
+		if (event.request.method === 'GET' && url.pathname.endsWith('/explore') && url.searchParams.has('section')) {
+			http.set(event.requestId, { url, start: event.timestamp, end: null });
+		}
 	});
-
-	await page.locator('#nextX').click();
-	await waitForRoute(page, 'explore', { url: /(?:\?|&)offset=100(?:&|$)/ });
-	await expect(page).toHaveURL(/(?:\?|&)offset=100(?:&|$)/);
-	await expect(page.locator('#explore-result-count')).toHaveText('Rows 101–200 of 300');
-	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(300);
-	await expect(rows.first()).toContainText('large row 100');
-	indices = await rows.evaluateAll(elements => elements.map(row => Number(row.getAttribute('data-workbench-row-index'))));
-	expect(indices.length).toBeLessThanOrEqual(80);
-	expect(Math.max(...indices)).toBeLessThan(100);
-	await expect(page.locator('#previousX')).toBeEnabled();
-	await expect(page.locator('#nextX')).toBeEnabled();
-	await assertPageHealth(page, health, 'explore');
-	await capture(page, 'explore-large-limit-100-page-two', health, {
-		rowCount: indices.length,
-		firstVisibleIndex: Math.min(...indices),
-		lastVisibleIndex: Math.max(...indices)
+	cdp.on('Network.loadingFinished', event => {
+		const request = http.get(event.requestId);
+		if (request) request.end = event.timestamp;
 	});
-
-	await page.locator('#nextX').click();
-	await waitForRoute(page, 'explore', { url: /(?:\?|&)offset=200(?:&|$)/ });
-	await expect(page).toHaveURL(/(?:\?|&)offset=200(?:&|$)/);
-	await expect(page.locator('#explore-result-count')).toHaveText('Rows 201–300 of 300');
-	expect(await page.evaluate(() => window.workbench.paging.getTotalResultCount())).toBe(300);
-	await expect(rows.first()).toContainText('large row 200');
-	indices = await rows.evaluateAll(elements => elements.map(row => Number(row.getAttribute('data-workbench-row-index'))));
-	expect(indices.length).toBeLessThanOrEqual(80);
-	expect(Math.max(...indices)).toBeLessThan(100);
-	await expect(page.locator('#previousX')).toBeEnabled();
-	await expect(page.locator('#nextX')).toBeDisabled();
-	await assertPageHealth(page, health, 'explore');
-	await capture(page, 'explore-large-limit-100-final-page', health, {
-		rowCount: indices.length,
-		firstVisibleIndex: Math.min(...indices),
-		lastVisibleIndex: Math.max(...indices)
+	cdp.on('Network.loadingFailed', event => {
+		const request = http.get(event.requestId);
+		if (request) { request.end = event.timestamp; request.failure = event.errorText; }
 	});
+	const inflight = new Map();
+	const running = { rows: 0, count: 0 };
+	const peak = { rows: 0, count: 0 };
+	page.on('request', request => {
+		const url = new URL(request.url());
+		if (request.method() !== 'GET' || !url.pathname.endsWith('/explore') || !url.searchParams.has('section')) return;
+		const kind = url.searchParams.get('kind');
+		const event = { url, request, done: false };
+		seen.push(event);
+		inflight.set(request, event);
+		running[kind]++;
+		peak[kind] = Math.max(peak[kind], running[kind]);
+	});
+	const finished = request => {
+		const event = inflight.get(request);
+		if (!event) return;
+		event.done = true;
+		event.failure = request.failure()?.errorText || null;
+		running[event.url.searchParams.get('kind')]--;
+		inflight.delete(request);
+	};
+	page.on('requestfinished', finished);
+	page.on('requestfailed', finished);
+	const url = new URL(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore`);
+	const typedResource = 'ex:explore-large-resource';
+	url.searchParams.set('resource', typedResource);
+	url.searchParams.set('limit_explore', '0');
+	url.searchParams.set('offset', '500');
+	await page.goto(url.toString(), { waitUntil: 'domcontentloaded' });
+	await waitForRoute(page, 'explore');
+	await expect(page.locator('#resource')).toHaveValue(typedResource);
+	const outgoing = page.locator('[data-explore-role="outgoing"]');
+	await expect(outgoing.locator('.explore-group__count')).toHaveText(/10.?005/, { timeout: 30000 });
+	const rows = exploreRows(page, 'outgoing');
+	await expect(rows.first()).toBeVisible({ timeout: 30000 });
+	await expect(outgoing.locator('.workbench-window-controls [role="status"]')).toHaveText(/Showing 1–100\s+of 10.?000 cached/);
+	expect(await rows.count()).toBeLessThanOrEqual(100);
+	await expect.poll(() => seen.filter(event => event.done).length, { timeout: 30000 }).toBe(29);
+	await expect.poll(() => [...http.values()].filter(event => event.end !== null).length, { timeout: 30000 }).toBe(29);
+	fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+	const httpEvents = [...http.values()];
+	const outcomes = new Map(seen.map(event => [event.url.searchParams.get('query-request-id'), event.failure]));
+	fs.writeFileSync(path.join(EVIDENCE_DIR, `http-timings-${test.info().repeatEachIndex}.json`), JSON.stringify(httpEvents.map(event => ({
+		section: event.url.searchParams.get('section'), kind: event.url.searchParams.get('kind'),
+		scope: event.url.searchParams.get('scope'), start: event.start, end: event.end, failure: event.failure,
+		playwrightFailure: outcomes.get(event.url.searchParams.get('query-request-id'))
+	})), null, 2) + '\n');
+	fs.writeFileSync(path.join(EVIDENCE_DIR, `ui-sections-${test.info().repeatEachIndex}.json`), JSON.stringify(
+		await page.locator('[data-explore-section]').evaluateAll(elements => elements.map(element => ({
+			section: element.getAttribute('data-explore-section'), text: element.textContent?.slice(0, 500)
+		}))), null, 2) + '\n');
+	// Chromium may report a cancelled transport after delivering the complete stream. The page must nevertheless
+	// finish each section successfully; other network failures remain test failures.
+	expect(seen.filter(event => event.failure && event.failure !== 'net::ERR_ABORTED')
+		.map(event => ({ section: event.url.searchParams.get('section'), kind: event.url.searchParams.get('kind'),
+			failure: event.failure }))).toEqual([]);
+	await expect(page.locator('#explore-section-output [role="status"]').filter({ hasText: 'Loading…' })).toHaveCount(0);
+	await expect(page.locator('[data-explore-section] .explore-group__count').filter({ hasText: '…' })).toHaveCount(0);
+	await expect(page.locator('#explore-section-output [role="alert"]')).toHaveCount(0);
+	const peakHttp = { rows: peakHttpRequests(httpEvents, 'rows'), count: peakHttpRequests(httpEvents, 'count') };
+	expect(peakHttp.rows).toBeLessThanOrEqual(4);
+	expect(peakHttp.count).toBeLessThanOrEqual(4);
+	expect(seen.filter(event => event.url.searchParams.get('kind') === 'rows')).toHaveLength(14);
+	expect(seen.filter(event => event.url.searchParams.get('kind') === 'count')).toHaveLength(15);
+	expect(new Set(seen.map(event => event.url.searchParams.get('query-request-id'))).size).toBe(29);
+	for (const { url: requestUrl } of seen) {
+		expect(requestUrl.searchParams.get('resource')).toBe(`<${LARGE_RESOURCE_IRI}>`);
+		expect(requestUrl.searchParams.has('offset')).toBe(false);
+		expect(requestUrl.searchParams.has('limit_explore')).toBe(false);
+	}
+	await expect(page.locator('#limit_explore')).toHaveCount(0);
+	const firstUrl = page.url();
+	const prior = seen.length;
+	await outgoing.getByRole('button', { name: 'Next', exact: true }).click();
+	await expect(outgoing.locator('.workbench-window-controls [role="status"]')).toHaveText(/Showing 101–200\s+of 10.?000 cached/);
+	await expect.poll(async () => Number(await rows.first().getAttribute('data-workbench-row-index'))).toBeGreaterThanOrEqual(100);
+	expect(Number(await rows.last().getAttribute('data-workbench-row-index'))).toBeLessThan(200);
+	expect(seen).toHaveLength(prior);
+	expect(page.url()).toBe(firstUrl);
+	await outgoing.getByRole('button', { name: 'Load more' }).click();
+	await expect.poll(() => seen.filter(event => event.url.searchParams.get('load') === 'more' && event.done).length,
+		{ timeout: 30000 }).toBe(1);
+	await expect(outgoing.getByRole('button', { name: 'Load more' })).toHaveCount(0);
+	await expect(outgoing).toContainText(/10.?005 cached/);
+	expect(seen.filter(event => event.url.searchParams.get('load') === 'more')[0].url.searchParams.get('section')).toBe('outgoing');
+	await expect(outgoing.locator('.workbench-window-controls [role="status"]')).toHaveText(/Showing 101–200\s+of 10.?005 cached/);
+	await assertPageHealth(page, health, 'explore');
+	await capture(page, 'explore-large-desktop', health, { peakHttp, peakEvents: peak, requests: seen.length });
+	for (let nextStart = 200; nextStart <= 10000; nextStart += 100) {
+		await outgoing.getByRole('button', { name: 'Next', exact: true }).click();
+		await expect.poll(async () => Number(await rows.first().getAttribute('data-workbench-row-index')))
+			.toBeGreaterThanOrEqual(nextStart);
+	}
+	await expect(outgoing.locator('.workbench-window-controls [role="status"]'))
+		.toHaveText(/Showing 10.?001–10.?005\s+of 10.?005 cached/);
+	await expectRoleRows(page, 'outgoing', 5);
+	await expect(outgoing.getByRole('button', { name: 'Next', exact: true })).toBeDisabled();
+	expect(seen).toHaveLength(prior + 1);
+	await assertPageHealth(page, health, 'explore');
+	await capture(page, 'explore-large-last-page', health);
 });
 
-test('All results stay virtualized while desktop and mobile scrolling reaches later rows', async ({ page }) => {
-	for (const viewport of [
-		{ name: 'desktop', width: 1440, height: 1000 },
-		{ name: 'mobile', width: 390, height: 900 }
-	]) {
-		await page.setViewportSize({ width: viewport.width, height: viewport.height });
-		const health = monitorPage(page);
-		const initialUrl = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore?resource=${encodeURIComponent(`<${LARGE_RESOURCE_IRI}>`)}`;
-		await page.goto(initialUrl, { waitUntil: 'domcontentloaded' });
-		await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'explore');
-		const rows = exploreRows(page);
-		await expect.poll(() => rows.count(), { timeout: 30_000 }).toBeGreaterThan(0);
-		await expect(page.locator('#explore-results .workbench-pending-row')).toHaveCount(0);
-
-		const toggle = page.locator('#explore-result-options-toggle');
-		await toggle.click();
-		await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-		await expect(page.locator('#explore-result-options-panel')).toBeVisible();
-		const limit = page.locator('#limit_explore');
-		await expect(limit.locator('option[value="0"]')).toHaveText('All');
-		// A new Result limit applies at once (round-3 finding C19): the page is shown again with all results.
-		await limit.selectOption('0');
-		await waitForRoute(page, 'explore', { url: (url) => url.searchParams.get('limit_explore') === '0' });
-		await expect(limit).toHaveValue('0');
-		const showDatatypes = page.locator('#explore-show-datatypes');
-		const initialDatatypeVisibility = await showDatatypes.isChecked();
-		if (initialDatatypeVisibility) {
-			await showDatatypes.uncheck();
-			await expect(showDatatypes).not.toBeChecked();
-		} else {
-			await showDatatypes.check();
-			await expect(showDatatypes).toBeChecked();
+test('a self-link appears in every matching role on desktop and mobile', async ({ page }) => {
+	const health = monitorPage(page);
+	for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 900 }]) {
+		await page.setViewportSize(viewport);
+		await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore?resource=${encodeURIComponent('<urn:explore:self>')}`,
+			{ waitUntil: 'domcontentloaded' });
+		await waitForRoute(page, 'explore');
+		for (const role of ['outgoing', 'incoming', 'predicate', 'graph']) {
+			await expectRoleRows(page, role, 1);
+			await expect(page.locator(`[data-explore-role="${role}"] .explore-group__count`)).toHaveText('1');
 		}
-		const expectedDatatypeVisibility = !initialDatatypeVisibility;
-		const resourceInput = page.locator('#resource');
-		const assertOptionsPreserved = async () => {
-			await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-			await expect(page.locator('#explore-result-options-panel')).toBeVisible();
-			await expect(limit).toHaveValue('0');
-			if (expectedDatatypeVisibility) {
-				await expect(showDatatypes).toBeChecked();
-			} else {
-				await expect(showDatatypes).not.toBeChecked();
-			}
-			await expect(resourceInput).toHaveValue(`<${LARGE_RESOURCE_IRI}>`);
-			await expect(page.locator('#explore-result-count')).toContainText('300');
-		};
-		await assertOptionsPreserved();
-		await capture(page, `explore-result-options-${viewport.name}-open`, health, {
-			limit: await limit.inputValue(),
-			showDatatypes: expectedDatatypeVisibility
-		});
-
-		await page.evaluate(() => window.scrollTo(0, 250));
-		await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 10_000 }).toBeGreaterThan(0);
-		await assertOptionsPreserved();
-		await page.setViewportSize({ width: viewport.width, height: viewport.height - 64 });
-		await expect.poll(() => page.evaluate(() => window.innerHeight)).toBe(viewport.height - 64);
-		await assertOptionsPreserved();
-		await page.setViewportSize({ width: viewport.width, height: viewport.height });
-		await expect.poll(() => page.evaluate(() => window.innerHeight)).toBe(viewport.height);
-		await page.evaluate(() => window.scrollTo(0, 0));
-		await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
-		await assertOptionsPreserved();
-
-		await resourceInput.press('Enter');
-		// The form's own address, not the one the limit change opened (which carries know_total).
-		await waitForRoute(page, 'explore', { url: (url) => url.searchParams.get('limit_explore') === '0'
-			&& !url.searchParams.has('know_total') });
-		expect(new URL(page.url()).searchParams.get('limit_explore')).toBe('0');
-
-		await expect.poll(() => rows.count(), { timeout: 30_000 }).toBeGreaterThan(0);
-		await expect(page.locator('#explore-results .workbench-pending-row')).toHaveCount(0);
-		await expect(page.locator('#explore-result-count')).toContainText('300');
-		const firstWindow = await rows.evaluateAll(elements => elements.map(row => Number(row.getAttribute('data-workbench-row-index'))));
-		expect(firstWindow.length).toBeLessThan(300);
-		expect(firstWindow.length).toBeLessThanOrEqual(80);
+		await expect(page.locator('#resource')).toHaveValue('<urn:explore:self>');
 		await assertPageHealth(page, health, 'explore');
-		if (viewport.name === 'mobile') {
-			const width = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-			expect(width, 'Explore should fit the 390px viewport without horizontal page overflow').toBeLessThanOrEqual(1);
+		if (viewport.width === 390) {
+			expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
 		}
-		await capture(page, `explore-large-${viewport.name}-first-window`, health, { rowCount: firstWindow.length });
-
-		await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-		await expect.poll(async () => {
-			const indices = await rows.evaluateAll(elements => elements.map(row => Number(row.getAttribute('data-workbench-row-index'))));
-			return indices.length ? Math.max(...indices) : -1;
-		}, { timeout: 15_000 }).toBeGreaterThan(80);
-		const laterWindow = await rows.evaluateAll(elements => elements.map(row => Number(row.getAttribute('data-workbench-row-index'))));
-		expect(laterWindow.length).toBeLessThanOrEqual(80);
-		expect(Math.min(...laterWindow)).toBeGreaterThan(0);
-		await assertPageHealth(page, health, 'explore');
-		await capture(page, `explore-large-${viewport.name}-later-window`, health, {
-			rowCount: laterWindow.length,
-			firstVisibleIndex: Math.min(...laterWindow),
-			lastVisibleIndex: Math.max(...laterWindow)
-		});
+		await capture(page, `explore-self-${viewport.width}`, health);
 	}
 });
 
-test('Explore opens again on what was explored after a visit to another page', async ({ page }) => {
-	await page.setViewportSize({ width: 1440, height: 1000 });
+test('a stored blank node retains its identity from Query through Explore into Graph', async ({ page }) => {
 	const health = monitorPage(page);
-	const resource = `<${LARGE_RESOURCE_IRI}>`;
-	const exploredUrl = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore?resource=${encodeURIComponent(resource)}`
-		+ '&limit_explore=100&offset=100';
-	await page.goto(exploredUrl, { waitUntil: 'domcontentloaded' });
-	await waitForRoute(page, 'explore');
-	await expect(exploreRows(page).first()).toBeVisible();
+	await openQueryPage(page, REPOSITORY_ID);
+	await runQuery(page, `SELECT ?node WHERE { GRAPH <${CONTEXT_IRI}> { <urn:explore:record> <urn:explore:related> ?node } }`);
+	const reference = page.locator('#query-results a[href^="explore?resource="]').first();
+	await expect(reference).toBeVisible();
+	const resource = new URL(await reference.getAttribute('href'), page.url()).searchParams.get('resource');
+	expect(resource).toMatch(/^<_:.*>$/);
+	await reference.click();
+	await waitForRoute(page, 'explore', { url: url => url.searchParams.get('resource') === resource });
+	await expect(page.locator('#resource')).toHaveValue(resource);
+	await expectRoleRows(page, 'outgoing', 1);
+	await page.getByRole('button', { name: 'Add to graph' }).first().click();
+	const openGraph = page.getByRole('link', { name: 'Open graph' });
+	await expect(openGraph).toBeVisible();
+	await openGraph.click();
+	await waitForRoute(page, 'graph');
+	const node = page.locator('.graph-node.blank').filter({ hasText: 'Blank node target' }).first();
+	await expect(node).toBeAttached({ timeout: 30000 });
+	await node.click();
+	const explore = page.locator('.node-details').getByRole('link', { name: 'Explore', exact: true });
+	await expect(explore).toBeVisible();
+	expect(new URL(await explore.getAttribute('href'), page.url()).searchParams.get('resource')).toBe(resource);
+	await assertPageHealth(page, health, 'graph');
+	await capture(page, 'explore-query-graph-blank', health, { resource });
+});
 
+test('Explore returns to the remembered resource after visiting Query', async ({ page }) => {
+	const resource = '<urn:explore:self>';
+	const url = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore?resource=${encodeURIComponent(resource)}`;
+	await page.goto(url, { waitUntil: 'domcontentloaded' });
+	await waitForRoute(page, 'explore');
+	await expectRoleRows(page, 'outgoing', 1);
 	await page.locator('#navigation a[data-workbench-nav-href="query"]').click();
 	await waitForRoute(page, 'query');
 	await page.locator('#navigation a[data-workbench-nav-href="explore"]').click();
 	await waitForRoute(page, 'explore');
-
-	// The resource, its page and the row limit, in the address and on the page.
-	await expect(page).toHaveURL(exploredUrl);
+	await expect(page).toHaveURL(url);
 	await expect(page.locator('#resource')).toHaveValue(resource);
-	await expect(page.locator('#explore-resource-value')).toHaveText(resource);
-	await expect(page.locator('#explore-result-count')).toContainText('Rows 101–200');
-	// The Query page stays parked in the document, so the page checks are the browser's own.
-	expect(health.pageErrors).toEqual([]);
-	expect(health.consoleErrors).toEqual([]);
-	expect(health.failedRequests).toEqual([]);
+	await expectRoleRows(page, 'outgoing', 1);
 });

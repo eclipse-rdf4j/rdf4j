@@ -19,6 +19,7 @@ const vm = require('node:vm');
 const { FakeDocument } = require('./browser-fakes.js');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 const { renderPageResultTables } = require('./page-result-table-harness.js');
+const { createExploreModel, createMemoryRowStore } = require('./explore-section-fixtures.js');
 
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
@@ -27,7 +28,7 @@ function loadWorkbench() {
     const window = {};
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({ console, URL, Promise, window, workbench, setTimeout });
-    for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js']) {
+    for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js', 'explore.js']) {
         vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), context, { filename });
     }
     window.workbench = context.workbench;
@@ -197,83 +198,39 @@ test('saved-query bindings retain overlapping cards and dispose queries leaving 
     assert.equal(harness.listeners.size, 0);
 });
 
-test('Explore group navigation completes when resize changes the viewport during its summary scan', async () => {
-    const { workbench, window } = loadWorkbench();
-    const rows = Array.from({ length: 300 }, (_unused, index) => [
-        { kind: 'iri', value: 'urn:example:resource' },
-        { kind: 'iri', value: index < 80 ? 'http://www.w3.org/2000/01/rdf-schema#range' : 'urn:predicate' },
-        { kind: 'iri', value: `urn:range:${String(index).padStart(3, '0')}` }
-    ]);
-    const model = modelFor('explore', []);
-    model.rowCount = rows.length;
-    let releaseScan;
-    let blockScan = false;
-    model.rowStore = {
-        read(start, count) {
-            if (blockScan && start === 0 && count === 256) {
-                blockScan = false;
-                return new Promise(resolve => { releaseScan = () => resolve(rows.slice(start, start + count)); });
-            }
-            return Promise.resolve(rows.slice(start, start + count));
-        }
-    };
-    const harness = windowHarness(workbench, window, model);
-    workbench.views.render(harness.mount, model, context, harness.renderer);
-    const dispose = await workbench.views.bindRowWindows(harness.mount, model, context, harness.renderer);
-    const next = harness.mount.querySelectorAll('[data-workbench-explore-action]').find(button =>
-        button.getAttribute('data-workbench-explore-group') === 'range'
-        && button.getAttribute('data-workbench-explore-action') === 'next');
-    assert.ok(next, 'the complete summary must bind its group navigation controls');
-    blockScan = true;
-    next.trigger('click');
-    assert.equal(typeof releaseScan, 'function', 'navigation must start its own summary scan');
-    window.innerHeight = 660;
-    await harness.listeners.get('resize')();
-    releaseScan();
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(model.exploreSummary.groups.range.start, 40);
-    assert.match(flatten(harness.mount.template), /Showing 41–80 of 80/,
-        'viewport generations must not discard a completed group navigation');
-    const previous = harness.mount.querySelectorAll('[data-workbench-explore-action]').find(button =>
-        button.getAttribute('data-workbench-explore-group') === 'range'
-        && button.getAttribute('data-workbench-explore-action') === 'previous');
-    previous.trigger('click');
-    await new Promise(resolve => setImmediate(resolve));
-    assert.match(flatten(harness.mount.template), /Showing 1–40 of 80/,
-        'updated group controls must remain bound in both directions');
-    dispose();
+test('Explore page controls use local section pages rather than viewport summary scans', () => {
+    const { workbench } = loadWorkbench();
+    const calls = [];
+    const rows = Array.from({ length: 40 }, (_unused, index) => [{ kind: 'iri', value: `urn:type:${index}` }]);
+    const model = createExploreModel({ sections: {
+        types: { rows, totalRows: 80, count: '80' }
+    }, controller: { page(key, direction) { calls.push([key, direction]); } } });
+    const rendered = renderedExplore(workbench, model);
+    const actions = bindings(rendered.template).filter(binding => binding.before.includes('@click='));
+    const next = actions.find(binding => binding.after.includes('>Next</button>'));
+    const previous = actions.find(binding => binding.after.includes('>Previous</button>'));
+
+    assert.ok(next && previous, 'the current section page has both local navigation actions');
+    assert.match(rendered.markup, /Showing 1–40 of 80 cached/);
+    next.handler({ preventDefault() {} });
+    previous.handler({ preventDefault() {} });
+    assert.deepEqual(calls, [['types', 'next'], ['types', 'previous']]);
 });
 
-test('owned row regions initialize from preloaded summaries and stay isolated between mounts', () => {
-    const { workbench, window } = loadWorkbench();
-    const row = [
-        { kind: 'iri', value: 'urn:example:other' },
-        { kind: 'iri', value: 'http://www.w3.org/2000/01/rdf-schema#range' },
-        { kind: 'iri', value: 'urn:range:initial' }
-    ];
-    const unrelated = [
-        { kind: 'iri', value: 'urn:example:resource' },
-        { kind: 'iri', value: 'http://www.w3.org/2000/01/rdf-schema#label' },
-        { kind: 'literal', value: 'Another resource' }
-    ];
-    const model = modelFor('explore', [row, unrelated]);
-    // A row about another resource keeps the windowed table (rows about the resource are grouped by role instead);
-    // the explored resource's range is its Range group.
-    model.metadata = { resource: '<urn:example:other>' };
-    model.rowStore = { async read() { return [row, unrelated]; } };
-    const first = windowHarness(workbench, window, model);
-    assert.doesNotThrow(() => workbench.views.render(first.mount, model, context, first.renderer),
-        'the initial native render must support an already populated row window');
-    assert.match(flatten(routeTemplate(workbench, first.mount)), /urn:range:initial/);
-    const second = windowHarness(workbench, window, model);
-    workbench.views.render(second.mount, model, context, second.renderer);
-    const firstNodes = first.nodeValues(routeTemplate(workbench, first.mount));
-    const secondNodes = second.nodeValues(routeTemplate(workbench, second.mount));
-    assert.ok(firstNodes.length > 1, 'table rows and group summaries must have independent owned roots');
-    assert.ok(secondNodes.every(node => !firstNodes.includes(node)), 'mounts must not share DOM regions');
+test('Explore statement tables are isolated between mounts and absent from the page model', async () => {
+    const { workbench } = loadWorkbench();
+    const iri = value => ({ kind: 'iri', value });
+    const model = createExploreModel({ sections: {
+        outgoing: { rows: [[iri('urn:r'), iri('urn:p'), iri('urn:o'), null]], totalRows: 1 }
+    } });
+    const first = await renderPageResultTables(workbench, model, context);
+    const second = await renderPageResultTables(workbench, model, context);
+    const firstTable = first.host('explore-outgoing');
+    const secondTable = second.host('explore-outgoing');
+    assert.ok(firstTable && secondTable, 'each independent section mount renders its role table');
+    assert.notEqual(firstTable, secondTable, 'different mounts never share a result-table host');
     const pure = workbench.views.pageTemplate(model, context, runtime());
-    assert.equal(first.nodeValues(pure).length, 0, 'pure templates must keep their ordinary template representation');
-    assert.match(flatten(pure), /urn:range:initial/);
+    assert.doesNotMatch(flatten(pure), /urn:p/, 'the metadata page template contains no section rows');
 });
 
 function exploreLinks(template, result = []) {
@@ -312,6 +269,42 @@ function modelFor(viewId, rows) {
 }
 
 const context = { basePath: '/rdf4j-workbench', repositoryId: 'a', workbench: {} };
+
+function renderedExplore(workbench, model, pageContext = context, renderer = runtime()) {
+    const host = {};
+    workbench.views.renderExploreSections({
+        querySelector(selector) { return selector === '#explore-section-output' ? host : null; }
+    }, model, pageContext, renderer);
+    return { host, template: host.template, markup: flatten(host.template).replace(/\s+/g, ' ') };
+}
+
+function bindings(template, result = []) {
+    if (Array.isArray(template)) {
+        template.forEach(value => bindings(value, result));
+    } else if (template && Array.isArray(template.strings)) {
+        template.values.forEach((value, index) => {
+            if (typeof value === 'function') {
+                result.push({ before: template.strings[index], after: template.strings[index + 1], handler: value });
+            } else {
+                bindings(value, result);
+            }
+        });
+    }
+    return result;
+}
+
+async function waitFor(predicate) {
+    for (let attempt = 0; attempt < 200 && !predicate(); attempt++) {
+        await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.ok(predicate(), 'Explore section requests reached the expected state');
+}
+
+function sectionMarkup(markup, key) {
+    const start = markup.indexOf(`data-explore-section=${key}`);
+    assert.ok(start >= 0, `the ${key} section is rendered`);
+    return markup.slice(start, markup.indexOf('</section>', start));
+}
 const terms = [
     [{ kind: 'iri', value: 'http://example.org/resource' }, '<http://example.org/resource>'],
     [{ kind: 'iri', value: 'https://example.org/café%20x?x=1&y=2#fragment' },
@@ -369,181 +362,113 @@ for (const viewId of ['contexts', 'types']) {
 test('Explore summary links and type chips preserve result provenance recursively', () => {
     const { workbench } = loadWorkbench();
     const iri = value => ({ kind: 'iri', value });
-    const resource = iri('urn:example:resource');
     const untrusted = { kind: 'bnode', value: 'unverified', scope: 'old-server-result' };
     const trusted = { kind: 'bnode', value: 'stored', reference: true };
     const nested = { kind: 'triple', subject: trusted, predicate: iri('urn:p'), object: untrusted };
-    const model = modelFor('explore', [
-        [resource, iri('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), untrusted],
-        [resource, iri('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), trusted],
-        [resource, iri('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), nested],
-        [resource, iri('http://www.w3.org/2000/01/rdf-schema#subClassOf'), untrusted],
-        [resource, iri('http://www.w3.org/2000/01/rdf-schema#subClassOf'), trusted]
-    ]);
-    const mount = {};
-    workbench.views.render(mount, model, context, runtime());
-    const links = exploreLinks(routeTemplate(workbench, mount));
+    const model = createExploreModel({ sections: {
+        types: { rows: [[untrusted], [trusted], [nested]] },
+        subClasses: { rows: [[untrusted], [trusted]] }
+    } });
+    const rendered = renderedExplore(workbench, model);
+    const links = exploreLinks(rendered.template);
     assert.equal(links.filter(link => decodeURIComponent(link).includes('<_:unverified>')).length, 0,
-        'neither type chips nor summary links can promote an unverified nested component');
+        'neither value sections nor nested triple terms promote an unverified blank node');
     assert.equal(links.filter(link => link === 'explore?resource=' + encodeURIComponent('<_:stored>')).length, 2,
-        'both certified type and summary navigation remain available');
-    assert.match(flatten(routeTemplate(workbench, mount)), /_:unverified/);
+        'certified terms remain reusable across independent value sections');
+    assert.match(rendered.markup, /_:unverified/);
 });
 
 test('Explore preserves an explicit fixed-reference operand without result certification', () => {
     const { workbench } = loadWorkbench();
     workbench.graphAdditions = { add() { return 1; } };
-    const model = modelFor('explore', []);
-    model.metadata = { resource: '<_:explicit>', 'explore-resource': '<_:explicit>' };
-    const mount = {};
-    workbench.views.render(mount, model, { ...context, serverIdentity: 'server' }, runtime());
-    const markup = flatten(routeTemplate(workbench, mount));
+    const model = createExploreModel({ metadata: { resource: '<_:explicit>', 'explore-resource': '<_:explicit>' } });
+    const { markup } = renderedExplore(workbench, model, { ...context, serverIdentity: 'server' });
     assert.match(markup, /Query this resource/);
     assert.match(markup, /workbench-add-to-graph/,
         'a deliberate user operand remains usable without a matching certified result row');
 });
 
-// The statements of a long Explore page are the shared result table, which reads only a window of rows itself;
-// bindRowWindows reads the page in bounded chunks for the resource card (.agent/execplans/workbench-shared-result-table.md).
-test('Explore reads a long page in bounded windows and leaves its rows to the shared result table', async () => {
-    const { workbench, window } = loadWorkbench();
-    const rows = Array.from({ length: 300 }, (_unused, index) => [
-        { kind: 'iri', value: `urn:subject:${index}` },
+test('Explore role tables render only their bounded current section page', async () => {
+    const { workbench } = loadWorkbench();
+    const rows = Array.from({ length: 100 }, (_unused, index) => [
+        { kind: 'iri', value: `urn:subject:${100 + index}` },
         { kind: 'iri', value: 'urn:predicate' },
-        { kind: 'literal', value: String(index) }
+        { kind: 'literal', value: String(100 + index) }, null
     ]);
-    const reads = [];
-    const model = modelFor('explore', []);
-    model.rowCount = rows.length;
-    model.rowStore = {
-        async read(start, count) { reads.push({ start, count }); return rows.slice(start, start + count); },
-        async count() { return rows.length; }
-    };
-    const listeners = new Map();
-    window.addEventListener = (name, listener) => listeners.set(name, listener);
-    window.removeEventListener = name => listeners.delete(name);
+    const model = createExploreModel({
+        metadata: { 'total-result-count': '1', 'explore-resource': '<urn:resource>' },
+        sections: { outgoing: { rows, totalRows: 300, start: 100, count: '300' } }
+    });
     const page = await renderPageResultTables(workbench, model, context);
-    assert.doesNotMatch(flatten(page.template), /Loading rows/, 'a page too long to group shows its table at once');
-    const host = page.host('explore-all');
-    assert.ok(host, 'the statements are one shared result table');
-    const dispose = await workbench.views.bindRowWindows(page.mount, model, context, page.runtime);
-    await page.settle();
-    assert.equal(page.host('explore-all'), host, 'rendering the page again keeps the table');
-    assert.ok(reads.length > 0 && reads.every(read => read.count < rows.length),
-        'summary scans and table windows must stay bounded');
+    const host = page.host('explore-outgoing');
     const rendered = host.querySelectorAll('tr').filter(row => row.getAttribute('data-workbench-row-index') !== null
         && row.getAttribute('data-workbench-row-index') !== undefined);
-    assert.ok(rendered.length > 0 && rendered.length <= 80, `a bounded window of rows: ${rendered.length}`);
-    assert.equal(rendered[0].getAttribute('data-workbench-row-index'), '0');
-    assert.match(rendered[0].textContent, /urn:subject:0/);
-    assert.equal(listeners.size, 0, 'Explore leaves window scrolling to its result table');
-    dispose();
+    assert.ok(rendered.length > 0 && rendered.length < 100,
+        'the statement table materializes only its visible viewport from the current section page');
+    assert.equal(rendered[0].getAttribute('data-workbench-row-index'), '100');
+    assert.match(rendered[0].textContent, /100/,
+        'the first displayed object comes from the current section page');
+    assert.ok(rendered.every(row => Number(row.getAttribute('data-workbench-row-index')) >= 100
+        && Number(row.getAttribute('data-workbench-row-index')) < 200),
+        'visible rows stay within the current 100-row section page');
+    assert.equal(model.rowCount, 0, 'the metadata model contains no whole-store rows');
+    assert.doesNotMatch(flatten(page.template), /id="result-limited"|explore-all/);
 });
 
-test('Explore empty resources show an empty result without opening a row window', async () => {
-    const { workbench, window } = loadWorkbench();
-    let reads = 0;
-    let listeners = 0;
-    const model = modelFor('explore', []);
-    model.rowStore = { async read() { reads++; return []; }, async count() { return 0; } };
-    window.addEventListener = () => listeners++;
-    const mount = { querySelectorAll() { return []; } };
-    const renderer = runtime();
-    workbench.views.render(mount, model, context, renderer);
-    await workbench.views.bindRowWindows(mount, model, context, renderer);
-    assert.match(flatten(mount.template), /No results to display\./);
-    assert.doesNotMatch(flatten(mount.template), /Loading rows\.\.\./);
-    assert.equal(reads, 0);
-    assert.equal(listeners, 0);
+test('empty Explore section results render without opening a shared row window', () => {
+    const { workbench } = loadWorkbench();
+    const model = createExploreModel();
+    const rendered = renderedExplore(workbench, model);
+    assert.match(rendered.markup, /No results to display\./);
+    assert.doesNotMatch(rendered.markup, /Loading rows\.\.\./);
+    assert.equal(model.rowCount, 0, 'the metadata model contains no whole-store rows');
 });
 
-const countCases = [
-    { name: 'short page with a stale total cookie',
-        total: 8, returned: 8, limit: 100, offset: 0, cookie: '1', range: 'Rows 1–8 of 8' },
-    { name: 'first finite page with no total cookie',
-        total: 300, returned: 100, limit: 100, offset: 0, cookie: '', range: 'Rows 1–100 of 300' },
-    { name: 'middle finite page',
-        total: 300, returned: 100, limit: 100, offset: 100, cookie: '1', range: 'Rows 101–200 of 300' },
-    { name: 'last finite page',
-        total: 250, returned: 50, limit: 100, offset: 200, cookie: '1', range: 'Rows 201–250 of 250' },
-    { name: 'All results with an irrelevant offset',
-        total: 300, returned: 300, limit: 0, offset: 200, cookie: '1', range: 'Rows 1–300 of 300' },
-    { name: 'empty resource with a stale total cookie',
-        total: 0, returned: 0, limit: 100, offset: 0, cookie: '300', range: 'No rows' },
-    { name: 'empty page past the final offset',
-        total: 300, returned: 0, limit: 100, offset: 400, cookie: '1', range: 'Rows 0 of 300' }
+const sectionCountCases = [
+    { name: 'exact count below one section page', count: '8', totalRows: 8, start: 0, pageRows: 8,
+        range: null },
+    { name: 'count beyond the first cached page', count: '300', totalRows: 300, start: 0, pageRows: 100,
+        range: 'Showing 1–100 of 300 cached' },
+    { name: 'middle cached page', count: '300', totalRows: 300, start: 100, pageRows: 100,
+        range: 'Showing 101–200 of 300 cached' },
+    { name: 'last cached page', count: '250', totalRows: 250, start: 200, pageRows: 50,
+        range: 'Showing 201–250 of 250 cached' },
+    { name: 'large exact server count', count: '9007199254740993', totalRows: 100, start: 0, pageRows: 100,
+        range: null },
+    { name: 'empty response with no cached rows', count: '0', totalRows: 0, start: 0, pageRows: 0,
+        range: null },
+    { name: 'unavailable section count with cached rows', count: null, totalRows: 100, start: 0, pageRows: 100,
+        countStatus: 'error', countError: 'count unavailable', range: null }
 ];
 
-for (const example of countCases) {
-    test(`Explore native metadata remains authoritative during legacy startup: ${example.name}`, () => {
-        const { workbench, context: sandbox } = loadWorkbench();
-        const model = modelFor('explore', []);
-        model.rowCount = example.returned;
-        model.metadata['total-result-count'] = example.total;
-        const mount = {};
-        workbench.views.render(mount, model, context, runtime());
-        const markup = flatten(mount.template);
-        const countInput = markup.match(/<input\b[^>]*id="workbench-total-result-count"[^>]*value=([^\s>]+)/);
-        const resultCount = { textContent: markup.match(/<span id="explore-result-count">([^<]*)<\/span>/)[1] };
-        const resource = '<urn:example:resource>';
-        const next = { value: `Next ${example.returned}`, disabled: false };
-        const previous = { value: `Previous ${example.returned}`, disabled: false };
-        const elements = {
-            'explore-result-count': resultCount,
-            'explore-resource-summary': { removeAttribute() {} },
-            'explore-resource-value': { textContent: '' },
-            'explore-pagination': { hidden: false },
-            'workbench-total-result-count': countInput ? { value: countInput[1] } : null
-        };
-        sandbox.document = {
-            location: new URL(`https://workbench.test/explore?resource=${encodeURIComponent(resource)}`
-                + `&limit_explore=${example.limit}&offset=${example.offset}`),
-            getElementById(id) { return elements[id] || null; }
-        };
-        // The route mount (M7.2) looks for its elements inside the outlet.
-        const outlet = {
-            querySelectorAll() { return example.returned ? [{}] : []; },
-            querySelector(selector) {
-                if (/^#[\w-]+$/.test(selector)) { return elements[selector.substring(1)] || null; }
-                if (selector.endsWith('.workbench-empty')) { return example.returned ? null : {}; }
-                return example.returned ? {} : null;
-            }
-        };
-        const controls = {
-            '#resource': { value: resource },
-            '#limit_explore': { value: String(example.limit) },
-            '#nextX': next,
-            '#previousX': previous
-        };
-        const jquery = selector => {
-            if (selector === outlet) {
-                return { find: jquery };
-            }
-            const control = controls[selector] || {};
-            return {
-                val(value) { if (arguments.length) { control.value = value; return this; } return control.value; },
-                prop(name, value) {
-                    if (arguments.length > 1) { control[name] = value; return this; }
-                    return control[name];
-                },
-                on() { return this; },
-                off() { return this; }
-            };
-        };
-        sandbox.$ = jquery;
-        workbench.getQueryStringElements = () => sandbox.document.location.search.substring(1).split('&');
-        workbench.getCookie = name => name === 'total_result_count' ? example.cookie : '';
-        for (const filename of ['paging.js', 'explore.js']) {
-            vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), sandbox, { filename });
+for (const example of sectionCountCases) {
+    test(`Explore section metadata and local paging: ${example.name}`, () => {
+        const { workbench } = loadWorkbench();
+        const model = createExploreModel({
+            metadata: { 'explore-resource': '<urn:resource>', 'total-result-count': '1' },
+            sections: { outgoing: {
+                count: example.count,
+                countStatus: example.countStatus || 'ready',
+                countError: example.countError || '',
+                totalRows: example.totalRows,
+                start: example.start,
+                rows: Array.from({ length: example.pageRows }, (_unused, index) => [
+                    { kind: 'iri', value: `urn:resource` }, { kind: 'iri', value: 'urn:p' },
+                    { kind: 'literal', value: String(example.start + index) }, null
+                ])
+            } }
+        });
+        const { markup } = renderedExplore(workbench, model);
+        const outgoing = sectionMarkup(markup, 'outgoing');
+        if (example.countStatus === 'error') {
+            assert.match(outgoing, /count unavailable/);
+            assert.match(outgoing, /Retry count/);
+        } else {
+            assert.ok(outgoing.includes(example.count), `exact section count ${example.count}`);
         }
-        workbench.explore.mount(outlet)();
-        assert.equal(resultCount.textContent, example.range,
-            'the actual total must survive native rendering and legacy startup');
-        assert.ok(countInput, 'native Explore must publish the canonical paging metadata input');
-        assert.equal(workbench.paging.getTotalResultCount(), example.total);
-        assert.equal(previous.disabled, example.offset <= 0 || example.limit <= 0);
-        assert.equal(next.disabled, example.limit <= 0 || example.returned < example.limit
-            || example.offset + example.returned >= example.total);
+        if (example.range) { assert.ok(outgoing.replace(/\s+/g, ' ').includes(example.range), example.range); }
+        assert.doesNotMatch(markup, /id="explore-result-count"|id="explore-pagination"|id="result-limited"/);
+        assert.doesNotMatch(markup, />All</, 'no whole-store server page is exposed');
     });
 }
 
@@ -636,192 +561,182 @@ for (const viewId of ['repositories', 'contexts']) {
     });
 }
 
-// Explore and Export show statements in the shared result table (.agent/execplans/workbench-shared-result-table.md),
-// whose links are the Query page's: every term links to Explore; a multi-line literal keeps its line breaks (C27).
+// Export previews and Explore statement sections share the Query table's RDF-link serialization (C27).
 for (const viewId of ['explore', 'export']) {
     test(`${viewId} RDF links serialize absolute IRIs and literal syntax before URL encoding`, async () => {
         const { workbench } = loadWorkbench();
-        const model = modelFor(viewId, terms.map(([term]) => [term]));
-        model.vars = ['value'];
-        model.metadata['statement-preview-requested'] = 'true';
+        const model = viewId === 'explore'
+            ? createExploreModel({ sections: { outgoing: { rows: terms.map(([term]) => [
+                { kind: 'iri', value: 'urn:resource' }, { kind: 'iri', value: 'urn:predicate' }, term, null
+            ]) } } })
+            : modelFor(viewId, terms.map(([term]) => [term]));
+        if (viewId === 'export') {
+            model.vars = ['value'];
+            model.metadata['statement-preview-requested'] = 'true';
+        }
         const page = await renderPageResultTables(workbench, model, context);
-        assert.equal(page.hosts.length, 1, `${viewId} shows its statements in one shared result table`);
-        const links = page.hosts[0].querySelectorAll('a').filter(link => !link.classList.contains('resourceURL'))
+        const host = page.host(viewId === 'explore' ? 'explore-outgoing' : 'export-preview');
+        assert.ok(host, `${viewId} shows its statements in a shared result table`);
+        const objectCells = viewId === 'explore'
+            ? host.querySelectorAll('td').filter(cell => cell.getAttribute('data-label') === 'Object')
+            : host.querySelectorAll('td');
+        const links = objectCells.flatMap(cell => cell.querySelectorAll('a'))
+            .filter(link => !link.classList.contains('resourceURL'))
             .map(link => link.getAttribute('href'));
         assert.equal(links.length, terms.length);
         terms.forEach(([term, expected], index) => {
             const decoded = new URL(links[index], 'https://workbench.test/').searchParams.get('resource');
             assert.equal(decoded, expected, `${viewId} must preserve ${term.kind} RDF syntax`);
         });
-        assert.equal(page.hosts[0].querySelectorAll('pre').length, 0, 'no bare <pre>');
-        assert.equal(page.hosts[0].querySelectorAll('a.rdf-preformatted').length, 1, 'a multi-line literal keeps its breaks');
+        assert.equal(host.querySelectorAll('pre').length, 0, 'no bare <pre>');
+        assert.equal(host.querySelectorAll('a.rdf-preformatted').length, 1, 'a multi-line literal keeps its breaks');
     });
 
     test(`${viewId} keeps untrusted blank-node labels out of Explore links`, async () => {
         const { workbench } = loadWorkbench();
-        const model = modelFor(viewId, [[{ kind: 'bnode', value: 'untrusted', scope: 'document' }]]);
-        model.vars = ['value'];
-        model.metadata['statement-preview-requested'] = 'true';
+        const model = viewId === 'explore'
+            ? createExploreModel({ sections: { outgoing: { rows: [[
+                { kind: 'iri', value: 'urn:resource' }, { kind: 'iri', value: 'urn:predicate' },
+                { kind: 'bnode', value: 'untrusted', scope: 'document' }, null
+            ]] } } })
+            : modelFor(viewId, [[{ kind: 'bnode', value: 'untrusted', scope: 'document' }]]);
+        if (viewId === 'export') {
+            model.vars = ['value'];
+            model.metadata['statement-preview-requested'] = 'true';
+        }
         const page = await renderPageResultTables(workbench, model, context);
-        assert.equal(page.hosts.length, 1, `${viewId} keeps the value in its shared result table`);
-        assert.equal(page.hosts[0].querySelectorAll('a').length, 0, 'an untrusted label has no reusable Explore link');
-        assert.match(page.hosts[0].textContent, /_:untrusted/, 'the blank-node value remains visible');
+        const host = page.host(viewId === 'explore' ? 'explore-outgoing' : 'export-preview');
+        assert.ok(host, `${viewId} keeps the value in its shared result table`);
+        const objectCells = viewId === 'explore'
+            ? host.querySelectorAll('td').filter(cell => cell.getAttribute('data-label') === 'Object')
+            : host.querySelectorAll('td');
+        assert.equal(objectCells.flatMap(cell => cell.querySelectorAll('a')).length, 0,
+            'an untrusted label has no reusable Explore link');
+        assert.match(host.textContent, /_:untrusted/, 'the blank-node value remains visible');
     });
 }
 
-// Task M5.1 of .agent/execplans/workbench-app-shell-and-critique-fixes-20260930.md: Explore groups rows by role.
-test('Explore groups rows by the role the resource plays and shows prefixed names', async () => {
+// The server returns each role independently; a resource can occur in every role at once.
+test('Explore renders overlapping role sections with prefixes and dedicated scalar labels', async () => {
     const { workbench } = loadWorkbench();
     const iri = value => ({ kind: 'iri', value });
     const ex = 'http://example.org/';
     const rdfs = 'http://www.w3.org/2000/01/rdf-schema#';
     const item = iri(ex + 'item');
     const graph = iri(ex + 'graph');
-    const rows = [
-        [item, iri(rdfs + 'label'), { kind: 'literal', value: 'Item label' }, graph],
-        [item, iri(ex + 'price'), { kind: 'literal', value: '12', datatype: 'http://www.w3.org/2001/XMLSchema#integer' }, graph],
-        [iri(ex + 'other'), iri(ex + 'link'), item, graph],
-        [iri(ex + 'a'), item, iri(ex + 'b'), graph],
-        [iri(ex + 'x'), iri(ex + 'y'), iri(ex + 'z'), item]
-    ];
-    const model = modelFor('explore', rows);
-    model.vars = ['subject', 'predicate', 'object', 'context'];
-    model.namespaceMap = { 'ex:': ex, 'rdfs:': rdfs };
-    model.metadata = { resource: 'ex:item', 'explore-resource': '<' + ex + 'item>', 'total-result-count': rows.length };
+    const model = createExploreModel({
+        namespaceMap: { 'ex:': ex, 'rdfs:': rdfs },
+        metadata: { resource: 'ex:item', 'explore-resource': '<' + ex + 'item>' },
+        sections: {
+            outgoing: { rows: [
+                [item, iri(rdfs + 'label'), { kind: 'literal', value: 'Item label' }, graph],
+                [item, iri(ex + 'price'), { kind: 'literal', value: '12', datatype: 'http://www.w3.org/2001/XMLSchema#integer' }, graph]
+            ] },
+            incoming: { rows: [[iri(ex + 'other'), iri(ex + 'link'), item, graph]] },
+            predicate: { rows: [[iri(ex + 'a'), item, iri(ex + 'b'), graph]] },
+            graph: { rows: [[iri(ex + 'x'), iri(ex + 'y'), iri(ex + 'z'), item]] },
+            label: { rows: [[{ kind: 'literal', value: 'Item label' }]] }
+        }
+    });
     const page = await renderPageResultTables(workbench, model, context);
     const markup = flatten(page.template);
-    const group = role => {
-        const match = new RegExp(`data-explore-role="?${role}"?[\\s>]`).exec(markup);
-        const start = match ? match.index : -1;
-        assert.ok(start >= 0, `the ${role} group is rendered`);
-        const end = markup.indexOf('</section>', start);
-        return markup.substring(start, end);
-    };
-    assert.match(group('outgoing'), /Outgoing/);
-    assert.match(group('incoming'), /Incoming/);
-    assert.match(group('predicate'), /Used as predicate/);
-    assert.match(group('graph'), /Graph contents/);
-    assert.match(group('outgoing'), /Graph: ex:graph/, 'one graph is named in the group header');
-    // Each group is the shared result table, with the page's row index on its rows.
     assert.deepEqual(page.hosts.map(host => host.getAttribute('data-workbench-result-table')),
         ['explore-outgoing', 'explore-incoming', 'explore-predicate', 'explore-graph']);
+    for (const [key, title] of [['outgoing', 'Outgoing'], ['incoming', 'Incoming'],
+        ['predicate', 'Used as predicate'], ['graph', 'Graph contents']]) {
+        assert.match(sectionMarkup(markup, key), new RegExp(title));
+    }
     assert.ok(page.host('explore-outgoing').querySelectorAll('a').map(link => link.textContent).includes('rdfs:label'),
         'predicates use the repository prefixes');
-    assert.deepEqual(page.headers('explore-outgoing'), ['Predicate', 'Object'],
-        'no Graph column when every row shares one graph');
+    assert.deepEqual(page.headers('explore-outgoing'), ['Predicate', 'Object', 'Graph']);
     assert.deepEqual(page.headers('explore-graph'), ['Subject', 'Predicate', 'Object']);
     assert.deepEqual(page.host('explore-incoming').querySelectorAll('tbody tr')
-        .map(row => row.getAttribute('data-workbench-row-index')), ['2']);
+        .map(row => row.getAttribute('data-workbench-row-index')), ['0']);
     assert.match(markup, /<h2[^>]*>Item label<\/h2>/, 'the label of the explored resource is the heading');
 });
 
-// Plan task M12.1: Explore pages are rendered again in place by the router, so the view (not explore.ts editing the
-// rendered DOM) leaves out repeated values and the explored resource itself.
-test('Explore lists each class and type once and leaves out the explored resource', () => {
+test('Explore renders values from their dedicated server sections', () => {
     const { workbench } = loadWorkbench();
     const iri = value => ({ kind: 'iri', value });
     const ex = 'http://example.org/';
-    const rdf = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
     const rdfs = 'http://www.w3.org/2000/01/rdf-schema#';
-    const rows = [
-        [iri(ex + 'Sub'), iri(rdfs + 'subClassOf'), iri(ex + 'Class'), iri(ex + 'g1')],
-        [iri(ex + 'Sub'), iri(rdfs + 'subClassOf'), iri(ex + 'Class'), iri(ex + 'g2')],
-        [iri(ex + 'Class'), iri(rdfs + 'subClassOf'), iri(ex + 'Super'), iri(ex + 'g1')],
-        [iri(ex + 'Class'), iri(rdf + 'type'), iri(rdfs + 'Class'), iri(ex + 'g1')],
-        [iri(ex + 'Class'), iri(rdf + 'type'), iri(rdfs + 'Class'), iri(ex + 'g2')]
-    ];
-    const model = modelFor('explore', rows);
-    model.vars = ['subject', 'predicate', 'object', 'context'];
-    model.namespaceMap = { 'ex:': ex, 'rdfs:': rdfs };
-    model.metadata = { resource: 'ex:Class', 'explore-resource': '<' + ex + 'Class>', 'total-result-count': rows.length };
-    const mount = {};
-    workbench.views.render(mount, model, context, runtime());
-    const markup = flatten(routeTemplate(workbench, mount));
-    const section = (key) => {
-        const start = markup.indexOf(`data-workbench-explore-group=${key}`);
-        assert.ok(start >= 0, `the ${key} group is rendered`);
-        return markup.substring(start, markup.indexOf('</section>', start));
-    };
+    const model = createExploreModel({
+        namespaceMap: { 'ex:': ex, 'rdfs:': rdfs },
+        metadata: { resource: 'ex:Class', 'explore-resource': '<' + ex + 'Class>' },
+        sections: {
+            types: { rows: [[iri(rdfs + 'Class')]] },
+            subClasses: { rows: [[iri(ex + 'Sub')]] },
+            superClasses: { rows: [[iri(ex + 'Super')]] }
+        }
+    });
+    const { markup } = renderedExplore(workbench, model);
     const links = (part, term) => part.split('explore?resource=' + encodeURIComponent(term)).length - 1;
 
-    assert.equal(links(section('subClasses'), '<' + ex + 'Sub>'), 1, 'a sub class stated in two graphs is listed once');
-    assert.equal(links(section('superClasses'), '<' + ex + 'Super>'), 1);
-    assert.equal(links(section('superClasses'), '<' + ex + 'Class>'), 0, 'the explored class is not its own super class');
-    const card = markup.substring(markup.indexOf('explore-resource-card__types'));
-    assert.equal(links(card.substring(0, card.indexOf('</ul>')), '<' + rdfs + 'Class>'), 1, 'each type is shown once');
+    assert.equal(links(sectionMarkup(markup, 'subClasses'), '<' + ex + 'Sub>'), 1);
+    assert.equal(links(sectionMarkup(markup, 'superClasses'), '<' + ex + 'Super>'), 1);
+    assert.equal(links(sectionMarkup(markup, 'types'), '<' + rdfs + 'Class>'), 1,
+        'the Types response is rendered independently from the metadata page');
+    assert.doesNotMatch(sectionMarkup(markup, 'superClasses'), /<ex:Class>/,
+        'a page-wide row cannot leak into a value section');
 });
 
-/** The rendered markup of an Explore page for rows about one explored resource. */
-function exploreGroupMarkup(workbench, rows, explored) {
+/** Render the explicitly supplied independent value-section responses for one resource. */
+function exploreGroupMarkup(workbench, sections, explored) {
     const ex = 'http://example.org/';
-    const model = modelFor('explore', rows);
-    model.vars = ['subject', 'predicate', 'object', 'context'];
-    model.namespaceMap = { 'ex:': ex };
-    model.metadata = { resource: 'ex:' + explored, 'explore-resource': '<' + ex + explored + '>',
-        'total-result-count': rows.length };
-    const mount = {};
-    workbench.views.render(mount, model, context, runtime());
-    return { markup: flatten(routeTemplate(workbench, mount)) };
+    const model = createExploreModel({
+        namespaceMap: { 'ex:': ex },
+        metadata: { resource: 'ex:' + explored, 'explore-resource': '<' + ex + explored + '>' },
+        sections
+    });
+    return renderedExplore(workbench, model);
 }
 
-/** The class and property groups of an Explore page, keyed by group: the resources each one links to and the labels. */
-function exploreGroupLinks(workbench, rows, explored) {
+/** The returned section members and their prefixed labels, keyed by section. */
+function exploreGroupLinks(workbench, sections, explored) {
+    const { markup } = exploreGroupMarkup(workbench, sections, explored);
     const ex = 'http://example.org/';
-    const model = modelFor('explore', rows);
-    model.vars = ['subject', 'predicate', 'object', 'context'];
-    model.namespaceMap = { 'ex:': ex };
-    model.metadata = { resource: 'ex:' + explored, 'explore-resource': '<' + ex + explored + '>',
-        'total-result-count': rows.length };
-    const mount = {};
-    workbench.views.render(mount, model, context, runtime());
-    const markup = flatten(routeTemplate(workbench, mount));
     const groups = {};
     const labels = {};
-    const pattern = /data-workbench-explore-group=(\w+)/g;
-    let match;
-    while ((match = pattern.exec(markup)) !== null) {
-        const part = markup.substring(match.index, markup.indexOf('</section>', match.index));
-        groups[match[1]] = Array.from(part.matchAll(/explore\?resource=([^"\s>]+)/g))
+    for (const key of Object.keys(sections)) {
+        const start = markup.indexOf(`data-explore-section=${key}`);
+        if (start < 0) { continue; }
+        const part = markup.slice(start, markup.indexOf('</section>', start));
+        groups[key] = Array.from(part.matchAll(/explore\?resource=([^"\s>]+)/g))
             .map(link => decodeURIComponent(link[1]).replace(ex, 'ex:'));
-        labels[match[1]] = Array.from(part.matchAll(/<a [^>]*>([^<]*)<\/a>/g)).map(link => link[1]);
+        labels[key] = Array.from(part.matchAll(/<a [^>]*>([^<]*)<\/a>/g)).map(link => link[1]);
     }
     return { groups, labels };
 }
 
-// A group lists the resources the explored one is related to, so a group it is the other end of stays away: a root
-// class has sub classes but no "Super Classes" heading over an empty list.
-test('Explore groups list only the explored resource\'s own super classes, sub classes and properties', () => {
+test('Explore value sections show independent class and property results with local counts', () => {
     const { workbench } = loadWorkbench();
     const iri = value => ({ kind: 'iri', value });
     const ex = 'http://example.org/';
-    const rdf = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
-    const rdfs = 'http://www.w3.org/2000/01/rdf-schema#';
-    const graph = iri(ex + 'g');
-    const { groups: rootGroups, labels: rootLabels } = exploreGroupLinks(workbench, [
-        [iri(ex + 'Child1'), iri(rdfs + 'subClassOf'), iri(ex + 'Root'), graph],
-        [iri(ex + 'Child2'), iri(rdfs + 'subClassOf'), iri(ex + 'Root'), graph],
-        [iri(ex + 'prop'), iri(rdfs + 'domain'), iri(ex + 'Root'), graph],
-        [iri(ex + 'Root'), iri(rdf + 'type'), iri(rdfs + 'Class'), graph]
-    ], 'Root');
-    assert.deepEqual(Object.keys(rootGroups).sort(), ['properties', 'subClasses'],
-        'a root class has no super classes and no domain of its own');
+    const { groups: rootGroups, labels: rootLabels } = exploreGroupLinks(workbench, {
+        types: { rows: [[iri(ex + 'Class')]] },
+        subClasses: { rows: [[iri(ex + 'Child1')], [iri(ex + 'Child2')]] },
+        properties: { rows: [[iri(ex + 'prop')]] },
+        superClasses: { rows: [] },
+        domain: { rows: [] }
+    }, 'Root');
+    assert.deepEqual(Object.keys(rootGroups).sort(), ['properties', 'subClasses', 'types'],
+        'empty server sections are omitted from the resource page');
     assert.deepEqual(rootGroups.subClasses, ['<ex:Child1>', '<ex:Child2>']);
     assert.deepEqual(rootGroups.properties, ['<ex:prop>']);
     assert.deepEqual(rootLabels.subClasses, ['ex:Child1', 'ex:Child2'],
-        'group members use the repository prefixes, as the statement tables beside them do');
+        'section members use the repository prefixes');
 
-    const { markup } = exploreGroupMarkup(workbench, [
-        [iri(ex + 'Child1'), iri(rdfs + 'subClassOf'), iri(ex + 'Root'), graph],
-        [iri(ex + 'Child2'), iri(rdfs + 'subClassOf'), iri(ex + 'Root'), graph]
-    ], 'Root');
-    assert.match(markup, /<h3>Sub Classes <span class="explore-group__count">2<\/span><\/h3>/,
-        'a group names how many members it has, as the statement groups do');
+    const { markup } = exploreGroupMarkup(workbench, { subClasses: {
+        rows: [[iri(ex + 'Child1')], [iri(ex + 'Child2')]], totalRows: 2, count: '2'
+    } }, 'Root');
+    assert.match(markup, /<h3 class="explore-group__title">Sub Classes <span class="explore-group__count">2<\/span><\/h3>/,
+        'each section shows its own exact count');
 
-    // A property without a domain still shows its super property and its range.
-    const { groups: propertyGroups } = exploreGroupLinks(workbench, [
-        [iri(ex + 'prop'), iri(rdfs + 'subPropertyOf'), iri(ex + 'superProp'), graph],
-        [iri(ex + 'prop'), iri(rdfs + 'range'), iri(ex + 'Range'), graph]
-    ], 'prop');
+    const { groups: propertyGroups } = exploreGroupLinks(workbench, {
+        superProperties: { rows: [[iri(ex + 'superProp')]] },
+        range: { rows: [[iri(ex + 'Range')]] },
+        domain: { rows: [] }
+    }, 'prop');
     assert.deepEqual(Object.keys(propertyGroups).sort(), ['range', 'superProperties']);
     assert.deepEqual(propertyGroups.superProperties, ['<ex:superProp>']);
     assert.deepEqual(propertyGroups.range, ['<ex:Range>']);
@@ -993,32 +908,49 @@ test('saved deletion confirmation cannot submit a recycled card with the same ur
     harness.disposeRows();
 });
 
-// A resource labelled in several languages still gets a heading: the label in the reader's language, else one without
-// a language, else the English one, else the first. The same choice names its description.
-test('Explore heads a resource labelled in several languages with the reader\'s label', () => {
-    const iri = value => ({ kind: 'iri', value });
-    const literal = (value, language) => (language ? { kind: 'literal', value, language } : { kind: 'literal', value });
-    const ex = 'http://example.org/';
-    const rdfs = 'http://www.w3.org/2000/01/rdf-schema#';
-    const heading = (labels, languages) => {
-        const { workbench, context: vmContext } = loadWorkbench();
-        vmContext.navigator = languages ? { languages, language: languages[0] } : undefined;
-        const rows = labels.map(([value, language]) => [iri(ex + 'cat'), iri(rdfs + 'label'), literal(value, language), null]);
-        rows.push([iri(ex + 'cat'), iri(rdfs + 'comment'), literal('Un chat', 'fr'), null]);
-        rows.push([iri(ex + 'cat'), iri(rdfs + 'comment'), literal('Eine Katze', 'de'), null]);
-        const model = modelFor('explore', rows);
-        model.vars = ['subject', 'predicate', 'object', 'context'];
-        model.metadata = { resource: '<' + ex + 'cat>', 'explore-resource': '<' + ex + 'cat>', 'total-result-count': rows.length };
-        const mount = {};
-        workbench.views.render(mount, model, context, runtime());
-        const markup = flatten(routeTemplate(workbench, mount));
-        const title = /<section id="explore-resource-card"[\s\S]*?<h2>([^<]*)<\/h2>/.exec(markup);
-        const comment = /class="explore-resource-card__comment workbench-prose">([^<]*)</.exec(markup);
-        return [title ? title[1] : null, comment ? comment[1] : null];
+test('Explore requests localized scalar sections in browser language order and renders the returned values', async () => {
+    const { workbench, window, context: sandbox } = loadWorkbench();
+    sandbox.AbortController = AbortController;
+    window.navigator = { languages: ['de-DE', 'en'] };
+    window.fetch = async () => ({ ok: true });
+    const requests = [];
+    workbench.app = { loadModel: async (_fetcher, rawUrl) => {
+        const url = new URL(rawUrl);
+        requests.push(url);
+        const key = url.searchParams.get('section');
+        const kind = url.searchParams.get('kind');
+        const rows = kind === 'rows' && key === 'label'
+            ? [[{ kind: 'literal', value: 'Katze', language: 'de' }]]
+            : kind === 'rows' && key === 'comment'
+                ? [[{ kind: 'literal', value: 'Eine Katze', language: 'de' }]]
+                : [];
+        return { rowStore: createMemoryRowStore(rows), rowCount: rows.length, vars: ['value'], metadata:
+            kind === 'count' ? { 'explore-count': '0' } : {} };
+    } };
+    const resourceInput = { value: '' };
+    const sectionHost = {};
+    const outlet = {
+        querySelector(selector) {
+            return selector === '#resource' ? resourceInput
+                : selector === '#explore-section-output' ? sectionHost : null;
+        }
     };
-    const labels = [['Chat', 'fr'], ['Cat', 'en'], ['Katze', 'de']];
-    assert.deepEqual(heading(labels, ['de-DE', 'en']), ['Katze', 'Eine Katze'], 'the reader\'s language first');
-    assert.deepEqual(heading(labels, ['fr-CA']), ['Chat', 'Un chat'], 'a regional reader gets the base language');
-    assert.deepEqual(heading(labels, null)[0], 'Cat', 'without a known language, English');
-    assert.deepEqual(heading(labels.concat([['Felis']]), null)[0], 'Felis', 'a label without a language before English');
+    const model = createExploreModel({ metadata: {
+        resource: '<http://example.org/cat>', 'explore-resource': '<http://example.org/cat>'
+    } });
+    const routeUrl = new URL('https://example.test/workbench/repositories/r/explore?resource=%3Chttp%3A%2F%2Fexample.org%2Fcat%3E');
+    const dispose = workbench.explore.mount(outlet, { model, url: routeUrl, context, runtime: runtime() });
+    await waitFor(() => model.exploreSections.label.status === 'ready' && model.exploreSections.comment.status === 'ready');
+
+    for (const key of ['label', 'comment']) {
+        const request = requests.find(url => url.searchParams.get('section') === key
+            && url.searchParams.get('kind') === 'rows');
+        assert.deepEqual(request.searchParams.getAll('language'), ['de-DE', 'en'], `${key} preference order`);
+    }
+    const markup = flatten(sectionHost.template);
+    assert.match(markup, /<h2>Katze<\/h2>/, 'the scalar label is supplied by its section response');
+    assert.match(markup, /class="explore-resource-card__comment workbench-prose">Eine Katze</,
+        'the scalar comment is displayed with the resource card');
+    assert.equal(resourceInput.value, '<http://example.org/cat>');
+    dispose();
 });

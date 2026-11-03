@@ -194,6 +194,81 @@ namespace workbench {
             reference?: boolean;
         }
 
+        /** Identity for an RDF value, independent of its display or serialization. */
+        export function termIdentity(term: any, repositoryScope: string): string {
+            function parts(value: any): any {
+                if (Array.isArray(value)) {
+                    value = unpackTerm(value);
+                }
+                if (value === null || typeof value === 'undefined') {
+                    return ['unbound'];
+                }
+                if (value.kind === 'triple') {
+                    return ['triple', parts(value.subject), parts(value.predicate), parts(value.object)];
+                }
+                if (value.kind === 'bnode') {
+                    return value.reference === true
+                        ? ['bnode', 'repository', repositoryScope || '', value.value || '']
+                        : ['bnode', 'response', value.scope || '', value.value || ''];
+                }
+                if (value.kind === 'literal') {
+                    var language = value.language || '';
+                    var direction = value.direction || '';
+                    var datatype = language ? (direction ? RDF_DIR_LANG_STRING : RDF_LANG_STRING)
+                        : value.datatype || XSD_STRING;
+                    return ['literal', value.value || '', datatype, language.toLowerCase(), direction];
+                }
+                if (value.kind === 'iri') {
+                    return ['iri', value.value || ''];
+                }
+                throw new Error('An RDF term is required to compare result identities.');
+            }
+            return JSON.stringify(parts(term));
+        }
+
+        /** An ordered row key made from typed RDF terms, including unbound slots and nested triple terms. */
+        export function rowIdentity(row: any[], repositoryScope: string): string {
+            if (!Array.isArray(row)) {
+                throw new Error('A result row is required to compare row identities.');
+            }
+            return JSON.stringify(row.map(term => termIdentity(term, repositoryScope)));
+        }
+
+        /** True if any nested blank node lacks proof of repository identity. */
+        export function hasUnverifiedBlankNode(term: any): boolean {
+            var pending = term ? [term] : [];
+            while (pending.length) {
+                var value = pending.pop();
+                if (!value) { continue; }
+                if (Array.isArray(value)) {
+                    if (value[0] === 1 && value[3] !== true) { return true; }
+                    if (value[0] === 3) { pending.push(value[1], value[2], value[3]); }
+                } else if (value.kind === 'bnode' && value.reference !== true) {
+                    return true;
+                } else if (value.kind === 'triple') {
+                    pending.push(value.subject, value.predicate, value.object);
+                }
+            }
+            return false;
+        }
+
+        /** Assign unverified blank nodes the identity of the response in which they occurred. */
+        export function scopeUnverifiedBlankNodes(term: any, scope: string): void {
+            var pending = term ? [term] : [];
+            while (pending.length) {
+                var value = pending.pop();
+                if (!value) { continue; }
+                if (Array.isArray(value)) {
+                    if (value[0] === 1 && value[3] !== true) { value[2] = scope; }
+                    if (value[0] === 3) { pending.push(value[1], value[2], value[3]); }
+                } else if (value.kind === 'bnode' && value.reference !== true) {
+                    value.scope = scope;
+                } else if (value.kind === 'triple') {
+                    pending.push(value.subject, value.predicate, value.object);
+                }
+            }
+        }
+
         export interface QueryResultRecord {
             type: string;
             version?: number;
@@ -216,15 +291,38 @@ namespace workbench {
             onRecord?: (record: QueryResultRecord) => void | Promise<void>;
         }
 
+        /** A decoded window owns its page-budget reservation until the consumer releases it. */
+        export interface RowStoreWindow {
+            rows: any[][];
+            release(): void;
+        }
+
         export interface RowStore {
             readonly id?: string;
             /** True for the bounded store in the page's memory, used where browser storage is unavailable. */
             readonly inMemory?: boolean;
             append(rows: any[][]): Promise<number>;
             read(start: number, count: number): Promise<any[][]>;
+            readOwned(start: number, count: number): Promise<RowStoreWindow>;
             count(): Promise<number>;
             truncate(count: number): Promise<number>;
             dispose(): Promise<void>;
+        }
+
+        export type RowStoreBudgetCategory = 'retained' | 'temporary';
+
+        export interface RowStoreBudgetReservation {
+            readonly bytes: number;
+            grow(bytes: number, timeout?: number): Promise<void>;
+            shrink(bytes: number): void;
+            release(): void;
+        }
+
+        export interface RowStoreBudget {
+            readonly maxBytes: number;
+            readonly usedBytes: number;
+            createReservation(category?: RowStoreBudgetCategory): RowStoreBudgetReservation;
+            registerPressureHandler(handler: () => void, onError?: (error: any) => void): () => void;
         }
 
         export interface RowStoreOptions {
@@ -238,6 +336,8 @@ namespace workbench {
             spillRowLimit?: number;
             /** Estimated bytes a store keeps in memory before it moves them to browser storage (SPILL_BYTE_LIMIT). */
             spillByteLimit?: number;
+            /** A page-wide budget shared by its independently loaded result stores. */
+            memoryBudget?: RowStoreBudget;
             /**
              * Milliseconds a store whose memory is full waits for browser storage to make progress before it gives up
              * (default STORAGE_TIMEOUT); one IndexedDB call (a disposal) waits at most STORAGE_CALL_TIMEOUT of it.
@@ -1817,12 +1917,80 @@ namespace workbench {
          * how it keeps them. JSON never writes a raw line feed (one inside a string becomes \n), so the lines are
          * exactly the rows. One string is far cheaper for the browser to copy than the arrays and strings of the rows.
          */
-        export function encodeRowBatch(rows: any[][]): string {
+        export function encodeRowBatch(rows: any[][], rowTextLengths?: number[]): string {
             var lines = new Array(rows.length);
             for (var index = 0; index < rows.length; index++) {
                 lines[index] = JSON.stringify(rows[index]);
+                if (rowTextLengths) {
+                    rowTextLengths[index] = lines[index].length;
+                }
             }
             return lines.join('\n');
+        }
+
+        function jsonStringCharacters(value: string): number {
+            var length = 2;
+            for (var index = 0; index < value.length; index++) {
+                var code = value.charCodeAt(index);
+                if (code === 0x22 || code === 0x5c) {
+                    length += 2;
+                } else if (code < 0x20) {
+                    length += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c || code === 0x0d
+                        ? 2 : 6;
+                } else if (code >= 0xd800 && code <= 0xdfff) {
+                    var pairedSurrogate = code <= 0xdbff && index + 1 < value.length
+                        && value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff;
+                    if (pairedSurrogate) {
+                        length += 2;
+                        index++;
+                    } else {
+                        length += 6;
+                    }
+                } else {
+                    length++;
+                }
+            }
+            return length;
+        }
+
+        /** JSON characters before a row batch is serialized, including escaping of control characters. */
+        function estimateJsonCharacters(value: any): number {
+            var pending: any[] = [value];
+            var characters = 0;
+            while (pending.length) {
+                var current = pending.pop();
+                if (typeof current === 'string') {
+                    characters += jsonStringCharacters(current);
+                } else if (current === null || typeof current === 'undefined') {
+                    characters += 4;
+                } else if (typeof current === 'boolean') {
+                    characters += current ? 4 : 5;
+                } else if (typeof current === 'number') {
+                    characters += isFinite(current) ? String(current).length : 4;
+                } else if (Array.isArray(current)) {
+                    characters += 2 + Math.max(0, current.length - 1);
+                    for (var arrayIndex = 0; arrayIndex < current.length; arrayIndex++) {
+                        pending.push(current[arrayIndex]);
+                    }
+                } else if (typeof current === 'object') {
+                    var keys = Object.keys(current).filter(key => typeof current[key] !== 'undefined');
+                    characters += 2 + Math.max(0, keys.length - 1);
+                    for (var keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+                        var key = keys[keyIndex];
+                        characters += jsonStringCharacters(key) + 1;
+                        pending.push(current[key]);
+                    }
+                }
+            }
+            return characters;
+        }
+
+        function estimateBatchTextCharacters(rows: any[][]): number {
+            var characters = Math.max(0, rows.length - 1);
+            for (var index = 0; index < rows.length; index++) {
+                characters += estimateJsonCharacters(rows[index]);
+            }
+            return characters;
         }
 
         function estimateBatchBytes(batch: any[][]): number {
@@ -1831,6 +1999,20 @@ namespace workbench {
                 bytes += estimateRowBytes(batch[index]);
             }
             return bytes;
+        }
+
+        function rowStoreWindow(rows: any[][], reservation?: RowStoreBudgetReservation): RowStoreWindow {
+            var released = false;
+            var window: RowStoreWindow = {
+                rows: rows,
+                release: function() {
+                    if (released) { return; }
+                    released = true;
+                    window.rows = [];
+                    if (reservation) { reservation.release(); }
+                }
+            };
+            return window;
         }
 
         function warnRowsKeptInMemory(limit: number, error: any): void {
@@ -1881,6 +2063,255 @@ namespace workbench {
             return error;
         }
 
+        /** Keep part of the page budget available for one bounded worker write or identity-filter batch. */
+        var ROW_STORE_BUDGET_TEMPORARY_RESERVE = 32 * 1024 * 1024;
+
+        interface RowStoreBudgetWaiter {
+            reservation: SharedRowStoreBudgetReservation;
+            bytes: number;
+            resolve: () => void;
+            reject: (error: any) => void;
+            cancelTimer: () => void;
+        }
+
+        class SharedRowStoreBudgetReservation implements RowStoreBudgetReservation {
+            private currentBytes = 0;
+            private isReleased = false;
+
+            constructor(private budget: SharedRowStoreBudget, private category: RowStoreBudgetCategory) {
+            }
+
+            get bytes(): number {
+                return this.currentBytes;
+            }
+
+            grow(bytes: number, timeout?: number): Promise<void> {
+                return this.budget.grow(this, bytes, timeout);
+            }
+
+            shrink(bytes: number): void {
+                this.budget.shrink(this, bytes);
+            }
+
+            release(): void {
+                this.budget.release(this);
+            }
+
+            add(bytes: number): void {
+                this.currentBytes += bytes;
+            }
+
+            subtract(bytes: number): void {
+                this.currentBytes -= bytes;
+            }
+
+            markReleased(): void {
+                this.isReleased = true;
+            }
+
+            get released(): boolean {
+                return this.isReleased;
+            }
+
+            get reservationCategory(): RowStoreBudgetCategory {
+                return this.category;
+            }
+        }
+
+        class SharedRowStoreBudget implements RowStoreBudget {
+            private used = 0;
+            private retained = 0;
+            private retainedLimit: number;
+            private waiters: RowStoreBudgetWaiter[] = [];
+            private pressureHandlers: Array<{ handler: () => void; onError?: (error: any) => void }> = [];
+
+            constructor(readonly maxBytes: number) {
+                if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+                    throw new RangeError('A row-store memory budget must be a positive safe byte count.');
+                }
+                this.retainedLimit = maxBytes - Math.min(Math.floor(maxBytes / 2),
+                    ROW_STORE_BUDGET_TEMPORARY_RESERVE);
+            }
+
+            get usedBytes(): number {
+                return this.used;
+            }
+
+            createReservation(category?: RowStoreBudgetCategory): RowStoreBudgetReservation {
+                var selected = category || 'retained';
+                if (selected !== 'retained' && selected !== 'temporary') {
+                    throw new Error('Unknown row-store budget reservation category.');
+                }
+                return new SharedRowStoreBudgetReservation(this, selected);
+            }
+
+            registerPressureHandler(handler: () => void, onError?: (error: any) => void): () => void {
+                var registration = { handler: handler, onError: onError };
+                this.pressureHandlers.push(registration);
+                return () => {
+                    this.pressureHandlers = this.pressureHandlers.filter(candidate => candidate !== registration);
+                };
+            }
+
+            grow(reservation: SharedRowStoreBudgetReservation, bytes: number, timeout?: number): Promise<void> {
+                if (reservation.released) {
+                    return Promise.reject(new Error('The row-store memory reservation has been released.'));
+                }
+                if (!Number.isSafeInteger(bytes) || bytes < 0) {
+                    return Promise.reject(new Error('A row-store memory reservation must be a non-negative safe byte count.'));
+                }
+                if (bytes === 0) {
+                    return Promise.resolve();
+                }
+                if (bytes > this.maxBytes || reservation.reservationCategory === 'retained'
+                        && bytes > this.retainedLimit) {
+                    return Promise.reject(this.fullError('The requested rows exceed the shared Workbench memory budget.'));
+                }
+                if (this.fits(reservation, bytes)) {
+                    this.allocate(reservation, bytes);
+                    return Promise.resolve();
+                }
+                return new Promise<void>((resolve, reject) => {
+                    var waiter: RowStoreBudgetWaiter = {
+                        reservation: reservation,
+                        bytes: bytes,
+                        resolve: resolve,
+                        reject: reject,
+                        cancelTimer: () => {}
+                    };
+                    var waitMillis = countOption(timeout, STORAGE_TIMEOUT);
+                    waiter.cancelTimer = startTimer(() => {
+                        this.removeWaiter(waiter);
+                        reject(this.fullError('Timed out waiting for space in the shared Workbench result memory budget.'));
+                    }, waitMillis);
+                    this.waiters.push(waiter);
+                    var pressureFailures = this.requestSpill();
+                    if (pressureFailures.length) {
+                        this.removeWaiter(waiter);
+                        this.pump();
+                        reject(this.pressureError(pressureFailures));
+                        return;
+                    }
+                    this.pump();
+                });
+            }
+
+            shrink(reservation: SharedRowStoreBudgetReservation, bytes: number): void {
+                if (reservation.released) {
+                    return;
+                }
+                if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > reservation.bytes) {
+                    throw new Error('A row-store memory reservation cannot release more bytes than it holds.');
+                }
+                if (bytes === 0) {
+                    return;
+                }
+                reservation.subtract(bytes);
+                this.used -= bytes;
+                if (reservation.reservationCategory === 'retained') {
+                    this.retained -= bytes;
+                }
+                this.pump();
+            }
+
+            release(reservation: SharedRowStoreBudgetReservation): void {
+                if (reservation.released) {
+                    return;
+                }
+                reservation.markReleased();
+                var pending = this.waiters.filter(waiter => waiter.reservation === reservation);
+                pending.forEach(waiter => {
+                    this.removeWaiter(waiter);
+                    waiter.reject(new Error('The row-store memory reservation has been released.'));
+                });
+                var bytes = reservation.bytes;
+                if (bytes) {
+                    reservation.subtract(bytes);
+                    this.used -= bytes;
+                    if (reservation.reservationCategory === 'retained') {
+                        this.retained -= bytes;
+                    }
+                }
+                this.pump();
+            }
+
+            private fits(reservation: SharedRowStoreBudgetReservation, bytes: number): boolean {
+                return this.used + bytes <= this.maxBytes
+                    && (reservation.reservationCategory !== 'retained'
+                        || this.retained + bytes <= this.retainedLimit);
+            }
+
+            private allocate(reservation: SharedRowStoreBudgetReservation, bytes: number): void {
+                reservation.add(bytes);
+                this.used += bytes;
+                if (reservation.reservationCategory === 'retained') {
+                    this.retained += bytes;
+                }
+            }
+
+            private requestSpill(): any[] {
+                var failures: any[] = [];
+                this.pressureHandlers.slice().forEach(registration => {
+                    try {
+                        registration.handler();
+                    } catch (error) {
+                        failures.push(error);
+                        if (registration.onError) {
+                            try {
+                                registration.onError(error);
+                            } catch (failure) {
+                                failures.push(failure);
+                            }
+                        }
+                    }
+                });
+                return failures;
+            }
+
+            private removeWaiter(waiter: RowStoreBudgetWaiter): void {
+                waiter.cancelTimer();
+                this.waiters = this.waiters.filter(candidate => candidate !== waiter);
+            }
+
+            private pump(): void {
+                var index = 0;
+                while (index < this.waiters.length) {
+                    var waiter = this.waiters[index];
+                    if (waiter.reservation.released) {
+                        this.removeWaiter(waiter);
+                        waiter.reject(new Error('The row-store memory reservation has been released.'));
+                    } else if (this.fits(waiter.reservation, waiter.bytes)) {
+                        this.removeWaiter(waiter);
+                        this.allocate(waiter.reservation, waiter.bytes);
+                        waiter.resolve();
+                    } else {
+                        index++;
+                    }
+                }
+            }
+
+            private fullError(message: string): Error {
+                var error: any = storageError(message + ' Retry after another listing spills rows or is disposed.');
+                error.retryable = true;
+                return error;
+            }
+
+            private pressureError(failures: any[]): any {
+                if (failures.length === 1) {
+                    return failures[0];
+                }
+                var error: any = storageError('One or more row stores failed while freeing shared result memory.');
+                error.retryable = true;
+                error.pressureFailures = failures;
+                return error;
+            }
+        }
+
+        /** A single page may share this budget among its independent row stores and identity indexes. */
+        export function createRowStoreBudget(maxBytes: number = MEMORY_BYTE_LIMIT): RowStoreBudget {
+            return new SharedRowStoreBudget(maxBytes);
+        }
+
         /**
          * A row store that starts in the page's memory. Once an append takes it past spillRowLimit rows or
          * spillByteLimit bytes it starts moving the rows to a worker store (an IndexedDB database of its own) in the
@@ -1928,6 +2359,28 @@ namespace workbench {
             var pendingOperations = 0;
             var disposed = false;
             var disposePromise: Promise<void> = null;
+            var pendingWindows: Array<{ release: () => void }> = [];
+            var memoryReservation = config.memoryBudget
+                ? config.memoryBudget.createReservation('retained') : null;
+            var unregisterPressureHandler = config.memoryBudget
+                ? config.memoryBudget.registerPressureHandler(function() {
+                    if (state === 'memory') {
+                        startMove();
+                    } else if (state === 'stored') {
+                        drain();
+                    }
+                }, function(error: any) {
+                    if (state === 'memory' || state === 'moving') {
+                        var abandon = abandonMove;
+                        if (abandon) {
+                            abandon();
+                        }
+                        finishMove('failed', error);
+                    } else if (state === 'stored') {
+                        writeFailure = error;
+                        notifyMove(false);
+                    }
+                }) : function() {};
 
             function disposedError(): Error {
                 return new Error('The query row store has been disposed.');
@@ -1935,6 +2388,7 @@ namespace workbench {
 
             /** Runs the operation now when none is pending, else after the pending ones, in the order called. */
             function serialized<T>(operation: () => T | Promise<T>): Promise<T> {
+                var accepted = !disposed;
                 var run = function(): T | Promise<T> {
                     if (disposed) {
                         throw disposedError();
@@ -1953,7 +2407,14 @@ namespace workbench {
                 }
                 pendingOperations++;
                 chain = result.then(function() {}, function() {}).then(function() { pendingOperations--; });
-                return result;
+                if (!accepted) { return result; }
+                return result.then(function(value: T) { return value; }, function(error: any): Promise<T> {
+                    if (disposed && documentUnloading) {
+                        // Accepted work goes with the departing document, including work waiting for a reservation.
+                        return new Promise<T>(() => {});
+                    }
+                    throw error;
+                });
             }
 
             function notifyMove(ended: boolean): void {
@@ -1993,11 +2454,15 @@ namespace workbench {
                     });
                 }
                 truncatedTo = Infinity;
+                var releasedBytes = bytes;
                 stored = store;
                 written = copied;
                 rows = [];
                 bytes = 0;
                 batches = [];
+                if (memoryReservation && releasedBytes) {
+                    memoryReservation.shrink(releasedBytes);
+                }
                 finishMove('stored');
                 return Promise.resolve();
             }
@@ -2033,6 +2498,9 @@ namespace workbench {
                     batches.splice(0, taken);
                     written += count;
                     bytes -= chunkBytes;
+                    if (memoryReservation && chunkBytes) {
+                        memoryReservation.shrink(chunkBytes);
+                    }
                     notifyMove(false);
                     drain();
                 }, function(error: any) {
@@ -2146,7 +2614,7 @@ namespace workbench {
                     + 'query, or use Download for the full result.');
             }
 
-            function appendNow(batch: any[][], batchBytes: number): Promise<number> {
+            function appendReserved(batch: any[][], batchBytes: number): Promise<number> {
                 if (disposed) {
                     return Promise.reject(disposedError());
                 }
@@ -2167,7 +2635,7 @@ namespace workbench {
                         drain();
                         return Promise.resolve(written + rows.length);
                     }
-                    return waitForWrite(batch).then(function() { return appendNow(batch, batchBytes); });
+                    return waitForWrite(batch).then(function() { return appendReserved(batch, batchBytes); });
                 }
                 if (rows.length + batch.length > spillRows || bytes + batchBytes > spillBytes) {
                     startMove();
@@ -2180,15 +2648,128 @@ namespace workbench {
                     return Promise.resolve(rows.length);
                 }
                 if (state === 'moving') {
-                    return waitForMove().then(function() { return appendNow(batch, batchBytes); });
+                    return waitForMove().then(function() { return appendReserved(batch, batchBytes); });
                 }
                 return Promise.reject(memoryFull(batch));
+            }
+
+            function appendNow(batch: any[][], batchBytes: number): Promise<number> {
+                if (disposed) {
+                    return Promise.reject(disposedError());
+                }
+                if (!batch.length || !memoryReservation) {
+                    return appendReserved(batch, batchBytes);
+                }
+                if (state === 'stored' && writeFailure) {
+                    return Promise.reject(writeFailure);
+                }
+                var accepted = false;
+                var reserved = false;
+                return memoryReservation.grow(batchBytes, timeout).then(function() {
+                    reserved = true;
+                    return appendReserved(batch, batchBytes).then(function(result: number) {
+                        accepted = true;
+                        return result;
+                    });
+                }).then(null, function(error: any) {
+                    if (!accepted && reserved) {
+                        memoryReservation.shrink(batchBytes);
+                    }
+                    throw error;
+                });
             }
 
             function checkWindow(start: number, count: number): void {
                 if (!isFinite(start) || !isFinite(count) || start < 0 || count < 0) {
                     throw new Error('A non-negative row window is required.');
                 }
+            }
+
+            /** Estimate without keeping references while a reservation waits and background writes may finish. */
+            function memoryWindowBytes(first: number, end: number): number {
+                var limit = Math.min(rows.length, end);
+                var start = Math.min(limit, Math.max(0, first));
+                if (start === limit) { return 0; }
+                var estimate = 256 + (limit - start) * 256;
+                for (var index = start; index < limit; index++) {
+                    estimate += estimateRowBytes(rows[index]);
+                }
+                return Number.isSafeInteger(estimate) ? estimate
+                    : (config.memoryBudget ? config.memoryBudget.maxBytes + 1 : Number.MAX_SAFE_INTEGER);
+            }
+
+            /** Reserve the returned references before they can outlive the store's own memory reservation. */
+            function readOwnedNow(first: number, end: number): Promise<RowStoreWindow> {
+                var wasStored = state === 'stored';
+                var memoryFirst = wasStored ? Math.max(0, first - written) : first;
+                var memoryEnd = wasStored ? Math.max(0, end - written) : end;
+                var reservedBytes = memoryWindowBytes(memoryFirst, memoryEnd);
+                var reservation = config.memoryBudget && reservedBytes
+                    ? config.memoryBudget.createReservation('retained') : null;
+                var pending = { release: function() { if (reservation) { reservation.release(); } } };
+                pendingWindows.push(pending);
+                var forget = function() {
+                    pendingWindows = pendingWindows.filter(candidate => candidate !== pending);
+                };
+                var fail = function(error: any): never {
+                    forget();
+                    pending.release();
+                    throw error;
+                };
+                var capture = function(): Promise<RowStoreWindow> | RowStoreWindow {
+                    if (disposed) {
+                        forget();
+                        pending.release();
+                        throw disposedError();
+                    }
+                    if (!wasStored && state === 'stored') {
+                        forget();
+                        pending.release();
+                        return readOwnedNow(first, end);
+                    }
+                    if (!wasStored) {
+                        forget();
+                        return rowStoreWindow(rows.slice(first, end), reservation);
+                    }
+                    // A completed background write can only reduce this still-unreferenced memory suffix.
+                    var waiting = rowStoreWindow(rows.slice(Math.max(0, first - written),
+                        Math.max(0, end - written)), reservation);
+                    pending.release = function() { waiting.release(); };
+                    var fromWorker = Math.max(0, Math.min(end, written) - first);
+                    if (!fromWorker) { forget(); return waiting; }
+                    return stored.readOwned(first, fromWorker).then(function(found: RowStoreWindow) {
+                        forget();
+                        if (disposed) {
+                            waiting.release();
+                            found.release();
+                            throw disposedError();
+                        }
+                        var released = false;
+                        var combined: RowStoreWindow = {
+                            rows: found.rows.concat(waiting.rows),
+                            release: function() {
+                                if (released) { return; }
+                                released = true;
+                                combined.rows = [];
+                                found.release();
+                                waiting.release();
+                            }
+                        };
+                        return combined;
+                    }, function(error: any) {
+                        forget();
+                        waiting.release();
+                        throw error;
+                    });
+                };
+                if (!reservation) {
+                    try { return Promise.resolve(capture()).then(null, fail); }
+                    catch (error) { return Promise.reject(error).then(null, fail); }
+                }
+                return reservation.grow(reservedBytes, timeout).then(capture, function(error: any) {
+                    if (disposed) { throw disposedError(); }
+                    throw error;
+                }).then(null, fail);
             }
 
             return {
@@ -2221,6 +2802,11 @@ namespace workbench {
                     }
                     return rows.slice(first, end);
                 }),
+                readOwned: (start: number, count: number): Promise<RowStoreWindow> => serialized(() => {
+                    checkWindow(start, count);
+                    var first = Math.floor(start);
+                    return readOwnedNow(first, first + Math.floor(count));
+                }),
                 count: (): Promise<number> => serialized(() => state === 'stored' ? written + rows.length : rows.length),
                 truncate: (count: number): Promise<number> => serialized(() => {
                     if (!Number.isSafeInteger(count) || count < 0) {
@@ -2238,13 +2824,21 @@ namespace workbench {
                         };
                         return (writing || Promise.resolve()).then(function(): number | Promise<number> {
                             if (count >= written) {
+                                var previousBytes = bytes;
                                 rows.length = count - written;
                                 bytes = estimateBatchBytes(rows);
+                                if (memoryReservation && previousBytes > bytes) {
+                                    memoryReservation.shrink(previousBytes - bytes);
+                                }
                                 batches = rows.length ? [{ end: count, bytes: bytes }] : [];
                                 return count;
                             }
+                            var previousBytes = bytes;
                             rows = [];
                             bytes = 0;
+                            if (memoryReservation && previousBytes) {
+                                memoryReservation.shrink(previousBytes);
+                            }
                             batches = [];
                             return stored.truncate(count).then(function(result: number) {
                                 written = result;
@@ -2261,8 +2855,12 @@ namespace workbench {
                     if (count > rows.length) {
                         throw new Error('The truncate count cannot exceed the stored row count.');
                     }
+                    var previousBytes = bytes;
                     rows.length = count;
                     bytes = estimateBatchBytes(rows);
+                    if (memoryReservation && previousBytes > bytes) {
+                        memoryReservation.shrink(previousBytes - bytes);
+                    }
                     if (state === 'moving') {
                         truncatedTo = Math.min(truncatedTo, count);
                     }
@@ -2276,6 +2874,11 @@ namespace workbench {
                     rows = [];
                     bytes = 0;
                     batches = [];
+                    unregisterPressureHandler();
+                    pendingWindows.splice(0).forEach(window => window.release());
+                    if (memoryReservation) {
+                        memoryReservation.release();
+                    }
                     if (abandonMove) {
                         abandonMove();
                     }
@@ -2315,6 +2918,16 @@ namespace workbench {
             var registry = rowStoreRegistryStorage();
             var created = Date.now();
             var bytes = 0;
+            var rowTextBatches: Array<{ start: number; count: number; lengths: number[]; reservedBytes: number }> = [];
+            var storedRowCount = 0;
+            var transferReservation = config.memoryBudget
+                ? config.memoryBudget.createReservation('temporary') : null;
+            var rowTextReservation = config.memoryBudget
+                ? config.memoryBudget.createReservation('retained') : null;
+            var readReservation = config.memoryBudget
+                ? config.memoryBudget.createReservation('temporary') : null;
+            var pendingOwnedReservations: RowStoreBudgetReservation[] = [];
+            var transferReservationReleased = false;
             var lastRegistryWrite = 0;
             var cancelRegistryWrite: () => void = null;
 
@@ -2372,6 +2985,9 @@ namespace workbench {
                     delete pending[id];
                 });
             }
+            function workerClosedError(): Error {
+                return new Error('The query row-store worker was closed.');
+            }
             function receive(event: any) {
                 var response = event && event.data;
                 var operation = response && pending[String(response.requestId)];
@@ -2417,16 +3033,27 @@ namespace workbench {
                         delete pending[id];
                     });
                 } else {
-                    rejectPending(new Error('The query row-store worker was closed.'));
+                    rejectPending(workerClosedError());
                 }
                 if (typeof worker.terminate === 'function') {
                     worker.terminate();
                 }
+                if (transferReservation && !transferReservationReleased) {
+                    transferReservationReleased = true;
+                    transferReservation.release();
+                }
+                if (rowTextReservation) {
+                    rowTextReservation.release();
+                }
+                if (readReservation) {
+                    readReservation.release();
+                }
+                pendingOwnedReservations.splice(0).forEach(reservation => reservation.release());
             }
 
             function send(op: string, data?: any): Promise<any> {
                 if (disposed && op !== 'dispose') {
-                    return Promise.reject(new Error('The query row store has been disposed.'));
+                    return Promise.reject(workerClosedError());
                 }
                 var id = ++requestId;
                 return new Promise((resolve, reject) => {
@@ -2442,6 +3069,93 @@ namespace workbench {
                 });
             }
 
+            function estimateReadWindowBytes(start: number, count: number): number {
+                var first = Math.floor(start);
+                var end = Math.min(storedRowCount, first + Math.floor(count));
+                var rowCount = Math.max(0, end - first);
+                var textChars = 2 + Math.max(0, rowCount - 1);
+                var budgetLimit = config.memoryBudget ? config.memoryBudget.maxBytes : Number.MAX_SAFE_INTEGER;
+                var maximumChars = Math.floor(Math.max(0, budgetLimit - rowCount * 256 - 256) / 8);
+                if (textChars > maximumChars) {
+                    return budgetLimit + 1;
+                }
+                for (var batchIndex = 0; batchIndex < rowTextBatches.length; batchIndex++) {
+                    var batch = rowTextBatches[batchIndex];
+                    var batchEnd = batch.start + batch.count;
+                    var overlapStart = Math.max(first, batch.start);
+                    var overlapEnd = Math.min(end, batchEnd);
+                    for (var rowIndex = overlapStart; rowIndex < overlapEnd; rowIndex++) {
+                        textChars += batch.lengths[rowIndex - batch.start];
+                        if (textChars > maximumChars) {
+                            return budgetLimit + 1;
+                        }
+                    }
+                }
+                // Include worker text, transferred text, parsed terms, and object/array overhead together.
+                var bytes = textChars * 8 + rowCount * 256 + 256;
+                return Number.isSafeInteger(bytes) ? bytes : budgetLimit + 1;
+            }
+
+            function truncateRowTextLengths(count: number): void {
+                var releasedBytes = 0;
+                while (rowTextBatches.length && rowTextBatches[rowTextBatches.length - 1].start >= count) {
+                    releasedBytes += rowTextBatches.pop().reservedBytes;
+                }
+                var last = rowTextBatches[rowTextBatches.length - 1];
+                if (last && last.start + last.count > count) {
+                    // Keep the full reservation for a partial batch while its backing array remains allocated.
+                    last.count = count - last.start;
+                }
+                storedRowCount = count;
+                if (releasedBytes && rowTextReservation) {
+                    rowTextReservation.shrink(releasedBytes);
+                }
+            }
+
+            function readWindow(start: number, count: number, owned: boolean): Promise<RowStoreWindow> {
+                if (!isFinite(start) || !isFinite(count) || start < 0 || count < 0) {
+                    return Promise.reject(new Error('A non-negative row window is required.'));
+                }
+                var first = Math.floor(start);
+                var rowCount = Math.floor(count);
+                var reservation = owned && config.memoryBudget
+                    ? config.memoryBudget.createReservation('retained') : owned ? null : readReservation;
+                if (owned && reservation) { pendingOwnedReservations.push(reservation); }
+                var forgetReservation = function() {
+                    if (owned && reservation) {
+                        pendingOwnedReservations = pendingOwnedReservations.filter(candidate => candidate !== reservation);
+                    }
+                };
+                var reservedBytes = reservation ? estimateReadWindowBytes(first, rowCount) : 0;
+                var held = false;
+                var sendRead = () => send('read', { start: first, count: rowCount });
+                var request = reservation ? reservation.grow(reservedBytes, config.storageTimeout).then(() => {
+                    held = true;
+                    return sendRead();
+                }) : sendRead();
+                return request.then(result => {
+                    if (disposed) { throw workerClosedError(); }
+                    if (reservation && typeof result.text === 'string'
+                            && result.text.length * 8 + rowCount * 256 + 256 > reservedBytes) {
+                        throw storageError('The stored row window exceeded its reserved read budget.');
+                    }
+                    var rows: any[][] = result.text ? JSON.parse(result.text) : [];
+                    forgetReservation();
+                    if (owned) { return rowStoreWindow(rows, reservation); }
+                    if (held && reservation) { reservation.shrink(reservedBytes); }
+                    return rowStoreWindow(rows);
+                }).then(null, function(error: any) {
+                    forgetReservation();
+                    if (owned && reservation) {
+                        reservation.release();
+                    } else if (held && reservation) {
+                        reservation.shrink(reservedBytes);
+                    }
+                    if (disposed) { throw workerClosedError(); }
+                    throw error;
+                });
+            }
+
             currentDocumentRowStoreIds.push(storeId);
             listenForRowStorePagehide();
             register();
@@ -2454,27 +3168,60 @@ namespace workbench {
                         if (!Array.isArray(rows)) {
                             return Promise.reject(new Error('Query rows must be provided as a batch.'));
                         }
-                        var text: string;
-                        try {
-                            text = encodeRowBatch(rows);
-                        } catch (error) {
-                            return Promise.reject(error);
-                        }
-                        return send('append', { text: text, rowCount: rows.length }).then(result => {
-                            bytes += text.length;
-                            registerSoon();
-                            return result.count;
+                        var reservedBytes = estimateBatchTextCharacters(rows) * 4 + rows.length * 16;
+                        var rowTextBytes = rows.length ? rows.length * 16 + 64 : 0;
+                        var heldTransfer = false;
+                        var heldRowText = false;
+                        var rowTextReservationRequest = rowTextReservation && rowTextBytes
+                            ? rowTextReservation.grow(rowTextBytes, config.storageTimeout) : Promise.resolve();
+                        return rowTextReservationRequest.then(function() {
+                            heldRowText = !!rowTextReservation && rowTextBytes > 0;
+                            return transferReservation
+                                ? transferReservation.grow(reservedBytes, config.storageTimeout) : undefined;
+                        }).then(function() {
+                            heldTransfer = !!transferReservation;
+                            var lengths = new Array(rows.length);
+                            var text = encodeRowBatch(rows, lengths);
+                            var actualBytes = text.length * 4 + rows.length * 16;
+                            var adjust = Promise.resolve();
+                            if (transferReservation && actualBytes > reservedBytes) {
+                                adjust = transferReservation.grow(actualBytes - reservedBytes, config.storageTimeout)
+                                    .then(() => { reservedBytes = actualBytes; });
+                            } else if (transferReservation && actualBytes < reservedBytes) {
+                                transferReservation.shrink(reservedBytes - actualBytes);
+                                reservedBytes = actualBytes;
+                            }
+                            return adjust.then(() => send('append', { text: text, rowCount: rows.length }))
+                                .then(result => {
+                                    if (rows.length) {
+                                        rowTextBatches.push({ start: storedRowCount, count: rows.length, lengths: lengths,
+                                            reservedBytes: rowTextBytes });
+                                        storedRowCount += rows.length;
+                                        heldRowText = false;
+                                    }
+                                    bytes += text.length;
+                                    registerSoon();
+                                    return result.count;
+                                });
+                        }).then(function(result: number) {
+                            if (heldTransfer && transferReservation) {
+                                transferReservation.shrink(reservedBytes);
+                            }
+                            return result;
+                        }, function(error: any) {
+                            if (heldTransfer && transferReservation) {
+                                transferReservation.shrink(reservedBytes);
+                            }
+                            if (heldRowText && rowTextReservation) {
+                                rowTextReservation.shrink(rowTextBytes);
+                            }
+                            throw error;
                         });
                     },
-                    read: (start: number, count: number): Promise<any[][]> => {
-                        if (!isFinite(start) || !isFinite(count) || start < 0 || count < 0) {
-                            return Promise.reject(new Error('A non-negative row window is required.'));
-                        }
-                        return send('read', {
-                            start: Math.floor(start),
-                            count: Math.floor(count)
-                        }).then(result => result.text ? JSON.parse(result.text) : []);
-                    },
+                    read: (start: number, count: number): Promise<any[][]> =>
+                        readWindow(start, count, false).then(window => window.rows),
+                    readOwned: (start: number, count: number): Promise<RowStoreWindow> =>
+                        readWindow(start, count, true),
                     count: (): Promise<number> => send('count').then(result => result.count),
                     truncate: (count: number): Promise<number> => {
                         if (!Number.isSafeInteger(count) || count < 0) {
@@ -2486,6 +3233,7 @@ namespace workbench {
                             }
                             return send('truncate', { count: count }).then(result => {
                                 bytes = current.count > 0 ? Math.round(bytes * result.count / current.count) : 0;
+                                truncateRowTextLengths(count);
                                 registerSoon();
                                 return result.count;
                             });
@@ -2523,6 +3271,448 @@ namespace workbench {
                     forget(!(error && error.unavailable));
                     releaseLock();
                 }
+                closeWorker();
+                throw error;
+            });
+        }
+
+        export interface RowIdentityIndex {
+            /** Adds only the original listing rows; expanding queries never add to this baseline. */
+            add(rows: any[][]): Promise<void>;
+            /** Returns rows whose typed quad keys were absent from the original listing. */
+            filter(rows: any[][]): Promise<any[][]>;
+            dispose(): Promise<void>;
+        }
+
+        interface IdentityJsonMetrics {
+            characters: number;
+            quotes: number;
+            backslashes: number;
+        }
+
+        export var ROW_IDENTITY_BASELINE_ROW_LIMIT = 10000;
+        export var ROW_IDENTITY_BATCH_ROWS = 256;
+
+        /**
+         * Keeps the initial result's typed row identities in a dedicated worker. Only bounded batches and the
+         * returned unseen rows cross back to this page; expanding to a larger result never builds a million-key Set
+         * in the main thread. The baseline and every in-flight key/batch share the page's RowStoreBudget.
+         */
+        export function createRowIdentityIndex(repositoryScope: string,
+                                               budget: RowStoreBudget): Promise<RowIdentityIndex> {
+            if (!budget || typeof budget.createReservation !== 'function'
+                    || typeof budget.registerPressureHandler !== 'function') {
+                return Promise.reject(new Error('A shared row-store memory budget is required for result identities.'));
+            }
+            var worker: any;
+            try {
+                worker = createRowStoreWorker({});
+            } catch (error) {
+                return Promise.reject(error);
+            }
+
+            var indexId = newRowStoreId();
+            var requestId = 0;
+            var pending: { [key: string]: { resolve: (response: any) => void; reject: (error: any) => void } } = {};
+            var baselineRows = 0;
+            var disposed = false;
+            var disposeRequested = false;
+            var disposePromise: Promise<void> = null;
+            var chain: Promise<any> = Promise.resolve();
+            var indexReservation = budget.createReservation('retained');
+            var stagingReservation = budget.createReservation('temporary');
+
+            function releaseReservations(): void {
+                indexReservation.release();
+                stagingReservation.release();
+            }
+
+            function closeWorker(): void {
+                if (typeof worker.removeEventListener === 'function') {
+                    worker.removeEventListener('message', receive);
+                    worker.removeEventListener('error', onError);
+                } else {
+                    worker.onmessage = null;
+                    worker.onerror = null;
+                }
+                Object.keys(pending).forEach(id => {
+                    pending[id].reject(new Error('The row identity worker was closed.'));
+                    delete pending[id];
+                });
+                if (typeof worker.terminate === 'function') {
+                    worker.terminate();
+                }
+            }
+
+            function send(op: string, data?: any): Promise<any> {
+                if (disposed && op !== 'identity-dispose') {
+                    return Promise.reject(new Error('The row identity index has been disposed.'));
+                }
+                var id = ++requestId;
+                return new Promise((resolve, reject) => {
+                    pending[String(id)] = { resolve: resolve, reject: reject };
+                    try {
+                        var message: any = { op: op, requestId: id, indexId: indexId };
+                        Object.keys(data || {}).forEach(key => message[key] = data[key]);
+                        worker.postMessage(message);
+                    } catch (error) {
+                        delete pending[String(id)];
+                        reject(error);
+                    }
+                });
+            }
+
+            function receive(event: any): void {
+                var response = event && event.data;
+                var operation = response && pending[String(response.requestId)];
+                if (!operation) {
+                    return;
+                }
+                delete pending[String(response.requestId)];
+                if (!response.ok) {
+                    var error: any = new Error(response.error || 'The row identity worker failed.');
+                    error.code = 'storage';
+                    error.retryable = true;
+                    operation.reject(error);
+                } else {
+                    operation.resolve(response);
+                }
+            }
+
+            function onError(event: any): void {
+                var message = event && (event.message || event.error && event.error.message);
+                var error: any = storageError(message || 'The row identity worker stopped unexpectedly.');
+                error.retryable = true;
+                disposed = true;
+                disposeRequested = true;
+                Object.keys(pending).forEach(id => {
+                    pending[id].reject(error);
+                    delete pending[id];
+                });
+                releaseReservations();
+                closeWorker();
+            }
+
+            if (typeof worker.addEventListener === 'function') {
+                worker.addEventListener('message', receive);
+                worker.addEventListener('error', onError);
+            } else {
+                worker.onmessage = receive;
+                worker.onerror = onError;
+            }
+
+            function enqueue<T>(operation: () => Promise<T>): Promise<T> {
+                if (disposed || disposeRequested) {
+                    return Promise.reject(new Error('The row identity index has been disposed.'));
+                }
+                var result = chain.then(operation);
+                chain = result.then(function() {}, function() {});
+                return result;
+            }
+
+            function stringJsonMetrics(value: string): IdentityJsonMetrics {
+                var metrics: IdentityJsonMetrics = { characters: 2, quotes: 2, backslashes: 0 };
+                for (var index = 0; index < value.length; index++) {
+                    var code = value.charCodeAt(index);
+                    if (code === 0x22) {
+                        metrics.characters += 2;
+                        metrics.quotes++;
+                        metrics.backslashes++;
+                    } else if (code === 0x5c) {
+                        metrics.characters += 2;
+                        metrics.backslashes += 2;
+                    } else if (code < 0x20) {
+                        metrics.characters += code === 0x08 || code === 0x09 || code === 0x0a || code === 0x0c
+                            || code === 0x0d ? 2 : 6;
+                        metrics.backslashes++;
+                    } else if (code >= 0xd800 && code <= 0xdfff) {
+                        var pairedSurrogate = code <= 0xdbff && index + 1 < value.length
+                            && value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff;
+                        if (pairedSurrogate) {
+                            metrics.characters += 2;
+                            index++;
+                        } else {
+                            metrics.characters += 6;
+                            metrics.backslashes++;
+                        }
+                    } else {
+                        metrics.characters++;
+                    }
+                }
+                return metrics;
+            }
+
+            function valueJsonMetrics(value: any): IdentityJsonMetrics {
+                if (typeof value === 'string') {
+                    return stringJsonMetrics(value);
+                }
+                if (value === null || typeof value === 'undefined'
+                        || typeof value === 'number' && !isFinite(value)) {
+                    return { characters: 4, quotes: 0, backslashes: 0 };
+                }
+                if (typeof value === 'boolean') {
+                    return { characters: value ? 4 : 5, quotes: 0, backslashes: 0 };
+                }
+                if (typeof value === 'number') {
+                    return { characters: String(value).length, quotes: 0, backslashes: 0 };
+                }
+                throw new Error('An RDF term field must be a scalar value.');
+            }
+
+            function identityArrayMetrics(values: any[]): IdentityJsonMetrics {
+                var metrics: IdentityJsonMetrics = {
+                    characters: 2 + Math.max(0, values.length - 1), quotes: 0, backslashes: 0
+                };
+                for (var index = 0; index < values.length; index++) {
+                    var value = values[index];
+                    var item = typeof value === 'string' ? stringJsonMetrics(value) : valueJsonMetrics(value);
+                    metrics.characters += item.characters;
+                    metrics.quotes += item.quotes;
+                    metrics.backslashes += item.backslashes;
+                }
+                return metrics;
+            }
+
+            /** Exact JSON size of termIdentity, counted without allocating the identity string or its nested arrays. */
+            function termIdentityMetrics(term: any): IdentityJsonMetrics {
+                if (term === null || typeof term === 'undefined') {
+                    return identityArrayMetrics(['unbound']);
+                }
+                var kind = term.kind;
+                var value = term;
+                if (Array.isArray(term)) {
+                    if (term[0] === 0) {
+                        kind = 'iri';
+                        value = { value: term[1] };
+                    } else if (term[0] === 1) {
+                        kind = 'bnode';
+                        value = { value: term[1], scope: term[2], reference: term[3] === true };
+                    } else if (term[0] === 2) {
+                        kind = 'literal';
+                        value = term[2] === null
+                            ? { value: term[1], language: term[3], direction: term[4] }
+                            : { value: term[1], datatype: term[2] };
+                    } else if (term[0] === 3) {
+                        kind = 'triple';
+                        value = { subject: term[1], predicate: term[2], object: term[3] };
+                    } else {
+                        throw new Error('An RDF term is required to estimate result identities.');
+                    }
+                }
+
+                if (kind === 'triple') {
+                    var triple = identityArrayMetrics(['triple']);
+                    var subject = termIdentityMetrics(value.subject);
+                    var predicate = termIdentityMetrics(value.predicate);
+                    var object = termIdentityMetrics(value.object);
+                    return {
+                        characters: triple.characters + 3 + subject.characters + predicate.characters
+                            + object.characters,
+                        quotes: triple.quotes + subject.quotes + predicate.quotes + object.quotes,
+                        backslashes: triple.backslashes + subject.backslashes + predicate.backslashes
+                            + object.backslashes
+                    };
+                }
+                if (kind === 'iri') {
+                    return identityArrayMetrics(['iri', value.value || '']);
+                }
+                if (kind === 'bnode') {
+                    return identityArrayMetrics(['bnode', value.reference === true ? 'repository' : 'response',
+                        value.reference === true ? repositoryScope || '' : value.scope || '', value.value || '']);
+                }
+                if (kind === 'literal') {
+                    var language = value.language || '';
+                    var direction = value.direction || '';
+                    var datatype = language ? (direction ? RDF_DIR_LANG_STRING : RDF_LANG_STRING)
+                        : value.datatype || XSD_STRING;
+                    return identityArrayMetrics(['literal', value.value || '', datatype, language.toLowerCase(), direction]);
+                }
+                throw new Error('An RDF term is required to estimate result identities.');
+            }
+
+            /** Counts row identity bytes without creating the JSON keys that will be retained or transferred. */
+            function estimateIdentityBytes(rows: any[][]): number {
+                var bytes = 0;
+                for (var rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+                    var row = rows[rowIndex];
+                    if (!Array.isArray(row)) {
+                        throw new Error('A result row is required to compare row identities.');
+                    }
+                    var keyCharacters = 2 + Math.max(0, row.length - 1);
+                    for (var termIndex = 0; termIndex < row.length; termIndex++) {
+                        var metrics = termIdentityMetrics(row[termIndex]);
+                        // rowIdentity JSON-encodes each termIdentity string in its outer array.
+                        keyCharacters += metrics.characters + 2 + metrics.quotes + metrics.backslashes;
+                    }
+                    bytes += keyCharacters * 2 + 16;
+                    if (!Number.isSafeInteger(bytes)) {
+                        return Number.MAX_SAFE_INTEGER;
+                    }
+                }
+                return bytes;
+            }
+
+            function keysAndBytes(rows: any[][]): { keys: string[]; bytes: number } {
+                var keys = new Array(rows.length);
+                var bytes = 0;
+                for (var index = 0; index < rows.length; index++) {
+                    var key = rowIdentity(rows[index], repositoryScope);
+                    keys[index] = key;
+                    bytes += key.length * 2 + 16;
+                }
+                return { keys: keys, bytes: bytes };
+            }
+
+            function growStage(bytes: number, held: { value: number }): Promise<void> {
+                return stagingReservation.grow(bytes, STORAGE_TIMEOUT).then(() => {
+                    held.value += bytes;
+                });
+            }
+
+            function addChunk(rows: any[][]): Promise<void> {
+                var heldStage = { value: 0 };
+                var candidateBytes = 0;
+                var candidateReserved = false;
+                var estimatedCandidateBytes = estimateIdentityBytes(rows) + rows.length * 32;
+                var stagingBytes = estimateBatchBytes(rows) + rows.length * 16 + estimatedCandidateBytes * 3;
+                return growStage(stagingBytes, heldStage).then(() => {
+                    candidateBytes = estimatedCandidateBytes;
+                    return indexReservation.grow(candidateBytes, STORAGE_TIMEOUT).then(() => {
+                        candidateReserved = true;
+                    });
+                }).then(() => {
+                    var prepared = keysAndBytes(rows);
+                    if (prepared.bytes > candidateBytes) {
+                        throw storageError('The estimated row identity size was smaller than its serialized keys.');
+                    }
+                    if (candidateBytes > prepared.bytes) {
+                        indexReservation.shrink(candidateBytes - prepared.bytes);
+                    }
+                    candidateBytes = prepared.bytes;
+                    return send('identity-add', { keys: prepared.keys }).then((result: any) => {
+                        if (!Number.isSafeInteger(result.addedBytes) || result.addedBytes < 0
+                                || result.addedBytes > candidateBytes
+                                || result.baselineRows !== baselineRows + rows.length) {
+                            throw new Error('The row identity worker returned an invalid baseline count.');
+                        }
+                        if (candidateBytes > result.addedBytes) {
+                            indexReservation.shrink(candidateBytes - result.addedBytes);
+                        }
+                        candidateReserved = false;
+                        candidateBytes = 0;
+                        baselineRows = result.baselineRows;
+                    });
+                }).then(function() {
+                    if (heldStage.value) {
+                        stagingReservation.shrink(heldStage.value);
+                    }
+                }, function(error: any) {
+                    if (candidateReserved && candidateBytes) {
+                        indexReservation.shrink(candidateBytes);
+                        candidateReserved = false;
+                        candidateBytes = 0;
+                    }
+                    if (heldStage.value) {
+                        stagingReservation.shrink(heldStage.value);
+                    }
+                    throw error;
+                });
+            }
+
+            function filterChunk(rows: any[][]): Promise<any[][]> {
+                var heldStage = { value: 0 };
+                var estimatedCandidateBytes = estimateIdentityBytes(rows) + rows.length * 32;
+                var stagingBytes = estimateBatchBytes(rows) + rows.length * 16 + estimatedCandidateBytes * 3;
+                return growStage(stagingBytes, heldStage).then(() => {
+                    var prepared = keysAndBytes(rows);
+                    if (prepared.bytes > estimatedCandidateBytes) {
+                        throw storageError('The estimated row identity size was smaller than its serialized keys.');
+                    }
+                    return send('identity-filter', { keys: prepared.keys }).then((result: any) => {
+                        if (!Array.isArray(result.unseen)
+                                || result.unseen.some((index: any) => !Number.isSafeInteger(index)
+                                    || index < 0 || index >= rows.length)) {
+                            throw new Error('The row identity worker returned invalid row positions.');
+                        }
+                        return result.unseen.map((index: number) => rows[index]);
+                    });
+                }).then(function(rows: any[][]) {
+                    if (heldStage.value) {
+                        stagingReservation.shrink(heldStage.value);
+                    }
+                    return rows;
+                }, function(error: any) {
+                    if (heldStage.value) {
+                        stagingReservation.shrink(heldStage.value);
+                    }
+                    throw error;
+                });
+            }
+
+            function processChunks<T>(rows: any[][], chunk: (batch: any[][]) => Promise<T>,
+                                      collect?: (result: T) => void): Promise<any[][] | void> {
+                var results: any[][] = [];
+                var offset = 0;
+                function next(): Promise<any[][] | void> {
+                    if (offset >= rows.length) {
+                        return Promise.resolve(collect ? undefined : results);
+                    }
+                    var end = Math.min(rows.length, offset + ROW_IDENTITY_BATCH_ROWS);
+                    var batch = rows.slice(offset, end);
+                    offset = end;
+                    return chunk(batch).then(function(result: T) {
+                        if (collect) {
+                            collect(result);
+                        } else {
+                            results.push.apply(results, result as any[][]);
+                        }
+                        return next();
+                    });
+                }
+                return next();
+            }
+
+            var createPromise = send('identity-create', {}).then((): RowIdentityIndex => ({
+                add: (rows: any[][]): Promise<void> => {
+                    if (!Array.isArray(rows)) {
+                        return Promise.reject(new Error('Rows are required to extend the baseline identity index.'));
+                    }
+                    return enqueue(() => {
+                        if (baselineRows + rows.length > ROW_IDENTITY_BASELINE_ROW_LIMIT) {
+                            throw storageError('The baseline identity index is limited to 10,000 rows.');
+                        }
+                        return <Promise<void>>processChunks(rows, addChunk, function() {});
+                    });
+                },
+                filter: (rows: any[][]): Promise<any[][]> => {
+                    if (!Array.isArray(rows)) {
+                        return Promise.reject(new Error('Rows are required to filter result identities.'));
+                    }
+                    return enqueue(() => <Promise<any[][]>>processChunks(rows, filterChunk));
+                },
+                dispose: (): Promise<void> => {
+                    if (disposePromise) {
+                        return disposePromise;
+                    }
+                    disposeRequested = true;
+                    disposePromise = chain.then(() => send('identity-dispose').then(() => {}, () => {}))
+                        .then(() => {
+                            disposed = true;
+                            releaseReservations();
+                            closeWorker();
+                        }, (error: any) => {
+                            disposed = true;
+                            releaseReservations();
+                            closeWorker();
+                            throw error;
+                        });
+                    return disposePromise;
+                }
+            }));
+
+            return createPromise.then(null, (error: any) => {
+                disposed = true;
+                releaseReservations();
                 closeWorker();
                 throw error;
             });
@@ -3243,6 +4433,7 @@ namespace workbench {
 
         var XSD_STRING = XSD_NAMESPACE + 'string';
         var RDF_LANG_STRING = RDF_NAMESPACE + 'langString';
+        var RDF_DIR_LANG_STRING = RDF_NAMESPACE + 'dirLangString';
 
         function isNumericDatatype(datatype: string): boolean {
             var localName = datatype && datatype.indexOf(XSD_NAMESPACE) === 0
@@ -4123,21 +5314,7 @@ namespace workbench {
             }
 
             private scopeBlankNodes(term: any, scope: string) {
-                var pending = term ? [term] : [];
-                while (pending.length) {
-                    var value = pending.pop();
-                    if (Array.isArray(value)) {
-                        if (value[0] === 1) {
-                            value[2] = scope;
-                        } else if (value[0] === 3) {
-                            pending.push(value[1], value[2], value[3]);
-                        }
-                    } else if (value.kind === 'bnode') {
-                        value.scope = scope;
-                    } else if (value.kind === 'triple') {
-                        pending.push(value.subject, value.predicate, value.object);
-                    }
-                }
+                scopeUnverifiedBlankNodes(term, scope);
             }
 
             private namespacesForRow(index: number): { prefix: string; name: string }[] {

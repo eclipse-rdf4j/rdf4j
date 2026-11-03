@@ -15,6 +15,10 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -23,16 +27,22 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.StoredBNodeIdResolver;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -46,6 +56,8 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 
 import jakarta.servlet.ServletException;
 
@@ -114,6 +126,67 @@ class ClearServletPageDataTest {
 		assertThat(metadata(records).path("context-discovery-complete").asBoolean()).isTrue();
 		assertThat(metadata(records).path("context-discovery-timed-out").asBoolean()).isFalse();
 		assertThat(metadata(records).path("statement-counts-timed-out").asBoolean()).isFalse();
+	}
+
+	@Test
+	void contextDiscoveryCarriesItsWorkerValueFactoryToThePageWriter() throws Exception {
+		StoredBNodeValueFactory valueFactory = new StoredBNodeValueFactory();
+		Resource graph = valueFactory.createBNode("stored-graph");
+		Repository repository = new RepositoryWrapper(store) {
+			@Override
+			public RepositoryConnection getConnection() throws RepositoryException {
+				return new RepositoryConnectionWrapper(this, super.getConnection()) {
+					@Override
+					public ValueFactory getValueFactory() {
+						return valueFactory;
+					}
+
+					@Override
+					public RepositoryResult<Resource> getContextIDs() {
+						return new RepositoryResult<>(new CloseableIteratorIteration<>(List.of(graph).iterator()));
+					}
+				};
+			}
+		};
+
+		List<JsonNode> records = run(new ClearServlet(), repository, false);
+
+		JsonNode graphTerm = firstRow(records).get(0);
+		assertThat(graphTerm.path("value").asText()).isEqualTo("stored-graph");
+		assertThat(graphTerm.path("reference").asBoolean()).isTrue();
+	}
+
+	@Test
+	void clearDiscoveryAndCountsNegotiateOriginsOnTheirWorkerConnections() throws Exception {
+		AtomicInteger originRequests = new AtomicInteger();
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> respond(exchange, "text/plain", "12"));
+		server.createContext("/repositories", exchange -> respond(exchange, "application/sparql-results+json",
+				"{\"head\":{\"vars\":[\"uri\",\"id\",\"title\",\"readable\",\"writable\"]},"
+						+ "\"results\":{\"bindings\":[{\"id\":{\"type\":\"literal\",\"value\":\"remote\"},"
+						+ "\"readable\":{\"type\":\"literal\",\"value\":\"true\"},"
+						+ "\"writable\":{\"type\":\"literal\",\"value\":\"true\"}}]}}"));
+		server.createContext("/repositories/remote/contexts", exchange -> {
+			countOriginHeader(exchange, originRequests);
+			respond(exchange, "application/sparql-results+json",
+					"{\"head\":{\"vars\":[\"contextID\"]},\"results\":{\"bindings\":[]}}");
+		});
+		server.createContext("/repositories/remote/size", exchange -> {
+			countOriginHeader(exchange, originRequests);
+			respond(exchange, "text/plain", "0");
+		});
+		server.start();
+		HTTPRepository repository = new HTTPRepository(
+				"http://127.0.0.1:" + server.getAddress().getPort() + "/repositories/remote");
+		try {
+			List<JsonNode> records = run(new ClearServlet(), repository, true);
+
+			assertThat(originRequests).hasValue(3);
+			assertThat(column(records, 1)).containsExactly("0");
+		} finally {
+			repository.shutDown();
+			server.stop(0);
+		}
 	}
 
 	@Test
@@ -488,6 +561,30 @@ class ClearServletPageDataTest {
 		}
 	}
 
+	private static JsonNode firstRow(List<JsonNode> records) {
+		return records.stream()
+				.filter(record -> "rows".equals(record.path("type").asText()))
+				.findFirst()
+				.orElseThrow()
+				.path("values")
+				.get(0);
+	}
+
+	private static void countOriginHeader(HttpExchange exchange, AtomicInteger originRequests) {
+		if (BNodeOriginTransport.VERSION.equals(exchange.getRequestHeaders().getFirst(BNodeOriginTransport.HEADER))) {
+			originRequests.incrementAndGet();
+		}
+	}
+
+	private static void respond(HttpExchange exchange, String contentType, String body) throws IOException {
+		byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+		exchange.getResponseHeaders().set("Content-Type", contentType);
+		exchange.sendResponseHeaders(200, bytes.length);
+		try (exchange; OutputStream output = exchange.getResponseBody()) {
+			output.write(bytes);
+		}
+	}
+
 	private static List<String> vars(List<JsonNode> records) {
 		List<String> names = new ArrayList<>();
 		records.stream()
@@ -515,5 +612,12 @@ class ClearServletPageDataTest {
 			}
 		}
 		return values;
+	}
+
+	private static final class StoredBNodeValueFactory extends SimpleValueFactory implements StoredBNodeIdResolver {
+		@Override
+		public boolean hasStoredBNodeId(String id) {
+			return "stored-graph".equals(id);
+		}
 	}
 }
