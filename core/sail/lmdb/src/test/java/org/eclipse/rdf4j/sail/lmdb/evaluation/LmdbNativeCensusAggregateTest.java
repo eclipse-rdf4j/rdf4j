@@ -600,6 +600,29 @@ class LmdbNativeCensusAggregateTest {
 	}
 
 	@Test
+	void globalCensusIsSelectedUnforcedWhenHeadersAndMetadataAnswerIt() {
+		// 24000 quads on homogeneous pages: the census answers COUNT(DISTINCT ?s/?o) from node metadata and the rest
+		// from page headers, so it must out-price the sequential path instead of quoting a payload decode per quad
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.begin();
+			connection.clear();
+			IRI p = vf.createIRI(EX + "p");
+			IRI g = vf.createIRI(EX + "g");
+			for (int i = 0; i < 12_000; i++) {
+				connection.add(vf.createIRI(EX + i), p, vf.createIRI(EX + (i + 1)), g);
+				connection.add(vf.createIRI(EX + i), vf.createIRI(EX + "p2"), vf.createIRI(EX + (i + 1)), g);
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		// measured 2026-11-03 on this fixture (parity run, generic engine included): census 55 to 111 ms,
+		// nestedLoop 580 to 755 ms; on the 14.6M-quad theme store 0.24 s against 16 s for the kernel
+		assertParity(CENSUS);
+		assertThat(telemetry(CENSUS)).contains("nativeExecutionPath=adjacencyCensus");
+	}
+
+	@Test
 	void homogeneousPagesUseCountsAndUnavailableProjectionsUseExactDomains() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();

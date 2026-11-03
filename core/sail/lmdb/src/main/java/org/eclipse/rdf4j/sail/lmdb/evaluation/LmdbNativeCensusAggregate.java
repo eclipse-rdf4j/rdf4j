@@ -141,87 +141,181 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		}
 	}
 
-	/** Metadata inspection never opens payload rows and owns no native view after the quote returns. */
+	/**
+	 * The page-level work of the selected recipe, counted exactly the way {@link #collect} executes it: one header pass
+	 * to establish graph coverage, DISTINCT ?s / ?o answered from node metadata when that coverage allows it, then per
+	 * page either a header bulk count, a root decode per row, or a payload decode per quad.
+	 */
+	private record RecipeCount(double planes, double headers, double decoded, double updates, double complement,
+			boolean payload, boolean reduced, String unavailable) {
+		static RecipeCount unavailable(String reason) {
+			return new RecipeCount(0D, 0D, 0D, 0D, 0D, false, false, reason);
+		}
+
+		/** Every count is exact, so the quote is a point: the recipe knows which pages it will open. */
+		LmdbNativeWork work() {
+			double total = planes + headers + decoded + updates + complement;
+			return LmdbNativeWork.between(total, total);
+		}
+	}
+
+	/**
+	 * Metadata inspection never opens payload rows and owns no native view after the quote returns. One header pass
+	 * accumulates the page work under both hypotheses (DISTINCT ?s / ?o answered from the node domain, or decoded from
+	 * payload) because the executor's choice depends on the graph coverage that pass establishes.
+	 */
+	private RecipeCount countRecipe(NativeProbe probe, WildcardAdjacency wildcard,
+			NativeCancellationToken cancellation) throws IOException {
+		int requiredIds = idMask;
+		int distinctNodeIds = 0;
+		for (int field = 0; field < 4; field++) {
+			if (distinctFields[field]) {
+				requiredIds |= 1 << field;
+				if (field == S || field == O) {
+					distinctNodeIds |= 1 << field;
+				}
+			}
+		}
+		boolean allRowsSelected = constants[S] == UNKNOWN && constants[P] == UNKNOWN && constants[O] == UNKNOWN;
+		for (boolean accepted : acceptedKinds) {
+			allRowsSelected &= accepted;
+		}
+		boolean domainEligible = canonicalPatternIds(source) && allRowsSelected && groupFields.length == 0
+				&& distinctNodeIds != 0;
+		double metadataReads = 0D;
+		int rootDomainFields = 0;
+		if (domainEligible) {
+			for (int field : new int[] { S, O }) {
+				if (!distinctFields[field]) {
+					continue;
+				}
+				NodePredicates projection = probe.nodePredicates(field == S);
+				if (projection != null && projection.nodeCount() >= 0L) {
+					metadataReads += 1D; // one metadata read answers the whole DISTINCT domain
+				} else {
+					rootDomainFields++; // the root-domain merge decodes every key of every selected plane
+				}
+			}
+		}
+		int domainIds = requiredIds & ~distinctNodeIds;
+		double planes = wildcard.predicateCount();
+		double headers = 0D, totalQuads = 0D, excludedQuads = 0D, planeKeys = 0D;
+		double decodedPayload = 0D, updatesPayload = 0D, decodedDomain = 0D, updatesDomain = 0D;
+		boolean payloadIfPayload = false, reducedIfPayload = false, payloadIfDomain = false,
+				reducedIfDomain = false;
+		for (int p = 0; p < wildcard.predicateCount(); p++) {
+			cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
+			long predicate = wildcard.predicateAt(p);
+			if (constants[P] != UNKNOWN && constants[P] != predicate) {
+				continue;
+			}
+			wildcard.bind(p);
+			long keys = wildcard.keyCount();
+			if (keys == 0L) {
+				continue;
+			}
+			planeKeys += keys;
+			NativeAdjacency view = probe.adjacency(predicate, true);
+			if (view == null) {
+				return RecipeCount.unavailable("adjacency view unavailable");
+			}
+			try (AdjacencyPageCursor pages = view.openPageCursor()) {
+				if (pages == null) {
+					return RecipeCount.unavailable("page cursor unavailable");
+				}
+				while (pages.advance()) {
+					cancellation.check();
+					LmdbNativeProbeDeadline.poll(0);
+					headers += 2D; // the exact opener performs coverage and reduction passes
+					boolean common = pages.hasCommonContext();
+					long quads = pages.quadCount();
+					totalQuads += quads;
+					if (common && !acceptsContext(pages.commonContext())) {
+						allRowsSelected = false;
+						excludedQuads += quads;
+						continue;
+					}
+					allRowsSelected &= common;
+					long rows = pages.rowCount();
+					boolean rootKind = (kindMask & 1 << S) != 0 && !pages.uniformRowTermKind();
+					boolean neighborKind = (kindMask & 1 << O) != 0 && !pages.uniformNeighborTermKind();
+					for (int hypothesis = 0; hypothesis < 2; hypothesis++) {
+						int ids = hypothesis == 0 ? requiredIds : domainIds;
+						boolean roots = (ids & 1 << S) != 0 || rootKind;
+						boolean neighbors = (ids & 1 << O) != 0 || neighborKind;
+						double decoded, updates;
+						boolean payload, reduced;
+						if (common && !roots && !neighbors) {
+							decoded = 0D;
+							updates = 1D; // header bulk count
+							payload = false;
+							reduced = true;
+						} else if (common && !neighbors) {
+							decoded = rows;
+							updates = rows;
+							payload = true;
+							reduced = rows < quads;
+						} else {
+							decoded = rows + (common ? quads : 2D * quads);
+							updates = quads;
+							payload = true;
+							reduced = false;
+						}
+						if (hypothesis == 0) {
+							decodedPayload += decoded;
+							updatesPayload += updates;
+							payloadIfPayload |= payload;
+							reducedIfPayload |= reduced;
+						} else {
+							decodedDomain += decoded;
+							updatesDomain += updates;
+							payloadIfDomain |= payload;
+							reducedIfDomain |= reduced;
+						}
+					}
+				}
+			}
+		}
+		double channelWork = channels.length + 3D;
+		if (domainEligible && (allRowsSelected || excludedQuads < totalQuads - excludedQuads)) {
+			double complement = allRowsSelected ? 0D : excludedQuads;
+			return new RecipeCount(planes, headers + metadataReads, decodedDomain + rootDomainFields * planeKeys,
+					updatesDomain * channelWork, complement, payloadIfDomain, reducedIfDomain, null);
+		}
+		return new RecipeCount(planes, headers, decodedPayload, updatesPayload * channelWork, 0D, payloadIfPayload,
+				reducedIfPayload, null);
+	}
+
 	private RecipeQuote inspectRecipe() throws IOException {
 		NativeCancellationToken cancellation = NativeCancellationToken.forSource(source);
 		try (NativeProbe probe = source.newProbe(); WildcardAdjacency wildcard = probe.wildcardAdjacency(true)) {
 			if (wildcard == null) {
 				return RecipeQuote.unavailable("wildcard adjacency unavailable");
 			}
-			int requiredIds = idMask;
+			RecipeCount count = countRecipe(probe, wildcard, cancellation);
+			if (count.unavailable() != null) {
+				return RecipeQuote.unavailable(count.unavailable());
+			}
 			boolean distinct = false;
 			for (Channel channel : channels) {
 				distinct |= channel.distinct;
-				if (channel.distinct && channel.field >= 0) {
-					requiredIds |= 1 << channel.field;
-				}
 			}
-			double planes = wildcard.predicateCount();
-			double headers = 0D, contributions = 0D, decoded = 0D, complement = 0D;
-			boolean reduced = false, payload = false;
-			for (int p = 0; p < wildcard.predicateCount(); p++) {
-				cancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
-				long predicate = wildcard.predicateAt(p);
-				if (constants[P] != UNKNOWN && constants[P] != predicate) {
-					continue;
-				}
-				wildcard.bind(p);
-				if (wildcard.keyCount() == 0L) {
-					continue;
-				}
-				NativeAdjacency view = probe.adjacency(predicate, true);
-				if (view == null) {
-					return RecipeQuote.unavailable("adjacency view unavailable");
-				}
-				try (AdjacencyPageCursor pages = view.openPageCursor()) {
-					if (pages == null) {
-						return RecipeQuote.unavailable("page cursor unavailable");
-					}
-					while (pages.advance()) {
-						cancellation.check();
-						LmdbNativeProbeDeadline.poll(0);
-						headers += 2D; // The exact opener performs coverage and reduction passes.
-						boolean common = pages.hasCommonContext();
-						if (common && !acceptsContext(pages.commonContext())) {
-							if (distinct) {
-								complement += pages.quadCount();
-							}
-							continue;
-						}
-						boolean roots = (requiredIds & 1 << S) != 0
-								|| (kindMask & 1 << S) != 0 && !pages.uniformRowTermKind();
-						boolean neighbors = (requiredIds & 1 << O) != 0
-								|| (kindMask & 1 << O) != 0 && !pages.uniformNeighborTermKind();
-						payload |= !common || neighbors;
-						double updates = common && !neighbors ? roots ? pages.rowCount() : 1D : pages.quadCount();
-						contributions += updates;
-						decoded += roots || neighbors || !common ? pages.rowCount() : 0D;
-						if (!common) {
-							decoded += 2D * pages.quadCount();
-						} else if (neighbors) {
-							decoded += pages.quadCount();
-						}
-						reduced |= common && updates < pages.quadCount();
-					}
-				}
-			}
-			double low = planes + headers;
-			double high = low + contributions * (channels.length + 3D) + complement;
-			LmdbNativeWork work = LmdbNativeWork.between(low, high);
+			LmdbNativeWork work = count.work();
 			// Exact DISTINCT-domain complements and cross-group membership need their own storage/domain quote.
 			// Their legal exact opener remains available, with explicitly unknown structured features meanwhile.
 			if (distinct || groupFields.length != 0) {
 				return new RecipeQuote(null, work, false, null);
 			}
+			double contributions = count.updates();
 			NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(contributions,
-					planes + headers + contributions, planes, contributions, decoded, 0D, contributions,
-					LmdbNativeCostVector.zero());
+					count.planes() + count.headers() + contributions, count.planes(), contributions, count.decoded(),
+					0D, contributions, LmdbNativeCostVector.zero());
 			NativeAggregatePhysicalPlan.Work physical = new NativeAggregatePhysicalPlan.Work(input,
 					LmdbNativeCostVector.zero(), 1D);
 			// A partially compressed recipe can still require a large payload sweep. Keep that legal work quoted,
 			// but only use this cold anchor when the entire selected recipe avoids neighbor/context expansion.
-			return new RecipeQuote(physical, work, reduced && !payload, null);
+			return new RecipeQuote(physical, work, count.reduced() && !count.payload(), null);
 		}
 	}
 
@@ -321,57 +415,8 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			if (wildcard == null) {
 				return LmdbNativeWork.UNKNOWN;
 			}
-			int requiredIds = idMask;
-			for (int field = 0; field < 4; field++) {
-				if (distinctFields[field]) {
-					requiredIds |= 1 << field;
-				}
-			}
-			double low = wildcard.predicateCount(), high = low;
-			for (int index = 0; index < wildcard.predicateCount(); index++) {
-				cancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
-				long predicate = wildcard.predicateAt(index);
-				if (constants[P] != UNKNOWN && constants[P] != predicate) {
-					continue;
-				}
-				wildcard.bind(index);
-				if (wildcard.keyCount() == 0L) {
-					continue;
-				}
-				NativeAdjacency adjacency = probe.adjacency(predicate, true);
-				if (adjacency == null) {
-					return LmdbNativeWork.UNKNOWN;
-				}
-				try (AdjacencyPageCursor pages = adjacency.openPageCursor()) {
-					if (pages == null) {
-						return LmdbNativeWork.UNKNOWN;
-					}
-					while (pages.advance()) {
-						cancellation.check();
-						LmdbNativeProbeDeadline.poll(0);
-						// Execution makes one coverage pass and one reduction pass over these exact visible headers.
-						low += 2D;
-						high += 2D;
-						boolean common = pages.hasCommonContext();
-						if (common && !acceptsContext(pages.commonContext())) {
-							// The optional distinct-domain complement can inspect the excluded payload.
-							high += pages.quadCount();
-							continue;
-						}
-						boolean roots = (requiredIds & 1 << S) != 0
-								|| (kindMask & 1 << S) != 0 && !pages.uniformRowTermKind();
-						boolean neighbors = (requiredIds & 1 << O) != 0
-								|| (kindMask & 1 << O) != 0 && !pages.uniformNeighborTermKind();
-						double minimumUpdates = common && !roots && !neighbors ? 1D : pages.rowCount();
-						double maximumUpdates = common && !neighbors ? minimumUpdates : pages.quadCount();
-						low += minimumUpdates;
-						// Reducer channels, grouping/membership and output are bounded by the physical input grain.
-						high += maximumUpdates * (channels.length + 3D);
-					}
-				}
-			}
-			return LmdbNativeWork.between(low, high);
+			RecipeCount count = countRecipe(probe, wildcard, cancellation);
+			return count.unavailable() != null ? LmdbNativeWork.UNKNOWN : count.work();
 		}
 	}
 
