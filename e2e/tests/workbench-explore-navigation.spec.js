@@ -27,7 +27,7 @@ const LARGE_RESOURCE_IRI = 'http://example.org/explore-large-resource';
 // Screenshots go to WORKBENCH_EXPLORE_EVIDENCE_DIR when it is set, otherwise to each test's output directory; the
 // evidence summary is written only to that directory. The fixture repository is deleted after the run unless
 // WORKBENCH_EXPLORE_RETAIN_FIXTURE=true keeps it for debugging.
-const EVIDENCE_DIR = process.env.WORKBENCH_EXPLORE_EVIDENCE_DIR || '/private/tmp/explore-qa';
+const EVIDENCE_DIR = process.env.WORKBENCH_EXPLORE_EVIDENCE_DIR || '';
 const RETAIN_FIXTURE = process.env.WORKBENCH_EXPLORE_RETAIN_FIXTURE === 'true';
 let fixtureCreated = false;
 
@@ -163,12 +163,13 @@ async function expectRoleRows(page, role, count) {
 	return rows;
 }
 
-/** Count HTTP intervals from CDP events, whose timestamps share a monotonic clock. */
+/** Count Chromium HTTP intervals from CDP events, whose timestamps share a monotonic clock. */
 function peakHttpRequests(events, kind) {
 	const points = [];
 	for (const event of events.filter(item => item.url.searchParams.get('kind') === kind)) {
 		const { start, end } = event;
 		expect(start).toBeGreaterThan(0);
+		expect(end, `missing response timing for ${event.url}`).not.toBeNull();
 		expect(end).toBeGreaterThanOrEqual(start);
 		if (end > start) {
 			points.push({ time: start, change: 1 });
@@ -288,27 +289,31 @@ test('invalid and empty resources remain recoverable', async ({ page }) => {
 	await assertPageHealth(page, health, 'explore');
 });
 
-test('10,005-row listing uses independent requests, local pages, and one explicit expansion', async ({ page }) => {
+test('10,005-row listing uses independent requests, local pages, and one explicit expansion', async ({ page, browserName }) => {
 	await page.setViewportSize({ width: 1440, height: 1000 });
 	const health = monitorPage(page);
 	const seen = [];
 	const http = new Map();
-	const cdp = await page.context().newCDPSession(page);
-	await cdp.send('Network.enable');
-	cdp.on('Network.requestWillBeSent', event => {
-		const url = new URL(event.request.url);
-		if (event.request.method === 'GET' && url.pathname.endsWith('/explore') && url.searchParams.has('section')) {
-			http.set(event.requestId, { url, start: event.timestamp, end: null });
-		}
-	});
-	cdp.on('Network.loadingFinished', event => {
-		const request = http.get(event.requestId);
-		if (request) request.end = event.timestamp;
-	});
-	cdp.on('Network.loadingFailed', event => {
-		const request = http.get(event.requestId);
-		if (request) { request.end = event.timestamp; request.failure = event.errorText; }
-	});
+	if (browserName === 'chromium') {
+		// Only Chromium exposes CDP's common monotonic clock for actual HTTP start/end intervals. All browsers
+		// still run the functional checks and record Playwright's request events below.
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Network.enable');
+		cdp.on('Network.requestWillBeSent', event => {
+			const url = new URL(event.request.url);
+			if (event.request.method === 'GET' && url.pathname.endsWith('/explore') && url.searchParams.has('section')) {
+				http.set(event.requestId, { url, start: event.timestamp, end: null });
+			}
+		});
+		cdp.on('Network.loadingFinished', event => {
+			const request = http.get(event.requestId);
+			if (request) request.end = event.timestamp;
+		});
+		cdp.on('Network.loadingFailed', event => {
+			const request = http.get(event.requestId);
+			if (request) { request.end = event.timestamp; request.failure = event.errorText; }
+		});
+	}
 	const inflight = new Map();
 	const running = { rows: 0, count: 0 };
 	const peak = { rows: 0, count: 0 };
@@ -316,7 +321,7 @@ test('10,005-row listing uses independent requests, local pages, and one explici
 		const url = new URL(request.url());
 		if (request.method() !== 'GET' || !url.pathname.endsWith('/explore') || !url.searchParams.has('section')) return;
 		const kind = url.searchParams.get('kind');
-		const event = { url, request, done: false };
+		const event = { url, request, done: false, failure: null };
 		seen.push(event);
 		inflight.set(request, event);
 		running[kind]++;
@@ -347,16 +352,19 @@ test('10,005-row listing uses independent requests, local pages, and one explici
 	await expect(outgoing.locator('.workbench-window-controls [role="status"]')).toHaveText(/Showing 1–100\s+of 10.?000 cached/);
 	expect(await rows.count()).toBeLessThanOrEqual(100);
 	await expect.poll(() => seen.filter(event => event.done).length, { timeout: 30000 }).toBe(29);
-	await expect.poll(() => [...http.values()].filter(event => event.end !== null).length, { timeout: 30000 }).toBe(29);
-	fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+	if (browserName === 'chromium') {
+		await expect.poll(() => [...http.values()].filter(event => event.end !== null).length, { timeout: 30000 }).toBe(29);
+	}
 	const httpEvents = [...http.values()];
-	const outcomes = new Map(seen.map(event => [event.url.searchParams.get('query-request-id'), event.failure]));
-	fs.writeFileSync(path.join(EVIDENCE_DIR, `http-timings-${test.info().repeatEachIndex}.json`), JSON.stringify(httpEvents.map(event => ({
-		section: event.url.searchParams.get('section'), kind: event.url.searchParams.get('kind'),
-		scope: event.url.searchParams.get('scope'), start: event.start, end: event.end, failure: event.failure,
-		playwrightFailure: outcomes.get(event.url.searchParams.get('query-request-id'))
-	})), null, 2) + '\n');
-	fs.writeFileSync(path.join(EVIDENCE_DIR, `ui-sections-${test.info().repeatEachIndex}.json`), JSON.stringify(
+	const httpById = new Map(httpEvents.map(event => [event.url.searchParams.get('query-request-id'), event]));
+	fs.writeFileSync(evidencePath(EVIDENCE_DIR, `http-timings-${test.info().project.name}-${test.info().repeatEachIndex}.json`),
+		JSON.stringify({ browserName, eventPeak: peak, requests: seen.map(event => {
+			const wire = httpById.get(event.url.searchParams.get('query-request-id'));
+			return { section: event.url.searchParams.get('section'), kind: event.url.searchParams.get('kind'),
+				scope: event.url.searchParams.get('scope'), timing: event.request.timing(), failure: event.failure,
+				wireStart: wire?.start, wireEnd: wire?.end, wireFailure: wire?.failure };
+		}) }, null, 2) + '\n');
+	fs.writeFileSync(evidencePath(EVIDENCE_DIR, `ui-sections-${test.info().project.name}-${test.info().repeatEachIndex}.json`), JSON.stringify(
 		await page.locator('[data-explore-section]').evaluateAll(elements => elements.map(element => ({
 			section: element.getAttribute('data-explore-section'), text: element.textContent?.slice(0, 500)
 		}))), null, 2) + '\n');
@@ -368,9 +376,14 @@ test('10,005-row listing uses independent requests, local pages, and one explici
 	await expect(page.locator('#explore-section-output [role="status"]').filter({ hasText: 'Loading…' })).toHaveCount(0);
 	await expect(page.locator('[data-explore-section] .explore-group__count').filter({ hasText: '…' })).toHaveCount(0);
 	await expect(page.locator('#explore-section-output [role="alert"]')).toHaveCount(0);
-	const peakHttp = { rows: peakHttpRequests(httpEvents, 'rows'), count: peakHttpRequests(httpEvents, 'count') };
-	expect(peakHttp.rows).toBeLessThanOrEqual(4);
-	expect(peakHttp.count).toBeLessThanOrEqual(4);
+	const peakHttp = browserName === 'chromium'
+		? { rows: peakHttpRequests(httpEvents, 'rows'), count: peakHttpRequests(httpEvents, 'count') } : null;
+	if (peakHttp) {
+		expect(peakHttp.rows).toBeGreaterThan(0);
+		expect(peakHttp.count).toBeGreaterThan(0);
+		expect(peakHttp.rows).toBeLessThanOrEqual(4);
+		expect(peakHttp.count).toBeLessThanOrEqual(4);
+	}
 	expect(seen.filter(event => event.url.searchParams.get('kind') === 'rows')).toHaveLength(14);
 	expect(seen.filter(event => event.url.searchParams.get('kind') === 'count')).toHaveLength(15);
 	expect(new Set(seen.map(event => event.url.searchParams.get('query-request-id'))).size).toBe(29);
