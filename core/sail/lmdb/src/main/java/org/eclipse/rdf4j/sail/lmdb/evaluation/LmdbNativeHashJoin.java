@@ -234,9 +234,11 @@ final class LmdbNativeHashJoin {
 		if (candidate == null) {
 			return null;
 		}
-		// Measured (2026-11-02, both store sizes): a hash-join batch ran at 0.98 to 1.03 times the probe chain it
-		// replaces, while a "scan both sides once" quote priced it at 0.04 of the chain. It is therefore priced as the
-		// chain with batch rows, plus the hash build and probes it adds; the build is paid before the first row.
+		// The build side is read once before the first row; the probe side is read once under the entry bindings
+		// (never once per build row) with a hash probe per row, and every joined row is a batch row. Measured
+		// 2026-11-03 (starTwoHop, spoc-only 3000-person store): 9.9 ms against 2.5 s for the probe chain this used
+		// to be priced as, which had quoted it at 159 ms and handed the decision to a 1.4 s parallel pipeline. Where
+		// the probe is indexed the chain and the scan price alike (measured 0.98 to 1.03x on 2026-11-02).
 		long boundMask = row.boundMask();
 		double probeRows = LmdbNativeCostVectors.rows(candidate.probe, row, boundMask);
 		double outputRows = LmdbNativeWork.rowsOut(plan, row, boundMask);
@@ -245,8 +247,9 @@ final class LmdbNativeHashJoin {
 				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_BUILD_ROW,
 						candidate.buildRowsEstimate));
 		LmdbNativeCostVector streaming = LmdbNativeCostVectors
-				.plan(plan, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
-				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_PROBE, probeRows));
+				.plan(candidate.probe, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_PROBE, probeRows, row))
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.BATCH_ROW, outputRows, row));
 		return new LmdbNativeStrategyProposal<>(() -> candidate.open(plan, row, capacity), candidate.estCost,
 				LmdbNativeAttemptMetrics.PATH_BATCH)
 						.withCostQuote(new LmdbNativeCostQuote(startup, streaming, outputRows, false, false));
