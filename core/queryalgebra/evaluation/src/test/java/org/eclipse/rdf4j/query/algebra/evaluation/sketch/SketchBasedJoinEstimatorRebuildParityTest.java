@@ -122,6 +122,77 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 	}
 
 	@Test
+	void incrementalUpdatesBeforeSnapshotAreNotAppliedTwice() throws Exception {
+		Statement base = statement("urn:s:base", "urn:p:base", "urn:o:base", "urn:c:base");
+		Statement removed = statement("urn:s:removed", "urn:p:removed", "urn:o:removed", "urn:c:base");
+		Statement added = statement("urn:s:added", "urn:p:added", "urn:o:added", "urn:c:base");
+		BlockingSnapshotStore store = new BlockingSnapshotStore();
+		store.add(base);
+		store.add(removed);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		assertEquals(2L, estimator.rebuild());
+		CountDownLatch snapshotEntered = store.blockBeforeSnapshot();
+		AtomicReference<Throwable> rebuildFailure = new AtomicReference<>();
+		Thread rebuildThread = new Thread(() -> {
+			try {
+				estimator.rebuild();
+			} catch (Throwable failure) {
+				rebuildFailure.set(failure);
+			}
+		}, "SketchEstimator-BeforeSnapshot");
+		rebuildThread.start();
+		try {
+			assertTrue(snapshotEntered.await(2, TimeUnit.SECONDS), "Expected rebuild to reach snapshot admission");
+			store.remove(removed);
+			store.add(added);
+			estimator.deleteStatement(removed);
+			estimator.addStatement(added);
+			estimator.debugFlushPendingIncremental();
+		} finally {
+			store.releaseSnapshot();
+		}
+		rebuildThread.join(TimeUnit.SECONDS.toMillis(2));
+		assertEquals(null, rebuildFailure.get(), "Rebuild should complete without failure");
+		assertTrue(!rebuildThread.isAlive(), "Rebuild should finish after snapshot admission");
+		assertEquals(1D, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:p:added"));
+		assertEquals(0D, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:p:removed"));
+		store.add(removed);
+		estimator.addStatement(removed);
+		assertEquals(1D, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:p:removed"));
+	}
+
+	@Test
+	void initialRebuildIncludesUpdatesBeforeSnapshot() throws Exception {
+		Statement base = statement("urn:s:base", "urn:p:base", "urn:o:base", "urn:c:base");
+		Statement added = statement("urn:s:added", "urn:p:added", "urn:o:added", "urn:c:base");
+		BlockingSnapshotStore store = new BlockingSnapshotStore();
+		store.add(base);
+		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		CountDownLatch snapshotEntered = store.blockBeforeSnapshot();
+		AtomicReference<Throwable> rebuildFailure = new AtomicReference<>();
+		Thread rebuildThread = new Thread(() -> {
+			try {
+				estimator.rebuild();
+			} catch (Throwable failure) {
+				rebuildFailure.set(failure);
+			}
+		}, "SketchEstimator-InitialSnapshot");
+		rebuildThread.start();
+		try {
+			assertTrue(snapshotEntered.await(2, TimeUnit.SECONDS), "Expected rebuild to reach snapshot admission");
+			store.add(added);
+			estimator.addStatement(added);
+		} finally {
+			store.releaseSnapshot();
+		}
+		rebuildThread.join(TimeUnit.SECONDS.toMillis(2));
+		assertEquals(null, rebuildFailure.get(), "Rebuild should complete without failure");
+		assertTrue(!rebuildThread.isAlive(), "Rebuild should finish after snapshot admission");
+		assertTrue(estimator.isReady(), "The published snapshot must include the pending update");
+		assertEquals(1D, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:p:added"));
+	}
+
+	@Test
 	void rebuildUsesConfiguredThrottleBetweenScannedStatements() throws Exception {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		store.add(statement("urn:s:throttle-1", "urn:p:throttle", "urn:o:throttle-1", "urn:c:throttle"));
@@ -179,6 +250,8 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 	private static final class BlockingSnapshotStore implements SketchStatementSource {
 		private final List<Statement> data = new CopyOnWriteArrayList<>();
 		private final CountDownLatch releaseScan = new CountDownLatch(1);
+		private final CountDownLatch snapshotRelease = new CountDownLatch(1);
+		private volatile CountDownLatch beforeSnapshot;
 		private volatile CountDownLatch blockAfterFirstStatement;
 
 		void add(Statement statement) {
@@ -187,6 +260,15 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 
 		void remove(Statement statement) {
 			data.remove(statement);
+		}
+
+		CountDownLatch blockBeforeSnapshot() {
+			beforeSnapshot = new CountDownLatch(1);
+			return beforeSnapshot;
+		}
+
+		void releaseSnapshot() {
+			snapshotRelease.countDown();
 		}
 
 		CountDownLatch blockAfterFirstStatement() {
@@ -206,6 +288,17 @@ class SketchBasedJoinEstimatorRebuildParityTest {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) {
+			CountDownLatch gate = beforeSnapshot;
+			if (gate != null) {
+				beforeSnapshot = null;
+				gate.countDown();
+				try {
+					assertTrue(snapshotRelease.await(2, TimeUnit.SECONDS), "Timed out waiting to acquire snapshot");
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(interrupted);
+				}
+			}
 			List<Statement> snapshot = new ArrayList<>(data);
 			List<Statement> matches = new ArrayList<>();
 			for (Statement statement : snapshot) {

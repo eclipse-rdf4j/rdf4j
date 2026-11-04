@@ -33,7 +33,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -286,26 +285,6 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 	}
 
-	private void awaitPendingPublication(CountDownLatch pendingPublished) {
-		try {
-			assertThat(pendingPublished.await(30, TimeUnit.SECONDS))
-					.as("pending row publication should precede snapshot acquisition")
-					.isTrue();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new AssertionError("interrupted while waiting for pending row publication", e);
-		}
-	}
-
-	private static void awaitQueueAdmissionRelease(CountDownLatch releaseQueueAdmission) {
-		try {
-			releaseQueueAdmission.await();
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new AssertionError("interrupted while holding queue admission", e);
-		}
-	}
-
 	private void openPreferStore() throws IOException {
 		openStore(DirectAdjacencyMode.PREFER, null, null);
 	}
@@ -347,16 +326,22 @@ class LmdbDirectAdjacencyQueryTest {
 	@Test
 	void genericSailDatasetUnorderedStatementsUseAdjacencyWhenAvailable() throws IOException {
 		openPreferStore();
-		long hitsBefore = direct.snapshotMetrics().lookupHits;
-
-		try (CloseableDataset dataset = dataset()) {
-			assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null)))
+		LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+		try (RoutingObservation observation = new RoutingObservation(); CloseableDataset dataset = dataset()) {
+			observation.reset();
+			List<Statement> statements = collectStatements(dataset.dataset.getStatements(S1, P1, null));
+			LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+			String diagnostics = routingDiagnostics(before, after, observation);
+			assertThat(statements)
+					.as("generic Sail all-context statement results; " + diagnostics)
 					.containsExactlyInAnyOrder(
 							F.createStatement(S1, P1, O1),
 							F.createStatement(S1, P1, O2, G1));
+			assertThat(after.lookupHits)
+					.as("generic Sail all-context adjacency hit; " + diagnostics)
+					.isGreaterThan(before.lookupHits);
 		}
 
-		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
 	}
 
@@ -376,35 +361,15 @@ class LmdbDirectAdjacencyQueryTest {
 		direct = backing.directAdjacencyStore();
 		awaitDirectAdjacencyReady();
 		long buildsBefore = direct.snapshotMetrics().buildsCompleted;
-		// The selected predicate's first statement commits after the build has started but before it pins its
+		// The selected predicate's first statement commits after the rebuild was requested but before it pins its
 		// snapshot, as on CI, where the store's first commit raced its first build.
-		CountDownLatch committed = new CountDownLatch(1);
-		AtomicReference<Throwable> commitFailure = new AtomicReference<>();
-		direct.beforeBuildSnapshotForTest = () -> {
-			direct.beforeBuildSnapshotForTest = null;
-			Thread writer = new Thread(() -> {
-				try (RepositoryConnection conn = repo.getConnection()) {
-					conn.add(S1, P1, O1);
-				} catch (Throwable failure) {
-					commitFailure.set(failure);
-				} finally {
-					committed.countDown();
-				}
-			});
-			writer.start();
-			try {
-				assertThat(committed.await(20, TimeUnit.SECONDS)).as("the racing commit completes").isTrue();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-			}
-		};
-		direct.scheduleQuiescentRebuild();
-		assertThat(committed.await(30, TimeUnit.SECONDS)).isTrue();
-		assertThat(commitFailure.get()).isNull();
-		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
-		while (direct.snapshotMetrics().buildsCompleted == buildsBefore && System.nanoTime() < deadline) {
-			Thread.onSpinWait();
+		ApplierStepping.holdBuildBeforePin(direct);
+		try (RepositoryConnection conn = repo.getConnection()) {
+			conn.add(S1, P1, O1);
 		}
+		ApplierStepping.releaseBuild(direct);
+		assertThat(ApplierStepping.awaitCondition(() -> direct.snapshotMetrics().buildsCompleted > buildsBefore, 30,
+				TimeUnit.SECONDS)).as("the rebuild completed").isTrue();
 		awaitDirectAdjacencyReady();
 		String base = sail.getDirectAdjacencyReadinessDescription();
 		try (RepositoryConnection conn = repo.getConnection()) {
@@ -424,55 +389,51 @@ class LmdbDirectAdjacencyQueryTest {
 	@Test
 	void genericSailDatasetUnorderedStatementsUseSelectedAdjacencyWhenAvailable() throws IOException {
 		openStore(DirectAdjacencyMode.PREFER, DirectAdjacencyCoverage.SELECTED, List.of(P1));
-		RoutingObservation observation = new RoutingObservation();
-		backing.nativeSourceObservationForTest = observation;
+		try (RoutingObservation observation = new RoutingObservation(); CloseableDataset dataset = dataset()) {
+			observation.reset();
+			List<String> queryCaptures = new ArrayList<>();
+			LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+			List<Statement> allContexts = collectStatements(dataset.dataset.getStatements(S1, P1, null));
+			LmdbAdjacencyMetrics.Snapshot afterAllContexts = direct.snapshotMetrics();
+			String allContextsDiagnostics = routingDiagnostics(before, afterAllContexts, observation);
+			queryCaptures.add("allContexts=" + allContextsDiagnostics);
+			assertThat(allContexts)
+					.as("selected-predicate statement access; " + allContextsDiagnostics)
+					.containsExactlyInAnyOrder(
+							F.createStatement(S1, P1, O1),
+							F.createStatement(S1, P1, O2, G1));
+			assertThat(afterAllContexts.lookupHits)
+					.as("selected-predicate lookup hit; " + allContextsDiagnostics)
+					.isGreaterThan(before.lookupHits);
+			long allContextsHits = direct.snapshotMetrics().lookupHits;
 
-		try {
-			try (CloseableDataset dataset = dataset()) {
-				List<String> queryCaptures = new ArrayList<>();
-				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
-				List<Statement> allContexts = collectStatements(dataset.dataset.getStatements(S1, P1, null));
-				LmdbAdjacencyMetrics.Snapshot afterAllContexts = direct.snapshotMetrics();
-				String allContextsDiagnostics = routingDiagnostics(before, afterAllContexts, observation);
-				queryCaptures.add("allContexts=" + allContextsDiagnostics);
-				assertThat(allContexts)
-						.as("selected-predicate statement access; " + allContextsDiagnostics)
-						.containsExactlyInAnyOrder(
-								F.createStatement(S1, P1, O1),
-								F.createStatement(S1, P1, O2, G1));
-				assertThat(afterAllContexts.lookupHits)
-						.as("selected-predicate lookup hit; " + allContextsDiagnostics)
-						.isGreaterThan(before.lookupHits);
-				long allContextsHits = direct.snapshotMetrics().lookupHits;
+			LmdbAdjacencyMetrics.Snapshot beforeNamedContext = direct.snapshotMetrics();
+			observation.reset();
+			List<Statement> namedContext = collectStatements(dataset.dataset.getStatements(S1, P1, null, G1));
+			LmdbAdjacencyMetrics.Snapshot afterNamedContext = direct.snapshotMetrics();
+			String namedContextDiagnostics = routingDiagnostics(beforeNamedContext, afterNamedContext, observation);
+			queryCaptures.add("namedContext=" + namedContextDiagnostics);
+			assertThat(namedContext)
+					.as("selected-predicate named-context access; " + namedContextDiagnostics)
+					.containsExactly(F.createStatement(S1, P1, O2, G1));
+			assertThat(afterNamedContext.lookupHits)
+					.as("selected-predicate named-context lookup hit; " + namedContextDiagnostics)
+					.isGreaterThan(allContextsHits);
+			long namedContextHits = direct.snapshotMetrics().lookupHits;
 
-				LmdbAdjacencyMetrics.Snapshot beforeNamedContext = direct.snapshotMetrics();
-				List<Statement> namedContext = collectStatements(dataset.dataset.getStatements(S1, P1, null, G1));
-				LmdbAdjacencyMetrics.Snapshot afterNamedContext = direct.snapshotMetrics();
-				String namedContextDiagnostics = routingDiagnostics(beforeNamedContext, afterNamedContext, observation);
-				queryCaptures.add("namedContext=" + namedContextDiagnostics);
-				assertThat(namedContext)
-						.as("selected-predicate named-context access; " + namedContextDiagnostics)
-						.containsExactly(F.createStatement(S1, P1, O2, G1));
-				assertThat(afterNamedContext.lookupHits)
-						.as("selected-predicate named-context lookup hit; " + namedContextDiagnostics)
-						.isGreaterThan(allContextsHits);
-				long namedContextHits = direct.snapshotMetrics().lookupHits;
-
-				LmdbAdjacencyMetrics.Snapshot beforeUncovered = direct.snapshotMetrics();
-				List<Statement> uncovered = collectStatements(dataset.dataset.getStatements(S1, P2, null));
-				LmdbAdjacencyMetrics.Snapshot afterUncovered = direct.snapshotMetrics();
-				String uncoveredDiagnostics = routingDiagnostics(beforeUncovered, afterUncovered, observation);
-				queryCaptures.add("uncovered=" + uncoveredDiagnostics);
-				assertThat(uncovered)
-						.as("uncovered predicate fallback; " + uncoveredDiagnostics)
-						.containsExactly(F.createStatement(S1, P2, O1));
-				assertThat(afterUncovered.lookupHits)
-						.as("an uncovered predicate remains correct through LMDB fallback; " + uncoveredDiagnostics)
-						.isEqualTo(namedContextHits);
-				System.out.println("same-lookup generic Sail routing capture: " + queryCaptures);
-			}
-		} finally {
-			backing.nativeSourceObservationForTest = null;
+			LmdbAdjacencyMetrics.Snapshot beforeUncovered = direct.snapshotMetrics();
+			observation.reset();
+			List<Statement> uncovered = collectStatements(dataset.dataset.getStatements(S1, P2, null));
+			LmdbAdjacencyMetrics.Snapshot afterUncovered = direct.snapshotMetrics();
+			String uncoveredDiagnostics = routingDiagnostics(beforeUncovered, afterUncovered, observation);
+			queryCaptures.add("uncovered=" + uncoveredDiagnostics);
+			assertThat(uncovered)
+					.as("uncovered predicate fallback; " + uncoveredDiagnostics)
+					.containsExactly(F.createStatement(S1, P2, O1));
+			assertThat(afterUncovered.lookupHits)
+					.as("an uncovered predicate remains correct through LMDB fallback; " + uncoveredDiagnostics)
+					.isEqualTo(namedContextHits);
+			System.out.println("same-lookup generic Sail routing capture: " + queryCaptures);
 		}
 
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
@@ -482,14 +443,25 @@ class LmdbDirectAdjacencyQueryTest {
 	void genericSailDatasetCountAndHasUseAdjacencyWhenAvailable() throws IOException {
 		openPreferStore();
 
+		// count and existence access expose metrics but do not use NativeSourceObservationForTest.
 		try (CloseableDataset dataset = dataset()) {
-			long countHitsBefore = direct.snapshotMetrics().lookupHits;
-			assertThat(dataset.dataset.getStatementCount(S1, P1, null)).isEqualTo(2);
-			assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(countHitsBefore);
+			LmdbAdjacencyMetrics.Snapshot beforeCount = direct.snapshotMetrics();
+			long statementCount = dataset.dataset.getStatementCount(S1, P1, null);
+			LmdbAdjacencyMetrics.Snapshot afterCount = direct.snapshotMetrics();
+			String countDiagnostics = adjacencyMetricsDiagnostics(beforeCount, afterCount);
+			assertThat(statementCount).as("generic Sail count results; " + countDiagnostics).isEqualTo(2);
+			assertThat(afterCount.lookupHits)
+					.as("generic Sail count adjacency hit; " + countDiagnostics)
+					.isGreaterThan(beforeCount.lookupHits);
 
-			long hasHitsBefore = direct.snapshotMetrics().lookupHits;
-			assertThat(dataset.dataset.hasStatements(S1, P1, O2, G1)).isTrue();
-			assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hasHitsBefore);
+			LmdbAdjacencyMetrics.Snapshot beforeHas = direct.snapshotMetrics();
+			boolean hasStatement = dataset.dataset.hasStatements(S1, P1, O2, G1);
+			LmdbAdjacencyMetrics.Snapshot afterHas = direct.snapshotMetrics();
+			String hasDiagnostics = adjacencyMetricsDiagnostics(beforeHas, afterHas);
+			assertThat(hasStatement).as("generic Sail existence result; " + hasDiagnostics).isTrue();
+			assertThat(afterHas.lookupHits)
+					.as("generic Sail existence adjacency hit; " + hasDiagnostics)
+					.isGreaterThan(beforeHas.lookupHits);
 
 			assertThat(dataset.dataset.getStatementCount(S1, P1, null, (Resource) null)).isEqualTo(1);
 			assertThat(dataset.dataset.getStatementCount(S1, P1, null, G1)).isEqualTo(1);
@@ -503,19 +475,24 @@ class LmdbDirectAdjacencyQueryTest {
 	@Test
 	void genericSailDatasetRequestedOrderUsesAdjacencyAndRemainsMonotonic() throws IOException {
 		openPreferStore();
-		long hitsBefore = direct.snapshotMetrics().lookupHits;
-
-		try (CloseableDataset dataset = dataset()) {
+		LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+		try (RoutingObservation observation = new RoutingObservation(); CloseableDataset dataset = dataset()) {
+			observation.reset();
 			List<Statement> statements = collectStatements(
 					dataset.dataset.getStatements(StatementOrder.O, S1, P1, null));
+			LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+			String diagnostics = routingDiagnostics(before, after, observation);
 			assertThat(statements)
+					.as("generic Sail ordered statement results; " + diagnostics)
 					.containsExactlyInAnyOrder(
 							F.createStatement(S1, P1, O1),
 							F.createStatement(S1, P1, O2, G1))
 					.isSortedAccordingTo(StatementOrder.O.getComparator(dataset.dataset.getComparator()));
+			assertThat(after.lookupHits)
+					.as("generic Sail ordered adjacency hit; " + diagnostics)
+					.isGreaterThan(before.lookupHits);
 		}
 
-		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
 	}
 
@@ -526,27 +503,63 @@ class LmdbDirectAdjacencyQueryTest {
 			connection.add(S1, P1, O1, G2);
 		}
 		awaitDirectAdjacencyReady();
-		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+		List<String> queryCaptures = new ArrayList<>();
+		try (RoutingObservation observation = new RoutingObservation(); CloseableDataset dataset = dataset()) {
+			observation.reset();
+			LmdbAdjacencyMetrics.Snapshot beforeSelected = direct.snapshotMetrics();
+			List<Statement> selected = collectStatements(dataset.dataset.getStatements(S1, P1, null, null, G1));
+			LmdbAdjacencyMetrics.Snapshot afterSelected = direct.snapshotMetrics();
+			String selectedDiagnostics = routingDiagnostics(beforeSelected, afterSelected, observation);
+			queryCaptures.add("selected=" + selectedDiagnostics);
+			assertThat(selected).as("generic Sail selected-context results; " + selectedDiagnostics)
+					.containsExactlyInAnyOrder(
+							F.createStatement(S1, P1, O1),
+							F.createStatement(S1, P1, O2, G1));
 
-		try (CloseableDataset dataset = dataset()) {
-			List<Statement> selected = collectStatements(
-					dataset.dataset.getStatements(S1, P1, null, null, G1));
-			List<Statement> separatelySelected = new ArrayList<>(collectStatements(
-					dataset.dataset.getStatements(S1, P1, null, (Resource) null)));
-			separatelySelected.addAll(collectStatements(dataset.dataset.getStatements(S1, P1, null, G1)));
-			assertThat(selected).containsExactlyInAnyOrder(
-					F.createStatement(S1, P1, O1),
-					F.createStatement(S1, P1, O2, G1));
-			assertThat(selected).containsExactlyInAnyOrderElementsOf(separatelySelected);
-			assertThat(selected).doesNotContain(F.createStatement(S1, P1, O1, G2));
-			assertThat(collectStatements(dataset.dataset.getStatements(S1, P1, null)))
+			LmdbAdjacencyMetrics.Snapshot beforeDefault = direct.snapshotMetrics();
+			observation.reset();
+			List<Statement> defaultContext = collectStatements(
+					dataset.dataset.getStatements(S1, P1, null, (Resource) null));
+			LmdbAdjacencyMetrics.Snapshot afterDefault = direct.snapshotMetrics();
+			String defaultDiagnostics = routingDiagnostics(beforeDefault, afterDefault, observation);
+			queryCaptures.add("defaultContext=" + defaultDiagnostics);
+
+			LmdbAdjacencyMetrics.Snapshot beforeNamed = direct.snapshotMetrics();
+			observation.reset();
+			List<Statement> namedContext = collectStatements(dataset.dataset.getStatements(S1, P1, null, G1));
+			LmdbAdjacencyMetrics.Snapshot afterNamed = direct.snapshotMetrics();
+			String namedDiagnostics = routingDiagnostics(beforeNamed, afterNamed, observation);
+			queryCaptures.add("namedContext=" + namedDiagnostics);
+			List<Statement> separatelySelected = new ArrayList<>(defaultContext);
+			separatelySelected.addAll(namedContext);
+
+			assertThat(selected).as("generic Sail selected-context parity; " + String.join("; ", queryCaptures))
+					.containsExactlyInAnyOrderElementsOf(separatelySelected);
+			assertThat(selected).as("generic Sail context exclusion; " + selectedDiagnostics)
+					.doesNotContain(F.createStatement(S1, P1, O1, G2));
+
+			LmdbAdjacencyMetrics.Snapshot beforeAllContexts = direct.snapshotMetrics();
+			observation.reset();
+			List<Statement> allContexts = collectStatements(dataset.dataset.getStatements(S1, P1, null));
+			LmdbAdjacencyMetrics.Snapshot afterAllContexts = direct.snapshotMetrics();
+			String allContextsDiagnostics = routingDiagnostics(beforeAllContexts, afterAllContexts, observation);
+			queryCaptures.add("allContexts=" + allContextsDiagnostics);
+			assertThat(allContexts).as("generic Sail all-context results; " + allContextsDiagnostics)
 					.containsExactlyInAnyOrderElementsOf(List.of(
 							F.createStatement(S1, P1, O1),
 							F.createStatement(S1, P1, O2, G1),
 							F.createStatement(S1, P1, O1, G2)));
 		}
+		LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+		String diagnostics = "queryCaptures=" + queryCaptures
+				+ ", afterDatasetClose=" + directAdjacencyDiagnostics(before, after)
+				+ ", absoluteFallbacksBefore=" + absoluteFallbacks(before)
+				+ ", absoluteFallbacksAfter=" + absoluteFallbacks(after);
+		assertThat(after.lookupHits)
+				.as("generic Sail multi-context adjacency hit; " + diagnostics)
+				.isGreaterThanOrEqualTo(before.lookupHits + 3);
 
-		assertThat(direct.snapshotMetrics().lookupHits).isGreaterThanOrEqualTo(hitsBefore + 3);
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
 	}
 
@@ -554,23 +567,35 @@ class LmdbDirectAdjacencyQueryTest {
 	void genericSailDatasetMultiContextIteratorRetainsAndReleasesItsAdjacencyLease() throws IOException {
 		openPreferStore();
 		awaitExactViewServesMultiContextStatements();
-		org.eclipse.rdf4j.sail.base.SailDataset dataset = backing.getExplicitSailSource()
-				.dataset(IsolationLevels.SNAPSHOT);
-		try {
-			long hitsBefore = direct.snapshotMetrics().lookupHits;
-			try (CloseableIteration<? extends Statement> statements = dataset.getStatements(
-					S1, P1, null, null, G1)) {
-				assertThat(statements.hasNext()).isTrue();
-				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
+		try (RoutingObservation observation = new RoutingObservation()) {
+			org.eclipse.rdf4j.sail.base.SailDataset dataset = backing.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT);
+			try {
+				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+				observation.reset();
+				try (CloseableIteration<? extends Statement> statements = dataset.getStatements(
+						S1, P1, null, null, G1)) {
+					boolean hasNext = statements.hasNext();
+					LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+					String diagnostics = routingDiagnostics(before, after, observation);
+					assertThat(hasNext)
+							.as("generic Sail multi-context iterator result; " + diagnostics)
+							.isTrue();
+					assertThat(after.lookupHits)
+							.as("generic Sail multi-context iterator adjacency hit; " + diagnostics)
+							.isGreaterThan(before.lookupHits);
+					assertThat(direct.snapshotMetrics().activeViews)
+							.as("the open generic iterator shares the dataset's retained adjacency view; "
+									+ diagnostics)
+							.isEqualTo(1);
+				}
 				assertThat(direct.snapshotMetrics().activeViews)
-						.as("the open generic iterator shares the dataset's retained adjacency view")
+						.as("closing the iterator releases its lease while the dataset retains the owning lease; "
+								+ routingDiagnostics(before, direct.snapshotMetrics(), observation))
 						.isEqualTo(1);
+			} finally {
+				dataset.close();
 			}
-			assertThat(direct.snapshotMetrics().activeViews)
-					.as("closing the iterator releases its lease while the dataset retains the owning lease")
-					.isEqualTo(1);
-		} finally {
-			dataset.close();
 		}
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
 	}
@@ -962,7 +987,9 @@ class LmdbDirectAdjacencyQueryTest {
 		CountDownLatch commitReachedPublicationWindow = new CountDownLatch(1);
 		CountDownLatch allowRevisionPublication = new CountDownLatch(1);
 		tripleStore.setDirectAdjacencyCommitHooks((delta, nextRevision) -> {
-			delegate.beforeRevisionBump(delta, nextRevision);
+			if (delegate != null) {
+				delegate.beforeRevisionBump(delta, nextRevision);
+			}
 			commitReachedPublicationWindow.countDown();
 			try {
 				allowRevisionPublication.await();
@@ -1283,15 +1310,9 @@ class LmdbDirectAdjacencyQueryTest {
 		RuntimeException acquireFailure = new IllegalStateException("synthetic adjacency acquisition failure");
 		TxnManager txnManager = backing.getTripleStore().getTxnManager();
 		int availableReadersBefore = txnManager.availableReadTxnSlots(1_024, 0);
-		direct.beforeExactViewReturnForTest = () -> {
-			throw acquireFailure;
-		};
-		try {
-			assertThatThrownBy(() -> backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT))
-					.isSameAs(acquireFailure);
-		} finally {
-			direct.beforeExactViewReturnForTest = null;
-		}
+		direct.injectAcquireFailureForTest(acquireFailure);
+		assertThatThrownBy(() -> backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT))
+				.isSameAs(acquireFailure);
 
 		assertThat(direct.snapshotMetrics().activeViews)
 				.as("the failed adjacency acquisition releases its provisional view")
@@ -1739,17 +1760,24 @@ class LmdbDirectAdjacencyQueryTest {
 		awaitExactViewServesGraphCount();
 
 		try (CloseableDataset dataset = dataset()) {
-			long hitsBefore = direct.snapshotMetrics().lookupHits;
-			assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
-			assertThat(direct.snapshotMetrics().lookupHits)
-					.as("a named-graph count is served by the exact view instead of an LMDB index scan")
-					.isGreaterThan(hitsBefore);
+			try (LmdbStartupReadCounter reads = new LmdbStartupReadCounter()) {
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
+				Map<String, Long> work = reads.operations();
+				assertThat(work.getOrDefault("mdb_get", 0L))
+						.as("the context count uses the exact LMDB context catalog")
+						.isPositive();
+				assertThat(work.getOrDefault("mdb_cursor_get", 0L))
+						.as("the context catalog count does not scan statement records")
+						.isZero();
+				assertThat(direct.snapshotMetrics().lookupHits)
+						.as("context-only counts are served by the exact context catalog")
+						.isEqualTo(hitsBefore);
+			}
 
 			long hitsBeforeDefaultGraph = direct.snapshotMetrics().lookupHits;
 			assertThat(dataset.source.count(-1, -1, -1, 0)).isEqualTo(4);
-			assertThat(direct.snapshotMetrics().lookupHits)
-					.as("the default-graph count is served by the exact view")
-					.isGreaterThan(hitsBeforeDefaultGraph);
+			assertThat(direct.snapshotMetrics().lookupHits).isEqualTo(hitsBeforeDefaultGraph);
 
 			long hitsBeforePredicate = direct.snapshotMetrics().lookupHits;
 			assertThat(dataset.source.count(-1, p1, -1, g1)).isEqualTo(1);
@@ -1782,6 +1810,65 @@ class LmdbDirectAdjacencyQueryTest {
 			assertThat(direct.snapshotMetrics().lookupHits)
 					.as("no index leads with both predicate and context, so that count sweeps the predicate's run")
 					.isGreaterThan(hitsBefore);
+		}
+	}
+
+	@Test
+	void rebuildingCommittedRevisionBeforePreparationDoesNotLeavePendingRows() throws Exception {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
+		openPreferStore("spoc,posc,cspo");
+		direct.awaitCommitCleanupForTest();
+		direct.awaitCompactionForTest();
+		// Hold the applier so the commit's record stays unapplied, then rebuild: the applier starts a requested rebuild
+		// before it prepares the next record, so the new base already includes this commit and the record is skipped.
+		direct.pauseApplierForTest(true);
+		try {
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.begin();
+				connection.add(S2, P1, O2);
+				for (int i = 0; i < 2048; i++) {
+					connection.add(F.createIRI("http://example.org/rebuild-before-preparation/" + i), P2, O1);
+				}
+				connection.commit();
+			}
+			long revision = backing.getTripleStore().getDataRevision();
+			assertThat(direct.publishedStateForTest().appliedRevision())
+					.as("the paused applier has not applied the commit yet")
+					.isLessThan(revision);
+			assertThat(direct.buildNowForTest()).isTrue();
+			assertThat(direct.publishedStateForTest().appliedRevision()).isEqualTo(revision);
+			assertThat(direct.publishedStateForTest().pending()).isEmpty();
+			direct.pauseApplierForTest(false);
+			direct.awaitCommitCleanupForTest();
+			try (CloseableDataset dataset = dataset()) {
+				long hitsBefore = direct.snapshotMetrics().lookupHits;
+				assertThat(dataset.source.count(-1, p1, -1, 0)).isEqualTo(3L);
+				assertThat(direct.snapshotMetrics().lookupHits)
+						.as("the rebuilt exact view serves the predicate and context count")
+						.isGreaterThan(hitsBefore);
+				assertThat(direct.publishedStateForTest().pending())
+						.as("a commit already included in the rebuilt generation cannot remain pending")
+						.isEmpty();
+				assertThat(dataset.source.count(-1, p1, -1, g1)).isEqualTo(1L);
+				try (RepositoryConnection connection = repo.getConnection()) {
+					connection.add(S2, P1, O2, G1);
+				}
+				direct.awaitCommitCleanupForTest();
+				assertThat(dataset.source.count(-1, p1, -1, g1))
+						.as("the previously acquired snapshot retains its graph count")
+						.isEqualTo(1L);
+				try (CloseableDataset latest = dataset()) {
+					long latestHits = direct.snapshotMetrics().lookupHits;
+					assertThat(latest.source.count(-1, p1, -1, g1)).isEqualTo(2L);
+					assertThat(direct.snapshotMetrics().lookupHits)
+							.as("a later committed revision remains eligible for exact graph counts")
+							.isGreaterThan(latestHits);
+				}
+			}
+		} finally {
+			direct.pauseApplierForTest(false);
+			direct.awaitCommitCleanupForTest();
 		}
 	}
 
@@ -1902,19 +1989,45 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		openPreferStore();
+		String queryText = "SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }";
 		String plan;
 		try (RepositoryConnection connection = repo.getConnection()) {
-			plan = connection.prepareTupleQuery("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }")
+			plan = connection.prepareTupleQuery(queryText)
 					.explain(Explanation.Level.Optimized)
 					.toString();
 		}
 
 		LmdbPrefixRunPlan.resetMetrics();
-		assertThat(queryRows("SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }", "count"))
-				.containsExactly("3");
-		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).as("whole-plane physical candidate inventory:%n%s", plan)
-				.isGreaterThan(0);
-		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
+		long hitsBefore = direct.snapshotMetrics().lookupHits;
+		Explanation telemetry;
+		List<String> actual = new ArrayList<>();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(queryText);
+			telemetry = query.explain(Explanation.Level.Telemetry);
+			try (TupleQueryResult result = query.evaluate()) {
+				while (result.hasNext()) {
+					actual.add(result.next().getValue("count").stringValue());
+				}
+			}
+		}
+		assertThat(actual).containsExactly("3");
+		String proposalCosts = findMetric(telemetry.toGenericPlanNode(), "nativeStrategyProposalCosts");
+		assertThat(proposalCosts)
+				.as("indexed count has a finite quote from its exact metadata result:%n%s", telemetry)
+				.contains("indexedCount=")
+				.doesNotContain("indexedCount=Infinity");
+		assertThat(findMetric(telemetry.toGenericPlanNode(), "nativeExecutionPath"))
+				.as("exact predicate-plane COUNT(*) should use the indexed count route:%n%s", telemetry)
+				.isEqualTo("indexedCount");
+		assertThat(direct.snapshotMetrics().lookupHits)
+				.as("the scalar count is answered from exact predicate-plane metadata; optimized plan:%n%s", plan)
+				.isGreaterThan(hitsBefore);
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
+				.as("exact predicate-plane cardinality does not open a payload cursor")
+				.isZero();
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get())
+				.as("exact predicate-plane cardinality does not count scanned run rows")
+				.isZero();
 	}
 
 	@Test
@@ -2507,18 +2620,10 @@ class LmdbDirectAdjacencyQueryTest {
 				assertThat(emptySnapshot.source.exactPredicateCount(p2)).hasValue(0L);
 				assertThat(emptySnapshot.rows(-1, p2, -1, -1)).isEmpty();
 				direct.pauseApplierForTest(true);
-				CountDownLatch pendingPublished = new CountDownLatch(1);
-				CountDownLatch releaseQueueAdmission = new CountDownLatch(1);
-				Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
-				direct.beforeApplyQueueAdmissionForTest = () -> {
-					pendingPublished.countDown();
-					awaitQueueAdmissionRelease(releaseQueueAdmission);
-				};
 				try {
 					try (RepositoryConnection connection = repo.getConnection()) {
 						connection.add(S2, P2, O2);
 					}
-					awaitPendingPublication(pendingPublished);
 
 					assertThat(oldSnapshot.source.exactPredicateCount(p2))
 							.as("a retained old source stays exact while a newer committed row is pending")
@@ -2540,8 +2645,6 @@ class LmdbDirectAdjacencyQueryTest {
 							.as("a pending committed insertion must not be pruned by a stale empty count")
 							.isEqualTo(prunesBeforePendingQuery);
 				} finally {
-					releaseQueueAdmission.countDown();
-					direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 					direct.pauseApplierForTest(false);
 					direct.awaitCommitCleanupForTest();
 				}
@@ -2644,13 +2747,14 @@ class LmdbDirectAdjacencyQueryTest {
 
 	@Test
 	void pagedBaseServesExactCountAndPredicateAnalytics() throws IOException {
+		// This is a cold AUTO physical-route assertion, not a latency contest after earlier tests or forced
+		// capability probes have trained the process-wide cost model.
+		KernelExecutionTestAccess.resetCostCalibration();
 		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		openPreferStore();
 		String fixedQuery = "SELECT (COUNT(*) AS ?count) WHERE { ?s <" + P1 + "> ?o }";
 		String predicateQuery = "SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p";
-		assertAdjacencyCapability(fixedQuery, "count");
-		assertAdjacencyCapability(predicateQuery, "p", "count");
 		try (var pinnedDataset = dataset();
 				var unpinnedDataset = new CloseableDataset(
 						backing.getExplicitSailSource().dataset(IsolationLevels.NONE))) {
@@ -2674,15 +2778,32 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 
 		LmdbPrefixRunPlan.resetMetrics();
-		assertThat(queryRows(fixedQuery, "count"))
-				.containsExactly("3");
-		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
-		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
+		long hitsBeforeScalar = direct.snapshotMetrics().lookupHits;
+		assertThat(queryRows(fixedQuery, "count")).containsExactly("3");
+		assertThat(direct.snapshotMetrics().lookupHits)
+				.as("AUTO serves the scalar count from exact plane metadata")
+				.isGreaterThan(hitsBeforeScalar);
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
+				.as("the exact scalar total does not open a payload cursor")
+				.isZero();
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isZero();
+
 		LmdbPrefixRunPlan.resetMetrics();
 		assertThat(queryRows(predicateQuery, "p", "count"))
 				.containsExactly(P1.stringValue() + "=3", P2.stringValue() + "=1", P3.stringValue() + "=1");
 		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get()).isGreaterThan(0);
-		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(5);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get())
+				.as("the grouped query counts predicate-prefix rows")
+				.isEqualTo(5);
+
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(queryRowsVia(fixedQuery, "adjacencyAggregate", "count")).containsExactly("3");
+		assertThat(LmdbPrefixRunPlan.ADJACENCY_OPENED.get())
+				.as("the forced adjacency capability remains available for the same exact result")
+				.isGreaterThan(0);
+		assertThat(LmdbPrefixRunPlan.RUN_ROWS_COUNTED.get()).isEqualTo(3);
+		assertAdjacencyCapability(fixedQuery, "count");
+		assertAdjacencyCapability(predicateQuery, "p", "count");
 		assertThat(direct.snapshotMetrics().activeViews).isZero();
 	}
 
@@ -2779,43 +2900,24 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, "true");
 		openPreferStore();
 		direct.pauseApplierForTest(true);
-		CountDownLatch firstPendingPublished = new CountDownLatch(1);
-		CountDownLatch releaseFirstQueueAdmission = new CountDownLatch(1);
-		CountDownLatch secondPendingPublished = new CountDownLatch(1);
-		CountDownLatch releaseSecondQueueAdmission = new CountDownLatch(1);
-		Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
-		direct.beforeApplyQueueAdmissionForTest = () -> {
-			firstPendingPublished.countDown();
-			awaitQueueAdmissionRelease(releaseFirstQueueAdmission);
-		};
 		try {
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(F.createIRI("http://example.org/unrelated"), P2, O2);
 			}
-			awaitPendingPublication(firstPendingPublished);
-			releaseFirstQueueAdmission.countDown();
 			try (var dataset = dataset()) {
 				assertThat(dataset.source.indexName(-1, -1, o1, -1)).isEqualTo("direct-psoc");
 				long hitsBefore = direct.snapshotMetrics().lookupHits;
 				assertThat(CloseableDataset.collect(dataset.source.statements(-1, -1, o1, -1))).hasSize(3);
 				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 			}
-			direct.beforeApplyQueueAdmissionForTest = () -> {
-				secondPendingPublished.countDown();
-				awaitQueueAdmissionRelease(releaseSecondQueueAdmission);
-			};
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(F.createIRI("http://example.org/touches-o1"), P3, O1);
 			}
-			awaitPendingPublication(secondPendingPublished);
 			try (var touched = dataset()) {
 				assertThat(touched.source.indexName(-1, -1, o1, -1))
 						.isEqualTo(backing.getTripleStore().getIndexName(-1, -1, o1, -1));
 			}
 		} finally {
-			releaseFirstQueueAdmission.countDown();
-			releaseSecondQueueAdmission.countDown();
-			direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 			direct.pauseApplierForTest(false);
 		}
 	}
@@ -2825,19 +2927,10 @@ class LmdbDirectAdjacencyQueryTest {
 		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
 		openPreferStore("spco,spoc,posc");
 		direct.pauseApplierForTest(true);
-		CountDownLatch pendingPublished = new CountDownLatch(1);
-		CountDownLatch releaseQueueAdmission = new CountDownLatch(1);
-		Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
-		direct.beforeApplyQueueAdmissionForTest = () -> {
-			pendingPublished.countDown();
-			awaitQueueAdmissionRelease(releaseQueueAdmission);
-		};
 		try {
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(F.createIRI("http://example.org/unrelated"), P2, O2);
 			}
-			awaitPendingPublication(pendingPublished);
-			releaseQueueAdmission.countDown();
 			try (var dataset = dataset()) {
 				assertThat(backing.getTripleStore().getIndexName(s1, p1, -1, -1)).isEqualTo("spco");
 				assertThat(dataset.source.indexName(s1, p1, -1, -1)).isEqualTo("direct-spoc");
@@ -2847,15 +2940,12 @@ class LmdbDirectAdjacencyQueryTest {
 				assertThat(direct.snapshotMetrics().lookupHits).isGreaterThan(hitsBefore);
 			}
 		} finally {
-			releaseQueueAdmission.countDown();
-			direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 			direct.pauseApplierForTest(false);
 		}
 	}
 
-	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void readinessWaitsForAnUnpublishedCommitToReachTheApplyQueue(boolean delayCommitFinalization) throws Exception {
+	@Test
+	void readinessWaitsForAnUnpublishedCommitToReachTheApplyQueue() throws Exception {
 		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyEnabled(true)
@@ -2878,65 +2968,37 @@ class LmdbDirectAdjacencyQueryTest {
 		assertThat(direct).isNotNull();
 		awaitDirectAdjacencyReady();
 
-		CountDownLatch admissionStarted = new CountDownLatch(1);
-		CountDownLatch releaseAdmission = new CountDownLatch(1);
-		CountDownLatch finalizationStarted = new CountDownLatch(1);
-		CountDownLatch releaseFinalization = new CountDownLatch(1);
-		CountDownLatch readinessStarted = new CountDownLatch(1);
-		Runnable previousAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
-		Runnable previousFinalizationHook = direct.beforePreparedFinalizeWaitForTest;
-		ExecutorService executor = Executors.newFixedThreadPool(2);
-		direct.beforeApplyQueueAdmissionForTest = () -> {
-			admissionStarted.countDown();
-			awaitQueueAdmissionRelease(releaseAdmission);
-		};
-		if (delayCommitFinalization) {
-			direct.beforePreparedFinalizeWaitForTest = () -> {
-				finalizationStarted.countDown();
-				awaitQueueAdmissionRelease(releaseFinalization);
-			};
-		}
+		// the paused applier leaves the committed record sealed but unapplied: readiness must wait behind it
+		direct.pauseApplierForTest(true);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
 		try {
-			Future<?> commit = executor.submit(() -> {
-				try (RepositoryConnection connection = repo.getConnection()) {
-					connection.add(F.createIRI("http://example.org/pending"), P2, O2);
-				}
-			});
-			awaitPendingPublication(admissionStarted);
-			if (delayCommitFinalization) {
-				awaitPendingPublication(finalizationStarted);
-				assertThat(commit.isDone()).isFalse();
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(F.createIRI("http://example.org/pending"), P2, O2);
 			}
-			releaseFinalization.countDown();
-			// Queue admission runs on the preparation worker and can precede the connection's admission release.
-			commit.get(30, TimeUnit.SECONDS);
-			assertThat(direct.publicationDiagnostics()).contains("admittedWrites=0");
 			LmdbAdjacencyMetrics.Snapshot handoff = direct.snapshotMetrics();
 			assertThat(handoff.currentDataRevision).as(direct.publicationDiagnostics())
 					.isGreaterThan(handoff.appliedRevision);
+			CountDownLatch readinessStarted = new CountDownLatch(1);
 			Future<Boolean> readiness = executor.submit(() -> {
 				readinessStarted.countDown();
 				return sail.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS);
 			});
 			assertThat(readinessStarted.await(30, TimeUnit.SECONDS)).isTrue();
-			Boolean readinessBeforeHandoff;
+			Boolean readinessBeforeApply;
 			try {
-				readinessBeforeHandoff = readiness.get(250, TimeUnit.MILLISECONDS);
+				readinessBeforeApply = readiness.get(250, TimeUnit.MILLISECONDS);
 			} catch (TimeoutException expected) {
-				readinessBeforeHandoff = null;
+				readinessBeforeApply = null;
 			}
-			assertThat(readinessBeforeHandoff)
-					.as("readiness must wait while a committed revision is still being handed to the applier: currentRevision="
+			assertThat(readinessBeforeApply)
+					.as("readiness must wait while a committed revision is unapplied: currentRevision="
 							+ handoff.currentDataRevision + ", appliedRevision=" + handoff.appliedRevision + ", "
 							+ direct.publicationDiagnostics())
 					.isNull();
-			releaseAdmission.countDown();
+			direct.pauseApplierForTest(false);
 			assertThat(readiness.get(60, TimeUnit.SECONDS)).isTrue();
 		} finally {
-			releaseFinalization.countDown();
-			releaseAdmission.countDown();
-			direct.beforeApplyQueueAdmissionForTest = previousAdmissionHook;
-			direct.beforePreparedFinalizeWaitForTest = previousFinalizationHook;
+			direct.pauseApplierForTest(false);
 			executor.shutdownNow();
 		}
 	}
@@ -3145,11 +3207,10 @@ class LmdbDirectAdjacencyQueryTest {
 		assertThat(direct.buildNowForTest()).isTrue();
 		awaitDirectAdjacencyReady();
 
-		RoutingObservation observation = new RoutingObservation();
-		backing.nativeSourceObservationForTest = observation;
-		try {
+		try (RoutingObservation observation = new RoutingObservation()) {
 			try (var dataset = dataset()) {
 				long predicate = dataset.idOf(widePredicate);
+				observation.reset();
 				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
 				List<long[]> rows = dataset.rows(-1, predicate, -1, -1, observation);
 				LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
@@ -3160,8 +3221,6 @@ class LmdbDirectAdjacencyQueryTest {
 						.isGreaterThan(before.lookupHits);
 				System.out.println("same-lookup rootbulk routing capture: " + diagnostics);
 			}
-		} finally {
-			backing.nativeSourceObservationForTest = null;
 		}
 	}
 
@@ -3173,6 +3232,13 @@ class LmdbDirectAdjacencyQueryTest {
 				+ ", sameLookupObservation=" + observation;
 	}
 
+	private String adjacencyMetricsDiagnostics(LmdbAdjacencyMetrics.Snapshot before,
+			LmdbAdjacencyMetrics.Snapshot after) {
+		return directAdjacencyDiagnostics(before, after)
+				+ ", absoluteFallbacksBefore=" + absoluteFallbacks(before)
+				+ ", absoluteFallbacksAfter=" + absoluteFallbacks(after);
+	}
+
 	private static EnumMap<FallbackReason, Long> absoluteFallbacks(LmdbAdjacencyMetrics.Snapshot snapshot) {
 		EnumMap<FallbackReason, Long> counts = new EnumMap<>(FallbackReason.class);
 		for (FallbackReason reason : FallbackReason.values()) {
@@ -3181,14 +3247,32 @@ class LmdbDirectAdjacencyQueryTest {
 		return counts;
 	}
 
-	private static final class RoutingObservation implements LmdbSailStore.NativeSourceObservationForTest {
+	private final class RoutingObservation implements LmdbSailStore.NativeSourceObservationForTest, AutoCloseable {
 		private static final int MAX_EVENTS = 128;
+		private final LmdbSailStore.NativeSourceObservationForTest previousObservation = backing.nativeSourceObservationForTest;
 		private final List<LmdbSailStore.NativeSourceStateForTest> states = new ArrayList<>();
 		private final List<String> events = new ArrayList<>();
 		private long omittedEvents;
 
+		private RoutingObservation() {
+			backing.nativeSourceObservationForTest = this;
+		}
+
+		private synchronized void reset() {
+			states.clear();
+			events.clear();
+			omittedEvents = 0L;
+		}
+
 		@Override
-		public void state(LmdbSailStore.NativeSourceStateForTest state) {
+		public void close() {
+			if (backing.nativeSourceObservationForTest == this) {
+				backing.nativeSourceObservationForTest = previousObservation;
+			}
+		}
+
+		@Override
+		public synchronized void state(LmdbSailStore.NativeSourceStateForTest state) {
 			if (states.size() < MAX_EVENTS) {
 				states.add(state);
 			} else {
@@ -3232,7 +3316,8 @@ class LmdbDirectAdjacencyQueryTest {
 					+ ":filtered=" + filteredRows + ":censored=" + censored, null, -1L, -1L, -1L, -1L);
 		}
 
-		private void record(String kind, String result, StatementOrder order, long subj, long pred, long obj,
+		private synchronized void record(String kind, String result, StatementOrder order, long subj, long pred,
+				long obj,
 				long context) {
 			if (events.size() < MAX_EVENTS) {
 				events.add(kind + "(" + result + ", order=" + order + ", ids=" + subj + "/" + pred + "/" + obj
@@ -3243,7 +3328,7 @@ class LmdbDirectAdjacencyQueryTest {
 		}
 
 		@Override
-		public String toString() {
+		public synchronized String toString() {
 			return "states=" + states + ", events=" + events + ", omitted=" + omittedEvents;
 		}
 	}
@@ -3316,100 +3401,55 @@ class LmdbDirectAdjacencyQueryTest {
 		assertDoublyBoundContextProbes();
 	}
 
-	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void resumingApplierWaitsForCommittedPreparation(boolean delayQueueAdmission) throws Exception {
+	/**
+	 * Resuming the applier returns only once the commit that landed while it was paused is applied, so a reader after
+	 * the resume sees the doubly bound context rows from adjacency.
+	 */
+	@Test
+	void resumingApplierWaitsForCommittedPreparation() throws Exception {
 		System.setProperty(LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY, "false");
 		System.setProperty(LmdbDirectAdjacencyStore.BOUND_PROBE_PROPERTY, "true");
 		openPreferStore();
 		direct.pauseApplierForTest(true);
-		CountDownLatch handoffReached = new CountDownLatch(1);
-		CountDownLatch releaseHandoff = new CountDownLatch(1);
-		Runnable delayedHandoff = () -> {
-			handoffReached.countDown();
-			awaitQueueAdmissionRelease(releaseHandoff);
-		};
-		Runnable previousPreparation = direct.beforePreparationForTest;
-		Runnable previousAdmission = direct.beforeApplyQueueAdmissionForTest;
-		if (delayQueueAdmission) {
-			direct.beforeApplyQueueAdmissionForTest = delayedHandoff;
-		} else {
-			direct.beforePreparationForTest = delayedHandoff;
-		}
 		ExecutorService executor = Executors.newSingleThreadExecutor();
-		Future<?> resume = null;
 		try {
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.begin();
 				connection.add(S1, P1, O1, G1);
 				connection.add(S1, P1, O1, G2);
-				if (!delayQueueAdmission) {
-					// Capture invokes its preparation hook for full batches, rather than the small final tail.
-					for (int index = 0; index < 2048; index++) {
-						connection.add(F.createIRI("http://example.org/prepared/" + index), P2, O1);
-					}
-				}
 				connection.commit();
 			}
-			assertThat(handoffReached.await(30, TimeUnit.SECONDS)).isTrue();
-			if (delayQueueAdmission) {
-				// Pending-row evidence is already published, but the maintenance queue is still empty. A snapshot
-				// acquired here reproduces the original two hits: only the two untouched rows can use adjacency.
-				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
-				RoutingObservation observation = new RoutingObservation();
-				try (CloseableDataset pending = dataset()) {
-					assertDoublyBoundContextRows(pending, observation);
-				}
-				LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
-				String diagnostics = routingDiagnostics(before, after, observation);
-				assertThat(after.lookupHits).as(diagnostics).isEqualTo(before.lookupHits + 2);
-				assertThat(after.fallbacks(FallbackReason.PENDING_ROW)).as(diagnostics)
-						.isEqualTo(before.fallbacks(FallbackReason.PENDING_ROW) + 2);
-			}
-			CountDownLatch resumeStarted = new CountDownLatch(1);
-			resume = executor.submit(() -> {
-				resumeStarted.countDown();
-				direct.pauseApplierForTest(false);
-			});
-			assertThat(resumeStarted.await(30, TimeUnit.SECONDS)).isTrue();
-			Future<?> waitingResume = resume;
-			assertThatThrownBy(() -> waitingResume.get(1, TimeUnit.SECONDS))
-					.as("resume must include committed preparation before draining maintenance")
-					.isInstanceOf(TimeoutException.class);
-			releaseHandoff.countDown();
-			resume.get(30, TimeUnit.SECONDS);
+			long head = backing.getTripleStore().getDataRevision();
+			assertThat(direct.applierStateForTest().appliedRevision()).isLessThan(head);
+			executor.submit(() -> direct.pauseApplierForTest(false)).get(30, TimeUnit.SECONDS);
+			assertThat(direct.applierStateForTest().appliedRevision()).as("resume applied the pending commit")
+					.isEqualTo(head);
 			assertDoublyBoundContextProbes();
 		} finally {
-			releaseHandoff.countDown();
-			direct.beforePreparationForTest = previousPreparation;
-			direct.beforeApplyQueueAdmissionForTest = previousAdmission;
-			try {
-				if (resume != null) {
-					resume.get(30, TimeUnit.SECONDS);
-				}
-				direct.pauseApplierForTest(false);
-			} finally {
-				executor.shutdownNow();
-			}
+			direct.pauseApplierForTest(false);
+			executor.shutdownNow();
 		}
 	}
 
 	private void assertDoublyBoundContextProbes() throws IOException {
-		RoutingObservation observation = new RoutingObservation();
-		LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
-		long hitsBefore = direct.snapshotMetrics().lookupHits;
-		long fallbacksBefore = direct.snapshotMetrics().fallbacks(FallbackReason.DOUBLY_BOUND);
-		try (var dataset = dataset()) {
-			assertDoublyBoundContextRows(dataset, observation);
+		try (RoutingObservation observation = new RoutingObservation()) {
+			LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
+			long hitsBefore = before.lookupHits;
+			long fallbacksBefore = before.fallbacks(FallbackReason.DOUBLY_BOUND);
+			try (var dataset = dataset()) {
+				assertDoublyBoundContextRows(dataset, observation);
+			}
+			LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
+			assertThat(after.lookupHits)
+					.as(routingDiagnostics(before, after, observation))
+					.isGreaterThanOrEqualTo(hitsBefore + 4);
+			assertThat(after.fallbacks(FallbackReason.DOUBLY_BOUND)).isEqualTo(fallbacksBefore);
 		}
-		assertThat(direct.snapshotMetrics().lookupHits)
-				.as(routingDiagnostics(before, direct.snapshotMetrics(), observation))
-				.isGreaterThanOrEqualTo(hitsBefore + 4);
-		assertThat(direct.snapshotMetrics().fallbacks(FallbackReason.DOUBLY_BOUND)).isEqualTo(fallbacksBefore);
 	}
 
 	private void assertDoublyBoundContextRows(CloseableDataset dataset, RoutingObservation observation)
 			throws IOException {
+		observation.reset();
 		long g2 = dataset.idOf(G2);
 		assertSameRows(dataset.rows(s1, p1, o1, -1, observation), List.of(
 				new long[] { s1, p1, o1, 0 },

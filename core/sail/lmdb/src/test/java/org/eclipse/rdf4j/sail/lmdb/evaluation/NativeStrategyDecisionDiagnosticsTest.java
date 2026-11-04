@@ -24,16 +24,38 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
 
+@Isolated("Scopes process-wide calibration consumption for deterministic JFR decisions")
 class NativeStrategyDecisionDiagnosticsTest {
 
 	private static final String EVENT = "org.eclipse.rdf4j.lmdb.NativeStrategyDecision";
+
+	private String previousCalibration;
+
+	@BeforeEach
+	void isolateCalibration() {
+		// These fixtures exercise diagnostic capture, not costs learned by unrelated queries.
+		previousCalibration = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
+	}
+
+	@AfterEach
+	void restoreCalibration() {
+		if (previousCalibration == null) {
+			System.clearProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
+		} else {
+			System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCalibration);
+		}
+	}
 
 	@Test
 	void decisionQuotesRetainTheSingleRankedBatchAndCompleteLegalInventory(@TempDir Path directory) throws Exception {

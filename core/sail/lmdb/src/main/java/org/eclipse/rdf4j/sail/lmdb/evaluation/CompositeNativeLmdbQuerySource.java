@@ -280,6 +280,65 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public IndexAccessProfile indexAccessProfile() {
+		return indexAccessProfile(false);
+	}
+
+	@Override
+	public IndexAccessProfile pinnedLmdbSweepProfile() {
+		return indexAccessProfile(true);
+	}
+
+	private IndexAccessProfile indexAccessProfile(boolean pinnedSweep) {
+		if (activeSources.isEmpty()) {
+			return null;
+		}
+		int[][] prefixes = null;
+		long entries = 0L;
+		int sources = 0;
+		boolean adjacencyPossible = false;
+		long predicates = -1L;
+		long outgoing = -1L;
+		long incoming = -1L;
+		for (NativeLmdbQuerySource source : activeSources) {
+			IndexAccessProfile profile = pinnedSweep ? source.pinnedLmdbSweepProfile() : source.indexAccessProfile();
+			if (profile == null) {
+				return null;
+			}
+			entries = Long.MAX_VALUE - entries < profile.entries() ? Long.MAX_VALUE : entries + profile.entries();
+			sources = Math.addExact(sources, profile.sources());
+			adjacencyPossible |= profile.adjacencyPossible();
+			predicates = predicates == -2L || profile.adjacencyPredicateWork() == -2L ? -2L
+					: addAvailableWork(predicates, profile.adjacencyPredicateWork());
+			outgoing = addAvailableWork(outgoing, profile.outgoingAdjacencyWork());
+			incoming = addAvailableWork(incoming, profile.incomingAdjacencyWork());
+			if (prefixes == null) {
+				prefixes = profile.prefixes();
+				continue;
+			}
+			for (int order = 0; order < prefixes.length; order++) {
+				StatementOrder statementOrder = order == 0 ? null : StatementOrder.values()[order - 1];
+				for (int mask = 0; mask < 16; mask++) {
+					int other = profile.prefixMask(statementOrder, mask);
+					prefixes[order][mask] = prefixes[order][mask] < 0 || other < 0 ? -1
+							: prefixes[order][mask] & other;
+				}
+			}
+		}
+		return new IndexAccessProfile(entries, sources, prefixes, adjacencyPossible, predicates, outgoing, incoming);
+	}
+
+	private static long addAvailableWork(long left, long right) {
+		if (left < 0L) {
+			return right;
+		}
+		if (right < 0L) {
+			return left;
+		}
+		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+	}
+
+	@Override
 	public String indexName(long subj, long pred, long obj, long context) {
 		String common = null;
 		int active = 0;
@@ -520,6 +579,84 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+		List<PreparedPredicateCount> plans = new ArrayList<>(activeSources.size());
+		double workUnits = 0D;
+		double workUnitsLow = 0D;
+		double workUnitsHigh = 0D;
+		long metadataLookups = 0L;
+		boolean metadataLookupsKnown = true;
+		for (NativeLmdbQuerySource source : activeSources) {
+			PreparedPredicateCount plan = source.prepareExactPredicateCount(predicate);
+			if (plan == null || !(plan.workUnits() >= 0D) || !Double.isFinite(plan.workUnits())
+					|| !Double.isFinite(workUnits + plan.workUnits())
+					|| !(plan.workUnitsLow() >= 0D) || !(plan.workUnitsLow() <= plan.workUnits())
+					|| !(plan.workUnitsHigh() >= plan.workUnits()) || !Double.isFinite(plan.workUnitsHigh())
+					|| !Double.isFinite(workUnitsHigh + plan.workUnitsHigh())) {
+				return null;
+			}
+			plans.add(plan);
+			workUnits += plan.workUnits();
+			workUnitsLow += plan.workUnitsLow();
+			workUnitsHigh += plan.workUnitsHigh();
+			OptionalLong sourceLookups = plan.metadataLookups();
+			if (sourceLookups.isEmpty() || sourceLookups.getAsLong() < 0L) {
+				metadataLookupsKnown = false;
+			} else if (metadataLookupsKnown) {
+				try {
+					metadataLookups = Math.addExact(metadataLookups, sourceLookups.getAsLong());
+				} catch (ArithmeticException overflow) {
+					metadataLookupsKnown = false;
+				}
+			}
+		}
+		double quotedWork = workUnits;
+		double quotedWorkLow = workUnitsLow;
+		double quotedWorkHigh = workUnitsHigh;
+		OptionalLong quotedMetadataLookups = metadataLookupsKnown
+				? OptionalLong.of(metadataLookups)
+				: OptionalLong.empty();
+		return new PreparedPredicateCount() {
+			@Override
+			public double workUnits() {
+				return quotedWork;
+			}
+
+			@Override
+			public double workUnitsLow() {
+				return quotedWorkLow;
+			}
+
+			@Override
+			public double workUnitsHigh() {
+				return quotedWorkHigh;
+			}
+
+			@Override
+			public OptionalLong metadataLookups() {
+				return quotedMetadataLookups;
+			}
+
+			@Override
+			public OptionalLong execute() throws IOException {
+				long count = 0L;
+				for (PreparedPredicateCount plan : plans) {
+					OptionalLong sourceCount = plan.execute();
+					if (sourceCount.isEmpty()) {
+						return OptionalLong.empty();
+					}
+					long value = sourceCount.getAsLong();
+					if (value < 0L || Long.MAX_VALUE - count < value) {
+						return OptionalLong.empty();
+					}
+					count += value;
+				}
+				return OptionalLong.of(count);
+			}
+		};
+	}
+
+	@Override
 	public OrderedIntegerDomain orderedIntegerDomain(long subj, long pred, long obj, long context,
 			int varyingField) {
 		if (activeSources.isEmpty()) {
@@ -576,6 +713,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	private static final class CompositePrefixRunCursor implements LmdbPrefixRunCursor {
 
 		private final List<LmdbPrefixRunCursor> cursors;
+		private final Thread owner = Thread.currentThread();
 		private final int[] orderedPrefixFields;
 		private final boolean countRunRows;
 		private final String indexName;
@@ -583,6 +721,9 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private final boolean[] headReady;
 		private final long[] emittedPrefix;
 		private final long[] quad = new long[4];
+		private LmdbPrefixRunCursor representative;
+		private boolean emittedHeadsPending;
+		private boolean quadReady;
 		private boolean closed;
 		private long runRowCount;
 		private long[] stopPrefix;
@@ -600,9 +741,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public boolean next() throws IOException {
+			checkOwner();
 			if (closed) {
 				return false;
 			}
+			advanceEmittedHeads();
 			for (int i = 0; i < cursors.size(); i++) {
 				if (!headReady[i] && cursors.get(i).next()) {
 					copyPrefix(i);
@@ -623,17 +766,34 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			for (int i = 0; i < orderedPrefixFields.length; i++) {
 				quad[orderedPrefixFields[i]] = emittedPrefix[i];
 			}
+			representative = cursors.get(first);
+			quadReady = false;
 			long mergedRunRowCount = 0L;
 			for (int i = 0; i < heads.length; i++) {
 				if (headReady[i] && samePrefix(emittedPrefix, heads[i])) {
 					if (countRunRows) {
 						mergedRunRowCount = addSaturated(mergedRunRowCount, cursors.get(i).runRowCount());
 					}
+				}
+			}
+			emittedHeadsPending = true;
+			runRowCount = countRunRows ? mergedRunRowCount : 1L;
+			return true;
+		}
+
+		private void advanceEmittedHeads() throws IOException {
+			if (!emittedHeadsPending) {
+				return;
+			}
+			emittedHeadsPending = false;
+			representative = null;
+			// Keep every contributing cursor on the current run until its representative has been consumed.
+			// Adjacency cursors decode non-prefix columns lazily from that position.
+			for (int i = 0; i < heads.length; i++) {
+				if (headReady[i] && samePrefix(emittedPrefix, heads[i])) {
 					headNext(i);
 				}
 			}
-			runRowCount = countRunRows ? mergedRunRowCount : 1L;
-			return true;
 		}
 
 		private int firstHead() {
@@ -694,9 +854,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public boolean seekTo(long value) throws IOException {
+			checkOwner();
 			if (closed) {
 				return false;
 			}
+			advanceEmittedHeads();
 			int streamedPosition = orderedPrefixFields.length - 1;
 			boolean any = false;
 			for (int i = 0; i < cursors.size(); i++) {
@@ -713,9 +875,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public boolean seekTo(long[] prefixValues) throws IOException {
+			checkOwner();
 			if (closed) {
 				return false;
 			}
+			advanceEmittedHeads();
 			boolean any = false;
 			for (int i = 0; i < cursors.size(); i++) {
 				long[] head = heads[i];
@@ -731,6 +895,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public void stopBefore(long[] prefixValues) {
+			checkOwner();
 			if (closed) {
 				return;
 			}
@@ -742,12 +907,22 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public long[] quad() {
+			checkOwner();
+			if (!quadReady && representative != null) {
+				System.arraycopy(representative.quad(), 0, quad, 0, quad.length);
+				quadReady = true;
+			}
 			return quad;
 		}
 
 		@Override
 		public long prefixValue(int field) {
-			return quad[field];
+			for (int prefixField : orderedPrefixFields) {
+				if (prefixField == field) {
+					return quad[field];
+				}
+			}
+			return quad()[field];
 		}
 
 		@Override
@@ -790,11 +965,19 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public void close() {
+			checkOwner();
 			if (closed) {
 				return;
 			}
 			closed = true;
 			closePrefixRunCursors(cursors, null);
+		}
+
+		private void checkOwner() {
+			if (Thread.currentThread() != owner) {
+				throw new IllegalStateException(
+						"Composite prefix cursor must be used and closed by its creating thread");
+			}
 		}
 
 		private static int[] orderedPrefixFields(LmdbPrefixRunPlan plan) {
@@ -1124,6 +1307,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public IndexAccessProfile indexAccessProfile() {
+			return delegate.indexAccessProfile();
+		}
+
+		@Override
+		public IndexAccessProfile pinnedLmdbSweepProfile() {
+			return delegate.pinnedLmdbSweepProfile();
+		}
+
+		@Override
 		public String indexName(long subj, long pred, long obj, long context) {
 			return delegate.indexName(subj, pred, obj, context);
 		}
@@ -1187,6 +1380,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalLong exactPredicateCount(long predicate) {
 			return delegate.exactPredicateCount(predicate);
+		}
+
+		@Override
+		public PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+			return delegate.prepareExactPredicateCount(predicate);
 		}
 
 		@Override

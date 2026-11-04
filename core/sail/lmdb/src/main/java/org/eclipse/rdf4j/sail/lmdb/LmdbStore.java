@@ -299,6 +299,99 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true"));
 	}
 
+	/** Returns the configured asyncValueCleanup setting. */
+	public boolean getAsyncValueCleanup() {
+		return config.getAsyncValueCleanup();
+	}
+
+	/** Configures asyncValueCleanup before initialization; live changes are rejected. */
+	public void setAsyncValueCleanup(boolean enabled) {
+		configureValueCleanup(() -> config.setAsyncValueCleanup(enabled));
+	}
+
+	/** Returns the configured asyncValueCleanupMaxCandidates setting. */
+	public int getAsyncValueCleanupMaxCandidates() {
+		return config.getAsyncValueCleanupMaxCandidates();
+	}
+
+	/** Configures asyncValueCleanupMaxCandidates before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupMaxCandidates(int maxCandidates) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupMaxCandidates(maxCandidates));
+	}
+
+	/** Returns the configured asyncValueCleanupMaxBytes setting. */
+	public long getAsyncValueCleanupMaxBytes() {
+		return config.getAsyncValueCleanupMaxBytes();
+	}
+
+	/** Configures asyncValueCleanupMaxBytes before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupMaxBytes(long maxBytes) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupMaxBytes(maxBytes));
+	}
+
+	/** Returns the configured asyncValueCleanupBatchSize setting. */
+	public int getAsyncValueCleanupBatchSize() {
+		return config.getAsyncValueCleanupBatchSize();
+	}
+
+	/** Configures asyncValueCleanupBatchSize before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupBatchSize(int batchSize) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupBatchSize(batchSize));
+	}
+
+	/** Returns the configured asyncValueCleanupMaxPendingProducers setting. */
+	public int getAsyncValueCleanupMaxPendingProducers() {
+		return config.getAsyncValueCleanupMaxPendingProducers();
+	}
+
+	/** Configures asyncValueCleanupMaxPendingProducers before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupMaxPendingProducers(int maxPendingProducers) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupMaxPendingProducers(maxPendingProducers));
+	}
+
+	/** Returns the bounded optional cleanup-pressure pause for safe new writers. */
+	public long getAsyncValueCleanupPressureTimeoutMillis() {
+		return config.getAsyncValueCleanupPressureTimeoutMillis();
+	}
+
+	/** Configures the cleanup-pressure pause before initialization; zero disables this optional pause. */
+	public void setAsyncValueCleanupPressureTimeoutMillis(long timeoutMillis) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupPressureTimeoutMillis(timeoutMillis));
+	}
+
+	/** Returns the configured asyncValueCleanupAdmissionTimeoutMillis setting. */
+	public long getAsyncValueCleanupAdmissionTimeoutMillis() {
+		return config.getAsyncValueCleanupAdmissionTimeoutMillis();
+	}
+
+	/** Configures asyncValueCleanupAdmissionTimeoutMillis before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupAdmissionTimeoutMillis(long timeoutMillis) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupAdmissionTimeoutMillis(timeoutMillis));
+	}
+
+	/** Returns the configured asyncValueCleanupShutdownTimeoutMillis setting. */
+	public long getAsyncValueCleanupShutdownTimeoutMillis() {
+		return config.getAsyncValueCleanupShutdownTimeoutMillis();
+	}
+
+	/** Configures asyncValueCleanupShutdownTimeoutMillis before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupShutdownTimeoutMillis(long timeoutMillis) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupShutdownTimeoutMillis(timeoutMillis));
+	}
+
+	private void configureValueCleanup(Runnable update) {
+		initializationLock.writeLock().lock();
+		try {
+			if (isInitialized()) {
+				throw new IllegalStateException(
+						"Async value cleanup settings must be configured before initialization");
+			}
+			update.run();
+		} finally {
+			initializationLock.writeLock().unlock();
+		}
+	}
+
 	public boolean getPageCardinalityEstimator() {
 		return config.getPageCardinalityEstimator();
 	}
@@ -412,8 +505,6 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		logger.debug("Data dir is " + dataDir);
 
 		try {
-			// An initial run import that never completed left value records without lookups; start empty instead.
-			LmdbInitialRunImport.resetInterruptedImport(dataDir.toPath());
 			StoreProperties properties = new StoreProperties(dataDir);
 			properties.load();
 			// Diagnose unsupported persisted capabilities before optimization metadata is considered. This pure
@@ -421,7 +512,14 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			LmdbStoreFormat loadedFormat = properties.isLoaded()
 					? LmdbStoreFormat.resolve(dataDir, properties, config)
 					: null;
-			preparedBulkSnapshot = PreparedBulkStore.read(dataDir.toPath(), properties, config);
+			// Interrupted imports may discard their native data only after the persisted format has been admitted.
+			// Keep the original sidecars and recovery marker until the replacement generation is ready.
+			boolean resetInitialImport = LmdbInitialRunImport.resetInterruptedImport(dataDir.toPath(), loadedFormat);
+			if (resetInitialImport) {
+				properties.recreateNativeGeneration();
+			}
+			preparedBulkSnapshot = resetInitialImport ? null
+					: PreparedBulkStore.read(dataDir.toPath(), properties, config);
 			properties.preparedBulkStore = preparedBulkSnapshot;
 			if (preparedBulkSnapshot == null) {
 				LegacyStoreDiscovery.discover(dataDir, properties);
@@ -436,7 +534,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
+			properties.completeNativeGenerationRecreation();
 			properties.save();
+			if (resetInitialImport) {
+				LmdbInitialRunImport.completeReset(dataDir.toPath(), format);
+			}
 
 			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
 				@Override
@@ -530,6 +632,15 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	@Override
+	protected void prepareForShutdown() throws SailException {
+		// Failure must precede the AbstractSail lifecycle transition: the worker retains both native
+		// environments and the directory lock until a later shutdown can safely finish.
+		if (backingStore != null) {
+			backingStore.stopAsyncValueCleanupForShutdown();
+		}
+	}
+
+	@Override
 	protected boolean cancelConnectionsOnShutdown() {
 		return true;
 	}
@@ -566,7 +677,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			overflowFormat.initializeProperties(overflowProperties);
 		}
 		LmdbSailStore overflowStore = new LmdbSailStore(directory, overflowProperties, config,
-				useSketchBasedJoinEstimator, overflowFormat, getQueryExecutionPolicy());
+				useSketchBasedJoinEstimator, overflowFormat, getQueryExecutionPolicy(), true);
 		overflowStore.enableMultiThreading = false;
 		return overflowStore;
 	}

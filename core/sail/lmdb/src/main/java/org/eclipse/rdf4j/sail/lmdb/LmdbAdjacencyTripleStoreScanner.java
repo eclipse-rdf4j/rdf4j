@@ -833,7 +833,7 @@ final class LmdbAdjacencyTripleStoreScanner implements AdjacencySourceScanner {
 	public void ensureSnapshotValid() throws IOException {
 		txn.ensureSnapshotValid(txnLease);
 		if (txn.version() != initialTxnVersion) {
-			throw new IOException("build snapshot invalidated by a map resize");
+			throw new LmdbAdjacencyBuildInvalidatedException();
 		}
 		if (!allowRevisionAdvance) {
 			long currentRevision = tripleStore.getDataRevision();

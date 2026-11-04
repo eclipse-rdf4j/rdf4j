@@ -43,8 +43,8 @@ class LmdbNativeAdaptiveCostModelTest {
 		assertEquals(1.0, quarter.expected(LmdbNativeCostVector.Feature.OPEN));
 		assertEquals(2.0, quarter.expected(LmdbNativeCostVector.Feature.INDEX_SEEK));
 		assertEquals(25.0, quarter.expected(LmdbNativeCostVector.Feature.SCANNED_ROW));
-		assertEquals(20.0, quarter.low(LmdbNativeCostVector.Feature.SCANNED_ROW));
-		assertEquals(30.0, quarter.high(LmdbNativeCostVector.Feature.SCANNED_ROW));
+		assertEquals(0.0, quarter.low(LmdbNativeCostVector.Feature.SCANNED_ROW));
+		assertEquals(120.0, quarter.high(LmdbNativeCostVector.Feature.SCANNED_ROW));
 		assertThrows(IllegalArgumentException.class,
 				() -> LmdbNativeCostVector.bounds(LmdbNativeCostVector.Feature.OPEN, 2, 1, 3));
 	}

@@ -143,7 +143,8 @@ test('organize draws an expanded hub as a compact fan: no overlap, crossing or a
   assert.equal(metrics.nodeOverlaps, 0);
   assert.equal(metrics.edgeCrossings, 0);
   assert.equal(metrics.routedEdgeNodeOverlaps, 0);
-  assert.ok(metrics.area < 2.2e6, `area ${(metrics.area / 1e6).toFixed(2)}M px²`);
+  // The two separate pairs sit a component gap from the fan (2.66M; 1.96M when components were packed a card gap apart).
+  assert.ok(metrics.area < 2.8e6, `area ${(metrics.area / 1e6).toFixed(2)}M px²`);
   const curved = [...result.routes.values()].filter((route) => route.points.length > 2);
   assert.equal(curved.length, 0, 'every arrow is straight');
 });

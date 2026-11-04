@@ -97,6 +97,7 @@ import org.lwjgl.Version;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
 import org.lwjgl.util.lmdb.MDBVal;
+import org.mockito.Mockito;
 
 /** Process-death coverage for durable LMDB commits; it does not simulate host power loss. */
 class LmdbCrashRecoveryTest {
@@ -126,7 +127,10 @@ class LmdbCrashRecoveryTest {
 			assertTrue(seed.waitFor(10, TimeUnit.SECONDS));
 			assertEquals(86, seed.exitValue());
 		}
-		Process current = new ProcessBuilder(javaBinary, "-cp", System.getProperty("java.class.path"),
+		// Only this child uses Mockito's native-call counter; avoid unsupported dynamic self-attachment.
+		String mockitoAgent = "-javaagent:"
+				+ Path.of(Mockito.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+		Process current = new ProcessBuilder(javaBinary, mockitoAgent, "-cp", System.getProperty("java.class.path"),
 				UnusedCohortChildMain.class.getName(), values.toString(), pinned ? "PINNED" : "CURRENT")
 						.redirectErrorStream(true)
 						.start();
@@ -601,7 +605,7 @@ class LmdbCrashRecoveryTest {
 		}
 		// Ensure this cut targets a persisted, pre-existing store even while the separate dirty-flag regression is red.
 		StoreProperties properties = new StoreProperties(storeDir.toFile());
-		assertTrue(properties.load(), "the initialized format-6 properties must remain the crash baseline");
+		assertTrue(properties.load(), "the initialized format-7 properties must remain the crash baseline");
 		properties.setVersion(String.valueOf(LmdbStore.VERSION))
 				.setTripleIndexes("spoc")
 				.setTripleTermIndexes("spoc,cspo")

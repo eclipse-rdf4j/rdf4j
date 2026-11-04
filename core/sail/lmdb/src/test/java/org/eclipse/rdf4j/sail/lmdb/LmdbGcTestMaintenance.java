@@ -20,6 +20,8 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.sail.base.SailClosable;
+
 /** Explicitly drives bounded publications in tests whose contract requires completing their entire finite backlog. */
 final class LmdbGcTestMaintenance {
 	private LmdbGcTestMaintenance() {
@@ -73,6 +75,10 @@ final class LmdbGcTestMaintenance {
 
 	/** Runs one explicit bounded physical-reclamation batch for fixtures that require reusable IDs. */
 	static int reclaimUnusedValues(LmdbStore store, int maxVisitedRecords) throws IOException {
-		return store.getBackingStore().valueStore().reclaimPersistedUnusedIdsBatch(maxVisitedRecords);
+		// An empty async hint queue does not exclude an idle maintenance writer. Use the owning Sail's
+		// publication admission, just like normal maintenance, before opening an independent native writer.
+		try (SailClosable publication = store.getBackingStore().getExplicitSailSource().beginPublication()) {
+			return store.getBackingStore().valueStore().reclaimPersistedUnusedIdsBatch(maxVisitedRecords);
+		}
 	}
 }

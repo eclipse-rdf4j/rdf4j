@@ -224,19 +224,19 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		}
 		channels = plan.channels();
 		streaming = seeded && plan.streaming();
+		row.encounterOrderRequired |= !allowsReorderedGrouping(iteration);
 		if (streaming) {
 			streamingMemory = KernelRuntime.AggregateMemory
 					.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
 			streamingMemory.reserve(Math.addExact(512L, Math.multiplyExact(128L, iteration.aggregates.length)));
-			row.encounterOrderRequired |= !allowsReorderedGrouping(iteration);
-			input = row.aggregateInput(plan.input().open(row));
+			input = openInput(plan);
 			LmdbNativeExplain.recordExecutionPath(iteration.explainTarget, plan.tag());
 			return;
 		}
 		table = NativeGroupTable.create(iteration.groupSlots, iteration.aggregates, iteration.aggContext, channels,
 				true, false);
 		if (seeded) {
-			input = row.aggregateInput(plan.input().open(row));
+			input = openInput(plan);
 			while (row.advance(input)) {
 				LmdbNativeProbeDeadline.poll(++probeTicks);
 				cancellation().check();
@@ -248,6 +248,13 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		}
 		results = table.physicalResults(iteration);
 		LmdbNativeExplain.recordExecutionPath(iteration.explainTarget, plan.tag());
+	}
+
+	private RowCursor openInput(GroupingPlan plan) throws Exception {
+		RowCursor opened = plan.input().open(row);
+		return row.aggregateInput(iteration.requiresOpaqueEncounterOrder()
+				? LmdbNativeFactorAlgebra.logical(opened, row)
+				: opened);
 	}
 
 	static boolean canonicalStoredDomain(NativeLmdbQuerySource source) {

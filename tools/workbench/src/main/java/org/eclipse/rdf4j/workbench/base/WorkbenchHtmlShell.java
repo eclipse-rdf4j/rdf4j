@@ -92,6 +92,10 @@ public final class WorkbenchHtmlShell {
 		writer.write("\"><script src=\"");
 		writer.write(escape(basePath));
 		writer.write("/scripts/workbench-theme.js\"></script>");
+		// The Workbench's own icon, wherever it is deployed: without it browsers ask the server root for one.
+		writer.write("<link rel=\"icon\" href=\"");
+		writer.write(escape(basePath));
+		writer.write("/favicon.ico\">");
 		writer.write("<link rel=\"stylesheet\" href=\"");
 		writer.write(escape(basePath));
 		writer.write("/styles/workbench-refresh.css\">");

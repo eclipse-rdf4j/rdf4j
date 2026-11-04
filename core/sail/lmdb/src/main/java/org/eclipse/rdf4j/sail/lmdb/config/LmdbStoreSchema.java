@@ -103,6 +103,23 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI VALUE_EVICTION_INTERVAL;
 
+	/** Best-effort background dictionary reclamation, configured before startup. */
+	public final static IRI ASYNC_VALUE_CLEANUP;
+
+	public final static IRI ASYNC_VALUE_CLEANUP_MAX_CANDIDATES;
+
+	public final static IRI ASYNC_VALUE_CLEANUP_MAX_BYTES;
+
+	public final static IRI ASYNC_VALUE_CLEANUP_BATCH_SIZE;
+
+	public final static IRI ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS;
+
+	public final static IRI ASYNC_VALUE_CLEANUP_PRESSURE_TIMEOUT_MILLIS;
+
+	public final static IRI ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS;
+
+	public final static IRI ASYNC_VALUE_CLEANUP_SHUTDOWN_TIMEOUT_MILLIS;
+
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#valueHashCacheEnabled</tt>
 	 */
@@ -224,6 +241,18 @@ public class LmdbStoreSchema {
 		AUTO_GROW = factory.createIRI(NAMESPACE, "autoGrow");
 		PAGE_CARDINALITY_ESTIMATOR = factory.createIRI(NAMESPACE, "pageCardinalityEstimator");
 		VALUE_EVICTION_INTERVAL = factory.createIRI(NAMESPACE, "valueEvictionInterval");
+		ASYNC_VALUE_CLEANUP = factory.createIRI(NAMESPACE, "asyncValueCleanup");
+		ASYNC_VALUE_CLEANUP_MAX_CANDIDATES = factory.createIRI(NAMESPACE, "asyncValueCleanupMaxCandidates");
+		ASYNC_VALUE_CLEANUP_MAX_BYTES = factory.createIRI(NAMESPACE, "asyncValueCleanupMaxBytes");
+		ASYNC_VALUE_CLEANUP_BATCH_SIZE = factory.createIRI(NAMESPACE, "asyncValueCleanupBatchSize");
+		ASYNC_VALUE_CLEANUP_MAX_PENDING_PRODUCERS = factory.createIRI(NAMESPACE,
+				"asyncValueCleanupMaxPendingProducers");
+		ASYNC_VALUE_CLEANUP_PRESSURE_TIMEOUT_MILLIS = factory.createIRI(NAMESPACE,
+				"asyncValueCleanupPressureTimeoutMillis");
+		ASYNC_VALUE_CLEANUP_ADMISSION_TIMEOUT_MILLIS = factory.createIRI(NAMESPACE,
+				"asyncValueCleanupAdmissionTimeoutMillis");
+		ASYNC_VALUE_CLEANUP_SHUTDOWN_TIMEOUT_MILLIS = factory.createIRI(NAMESPACE,
+				"asyncValueCleanupShutdownTimeoutMillis");
 		VALUE_HASH_CACHE_ENABLED = factory.createIRI(NAMESPACE, "valueHashCacheEnabled");
 		LEGACY_REFERENCE_COUNT_REPAIR_ENABLED = factory.createIRI(NAMESPACE, "legacyReferenceCountRepairEnabled");
 		SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorSubjectBucketCount");

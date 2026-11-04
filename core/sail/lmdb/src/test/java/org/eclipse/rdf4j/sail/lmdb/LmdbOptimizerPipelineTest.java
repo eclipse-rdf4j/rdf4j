@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -375,9 +376,10 @@ class LmdbOptimizerPipelineTest {
 
 	@Test
 	void longLivedConnectionsUseStandardPipelineUntilSketchesReady(@TempDir File dataDir) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
+		ControlledSketchStartupStore store = new ControlledSketchStartupStore(dataDir);
 		store.init();
 		try (NotifyingSailConnection connection = store.getConnection()) {
+			assertTrue(store.providerEntered.await(30, TimeUnit.SECONDS));
 			EvaluationStrategyFactory factory = capturedEvaluationStrategyFactory(connection);
 
 			EvaluationStrategy initialStrategy = createExperimentalEvaluationStrategy(factory, store.getBackingStore()
@@ -389,8 +391,11 @@ class LmdbOptimizerPipelineTest {
 
 			addSingleStatement(store, "urn:adaptive");
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			store.releaseProvider.countDown();
+			assertTrue(store.refreshEntered.await(30, TimeUnit.SECONDS));
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			estimator.stop();
-			estimator.rebuild();
+			assertEquals(1L, estimator.rebuild());
 
 			assertTrue(estimator.isReadyNonBlocking());
 			EvaluationStrategy readyStrategy = createExperimentalEvaluationStrategy(factory, store.getBackingStore()
@@ -400,6 +405,8 @@ class LmdbOptimizerPipelineTest {
 			assertTrue(readyOptimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
 			assertFalse(readyOptimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 		} finally {
+			store.releaseProvider.countDown();
+			store.releaseRefresh.countDown();
 			store.shutDown();
 		}
 	}
@@ -702,6 +709,7 @@ class LmdbOptimizerPipelineTest {
 		store.init();
 		try {
 			addMedicalQueryShape(store);
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
 			estimator.stop();
 			estimator.rebuild();
@@ -1061,6 +1069,44 @@ class LmdbOptimizerPipelineTest {
 				.setSketchEstimatorEnabled(true);
 		config.setExperimentalQueryOptimizations(true);
 		return config;
+	}
+
+	private static final class ControlledSketchStartupStore extends LmdbStore {
+		private final CountDownLatch providerEntered = new CountDownLatch(1);
+		private final CountDownLatch releaseProvider = new CountDownLatch(1);
+		private final CountDownLatch refreshEntered = new CountDownLatch(1);
+		private final CountDownLatch releaseRefresh = new CountDownLatch(1);
+
+		private ControlledSketchStartupStore(File dataDir) {
+			super(dataDir, sketchEnabledConfig("spoc"));
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File data, StoreProperties properties, LmdbStoreConfig settings,
+				boolean sketches) throws IOException {
+			return new LmdbSailStore(data, properties, settings, sketches) {
+				@Override
+				void beforeSketchProviderPublicationForTest() {
+					providerEntered.countDown();
+					awaitGate(releaseProvider);
+				}
+
+				@Override
+				void beforeSketchRefreshReadForTest() {
+					refreshEntered.countDown();
+					awaitGate(releaseRefresh);
+				}
+			};
+		}
+
+		private static void awaitGate(CountDownLatch gate) {
+			try {
+				gate.await();
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(interrupted);
+			}
+		}
 	}
 
 	private static StrictEvaluationStrategy experimentalStrategy(TripleSource tripleSource) {

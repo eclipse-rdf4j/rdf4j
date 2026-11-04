@@ -40,6 +40,7 @@ final class PatternPlan implements SlotPlan {
 	final LmdbKeyRange range;
 	final long producedMask;
 	final double staticEstimate;
+	final NativeLmdbQuerySource.IndexAccessProfile accessProfile;
 
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
 			double staticEstimate) {
@@ -58,6 +59,12 @@ final class PatternPlan implements SlotPlan {
 
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
 			StatementOrder statementOrder, String indexName, LmdbKeyRange range, double staticEstimate) {
+		this(s, p, o, c, contexts, namedContextScope, statementOrder, indexName, range, staticEstimate, null);
+	}
+
+	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
+			StatementOrder statementOrder, String indexName, LmdbKeyRange range, double staticEstimate,
+			NativeLmdbQuerySource.IndexAccessProfile accessProfile) {
 		this.s = s;
 		this.p = p;
 		this.o = o;
@@ -82,6 +89,7 @@ final class PatternPlan implements SlotPlan {
 		}
 		this.producedMask = mask;
 		this.staticEstimate = staticEstimate;
+		this.accessProfile = accessProfile;
 	}
 
 	/**
@@ -90,7 +98,8 @@ final class PatternPlan implements SlotPlan {
 	 * selected scan order cannot apply those bounds physically.
 	 */
 	PatternPlan withOrder(StatementOrder order, String selectedIndex) {
-		return new PatternPlan(s, p, o, c, contexts, namedContextScope, order, selectedIndex, range, staticEstimate);
+		return new PatternPlan(s, p, o, c, contexts, namedContextScope, order, selectedIndex, range, staticEstimate,
+				accessProfile);
 	}
 
 	@Override
@@ -142,7 +151,10 @@ final class PatternPlan implements SlotPlan {
 			PatternCursor reusable) throws IOException {
 		NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.inputStage("scan", row.cancellation);
 		try {
-			return openRaw(row, probe, existenceOnly, reusable).withResidualRange(range).withExecutionPhase(phase);
+			return openRaw(row, probe, existenceOnly, reusable)
+					.withResidualRange(range)
+					.withCancellation(row.cancellation)
+					.withExecutionPhase(phase);
 		} catch (IOException | RuntimeException | Error failure) {
 			phase.close();
 			throw failure;
@@ -172,14 +184,14 @@ final class PatternPlan implements SlotPlan {
 				}
 				return singleCursor(reusable,
 						openIterator(row.source, probe, subj, pred, obj, context, accessObserver,
-								row.encounterOrderRequired));
+								row.encounterOrderRequired, row.directLmdbSweep));
 			}
 			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver,
-					row.encounterOrderRequired, reusable);
+					row.encounterOrderRequired, reusable).withDirectLmdbSweep(row.directLmdbSweep);
 		}
 		return singleCursor(reusable,
 				openIterator(row.source, probe, subj, pred, obj, context, accessObserver,
-						row.encounterOrderRequired));
+						row.encounterOrderRequired, row.directLmdbSweep));
 	}
 
 	/**
@@ -224,7 +236,10 @@ final class PatternPlan implements SlotPlan {
 			throws IOException {
 		NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.inputStage("scan", row.cancellation);
 		try {
-			return openRawUnbindingInternal(row, unboundMask, probe).withResidualRange(range).withExecutionPhase(phase);
+			return openRawUnbindingInternal(row, unboundMask, probe)
+					.withResidualRange(range)
+					.withCancellation(row.cancellation)
+					.withExecutionPhase(phase);
 		} catch (IOException | RuntimeException | Error failure) {
 			phase.close();
 			throw failure;
@@ -251,14 +266,14 @@ final class PatternPlan implements SlotPlan {
 				}
 				return PatternCursor.single(
 						openIterator(row.source, probe, subj, pred, obj, context, accessObserver,
-								row.encounterOrderRequired));
+								row.encounterOrderRequired, false));
 			}
 			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver,
 					row.encounterOrderRequired, null);
 		}
 		return PatternCursor.single(
 				openIterator(row.source, probe, subj, pred, obj, context, accessObserver,
-						row.encounterOrderRequired));
+						row.encounterOrderRequired, false));
 	}
 
 	private static PatternCursor singleCursor(PatternCursor reusable, RecordIterator iterator) {
@@ -276,8 +291,12 @@ final class PatternPlan implements SlotPlan {
 
 	private RecordIterator openIterator(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
 			long subj, long pred, long obj, long context,
-			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired)
+			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired,
+			boolean directLmdbSweep)
 			throws IOException {
+		if (directLmdbSweep) {
+			return source.lmdbStatements(subj, pred, obj, context, accessObserver);
+		}
 		if (statementOrder != null) {
 			return source.statements(statementOrder, subj, pred, obj, context, accessObserver);
 		}
@@ -317,8 +336,62 @@ final class PatternPlan implements SlotPlan {
 	}
 
 	private NativeLmdbQuerySource.AdjacencyAccessObserver adjacencyAccessObserver(RowState row) {
-		return row.runtimePlan == null ? null
+		NativeLmdbQuerySource.AdjacencyAccessObserver telemetry = row.runtimePlan == null ? null
 				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(this, row.layout));
+		return combineAccessObservers(telemetry, row.probeWorkObserver);
+	}
+
+	static NativeLmdbQuerySource.AdjacencyAccessObserver combineAccessObservers(
+			NativeLmdbQuerySource.AdjacencyAccessObserver first,
+			NativeLmdbQuerySource.AdjacencyAccessObserver second) {
+		if (first == null || second == null) {
+			return first == null ? second : first;
+		}
+		return new NativeLmdbQuerySource.AdjacencyAccessObserver() {
+			@Override
+			public void access(boolean used, String reason, StatementOrder order, long s, long p, long o, long c) {
+				first.access(used, reason, order, s, p, o, c);
+				second.access(used, reason, order, s, p, o, c);
+			}
+
+			@Override
+			public void candidate(String source, String reason, StatementOrder order, long s, long p, long o, long c) {
+				first.candidate(source, reason, order, s, p, o, c);
+				second.candidate(source, reason, order, s, p, o, c);
+			}
+
+			@Override
+			public void selected(boolean adjacency, String reason, StatementOrder order, long s, long p, long o,
+					long c) {
+				first.selected(adjacency, reason, order, s, p, o, c);
+				second.selected(adjacency, reason, order, s, p, o, c);
+			}
+
+			@Override
+			public void outranked(String source, String reason, StatementOrder order, long s, long p, long o, long c) {
+				first.outranked(source, reason, order, s, p, o, c);
+				second.outranked(source, reason, order, s, p, o, c);
+			}
+
+			@Override
+			public void ineligible(String reason, StatementOrder order, long s, long p, long o, long c) {
+				first.ineligible(reason, order, s, p, o, c);
+				second.ineligible(reason, order, s, p, o, c);
+			}
+
+			@Override
+			public void measurement(boolean adjacency, long scanned, long matched, long filtered, boolean censored) {
+				first.measurement(adjacency, scanned, matched, filtered, censored);
+				second.measurement(adjacency, scanned, matched, filtered, censored);
+			}
+
+			@Override
+			public void measurement(boolean adjacency, long scanned, long matched, long filtered, boolean censored,
+					boolean physicalScanCount) {
+				first.measurement(adjacency, scanned, matched, filtered, censored, physicalScanCount);
+				second.measurement(adjacency, scanned, matched, filtered, censored, physicalScanCount);
+			}
+		};
 	}
 
 	static long lookupUnbinding(Term term, long[] slots, long unboundMask) {
@@ -391,14 +464,151 @@ final class PatternPlan implements SlotPlan {
 
 	@Override
 	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
-		// One index positioning plus one touch per matching quad. Like estimate(RowState) this must never perform
-		// LMDB I/O: it reads only statistics captured at compile time or already cached.
-		double rows = estimateForBoundMask(boundMask, row == null ? null : row.source);
-		if (!Double.isFinite(rows) || rows < 0D) {
-			// The seek is paid whatever the scan turns out to be, so the floor is still measured.
-			return LmdbNativeWork.atLeast(LmdbNativeWork.SEEK);
+		if (contexts.isEmpty() || hasKnownSyntheticProbe(row, boundMask)) {
+			return LmdbNativeWork.ZERO;
 		}
-		return LmdbNativeWork.exact(LmdbNativeWork.SEEK + rows);
+		// Source work and output cardinality are different: bindings after an index prefix are residual filters and
+		// may require visiting the entire prefix range. The profile was captured at compilation, so costing a nested
+		// probe does not perform LMDB I/O or consult a fabricated value for its hypothetical bound slots.
+		boolean hypotheticalSynthetic = row != null && row.source instanceof SyntheticValueSource
+				&& (producedMask & boundMask & ~row.boundMask()) != 0L;
+		double rows = workRowsForBoundMask(boundMask, row == null ? null : row.source);
+		if (!Double.isFinite(rows) || rows < 0D) {
+			return LmdbNativeWork.atLeast(hypotheticalSynthetic
+					|| row != null && accessProfile != null && accessProfile.adjacencyPossible()
+							? 0D
+							: LmdbNativeWork.SEEK);
+		}
+		if (row == null) {
+			return LmdbNativeWork.exact(LmdbNativeWork.SEEK + rows);
+		}
+		if (accessProfile == null) {
+			return LmdbNativeWork.atLeast(hypotheticalSynthetic ? 0D : LmdbNativeWork.SEEK);
+		}
+		int mask = (termKnown(s, boundMask) ? 1 : 0) | (termKnown(p, boundMask) ? 2 : 0)
+				| (termKnown(o, boundMask) ? 4 : 0) | (termKnown(c, boundMask) ? 8 : 0);
+		// The entry row supplies concrete bindings; slots added while costing an upstream producer might be
+		// unbound on some of its rows (VALUES UNDEF, UNION, OPTIONAL, and expression errors). Enumerate the
+		// at-most-four physical fields rather than treating the producer's union mask as a guarantee.
+		long hypothetical = boundMask & ~row.boundMask();
+		int varying = (termHypothetical(s, hypothetical) ? 1 : 0) | (termHypothetical(p, hypothetical) ? 2 : 0)
+				| (termHypothetical(o, hypothetical) ? 4 : 0) | (termHypothetical(c, hypothetical) ? 8 : 0);
+		double low = Double.POSITIVE_INFINITY;
+		double high = 0D;
+		int subset = varying;
+		while (true) {
+			LmdbNativeWork alternative = physicalWorkForMask((mask & ~varying) | subset, hypotheticalSynthetic);
+			low = Math.min(low, alternative.low());
+			high = Math.max(high, alternative.high());
+			if (subset == 0) {
+				break;
+			}
+			subset = (subset - 1) & varying;
+		}
+		return LmdbNativeWork.between(low, high);
+	}
+
+	private boolean termHypothetical(Term term, long hypothetical) {
+		return !term.isConstant() && term.slot >= 0 && (hypothetical & (1L << term.slot)) != 0L;
+	}
+
+	private LmdbNativeWork physicalWorkForMask(int mask, boolean hypotheticalSynthetic) {
+		int scans = contexts.isFixed() && (mask & 8) == 0 ? contexts.ids.length : 1;
+		if (contexts.isFixed()) {
+			mask |= 8;
+		}
+		int prefix = accessProfile.prefixMask(statementOrder, mask);
+		double seek = LmdbNativeWork.SEEK * accessProfile.sources() * scans;
+		if (prefix < 0) {
+			return LmdbNativeWork.atLeast(accessProfile.adjacencyPossible() || hypotheticalSynthetic ? 0D : seek);
+		}
+		double sourceRows = (double) accessProfile.entries() * scans;
+		boolean universalAdjacency = accessProfile.adjacencyPredicateWork() != -1L;
+		if (universalAdjacency && (range != null || statementOrder != null)) {
+			// The alternate source can sort a whole range or merge predicate streams. Its selected cost is not
+			// bounded by one unsorted LMDB pass, and the arbitration may choose either source.
+			return LmdbNativeWork.atLeast(0D);
+		}
+		if (range == null && mask == 0 && !universalAdjacency) {
+			return LmdbNativeWork.exact(seek + sourceRows);
+		}
+		if (range == null && (mask & 7) == 0 && universalAdjacency) {
+			// An adjacency root also walks its predicate catalog, including retained zero-count predicates.
+			// A context restriction can remove every row, so only an unrestricted root has a row floor.
+			double lower = mask == 0 ? sourceRows : 0D;
+			if (accessProfile.adjacencyPredicateWork() == -2L) {
+				return LmdbNativeWork.atLeast(lower);
+			}
+			double directory = (double) accessProfile.adjacencyPredicateWork() * scans;
+			return LmdbNativeWork.between(lower, seek + (sourceRows + directory) * (1D + LmdbNativeWork.SEEK));
+		}
+		boolean nodeAdjacency = range == null
+				&& (statementOrder == null || statementOrder == StatementOrder.P) && (mask & 2) == 0
+				&& (((mask & 1) != 0 && accessProfile.outgoingAdjacencyWork() >= 0L)
+						|| ((mask & 4) != 0 && accessProfile.incomingAdjacencyWork() >= 0L));
+		boolean mayUseAdjacency = accessProfile.adjacencyPossible() && (mask & 7) != 0;
+		if (mayUseAdjacency && !nodeAdjacency) {
+			// A partial or fixed-predicate adjacency row may be selected independently of LMDB. Without a
+			// bound for its lookup and overlay work, retain an unknown ceiling rather than claiming dominance.
+			return LmdbNativeWork.atLeast(0D);
+		}
+		// A residual field can skip index ranges, while a complete node adjacency candidate can inspect its
+		// node-to-predicate projection as well as edge rows. The arbiter can still select LMDB for a particular key,
+		// so do not price the candidate as a guaranteed direct lookup.
+		double projectionWork = 0D;
+		if (nodeAdjacency && (mask & 1) != 0 && accessProfile.outgoingAdjacencyWork() >= 0L) {
+			projectionWork += accessProfile.outgoingAdjacencyWork();
+		}
+		if (nodeAdjacency && (mask & 4) != 0 && accessProfile.incomingAdjacencyWork() >= 0L) {
+			projectionWork += accessProfile.incomingAdjacencyWork();
+		}
+		double scanWork = sourceRows * ((mask & ~prefix) != 0 || range != null ? 1D + LmdbNativeWork.SEEK : 1D);
+		// A future binding can be an evaluation-scoped value. The synthetic wrapper returns an empty iterator
+		// before opening the backing source, so such a hypothetical probe has no guaranteed seek cost.
+		double lower = mayUseAdjacency || hypotheticalSynthetic ? 0D : seek;
+		return LmdbNativeWork.between(lower, seek + scanWork + projectionWork * scans);
+	}
+
+	/** A concrete synthetic term makes this exact probe empty before the backing source is opened. */
+	private boolean hasKnownSyntheticProbe(RowState row, long boundMask) {
+		if (row == null || !(row.source instanceof SyntheticValueSource source)) {
+			return false;
+		}
+		return isKnownSynthetic(s, source, row, boundMask) || isKnownSynthetic(p, source, row, boundMask)
+				|| isKnownSynthetic(o, source, row, boundMask) || isKnownSynthetic(c, source, row, boundMask);
+	}
+
+	private boolean isKnownSynthetic(Term term, SyntheticValueSource source, RowState row, long boundMask) {
+		return (term.isConstant() || term.slot >= 0 && (boundMask & row.boundMask() & (1L << term.slot)) != 0L)
+				&& source.synthetic(term.lookup(row.slots));
+	}
+
+	/** Conservative output bounds for a complete open, independent of sampled result-size estimates. */
+	LmdbNativeWork.RowBounds rowBounds(RowState row, long boundMask) {
+		if (contexts.isEmpty() || hasKnownSyntheticProbe(row, boundMask)) {
+			return LmdbNativeWork.RowBounds.ZERO;
+		}
+		if (accessProfile == null) {
+			return LmdbNativeWork.RowBounds.UNKNOWN;
+		}
+		int scans = contexts.isFixed() ? contexts.ids.length : 1;
+		double upper = (double) accessProfile.entries() * scans;
+		// A free, non-repeating quad pattern emits every row of its pinned source. Other patterns can reject
+		// rows through constants, repeated variables, graph scope, ranges, or occupied input cells.
+		int slots = (s.hasSlot() ? 1 : 0) + (p.hasSlot() ? 1 : 0) + (o.hasSlot() ? 1 : 0)
+				+ (c.hasSlot() ? 1 : 0);
+		boolean allRows = row != null && range == null && !namedContextScope && !contexts.isFixed()
+				&& !s.isConstant() && !p.isConstant() && !o.isConstant() && !c.isConstant()
+				&& (producedMask & boundMask) == 0L && Long.bitCount(producedMask) == slots;
+		if (allRows) {
+			for (long remaining = producedMask; remaining != 0L; remaining &= remaining - 1) {
+				if (row.summaryCell(Long.numberOfTrailingZeros(remaining)) != null) {
+					allRows = false;
+					break;
+				}
+			}
+		}
+		return new LmdbNativeWork.RowBounds(allRows ? upper : 0D, upper);
 	}
 
 	/**
@@ -416,6 +626,14 @@ final class PatternPlan implements SlotPlan {
 		}
 		OptionalDouble fanOut = fanOutForBoundMask(boundMask, source);
 		return fanOut.isPresent() ? fanOut.getAsDouble() : structuralEstimate(boundMask);
+	}
+
+	/** A binding can restrict a relation's result, but must not cap the physical work of finding it. */
+	double workRowsForBoundMask(long boundMask, NativeLmdbQuerySource source) {
+		double rows = estimateForBoundMask(boundMask, source);
+		return source != null && (producedMask & boundMask) != 0L && Double.isFinite(staticEstimate)
+				? Math.min(rows, Math.max(0D, staticEstimate))
+				: rows;
 	}
 
 	/** Whether planning can cost this shape without falling back to pseudo-cardinalities. */
@@ -625,6 +843,7 @@ final class PatternRowCursor implements RowCursor {
 	final RowState row;
 	final PatternCursor cursor;
 	int activeMark = -1;
+	int cancellationPollTick;
 
 	PatternRowCursor(PatternPlan pattern, RowState row, PatternCursor cursor) {
 		this.pattern = pattern;
@@ -635,9 +854,18 @@ final class PatternRowCursor implements RowCursor {
 	@Override
 	public boolean next() throws IOException {
 		release();
+		if (cancellationPollTick == 0) {
+			LmdbNativeProbeDeadline.poll(0);
+			row.cancellation.check();
+		}
 		while (true) {
+			int tick = ++this.cancellationPollTick;
+			LmdbNativeProbeDeadline.poll(tick);
+			row.cancellation.poll(tick);
 			long[] quad = cursor.next();
 			if (quad == null) {
+				LmdbNativeProbeDeadline.poll(0);
+				row.cancellation.check();
 				return false;
 			}
 			int mark = row.mark();

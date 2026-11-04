@@ -680,11 +680,11 @@ class ScopedModifierAndOptionalEvaluationTest {
 		}
 
 		@Override
-		public Set<BindingSet> createSetOfBindingSets() {
+		public <T> Set<T> createSet() {
 			if (allocationFailure != null) {
 				throw allocationFailure;
 			}
-			return super.createSetOfBindingSets();
+			return super.createSet();
 		}
 
 		@Override

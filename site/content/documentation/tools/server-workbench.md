@@ -164,6 +164,9 @@ menu.group.explore.visible=true
 menu.item.query.order=10
 page.summary.enabled=false
 
+# Hide the Information page. Its route answers 404, like any other disabled page.
+page.information.enabled=false
+
 # Hide a whole navigation group or one item.
 menu.group.modify.visible=false
 menu.item.namespaces.visible=false
@@ -258,9 +261,74 @@ defaulted to `0`, which means no limit. Users can change the timeout for their q
 `query-timeout` feature is disabled, the default applies to every query. To restore unlimited queries by default, set
 `default-query-timeout` to `0` in `WEB-INF/web.xml`.
 
+The timeout can also be set in `workbench.properties` with `query.default-timeout`, a non-negative number of seconds
+(`0` means no limit). The key is not part of the packaged defaults: when it is absent the `default-query-timeout` init
+parameter keeps applying, and when it is present it takes precedence over that init parameter, for every page that uses
+the default. A negative or non-numeric value is a configuration error.
+
+```properties
+query.default-timeout=120
+```
+
 A query that runs longer than its timeout is reported as timed out (“Query timed out after 1 second”), also when the
 Workbench stopped waiting for the RDF4J Server's answer just before the server reported the timeout itself; rows that
 were already received are kept.
+
+#### Repository types offered when creating a repository
+
+By default the “New repository” page offers every built-in repository type and Federation. A distribution can restrict
+and reorder that list, and add its own types, with `create.templates` in `workbench.properties`: a list of repository
+template types separated by commas and/or whitespace. The key is not part of the packaged defaults; when it is absent or
+blank nothing changes.
+
+```properties
+create.templates=native, memory, federate, acme-graph
+```
+
+When the key is set, the page offers exactly the listed types, in the order listed (they are not sorted), labelled with
+the label of each template. `federate` is a pseudo-type that stands for the Federation option; leave it out to remove
+Federation. The list may also name built-in templates that are normally hidden, such as `memory-rdfs-legacy`, and your
+own templates: a template is a Turtle file with the Workbench template annotations of the built-in ones, placed in
+`WEB-INF/classes/org/eclipse/rdf4j/repository/config/<type>.ttl` (or on the class path under the same package), and
+named in the list by its file name without `.ttl`.
+
+Types outside the list are refused: requesting the form of an unlisted type answers `404 Not Found`, and posting one
+answers `400 Bad Request` without creating a repository. The list is checked when the policy is loaded: an entry that
+contains characters other than letters, digits, `.`, `_` and `-`, a type listed twice, or a type whose template cannot be
+loaded makes the whole policy invalid, so every Workbench page answers `503 Service Unavailable` as described above.
+
+#### Namespaces and the prefixes the query editor knows
+
+The Query and Update editors know the namespaces of the repository. They complete a prefix after `PREFIX`, and
+typing a prefixed name such as `skos:Concept` adds the missing `PREFIX skos: <…>` line at the top of the query.
+**Insert prefixes** (under Query settings) adds a line for every repository namespace the query does not declare yet.
+
+For a prefix that the repository does not define, the editors fall back on a second list of prefixes. Typing a prefixed
+name from this list adds its `PREFIX` line, as for a repository namespace. **Insert prefixes** never adds the fallback
+list. The Workbench ships with an empty fallback list; a deployment sets its own with `namespaces.fallback`.
+
+Two keys of `workbench.properties` change this. Neither is part of the packaged defaults. Each takes `prefix:namespace`
+entries separated by commas and/or whitespace. A namespace may be written in angle brackets, which it needs when it
+contains a comma. A prefix may be empty (`:http://example.org/`, the default namespace).
+
+```properties
+# Namespaces that every repository has, as far as the Workbench is concerned.
+namespaces=dcat:http://www.w3.org/ns/dcat# acme:<https://acme.example/vocab#>
+# The prefixes the editors fall back on; an empty value turns the fallback off.
+namespaces.fallback=schema:https://schema.org/ foaf:http://xmlns.com/foaf/0.1/
+```
+
+- `namespaces`: pages treat these namespaces as if every repository had stored them. This covers the editors and
+  **Insert prefixes**, and the prefixed names in the result tables, Explore, the Remove preview and the other pages
+  that show the repository's prefixes. A prefix that a repository stores keeps the repository's namespace. The
+  Namespaces page lists, and changes, only the namespaces the repository stores.
+- `namespaces.fallback`: the fallback list. It replaces the whole bundled list (empty in this release) rather than
+  adding to it. An empty value turns the fallback off.
+
+An entry without a colon, an invalid prefix, a namespace that is not an absolute IRI, or a prefix listed twice makes
+the whole policy invalid. Every Workbench page then answers `503 Service Unavailable`, as described above. The editors
+load the fallback list once per page from `<workbench>/fallback-namespaces`. Browsers check it again on every page
+load, so a changed list reaches the editors as soon as the Workbench has restarted.
 
 ### OpenTelemetry Tracing
 
@@ -335,6 +403,44 @@ Both RDF4J Server and RDF4J Workbench use the Logback logging framework. In its 
 The default log level is INFO, indicating that only important status messages, warnings and errors are logged. The log level and -behaviour can be adjusted by modifying the `[RDF4J_DATA]/Server/conf/logback.xml` file. This file will be generated when the server is first run. Please consult the logback manual for configuration instructions.
 
 The built-in `/system/logging/overview.view` page is disabled by default and returns `403 Forbidden`. Server logs can include request URLs, query parameters, error details, and stack traces. To enable the page, start the Server JVM with `-Dorg.eclipse.rdf4j.server.logging.ui.enabled=true`. For the packaged Spring Boot distribution, add this option through `RDF4J_JAVA_OPTS`; for a standalone WAR, add it to the servlet container's JVM options. This setting only makes the page available. Protect `/system/logging/*` with servlet-container authentication and authorization or an authenticating reverse proxy before enabling it. For the packaged Boot server, protect both `/system/logging/*` and `/rdf4j-server/system/logging/*` when using a reverse proxy. The page must not be exposed anonymously on a publicly reachable listener.
+
+### Extending the RDF4J Server Spring configuration
+
+Downstream distributions can add or replace Spring beans in RDF4J Server without modifying the WAR's own configuration files. At the end of its `rdf4j-http-server-servlet.xml`, the server imports every Spring XML file that it finds on the classpath at `META-INF/rdf4j-server/*.xml`:
+
+- In the standard WAR, put the file at `META-INF/rdf4j-server/<name>.xml` inside a jar in `WEB-INF/lib`, or directly under `WEB-INF/classes/META-INF/rdf4j-server/`.
+- In the Spring Boot packaging (`rdf4j-server-boot`), put the jar (or directory) containing the file on the application classpath.
+
+Extension files are loaded after all stock bean definitions. A bean with the same id as a stock bean replaces it, so you can, for example, replace the `rdf4jRepositoryManager` bean that the server's controllers reference by name. The stock URL handler mappings use orders 0 to 3; give your own mappings an order that does not conflict with these. The `commonAppConfig` bean is available to extensions (for instance to look up the data directory). The order in which several extension files are loaded is not specified, so do not make one extension file depend on another. When packaging extensions in a jar, make sure the jar has directory entries (jars built by Maven do), as the classpath lookup relies on them.
+
+The following example replaces the repository manager with a custom `FactoryBean` and adds a URL mapping to a custom controller:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd">
+
+	<!-- Replaces the stock repository manager. The class must produce a RepositoryManager. -->
+	<bean id="rdf4jRepositoryManager" class="com.example.CustomRepositoryManagerFactoryBean">
+		<constructor-arg>
+			<bean factory-bean="commonAppConfig" factory-method="getDataDir" />
+		</constructor-arg>
+	</bean>
+
+	<bean id="exampleController" class="com.example.ExampleController" />
+
+	<!-- Adds a new endpoint; the stock mappings use orders 0-3. -->
+	<bean id="exampleHandlerMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping">
+		<property name="order" value="10" />
+		<property name="urlMap">
+			<map>
+				<entry key="/example" value-ref="exampleController" />
+			</map>
+		</property>
+	</bean>
+</beans>
+```
 
 ## Access Rights and Security
 
@@ -576,6 +682,8 @@ Click on “New repository” in the sidebar menu. This brings up the “New Rep
 - 12 SPARQL Endpoint Proxy: References a SPARQL Endpoint (See SPARQL 1.1 Protocol).
 - 1| Federation Store: Presents other stores referenced on the present server as a single federation store for querying purposes.
 
+Deployments can restrict this list, reorder it and add their own types with the `create.templates` policy key (see [Repository types offered when creating a repository](#repository-types-offered-when-creating-a-repository)).
+
 The “ID:” and “Title:” fields are optional in this form. Clicking “Next” brings up a form with more fields specific to the repository type selected. On that form, it will be necessary to enter something in the “ID:” field before the “Create” button may be clicked. If creation is successful, the new repository is also opened and its “Summary” page is presented.
 
 A repository ID is part of the repository's URLs (and, on a local server, the name of its data directory), so the Workbench only creates repositories whose ID consists of the letters a–z and A–Z, digits, `-`, `_`, `.` and `@`, and is not made of dots only (`.` and `..` are not valid IDs). Other IDs are refused with a message saying so.
@@ -602,7 +710,7 @@ The “Clear Repository” page is powerful. Leaving the lone “Context:” fie
 
 #### SPARQL Update
 
-The “Execute SPARQL Update on Repository” page gives a text area where you enter a SPARQL 1.1 Update command. SPARQL Update is an extension to the SPARQL query language that provides full CRUD (Create Read Update Delete) capabilities. For more information see the W3C Recommendation for SPARQL 1.1 Update. Clicking “Execute” executes the specified SPARQL Update operation.
+The “Execute SPARQL Update on Repository” page gives a text area where you enter a SPARQL 1.1 Update command. SPARQL Update is an extension to the SPARQL query language that provides full CRUD (Create Read Update Delete) capabilities. For more information see the W3C Recommendation for SPARQL 1.1 Update. Clicking “Execute” executes the specified SPARQL Update operation. The browser keeps what you type as a draft for each repository (and server), so an update written for one repository is never waiting, ready to run, on another repository's page.
 
 When a repository with SHACL validation rejects a change made with Add, Remove, Clear or SPARQL Update, the Workbench lists the violations, one per line, with the focus node, the path, the offending value and what the constraint expected (or the shape's `sh:message`), for example `- ex:alice, ex:age: value "abc": expected datatype xsd:integer`. Long reports list their first 20 violations.
 
@@ -640,13 +748,13 @@ Click on “Explore” in the sidebar menu. You are presented with an “Explore
 
 Data types expressed with qnames also need to have their namespace defined in the repository.
 
-By using the “Results per page” setting and the “Previous …” and “Next …” buttons, you may page through a long set of results, or display all of the results at once. There is also a “Show data types & language tags” checkbox which, when un-checked, allows a less verbose table view.
+By using the “Results per page” setting and the “Previous …” and “Next …” buttons, you may page through a long set of results, or display all of the results at once. There is also a “Show data types & language tags” checkbox which, when un-checked, allows a less verbose table view. Explore remembers what you explored in each repository, with its page and “Results per page”, until you close the browser tab: open it again from the sidebar menu (or from another repository and back) and it shows that resource again. Explore an empty “Resource” field to start afresh.
 
 #### Graph Page
 
 Click on “Graph” in the sidebar menu to explore the repository as an interactive graph. The graph starts empty: load the first 100 statements, find a resource with the search field in the top-left corner of the canvas (it lists the loaded nodes as you type, and its last choice searches the repository's labels and adds the matching resources), or run a query in the query editor. Queries may be `CONSTRUCT` or `DESCRIBE` queries, or `SELECT` queries whose result columns name a `?source`, a `?predicate` and a `?target` (or `?s`, `?p`, `?o`). The other Workbench pages offer “Add to graph” as well: on a resource in Explore (the resource and its neighbours), on any IRI in a result table, on the results of a query on the Query page, and on the rows of the Types (instances of the type) and Graphs (statements of the named graph) pages; what is added appears on the Graph page of the same repository the next time it opens, or straight away in a Graph page open in another tab. The graph, its layout, groups and selection are kept in the browser (per repository) and come back when the page is opened again; “Clear graph” empties it, and Undo brings it back.
 
-Resources are drawn as nodes, coloured by RDF type, and the links between them as edges. Click a node to see its details (types, literal values and links, each link leading to the linked node); double-click it, or use “Expand” in the details, to load its neighbours. A number such as “+12” on a node says how many of its links are not loaded yet; click it, or expand the node again, to load the next ones. Literal values and `rdf:type` links are shown in the details rather than as nodes; “Values” draws them as nodes too. Click a link (or next to it) to see its statement: what the predicate means (its description, domain and range, how many statements use it), and a card for every resource that says something about the statement: RDF 1.2 reifiers (`<< s p o >>` and `{| … |}` annotations), classic `rdf:Statement` reifications, and statements that refer to the triple term `<<( s p o )>>`; each card can be added to the graph. The details of a node offer the same statement card for each of its values and links (“Statement: …”), which also works from the keyboard. A reifier, or a resource that refers to a triple term, is connected to the statement it is about by a dashed line to the middle of the statement's edge. Right-click or long-press a node for more actions, such as expanding a single relation or selecting neighbours; the type names under the graph select the nodes of a type. “Filters” narrows the selection by type and by the values of the nodes' properties, including values the repository has that are not loaded (they load in the background, are kept in the browser for an hour and load again after any change made through the Workbench): the counts always say how many nodes a choice would select, choices that would select nothing are left out, numbers and dates are filtered by a from–to range, and the active filters are listed as chips at the top of the panel. Open the query editor (“Query editor”) to change the query, or to hand it over to the Query page (“Open on the Query page”). The “More views” menu shows the same data as a triple table, cards, an adjacency matrix, a timeline, a map (of WKT points, and of `geo:lat`/`geo:long` or `schema:latitude`/`schema:longitude` values, also on a `schema:geo` node) or value charts (one numeric property at a time); while nodes are selected, these views show only the statements of the selection, and the triple table shows 500 rows at a time. “Tools” downloads the loaded statements as Turtle and the drawn graph as an SVG or PNG image. The “?” button at the end of the toolbar lists every mouse, touch and keyboard control.
+Resources are drawn as nodes, coloured by RDF type, and the links between them as edges. Click a node to see its details (types, literal values and links, each link leading to the linked node); double-click it, or use “Expand” in the details, to load its neighbours. A number such as “+12” on a node says how many of its links are not loaded yet; click it, or expand the node again, to load the next ones. Literal values and `rdf:type` links are shown in the details rather than as nodes; “Values” draws them as nodes too. Click a link (or next to it) to see its statement: what the predicate means (its description, domain and range, how many statements use it), and a card for every resource that says something about the statement: RDF 1.2 reifiers (`<< s p o >>` and `{| … |}` annotations), classic `rdf:Statement` reifications, and statements that refer to the triple term `<<( s p o )>>`; each card can be added to the graph. The details of a node offer the same statement card for each of its values and links (“Statement: …”), which also works from the keyboard. A reifier, or a resource that refers to a triple term, is connected to the statement it is about by a dashed line to the middle of the statement's edge. Right-click or long-press a node for more actions, such as expanding a single relation or selecting neighbours; the type names under the graph select the nodes of a type. “Filters” narrows the selection by type and by the values of the nodes' properties, including values the repository has that are not loaded (they load in the background, are kept in the browser for an hour and load again after any change made through the Workbench): the counts always say how many nodes a choice would select, choices that would select nothing are left out, numbers and dates are filtered by a from–to range, and the active filters are listed as chips at the top of the panel. Open the query editor (“Query editor”) to change the query, or to hand it over to the Query page (“Open on the Query page”). The view menu beside “Query editor” (it shows the name of the current view, “Graph” at first) shows the same data as a triple table, cards, an adjacency matrix, a timeline, a map (of WKT points, and of `geo:lat`/`geo:long` or `schema:latitude`/`schema:longitude` values, also on a `schema:geo` node) or value charts (one numeric property at a time); while nodes are selected, these views show only the statements of the selection, and the triple table shows 500 rows at a time. “Tools” downloads the loaded statements as Turtle and the drawn graph as an SVG or PNG image; on a narrow screen it also holds undo, redo, “Values”, “Labels” and full screen, so that the toolbar stays one row. The “?” button near the end of the toolbar lists every mouse, touch and keyboard control.
 
 The page is built for large graphs: 50,000 nodes and 200,000 links load in a few seconds and move smoothly. From 500 drawn nodes it switches to a WebGL renderer that shows labels when zoomed in or for the selected node, the layout is computed in the background (“Arranging…” is shown meanwhile), and the stored copy takes about 12 MB of browser storage.
 

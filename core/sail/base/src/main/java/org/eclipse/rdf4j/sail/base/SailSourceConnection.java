@@ -453,8 +453,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		Thread selfInterruptOnTimeoutThread = new Thread(() -> {
 			try {
 				TimeUnit.SECONDS.sleep(timeoutSeconds);
-				currentThread.interrupt();
+				// Evaluation may react to the interrupt before this thread runs again.
 				timedOut.set(true);
+				currentThread.interrupt();
 			} catch (InterruptedException ignored) {
 
 			}

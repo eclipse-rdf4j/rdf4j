@@ -610,7 +610,8 @@ class LmdbPreparedBulkStoreTest {
 	@Test
 	void reusableFreeIdsDoNotTriggerStartupRecovery() throws Exception {
 		Path target = directory.resolve("reusable-ids");
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
+		// This fixture observes the bounded post-ready reclamation hook of durable cleanup.
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setAsyncValueCleanup(false);
 		StringBuilder input = new StringBuilder();
 		for (int index = 0; index < 200; index++) {
 			input.append("<urn:delete:")
@@ -846,7 +847,9 @@ class LmdbPreparedBulkStoreTest {
 	@ValueSource(booleans = { false, true })
 	void firstPreparedOpeningSupportsMutationAndSharedTermGarbageCollection(boolean inline) throws Exception {
 		Path target = directory.resolve("first-write-" + inline);
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(inline);
+		// This fixture observes the bounded post-ready reclamation hook of durable cleanup.
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(inline)
+				.setAsyncValueCleanup(false);
 		String inner = "<<( <urn:shared> <urn:p> \"shared\"@EN )>>";
 		String input = "<urn:remove> <urn:p> <<( <urn:outer> <urn:p> " + inner + " )>> .\n"
 				+ "<urn:keep> <urn:p> " + inner + " .\n";
@@ -922,10 +925,25 @@ class LmdbPreparedBulkStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void certifiedReferenceCountsMatchLiveOwnerReconstructionAndGc(boolean inline) throws Exception {
+		certifiedReferenceCountsMatchLiveOwnerReconstructionAndGc(inline, false);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void defaultAsyncCleanupPublishesDependencyFrontierBeforeExplicitGc(boolean inline) throws Exception {
+		certifiedReferenceCountsMatchLiveOwnerReconstructionAndGc(inline, true);
+	}
+
+	private void certifiedReferenceCountsMatchLiveOwnerReconstructionAndGc(boolean inline, boolean asyncHandoff)
+			throws Exception {
 		Path target = directory.resolve("reference-counts-" + inline);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(inline)
 				.setValueHashCacheEnabled(true)
 				.setTripleTermIndexes("spoc,cspo,posc");
+		if (!asyncHandoff) {
+			// This oracle owns explicit durable GC, not concurrent publication of another cleanup frontier.
+			config.setAsyncValueCleanup(false);
+		}
 		String row = "<urn:owner> <urn:p> <<( <urn:same> <urn:same> "
 				+ "<<( <urn:same> <urn:same> <urn:same> )>> )>> .\n";
 		String input = row.repeat(3)
@@ -962,6 +980,10 @@ class LmdbPreparedBulkStoreTest {
 		LmdbStore.reconstructReferenceCountsOffline(target.toFile(), config);
 		assertEquals(certified, referenceCounts(target),
 				"closed-directory reconstruction must match the live-owner count oracle exactly");
+		CountDownLatch beforeBatch = new CountDownLatch(1);
+		CountDownLatch releaseBatch = new CountDownLatch(1);
+		CountDownLatch afterBatch = new CountDownLatch(1);
+		CountDownLatch releaseAfterBatch = new CountDownLatch(1);
 		LmdbStore store = new LmdbStore(target.toFile(), config);
 		SailRepository repository = new SailRepository(store);
 		try {
@@ -970,13 +992,49 @@ class LmdbPreparedBulkStoreTest {
 			assertTrue(store.awaitIndexRebuild(10L, java.util.concurrent.TimeUnit.SECONDS),
 					store.getStartupStatus().toString());
 			assertTrue(store.getBackingStore().valueStore().hasTrustedReferenceCounts());
+			if (asyncHandoff) {
+				assertFalse(store.getBackingStore().hasRetiredValueIds());
+				store.getBackingStore().asyncValueCleanupCoordinator().beforeBatchForTest(() -> {
+					beforeBatch.countDown();
+					awaitCleanupGate(releaseBatch);
+				});
+				store.getBackingStore().asyncValueCleanupCoordinator().afterBatchCommitForTest(() -> {
+					afterBatch.countDown();
+					awaitCleanupGate(releaseAfterBatch);
+				});
+			}
 			try (var connection = repository.getConnection()) {
 				assertEquals(7L, connection.size());
 				connection.clear();
 				assertEquals(0L, connection.size());
 			}
+			if (asyncHandoff) {
+				assertTrue(beforeBatch.await(10, java.util.concurrent.TimeUnit.SECONDS));
+			}
 			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
+			if (asyncHandoff) {
+				assertFalse(store.getBackingStore().hasRetiredValueIds(),
+						"the durable-only drain cannot observe the held asynchronous root batch");
+				releaseBatch.countDown();
+				assertTrue(afterBatch.await(10, java.util.concurrent.TimeUnit.SECONDS));
+				assertTrue(store.getBackingStore().hasRetiredValueIds(),
+						"the committed root batch publishes a real dependent retirement frontier");
+				releaseAfterBatch.countDown();
+				assertTrue(store.getBackingStore()
+						.asyncValueCleanupCoordinator()
+						.awaitEmpty(10, java.util.concurrent.TimeUnit.SECONDS));
+				// Queue acknowledgement is not idle-maintenance quiescence. Join the actual worker before
+				// this explicit finite-cohort oracle observes the final durable frontier.
+				store.getBackingStore().stopAsyncValueCleanupForShutdown();
+				LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
+			}
 			assertFalse(store.getBackingStore().hasRetiredValueIds());
+			if (asyncHandoff) {
+				// Stopping a coordinator is terminal. Reopen a real default-on owner before testing new writes.
+				repository.shutDown();
+				repository.init();
+				LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+			}
 			try (var connection = repository.getConnection()) {
 				var values = SimpleValueFactory.getInstance();
 				connection.add(values.createIRI("urn:new"), values.createIRI("urn:p"),
@@ -984,6 +1042,8 @@ class LmdbPreparedBulkStoreTest {
 				assertEquals(1L, connection.size());
 			}
 		} finally {
+			releaseBatch.countDown();
+			releaseAfterBatch.countDown();
 			repository.shutDown();
 		}
 		assertPreparedOpening(target, config, 1L);
@@ -1005,6 +1065,15 @@ class LmdbPreparedBulkStoreTest {
 			}
 		} finally {
 			finalRepository.shutDown();
+		}
+	}
+
+	private static void awaitCleanupGate(CountDownLatch gate) {
+		try {
+			assertTrue(gate.await(20, java.util.concurrent.TimeUnit.SECONDS));
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(interrupted);
 		}
 	}
 

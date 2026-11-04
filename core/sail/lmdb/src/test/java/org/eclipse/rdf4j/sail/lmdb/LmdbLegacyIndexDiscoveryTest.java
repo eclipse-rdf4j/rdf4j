@@ -826,6 +826,8 @@ class LmdbLegacyIndexDiscoveryTest {
 				values.createLiteral("unreferenced component"));
 		// Bounded reclamation needs a leading object index to establish term liveness.
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(false)
+				// This fixture deliberately retains reverse-only records until the next startup batch.
+				.setAsyncValueCleanup(false)
 				.setValueEvictionInterval(60_000)
 				.setLegacyReferenceCountRepairEnabled(true);
 		SailRepository initial = new SailRepository(new LmdbStore(directory.toFile(), config));
@@ -1188,7 +1190,7 @@ class LmdbLegacyIndexDiscoveryTest {
 
 	private SailRepository repository() throws Exception {
 		if (!Files.exists(directory.resolve("values/data.mdb"))) {
-			// Legacy encoding tests require a genuine v2 generation; optimize's new-store contract is v6.
+			// Legacy encoding tests require a genuine v2 generation; the new-store contract is v7.
 			extract("v2-empty-inline-false.zip", directory);
 		}
 		return new SailRepository(new LmdbStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false)));

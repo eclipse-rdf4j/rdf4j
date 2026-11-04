@@ -69,8 +69,17 @@ final class LeftJoinPlan implements SlotPlan {
 
 	@Override
 	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
-		// Same work shape as an inner join: the optional arm is probed once per left row whether or not it matches.
-		return LmdbNativeWork.probeChain(left, right, row, boundMask);
+		if (lexicalSharedSlots != null || lexicalProblemSlots != null) {
+			// A lexical arm may eagerly materialize the right side, or hide and restore entry bindings before
+			// an additional independent probe. Its replay and spill work is not bounded by a single nested loop.
+			return LmdbNativeWork.UNKNOWN;
+		}
+		// The ordinary cursor can retain and replay right-side results rather than opening the complete right
+		// relation for each left row. Keep the mandatory left work, and leave the right interval unknown until
+		// its runtime admission and replay work can be bounded.
+		LmdbNativeWork leftWork = left.estimateWork(row, boundMask);
+		LmdbNativeWork.RowBounds leftRows = LmdbNativeWork.rowBounds(left, row, boundMask);
+		return leftWork.plus(LmdbNativeWork.UNKNOWN.times(new LmdbNativeWork.RowBounds(0D, leftRows.high())));
 	}
 
 	@Override

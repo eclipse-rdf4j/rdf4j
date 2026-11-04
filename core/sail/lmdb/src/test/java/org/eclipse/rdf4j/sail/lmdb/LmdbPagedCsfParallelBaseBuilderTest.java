@@ -43,7 +43,6 @@ class LmdbPagedCsfParallelBaseBuilderTest {
 					LmdbInMemoryAdjacencyIndex index = LmdbPagedCsfBaseBuilder.build(family,
 							LmdbAdjacencyCoverage.full(), account, 1L << 20, 1L << 16, workers, null,
 							LmdbNodePredicateOptions.ALL_PLANES)) {
-				index.retain();
 				LmdbAdjacencyPublishedState state = new LmdbAdjacencyPublishedState(1, index, 7, Long.MAX_VALUE,
 						LmdbAdjacencyPublishedState.AdjacencyServingState.ROW_EXACT);
 				AtomicInteger inconsistencies = new AtomicInteger();

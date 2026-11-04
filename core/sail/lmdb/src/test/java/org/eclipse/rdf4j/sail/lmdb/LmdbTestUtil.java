@@ -18,12 +18,114 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public final class LmdbTestUtil {
 	private static final int DELETE_RETRY_ATTEMPTS = 5;
 
 	private LmdbTestUtil() {
+	}
+
+	/** Adapts test-owned shutdown to try-with-resources, preserving failures through suppression. */
+	public static Cleanup onClose(Runnable cleanup) {
+		return cleanup::run;
+	}
+
+	@FunctionalInterface
+	public interface Cleanup extends AutoCloseable {
+		@Override
+		void close();
+	}
+
+	/** Attempts every cleanup action without replacing an already failing test. */
+	static void cleanup(Throwable primary, AutoCloseable... actions) throws Exception {
+		Throwable failure = primary;
+		for (AutoCloseable action : actions) {
+			try {
+				if (action != null) {
+					action.close();
+				}
+			} catch (Throwable cleanupFailure) {
+				if (failure == null) {
+					failure = cleanupFailure;
+				} else if (failure != cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+			}
+		}
+		if (primary == null) {
+			rethrowCleanupFailure(failure);
+		}
+	}
+
+	/** Forces and reaps a worker on failure; strict callers still fail their original graceful-shutdown assertion. */
+	static void shutdownExecutor(ExecutorService executor, long gracefulSeconds, long forcedSeconds,
+			boolean requireGraceful, String description) throws Exception {
+		Throwable failure = null;
+		boolean interrupted = Thread.interrupted();
+		try {
+			try {
+				executor.shutdown();
+				if (interrupted) {
+					throw new InterruptedException("Interrupted before " + description);
+				}
+				boolean terminated = executor.awaitTermination(gracefulSeconds, TimeUnit.SECONDS);
+				if (!terminated && requireGraceful) {
+					throw new AssertionError(description);
+				}
+			} catch (Throwable problem) {
+				failure = problem;
+				interrupted |= problem instanceof InterruptedException;
+			}
+			if (!executor.isTerminated()) {
+				try {
+					executor.shutdownNow();
+					long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(forcedSeconds);
+					boolean terminated = false;
+					do {
+						try {
+							terminated = executor.awaitTermination(Math.max(0L, deadline - System.nanoTime()),
+									TimeUnit.NANOSECONDS);
+							break;
+						} catch (InterruptedException problem) {
+							interrupted = true;
+							if (failure == null) {
+								failure = problem;
+							} else if (failure != problem) {
+								failure.addSuppressed(problem);
+							}
+						}
+					} while (System.nanoTime() < deadline);
+					if (!terminated) {
+						throw new AssertionError(description + " after forced shutdown");
+					}
+				} catch (Throwable problem) {
+					if (failure == null) {
+						failure = problem;
+					} else if (failure != problem) {
+						failure.addSuppressed(problem);
+					}
+				}
+			}
+			rethrowCleanupFailure(failure);
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	private static void rethrowCleanupFailure(Throwable failure) throws Exception {
+		if (failure instanceof Exception exception) {
+			throw exception;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure != null) {
+			throw new AssertionError(failure);
+		}
 	}
 
 	/** Waits for deferred owner initialization before tests explicitly replace or persist optional components. */
@@ -45,6 +147,35 @@ public final class LmdbTestUtil {
 			}
 			if (System.nanoTime() - started >= budget) {
 				throw new IOException("Timed out waiting for LMDB post-ready initialization: " + status);
+			}
+			Thread.yield();
+		}
+	}
+
+	/**
+	 * Waits until no startup background maintenance remains: post-ready initialization, both index rebuilds and the
+	 * optional overlay/adjacency work. Tests that arm or measure the shared reader pools need this quiescence, because
+	 * maintenance legitimately admits ordinary readers of both physical stores for short periods after {@code init()}.
+	 */
+	public static void awaitBackgroundMaintenance(LmdbStore store, long timeout, TimeUnit unit)
+			throws IOException, InterruptedException {
+		long started = System.nanoTime();
+		long budget = unit.toNanos(timeout);
+		awaitPostReadyInitialization(store, timeout, unit);
+		while (true) {
+			LmdbStore.StartupStatus status = store.getStartupStatus();
+			if (!status.backgroundWorkPending()) {
+				return;
+			}
+			if (status.statementIndexBuild().startsWith("FAILED") || status.tripleTermIndexBuild().startsWith("FAILED")
+					|| status.auxiliaryMaintenance().startsWith("FAILED")) {
+				throw new IOException("LMDB background maintenance failed: " + status);
+			}
+			if (Thread.interrupted()) {
+				throw new InterruptedException("Interrupted while waiting for LMDB background maintenance");
+			}
+			if (System.nanoTime() - started >= budget) {
+				throw new IOException("Timed out waiting for LMDB background maintenance: " + status);
 			}
 			Thread.yield();
 		}

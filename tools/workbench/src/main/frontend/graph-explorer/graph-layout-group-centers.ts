@@ -21,7 +21,7 @@ import type {LayoutOptions} from './graph-layout-engine.ts';
  */
 export function computeGroupCenters(graph: Graph, options: LayoutOptions) {
   const initial = computeNetworkLayout(graph, options).positions;
-  if (!options.nodeSizes || options.refine || graph.nodes.some(n => n.pinned) || graph.nodes.length > 80) return initial;
+  if (!options.nodeSizes || options.fromCurrent || graph.nodes.some(n => n.pinned) || graph.nodes.length > 80) return initial;
   const nodes = graph.nodes.map(node => ({...initial.get(node.id)!, ...options.nodeSizes!.get(node.id)!}));
   const indices = new Map(graph.nodes.map((node, i) => [node.id, i]));
   const links = graph.edges.map(edge => ({source: indices.get(edge.source)!, target: indices.get(edge.target)!}));
@@ -44,7 +44,7 @@ export function computeGroupCenters(graph: Graph, options: LayoutOptions) {
  */
 export function orientLayoutGroups(graph: Graph, groups: number[][], positions: Map<string, PointerPosition>,
   centers: Map<string, PointerPosition>, options: LayoutOptions = {}) {
-  if (options.refine || options.incremental || options.repairOnly || options.localNodeIds?.size) return;
+  if (options.incremental || options.repairOnly || options.localNodeIds?.size) return;
   const owner = new Map<string, number>(), boundary: Array<Array<{id: string; other: string}>> = groups.map(() => []);
   groups.forEach((members, c) => members.forEach(i => owner.set(graph.nodes[i].id, c)));
   for (const edge of graph.edges) {

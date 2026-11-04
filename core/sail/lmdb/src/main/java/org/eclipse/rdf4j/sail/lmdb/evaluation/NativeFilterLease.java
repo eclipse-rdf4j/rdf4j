@@ -94,6 +94,12 @@ final class NativeFilterLease {
 		if (plan instanceof EntryBindingCompatibilityPlan entry) {
 			return new EntryBindingCompatibilityPlan(borrow(entry.arg), entry.slots, entry.ids, entry.restoredMask);
 		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return alias.clonePlan(borrow(alias.original.left), borrow(alias.original.right));
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return new NativeAliasJoinMemoPlan(new JoinPlan(borrow(memo.original.left), borrow(memo.original.right)));
+		}
 		if (plan instanceof JoinPlan join) {
 			// Reapply relational identity/flattening while cloning the attempt. Otherwise an unused VALUES
 			// table that was folded to SingletonPlan can be resurrected as a nested JoinPlan barrier here,

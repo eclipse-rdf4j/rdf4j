@@ -34,6 +34,7 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkInput;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkOutput;
 import org.lwjgl.system.MemoryUtil;
@@ -98,6 +99,7 @@ class LmdbRecordIterator implements RecordIterator {
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
+	private int cancellationPollTick;
 
 	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
@@ -244,6 +246,10 @@ class LmdbRecordIterator implements RecordIterator {
 		fetchNext = false;
 		remove = false;
 		resumeExclusive = null;
+		sourceRowsScannedActual = 0L;
+		sourceRowsMatchedActual = 0L;
+		sourceRowsFilteredActual = 0L;
+		cancellationPollTick = 0;
 		closed = false;
 	}
 
@@ -312,6 +318,9 @@ class LmdbRecordIterator implements RecordIterator {
 			return null;
 		}
 		validateSnapshot();
+		if (cancellationPollTick == 0) {
+			NativeLmdbQuerySource.checkpointCancellation();
+		}
 		if (state.txnRefVersion != txnRef.version()) {
 			if (state.chunkOutput != null) {
 				throw new SailException("Cannot renew a record cursor with pending chunk edits");
@@ -345,13 +354,16 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 				continue;
 			}
+			if ((++cancellationPollTick & 1023) == 0) {
+				NativeLmdbQuerySource.checkpointCancellation();
+			}
 			sourceRowsScannedActual++;
 			if (useIndex && Chunks.compareTuples(current, state.maxTuple) > 0) {
 				sourceRowsFilteredActual++;
 				preserveFiltered(current);
 				break;
 			}
-			if (!Chunks.matches(0, state.patternTuple, current)) {
+			if (!index.matchesEntry(state.patternTuple, current)) {
 				sourceRowsFilteredActual++;
 				preserveFiltered(current);
 				continue;
@@ -377,6 +389,7 @@ class LmdbRecordIterator implements RecordIterator {
 			fetchNext = true;
 			return state.quad;
 		}
+		NativeLmdbQuerySource.checkpointCancellation();
 		closeUnderReadLock();
 		return null;
 	}

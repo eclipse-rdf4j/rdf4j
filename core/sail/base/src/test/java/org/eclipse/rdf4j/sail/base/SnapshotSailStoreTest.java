@@ -28,9 +28,13 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -54,6 +58,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -1136,6 +1141,111 @@ public class SnapshotSailStoreTest {
 		} finally {
 			sail.shutDown();
 		}
+	}
+
+	@Test
+	public void testExplainPublishesTimeoutBeforeInterruptingEvaluation() throws Exception {
+		for (Explanation.Level level : List.of(Explanation.Level.Executed, Explanation.Level.Telemetry,
+				Explanation.Level.Timed)) {
+			assertExplainPublishesTimeoutBeforeInterruptingEvaluation(level);
+		}
+	}
+
+	private void assertExplainPublishesTimeoutBeforeInterruptingEvaluation(Explanation.Level level) throws Exception {
+		CountDownLatch evaluationStarted = new CountDownLatch(1);
+		CountDownLatch releaseEvaluation = new CountDownLatch(1);
+		CountDownLatch releaseTimeoutThread = new CountDownLatch(1);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> new CloseableIteration<BindingSet>() {
+			@Override
+			public boolean hasNext() {
+				evaluationStarted.countDown();
+				try {
+					releaseEvaluation.await();
+					return false;
+				} catch (InterruptedException interrupted) {
+					throw new IllegalStateException("evaluation observed the timeout interrupt", interrupted);
+				}
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void close() {
+			}
+		});
+		Sail sail = createExplainTestSail(strategy);
+		AtomicReference<Explanation> result = new AtomicReference<>();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread evaluationThread = new Thread(() -> {
+			try (SailConnection connection = sail.getConnection()) {
+				TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+				result.set(connection.explain(level, tupleExpr, null, EmptyBindingSet.getInstance(), false, 1));
+			} catch (Throwable problem) {
+				failure.set(problem);
+			}
+		}, "explain-timeout-regression") {
+			@Override
+			public void interrupt() {
+				super.interrupt();
+				// Hold the timeout thread after it interrupts evaluation until explain's cleanup interrupts it.
+				try {
+					releaseTimeoutThread.await();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		};
+		try {
+			evaluationThread.start();
+			assertTrue(evaluationStarted.await(10, TimeUnit.SECONDS), "evaluation must start");
+			evaluationThread.join(TimeUnit.SECONDS.toMillis(10));
+			assertFalse(evaluationThread.isAlive(), "explanation must complete after the timeout");
+			assertThat(failure.get()).as("%s explanation should report its own timeout", level).isNull();
+			assertThat(result.get().toGenericPlanNode().getTimedOut()).isTrue();
+		} finally {
+			releaseTimeoutThread.countDown();
+			releaseEvaluation.countDown();
+			if (evaluationThread.isAlive()) {
+				evaluationThread.interrupt();
+				evaluationThread.join(TimeUnit.SECONDS.toMillis(10));
+			}
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainPropagatesEvaluationFailureWithoutTimeout() {
+		IllegalStateException failure = new IllegalStateException("evaluation failed");
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> {
+			throw failure;
+		});
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(failure, assertThrows(IllegalStateException.class,
+					() -> connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
+							EmptyBindingSet.getInstance(), false, 10)));
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	private Sail createExplainTestSail(EvaluationStrategy strategy) {
+		SailStore store = mock(SailStore.class);
+		SailSource selected = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class);
+		SailDataset dataset = mock(SailDataset.class);
+		when(store.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		when(store.getExplicitSailSource()).thenReturn(selected);
+		when(selected.fork()).thenReturn(fork);
+		when(fork.dataset(any())).thenReturn(dataset);
+		when(strategy.optimize(any(), any(), any())).thenAnswer(call -> call.getArgument(0));
+		return createSail(store, IsolationLevels.READ_COMMITTED, strategy);
 	}
 
 	@Test

@@ -488,6 +488,10 @@ public class TripleIndex {
 		quad[indexMap[3]] = tuple[3];
 	}
 
+	boolean matchesEntry(long[] pattern, long[] entry) {
+		return Chunks.matches(0, pattern, entry);
+	}
+
 	int keyToQuadMatchStatus(ByteBuffer key, int rangePrefixLength, long matchSubj, long matchPred, long matchObj,
 			long matchContext, long[] quad) {
 		for (int i = 0; i < indexMap.length; i++) {

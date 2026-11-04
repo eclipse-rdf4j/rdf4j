@@ -24,11 +24,11 @@ import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -391,13 +391,15 @@ class LmdbGrowthCapacityTest {
 						"the early warning must not resize the ValueStore before validation and preflight");
 				ExecutorService arrivalExecutor = Executors.newSingleThreadExecutor();
 				Future<Boolean> arrival;
+				AtomicReference<Thread> arrivalThread = new AtomicReference<>();
 				try {
 					arrival = arrivalExecutor.submit(() -> {
+						arrivalThread.set(Thread.currentThread());
 						try (RepositoryConnection arrivingReader = repository.getConnection()) {
 							return arrivingReader.getStatements(null, null, null).hasNext();
 						}
 					});
-					awaitCurrentAdmissionWaiter(backingStore);
+					awaitAdmissionWaiter(arrivalThread, arrival);
 					assertTrue(backingStore.growthMetricsSnapshot().currentAdmissionWaiters() > 0,
 							"a read arriving after the warning must wait for the writer's shared growth episode");
 					connection.rollback();
@@ -408,8 +410,7 @@ class LmdbGrowthCapacityTest {
 					assertTrue(arrivalExecutor.awaitTermination(5, TimeUnit.SECONDS),
 							"admission-wait test worker must terminate");
 				}
-				assertEquals(0, backingStore.growthMetricsSnapshot().currentAdmissionWaiters(),
-						"rollback must release every blocked admission");
+				awaitAdmissionWaitersDrained(backingStore);
 				assertFalse(backingStore.growthAdmissionClosed(), "rollback must close the growth episode");
 			}
 		} finally {
@@ -439,12 +440,10 @@ class LmdbGrowthCapacityTest {
 								"the buffered statement estimate must close admission");
 						long growthEpisodes = backingStore.growthMetricsSnapshot().growthEpisodes();
 
-						CountDownLatch deadlineReaderStarted = new CountDownLatch(1);
+						AtomicReference<Thread> deadlineReaderThread = new AtomicReference<>();
 						Future<Boolean> deadlineReader = submitDeadlineBoundRead(readerExecutor, repository,
-								deadlineReaderStarted, 750);
-						assertTrue(deadlineReaderStarted.await(5, TimeUnit.SECONDS),
-								"the deadline-bound reader must start");
-						awaitCurrentAdmissionWaiter(backingStore, deadlineReader);
+								deadlineReaderThread, 750);
+						awaitAdmissionWaiter(deadlineReaderThread, deadlineReader);
 						assertReaderDeadlineExpires(deadlineReader);
 						assertTrue(writer.isActive(), "reader timeout must not finish the buffered writer");
 						assertTrue(backingStore.growthAdmissionClosed(),
@@ -491,12 +490,10 @@ class LmdbGrowthCapacityTest {
 								"the buffered statement estimate must start an admission phase");
 						long growthEpisodes = backingStore.growthMetricsSnapshot().growthEpisodes();
 
-						CountDownLatch deadlineReaderStarted = new CountDownLatch(1);
+						AtomicReference<Thread> deadlineReaderThread = new AtomicReference<>();
 						Future<Boolean> deadlineReader = submitDeadlineBoundRead(readerExecutor, repository,
-								deadlineReaderStarted, 750);
-						assertTrue(deadlineReaderStarted.await(5, TimeUnit.SECONDS),
-								"the deadline-bound reader must start");
-						awaitCurrentAdmissionWaiter(backingStore, deadlineReader);
+								deadlineReaderThread, 750);
+						awaitAdmissionWaiter(deadlineReaderThread, deadlineReader);
 
 						addBufferedStatement(writer, "urn:warning-restart:later-subject:", 0L);
 						assertReaderDeadlineExpires(deadlineReader);
@@ -541,12 +538,10 @@ class LmdbGrowthCapacityTest {
 				bufferStatementsUntilGrowthWarning(writer, backingStore, "urn:warning-no-probe:subject:");
 				long growthEpisodes = backingStore.growthMetricsSnapshot().growthEpisodes();
 
-				CountDownLatch deadlineReaderStarted = new CountDownLatch(1);
+				AtomicReference<Thread> deadlineReaderThread = new AtomicReference<>();
 				Future<Boolean> deadlineReader = submitDeadlineBoundRead(readerExecutor, repository,
-						deadlineReaderStarted, 750);
-				assertTrue(deadlineReaderStarted.await(5, TimeUnit.SECONDS),
-						"the deadline-bound reader must start");
-				awaitCurrentAdmissionWaiter(backingStore, deadlineReader);
+						deadlineReaderThread, 750);
+				awaitAdmissionWaiter(deadlineReaderThread, deadlineReader);
 				assertReaderDeadlineExpires(deadlineReader);
 				assertEquals(growthEpisodes, backingStore.growthMetricsSnapshot().growthEpisodes(),
 						"the reader's own deadline must not expire the writer's growth episode");
@@ -731,29 +726,43 @@ class LmdbGrowthCapacityTest {
 				VF.createLiteral("bounded buffered write"));
 	}
 
-	private static void awaitCurrentAdmissionWaiter(LmdbSailStore store) throws InterruptedException {
-		awaitCurrentAdmissionWaiter(store, null);
-	}
-
-	private static void awaitCurrentAdmissionWaiter(LmdbSailStore store, Future<?> operation)
-			throws InterruptedException {
+	private static void awaitAdmissionWaiter(AtomicReference<Thread> readerThread, Future<?> operation) {
 		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-		while (store.growthMetricsSnapshot().currentAdmissionWaiters() == 0) {
-			if (operation != null && operation.isDone()) {
+		while (System.nanoTime() - deadlineNanos < 0) {
+			if (operation.isDone()) {
 				throw new AssertionError(
 						"The reader completed without waiting at the closed map-growth admission gate");
 			}
-			if (System.nanoTime() >= deadlineNanos) {
-				throw new AssertionError("No reader entered the closed map-growth admission gate");
+			Thread thread = readerThread.get();
+			// The aggregate gauge can include background sketch refreshes, not just this reader.
+			if (thread != null && Arrays.stream(thread.getStackTrace())
+					.anyMatch(frame -> frame.getClassName()
+							.equals(LmdbSailStore.class.getName()
+									+ "$MapGrowthCoordinator")
+							&& frame.getMethodName().equals("awaitChange"))) {
+				return;
 			}
 			Thread.yield();
 		}
+		throw new AssertionError("The reader did not enter the closed map-growth admission gate");
+	}
+
+	private static void awaitAdmissionWaitersDrained(LmdbSailStore store) {
+		// Rollback signals every waiter, but joining our reader does not join background readers.
+		// Their finally blocks decrement the gauge only after they reacquire the coordinator lock.
+		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (store.growthMetricsSnapshot().currentAdmissionWaiters() != 0
+				&& System.nanoTime() - deadlineNanos < 0) {
+			Thread.yield();
+		}
+		assertEquals(0, store.growthMetricsSnapshot().currentAdmissionWaiters(),
+				"rollback must release all blocked admissions");
 	}
 
 	private static Future<Boolean> submitDeadlineBoundRead(ExecutorService readerExecutor,
-			SailRepository repository, CountDownLatch readerStarted, long deadlineMillis) {
+			SailRepository repository, AtomicReference<Thread> readerThread, long deadlineMillis) {
 		return readerExecutor.submit(() -> {
-			readerStarted.countDown();
+			readerThread.set(Thread.currentThread());
 			try (InterruptingTimeLimit limit = InterruptingTimeLimit.start(deadlineMillis);
 					RepositoryConnection reader = repository.getConnection()) {
 				try (var statements = reader.getStatements(null, null, null)) {
@@ -773,21 +782,19 @@ class LmdbGrowthCapacityTest {
 
 	private static void assertRollbackReleasesAdmission(RepositoryConnection writer, ExecutorService readerExecutor,
 			SailRepository repository, LmdbSailStore backingStore) throws Exception {
-		CountDownLatch releasedReaderStarted = new CountDownLatch(1);
+		AtomicReference<Thread> releasedReaderThread = new AtomicReference<>();
 		Future<Boolean> releasedReader = readerExecutor.submit(() -> {
-			releasedReaderStarted.countDown();
+			releasedReaderThread.set(Thread.currentThread());
 			try (RepositoryConnection reader = repository.getConnection();
 					var statements = reader.getStatements(null, null, null)) {
 				return statements.hasNext();
 			}
 		});
-		assertTrue(releasedReaderStarted.await(5, TimeUnit.SECONDS), "the remaining reader must start");
-		awaitCurrentAdmissionWaiter(backingStore, releasedReader);
+		awaitAdmissionWaiter(releasedReaderThread, releasedReader);
 		writer.rollback();
 		assertFalse(releasedReader.get(5, TimeUnit.SECONDS),
 				"rolling back the writer must release the remaining admission");
-		assertEquals(0, backingStore.growthMetricsSnapshot().currentAdmissionWaiters(),
-				"rollback must release all blocked admissions");
+		awaitAdmissionWaitersDrained(backingStore);
 		assertFalse(backingStore.growthAdmissionClosed(), "rollback must close the writer's growth phase");
 	}
 

@@ -37,6 +37,11 @@ final class AsyncSignal {
 		void park(Object blocker);
 
 		void parkNanos(Object blocker, long nanos);
+
+		/** Monotonic elapsed-time source; tests advance it without depending on scheduler timing. */
+		default long nanoTime() {
+			return System.nanoTime();
+		}
 	}
 
 	private static final Waiter SYSTEM_WAITER = new Waiter() {
@@ -85,9 +90,9 @@ final class AsyncSignal {
 	 * - park immediately: 18,170 ops/s - 1,024 spins / 64 yields: 21,770 ops/s - 4,096 / 256: 24,628 ops/s - 4,096 /
 	 * 1,024: 24,665 ops/s - 16,384 / 4,096: 24,260 ops/s - 256 / 4,096: 23,077 ops/s
 	 *
-	 * Throughput plateaus at 4,096 / 256, the smallest budget there, so it burns the least CPU before a long wait
-	 * parks. Larger budgets gain nothing and only spin longer, and a short cheap spin followed by a long yield spin
-	 * measured lower. On that machine the tiers last about 50 us and 30 us.
+	 * Those measurements used the earlier 4,096-spin limit. The current count limits remain upper bounds, not
+	 * elapsed-time guarantees. Timed waits check their deadline every 64 cheap spins; untimed cheap spins do not read
+	 * the clock. Interruption is also checked at each of these boundaries.
 	 *
 	 * The yield spin also stops after YIELD_NANOS. On a loaded machine, such as a CI runner running tests in parallel,
 	 * each yield can wait a whole scheduler slice of several milliseconds, and 256 of them would keep an idle waiter
@@ -96,9 +101,10 @@ final class AsyncSignal {
 	 * A signal that arrives during the spins leaves an unused unpark permit, so a later park on this thread may return
 	 * early. That is allowed: every caller re-checks its condition after await returns.
 	 */
-	static final int SPINS = 1 << 12;
-	static final int YIELDS = 1 << 8;
+	static final int SPINS = 64 * 1024;
+	static final int YIELDS = 256;
 	static final long YIELD_NANOS = 100_000L;
+	private static final int SPIN_CHECK_MASK = 63;
 
 	private final Waiter waiter;
 	private final boolean spinBeforePark;
@@ -167,14 +173,17 @@ final class AsyncSignal {
 			throw new InterruptedException();
 		}
 		if (remainingNanos > 0L && sequence.get() == observed) {
-			long deadline = remainingNanos == Long.MAX_VALUE ? 0L : System.nanoTime() + remainingNanos;
-			if ((!spinBeforePark || !changedWhileSpinning(observed, deadline)) && sequence.get() == observed) {
-				if (deadline == 0L) {
+			boolean timed = remainingNanos != Long.MAX_VALUE;
+			long started = timed ? waiter.nanoTime() : 0L;
+			if ((!spinBeforePark || !finishedWhileSpinning(observed, started, remainingNanos))
+					&& sequence.get() == observed && !Thread.currentThread().isInterrupted()) {
+				if (!timed) {
 					waiter.park(this);
 				} else {
-					long left = deadline - System.nanoTime();
-					if (left > 0L) {
-						waiter.parkNanos(this, left);
+					// Elapsed subtraction remains valid across nanoTime wraparound, including a deadline of zero.
+					long elapsed = waiter.nanoTime() - started;
+					if (elapsed < remainingNanos) {
+						waiter.parkNanos(this, remainingNanos - elapsed);
 					}
 				}
 			}
@@ -184,29 +193,41 @@ final class AsyncSignal {
 		}
 	}
 
-	/** The two spin tiers; {@code deadline} is zero for an untimed wait. */
-	private boolean changedWhileSpinning(long observed, long deadline) {
+	/** Returns true when publication, interruption or expiration finishes the wait before parking. */
+	private boolean finishedWhileSpinning(long observed, long started, long remainingNanos) {
+		boolean timed = remainingNanos != Long.MAX_VALUE;
 		for (int i = 0; i < SPINS; i++) {
 			if (sequence.get() != observed) {
 				return true;
 			}
 			waiter.spin();
-		}
-		long yieldEnd = System.nanoTime() + YIELD_NANOS;
-		for (int i = 0; i < YIELDS; i++) {
-			if (sequence.get() != observed) {
+			if ((i & SPIN_CHECK_MASK) == SPIN_CHECK_MASK
+					&& (Thread.currentThread().isInterrupted()
+							|| timed && waiter.nanoTime() - started >= remainingNanos)) {
 				return true;
 			}
-			long now = System.nanoTime();
-			if (deadline != 0L && now - deadline >= 0L) {
-				return false;
-			}
-			if (now - yieldEnd >= 0L) {
-				break;
+		}
+		if (sequence.get() != observed || Thread.currentThread().isInterrupted()) {
+			return true;
+		}
+		long yieldStarted = waiter.nanoTime();
+		if (timed && yieldStarted - started >= remainingNanos) {
+			return true;
+		}
+		for (int i = 0; i < YIELDS; i++) {
+			if (sequence.get() != observed || Thread.currentThread().isInterrupted()) {
+				return true;
 			}
 			waiter.yield();
+			long now = waiter.nanoTime();
+			if (timed && now - started >= remainingNanos) {
+				return true;
+			}
+			if (now - yieldStarted >= YIELD_NANOS) {
+				break;
+			}
 		}
-		return sequence.get() != observed;
+		return sequence.get() != observed || Thread.currentThread().isInterrupted();
 	}
 
 	void unregister(boolean primary) {

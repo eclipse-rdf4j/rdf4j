@@ -56,7 +56,9 @@ public class LmdbValueGcRecoveryTest {
 
 	@Test
 	void finalMaintenanceGrowthReleasesAdjacencyBeforeWaitingForAnotherWriter() throws Exception {
+		// The injected GC failures must run on the foreground publication owners, not an async worker.
 		LmdbStoreConfig options = new LmdbStoreConfig("spoc,posc,ospc").setValueDBSize(64L * 1024 * 1024)
+				.setAsyncValueCleanup(false)
 				.setTripleDBSize(64L * 1024 * 1024)
 				.setDirectAdjacencyEnabled(true)
 				.setSketchEstimatorEnabled(false)
@@ -65,7 +67,6 @@ public class LmdbValueGcRecoveryTest {
 		CountDownLatch releaseFirstGc = new CountDownLatch(1);
 		CountDownLatch secondWriterBuffered = new CountDownLatch(1);
 		CountDownLatch allowSecondCommit = new CountDownLatch(1);
-		CountDownLatch secondWriterWaiting = new CountDownLatch(1);
 		CountDownLatch secondInlineGcFailed = new CountDownLatch(1);
 		CountDownLatch commitsFinished = new CountDownLatch(2);
 		AtomicInteger capacityFaults = new AtomicInteger();
@@ -176,20 +177,13 @@ public class LmdbValueGcRecoveryTest {
 			assertThat(backing.valueStore().hasRetiredIds()).isTrue();
 			assertThat(backing.directAdjacencyStore().buildNowForTest()).isTrue();
 			mapBefore.set(backing.valueStore().mapSizeBytes());
-			backing.directAdjacencyStore().beforeWriteAdmissionWaitForTest = () -> {
-				if (Thread.currentThread() == secondWriter) {
-					secondWriterWaiting.countDown();
-				}
-			};
 			secondWriter.start();
 			assertThat(secondWriterBuffered.await(10, TimeUnit.SECONDS)).isTrue();
 			armed.set(true);
 			firstWriter.start();
 			assertThat(firstGcEntered.await(10, TimeUnit.SECONDS)).isTrue();
 			allowSecondCommit.countDown();
-			assertThat(secondWriterWaiting.await(10, TimeUnit.SECONDS))
-					.as("the buffered writer must reach real adjacency admission")
-					.isTrue();
+			// adjacency admission depends only on the applier's backlog now: the buffered writer never waits on it
 			releaseFirstGc.countDown();
 			assertThat(commitsFinished.await(10, TimeUnit.SECONDS))
 					.as("final retirement growth must not retain adjacency admission; phase=%s, A=%s, B=%s",
@@ -237,7 +231,6 @@ public class LmdbValueGcRecoveryTest {
 			firstWriter.join(10_000);
 			assertThat(secondWriter.isAlive()).isFalse();
 			assertThat(firstWriter.isAlive()).isFalse();
-			store.getBackingStore().directAdjacencyStore().beforeWriteAdmissionWaitForTest = null;
 			store.shutDown();
 		}
 	}
@@ -375,11 +368,11 @@ public class LmdbValueGcRecoveryTest {
 					writer.removeStatements(subjectV, pred, null);
 					writer.commit();
 				}
+				// The live reader protects the association; async cleanup may retire it as soon as the reader closes.
+				ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
+				assertThat(valueStore.getId(subjectV)).isNotEqualTo(LmdbValue.UNKNOWN_ID);
 				reader.commit();
 			}
-			// v's dictionary entries are still intact: reclamation never ran (no draining commit followed)
-			ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
-			assertThat(valueStore.getId(vf.createIRI("http://example.com/v"))).isNotEqualTo(LmdbValue.UNKNOWN_ID);
 		} finally {
 			store.shutDown();
 		}
@@ -388,6 +381,10 @@ public class LmdbValueGcRecoveryTest {
 		store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc,ospc"));
 		store.init();
 		try {
+			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+			// Restarted spool candidates must reach retirement before the durable drain can observe them.
+			assertThat(store.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS))
+					.isTrue();
 			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 			ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
 			assertThat(valueStore.getId(vf.createIRI("http://example.com/v")))
@@ -450,9 +447,16 @@ public class LmdbValueGcRecoveryTest {
 		// A batch bound of one requires separate explicit publications to finish this backlog.
 		System.setProperty("rdf4j.lmdb.valueGc.drainBatchSize", "1");
 		try {
-			store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc,ospc"));
+			store = new LmdbStore(storeDir, new LmdbStoreConfig("spoc,posc,ospc").setAsyncValueCleanupBatchSize(1));
 			store.init();
 			try {
+				LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+				// Both replayed root batches and durable continuations remain bounded to one candidate.
+				assertThat(store.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS))
+						.isTrue();
+				// awaitEmpty acknowledges root batches, not an idle writer's in-progress retirement transaction.
+				// This fixture now owns the finite durable backlog; it performs no more writes on this owner.
+				store.getBackingStore().stopAsyncValueCleanupForShutdown();
 				LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 				ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
 				for (int i = 0; i < 5; i++) {
@@ -468,6 +472,137 @@ public class LmdbValueGcRecoveryTest {
 			}
 		} finally {
 			System.clearProperty("rdf4j.lmdb.valueGc.drainBatchSize");
+		}
+	}
+
+	@Test
+	@org.junit.jupiter.api.Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void acknowledgedRootsDoNotMakeAnIdleRetirementFrontierQuiescent(
+			@TempDir(cleanup = org.junit.jupiter.api.io.CleanupMode.NEVER) File diagnosticDir) throws Exception {
+		CountDownLatch rootEntered = new CountDownLatch(1);
+		CountDownLatch releaseRoot = new CountDownLatch(1);
+		CountDownLatch temporaryEmpty = new CountDownLatch(1);
+		CountDownLatch releaseEmpty = new CountDownLatch(1);
+		CountDownLatch frontierCommitted = new CountDownLatch(1);
+		CountDownLatch releaseCommit = new CountDownLatch(1);
+		AtomicReference<Thread> worker = new AtomicReference<>();
+		AtomicBoolean arm = new AtomicBoolean();
+		AtomicBoolean observed = new AtomicBoolean();
+		AtomicBoolean committedGate = new AtomicBoolean();
+		LmdbStore store = new LmdbStore(diagnosticDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setAsyncValueCleanupBatchSize(1)) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+					boolean estimatorEnabled) throws IOException {
+				return new LmdbSailStore(directory, properties, config, estimatorEnabled,
+						(valueDir, valueProperties, valueConfig) -> new ValueStore(valueDir, valueProperties,
+								valueConfig,
+								false, null, LmdbStoreFormat.resolveDictionary(valueDir, valueProperties, valueConfig),
+								true) {
+							private boolean hasActualFrontier;
+
+							@Override
+							public void gcIds(Collection<Long> ids, Collection<Long> nextIds) throws IOException {
+								super.gcIds(ids, nextIds);
+								hasActualFrontier = Thread.currentThread() == worker.get() && !nextIds.isEmpty();
+							}
+
+							@Override
+							void removeRetiredIds(RetiredValueIdStore.DrainBatch batch) throws IOException {
+								super.removeRetiredIds(batch);
+								if (arm.get() && Thread.currentThread() == worker.get() && hasActualFrontier
+										&& !hasRetiredIds() && observed.compareAndSet(false, true)) {
+									temporaryEmpty.countDown();
+									awaitDiagnosticGate(releaseEmpty);
+								}
+							}
+
+							@Override
+							public void commit() throws IOException {
+								super.commit();
+								if (Thread.currentThread() == worker.get() && observed.get()
+										&& committedGate.compareAndSet(false, true)) {
+									frontierCommitted.countDown();
+									awaitDiagnosticGate(releaseCommit);
+								}
+							}
+						}, TripleStore::new);
+			}
+		};
+		try (var owner = LmdbTestUtil.onClose(() -> {
+			store.shutDown();
+			LmdbTestUtil.deleteDir(diagnosticDir);
+		})) {
+			try {
+				store.init();
+				ValueStore values = LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+				ValueFactory vf = SimpleValueFactory.getInstance();
+				IRI subject = vf.createIRI("urn:recovery-observation:doomed");
+				IRI predicate = vf.createIRI("urn:recovery-observation:predicate");
+				IRI keeper = vf.createIRI("urn:recovery-observation:keeper");
+				IRI datatype = vf.createIRI("urn:unique-retired-datatype:type");
+				try (NotifyingSailConnection writer = store.getConnection()) {
+					writer.begin();
+					writer.addStatement(subject, predicate, vf.createLiteral("doomed", datatype));
+					writer.addStatement(keeper, predicate, vf.createLiteral("keep"));
+					writer.commit();
+				}
+				store.getBackingStore().asyncValueCleanupCoordinator().beforeBatchForTest(() -> {
+					if (worker.compareAndSet(null, Thread.currentThread())) {
+						rootEntered.countDown();
+						try {
+							releaseRoot.await();
+						} catch (InterruptedException interrupted) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(interrupted);
+						}
+					}
+				});
+				arm.set(true);
+				try (org.eclipse.rdf4j.sail.base.SailDataset reader = store.getBackingStore()
+						.getExplicitSailSource()
+						.dataset(IsolationLevels.SNAPSHOT_READ)) {
+					try (NotifyingSailConnection writer = store.getConnection()) {
+						writer.begin(IsolationLevels.NONE);
+						writer.removeStatements(subject, predicate, null);
+						writer.commit();
+					}
+					assertThat(rootEntered.await(5, TimeUnit.SECONDS)).isTrue();
+				}
+				releaseRoot.countDown();
+				assertThat(temporaryEmpty.await(5, TimeUnit.SECONDS)).isTrue();
+				assertThat(store.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(5, TimeUnit.SECONDS))
+						.isTrue();
+				assertThat(values.hasRetiredIds())
+						.as("writer-local counter is temporarily empty before frontier record")
+						.isFalse();
+				LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
+				releaseEmpty.countDown();
+				assertThat(frontierCommitted.await(5, TimeUnit.SECONDS)).isTrue();
+				assertThat(values.hasRetiredIds())
+						.as("a real idle transaction can publish its dependency frontier after the unowned empty observation")
+						.isTrue();
+				releaseCommit.countDown();
+				store.getBackingStore().stopAsyncValueCleanupForShutdown();
+				LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
+				assertThat(values.hasRetiredIds()).as("the owned finite backlog must be completely drained").isFalse();
+				assertThat(values.getId(datatype)).isEqualTo(LmdbValue.UNKNOWN_ID);
+				assertThat(values.getId(subject)).isEqualTo(LmdbValue.UNKNOWN_ID);
+				assertThat(values.getId(keeper)).isNotEqualTo(LmdbValue.UNKNOWN_ID);
+			} finally {
+				releaseRoot.countDown();
+				releaseEmpty.countDown();
+				releaseCommit.countDown();
+			}
+		}
+	}
+
+	private static void awaitDiagnosticGate(CountDownLatch release) throws IOException {
+		try {
+			release.await();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException(interrupted);
 		}
 	}
 

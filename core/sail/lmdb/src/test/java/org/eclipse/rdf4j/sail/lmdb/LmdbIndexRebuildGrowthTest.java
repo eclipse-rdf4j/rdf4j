@@ -37,8 +37,8 @@ class LmdbIndexRebuildGrowthTest {
 	Path directory;
 
 	@ParameterizedTest
-	@CsvSource({ "2,false,false", "2,true,false", "6,false,false", "6,true,false",
-			"2,false,true", "2,true,true", "6,false,true", "6,true,true" })
+	@CsvSource({ "2,false,false", "2,true,false", "7,false,false", "7,true,false",
+			"2,false,true", "2,true,true", "7,false,true", "7,true,true" })
 	void capacityDerivedStatementRebuildKeepsEverySourceRow(int format, boolean inline, boolean inferred)
 			throws Exception {
 		Path output = directory.resolve("rebuild-child.log");

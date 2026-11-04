@@ -100,31 +100,9 @@ jobs:
             --runner-groups "$runner_groups" \
             --strace "$(command -v strace)"
 
+      # PR verify owns JUnit execution; quick still compiles the guest writer/test classes.
       - name: Build exact Java 25 artifacts
         run: mvn -B -ntp -T 1C -Dmaven.repo.local=.m2_repo -Pquick clean install --fail-at-end
-
-      - name: Run required LMDB recovery and isolation tests
-        run: >-
-          mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb
-          -Dtest=LmdbCrashRecoveryTest,LmdbStoreFlushReproductionTest,TripleStoreAutoGrowTest,ValueStoreTermIndexRecoveryTest,LmdbConstructorCleanupTest,PersistentSetFactoryTransactionOwnershipTest,LmdbSnapshotValueLifetimeTest,LmdbValueRetirementRecoveryTest,TxnMutationJournalTest
-          -Dit.test=LmdbStoreModelLifecycleIT verify --fail-at-end
-
-      - name: Preserve Maven test reports
-        if: always()
-        run: |
-          if [[ -z "${CRASHLAB_ROOT:-}" ]]; then
-            printf 'Crashlab workspace was not initialized; Maven reports cannot be copied.\n'
-            exit 0
-          fi
-          mkdir -p "$CRASHLAB_ROOT/maven"
-          for report_dir in core/sail/lmdb/target/surefire-reports core/sail/lmdb/target/failsafe-reports; do
-            if [[ -d "$report_dir" ]]; then
-              cp -a "$report_dir" "$CRASHLAB_ROOT/maven/"
-            else
-              printf 'missing report directory: %s\n' "$report_dir" \
-                >> "$CRASHLAB_ROOT/maven/missing-report-directories.txt"
-            fi
-          done
 
       - name: Check crashlab Python harness
         run: scripts/lmdb-crashlab/run-tests.sh
@@ -172,7 +150,7 @@ jobs:
             --machine q35 --accel kvm --cpu host --native-classifier linux \
             --port-base 23000
 
-      - name: Reject skipped Java tests and incomplete campaign reports
+      - name: Reject incomplete campaign reports
         run: |
           python3 scripts/lmdb-crashlab/ci_gate.py \
             --calibration-report "$CRASHLAB_ROOT/campaigns/calibration/results/ext4-crash-calibration-report.json" \
@@ -184,8 +162,6 @@ jobs:
             --running-report "$CRASHLAB_ROOT/campaigns/running-normal-preflight-persistence/results/actual-powercut-campaign-report.json" \
             --running-report "$CRASHLAB_ROOT/campaigns/running-journal-replay-write/results/actual-powercut-campaign-report.json" \
             --running-report "$CRASHLAB_ROOT/campaigns/running-journal-replay-persistence/results/actual-powercut-campaign-report.json" \
-            --surefire-dir core/sail/lmdb/target/surefire-reports \
-            --failsafe-dir core/sail/lmdb/target/failsafe-reports \
             --summary-json "$CRASHLAB_ROOT/campaigns/ci-gate-summary.json" \
             --github-step-summary "$GITHUB_STEP_SUMMARY"
 

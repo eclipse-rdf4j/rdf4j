@@ -240,8 +240,15 @@ function evidencePath(directory, ...segments) {
     return file;
 }
 
+/** Show a view of the graph explorer (`graph`, `table`, `cards`, `matrix`, `timeline`, `map` or `chart`) from its View menu. */
+async function chooseGraphView(explorer, mode) {
+    await explorer.locator('.view-menu > summary').click();
+    await explorer.locator(`.view-menu-popover button[data-view="${mode}"]`).click();
+}
+
 module.exports = {
     SEED_GRAPHS,
+    chooseGraphView,
     createSeededRepository,
     deleteRepository,
     evidencePath,

@@ -93,18 +93,19 @@ final class LmdbWildcardPredicateBatch {
 		if (shape == null) {
 			return null;
 		}
-		LmdbNativeWork work = estimatePhysicalWork(shape, row);
+		LmdbNativeWork work = estimatePhysicalWork(shape, row, false);
 		double rows = LmdbNativeWork.rowsOut(shape.prefix, row, row.boundMask());
 		String strategy = shape.demand == Demand.PAYLOAD ? STRATEGY : REDUCED_STRATEGY;
 		return new LmdbNativeStrategyProposal<>(() -> shape.open(row, capacity), work,
 				LmdbNativeWork.ZERO, rows, strategy, () -> {
-				});
+				}).withPlanningWork(estimatePhysicalWork(shape, row, true));
 	}
 
-	private static LmdbNativeWork estimatePhysicalWork(Shape shape, RowState row) {
+	private static LmdbNativeWork estimatePhysicalWork(Shape shape, RowState row, boolean planning) {
 		long boundMask = row.boundMask();
 		double rows = LmdbNativeWork.rowsOut(shape.prefix, row, boundMask);
-		LmdbNativeWork prefixWork = shape.prefix.estimateWork(row, boundMask);
+		LmdbNativeWork prefixWork = planning ? LmdbNativeWork.planning(shape.prefix, row, boundMask)
+				: shape.prefix.estimateWork(row, boundMask);
 		// A variable-predicate PatternPlan has no predicate fan-out statistic and therefore falls back to the
 		// 64 * 4,096 * 256 structural pseudo-domain when one endpoint becomes bound. That describes an index scan,
 		// not the wildcard executor: its predicate planes cover at most the pattern's captured total cardinality for
@@ -112,7 +113,8 @@ final class LmdbWildcardPredicateBatch {
 		// remove this valid proposal at the arbiter's cold-static gate.
 		LmdbNativeWork wildcardWork = Double.isFinite(shape.wildcard.staticEstimate)
 				? LmdbNativeWork.exact(LmdbNativeWork.SEEK + Math.max(0D, shape.wildcard.staticEstimate))
-				: shape.wildcard.estimateWork(row, boundMask | shape.prefix.producedMask());
+				: planning ? LmdbNativeWork.planning(shape.wildcard, row, boundMask | shape.prefix.producedMask())
+						: shape.wildcard.estimateWork(row, boundMask | shape.prefix.producedMask());
 		return !Double.isNaN(rows) && prefixWork.known()
 				? prefixWork.plus(wildcardWork.times(rows))
 				: LmdbNativeWork.UNKNOWN;
@@ -408,7 +410,7 @@ final class LmdbWildcardPredicateBatch {
 			return LmdbNativeWork.UNKNOWN;
 		}
 		Shape shape = Shape.match(join, row, LmdbWildcardPhysicalDemand.weighted(liveMask));
-		return shape == null ? LmdbNativeWork.UNKNOWN : estimatePhysicalWork(shape, row);
+		return shape == null ? LmdbNativeWork.UNKNOWN : estimatePhysicalWork(shape, row, false);
 	}
 
 	/** Whether this row subtree should be owned by its round-scoped wildcard producer. */

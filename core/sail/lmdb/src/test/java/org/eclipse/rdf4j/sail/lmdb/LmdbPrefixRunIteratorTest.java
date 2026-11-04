@@ -60,6 +60,16 @@ public class LmdbPrefixRunIteratorTest {
 	}
 
 	@Test
+	public void prefixCountsIncludeChunkSuffixes() throws Exception {
+		storeDefaultRows();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertThat(tripleStore.countTriples(txn, -1, 10, -1, -1, true)).isEqualTo(3L);
+			assertThat(tripleStore.countTriples(txn, -1, 20, -1, -1, true)).isEqualTo(2L);
+		}
+	}
+
+	@Test
 	public void countedRunsIncludeChunkSuffixesAcrossBatchBoundaries() throws Exception {
 		tripleStore.startTransaction();
 		for (int i = 0; i < 300; i++) {
@@ -175,7 +185,7 @@ public class LmdbPrefixRunIteratorTest {
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			LmdbPrefixRunPlan plan = tripleStore.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, -1, -1, -1, -1);
 
-			try (LmdbPrefixRunIterator cursor = tripleStore.getPrefixRuns(txn, plan, -1, -1, -1, -1, true, false)) {
+			try (LmdbPrefixRunCursor cursor = tripleStore.getPrefixRuns(txn, plan, -1, -1, -1, -1, true, false)) {
 				assertThat(cursor.seekTo(15L)).isTrue();
 				assertThat(cursor.next()).isTrue();
 				assertThat(cursor.quad()[TripleIndex.PRED_IDX]).isEqualTo(20L);
@@ -200,7 +210,7 @@ public class LmdbPrefixRunIteratorTest {
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			LmdbPrefixRunPlan plan = tripleStore.prefixRunPlan(new int[] { TripleIndex.OBJ_IDX }, -1, 10, -1, -1);
 
-			try (LmdbPrefixRunIterator cursor = tripleStore.getPrefixRuns(txn, plan, -1, 10, -1, -1, true, false)) {
+			try (LmdbPrefixRunCursor cursor = tripleStore.getPrefixRuns(txn, plan, -1, 10, -1, -1, true, false)) {
 				assertThat(cursor.next()).isTrue();
 				assertThat(cursor.quad()[TripleIndex.OBJ_IDX]).isEqualTo(1000L);
 				assertThat(cursor.seekTo(1001L)).isTrue();
@@ -222,8 +232,8 @@ public class LmdbPrefixRunIteratorTest {
 		tripleStore.commit();
 	}
 
-	private static ScanResult collect(LmdbPrefixRunIterator iterator) throws Exception {
-		try (LmdbPrefixRunIterator cursor = iterator) {
+	private static ScanResult collect(LmdbPrefixRunCursor iterator) throws Exception {
+		try (LmdbPrefixRunCursor cursor = iterator) {
 			List<long[]> rows = new ArrayList<>();
 			while (cursor.next()) {
 				rows.add(Arrays.copyOf(cursor.quad(), 4));

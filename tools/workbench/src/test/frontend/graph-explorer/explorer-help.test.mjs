@@ -39,6 +39,11 @@ test("elsewhere the guide names Ctrl and zooms with the scroll wheel", () => {
   assert.doesNotMatch(guide, /⌘/);
 });
 
+test("the graph guide names the select-all shortcut for each platform", () => {
+  assert.match(guideText(true), /⌘A — Select all drawn nodes/);
+  assert.match(guideText(false), /Ctrl\+A — Select all drawn nodes/);
+});
+
 test("the guide shows the gestures and keys the canvas only told screen readers about", () => {
   const guide = guideText(false);
   for (const gesture of [

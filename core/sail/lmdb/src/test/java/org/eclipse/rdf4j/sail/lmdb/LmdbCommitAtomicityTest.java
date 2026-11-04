@@ -211,7 +211,9 @@ class LmdbCommitAtomicityTest {
 			TripleStore tripleStore = backing.getTripleStore();
 			TripleStore.DirectAdjacencyCommitListener delegate = adjacency.commitListener();
 			tripleStore.setDirectAdjacencyCommitHooks((delta, nextRevision) -> {
-				delegate.beforeRevisionBump(delta, nextRevision);
+				if (delegate != null) {
+					delegate.beforeRevisionBump(delta, nextRevision);
+				}
 				if (failOnce.compareAndSet(false, true)) {
 					throw new IllegalStateException("injected derived publication failure");
 				}

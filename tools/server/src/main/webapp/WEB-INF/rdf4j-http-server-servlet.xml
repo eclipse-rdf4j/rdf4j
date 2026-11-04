@@ -148,4 +148,14 @@
 		<property name="externalUrl" value="${rdf4j.externalurl:#{null}}" />
 	</bean>
 	<bean id="rdf4jRepositoryLmdbStrategiesController" class="org.eclipse.rdf4j.common.webapp.system.LmdbForceableStrategiesController" />
+	<!--
+		EXTENSION POINT for downstream distributions.
+		Spring XML files placed at META-INF/rdf4j-server/*.xml on the classpath (in a jar in WEB-INF/lib, or under
+		WEB-INF/classes) are loaded after all stock definitions above. A bean with the same id replaces the stock bean,
+		e.g. rdf4jRepositoryManager (referenced by name by the controllers and the interceptor). The stock URL handler
+		mappings use orders 0-3; extensions can pick other orders. Extensions can use the commonAppConfig bean (e.g.
+		its getDataDir method). The order among several extension files is not specified. Jars need directory entries
+		for the classpath*: pattern to match (Maven-built jars have them).
+	-->
+	<import resource="classpath*:META-INF/rdf4j-server/*.xml" />
 </beans>

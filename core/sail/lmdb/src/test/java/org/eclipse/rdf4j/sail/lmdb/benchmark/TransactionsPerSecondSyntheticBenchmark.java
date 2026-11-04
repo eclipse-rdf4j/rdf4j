@@ -16,19 +16,16 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
-import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -52,13 +49,13 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks insertion performance with synthetic data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 3)
+@Warmup(iterations = 3, time = 10, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
 @Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondSyntheticBenchmark {
-	@Param({ "NONE" })
+	@Param({ "SNAPSHOT_READ" })
 	public IsolationLevels isolationLevel;
 
 	SailRepositoryConnection connection;
@@ -137,6 +134,15 @@ public class TransactionsPerSecondSyntheticBenchmark {
 	}
 
 	@Benchmark
+	public void multipleSmallTransactions() {
+		for (int i = 0; i < 10000; i++) {
+			connection.begin(isolationLevel);
+			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			connection.commit();
+		}
+	}
+
+	@Benchmark
 	public void mediumTransactions() {
 		connection.begin(isolationLevel);
 		for (int k = 0; k < 10; k++) {
@@ -152,6 +158,17 @@ public class TransactionsPerSecondSyntheticBenchmark {
 			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		}
 		connection.commit();
+	}
+
+	@Benchmark
+	public void multipleLargerTransactions() {
+		for (int i = 0; i < 100; i++) {
+			connection.begin(isolationLevel);
+			for (int k = 0; k < 10000; k++) {
+				connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			}
+			connection.commit();
+		}
 	}
 
 	@Benchmark

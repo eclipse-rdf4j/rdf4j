@@ -106,7 +106,11 @@ test('A12: Explore says a page may be truncated when it is as long as the limit 
     const rows = Array.from({ length: 100 }, (_, index) => [iri('urn:s'), iri('urn:p' + index), iri('urn:o'), null]);
     const model = { viewId: 'explore', vars, rows, rowCount: 100,
         metadata: { 'explore-resource': '<urn:s>', 'total-result-count': 250 } };
-    assert.match(flat(quiet(() => wb.views.pageTemplate(model, ctx, runtime()))), /id="result-limited"/);
+    const markup = flat(quiet(() => wb.views.pageTemplate(model, ctx, runtime())));
+    assert.match(markup, /id="result-limited"/);
+    // The notice is the shared info callout, like the other pages' notes, not a bare line between the cards.
+    assert.match(markup, /<div id="result-limited" class="workbench-callout workbench-callout--info" role="note">/);
+    assert.match(markup, /The results shown may be truncated\./);
 });
 
 test('A12: an Explore page shorter than the limit in use is not called truncated', () => {

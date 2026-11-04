@@ -292,7 +292,9 @@ class ValueStoreCountAuthorityTest {
 
 	@Test
 	void postReadyMaintenanceReclaimsOneBoundedPersistedUnusedBatch() throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true)
+		// This case asserts the durable-policy foreground/post-ready maintenance boundary.
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setAsyncValueCleanup(false)
+				.setForceSync(true)
 				.setValueDBSize(64L * 1024 * 1024)
 				.setSketchEstimatorEnabled(false)
 				.setValueHashCacheEnabled(false);
@@ -655,7 +657,9 @@ class ValueStoreCountAuthorityTest {
 	@Test
 	void trustedLegacyCloseRetainsPendingUnusedValuesAfterReaderManagerCloses() throws Exception {
 		LmdbCompatibilityFixtures.extract("v2-610-default.zip", directory);
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setLegacyReferenceCountRepairEnabled(true);
+		// This case asserts the durable-policy foreground/post-ready maintenance boundary.
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setAsyncValueCleanup(false)
+				.setLegacyReferenceCountRepairEnabled(true);
 		LmdbStore.reconstructReferenceCountsOffline(directory.toFile(), config);
 		LmdbStore sail = new LmdbStore(directory.toFile(), config);
 		SailRepository repository = new SailRepository(sail);

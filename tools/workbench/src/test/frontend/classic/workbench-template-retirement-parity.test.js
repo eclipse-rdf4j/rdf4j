@@ -310,3 +310,87 @@ test('Export keeps its independent defaults, preview state, and explicit unlimit
     assert.ok(!emptyText.includes('Choose Show preview to see the first statements.'),
         'an empty requested preview should not look like a preview has not been requested');
 });
+
+/** The template as markup: each value written where the template places it. */
+function flatten(template) {
+    if (Array.isArray(template)) {
+        return template.map(flatten).join('');
+    }
+    if (template && Array.isArray(template.strings)) {
+        return template.strings.reduce((result, fragment, index) => result + fragment
+            + (index < template.values.length ? flatten(template.values[index]) : ''), '');
+    }
+    return template === null || typeof template === 'undefined' ? '' : String(template);
+}
+
+function navigationMarkup(workbench, repositoryId, info) {
+    const markup = flatten(workbench.views.pageTemplate({ viewId: 'summary', vars: [], rows: [], metadata: {} }, {
+        basePath: '/workbench',
+        repositoryId,
+        workbench: Object.assign({
+            menu: [{
+                id: 'repository', label: 'Repository', icon: 'repository',
+                items: [
+                    { id: 'query', label: 'Query', icon: 'query', href: 'query' },
+                    { id: 'update', label: 'SPARQL Update', icon: 'update', href: 'update' }
+                ]
+            }]
+        }, info)
+    }, fakeRuntime()));
+    const start = markup.indexOf('id="navigation"');
+    return markup.substring(start, markup.indexOf('</nav>', start));
+}
+
+// A menu item's tooltip says something its label does not: nothing for an item that can be opened (it used to repeat
+// the group's name, so "Query" said "Repository"), and why an unavailable item cannot be.
+test('navigation tooltips explain unavailable items instead of repeating the group name', () => {
+    const workbench = loadWorkbench();
+    const readOnly = navigationMarkup(workbench, 'repo-1', { id: 'repo-1', readable: true, writeable: false });
+    const query = /<a href=query[^>]*>/.exec(readOnly);
+    assert.ok(query, 'the Query item is a link');
+    assert.doesNotMatch(query[0], /title=/, 'an available item has no tooltip repeating its group');
+    assert.match(readOnly, /<span class="disabled" aria-disabled="true"\s+title="?You can only read this repository"?>/,
+        'a write page of a read-only repository says why it is unavailable');
+
+    const none = navigationMarkup(workbench, 'NONE', { id: 'NONE', readable: false, writeable: false });
+    assert.match(none, /<span class="disabled" aria-disabled="true"\s+title="?Choose a repository first"?>[\s\S]*?Query/,
+        'without a repository, its pages say a repository comes first');
+});
+
+// A copy button confirms the copy: for a moment it shows a check and is named "Copied", and the page's status line
+// says so; a refused clipboard says how to copy instead. Pressing it again keeps the button's own icon and name.
+test('copy buttons confirm the copy and then return to what they were', async () => {
+    const workbench = loadWorkbench();
+    const document = new FakeDocument();
+    const timers = [];
+    document.defaultView = { setTimeout: (callback, delay) => { timers.push([callback, delay]); return timers.length; },
+        clearTimeout: (id) => { if (timers[id - 1]) { timers[id - 1][0] = null; } } };
+    const status = document.createElement('p');
+    status.id = 'workbench-route-status';
+    document.body.appendChild(status);
+    const button = document.createElement('button');
+    document.body.appendChild(button);
+    workbench.icons.decorateButton(button, 'copy', 'Copy resource');
+    const icon = () => button.querySelector('svg[data-workbench-icon]').getAttribute('data-workbench-icon');
+
+    workbench.icons.confirmCopy(button, Promise.resolve());
+    await Promise.resolve();
+    assert.equal(icon(), 'check');
+    assert.equal(button.getAttribute('aria-label'), 'Copied');
+    assert.equal(status.textContent, 'Copied');
+    workbench.icons.confirmCopy(button, Promise.resolve());
+    await Promise.resolve();
+    assert.equal(timers.length, 2);
+    assert.equal(timers[0][0], null, 'a second copy restarts the moment');
+    timers[1][0]();
+    assert.equal(icon(), 'copy', 'the button gets its own icon back');
+    assert.equal(button.getAttribute('aria-label'), 'Copy resource', 'and its own name');
+
+    workbench.icons.confirmCopy(button, Promise.reject(new Error('denied')));
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(status.textContent, 'Could not copy. Select the text to copy it.');
+    assert.equal(icon(), 'copy');
+    workbench.icons.confirmCopy(button, false);
+    assert.equal(status.textContent, 'Could not copy. Select the text to copy it.', 'no clipboard says the same');
+});

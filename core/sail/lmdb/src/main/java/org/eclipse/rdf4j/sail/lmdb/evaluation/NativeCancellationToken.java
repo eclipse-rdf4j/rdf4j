@@ -14,20 +14,28 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 
 /** Evaluation-scoped cancellation state. Cancellation is an outcome signal; the outer timeout owns its exception. */
-final class NativeCancellationToken {
+final class NativeCancellationToken implements KernelCancellation.QueryCancellation {
 	private static final AtomicLong NEXT_EVALUATION_ID = new AtomicLong();
 	private static final ThreadLocal<NativeCancellationToken> CURRENT = new ThreadLocal<>();
 
 	/**
-	 * Thread that created the evaluation. {@code SailSourceConnection.explain} enforces its deadline by interrupting
-	 * this thread, while native parallel workers poll the same token from different threads. Retaining the owner makes
-	 * that interrupt visible to every worker without turning a probe decline into query cancellation.
+	 * Thread that created the root evaluation. {@code SailSourceConnection.explain} enforces its deadline by
+	 * interrupting this thread, while native parallel workers poll the same token from different threads. Children
+	 * inherit this authority even when they are created by a pool worker. A worker's interrupt is attributed separately
+	 * and is not published recursively into a parent token; workers sharing the same local token can still observe its
+	 * terminal outcome.
 	 */
-	private final Thread evaluationThread = Thread.currentThread();
+	private final Thread evaluationThread;
+	private final NativeCancellationToken evaluationOwner;
 	private volatile boolean cancellationRequested;
+	private volatile boolean explicitlyRequested;
+	/** Immutable after cancellationRequested is published; null means an unattributed thread interruption. */
+	private Object cancellationOrigin;
 	private final NativeCancellationToken parent;
 	private final long evaluationId;
 	private final long ownerThreadId;
@@ -40,6 +48,8 @@ final class NativeCancellationToken {
 	/** A pipeline can stop its workers without cancelling its enclosing query or a later fallback. */
 	NativeCancellationToken(NativeCancellationToken parent) {
 		this.parent = parent;
+		this.evaluationThread = parent == null ? Thread.currentThread() : parent.evaluationThread;
+		this.evaluationOwner = parent == null ? this : parent.evaluationOwner;
 		this.evaluationId = parent == null ? NEXT_EVALUATION_ID.incrementAndGet() : parent.evaluationId;
 		this.ownerThreadId = parent == null ? evaluationThread.threadId() : parent.ownerThreadId;
 	}
@@ -91,22 +101,47 @@ final class NativeCancellationToken {
 	}
 
 	void requestCancellation() {
+		explicitlyRequested = true;
+		publishCancellation(this);
+	}
+
+	private synchronized void publishCancellation(Object origin) {
 		if (!cancellationRequested) {
+			cancellationOrigin = origin;
 			cancellationRequested = true;
 			NativeExecutionPhaseEvent.mark("cancellation-request", this, "REQUESTED");
 		}
 	}
 
 	boolean isCancellationRequested() {
-		if (!cancellationRequested
-				&& (parent != null && parent.isCancellationRequested()
-						|| evaluationThread.isInterrupted() || Thread.currentThread().isInterrupted())) {
-			requestCancellation();
+		return isCancellationRequested(true);
+	}
+
+	private boolean isCancellationRequested(boolean includeCurrentThreadInterrupt) {
+		if (!cancellationRequested) {
+			// A worker checking its parent must not publish that worker's unrelated interrupt as cancellation of
+			// the enclosing evaluation or of sibling operators.
+			if (parent != null && parent.isCancellationRequested(false)) {
+				publishCancellation(parent.cancellationOrigin);
+			} else if (evaluationThread.isInterrupted()) {
+				publishCancellation(evaluationOwner);
+			} else if (includeCurrentThreadInterrupt && Thread.currentThread().isInterrupted()) {
+				publishCancellation(QueryExecutionContext.consumeInterruptionOwner());
+			}
 		}
 		if (cancellationRequested) {
 			acknowledgeCancellation();
 		}
 		return cancellationRequested;
+	}
+
+	/**
+	 * Checks cancellation inherited from the query owner or a thread interrupt without consulting this token's local
+	 * stop bit. Owners use this to distinguish their own close request from a concurrent parent cancellation.
+	 */
+	boolean isUpstreamCancellationRequested() {
+		return parent != null && parent.isCancellationRequested(false)
+				|| evaluationThread.isInterrupted() || Thread.currentThread().isInterrupted();
 	}
 
 	long evaluationId() {
@@ -121,6 +156,26 @@ final class NativeCancellationToken {
 		return cancellationRequested || parent != null && parent.cancellationPublished();
 	}
 
+	boolean explicitCancellationPublished() {
+		return explicitlyRequested || parent != null && parent.explicitCancellationPublished();
+	}
+
+	/** A token owns its own cancellation and the cancellation of any of its ancestors, but not a sibling's. */
+	boolean owns(KernelQueryCancelledException signal) {
+		Object origin = signal.origin();
+		for (NativeCancellationToken token = this; token != null; token = token.parent) {
+			if (origin == token) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	boolean unownedCancellation(KernelQueryCancelledException signal) {
+		return signal != KernelQueryCancelledException.INSTANCE && !owns(signal)
+				&& !QueryExecutionContext.currentOwnsCancellation(signal.origin());
+	}
+
 	private synchronized void acknowledgeCancellation() {
 		if (!cancellationAcknowledged) {
 			cancellationAcknowledged = true;
@@ -129,9 +184,39 @@ final class NativeCancellationToken {
 	}
 
 	void check() {
-		if (isCancellationRequested()) {
-			throw KernelQueryCancelledException.INSTANCE;
+		KernelQueryCancelledException signal = pollCancellation();
+		if (signal != null) {
+			throw signal;
 		}
+	}
+
+	static void checkCurrent() {
+		NativeCancellationToken current = CURRENT.get();
+		if (current != null) {
+			current.check();
+		}
+	}
+
+	@Override
+	public boolean getAsBoolean() {
+		return isCancellationRequested();
+	}
+
+	@Override
+	public KernelQueryCancelledException pollCancellation() {
+		return isCancellationRequested() ? new KernelQueryCancelledException(this, cancellationOrigin) : null;
+	}
+
+	/**
+	 * Returns this token's view of an already-published ancestor cancellation without attributing a worker's unrelated
+	 * interrupt to the ancestor. Owners use this after a local stop has won the token's first-origin race but an
+	 * enclosing query is cancelled before the owner's cleanup/adoption boundary.
+	 */
+	KernelQueryCancelledException pollUpstreamCancellation() {
+		NativeCancellationToken upstream = parent;
+		return upstream != null && upstream.isCancellationRequested(false)
+				? new KernelQueryCancelledException(this, upstream.cancellationOrigin)
+				: null;
 	}
 
 	/** Data-proportional loops poll at entry and at most every 1024 operations. */

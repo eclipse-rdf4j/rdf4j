@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.util.Values;
@@ -56,15 +55,6 @@ public final class LmdbAsyncStartupProfile {
 		long initialized = System.nanoTime();
 		try {
 			LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
-			AtomicInteger preparing = new AtomicInteger();
-			AtomicInteger overlappingPhysicalCommits = new AtomicInteger();
-			adjacency.beforePreparationForTest = preparing::incrementAndGet;
-			adjacency.afterPreparationForTest = preparing::decrementAndGet;
-			adjacency.beforePreparedFinalizeWaitForTest = () -> {
-				if (preparing.get() > 0) {
-					overlappingPhysicalCommits.incrementAndGet();
-				}
-			};
 			write(repository, "startup", commits);
 			if (!sail.awaitDirectAdjacencyReady(120, TimeUnit.SECONDS)) {
 				throw new IllegalStateException(sail.getDirectAdjacencyReadinessDescription());
@@ -80,8 +70,6 @@ public final class LmdbAsyncStartupProfile {
 					.println("PROFILE steady.transactionMicros="
 							+ (System.nanoTime() - steadyStarted) / 1_000.0 / commits);
 			System.out.println("PROFILE steady " + sail.getDirectAdjacencyReadinessDescription());
-			System.out.println("PROFILE overlap.physicalCommitsFinishingDuringPreparation="
-					+ overlappingPhysicalCommits.get());
 			System.out.println("PROFILE phases " + adjacency.phaseTimings());
 		} finally {
 			repository.shutDown();

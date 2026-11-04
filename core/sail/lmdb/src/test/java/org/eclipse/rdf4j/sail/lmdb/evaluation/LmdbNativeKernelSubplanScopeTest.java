@@ -134,10 +134,7 @@ class LmdbNativeKernelSubplanScopeTest {
 					LmdbNativeProbeDeadline.poll(0);
 				}
 			}, LmdbNativeProbeDeadlineExceeded.INSTANCE);
-			assertFailureRestores(strategy, (fixture, failure) -> {
-				fixture.row.cancellation.requestCancellation();
-				fixture.row.cancellation.check();
-			}, KernelQueryCancelledException.INSTANCE);
+			assertCancellationRestores(strategy);
 			assertForced(strategy);
 		} finally {
 			SlowQueryContextHolder.restore(previous);
@@ -270,6 +267,23 @@ class LmdbNativeKernelSubplanScopeTest {
 				throw new AssertionError("the controlled terminal action must throw");
 			};
 			assertThatThrownBy(() -> plan(step).open(fixture.row)).isSameAs(expected);
+			assertForced(strategy);
+		}
+	}
+
+	private static void assertCancellationRestores(LmdbNativeEvaluationStrategy strategy) throws Exception {
+		try (EvaluationFixture fixture = new EvaluationFixture()) {
+			QueryEvaluationStep step = bindings -> {
+				assertMasked(strategy);
+				fixture.row.cancellation.requestCancellation();
+				fixture.row.cancellation.check();
+				throw new AssertionError("the controlled terminal action must throw");
+			};
+			assertThatThrownBy(() -> plan(step).open(fixture.row))
+					.isInstanceOfSatisfying(KernelQueryCancelledException.class, cancellation -> {
+						assertThat(cancellation.origin()).isSameAs(fixture.row.cancellation);
+						assertThat(cancellation.observedBy(fixture.row.cancellation)).isTrue();
+					});
 			assertForced(strategy);
 		}
 	}

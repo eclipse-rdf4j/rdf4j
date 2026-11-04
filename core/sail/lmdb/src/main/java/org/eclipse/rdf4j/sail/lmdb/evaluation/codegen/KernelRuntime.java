@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -79,6 +80,16 @@ public final class KernelRuntime {
 				throw new AllocationDeniedException();
 			}
 		}
+	}
+
+	/**
+	 * Marker for stackless evaluation signals whose shared singleton instance cannot retain suppressed cleanup errors.
+	 * Implementations are classified narrowly so ordinary suppression-disabled failures are not treated as clean
+	 * controls.
+	 */
+	@Experimental
+	@InternalUseOnly
+	public interface SuppressionDisabledControl {
 	}
 
 	/**
@@ -163,11 +174,23 @@ public final class KernelRuntime {
 
 	/** Closes all resources without letting one failed release skip subsequent releases. */
 	public static Throwable closeResource(AutoCloseable resource, Throwable failure) {
+		return closeResource(resource, failure, null);
+	}
+
+	/**
+	 * Closes a resource and reports its retained cleanup contribution to an owner before returning or rethrowing it.
+	 */
+	public static Throwable closeResource(AutoCloseable resource, Throwable failure,
+			Consumer<Throwable> closeFailureObserver) {
 		if (resource != null) {
 			try {
 				resource.close();
 			} catch (Throwable cleanup) {
-				return retainCloseFailure(failure, cleanup);
+				Throwable retained = retainCloseFailure(failure, cleanup);
+				if (closeFailureObserver != null) {
+					closeFailureObserver.accept(retained == failure ? cleanup : retained);
+				}
+				return retained;
 			}
 		}
 		return failure;
@@ -210,7 +233,7 @@ public final class KernelRuntime {
 				addSuppressedOnce(existingReal, cleanup);
 			}
 			if (failure != existingReal) {
-				addSuppressedOnce(existingReal, failure);
+				addControlEvidence(existingReal, failure);
 			}
 			return existingReal;
 		}
@@ -256,8 +279,8 @@ public final class KernelRuntime {
 	}
 
 	private static boolean isSuppressionDisabledControl(Throwable problem) {
-		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
-				|| problem instanceof KernelPeerCancelledException;
+		return problem instanceof KernelCancelledException || problem == KernelQueryCancelledException.INSTANCE
+				|| problem instanceof KernelPeerCancelledException || problem instanceof SuppressionDisabledControl;
 	}
 
 	private static boolean isControlWrapper(Throwable problem) {
@@ -342,9 +365,25 @@ public final class KernelRuntime {
 		primary.addSuppressed(suppressed);
 	}
 
+	private static void addControlEvidence(Throwable primary, Throwable control) {
+		if (control instanceof KernelQueryCancelledException query && query != KernelQueryCancelledException.INSTANCE) {
+			for (Throwable existing : primary.getSuppressed()) {
+				if (existing instanceof KernelQueryCancelledException prior && prior.sameProvenance(query)) {
+					return;
+				}
+			}
+			// The original control already suppresses the promoted cleanup. A fresh occurrence keeps its owner
+			// without creating a cleanup -> control -> cleanup cycle.
+			addSuppressedOnce(primary, query.copy());
+		} else {
+			addSuppressedOnce(primary, control);
+		}
+	}
+
 	private static boolean isControlSignal(Throwable problem) {
 		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
-				|| problem instanceof KernelPeerCancelledException || problem instanceof AllocationDeniedException;
+				|| problem instanceof KernelPeerCancelledException || problem instanceof AllocationDeniedException
+				|| problem instanceof SuppressionDisabledControl;
 	}
 
 	public static void rethrowCloseFailure(Throwable failure) {
@@ -357,6 +396,10 @@ public final class KernelRuntime {
 		// boundary the real cleanup must be promoted so it cannot be mistaken for a clean strategy decline.
 		Throwable realFailure = realFailureAttachedToControl(failure);
 		if (realFailure != null) {
+			if (failure instanceof KernelQueryCancelledException query
+					&& query != KernelQueryCancelledException.INSTANCE) {
+				addControlEvidence(realFailure, query);
+			}
 			failure = realFailure;
 		}
 		if (failure instanceof RuntimeException problem) {
@@ -366,6 +409,13 @@ public final class KernelRuntime {
 			throw problem;
 		}
 		throw new IllegalStateException("kernel resource close failed", failure);
+	}
+
+	/** Rethrows a changed close outcome or a real cleanup failure retained on the unchanged primary control. */
+	public static void rethrowCloseFailureIfNotPrimary(Throwable failure, Throwable primary) {
+		if (failure != null && (failure != primary || realFailureAttachedToControl(failure) != null)) {
+			rethrowCloseFailure(failure);
+		}
 	}
 
 	/** An exceptional fill cannot be resumed; drain owned cursors, preserving the evaluation failure. */
@@ -378,33 +428,31 @@ public final class KernelRuntime {
 				failure = retainCloseFailure(failure, cleanup);
 			}
 		}
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/** Releases an activation-local owner without replacing a primary evaluation failure. */
 	public static void closeCursor(AutoCloseable cursor, Throwable primary) {
-		Throwable failure = closeResource(cursor, primary);
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		closeCursor(cursor, primary, null);
+	}
+
+	/** Releases an activation-local owner and reports retained cleanup failures before they escape. */
+	public static void closeCursor(AutoCloseable cursor, Throwable primary,
+			Consumer<Throwable> closeFailureObserver) {
+		Throwable failure = closeResource(cursor, primary, closeFailureObserver);
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/** Close a scoped scan while preserving a primary evaluation failure. No per-row allocation or dispatch. */
 	public static void closeScanCursor(KernelQuadCursor cursor, Throwable primary) {
 		Throwable failure = closeResource(cursor, primary);
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/** The plan-cursor equivalent of {@link #closeScanCursor}. */
 	public static void closePlanCursor(KernelPlan.Cursor cursor, Throwable primary) {
 		Throwable failure = closeResource(cursor, primary);
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/**
@@ -418,7 +466,7 @@ public final class KernelRuntime {
 		}
 		int cancellationReason = cancellation.cancellationReason();
 		if (cancellationReason == KernelCancellation.QUERY_CANCELLED) {
-			throw KernelQueryCancelledException.INSTANCE;
+			throw cancellation.queryCancellationException();
 		}
 		if (cancellationReason == KernelCancellation.PROBE_CANCELLED) {
 			throw KernelCancelledException.INSTANCE;
@@ -449,7 +497,7 @@ public final class KernelRuntime {
 		}
 		int reason = cancellation.cancellationReasonAtMaterializationLimit();
 		if (reason == KernelCancellation.QUERY_CANCELLED) {
-			throw KernelQueryCancelledException.INSTANCE;
+			throw cancellation.queryCancellationException();
 		}
 		if (reason == KernelCancellation.PEER_CANCELLED) {
 			throw KernelPeerCancelledException.INSTANCE;

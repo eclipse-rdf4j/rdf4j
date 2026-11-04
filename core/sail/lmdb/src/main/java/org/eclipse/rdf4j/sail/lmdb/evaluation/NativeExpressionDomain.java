@@ -509,11 +509,12 @@ final class NativeExpressionDomain implements AutoCloseable {
 			return outcome;
 		} catch (Throwable failure) {
 			NativeCancellationToken local = row.expressionCancellation();
-			if (failure == KernelQueryCancelledException.INSTANCE && local != null && local != cancellation
+			if (failure instanceof KernelQueryCancelledException cancelled && local != null && local != cancellation
+					&& (cancelled == KernelQueryCancelledException.INSTANCE || cancelled.observedBy(local))
 					&& local.isCancellationRequested() && !cancellation.isCancellationRequested()) {
 				// Stopping one derived cursor/hedge does not invalidate completed PURE results owned by its query.
 				// That cursor remains terminal through its own token; this pending evaluation was never published.
-				throw KernelQueryCancelledException.INSTANCE;
+				throw cancelled;
 			}
 			if (failure instanceof IOException io) {
 				failure = new UncheckedIOException("Expression-domain spill failed", io);

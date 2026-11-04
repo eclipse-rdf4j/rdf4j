@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Properties;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -65,8 +67,20 @@ public final class WorkbenchPolicy {
 	private static final String MENU_GROUPS_KEY = "menu.groups";
 	private static final String MENU_CONSUMER_IDS_KEY = "menu.consumer-ids";
 	private static final String QUERY_CONSUMER_FEATURE_IDS_KEY = "query.consumer-feature-ids";
+	/** Default query timeout in seconds; when present it replaces the {@code default-query-timeout} init parameter. */
+	public static final String QUERY_DEFAULT_TIMEOUT_KEY = "query.default-timeout";
+	/** Allowlist of repository types for the "New repository" page, in display order; may include "federate". */
+	public static final String CREATE_TEMPLATES_KEY = "create.templates";
+	private static final Pattern CREATE_TEMPLATE_TYPE_PATTERN = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*");
 	private static final String QUERY_DOWNLOAD_DEFAULT_LIMIT_KEY = "query.download.default-limit";
 	private static final String DEPLOYMENT_THEME_DEFAULT_KEY = "theme.deployment-default";
+	/** Namespaces that pages treat as if every repository had stored them: {@code prefix:namespace} entries. */
+	public static final String NAMESPACES_KEY = "namespaces";
+	/**
+	 * Replaces the bundled (empty) list the query editor falls back on for prefixes that are not defined; empty turns
+	 * the fallback off.
+	 */
+	public static final String FALLBACK_NAMESPACES_KEY = "namespaces.fallback";
 	private static final List<String> DEFAULT_GROUP_IDS = List.of("explore", "modify", "repositories", "system",
 			"server");
 	/**
@@ -102,10 +116,16 @@ public final class WorkbenchPolicy {
 	private final Set<String> queryFeatureIds;
 	private final int queryDownloadDefaultLimit;
 	private final String deploymentThemeDefault;
+	private final OptionalInt queryDefaultTimeout;
+	private final Optional<List<String>> createTemplateAllowlist;
+	private final Map<String, String> configuredNamespaces;
+	private final Map<String, String> fallbackNamespaces;
 
 	private WorkbenchPolicy(List<MenuItem> visibleMenuItems, List<MenuGroup> visibleMenuGroups,
 			Map<String, List<String>> customRoutesByPath, Properties properties, Set<String> queryFeatureIds,
-			int queryDownloadDefaultLimit, String deploymentThemeDefault) {
+			int queryDownloadDefaultLimit, String deploymentThemeDefault, OptionalInt queryDefaultTimeout,
+			Optional<List<String>> createTemplateAllowlist, Map<String, String> configuredNamespaces,
+			Map<String, String> fallbackNamespaces) {
 		this.visibleMenuItems = List.copyOf(visibleMenuItems);
 		this.visibleMenuGroups = List.copyOf(visibleMenuGroups);
 		Map<String, MenuItem> byId = new LinkedHashMap<>();
@@ -120,6 +140,10 @@ public final class WorkbenchPolicy {
 		this.queryFeatureIds = Collections.unmodifiableSet(new LinkedHashSet<>(queryFeatureIds));
 		this.queryDownloadDefaultLimit = queryDownloadDefaultLimit;
 		this.deploymentThemeDefault = deploymentThemeDefault;
+		this.queryDefaultTimeout = queryDefaultTimeout;
+		this.createTemplateAllowlist = createTemplateAllowlist.map(List::copyOf);
+		this.configuredNamespaces = configuredNamespaces;
+		this.fallbackNamespaces = fallbackNamespaces;
 	}
 
 	/**
@@ -223,12 +247,25 @@ public final class WorkbenchPolicy {
 			throw new IllegalArgumentException(
 					QUERY_DOWNLOAD_DEFAULT_LIMIT_KEY + " must be zero or a positive integer");
 		}
+		OptionalInt defaultTimeout = OptionalInt.empty();
+		if (values.getProperty(QUERY_DEFAULT_TIMEOUT_KEY) != null) {
+			int timeout = parseInteger(values, QUERY_DEFAULT_TIMEOUT_KEY, 0);
+			if (timeout < 0) {
+				throw new IllegalArgumentException(
+						QUERY_DEFAULT_TIMEOUT_KEY + " must be zero or a positive integer");
+			}
+			defaultTimeout = OptionalInt.of(timeout);
+		}
 		String themeDefault = property(values, DEPLOYMENT_THEME_DEFAULT_KEY, "system").trim().toLowerCase(Locale.ROOT);
 		if (!Set.of("system", "light", "dark").contains(themeDefault)) {
 			throw new IllegalArgumentException(DEPLOYMENT_THEME_DEFAULT_KEY + " must be system, light, or dark");
 		}
+		String fallback = values.getProperty(FALLBACK_NAMESPACES_KEY);
 		return new WorkbenchPolicy(visibleItems, visibleGroups, customRoutes, values, featureIds,
-				downloadDefaultLimit, themeDefault);
+				downloadDefaultLimit, themeDefault, defaultTimeout, parseCreateTemplateAllowlist(values),
+				WorkbenchNamespaces.parse(values.getProperty(NAMESPACES_KEY, ""), NAMESPACES_KEY),
+				fallback == null ? WorkbenchNamespaces.bundledFallback()
+						: WorkbenchNamespaces.parse(fallback, FALLBACK_NAMESPACES_KEY));
 	}
 
 	/**
@@ -342,6 +379,35 @@ public final class WorkbenchPolicy {
 		return queryDownloadDefaultLimit;
 	}
 
+	/** Returns the configured default query timeout in seconds, when the policy sets one. */
+	public OptionalInt getQueryDefaultTimeout() {
+		return queryDefaultTimeout;
+	}
+
+	/**
+	 * Returns the repository types offered by the "New repository" page, in the configured order, when the policy sets
+	 * an allowlist. The pseudo-type {@code federate} stands for the Federation option.
+	 */
+	public Optional<List<String>> getCreateTemplateAllowlist() {
+		return createTemplateAllowlist;
+	}
+
+	/**
+	 * Returns the namespaces of {@code namespaces}, by prefix in the configured order. Pages treat them as if every
+	 * repository had stored them; a prefix that a repository stores keeps the repository's namespace.
+	 */
+	public Map<String, String> getConfiguredNamespaces() {
+		return configuredNamespaces;
+	}
+
+	/**
+	 * Returns the namespaces the query editor falls back on for prefixes that neither the repository nor
+	 * {@code namespaces} defines: the bundled (empty) list, or {@code namespaces.fallback} when that is set.
+	 */
+	public Map<String, String> getFallbackNamespaces() {
+		return fallbackNamespaces;
+	}
+
 	/** Returns the validated deployment theme used before a user preference is available. */
 	public String getDeploymentThemeDefault() {
 		return deploymentThemeDefault;
@@ -360,8 +426,22 @@ public final class WorkbenchPolicy {
 					.contains(key)) {
 				continue;
 			}
+			if (QUERY_DEFAULT_TIMEOUT_KEY.equals(key)) {
+				if (parseInteger(values, key, 0) < 0) {
+					throw new IllegalArgumentException(key + " must be zero or a positive integer");
+				}
+				continue;
+			}
+			if (CREATE_TEMPLATES_KEY.equals(key)) {
+				parseCreateTemplateAllowlist(values);
+				continue;
+			}
 			if (QUERY_DOWNLOAD_DEFAULT_LIMIT_KEY.equals(key)) {
 				parseInteger(values, key, 0);
+				continue;
+			}
+			if (NAMESPACES_KEY.equals(key) || FALLBACK_NAMESPACES_KEY.equals(key)) {
+				WorkbenchNamespaces.parse(value, key);
 				continue;
 			}
 			if (DEPLOYMENT_THEME_DEFAULT_KEY.equals(key)) {
@@ -479,6 +559,27 @@ public final class WorkbenchPolicy {
 			validateId(id, key);
 		}
 		return declared;
+	}
+
+	/** Parses and validates {@code create.templates}; empty when the key is unset or blank. */
+	private static Optional<List<String>> parseCreateTemplateAllowlist(Properties values) {
+		List<String> types = parseList(values.getProperty(CREATE_TEMPLATES_KEY), CREATE_TEMPLATES_KEY);
+		if (types.isEmpty()) {
+			return Optional.empty();
+		}
+		for (String type : types) {
+			if (!CREATE_TEMPLATE_TYPE_PATTERN.matcher(type).matches()) {
+				throw new IllegalArgumentException(CREATE_TEMPLATES_KEY + " contains an invalid template type '" + type
+						+ "': use letters, digits, '.', '_' and '-'");
+			}
+		}
+		assertUnique(types, CREATE_TEMPLATES_KEY);
+		for (String type : types) {
+			if (!CreateServlet.FEDERATE.equals(type)) {
+				CreateServlet.requireCreateTemplate(type);
+			}
+		}
+		return Optional.of(Collections.unmodifiableList(new ArrayList<>(types)));
 	}
 
 	private static void assertUnique(List<String> values, String key) {

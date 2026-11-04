@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 
 /**
@@ -41,6 +42,8 @@ final class LmdbNativeFactorAlgebra {
 	static boolean candidate(SlotPlan plan) {
 		if (!enabled() || plan == null)
 			return false;
+		if (plan instanceof NativeAliasJoinPlan alias)
+			return candidate(alias.original);
 		if (plan instanceof UnionPlan || plan instanceof ExtensionPlan || plan instanceof LeftJoinPlan)
 			return true;
 		if (plan instanceof FilterPlan filter)
@@ -75,6 +78,8 @@ final class LmdbNativeFactorAlgebra {
 		if (SlotPlan.requiresPhysicalCells(plan)) {
 			return null;
 		}
+		if (plan instanceof NativeAliasJoinPlan alias)
+			return open(alias.select(row), row);
 		if (plan instanceof UnionPlan union)
 			return new Union(union, row);
 		if (plan instanceof OrderedUnionPlan) {
@@ -285,7 +290,7 @@ final class LmdbNativeFactorAlgebra {
 					repeat = weight - 1L;
 					return true;
 				} catch (IOException | RuntimeException | Error failure) {
-					closeSuppressing(this, failure);
+					KernelRuntime.closeCursor(this, failure);
 					throw failure;
 				}
 			}

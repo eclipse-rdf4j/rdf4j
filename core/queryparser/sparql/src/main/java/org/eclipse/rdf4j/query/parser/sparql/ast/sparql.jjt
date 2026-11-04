@@ -971,7 +971,6 @@ void PropertyList() :
 {}
 {
 	Verb() ObjectList()
-        ( AnnotationSuffix(false) )*
 	[ <SEMICOLON> [PropertyList()] ]
 }
 
@@ -997,7 +996,6 @@ void PropertyListPath() :
 {}
 {
     (VerbPath() | VerbSimple()) ObjectListPath()
-        ( AnnotationSuffix(true) )*
     [<SEMICOLON> [PropertyListPath()] ]
 }
 
@@ -1096,13 +1094,13 @@ void VerbSimple() #void :
 void Object() #void :
 {}
 {
-	GraphNode()
+	GraphNode() ( AnnotationSuffix(false) )*
 }
 
 void ObjectPath() #void :
 {}
 {
-	GraphNodePath()
+	GraphNodePath() ( AnnotationSuffix(true) )*
 }
 
 void Verb() #void :

@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.workbench.support.TestProcess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -494,16 +495,19 @@ class GraphExplorerFacetRegressionTest {
 		Path errors = Files.createTempFile(directory, "generator-", ".log");
 		Path input = Files.createTempFile(directory, "request-", ".json");
 		Files.writeString(input, JSON.writeValueAsString(request));
-		Process process = new ProcessBuilder(Files.isExecutable(bundledNode) ? bundledNode.toString() : node,
-				"--experimental-strip-types", "src/test/frontend/graph-explorer/fixtures/facet-regression-bridge.mjs",
-				"--request-file", input.toString()).redirectOutput(output.toFile())
-						.redirectError(errors.toFile())
-						.start();
-		if (!process.waitFor(30, TimeUnit.SECONDS)) {
-			process.destroyForcibly();
-			throw new AssertionError("Node query generator did not finish; see " + errors);
+		try (TestProcess child = TestProcess
+				.start(new ProcessBuilder(Files.isExecutable(bundledNode) ? bundledNode.toString() : node,
+						"--experimental-strip-types",
+						"src/test/frontend/graph-explorer/fixtures/facet-regression-bridge.mjs",
+						"--request-file", input.toString()).redirectOutput(output.toFile())
+								.redirectError(errors.toFile()))) {
+			Process process = child.process();
+			if (!process.waitFor(30, TimeUnit.SECONDS)) {
+				process.destroyForcibly();
+				throw new AssertionError("Node query generator did not finish; see " + errors);
+			}
+			assertThat(process.exitValue()).as(Files.readString(errors)).isZero();
+			return Files.readString(output);
 		}
-		assertThat(process.exitValue()).as(Files.readString(errors)).isZero();
-		return Files.readString(output);
 	}
 }

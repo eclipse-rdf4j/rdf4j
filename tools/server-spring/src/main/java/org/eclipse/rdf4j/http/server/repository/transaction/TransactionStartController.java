@@ -159,7 +159,7 @@ public class TransactionStartController extends AbstractController {
 		} catch (RepositoryException | InterruptedException | ExecutionException e) {
 			throw new ServerHTTPException("Transaction start error: " + e.getMessage(), e);
 		} finally {
-			if (!allGood) {
+			if (!allGood && txn != null) {
 				try {
 					txn.close();
 				} catch (InterruptedException | ExecutionException e) {

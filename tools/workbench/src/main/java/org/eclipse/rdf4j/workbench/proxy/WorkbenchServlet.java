@@ -110,6 +110,11 @@ public class WorkbenchServlet extends AbstractServlet {
 			throw new MissingInitParameterException(SERVER_PARAM);
 		}
 		this.policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), null);
+		if (policy.getQueryDefaultTimeout().isPresent()) {
+			// The policy value takes precedence over the init parameter for this servlet and every child servlet.
+			this.config = new BasicServletConfig(config.getServletName(), config,
+					Map.of("default-query-timeout", Integer.toString(policy.getQueryDefaultTimeout().getAsInt())));
+		}
 		try {
 			serverIdentity = ServerIdentity.of(param);
 			manager = createRepositoryManager(param);

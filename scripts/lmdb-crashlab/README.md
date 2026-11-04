@@ -140,8 +140,8 @@ a fresh qcow2 overlay and copied UEFI variables.
 
 ### Required GitHub pull-request gate
 
-`.github/workflows/lmdb-qemu-durability.yml` runs unconditionally for every
-`pull_request` on `ubuntu-24.04`. It adds a read/write ACL for the job user's
+`.github/workflows/lmdb-qemu-durability.yml` runs for matching LMDB, Sail base,
+crashlab, and workflow `pull_request` changes on `ubuntu-24.04`. It adds a read/write ACL for the job user's
 UID on `/dev/kvm`. The preflight captures process and device metadata, verifies
 the KVM API and creates/closes a test VM, then records a direct-user QEMU file
 open trace and available AppArmor/kernel/audit denial records. Its tested
@@ -162,12 +162,11 @@ x86_64 Java 25 guest with OVMF and runs the actual Linux guest FLUSH/FUA
 calibration, acknowledged namespace-only commit, all three precise transaction
 cuts, and four continuous transaction trials. Each cut campaign reopens the same preserved image
 twice and compares the full public-oracle outcome and state hash. The job also
-runs the crashlab Python tests and explicitly selects the Java test classes
-below; a report validator fails if any selected class is missing, ran zero
-tests, failed, errored, or skipped a test. The artifact step always retains
-diagnostic logs, NBD traces, guest serial output, campaign reports, and Maven
-test reports without changing the job result; regenerable OS images and
-overlays are excluded.
+runs the crashlab Python tests and native guest-writer checks. The campaign
+validator rejects missing, skipped, failed, or incomplete guest campaigns.
+The artifact step always retains diagnostic logs, NBD traces, guest serial
+output, and campaign reports without changing the job result; regenerable OS
+images and overlays are excluded.
 
 ### Continuous transaction matrix
 
@@ -254,19 +253,20 @@ the QEMU gate, which requires an independent witness filesystem. They establish
 process-death/native oracle coverage; hosted Linux/ext4/NBD acceptance remains
 a separate required execution.
 
-The required Java selection is `LmdbCrashRecoveryTest`,
-`LmdbStoreFlushReproductionTest`, `TripleStoreAutoGrowTest`,
+JUnit execution belongs to `.github/workflows/pr-verify.yml`, not the QEMU
+job. Its `lmdb-unit-tests` job covers the LMDB unit tests, including
+`LmdbCrashRecoveryTest`, `LmdbStoreFlushReproductionTest`, `TripleStoreAutoGrowTest`,
 `ValueStoreTermIndexRecoveryTest`, `LmdbConstructorCleanupTest`,
-`PersistentSetFactoryTransactionOwnershipTest`,
-`LmdbSnapshotValueLifetimeTest`, `LmdbValueRetirementRecoveryTest`,
-`TxnMutationJournalTest`, and the `LmdbStoreModelLifecycleIT` integration test.
-The gate requires zero skipped tests in each selected report. This does not
-claim that every test in the LMDB module is enabled: separate long-running
-theme/benchmark and sketch-placement cases are intentionally `@Disabled`,
-`SailSourceModelTest` and `LongMultithreadedTransactions` are disabled, the
-optional `LmdbRegressionPlanCaptureTest` is property-gated, and one oversized
-native-map probe in `TripleStoreInitializationTest` uses a platform assumption.
-Those unrelated exclusions remain outside this focused required gate.
+`PersistentSetFactoryTransactionOwnershipTest`, `LmdbSnapshotValueLifetimeTest`,
+`LmdbValueRetirementRecoveryTest`, and `TxnMutationJournalTest`; its
+`integration-tests` job covers `LmdbStoreModelLifecycleIT`, and `slow-tests`
+covers slow-tagged tests. The unit and integration jobs validate their existing
+reports with `validate_java_reports.py`, requiring every selected class to run
+nonzero tests with zero failures, errors, or skips, without rerunning JUnit.
+The unit reports are checked before the synchronous-profile probe can replace
+them. The QEMU job retains `-Pquick clean install`, which
+skips Surefire/Failsafe execution while compiling the test classes needed by the
+guest writers and recovery oracles. It does not require JUnit XML reports.
 
 ### Recreate the Java 25 guest and exact test classpath
 

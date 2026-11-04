@@ -35,6 +35,7 @@ final class LmdbAdjacencyDeltaGeneration {
 	static final long ROW_TOMBSTONE = -4L;
 
 	private final long revision;
+	private volatile long firstRevision;
 	private final LmdbAdjacencyArena arena;
 	private final LmdbAdjacencyDeltaArenaOwner arenaOwner;
 	private final LmdbAdjacencyArenaCatalog catalog; // slot 0 = base arena, slot 1 = this generation's arena
@@ -117,6 +118,7 @@ final class LmdbAdjacencyDeltaGeneration {
 			LmdbAdjacencyArenaCatalog catalog, Charge metadataCharge, long compactionWeightBytes, long[] rowKeys,
 			byte[] rowPlanes, long[] rowPredicates, long[] runRefs) {
 		this.revision = revision;
+		this.firstRevision = revision;
 		this.arenaOwner = arenaOwner;
 		this.arena = arenaOwner.arena();
 		this.catalog = catalog;
@@ -152,6 +154,23 @@ final class LmdbAdjacencyDeltaGeneration {
 
 	long revision() {
 		return revision;
+	}
+
+	/**
+	 * The first revision whose rows this generation holds: its revision for a generation prepared from one commit, the
+	 * first commit's for a coalesced run or a merged range. A snapshot in {@code [firstRevision, revision)} cannot be
+	 * served from an overlay set holding this generation.
+	 */
+	long firstRevision() {
+		return firstRevision;
+	}
+
+	/** Records that this generation also holds rows from revisions back to {@code firstRevision}. */
+	void coversFrom(long firstRevision) {
+		if (firstRevision > revision) {
+			throw new IllegalArgumentException("first revision " + firstRevision + " after " + revision);
+		}
+		this.firstRevision = firstRevision;
 	}
 
 	long rowCount() {

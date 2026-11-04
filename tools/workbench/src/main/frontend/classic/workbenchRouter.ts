@@ -241,6 +241,48 @@ namespace workbench {
             return views().outletOf(session.mount);
         }
 
+        /**
+         * Explore remembers what was explored (the resource, page and row limit of its address) for each server and
+         * repository in this tab: an Explore address without a resource (the menu, the repository switcher, the
+         * Repositories list) opens it again. Exploring an empty resource forgets it.
+         */
+        function exploredKey(serverIdentity: string, repositoryId: string): string {
+            return 'workbench:explored:' + encodeURIComponent(serverIdentity || '') + ':'
+                + encodeURIComponent(repositoryId);
+        }
+
+        function rememberExplored(url: URL, serverIdentity: string): void {
+            if (viewIdOf(url) !== 'explore' || !url.searchParams.has('resource')) {
+                return;
+            }
+            const key = exploredKey(serverIdentity, repositoryIdOf(url));
+            try {
+                if (url.searchParams.get('resource')) {
+                    window.sessionStorage.setItem(key, url.search);
+                } else {
+                    window.sessionStorage.removeItem(key);
+                }
+            } catch (e) {
+                // Ignore browsers where storage access is unavailable.
+            }
+        }
+
+        function exploreAgain(target: URL): void {
+            if (viewIdOf(target) !== 'explore' || target.searchParams.has('resource')) {
+                return;
+            }
+            const serverIdentity = currentRoute && currentRoute.context ? currentRoute.context.serverIdentity : '';
+            let explored = '';
+            try {
+                explored = window.sessionStorage.getItem(exploredKey(serverIdentity, repositoryIdOf(target))) || '';
+            } catch (e) {
+                // Ignore browsers where storage access is unavailable.
+            }
+            if (explored.charAt(0) === '?') {
+                target.search = explored;
+            }
+        }
+
         function markRoute(viewId: string, ready: boolean): void {
             const element = outlet();
             element.setAttribute('data-workbench-route', viewId);
@@ -904,6 +946,7 @@ namespace workbench {
             currentRoute = { url: url.href, viewId: viewIdOf(url), repositoryId: repositoryIdOf(url), key,
                 instance: started.instance, model: started.model,
                 context: app().viewContext(started.mount, started.model, url.href, started.runtime) };
+            rememberExplored(url, currentRoute.context.serverIdentity);
             markRoute(currentRoute.viewId, true);
             windowObject.document.addEventListener('click', onClick, false);
             windowObject.document.addEventListener('submit', onSubmit, false);
@@ -925,6 +968,10 @@ namespace workbench {
                     ? navigate(url, Object.assign({}, options, { leaveUpload: true })) : 'abandoned');
             }
             const target = new URL(url, windowObject.location.href);
+            // Back and Forward show their entry as it was.
+            if (!options.body && options.history !== 'none') {
+                exploreAgain(target);
+            }
             const viewId = viewIdOf(target);
             const definition = routes.get(viewId);
             if (!definition || !definition.routerReady) {
@@ -1150,6 +1197,9 @@ namespace workbench {
             const viewId = viewIdOf(url);
             currentRoute = { url: url.href, viewId, repositoryId: repositoryIdOf(url), key,
                 instance: { dispose() {} }, model, context };
+            if (!model.error) {
+                rememberExplored(url, context.serverIdentity);
+            }
             markRoute(viewId, false);
             // An error page holds nothing but its row store; any other route mounts (possibly asynchronously).
             const showsOwnError = views().showsOwnError;

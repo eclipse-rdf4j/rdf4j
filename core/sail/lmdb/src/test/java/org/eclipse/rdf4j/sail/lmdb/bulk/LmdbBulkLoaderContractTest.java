@@ -238,12 +238,12 @@ class LmdbBulkLoaderContractTest {
 		Files.write(artifact, artifactBytes);
 
 		Properties marker = new Properties();
-		marker.setProperty("version", "2");
+		marker.setProperty("version", "3");
 		marker.setProperty("generation", generationName);
 		storeProperties(target.resolve(LmdbBulkLoadGeneration.MARKER_FILE_NAME), marker);
 
 		Properties manifest = new Properties();
-		manifest.setProperty("version", "2");
+		manifest.setProperty("version", "3");
 		manifest.setProperty("generation", generationName);
 		manifest.setProperty("artifact.count", "1");
 		manifest.setProperty("artifact.0", "values");
@@ -946,14 +946,21 @@ class LmdbBulkLoaderContractTest {
 		assertThat(workspace.resolve("assigned-values.bin")).doesNotExist();
 		assertThat(workspace.resolve("resolved-value-components.bin")).doesNotExist();
 
+		List<ProgressSnapshot> resumedProgress = new ArrayList<>();
 		LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
 				.partitionCount(8)
 				.maxOpenFiles(3)
+				.progressListener(resumedProgress::add)
 				.build()
 				.load(new ReadFailingInputStream(), "urn:native:", RDFFormat.NQUADS);
 
 		assertThat(result.parsedStatements()).isEqualTo(200);
 		assertThat(result.storedStatements()).isEqualTo(200);
+		assertThat(resumedProgress)
+				.anyMatch(snapshot -> snapshot.resumed() && snapshot.phase() == BulkLoadPhase.WRITE_GENERATION
+						&& snapshot.phaseNumber() == BulkLoadPhase.WRITE_GENERATION.ordinal() + 1
+						&& snapshot.phaseCount() == BulkLoadPhase.values().length
+						&& snapshot.activeIndexes().isEmpty() && snapshot.indexEvent() == null);
 		assertThat(workspace).doesNotExist();
 	}
 

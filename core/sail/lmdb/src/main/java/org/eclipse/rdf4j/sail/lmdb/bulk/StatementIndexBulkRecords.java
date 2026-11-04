@@ -51,14 +51,16 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
 			BooleanSupplier cancellationSignal) throws IOException {
 		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
-				cancellationSignal, TripleIndex::usesUnsignedTupleOrder, null);
+				cancellationSignal, TripleIndex::usesUnsignedTupleOrder, null, () -> {
+				}, null);
 	}
 
 	static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
 			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
 			BooleanSupplier cancellationSignal, Predicate<String> tupleOrderEquivalence) throws IOException {
 		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
-				cancellationSignal, tupleOrderEquivalence, null);
+				cancellationSignal, tupleOrderEquivalence, null, () -> {
+				}, null);
 	}
 
 	static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
@@ -66,7 +68,7 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
 		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
 				cancellationSignal, TripleIndex::usesUnsignedTupleOrder, scheduler, () -> {
-				});
+				}, null);
 	}
 
 	static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
@@ -74,7 +76,15 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, Runnable spillOutputObserver)
 			throws IOException {
 		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
-				cancellationSignal, TripleIndex::usesUnsignedTupleOrder, scheduler, spillOutputObserver);
+				cancellationSignal, TripleIndex::usesUnsignedTupleOrder, scheduler, spillOutputObserver, null);
+	}
+
+	static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
+			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, Runnable spillOutputObserver,
+			BulkLoadProgress progress) throws IOException {
+		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
+				cancellationSignal, TripleIndex::usesUnsignedTupleOrder, scheduler, spillOutputObserver, progress);
 	}
 
 	private static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
@@ -83,13 +93,13 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 			throws IOException {
 		return build(spool, workspace, configuredIndexes, memoryBudgetBytes, maxOpenFiles, compression,
 				cancellationSignal, tupleOrderEquivalence, scheduler, () -> {
-				});
+				}, null);
 	}
 
 	private static StatementIndexBulkRecords build(ResolvedIdQuadSpool spool, Path workspace, String configuredIndexes,
 			long memoryBudgetBytes, int maxOpenFiles, BulkCompression compression,
 			BooleanSupplier cancellationSignal, Predicate<String> tupleOrderEquivalence, BulkTaskScheduler scheduler,
-			Runnable spillOutputObserver) throws IOException {
+			Runnable spillOutputObserver, BulkLoadProgress progress) throws IOException {
 		List<String> specifications = parseSpecifications(configuredIndexes);
 		long readerBytes = spool.scanReaderMemoryEstimateBytes();
 		long spillOutputBytes = BulkLz4.mergeOutputMemoryBytes(compression.codecFor(BulkArtifact.STATEMENT_INDEXES));
@@ -134,13 +144,21 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 					: scheduler.reserveScanEnvelope(readerBytes, spool.scanReaderFileDescriptorEstimate(),
 							spool.statements() == 0L ? 0L : 1024L, synchronousSpillBytes,
 							spool.statements() == 0L ? 0 : 1)) {
+				if (progress != null) {
+					for (int index = 0; index < specifications.size(); index++) {
+						progress.startIndex(ProgressSnapshot.IndexFamily.STATEMENT, specifications.get(index),
+								index + 1,
+								specifications.size(), ProgressSnapshot.IndexStage.SCAN);
+					}
+				}
 				scanOnce(spool, specifications, tupleSorters, encodedSorters, compression, cancellationSignal,
 						scheduler);
 			}
 			List<IndexRun> runs = scheduler == null
-					? finishSerially(specifications, sortedOutputs, tupleSorters, encodedSorters, cancellationSignal)
+					? finishSerially(specifications, sortedOutputs, tupleSorters, encodedSorters, cancellationSignal,
+							progress)
 					: finishConcurrently(specifications, sortedOutputs, tupleSorters, encodedSorters,
-							cancellationSignal, scheduler);
+							cancellationSignal, scheduler, progress);
 			ExternalLongTupleSorter.SortedTupleFile contexts = buildContexts(runs.getFirst(), workspace,
 					memoryBudgetBytes, maxOpenFiles, compression, cancellationSignal, scheduler);
 			return new StatementIndexBulkRecords(runs, contexts);
@@ -154,15 +172,23 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 
 	private static List<IndexRun> finishSerially(List<String> specifications, List<Path> outputs,
 			List<ExternalLongTupleSorter> tupleSorters, List<ExternalByteKeySorter> encodedSorters,
-			BooleanSupplier cancellationSignal) throws IOException {
+			BooleanSupplier cancellationSignal, BulkLoadProgress progress) throws IOException {
 		List<IndexRun> runs = new ArrayList<>(specifications.size());
 		for (int i = 0; i < specifications.size(); i++) {
 			checkCancelled(cancellationSignal);
+			String specification = specifications.get(i);
+			if (progress != null) {
+				progress.indexStage(ProgressSnapshot.IndexFamily.STATEMENT, specification,
+						ProgressSnapshot.IndexStage.MERGE);
+			}
 			ExternalLongTupleSorter tupleSorter = tupleSorters.get(i);
 			if (tupleSorter != null) {
-				runs.add(new IndexRun(specifications.get(i), tupleSorter.finish(outputs.get(i)), null));
+				runs.add(new IndexRun(specification, tupleSorter.finish(outputs.get(i)), null));
 			} else {
-				runs.add(new IndexRun(specifications.get(i), null, encodedSorters.get(i).finish(outputs.get(i))));
+				runs.add(new IndexRun(specification, null, encodedSorters.get(i).finish(outputs.get(i))));
+			}
+			if (progress != null) {
+				progress.completeIndex(ProgressSnapshot.IndexFamily.STATEMENT, specification);
 			}
 		}
 		return runs;
@@ -170,7 +196,8 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 
 	private static List<IndexRun> finishConcurrently(List<String> specifications, List<Path> outputs,
 			List<ExternalLongTupleSorter> tupleSorters, List<ExternalByteKeySorter> encodedSorters,
-			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler) throws IOException {
+			BooleanSupplier cancellationSignal, BulkTaskScheduler scheduler, BulkLoadProgress progress)
+			throws IOException {
 		for (ExternalLongTupleSorter sorter : tupleSorters) {
 			if (sorter != null) {
 				sorter.prepareFinish();
@@ -194,10 +221,19 @@ final class StatementIndexBulkRecords implements AutoCloseable {
 					: encodedSorter.requiresSerialMemoryFloor();
 			work.add(new BulkTaskScheduler.Work<>(memoryBytes, fileDescriptors, () -> {
 				checkCancelled(cancellationSignal);
-				return tupleSorter != null
+				String specification = specifications.get(index);
+				if (progress != null) {
+					progress.indexStage(ProgressSnapshot.IndexFamily.STATEMENT, specification,
+							ProgressSnapshot.IndexStage.MERGE);
+				}
+				IndexRun run = tupleSorter != null
 						? new IndexRun(specifications.get(index), tupleSorter.finish(outputs.get(index)), null)
 						: new IndexRun(specifications.get(index), null,
 								encodedSorter.finish(outputs.get(index)));
+				if (progress != null) {
+					progress.completeIndex(ProgressSnapshot.IndexFamily.STATEMENT, specification);
+				}
+				return run;
 			}, minimumMemoryFloor));
 		}
 		return scheduler.runOrdered(work);

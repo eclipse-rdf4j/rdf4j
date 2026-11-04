@@ -4484,7 +4484,10 @@ class LmdbNoneStreamingIngestionTest {
 	@Test
 	@Timeout(value = 120, unit = TimeUnit.SECONDS)
 	void nativeOwnerBoundNoneRecoveryReResolvesInputAfterPeerReusesItsValueId(@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = smallMaps().setTripleIndexes("spoc,posc,ospc")
+		// This fixture requires physical ID reuse while both native owners remain open.
+		// Async producer identity reservations intentionally prohibit that durable-policy scenario.
+		LmdbStoreConfig config = smallMaps().setAsyncValueCleanup(false)
+				.setTripleIndexes("spoc,posc,ospc")
 				.setTripleDBSize(16L << 20)
 				.setValueDBSize(16L << 20)
 				.setMapGrowthThreshold(0.5d)

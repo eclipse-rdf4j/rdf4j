@@ -58,7 +58,8 @@ class RepositoryValueIterationTest {
 				var workers = Executors.newSingleThreadExecutor()) {
 			ValueResolutionScope creator = store.openValueResolutionScope();
 			List<Value> values = seed(store, creator, 1);
-			long earlier = ((LmdbValue) values.getFirst()).getValueStoreRevision().getRevisionId();
+			ValueStoreRevision.Lazy earlier = (ValueStoreRevision.Lazy) ((LmdbValue) values.getFirst())
+					.getValueStoreRevision();
 			rotate(store, creator);
 			CountDownLatch entered = new CountDownLatch(1);
 			CountDownLatch released = new CountDownLatch(1);
@@ -104,7 +105,7 @@ class RepositoryValueIterationTest {
 				try {
 					assertTrue(cancelled.await(2, TimeUnit.SECONDS), "the timeout escalation must close the source");
 					assertEquals(0, drains.get(), "The active callback must retain its native value horizon");
-					assertFalse(store.unusedRevisionIds.contains(earlier));
+					assertTrue(isEpochProtected(store, earlier));
 				} finally {
 					released.countDown();
 				}
@@ -112,7 +113,7 @@ class RepositoryValueIterationTest {
 						() -> pulling.get(5, TimeUnit.SECONDS));
 				assertInstanceOf(QueryInterruptedException.class, failure.getCause());
 				assertEquals(1, drains.get());
-				assertTrue(store.unusedRevisionIds.contains(earlier));
+				assertFalse(isEpochProtected(store, earlier));
 			}
 		}
 	}
@@ -122,7 +123,8 @@ class RepositoryValueIterationTest {
 		try (ObservedValues store = new ObservedValues(directory); var workers = Executors.newFixedThreadPool(2)) {
 			ValueResolutionScope creator = store.openValueResolutionScope();
 			List<Value> values = seed(store, creator, 1);
-			long earlier = ((LmdbValue) values.getFirst()).getValueStoreRevision().getRevisionId();
+			ValueStoreRevision.Lazy earlier = (ValueStoreRevision.Lazy) ((LmdbValue) values.getFirst())
+					.getValueStoreRevision();
 			rotate(store, creator);
 			CountDownLatch entered = new CountDownLatch(1);
 			CountDownLatch released = new CountDownLatch(1);
@@ -160,13 +162,13 @@ class RepositoryValueIterationTest {
 					workers.submit(result::close).get(5, TimeUnit.SECONDS);
 					assertEquals(1, closes.get(), "Close must immediately cancel its source exactly once");
 					assertEquals(0, drains.get(), "An admitted callback still owns the outward epoch horizon");
-					assertFalse(store.unusedRevisionIds.contains(earlier));
+					assertTrue(isEpochProtected(store, earlier));
 				} finally {
 					released.countDown();
 				}
 				assertFalse(pulling.get(5, TimeUnit.SECONDS));
 				assertEquals(1, drains.get(), "The final admitted exit must drain once without a background task");
-				assertTrue(store.unusedRevisionIds.contains(earlier));
+				assertFalse(isEpochProtected(store, earlier));
 			}
 		}
 	}
@@ -292,7 +294,8 @@ class RepositoryValueIterationTest {
 		try (ObservedValues store = new ObservedValues(directory)) {
 			ValueResolutionScope creator = store.openValueResolutionScope();
 			List<Value> values = seed(store, creator, 2);
-			long earlier = ((LmdbValue) values.getFirst()).getValueStoreRevision().getRevisionId();
+			ValueStoreRevision.Lazy earlier = (ValueStoreRevision.Lazy) ((LmdbValue) values.getFirst())
+					.getValueStoreRevision();
 			rotate(store, creator);
 			var source = new IterationWrapper<List<Value>>(
 					new CloseableIteratorIteration<>(List.of(values).iterator())) {
@@ -315,13 +318,13 @@ class RepositoryValueIterationTest {
 			try (var result = exposeRoots(store, source, null)) {
 				assertSame(values, result.next());
 				assertFalse(creator.isOpen(), "The source next must really close its inner owner before preparation");
-				assertFalse(store.unusedRevisionIds.contains(earlier),
+				assertTrue(isEpochProtected(store, earlier),
 						"The outward owner retains the original horizon");
 				for (Value value : values) {
 					assertInstanceOf(ValueStoreRevision.Default.class, ((LmdbValue) value).getValueStoreRevision());
 				}
 				assertFalse(result.hasNext());
-				assertTrue(store.unusedRevisionIds.contains(earlier),
+				assertFalse(isEpochProtected(store, earlier),
 						"Observed exhaustion releases the outward owner's horizon");
 			}
 		}
@@ -481,6 +484,16 @@ class RepositoryValueIterationTest {
 			}
 		}
 		return values;
+	}
+
+	/** Probe the actual epoch capability; async cleanup intentionally does not retain timed-eviction hint sets. */
+	private static boolean isEpochProtected(ValueStore store, ValueStoreRevision.Lazy revision) {
+		try (ValueStore.EpochReservation ignored = store.reserveValueEpoch(revision)) {
+			return true;
+		} catch (SailException released) {
+			assertEquals("The lazy dictionary epoch was already released", released.getMessage());
+			return false;
+		}
 	}
 
 	private static void rotate(ObservedValues store, ValueResolutionScope creator) throws IOException {
