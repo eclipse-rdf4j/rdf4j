@@ -96,7 +96,7 @@ import ch.qos.logback.classic.Logger;
 @State(Scope.Benchmark)
 @Warmup(iterations = 5)
 @BenchmarkMode(Mode.AverageTime)
-@Fork(value = 0, jvmArgs = { "-Xms8G", "-Xmx8G" })
+@Fork(value = 1, jvmArgs = { "-Xms8G", "-Xmx8G" })
 @Measurement(iterations = 10)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class ClassConstraintSparqlFilterBenchmark {
