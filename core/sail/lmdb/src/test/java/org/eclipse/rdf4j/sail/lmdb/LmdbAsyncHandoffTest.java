@@ -669,6 +669,9 @@ class LmdbAsyncHandoffTest {
 		private volatile boolean blockRollback;
 		private int commits;
 
+		// test-only counter to verify that rollback is called when a transaction is interrupted
+		private final AtomicInteger rollbackCalls = new AtomicInteger();
+
 		private ControlledTripleStore(File directory, StoreProperties properties, LmdbStoreConfig config,
 				ValueStore values) throws IOException {
 			super(directory, properties, config, values);
@@ -719,6 +722,7 @@ class LmdbAsyncHandoffTest {
 
 		@Override
 		public void rollback() throws IOException {
+			rollbackCalls.incrementAndGet();
 			if (nativeOwners != null) {
 				nativeOwners.add(Thread.currentThread());
 			}
