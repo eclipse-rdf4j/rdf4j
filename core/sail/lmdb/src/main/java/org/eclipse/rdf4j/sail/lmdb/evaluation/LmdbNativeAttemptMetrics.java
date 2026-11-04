@@ -263,8 +263,8 @@ public final class LmdbNativeAttemptMetrics {
 	}
 
 	/**
-	 * Directs subsequent {@link #recordDecline} calls on this thread into {@code capture} (keyed by base tag), and
-	 * returns whatever capture was previously installed so a nested arbitration can restore it. Pass {@code null} to
+	 * Directs subsequent {@link #recordDecline} calls on this thread into {@code capture}, keyed by exact strategy id.
+	 * Returns whatever capture was previously installed so a nested arbitration can restore it. Pass {@code null} to
 	 * stop capturing.
 	 */
 	static Map<String, String> installDeclineCapture(Map<String, String> capture) {
@@ -285,12 +285,12 @@ public final class LmdbNativeAttemptMetrics {
 		Map<String, String> capture = DECLINE_CAPTURE.get();
 		if (LmdbNativeStrategyPreview.active()) {
 			if (capture != null && strategy != null && reason != null) {
-				capture.put(LmdbNativeCandidate.baseId(strategy), reason);
+				capture.put(strategy, reason);
 			}
 			return;
 		}
 		if (capture != null && strategy != null && reason != null) {
-			capture.put(LmdbNativeCandidate.baseId(strategy), reason);
+			capture.put(strategy, reason);
 		}
 		LmdbNativeExplain.recordStrategyDecline(target, strategy, reason);
 		if (JANINO_STRATEGIES.contains(strategy) && logger.isInfoEnabled()) {
@@ -307,7 +307,7 @@ public final class LmdbNativeAttemptMetrics {
 	static void captureDecline(String strategy, String reason) {
 		Map<String, String> capture = DECLINE_CAPTURE.get();
 		if (capture != null) {
-			capture.put(LmdbNativeCandidate.baseId(strategy), reason);
+			capture.put(strategy, reason);
 		}
 	}
 

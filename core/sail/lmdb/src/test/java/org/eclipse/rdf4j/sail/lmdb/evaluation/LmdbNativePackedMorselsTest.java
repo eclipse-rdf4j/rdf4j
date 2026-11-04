@@ -260,12 +260,12 @@ class LmdbNativePackedMorselsTest {
 		// Every possible root of this BGP has 128 distinct values, independent of join-order selection.
 		String input = "?s a ex:Root; ex:u ?u; ex:v ?v .";
 		long before = LmdbNativePackedMorsels.ROW_RUNS.get();
-		assertSameBag("SELECT ?s ?u ?v WHERE { " + input + " }", "packedFtree", null);
+		assertSameBag("SELECT ?s ?u ?v WHERE { " + input + " }", "packedFtree(parallel)", null);
 		assertTrue(LmdbNativePackedMorsels.ROW_RUNS.get() > before, "forced packed rows stayed sequential");
 		before = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
 		long morsels = LmdbNativePackedMorsels.MORSELS.get();
 		assertSameBag("SELECT ?s (COUNT(*) AS ?n) (COUNT(DISTINCT ?v) AS ?nv) WHERE { " + input + " } GROUP BY ?s",
-				"packedFtreeAggregate", null);
+				"packedFtreeAggregate(parallel)", null);
 		assertTrue(LmdbNativePackedMorsels.AGGREGATE_RUNS.get() > before, "forced packed aggregate stayed sequential");
 		assertTrue(LmdbNativePackedMorsels.MORSELS.get() - morsels > 16,
 				"work remained a fixed four ranges per worker");
@@ -415,7 +415,7 @@ class LmdbNativePackedMorselsTest {
 		String query = "SELECT ?s (GROUP_CONCAT(DISTINCT STR(?v); SEPARATOR=\"|\") AS ?text) WHERE { "
 				+ "?s a ex:Root; ex:p ?p; ex:u ?u; ex:v ?v . } GROUP BY ?s";
 		long before = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
-		List<BindingSet> rows = evaluate(query, "packedFtreeAggregate", null);
+		List<BindingSet> rows = evaluate(query, "packedFtreeAggregate(parallel)", null);
 		assertEquals(128, rows.size());
 		for (BindingSet row : rows) {
 			assertEquals(row.getValue("s").stringValue().replace(EX + "s", EX + "v"),
@@ -449,7 +449,7 @@ class LmdbNativePackedMorselsTest {
 					"the fixture must expose separated copies before exercising packed order");
 		}
 		long before = LmdbNativePackedMorsels.AGGREGATE_RUNS.get();
-		List<BindingSet> actual = evaluate(query, "packedFtreeAggregate", null);
+		List<BindingSet> actual = evaluate(query, "packedFtreeAggregate(parallel)", null);
 		assertEquals(canonical(expected), canonical(actual));
 		assertTrue(LmdbNativePackedMorsels.AGGREGATE_RUNS.get() > before,
 				"ordered full CONCAT must execute its replay inside packed workers");

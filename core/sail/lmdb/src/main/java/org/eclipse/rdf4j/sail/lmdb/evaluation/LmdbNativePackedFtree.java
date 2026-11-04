@@ -68,6 +68,10 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
  */
 @Experimental
 final class LmdbNativePackedFtree {
+	static final String ROWS_SERIAL = LmdbNativeAttemptMetrics.PATH_PACKED_FTREE + "(serial)";
+	static final String ROWS_PARALLEL = LmdbNativeAttemptMetrics.PATH_PACKED_FTREE + "(parallel)";
+	static final String AGGREGATE_SERIAL = LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE + "(serial)";
+	static final String AGGREGATE_PARALLEL = LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE + "(parallel)";
 
 	/** Width of every physically contiguous packed value block. */
 	static final int VECTOR_SIZE = normalizedVectorSize(
@@ -157,18 +161,17 @@ final class LmdbNativePackedFtree {
 			int[] retainedSlots, boolean distinct, TupleExpr explainTarget) {
 		if (input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input))
 			return proposeRows(multi, row, retainedSlots, distinct, explainTarget);
-		if (!LmdbNativeFactorAlgebra.candidate(input))
+		if (!LmdbNativeFactorAlgebra.candidate(input)) {
+			LmdbNativeAttemptMetrics.recordDecline(explainTarget, ROWS_SERIAL, "unsupported-shape");
 			return null;
+		}
 		return new LmdbNativeStrategyProposal<>(() -> {
-			FactorizedRowCursor rows = LmdbNativePackedMorsels.tryRows(input, row, retainedSlots, distinct,
-					explainTarget);
-			if (rows == null)
-				rows = LmdbNativeFactorProjections.openRows(input, row, retainedSlots, !distinct);
+			FactorizedRowCursor rows = LmdbNativeFactorProjections.openRows(input, row, retainedSlots, !distinct);
 			if (row.runtimePlan != null)
-				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, new SlotPlan[] { input });
-			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
+				row.runtimePlan.activate(ROWS_SERIAL, new SlotPlan[] { input });
+			LmdbNativeExplain.recordExecutionPath(explainTarget, ROWS_SERIAL);
 			return NativeUnorderedInput.rows(row, rows);
-		}, input.estimateWork(row, row.boundMask()), LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, () -> {
+		}, input.estimateWork(row, row.boundMask()), ROWS_SERIAL, () -> {
 		}).withCostQuote(LmdbNativeCostQuote.streaming(
 				LmdbNativeCostVectors.plan(input, row, row.boundMask(), LmdbNativeCostVector.Feature.GENERATED_ROW),
 				LmdbNativeWork.rowsOut(input, row, row.boundMask())));
@@ -179,6 +182,13 @@ final class LmdbNativePackedFtree {
 		return input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input)
 				? tryEvaluateAggregate(multi, row, groups, aggregates, owner, explainTarget)
 				: LmdbNativePackedAlgebraAggregate.evaluate(input, row, groups, aggregates, owner, explainTarget);
+	}
+
+	static List<BindingSet> tryEvaluateAggregateSerial(SlotPlan input, RowState row, int[] groups,
+			AggregateSpec[] aggregates, NativeGroupIteration owner, TupleExpr explainTarget) throws IOException {
+		return input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input)
+				? tryEvaluateAggregate(multi, row, groups, aggregates, owner, explainTarget, false)
+				: LmdbNativePackedAlgebraAggregate.evaluateSerial(input, row, groups, aggregates, owner, explainTarget);
 	}
 
 	static LmdbNativeWork estimateAggregateWork(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
@@ -203,38 +213,235 @@ final class LmdbNativePackedFtree {
 	 */
 	static LmdbNativeStrategyProposal<NativeUnorderedInput> proposeRows(MultiJoinPlan multiJoin, RowState row,
 			int[] retainedSlots, boolean distinct, TupleExpr explainTarget) {
-		if (!enabled() || multiJoin == null) {
+		if (!enabled()) {
+			LmdbNativeAttemptMetrics.recordDecline(explainTarget, ROWS_SERIAL, "disabled");
+			return null;
+		}
+		if (multiJoin == null) {
+			LmdbNativeAttemptMetrics.recordDecline(explainTarget, ROWS_SERIAL, "not-multi-join");
 			return null;
 		}
 		Plan plan = Planner.plan(multiJoin, row, retainedSlots);
 		if (plan == null) {
-			LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
+			LmdbNativeAttemptMetrics.recordDecline(explainTarget, ROWS_SERIAL,
 					"unsupported-shape");
 			return null;
 		}
 		if ((plan.variableMask & row.boundMask()) != 0L) {
-			LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
+			LmdbNativeAttemptMetrics.recordDecline(explainTarget, ROWS_SERIAL,
 					"correlated-entry");
 			return null;
 		}
 		LmdbNativeWork work = plan.estimateRowWork(row.source);
 		return new LmdbNativeStrategyProposal<>(() -> {
-			FactorizedRowCursor cursor = LmdbNativePackedMorsels.tryRows(multiJoin, row, retainedSlots, distinct,
-					explainTarget);
-			if (cursor == null)
-				cursor = PackedRowCursor.open(plan, row);
+			FactorizedRowCursor cursor = PackedRowCursor.open(plan, row);
 			if (cursor == null) {
-				LmdbNativeAttemptMetrics.recordDecline(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
+				LmdbNativeAttemptMetrics.recordDecline(explainTarget, ROWS_SERIAL,
 						"adjacency-unavailable");
 				return null;
 			}
 			if (row.runtimePlan != null) {
-				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, multiJoin.children);
+				row.runtimePlan.activate(ROWS_SERIAL, multiJoin.children);
 			}
-			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
+			LmdbNativeExplain.recordExecutionPath(explainTarget, ROWS_SERIAL);
 			return NativeUnorderedInput.rows(row, cursor);
-		}, work, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, () -> {
+		}, work, ROWS_SERIAL, () -> {
 		}).withCostQuote(rowQuote(plan, multiJoin, row));
+	}
+
+	/** The parallel opener is independent of the serial candidate and must bind the worker group it quotes. */
+	static LmdbNativeStrategyProposal<NativeUnorderedInput> proposeParallelRows(SlotPlan input, RowState row,
+			int[] retainedSlots, boolean distinct, TupleExpr explainTarget) {
+		if (!LmdbNativePackedMorsels.eligible(input, row)) {
+			LmdbNativeAttemptMetrics.recordDecline(explainTarget, ROWS_PARALLEL, "parallel-ineligible");
+			return null;
+		}
+		// Reject an unavailable worker group before repeating serial or root-partition planning. This quote holds
+		// no tasks; the shape-capped quote below is still admitted exactly when the selected opener runs.
+		try (LmdbNativeParallelPipelines.TaskReservation available = LmdbNativeParallelPipelines
+				.quoteTasks(true, LmdbNativeParallelPipelines.configuredThreads())) {
+			if (available == null) {
+				LmdbNativeAttemptMetrics.recordDecline(explainTarget, ROWS_PARALLEL, "task-budget");
+				return null;
+			}
+		}
+		try (LmdbNativeStrategyProposal<NativeUnorderedInput> serial = LmdbNativeAttemptMetrics.withDeclineRoute(
+				ROWS_SERIAL, ROWS_PARALLEL,
+				() -> proposeRows(input, row, retainedSlots, distinct, explainTarget))) {
+			if (serial == null)
+				return null;
+			LmdbNativePackedMorsels.Capacity capacity = LmdbNativePackedMorsels.quoteCapacity(input, row);
+			if (capacity == null) {
+				LmdbNativeAttemptMetrics.recordDecline(explainTarget, ROWS_PARALLEL,
+						"insufficient-partitions-or-task-budget");
+				return null;
+			}
+			LmdbNativeCostQuote quote = parallelQuote(serial.costQuote(), input, row, capacity, null, false);
+			quote = bufferedProjectionReplay(quote, input, row, retainedSlots, distinct, capacity.workers());
+			return new LmdbNativeStrategyProposal<>(() -> {
+				FactorizedRowCursor cursor = LmdbNativePackedMorsels.tryRows(input, row, retainedSlots, distinct,
+						explainTarget, capacity.reservation());
+				if (cursor == null)
+					return null;
+				recordVariant(input, row, explainTarget, ROWS_PARALLEL);
+				return NativeUnorderedInput.rows(row, cursor);
+			}, serial.work, LmdbNativeWork.ZERO, quote.outputRows(), ROWS_PARALLEL, capacity::close)
+					.withCostQuote(quote);
+		}
+	}
+
+	static LmdbNativeStrategyProposal<List<BindingSet>> proposeParallelAggregate(SlotPlan input, RowState row,
+			int[] groups, AggregateSpec[] aggregates, NativeGroupIteration owner, TupleExpr explainTarget) {
+		if (!(input instanceof MultiJoinPlan) && !LmdbNativeFactorAlgebra.candidate(input))
+			return null;
+		for (AggregateSpec spec : aggregates)
+			if (spec.reducer.spillEncoding == NativeReducerCapabilities.SpillEncoding.OPAQUE)
+				return null;
+		LmdbNativePackedMorsels.Capacity capacity = LmdbNativePackedMorsels.quoteCapacity(input, row);
+		if (capacity == null)
+			return null;
+		LmdbNativeCostQuote serial = input instanceof MultiJoinPlan multi && !LmdbNativeFactorAlgebra.candidate(input)
+				? aggregateQuote(multi, row, groups, aggregates)
+				: LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVectors
+								.plan(input, row, row.boundMask(), LmdbNativeCostVector.Feature.GENERATED_ROW)
+								.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+										LmdbNativeWork.rowsOut(input, row, row.boundMask()), row)),
+						groups.length == 0 ? 1D : Double.NaN);
+		LmdbNativeCostQuote quote = parallelQuote(serial, input, row, capacity, groups,
+				LmdbNativePackedMorsels.usesSharedAggregateStore(aggregates));
+		return new LmdbNativeStrategyProposal<>(
+				() -> tryParallelAggregate(input, row, groups, aggregates, owner, explainTarget,
+						capacity.reservation(), AGGREGATE_PARALLEL),
+				estimateAggregateWork(input, row, groups, aggregates), LmdbNativeWork.ZERO, quote.outputRows(),
+				AGGREGATE_PARALLEL, capacity::close).withCostQuote(quote);
+	}
+
+	private static LmdbNativeCostQuote parallelQuote(LmdbNativeCostQuote serial, SlotPlan input, RowState row,
+			LmdbNativePackedMorsels.Capacity capacity, int[] groups, boolean sharedAggregateStore) {
+		int workers = capacity.workers();
+		LmdbNativeStaticPrior.ParallelShape shape = groups == null
+				? LmdbNativeStaticPrior.ParallelShape.rows(input, row, row.boundMask())
+				: LmdbNativeStaticPrior.ParallelShape.aggregate(input, row, row.boundMask(), groups);
+		// Packed morsels partition the additive left spine, including UNION, rather than the ordinary kernel root.
+		shape = new LmdbNativeStaticPrior.ParallelShape(true, capacity.roots(), groups != null, shape.groups(),
+				shape.rowsOut());
+		double factor = 1D / LmdbNativeStaticPrior.parallelSpeedup(shape, workers);
+		LmdbNativeCostVector startup = serial.startup()
+				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers));
+		if (!sharedAggregateStore) {
+			startup = startup.plus(LmdbNativeStaticPrior.parallelMerge(shape, workers));
+		}
+		LmdbNativeCostVector streaming = serial.streaming().scale(factor);
+		if (sharedAggregateStore) {
+			// DISTINCT and non-COUNT reducers serialize every update on one typed store. Only their input
+			// traversal earns parallel throughput credit, and no worker-local partial tables need merging.
+			LmdbNativeCostVector.Builder phases = LmdbNativeCostVector.builder();
+			for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+				LmdbNativeCostVector phase = feature == LmdbNativeCostVector.Feature.GROUP_UPDATE
+						? serial.streaming()
+						: streaming;
+				phases.add(feature, phase.low(feature), phase.expected(feature), phase.high(feature));
+			}
+			streaming = phases.build();
+		}
+		LmdbNativeCostQuote.ChunkedWork chunked = serial.chunked();
+		if (chunked != null) {
+			// Before the first output, workers can each construct a whole morsel. Preserve that first wave when
+			// slicing, rather than dividing a single serial chunk by the entire worker group's speed-up.
+			int wave = (int) Math.min(Integer.MAX_VALUE,
+					Math.min(chunked.batchSize(), LmdbNativePackedMorsels.morselRows()) * (long) workers);
+			chunked = chunked.scaled(factor, wave);
+		}
+		return new LmdbNativeCostQuote(startup, streaming, serial.outputRows(),
+				serial.ordered(), serial.distinct(), chunked);
+	}
+
+	/** A page counts projected entries, so only a proven unit-multiplicity shape can use logical rows here. */
+	private static LmdbNativeCostQuote bufferedProjectionReplay(LmdbNativeCostQuote quote, SlotPlan input,
+			RowState row, int[] retainedSlots, boolean distinct, int workers) {
+		int pageRows = projectionReplayPageRows(quote, input, row, retainedSlots, distinct, workers);
+		if (pageRows <= 1) {
+			return quote;
+		}
+		LmdbNativeCostVector streaming = quote.streaming();
+		LmdbNativeCostVector.Feature generated = LmdbNativeCostVector.Feature.GENERATED_ROW;
+		if (streaming.high(generated) == 0D) {
+			return quote;
+		}
+		LmdbNativeCostVector replay = LmdbNativeCostVector.bounds(generated, streaming.low(generated),
+				streaming.expected(generated), streaming.high(generated));
+		LmdbNativeCostVector.Builder remaining = LmdbNativeCostVector.builder();
+		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+			if (feature != generated) {
+				remaining.add(feature, streaming.low(feature), streaming.expected(feature), streaming.high(feature));
+			}
+		}
+		// Construction already has its worker-wide root wave. Replay earns the same speedup exactly once but
+		// rounds independently to one expected output page; sibling speculation stays inside the full ceiling.
+		LmdbNativeCostQuote.ChunkedWork replayPage = new LmdbNativeCostQuote.ChunkedWork(replay, quote.outputRows(),
+				pageRows);
+		return new LmdbNativeCostQuote(quote.startup(), remaining.build(), quote.outputRows(), quote.ordered(),
+				quote.distinct(), quote.chunked()
+						.withBufferedConsumer(quote.outputRows(), pageRows)
+						.withIndependentPhase(replayPage));
+	}
+
+	private static int projectionReplayPageRows(LmdbNativeCostQuote quote, SlotPlan input, RowState row,
+			int[] retainedSlots, boolean distinct, int workers) {
+		if (distinct || workers < 2 || row.source == null || row.boundMask() != 0L || quote.chunked() == null
+				|| !(quote.outputRows() > 0D) || !Double.isFinite(quote.outputRows())
+				|| !(input instanceof MultiJoinPlan join) || join.filters.length != 0 || join.children.length != 2
+				|| !(join.children[0] instanceof PatternPlan first)
+				|| !(join.children[1] instanceof PatternPlan second)
+				|| !plainReplayPagePattern(first) || !plainReplayPagePattern(second)
+				|| first.s.slot != second.s.slot || first.o.slot == second.o.slot) {
+			return 0;
+		}
+		boolean retainedVariable = false;
+		for (int slot : retainedSlots) {
+			retainedVariable |= slot == first.s.slot || slot == first.o.slot || slot == second.o.slot;
+		}
+		if (!retainedVariable) {
+			return 0;
+		}
+		long roots = -1L;
+		for (SlotPlan child : join.children) {
+			PatternPlan pattern = (PatternPlan) child;
+			OptionalLong quads = row.source.exactPredicateCount(pattern.p.constant);
+			if (quads.isEmpty() || quads.getAsLong() <= 0L || roots >= 0L && roots != quads.getAsLong()) {
+				return 0;
+			}
+			roots = quads.getAsLong();
+			for (int direction = 0; direction < 2; direction++) {
+				OptionalLong keys = row.source.adjacencyKeyDomainCardinality(pattern.p.constant, direction == 0);
+				if (keys.isEmpty() || keys.getAsLong() != roots) {
+					return 0;
+				}
+			}
+		}
+		// Q = subjects = objects proves one quad per key in both directions, not identical domains across
+		// predicates. Retaining a variable then prevents projected roots from coalescing into weighted entries.
+		if (quote.outputRows() != roots) {
+			return 0;
+		}
+		// A packed page survives morsel claims. Uniform per-worker output sizes this expectation, not the IR
+		// root-window count, and no barrier guarantees that every worker fills a page before the first take.
+		return (int) Math.min(LmdbNativePackedMorsels.outputPageRows(), Math.ceil(quote.outputRows() / workers));
+	}
+
+	private static boolean plainReplayPagePattern(PatternPlan pattern) {
+		return pattern.s.hasSlot() && !pattern.s.isConstant() && pattern.o.hasSlot() && !pattern.o.isConstant()
+				&& pattern.p.isConstant() && !pattern.p.hasSlot() && !pattern.hasRepeatedSlot()
+				&& !pattern.c.hasSlot() && !pattern.c.isConstant() && !pattern.contexts.isFixed()
+				&& !pattern.namedContextScope && pattern.range == null && pattern.statementOrder == null;
+	}
+
+	private static void recordVariant(SlotPlan input, RowState row, TupleExpr target, String tag) {
+		if (row.runtimePlan != null)
+			row.runtimePlan.activate(tag,
+					input instanceof MultiJoinPlan multi ? multi.children : new SlotPlan[] { input });
+		LmdbNativeExplain.recordExecutionPath(target, tag);
 	}
 
 	/**
@@ -490,6 +697,12 @@ final class LmdbNativePackedFtree {
 	 */
 	static List<BindingSet> tryEvaluateAggregate(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
 			AggregateSpec[] aggregates, NativeGroupIteration owner, TupleExpr explainTarget) throws IOException {
+		return tryEvaluateAggregate(multiJoin, row, groupSlots, aggregates, owner, explainTarget, true);
+	}
+
+	private static List<BindingSet> tryEvaluateAggregate(MultiJoinPlan multiJoin, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates, NativeGroupIteration owner, TupleExpr explainTarget, boolean allowParallel)
+			throws IOException {
 		if (!enabled() || multiJoin == null) {
 			return null;
 		}
@@ -511,31 +724,11 @@ final class LmdbNativePackedFtree {
 				return null;
 			}
 		}
-		NativeFilterLease parallelLease = new NativeFilterLease();
-		try {
-			List<BindingSet> parallel = LmdbNativePackedMorsels.tryAggregate(parallelLease.borrow(multiJoin), row,
-					groupSlots, aggregates, owner, explainTarget);
-			if (parallel != null) {
-				parallelLease.commit();
-				if (row.runtimePlan != null)
-					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
-							multiJoin.children);
-				LmdbNativeExplain.recordExecutionPath(explainTarget,
-						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
+		if (allowParallel) {
+			List<BindingSet> parallel = tryParallelAggregate(multiJoin, row, groupSlots, aggregates, owner,
+					explainTarget, null, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
+			if (parallel != null)
 				return parallel;
-			}
-			parallelLease.discard();
-		} catch (EncounterOrderFallback fallback) {
-			// The enclosing native aggregate dispatcher owns the ordered replay; no group escaped this attempt.
-			Throwable real = EncounterOrderFallback.realFailure(fallback);
-			if (real == null)
-				parallelLease.discard();
-			else
-				parallelLease.abort(real);
-			throw fallback;
-		} catch (IOException | RuntimeException | Error problem) {
-			parallelLease.abort(problem);
-			throw problem;
 		}
 		for (AggregateSpec aggregate : aggregates) {
 			if (aggregate.reducer.rowState
@@ -554,17 +747,47 @@ final class LmdbNativePackedFtree {
 			try {
 				result = groupSlots.length == 0
 						? evaluateUngrouped(runtime, plan, row, aggregates, owner, context)
-						: evaluateGrouped(multiJoin, runtime, plan, row, groupSlots, aggregates, owner, context);
+						: evaluateGrouped(multiJoin, runtime, plan, row, groupSlots, aggregates, owner, context,
+								allowParallel);
 			} finally {
 				context.close();
 			}
-			if (row.runtimePlan != null) {
-				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
-						multiJoin.children);
-			}
-			LmdbNativeExplain.recordExecutionPath(explainTarget,
-					LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
+			recordVariant(multiJoin, row, explainTarget,
+					allowParallel ? LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE : AGGREGATE_SERIAL);
 			return result;
+		}
+	}
+
+	private static List<BindingSet> tryParallelAggregate(SlotPlan input, RowState row, int[] groups,
+			AggregateSpec[] aggregates, NativeGroupIteration owner, TupleExpr target,
+			LmdbNativeParallelPipelines.TaskReservation reservation, String tag) throws IOException {
+		NativeFilterLease lease = new NativeFilterLease();
+		try {
+			List<BindingSet> parallel = LmdbNativePackedMorsels.tryAggregate(lease.borrow(input), row,
+					groups, aggregates, owner, target, reservation);
+			if (parallel != null) {
+				lease.commit();
+				recordVariant(input, row, target, tag);
+			} else {
+				lease.discard();
+			}
+			return parallel;
+		} catch (EncounterOrderFallback fallback) {
+			// The enclosing native aggregate dispatcher owns the ordered replay; no group escaped this attempt.
+			Throwable real = EncounterOrderFallback.realFailure(fallback);
+			if (real == null)
+				lease.discard();
+			else
+				lease.abort(real);
+			throw fallback;
+		} catch (IOException | RuntimeException | Error problem) {
+			lease.abort(problem);
+			throw problem;
+		} finally {
+			// Aggregates finish and close all workers before publication. This also covers failures before the
+			// session's own cleanup could take ownership of the exact reservation.
+			if (reservation != null)
+				reservation.close();
 		}
 	}
 
@@ -587,12 +810,14 @@ final class LmdbNativePackedFtree {
 	}
 
 	private static List<BindingSet> evaluateGrouped(MultiJoinPlan multiJoin, Runtime runtime, Plan plan, RowState row,
-			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration owner, AggContext context)
+			int[] groupSlots, AggregateSpec[] aggregates, NativeGroupIteration owner, AggContext context,
+			boolean allowParallel)
 			throws IOException {
-		List<BindingSet> parallel = collectGroupsParallel(multiJoin, plan, runtime, row, groupSlots, aggregates,
-				owner.strictCompare, groups -> toBindingSets(groups, owner));
-		if (parallel != null) {
-			return parallel;
+		if (allowParallel) {
+			List<BindingSet> parallel = collectGroupsParallel(multiJoin, plan, runtime, row, groupSlots, aggregates,
+					owner.strictCompare, groups -> toBindingSets(groups, owner));
+			if (parallel != null)
+				return parallel;
 		}
 		HashMap<GroupKey, AggState> groups = collectGroups(runtime, plan, row, groupSlots, aggregates, context);
 		return toBindingSets(groups, owner);

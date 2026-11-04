@@ -1402,7 +1402,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private LmdbPrefixRunPlan tryPrefixRunPlan(NativeLmdbQuerySource stepSource, PatternPlan pattern, int[] slots) {
-		if (!prefixSafePattern(pattern)) {
+		// A run representative can fail a range while a later member matches. These plans do not carry the range
+		// into their run cursor, so the ordinary pattern cursor must perform the exact filtering before DISTINCT.
+		if (pattern.range != null || !prefixSafePattern(pattern)) {
 			return null;
 		}
 		int[] prefixFields = prefixFields(pattern, slots);

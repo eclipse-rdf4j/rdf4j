@@ -17,7 +17,8 @@ import java.util.function.ToDoubleFunction;
 
 /**
  * Immutable lower/expected/upper physical operation counts. Counts are deliberately unit-free; a vector becomes a
- * latency only after every non-zero feature has a supported machine coefficient.
+ * latency only after every non-zero feature has a supported machine coefficient. Lower and expected counts are finite;
+ * only an upper count may be positive infinity, denoting an absent or overflowed ceiling.
  */
 final class LmdbNativeCostVector {
 
@@ -104,7 +105,7 @@ final class LmdbNativeCostVector {
 		for (int i = 0; i < FEATURES.length; i++) {
 			resultLow[i] = saturatedAdd(low[i], other.low[i]);
 			resultExpected[i] = saturatedAdd(expected[i], other.expected[i]);
-			resultHigh[i] = saturatedAdd(high[i], other.high[i]);
+			resultHigh[i] = upperAdd(high[i], other.high[i]);
 		}
 		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh, false);
 	}
@@ -125,11 +126,7 @@ final class LmdbNativeCostVector {
 		for (int i = 0; i < FEATURES.length; i++) {
 			resultLow[i] = saturatedMultiply(low[i], factor);
 			resultExpected[i] = saturatedMultiply(expected[i], factor);
-			// an unknown ceiling stays unknown: dividing it by a speed-up must not make it a finite price
-			double scaledHigh = saturatedMultiply(high[i], factor);
-			resultHigh[i] = high[i] >= LmdbNativeCostQuote.UNBOUNDED_COUNT
-					? Math.max(scaledHigh, LmdbNativeCostQuote.UNBOUNDED_COUNT)
-					: scaledHigh;
+			resultHigh[i] = upperMultiply(high[i], factor);
 		}
 		return new LmdbNativeCostVector(resultLow, resultExpected, resultHigh, false);
 	}
@@ -154,15 +151,15 @@ final class LmdbNativeCostVector {
 	}
 
 	double dotExpected(double[] coefficients) {
-		return dot(expected, coefficients);
+		return dot(expected, coefficients, false);
 	}
 
 	double dotLow(double[] coefficients) {
-		return dot(low, coefficients);
+		return dot(low, coefficients, false);
 	}
 
 	double dotHigh(double[] coefficients) {
-		return dot(high, coefficients);
+		return dot(high, coefficients, true);
 	}
 
 	double structuralWork(ToDoubleFunction<Feature> weights) {
@@ -203,7 +200,7 @@ final class LmdbNativeCostVector {
 		return FEATURES.length;
 	}
 
-	private static double dot(double[] counts, double[] coefficients) {
+	private static double dot(double[] counts, double[] coefficients, boolean upper) {
 		Objects.requireNonNull(coefficients, "coefficients");
 		if (coefficients.length != FEATURES.length) {
 			throw new IllegalArgumentException("expected " + FEATURES.length + " coefficients, got "
@@ -215,7 +212,8 @@ final class LmdbNativeCostVector {
 			if (!Double.isFinite(coefficient) || coefficient < 0.0) {
 				throw new IllegalArgumentException("coefficient must be finite and non-negative at " + i);
 			}
-			result = saturatedAdd(result, saturatedMultiply(counts[i], coefficient));
+			result = upper ? upperAdd(result, upperMultiply(counts[i], coefficient))
+					: saturatedAdd(result, saturatedMultiply(counts[i], coefficient));
 		}
 		return result;
 	}
@@ -232,12 +230,22 @@ final class LmdbNativeCostVector {
 			throw new IllegalArgumentException("invalid feature-vector length");
 		}
 		for (int i = 0; i < FEATURES.length; i++) {
-			if (!Double.isFinite(low[i]) || !Double.isFinite(expected[i]) || !Double.isFinite(high[i])
+			if (!Double.isFinite(low[i]) || !Double.isFinite(expected[i]) || Double.isNaN(high[i])
 					|| low[i] < 0.0 || expected[i] < low[i] || high[i] < expected[i]) {
 				throw new IllegalArgumentException("invalid bounds for " + FEATURES[i] + ": " + low[i] + "/"
 						+ expected[i] + "/" + high[i]);
 			}
 		}
+	}
+
+	/** Upper-bound arithmetic must not turn overflow or an unknown ceiling into a finite proof. */
+	static double upperAdd(double left, double right) {
+		return left + right;
+	}
+
+	/** Non-negative upper counts; a proven zero repetition annihilates even an unknown count. */
+	static double upperMultiply(double left, double right) {
+		return left == 0D || right == 0D ? 0D : left * right;
 	}
 
 	private static double saturatedAdd(double left, double right) {
@@ -302,14 +310,14 @@ final class LmdbNativeCostVector {
 
 		Builder add(Feature feature, double lower, double expectedCount, double upper) {
 			Objects.requireNonNull(feature, "feature");
-			if (!Double.isFinite(lower) || !Double.isFinite(expectedCount) || !Double.isFinite(upper)
+			if (!Double.isFinite(lower) || !Double.isFinite(expectedCount) || Double.isNaN(upper)
 					|| lower < 0.0 || expectedCount < lower || upper < expectedCount) {
 				throw new IllegalArgumentException("invalid bounds " + lower + "/" + expectedCount + "/" + upper);
 			}
 			int index = feature.ordinal();
 			low[index] = saturatedAdd(low[index], lower);
 			expected[index] = saturatedAdd(expected[index], expectedCount);
-			high[index] = saturatedAdd(high[index], upper);
+			high[index] = upperAdd(high[index], upper);
 			return this;
 		}
 
@@ -319,7 +327,7 @@ final class LmdbNativeCostVector {
 				int index = feature.ordinal();
 				low[index] = saturatedAdd(low[index], vector.low[index]);
 				expected[index] = saturatedAdd(expected[index], vector.expected[index]);
-				high[index] = saturatedAdd(high[index], vector.high[index]);
+				high[index] = upperAdd(high[index], vector.high[index]);
 			}
 			return this;
 		}

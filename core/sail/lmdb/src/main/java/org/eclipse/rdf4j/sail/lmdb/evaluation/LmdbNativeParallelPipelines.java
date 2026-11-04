@@ -270,9 +270,29 @@ final class LmdbNativeParallelPipelines {
 		// estRows is a ROWS quantity (gap-analysis C1): prorating a LIMIT slice against work units made the
 		// fraction sliceRows/totalWork vanishingly small and systematically underpriced parallel pipelines under
 		// LIMIT — the exact inversion the startup split above exists to prevent.
+		long boundMask = consumerRow.boundMask();
+		double outputRows = LmdbNativeWork.rowsOut(plan, consumerRow, boundMask);
+		// The opener admits this exact quoted group, or declines if capacity changed. Pricing the configured
+		// maximum instead would claim a speed-up from workers this candidate never owns under contention.
+		LmdbNativeCostVector streaming = LmdbNativePlanExecutionProfile
+				.profile(plan, consumerRow, boundMask, LmdbNativePlanExecutionProfile.Mode.BATCH)
+				.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(
+						LmdbNativeStaticPrior.ParallelShape.rows(plan, consumerRow, boundMask), workers))
+				// Consumer allocations are serial, and sampled output is neither their floor nor their ceiling.
+				.plus(LmdbNativeCostVectors.boundedRows(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION,
+						outputRows, LmdbNativeCostVectors.rowBounds(plan, consumerRow, boundMask)));
+		if (step.distinct && step.orderSlots.length == 0) {
+			// This ordinary producer leaves root ID-key deduplication to the serial consumer after worker replay.
+			streaming = streaming.plus(LmdbNativeCostVectors.boundedRows(
+					LmdbNativeCostVector.Feature.DISTINCT_UPDATE, outputRows,
+					LmdbNativeCostVectors.rowBounds(plan, consumerRow, boundMask)));
+		}
+		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D)
+				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers));
 		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
-				LmdbNativeWork.exact(startupCost), LmdbNativeWork.rowsOut(plan, consumerRow, consumerRow.boundMask()),
-				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, reservation::close);
+				LmdbNativeWork.exact(startupCost), outputRows,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, reservation::close)
+						.withCostQuote(new LmdbNativeCostQuote(startup, streaming, outputRows, false, false));
 	}
 
 	private static RowCursor open(ParallelCandidate candidate) throws IOException {

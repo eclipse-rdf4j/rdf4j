@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
@@ -412,21 +413,13 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		if (forced == null) {
 			return null;
 		}
-		int comma = forced.indexOf(',');
-		return (comma < 0 ? forced : forced.substring(0, comma)).trim();
+		List<String> options = LmdbNativeForceableStrategies.options(forced);
+		return options.isEmpty() ? null : options.get(0);
 	}
 
 	/** Whether a forced value, alone or as a preference list, names {@code tag} anywhere. */
 	private static boolean forcedIncludes(String forced, String tag) {
-		if (forced == null) {
-			return false;
-		}
-		for (String option : forced.split(",")) {
-			if (tag.equals(option.trim())) {
-				return true;
-			}
-		}
-		return false;
+		return LmdbNativeForceableStrategies.forces(forced, tag);
 	}
 
 	/**
@@ -972,10 +965,11 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	 * final answer. Null when the kernel declines; every later tier (ordered-factorized, top-K, spill sort — each free
 	 * to use the unordered kernel as its row producer) then runs unchanged.
 	 */
-	private List<BindingSet> tryEvaluateOrderedKernel(RowState row, AggContext values) {
+	private List<BindingSet> tryEvaluateOrderedKernel(RowState row, AggContext values, boolean interpreted,
+			boolean wildcard) {
 		try {
-			RowCursor cursor = LmdbNativeKernelExecution.tryOpenOrderedRows(arg, row, originalExpr, orderSlots,
-					orderAscending, limit, offset, strictCompare);
+			RowCursor cursor = LmdbNativeKernelExecution.tryOpenOrderedRowsSerial(arg, row, originalExpr, orderSlots,
+					orderAscending, limit, offset, strictCompare, interpreted, wildcard);
 			if (cursor == null) {
 				return null;
 			}
@@ -1488,7 +1482,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		// possibility of an alternative winning, so honoring a forced strategy requires skipping them.
 		String forcedStrategy = forcedExecutionStrategyName();
 		if (LmdbNativeFactorAlgebra.candidate(arg) && !SlotPlan.encounterOrderReplaySafe(arg)
-				&& LmdbNativeAttemptMetrics.PATH_PACKED_FTREE.equals(forcedLeader(forcedStrategy))) {
+				&& LmdbNativeForceableStrategies.matches(forcedLeader(forcedStrategy),
+						LmdbNativeAttemptMetrics.PATH_PACKED_FTREE + "(serial)")) {
 			LmdbNativeDispatchLoop.logDirect(originalExpr, "row/join serial dispatch",
 					LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 					"Effectful bag algebra is evaluated once, without speculative replay");
@@ -1541,7 +1536,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		{
 			LmdbNativeDispatchLoop.Selection<NativeUnorderedInput> selection = new LmdbNativeDispatchLoop<>(
 					LmdbNativeDecisionPoint.ROW, offers.strategies(), originalExpr)
-							.slice(consumableRows())
+							.slice(consumableRows(), distinct)
 							.sharedRow(row)
 							.forcing(forcedStrategy)
 							.dispatch(null);
@@ -1599,39 +1594,61 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 						: LmdbNativeCostVectors.sweepWork(row),
 				rows)
 				.ordered(true);
-		List<LmdbNativeStrategy<Void, List<BindingSet>>> strategies = new ArrayList<>(2);
-		// Exactly ONE of the two IR-kernel tags (kernel-interpreter plan, D1/M4): compiled when janino is
-		// enabled, interpreted when only the interpreter tier is available, neither when both are off.
-		String orderedKernelTag = LmdbNativeJaninoCodegen.enabled()
-				? LmdbNativeAttemptMetrics.PATH_IR_KERNEL
-				: LmdbNativeKernelInterpreter.enabled()
-						? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED
-						: null;
-		if (orderedKernelTag != null) {
-			strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, orderedKernelTag,
-					context -> LmdbNativeAdmission.of(LmdbNativeCandidate.of(orderedKernelTag, quote,
-							() -> tryEvaluateOrderedKernel(row, values)))));
+		List<LmdbNativeStrategy<Void, List<BindingSet>>> strategies = new ArrayList<>(5);
+		// A pending compiled kernel declines its own candidate. The independently offered interpreter can then
+		// serve under its actual tier, and neither serial candidate may silently open a parallel worker group.
+		boolean streamingKernel = LmdbNativeKernelExecution.orderedRowsMayStream(arg, row.boundMask(), orderSlots);
+		if (streamingKernel) {
+			if (LmdbNativeKernelExecution.wildcardIrCandidate(arg) && row.source.mayHaveWildcardViews()) {
+				addOrderedKernelStrategies(strategies, row, values, quote, true);
+			}
+			addOrderedKernelStrategies(strategies, row, values, quote, false);
 		}
 		String factorizedTag = emitCap == Long.MAX_VALUE
 				? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
 				: LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K;
 		LmdbNativeCostQuote factorizedQuote = orderedFactorizedQuote(row, emitCap, rows, quote);
 		strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, factorizedTag,
-				context -> LmdbNativeAdmission.of(LmdbNativeCandidate.of(factorizedTag, factorizedQuote,
-						() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap)))));
+				context -> factorizedQuote == null ? LmdbNativeAdmission.declined("not-multi-join")
+						: LmdbNativeAdmission.of(LmdbNativeCandidate.of(factorizedTag, factorizedQuote,
+								() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap)))));
 		return strategies;
+	}
+
+	private void addOrderedKernelStrategies(List<LmdbNativeStrategy<Void, List<BindingSet>>> strategies, RowState row,
+			AggContext values, LmdbNativeCostQuote quote, boolean wildcard) {
+		String staticDecline = LmdbNativeKernelExecution.hasFusionOpportunity(arg) ? null : "no-fusion-opportunity";
+		if (LmdbNativeJaninoCodegen.enabled()) {
+			String tag = wildcard ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD
+					: LmdbNativeAttemptMetrics.PATH_IR_KERNEL;
+			strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, tag,
+					context -> staticDecline != null ? LmdbNativeAdmission.declined(staticDecline)
+							: LmdbNativeAdmission.of(LmdbNativeCandidate.of(tag, quote,
+									() -> tryEvaluateOrderedKernel(row, values, false, wildcard)))));
+		}
+		if (LmdbNativeKernelInterpreter.enabled()) {
+			String tag = wildcard ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED
+					: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED;
+			strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, tag,
+					context -> staticDecline != null ? LmdbNativeAdmission.declined(staticDecline)
+							: LmdbNativeAdmission.of(LmdbNativeCandidate.of(tag, quote,
+									() -> tryEvaluateOrderedKernel(row, values, true, wildcard)))));
+		}
 	}
 
 	/**
 	 * The ordered factorized strategies' own quote, from the factorization {@link #tryEvaluateOrderedFactorized} would
 	 * run: the prefix's access per distinct probe key, a packed prefix row each, the sort (or the bounded heap of a
-	 * LIMIT) over the prefix rows and the expansion of the emitted rows only. Where that attempt would decline, the
-	 * input's work interval stays the quote.
+	 * LIMIT) over the prefix rows and the expansion of the emitted rows only. A missing join input is a static
+	 * admission refusal, reported as null. Other refusal conditions retain the input's work interval as their quote.
 	 */
 	private LmdbNativeCostQuote orderedFactorizedQuote(RowState row, long emitCap, double rows,
 			LmdbNativeCostQuote fallback) {
 		MultiJoinPlan input = orderedFactorizedInput();
-		if (!orderedFactorizedEnabled() || distinct || snapshotRows || input == null || input.children.length == 0
+		if (input == null) {
+			return null;
+		}
+		if (!orderedFactorizedEnabled() || distinct || snapshotRows || input.children.length == 0
 				|| !SlotPlan.encounterOrderReplaySafe(arg) || SlotPlan.requiresPhysicalCells(arg)
 				|| (arg.producedMask() & row.boundMask()) != 0L) {
 			return fallback;
@@ -1652,7 +1669,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	}
 
 	private void offerUnorderedStrategies(RowState row, NativeTupleDistinctPlan distinctPlan, MultiJoinPlan multiJoin,
-			boolean correlatedEntry, int[] retainedSlots, LmdbNativeCandidateOffers<NativeUnorderedInput> arbiter)
+			boolean correlatedEntry, int[] retainedSlots, LmdbNativeOfferBridge<NativeUnorderedInput> arbiter)
 			throws IOException {
 		if (orderSlots.length == 0) {
 			// Emission strategy, never a sort input (the ORDER BY materializer callers all carry orderSlots).
@@ -1683,11 +1700,18 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		// available
 		// when the caller explicitly forces packedFtree, but otherwise falls through to the ordinary native/IR ladder.
 		if (multiJoin != null) {
-			arbiter.offer(
-					() -> LmdbNativePackedFtree.proposeRows(multiJoin, row, retainedSlots, distinct, originalExpr));
+			arbiter.offer(LmdbNativePackedFtree.ROWS_SERIAL,
+					() -> LmdbNativePackedFtree.proposeRows((SlotPlan) multiJoin, row, retainedSlots, distinct,
+							originalExpr));
+			arbiter.offer(LmdbNativePackedFtree.ROWS_PARALLEL,
+					() -> LmdbNativePackedFtree.proposeParallelRows(multiJoin, row, retainedSlots, distinct,
+							originalExpr));
 		} else if (forcedIncludes(forcedExecutionStrategyName(), LmdbNativeAttemptMetrics.PATH_PACKED_FTREE)) {
-			arbiter.offer(
+			arbiter.offer(LmdbNativePackedFtree.ROWS_SERIAL,
 					() -> LmdbNativePackedFtree.proposeRows(arg, row, retainedSlots, distinct, originalExpr));
+			arbiter.offer(LmdbNativePackedFtree.ROWS_PARALLEL,
+					() -> LmdbNativePackedFtree.proposeParallelRows(arg, row, retainedSlots, distinct,
+							originalExpr));
 		}
 		arbiter.offer(() -> proposeFactorized(row, multiJoin, correlatedEntry, retainedSlots));
 		arbiter.offer(() -> proposeBatch(row, multiJoin, correlatedEntry));
@@ -1698,6 +1722,10 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		arbiter.offer(() -> wrapCursorProposal(row,
 				LmdbNativeKernelExecution.proposeParallelRows(arg, row, originalExpr, true), this::acceptKernel));
 		arbiter.offer(() -> wrapCursorProposal(row,
+				LmdbNativeKernelExecution.proposeWildcardRows(arg, row, originalExpr, false), this::acceptKernel));
+		arbiter.offer(() -> wrapCursorProposal(row,
+				LmdbNativeKernelExecution.proposeWildcardRows(arg, row, originalExpr, true), this::acceptKernel));
+		arbiter.offer(() -> wrapCursorProposal(row,
 				LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, false), this::acceptKernel));
 		arbiter.offer(() -> wrapCursorProposal(row,
 				LmdbNativeKernelExecution.proposeRows(arg, row, originalExpr, true), this::acceptKernel));
@@ -1705,27 +1733,33 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			// The DISTINCT-sinking kernel replaces input AND dedup in one cursor; it competes here instead of
 			// capturing by ladder position (which starved factorized/batch and generated no cost evidence). The
 			// ORDER BY materializer callers need non-distinct sort slots, hence the orderSlots gate.
+			LmdbNativeDistinctRowCostQuote.SharedInput distinctPricing = new LmdbNativeDistinctRowCostQuote.SharedInput(
+					arg, row, sourceSlots);
 			arbiter.offer(() -> wrapCursorProposal(row,
 					LmdbNativeKernelExecution.proposeParallelDistinctRows(arg, row, originalExpr, sourceSlots,
-							false),
+							false, distinctPricing),
 					this::acceptDistinctKernel));
 			arbiter.offer(() -> wrapCursorProposal(row,
 					LmdbNativeKernelExecution.proposeParallelDistinctRows(arg, row, originalExpr, sourceSlots,
-							true),
+							true, distinctPricing),
 					this::acceptDistinctKernel));
 			arbiter.offer(() -> wrapCursorProposal(row,
-					LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots, false),
+					LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots, false,
+							distinctPricing),
 					this::acceptDistinctKernel));
 			arbiter.offer(() -> wrapCursorProposal(row,
-					LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots, true),
+					LmdbNativeKernelExecution.proposeDistinctRows(arg, row, originalExpr, sourceSlots, true,
+							distinctPricing),
 					this::acceptDistinctKernel));
 		}
 		arbiter.offer(() -> !LmdbNativeAdaptiveFilterPlacement.canAttempt(this, row) ? null
 				: planProposal(
 						() -> acceptAdaptive(row, LmdbNativeAdaptiveFilterPlacement.tryOpen(this, row), multiJoin),
 						LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT, arg, row));
-		arbiter.offer(() -> planProposal(() -> acceptNested(row, arg.open(row), multiJoin),
-				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, arg, row));
+		arbiter.offer(() -> withOrdinaryRootDistinctTracker(
+				planProposal(() -> acceptNested(row, arg.open(row), multiJoin),
+						LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, arg, row),
+				row));
 		if (NativeExpressionDomainPolicy.hasCarrier(arg) && SlotPlan.encounterOrderReplaySafe(arg)) {
 			// Hash key construction, payload retention and possible spill I/O are not priced by the scalar
 			// compiler. Keep the complete alternative UNKNOWN; ordinary execution wins the static ladder.
@@ -1832,7 +1866,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				}
 			}
 			new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW, offers.strategies(), originalExpr)
-					.slice(consumableRows())
+					.slice(consumableRows(), distinct)
 					.label(orderSlots.length == 0 ? "row/join dispatch" : "row/join dispatch (ORDER BY fallback input)")
 					.forcing(forcedExecutionStrategyName())
 					.preview(null, directTag, directReason);
@@ -1867,9 +1901,14 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			return null;
 		}
 		double cost = factorized.proposalCost(row);
+		LmdbNativeCostVectors.FactorizedRowsProfile physical = factorized.physicalProfile(row);
+		LmdbNativeCostQuote quote = new LmdbNativeCostQuote(LmdbNativeCostVector.zero(), physical.streaming(),
+				estimatedRows(row), false, false, physical.existsOpens());
+		quote = unorderedRootConsumerQuote(quote, physical.emittedRows(), factorized.derived.order, row, 1,
+				physical.emittedRowsHigh());
 		return inputProposal(() -> acceptFactorized(row, factorized, metrics),
 				LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, workEstimate(cost), estimatedRows(row))
-						.withCostQuote(LmdbNativeCostQuote.streaming(factorized.costVector(row), estimatedRows(row)));
+						.withCostQuote(quote);
 	}
 
 	private LmdbNativeStrategyProposal<NativeUnorderedInput> proposeBatch(RowState row, MultiJoinPlan multiJoin,
@@ -1893,9 +1932,15 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				: LmdbWildcardPredicateBatch.propose(batchJoin,
 						row, capacity, distinct, sourceSlots, orderSlots);
 		if (proposal == null && multiJoin == null) {
-			return planProposal(() -> openDirectBatch(row, capacity), LmdbNativeAttemptMetrics.PATH_BATCH, arg,
-					row, LmdbNativeCostVector.Feature.BATCH_ROW);
+			boolean directPatternBatch = arg instanceof PatternPlan pattern && pattern.p.isConstant();
+			LmdbNativeStrategyProposal<NativeUnorderedInput> direct = planProposal(
+					() -> openDirectBatch(row, capacity), LmdbNativeAttemptMetrics.PATH_BATCH, arg,
+					row, LmdbNativeCostVector.Feature.BATCH_ROW, directPatternBatch ? capacity : 1);
+			// Composed wildcard batches can be exposed as scalar cursors. Only this plain fixed-predicate
+			// pattern proves that the consumer filters a complete selected batch before returning its first key.
+			return directPatternBatch ? withOrdinaryRootDistinctTracker(direct, row, capacity) : direct;
 		}
+		boolean ordinaryBatch = proposal == null;
 		if (proposal == null) {
 			proposal = multiJoin.proposeBatch(row, capacity);
 		}
@@ -1915,7 +1960,130 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		}, selectedProposal.work, selectedProposal.startupWork, selectedProposal.estRows, selectedProposal.tag,
 				selectedProposal::close).withOptionalPlanningWork(selectedProposal.planningWork());
 		// the merge and hash joins quote their own access work; the wrapper must carry it, not re-derive rows
-		return selectedProposal.costQuote() == null ? wrapped : wrapped.withCostQuote(selectedProposal.costQuote());
+		LmdbNativeCostQuote quote = selectedProposal.costQuote();
+		if (quote != null && ordinaryBatch && distinct) {
+			quote = unorderedRootConsumerQuote(quote, quote.outputRows(), multiJoin.derivedPlan(row).order, row,
+					capacity, LmdbNativeCostVectors.rowBounds(multiJoin, row, row.boundMask()).high());
+		} else if (quote != null && ordinaryBatch && orderSlots.length == 0) {
+			// Ordinary merge/hash batches expose native IDs; this root allocates the returned BindingSets. A
+			// sampled output count is their expectation, never an allocation floor or complete-run ceiling.
+			LmdbNativeCostVector materialization = LmdbNativeCostVectors.boundedRows(
+					LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, quote.outputRows(),
+					LmdbNativeCostVectors.rowBounds(multiJoin, row, row.boundMask()));
+			quote = new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(materialization),
+					quote.outputRows(),
+					quote.ordered(), quote.distinct(), quote.chunked());
+		}
+		return quote == null ? wrapped : wrapped.withCostQuote(quote);
+	}
+
+	/**
+	 * The unordered root deduplicates native IDs before constructing BindingSets. A factorized COUNT cursor also
+	 * replays the same BindingSet for its multiplicity. Neither operation changes the producer's logical demand
+	 * contract: retain outputRows and distinct certification, and price the actual consumer boundary separately.
+	 * Wildcard-owned DISTINCT and ordered materializers have their own boundaries and do not enter here.
+	 */
+	private LmdbNativeCostQuote unorderedRootConsumerQuote(LmdbNativeCostQuote quote, double physicalRows,
+			SlotPlan[] producerOrder, RowState row, int consumerBatchSize) {
+		return unorderedRootConsumerQuote(quote, physicalRows, producerOrder, row, consumerBatchSize, Double.NaN);
+	}
+
+	private LmdbNativeCostQuote unorderedRootConsumerQuote(LmdbNativeCostQuote quote, double physicalRows,
+			SlotPlan[] producerOrder, RowState row, int consumerBatchSize, double physicalRowsHigh) {
+		if (orderSlots.length != 0) {
+			return quote;
+		}
+		double demand = consumableRows();
+		if (!distinct && demand >= 0D && demand < quote.outputRows()) {
+			// A complete-run COUNT average does not locate its multiplicities within a requested slice. Retain
+			// the logical-row expectation: every returned row can need its own BindingSet, even the first replay.
+			// That expectation is not an allocation floor: replay shares objects, and OFFSET may emit nothing.
+			LmdbNativeCostVector materialization = LmdbNativeCostVectors.boundedRows(
+					LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, quote.outputRows(),
+					new LmdbNativeWork.RowBounds(0D, physicalRowsHigh));
+			return new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(materialization), quote.outputRows(),
+					quote.ordered(), quote.distinct(), quote.chunked());
+		}
+		double inputs = Double.isFinite(physicalRows) && physicalRows >= 0D ? physicalRows : quote.outputRows();
+		if (distinct && offset == 0L && limit == 1L) {
+			// This root request stops after its first key. Specialize only its bounded consumer: one scalar
+			// tracker input, or the first nonempty selected batch, precedes at most one BindingSet allocation.
+			// These are startup obligations of this request, not inflated full-run totals used to cancel a slice
+			// fraction. Producer work, logical outputRows and uniqueness certification stay untouched.
+			boolean empty = quote.outputRows() == 0D && inputs == 0D;
+			double firstInputs = empty ? 0D
+					: Double.isFinite(inputs) && inputs > 0D
+							? Math.min(consumerBatchSize, Math.ceil(inputs))
+							: consumerBatchSize;
+			LmdbNativeCostVector firstConsumer = LmdbNativeCostVector.bounds(
+					LmdbNativeCostVector.Feature.DISTINCT_UPDATE, 0D, firstInputs, consumerBatchSize)
+					.plus(LmdbNativeCostVector.bounds(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION,
+							0D, empty ? 0D : 1D, 1D));
+			return new LmdbNativeCostQuote(quote.startup().plus(firstConsumer), quote.streaming(), quote.outputRows(),
+					quote.ordered(), quote.distinct(), quote.chunked());
+		}
+		// A sampled logical output estimate is not the physical producer's ceiling. Factorized plans carry
+		// their raw-prefix/ordinary-suffix bound explicitly, without changing logical demand or expected work.
+		double ceiling = physicalRowsHigh >= 0D ? physicalRowsHigh
+				: Double.isFinite(quote.outputRows()) && quote.outputRows() >= 0D ? quote.outputRows()
+						: LmdbNativeCostQuote.UNBOUNDED_COUNT;
+		LmdbNativeCostVector consumer = LmdbNativeCostVector.zero();
+		if (distinct) {
+			// A keys-only view or factorized tail can decline at bind time and enumerate the raw suffix instead.
+			// Preferred physical inputs set the expectation, never a ceiling on the root tracker's actual work.
+			boolean knownInputs = Double.isFinite(inputs) && inputs >= 0D;
+			consumer = LmdbNativeCostVector.bounds(LmdbNativeCostVector.Feature.DISTINCT_UPDATE, 0D,
+					knownInputs ? inputs : 0D,
+					Math.max(ceiling, knownInputs ? inputs : LmdbNativeCostQuote.UNBOUNDED_COUNT));
+		}
+		double emitted = distinct ? unorderedDistinctKeys(producerOrder, row, inputs) : inputs;
+		if (!Double.isFinite(emitted) || emitted < 0D) {
+			// An unknown key domain cannot earn deduplication credit or a new LIMIT-consumption certificate.
+			emitted = inputs;
+		}
+		if (!Double.isFinite(emitted) || emitted < 0D) {
+			emitted = 0D;
+			ceiling = Math.max(ceiling, LmdbNativeCostQuote.UNBOUNDED_COUNT);
+		}
+		consumer = consumer.plus(LmdbNativeCostVector.bounds(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION,
+				0D, emitted, Math.max(ceiling, emitted)));
+		return new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(consumer), quote.outputRows(),
+				quote.ordered(), quote.distinct(), quote.chunked());
+	}
+
+	/** Retained key domains from the first producer of each slot; missing or nullable domains remain unknown. */
+	private double unorderedDistinctKeys(SlotPlan[] producerOrder, RowState row, double inputRows) {
+		if (!Double.isFinite(inputRows) || inputRows < 0D) {
+			return Double.NaN;
+		}
+		double keys = 1D;
+		long seen = row.boundMask();
+		for (int slot : sourceSlots) {
+			if (slot < 0 || slot >= 64) {
+				return Double.NaN;
+			}
+			long bit = 1L << slot;
+			if ((seen & bit) != 0L) {
+				continue;
+			}
+			seen |= bit;
+			double domain = Double.NaN;
+			for (SlotPlan producer : producerOrder) {
+				if ((producer.producedMask() & bit) == 0L) {
+					continue;
+				}
+				if (producer instanceof PatternPlan pattern && pattern.p.isConstant()
+						&& (pattern.s.slot == slot || pattern.o.slot == slot)) {
+					domain = LmdbNativeFanOutFacts.keyDomain(row.source, pattern.p.constant, pattern.s.slot == slot);
+				}
+				break;
+			}
+			if (!Double.isFinite(domain) || domain < 0D) {
+				return Double.NaN;
+			}
+			keys = Math.min(Double.MAX_VALUE, keys * domain);
+		}
+		return Math.min(inputRows, keys);
 	}
 
 	private NativeUnorderedInput openDirectBatch(RowState row, int capacity) throws IOException {
@@ -2048,7 +2216,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		if (proposal == null) {
 			return null;
 		}
-		return new LmdbNativeStrategyProposal<>(() -> {
+		return withOrdinaryRootDistinctTracker(new LmdbNativeStrategyProposal<>(() -> {
 			try {
 				return accepter.apply(row, proposal.open());
 			} finally {
@@ -2056,7 +2224,49 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			}
 		}, proposal.work, proposal.startupWork, proposal.estRows, proposal.tag, proposal::close)
 				.withOptionalPlanningWork(proposal.planningWork())
-				.withCostQuote(proposal.costQuote() != null ? proposal.costQuote() : cursorQuote(proposal.tag, row));
+				.withCostQuote(proposal.costQuote() != null ? proposal.costQuote()
+						: cursorQuote(proposal.tag, row, proposal.parallelWorkers())),
+				row);
+	}
+
+	/** Add the consumer-owned tracker after pricing an ordinary producer. */
+	private LmdbNativeStrategyProposal<NativeUnorderedInput> withOrdinaryRootDistinctTracker(
+			LmdbNativeStrategyProposal<NativeUnorderedInput> proposal, RowState row) {
+		return withOrdinaryRootDistinctTracker(proposal, row, 1);
+	}
+
+	private LmdbNativeStrategyProposal<NativeUnorderedInput> withOrdinaryRootDistinctTracker(
+			LmdbNativeStrategyProposal<NativeUnorderedInput> proposal, RowState row, int consumerBatchSize) {
+		if (!distinct || orderSlots.length != 0 || limit == 0L
+				|| !(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP.equals(proposal.tag)
+						|| LmdbNativeAttemptMetrics.PATH_BATCH.equals(proposal.tag)
+						|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL.equals(proposal.tag)
+						|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED.equals(proposal.tag)
+						|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL.equals(proposal.tag)
+						|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED.equals(proposal.tag)
+						|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD.equals(proposal.tag)
+						|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED.equals(proposal.tag))) {
+			return proposal;
+		}
+		LmdbNativeCostQuote quote = proposal.costQuote();
+		LmdbNativeWork.RowBounds population = LmdbNativeCostVectors.rowBounds(arg, row, row.boundMask());
+		boolean firstKey = offset == 0L && limit == 1L;
+		// A scalar cursor exposes one input at a time; a direct batch filters all selected inputs before
+		// returning its first key. Neither consumer boundary follows the producer's private prefetch width.
+		// Beyond that first key, duplicates can require the complete raw stream to satisfy LIMIT/OFFSET.
+		double firstHigh = population.high() == 0D ? 0D : consumerBatchSize;
+		double firstInput = firstHigh == 0D ? 0D
+				: quote.outputRows() > 0D && Double.isFinite(quote.outputRows())
+						? Math.min(consumerBatchSize, Math.ceil(quote.outputRows()))
+						: consumerBatchSize;
+		LmdbNativeCostVector tracker = firstKey
+				? LmdbNativeCostVector.bounds(LmdbNativeCostVector.Feature.DISTINCT_UPDATE, 0D, firstInput, firstHigh)
+				: LmdbNativeCostVectors.boundedRows(LmdbNativeCostVector.Feature.DISTINCT_UPDATE,
+						quote.outputRows(), population);
+		return proposal.withCostQuote(new LmdbNativeCostQuote(
+				firstKey ? quote.startup().plus(tracker) : quote.startup(),
+				firstKey ? quote.streaming() : quote.streaming().plus(tracker), quote.outputRows(),
+				quote.ordered(), quote.distinct(), quote.chunked()));
 	}
 
 	private static LmdbNativeStrategyProposal<NativeUnorderedInput> inputProposal(
@@ -2076,16 +2286,32 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	private static LmdbNativeStrategyProposal<NativeUnorderedInput> planProposal(
 			LmdbNativeStrategyProposal.Opener<NativeUnorderedInput> opener, String tag, SlotPlan plan, RowState row,
 			LmdbNativeCostVector.Feature rowFeature) {
+		return planProposal(opener, tag, plan, row, rowFeature, 1);
+	}
+
+	private static LmdbNativeStrategyProposal<NativeUnorderedInput> planProposal(
+			LmdbNativeStrategyProposal.Opener<NativeUnorderedInput> opener, String tag, SlotPlan plan, RowState row,
+			LmdbNativeCostVector.Feature rowFeature, int producerBatchSize) {
 		long boundMask = row.boundMask();
 		double rows = LmdbNativeWork.rowsOut(plan, row, boundMask);
 		// priced as the cursor runs it (MINUS, OPTIONAL, EXISTS and filters by their executors' gates)
 		LmdbNativePlanExecutionProfile.Mode mode = rowFeature == LmdbNativeCostVector.Feature.BATCH_ROW
 				? LmdbNativePlanExecutionProfile.Mode.BATCH
 				: LmdbNativePlanExecutionProfile.Mode.SEQUENTIAL;
-		return inputProposal(opener, tag, plan.estimateWork(row, boundMask), rows)
-				.withPlanningWork(LmdbNativeWork.planning(plan, row, boundMask))
-				.withCostQuote(LmdbNativeCostQuote.streaming(
-						LmdbNativePlanExecutionProfile.profile(plan, row, boundMask, mode), rows));
+		LmdbNativeStrategyProposal<NativeUnorderedInput> proposal = inputProposal(opener, tag,
+				plan.estimateWork(row, boundMask), rows)
+						.withPlanningWork(LmdbNativeWork.planning(plan, row, boundMask));
+		LmdbNativeCostVector producer = LmdbNativePlanExecutionProfile.profile(plan, row, boundMask, mode);
+		LmdbNativeCostVector materialization = LmdbNativeCostVectors.boundedRows(
+				LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, rows,
+				LmdbNativeCostVectors.rowBounds(plan, row, boundMask));
+		// The plain direct pattern fills a complete selected batch before exposing its first output.
+		// Consumer BindingSets still follow requested demand, independently of that producer buffer.
+		LmdbNativeCostQuote quote = producerBatchSize > 1 && rows > 0D && Double.isFinite(rows)
+				? new LmdbNativeCostQuote(LmdbNativeCostVector.zero(), materialization, rows, false, false,
+						new LmdbNativeCostQuote.ChunkedWork(producer, rows, producerBatchSize))
+				: LmdbNativeCostQuote.streaming(producer.plus(materialization), rows);
+		return proposal.withCostQuote(quote);
 	}
 
 	/**
@@ -2093,13 +2319,28 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	 * interpreted tiers an interpreted row, pipelines a batch row; parallel variants divide the streaming part by the
 	 * worker count and pay one worker start per worker; DISTINCT-sinking variants pay a distinct update per row.
 	 */
-	private LmdbNativeCostQuote cursorQuote(String tag, RowState row) {
+	private LmdbNativeCostQuote cursorQuote(String tag, RowState row, int quotedWorkers) {
 		long boundMask = row.boundMask();
 		boolean pipelines = LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES.equals(tag);
 		LmdbNativeCostVector.Feature rowFeature = pipelines ? LmdbNativeCostVector.Feature.BATCH_ROW
 				: tag.contains("Interpreted") ? LmdbNativeCostVector.Feature.INTERPRETED_ROW
 						: LmdbNativeCostVector.Feature.GENERATED_ROW;
 		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
+		boolean ordinarySerial = LmdbNativeAttemptMetrics.PATH_IR_KERNEL.equals(tag)
+				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED.equals(tag);
+		boolean wildcardSerial = LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD.equals(tag)
+				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED.equals(tag);
+		boolean ordinaryParallel = LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL.equals(tag)
+				|| LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED.equals(tag);
+		if ((ordinarySerial || ordinaryParallel) && orderSlots.length == 0) {
+			LmdbNativeCostQuote hash = ordinarySerial
+					? LmdbNativeKernelHashCostQuote.quote(arg, row, rowFeature, rows,
+							LmdbNativeKernelExecution.rowFillSize(replaySafe))
+					: LmdbNativeKernelHashCostQuote.parallelQuote(arg, row, rowFeature, rows, quotedWorkers);
+			if (hash != null) {
+				return hash;
+			}
+		}
 		// a kernel lowers EXISTS and MINUS bodies to witnesses and OPTIONAL to correlated probes; a pipeline runs
 		// the batch cursors; the interpreted tier walks the same IR as the compiled one
 		LmdbNativeCostVector streaming = pipelines
@@ -2108,16 +2349,89 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				: LmdbNativePlanExecutionProfile.kernelVector(arg, row, boundMask, rowFeature);
 		if (tag.contains("Distinct")) {
 			streaming = streaming
-					.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.DISTINCT_UPDATE, rows));
+					.plus(LmdbNativeCostVectors.boundedRows(LmdbNativeCostVector.Feature.DISTINCT_UPDATE, rows,
+							LmdbNativeCostVectors.rowBounds(arg, row, boundMask)));
 		}
 		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D);
+		int workers = 1;
 		if (pipelines || tag.contains("Parallel")) {
-			int workers = Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers());
+			workers = quotedWorkers > 0 ? quotedWorkers
+					: Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers());
 			streaming = streaming.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(
 					LmdbNativeStaticPrior.ParallelShape.rows(arg, row, boundMask), workers));
 			startup = startup.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers));
 		}
-		return new LmdbNativeCostQuote(startup, streaming, rows, false, false);
+		// Consumer output is not worker-private and does not inherit producer-page rounding. A sampled output
+		// count is only its expectation, never a floor or a complete-open ceiling (including zero/unknown samples).
+		LmdbNativeCostVector materialization = LmdbNativeCostVectors.boundedRows(
+				LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, rows,
+				LmdbNativeCostVectors.rowBounds(arg, row, boundMask));
+		// Both serial families use the same buffered KernelRowCursor. A wildcard-view family is not permission
+		// to quote fractional producer work before that buffer has been filled.
+		int fillRows = ordinarySerial || wildcardSerial ? LmdbNativeKernelExecution.rowFillSize(replaySafe)
+				: ordinaryParallel ? parallelRowPageSize(arg, row, rows, workers) : 0;
+		if (orderSlots.length == 0 && fillRows > 1 && onlyBufferedPatternWork(arg)
+				&& rows > 0D && Double.isFinite(rows)) {
+			// The row bridge fills a complete producer buffer before exposing its first row. BindingSet output
+			// still follows consumed demand in its explicit streaming interval, never rounded to this buffer.
+			// A parallel page is private producer work, already speedup-scaled, not one page per worker.
+			return new LmdbNativeCostQuote(startup, materialization, rows, false, false,
+					new LmdbNativeCostQuote.ChunkedWork(streaming, rows, fillRows));
+		}
+		return new LmdbNativeCostQuote(startup, streaming.plus(materialization), rows, false, false);
+	}
+
+	/**
+	 * An expected page size without speculative IR lowering. For this plain unbound two-arm star every possible root is
+	 * one of its predicate adjacencies. Require both directions of both predicates to have the same exact key count, so
+	 * join ordering, hash selection and producer orientation cannot change the window count. Other roots and residual
+	 * filters keep their existing quote until their physical output layout is known.
+	 */
+	static int parallelRowPageSize(SlotPlan plan, RowState row, double outputRows, int workers) {
+		if (workers < 2 || !(outputRows > 0D) || !Double.isFinite(outputRows)
+				|| row.source == null || row.boundMask() != 0L
+				|| !(plan instanceof MultiJoinPlan join) || join.filters.length != 0 || join.children.length != 2
+				|| !(join.children[0] instanceof PatternPlan first)
+				|| !(join.children[1] instanceof PatternPlan second)
+				|| !plainParallelPagePattern(first) || !plainParallelPagePattern(second)
+				|| first.s.slot != second.s.slot || first.o.slot == second.o.slot) {
+			return 0;
+		}
+		long rootKeys = -1L;
+		for (SlotPlan child : join.children) {
+			PatternPlan pattern = (PatternPlan) child;
+			for (int direction = 0; direction < 2; direction++) {
+				OptionalLong keys = row.source.adjacencyKeyDomainCardinality(pattern.p.constant, direction == 0);
+				if (keys.isEmpty() || keys.getAsLong() <= 0L || rootKeys >= 0L && rootKeys != keys.getAsLong()) {
+					return 0;
+				}
+				rootKeys = keys.getAsLong();
+			}
+		}
+		return LmdbNativeParallelKernelRows.expectedOutputPageRows(outputRows, rootKeys, workers);
+	}
+
+	private static boolean plainParallelPagePattern(PatternPlan pattern) {
+		return pattern.s.hasSlot() && !pattern.s.isConstant() && pattern.o.hasSlot() && !pattern.o.isConstant()
+				&& pattern.p.isConstant() && !pattern.p.hasSlot() && !pattern.hasRepeatedSlot()
+				&& !pattern.c.hasSlot() && !pattern.c.isConstant() && !pattern.contexts.isFixed()
+				&& !pattern.namedContextScope && pattern.range == null && pattern.statementOrder == null;
+	}
+
+	/** Other shapes can retain predicates evaluated by the bridge only as buffered rows are consumed. */
+	private static boolean onlyBufferedPatternWork(SlotPlan plan) {
+		if (plan instanceof PatternPlan) {
+			return true;
+		}
+		if (!(plan instanceof MultiJoinPlan multiJoin) || multiJoin.filters.length != 0) {
+			return false;
+		}
+		for (SlotPlan child : multiJoin.children) {
+			if (!(child instanceof PatternPlan)) {
+				return false;
+			}
+		}
+		return multiJoin.children.length > 0;
 	}
 
 	private static LmdbNativeWork workEstimate(double estimate) {
@@ -2140,7 +2454,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	}
 
 	/**
-	 * Rows a consumer of this producer can possibly take, or a negative value when unbounded.
+	 * Rows or distinct keys the consumer can take, or a negative value when unbounded. The dispatch translates a
+	 * distinct-key budget to each candidate's output contract before pricing its work.
 	 * <p>
 	 * Only meaningful without ORDER BY. Under a sort the slice is applied <em>after</em> ordering ({@code evaluateAll}
 	 * caps at {@code offset + limit} once the rows are sorted), so the producer must still emit everything and

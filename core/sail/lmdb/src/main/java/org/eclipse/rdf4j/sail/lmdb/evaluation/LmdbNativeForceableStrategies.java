@@ -231,10 +231,60 @@ public final class LmdbNativeForceableStrategies {
 	/**
 	 * Whether {@code tag} is a name a caller may legally pass to {@code LmdbNativeDispatchLoop#forcing(String)}. The
 	 * spellings that mean "do not force anything" are not themselves forceable, so they are not included here; callers
-	 * must rule them out with {@link #isNoForcing(String)} before calling this method.
+	 * must rule them out with {@link #isNoForcing(String)} before calling this method. A known family followed by a
+	 * balanced parenthesized suffix names an exact variant; dispatch still verifies that the variant is admitted.
 	 */
 	public static boolean isForceable(String tag) {
-		return tag != null && DESCRIPTIONS.containsKey(tag);
+		if (tag == null) {
+			return false;
+		}
+		if (DESCRIPTIONS.containsKey(tag)) {
+			return true;
+		}
+		int opening = tag.indexOf('(');
+		if (opening <= 0 || !tag.endsWith(")") || tag.substring(opening + 1, tag.length() - 1).isBlank()
+				|| !DESCRIPTIONS.containsKey(tag.substring(0, opening))) {
+			return false;
+		}
+		int depth = 0;
+		for (int i = opening; i < tag.length(); i++) {
+			char character = tag.charAt(i);
+			if (character == '(') {
+				depth++;
+			} else if (character == ')' && (--depth < 0 || depth == 0 && i != tag.length() - 1)) {
+				return false;
+			}
+		}
+		return depth == 0;
+	}
+
+	/** Preference separators are top-level commas; commas inside an exact variant belong to its name. */
+	static List<String> options(String requested) {
+		if (isNoForcing(requested)) {
+			return List.of();
+		}
+		List<String> options = new ArrayList<>();
+		int start = 0;
+		int depth = 0;
+		for (int i = 0; i < requested.length(); i++) {
+			char character = requested.charAt(i);
+			if (character == '(') {
+				depth++;
+			} else if (character == ')') {
+				depth--;
+			} else if (character == ',' && depth == 0) {
+				options.add(requested.substring(start, i).trim());
+				start = i + 1;
+			}
+		}
+		options.add(requested.substring(start).trim());
+		return List.copyOf(options);
+	}
+
+	/** A bare name selects its family; a decorated name selects precisely that admitted variant. */
+	static boolean matches(String requested, String candidate) {
+		return requested != null && (requested.equals(candidate)
+				|| requested.indexOf('(') < 0 && requested.equals(LmdbNativeCandidate.baseId(candidate)));
 	}
 
 	/**
@@ -246,10 +296,10 @@ public final class LmdbNativeForceableStrategies {
 		if (isNoForcing(requested)) {
 			return false;
 		}
-		for (String option : requested.split(",")) {
-			String trimmed = option.trim();
+		for (String option : options(requested)) {
 			for (String tag : tags) {
-				if (trimmed.equals(tag)) {
+				// Admission asks whether its family is requested; dispatch enforces an exact variant afterward.
+				if (matches(option, tag) || matches(tag, option)) {
 					return true;
 				}
 			}

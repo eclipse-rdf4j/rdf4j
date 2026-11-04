@@ -441,8 +441,11 @@ final class LmdbNativeFactorizedRows {
 			return null;
 		}
 		PatternPlan root = (PatternPlan) order[0];
-		if (!root.p.isConstant() || root.hasRepeatedSlot() || root.namedContextScope || root.contexts.isFixed()
-				|| root.c.isConstant() || root.c.hasSlot() || root.rejectsNullContextAtBind()) {
+		// Enumerating adjacency keys bypasses the root's exact range filter and cannot prove that a run has an
+		// accepted edge. Keep ranged roots on the ordinary prefix cursor.
+		if (root.range != null || !root.p.isConstant() || root.hasRepeatedSlot() || root.namedContextScope
+				|| root.contexts.isFixed() || root.c.isConstant() || root.c.hasSlot()
+				|| root.rejectsNullContextAtBind()) {
 			return null;
 		}
 		if (!root.s.hasSlot() || !root.o.hasSlot()) {
@@ -755,7 +758,12 @@ final class LmdbNativeFactorizedRows {
 	 */
 	/** The executor's own work: prefix chain, memoised branches per distinct key, a batch row per emitted row. */
 	LmdbNativeCostVector costVector(RowState row) {
-		return LmdbNativeCostVectors.factorizedRows(derived.order, flatCount, branchRoles(),
+		return physicalProfile(row).vector();
+	}
+
+	/** COUNT changes logical multiplicity, not the number of RDF BindingSets the row consumer constructs. */
+	LmdbNativeCostVectors.FactorizedRowsProfile physicalProfile(RowState row) {
+		return LmdbNativeCostVectors.factorizedRowsProfile(derived.order, flatCount, branchRoles(),
 				keysOnlyRoot == null ? Double.NaN : keysOnlyRoot.distinctKeyEstimate(row), row, row.boundMask());
 	}
 

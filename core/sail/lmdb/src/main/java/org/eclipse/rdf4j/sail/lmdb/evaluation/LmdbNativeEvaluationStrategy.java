@@ -202,7 +202,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		String requested = currentForcedExecutionStrategy();
 		if (requested != null) {
 			// a comma-separated list is a preference order: the first entry admitted at a decision point is forced
-			for (String option : requested.split(",")) {
+			for (String option : LmdbNativeForceableStrategies.options(requested)) {
 				if (!LmdbNativeForceableStrategies.isForceable(option.trim())) {
 					throw new QueryEvaluationException("Unknown LMDB execution strategy '" + option.trim()
 							+ "'. Valid values: (empty), " + LmdbNativeForceableStrategies.NOT_ACTIVATED + ", "

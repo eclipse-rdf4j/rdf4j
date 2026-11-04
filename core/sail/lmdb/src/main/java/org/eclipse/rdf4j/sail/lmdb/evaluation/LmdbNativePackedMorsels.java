@@ -36,9 +36,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtree.Runtime;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 
 /**
- * Morsel execution inside packedftree/packedftreeaggregate, not a competing execution strategy. Workers retain their
- * packed runtimes, scalar evaluators and aggregate state across claims. A root occurrence and all its OPTIONAL arms
- * stay together. Only final projected ID/weight pages cross threads; borrowed factors never outlive their worker.
+ * Morsel execution for the parallel packed f-tree variants. Workers retain their packed runtimes, scalar evaluators and
+ * aggregate state across claims. A root occurrence and all its OPTIONAL arms stay together. Only final projected
+ * ID/weight pages cross threads; borrowed factors never outlive their worker.
  *
  * <p>
  * Partitioning distributes only along the additive left spine: UNION arms, row-local FILTER/BIND, and the mandatory
@@ -61,6 +61,10 @@ final class LmdbNativePackedMorsels {
 		return Math.max(1L, Long.getLong(ROWS_PROPERTY, LmdbNativePackedFtree.parallelMinRootsPerPartition()));
 	}
 
+	static int outputPageRows() {
+		return Math.max(1, Math.min(4096, Integer.getInteger(OUTPUT_ROWS_PROPERTY, 256)));
+	}
+
 	static boolean eligible(SlotPlan plan, RowState row) {
 		return LmdbNativePackedFtree.enabled() && LmdbNativePackedFtree.parallelGroupsEnabled()
 				&& LmdbNativeParallelPipelines.enabled() && LmdbNativeParallelPipelines.configuredThreads() >= 2
@@ -69,12 +73,93 @@ final class LmdbNativePackedMorsels {
 				&& SlotPlan.encounterOrderReplaySafe(plan) && forkable(plan);
 	}
 
+	/** These reducers update one synchronized store rather than merge worker-local partial tables. */
+	static boolean usesSharedAggregateStore(AggregateSpec[] aggregates) {
+		for (AggregateSpec spec : aggregates) {
+			if (spec.kind != AggKind.COUNT || spec.distinct) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Capacity is quoted without opening probes, snapshots, worker tasks or filter leases. */
+	static Capacity quoteCapacity(SlotPlan plan, RowState row) {
+		if (!eligible(plan, row) || row.source == null)
+			return null;
+		PartitionWork work = partitionWork(plan, row);
+		if (work.units < 2D || work.roots / 2D < LmdbNativePackedFtree.parallelMinRootsPerPartition())
+			return null;
+		int desired = LmdbNativeParallelPipelines.configuredThreads();
+		if (Double.isFinite(work.units))
+			desired = (int) Math.min(desired, work.units);
+		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
+				.quoteTasks(true, desired);
+		return reservation == null ? null : new Capacity(reservation, work.roots);
+	}
+
+	record Capacity(LmdbNativeParallelPipelines.TaskReservation reservation, double roots) implements AutoCloseable {
+		int workers() {
+			return reservation.grantedWorkers();
+		}
+
+		@Override
+		public void close() {
+			reservation.close();
+		}
+	}
+
+	private record PartitionWork(double roots, double units) {
+		PartitionWork plus(PartitionWork other) {
+			return new PartitionWork(roots + other.roots, units + other.units);
+		}
+	}
+
+	/** The same additive left spine as {@link #split}, using metadata rather than opening root producers. */
+	private static PartitionWork partitionWork(SlotPlan plan, RowState row) {
+		if (plan instanceof UnionPlan union)
+			return partitionWork(union.left, row).plus(partitionWork(union.right, row));
+		if (plan instanceof FilterPlan filter)
+			return partitionWork(filter.arg, row);
+		if (plan instanceof EntryBindingCompatibilityPlan entry)
+			return partitionWork(entry.arg, row);
+		if (plan instanceof ExtensionPlan extension)
+			return partitionWork(extension.arg, row);
+		if (plan instanceof JoinPlan join)
+			return partitionWork(join.left, row);
+		if (plan instanceof LeftJoinPlan optional)
+			return partitionWork(optional.left, row);
+		if (plan instanceof MultiJoinPlan multi && !patternsOnly(multi)) {
+			SlotPlan[] order = multi.derivedPlan(row).order;
+			return order.length == 0 ? new PartitionWork(1D, 1D) : partitionWork(order[0], row);
+		}
+		MultiJoinPlan anchor = plan instanceof MultiJoinPlan multi ? multi
+				: plan instanceof PatternPlan pattern
+						? new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0])
+						: null;
+		MultiJoinPlan specialized = anchor == null ? null : specialize(anchor, row);
+		Plan packed = specialized == null ? null
+				: LmdbNativePackedFtree.Planner.plan(specialized, row, slotsOf(specialized.producedMask()));
+		if (packed == null || packed.root.seed == null)
+			return new PartitionWork(1D, 1D);
+		double roots = LmdbNativePackedFtreeQuote.rootCount(packed, row);
+		return new PartitionWork(roots, Math.ceil(roots / morselRows()));
+	}
+
 	static FactorizedRowCursor tryRows(SlotPlan plan, RowState row, int[] outputs, boolean distinct,
 			TupleExpr explainTarget) throws IOException {
-		if (!eligible(plan, row))
+		return tryRows(plan, row, outputs, distinct, explainTarget, null);
+	}
+
+	static FactorizedRowCursor tryRows(SlotPlan plan, RowState row, int[] outputs, boolean distinct,
+			TupleExpr explainTarget, LmdbNativeParallelPipelines.TaskReservation reservation) throws IOException {
+		if (!eligible(plan, row)) {
+			if (reservation != null)
+				reservation.close();
 			return null;
+		}
 		Session session = Session.open(plan, row, new int[][] { outputs.clone() }, new boolean[] { !distinct },
-				null, explainTarget);
+				null, explainTarget, reservation);
 		if (session == null)
 			return null;
 		try {
@@ -90,13 +175,25 @@ final class LmdbNativePackedMorsels {
 	/** The caller supplies a filter lease if it may replay after EncounterOrderFallback. */
 	static List<BindingSet> tryAggregate(SlotPlan plan, RowState row, int[] groups, AggregateSpec[] aggregates,
 			NativeGroupIteration owner, TupleExpr explainTarget) throws IOException {
-		if (!eligible(plan, row))
+		return tryAggregate(plan, row, groups, aggregates, owner, explainTarget, null);
+	}
+
+	static List<BindingSet> tryAggregate(SlotPlan plan, RowState row, int[] groups, AggregateSpec[] aggregates,
+			NativeGroupIteration owner, TupleExpr explainTarget,
+			LmdbNativeParallelPipelines.TaskReservation reservation) throws IOException {
+		if (!eligible(plan, row)) {
+			if (reservation != null)
+				reservation.close();
 			return null;
+		}
 		for (AggregateSpec spec : aggregates)
-			if (spec.reducer.spillEncoding == NativeReducerCapabilities.SpillEncoding.OPAQUE)
+			if (spec.reducer.spillEncoding == NativeReducerCapabilities.SpillEncoding.OPAQUE) {
+				if (reservation != null)
+					reservation.close();
 				return null;
+			}
 		AggregateProgram program = new AggregateProgram(plan, groups, aggregates, owner);
-		Session session = Session.open(plan, row, program.columns, program.exact, program, explainTarget);
+		Session session = Session.open(plan, row, program.columns, program.exact, program, explainTarget, reservation);
 		if (session == null)
 			return null;
 		List<BindingSet> results;
@@ -448,8 +545,7 @@ final class LmdbNativePackedMorsels {
 			this.specs = aggregates.clone();
 			this.strict = owner.strictCompare;
 			this.owner = owner;
-			this.bounded = !AggregateSpec.allCounts(aggregates)
-					|| Arrays.stream(aggregates).anyMatch(spec -> spec.distinct);
+			this.bounded = usesSharedAggregateStore(aggregates);
 			this.ordered = Arrays.stream(aggregates)
 					.anyMatch(spec -> spec.reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.ORDERED_CONCAT);
 			this.scalarReplay = Arrays.stream(aggregates)
@@ -619,14 +715,18 @@ final class LmdbNativePackedMorsels {
 		}
 
 		static Session open(SlotPlan input, RowState row, int[][] columns, boolean[] exact, AggregateProgram aggregate,
-				TupleExpr target) throws IOException {
+				TupleExpr target, LmdbNativeParallelPipelines.TaskReservation quotedReservation) throws IOException {
 			NativeFilterLease owners = new NativeFilterLease(true);
-			LmdbNativeParallelPipelines.TaskReservation reservation = null;
+			LmdbNativeParallelPipelines.TaskReservation reservation = quotedReservation;
 			NativeLmdbQuerySource.ParallelSource[] sources = null;
 			LmdbQueryMemoryManager.Reservation memory = null;
 			boolean transferred = false;
 			Throwable failure = null;
 			try {
+				// A selected quote owns this exact group. A changed task budget is a bind-time decline, never a
+				// silent resize whose speed-up or CPU-benefit requirement differs from the selected candidate.
+				if (reservation != null && !reservation.admit())
+					return null;
 				SlotPlan template = owners.borrow(input);
 				List<Job> jobs = new ArrayList<>();
 				split(template, row, UnaryOperator.identity(), jobs);
@@ -640,11 +740,14 @@ final class LmdbNativePackedMorsels {
 				if (units < 2L || roots / 2L < floor)
 					return null;
 				int desired = (int) Math.min(units, LmdbNativeParallelPipelines.configuredThreads());
-				reservation = LmdbNativeParallelPipelines.tryReserveTasks(false, desired);
+				if (reservation == null)
+					reservation = LmdbNativeParallelPipelines.tryReserveTasks(false, desired);
+				else if (reservation.grantedWorkers() > units)
+					return null;
 				if (reservation == null || reservation.grantedWorkers() < 2)
 					return null;
 				int workers = reservation.grantedWorkers();
-				int pageRows = Math.max(1, Math.min(4096, Integer.getInteger(OUTPUT_ROWS_PROPERTY, 256)));
+				int pageRows = outputPageRows();
 				int queuePages = Math.multiplyExact(workers,
 						Math.max(1, Math.min(16, Integer.getInteger(QUEUE_PAGES_PROPERTY, 2))));
 				if (aggregate == null) {

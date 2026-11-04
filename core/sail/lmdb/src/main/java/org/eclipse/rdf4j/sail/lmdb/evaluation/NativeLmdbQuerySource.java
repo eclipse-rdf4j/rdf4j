@@ -2409,6 +2409,15 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
+	 * Conservative, non-opening capability for wildcard views. False means the source knows such views are disabled,
+	 * not merely that metadata or a current view is unavailable. Unknown sources remain possible, and wrappers must
+	 * preserve the capability of their actual data sources. A true result never guarantees a successful later bind.
+	 */
+	default boolean mayHaveWildcardViews() {
+		return true;
+	}
+
+	/**
 	 * The number of distinct predicates the snapshot's complete adjacency plane catalog holds, for pricing the group
 	 * domain of a variable-predicate slot before any plane is opened; empty when no exact full-coverage view serves the
 	 * snapshot.
@@ -2528,6 +2537,18 @@ public interface NativeLmdbQuerySource {
 	 */
 	default ParallelSource[] openParallelSources(int count) throws IOException {
 		return null;
+	}
+
+	/**
+	 * Metadata-only upper bound on the number of partitions returned by {@link #planRootScanPartitions} for this exact
+	 * pattern and target, or empty when no bound is available. A present bound must be nonnegative. It does not prove
+	 * that partitioning is supported, that the scan is nonempty, or that the returned count equals the bound.
+	 * Implementations must not plan ranges, open probes or read records to answer this question. Composite sources must
+	 * account for every active member rather than treating the requested target as a global partition count.
+	 */
+	default OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+			int targetPartitions) {
+		return OptionalLong.empty();
 	}
 
 	/**
