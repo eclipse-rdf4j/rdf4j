@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 final class LmdbPhysicalEventOrigins implements AutoCloseable {
 	private final PackedQueryView query;
 	private final boolean datasetUsesStoreDefaults;
+	private final int planeMask;
 	private PackedProviderMemory memory = PackedProviderMemory.NONE;
 	private PhysicalEventKey.Factory factory;
 	private PhysicalEventKey.Origin[] attached;
@@ -30,8 +31,13 @@ final class LmdbPhysicalEventOrigins implements AutoCloseable {
 	private boolean sourceAttempted;
 
 	LmdbPhysicalEventOrigins(PackedQueryView query, boolean datasetUsesStoreDefaults) {
+		this(query, datasetUsesStoreDefaults, org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.BOTH_PLANES);
+	}
+
+	LmdbPhysicalEventOrigins(PackedQueryView query, boolean datasetUsesStoreDefaults, int planeMask) {
 		this.query = query;
 		this.datasetUsesStoreDefaults = datasetUsesStoreDefaults;
+		this.planeMask = planeMask;
 	}
 
 	void bind(PackedProviderMemory memory) {
@@ -58,11 +64,18 @@ final class LmdbPhysicalEventOrigins implements AutoCloseable {
 			if (!reserve(512L)) {
 				return false;
 			}
-			String source = query.tryPhysicalSourceIdentity(memory, LearningKeyCodec.MAX_STRING_BYTES);
+			// Old source identities omitted actual read planes; even the old apparent BOTH namespace may contain
+			// explicit-only observations. Retain exact plane identity for every newly qualified physical population.
+			String prefix = "mapped-read-v2:planes:" + planeMask + '|';
+			String source = query.tryPhysicalSourceIdentity(memory,
+					LearningKeyCodec.MAX_STRING_BYTES - prefix.length());
 			if (source == null) {
 				return false;
 			}
-			factory = new PhysicalEventKey.Factory(source, memory);
+			if (!reserve(40L + 2L * (prefix.length() + source.length()))) {
+				return false;
+			}
+			factory = new PhysicalEventKey.Factory(prefix + source, memory);
 		}
 		if (state != 0 && (attached == null || state >= attached.length)) {
 			int previous = attached == null ? 0 : attached.length;

@@ -54,6 +54,7 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 			| RuntimeFeedbackContract.ORIGIN_CERTIFIED;
 
 	private final PackedCostSession delegate;
+	private final boolean verifyReadScope;
 	private final LmdbPackedCostModel mappedCostModel;
 	private final LmdbEstimatorRuntime runtime;
 	private final FrontierStatisticsView statistics;
@@ -71,22 +72,43 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 	LmdbFrontierStatisticsCostSession(PackedCostSession delegate, LmdbPackedCostModel mappedCostModel,
 			FrontierStatisticsView statistics, PackedQueryView query, LmdbEstimatorRuntime runtime,
 			boolean datasetUsesStoreDefaults) {
+		this(delegate, mappedCostModel, statistics, query, runtime, datasetUsesStoreDefaults,
+				org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.BOTH_PLANES, false);
+	}
+
+	LmdbFrontierStatisticsCostSession(PackedCostSession delegate, LmdbPackedCostModel mappedCostModel,
+			FrontierStatisticsView statistics, PackedQueryView query, LmdbEstimatorRuntime runtime,
+			boolean datasetUsesStoreDefaults, int planeMask) {
+		this(delegate, mappedCostModel, statistics, query, runtime, datasetUsesStoreDefaults, planeMask, true);
+	}
+
+	private LmdbFrontierStatisticsCostSession(PackedCostSession delegate, LmdbPackedCostModel mappedCostModel,
+			FrontierStatisticsView statistics, PackedQueryView query, LmdbEstimatorRuntime runtime,
+			boolean datasetUsesStoreDefaults, int planeMask, boolean verifyReadScope) {
+		this.verifyReadScope = verifyReadScope;
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
 		this.mappedCostModel = Objects.requireNonNull(mappedCostModel, "mappedCostModel");
 		this.statistics = Objects.requireNonNull(statistics, "statistics");
 		this.mappedGenerationId = statistics.ready() ? statistics.generationId() : 0L;
 		this.query = Objects.requireNonNull(query, "query");
 		this.runtime = Objects.requireNonNull(runtime, "runtime");
-		this.physicalOrigins = new LmdbPhysicalEventOrigins(query, datasetUsesStoreDefaults);
+		this.physicalOrigins = new LmdbPhysicalEventOrigins(query, datasetUsesStoreDefaults, planeMask);
 		this.learning = new LmdbMappedFrontierLearningSession(
-				this.runtime, query, datasetUsesStoreDefaults, physicalOrigins);
+				this.runtime, query, datasetUsesStoreDefaults, physicalOrigins, planeMask);
 		this.semiAntiCosting = new LmdbMappedSemiAntiCosting(mappedCostModel, query);
 		this.semanticProofs = new LmdbSemanticPopulationProof(query, MAXIMUM_MAPPED_EVIDENCE_STATES);
 		this.bindings = new LmdbBindingAssurance(query, semanticProofs);
 	}
 
+	private void requireCurrentRead() {
+		if (closed.get() || verifyReadScope && !mappedCostModel.mappedReadCurrent()) {
+			throw new IllegalStateException("Mapped planning session is outside its live owning read scope");
+		}
+	}
+
 	@Override
 	public void bindProviderMemory(PackedProviderMemory memory) {
+		requireCurrentRead();
 		physicalOrigins.bind(memory);
 		delegate.bindProviderMemory(memory);
 	}
@@ -123,6 +145,7 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 
 	@Override
 	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		requireCurrentRead();
 		delegate.estimateLeaf(relationId, context, output);
 		int proof = canAttachState(output) ? semanticProofs.isolated(relationId, context, output) : 0;
 		learning.applyLeaf(relationId, context, output, semanticProofs.unconditioned(proof));
@@ -132,6 +155,7 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 
 	@Override
 	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		requireCurrentRead();
 		MappedEvidenceState prefix = state(context.evidenceStateId());
 		if (prefix != null && prefix.bindingOnly() || context.prefixRelationCount() > 0 && (prefix == null
 				|| !semanticProofs.describesPrefix(prefix.semanticProof(), context, output))) {
@@ -168,6 +192,7 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 
 	@Override
 	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+		requireCurrentRead();
 		boolean innerJoin = query.isInnerJoin(relationId);
 		MappedEvidenceState input = state(innerJoin || context.leftInputEvidenceStateId() != 0
 				? context.leftInputEvidenceStateId()
@@ -228,6 +253,7 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 
 	@Override
 	public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+		requireCurrentRead();
 		boolean physicalEvent = output.plannedStringMetric("optimizer.physicalJoinImplementation") != null;
 		RuntimeFeedbackContract incomingCandidateFeedback = physicalEvent
 				&& (context.evidenceStateId() != 0 || context.leftInputEvidenceStateId() != 0
@@ -404,12 +430,14 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 
 	@Override
 	public int exactContinuationIdentity(PackedCostEstimate estimate) {
+		requireCurrentRead();
 		/* Mapped conditional estimates can depend on prefix order and operator-provided binding domains. */
 		return 0;
 	}
 
 	@Override
 	public FrontierEvidenceBundle detachEvidence(int[] evidenceStateIds) {
+		requireCurrentRead();
 		Objects.requireNonNull(evidenceStateIds, "evidenceStateIds");
 		int[] localStateIds = new int[stateCount + 1];
 		int[] uniqueStateIds = new int[evidenceStateIds.length];

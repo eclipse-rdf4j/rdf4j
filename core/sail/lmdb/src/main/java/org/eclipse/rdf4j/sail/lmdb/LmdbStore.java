@@ -447,13 +447,19 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			} else if (properties.getVersion() == null) {
 				properties.setVersion(Integer.toString(format.getVersion()));
 			}
+			java.util.UUID ownerIdentity = null;
+			boolean separateLegacyIdentity = format.isLegacy() && properties.isLoaded()
+					&& properties.hasNativeGeneration() && properties.storeId == null;
 			try {
-				properties.getOrCreateStoreId();
-			} catch (IllegalStateException e) {
-				logger.warn("Frontier OmniSketch is unavailable because the LMDB store identity is invalid", e);
+				ownerIdentity = separateLegacyIdentity ? LegacyStoreIdentity.resolve(dataDir, properties, format)
+						: properties.getOrCreateStoreId();
+			} catch (IllegalStateException | IOException e) {
+				logger.warn("A durable logical identity is unavailable; UUID-owned alternate estimator persistence is disabled", e);
 			}
-			// The durable UUID must exist before a Frontier service can publish a generation that refers to it.
+			// Existing/fresh properties retain their ordinary durable UUID receipt. A loaded legacy policy instead
+			// keeps its exact bytes; the separate logical receipt grants no native-generation or freshness authority.
 			properties.save();
+			properties.resolveOwnerIdentity(ownerIdentity);
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);

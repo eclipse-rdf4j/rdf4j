@@ -19,11 +19,35 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
 
 /** Ordered physical plane occurrences, borrowed only while their actual dataset owners remain live. */
 interface LmdbPhysicalReadComposition {
 
 	List<PlaneOccurrence> planeOccurrences();
+
+	/** A representable table mask, or zero for repeated/unknown plane bags; never flattens a Combined tree. */
+	default int frontierPlaneMask() {
+		List<PlaneOccurrence> occurrences = planeOccurrences();
+		if (occurrences.isEmpty() || occurrences.size() > 2) {
+			return 0;
+		}
+		int mask = 0;
+		for (PlaneOccurrence occurrence : occurrences) {
+			int bit = occurrence.explicit() ? FrontierLeafProbe.EXPLICIT : FrontierLeafProbe.INFERRED;
+			if ((mask & bit) != 0) {
+				return 0;
+			}
+			mask |= bit;
+		}
+		return mask;
+	}
+
+	private static int combinedPlaneMask(LmdbPhysicalReadComposition left, LmdbPhysicalReadComposition right) {
+		int first = left.frontierPlaneMask();
+		int second = right.frontierPlaneMask();
+		return first == 0 || second == 0 || (first & second) != 0 ? 0 : first | second;
+	}
 
 	record PlaneOccurrence(LmdbPinnedReadTxnSource owner, boolean explicit) {
 	}
@@ -33,7 +57,7 @@ interface LmdbPhysicalReadComposition {
 		Optional<PairSummary> first = summary(left);
 		Optional<PairSummary> second = summary(right);
 		return first.isPresent() && second.isPresent() && first.orElseThrow().samePair(second.orElseThrow())
-				? Optional.of(new Combined(left, right, first.orElseThrow()))
+				? Optional.of(new Combined(left, right, first.orElseThrow(), combinedPlaneMask(left, right)))
 				: Optional.empty();
 	}
 
@@ -72,7 +96,8 @@ interface LmdbPhysicalReadComposition {
 		}
 	}
 
-	record Combined(LmdbPhysicalReadComposition left, LmdbPhysicalReadComposition right, PairSummary pair)
+	record Combined(LmdbPhysicalReadComposition left, LmdbPhysicalReadComposition right, PairSummary pair,
+			int frontierPlaneMask)
 			implements LmdbPhysicalReadComposition {
 		@Override
 		public List<PlaneOccurrence> planeOccurrences() {

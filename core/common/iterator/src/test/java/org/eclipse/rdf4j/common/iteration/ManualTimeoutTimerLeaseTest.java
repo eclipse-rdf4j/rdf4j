@@ -65,7 +65,7 @@ class ManualTimeoutTimerLeaseTest {
 		Thread timer = Thread.getAllStackTraces()
 				.keySet()
 				.stream()
-				.filter(thread -> thread.isAlive() && thread.getName().equals("TimeLimitIteration"))
+				.filter(thread -> thread.isAlive() && thread.getName().equals("TimeLimitIteration scheduler"))
 				.findFirst()
 				.orElse(null);
 		try {

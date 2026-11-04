@@ -218,8 +218,7 @@ final class PatternMembershipProbe {
 	}
 
 	private boolean bind(long[] quad, long[] slots) {
-		if (pattern.namedContextScope && !pattern.contexts.isFixed()
-				&& quad[TripleIndex.CONTEXT_IDX] == NULL_CONTEXT_ID) {
+		if (!pattern.matchesRangeAndContext(quad, 0)) {
 			return false;
 		}
 		return bindTerm(pattern.s, quad[TripleIndex.SUBJ_IDX], slots)
@@ -229,8 +228,13 @@ final class PatternMembershipProbe {
 	}
 
 	private static boolean bindTerm(Term term, long id, long[] slots) {
+		if (term.readOnly) { return true; }
 		if (term.isConstant()) {
-			return term.constant == id && (!term.bindConstant || bindSlot(term.slot, id, slots));
+			if (term.constant != id) { return false; }
+			if (!term.bindConstant) { return true; }
+			long current = slots[term.slot];
+			if (term.preserveExisting && current != UNKNOWN) { return current != 0L; }
+			return bindSlot(term.slot, id, slots);
 		}
 		return term.slot < 0 || bindSlot(term.slot, id, slots);
 	}

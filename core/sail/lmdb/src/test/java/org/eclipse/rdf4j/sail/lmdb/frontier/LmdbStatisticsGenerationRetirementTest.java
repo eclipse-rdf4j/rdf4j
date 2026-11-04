@@ -107,6 +107,47 @@ class LmdbStatisticsGenerationRetirementTest {
 	}
 
 	@Test
+	void requiringCurrentOwnerBaseReleasesOnlyTheServiceReferenceAndPreservesLineage() throws Exception {
+		service = openService();
+		FrontierStatisticsManifest one = writeGeneration(1L, -1L, 7L, 41L);
+		service.publish(one);
+		FrontierStatisticsLease accepted = service.acquire(7L);
+		assertTrue(accepted.ready());
+		assertTrue(service.status().heapBytesByPurpose().get(FrontierStatisticsMemoryPurpose.MAPPED_METADATA) > 0L);
+
+		service.requireCurrentOwnerBase();
+
+		assertEquals(FrontierStatisticsAvailability.NO_GENERATION, service.status().availability());
+		assertEquals(FrontierFallbackReason.GENERATION_TOO_STALE, service.status().fallbackReason());
+	try (FrontierStatisticsLease fenced = service.acquire(7L)) {
+			assertFalse(fenced.ready());
+			assertEquals(FrontierFallbackReason.GENERATION_TOO_STALE, fenced.fallbackReason());
+		}
+		assertEquals(41L, accepted.shard(PROBE_SHARD).column(0).value(0L),
+				"a query lease admitted before the owner fence remains valid");
+		assertTrue(Files.exists(manifestPath(1L)), "the predecessor manifest remains available for lineage");
+		for (Path shard : shardPaths(one)) {
+			assertTrue(Files.exists(shard), () -> "the predecessor shard remains available: " + shard);
+		}
+		assertEquals(1L, service.publicationPredecessorGeneration());
+
+		accepted.close();
+
+		assertEquals(0L, service.status().heapBytesByPurpose().get(FrontierStatisticsMemoryPurpose.MAPPED_METADATA),
+				"the mapping lease ends when its service and accepted query references are released");
+		FrontierStatisticsManifest two = writeGeneration(2L, 1L, 8L, 82L);
+		service.publishCurrentOwnerBase(two);
+
+		assertEquals(2L, service.status().generationId());
+		assertEquals(1L, two.previousGenerationId());
+		assertTrue(Files.exists(manifestPath(1L)), "the published generation retains its direct predecessor");
+		assertFalse(service.rollback(), "an untrusted predecessor cannot become query evidence again");
+		try (FrontierStatisticsLease current = service.acquire(8L)) {
+			assertEquals(82L, current.shard(PROBE_SHARD).column(0).value(0L));
+		}
+	}
+
+	@Test
 	void inProgressBuildOutputsSurviveRetirementTriggeredByALeaseRelease() throws Exception {
 		service = openService();
 		FrontierStatisticsManifest one = writeGeneration(1L, -1L, 7L, 41L);

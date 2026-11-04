@@ -68,6 +68,75 @@ final class LmdbEstimatorRuntime {
 	private final AtomicReference<ProviderView> latestView = new AtomicReference<>();
 	private final ThreadLocal<PinnedView> scopedView = new ThreadLocal<>();
 	private final ThreadLocal<LmdbEstimatorOptimizationScope> optimizationScope = new ThreadLocal<>();
+	private final boolean standalonePhysicalPopulation;
+	private final ThreadLocal<FrontierReadScope> frontierReadScope = new ThreadLocal<>();
+
+	private record FrontierReadScope(LmdbFrontierReadSelection selection, FrontierReadScope previous) {
+	}
+
+	QueryOptimizationScope beginFrontierReadScope(org.eclipse.rdf4j.query.algebra.evaluation.TripleSource source,
+			org.eclipse.rdf4j.query.Dataset dataset) {
+		return beginFrontierReadScope(source, dataset, -1);
+	}
+
+	QueryOptimizationScope beginFrontierReadScope(org.eclipse.rdf4j.query.algebra.evaluation.TripleSource source,
+			org.eclipse.rdf4j.query.Dataset dataset, int requiredPlaneMask) {
+		LmdbFrontierReadSelection selected = LmdbFrontierReadSelection.capture(this, source, dataset);
+		if (requiredPlaneMask != -1 && selected.representedPlaneMask() != requiredPlaneMask) {
+			selected = LmdbFrontierReadSelection.UNAVAILABLE;
+		}
+		FrontierReadScope scope = new FrontierReadScope(selected, frontierReadScope.get());
+		frontierReadScope.set(scope);
+		return new QueryOptimizationScope() {
+			private boolean closed;
+
+			@Override
+			public void close() {
+				if (!closed) {
+					if (frontierReadScope.get() != scope) {
+						throw new IllegalStateException("Frontier read scopes must close in invocation order");
+					}
+					closed = true;
+					if (scope.previous() == null) {
+						frontierReadScope.remove();
+					} else {
+						frontierReadScope.set(scope.previous());
+					}
+				}
+			}
+		};
+	}
+
+	boolean frontierReadSelectionIsActive(LmdbFrontierReadSelection selection) {
+		FrontierReadScope scope = frontierReadScope.get();
+		return scope != null && scope.selection() == selection;
+	}
+
+	LmdbFrontierReadSelection frontierPlanningReadSelection(
+			org.eclipse.rdf4j.query.algebra.evaluation.TripleSource source) {
+		FrontierReadScope scope = frontierReadScope.get();
+		return scope != null && scope.selection().matchesSource(source) && scope.selection().isCurrent()
+				? scope.selection()
+				: LmdbFrontierReadSelection.UNAVAILABLE;
+	}
+
+	LmdbFrontierReadPopulation frontierReadPopulation() {
+		FrontierReadScope scope = frontierReadScope.get();
+		return scope != null ? scope.selection().population()
+				: standalonePhysicalPopulation ? LmdbFrontierReadPopulation.PHYSICAL_DEFAULT
+						: LmdbFrontierReadPopulation.UNSUPPORTED;
+	}
+
+	long frontierReadSnapshotEpoch() {
+		FrontierReadScope scope = frontierReadScope.get();
+		return scope == null ? -1L : scope.selection().snapshotEpoch();
+	}
+
+	int frontierReadPlaneMask() {
+		FrontierReadScope scope = frontierReadScope.get();
+		return scope != null ? scope.selection().planeMask()
+				: standalonePhysicalPopulation ? org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.BOTH_PLANES : 0;
+	}
 
 	/** One atomic store publication; Frontier may become available after the filter/operator pair. */
 	record PublishedProviders(long generation, LmdbFilterSelectivityStats filters,
@@ -153,6 +222,7 @@ final class LmdbEstimatorRuntime {
 		this.finiteJoinSurfaceEstimator = new LmdbFiniteJoinSurfaceEstimator(valueStore, tripleStore, cardinalities);
 		PublishedProviders fixed = new PublishedProviders(0L, filters, feedback, statistics);
 		this.providerSupplier = providerSupplier == null ? () -> fixed : providerSupplier;
+		this.standalonePhysicalPopulation = providerSupplier == null;
 		latestView.set(createView(this.providerSupplier.get()));
 	}
 
@@ -689,6 +759,14 @@ final class LmdbEstimatorRuntime {
 						repeatedComponentPairMask);
 	}
 
+	LmdbPlanningCardinality packedReadRowsQualified(Resource subject, IRI predicate, Value object, Resource context,
+			int repeatedComponentPairMask, LmdbFrontierReadSelection selection,
+			org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView ownedView) {
+		return providerView().storage()
+				.packedReadRowsQualified(subject, predicate, object, context,
+						repeatedComponentPairMask, selection, ownedView);
+	}
+
 	double conventionalStatementPatternRows(StatementPattern pattern) {
 		BagEstimate estimate = estimate(pattern, Set.of(), EstimationTier.STANDARD, false);
 		return Double.isFinite(estimate.rows()) && estimate.rows() >= 0.0d ? estimate.rows() : Double.NaN;
@@ -696,7 +774,9 @@ final class LmdbEstimatorRuntime {
 
 	double packedTransitionRows(StatementPattern pattern, String joinVariable, double patternRows,
 			double prefixRows) {
-		return providerView().storage().packedTransitionRows(pattern, joinVariable, patternRows, prefixRows);
+		return providerView().storage()
+				.packedTransitionRows(pattern, joinVariable, patternRows, prefixRows, frontierReadPopulation(),
+						frontierReadPlaneMask(), frontierReadSnapshotEpoch());
 	}
 
 	boolean describePackedDistinctCursorSkip(StatementPattern pattern, double normalRows, PackedCostEstimate output) {
@@ -705,7 +785,9 @@ final class LmdbEstimatorRuntime {
 			BagEstimate conventional = view.providers().statistics() == null
 					? null
 					: estimate(pattern, Set.of(), EstimationTier.STANDARD, false);
-			return view.storage().describePackedDistinctCursorSkip(pattern, normalRows, conventional, output);
+			return view.storage()
+					.describePackedDistinctCursorSkip(pattern, normalRows, conventional, output,
+							frontierReadPopulation(), frontierReadPlaneMask(), frontierReadSnapshotEpoch());
 		}
 	}
 
@@ -813,7 +895,8 @@ final class LmdbEstimatorRuntime {
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		return LmdbEstimateContextBuilder.root(expression, synopsis, storageAccess.dataRevision(), snapshotVersion(),
 				leoRevision(), scope, adaptiveEvidenceAllowed())
-				.withFilterReadContext(readContext == null ? null : readContext.forExpression(expression));
+				.withFilterReadContext(readContext == null ? null : readContext.forExpression(expression))
+				.withReadPopulation(frontierReadPopulation(), frontierReadPlaneMask(), frontierReadSnapshotEpoch());
 	}
 
 	boolean adaptiveEvidenceAllowed() {

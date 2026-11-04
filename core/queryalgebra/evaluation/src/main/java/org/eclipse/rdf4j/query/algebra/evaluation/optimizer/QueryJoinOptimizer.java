@@ -418,6 +418,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				// Recursively get the join arguments
 				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<>());
+				if (hasUnsafeExtensionReorder(joinArgs)) {
+					// An Extension may read a sibling's output or overwrite a name the sibling produces. Moving such a
+					// BIND into the priority prefix turns an ordered row transformation into an independent relation. Keep
+					// the original operands and their existing scope metadata: no BIND is extracted here, so applying the
+					// OPTIONAL fallback's new-scope mark would itself change the retained evaluation contract.
+					visitAt(node.getLeftArg());
+					visitAt(node.getRightArg());
+					return;
+				}
 				if (hasUnsafeOptionalReorder(node, joinArgs)) {
 					// Without reordering, a group-level BIND is not moved ahead of its siblings, so it must be
 					// evaluated in its own scope to keep sibling bindings out of its expressions.
@@ -829,6 +838,68 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return false;
+		}
+
+		/**
+		 * Priority extraction is valid only when a BIND neither reads a sibling's possible output nor writes a name that
+		 * the sibling may produce. Unknown sibling domains cannot certify that the transformation is independent.
+		 */
+		private boolean hasUnsafeExtensionReorder(List<TupleExpr> joinArgs) {
+			List<TupleExpr> extensions = getExtensionTupleExprs(joinArgs);
+			if (extensions.isEmpty()) {
+				return false;
+			}
+			for (TupleExpr extension : extensions) {
+				TupleExprs.ConditionBindingDomain extensionObservations = TupleExprs
+						.tupleBindingObservationDomain(extension);
+				if (!extensionObservations.known()) {
+					// A priority extraction changes which bindings exist while an Extension is evaluated. Unknown
+					// expression inputs cannot prove that its row transformation is independent of its siblings.
+					return true;
+				}
+				Set<String> reads = extensionObservations.names();
+				Set<String> writes = extensionWriteNames(extension);
+				for (TupleExpr sibling : joinArgs) {
+					if (sibling == extension) {
+						continue;
+					}
+					TupleExprs.ConditionBindingDomain siblingObservations = TupleExprs
+							.tupleBindingObservationDomain(sibling);
+					if (!siblingObservations.known()) {
+						// Do not move a BIND through an operator whose complete input-observation domain is not proved.
+						return true;
+					}
+					QueryAlgebraBindingAnalysis.ReadOnlyContext siblingInput = bindingAnalysis.contextAt(sibling);
+					QueryAlgebraBindingAnalysis.OutputFacts siblingFacts = bindingAnalysis.outputFacts(sibling,
+							siblingInput);
+					if (!siblingFacts.possibleOutputsKnown()) {
+						return true;
+					}
+					Set<String> siblingNames = new HashSet<>(siblingFacts.possibleOutputs());
+					siblingNames.addAll(siblingFacts.retainedInputNames());
+					if (!Collections.disjoint(reads, siblingNames) || !Collections.disjoint(writes, siblingNames)
+							|| !Collections.disjoint(writes, siblingObservations.names())) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private Set<String> extensionWriteNames(TupleExpr expression) {
+			Set<String> names = new HashSet<>();
+			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Extension extension) {
+					for (ExtensionElem element : extension.getElements()) {
+						if (TupleExprs.isEvaluatedExtensionElement(element) && element.getName() != null) {
+							names.add(element.getName());
+						}
+					}
+					super.meet(extension);
+				}
+			});
+			return names;
 		}
 
 		private boolean siblingChangesNames(TupleExpr candidate, List<TupleExpr> joinArgs,

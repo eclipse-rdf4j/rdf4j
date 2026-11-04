@@ -464,7 +464,8 @@ final class PreparedBulkStore {
 			throw new IOException("Unable to reload prepared LmdbStore generation properties", unreadable);
 		}
 		if (!sameImmutableWriterCapabilities(properties, persisted)) {
-			throw new IOException("Prepared LmdbStore generation writer capabilities changed from their persisted values");
+			throw new IOException(
+					"Prepared LmdbStore generation writer capabilities changed from their persisted values");
 		}
 		// The owner established this fact under its directory lock during native preflight. Reloading its sidecar must
 		// not erase that separate authority before the native transaction and generation checks below run.

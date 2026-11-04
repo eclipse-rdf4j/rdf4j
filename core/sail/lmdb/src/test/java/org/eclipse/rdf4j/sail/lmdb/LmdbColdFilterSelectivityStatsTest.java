@@ -116,10 +116,11 @@ class LmdbColdFilterSelectivityStatsTest {
 		writer.setExperimentalQueryOptimizations(true);
 		SailRepository repository = new SailRepository(writer);
 		repository.init();
+		LmdbTestUtil.awaitPostReadyInitialization(writer, 30, TimeUnit.SECONDS);
 		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 64);
-			writer.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildAndPersist(writer);
 			assertTrue(writer.forceFlushSketchEstimator());
 			assertTrue(writer.awaitSketchesReady(10, TimeUnit.SECONDS));
 		} finally {
@@ -288,10 +289,11 @@ class LmdbColdFilterSelectivityStatsTest {
 		LmdbStore writer = initializedStore(dataDir, coldSnapshotOnlyConfig(256));
 		SailRepository repository = new SailRepository(writer);
 		repository.init();
+		LmdbTestUtil.awaitPostReadyInitialization(writer, 30, TimeUnit.SECONDS);
 		assertSketchFixtureProfile((LmdbStore) repository.getSail());
 		try {
 			loadRows(repository, 64);
-			writer.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildAndPersist(writer);
 		} finally {
 			repository.shutDown();
 		}
@@ -336,7 +338,7 @@ class LmdbColdFilterSelectivityStatsTest {
 				}
 				connection.commit();
 			}
-			writer.getBackingStore().getSketchBasedJoinEstimator().rebuild();
+			rebuildAndPersist(writer);
 		} finally {
 			repository.shutDown();
 		}
@@ -345,6 +347,7 @@ class LmdbColdFilterSelectivityStatsTest {
 		reopened.init();
 		assertSketchFixtureProfile(reopened);
 		try {
+			assertTrue(reopened.awaitSketchesReady(10, TimeUnit.SECONDS));
 			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.EXACT, estimate(reopened, query).getSource());
 			assertEquals(1.0d, estimate(reopened, query).getPassRatio(), 0.0d);
 		} finally {
@@ -468,9 +471,12 @@ class LmdbColdFilterSelectivityStatsTest {
 		return store;
 	}
 
-	private static void rebuildAndPersist(LmdbStore store) {
-		store.getBackingStore().getSketchBasedJoinEstimator().rebuild();
-		assertTrue(store.getBackingStore().getSketchBasedJoinEstimator().persistIfDirty());
+	private static void rebuildAndPersist(LmdbStore store) throws Exception {
+		LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+		var estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+		estimator.rebuild();
+		assertTrue(estimator.persistIfDirty());
+		assertTrue(store.awaitSketchesReady(10, TimeUnit.SECONDS));
 	}
 
 	private static EvaluationStatistics.FilterPassEstimate estimate(LmdbStore store, String query) {

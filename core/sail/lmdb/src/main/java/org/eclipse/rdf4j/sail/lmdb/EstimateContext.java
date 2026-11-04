@@ -35,7 +35,20 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		EvidencePolicy evidencePolicy, JoinFactorCostModel.EstimationTier estimationTier,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
 		MetricsPreference metricsPreference, boolean exactProbePermitted, PlanningGraphDomain graphDomain,
-		LmdbFilterReadContext filterReadContext) {
+		LmdbFilterReadContext filterReadContext, LmdbFrontierReadPopulation readPopulation, int frontierPlaneMask,
+		long frontierSnapshotEpoch) {
+
+	EstimateContext(BindingUniverse universe, BindingMask boundMask,
+			Optional<FiniteRelationEstimate> finiteBindings, BagEstimate prefixEstimate, double invocationCount,
+			EvidencePolicy evidencePolicy, JoinFactorCostModel.EstimationTier estimationTier,
+			QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
+			MetricsPreference metricsPreference, boolean exactProbePermitted, PlanningGraphDomain graphDomain,
+			LmdbFilterReadContext filterReadContext) {
+		this(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy, estimationTier,
+				snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference, exactProbePermitted, graphDomain,
+				filterReadContext, LmdbFrontierReadPopulation.PHYSICAL_DEFAULT,
+				org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.BOTH_PLANES, -1L);
+	}
 
 	EstimateContext(BindingUniverse universe, BindingMask boundMask,
 			Optional<FiniteRelationEstimate> finiteBindings, BagEstimate prefixEstimate, double invocationCount,
@@ -50,7 +63,8 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 	EstimateContext withFilterReadContext(LmdbFilterReadContext readContext) {
 		return new EstimateContext(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy,
 				estimationTier, snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference,
-				exactProbePermitted, graphDomain, readContext);
+				exactProbePermitted, graphDomain, readContext, readPopulation, frontierPlaneMask,
+				frontierSnapshotEpoch);
 	}
 
 	enum EvidencePolicy {
@@ -76,6 +90,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		snapshotVersion = Math.max(0L, snapshotVersion);
 		metricsPreference = metricsPreference == null ? MetricsPreference.SUMMARY : metricsPreference;
 		graphDomain = graphDomain == null ? PlanningGraphDomain.unknown() : graphDomain;
+		readPopulation = readPopulation == null ? LmdbFrontierReadPopulation.UNSUPPORTED : readPopulation;
 	}
 
 	static EstimateContext root(TupleExpr expression, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion) {
@@ -106,7 +121,21 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		return new EstimateContext(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy,
 				estimationTier, snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference,
 				exactProbePermitted,
-				domain, filterReadContext);
+				domain, filterReadContext, readPopulation, frontierPlaneMask, frontierSnapshotEpoch);
+	}
+
+	EstimateContext withReadPopulation(LmdbFrontierReadPopulation population) {
+		return withReadPopulation(population, frontierPlaneMask, frontierSnapshotEpoch);
+	}
+
+	EstimateContext withReadPopulation(LmdbFrontierReadPopulation population, int planeMask) {
+		return withReadPopulation(population, planeMask, frontierSnapshotEpoch);
+	}
+
+	EstimateContext withReadPopulation(LmdbFrontierReadPopulation population, int planeMask, long snapshotEpoch) {
+		return new EstimateContext(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy,
+				estimationTier, snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference,
+				exactProbePermitted, graphDomain, filterReadContext, population, planeMask, snapshotEpoch);
 	}
 
 	Set<String> boundNames() {
@@ -182,7 +211,8 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 			double invocations, EvidencePolicy policy, JoinFactorCostModel.EstimationTier tier,
 			MetricsPreference preference, boolean exactPermission) {
 		return new EstimateContext(universe, mask, bindings, prefix, invocations, policy, tier, snapshotIdentity,
-				snapshotVersion, learnedRevision, preference, exactPermission, graphDomain, filterReadContext);
+				snapshotVersion, learnedRevision, preference, exactPermission, graphDomain, filterReadContext,
+				readPopulation, frontierPlaneMask, frontierSnapshotEpoch);
 	}
 
 	private static double finiteNonNegative(double value, double fallback) {

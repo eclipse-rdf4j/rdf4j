@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -1093,6 +1094,147 @@ class LmdbOperatorFeedbackStatsTest {
 		dataStamp.set(41L);
 		assertEquals(65_346.0d, stats.exactCardinalityFact("difference@1fad0aa0"), 0.0d,
 				"A matching stamp serves the fact again");
+	}
+
+	@Test
+	void failedResetInvalidatesExactCardinalityFactsAndPlanningRevision(@TempDir Path tempDir) throws Exception {
+		String previous = System.getProperty(
+				LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY);
+		System.setProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true");
+		try {
+			String groupKey = "difference@failed-reset";
+			AtomicLong statementMutationStamp = new AtomicLong(41L);
+			LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir),
+					() -> TEST_SNAPSHOT_IDENTITY, () -> true, statementMutationStamp::get);
+			FrontierLearningKey key = FrontierLearningKey.of(
+					"difference", "DIFFERENCE@failed-reset", 29L, 0L, "difference", "none", "none");
+			Join observed = join("s", "x", "o");
+			completeCostFeedback(observed, 65_346, 100, 1_100, 650);
+			observed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+			observed.setStringMetricPlanned("optimizer.costEventDigest", "event-failed-reset");
+			observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-failed-reset");
+			observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+			observed.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", groupKey);
+			stats.recordOperatorOutcome(observed);
+			assertEquals(65_346.0d, stats.exactCardinalityFact(groupKey), 0.0d,
+					"the owning provider first exposes its current-stamp exact fact");
+
+			long revisionBeforeReset = stats.planningRevision();
+			AssertionError injected = new AssertionError("injected operator reset observer failure");
+			stats.setLearnedStateObserver(new LmdbOperatorFeedbackStats.LearnedStateObserver() {
+				@Override
+				public void learnedStateReset() {
+					throw injected;
+				}
+			});
+			assertTrue(injected == assertThrows(AssertionError.class, stats::reset),
+					"the reset failure remains the primary exception");
+			assertAll(
+					() -> assertTrue(stats.planningRevision() > revisionBeforeReset,
+							"failed availability transitions invalidate cached planning artifacts"),
+					() -> assertTrue(Double.isNaN(stats.exactCardinalityFact(groupKey)),
+							"an unavailable provider must not expose a retained exact cardinality fact"));
+		} finally {
+			restoreProperty(LmdbOperatorFeedbackStats.FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, previous);
+		}
+	}
+
+	@Test
+	void failedResetWithholdsPreviouslyPublishedTypedSemiAntiEvidence(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath(tempDir));
+		LogicalLearningKey logical = LogicalLearningKey.of(
+				"difference", "typed-semi-anti", "children", "predicates", "v0", "none",
+				"bag|duplicate-sensitive|minus-compatible-domain", "default");
+		LearningApplicability applicability = new LearningApplicability(
+				1L, 0L, "unconditional", 2L, 2L, 1L);
+		PhysicalResidualKey physical = PhysicalResidualKey.of(
+				"materialized-hash", "statement-pattern", "spoc", "single-open", "materialized", "none",
+				"none", "bound");
+		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(
+				1.0d, 7.0d, 1.0d, 7.0d, 1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		RuntimeFeedbackContract contract = new RuntimeFeedbackContract(
+				new LmdbRuntimeFeedbackDescriptor(null, null, logical, applicability, physical),
+				prediction, prediction, 1.0d, 7.0d, 7.0d, Double.POSITIVE_INFINITY,
+				RuntimeFeedbackContract.SemanticKind.NOT_EXISTS,
+				RuntimeFeedbackContract.Algorithm.MATERIALIZED_HASH,
+				RuntimeFeedbackContract.Access.EXACT_LOOKUP, physical.hashCode(), 2L, 2L, 1L,
+				RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL
+						| RuntimeFeedbackContract.ADMIT_SEMI_ANTI);
+		RuntimeFeedbackTarget target = stats.resolveRuntimeFeedbackTarget(contract);
+		assertNotNull(target);
+		target.open();
+		target.close(16_352L, 46_800.0d, 46_800L, 0L, 99_600L, 46_800L, 99_600L, 0L, 0L, 46_800L,
+				EvaluationStatistics.TerminationClassification.EXHAUSTED);
+		target.recordSemiAnti(16_352L, 83_248L, 16_352L, 83_248L, 0L, 0L, 0L,
+				DistinctBindingFeedback.approximate(24_971L, 10_000L, 14_971L, 0.01625d, 99_600L,
+						"hll-p12"));
+		target.recordActualPhysicalImplementation(contract.physicalImplementationId());
+		stats.publishRuntimeFeedbackTargets(new RuntimeFeedbackTarget[] { target }, 1, true);
+		assertNotNull(stats.typedSemiAntiDistinctEstimate(logical, physical, applicability),
+				"the completed real target publishes typed semi/anti evidence before reset");
+
+		AssertionError injected = new AssertionError("injected reset observer failure with typed semi/anti evidence");
+		stats.setLearnedStateObserver(new LmdbOperatorFeedbackStats.LearnedStateObserver() {
+			@Override
+			public void learnedStateReset() {
+				throw injected;
+			}
+		});
+		assertTrue(injected == assertThrows(AssertionError.class, stats::reset));
+		try {
+			assertNull(stats.typedSemiAntiDistinctEstimate(logical, physical, applicability),
+					"an unavailable provider must not expose retained typed semi/anti evidence");
+		} finally {
+			target.release();
+		}
+	}
+
+	@Test
+	void failedResetRejectsAlreadyOpenOperatorFeedbackTarget(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath(tempDir));
+		LogicalLearningKey logical = LogicalLearningKey.of(
+				"difference", "typed-semi-anti", "children", "predicates", "v0", "none",
+				"bag|duplicate-sensitive|minus-compatible-domain", "default");
+		LearningApplicability applicability = new LearningApplicability(
+				1L, 0L, "unconditional", 2L, 2L, 1L);
+		PhysicalResidualKey physical = PhysicalResidualKey.of(
+				"materialized-hash", "statement-pattern", "spoc", "single-open", "materialized", "none",
+				"none", "bound");
+		RuntimeFeedbackContract.PredictionVector prediction = new RuntimeFeedbackContract.PredictionVector(
+				1.0d, 7.0d, 1.0d, 7.0d, 1.0d, 1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		RuntimeFeedbackContract contract = new RuntimeFeedbackContract(
+				new LmdbRuntimeFeedbackDescriptor(null, null, logical, applicability, physical),
+				prediction, prediction, 1.0d, 7.0d, 7.0d, Double.POSITIVE_INFINITY,
+				RuntimeFeedbackContract.SemanticKind.NOT_EXISTS,
+				RuntimeFeedbackContract.Algorithm.MATERIALIZED_HASH,
+				RuntimeFeedbackContract.Access.EXACT_LOOKUP, physical.hashCode(), 2L, 2L, 1L,
+				RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL
+						| RuntimeFeedbackContract.ADMIT_SEMI_ANTI);
+		RuntimeFeedbackTarget target = stats.resolveRuntimeFeedbackTarget(contract);
+		assertNotNull(target, "an in-flight operator target is prepared before reset");
+		target.open();
+
+		AssertionError injected = new AssertionError("injected reset observer failure with an open operator target");
+		stats.setLearnedStateObserver(new LmdbOperatorFeedbackStats.LearnedStateObserver() {
+			@Override
+			public void learnedStateReset() {
+				throw injected;
+			}
+		});
+		assertTrue(injected == assertThrows(AssertionError.class, stats::reset));
+		try {
+			target.close(16_352L, 46_800.0d, 46_800L, 0L, 99_600L, 46_800L, 99_600L, 0L, 0L, 46_800L,
+					EvaluationStatistics.TerminationClassification.EXHAUSTED);
+			target.recordSemiAnti(16_352L, 83_248L, 16_352L, 83_248L, 0L, 0L, 0L,
+					DistinctBindingFeedback.approximate(24_971L, 10_000L, 14_971L, 0.01625d, 99_600L,
+							"hll-p12"));
+			target.recordActualPhysicalImplementation(contract.physicalImplementationId());
+			stats.publishRuntimeFeedbackTargets(new RuntimeFeedbackTarget[] { target }, 1, true);
+			assertNull(stats.typedSemiAntiDistinctEstimate(logical, physical, applicability),
+					"a target opened before failed reset cannot publish into the unavailable provider");
+		} finally {
+			target.release();
+		}
 	}
 
 	@Test

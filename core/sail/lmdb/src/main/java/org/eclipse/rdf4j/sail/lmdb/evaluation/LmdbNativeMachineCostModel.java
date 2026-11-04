@@ -148,7 +148,7 @@ final class LmdbNativeMachineCostModel {
 		double low = vector.dotLow(snapshot.coefficients);
 		double expected = vector.dotExpected(snapshot.coefficients);
 		double high = vector.dotHigh(snapshot.coefficients);
-		double covarianceVariance = quadratic(snapshot.covariance, vector.expectedArray());
+		double covarianceVariance = vector.quadraticExpected(snapshot.covariance);
 		double standardDeviation = Math.sqrt(Math.max(MIN_RESIDUAL_VARIANCE,
 				covarianceVariance + snapshot.residualVariance));
 		long supportedMask = 0L;

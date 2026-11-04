@@ -42,29 +42,46 @@ final class LmdbNativeFactorAlgebra {
 
 	/** Structural admission only: never opens storage, evaluates an expression or changes the entry row. */
 	static boolean candidate(SlotPlan plan) {
+		return candidate(plan, null);
+	}
+
+	static boolean candidate(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
+		if (facts == null) {
+			if (!(plan instanceof NativeValuesFoldPlan)) { return candidateUncached(plan, null); }
+			facts = new java.util.IdentityHashMap<>();
+		}
+		Boolean previous = facts.get(plan);
+		if (previous != null) { return previous; }
+		boolean result = candidateUncached(plan, facts);
+		facts.put(plan, result);
+		return result;
+	}
+
+	static boolean candidateUncached(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
+		if (plan instanceof NativeValuesFoldPlan guard) { return candidate(guard.folded, facts) || candidate(guard.original, facts); }
 		if (!enabled() || plan == null)
 			return false;
 		if (plan instanceof NativeAliasJoinPlan alias)
-			return candidate(alias.original);
+			return candidate(alias.original, facts);
 		if (plan instanceof UnionPlan || plan instanceof ExtensionPlan || plan instanceof LeftJoinPlan)
 			return true;
 		if (plan instanceof FilterPlan filter)
-			return candidate(filter.arg);
+			return candidate(filter.arg, facts);
 		if (plan instanceof EntryBindingCompatibilityPlan entry)
-			return candidate(entry.arg);
+			return candidate(entry.arg, facts);
 		if (plan instanceof RowDistinctPlan distinct)
-			return candidate(distinct.arg);
+			return candidate(distinct.arg, facts);
 		if (plan instanceof OrderedUnionPlan)
 			return true;
 		if (plan instanceof MinusPlan minus)
-			return candidate(minus.left) || candidate(minus.right);
+			return candidate(minus.left, facts) || candidate(minus.right, facts);
 		if (plan instanceof DrainGuardPlan guard)
-			return candidate(guard.delegate) || candidate(guard.drained);
+			return candidate(guard.delegate, facts) || candidate(guard.drained, facts);
 		if (plan instanceof JoinPlan join)
-			return candidate(join.left) || candidate(join.right);
+			return candidate(join.left, facts) || candidate(join.right, facts);
 		if (plan instanceof MultiJoinPlan join) {
 			for (SlotPlan child : join.children)
-				if (candidate(child))
+				if (candidate(child, facts))
 					return true;
 		}
 		return false;
@@ -280,6 +297,7 @@ final class LmdbNativeFactorAlgebra {
 	}
 
 	private static LmdbNativeFactorCursor open(SlotPlan plan, RowState row, OnePass onePass) throws IOException {
+		if (plan instanceof NativeValuesFoldPlan guard) { return open(guard.select(row), row, onePass); }
 		if (plan instanceof NativeAliasJoinPlan alias)
 			return open(alias.select(row), row, onePass);
 		if (plan instanceof UnionPlan union)
@@ -308,7 +326,8 @@ final class LmdbNativeFactorAlgebra {
 				SlotPlan right = new Boundary(optional.right);
 				RowCursor cursor = optional.lexicalProblemSlots != null
 						? new LexicalFrameLeftJoinCursor(left, right, optional.lexicalProblemSlots, row)
-						: new LexicalLeftJoinCursor(left, right, optional.lexicalSharedSlots, row);
+						: new LexicalLeftJoinCursor(left, right, optional.lexicalSharedSlots, optional.lexicalCondition,
+								row);
 				return LmdbNativeFactorRows.scalar(cursor, row.slots.length);
 			}
 			return join(optional.left, optional.right, row, true, onePass);
@@ -632,6 +651,7 @@ final class LmdbNativeFactorAlgebra {
 	private static final class Extended implements LmdbNativeFactorCursor {
 		final LmdbNativeFactorCursor input;
 		final CopyBinding[] copies;
+		final boolean sourcesExternallyRetained;
 		final RowState row;
 		int mark = -1;
 		int tick;
@@ -639,7 +659,20 @@ final class LmdbNativeFactorAlgebra {
 
 		Extended(LmdbNativeFactorCursor input, CopyBinding[] copies, RowState row) {
 			this.input = input;
-			this.copies = copies;
+			CopyBinding[] retainedCopies = null;
+			if (input.borrowedSourcesExternallyRetained() && copies != null) {
+				// Validate the exact snapshot that grants forwarding, never the caller's mutable array.
+				retainedCopies = copies.clone();
+				for (CopyBinding copy : retainedCopies) {
+					if (copy == null || copy.sourceSlot < 0 || copy.computed != null || copy.computedValue != null
+							|| copy.semanticValue != null) {
+						retainedCopies = null;
+						break;
+					}
+				}
+			}
+			sourcesExternallyRetained = retainedCopies != null;
+			this.copies = sourcesExternallyRetained ? retainedCopies : copies;
 			this.row = row;
 		}
 
@@ -681,6 +714,11 @@ final class LmdbNativeFactorAlgebra {
 				row.rollback(mark);
 				mark = -1;
 			}
+		}
+
+		@Override
+		public boolean borrowedSourcesExternallyRetained() {
+			return sourcesExternallyRetained;
 		}
 
 		@Override

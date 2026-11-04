@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -37,6 +38,9 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -144,9 +148,79 @@ class LmdbLoweredGraphInputAuthorityTest {
 			QueryRoot root = query(body, 3);
 			lower(root, selected, true);
 			assertThat(body.isIndependentInputScope()).isTrue();
-			NativeResult result = fixture.evaluate(root, selected, layout);
+			NativeResult result = fixture.evaluate(root, selected, layout, QueryExecutionPolicy.EXPERIMENTAL);
 			assertThat(result.bag()).containsExactly("{g=urn:native-authority:g2, matched=true}");
 			assertThat(body.getAlgorithmName()).isEqualTo("BoundStatementPatternLeftJoinIteration");
+			assertThat(result.reads()).hasSize(2).allSatisfy(read -> {
+				assertThat(read.subject()).isEqualTo(SUBJECT);
+				assertThat(read.contexts()).containsExactly(G1);
+			});
+			assertThat(result.reads()).extracting(NativeRead::count).containsExactly(true, true);
+			assertThat(result.reads()).extracting(NativeRead::predicate)
+					.containsExactly(PREDICATE, SECOND_PREDICATE);
+			assertThat(result.reads()).extracting(NativeRead::object).containsExactly(OBJECT, SECOND_OBJECT);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(RowLayout.class)
+	void defaultPolicyKeepsTheSameGraphBagAndSelectorOriginOnOrdinaryJoin(RowLayout layout,
+			@TempDir File directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			MapBindingSet selected = selected(G1);
+			Join body = new Join(fixedPattern(PREDICATE, OBJECT), fixedPattern(SECOND_PREDICATE, SECOND_OBJECT));
+			QueryRoot root = query(body, 3);
+			lower(root, selected, true);
+			assertThat(body.isIndependentInputScope()).isTrue();
+			NativeResult result = fixture.evaluate(root, selected, layout, QueryExecutionPolicy.DEFAULT);
+			assertThat(result.bag()).containsExactly("{g=urn:native-authority:g2, matched=true}");
+			assertThat(body.getAlgorithmName()).isEqualTo("JoinIterator");
+			assertThat(result.reads()).hasSize(2).allSatisfy(read -> {
+				assertThat(read.count()).isTrue();
+				assertThat(read.subject()).isEqualTo(SUBJECT);
+				assertThat(read.contexts()).containsExactly(G1);
+			});
+			assertThat(result.reads()).extracting(NativeRead::count).containsExactly(true, true);
+			assertThat(result.reads()).extracting(NativeRead::predicate)
+					.containsExactly(PREDICATE, SECOND_PREDICATE);
+			assertThat(result.reads()).extracting(NativeRead::object).containsExactly(OBJECT, SECOND_OBJECT);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(RowLayout.class)
+	void partiallyBoundNativeCountAndLookupRetainInheritedSelectorOrigin(RowLayout layout, @TempDir File directory)
+			throws Exception {
+		assertCountAndLookupRetainSelectorOrigin(layout, directory, QueryExecutionPolicy.EXPERIMENTAL,
+				"BoundStatementPatternLeftJoinIteration");
+	}
+
+	@ParameterizedTest
+	@EnumSource(RowLayout.class)
+	void defaultPolicyCountAndLookupRetainInheritedSelectorOrigin(RowLayout layout, @TempDir File directory)
+			throws Exception {
+		assertCountAndLookupRetainSelectorOrigin(layout, directory, QueryExecutionPolicy.DEFAULT, "JoinIterator");
+	}
+
+	private static void assertCountAndLookupRetainSelectorOrigin(RowLayout layout, File directory,
+			QueryExecutionPolicy policy, String expectedAlgorithm) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			MapBindingSet selected = selected(G1);
+			StatementPattern lookup = new StatementPattern(Var.of("subject", SUBJECT, true, true),
+					Var.of("predicate", SECOND_PREDICATE, true, true), Var.of("lookupObject"));
+			Join body = new Join(fixedPattern(PREDICATE, OBJECT), lookup);
+			QueryRoot root = query(body, 3);
+			root.setArg(new Projection(root.getArg(),
+					new ProjectionElemList(new ProjectionElem("g"), new ProjectionElem("matched"))));
+			lower(root, selected, true);
+			assertThat(body.isIndependentInputScope()).isTrue();
+			assertThat(lookup.getObjectVar().hasValue()).isFalse();
+
+			NativeResult result = fixture.evaluate(root, selected, layout, policy);
+			assertThat(result.bag()).containsExactly("{g=urn:native-authority:g2, matched=true}");
+			assertThat(result.rows()).singleElement()
+					.satisfies(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("g", "matched"));
+			assertThat(body.getAlgorithmName()).isEqualTo(expectedAlgorithm);
 			assertThat(result.reads()).hasSize(2).allSatisfy(read -> {
 				assertThat(read.subject()).isEqualTo(SUBJECT);
 				assertThat(read.contexts()).containsExactly(G1);
@@ -154,6 +228,8 @@ class LmdbLoweredGraphInputAuthorityTest {
 			assertThat(result.reads()).extracting(NativeRead::count).containsExactly(true, false);
 			assertThat(result.reads()).extracting(NativeRead::predicate)
 					.containsExactly(PREDICATE, SECOND_PREDICATE);
+			assertThat(result.reads().getFirst().object()).isEqualTo(OBJECT);
+			assertThat(result.reads().get(1).object()).isNull();
 		}
 	}
 
@@ -213,7 +289,7 @@ class LmdbLoweredGraphInputAuthorityTest {
 		ARRAY
 	}
 
-	private record NativeRead(boolean count, Resource subject, IRI predicate, List<Resource> contexts) {
+	private record NativeRead(boolean count, Resource subject, IRI predicate, Value object, List<Resource> contexts) {
 	}
 
 	private record NativeResult(List<BindingSet> rows, List<NativeRead> reads) {
@@ -247,6 +323,10 @@ class LmdbLoweredGraphInputAuthorityTest {
 		}
 
 		private NativeResult evaluate(QueryRoot root, BindingSet input, RowLayout layout) {
+			return evaluate(root, input, layout, QueryExecutionPolicy.DEFAULT);
+		}
+
+		private NativeResult evaluate(QueryRoot root, BindingSet input, RowLayout layout, QueryExecutionPolicy policy) {
 			List<BindingSet> rows = new ArrayList<>();
 			List<NativeRead> reads = new ArrayList<>();
 			LmdbSailStore backing = store.getBackingStore();
@@ -259,7 +339,7 @@ class LmdbLoweredGraphInputAuthorityTest {
 					@Override
 					public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
 							Value object, Resource... contexts) {
-						reads.add(new NativeRead(false, subject, predicate, List.of(contexts.clone())));
+						reads.add(new NativeRead(false, subject, predicate, object, List.of(contexts.clone())));
 						try {
 							return backing.createStatementIterator(admission.view(), subject, predicate, object, true,
 									contexts);
@@ -270,7 +350,7 @@ class LmdbLoweredGraphInputAuthorityTest {
 
 					@Override
 					public long getStatementCount(Resource subject, IRI predicate, Value object, Resource... contexts) {
-						reads.add(new NativeRead(true, subject, predicate, List.of(contexts.clone())));
+						reads.add(new NativeRead(true, subject, predicate, object, List.of(contexts.clone())));
 						try {
 							return backing.countStatementIterator(admission.view(), subject, predicate, object, true,
 									contexts);
@@ -290,8 +370,9 @@ class LmdbLoweredGraphInputAuthorityTest {
 					}
 				};
 				TupleExpr executable = layout == RowLayout.ARRAY ? root : root.getArg();
-				try (CloseableIteration<BindingSet> result = new DefaultEvaluationStrategy(source, null)
-						.precompile(executable)
+				DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+				strategy.setQueryExecutionPolicy(policy);
+				try (CloseableIteration<BindingSet> result = strategy.precompile(executable)
 						.evaluate(input)) {
 					result.forEachRemaining(rows::add);
 				}

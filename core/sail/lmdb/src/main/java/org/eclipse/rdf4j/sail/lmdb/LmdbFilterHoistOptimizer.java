@@ -64,7 +64,8 @@ final class LmdbFilterHoistOptimizer implements QueryOptimizer {
 				}
 				var conditionScope = FilterBindingScope.resolve(filter);
 				while (filter.getParentNode() instanceof Join parentJoin && !parentJoin.isVariableScopeChange()) {
-					TupleExpr otherArg = parentJoin.getLeftArg() == filter
+					boolean filterOnLeft = parentJoin.getLeftArg() == filter;
+					TupleExpr otherArg = filterOnLeft
 							? parentJoin.getRightArg()
 							: parentJoin.getLeftArg();
 					if (bindsNewConditionVar(otherArg, conditionVars, filter.getArg())
@@ -81,8 +82,13 @@ final class LmdbFilterHoistOptimizer implements QueryOptimizer {
 						break;
 					}
 					parentJoin.replaceWith(filter);
-					parentJoin.setLeftArg(otherArg);
-					parentJoin.setRightArg(filter.getArg());
+					// A sibling FILTER may require bindings from the original left operand. Hoist only
+					// the gate; changing operand order would execute that consumer before its provider.
+					if (filterOnLeft) {
+						parentJoin.setLeftArg(filter.getArg());
+					} else {
+						parentJoin.setRightArg(filter.getArg());
+					}
 					filter.setArg(parentJoin);
 					FilterBindingScope.preserve(filter, conditionScope);
 				}

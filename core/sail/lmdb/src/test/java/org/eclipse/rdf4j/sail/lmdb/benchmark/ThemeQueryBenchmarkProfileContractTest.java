@@ -38,7 +38,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
-/** Existing benchmark entry points must compose service requests and the immutable sketch profile independently. */
+/** Benchmark engine selection is fixed while sketch and overlay service requests remain independent. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class ThemeQueryBenchmarkProfileContractTest {
 
@@ -68,23 +68,23 @@ class ThemeQueryBenchmarkProfileContractTest {
 	}
 
 	@Test
-	void directOnlyRequestRetainsTheDefaultQueryProfile(@TempDir Path directory) throws Exception {
+	void directWaitRetainsTheCurrentEngineProfile(@TempDir Path directory) throws Exception {
 		assertCompleteLoadAndReuse(directory, false, false, true, false, false);
 	}
 
 	@Test
-	void overlayOnlyRequestRetainsTheDefaultQueryProfile(@TempDir Path directory) throws Exception {
+	void overlayOnlyRequestRetainsTheCurrentEngineProfile(@TempDir Path directory) throws Exception {
 		assertCompleteLoadAndReuse(directory, false, false, false, true, false);
 	}
 
 	@Test
-	void sketchParameterWithoutSketchWaitingStillOwnsTheExperimentalProfile(@TempDir Path directory)
+	void sketchParameterWithoutSketchWaitingKeepsItsSketchOwner(@TempDir Path directory)
 			throws Exception {
 		assertCompleteLoadAndReuse(directory, true, false, false, false, false);
 	}
 
 	@Test
-	void absentWaitRequestsAndFalseParameterRetainAllDefaults(@TempDir Path directory) throws Exception {
+	void absentWaitRequestsAndFalseParameterKeepTheCurrentEngine(@TempDir Path directory) throws Exception {
 		assertCompleteLoadAndReuse(directory, false, false, false, false, true);
 	}
 
@@ -112,11 +112,12 @@ class ThemeQueryBenchmarkProfileContractTest {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark(directory.toFile(), repository -> {
 			loads[0]++;
 			LmdbStore store = (LmdbStore) repository.getSail();
-			assertEquals(sketchProfile, store.getQueryExecutionPolicy().experimentalQueryOptimizations(),
-					"the actual loading store must select the profile from sketch intent alone");
+			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations(),
+					"the current branch planner remains enabled independently of sketch intent");
+			assertTrue(store.isNativeQueryEngineEnabled());
 			repository.init();
-			assertEquals(!waitForDirect, "disabled".equals(store.getDirectAdjacencyReadinessDescription()),
-					"direct ownership must follow its own request even with the default query profile");
+			assertFalse("disabled".equals(store.getDirectAdjacencyReadinessDescription()),
+					"direct ownership remains enabled independently of the wait request");
 			try (var connection = repository.getConnection()) {
 				connection.begin();
 				connection.add(Values.iri("urn:profile:subject:0"), Values.iri("urn:profile:predicate"),

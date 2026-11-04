@@ -92,6 +92,7 @@ final class LmdbMappedFrontierLearningSession {
 	private final LmdbEstimatorRuntime runtime;
 	private final PackedQueryView query;
 	private final boolean datasetUsesStoreDefaults;
+	private final int planeMask;
 	private final LmdbEstimatorRuntime.PlanningRevisions revisions;
 	private final LmdbPhysicalCostObjective physicalCostObjective;
 	private final LogicalBasis[] logicalBases;
@@ -111,6 +112,13 @@ final class LmdbMappedFrontierLearningSession {
 
 	LmdbMappedFrontierLearningSession(LmdbEstimatorRuntime runtime, PackedQueryView query,
 			boolean datasetUsesStoreDefaults, LmdbPhysicalEventOrigins physicalOrigins) {
+		this(runtime, query, datasetUsesStoreDefaults, physicalOrigins,
+				org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.BOTH_PLANES);
+	}
+
+	LmdbMappedFrontierLearningSession(LmdbEstimatorRuntime runtime, PackedQueryView query,
+			boolean datasetUsesStoreDefaults, LmdbPhysicalEventOrigins physicalOrigins, int planeMask) {
+		this.planeMask = planeMask;
 		this.physicalOrigins = physicalOrigins;
 		this.runtime = runtime;
 		this.query = query;
@@ -1171,8 +1179,11 @@ final class LmdbMappedFrontierLearningSession {
 	}
 
 	private String datasetScope(TupleExpr expression) {
-		return (datasetUsesStoreDefaults ? "store-defaults" : "explicit-dataset") + '|'
+		String scope = (datasetUsesStoreDefaults ? "store-defaults" : "explicit-dataset") + '|'
 				+ (expression instanceof StatementPattern pattern ? pattern.getScope().name() : "mixed-scope");
+		// Old mapped keys omitted the actual read plane, so old explicit-only observations may occupy the apparent
+		// BOTH namespace too. Every newly qualified reader starts in this exact read-population namespace.
+		return scope + "|mapped-read-v2:planes:" + planeMask;
 	}
 
 	private static RuntimeFeedbackContract.SemanticKind semanticKind(LmdbRuntimeFeedbackDescriptor descriptor,

@@ -270,6 +270,15 @@ class LmdbEvaluationStatistics extends EvaluationStatistics
 		}
 	}
 
+	LmdbPreparedFilterOutcome prepareNativeFilterOutcome(Filter surface, Filter origin, TripleSource source,
+			Dataset dataset) {
+		if (!feedbackPublicationAllowed() || requiresReadAuthority && source != executionSource) {
+			return LmdbPreparedFilterOutcome.denied();
+		}
+		LmdbPreparedFilterOutcome prepared = filterServices.prepareNativeFilterOutcome(surface, origin, source, dataset);
+		return prepared == null ? LmdbPreparedFilterOutcome.denied() : prepared;
+	}
+
 	/** Returns whether runtime feedback observed through this instance is published into the learned state. */
 	boolean feedbackPublicationAllowed() {
 		return feedbackPublicationAllowed && readAuthorityAllowsEvidence();

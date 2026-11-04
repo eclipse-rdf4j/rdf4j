@@ -668,35 +668,36 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		Throwable observed;
 		try {
 			observed = catchThrowable(() -> {
-				try (RowCursor cursor = openParallelRowsWithKernel(lowered, plan, scenario, ignored -> new JaninoKernel() {
-					private boolean failing;
-					private boolean closed;
+				try (RowCursor cursor = openParallelRowsWithKernel(lowered, plan, scenario,
+						ignored -> new JaninoKernel() {
+							private boolean failing;
+							private boolean closed;
 
-					@Override
-					public void bind(KernelContext context) {
-						failing = failingWorkerClaimed.compareAndSet(false, true);
-					}
-
-					@Override
-					public int fill(long[] rowBuffer, int maxRows) {
-						if (failing) {
-							bodiesFailed.incrementAndGet();
-							throw bodyFailure;
-						}
-						return 0;
-					}
-
-					@Override
-					public void close() {
-						if (!closed) {
-							closed = true;
-							if (failing) {
-								cleanupsFailed.incrementAndGet();
-								throw cleanupFailure;
+							@Override
+							public void bind(KernelContext context) {
+								failing = failingWorkerClaimed.compareAndSet(false, true);
 							}
-						}
-					}
-				})) {
+
+							@Override
+							public int fill(long[] rowBuffer, int maxRows) {
+								if (failing) {
+									bodiesFailed.incrementAndGet();
+									throw bodyFailure;
+								}
+								return 0;
+							}
+
+							@Override
+							public void close() {
+								if (!closed) {
+									closed = true;
+									if (failing) {
+										cleanupsFailed.incrementAndGet();
+										throw cleanupFailure;
+									}
+								}
+							}
+						})) {
 					assertThat(cursor).as("no row can escape before the initiating failure").isNull();
 				}
 			});

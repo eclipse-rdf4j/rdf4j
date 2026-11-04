@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -1316,7 +1317,8 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	@Test
-	public void earlyCloseCancelsWorkersAndLeavesStoreUsable() {
+	public void earlyCloseCancelsWorkersAndLeavesStoreUsable() throws Exception {
+		LmdbTestUtil.awaitBackgroundMaintenance((LmdbStore) repository.getSail(), 30, TimeUnit.SECONDS);
 		long cancelled = LmdbNativeParallelPipelines.CANCELLED_RUNS.get();
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			// Probe/hedge execution may consume a complete parallel candidate before its caller sees one row.

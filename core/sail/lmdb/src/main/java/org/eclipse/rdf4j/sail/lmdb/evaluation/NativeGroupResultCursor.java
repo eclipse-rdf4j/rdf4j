@@ -442,18 +442,24 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 
 	/** Active leases and every accepted producer resource finish before a sample can be marked complete. */
 	private Throwable finishSelection(Throwable failure) {
-		if (selection != null) {
-			if (completed && failure == null) {
-				selection.selected().exhausted();
-			} else if (failure != null) {
-				selection.selected().failed(failure);
-			}
-			failure = KernelRuntime.closeResource(selection.selected(), failure);
-			if (completed && failure == null) {
-				LmdbNativeCostCalibration.record(selection.tag(), selection.predictedWork(),
-						System.nanoTime() - selection.startedNanos());
-			}
-			selection = null;
+		NativePhysicalGroupArbitration.Selection retiring = selection;
+		if (retiring == null) {
+			return failure;
+		}
+		// Detach before invoking model or filter callbacks: terminal cleanup owns this receipt exactly once.
+		selection = null;
+		LmdbNativeStrategySelection<NativeResultCursor> selected = retiring.selected();
+		if (completed && failure == null) {
+			failure = KernelRuntime.closeResource(selected::exhausted, failure);
+		}
+		if (failure != null) {
+			Throwable terminal = failure;
+			failure = KernelRuntime.closeResource(() -> selected.failed(terminal), failure);
+		}
+		failure = KernelRuntime.closeResource(selected, failure);
+		if (completed && failure == null) {
+			LmdbNativeCostCalibration.record(retiring.tag(), retiring.predictedWork(),
+					System.nanoTime() - retiring.startedNanos());
 		}
 		return failure;
 	}

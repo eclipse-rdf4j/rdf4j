@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailDatasetReadComposition;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 
 @Experimental
@@ -123,6 +124,29 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		}
 	}
 
+	/** Borrow only the actual read owner; custom optimizer input and graph metadata remain the caller's. */
+	<T> T withPlanningReadScope(Dataset dataset, java.util.function.Supplier<T> planner) {
+		if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
+			lmdbStatistics.bindOptimizerDataset(tripleSource, dataset);
+		}
+		try (TripleStore.PlanningReadPin ignored = pinCustomPlanningReads();
+				var population = runtime == null
+						? (org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope) () -> {
+						}
+						: runtime.beginFrontierReadScope(tripleSource, dataset)) {
+			return planner.get();
+		}
+	}
+
+	/** A newly borrowed custom scope needs the audited complete stream, independently of Frontier table support. */
+	private TripleStore.PlanningReadPin pinCustomPlanningReads() {
+		if (runtime == null) {
+			return TripleStore.PlanningReadPin.NONE;
+		}
+		return SailDatasetReadComposition.resolve(tripleSource, LmdbPhysicalReadComposition.class,
+				LmdbPhysicalReadComposition::union).isPresent() ? pinPlanningReads() : unqualifiedPlanningReads();
+	}
+
 	TupleExpr optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
 			lmdbStatistics.bindOptimizerDataset(tripleSource, dataset);
@@ -134,7 +158,11 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		}
 		// Every planner-time storage read of this pipeline run (request-bound optimizers, cascades, filter sampling)
 		// reuses the query's own dataset lease; the pin is released before the dataset is, on this thread.
-		try (TripleStore.PlanningReadPin ignored = pinPlanningReads()) {
+		try (TripleStore.PlanningReadPin ignored = pinPlanningReads();
+				var population = runtime == null
+						? (org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope) () -> {
+						}
+						: runtime.beginFrontierReadScope(tripleSource, dataset)) {
 			if (tupleExpr == null || planCache == null) {
 				return optimizeUncached(tupleExpr, dataset, bindings);
 			}
@@ -301,7 +329,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 												.collect(Collectors.toUnmodifiableSet())));
 		LmdbPlanDecisionCache.DetachedRefreshWork refreshWork = summary == null || detachedPrepared == null
 				|| runtime.cascadesPlanCache() == null
-				|| detachedPlanningSnapshots == null
+				|| detachedPlanningSnapshots == null || runtime.frontierReadPlaneMask() == 0
 						? null
 						: PackedCascadesPlanner
 								.detachedRefreshWork(detachedPrepared, detachedGoal, summary,
@@ -317,7 +345,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 										context.revision().planningRevisions().dataRevision(),
 										strategy.getQueryExecutionPolicy().experimentalQueryOptimizations(),
 										context.filterReadIdentity(),
-										context.inputIdentity()))
+										context.inputIdentity(), runtime.frontierReadPlaneMask()))
 								.orElse(null);
 		return new LmdbPipelinePlanCache.PlanComputation(optimized, summary, refreshWork, assumptions);
 	}
@@ -331,7 +359,11 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 			BiFunction<TupleExpr, LmdbCascadesOptimizer, T> planner) {
 		LmdbValueIdFilter.preserveEffectiveKinds(completeQuery);
 		PlanningGraphDomains.capture(completeQuery, PlanningGraphDomain.defaultGraph());
-		try (TripleStore.PlanningReadPin ignored = pinPlanningReads()) {
+		try (TripleStore.PlanningReadPin ignored = pinPlanningReads();
+				var population = runtime == null
+						? (org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope) () -> {
+						}
+						: runtime.beginFrontierReadScope(tripleSource, dataset)) {
 			LmdbFilterReadContext.FamilyIdentity entry = filterReadIdentity(completeQuery, dataset, bindings);
 			prepareRequestBoundInput(completeQuery, dataset, bindings);
 			return planner.apply(completeQuery, cascadesOptimizer(completeQuery, dataset, bindings, entry));
@@ -387,6 +419,10 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	}
 
 	private LmdbPipelinePlanCache.Context context(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		// Unknown physical compositions have no plane-qualified reusable query plan or detached refresh owner.
+		if (runtime.frontierReadPlaneMask() == 0) {
+			return null;
+		}
 		LmdbPipelinePlanCache.BindingIdentity bindingIdentity = LmdbPipelinePlanCache.BindingIdentity.of(bindings);
 		LmdbPipelinePlanCache.DatasetIdentity datasetIdentity = LmdbPipelinePlanCache.DatasetIdentity.of(dataset);
 		if (bindingIdentity == null || datasetIdentity == null) {
@@ -436,6 +472,9 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		}
 		Collections.sort(names);
 		StringBuilder signature = new StringBuilder(names.size() * 48);
+		signature.append("frontier.population.schema=4;read.planes=")
+				.append(runtime.frontierReadPlaneMask())
+				.append(';');
 		signature.append("query.policy.experimental=")
 				.append(strategy.getQueryExecutionPolicy().experimentalQueryOptimizations())
 				.append(';');

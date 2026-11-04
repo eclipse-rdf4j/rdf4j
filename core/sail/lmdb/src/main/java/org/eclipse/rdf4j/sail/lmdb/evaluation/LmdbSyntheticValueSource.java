@@ -133,9 +133,10 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	static NativeFilterLease activeFilterParent(NativeExecutionContext owner) {
 		SyntheticValueSource active = ACTIVE_EVALUATION.get();
-		return active != null && active.context != null && active.context.filterOutcomeOwner() == owner.filterOutcomeOwner()
-				? active.filterParent
-				: null;
+		return active != null && active.context != null
+				&& active.context.filterOutcomeOwner() == owner.filterOutcomeOwner()
+						? active.filterParent
+						: null;
 	}
 
 	/** A fresh evaluation-scoped instance over the same store and catalog, owning its own runtime interner. */
@@ -305,6 +306,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			ACTIVE_EVALUATION.set(active);
 		}
 		return new EvaluationScope(previous, active != null);
+	}
+
+	/** The exact already-attached invocation facade, or null; never creates or substitutes an owner. */
+	static SyntheticValueSource activeEvaluation() {
+		return ACTIVE_EVALUATION.get();
 	}
 
 	/** True while a nested step is borrowing this context; only the outer evaluation owns its lifetime. */

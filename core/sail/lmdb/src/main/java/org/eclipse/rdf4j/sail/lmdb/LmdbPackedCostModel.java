@@ -96,7 +96,7 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 final class LmdbPackedCostModel
 		implements PackedCostModel, PackedStalePlanValidator, PackedRootCardinalityCertifier {
 
-	static final long VERSION = 36L;
+	static final long VERSION = 38L;
 
 	private static final String[] DISTINCT_REQUIREMENT_METRICS = {
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
@@ -118,6 +118,7 @@ final class LmdbPackedCostModel
 	private final LmdbFilterReadContext filterReadContext;
 	private final OptionalLong executionSnapshotEpoch;
 	private final boolean datasetUsesStoreDefaults;
+	private final LmdbFrontierReadSelection readSelection;
 	private final SailDatasetTripleTermSource frontierStatementSource;
 	private final EvaluationStrategy evaluationStrategy;
 	private final boolean frontierPlanningAllowed;
@@ -148,7 +149,8 @@ final class LmdbPackedCostModel
 			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource,
 			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed) {
 		this(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy,
-				frontierPlanningAllowed, null, true, null, null);
+				frontierPlanningAllowed, null, true, null, null,
+				runtime.frontierPlanningReadSelection(frontierStatementSource));
 	}
 
 	LmdbPackedCostModel(LmdbEstimatorRuntime runtime, OptionalLong executionSnapshotEpoch,
@@ -156,7 +158,8 @@ final class LmdbPackedCostModel
 			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed,
 			LmdbFilterReadContext filterReadContext) {
 		this(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy,
-				frontierPlanningAllowed, null, true, null, filterReadContext);
+				frontierPlanningAllowed, null, true, null, filterReadContext,
+				runtime.frontierPlanningReadSelection(frontierStatementSource));
 	}
 
 	PackedProviderCacheIdentity providerCacheIdentity() {
@@ -167,11 +170,13 @@ final class LmdbPackedCostModel
 			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource,
 			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed,
 			FrontierStatisticsView statisticsView, boolean unpinnedMappedStatisticsAllowed,
-			PackedQueryView planningQuery, LmdbFilterReadContext filterReadContext) {
+			PackedQueryView planningQuery, LmdbFilterReadContext filterReadContext,
+			LmdbFrontierReadSelection readSelection) {
 		this.filterReadContext = filterReadContext;
 		this.runtime = runtime;
 		this.executionSnapshotEpoch = executionSnapshotEpoch == null ? OptionalLong.empty() : executionSnapshotEpoch;
 		this.datasetUsesStoreDefaults = datasetUsesStoreDefaults;
+		this.readSelection = readSelection;
 		this.frontierStatementSource = frontierStatementSource;
 		this.evaluationStrategy = evaluationStrategy;
 		this.frontierPlanningAllowed = frontierPlanningAllowed;
@@ -183,7 +188,7 @@ final class LmdbPackedCostModel
 
 	@Override
 	public PackedCostSession openSession(PackedQueryView query) {
-		if (!frontierPlanningAllowed || !allNativeGraphDomains(query)
+		if (!frontierPlanningAllowed || !mappedReadCurrent() || !allNativeGraphDomains(query)
 				|| runtime.frontierSettings().mode() == FrontierEstimatorMode.OFF) {
 			PackedCostSession scalar = PackedCostSession.scalar(this, query);
 			return runtime.frontierSettings().mode() == FrontierEstimatorMode.AUTHORITATIVE
@@ -208,14 +213,14 @@ final class LmdbPackedCostModel
 			}
 			LmdbPackedCostModel scoped = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
 					datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
-					view, true, query, filterReadContext);
+					view, true, query, filterReadContext, readSelection);
 			scoped.mappedStatisticsCache.initializeLineageWorkBudget(statementPatternCount(query));
 			return new LmdbFrontierStatisticsCostSession(PackedCostSession.scalar(scoped, query), scoped, view, query,
-					runtime, datasetUsesStoreDefaults);
+					runtime, datasetUsesStoreDefaults, mappedPlaneMask());
 		}
 		LmdbPackedCostModel conventional = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
 				datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
-				null, false, query, filterReadContext);
+				null, false, query, filterReadContext, readSelection);
 		if (runtime.frontierSettings().mode() != FrontierEstimatorMode.AUTHORITATIVE) {
 			return PackedCostSession.scalar(conventional, query);
 		}
@@ -271,6 +276,8 @@ final class LmdbPackedCostModel
 		long version = mixVersion(VERSION, executionSnapshotEpoch.isPresent() ? 1L : 0L);
 		version = mixVersion(version, frontier.mode().ordinal());
 		version = mixVersion(version, datasetUsesStoreDefaults ? 1L : 0L);
+		version = mixVersion(version, mappedReadPopulation().ordinal());
+		version = mixVersion(version, ownedReadCurrent() ? readSelection.planeMask() : 0);
 		version = mixVersion(version, frontierPlanningAllowed ? 1L : 0L);
 		return mixVersion(version, runtime.mayHaveInferred() ? 1L : 0L);
 	}
@@ -316,8 +323,11 @@ final class LmdbPackedCostModel
 			}
 			return runtime.conventionalStatementPatternRows(pattern);
 		}
-		return runtime.packedStatementPatternRows((Resource) subjectValue, (IRI) predicateValue, objectValue,
-				(Resource) contextValue, repeatedComponentPairMask(query, relationId));
+		LmdbPlanningCardinality physical = runtime.packedReadRowsQualified((Resource) subjectValue,
+				(IRI) predicateValue,
+				objectValue, (Resource) contextValue, repeatedComponentPairMask(query, relationId),
+				qualifiedReadSelection(), statisticsView);
+		return physical == null ? Double.NaN : physical.rows();
 	}
 
 	TupleExpr materializeRelation(PackedQueryView query, int relationId) {
@@ -574,6 +584,73 @@ final class LmdbPackedCostModel
 				&& status.fallbackReason() == FrontierFallbackReason.NONE;
 	}
 
+	boolean mappedReadCurrent() {
+		return ownedReadCurrent() && readSelection.population() == LmdbFrontierReadPopulation.STORE_DEFAULTS;
+	}
+
+	private boolean ownedReadCurrent() {
+		return readSelection.matchesSource(frontierStatementSource) && readSelection.isCurrent()
+				&& executionSnapshotEpoch.isPresent()
+				&& executionSnapshotEpoch.getAsLong() == readSelection.snapshotEpoch();
+	}
+
+	private static FrontierLeafEstimate unavailableLeafEstimate(FrontierFallbackReason reason) {
+		return new FrontierLeafEstimate(1.0d, 0.0d, Double.MAX_VALUE, 0.0d, "frontier-v2-unavailable", reason);
+	}
+
+	private static FrontierJoinEstimate unavailableJoinEstimate(FrontierFallbackReason reason) {
+		return new FrontierJoinEstimate(1.0d, 0.0d, Double.MAX_VALUE, 0.0d,
+				"frontier-v2-join-unavailable", reason);
+	}
+
+	private FrontierLeafEstimate estimateOwnedLeaf(FrontierLeafProbe probe) {
+		if (!mappedReadCurrent() || runtime.statisticsService() == null) {
+			return unavailableLeafEstimate(FrontierFallbackReason.UNSUPPORTED_QUERY_SHAPE);
+		}
+		try (var view = runtime.statisticsService().openView(readSelection.snapshotEpoch())) {
+			return view.estimateLeaf(probe);
+		}
+	}
+
+	private FrontierJoinEstimate estimateOwnedJoin(FrontierJoinProbe probe) {
+		if (!mappedReadCurrent() || runtime.statisticsService() == null) {
+			return unavailableJoinEstimate(FrontierFallbackReason.UNSUPPORTED_QUERY_SHAPE);
+		}
+		try (var view = runtime.statisticsService().openView(readSelection.snapshotEpoch())) {
+			return view.estimateJoin(probe);
+		}
+	}
+
+	private FrontierJoinEstimate estimateOwnedSubgraph(FrontierJoinProgram program) {
+		if (!mappedReadCurrent() || runtime.statisticsService() == null) {
+			return unavailableJoinEstimate(FrontierFallbackReason.UNSUPPORTED_QUERY_SHAPE);
+		}
+		try (var view = runtime.statisticsService().openView(readSelection.snapshotEpoch())) {
+			return view.estimateSubgraph(program);
+		}
+	}
+
+	private double estimateOwnedDistinct(FrontierLeafProbe probe, int component) {
+		if (!mappedReadCurrent() || runtime.statisticsService() == null) {
+			return Double.NaN;
+		}
+		try (var view = runtime.statisticsService().openView(readSelection.snapshotEpoch())) {
+			return view.estimateProjectedDistinct(probe, component);
+		}
+	}
+
+	private LmdbFrontierReadSelection qualifiedReadSelection() {
+		return mappedReadCurrent() ? readSelection : LmdbFrontierReadSelection.UNAVAILABLE;
+	}
+
+	private LmdbFrontierReadPopulation mappedReadPopulation() {
+		return mappedReadCurrent() ? readSelection.population() : LmdbFrontierReadPopulation.UNSUPPORTED;
+	}
+
+	private int mappedPlaneMask() {
+		return mappedReadCurrent() ? readSelection.planeMask() : 0;
+	}
+
 	private FrontierLeafEstimate mappedLeafEstimate(PackedQueryView query, int relationId) {
 		if (!query.graphDomain(relationId).allowsNativeEvidence()) {
 			return null;
@@ -594,7 +671,7 @@ final class LmdbPackedCostModel
 			return null;
 		}
 		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
-				runtime.valueStore(), expression, FrontierLeafProbe.BOTH_PLANES);
+				runtime.valueStore(), expression, mappedPlaneMask(), mappedReadPopulation());
 		if (probe == null) {
 			return null;
 		}
@@ -602,7 +679,7 @@ final class LmdbPackedCostModel
 				? statisticsView.estimateLeaf(probe)
 				: executionSnapshotEpoch.isPresent()
 						? statistics.estimateLeaf(executionSnapshotEpoch.getAsLong(), probe)
-						: statistics.estimateLeafCurrent(probe);
+						: estimateOwnedLeaf(probe);
 		FrontierLeafEstimate available = estimate.fallbackReason() == FrontierFallbackReason.NONE ? estimate : null;
 		if (mappedStatisticsCache != null) {
 			mappedStatisticsCache.storeLeaf(relationId, available);
@@ -785,7 +862,7 @@ final class LmdbPackedCostModel
 					continue;
 				}
 				FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
-						runtime.valueStore(), factor, FrontierLeafProbe.BOTH_PLANES);
+						runtime.valueStore(), factor, mappedPlaneMask(), mappedReadPopulation());
 				if (probe == null) {
 					continue;
 				}
@@ -1085,7 +1162,7 @@ final class LmdbPackedCostModel
 		}
 		if (expandedCount == 1) {
 			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
-					runtime.valueStore(), factors.getFirst(), FrontierLeafProbe.BOTH_PLANES);
+					runtime.valueStore(), factors.getFirst(), mappedPlaneMask(), mappedReadPopulation());
 			if (probe == null) {
 				return Double.NaN;
 			}
@@ -1093,7 +1170,7 @@ final class LmdbPackedCostModel
 			return estimate.fallbackReason() == FrontierFallbackReason.NONE ? estimate.pointRows() : Double.NaN;
 		}
 		FrontierJoinProgram program = LmdbFrontierProbeFactory.joinProgramForLineage(
-				runtime.valueStore(), factors, FrontierLeafProbe.BOTH_PLANES);
+				runtime.valueStore(), factors, mappedPlaneMask(), mappedReadPopulation());
 		if (program == null) {
 			return Double.NaN;
 		}
@@ -1377,7 +1454,8 @@ final class LmdbPackedCostModel
 		}
 		if (expandedCount == 1) {
 			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
-					runtime.valueStore(), statementFactors.getFirst(), bindings, FrontierLeafProbe.BOTH_PLANES);
+					runtime.valueStore(), statementFactors.getFirst(), bindings, mappedPlaneMask(),
+					mappedReadPopulation());
 			if (probe == null) {
 				return null;
 			}
@@ -1395,7 +1473,7 @@ final class LmdbPackedCostModel
 			return result;
 		}
 		FrontierJoinProgram program = LmdbFrontierProbeFactory.joinProgramForLineage(
-				runtime.valueStore(), statementFactors, bindings, FrontierLeafProbe.BOTH_PLANES);
+				runtime.valueStore(), statementFactors, bindings, mappedPlaneMask(), mappedReadPopulation());
 		if (program == null) {
 			return null;
 		}
@@ -1435,7 +1513,8 @@ final class LmdbPackedCostModel
 				continue;
 			}
 			FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbeForLineage(
-					runtime.valueStore(), prefixStatement, appendedStatement, FrontierLeafProbe.BOTH_PLANES);
+					runtime.valueStore(), prefixStatement, appendedStatement, mappedPlaneMask(),
+					mappedReadPopulation());
 			if (probe == null) {
 				return null;
 			}
@@ -1487,7 +1566,7 @@ final class LmdbPackedCostModel
 	private FrontierJoinEstimate mappedProjectedDistinctTransition(PackedQueryView query, int relationId,
 			PackedCostContext context, TupleExpr expression) {
 		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
-				runtime.valueStore(), expression, FrontierLeafProbe.BOTH_PLANES);
+				runtime.valueStore(), expression, mappedPlaneMask(), mappedReadPopulation());
 		if (probe == null) {
 			return null;
 		}
@@ -1544,7 +1623,7 @@ final class LmdbPackedCostModel
 			LmdbStatisticsService statistics = runtime.statisticsService();
 			distinct = executionSnapshotEpoch.isPresent()
 					? statistics.estimateProjectedDistinct(executionSnapshotEpoch.getAsLong(), probe, component)
-					: statistics.estimateProjectedDistinctCurrent(probe, component);
+					: estimateOwnedDistinct(probe, component);
 		}
 		if (mappedStatisticsCache != null) {
 			mappedStatisticsCache.storeProjectedDistinct(probe, component, distinct);
@@ -1655,7 +1734,7 @@ final class LmdbPackedCostModel
 		}
 		if (expandedCount == 2) {
 			FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbeForLineage(
-					runtime.valueStore(), factors, FrontierLeafProbe.BOTH_PLANES);
+					runtime.valueStore(), factors, mappedPlaneMask(), mappedReadPopulation());
 			if (probe == null) {
 				return null;
 			}
@@ -1677,7 +1756,7 @@ final class LmdbPackedCostModel
 			return result;
 		}
 		FrontierJoinProgram program = LmdbFrontierProbeFactory.joinProgramForLineage(
-				runtime.valueStore(), factors, FrontierLeafProbe.BOTH_PLANES);
+				runtime.valueStore(), factors, mappedPlaneMask(), mappedReadPopulation());
 		if (program == null) {
 			return null;
 		}
@@ -1721,7 +1800,7 @@ final class LmdbPackedCostModel
 		}
 		if (expandedCount == 1) {
 			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
-					runtime.valueStore(), factors.get(0), FrontierLeafProbe.BOTH_PLANES);
+					runtime.valueStore(), factors.get(0), mappedPlaneMask(), mappedReadPopulation());
 			if (probe == null) {
 				return null;
 			}
@@ -1729,7 +1808,7 @@ final class LmdbPackedCostModel
 					? statisticsView.estimateLeaf(probe)
 					: executionSnapshotEpoch.isPresent()
 							? runtime.statisticsService().estimateLeaf(executionSnapshotEpoch.getAsLong(), probe)
-							: runtime.statisticsService().estimateLeafCurrent(probe);
+							: estimateOwnedLeaf(probe);
 			return estimate.fallbackReason() == FrontierFallbackReason.NONE
 					? new MappedRowsEstimate(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows(),
 							estimate.confidence(), estimate.source())
@@ -1737,7 +1816,7 @@ final class LmdbPackedCostModel
 		}
 		if (expandedCount == 2) {
 			FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbeForLineage(
-					runtime.valueStore(), factors, FrontierLeafProbe.BOTH_PLANES);
+					runtime.valueStore(), factors, mappedPlaneMask(), mappedReadPopulation());
 			if (probe == null) {
 				return null;
 			}
@@ -1752,7 +1831,7 @@ final class LmdbPackedCostModel
 					? statisticsView.estimateJoin(probe)
 					: executionSnapshotEpoch.isPresent()
 							? runtime.statisticsService().estimateJoin(executionSnapshotEpoch.getAsLong(), probe)
-							: runtime.statisticsService().estimateJoinCurrent(probe);
+							: estimateOwnedJoin(probe);
 			MappedRowsEstimate result = MappedRowsEstimate.from(estimate);
 			if (mappedStatisticsCache != null) {
 				mappedStatisticsCache.storeJoinEstimate(probe, result);
@@ -1760,7 +1839,7 @@ final class LmdbPackedCostModel
 			return result;
 		}
 		FrontierJoinProgram program = LmdbFrontierProbeFactory.joinProgramForLineage(
-				runtime.valueStore(), factors, FrontierLeafProbe.BOTH_PLANES);
+				runtime.valueStore(), factors, mappedPlaneMask(), mappedReadPopulation());
 		if (program == null) {
 			return null;
 		}
@@ -1776,7 +1855,7 @@ final class LmdbPackedCostModel
 				? statisticsView.estimateSubgraph(program)
 				: executionSnapshotEpoch.isPresent()
 						? runtime.statisticsService().estimateSubgraph(executionSnapshotEpoch.getAsLong(), program)
-						: runtime.statisticsService().estimateSubgraphCurrent(program);
+						: estimateOwnedSubgraph(program);
 		MappedRowsEstimate result = MappedRowsEstimate.from(estimate);
 		if (mappedStatisticsCache != null) {
 			mappedStatisticsCache.storeProgramEstimate(program, result);
@@ -4247,8 +4326,8 @@ final class LmdbPackedCostModel
 			return LmdbPlanningCardinality.exact(0.0d, 0L);
 		}
 		if (statisticsView == null) {
-			return runtime.packedStatementPatternRowsQualified((Resource) prefix.subject(), (IRI) prefix.predicate(),
-					prefix.object(), (Resource) prefix.graph(), 0);
+			return runtime.packedReadRowsQualified((Resource) prefix.subject(), (IRI) prefix.predicate(),
+					prefix.object(), (Resource) prefix.graph(), 0, qualifiedReadSelection(), null);
 		}
 		FrontierLeafProbe probe = nativePrefixProbe(prefix);
 		if (probe == null) {
@@ -4272,9 +4351,14 @@ final class LmdbPackedCostModel
 	}
 
 	private FrontierLeafProbe nativePrefixProbe(FiniteLookupKey prefix) {
+		// The raw physical API does not encode the query alias for a bound default context; null itself means ANY.
+		if (org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL.equals(prefix.graph())
+				|| org.eclipse.rdf4j.model.vocabulary.SESAME.NIL.equals(prefix.graph())) {
+			return null;
+		}
 		// Context-less native requests range over all contexts; named-only and variable equality are residual tests.
 		return LmdbFrontierProbeFactory.probe(runtime.valueStore(), prefix.subject(), prefix.predicate(),
-				prefix.object(), prefix.graph(), FrontierLeafProbe.BOTH_PLANES, 0);
+				prefix.object(), prefix.graph(), mappedPlaneMask(), 0);
 	}
 
 	private static FiniteLookupKey nativePrefix(FiniteLookupKey values, int mask) {
@@ -4307,8 +4391,9 @@ final class LmdbPackedCostModel
 			// A literal in a resource position can never match a stored statement: this zero is exact.
 			return LmdbPlanningCardinality.exact(0.0d, 0L);
 		}
-		return runtime.packedStatementPatternRowsQualified((Resource) probe.subject(), (IRI) probe.predicate(),
-				probe.object(), (Resource) probe.graph(), repeatedComponentPairMask);
+		return runtime.packedReadRowsQualified((Resource) probe.subject(), (IRI) probe.predicate(),
+				probe.object(), (Resource) probe.graph(), repeatedComponentPairMask, qualifiedReadSelection(),
+				statisticsView);
 	}
 
 	private static int potentiallyBoundStatementComponents(PackedQueryView query, int assignmentId, int relationId) {

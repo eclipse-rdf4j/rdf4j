@@ -151,7 +151,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 	private static NativePhysicalOutputEvidence.Column outputColumn(ValueExpr expression,
 			Map<String, NativePhysicalOutputEvidence.Column> columns, Object definition) {
 		if (expression instanceof Var variable && !variable.hasValue()) {
-			return columns.get(variable.getName());
+			NativePhysicalOutputEvidence.Column column = columns.get(variable.getName());
+			return column == null ? null : column.expressionValue();
 		}
 		if (expression instanceof Var || expression instanceof ValueConstant) {
 			return new NativePhysicalOutputEvidence.Column(definition, NativeResultCell.Kind.RDF_TERM,
@@ -172,8 +173,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 							: new NativePhysicalOutputEvidence.Column(definition, NativeResultCell.Kind.RDF_TERM,
 									NativePhysicalOutputEvidence.Domain.RDF_TERM,
 									NativeAggregateResultDemand.FULL_VALUE,
-									List.of(NativeResultCell.State.BOUND, NativeResultCell.State.UNBOUND,
-											NativeResultCell.State.ERROR));
+									NativePhysicalOutputEvidence.EXPRESSION_STATES);
 		}
 		return null;
 	}
@@ -225,12 +225,15 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			for (int index = 0; index < cells.length; index++) {
 				cells[index] = source.cell(schema.name(index));
 			}
-			NativeResultRow current = new NativeResultRow(schema, cells);
+			NativeRowProvenance provenance = source.provenance();
+			NativeResultRow current = new NativeResultRow(schema, cells, provenance);
 			for (Assignment assignment : assignments) {
 				cells[indices.get(assignment.name())] = assignment.physical()
 						.evaluate(current,
 								delegate.executionContext());
-				current = new NativeResultRow(schema, cells);
+				provenance = new NativeRowProvenance(provenance.origin.producing(java.util.Set.of(assignment.name())),
+						provenance.graphs.without(assignment.name()));
+				current = new NativeResultRow(schema, cells, provenance);
 			}
 			return current;
 		});
@@ -261,7 +264,7 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			QueryEvaluationContext context) {
 		if (expression instanceof Var variable) {
 			return variable.hasValue() ? (row, execution) -> NativeResultCell.term(variable.getValue())
-					: (row, execution) -> row.cell(variable.getName());
+					: (row, execution) -> row.cell(variable.getName()).expressionValue();
 		}
 		if (expression instanceof ValueConstant constant) {
 			return (row, execution) -> NativeResultCell.term(constant.getValue());
@@ -366,10 +369,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			}
 			try {
 				BindingSet source = delegate.next();
-				MapBindingSet result = new MapBindingSet(source.size() + assignments.length);
-				for (Binding binding : source) {
-					result.setBinding(binding);
-				}
+				org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet result = new org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet(
+						source);
 				for (Assignment assignment : assignments) {
 					NativeValueOutcome outcome = assignment.evaluator().evaluate(result, executionContext);
 					if (outcome.isBound()) {
@@ -377,6 +378,9 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 					} else {
 						result.removeBinding(assignment.name());
 					}
+					org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.set(result,
+							org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.of(result)
+									.producing(java.util.Set.of(assignment.name())));
 				}
 				return result;
 			} catch (RuntimeException | Error e) {

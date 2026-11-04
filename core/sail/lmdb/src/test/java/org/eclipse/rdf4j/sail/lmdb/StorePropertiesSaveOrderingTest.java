@@ -49,7 +49,9 @@ class StorePropertiesSaveOrderingTest {
 			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
 		GateFileOps files = new GateFileOps();
 		StoreProperties initial = new StoreProperties(directory.toFile(), files)
-				.setVersion("6").setTripleTermIndexes("spoc").setRdfTermDomainsVersion("domain-A");
+				.setVersion("6")
+				.setTripleTermIndexes("spoc")
+				.setRdfTermDomainsVersion("domain-A");
 		UUID identity = initial.getOrCreateStoreId();
 		initial.save();
 		assertFalse(initial.isLoaded(), "saving a fresh owner must not change load semantics");
@@ -76,7 +78,9 @@ class StorePropertiesSaveOrderingTest {
 			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
 		GateFileOps files = new GateFileOps();
 		StoreProperties properties = new StoreProperties(directory.toFile(), files)
-				.setVersion("6").setTripleTermIndexes("spoc").setRdfTermDomainsVersion("domain-A");
+				.setVersion("6")
+				.setTripleTermIndexes("spoc")
+				.setRdfTermDomainsVersion("domain-A");
 		UUID identity = properties.getOrCreateStoreId();
 		properties.save();
 		assertEquals(identity, properties.savedStoreId());
@@ -299,7 +303,8 @@ class StorePropertiesSaveOrderingTest {
 
 	private static StoreProperties initialProperties(Path directory, GateFileOps files) {
 		StoreProperties properties = new StoreProperties(directory.toFile(), files)
-				.setVersion("6").setTripleTermIndexes("spoc");
+				.setVersion("6")
+				.setTripleTermIndexes("spoc");
 		properties.save();
 		return properties;
 	}

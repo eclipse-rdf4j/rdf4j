@@ -38,6 +38,34 @@ final class LmdbDetachedPlanningSnapshot implements AutoCloseable {
 		return tripleSource;
 	}
 
+	/** Borrow this detached snapshot's actual pair for planning; closing the pin does not close its dataset. */
+	TripleStore.PlanningReadPin pinPlanningReads(LmdbEstimatorRuntime runtime) {
+		var owner = tripleSource.unwrapDataset(LmdbPinnedReadTxnSource.class)
+				.orElseThrow(() -> new IllegalStateException("Detached snapshot has no paired read owner"));
+		var transaction = owner.pinnedReadTxn().orElseThrow();
+		var dictionary = owner.pinnedValueSnapshot().orElseThrow();
+		runtime.validateQueryPlanningPair(transaction, dictionary);
+		var view = owner.enterPlanningReadView()
+				.orElseThrow(() -> new IllegalStateException("Detached snapshot cannot enter its planning read view"));
+		try {
+			var pin = runtime.pinQueryPlanningReads(transaction, dictionary);
+			return () -> {
+				try (view) {
+					pin.close();
+				}
+			};
+		} catch (RuntimeException | Error failure) {
+			try {
+				view.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
+	}
+
 	@Override
 	public void close() {
 		dataset.close();

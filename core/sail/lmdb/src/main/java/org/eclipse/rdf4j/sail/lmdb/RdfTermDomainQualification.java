@@ -100,6 +100,12 @@ final class RdfTermDomainQualification {
 
 	/** Must run before ValueStore can make its legitimate boot-epoch/DIRTY transaction. */
 	static void beginPairedWriter(Path directory, StoreProperties properties, LmdbStoreConfig config) {
+		// Capture original policy before withdrawal changes any field. This is not a durable domain receipt:
+		// actual paired rebuild/cleanup and live native floors still own all publication and use.
+		properties.ownerLocalLegacyRdfTermDomains = properties.isLoaded() && properties.hasNativeGeneration()
+				&& Integer.toString(LmdbStoreFormat.LEGACY_VERSION).equals(properties.getVersion())
+				&& properties.getRdfTermDomainsVersion() == null
+				&& properties.getRdfTermDomainQualification() == null;
 		DiscoveryPair discovery = properties.rdfTermDomainDiscoveryPair;
 		properties.rdfTermDomainDiscoveryPair = null;
 		if (properties.preparedBulkStore == null) {
@@ -144,6 +150,9 @@ final class RdfTermDomainQualification {
 		properties.rdfTermDomainWitnessAtOpen = null;
 		properties.rdfTermDomainValuesTransactionAtOpen = -1L;
 		properties.rdfTermDomainTriplesTransactionAtOpen = -1L;
+		if (properties.ownerLocalLegacyRdfTermDomains) {
+			return;
+		}
 		properties.setRdfTermDomainQualification(null);
 		if (!Objects.equals(properties.getRdfTermDomainsVersion(), durableVersion)) {
 			properties.setRdfTermDomainsVersion(durableVersion);

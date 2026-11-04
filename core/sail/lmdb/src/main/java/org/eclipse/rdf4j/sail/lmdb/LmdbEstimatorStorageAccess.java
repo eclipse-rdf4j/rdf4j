@@ -245,8 +245,70 @@ final class LmdbEstimatorStorageAccess {
 						repeatedComponentPairMask);
 	}
 
+	/** Raw native prefix for an actual packed reader; null context remains ANY, independently of lexical GRAPH. */
+	LmdbPlanningCardinality packedReadRowsQualified(Resource subject, IRI predicate, Value object, Resource context,
+			int repeatedComponentPairMask, LmdbFrontierReadSelection selection,
+			org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView ownedView) {
+		if (selection == null || !selection.matchesStores(valueStore, tripleStore) || !selection.isCurrent()
+				|| selection.population() != LmdbFrontierReadPopulation.STORE_DEFAULTS) {
+			return null;
+		}
+		// Query context aliases denote physical null, while this raw API's null denotes ANY. Without a qualified
+		// bound-default prefix representation, decline instead of looking up the alias IRI as a stored graph.
+		if (org.eclipse.rdf4j.model.vocabulary.RDF4J.NIL.equals(context)
+				|| org.eclipse.rdf4j.model.vocabulary.SESAME.NIL.equals(context)) {
+			return null;
+		}
+		int planes = selection.planeMask();
+		if (statistics != null && statisticsMode != FrontierEstimatorMode.OFF) {
+			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probe(valueStore, subject, predicate, object, context,
+					planes, repeatedComponentPairMask);
+			if (probe != null) {
+				FrontierLeafEstimate estimate;
+				if (ownedView != null) {
+					estimate = ownedView.estimateLeaf(probe);
+				} else {
+					try (var view = statistics.openView(selection.snapshotEpoch())) {
+						estimate = view.estimateLeaf(probe);
+					}
+				}
+				if (!selection.isCurrent()) {
+					return null;
+				}
+				if (LmdbFrontierLeafAnswer.answered(statisticsMode, estimate)) {
+					return LmdbPlanningCardinality.calibrated(estimate.pointRows(), estimate.lowerRows(),
+							estimate.upperRows());
+				}
+				if (statisticsMode == FrontierEstimatorMode.AUTHORITATIVE) {
+					return null;
+				}
+			}
+		}
+		LmdbPlanningCardinality physical = cardinalities == null ? null
+				: cardinalities.estimateForPlanningQualified(subject, predicate, object, context,
+						repeatedComponentPairMask);
+		if (!selection.isCurrent() || physical == null) {
+			return null;
+		}
+		// This legacy estimator explicitly counts BOTH planes. Its certified empty superset is also empty in either
+		// plane, but an ordinary positive BOTH point is not a single-plane point. No empty-plane store flag is proof.
+		return planes == FrontierLeafProbe.BOTH_PLANES || physical.certifiedBounds() && physical.upperRows() == 0.0d
+				? physical
+				: null;
+	}
+
 	double packedTransitionRows(StatementPattern pattern, String joinVariable, double patternRows,
 			double prefixRows) {
+		return packedTransitionRows(pattern, joinVariable, patternRows, prefixRows,
+				LmdbFrontierReadPopulation.PHYSICAL_DEFAULT,
+				mayHaveInferred() ? FrontierLeafProbe.BOTH_PLANES : FrontierLeafProbe.EXPLICIT, -1L);
+	}
+
+	double packedTransitionRows(StatementPattern pattern, String joinVariable, double patternRows,
+			double prefixRows, LmdbFrontierReadPopulation population, int planeMask, long snapshotEpoch) {
+		if (population == null || population == LmdbFrontierReadPopulation.UNSUPPORTED) {
+			return Double.NaN;
+		}
 		if (statistics == null || statisticsMode != FrontierEstimatorMode.AUTHORITATIVE || pattern == null
 				|| joinVariable == null
 				|| !Double.isFinite(patternRows) || patternRows < 0.0d
@@ -257,12 +319,11 @@ final class LmdbEstimatorStorageAccess {
 			return 0.0d;
 		}
 		int component = LmdbFrontierProbeFactory.componentIndex(pattern, joinVariable);
-		int planeMask = mayHaveInferred() ? FrontierLeafProbe.BOTH_PLANES : FrontierLeafProbe.EXPLICIT;
-		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probe(valueStore, pattern, planeMask);
+		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probe(valueStore, pattern, planeMask, population);
 		if (component < 0 || probe == null) {
 			return Double.NaN;
 		}
-		double distinct = statistics.estimateProjectedDistinctCurrent(probe, component);
+		double distinct = mappedDistinct(snapshotEpoch, probe, component);
 		if (!Double.isFinite(distinct) || distinct <= 0.0d) {
 			return Double.NaN;
 		}
@@ -276,6 +337,14 @@ final class LmdbEstimatorStorageAccess {
 
 	boolean describePackedDistinctCursorSkip(StatementPattern pattern, double normalRows,
 			BagEstimate conventional, PackedCostEstimate output) {
+		return describePackedDistinctCursorSkip(pattern, normalRows, conventional, output,
+				LmdbFrontierReadPopulation.PHYSICAL_DEFAULT,
+				mayHaveInferred() ? FrontierLeafProbe.BOTH_PLANES : FrontierLeafProbe.EXPLICIT, -1L);
+	}
+
+	boolean describePackedDistinctCursorSkip(StatementPattern pattern, double normalRows,
+			BagEstimate conventional, PackedCostEstimate output, LmdbFrontierReadPopulation population, int planeMask,
+			long snapshotEpoch) {
 		if (pattern == null || tripleStore == null
 				|| !Double.isFinite(normalRows) || normalRows <= 0.0d) {
 			return false;
@@ -286,7 +355,8 @@ final class LmdbEstimatorStorageAccess {
 			return false;
 		}
 		int distinctComponentMask = plan.get().distinctComponentMask();
-		double distinctRows = mappedProjectedDistinct(pattern, distinctComponentMask, normalRows);
+		double distinctRows = mappedProjectedDistinct(pattern, distinctComponentMask, normalRows, population, planeMask,
+				snapshotEpoch);
 		if (!validDistinct(distinctRows) && cardinalities != null
 				&& !LmdbFrontierLeafAnswer.ready(statisticsMode, statistics)) {
 			// Frontier does not own planning here (OFF, SHADOW, no generation, stale or uncovered): use the bounded
@@ -313,12 +383,21 @@ final class LmdbEstimatorStorageAccess {
 		return true;
 	}
 
-	private double mappedProjectedDistinct(StatementPattern pattern, int componentMask, double rowCap) {
+	private double mappedDistinct(long snapshotEpoch, FrontierLeafProbe probe, int component) {
+		if (snapshotEpoch < 0L) {
+			return statistics.estimateProjectedDistinctCurrent(probe, component);
+		}
+		try (var view = statistics.openView(snapshotEpoch)) {
+			return view.estimateProjectedDistinct(probe, component);
+		}
+	}
+
+	private double mappedProjectedDistinct(StatementPattern pattern, int componentMask, double rowCap,
+			LmdbFrontierReadPopulation population, int planeMask, long snapshotEpoch) {
 		if (statistics == null || statisticsMode != FrontierEstimatorMode.AUTHORITATIVE || componentMask == 0) {
 			return Double.NaN;
 		}
-		int planeMask = mayHaveInferred() ? FrontierLeafProbe.BOTH_PLANES : FrontierLeafProbe.EXPLICIT;
-		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probe(valueStore, pattern, planeMask);
+		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probe(valueStore, pattern, planeMask, population);
 		if (probe == null) {
 			return Double.NaN;
 		}
@@ -327,7 +406,7 @@ final class LmdbEstimatorStorageAccess {
 			if ((componentMask & 1 << component) == 0) {
 				continue;
 			}
-			double projected = statistics.estimateProjectedDistinctCurrent(probe, component);
+			double projected = mappedDistinct(snapshotEpoch, probe, component);
 			if (!validDistinct(projected)) {
 				return Double.NaN;
 			}

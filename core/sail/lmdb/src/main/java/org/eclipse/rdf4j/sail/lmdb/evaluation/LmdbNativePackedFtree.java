@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
@@ -352,8 +353,10 @@ final class LmdbNativePackedFtree {
 		for (int i = 0; i < children.length; i++) {
 			if (!(input.children[i] instanceof PatternPlan pattern))
 				return null;
-			children[i] = new PatternPlan(specialize(pattern.s, row), specialize(pattern.p, row),
-					specialize(pattern.o, row), specialize(pattern.c, row), pattern.contexts,
+			Term subject = specialize(pattern.s, row), predicate = specialize(pattern.p, row);
+			Term object = specialize(pattern.o, row), context = specialize(pattern.c, row);
+			if (subject == null || predicate == null || object == null || context == null) { return null; }
+			children[i] = new PatternPlan(subject, predicate, object, context, pattern.contexts,
 					pattern.namedContextScope, pattern.statementOrder, pattern.indexName, pattern.range,
 					pattern.staticEstimate, pattern.accessProfile);
 		}
@@ -361,8 +364,12 @@ final class LmdbNativePackedFtree {
 	}
 
 	private static Term specialize(Term term, RowState row) {
-		if (term.hasSlot() && !term.isConstant() && row.slots[term.slot] != UNKNOWN)
-			return Term.constantSlot(term.slot, row.slots[term.slot]);
+		if (term.hasSlot() && !term.isConstant() && row.slots[term.slot] != UNKNOWN) {
+			long value = term.lookup(row.slots);
+			if (value == UNKNOWN) { return null; }
+			return (term.readOnly ? Term.constant(value) : Term.constantSlot(term.slot, value))
+					.withEqualFields(term.equalFields);
+		}
 		return term;
 	}
 
@@ -1716,6 +1723,14 @@ final class LmdbNativePackedFtree {
 				}
 				patterns.add(pattern);
 			}
+			// Global fixed-slot facts describe equality. A keep-or-fill output supplied after a sibling writer
+			// must stay at its original logical position, including directly constructed adapter sequences.
+			for (int first = 0; first < patterns.size(); first++) {
+				for (int second = first + 1; second < patterns.size(); second++) {
+					if (!patterns.get(first).canCommuteWith(patterns.get(second))
+							|| !patterns.get(second).canCommuteWith(patterns.get(first))) { return null; }
+				}
+			}
 
 			Map<Integer, List<UnaryPlan>> unary = new HashMap<>();
 			Map<Long, List<EdgePlan>> edgesByPair = new HashMap<>();
@@ -1723,7 +1738,7 @@ final class LmdbNativePackedFtree {
 			Set<Integer> variables = new HashSet<>();
 			Map<Integer, Long> fixedBindings = new HashMap<>();
 			for (PatternPlan pattern : patterns) {
-				if (!collectPatternTerms(pattern, fixedBindings)) {
+				if (!collectPatternTerms(pattern, fixedBindings, row)) {
 					return null;
 				}
 				int sSlot = variableSlot(pattern.s);
@@ -1959,7 +1974,7 @@ final class LmdbNativePackedFtree {
 				return false;
 			}
 			Map<Integer, Long> fixed = new HashMap<>();
-			if (!collectPatternTerms(pattern, fixed)) {
+			if (!collectPatternTerms(pattern, fixed, row)) {
 				return false;
 			}
 			for (Map.Entry<Integer, Long> entry : fixed.entrySet()) {
@@ -1976,9 +1991,9 @@ final class LmdbNativePackedFtree {
 		}
 
 		/** Primitive endpoint/fixed-binding grammar shared by qualification and actual planning. */
-		private static boolean collectPatternTerms(PatternPlan pattern, Map<Integer, Long> fixed) {
-			if (!collectFixed(pattern.s, fixed) || !collectFixed(pattern.p, fixed)
-					|| !collectFixed(pattern.o, fixed) || !collectFixed(pattern.c, fixed)) {
+		private static boolean collectPatternTerms(PatternPlan pattern, Map<Integer, Long> fixed, RowState row) {
+			if (!collectFixed(pattern.s, fixed, row) || !collectFixed(pattern.p, fixed, row)
+					|| !collectFixed(pattern.o, fixed, row) || !collectFixed(pattern.c, fixed, row)) {
 				return false;
 			}
 			int subject = variableSlot(pattern.s);
@@ -1988,7 +2003,7 @@ final class LmdbNativePackedFtree {
 		}
 
 		private static boolean admissiblePattern(PatternPlan pattern) {
-			if (!pattern.p.isConstant() || pattern.range != null || pattern.statementOrder != null
+			if (pattern.readOnlyMask() != 0L || !pattern.p.isConstant() || pattern.range != null || pattern.statementOrder != null
 					|| pattern.contexts.isEmpty() || pattern.hasRepeatedSlot()) {
 				return false;
 			}
@@ -2006,12 +2021,14 @@ final class LmdbNativePackedFtree {
 			return term.hasSlot() && !term.isConstant() ? term.slot : -1;
 		}
 
-		private static boolean collectFixed(Term term, Map<Integer, Long> fixed) {
+		private static boolean collectFixed(Term term, Map<Integer, Long> fixed, RowState row) {
 			if (!term.hasSlot() || !term.isConstant()) {
 				return true;
 			}
-			Long previous = fixed.putIfAbsent(term.slot, term.constant);
-			return previous == null || previous.longValue() == term.constant;
+			long value = term.preserveExisting && row.slots[term.slot] != UNKNOWN ? row.slots[term.slot] : term.constant;
+			if (value == 0L) { return false; }
+			Long previous = fixed.putIfAbsent(term.slot, value);
+			return previous == null || previous.longValue() == value;
 		}
 
 		private static long pairKey(int left, int right) {
@@ -4239,59 +4256,28 @@ final class LmdbNativePackedFtree {
 			if (closed)
 				return;
 			closed = true;
-			try {
-				Throwable failure = null;
-				if (projectionBuilder != null)
-					try {
-						projectionBuilder.close();
-					} catch (RuntimeException | Error problem) {
-						failure = problem;
-					}
-				for (EdgeRuntime edge : primaryEdges)
-					failure = closeEdge(edge, failure);
-				for (EdgeRuntime[] edges : constraintEdges) {
-					if (edges != null) {
-						for (EdgeRuntime edge : edges)
-							failure = closeEdge(edge, failure);
-					}
-				}
-				if (failure instanceof RuntimeException problem)
-					throw problem;
-				if (failure instanceof Error problem)
-					throw problem;
-			} finally {
-				try {
-					if (roots != null)
-						roots.close();
-				} finally {
-					try {
-						probe.close();
-					} finally {
-						try {
-							if (lookupProbe != null) {
-								lookupProbe.close();
-								lookupProbe = null;
-							}
-						} finally {
-							closeNodeFilters();
-						}
-					}
+			ProjectionChunkBuilder retiringBuilder = projectionBuilder;
+			projectionBuilder = null;
+			Throwable failure = KernelRuntime.closeResource(retiringBuilder, null);
+			for (EdgeRuntime edge : primaryEdges)
+				failure = closeEdge(edge, failure);
+			for (EdgeRuntime[] edges : constraintEdges) {
+				if (edges != null) {
+					for (EdgeRuntime edge : edges)
+						failure = closeEdge(edge, failure);
 				}
 			}
+			failure = KernelRuntime.closeResource(roots, failure);
+			failure = KernelRuntime.closeResource(probe, failure);
+			NativeLmdbQuerySource.NativeProbe retiringLookup = lookupProbe;
+			lookupProbe = null;
+			failure = KernelRuntime.closeResource(retiringLookup, failure);
+			failure = closeNodeFilters(failure);
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 
 		private static Throwable closeEdge(EdgeRuntime edge, Throwable failure) {
-			if (edge != null) {
-				try {
-					edge.close();
-				} catch (RuntimeException | Error problem) {
-					if (failure == null)
-						return problem;
-					if (failure != problem)
-						failure.addSuppressed(problem);
-				}
-			}
-			return failure;
+			return edge == null ? failure : KernelRuntime.closeResource(edge::close, failure);
 		}
 
 		/**
@@ -4301,27 +4287,13 @@ final class LmdbNativePackedFtree {
 		 * {@code LmdbSailDataset.close()} on its write lock. Closing an unused filter is a no-op and filters are
 		 * close-re-entrant, so every node filter is released unconditionally.
 		 */
-		private void closeNodeFilters() {
-			Throwable failure = null;
+		private Throwable closeNodeFilters(Throwable failure) {
 			for (NodePlan node : plan.nodes) {
 				for (MaskedFilter filter : node.filters) {
-					try {
-						filter.filter.close();
-					} catch (RuntimeException | Error problem) {
-						if (failure == null) {
-							failure = problem;
-						} else if (failure != problem) {
-							failure.addSuppressed(problem);
-						}
-					}
+					failure = KernelRuntime.closeResource(filter.filter::close, failure);
 				}
 			}
-			if (failure instanceof Error) {
-				throw (Error) failure;
-			}
-			if (failure != null) {
-				throw (RuntimeException) failure;
-			}
+			return failure;
 		}
 	}
 
@@ -5048,6 +5020,7 @@ final class LmdbNativePackedFtree {
 		boolean borrowedSourceOpened;
 		BorrowedFactorBatch packedGroups;
 		BorrowedFactorBatch.Cursor packedReader;
+		boolean closed;
 
 		BorrowedFactorBatch.Cursor packedFibers() {
 			BorrowedFactorBatch.Source source = factorSource();
@@ -5162,18 +5135,19 @@ final class LmdbNativePackedFtree {
 		}
 
 		void close() {
-			try {
-				if (cursor != null)
-					cursor.close();
-			} finally {
-				try {
-					if (packedReader != null)
-						packedReader.close();
-				} finally {
-					if (borrowedSource != null)
-						borrowedSource.close();
-				}
-			}
+			if (closed)
+				return;
+			closed = true;
+			BorrowedFactorBatch.Cursor retiringReader = packedReader;
+			packedReader = null;
+			BorrowedFactorBatch.Source retiringSource = borrowedSource;
+			borrowedSource = null;
+			borrowedSourceOpened = true;
+			packedGroups = null;
+			Throwable failure = KernelRuntime.closeResource(cursor, null);
+			failure = KernelRuntime.closeResource(retiringReader, failure);
+			failure = KernelRuntime.closeResource(retiringSource, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 
@@ -6653,6 +6627,10 @@ final class LmdbNativePackedFtree {
 					if (request != completed + 1 || active != completed)
 						throw new IllegalStateException("unfinished marginal");
 					materializeForScalar(demands[request]);
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
 					active = request;
 					windowMode = scalarWindow = false;
 					projection = demands[request] == 0L ? null
@@ -7036,6 +7014,7 @@ final class LmdbNativePackedFtree {
 		final RowState row;
 		final Runtime runtime;
 		final boolean ownsRuntime;
+		final boolean sourcesExternallyRetained;
 		final FactorEnvironment factors;
 		final int mark;
 		Chunk chunk;
@@ -7048,6 +7027,21 @@ final class LmdbNativePackedFtree {
 		}
 
 		GroupedRowCursor(Plan plan, RowState row, Runtime runtime, boolean ownsRuntime) {
+			this(plan, row, runtime, ownsRuntime, false);
+		}
+
+		/**
+		 * The Morsels owner closes consumers before its Runtime. Runtime emits only cached retained physical
+		 * EdgeRuntime factor Sources, whose separate readers own independent decode state; chunk/reset and this
+		 * cursor's close retire views, not those Sources. Other nonowning constructions grant no such promise.
+		 */
+		static GroupedRowCursor forExternalRuntime(Plan plan, RowState row, Runtime runtime) {
+			return new GroupedRowCursor(plan, row, runtime, false, true);
+		}
+
+		private GroupedRowCursor(Plan plan, RowState row, Runtime runtime, boolean ownsRuntime,
+				boolean sourcesExternallyRetained) {
+			this.sourcesExternallyRetained = sourcesExternallyRetained;
 			this.ownsRuntime = ownsRuntime;
 			this.plan = plan;
 			this.row = row;
@@ -7096,16 +7090,19 @@ final class LmdbNativePackedFtree {
 					return true;
 				}
 			} catch (PackedDecline lostCoverage) {
-				close();
-				throw new QueryEvaluationException("factor transport lost adjacency coverage", lostCoverage);
+				QueryEvaluationException failure = new QueryEvaluationException("factor transport lost adjacency coverage",
+						lostCoverage);
+				LmdbNativeFactorAlgebra.closeSuppressing(this, failure);
+				throw failure;
 			} catch (IOException | RuntimeException | Error failure) {
-				try {
-					close();
-				} catch (Throwable closeFailure) {
-					failure.addSuppressed(closeFailure);
-				}
+				LmdbNativeFactorAlgebra.closeSuppressing(this, failure);
 				throw failure;
 			}
+		}
+
+		@Override
+		public boolean borrowedSourcesExternallyRetained() {
+			return sourcesExternallyRetained;
 		}
 
 		@Override

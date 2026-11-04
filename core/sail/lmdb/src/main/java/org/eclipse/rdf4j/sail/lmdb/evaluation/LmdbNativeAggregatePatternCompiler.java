@@ -174,7 +174,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		double estimate = rangedEstimate(base.staticEstimate, domain.minValue(), domain.maxValue(),
 				filter.operator, filter.constant);
 		return new PatternPlan(base.s, base.p, base.o, base.c, base.contexts, base.namedContextScope,
-				base.statementOrder, domain.indexFieldSeq(), range, estimate, base.accessProfile);
+				base.statementOrder, domain.indexFieldSeq(), range, estimate, base.accessProfile, base.accessSource);
 	}
 
 	/**
@@ -457,17 +457,21 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 				keepBinding);
 		Term o = compileTermWithConstant(sp.getObjectVar(), NativePatternField.OBJECT, variable, constantId,
 				keepBinding);
-		Term c = compileTermWithConstant(sp.getContextVar(), NativePatternField.CONTEXT, variable, constantId,
-				keepBinding);
+		Term c = sp.getContextVar() != null && sp.getContextVar().hasValue()
+				? compileStatementContextTerm(sp)
+				: compileTermWithConstant(sp.getContextVar(), NativePatternField.CONTEXT, variable, constantId,
+						keepBinding);
 		if (s == null || p == null || o == null || c == null) {
 			return null;
 		}
+		Term[] normalized = normalizePatternTerms(sp, new Term[] { s, p, o, c });
+		s = normalized[0]; p = normalized[1]; o = normalized[2]; c = normalized[3];
 		if (provablyEmptyByAdjacency(s, p, o)) {
 			return null;
 		}
-		return new PatternPlan(s, p, o, c, contexts, isNamedContextScope(sp, c),
+		return new PatternPlan(s, p, o, c, contexts, isNamedContextScope(sp, c, contexts),
 				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c), null,
-				staticEstimate(s, p, o, c, contexts), accessProfile());
+				staticEstimate(s, p, o, c, contexts), accessProfile(), source);
 	}
 
 	SlotPlan compileMultiValueStatementPattern(StatementPattern pattern, String variable, long[] ids,
@@ -644,21 +648,65 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		Term s = compileTerm(sp.getSubjectVar(), NativePatternField.SUBJECT);
 		Term p = compileTerm(sp.getPredicateVar(), NativePatternField.PREDICATE);
 		Term o = compileTerm(sp.getObjectVar(), NativePatternField.OBJECT);
-		Term c = compileTerm(sp.getContextVar(), NativePatternField.CONTEXT);
+		Term c = compileStatementContextTerm(sp);
 		if (s == null || p == null || o == null || c == null) {
 			return null;
 		}
+		Term[] normalized = normalizePatternTerms(sp, new Term[] { s, p, o, c });
+		s = normalized[0]; p = normalized[1]; o = normalized[2]; c = normalized[3];
 		if (provablyEmptyByAdjacency(s, p, o)) {
 			return null;
 		}
-		return new PatternPlan(s, p, o, c, contexts, isNamedContextScope(sp, c),
+		return new PatternPlan(s, p, o, c, contexts, isNamedContextScope(sp, c, contexts),
 				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c), null,
-				algebraEstimate(sp), accessProfile());
+				algebraEstimate(sp), accessProfile(), source);
 	}
 
-	/** A parser-level {@code GRAPH rdf4j:nil} denotes the default graph despite its named-context algebra scope. */
-	private static boolean isNamedContextScope(StatementPattern pattern, Term contextTerm) {
-		return pattern.getScope() == Scope.NAMED_CONTEXTS
+	/**
+	 * Lookup operands retain every original field. As in the ordinary statement converter, only the first occurrence
+	 * of a name can emit it; Var equality is a separate physical-field constraint and deliberately ignores constant.
+	 */
+	private static Term[] normalizePatternTerms(StatementPattern pattern, Term[] terms) {
+		Var[] variables = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),
+				pattern.getContextVar() };
+		for (int field = 0; field < terms.length; field++) {
+			Var variable = variables[field];
+			if (variable == null) { continue; }
+			int first = -1;
+			for (int earlier = 0; earlier < field; earlier++) {
+				if (variables[earlier] != null && variable.getName().equals(variables[earlier].getName())) {
+					first = earlier;
+					break;
+				}
+			}
+			if (first < 0) { continue; }
+			Term term = terms[field], preceding = terms[first];
+			// Keep the existing shared-slot fast grammar for an ordinary repeated variable: binding the one output
+			// also checks its equal physical fields. Other duplicate occurrences read only the entry frame.
+			if (!variable.hasValue() && variable.equals(variables[first]) && !term.isConstant()
+					&& !preceding.isConstant() && preceding.hasSlot() && !preceding.readOnly) {
+				term = Term.slot(preceding.slot);
+			} else {
+				term = term.isConstant() ? Term.constant(term.constant) : Term.inputSlot(term.slot);
+			}
+			int equals = 0;
+			if (!variable.hasValue()) {
+				for (int earlier = 0; earlier < field; earlier++) {
+					Term other = terms[earlier];
+					if (variable.equals(variables[earlier])
+							&& (term.readOnly || other.readOnly || term.slot != other.slot)) {
+						equals |= 1 << earlier;
+					}
+				}
+			}
+			terms[field] = term.withEqualFields(equals);
+		}
+		return terms;
+	}
+
+	/** The ordinary NAMED default-graph filter applies only to an unrestricted effective context array. */
+	private static boolean isNamedContextScope(StatementPattern pattern, Term contextTerm, ContextConstraint contexts) {
+		return pattern.getScope() == Scope.NAMED_CONTEXTS && !contexts.isFixed()
 				&& !(contextTerm.isConstant() && contextTerm.constant == NULL_CONTEXT_ID);
 	}
 

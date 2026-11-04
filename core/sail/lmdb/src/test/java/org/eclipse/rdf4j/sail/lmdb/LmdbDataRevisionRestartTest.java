@@ -120,7 +120,8 @@ class LmdbDataRevisionRestartTest {
 				store.commitNamespaceSnapshot(namespaces);
 				assertTrue(store.snapshotCoordinates()[0] > metadataEpoch,
 						"each changed metadata snapshot must have its own native commit");
-				assertEquals(first, store.getDataRevision(), "multiple metadata commits must keep one statement identity");
+				assertEquals(first, store.getDataRevision(),
+						"multiple metadata commits must keep one statement identity");
 				assertEquals(generationBeforeMetadata + 2, store.getNativeCommitGeneration());
 				assertNull(store.statementCommitReceiptAfter(generationBeforeMetadata),
 						"native metadata commits must not issue a statement receipt");

@@ -12,22 +12,32 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -50,28 +60,43 @@ class LmdbFilterSamplingBiasTest {
 	private static final int ROWS = 16_384;
 
 	@Test
-	void indexOrderCorrelatedFilterSamplesWithoutPrefixBias(@TempDir File dataDir) {
+	void indexOrderCorrelatedFilterSamplesWithoutPrefixBias(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, samplingConfig());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30L, TimeUnit.SECONDS);
 			loadOrderedRows(repository);
+			Filter filter = firstFilter(QUERY);
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
 
-			EvaluationStatistics.FilterPassEstimate estimate = store.getBackingStore()
-					.getEvaluationStatistics()
-					.estimateFilterPass(firstFilter(QUERY));
+			assertFalse(statistics.estimatorRuntime().hasPairedPlanningAuthority(),
+					"the direct lookup has no retained query-source owner");
+			EvaluationStatistics.FilterPassEstimate unqualified = statistics.estimateFilterPass(filter);
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, unqualified.getSource(),
+					"an unqualified statistics lookup must not claim query-source sampling");
 
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource());
-			assertTrue(estimate.getPassRatio() >= 0.3d && estimate.getPassRatio() <= 0.7d,
-					"The true pass ratio is ~0.5 but an index-order prefix sample sees only failing rows"
-							+ " (sampled ratio was " + estimate.getPassRatio() + ")");
+			try (PlanningStatisticsRead read = openPlanningStatistics(store)) {
+				PatternFilterSampleEstimate raw = rawSample(read, filter);
+				assertTrue(raw.sampleSize() > 0L, "the qualified live sampler must publish usable evidence");
+				assertTrue(raw.passRatio() >= 0.3d && raw.passRatio() <= 0.7d,
+						"the true pass ratio is ~0.5 but an index-order prefix sample sees only failing rows"
+								+ " (raw sampled ratio was " + raw.passRatio() + ")");
+
+				EvaluationStatistics.FilterPassEstimate rawCandidate = sampledCandidate(raw);
+				assertTrue(rawCandidate.getConfidenceScore() > 0.0d,
+						"the retained sample has a positive confidence score");
+				EvaluationStatistics.FilterPassEstimate facade = read.statistics().estimateFilterPass(filter);
+				assertFacadeDoesNotDiscardBetterEvidence(facade, rawCandidate, "stratified sampling");
+			}
 		} finally {
 			repository.shutDown();
 		}
 	}
 
 	@Test
-	void prefixModeStillSamplesButCarriesReducedEvidence(@TempDir File dataDir) {
+	void prefixModeStillSamplesButCarriesReducedEvidence(@TempDir File dataDir) throws Exception {
 		String previous = System.getProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY);
 		System.setProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY, "prefix");
 		try {
@@ -79,18 +104,25 @@ class LmdbFilterSamplingBiasTest {
 			SailRepository repository = new SailRepository(store);
 			repository.init();
 			try {
+				LmdbTestUtil.awaitPostReadyInitialization(store, 30L, TimeUnit.SECONDS);
 				loadOrderedRows(repository);
+				Filter filter = firstFilter(QUERY);
 
-				EvaluationStatistics.FilterPassEstimate estimate = store.getBackingStore()
-						.getEvaluationStatistics()
-						.estimateFilterPass(firstFilter(QUERY));
+				try (PlanningStatisticsRead read = openPlanningStatistics(store)) {
+					PatternFilterSampleEstimate raw = rawSample(read, filter);
+					EvaluationStatistics.FilterPassEstimate facade = read.statistics().estimateFilterPass(filter);
+					if (raw.sampleSize() > 0L) {
+						EvaluationStatistics.FilterPassEstimate rawCandidate = sampledCandidate(raw);
+						assertFacadeDoesNotDiscardBetterEvidence(facade, rawCandidate, "prefix sampling");
+					}
 
-				if (estimate.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED) {
-					// The prefix sample stopped inside the range: its evidence must be discounted so a fresh
-					// unbiased source can out-rank it.
-					assertTrue(estimate.getEvidenceCount() * 4L <= ROWS,
-							"A range-truncated prefix sample must report reduced evidence, but reported "
-									+ estimate.getEvidenceCount());
+					if (facade.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED) {
+						// The prefix sample stopped inside the range: its evidence must be discounted so a fresh
+						// unbiased source can out-rank it.
+						assertTrue(facade.getEvidenceCount() * 4L <= ROWS,
+								"A range-truncated prefix sample must report reduced evidence, but reported "
+										+ facade.getEvidenceCount());
+					}
 				}
 			} finally {
 				repository.shutDown();
@@ -105,13 +137,87 @@ class LmdbFilterSamplingBiasTest {
 	}
 
 	private static LmdbStoreConfig samplingConfig() {
-		return new LmdbStoreConfig()
+		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setTripleIndexes("spoc")
 				.setSketchEstimatorEnabled(false)
 				.setOptimizerSamplingEnabled(true)
 				// This fixture measures distribution quality, independently of the hard deadline controls.
 				.setOptimizerSamplingMaxMillis(20_000L)
 				.setBackgroundRawSamplingEnabled(false);
+		config.setExperimentalQueryOptimizations(true);
+		return config;
+	}
+
+	private static PlanningStatisticsRead openPlanningStatistics(LmdbStore store) {
+		SailDataset owner = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
+		SailClosable view = null;
+		TripleStore.PlanningReadPin pin = null;
+		try {
+			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), owner);
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			EvaluationStrategy strategy = store.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
+					null, source, statistics, store.getQueryExecutionPolicy());
+			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
+			view = borrowed.enterPlanningReadView().orElseThrow();
+			pin = statistics.estimatorRuntime().pinQueryPlanningReads(borrowed.pinnedReadTxn().orElseThrow(),
+					borrowed.pinnedValueSnapshot().orElseThrow());
+			assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority());
+			assertTrue(statistics.estimatorRuntime().adaptiveEvidenceAllowed());
+			return new PlanningStatisticsRead(owner, view, pin, source, statistics, strategy);
+		} catch (RuntimeException | Error failure) {
+			if (pin != null) {
+				closeAfterFailure(failure, pin::close);
+			}
+			if (view != null) {
+				closeAfterFailure(failure, view::close);
+			}
+			closeAfterFailure(failure, owner::close);
+			throw failure;
+		}
+	}
+
+	private static PatternFilterSampleEstimate rawSample(PlanningStatisticsRead read, Filter filter) {
+		StatementPattern pattern = (StatementPattern) filter.getArg();
+		return read.statistics().estimatorRuntime().filters().estimateLiveFilterPass(filter, pattern);
+	}
+
+	private static EvaluationStatistics.FilterPassEstimate sampledCandidate(PatternFilterSampleEstimate sample) {
+		return new EvaluationStatistics.FilterPassEstimate(sample.passRatio(),
+				EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, sample.sampleSize());
+	}
+
+	private static void assertFacadeDoesNotDiscardBetterEvidence(EvaluationStatistics.FilterPassEstimate facade,
+			EvaluationStatistics.FilterPassEstimate sampled, String mode) {
+		int confidence = Double.compare(facade.getConfidenceScore(), sampled.getConfidenceScore());
+		assertTrue(confidence > 0 || confidence == 0 && facade.getEvidenceCount() >= sampled.getEvidenceCount(),
+					"the " + mode + " facade result must rank at least as high as its raw sample: facade=" + facade.getSource()
+							+ "/" + facade.getConfidenceScore() + "/" + facade.getEvidenceCount() + ", raw sample="
+							+ sampled.getConfidenceScore() + "/" + sampled.getEvidenceCount());
+		if (facade.getSource() == EvaluationStatistics.FilterPassEstimate.Source.SAMPLED) {
+			assertEquals(sampled.getPassRatio(), facade.getPassRatio(), 1.0e-12d);
+			assertEquals(sampled.getEvidenceCount(), facade.getEvidenceCount());
+		}
+	}
+
+	private static void closeAfterFailure(Throwable primary, Runnable close) {
+		try {
+			close.run();
+		} catch (RuntimeException | Error cleanup) {
+			if (cleanup != primary) {
+				primary.addSuppressed(cleanup);
+			}
+		}
+	}
+
+	private record PlanningStatisticsRead(SailDataset owner, SailClosable view, TripleStore.PlanningReadPin pin,
+			SailDatasetTripleTermSource source, LmdbEvaluationStatistics statistics, EvaluationStrategy strategy)
+			implements AutoCloseable {
+		@Override
+		public void close() {
+			try (owner; view; pin) {
+			}
+		}
 	}
 
 	private static void loadOrderedRows(SailRepository repository) {

@@ -412,6 +412,9 @@ final class AggContext {
 	}
 
 	final NativeLmdbQuerySource source;
+	final org.eclipse.rdf4j.query.BindingSet rowInput;
+	private NativeBGPOrigin.ProjectionFrame rowProjection;
+	private NativeRowProvenance rowProvenance;
 	final NativeTermAuthority termAuthority;
 	final NativeCancellationToken cancellation;
 	final ValueComparator comparator;
@@ -443,8 +446,20 @@ final class AggContext {
 		this(source, strictCompare, encounterOrderChanging, deferDistinctValueAggregates, null);
 	}
 
+	AggContext(NativeLmdbQuerySource source, boolean strictCompare, org.eclipse.rdf4j.query.BindingSet rowInput) {
+		this(source, strictCompare, false, false, null, NativeEntryBindings.snapshot(rowInput));
+	}
+
 	AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging,
 			boolean deferDistinctValueAggregates, KernelRuntime.MemoryAccount memory) {
+		this(source, strictCompare, encounterOrderChanging, deferDistinctValueAggregates, memory,
+				org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+	}
+
+	private AggContext(NativeLmdbQuerySource source, boolean strictCompare, boolean encounterOrderChanging,
+			boolean deferDistinctValueAggregates, KernelRuntime.MemoryAccount memory,
+			org.eclipse.rdf4j.query.BindingSet rowInput) {
+		this.rowInput = rowInput;
 		this.source = source;
 		this.cancellation = NativeCancellationToken.forSource(source);
 		this.comparator = new ValueComparator(source instanceof SyntheticValueSource synthetic
@@ -460,6 +475,18 @@ final class AggContext {
 						: null;
 		this.memory = memory != null ? memory : ownedMemory;
 		this.comparator.setStrict(strictCompare);
+	}
+
+	/** This immutable proof and actual entry snapshot belong to one evaluation, never a compiled template. */
+	NativeRowProvenance projectedOrigin(NativeBGPOrigin.ProjectionFrame projection) {
+		if (projection == null) {
+			return NativeRowProvenance.EMPTY;
+		}
+		if (rowProjection != projection) {
+			rowProvenance = projection.frame(rowInput);
+			rowProjection = projection;
+		}
+		return rowProvenance;
 	}
 
 	/** COUNT-only and other primitive routes never own an unused value-cache reservation. */

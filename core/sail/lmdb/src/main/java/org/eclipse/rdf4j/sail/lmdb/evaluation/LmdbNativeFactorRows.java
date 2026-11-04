@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorEnvironment;
 import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
@@ -159,17 +160,20 @@ final class LmdbNativeFactorRows {
 	/** Expands only the consumer's dependency set, leaving all other descriptors attached. */
 	static final class Expanded implements LmdbNativeFactorCursor {
 		final LmdbNativeFactorCursor input;
+		final boolean sourcesExternallyRetained;
 		final RowState row;
 		final long demanded;
 		final FactorEnvironment remaining;
 		final FactorProductCursor product;
 		int mark = -1;
 		boolean active;
+		boolean productPending;
 		boolean closed;
 		int tick;
 
 		Expanded(LmdbNativeFactorCursor input, RowState row, long demanded) {
 			this.input = input;
+			this.sourcesExternallyRetained = input.borrowedSourcesExternallyRetained();
 			this.row = row;
 			this.demanded = demanded;
 			remaining = new FactorEnvironment(row.slots.length);
@@ -188,7 +192,15 @@ final class LmdbNativeFactorRows {
 					}
 					if (active) {
 						row.rollback(mark);
-						if (product.next()) {
+						boolean found = product.next();
+						if (productPending) {
+							productPending = false;
+							if (row.cancellation.isCancellationRequested()) {
+								close();
+								return false;
+							}
+						}
+						if (found) {
 							boolean compatible = true;
 							for (long mask = product.expandedMask(); mask != 0L; mask &= mask - 1L) {
 								int slot = Long.numberOfTrailingZeros(mask);
@@ -201,7 +213,18 @@ final class LmdbNativeFactorRows {
 						active = false;
 					}
 					remaining.clear();
-					if (!input.next()) {
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
+					if (!sourcesExternallyRetained)
+						product.release();
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
+					boolean next = input.next();
+					if (row.cancellation.isCancellationRequested() || !next) {
 						close();
 						return false;
 					}
@@ -210,6 +233,7 @@ final class LmdbNativeFactorRows {
 					if ((row.boundMask() & factors.mask()) != 0L)
 						throw new IllegalStateException("deferred factor installed as a scalar binding");
 					product.bind(factors, demanded, input.multiplicity());
+					productPending = true;
 					remaining.append(factors, ~product.expandedMask());
 					active = true;
 				}
@@ -217,6 +241,11 @@ final class LmdbNativeFactorRows {
 				closeSuppressing(this, failure);
 				throw failure;
 			}
+		}
+
+		@Override
+		public boolean borrowedSourcesExternallyRetained() {
+			return sourcesExternallyRetained;
 		}
 
 		@Override
@@ -235,13 +264,15 @@ final class LmdbNativeFactorRows {
 				return;
 			closed = true;
 			remaining.clear();
+			Throwable failure = KernelRuntime.closeResource(product, null);
 			try {
-				product.close();
-			} finally {
-				if (mark >= 0)
-					row.rollback(mark);
-				input.close();
+				if (mark >= 0) row.rollback(mark);
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) failure = problem;
+				else if (failure != problem) failure.addSuppressed(problem);
 			}
+			failure = KernelRuntime.closeResource(input, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 
@@ -412,6 +443,15 @@ final class LmdbNativeFactorRows {
 						row.rollback(mark);
 						mode = NONE;
 					}
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
+					releaseInputReaders();
+					if (row.cancellation.isCancellationRequested()) {
+						close();
+						return false;
+					}
 					if (!input.next()) {
 						close();
 						return false;
@@ -456,10 +496,10 @@ final class LmdbNativeFactorRows {
 					slot = Long.numberOfTrailingZeros(demand);
 					BorrowedFactorBatch batch = factors.batch(slot);
 					if (boundBatch != batch) {
-						if (reader != null)
-							reader.close();
+						BorrowedFactorBatch.Cursor previous = reader;
 						reader = null;
 						boundBatch = null;
+						if (previous != null) previous.close();
 						reader = batch.cursor(READ_WINDOW);
 						boundBatch = batch;
 					}
@@ -537,42 +577,56 @@ final class LmdbNativeFactorRows {
 			return result;
 		}
 
+		private void releaseInputReaders() {
+			BorrowedFactorBatch.Cursor previous = reader;
+			reader = null;
+			boundBatch = null;
+			factors = null;
+			Throwable failure = KernelRuntime.closeResource(previous, null);
+			if (product != null) {
+				try { product.release(); }
+				catch (RuntimeException | Error problem) {
+					if (failure == null) failure = problem;
+					else if (failure != problem) failure.addSuppressed(problem);
+				}
+			}
+			if (tupleFilter != null) {
+				try { tupleFilter.releaseInput(); }
+				catch (RuntimeException | Error problem) {
+					if (failure == null) failure = problem;
+					else if (failure != problem) failure.addSuppressed(problem);
+				}
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
+
 		@Override
 		public void close() {
-			if (closed)
-				return;
+			if (closed) return;
 			closed = true;
 			result.clear();
 			factors = null;
-			try {
-				if (reader != null)
-					reader.close();
-			} finally {
-				reader = null;
-				boundBatch = null;
-				try {
-					if (product != null)
-						product.close();
-				} finally {
-					try {
-						if (tupleFilter != null)
-							tupleFilter.close();
-					} finally {
-						try {
-							if (selected != null)
-								selected.close();
-						} finally {
-							try {
-								if (mark >= 0)
-									row.rollback(mark);
-								input.close();
-							} finally {
-								filter.close();
-							}
-						}
-					}
-				}
+			BorrowedFactorBatch.Cursor previous = reader;
+			reader = null;
+			boundBatch = null;
+			Throwable failure = KernelRuntime.closeResource(previous, null);
+			failure = KernelRuntime.closeResource(product, failure);
+			failure = KernelRuntime.closeResource(tupleFilter, failure);
+			SelectedFactorSource previousSelection = selected;
+			selected = null;
+			failure = KernelRuntime.closeResource(previousSelection, failure);
+			try { if (mark >= 0) row.rollback(mark); }
+			catch (RuntimeException | Error problem) {
+				if (failure == null) failure = problem;
+				else if (failure != problem) failure.addSuppressed(problem);
 			}
+			failure = KernelRuntime.closeResource(input, failure);
+			try { filter.close(); }
+			catch (RuntimeException | Error problem) {
+				if (failure == null) failure = problem;
+				else if (failure != problem) failure.addSuppressed(problem);
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 

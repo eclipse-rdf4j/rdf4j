@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+
 /** Selected physical value together with the observation whose lifetime must match consumer lifetime. */
 final class LmdbNativeStrategySelection<T> implements AutoCloseable {
 	private final T value;
@@ -100,19 +102,14 @@ final class LmdbNativeStrategySelection<T> implements AutoCloseable {
 					filterAttempt.commit();
 				}
 			} catch (RuntimeException | Error problem) {
-				if (cleanup == null) {
-					cleanup = problem;
-				} else if (cleanup != problem) {
-					cleanup.addSuppressed(problem);
-				}
+				cleanup = retainCleanup(cleanup, problem);
 			}
 		}
-		if (cleanup != null) {
-			if (failure != null && failure != cleanup) {
-				failure.addSuppressed(cleanup);
-			} else {
-				NativeContextClosingIteration.throwFailure(cleanup);
-			}
-		}
+		KernelRuntime.rethrowCloseFailureIfNotPrimary(retainCleanup(failure, cleanup), failure);
+	}
+
+	private static Throwable retainCleanup(Throwable primary, Throwable cleanup) {
+		return cleanup == null ? primary
+				: KernelRuntime.closeResource(() -> NativeContextClosingIteration.throwFailure(cleanup), primary);
 	}
 }

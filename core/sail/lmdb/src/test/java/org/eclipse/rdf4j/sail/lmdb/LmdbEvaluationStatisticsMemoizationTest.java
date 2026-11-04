@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -47,6 +48,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XMLSchema;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -63,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
@@ -79,14 +82,19 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollec
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
@@ -708,22 +716,22 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbStore sail = (LmdbStore) repository.getSail();
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
-			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
-			Filter filter = firstFilter("""
-					SELECT * WHERE {
-						?s <urn:test:recordedOn> ?date .
-						FILTER(?date IN (
-							"2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>,
-							"2024-02-01"^^<http://www.w3.org/2001/XMLSchema#date>
-						))
-					}
-					""");
-			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource());
-			assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.75d,
-					() -> "A bounded sample must not mistake the first object-ordered run for the population: "
-							+ estimate);
-			assertEquals(16L, estimate.getEvidenceCount());
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				EvaluationStatistics statistics = read.statistics();
+				Filter filter = qualifiedFirstFilter("""
+						SELECT * WHERE {
+							?s <urn:test:recordedOn> ?date .
+							FILTER(?date < "2024-04-01"^^<http://www.w3.org/2001/XMLSchema#date>)
+						}
+						""");
+				EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource());
+				assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.75d,
+						() -> "A bounded sample must not mistake the first object-ordered run for the population: "
+								+ estimate);
+				assertEquals(16L, estimate.getEvidenceCount());
+			}
+			assertDateSelection(repository, DATE_RANGE_QUERY);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -746,22 +754,24 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
-			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
-			Filter filter = firstFilter("""
-					SELECT * WHERE {
-						?s <urn:test:name> ?name .
-						FILTER(?name = "missing")
-					}
-					""");
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				EvaluationStatistics statistics = read.statistics();
+				Filter filter = qualifiedFirstFilter("""
+						SELECT * WHERE {
+							?s <urn:test:name> ?name .
+							FILTER(?name = "missing")
+						}
+						""");
 
-			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+				EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
 
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
-					"Expected zero-hit pattern-local sampling to stay usable instead of falling back to unknown");
-			assertEquals(0.0d, estimate.getPassRatio(), 0.0d,
-					"Expected a fully sampled miss to plan as a zero pass-ratio");
-			assertTrue(estimate.getEvidenceCount() > 0L,
-					"Expected zero-hit sampling to retain evidence");
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+						"Expected zero-hit pattern-local sampling to stay usable instead of falling back to unknown");
+				assertEquals(0.0d, estimate.getPassRatio(), 0.0d,
+						"Expected a fully sampled miss to plan as a zero pass-ratio");
+				assertTrue(estimate.getEvidenceCount() > 0L,
+						"Expected zero-hit sampling to retain evidence");
+			}
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -784,14 +794,16 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
-			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
-			Filter filter = firstFilter(
-					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				EvaluationStatistics statistics = read.statistics();
+				Filter filter = qualifiedFirstFilter(
+						"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
 
-			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+				EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
 
-			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
-					"Disabling optimizer sampling should prevent unlearned filters from spending sampling budget");
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+						"Disabling optimizer sampling should prevent unlearned filters from spending sampling budget");
+			}
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -815,26 +827,28 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
-			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
-			Filter filter = firstFilter(
-					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				EvaluationStatistics statistics = read.statistics();
+				Filter filter = qualifiedFirstFilter(
+						"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
 
-			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+				EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
 
-			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
-					"Foreground optimizer sampling is disabled for this test");
-			List<?> requests = drainBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore), 10);
-			assertEquals(1, requests.size(),
-					"Expected optimizer to vote for background sampling of the unknown filter");
-			Object request = requests.getFirst();
-			assertEquals("urn:test:name", invokeString(request, "predicateIri"));
-			assertTrue(invokeString(request, "filterKey").length() > 0,
-					"Expected background request to retain the canonical filter key");
-			assertEquals(1L, invokeLong(request, "voteCount"));
-			assertTrue(invokeDouble(request, "expectedRuntimeRows") > 0.0d);
-			assertTrue(invokeDouble(request, "expectedBenefitRows") > 0.0d);
-			assertTrue(invokeBoolean(request, "foregroundNeeded"),
-					"Foreground planner needs should be visible to the background sampler");
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+						"Foreground optimizer sampling is disabled for this test");
+				List<?> requests = drainBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore), 10);
+				assertEquals(1, requests.size(),
+						"Expected optimizer to vote for background sampling of the unknown filter");
+				Object request = requests.getFirst();
+				assertEquals("urn:test:name", invokeString(request, "predicateIri"));
+				assertTrue(invokeString(request, "filterKey").length() > 0,
+						"Expected background request to retain the canonical filter key");
+				assertEquals(1L, invokeLong(request, "voteCount"));
+				assertTrue(invokeDouble(request, "expectedRuntimeRows") > 0.0d);
+				assertTrue(invokeDouble(request, "expectedBenefitRows") > 0.0d);
+				assertTrue(invokeBoolean(request, "foregroundNeeded"),
+						"Foreground planner needs should be visible to the background sampler");
+			}
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -859,20 +873,15 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
-			String query = """
-					SELECT ?practitioner (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {
-						?enc <http://example.com/theme/medical/recordedOn> ?date .
-						FILTER (?date IN ("2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>,
-							"2024-02-01"^^<http://www.w3.org/2001/XMLSchema#date>))
-						?enc a <http://example.com/theme/medical/Encounter> .
-						?enc <http://example.com/theme/medical/handledBy> ?practitioner .
-						OPTIONAL {
-							?enc <http://example.com/theme/medical/hasCondition> ?cond .
-						}
-					}
-					GROUP BY ?practitioner
-					HAVING (COUNT(?enc) > 0)
-					""";
+			String temporalInQuery = medicalAggregateQuery("""
+					?date IN ("2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>,
+						"2024-02-01"^^<http://www.w3.org/2001/XMLSchema#date>)
+					""".strip());
+			String query = medicalAggregateQuery(
+					"?date < \"2024-03-01\"^^<http://www.w3.org/2001/XMLSchema#date>");
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				assertFiniteInDeclinesRawSampling(backingStore, qualifiedFirstFilter(temporalInQuery));
+			}
 			TupleExpr optimized;
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				Explanation explanation = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
@@ -890,44 +899,48 @@ class LmdbEvaluationStatisticsMemoizationTest {
 							throw new RuntimeException(e);
 						}
 					}),
-					"Expected optimizer to queue background sampling for the recordedOn IN filter; requests="
+					"Expected optimizer to queue background sampling for the recordedOn nonfinite range filter; requests="
 							+ requests);
 
 			Filter recordedOnFilter = findRecordedOnFilter(optimized);
 			assertNotNull(recordedOnFilter,
 					"Expected optimized plan to retain the recordedOn date constraint as a local filter");
-			assertTrue(runBackgroundFilterSamplingUntilSampled(backingStore, backingStore.getEvaluationStatistics(),
-					recordedOnFilter) > 0,
-					"Expected background cycle to sample the queued recordedOn filter");
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				assertTrue(runBackgroundFilterSamplingUntilSampled(backingStore, read.statistics(),
+						recordedOnFilter) > 0,
+						"Expected background cycle to sample the queued recordedOn filter");
 
-			EvaluationStatistics.FilterPassEstimate estimate = backingStore.getEvaluationStatistics()
-					.estimateFilterPass(recordedOnFilter);
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
-					"Expected background sampling to make the recordedOn IN filter available to planning");
-			assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.5d,
-					"Expected Jan-Feb date filter to be more selective than handledBy/rdf:type scans");
+				EvaluationStatistics.FilterPassEstimate estimate = read.statistics()
+						.estimateFilterPass(recordedOnFilter);
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+						"Expected background sampling to make the recordedOn nonfinite range filter available to planning");
+				assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.5d,
+						"Expected Jan-Feb date filter to be more selective than handledBy/rdf:type scans");
 
-			TupleExpr optimizedAfterSampling;
-			String optimizedTextAfterSampling;
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				Explanation explanation = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
-						.explain(Explanation.Level.Optimized);
-				optimizedAfterSampling = (TupleExpr) explanation.tupleExpr();
-				optimizedTextAfterSampling = explanation.toString();
+				TupleExpr optimizedAfterSampling;
+				String optimizedTextAfterSampling;
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					Explanation explanation = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
+							.explain(Explanation.Level.Optimized);
+					optimizedAfterSampling = (TupleExpr) explanation.tupleExpr();
+					optimizedTextAfterSampling = explanation.toString();
+				}
+				Filter recordedOnFilterAfterSampling = findRecordedOnFilter(optimizedAfterSampling);
+				assertNotNull(recordedOnFilterAfterSampling,
+						"Expected sampled optimized plan to retain the recordedOn date constraint");
+				assertEquals("sampled",
+						recordedOnFilterAfterSampling
+								.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
+						"Expected optimized plan telemetry to show sampled background selectivity");
+				assertTrue(optimizedTextAfterSampling.contains("filterSelectivitySource=sampled"),
+						"Expected Workbench text explain to show sampled selectivity for recordedOn\n"
+								+ optimizedTextAfterSampling);
+				assertFalse(optimizedTextAfterSampling.contains("Filter (filterSelectivitySource=unknown)"),
+						"Unsupported filters should not make Workbench text explain look like sampled selectivity was missed\n"
+								+ optimizedTextAfterSampling);
 			}
-			Filter recordedOnFilterAfterSampling = findRecordedOnFilter(optimizedAfterSampling);
-			assertNotNull(recordedOnFilterAfterSampling,
-					"Expected sampled optimized plan to retain the recordedOn date constraint");
-			assertEquals("sampled",
-					recordedOnFilterAfterSampling
-							.getStringMetricPlanned(TelemetryMetricNames.FILTER_SELECTIVITY_SOURCE),
-					"Expected optimized plan telemetry to show sampled background selectivity");
-			assertTrue(optimizedTextAfterSampling.contains("filterSelectivitySource=sampled"),
-					"Expected Workbench text explain to show sampled selectivity for recordedOn\n"
-							+ optimizedTextAfterSampling);
-			assertFalse(optimizedTextAfterSampling.contains("Filter (filterSelectivitySource=unknown)"),
-					"Unsupported filters should not make Workbench text explain look like sampled selectivity was missed\n"
-							+ optimizedTextAfterSampling);
+			assertMedicalAggregateRows(repository, temporalInQuery);
+			assertMedicalAggregateRows(repository, query);
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -952,17 +965,19 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
-			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
-			Filter filter = firstFilter(
-					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				EvaluationStatistics statistics = read.statistics();
+				Filter filter = qualifiedFirstFilter(
+						"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
 
-			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
-			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
-					"Disabled background raw sampling should not produce sampled estimates");
-			assertEquals(0, backingStore.runBackgroundFilterSamplingCycle(50L),
-					"Disabled background raw sampling should make the store cycle inert");
-			assertTrue(drainBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore), 10).isEmpty(),
-					"Disabled background raw sampling should prevent queueing");
+				EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, estimate.getSource(),
+						"Disabled background raw sampling should not produce sampled estimates");
+				assertEquals(0, backingStore.runBackgroundFilterSamplingCycle(50L),
+						"Disabled background raw sampling should make the store cycle inert");
+				assertTrue(drainBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore), 10).isEmpty(),
+						"Disabled background raw sampling should prevent queueing");
+			}
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -986,24 +1001,26 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
-			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
-			Filter filter = firstFilter(
-					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				EvaluationStatistics statistics = read.statistics();
+				Filter filter = qualifiedFirstFilter(
+						"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
 
-			EvaluationStatistics.FilterPassEstimate before = statistics.estimateFilterPass(filter);
-			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, before.getSource(),
-					"Foreground optimizer sampling is disabled for this test");
+				EvaluationStatistics.FilterPassEstimate before = statistics.estimateFilterPass(filter);
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, before.getSource(),
+						"Foreground optimizer sampling is disabled for this test");
 
-			assertTrue(runBackgroundFilterSamplingUntilSampled(backingStore, statistics, filter) > 0,
-					"Expected background cycle to sample the queued filter");
+				assertTrue(runBackgroundFilterSamplingUntilSampled(backingStore, statistics, filter) > 0,
+						"Expected background cycle to sample the queued filter");
 
-			EvaluationStatistics.FilterPassEstimate after = statistics.estimateFilterPass(filter);
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, after.getSource(),
-					"Expected background sampling to populate the sampled pass-ratio cache");
-			assertTrue(after.getPassRatio() >= 0.0d && after.getPassRatio() <= 1.0d,
-					"Expected background sampling to record a valid pass ratio");
-			assertTrue(after.getEvidenceCount() > 0L,
-					"Expected background sampling to retain sample evidence");
+				EvaluationStatistics.FilterPassEstimate after = statistics.estimateFilterPass(filter);
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, after.getSource(),
+						"Expected background sampling to populate the sampled pass-ratio cache");
+				assertTrue(after.getPassRatio() >= 0.0d && after.getPassRatio() <= 1.0d,
+						"Expected background sampling to record a valid pass ratio");
+				assertTrue(after.getEvidenceCount() > 0L,
+						"Expected background sampling to retain sample evidence");
+			}
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -1027,23 +1044,25 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
 
-			EvaluationStatistics statistics = backingStore.getEvaluationStatistics();
-			Filter nameFilter = firstFilter(
-					"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
-			Filter followsFilter = firstFilter(
-					"SELECT * WHERE { ?s <urn:test:follows> ?o . FILTER(?o != <urn:test:user:0>) }");
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				EvaluationStatistics statistics = read.statistics();
+				Filter nameFilter = qualifiedFirstFilter(
+						"SELECT * WHERE { ?s <urn:test:name> ?name . FILTER(CONTAINS(STR(?name), \"0\")) }");
+				Filter followsFilter = qualifiedFirstFilter(
+						"SELECT * WHERE { ?s <urn:test:follows> ?o . FILTER(?o != <urn:test:user:0>) }");
 
-			statistics.estimateFilterPass(nameFilter);
-			statistics.estimateFilterPass(followsFilter);
-			statistics.estimateFilterPass(nameFilter);
+				statistics.estimateFilterPass(nameFilter);
+				statistics.estimateFilterPass(followsFilter);
+				statistics.estimateFilterPass(nameFilter);
 
-			List<?> requests = drainBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore), 10);
-			assertEquals(2, requests.size());
-			assertEquals("urn:test:name", invokeString(requests.get(0), "predicateIri"),
-					"Repeated foreground needs should move the matching request to the front");
-			assertEquals(2L, invokeLong(requests.get(0), "voteCount"));
-			assertEquals("urn:test:follows", invokeString(requests.get(1), "predicateIri"));
-			assertEquals(1L, invokeLong(requests.get(1), "voteCount"));
+				List<?> requests = drainBackgroundSamplingRequests(extractFilterSelectivityStats(backingStore), 10);
+				assertEquals(2, requests.size());
+				assertEquals("urn:test:name", invokeString(requests.get(0), "predicateIri"),
+						"Repeated foreground needs should move the matching request to the front");
+				assertEquals(2L, invokeLong(requests.get(0), "voteCount"));
+				assertEquals("urn:test:follows", invokeString(requests.get(1), "predicateIri"));
+				assertEquals(1L, invokeLong(requests.get(1), "voteCount"));
+			}
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
@@ -1074,6 +1093,13 @@ class LmdbEvaluationStatisticsMemoizationTest {
 				Var.of("o"));
 		Filter filter = new Filter(pattern.clone(),
 				new Compare(Var.of("o"), new ValueConstant(excludedObject), Compare.CompareOp.NE));
+
+		assertFalse(PlanningGraphDomains.domain(filter).allowsNativeEvidence());
+		assertEquals(-1.0d, stats.estimateFilterPass(filter, pattern).passRatio(),
+				"an unqualified detached filter must not reach the runtime-row probe");
+		assertEquals(0, stats.pendingBackgroundSamplingRequests());
+		PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
+		PlanningGraphDomains.capture(pattern, PlanningGraphDomain.defaultGraph());
 
 		stats.estimateFilterPass(filter, pattern);
 		stats.estimateFilterPass(filter, pattern);
@@ -1115,15 +1141,33 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void recordsLearnedFilterPassRatioForExternalBoundPatternLocalFilter() throws Exception {
+		verifyLearnedFilterPassRatioForExternalBoundPatternLocalFilter(false);
+	}
+
+	@Test
+	void recordsLearnedFilterPassRatioForSelectedNativePlanWithExecutionSummary() throws Exception {
+		verifyLearnedFilterPassRatioForExternalBoundPatternLocalFilter(true);
+	}
+
+	private void verifyLearnedFilterPassRatioForExternalBoundPatternLocalFilter(boolean witnessNativePath)
+			throws Exception {
+		verifyLearnedFilterPassRatioForExternalBoundPatternLocalFilter(witnessNativePath, false);
+		verifyLearnedFilterPassRatioForExternalBoundPatternLocalFilter(witnessNativePath, true);
+	}
+
+	private void verifyLearnedFilterPassRatioForExternalBoundPatternLocalFilter(boolean witnessNativePath,
+			boolean sufficientEvidence) throws Exception {
 		File dataDir = Files.createTempDirectory("lmdb-eval-stats-learned-filter").toFile();
-		SailRepository repository = new SailRepository(new LmdbStore(dataDir, sketchEnabledConfig()));
+		LmdbStore sail = new LmdbStore(dataDir, sketchEnabledConfig());
+		SailRepository repository = new SailRepository(sail);
 		try {
 			loadData(repository);
-
-			LmdbStore sail = (LmdbStore) repository.getSail();
+			if (sufficientEvidence) {
+				// Increase the actual matching population while leaving the two-result query bag unchanged.
+				loadNameData(repository, 32);
+			}
 			LmdbSailStore backingStore = sail.getBackingStore();
 			rebuildSketchesAndAwaitLmdbOptimizer(sail, backingStore);
-
 			String externalBoundQuery = """
 					SELECT * WHERE {
 						VALUES ?target { "u0" "u1" }
@@ -1131,41 +1175,335 @@ class LmdbEvaluationStatisticsMemoizationTest {
 						FILTER(?name = ?target)
 					}
 					""";
-			Filter filter = firstFilter(externalBoundQuery);
-			EvaluationStatistics beforeExecution = backingStore.getEvaluationStatistics();
-			assertTrue(beforeExecution.estimateFilterPassRatio(filter) < 0.0d,
-					"Expected external-bound filter to have no sampled or heuristic estimate before runtime learning");
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				try (var result = connection.prepareTupleQuery(QueryLanguage.SPARQL, externalBoundQuery).evaluate()) {
-					while (result.hasNext()) {
-						result.next();
-					}
-				}
-			}
-
-			EvaluationStatistics afterExecution = backingStore.getEvaluationStatistics();
-			Filter plannedFilterAfterLiteralAnchor = firstFilter("""
+			String literalAnchoredQuery = """
 					SELECT * WHERE {
 						VALUES ?target { "u0" "u1" }
 						VALUES ?name { "u0" "u1" }
 						?s <urn:test:name> ?name .
 						FILTER(?name = ?target)
 					}
-					""");
-			EvaluationStatistics.FilterPassEstimate learnedEstimate = afterExecution
-					.estimateFilterPass(plannedFilterAfterLiteralAnchor);
-			double learnedPassRatio = learnedEstimate.getPassRatio();
+					""";
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				Filter qualified = qualifiedFirstFilter(externalBoundQuery);
+				EvaluationStatistics.FilterPassEstimate before = read.statistics().estimateFilterPass(qualified);
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, before.getSource(),
+						"a heuristic is allowed, but an unconditioned raw sample cannot describe an external value");
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, before.getSource());
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, before.getSource());
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN, before.getSource());
+				LmdbFilterSelectivityStats filters = read.statistics().estimatorRuntime().filters();
+				assertEquals(-1.0d, filters.estimateLiveFilterPass(qualified,
+						StatementPatternCollector.process(qualified.getArg()).getFirst()).passRatio());
+				assertEquals(0, backingStore.learnedFilterSelectivity().size(), "no runtime census exists before execution");
 
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, learnedEstimate.getSource(),
-					"Expected runtime feedback to be keyed by the local bound-component mask used after anchoring");
-			assertTrue(learnedPassRatio >= 0.0d && learnedPassRatio <= 1.0d,
-					"Expected runtime evaluation to record a valid learned pass ratio");
-			assertTrue(learnedEstimate.getEvidenceCount() > 0L,
-					"Expected runtime evaluation to retain evidence for external-bound pattern-local filters");
+				TupleExpr trainedPlan = read.strategy().optimize(parseCompleteQuery(externalBoundQuery),
+						read.statistics(), EmptyBindingSet.getInstance());
+				assertInstanceOf(LmdbNativeEvaluationStrategy.class, read.strategy());
+				if (witnessNativePath) {
+					trainedPlan.setExecutionSummaryEnabled(true);
+				}
+				Filter trainedFilter = firstFilter(trainedPlan);
+				List<BindingSet> actual = QueryResults.asList(read.strategy().precompile(trainedPlan)
+						.evaluate(EmptyBindingSet.getInstance()));
+				if (witnessNativePath) {
+					assertEquals("lmdb-native", trainedPlan.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_ENGINE),
+							"the actual query must be compiled by the native engine");
+					assertNotEquals("genericHostedRoot", trainedPlan.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND),
+							"the root must select a native plan rather than a generic host");
+					assertNotNull(trainedPlan.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH),
+							"the query must execute a real native path before asserting feedback");
+				}
+				List<String> bindings = actual.stream().map(row -> row.getValue("s").stringValue() + "|"
+						+ row.getValue("name").stringValue() + "|" + row.getValue("target").stringValue())
+						.sorted().toList();
+				assertEquals(List.of("urn:test:user:0|u0|u0", "urn:test:user:1|u1|u1"), bindings);
+				assertTrue(backingStore.learnedFilterSelectivity().size() > 0, "the actual completed query records evidence");
+
+				// Reuse is valid only for the same actual normalized logical input, not merely the same condition.
+				TupleExpr preparedLookup = read.strategy().optimize(parseCompleteQuery(externalBoundQuery),
+						read.statistics(), EmptyBindingSet.getInstance());
+				Filter plannedEquivalentFilter = firstFilter(preparedLookup);
+				var learned = backingStore.learnedFilterSelectivity();
+				var trainedDescriptor = LmdbFilterOutcomeFeedbackDescriptor.captureSource(learned.outcomeOwnerToken(),
+						read.statistics().estimatorRuntime(), read.source(), null, trainedFilter);
+				var lookupDescriptor = LmdbFilterOutcomeFeedbackDescriptor.captureSource(learned.outcomeOwnerToken(),
+						read.statistics().estimatorRuntime(), read.source(), null, plannedEquivalentFilter);
+				assertNotNull(trainedDescriptor);
+				assertNotNull(lookupDescriptor);
+				assertEquals(trainedDescriptor.read(), lookupDescriptor.read(), "the exact live source/plane/frame is retained");
+				assertNotNull(trainedDescriptor.pattern());
+				assertNotNull(lookupDescriptor.pattern());
+				assertEquals(trainedDescriptor.pattern().boundMask(), lookupDescriptor.pattern().boundMask(),
+						"the actual normalized filter must address the trained local bound-component mask");
+				assertEquals(trainedDescriptor.preparedBindings(), lookupDescriptor.preparedBindings(),
+						"a different prepared binding frame cannot borrow this observation");
+				assertEquals(trainedDescriptor.exact(), lookupDescriptor.exact(),
+						"only a genuinely equivalent prepared filter surface may reuse its completed census");
+				var runtime = read.statistics().estimatorRuntime();
+				var exactCensus = learned.estimateQualified(runtime.valueStore(), runtime.snapshotVersion(),
+						plannedEquivalentFilter, lookupDescriptor.read());
+				assertNotNull(exactCensus, "the identical qualified population owns a reusable exact census");
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, exactCensus.getSource());
+				long expectedInputs = sufficientEvidence ? 80L : 16L;
+				assertEquals(expectedInputs, exactCensus.getEvidenceCount());
+				assertEquals(2.0d / expectedInputs, exactCensus.getPassRatio(), 0.0d);
+				assertEquals((double) expectedInputs / (expectedInputs + 64.0d), exactCensus.getConfidenceScore(), 0.0d);
+				EvaluationStatistics.FilterPassEstimate learnedEstimate = read.statistics()
+						.estimateFilterPass(plannedEquivalentFilter);
+				assertEquals(sufficientEvidence ? EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER
+						: EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC, learnedEstimate.getSource(),
+						"the facade chooses between the exact census and heuristic by actual confidence");
+				if (sufficientEvidence) {
+					assertEquals(expectedInputs, learnedEstimate.getEvidenceCount());
+					assertEquals(exactCensus.getPassRatio(), learnedEstimate.getPassRatio(), 0.0d);
+				}
+
+				// A second VALUES table changes where the optimizer evaluates the condition and its population.
+				TupleExpr anchoredLookup = new LmdbQueryOptimizerPipeline(read.strategy(), read.source(), read.statistics())
+						.withPreparedQueryEntry(parseCompleteQuery(literalAnchoredQuery), null,
+								EmptyBindingSet.getInstance(), (prepared, cascades) -> prepared);
+				Filter anchoredFilter = firstFilter(anchoredLookup);
+				var anchoredDescriptor = LmdbFilterOutcomeFeedbackDescriptor.captureSource(learned.outcomeOwnerToken(),
+						read.statistics().estimatorRuntime(), read.source(), null, anchoredFilter);
+				assertNotNull(anchoredDescriptor);
+				assertEquals(trainedDescriptor.read(), anchoredDescriptor.read());
+				assertNull(anchoredDescriptor.pattern(), "the normalized finite-table filter has no local statement population");
+				assertNotEquals(trainedDescriptor.exact(), anchoredDescriptor.exact(),
+						"equal condition text and read identity cannot authorize a different FILTER input");
+				EvaluationStatistics.FilterPassEstimate anchoredEstimate = read.statistics().estimateFilterPass(anchoredFilter);
+				assertFalse(Set.of(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
+						EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
+						EvaluationStatistics.FilterPassEstimate.Source.LEARNED_PATTERN).contains(anchoredEstimate.getSource()),
+						"the completed statement-side census must not train the finite VALUES-side condition");
+				List<BindingSet> anchoredRows = QueryResults.asList(read.strategy().precompile(anchoredLookup)
+						.evaluate(EmptyBindingSet.getInstance()));
+				assertEquals(List.of("urn:test:user:0|u0|u0", "urn:test:user:1|u1|u1"), anchoredRows.stream()
+						.map(row -> row.getValue("s").stringValue() + "|" + row.getValue("name").stringValue()
+								+ "|" + row.getValue("target").stringValue()).sorted().toList(),
+						"the changed input population still returns the independently known exact bag");
+			}
 		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	private static TupleExpr parseCompleteQuery(String query) {
+		return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+	}
+
+	private static String medicalAggregateQuery(String dateCondition) {
+		return """
+				SELECT ?practitioner (COUNT(DISTINCT ?enc) AS ?encCount) WHERE {
+					?enc <http://example.com/theme/medical/recordedOn> ?date .
+					FILTER (%s)
+					?enc a <http://example.com/theme/medical/Encounter> .
+					?enc <http://example.com/theme/medical/handledBy> ?practitioner .
+					OPTIONAL {
+						?enc <http://example.com/theme/medical/hasCondition> ?cond .
+					}
+				}
+				GROUP BY ?practitioner
+				HAVING (COUNT(?enc) > 0)
+				""".formatted(dateCondition);
+	}
+
+	private static final String DATE_RANGE_QUERY = """
+			SELECT ?s ?date WHERE {
+				?s <urn:test:recordedOn> ?date .
+				FILTER(?date < "2024-04-01"^^<http://www.w3.org/2001/XMLSchema#date>)
+			}
+			""";
+
+	@Test
+	void rawGraphAndMissingPairedSourceCannotAuthorizeAFilterSample() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampling-authority").toFile();
+		LmdbStoreConfig config = sketchEnabledConfig().setOptimizerSamplingMaxMillis(5_000L)
+				.setOptimizerSamplingMaxRows(16).setBackgroundRawSamplingMaxMillisPerCycle(0L);
+		LmdbStore sail = new LmdbStore(dataDir, config);
+		SailRepository repository = new SailRepository(sail);
+		try {
+			loadInterleavedDateData(repository);
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, sail.getBackingStore());
+			LmdbEvaluationStatistics unbound = (LmdbEvaluationStatistics) sail.getBackingStore().getEvaluationStatistics();
+			assertFalse(unbound.estimatorRuntime().hasPairedPlanningAuthority());
+			assertFalse(unbound.estimatorRuntime().adaptiveEvidenceAllowed(),
+					"store identity and ready maintenance do not replace an actual bound query reader");
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED,
+					unbound.estimateFilterPass(qualifiedFirstFilter(DATE_RANGE_QUERY)).getSource());
+			LmdbEvaluationStatistics bound;
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				bound = read.statistics();
+				Filter raw = firstFilter(DATE_RANGE_QUERY);
+				assertFalse(PlanningGraphDomains.domain(raw).allowsNativeEvidence());
+				int pending = ((LmdbEvaluationStatistics) sail.getBackingStore().getEvaluationStatistics()).estimatorRuntime().filters().pendingBackgroundSamplingRequests();
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.HEURISTIC,
+						bound.estimateFilterPass(raw).getSource(), "binding a reader must not invent raw-parser graph authority");
+				assertEquals(pending, ((LmdbEvaluationStatistics) sail.getBackingStore().getEvaluationStatistics()).estimatorRuntime().filters().pendingBackgroundSamplingRequests());
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED,
+						bound.estimateFilterPass(qualifiedFirstFilter(DATE_RANGE_QUERY)).getSource());
+			}
+			assertFalse(bound.estimatorRuntime().adaptiveEvidenceAllowed(), "closed paired owners revoke evidence authority");
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void temporalInRetainsUncertaintyWithoutRawSampling() throws Exception {
+		File dataDir = Files.createTempDirectory("lmdb-eval-stats-finite-temporal-filter").toFile();
+		LmdbStore sail = new LmdbStore(dataDir, sketchEnabledConfig().setBackgroundRawSamplingMaxMillisPerCycle(0L));
+		SailRepository repository = new SailRepository(sail);
+		String query = """
+				SELECT ?s ?date WHERE {
+					?s <urn:test:recordedOn> ?date .
+					FILTER(?date IN (
+						"2024-01-01"^^<http://www.w3.org/2001/XMLSchema#date>,
+						"2024-02-01"^^<http://www.w3.org/2001/XMLSchema#date>
+					))
+				}
+				""";
+		try {
+			loadInterleavedDateData(repository);
+			rebuildSketchesAndAwaitLmdbOptimizer(sail, sail.getBackingStore());
+			try (PlanningStatisticsRead read = openPlanningStatistics(sail)) {
+				Filter filter = qualifiedFirstFilter(query);
+				assertFiniteInDeclinesRawSampling(sail.getBackingStore(), filter);
+				StatementPattern pattern = (StatementPattern) filter.getArg();
+				StatisticsEstimate input = read.statistics().statementPattern(pattern, Set.of()).orElseThrow();
+				StatisticsEstimate filtered = read.statistics().filter(pattern, filter.getCondition(), input, Set.of())
+						.orElseThrow();
+				assertEquals(0.0d, filtered.metrics().get("optimizer.filterComplete"), 0.0d,
+						"temporal term matches do not establish complete SPARQL value-equality evidence");
+				assertTrue(filtered.bag().finiteRelations().isEmpty());
+			}
+			assertDateSelection(repository, query);
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	private static void assertFiniteInDeclinesRawSampling(LmdbSailStore backing, Filter enclosing) throws Exception {
+		final Filter[] selected = new Filter[1];
+		enclosing.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter candidate) {
+				if (candidate.getCondition() instanceof org.eclipse.rdf4j.query.algebra.ListMemberOperator members
+						&& members.getArguments().getFirst() instanceof Var variable
+						&& "date".equals(variable.getName())) {
+					assertEquals(null, selected[0], "the fixture has one temporal IN condition");
+					selected[0] = candidate;
+				}
+				super.meet(candidate);
+			}
+		});
+		Filter filter = selected[0];
+		assertNotNull(filter, "the actual temporal IN, not the aggregate HAVING filter, supplies this control");
+		LmdbFilterSelectivityStats stats = ((LmdbEvaluationStatistics) backing.getEvaluationStatistics())
+				.estimatorRuntime().filters();
+		StatementPattern pattern = StatementPatternCollector.process(filter.getArg()).stream()
+				.filter(candidate -> candidate.getObjectVar().getName().equals("date")).findFirst().orElseThrow();
+		assertTrue(PlanningGraphDomains.domain(filter).allowsNativeEvidence());
+		assertTrue(PlanningGraphDomains.domain(pattern).allowsNativeEvidence());
+		int pending = stats.pendingBackgroundSamplingRequests();
+		assertEquals(-1.0d, stats.estimateLiveFilterPass(filter, pattern).passRatio());
+		assertEquals(-1.0d, stats.estimateCachedFilterPass(filter, pattern).passRatio());
+		assertEquals(pending, stats.pendingBackgroundSamplingRequests(), "a constant IN must not vote for raw sampling");
+	}
+
+	private static void assertDateSelection(SailRepository repository, String query) {
+		List<String> actual = new ArrayList<>();
+		try (var connection = repository.getConnection(); var rows = connection.prepareTupleQuery(query).evaluate()) {
+			while (rows.hasNext()) {
+				BindingSet row = rows.next();
+				assertEquals(VF.createLiteral("2024-01-01", XMLSchema.DATE), row.getValue("date"));
+				actual.add(row.getValue("s").stringValue());
+			}
+		}
+		List<String> expected = new ArrayList<>();
+		for (int i = 0; i < 64; i += 4) {
+			expected.add(String.format("urn:test:encounter:%03d", i));
+		}
+		actual.sort(String::compareTo);
+		assertEquals(expected, actual, "both conditions select exactly the sixteen January rows, including multiplicity");
+	}
+
+	private static void assertMedicalAggregateRows(SailRepository repository, String query) {
+		Map<String, Long> actual = new HashMap<>();
+		try (var connection = repository.getConnection(); var rows = connection.prepareTupleQuery(query).evaluate()) {
+			while (rows.hasNext()) {
+				BindingSet row = rows.next();
+				assertEquals(null, actual.put(row.getValue("practitioner").stringValue(),
+						((org.eclipse.rdf4j.model.Literal) row.getValue("encCount")).longValue()));
+			}
+		}
+		assertEquals(Map.of("http://example.com/theme/medical/practitioner/0", 4L,
+				"http://example.com/theme/medical/practitioner/1", 4L), actual);
+	}
+
+	private static Filter qualifiedFirstFilter(String completeQuery) {
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, completeQuery, null).getTupleExpr();
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		return firstFilter(root);
+	}
+
+	private static Filter firstFilter(TupleExpr root) {
+		final Filter[] found = new Filter[1];
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				if (found[0] == null) { found[0] = filter; }
+				super.meet(filter);
+			}
+		});
+		assertNotNull(found[0], "the real prepared query retains its FILTER");
+		return found[0];
+	}
+
+	private static PlanningStatisticsRead openPlanningStatistics(LmdbStore sail) {
+		SailDataset owner = sail.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
+		try {
+			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(sail.getValueFactory(), owner);
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) sail.getBackingStore().getEvaluationStatistics();
+			EvaluationStrategy strategy = sail.getConnectionEvaluationStrategyFactory().createEvaluationStrategy(
+					null, source, statistics, sail.getQueryExecutionPolicy());
+			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
+			SailClosable view = borrowed.enterPlanningReadView().orElseThrow();
+			try {
+				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime().pinQueryPlanningReads(
+						borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
+				try {
+					assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority());
+					assertTrue(statistics.estimatorRuntime().adaptiveEvidenceAllowed());
+					return new PlanningStatisticsRead(owner, view, pin, source, statistics, strategy);
+				} catch (RuntimeException | Error failure) {
+					closeAfterFailure(failure, pin::close);
+					throw failure;
+				}
+			} catch (RuntimeException | Error failure) {
+				closeAfterFailure(failure, view::close);
+				throw failure;
+			}
+		} catch (RuntimeException | Error failure) {
+			closeAfterFailure(failure, owner::close);
+			throw failure;
+		}
+	}
+
+	private static void closeAfterFailure(Throwable primary, Runnable close) {
+		try { close.run(); } catch (RuntimeException | Error cleanup) {
+			if (cleanup != primary) { primary.addSuppressed(cleanup); }
+		}
+	}
+
+	private record PlanningStatisticsRead(SailDataset owner, SailClosable view, TripleStore.PlanningReadPin pin,
+			SailDatasetTripleTermSource source, LmdbEvaluationStatistics statistics, EvaluationStrategy strategy)
+			implements AutoCloseable {
+		@Override
+		public void close() {
+			try (owner; view; pin) { }
 		}
 	}
 

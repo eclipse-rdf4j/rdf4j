@@ -938,8 +938,18 @@ final class LmdbNativeKernelEmitter {
 						.append(" = ")
 						.append(alias.source.token())
 						.append(";\n");
+				if (alias.nullIsError) {
+					body.append(indent)
+							.append("if (v")
+							.append(alias.dstCol)
+							.append(" == 0L) v")
+							.append(alias.dstCol)
+							.append(" = ")
+							.append(NativeLmdbQuerySource.UNKNOWN_ID)
+							.append("L;\n");
+				}
 				BitSet nested = (BitSet) boundColumns.clone();
-				if (operandGuaranteedBound(alias.source, boundColumns)) {
+				if (!alias.nullIsError && operandGuaranteedBound(alias.source, boundColumns)) {
 					nested.set(alias.dstCol);
 				}
 				emitFlatExistsNodesDirect(body, nodes, index + 1, indent, decoded, nested);
@@ -10314,8 +10324,18 @@ final class LmdbNativeKernelEmitter {
 						.append(bind.dstCol)
 						.append(" = ")
 						.append(bind.source.token())
-						.append(";\n")
-						.append(next(nextTemplate, indent));
+						.append(";\n");
+				if (bind.nullIsError) {
+					body.append(indent)
+							.append("if (v")
+							.append(bind.dstCol)
+							.append(" == 0L) v")
+							.append(bind.dstCol)
+							.append(" = ")
+							.append(NativeLmdbQuerySource.UNKNOWN_ID)
+							.append("L;\n");
+				}
+				body.append(next(nextTemplate, indent));
 			} else if (node instanceof BindHook) {
 				BindHook bind = (BindHook) node;
 				if (bind.args.length > 2) {

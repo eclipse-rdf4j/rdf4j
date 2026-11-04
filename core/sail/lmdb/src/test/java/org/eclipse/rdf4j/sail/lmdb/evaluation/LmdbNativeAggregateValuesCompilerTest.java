@@ -356,20 +356,73 @@ class LmdbNativeAggregateValuesCompilerTest {
 
 	@Test
 	void automaticConditionVisibilityAlsoHidesUndeclaredApiBindings() {
+		assertNativeConditionFrameMatchesOrdinary(ConditionBindingScope.AUTO, true, 1);
+	}
+
+	@Test
+	void unscopedAutomaticAndAllConditionFramesKeepDirectApiBindings() {
+		assertNativeConditionFrameMatchesOrdinary(ConditionBindingScope.AUTO, false, 0);
+		assertNativeConditionFrameMatchesOrdinary(ConditionBindingScope.ALL, false, 0);
+	}
+
+	@Test
+	void explicitlyRetainedStatementNamesHideUndeclaredApiBindings() {
+		assertNativeConditionFrameMatchesOrdinary(ConditionBindingScope.retain(Set.of("subject", "name")), false, 1);
+	}
+
+	private void assertNativeConditionFrameMatchesOrdinary(ConditionBindingScope scope, boolean scopeChange, int expectedSize) {
+			StatementPattern pattern = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name"));
+			Filter filter = new Filter(pattern, new Not(new Bound(Var.of("hidden"))));
+			filter.setConditionBindingScope(scope);
+			filter.setVariableScopeChange(scopeChange);
+			MapBindingSet api = new MapBindingSet();
+			api.addBinding("hidden", NAME_1);
+			TripleSource triples = new TripleSource() {
+				@Override public ValueFactory getValueFactory() { return VF; }
+				@Override public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o, Resource... c) {
+					boolean matches = (s == null || s.equals(SUBJECT)) && (p == null || p.equals(LINK)) && (o == null || o.equals(NAME_1));
+					return new org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration<>(
+							(matches ? List.of(VF.createStatement(SUBJECT, LINK, NAME_1)) : List.<Statement>of()).iterator());
+				}
+			};
+			var ordinary = new org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy(triples,
+					(org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver) null);
+			List<BindingSet> expected;
+			try (var rows = ordinary.precompile(filter.clone()).evaluate(api)) {
+				expected = org.eclipse.rdf4j.query.QueryResults.asList(rows);
+			}
+			assertThat(expected).as("condition scope %s, scopeChange=%s", scope, scopeChange)
+					.hasSize(expectedSize);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null,
+					null, 0L, new EvaluationStatistics(), false);
+			QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(filter,
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
+			assertThat(step).isNotNull();
+			try (var rows = step.evaluate(api)) {
+				assertThat(org.eclipse.rdf4j.query.QueryResults.asList(rows)).isEqualTo(expected);
+			}
+			if (!expected.isEmpty()) { assertThat(expected.getFirst().getValue("name")).isEqualTo(NAME_1); }
+	}
+
+	@Test
+	void exactDomainPropagationRequiresCompleteObservationContracts() {
 		StatementPattern pattern = new StatementPattern(Var.of("subject"), Var.of("link", LINK, true), Var.of("name"));
-		Filter filter = new Filter(pattern, new Not(new Bound(Var.of("hidden"))));
-		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
-				null, 0L, new EvaluationStatistics(), false);
-		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompile(filter,
-				new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
-		assertThat(step).isNotNull();
-		MapBindingSet api = new MapBindingSet();
-		api.addBinding("hidden", NAME_1);
-		try (var rows = step.evaluate(api)) {
-			assertThat(rows.hasNext()).isTrue();
-			assertThat(rows.next().getValue("name")).isEqualTo(NAME_1);
-			assertThat(rows.hasNext()).isFalse();
+		Filter opaqueFilter = new Filter(pattern.clone(), new Bound(Var.of("name")) { });
+		opaqueFilter.setConditionBindingScope(ConditionBindingScope.ALL);
+		List<TupleExpr> opaque = List.of(new Join(pattern.clone(), new SingletonSet() { }), opaqueFilter,
+				new Extension(pattern.clone(), new ExtensionElem(new Var("name") { }, "copy")));
+		for (TupleExpr expression : opaque) {
+			SingleStatementSource source = new SingleStatementSource();
+			var strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null, 0L, new EvaluationStatistics(), false);
+			var planner = new LmdbNativeAggregatePlanner(new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+			assertThat(planner.compileTupleWithConstantFilter(expression, "name", new long[] { NAME_1_ID }, new Value[] { NAME_1 }, true))
+					.as("a specialized finite-domain rewrite cannot certify hidden observations: %s", expression.getClass()).isNull();
 		}
+		SingleStatementSource source = new SingleStatementSource();
+		var strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null, null, 0L, new EvaluationStatistics(), false);
+		var planner = new LmdbNativeAggregatePlanner(new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+		assertThat(planner.compileTupleWithConstantFilter(new Join(pattern, new SingletonSet()), "name",
+				new long[] { NAME_1_ID }, new Value[] { NAME_1 }, true)).isNotNull();
 	}
 
 	@Test

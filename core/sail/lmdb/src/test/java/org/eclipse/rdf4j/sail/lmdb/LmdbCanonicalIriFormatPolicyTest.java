@@ -308,7 +308,8 @@ class LmdbCanonicalIriFormatPolicyTest {
 		LmdbStoreConfig config = config();
 		ValueStore values;
 		if (version == LmdbStoreFormat.LEGACY_VERSION) {
-			values = new ValueStore(valuesDirectory.toFile(), new StoreProperties().setVersion(Integer.toString(version)),
+			values = new ValueStore(valuesDirectory.toFile(),
+					new StoreProperties().setVersion(Integer.toString(version)),
 					config);
 		} else {
 			// The convenience path creates and persists format 7 capabilities and the old-reader marker before opening
@@ -373,7 +374,8 @@ class LmdbCanonicalIriFormatPolicyTest {
 		assertThat(LmdbCompatibilityFixtures.snapshot(valuesDirectory)).isEqualTo(before);
 
 		// An explicitly supplied codec remains sufficient for this low-level in-memory test seam.
-		ValueStore reopened = new ValueStore(valuesDirectory.toFile(), standaloneCodecProperties(version, config), config);
+		ValueStore reopened = new ValueStore(valuesDirectory.toFile(), standaloneCodecProperties(version, config),
+				config);
 		try {
 			assertThat(reopened.getFormat().getVersion()).isEqualTo(version);
 			assertThat(reopened.getId(value)).isEqualTo(id);

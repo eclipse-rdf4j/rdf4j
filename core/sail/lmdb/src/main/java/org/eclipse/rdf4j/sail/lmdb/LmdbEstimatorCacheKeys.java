@@ -37,7 +37,8 @@ record SemanticEstimateCacheKey(Object expression, Set<String> boundNames,
 		JoinFactorCostModel.EstimationTier estimationTier,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
 		EstimateContext.MetricsPreference metricsPreference, boolean exactProbePermitted,
-		LmdbFilterReadContext filterReadContext) {
+		LmdbFilterReadContext filterReadContext, LmdbFrontierReadPopulation readPopulation, int frontierPlaneMask,
+		long frontierSnapshotEpoch) {
 
 	static SemanticEstimateCacheKey of(TupleExpr expression, EstimateContext context,
 			LmdbEstimatorOptimizationScope scope) {
@@ -55,22 +56,26 @@ record SemanticEstimateCacheKey(Object expression, Set<String> boundNames,
 				context.snapshotVersion(),
 				context.learnedRevision(),
 				context.metricsPreference(),
-				context.exactProbePermitted(), context.filterReadContext());
+				context.exactProbePermitted(), context.filterReadContext(), context.readPopulation(),
+				context.frontierPlaneMask(), context.frontierSnapshotEpoch());
 	}
 }
 
-record ExactAlternativeSurfaceCacheKey(Object factor, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion) {
+record ExactAlternativeSurfaceCacheKey(Object factor, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion,
+		LmdbFrontierReadPopulation readPopulation, int frontierPlaneMask, long frontierSnapshotEpoch) {
 
 	static ExactAlternativeSurfaceCacheKey of(TupleExpr factor, EstimateContext estimateContext,
 			LmdbEstimatorOptimizationScope scope) {
 		return new ExactAlternativeSurfaceCacheKey(FactorCostCacheKey.factorFingerprint(factor, scope),
-				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion());
+				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion(), estimateContext.readPopulation(),
+				estimateContext.frontierPlaneMask(), estimateContext.frontierSnapshotEpoch());
 	}
 }
 
 record PrefixEstimateCacheKey(FiniteBranchRowsCacheKey factors, long rowsBits,
 		JoinFactorCostModel.EstimationTier estimationTier, QuadSnapshotIdentity snapshotIdentity,
-		long snapshotVersion, long learnedRevision, LmdbFilterReadContext filterReadContext) {
+		long snapshotVersion, long learnedRevision, LmdbFilterReadContext filterReadContext,
+		LmdbFrontierReadPopulation readPopulation, int frontierPlaneMask, long frontierSnapshotEpoch) {
 
 	static PrefixEstimateCacheKey of(List<TupleExpr> factors, double rows,
 			JoinFactorCostModel.EstimationTier estimationTier, EstimateContext estimateContext,
@@ -81,7 +86,9 @@ record PrefixEstimateCacheKey(FiniteBranchRowsCacheKey factors, long rowsBits,
 		return new PrefixEstimateCacheKey(FiniteBranchRowsCacheKey.of(factors, false, scope),
 				Double.doubleToLongBits(rows), tier,
 				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion(),
-				estimateContext.learnedRevision(), estimateContext.filterReadContext());
+				estimateContext.learnedRevision(), estimateContext.filterReadContext(),
+				estimateContext.readPopulation(), estimateContext.frontierPlaneMask(),
+				estimateContext.frontierSnapshotEpoch());
 	}
 }
 
@@ -92,7 +99,8 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 		Map<String, Set<Value>> finiteBindingValues, JoinFactorCostModel.EstimationTier estimationTier,
 		FiniteBranchRowsCacheKey prefixFactors,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
-		LmdbFilterReadContext filterReadContext) {
+		LmdbFilterReadContext filterReadContext, LmdbFrontierReadPopulation readPopulation, int frontierPlaneMask,
+		long frontierSnapshotEpoch) {
 
 	static ScopedFactorCostCacheKey of(TupleExpr factor, JoinFactorCostModel.CostContext context,
 			EstimateContext estimateContext) {
@@ -117,7 +125,9 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 				context.prefixFactorsDescribeCurrentRows(),
 				immutableFiniteBindingValues(context.getFiniteBindingValues()), tier, prefixFactors,
 				estimateContext.snapshotIdentity(), estimateContext.snapshotVersion(),
-				estimateContext.learnedRevision(), estimateContext.filterReadContext());
+				estimateContext.learnedRevision(), estimateContext.filterReadContext(),
+				estimateContext.readPopulation(), estimateContext.frontierPlaneMask(),
+				estimateContext.frontierSnapshotEpoch());
 	}
 
 	static Map<String, Set<Value>> immutableFiniteBindingValues(
@@ -141,7 +151,8 @@ record ScopedFactorCostCacheKey(Object factor, Set<String> boundVars, long outer
 				nestedIteratorInvocation, collectMetrics,
 				prefixFactorsDescribeCurrentRows,
 				immutableFiniteBindingValues(finiteBindingValues), estimationTier, prefixFactors,
-				snapshotIdentity, snapshotVersion, learnedRevision, filterReadContext);
+				snapshotIdentity, snapshotVersion, learnedRevision, filterReadContext, readPopulation,
+				frontierPlaneMask, frontierSnapshotEpoch);
 	}
 }
 
@@ -202,7 +213,8 @@ record EstimationSessionContextKey(Object boundMask, Object finiteBindings,
 		double invocations,
 		Object evidencePolicy, Object graphDomain, Object estimationTier, Object snapshotIdentity,
 		long snapshotVersion,
-		boolean exactProbePermitted, LmdbFilterReadContext filterReadContext) {
+		boolean exactProbePermitted, LmdbFilterReadContext filterReadContext, LmdbFrontierReadPopulation readPopulation,
+		int frontierPlaneMask, long frontierSnapshotEpoch) {
 
 	static EstimationSessionContextKey from(EstimateContext context) {
 		return new EstimationSessionContextKey(context.boundMask(), context.finiteBindings(),
@@ -210,7 +222,8 @@ record EstimationSessionContextKey(Object boundMask, Object finiteBindings,
 				context.invocationCount(), context.evidencePolicy(), context.graphDomain(),
 				context.estimationTier(),
 				context.snapshotIdentity(),
-				context.snapshotVersion(), context.exactProbePermitted(), context.filterReadContext());
+				context.snapshotVersion(), context.exactProbePermitted(), context.filterReadContext(),
+				context.readPopulation(), context.frontierPlaneMask(), context.frontierSnapshotEpoch());
 	}
 }
 

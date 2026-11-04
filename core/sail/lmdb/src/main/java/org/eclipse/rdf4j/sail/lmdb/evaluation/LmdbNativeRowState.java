@@ -616,6 +616,49 @@ final class RowState implements LmdbNativeSlotReader {
 		return false;
 	}
 
+	/** Semantic solution compatibility: a present-null mapping has no RDF value constraining a returned term. */
+	boolean bindReturnedTerm(int slot, long id) {
+		requireRdfTerm(slot);
+		if (slots[slot] != LmdbNativeAggregateCompiler.NULL_CONTEXT_ID
+				|| base.getValue(layout.slotName(slot)) != null) {
+			return bindOrCheckTerm(slot, id);
+		}
+		if (slots[slot] == id) {
+			return true;
+		}
+		// Only lexical solution writeback uses this protocol. Pattern/default-context lookup equality and ordinary
+		// bind remain unchanged. The prior null mapping is owned by this mark and is restored by rollback.
+		trailBinding(slot, id);
+		return true;
+	}
+
+	/** A null-valued returned mapping keeps every already-present value or bound summary. */
+	void bindReturnedNull(int slot) {
+		NativeResultCell cell = summaryCell(slot);
+		if (slots[slot] != UNKNOWN || cell != null && cell.state() == NativeResultCell.State.BOUND) {
+			return;
+		}
+		// An absent/error physical cell has no mapping-domain member. Clear that lane through the same trail,
+		// instead of asking it to impersonate RDF or losing its state when the child rolls back.
+		trailBinding(slot, LmdbNativeAggregateCompiler.NULL_CONTEXT_ID);
+	}
+
+	private void trailBinding(int slot, long id) {
+		boolean wasBound = (boundMask & (1L << slot)) != 0L;
+		trailSlots[trailSize] = slot;
+		trailOldValues[trailSize] = slots[slot];
+		if (trailOldCells != null) {
+			trailOldCells[trailSize] = summaryCell(slot);
+		}
+		trailSize++;
+		slots[slot] = id;
+		if (summaryCells != null) {
+			summaryCells[slot] = null;
+		}
+		boundMask |= 1L << slot;
+		view.slotReplaced(wasBound, true);
+	}
+
 	int mark() {
 		return trailSize;
 	}
@@ -1255,6 +1298,8 @@ final class CopyBinding {
 	 * context requests that any more.
 	 */
 	boolean setNullOnError = false;
+	/** Actual Extension assignment, rather than a synthetic compatibility copy. RDF-null is an expression error. */
+	boolean assignment;
 
 	CopyBinding(int targetSlot, int sourceSlot, long constant) {
 		this(targetSlot, sourceSlot, constant, null);
@@ -1353,6 +1398,7 @@ final class CopyBinding {
 	CopyBinding withComputed(LmdbNativeCompiledInlineId workerComputed) {
 		CopyBinding rebound = new CopyBinding(targetSlot, -1, UNKNOWN, workerComputed, generatedKeyProof);
 		rebound.setNullOnError = setNullOnError;
+		rebound.assignment = assignment;
 		return rebound;
 	}
 
@@ -1361,6 +1407,7 @@ final class CopyBinding {
 		CopyBinding rebound = new CopyBinding(targetSlot, workerComputedValue, encounterOrderReplaySafe,
 				generatedKeyProof);
 		rebound.setNullOnError = setNullOnError;
+		rebound.assignment = assignment;
 		return rebound;
 	}
 
@@ -1410,7 +1457,8 @@ final class CopyBinding {
 							row.positionMask(targetSlot), row)
 					: UNKNOWN;
 		}
-		return computed != null ? computed.id(row) : sourceSlot >= 0 ? row.id(sourceSlot) : constant;
+		long value = computed != null ? computed.id(row) : sourceSlot >= 0 ? row.id(sourceSlot) : constant;
+		return assignment && value == 0L ? UNKNOWN : value;
 	}
 
 	/** Slots read to produce this binding, or {@code -1} when the semantic evaluator has no native read mask. */

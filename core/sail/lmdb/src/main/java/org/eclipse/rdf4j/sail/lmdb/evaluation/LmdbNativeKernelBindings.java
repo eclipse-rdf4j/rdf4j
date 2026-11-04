@@ -90,7 +90,8 @@ final class LmdbNativeKernelBindings {
 	static final class BindHook {
 		private enum Builtin {
 			NONE,
-			NULL_PLACEHOLDER_TO_UNBOUND
+			NULL_PLACEHOLDER_TO_UNBOUND,
+			PRESERVE_EXISTING_OR_CONSTANT
 		}
 
 		private final Builtin builtin;
@@ -139,6 +140,15 @@ final class LmdbNativeKernelBindings {
 				return id == LmdbNativeAggregateCompiler.NULL_CONTEXT_ID ? LmdbNativeAggregateCompiler.UNKNOWN : id;
 			});
 			return new BindHook(value, null, null, new int[] { slot }, false, Builtin.NULL_PLACEHOLDER_TO_UNBOUND);
+		}
+
+		/** The physical field remains fixed, while the converter keeps an earlier named value if present. */
+		static BindHook preserveExistingOrConstant(int slot, long constant) {
+			LmdbNativeCompiledInlineId value = new LmdbNativeCompiledInlineId(1L << slot, true, input -> {
+				long current = input.id(slot);
+				return current == LmdbNativeAggregateCompiler.UNKNOWN ? constant : current;
+			});
+			return new BindHook(value, null, null, new int[] { slot }, false, Builtin.PRESERVE_EXISTING_OR_CONSTANT);
 		}
 
 		BindHook withSolutionScope() {

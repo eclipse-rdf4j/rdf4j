@@ -26,6 +26,14 @@ public final class SailDatasetReadComposition {
 	}
 
 	/**
+	 * Transfers both dataset owners to the existing ordered union wrapper. This does not merge RDF triples or grant a
+	 * native capability; readers and capability resolution retain the ordinary union order and multiplicity.
+	 */
+	public static SailDataset union(SailDataset first, SailDataset second) {
+		return UnionSailDataset.getInstance(Objects.requireNonNull(first), Objects.requireNonNull(second));
+	}
+
+	/**
 	 * Resolves every leaf of a supported source, preserving union order and multiplicity. The store-provided combiner
 	 * must authenticate its capabilities and may decline the complete composition. This supplies neither semantic graph
 	 * authority nor ownership of the borrowed leaves.

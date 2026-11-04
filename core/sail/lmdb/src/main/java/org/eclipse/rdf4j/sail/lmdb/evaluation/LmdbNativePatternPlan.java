@@ -41,6 +41,8 @@ final class PatternPlan implements SlotPlan {
 	final long producedMask;
 	final double staticEstimate;
 	final NativeLmdbQuerySource.IndexAccessProfile accessProfile;
+	/** Exact source that compiled these stored operands; null for unowned/manual patterns. */
+	final NativeLmdbQuerySource accessSource;
 
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
 			double staticEstimate) {
@@ -65,6 +67,13 @@ final class PatternPlan implements SlotPlan {
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
 			StatementOrder statementOrder, String indexName, LmdbKeyRange range, double staticEstimate,
 			NativeLmdbQuerySource.IndexAccessProfile accessProfile) {
+		this(s, p, o, c, contexts, namedContextScope, statementOrder, indexName, range, staticEstimate,
+				accessProfile, null);
+	}
+
+	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
+			StatementOrder statementOrder, String indexName, LmdbKeyRange range, double staticEstimate,
+			NativeLmdbQuerySource.IndexAccessProfile accessProfile, NativeLmdbQuerySource accessSource) {
 		this.s = s;
 		this.p = p;
 		this.o = o;
@@ -75,21 +84,22 @@ final class PatternPlan implements SlotPlan {
 		this.indexName = indexName;
 		this.range = range;
 		long mask = 0L;
-		if (s.hasSlot()) {
+		if (s.hasSlot() && !s.readOnly) {
 			mask |= 1L << s.slot;
 		}
-		if (p.hasSlot()) {
+		if (p.hasSlot() && !p.readOnly) {
 			mask |= 1L << p.slot;
 		}
-		if (o.hasSlot()) {
+		if (o.hasSlot() && !o.readOnly) {
 			mask |= 1L << o.slot;
 		}
-		if (c.hasSlot()) {
+		if (c.hasSlot() && !c.readOnly) {
 			mask |= 1L << c.slot;
 		}
 		this.producedMask = mask;
 		this.staticEstimate = staticEstimate;
 		this.accessProfile = accessProfile;
+		this.accessSource = accessSource;
 	}
 
 	/**
@@ -99,7 +109,7 @@ final class PatternPlan implements SlotPlan {
 	 */
 	PatternPlan withOrder(StatementOrder order, String selectedIndex) {
 		return new PatternPlan(s, p, o, c, contexts, namedContextScope, order, selectedIndex, range, staticEstimate,
-				accessProfile);
+				accessProfile, accessSource);
 	}
 
 	@Override
@@ -399,7 +409,7 @@ final class PatternPlan implements SlotPlan {
 			return term.constant;
 		}
 		if (term.slot >= 0 && (unboundMask & (1L << term.slot)) == 0L) {
-			return slots[term.slot];
+			return term.lookup(slots);
 		}
 		return UNKNOWN;
 	}
@@ -826,12 +836,56 @@ final class PatternPlan implements SlotPlan {
 		if (range != null && !range.includes(quad, offset)) {
 			return false;
 		}
-		return !namedContextScope || contexts.isFixed() || quad[offset + TripleIndex.CONTEXT_IDX] != NULL_CONTEXT_ID;
+		return (!namedContextScope || contexts.isFixed() || quad[offset + TripleIndex.CONTEXT_IDX] != NULL_CONTEXT_ID)
+				&& matchesFieldEqualities(s, p, o, c, quad[offset + TripleIndex.SUBJ_IDX],
+						quad[offset + TripleIndex.PRED_IDX], quad[offset + TripleIndex.OBJ_IDX],
+						quad[offset + TripleIndex.CONTEXT_IDX]);
+	}
+
+	/** These fields read without producing, or preserve an earlier named value rather than imposing equality. */
+	boolean hasEntryDependentFields() {
+		return readOnlyMask() != 0L || s.preserveExisting || p.preserveExisting || o.preserveExisting
+				|| c.preserveExisting;
+	}
+
+	/** Adjacent physical reorders must preserve entry-only reads and directional keep-or-fill outputs. */
+	boolean canCommuteWith(SlotPlan other) {
+		long mine = producedMask(), theirs = other.producedMask();
+		long reads = LmdbNativeAggregateCompiler.memoReadMask(other);
+		return reads >= 0L && (readOnlyMask() & theirs) == 0L && ((reads & ~theirs) & mine) == 0L
+				&& (SlotPlan.fixedValueOutputMask(this) & theirs) == 0L
+				&& (SlotPlan.fixedValueOutputMask(other) & mine) == 0L;
+	}
+
+	boolean hasFieldEqualities() {
+		return (s.equalFields | p.equalFields | o.equalFields | c.equalFields) != 0;
+	}
+
+	static boolean matchesFieldEqualities(Term s, Term p, Term o, Term c, long subject, long predicate,
+			long object, long context) {
+		return ((p.equalFields & 1) == 0 || predicate == subject)
+				&& ((o.equalFields & 1) == 0 || object == subject)
+				&& ((o.equalFields & 2) == 0 || object == predicate)
+				&& ((c.equalFields & 1) == 0 || context == subject)
+				&& ((c.equalFields & 2) == 0 || context == predicate)
+				&& ((c.equalFields & 4) == 0 || context == object);
+	}
+
+	long readOnlyMask() {
+		return (s.readOnly && s.hasSlot() ? 1L << s.slot : 0L)
+				| (p.readOnly && p.hasSlot() ? 1L << p.slot : 0L)
+				| (o.readOnly && o.hasSlot() ? 1L << o.slot : 0L)
+				| (c.readOnly && c.hasSlot() ? 1L << c.slot : 0L);
 	}
 
 	boolean bindTerm(Term term, long id, RowState row) {
+		if (term.readOnly) { return true; }
 		if (term.isConstant()) {
-			return term.constant == id && (!term.bindConstant || row.bind(term.slot, id));
+			if (term.constant != id) { return false; }
+			if (!term.bindConstant) { return true; }
+			long current = row.slots[term.slot];
+			if (term.preserveExisting && current != UNKNOWN) { return current != 0L; }
+			return row.bind(term.slot, id);
 		}
 		return term.slot < 0 || row.bind(term.slot, id);
 	}

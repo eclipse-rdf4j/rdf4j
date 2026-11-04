@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
 @Experimental
 public final class KernelFactorCursor implements AutoCloseable {
 	private final KernelPlan.FactorCursor factors;
+	private final boolean sourcesExternallyRetained;
 	private final KernelPlan.Cursor rows;
 	private final int[] outputs;
 	private final int[] slots;
@@ -101,6 +102,7 @@ public final class KernelFactorCursor implements AutoCloseable {
 	private KernelFactorCursor(KernelPlan.FactorCursor factors, KernelPlan.Cursor rows, int width,
 			int[] outputs, KernelCancellation cancellation) {
 		this.factors = factors;
+		this.sourcesExternallyRetained = factors != null && factors.borrowedSourcesExternallyRetained();
 		this.rows = rows;
 		this.width = width;
 		this.outputs = outputs.clone();
@@ -188,13 +190,17 @@ public final class KernelFactorCursor implements AutoCloseable {
 				return false;
 			scalarPending = false;
 		} else {
-			if (!productBound) {
+			boolean initialize = !productBound;
+			if (initialize) {
 				if (product == null)
 					product = new FactorProductCursor(Long.SIZE, 256);
 				product.bind(environment, demand, 1L);
 				productBound = true;
 			}
-			if (!product.next())
+			boolean found = product.next();
+			if (initialize)
+				KernelRuntime.checkCancelled(cancellation);
+			if (!found)
 				return false;
 			copyExpanded();
 		}
@@ -207,7 +213,12 @@ public final class KernelFactorCursor implements AutoCloseable {
 		prefixActive = false;
 		while (true) {
 			KernelRuntime.checkCancelled(cancellation);
-			if (!factors.next()) {
+			if (!sourcesExternallyRetained)
+				releaseReaders();
+			KernelRuntime.checkCancelled(cancellation);
+			boolean next = factors.next();
+			KernelRuntime.checkCancelled(cancellation);
+			if (!next) {
 				close();
 				return false;
 			}
@@ -244,6 +255,22 @@ public final class KernelFactorCursor implements AutoCloseable {
 			scalarPending = true;
 			return true;
 		}
+	}
+
+	private void releaseReaders() {
+		Throwable failure = null;
+		if (product != null) {
+			try { product.release(); }
+			catch (RuntimeException | Error problem) { failure = problem; }
+		}
+		if (counter != null) {
+			try { counter.release(); }
+			catch (RuntimeException | Error problem) {
+				if (failure == null) failure = problem;
+				else if (failure != problem) failure.addSuppressed(problem);
+			}
+		}
+		KernelRuntime.rethrowCloseFailure(failure);
 	}
 
 	/**

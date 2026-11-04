@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
 
@@ -64,7 +65,7 @@ class WholeRowObservationTest {
 		Var input = Var.of("input", null, false, true);
 		assertThat(input.isConstant()).isTrue();
 		assertThat(input.hasValue()).isFalse();
-		for (var condition : List.of(input, new Bound(input.clone()))) {
+		for (ValueExpr condition : List.<ValueExpr>of(input, new Bound(input.clone()))) {
 			TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(condition);
 			assertThat(!domain.known() || domain.names().contains("input")).isTrue();
 			assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of())).isFalse();
@@ -74,7 +75,7 @@ class WholeRowObservationTest {
 	@Test
 	void valuedConstantDoesNotAddAnOrdinaryInputDependency() {
 		Var fixed = Var.of("input", SimpleValueFactory.getInstance().createLiteral(2), false, true);
-		for (var condition : List.of(fixed, new Bound(fixed.clone()))) {
+		for (ValueExpr condition : List.<ValueExpr>of(fixed, new Bound(fixed.clone()))) {
 			TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(condition);
 			assertThat(domain.known()).isTrue();
 			assertThat(domain.names()).isEmpty();

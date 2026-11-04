@@ -344,7 +344,8 @@ final class LmdbNativeParallelKernelRows {
 										row.cancellation);
 								runWorker(lowered, rootAdjacency, rootDomain, rootWildcard, rootScan, domains, source,
 										row, workerCancellation, ranges, scanQueue, output, kernelFactory, failure,
-										failures, ownerCancellation, cancelled, startup, startupReported, replayContext);
+										failures, ownerCancellation, cancelled, startup, startupReported,
+										replayContext);
 								if (failure.get() == null && !cancelled.get()) {
 									inputPhases.complete();
 								}
@@ -402,7 +403,8 @@ final class LmdbNativeParallelKernelRows {
 			}
 		}
 		if (row.cancellation.isCancellationRequested() || ownerCancellation.get() != null) {
-			abandon(sources, reservation, tasks, failures, cancelled, workerCancellation, coordinatorInterruption != null);
+			abandon(sources, reservation, tasks, failures, cancelled, workerCancellation,
+					coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
@@ -411,7 +413,8 @@ final class LmdbNativeParallelKernelRows {
 			throw ownerCancellation.get();
 		}
 		if (first == null && (failure.get() != null || coordinatorInterruption != null)) {
-			abandon(sources, reservation, tasks, failures, cancelled, workerCancellation, coordinatorInterruption != null);
+			abandon(sources, reservation, tasks, failures, cancelled, workerCancellation,
+					coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
@@ -432,7 +435,8 @@ final class LmdbNativeParallelKernelRows {
 		}
 		PARALLEL_RUNS.incrementAndGet();
 		return new ParallelKernelRowCursor(row, lowered.bindings.columnEngineSlots, sources, reservation, output,
-				failure, failures, ownerCancellation, cancelled, workerCancellation, tasks, threads, first, endedWorkers,
+				failure, failures, ownerCancellation, cancelled, workerCancellation, tasks, threads, first,
+				endedWorkers,
 				emit, distinctAuthority, hashLedger);
 	}
 
@@ -520,7 +524,8 @@ final class LmdbNativeParallelKernelRows {
 			NativeLmdbQuerySource.ParallelSource[] sources, int threads, RowState row,
 			LmdbNativeParallelPipelines.TaskReservation reservation, Emit emit, NativeTermAuthority distinctAuthority,
 			ArrayBlockingQueue<Page> output,
-			AtomicReference<Throwable> failure, WorkerFailures failures, AtomicReference<RuntimeException> ownerCancellation,
+			AtomicReference<Throwable> failure, WorkerFailures failures,
+			AtomicReference<RuntimeException> ownerCancellation,
 			AtomicBoolean cancelled, NativeCancellationToken workerCancellation,
 			NativeExecutionContext.WorkerTasks tasks,
 			org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.Reservation hashLedger) {
@@ -546,7 +551,8 @@ final class LmdbNativeParallelKernelRows {
 			}
 		}
 		if (row.cancellation.isCancellationRequested() || ownerCancellation.get() != null) {
-			abandon(sources, reservation, tasks, failures, cancelled, workerCancellation, coordinatorInterruption != null);
+			abandon(sources, reservation, tasks, failures, cancelled, workerCancellation,
+					coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
@@ -559,7 +565,8 @@ final class LmdbNativeParallelKernelRows {
 			if (failure.get() == null && coordinatorInterruption == null) {
 				failures.execution(new LmdbNativeKernelPartitions.ParallelKernelDecline("ordered-result-too-large"));
 			}
-			abandon(sources, reservation, tasks, failures, cancelled, workerCancellation, coordinatorInterruption != null);
+			abandon(sources, reservation, tasks, failures, cancelled, workerCancellation,
+					coordinatorInterruption != null);
 			if (hashLedger != null) {
 				hashLedger.close();
 			}
@@ -1219,7 +1226,8 @@ final class LmdbNativeParallelKernelRows {
 
 		ParallelKernelRowCursor(RowState row, int[] columnSlots, NativeLmdbQuerySource.ParallelSource[] sources,
 				LmdbNativeParallelPipelines.TaskReservation reservation, ArrayBlockingQueue<Page> output,
-				AtomicReference<Throwable> failure, WorkerFailures failures, AtomicReference<RuntimeException> ownerCancellation,
+				AtomicReference<Throwable> failure, WorkerFailures failures,
+				AtomicReference<RuntimeException> ownerCancellation,
 				AtomicBoolean cancelled, NativeCancellationToken workerCancellation,
 				NativeExecutionContext.WorkerTasks tasks,
 				int threads,

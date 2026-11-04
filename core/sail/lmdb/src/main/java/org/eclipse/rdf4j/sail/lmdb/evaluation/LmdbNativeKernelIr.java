@@ -810,6 +810,11 @@ final class LmdbNativeKernelIr {
 		for (int i = 1; i < kernel.pipeline.size(); i++) {
 			Node node = kernel.pipeline.get(i);
 			if (node instanceof BindAlias alias) {
+				// This shortcut substitutes aliases and never executes them. A real Var assignment can map
+				// occupied RDF-null to expression UNKNOWN, so it is not an identity substitution.
+				if (alias.nullIsError) {
+					return null;
+				}
 				Operand value = resolveAlias(alias.source, aliases);
 				if (!prefixOperand(value, positions))
 					return null;
@@ -2662,14 +2667,28 @@ final class LmdbNativeKernelIr {
 		final Operand source;
 		final int dstCol;
 
+		/** A null mapping is not a successful RDF expression result; ordinary compatibility copies retain it. */
+		final boolean nullIsError;
+
 		BindAlias(Operand source, int dstCol) {
+			this(source, dstCol, false);
+		}
+
+		BindAlias(Operand source, int dstCol, boolean nullIsError) {
 			this.source = source;
 			this.dstCol = dstCol;
+			this.nullIsError = nullIsError;
 		}
 
 		@Override
 		void key(StringBuilder key) {
-			key.append("ba(").append(source.token()).append("->").append(dstCol).append(");");
+			key.append("ba(")
+					.append(source.token())
+					.append("->")
+					.append(dstCol)
+					.append(':')
+					.append(nullIsError)
+					.append(");");
 		}
 
 		@Override
@@ -3677,9 +3696,13 @@ final class LmdbNativeKernelIr {
 			int source = column;
 			for (int i = pipeline.size() - 1; i >= 0; i--) {
 				Node node = pipeline.get(i);
-				if (node instanceof BindAlias alias && alias.dstCol == source
-						&& alias.source.kind == Operand.COL) {
-					source = alias.source.index;
+				if (node instanceof BindAlias alias && alias.dstCol == source) {
+					if (alias.nullIsError) {
+						return -1;
+					}
+					if (alias.source.kind == Operand.COL) {
+						source = alias.source.index;
+					}
 				}
 			}
 			return source;
@@ -3688,8 +3711,8 @@ final class LmdbNativeKernelIr {
 		private static boolean rewrittenAfterRoot(List<Node> pipeline, int column) {
 			for (int i = 1; i < pipeline.size(); i++) {
 				Node node = pipeline.get(i);
-				if (node instanceof BindAlias alias && alias.dstCol == column && alias.source.kind == Operand.COL
-						&& alias.source.index == column) {
+				if (node instanceof BindAlias alias && !alias.nullIsError && alias.dstCol == column
+						&& alias.source.kind == Operand.COL && alias.source.index == column) {
 					continue;
 				}
 				BitSet produced = new BitSet();

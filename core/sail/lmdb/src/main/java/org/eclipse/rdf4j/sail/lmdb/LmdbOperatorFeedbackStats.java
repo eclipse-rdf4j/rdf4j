@@ -305,6 +305,20 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			BooleanSupplier adaptiveEvidenceAllowedSupplier,
 			LongSupplier statementMutationStampSupplier,
 			EstimatorPersistenceLocation alternateLocation) {
+		this(estimatorPath, snapshotIdentitySupplier, adaptiveEvidenceAllowedSupplier, statementMutationStampSupplier,
+				alternateLocation, true);
+	}
+
+	/**
+	 * A verified legacy owner cannot authenticate a prior owner's data-dependent operator payload from its logical
+	 * UUID or newer mutation journal: compatible older writers do not update that journal. Withholding this load is
+	 * invocation-independent; current-owner, source-qualified observations can still populate and persist every cell.
+	 */
+	LmdbOperatorFeedbackStats(Path estimatorPath,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier,
+			LongSupplier statementMutationStampSupplier,
+			EstimatorPersistenceLocation alternateLocation, boolean loadPriorOwnerOperatorEvidence) {
 		this.sidecarPath = estimatorPath == null ? null
 				: estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
 		this.alternateOperatorSlot = alternateLocation == null ? null
@@ -323,7 +337,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				: estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + LEO_SURFACE_SUFFIX);
 		this.leoFeedbackStore = new LmdbLeoFeedbackStore(leoSurfacePath, leoFeedbackConfig, alternateLeoSlot);
 		this.leoSurfaceStats = loadLeoSurfaceStats();
-		loadIfPresent();
+		if (loadPriorOwnerOperatorEvidence) {
+			loadIfPresent();
+		}
 	}
 
 	synchronized FrontierLearningModel.PhysicalInventory physicalInventory() {

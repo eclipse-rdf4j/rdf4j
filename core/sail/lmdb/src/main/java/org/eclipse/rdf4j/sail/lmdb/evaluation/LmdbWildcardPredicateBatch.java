@@ -472,7 +472,7 @@ final class LmdbWildcardPredicateBatch {
 
 	static boolean containsWildcard(SlotPlan plan) {
 		if (plan instanceof PatternPlan pattern) {
-			return pattern.p.hasSlot() && !pattern.p.isConstant();
+			return !pattern.hasEntryDependentFields() && pattern.p.hasSlot() && !pattern.p.isConstant();
 		}
 		if (plan instanceof MultiJoinPlan join) {
 			for (SlotPlan child : join.children) {
@@ -1756,7 +1756,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private static boolean isWildcardPredicate(PatternPlan pattern) {
-			return pattern.p.hasSlot() && !pattern.p.isConstant();
+			return !pattern.hasEntryDependentFields() && pattern.p.hasSlot() && !pattern.p.isConstant();
 		}
 
 		private static boolean batchEligible(PatternPlan pattern) {
@@ -7740,18 +7740,17 @@ final class LmdbWildcardPredicateBatch {
 		if (!pattern.contexts.contains(context)) {
 			return false;
 		}
+		if (!PatternPlan.matchesFieldEqualities(pattern.s, pattern.p, pattern.o, pattern.c,
+				subject, predicate, object, context)) { return false; }
 		Term[] terms = { pattern.s, pattern.p, pattern.o, pattern.c };
 		long[] values = { subject, predicate, object, context };
 		for (int i = 0; i < terms.length; i++) {
 			Term term = terms[i];
-			if (term.isConstant() && term.constant != values[i]) {
-				return false;
-			}
-			if (term.hasSlot() && row.slots[term.slot] != UNKNOWN && row.slots[term.slot] != values[i]) {
-				return false;
-			}
+			long current = term.hasSlot() ? row.slots[term.slot] : UNKNOWN;
+			if (!term.matchesEntryField(current, values[i])) { return false; }
 			for (int j = 0; j < i; j++) {
 				if (term.hasSlot() && terms[j].hasSlot() && term.slot == terms[j].slot
+						&& !term.readOnly && !terms[j].readOnly && !term.preserveExisting && !terms[j].preserveExisting
 						&& values[i] != values[j]) {
 					return false;
 				}
@@ -7768,21 +7767,17 @@ final class LmdbWildcardPredicateBatch {
 		if (!pattern.contexts.contains(context)) {
 			return false;
 		}
+		if (!PatternPlan.matchesFieldEqualities(pattern.s, pattern.p, pattern.o, pattern.c,
+				subject, predicate, object, context)) { return false; }
 		Term[] terms = { pattern.s, pattern.p, pattern.o, pattern.c };
 		long[] values = { subject, predicate, object, context };
 		for (int i = 0; i < terms.length; i++) {
 			Term term = terms[i];
-			if (term.isConstant() && term.constant != values[i]) {
-				return false;
-			}
-			if (term.hasSlot()) {
-				long current = batch.get(term.slot, physicalRow);
-				if (current != UNKNOWN && current != values[i]) {
-					return false;
-				}
-			}
+			long current = term.hasSlot() ? batch.get(term.slot, physicalRow) : UNKNOWN;
+			if (!term.matchesEntryField(current, values[i])) { return false; }
 			for (int j = 0; j < i; j++) {
 				if (term.hasSlot() && terms[j].hasSlot() && term.slot == terms[j].slot
+						&& !term.readOnly && !terms[j].readOnly && !term.preserveExisting && !terms[j].preserveExisting
 						&& values[i] != values[j]) {
 					return false;
 				}
@@ -7800,21 +7795,17 @@ final class LmdbWildcardPredicateBatch {
 		if (!contexts.contains(context)) {
 			return false;
 		}
+		if (!PatternPlan.matchesFieldEqualities(s, p, o, c, subject, predicate, object, context)) { return false; }
 		Term[] terms = { s, p, o, c };
 		long[] values = { subject, predicate, object, context };
 		for (int i = 0; i < terms.length; i++) {
 			Term term = terms[i];
-			if (term.isConstant() && term.constant != values[i]) {
-				return false;
-			}
-			if (term.hasSlot() && (allowedMask & 1L << term.slot) != 0L) {
-				long current = batch.get(term.slot, physicalRow);
-				if (current != UNKNOWN && current != values[i]) {
-					return false;
-				}
-			}
+			long current = term.hasSlot() && (allowedMask & 1L << term.slot) != 0L
+					? batch.get(term.slot, physicalRow) : UNKNOWN;
+			if (!term.matchesEntryField(current, values[i])) { return false; }
 			for (int j = 0; j < i; j++) {
 				if (term.hasSlot() && terms[j].hasSlot() && term.slot == terms[j].slot
+						&& !term.readOnly && !terms[j].readOnly && !term.preserveExisting && !terms[j].preserveExisting
 						&& values[i] != values[j]) {
 					return false;
 				}
@@ -7903,6 +7894,7 @@ final class LmdbWildcardPredicateBatch {
 	}
 
 	private static boolean bind(Term term, long value, NativeBatch target, int row) {
+		if (term.readOnly) { return true; }
 		if (term.isConstant() && term.constant != value) {
 			return false;
 		}
@@ -7911,13 +7903,14 @@ final class LmdbWildcardPredicateBatch {
 		}
 		long current = target.get(term.slot, row);
 		if (current != UNKNOWN) {
-			return current == value;
+			return term.preserveExisting ? current != 0L : current == value;
 		}
 		target.set(term.slot, row, value);
 		return true;
 	}
 
 	private static boolean bind(Term term, long value, long[] slots) {
+		if (term.readOnly) { return true; }
 		if (term.isConstant() && term.constant != value) {
 			return false;
 		}
@@ -7926,7 +7919,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 		long current = slots[term.slot];
 		if (current != UNKNOWN) {
-			return current == value;
+			return term.preserveExisting ? current != 0L : current == value;
 		}
 		slots[term.slot] = value;
 		return true;

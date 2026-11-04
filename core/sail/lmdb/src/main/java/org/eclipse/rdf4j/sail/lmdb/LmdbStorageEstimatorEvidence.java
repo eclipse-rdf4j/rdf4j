@@ -162,8 +162,8 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	private List<EstimateCandidate> statementCandidates(StatementPattern pattern, EstimateContext context) {
 		List<EstimateCandidate> candidates = new ArrayList<>(3);
-		FrontierLeafProbe frontierProbe = frontierProbe(pattern);
-		FrontierLeafEstimate frontier = frontierProbe == null ? null : statistics.estimateLeafCurrent(frontierProbe);
+		FrontierLeafProbe frontierProbe = frontierProbe(pattern, context);
+		FrontierLeafEstimate frontier = frontierProbe == null ? null : mappedLeaf(context, frontierProbe);
 		boolean frontierAnswered = LmdbFrontierLeafAnswer.answered(statisticsMode, frontier);
 		if (frontierAnswered) {
 			RowEvidence evidence = new RowEvidence(frontier.pointRows(), frontier.lowerRows(), frontier.upperRows(),
@@ -203,7 +203,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			if (name == null || !context.boundNames().contains(name) || !enrichedNames.add(name)) {
 				continue;
 			}
-			double distinctRows = statistics.estimateProjectedDistinctCurrent(probe, component);
+			double distinctRows = mappedDistinct(context, probe, component);
 			if (statisticsMode != FrontierEstimatorMode.AUTHORITATIVE || !valid(distinctRows)) {
 				continue;
 			}
@@ -219,20 +219,48 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		}
 	}
 
-	private FrontierLeafProbe frontierProbe(StatementPattern pattern) {
+	private FrontierLeafEstimate mappedLeaf(EstimateContext context, FrontierLeafProbe probe) {
+		if (context.frontierSnapshotEpoch() < 0L) {
+			return statistics.estimateLeafCurrent(probe);
+		}
+		try (var view = statistics.openView(context.frontierSnapshotEpoch())) {
+			return view.estimateLeaf(probe);
+		}
+	}
+
+	private FrontierJoinEstimate mappedJoin(EstimateContext context, FrontierJoinProbe probe) {
+		if (context.frontierSnapshotEpoch() < 0L) {
+			return statistics.estimateJoinCurrent(probe);
+		}
+		try (var view = statistics.openView(context.frontierSnapshotEpoch())) {
+			return view.estimateJoin(probe);
+		}
+	}
+
+	private double mappedDistinct(EstimateContext context, FrontierLeafProbe probe, int component) {
+		if (context.frontierSnapshotEpoch() < 0L) {
+			return statistics.estimateProjectedDistinctCurrent(probe, component);
+		}
+		try (var view = statistics.openView(context.frontierSnapshotEpoch())) {
+			return view.estimateProjectedDistinct(probe, component);
+		}
+	}
+
+	private FrontierLeafProbe frontierProbe(StatementPattern pattern, EstimateContext context) {
 		if (statistics == null || statisticsMode == FrontierEstimatorMode.OFF) {
 			return null;
 		}
-		return LmdbFrontierProbeFactory.probe(valueStore, pattern, FrontierLeafProbe.BOTH_PLANES);
+		return LmdbFrontierProbeFactory.probe(valueStore, pattern, context.frontierPlaneMask(),
+				context.readPopulation());
 	}
 
-	private boolean frontierLeafAnswered(StatementPattern pattern) {
+	private boolean frontierLeafAnswered(StatementPattern pattern, EstimateContext context) {
 		if (!authoritative()) {
 			return false;
 		}
-		FrontierLeafProbe probe = frontierProbe(pattern);
+		FrontierLeafProbe probe = frontierProbe(pattern, context);
 		return probe != null
-				&& LmdbFrontierLeafAnswer.answered(statisticsMode, statistics.estimateLeafCurrent(probe));
+				&& LmdbFrontierLeafAnswer.answered(statisticsMode, mappedLeaf(context, probe));
 	}
 
 	private boolean authoritative() {
@@ -255,11 +283,11 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			return Optional.empty();
 		}
 		FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbe(
-				valueStore, leftPattern, rightPattern, FrontierLeafProbe.BOTH_PLANES);
+				valueStore, leftPattern, rightPattern, context.frontierPlaneMask(), context.readPopulation());
 		if (probe == null) {
 			return Optional.empty();
 		}
-		FrontierJoinEstimate estimate = statistics.estimateJoinCurrent(probe);
+		FrontierJoinEstimate estimate = mappedJoin(context, probe);
 		if (statisticsMode != FrontierEstimatorMode.AUTHORITATIVE
 				|| estimate.fallbackReason() != FrontierFallbackReason.NONE || !valid(estimate.pointRows())
 				|| !valid(estimate.lowerRows()) || Double.isNaN(estimate.upperRows())) {
@@ -291,10 +319,10 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	public Optional<EstimateCandidate> exactCandidate(TupleExpr expression, EstimateContext context) {
 		if (!context.nativeEvidenceAllowed() || !(expression instanceof StatementPattern pattern)
 				|| cardinalities == null
-				|| frontierLeafAnswered(pattern)) {
+				|| frontierLeafAnswered(pattern, context)) {
 			return Optional.empty();
 		}
-		double rows = cardinalities.estimateExact(pattern);
+		double rows = cardinalities.estimateExactForQuery(pattern, context);
 		if (!valid(rows)) {
 			return Optional.empty();
 		}
@@ -325,7 +353,8 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 					: exactMandatoryPatternFilterZero(input, condition, context);
 		}
 		if (authoritative()) {
-			return mappedFilters.estimate(pattern, condition);
+			return mappedFilters.estimate(pattern, condition, context.readPopulation(), context.frontierPlaneMask(),
+					context.frontierSnapshotEpoch());
 		}
 		if (filters != null) {
 			Optional<FilterEvidence> evidence = filterEvidence(pattern, condition, context);

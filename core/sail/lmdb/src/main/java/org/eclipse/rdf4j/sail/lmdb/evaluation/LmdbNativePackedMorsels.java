@@ -201,7 +201,7 @@ final class LmdbNativePackedMorsels {
 		} else if (plan instanceof JoinPlan join) {
 			split(join.left, row, child -> continuation.apply(new JoinPlan(child, join.right)), jobs);
 		} else if (plan instanceof LeftJoinPlan optional) {
-			split(optional.left, row, child -> continuation.apply(new LeftJoinPlan(child, optional.right)), jobs);
+			split(optional.left, row, child -> continuation.apply(optional.withChildren(child, optional.right)), jobs);
 		} else if (plan instanceof MultiJoinPlan multi && !patternsOnly(multi)) {
 			// This is precisely the algebra leaf fallback's order/filter-depth construction. Never flatten a
 			// nullable branch into a BGP merely to find a root that happens to partition.
@@ -303,7 +303,7 @@ final class LmdbNativePackedMorsels {
 		public LmdbNativeFactorCursor openFactors(RowState target) {
 			if (target != row)
 				throw new IllegalStateException("a morsel leaf cannot move to a different binding frame");
-			return orderedReplay ? null : new LmdbNativePackedFtree.GroupedRowCursor(packed, row, runtime, false);
+			return orderedReplay ? null : LmdbNativePackedFtree.GroupedRowCursor.forExternalRuntime(packed, row, runtime);
 		}
 
 		@Override

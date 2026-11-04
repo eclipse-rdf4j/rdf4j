@@ -54,6 +54,160 @@ class TripleStoreStratifiedSamplingTest {
 	private static final int STRATA = 4;
 	private static final int ROWS_PER_STRATUM = 8;
 
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 2, 3, 16, 31, 64 })
+	void pairedSamplingChargesEveryNativeKeyAndNeverEmitsDuplicateRows(int budget, @TempDir Path directory)
+			throws Exception {
+		try (TripleStore store = open(directory)) {
+			store.startTransaction();
+			for (int i = 0; i < 128; i++) {
+				assertTrue(store.storeTriple(2_000L + i, PREDICATE, 21L, 0L, false));
+			}
+			store.commit();
+			try (Txn snapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+				java.util.Set<String> unique = new java.util.HashSet<>();
+				AtomicInteger delivered = new AtomicInteger();
+				TripleStore.StratifiedSampleResult result = store.sampleTriplesStratified(snapshot, -1L, PREDICATE,
+						-1L, -1L, budget, 16, true, () -> true, row -> {
+							assertTrue(unique.add(row.explicit() + ":" + java.util.Arrays.toString(row.quad())),
+									"each physical row contributes at most once");
+							delivered.incrementAndGet();
+							return true;
+						});
+				int examined = result.explicit().examinedKeys() + result.inferred().examinedKeys();
+				assertTrue(examined <= budget, "endpoint and boundary reads share one native-key cap");
+				assertTrue(delivered.get() <= examined);
+				assertEquals(delivered.get(), unique.size());
+				assertFalse(result.stoppedByControl());
+				if (budget >= 2) {
+					assertTrue(result.explicit().patternMatchedRows() > 0);
+					assertTrue(result.inferred().patternMatchedRows() > 0);
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 16, 31 })
+	void pairedSamplingVisitsUpperInteriorForBothPlanesWithinRemainingBudget(int budget, @TempDir Path directory)
+			throws Exception {
+		try (TripleStore store = open(directory)) {
+			long inferredFirst = 5_000L;
+			store.startTransaction();
+			for (int i = 0; i < POPULATION; i++) {
+				assertTrue(store.storeTriple(inferredFirst + i, PREDICATE, 20L, 0L, false));
+			}
+			store.commit();
+			try (Txn snapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+				List<TripleStore.StratifiedSampleRow> rows = new ArrayList<>();
+				TripleStore.StratifiedSampleResult result = store.sampleTriplesStratified(snapshot, -1L, PREDICATE,
+						-1L, -1L, budget, 16, true, () -> true, row -> { rows.add(row); return true; });
+				for (boolean explicit : new boolean[] { true, false }) {
+					long first = explicit ? FIRST_SUBJECT : inferredFirst;
+					assertTrue(rows.stream().filter(row -> row.explicit() == explicit)
+							.mapToLong(row -> row.quad()[TripleIndex.SUBJ_IDX] - first)
+							.anyMatch(offset -> offset >= POPULATION * 65 / 100 && offset < POPULATION * 85 / 100),
+							"each plane must reach an upper interior stratum, not just its last endpoint");
+				}
+				assertTrue(result.explicit().examinedKeys() + result.inferred().examinedKeys() <= budget);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 4, 16 })
+	void pairedSamplingChargesResidualNonmatches(int budget, @TempDir Path directory) throws Exception {
+		try (TripleStore store = open(directory)) {
+			store.startTransaction();
+			for (int i = 0; i < 128; i++) {
+				assertTrue(store.storeTriple(FIRST_SUBJECT, PREDICATE, 10_000L + i, 0L, true));
+			}
+			assertTrue(store.storeTriple(FIRST_SUBJECT, PREDICATE, 20_000L, 7L, true));
+			store.commit();
+			try (Txn snapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+				TripleStore.StratifiedSampleResult result = store.sampleTriplesStratified(snapshot, FIRST_SUBJECT,
+						PREDICATE, -1L, 7L, budget, 16, true, () -> true, row -> {
+							assertEquals(7L, row.quad()[TripleIndex.CONTEXT_IDX]);
+							return true;
+						});
+				assertTrue(result.explicit().examinedKeys() + result.inferred().examinedKeys() <= budget,
+						"residual rejects and setup probes consume the same cap");
+				assertTrue(result.explicit().patternMatchedRows() <= result.explicit().examinedKeys());
+			}
+		}
+	}
+
+	@Test
+	void pairedSamplingStopsAtControlAndReleasesBorrowedReader(@TempDir Path directory) throws Exception {
+		try (TripleStore store = open(directory);
+				Txn snapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+			AtomicInteger checks = new AtomicInteger();
+			AtomicInteger callbacks = new AtomicInteger();
+			TripleStore.StratifiedSampleResult result = store.sampleTriplesStratified(snapshot, -1L, PREDICATE,
+					-1L, -1L, 64, 16, true, () -> checks.incrementAndGet() < 4, row -> {
+						callbacks.incrementAndGet();
+						return true;
+					});
+			assertTrue(result.stoppedByControl());
+			assertEquals(0, callbacks.get(), "a partial native collection is not published");
+			assertTrue(result.explicit().examinedKeys() + result.inferred().examinedKeys() <= 64);
+			assertEquals(POPULATION, store.boundedExactCardinality(snapshot, -1L, PREDICATE, -1L, -1L, POPULATION)
+					.orElseThrow());
+			writeOne(store);
+		}
+	}
+
+	@Test
+	void pairedSamplingCallbackFailureKeepsIdentityAndReleasesNativeOwnership(@TempDir Path directory)
+			throws Exception {
+		try (TripleStore store = open(directory);
+				Txn snapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+			IllegalStateException failure = new IllegalStateException("paired callback failure");
+			assertSame(failure, assertThrows(IllegalStateException.class,
+					() -> store.sampleTriplesStratified(snapshot, -1L, PREDICATE, -1L, -1L, 16, 16, true,
+								() -> true, row -> { throw failure; })));
+			writeOne(store);
+		}
+	}
+
+	@Test
+	void pairedSamplingReleasesNativeReadBeforeBlockedCallback(@TempDir Path directory) throws Exception {
+		try (TripleStore store = open(directory);
+				Txn snapshot = store.getTxnManager().createReadTxnPinnedFamily(1, store::getDataRevision)[0]) {
+			ExecutorService workers = Executors.newFixedThreadPool(2);
+			CountDownLatch callbackEntered = new CountDownLatch(1);
+			CountDownLatch releaseCallback = new CountDownLatch(1);
+			try {
+				Future<TripleStore.StratifiedSampleResult> sample = workers.submit(() -> store.sampleTriplesStratified(
+						snapshot, -1L, PREDICATE, -1L, -1L, 16, 16, true, () -> true, row -> {
+							callbackEntered.countDown();
+							await(releaseCallback);
+							return true;
+						}));
+				assertTrue(callbackEntered.await(5L, TimeUnit.SECONDS), "a real sample must reach its callback");
+				Future<Void> writer = workers.submit(() -> { writeOne(store); return null; });
+				boolean committedWhilePaused = false;
+				try {
+					writer.get(3L, TimeUnit.SECONDS);
+					committedWhilePaused = true;
+				} catch (TimeoutException timeout) {
+					// Release the callback before joining tasks and asserting the progress contract.
+				} finally {
+					releaseCallback.countDown();
+				}
+				TripleStore.StratifiedSampleResult result = sample.get(10L, TimeUnit.SECONDS);
+				writer.get(10L, TimeUnit.SECONDS);
+				assertTrue(committedWhilePaused, "the callback must not retain the native read lock");
+				assertFalse(result.stoppedByControl());
+				assertTrue(result.explicit().examinedKeys() + result.inferred().examinedKeys() <= 16);
+			} finally {
+				releaseCallback.countDown();
+				workers.shutdownNow();
+				assertTrue(workers.awaitTermination(10L, TimeUnit.SECONDS));
+			}
+		}
+	}
+
 	@Test
 	void largePopulationCallbackDoesNotBlockOrdinaryWriter(@TempDir Path directory) throws Exception {
 		try (TripleStore store = open(directory)) {

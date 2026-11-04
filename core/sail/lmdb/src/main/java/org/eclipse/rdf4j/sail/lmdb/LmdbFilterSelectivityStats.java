@@ -97,7 +97,6 @@ class LmdbFilterSelectivityStats
 	private static final int SAMPLE_RESERVOIR_SIZE = 256;
 	private static final int ZERO_HIT_SAMPLE_MIN_EVIDENCE = SAMPLE_RESERVOIR_SIZE;
 	private static final int MIN_SAMPLED_EVIDENCE_TO_OUTRANK_HEURISTIC = 33;
-	private static final int MAX_MINIMUM_EVIDENCE_SCAN_MULTIPLIER = 4;
 	private static final int COLD_SYNOPSIS_MIN_MATCHING_ROWS = 32;
 	private static final double LOW_BENEFIT_ROWS_THRESHOLD = 32.0d;
 	private static final double LOW_BENEFIT_RATIO_THRESHOLD = 0.25d;
@@ -227,6 +226,36 @@ class LmdbFilterSelectivityStats
 			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier, int coldSynopsisCapacity,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier, LongSupplier statementMutationStampSupplier,
 			EstimatorPersistenceLocation alternateLocation) {
+		this(estimatorPath, tripleStore, valueStore, optimizerSamplingEnabled, optimizerSamplingMaxMillis,
+				optimizerSamplingMaxRows, backgroundRawSamplingEnabled, snapshotIdentitySupplier, coldSynopsisCapacity,
+				adaptiveEvidenceAllowedSupplier, statementMutationStampSupplier, alternateLocation, true);
+	}
+
+	/** Controls cold import independently; this compatibility overload retains normal learned-payload loading. */
+	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore,
+			boolean optimizerSamplingEnabled, long optimizerSamplingMaxMillis, int optimizerSamplingMaxRows,
+			boolean backgroundRawSamplingEnabled,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier, int coldSynopsisCapacity,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier, LongSupplier statementMutationStampSupplier,
+			EstimatorPersistenceLocation alternateLocation, boolean loadPriorOwnerColdSynopsis) {
+		this(estimatorPath, tripleStore, valueStore, optimizerSamplingEnabled, optimizerSamplingMaxMillis,
+				optimizerSamplingMaxRows, backgroundRawSamplingEnabled, snapshotIdentitySupplier, coldSynopsisCapacity,
+				adaptiveEvidenceAllowedSupplier, statementMutationStampSupplier, alternateLocation,
+				loadPriorOwnerColdSynopsis, true);
+	}
+
+	/**
+	 * Import decisions are independent of current-owner observation admission. Compatible older writers cannot update
+	 * the newer statement journal, so a verified legacy owner must withhold every prior learned payload section until
+	 * its own source-qualified observations teach the service. Cold synopsis import remains a separate decision.
+	 */
+	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore,
+			boolean optimizerSamplingEnabled, long optimizerSamplingMaxMillis, int optimizerSamplingMaxRows,
+			boolean backgroundRawSamplingEnabled,
+			Supplier<SketchSnapshotIdentity> snapshotIdentitySupplier, int coldSynopsisCapacity,
+			BooleanSupplier adaptiveEvidenceAllowedSupplier, LongSupplier statementMutationStampSupplier,
+			EstimatorPersistenceLocation alternateLocation, boolean loadPriorOwnerColdSynopsis,
+			boolean loadPriorOwnerLearnedEvidence) {
 		this.sidecarPath = estimatorPath == null ? null
 				: estimatorPath.resolveSibling(estimatorPath.getFileName().toString() + SIDECAR_SUFFIX);
 		this.coldSynopsisPath = estimatorPath == null ? null
@@ -248,10 +277,12 @@ class LmdbFilterSelectivityStats
 		this.optimizerSamplingMaxMillis = Math.max(0L, optimizerSamplingMaxMillis);
 		this.optimizerSamplingMaxRows = Math.max(0, optimizerSamplingMaxRows);
 		this.backgroundRawSamplingEnabled = backgroundRawSamplingEnabled;
-		if (adaptiveEvidenceAllowed) {
+		if (loadPriorOwnerLearnedEvidence && adaptiveEvidenceAllowed) {
 			loadIfPresent();
 		}
-		loadColdSynopsisIfPresent();
+		if (loadPriorOwnerColdSynopsis) {
+			loadColdSynopsisIfPresent();
+		}
 	}
 
 	/**
@@ -432,7 +463,7 @@ class LmdbFilterSelectivityStats
 		recordFilterOutcome(key, filterKey, filterTemplateKey, passedCount, filteredCount, true);
 	}
 
-	private record PreparedFilterOutcome(FilterSurfaceKey exact, FilterSurfaceKey generalized,
+	record PreparedFilterOutcome(FilterSurfaceKey exact, FilterSurfaceKey generalized,
 			PatternKey pattern, String filter, String template) {
 	}
 
@@ -466,13 +497,35 @@ class LmdbFilterSelectivityStats
 				|| (passedCount <= 0L && filteredCount <= 0L)) {
 			return null;
 		}
+		return captureFilterOutcome(filter, legacyPattern);
+	}
+
+	/** Prepares only immutable keys, never destination cells or their leases. */
+	static PreparedFilterOutcome captureFilterOutcome(Filter filter) {
+		return captureFilterOutcome(filter, filter == null ? null : LmdbEstimatorExpressionSupport.basePattern(filter.getArg()));
+	}
+
+	private static PreparedFilterOutcome captureFilterOutcome(Filter filter, StatementPattern legacyPattern) {
+		if (filter == null || !LmdbPlanningGraphEvidence.allows(filter) || filter.getCondition() == null) { return null; }
 		FilterSurfaceKey exact = exactSurfaceKey(filter);
 		FilterSurfaceKey generalized = generalizedSurfaceKey(filter);
 		PatternKey pattern = FilterSelectivityKeys.patternKeyFor(legacyPattern);
+		if (pattern != null && pattern.predicate() != null) {
+			// Do not retain a dictionary-owned IRI across the producer's read/resource lifetime.
+			pattern = new PatternKey(org.eclipse.rdf4j.model.impl.SimpleValueFactory.getInstance()
+					.createIRI(pattern.predicate().stringValue()), pattern.boundMask());
+		}
 		String key = pattern == null ? null : FilterSelectivityKeys.filterKeyFor(filter.getCondition());
-		String template = pattern == null ? null
-				: FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), legacyPattern);
+		String template = pattern == null ? null : FilterSelectivityKeys.filterTemplateKeyFor(filter.getCondition(), legacyPattern);
 		return new PreparedFilterOutcome(exact, generalized, pattern, key, template);
+	}
+
+	/** Same nonblocking publication/monitor order as the ordinary prepared legacy path. */
+	synchronized void recordPreparedFilterOutcome(PreparedFilterOutcome prepared, long passedCount, long filteredCount,
+			LmdbFeedbackReadAuthority.Publication publication) {
+		if (prepared == null || !adaptiveEvidenceAllowed() || passedCount <= 0L && filteredCount <= 0L) { return; }
+		publication.publishPrepared(() -> () -> recordPreparedFilterOutcome(prepared, passedCount, filteredCount),
+				() -> recordPreparedFilterOutcome(prepared, passedCount, filteredCount));
 	}
 
 	private void recordPreparedFilterOutcome(PreparedFilterOutcome prepared, long passedCount, long filteredCount) {
@@ -1639,8 +1692,6 @@ class LmdbFilterSelectivityStats
 			int[] eligibleRows, int[] scannedRows) {
 		Txn planningTxn = view.tripleTxn();
 		ValueStore.ReadSnapshot values = view.valueSnapshot();
-		boolean truncated = false;
-		boolean stratifiedDelivered = false;
 		long exactPopulation = -1L;
 		try {
 			// The configured retention cap bounds the census independently of an underestimated adaptive budget.
@@ -1657,74 +1708,17 @@ class LmdbFilterSelectivityStats
 				: scanBudget;
 		int effectiveReservoirSize = completePopulation ? Math.max(reservoirSize, Math.toIntExact(exactPopulation))
 				: reservoirSize;
-
-		if (stratifiedSamplingEnabled() && !completePopulation) {
-			/*
-			 * A budget-capped prefix scan reads only the FIRST scanBudget rows in index order — systematically wrong
-			 * whenever the filtered variable correlates with index order (e.g. a range filter over an object-ordered
-			 * index). Stratified starts cover the whole key range under the same row budget.
-			 */
-			int strata = Math.min(16, Math.max(1, effectiveScanBudget / 64));
-			int rowsPerStratum = Math.max(1, effectiveScanBudget / strata / 2);
-			long stratifiedDeadline = deadlineNanos;
-			boolean[] conversionFailed = { false };
-			boolean[] deadlineStopped = { false };
-			try {
-				for (boolean explicit : new boolean[] { true, false }) {
-					tripleStore.sampleTriplesStratified(planningTxn, candidate.subjId, candidate.predId,
-							candidate.objId, candidate.contextId, explicit, strata, rowsPerStratum, row -> {
-								checkSamplingQueryDeadline();
-								scannedRows[0]++;
-								if (!matchesRepeatedVarEquality(candidate.pattern, row)) {
-									return continueStratifiedSampling(stratifiedDeadline, effectiveScanBudget,
-											minimumEvidence, eligibleRows[0], scannedRows[0], deadlineStopped);
-								}
-								BindingSet bindingSet;
-								try {
-									bindingSet = toBindingSet(values, candidate.pattern, row);
-								} catch (IOException e) {
-									conversionFailed[0] = true;
-									return false;
-								}
-								eligibleRows[0]++;
-								if (samples.size() < effectiveReservoirSize) {
-									samples.add(bindingSet);
-								} else {
-									int replacementIndex = ThreadLocalRandom.current().nextInt(eligibleRows[0]);
-									if (replacementIndex < effectiveReservoirSize) {
-										samples.set(replacementIndex, bindingSet);
-									}
-								}
-								return continueStratifiedSampling(stratifiedDeadline, effectiveScanBudget,
-										minimumEvidence, eligibleRows[0], scannedRows[0], deadlineStopped);
-							});
-					if (conversionFailed[0] || deadlineStopped[0]) {
-						break;
-					}
-				}
-				stratifiedDelivered = !conversionFailed[0]
-						&& samples.size() >= minimumEvidence;
-				truncated = deadlineStopped[0];
-			} catch (IOException e) {
-				stratifiedDelivered = false;
-			}
-		}
-
-		if (!stratifiedDelivered) {
-			StatementOrder samplingOrder = completePopulation ? null : samplingOrder(planningTxn, candidate);
-			if (!completePopulation && samplingOrder == null) {
+		samples.clear();
+		eligibleRows[0] = 0;
+		scannedRows[0] = 0;
+		if (completePopulation) {
+			if (exactPopulation == 0L) {
 				return null;
 			}
-			samples.clear();
-			eligibleRows[0] = 0;
-			scannedRows[0] = 0;
 			try {
 				for (boolean explicit : new boolean[] { true, false }) {
-					try (RecordIterator triples = samplingOrder == null
-							? tripleStore.getTriples(planningTxn, candidate.subjId, candidate.predId, candidate.objId,
-									candidate.contextId, explicit)
-							: tripleStore.getTriples(planningTxn, samplingOrder, candidate.subjId, candidate.predId,
-									candidate.objId, candidate.contextId, explicit)) {
+					try (RecordIterator triples = tripleStore.getTriples(planningTxn, candidate.subjId,
+							candidate.predId, candidate.objId, candidate.contextId, explicit)) {
 						long[] row;
 						while (scannedRows[0] < effectiveScanBudget && !samplingDeadlineExceeded(deadlineNanos)
 								&& (row = triples.next()) != null) {
@@ -1733,39 +1727,98 @@ class LmdbFilterSelectivityStats
 							if (!matchesRepeatedVarEquality(candidate.pattern, row)) {
 								continue;
 							}
-							BindingSet bindingSet = toBindingSet(values, candidate.pattern, row);
 							eligibleRows[0]++;
-							if (samples.size() < effectiveReservoirSize) {
-								samples.add(bindingSet);
-								continue;
-							}
-							int replacementIndex = ThreadLocalRandom.current().nextInt(eligibleRows[0]);
-							if (replacementIndex < effectiveReservoirSize) {
-								samples.set(replacementIndex, bindingSet);
-							}
+							samples.add(toBindingSet(values, candidate.pattern, row));
 						}
 					}
 					if (scannedRows[0] >= effectiveScanBudget || samplingDeadlineExceeded(deadlineNanos)) {
-						// The scan stopped before covering the pattern's range: an index-order prefix sample.
-						truncated = !completePopulation;
 						break;
 					}
 				}
-			} catch (IOException e) {
+			} catch (IOException failure) {
 				return null;
 			}
+			if (samples.size() < minimumSamplingEvidence(candidate.expectedRuntimeRows, effectiveScanBudget)) {
+				return null;
+			}
+			int passed = evaluateFilterSamples(strategy, condition, samples, deadlineNanos);
+			if (passed < 0 || passed == 0 && samples.size() < ZERO_HIT_SAMPLE_MIN_EVIDENCE) {
+				return null;
+			}
+			boolean truncated = scannedRows[0] < exactPopulation;
+			return new SampledPassRatio((double) passed / samples.size(), samples.size(), truncated,
+					view.isCurrentForStatistics());
 		}
 
-		if (samples.size() < minimumSamplingEvidence(candidate.expectedRuntimeRows, effectiveScanBudget)) {
+		boolean useStrata = stratifiedSamplingEnabled();
+		if (!useStrata) {
+			return samplePrefix(view, candidate, strategy, condition, planningTxn, values, effectiveScanBudget,
+					deadlineNanos, effectiveReservoirSize, minimumEvidence, samples, eligibleRows, scannedRows);
+		}
+		List<List<long[]>> eligibleByPlane = List.of(new ArrayList<>(), new ArrayList<>());
+		TripleStore.StratifiedSampleResult result;
+		try {
+			result = tripleStore.sampleTriplesStratified(planningTxn, candidate.subjId, candidate.predId,
+					candidate.objId, candidate.contextId, effectiveScanBudget, 16, true,
+					() -> {
+						checkSamplingQueryDeadline();
+						return !samplingDeadlineExceeded(deadlineNanos);
+					}, row -> {
+						checkSamplingQueryDeadline();
+						int plane = row.explicit() ? 0 : 1;
+						if (matchesRepeatedVarEquality(candidate.pattern, row.quad())) {
+							eligibleByPlane.get(plane).add(row.quad());
+							eligibleRows[0]++;
+						}
+						return true;
+					});
+		} catch (IOException failure) {
+			return null;
+		}
+		if (result.stoppedByControl()) {
+			return null;
+		}
+		TripleStore.StratifiedPlaneMetrics[] metrics = { result.explicit(), result.inferred() };
+		scannedRows[0] = result.explicit().examinedKeys() + result.inferred().examinedKeys();
+
+		List<PlaneSample> planes = List.of(new PlaneSample(metrics[0], eligibleByPlane.get(0)),
+				new PlaneSample(metrics[1], eligibleByPlane.get(1)));
+		int[] reservoirTargets = allocatePlaneReservoir(planes, effectiveReservoirSize, deadlineNanos);
+		if (reservoirTargets == null) {
+			return null;
+		}
+		List<Integer> samplePlanes = new ArrayList<>(effectiveReservoirSize);
+		try {
+			for (int plane = 0; plane < planes.size(); plane++) {
+				List<long[]> retained = reservoirSample(planes.get(plane).eligibleRows, reservoirTargets[plane],
+						deadlineNanos);
+				if (retained == null) {
+					return null;
+				}
+				for (long[] row : retained) {
+					checkSamplingQueryDeadline();
+					if (samplingDeadlineExceeded(deadlineNanos)) {
+						return null;
+					}
+					samples.add(toBindingSet(values, candidate.pattern, row));
+					samplePlanes.add(plane);
+				}
+			}
+		} catch (IOException failure) {
+			return null;
+		}
+		if (samples.isEmpty()) {
 			return null;
 		}
 
-		int passed = 0;
-		for (BindingSet sample : samples) {
+		for (int i = 0; i < samples.size(); i++) {
 			checkSamplingQueryDeadline();
+			if (samplingDeadlineExceeded(deadlineNanos)) { return null; }
+			int plane = samplePlanes.get(i);
+			planes.get(plane).evaluated++;
 			try {
-				if (strategy.isTrue(condition, sample)) {
-					passed++;
+				if (strategy.isTrue(condition, samples.get(i))) {
+					planes.get(plane).passed++;
 				}
 			} catch (QueryInterruptedException | LmdbSailStore.MapResizeConflictException failure) {
 				throw failure;
@@ -1776,27 +1829,214 @@ class LmdbFilterSelectivityStats
 			}
 		}
 
-		if (passed == 0 && samples.size() < ZERO_HIT_SAMPLE_MIN_EVIDENCE) {
+		if (samplingDeadlineExceeded(deadlineNanos)) { return null; }
+		WeightedPassEstimate weighted = combinePlanePassRatios(planes);
+		if (weighted == null || samples.size() < minimumEvidence) {
 			return null;
 		}
+		boolean completeScan = result.explicit().complete() && result.inferred().complete();
+		boolean truncated = !completeScan && (!useStrata || result.stoppedByControl());
+		int effectiveSampleSize = weighted.effectiveSampleSize;
+		int reportedEvidence = truncated ? Math.max(1, effectiveSampleSize / 4) : effectiveSampleSize;
+		if (weighted.passRatio == 0.0d && reportedEvidence < ZERO_HIT_SAMPLE_MIN_EVIDENCE) {
+			return null;
+		}
+		return new SampledPassRatio(weighted.passRatio, effectiveSampleSize, truncated,
+				view.isCurrentForStatistics());
+	}
 
+	/** Retains the deliberately selected legacy prefix sampling policy and its reduced confidence. */
+	private SampledPassRatio samplePrefix(LmdbSailStore.ReadView view, SamplingCandidate candidate,
+			DefaultEvaluationStrategy strategy, QueryValueEvaluationStep condition, Txn planningTxn,
+			ValueStore.ReadSnapshot values, int scanBudget, long deadlineNanos, int reservoirSize,
+			int minimumEvidence, List<BindingSet> samples, int[] eligibleRows, int[] scannedRows) {
+		StatementOrder order = samplingOrder(planningTxn, candidate);
+		if (order == null) { return null; }
+		boolean truncated = false;
+		try {
+			for (boolean explicit : new boolean[] { true, false }) {
+				try (RecordIterator triples = tripleStore.getTriples(planningTxn, order, candidate.subjId,
+						candidate.predId, candidate.objId, candidate.contextId, explicit)) {
+					long[] row;
+					while (scannedRows[0] < scanBudget && !samplingDeadlineExceeded(deadlineNanos)
+							&& (row = triples.next()) != null) {
+						scannedRows[0]++;
+						checkSamplingQueryDeadline();
+						if (!matchesRepeatedVarEquality(candidate.pattern, row)) { continue; }
+						eligibleRows[0]++;
+						BindingSet bindingSet = toBindingSet(values, candidate.pattern, row);
+						if (samples.size() < reservoirSize) {
+							samples.add(bindingSet);
+						} else {
+							int replacement = ThreadLocalRandom.current().nextInt(eligibleRows[0]);
+							if (replacement < reservoirSize) { samples.set(replacement, bindingSet); }
+						}
+					}
+				}
+				if (scannedRows[0] >= scanBudget || samplingDeadlineExceeded(deadlineNanos)) {
+					truncated = true;
+					break;
+				}
+			}
+		} catch (IOException failure) {
+			return null;
+		}
+		if (samples.size() < minimumEvidence) { return null; }
+		int passed = evaluateFilterSamples(strategy, condition, samples, deadlineNanos);
+		int reported = truncated ? Math.max(1, samples.size() / 4) : samples.size();
+		if (passed < 0 || passed == 0 && reported < ZERO_HIT_SAMPLE_MIN_EVIDENCE) { return null; }
 		return new SampledPassRatio((double) passed / samples.size(), samples.size(), truncated,
 				view.isCurrentForStatistics());
 	}
 
-	private static boolean continueStratifiedSampling(long deadlineNanos, int scanBudget, int minimumEvidence,
-			int eligibleRows, int scannedRows, boolean[] deadlineStopped) {
+	private static int evaluateFilterSamples(DefaultEvaluationStrategy strategy, QueryValueEvaluationStep condition,
+			List<BindingSet> samples, long deadlineNanos) {
+		int passed = 0;
+		for (BindingSet sample : samples) {
+			checkSamplingQueryDeadline();
+			if (samplingDeadlineExceeded(deadlineNanos)) { return -1; }
+			try {
+				if (strategy.isTrue(condition, sample)) {
+					passed++;
+				}
+			} catch (QueryInterruptedException | LmdbSailStore.MapResizeConflictException failure) {
+				throw failure;
+			} catch (ValueExprEvaluationException e) {
+				// Per-row evaluation failures behave like filtered rows during query execution.
+			} catch (RuntimeException e) {
+				return -1;
+			}
+		}
+		return passed;
+	}
+
+	private static int[] allocatePlaneReservoir(List<PlaneSample> planes, int limit, long deadlineNanos) {
+		int[] targets = new int[planes.size()];
+		int remaining = Math.min(limit, planes.stream().mapToInt(plane -> plane.eligibleRows.size()).sum());
+		while (remaining > 0) {
+			checkSamplingQueryDeadline();
+			if (samplingDeadlineExceeded(deadlineNanos)) {
+				return null;
+			}
+			boolean allocated = false;
+			for (int i = 0; i < planes.size() && remaining > 0; i++) {
+				if (targets[i] < planes.get(i).eligibleRows.size()) {
+					targets[i]++;
+					remaining--;
+					allocated = true;
+				}
+			}
+			if (!allocated) {
+				break;
+			}
+		}
+		return targets;
+	}
+
+	private static List<long[]> reservoirSample(List<long[]> rows, int limit, long deadlineNanos) {
 		checkSamplingQueryDeadline();
-		if (!samplingDeadlineExceeded(deadlineNanos)) {
-			return true;
+		if (samplingDeadlineExceeded(deadlineNanos)) {
+			return null;
 		}
-		int minimumEvidenceScanLimit = Math.min(scanBudget,
-				Math.multiplyExact(minimumEvidence, MAX_MINIMUM_EVIDENCE_SCAN_MULTIPLIER));
-		if (eligibleRows < minimumEvidence && scannedRows < minimumEvidenceScanLimit) {
-			return true;
+		if (rows.size() <= limit) {
+			return rows;
 		}
-		deadlineStopped[0] = true;
-		return false;
+		List<long[]> reservoir = new ArrayList<>(limit);
+		for (int i = 0; i < limit; i++) {
+			checkSamplingQueryDeadline();
+			if (samplingDeadlineExceeded(deadlineNanos)) {
+				return null;
+			}
+			reservoir.add(rows.get(i));
+		}
+		for (int i = limit; i < rows.size(); i++) {
+			checkSamplingQueryDeadline();
+			if (samplingDeadlineExceeded(deadlineNanos)) {
+				return null;
+			}
+			int replacement = ThreadLocalRandom.current().nextInt(i + 1);
+			if (replacement < limit) {
+				reservoir.set(replacement, rows.get(i));
+			}
+		}
+		return reservoir;
+	}
+
+	private static final class PlaneSample {
+		final TripleStore.StratifiedPlaneMetrics metrics;
+		final List<long[]> eligibleRows;
+		int evaluated;
+		int passed;
+		double estimatedEligibleMass;
+
+		PlaneSample(TripleStore.StratifiedPlaneMetrics metrics, List<long[]> eligibleRows) {
+			this.metrics = metrics;
+			this.eligibleRows = eligibleRows;
+		}
+	}
+
+	private record WeightedPassEstimate(double passRatio, int effectiveSampleSize) {
+	}
+
+	private static WeightedPassEstimate combinePlanePassRatios(List<PlaneSample> planes) {
+		boolean allMassesKnown = true;
+		List<PlaneSample> possible = new ArrayList<>(planes.size());
+		for (PlaneSample plane : planes) {
+			TripleStore.StratifiedPlaneMetrics metrics = plane.metrics;
+			if (metrics.patternMassKnown() && metrics.patternMass() == 0L) {
+				if (metrics.patternMatchedRows() != 0) {
+					return null;
+				}
+				continue;
+			}
+			possible.add(plane);
+			allMassesKnown &= metrics.patternMassKnown();
+			if (plane.evaluated == 0 || plane.eligibleRows.isEmpty()) {
+				return null;
+			}
+		}
+		if (possible.isEmpty()) {
+			return null;
+		}
+		if (!allMassesKnown) {
+			PlaneSample first = possible.get(0);
+			for (int i = 1; i < possible.size(); i++) {
+				PlaneSample next = possible.get(i);
+				if ((long) first.passed * next.evaluated != (long) next.passed * first.evaluated) {
+					return null;
+				}
+			}
+			int effective = possible.stream().mapToInt(plane -> plane.evaluated).min().orElse(0);
+			return effective <= 0 ? null : new WeightedPassEstimate((double) first.passed / first.evaluated, effective);
+		}
+
+		double totalEligibleMass = 0D;
+		for (PlaneSample plane : possible) {
+			if (plane.metrics.patternMatchedRows() <= 0 || plane.eligibleRows.isEmpty()) {
+				return null;
+			}
+			plane.estimatedEligibleMass = plane.metrics.patternMass()
+					* ((double) plane.eligibleRows.size() / plane.metrics.patternMatchedRows());
+			if (!(plane.estimatedEligibleMass > 0D) || !Double.isFinite(plane.estimatedEligibleMass)) {
+				return null;
+			}
+			totalEligibleMass += plane.estimatedEligibleMass;
+		}
+		if (!(totalEligibleMass > 0D) || !Double.isFinite(totalEligibleMass)) {
+			return null;
+		}
+		double passRatio = 0D;
+		double inverseEffectiveSample = 0D;
+		int retained = 0;
+		for (PlaneSample plane : possible) {
+			double weight = plane.estimatedEligibleMass / totalEligibleMass;
+			passRatio += weight * ((double) plane.passed / plane.evaluated);
+			inverseEffectiveSample += weight * weight / plane.evaluated;
+			retained += plane.evaluated;
+		}
+		int effectiveSample = (int) Math.floor(1D / inverseEffectiveSample);
+		effectiveSample = Math.min(retained, Math.max(1, effectiveSample));
+		return new WeightedPassEstimate(passRatio, effectiveSample);
 	}
 
 	static final String FILTER_SAMPLING_MODE_PROPERTY = "rdf4j.optimizer.lmdb.filterSamplingMode";
@@ -2428,7 +2668,7 @@ class LmdbFilterSelectivityStats
 
 	private static boolean isUsableSampledPassRatio(SampledPassRatio sampled) {
 		return sampled != null && isValidPassRatio(sampled.passRatio)
-				&& (sampled.passRatio > 0.0d || sampled.sampleSize >= ZERO_HIT_SAMPLE_MIN_EVIDENCE);
+				&& (sampled.passRatio > 0.0d || sampled.reportedSampleSize() >= ZERO_HIT_SAMPLE_MIN_EVIDENCE);
 	}
 
 	private static void writeString(DataOutputStream out, String value) throws IOException {

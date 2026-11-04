@@ -135,6 +135,12 @@ public class FactorMarginalKernelTest {
 				int at = -1;
 				boolean closed;
 
+				// Test fixture Sources are externally owned; neither next nor close retires them.
+				// Extra method is compatible with the unchanged interface until the proposed default exists.
+				public boolean borrowedSourcesSurviveAdvance() { return true; }
+				// Complete external Source/independent-reader lifetime through both next and close.
+				public boolean borrowedSourcesExternallyRetained() { return true; }
+
 				public boolean next() {
 					pulls++;
 					return ++at < env.length;

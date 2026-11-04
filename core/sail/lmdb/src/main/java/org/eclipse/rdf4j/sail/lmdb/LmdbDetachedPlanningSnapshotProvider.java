@@ -15,5 +15,28 @@ package org.eclipse.rdf4j.sail.lmdb;
 @FunctionalInterface
 interface LmdbDetachedPlanningSnapshotProvider {
 
+	/** Legacy providers expose their historical physical explicit snapshot only. */
+	default LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot(int planeMask) {
+		if (planeMask != org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.EXPLICIT) {
+			throw new IllegalArgumentException("Detached provider cannot represent requested read planes");
+		}
+		return openDetachedPlanningSnapshot();
+	}
+
+	static LmdbDetachedPlanningSnapshotProvider forPlanes(
+			java.util.function.IntFunction<LmdbDetachedPlanningSnapshot> factory) {
+		return new LmdbDetachedPlanningSnapshotProvider() {
+			@Override
+			public LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot() {
+				return factory.apply(org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.EXPLICIT);
+			}
+
+			@Override
+			public LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot(int planeMask) {
+				return factory.apply(planeMask);
+			}
+		};
+	}
+
 	LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot();
 }

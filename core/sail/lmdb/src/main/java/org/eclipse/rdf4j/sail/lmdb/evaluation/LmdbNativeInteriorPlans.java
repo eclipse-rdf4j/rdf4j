@@ -199,6 +199,9 @@ final class LmdbNativeInteriorPlans {
 		if (!seen.add(plan)) {
 			return false;
 		}
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return contains(guard.folded, seen) || contains(guard.original, seen);
+		}
 		if (plan instanceof Carrier) {
 			return true;
 		}
@@ -275,6 +278,12 @@ final class LmdbNativeInteriorPlans {
 	}
 
 	private static SlotPlan resolveUncached(SlotPlan plan, boolean bag, Resolution resolution) {
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			SlotPlan fast = resolve(guard.folded, false, resolution);
+			SlotPlan ordinary = resolve(guard.original, false, resolution);
+			return fast == guard.folded && ordinary == guard.original ? plan
+					: new NativeValuesFoldPlan(fast, ordinary, guard.inputNames, guard.inputSlots);
+		}
 		if (plan instanceof Carrier carrier) {
 			List<SlotPlan> leaves = new ArrayList<>();
 			carrier.boundaries.collect(leaves);
@@ -323,8 +332,7 @@ final class LmdbNativeInteriorPlans {
 			SlotPlan left = resolve(optional.left, false, resolution);
 			SlotPlan right = resolve(optional.right, false, resolution);
 			return left == optional.left && right == optional.right ? plan
-					: new LeftJoinPlan(left, right, optional.lexicalSharedSlots, optional.lexicalHashKeys,
-							optional.lexicalProblemSlots);
+					: optional.withChildren(left, right);
 		}
 		if (plan instanceof MinusPlan minus) {
 			SlotPlan left = resolve(minus.left, false, resolution);

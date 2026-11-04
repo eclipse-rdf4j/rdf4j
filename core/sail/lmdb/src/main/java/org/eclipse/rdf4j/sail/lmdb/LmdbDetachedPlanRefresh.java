@@ -56,9 +56,10 @@ import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
  */
 final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRefreshWork {
 
-	private static final long OBJECT_BYTES = 384L;
+	private static final long OBJECT_BYTES = 392L;
 
 	private final LmdbEstimatorRuntime runtime;
+	private final int readPlaneMask;
 	private final LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots;
 	private final PackedPlanRefreshWork packedWork;
 	private final LmdbPipelinePlanCache.DatasetIdentity datasetIdentity;
@@ -131,10 +132,28 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 			LmdbPlanAssumptions assumptions, long buildDataRevision, boolean experimentalQueryOptimizations,
 			LmdbFilterReadContext.FamilyIdentity filterReadIdentity,
 			LmdbPipelinePlanCache.InputIdentity inputIdentity) {
+		this(runtime, detachedPlanningSnapshots, packedWork, datasetIdentity, bindingIdentity, trackResultSize,
+				preserveObservationOrder, runtimeTelemetry, queryEvaluationMode, mode, predicateRangeVersion,
+				buildRangeIdentity, predicateRangeProofsAllowed, assumptions, buildDataRevision,
+				experimentalQueryOptimizations, filterReadIdentity, inputIdentity, -1);
+	}
+
+	LmdbDetachedPlanRefresh(LmdbEstimatorRuntime runtime,
+			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, PackedPlanRefreshWork packedWork,
+			LmdbPipelinePlanCache.DatasetIdentity datasetIdentity,
+			LmdbPipelinePlanCache.BindingIdentity bindingIdentity, boolean trackResultSize,
+			boolean preserveObservationOrder, boolean runtimeTelemetry, QueryEvaluationMode queryEvaluationMode,
+			LmdbCascadesOptimizer.Mode mode, long predicateRangeVersion,
+			LmdbPipelinePlanCache.PredicateRangeIdentity buildRangeIdentity, boolean predicateRangeProofsAllowed,
+			LmdbPlanAssumptions assumptions, long buildDataRevision, boolean experimentalQueryOptimizations,
+			LmdbFilterReadContext.FamilyIdentity filterReadIdentity,
+			LmdbPipelinePlanCache.InputIdentity inputIdentity, int readPlaneMask) {
+		this.readPlaneMask = readPlaneMask;
+
 		this.inputIdentity = inputIdentity == null ? new LmdbPipelinePlanCache.InputIdentity(datasetIdentity,
 				bindingIdentity, buildRangeIdentity, "", filterReadIdentity, null) : inputIdentity;
 		this.retainedIdentity = new RetainedIdentity(this.inputIdentity, packedWork, buildRangeIdentity,
-				assumptions == null ? LmdbPlanAssumptions.NONE : assumptions);
+				assumptions == null ? LmdbPlanAssumptions.NONE : assumptions, readPlaneMask);
 		this.filterReadIdentity = filterReadIdentity;
 		this.experimentalQueryOptimizations = experimentalQueryOptimizations;
 		this.runtime = Objects.requireNonNull(runtime, "runtime");
@@ -158,9 +177,15 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 
 	@Override
 	public LmdbPlanDecisionCache.RefreshComputation execute() {
+		if (readPlaneMask == 0) {
+			throw new IllegalStateException("Query detached refresh has no authenticated read-plane population");
+		}
 		ensureSemanticsCurrent();
 		LmdbEstimatorRuntime.PlanningRevisions beforeSnapshot = runtime.capturePlanningRevisions();
-		try (LmdbDetachedPlanningSnapshot snapshot = detachedPlanningSnapshots.openDetachedPlanningSnapshot()) {
+		try (LmdbDetachedPlanningSnapshot snapshot = readPlaneMask == -1
+				? detachedPlanningSnapshots.openDetachedPlanningSnapshot()
+				: detachedPlanningSnapshots.openDetachedPlanningSnapshot(readPlaneMask);
+				var planningPin = snapshot.pinPlanningReads(runtime)) {
 			long snapshotEpoch = snapshot.snapshotEpoch();
 			LmdbEstimatorRuntime.PlanningRevisions buildRevisions = runtime.capturePlanningRevisions();
 			if (beforeSnapshot.dataRevision() != buildRevisions.dataRevision()) {
@@ -177,6 +202,18 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 		LmdbPlanDecisionCache.EvidenceSnapshot buildEvidence = LmdbPipelinePlanCache.evidence(buildRevisions);
 		Dataset dataset = dataset(datasetIdentity);
 		BindingSet bindings = bindings(bindingIdentity);
+		try (var population = runtime.beginFrontierReadScope(tripleSource, dataset, readPlaneMask)) {
+			if (readPlaneMask != -1 && runtime.frontierReadPlaneMask() != readPlaneMask) {
+				throw new IllegalStateException("Detached query snapshot does not own the requested read planes");
+			}
+			return executeAgainstReadScope(snapshotEpoch, tripleSource, buildRevisions, buildEvidence, dataset,
+					bindings);
+		}
+	}
+
+	private LmdbPlanDecisionCache.RefreshComputation executeAgainstReadScope(long snapshotEpoch,
+			SailDatasetTripleTermSource tripleSource, LmdbEstimatorRuntime.PlanningRevisions buildRevisions,
+			LmdbPlanDecisionCache.EvidenceSnapshot buildEvidence, Dataset dataset, BindingSet bindings) {
 		boolean storeDefaults = datasetIdentity.usesStoreDefaults();
 		OptionalLong detachedSnapshotEpoch = OptionalLong.of(snapshotEpoch);
 		DefaultEvaluationStrategy evaluationStrategy = new DefaultEvaluationStrategy(tripleSource, dataset, null);
@@ -254,13 +291,13 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 	}
 
 	private record RetainedIdentity(LmdbPipelinePlanCache.InputIdentity input, PackedPlanRefreshWork work,
-			LmdbPipelinePlanCache.PredicateRangeIdentity ranges, LmdbPlanAssumptions assumptions)
+			LmdbPipelinePlanCache.PredicateRangeIdentity ranges, LmdbPlanAssumptions assumptions, int readPlaneMask)
 			implements PackedProviderCacheIdentity {
 		@Override
 		public boolean accountRetainedMemory(
 				RetainedMemoryAccount account) {
 			account = PackedCacheMemory.ownedAccount(account);
-			if (!account.add(this, 48L)) {
+			if (!account.add(this, 56L)) {
 				return true;
 			}
 			return input.accountRetainedMemory(account) && work.accountRetainedMemory(account)

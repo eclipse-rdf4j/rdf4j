@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -323,6 +324,7 @@ public class LmdbNativeLeapfrogJoinTest {
 			System.setProperty(PARALLEL_THREADS_PROPERTY, "4");
 			System.setProperty(NATIVE_FLAG, "true");
 			openRepository();
+			LmdbTestUtil.awaitBackgroundMaintenance((LmdbStore) repository.getSail(), 30, TimeUnit.SECONDS);
 			Thread consumer = Thread.currentThread();
 			try (var context = QueryExecutionContext.activateReplaySafepoint(() -> {
 			}, () -> () -> () -> {

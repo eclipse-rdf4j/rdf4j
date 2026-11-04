@@ -31,8 +31,15 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -45,13 +52,19 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.CleanupMode;
@@ -66,6 +79,10 @@ class LmdbDeferredDomainNativeAdmissionTest {
     private static final IRI S = VF.createIRI("urn:domain-admission:subject");
     private static final IRI P = VF.createIRI("urn:domain-admission:predicate");
     private static final IRI O = VF.createIRI("urn:domain-admission:object");
+    private static final IRI NESTED_SUBJECT = VF.createIRI("urn:domain-admission:nested-subject");
+    private static final IRI NESTED_PREDICATE = VF.createIRI("urn:domain-admission:nested-predicate");
+    private static final IRI NESTED_OBJECT = VF.createIRI("urn:domain-admission:nested-object");
+    private static final IRI OUTER_PREDICATE = VF.createIRI("urn:domain-admission:outer-predicate");
     private static final List<LmdbStore> RETAINED = new CopyOnWriteArrayList<>();
 
     @Test
@@ -186,11 +203,96 @@ class LmdbDeferredDomainNativeAdmissionTest {
         }
     }
 
+    @Test
+    void completedObsoleteDomainScanDoesNotPromoteNestedTripleTermChildren(
+            @TempDir(cleanup = CleanupMode.NEVER) Path evidence) throws Exception {
+        try (Fixture fixture = new Fixture(evidence, true)) {
+            SailRepository repository = new SailRepository(fixture.store);
+            fixture.initialize(repository);
+
+            Map<Long, LmdbTripleTerm> scannedTerms = new HashMap<>();
+            for (LmdbValue value : fixture.scanValues) {
+                if (value instanceof LmdbTripleTerm term && term.isInitialized()) {
+                    scannedTerms.putIfAbsent(term.getInternalIdentity().id(), term);
+                }
+            }
+            LmdbTripleTerm outer = scannedTerms.values().stream()
+                    .filter(term -> nestedTripleChild(term) != null)
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("the completed domain scan must decode its outer term"));
+            LmdbTripleTerm nestedChild = nestedTripleChild(outer);
+            assertNotNull(nestedChild, "the outer term must retain a nested triple-term child");
+            LmdbTripleTerm inner = scannedTerms.get(nestedChild.getInternalIdentity().id());
+            assertNotNull(inner, "the domain scan must also process the nested child as its own object term");
+
+            Set<LmdbValue> scannedTree = Collections.newSetFromMap(new IdentityHashMap<>());
+            scannedTree.addAll(initializedValueTree(outer));
+            scannedTree.addAll(initializedValueTree(inner));
+            assertTrue(scannedTerms.size() >= 2, "the completed scan must include both nested terms");
+            assertTrue(scannedTree.size() >= 7, "the scan must have visited the outer and nested child tree");
+            long outerId = outer.getInternalIdentity().id();
+            long innerId = inner.getInternalIdentity().id();
+            assertEquals(innerId, nestedChild.getInternalIdentity().id(),
+                    "the outer payload must refer to the separately scanned nested term ID");
+            for (LmdbValue value : scannedTree) {
+                assertFalse(value.isExternallyOwned(),
+                        "internal deferred-domain classification must not promote a cold result value: "
+                                + value.getClass().getSimpleName());
+            }
+            assertTrue(fixture.gate.scanScopeClosures.get() > 0,
+                    "the internal scan's value-resolution scope must close before its result is published");
+
+            ValueStore values = fixture.backing.valueStore();
+            try (ValueResolutionScope resolution = values.openValueResolutionScope();
+                    SailClosable exposure = resolution.activate()) {
+                LmdbTripleTerm resolvedOuter = (LmdbTripleTerm) values.getLazyValue(outerId);
+                LmdbTripleTerm resolvedInner = (LmdbTripleTerm) values.getLazyValue(innerId);
+                assertEquals(outerId, resolvedOuter.getInternalIdentity().id());
+                assertEquals(innerId, resolvedInner.getInternalIdentity().id());
+                assertEquals(S.stringValue(), resolvedOuter.getSubject().stringValue());
+                assertEquals(OUTER_PREDICATE.stringValue(), resolvedOuter.getPredicate().stringValue());
+                LmdbTripleTerm resolvedNestedChild = (LmdbTripleTerm) resolvedOuter.getObject();
+                assertEquals(innerId, resolvedNestedChild.getInternalIdentity().id());
+                assertEquals(NESTED_SUBJECT.stringValue(), resolvedInner.getSubject().stringValue());
+                assertEquals(NESTED_PREDICATE.stringValue(), resolvedInner.getPredicate().stringValue());
+                assertEquals(NESTED_OBJECT.stringValue(), resolvedInner.getObject().stringValue());
+                for (LmdbValue value : initializedValueTree(resolvedOuter)) {
+                    assertFalse(value.isExternallyOwned(),
+                            "a fresh internal resolution owner must retain its own values");
+                }
+                for (LmdbValue value : initializedValueTree(resolvedInner)) {
+                    assertFalse(value.isExternallyOwned(),
+                            "a fresh internal resolution owner must retain nested values");
+                }
+            }
+
+            fixture.gate.releaseScan.countDown();
+            LmdbTestUtil.awaitPostReadyInitialization(fixture.store, 30, TimeUnit.SECONDS);
+            try (var connection = repository.getConnection();
+                    var rows = connection.getStatements(S, P, null, false)) {
+                Set<Long> resultIds = new java.util.HashSet<>();
+                while (rows.hasNext()) {
+                    Value value = rows.next().getObject();
+                    assertTrue(value instanceof LmdbValue, "LMDB repository results retain their cached values");
+                    LmdbValue nativeValue = (LmdbValue) value;
+                    resultIds.add(nativeValue.getInternalIdentity().id());
+                    for (LmdbValue resultNode : initializedValueTree(nativeValue)) {
+                        assertFalse(resultNode.isExternallyOwned(),
+                                "the exact repository result must preserve its result-scoped ownership");
+                    }
+                }
+                assertEquals(scannedTerms.keySet(), resultIds,
+                        "repository rows must expose both nested terms processed by the completed scan");
+            }
+        }
+    }
+
     private static final class Fixture implements AutoCloseable {
         private final ExecutorService pool;
         private final Gate gate = new Gate();
         private final AtomicBoolean unsafeClose = new AtomicBoolean();
         private final AtomicBoolean unsafeUnlock = new AtomicBoolean();
+        private final List<LmdbValue> scanValues = new CopyOnWriteArrayList<>();
         private final Path evidence;
         private final Path directory;
         private final LmdbStore store;
@@ -201,15 +303,29 @@ class LmdbDeferredDomainNativeAdmissionTest {
         private CountDownLatch writerRelease;
 
         private Fixture(Path evidence) throws Exception {
+            this(evidence, false);
+        }
+
+        private Fixture(Path evidence, boolean nestedTerms) throws Exception {
             this.evidence = evidence;
             this.directory = evidence.resolve("store");
-            seed(directory);
-            store = instrumentedStore(directory, gate, unsafeClose, unsafeUnlock);
+            if (nestedTerms) {
+                seedNested(directory);
+            } else {
+                seed(directory);
+            }
+            store = instrumentedStore(directory, gate, unsafeClose, unsafeUnlock, scanValues);
             pool = Executors.newFixedThreadPool(3, Thread.ofPlatform().daemon().factory());
         }
 
         private void initialize() throws Exception {
             store.init();
+            backing = store.getBackingStore();
+            assertTrue(gate.scanned.await(30, TimeUnit.SECONDS), "the real domain scan reached the gate");
+        }
+
+        private void initialize(SailRepository repository) throws Exception {
+            repository.init();
             backing = store.getBackingStore();
             assertTrue(gate.scanned.await(30, TimeUnit.SECONDS), "the real domain scan reached the gate");
         }
@@ -293,18 +409,20 @@ class LmdbDeferredDomainNativeAdmissionTest {
 
     private static final class Gate {
         private final AtomicBoolean first = new AtomicBoolean(true);
+        private final AtomicBoolean captureScan = new AtomicBoolean();
         private final CountDownLatch scanned = new CountDownLatch(1);
         private final CountDownLatch releaseScan = new CountDownLatch(1);
         private final CountDownLatch beginCalled = new CountDownLatch(1);
         private final CountDownLatch beginReturnedLatch = new CountDownLatch(1);
         private final AtomicBoolean beginReturned = new AtomicBoolean();
         private final AtomicInteger nativeBeginsInFlight = new AtomicInteger();
+        private final AtomicInteger scanScopeClosures = new AtomicInteger();
         private final AtomicReference<Thread> worker = new AtomicReference<>();
         private final AtomicReference<RetirementNativeTransaction> nativeOwner = new AtomicReference<>();
     }
 
     private static LmdbStore instrumentedStore(Path directory, Gate gate, AtomicBoolean unsafeClose,
-            AtomicBoolean unsafeUnlock) {
+            AtomicBoolean unsafeUnlock, List<LmdbValue> scanValues) {
         return new LmdbStore(directory.toFile(), config()) {
             @Override
             protected void shutDownInternal() throws SailException {
@@ -323,6 +441,35 @@ class LmdbDeferredDomainNativeAdmissionTest {
                     boolean estimatorEnabled) throws IOException, SailException {
                 return new LmdbSailStore(dataDir, properties, settings, estimatorEnabled,
                         (valueDir, valueProperties, valueConfig) -> new ValueStore(valueDir, valueProperties, valueConfig) {
+                            private void recordScanValue(LmdbValue value) {
+                                if (value != null && gate.captureScan.get()
+                                        && Thread.currentThread() == gate.worker.get()) {
+                                    scanValues.add(value);
+                                }
+                            }
+
+                            @Override
+                            public LmdbValue getValue(long id) throws IOException {
+                                LmdbValue value = super.getValue(id);
+                                recordScanValue(value);
+                                return value;
+                            }
+
+                            @Override
+                            LmdbValue getLazyValue(long id, ValueStoreRevision revision) throws IOException {
+                                LmdbValue value = super.getLazyValue(id, revision);
+                                recordScanValue(value);
+                                return value;
+                            }
+
+                            @Override
+                            void resolutionScopeClosed(ValueResolutionScope scope) {
+                                super.resolutionScopeClosed(scope);
+                                if (gate.captureScan.get() && Thread.currentThread() == gate.worker.get()) {
+                                    gate.scanScopeClosures.incrementAndGet();
+                                }
+                            }
+
                             @Override
                             void closeEnvironment(long environment) {
                                 assertSafeToClose(gate, unsafeClose);
@@ -340,9 +487,18 @@ class LmdbDeferredDomainNativeAdmissionTest {
                             @Override
                             DeferredRdfTermDomainPlan scanDeferredRdfTermDomains(TxnManager.Txn triples,
                                     ValueStore.ReadSnapshot snapshot) throws IOException {
-                                DeferredRdfTermDomainPlan plan = super.scanDeferredRdfTermDomains(triples, snapshot);
-                                if (gate.first.compareAndSet(true, false)) {
+                                boolean firstScan = gate.first.compareAndSet(true, false);
+                                if (firstScan) {
                                     gate.worker.set(Thread.currentThread());
+                                }
+                                gate.captureScan.set(true);
+                                DeferredRdfTermDomainPlan plan;
+                                try {
+                                    plan = super.scanDeferredRdfTermDomains(triples, snapshot);
+                                } finally {
+                                    gate.captureScan.set(false);
+                                }
+                                if (firstScan) {
                                     gate.scanned.countDown();
                                     try {
                                         if (!gate.releaseScan.await(30, TimeUnit.SECONDS)) {
@@ -451,6 +607,66 @@ class LmdbDeferredDomainNativeAdmissionTest {
         assertTrue(properties.load());
         properties.setRdfTermDomainsVersion("test-obsolete-domain-profile");
         properties.save();
+    }
+
+    private static void seedNested(Path directory) throws Exception {
+        LmdbStore store = new LmdbStore(directory.toFile(), config());
+        try {
+            store.init();
+            LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+            TripleTerm inner = VF.createTripleTerm(NESTED_SUBJECT, NESTED_PREDICATE, NESTED_OBJECT);
+            TripleTerm outer = VF.createTripleTerm(S, OUTER_PREDICATE, inner);
+            try (var connection = store.getConnection()) {
+                connection.begin();
+                connection.addStatement(S, P, inner);
+                connection.addStatement(S, P, outer);
+                connection.commit();
+            }
+        } finally {
+            store.shutDown();
+        }
+        StoreProperties properties = new StoreProperties(directory.toFile());
+        assertTrue(properties.load());
+        properties.setRdfTermDomainsVersion("test-obsolete-domain-profile");
+        properties.save();
+    }
+
+    private static LmdbTripleTerm nestedTripleChild(LmdbTripleTerm parent) {
+        AtomicReference<LmdbTripleTerm> nested = new AtomicReference<>();
+        parent.visitValueChildren(child -> {
+            if (child instanceof LmdbTripleTerm term) {
+                nested.compareAndSet(null, term);
+            }
+        });
+        return nested.get();
+    }
+
+    private static Value childAt(LmdbTripleTerm parent, int selected) {
+        List<Value> children = new ArrayList<>(3);
+        parent.visitValueChildren(children::add);
+        return children.get(selected);
+    }
+
+    private static List<LmdbValue> initializedValueTree(LmdbValue root) {
+        List<LmdbValue> values = new ArrayList<>();
+        Set<LmdbValue> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        ArrayDeque<LmdbValue> pending = new ArrayDeque<>();
+        pending.add(root);
+        while (!pending.isEmpty()) {
+            LmdbValue value = pending.removeLast();
+            if (!visited.add(value)) {
+                continue;
+            }
+            values.add(value);
+            if (value.isInitialized()) {
+                value.visitValueChildren(child -> {
+                    if (child instanceof LmdbValue nativeChild) {
+                        pending.addLast(nativeChild);
+                    }
+                });
+            }
+        }
+        return values;
     }
 
     private static LmdbStoreConfig config() {

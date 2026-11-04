@@ -2534,7 +2534,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (node instanceof BindAlias) {
 			BindAlias bind = (BindAlias) node;
 			return () -> {
-				v[bind.dstCol] = read(bind.source);
+				long value = read(bind.source);
+				v[bind.dstCol] = bind.nullIsError && value == 0L ? NativeLmdbQuerySource.UNKNOWN_ID : value;
 				return next.run();
 			};
 		}

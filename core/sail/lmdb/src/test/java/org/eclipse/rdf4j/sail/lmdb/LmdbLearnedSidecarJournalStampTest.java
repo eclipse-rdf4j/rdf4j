@@ -24,8 +24,9 @@ import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.OptionalLong;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -42,6 +43,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
@@ -135,11 +139,13 @@ class LmdbLearnedSidecarJournalStampTest {
 
 		LmdbStore reader = openStore(dataDir, sketchEnabled);
 		try {
-			EvaluationStatistics.FilterPassEstimate filterEstimate = reader.getBackingStore()
-					.getEvaluationStatistics()
-					.estimateFilterPass(filter("6"));
-			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
-					filterEstimate.getSource());
+			try (PlanningStatisticsRead read = openPlanningStatistics(reader)) {
+				LmdbEvaluationStatistics statistics = read.statistics();
+				assertNoLearnedFilterEvidence(statistics, filter("5"),
+						"a stale sidecar must not restore its exact filter surface");
+				assertNoLearnedFilterEvidence(statistics, filter("6"),
+						"a stale sidecar must not restore its generalized filter surface");
+			}
 			assertNull(operatorStats(reader).estimate(join(), 200.0d, 100.0d, 10.0d, 20.0d));
 			assertTrue(operatorStats(reader).evidence(LeoSurfaceKey.fanout(33L, "object", 44L)).isEmpty());
 			assertTrue(reader.getColdFilterSynopsisFootprint().isEmpty());
@@ -189,9 +195,15 @@ class LmdbLearnedSidecarJournalStampTest {
 
 		LmdbStore reader = openStore(dataDir, true);
 		try {
-			EvaluationStatistics.FilterPassEstimate filterEstimate = reader.getBackingStore()
-					.getEvaluationStatistics()
-					.estimateFilterPass(filter("6"));
+			EvaluationStatistics.FilterPassEstimate filterEstimate;
+			try (PlanningStatisticsRead read = openPlanningStatistics(reader)) {
+				LmdbEvaluationStatistics statistics = read.statistics();
+				assertNoLearnedFilterEvidence(statistics, filter("5"),
+						"legacy coordinates must not restore the exact filter surface");
+				assertNoLearnedFilterEvidence(statistics, filter("6"),
+						"legacy coordinates must not restore the generalized filter surface");
+				filterEstimate = statistics.estimateFilterPass(filter("6"));
+			}
 			assertAll(
 					() -> assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
 							filterEstimate.getSource()),
@@ -205,7 +217,7 @@ class LmdbLearnedSidecarJournalStampTest {
 		}
 	}
 
-	private static LmdbStore openStore(File dataDir, boolean sketchEnabled) {
+	private static LmdbStore openStore(File dataDir, boolean sketchEnabled) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)
 				.setFrontierSynopsisBudgetBytes(1024L * 1024L)
@@ -216,6 +228,7 @@ class LmdbLearnedSidecarJournalStampTest {
 			store.setExperimentalQueryOptimizations(true);
 		}
 		store.init();
+		LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 		if (sketchEnabled) {
 			assertSketchFixtureProfile(store);
 		}
@@ -244,9 +257,14 @@ class LmdbLearnedSidecarJournalStampTest {
 
 	private static void trainAndPersistLearnedSurfaces(LmdbStore store) throws Exception {
 		LmdbSailStore backingStore = store.getBackingStore();
-		LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) backingStore.getEvaluationStatistics();
-		statistics.bindExecutionSnapshot(OptionalLong.of(0L)); // observations from a committed query
-		statistics.recordFilterOutcome(filter("5"), 20L, 80L);
+		try (PlanningStatisticsRead read = openPlanningStatistics(store)) {
+			LmdbEvaluationStatistics statistics = read.statistics();
+			Filter filter = filter("5");
+			assertTrue(statistics.feedbackPublicationAllowed(),
+					"the live paired source must authorize the synthetic observation");
+			statistics.prepareFilterOutcome(filter, read.source(), null);
+			statistics.recordFilterOutcome(filter, 20L, 80L);
+		}
 
 		LmdbOperatorFeedbackStats operatorStats = operatorStats(store);
 		Join observed = join();
@@ -269,21 +287,85 @@ class LmdbLearnedSidecarJournalStampTest {
 	}
 
 	private static void assertLearnedSurfacesPresent(LmdbStore store, boolean sketchEnabled) throws Exception {
-		EvaluationStatistics.FilterPassEstimate filterEstimate = store.getBackingStore()
-				.getEvaluationStatistics()
-				.estimateFilterPass(filter("6"));
-		LmdbOperatorFeedbackStats.OperatorEstimate operatorEstimate = operatorStats(store)
-				.estimate(join(), 200.0d, 100.0d, 10.0d, 20.0d);
-		assertAll(
-				() -> assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
-						filterEstimate.getSource()),
-				() -> assertEquals(0.2d, filterEstimate.getPassRatio(), 0.000_001d),
-				() -> assertEquals(100L, filterEstimate.getEvidenceCount()),
-				() -> assertNotNull(operatorEstimate),
-				() -> assertTrue(operatorStats(store)
-						.evidence(LeoSurfaceKey.fanout(33L, "object", 44L))
-						.isPresent()),
-				() -> assertEquals(sketchEnabled, store.getColdFilterSynopsisFootprint().isPresent()));
+		try (PlanningStatisticsRead read = openPlanningStatistics(store)) {
+			LmdbEvaluationStatistics statistics = read.statistics();
+			LmdbLearnedFilterEvidence evidence = statistics.estimatorRuntime().learnedFilterEvidence(filter("6"));
+			assertNotNull(evidence, "the loaded learned template is present in the raw surface");
+			assertTrue(evidence.generalized());
+			assertEquals(0.2d, evidence.passRatio(), 0.000_001d);
+			assertEquals(100L, evidence.evidenceCount());
+			EvaluationStatistics.FilterPassEstimate filterEstimate = statistics.estimateFilterPass(filter("6"));
+			LmdbOperatorFeedbackStats.OperatorEstimate operatorEstimate = operatorStats(store)
+					.estimate(join(), 200.0d, 100.0d, 10.0d, 20.0d);
+			assertAll(
+					() -> assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
+							filterEstimate.getSource()),
+					() -> assertEquals(0.2d, filterEstimate.getPassRatio(), 0.000_001d),
+					() -> assertEquals(100L, filterEstimate.getEvidenceCount()),
+					() -> assertNotNull(operatorEstimate),
+					() -> assertTrue(operatorStats(store)
+							.evidence(LeoSurfaceKey.fanout(33L, "object", 44L))
+							.isPresent()),
+					() -> assertEquals(sketchEnabled, store.getColdFilterSynopsisFootprint().isPresent()));
+		}
+	}
+
+	private static void assertNoLearnedFilterEvidence(LmdbEvaluationStatistics statistics, Filter filter,
+			String reason) {
+		assertNull(statistics.estimatorRuntime().learnedFilterEvidence(filter), reason + " (raw evidence)");
+		EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+		assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, estimate.getSource(), reason);
+		assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource(), reason);
+	}
+
+	private static PlanningStatisticsRead openPlanningStatistics(LmdbStore store) {
+		SailDataset owner = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
+		try {
+			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), owner);
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
+			SailClosable view = borrowed.enterPlanningReadView().orElseThrow();
+			try {
+				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime().pinQueryPlanningReads(
+						borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
+				try {
+					statistics.bindExecutionSource(source, null);
+					assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority(),
+							"the fixture owns the actual paired planning readers");
+					return new PlanningStatisticsRead(owner, source, view, pin, statistics);
+				} catch (RuntimeException | Error failure) {
+					closeAfterFailure(failure, pin::close);
+					throw failure;
+				}
+			} catch (RuntimeException | Error failure) {
+				closeAfterFailure(failure, view::close);
+				throw failure;
+			}
+		} catch (RuntimeException | Error failure) {
+			closeAfterFailure(failure, owner::close);
+			throw failure;
+		}
+	}
+
+	private static void closeAfterFailure(Throwable primary, Runnable close) {
+		try {
+			close.run();
+		} catch (RuntimeException | Error cleanup) {
+			if (cleanup != primary) {
+				primary.addSuppressed(cleanup);
+			}
+		}
+	}
+
+	private record PlanningStatisticsRead(SailDataset owner, SailDatasetTripleTermSource source,
+			SailClosable view, TripleStore.PlanningReadPin pin, LmdbEvaluationStatistics statistics)
+			implements AutoCloseable {
+		@Override
+		public void close() {
+			try (owner; view; pin) {
+			}
+		}
 	}
 
 	private static LmdbOperatorFeedbackStats operatorStats(LmdbStore store) throws Exception {

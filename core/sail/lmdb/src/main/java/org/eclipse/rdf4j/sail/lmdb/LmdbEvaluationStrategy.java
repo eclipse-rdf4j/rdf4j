@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQuer
 
 public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	private QueryOptimizerPipeline optimizerPipeline;
+	private LmdbQueryOptimizerPipeline customPlanningScopeOwner;
 	private final EvaluationStatistics filterOutcomeStatistics;
 
 	public LmdbEvaluationStrategy(TripleSource tripleSource, Dataset dataset, FederatedServiceResolver serviceResolver,
@@ -53,6 +54,9 @@ public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	public void setOptimizerPipeline(QueryOptimizerPipeline pipeline) {
 		super.setOptimizerPipeline(pipeline);
 		optimizerPipeline = pipeline;
+		customPlanningScopeOwner = pipeline instanceof LmdbQueryOptimizerPipeline || filterOutcomeStatistics == null
+				? null
+				: new LmdbQueryOptimizerPipeline(this, tripleSource, filterOutcomeStatistics);
 	}
 
 	@Override
@@ -63,7 +67,9 @@ public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 					: optimizeWithBNodePreflight(expr, bindings,
 							() -> lmdbPipeline.optimize(expr, dataset, bindings));
 		}
-		return super.optimize(expr, evaluationStatistics, bindings);
+		return customPlanningScopeOwner == null ? super.optimize(expr, evaluationStatistics, bindings)
+				: customPlanningScopeOwner.withPlanningReadScope(dataset,
+						() -> super.optimize(expr, evaluationStatistics, bindings));
 	}
 
 	@Override
@@ -78,6 +84,13 @@ public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 			statistics.prepareFilterOutcome(filter, tripleSource, dataset);
 		}
 		return super.prepare(filter, context);
+	}
+
+	/** Native compilers share the generic preparation authority without manufacturing an AST tracking contract. */
+	protected final LmdbPreparedFilterOutcome prepareNativeFilterOutcome(Filter surface, Filter origin) {
+		return filterOutcomeStatistics instanceof LmdbEvaluationStatistics statistics
+				? statistics.prepareNativeFilterOutcome(surface, origin, tripleSource, dataset)
+				: null;
 	}
 
 	@Override

@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -124,6 +125,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 */
 	Set<String> inheritedLateralFrameInputNames = Set.of();
 
+	NativePrimitiveInputSemantics inheritedInputSemantics;
+
 	LmdbNativeAggregatePlanner(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
 		super(context, strategy, source);
@@ -181,24 +184,53 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (!(node instanceof Projection projection)) {
 			return null;
 		}
-		AggregateRootStack aggregate = compileAggregateRootStack(projection.getArg());
-		return aggregate == null ? null : new NativeBindingSetProjectionStep(aggregate.step, projection);
+		// Capture demand from the complete consumer before descending into a nested Group. An isolated Group
+		// analysis would treat every output as an RDF observer and lose a proved length-only aggregate demand.
+		return strategy.withValuePositionsFor(expr, () -> {
+			var templates = NativeSubSelectScopeBoundaryStep.Templates.capture(expr, strategy);
+			AggregateRootStack aggregate = compileAggregateRootStack(projection.getArg(), templates);
+			return aggregate == null ? null : new NativeBindingSetProjectionStep(aggregate.step, projection, context);
+		});
 	}
 
 	/**
 	 * Composes the parser's complete post-group stack in algebra order. HAVING aggregates introduce an Extension below
 	 * the Filter, while projected aggregates introduce another Extension above it, so legal roots are not limited to
 	 * the historical {@code Projection -> Extension -> Group} shape. Every aggregate-valued Extension is matched to the
-	 * authoritative binding already produced by the one Group step; ordinary computed expressions stay in the semantic
-	 * BindingSet value tier.
+	 * authoritative binding already produced by the one Group step. Nested SELECT projections preserve typed cells and
+	 * their lexical/parent authority until a supported scalar consumes them; RDF observers retain full-value demand.
 	 */
-	private AggregateRootStack compileAggregateRootStack(TupleExpr node) {
+	private AggregateRootStack compileAggregateRootStack(TupleExpr node,
+			NativeSubSelectScopeBoundaryStep.Templates templates) {
+		AggregateRootStack compiled = compileAggregateRootNode(node, templates);
+		if (compiled == null || !org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis
+				.isNestedSubSelectRoot(node)) {
+			return compiled;
+		}
+		// Only internal unit roots are composed here. The outer compile root still receives Default's
+		// prepared-step decorator from its real strategy caller, so it must not be wrapped a second time.
+		if (compiled.step instanceof NativeResultStep nativeStep && nativeStep.requiresPhysicalResults()
+				&& !templates.contains(node)) {
+			return null;
+		}
+		return new AggregateRootStack(new NativeSubSelectScopeBoundaryStep(compiled.step, node, context,
+				strategy, source, templates), compiled.group);
+	}
+
+	private AggregateRootStack compileAggregateRootNode(TupleExpr node,
+			NativeSubSelectScopeBoundaryStep.Templates templates) {
 		if (node instanceof Group group) {
 			QueryEvaluationStep step = compile(group);
 			return step == null ? null : new AggregateRootStack(step, group);
 		}
+		if (node instanceof Projection projection) {
+			AggregateRootStack arg = compileAggregateRootStack(projection.getArg(), templates);
+			return arg == null ? null
+					: new AggregateRootStack(new NativeBindingSetProjectionStep(arg.step, projection, context),
+							arg.group);
+		}
 		if (node instanceof Extension extension) {
-			AggregateRootStack arg = compileAggregateRootStack(extension.getArg());
+			AggregateRootStack arg = compileAggregateRootStack(extension.getArg(), templates);
 			if (arg == null) {
 				return null;
 			}
@@ -214,7 +246,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				QueryEvaluationStep step = compile(filter);
 				return step == null ? null : new AggregateRootStack(step, (Group) filter.getArg());
 			}
-			AggregateRootStack arg = compileAggregateRootStack(filter.getArg());
+			AggregateRootStack arg = compileAggregateRootStack(filter.getArg(), templates);
 			if (arg == null) {
 				return null;
 			}
@@ -241,7 +273,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return new AggregateRootStack(step, arg.group);
 		}
 		if (node instanceof Order order) {
-			AggregateRootStack arg = compileAggregateRootStack(order.getArg());
+			AggregateRootStack arg = compileAggregateRootStack(order.getArg(), templates);
 			if (arg == null) {
 				return null;
 			}
@@ -414,8 +446,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		PrefixRunGroupCandidate prefixRun = serialOnlyAggregates ? null
 				: tryPrefixRunGroupPlan(stepSource, physicalArg, groupSlots, aggregates, havingCondition);
 		LmdbNativeTypeMatrix typeMatrix = !serialOnlyAggregates && havingCondition == null
-						? tryTypeMatrixStep(stepSource, physicalArg, groupSlots, aggregates, originalExpr)
-						: null;
+				? tryTypeMatrixStep(stepSource, physicalArg, groupSlots, aggregates, originalExpr)
+				: null;
 		layout.freeze(slotNames);
 		NativeGroupStep groupStep = new NativeGroupStep(stepSource, arg, layout, groupSlots, aggregates, strictCompare,
 				strategy, originalExpr, context, optionalOnlyNames, prefixRun == null ? null : prefixRun.pattern,
@@ -423,6 +455,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				prefixRun != null && prefixRun.distinctRuns, prefixRun == null ? null : prefixRun.runFilter,
 				prefixRun == null ? null : prefixRun.rootKindFilter,
 				prefixRun == null ? 0L : prefixRun.minRunCount, existsIntersection, havingCondition);
+		groupStep.inputSemantics = inheritedInputSemantics != null ? inheritedInputSemantics
+				: NativePrimitiveInputSemantics.prepare(group, context, strategy, stepSource);
+		if (groupStep.inputSemantics == null) {
+			return null;
+		}
 		groupStep.adjacencyAggregate = adjacencyAggregate;
 		groupStep.typeMatrix = typeMatrix;
 		groupStep.alternatives = List.copyOf(alternatives);
@@ -456,6 +493,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 					compiler.inheritedLateralFrameInputNames = lateralInputs;
 					compiler.lateralFrameInputNames = lateralNames;
 					compiler.rootEvaluationScoped = rootScoped;
+					compiler.inheritedInputSemantics = groupStep.inputSemantics;
 					QueryEvaluationStep candidate = compiler.compileGroup(copied,
 							havingCondition == null ? null : havingCondition.clone(), originalExpr);
 					return candidate instanceof NativeGroupStep nativeCandidate
@@ -474,6 +512,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * piece is unsupported so the generic evaluator remains the fallback.
 	 */
 	QueryEvaluationStep compileRowRoot(TupleExpr expr) {
+		return compileRowRoot(expr, null);
+	}
+
+	/** A sealed demand copy borrows its proved original Projection's input policy and fallback schema. */
+	QueryEvaluationStep compileRowRoot(TupleExpr expr, NativePrimitiveInputSemantics originalInputs) {
 		layout.positionMasks(strategy.valuePositionMasks(expr), strategy.valuePositionMasks(expr));
 		TupleExpr node = expr;
 		if (node instanceof QueryRoot) {
@@ -694,6 +737,12 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		NativeRowsStep rowsStep = new NativeRowsStep(stepSource, arg, layout, sourceSlots, targetNames, distinct,
 				orderSlots, orderAscending, offset, limit, strictCompare, strategy, expr, context, optionalOnlyNames,
 				prefixPattern, prefixRunPlan);
+		rowsStep.inputSemantics = originalInputs == null
+				? NativePrimitiveInputSemantics.prepare(expr, context, strategy, stepSource)
+				: originalInputs;
+		if (rowsStep.inputSemantics == null) {
+			return null;
+		}
 		rowsStep.rootEvaluationScoped = rootEvaluationScoped;
 		if (finalTupleResult && projection != null && orderElems.isEmpty() && limit < 0L && offset == 0L
 				&& !distinct && !reduced && pendingAggregateExpressions.isEmpty()) {
@@ -789,34 +838,57 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private static boolean containsLeftJoin(SlotPlan plan) {
+		return containsLeftJoin(plan, null);
+	}
+
+	private static boolean containsLeftJoin(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
+		if (facts == null) {
+			if (!(plan instanceof NativeValuesFoldPlan)) {
+				return containsLeftJoinUncached(plan, null);
+			}
+			facts = new java.util.IdentityHashMap<>();
+		}
+		Boolean previous = facts.get(plan);
+		if (previous != null) {
+			return previous;
+		}
+		boolean result = containsLeftJoinUncached(plan, facts);
+		facts.put(plan, result);
+		return result;
+	}
+
+	private static boolean containsLeftJoinUncached(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return containsLeftJoin(guard.folded, facts) || containsLeftJoin(guard.original, facts);
+		}
 		if (plan instanceof LeftJoinPlan) {
 			return true;
 		}
 		if (plan instanceof FilterPlan filter) {
-			return containsLeftJoin(filter.arg);
+			return containsLeftJoin(filter.arg, facts);
 		}
 		if (plan instanceof ExtensionPlan extension) {
-			return containsLeftJoin(extension.arg);
+			return containsLeftJoin(extension.arg, facts);
 		}
 		if (plan instanceof JoinPlan join) {
-			return containsLeftJoin(join.left) || containsLeftJoin(join.right);
+			return containsLeftJoin(join.left, facts) || containsLeftJoin(join.right, facts);
 		}
 		if (plan instanceof MultiJoinPlan multiJoin) {
 			for (SlotPlan child : multiJoin.children) {
-				if (containsLeftJoin(child)) {
+				if (containsLeftJoin(child, facts)) {
 					return true;
 				}
 			}
 			return false;
 		}
 		if (plan instanceof UnionPlan union) {
-			return containsLeftJoin(union.left) || containsLeftJoin(union.right);
+			return containsLeftJoin(union.left, facts) || containsLeftJoin(union.right, facts);
 		}
 		if (plan instanceof OrderedUnionPlan union) {
-			return containsLeftJoin(union.left) || containsLeftJoin(union.right);
+			return containsLeftJoin(union.left, facts) || containsLeftJoin(union.right, facts);
 		}
 		if (plan instanceof MinusPlan minus) {
-			return containsLeftJoin(minus.left) || containsLeftJoin(minus.right);
+			return containsLeftJoin(minus.left, facts) || containsLeftJoin(minus.right, facts);
 		}
 		return false;
 	}
@@ -1431,7 +1503,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private boolean prefixSafePattern(PatternPlan pattern) {
-		return !pattern.contexts.isFixed() && !pattern.namedContextScope
+		return !pattern.hasEntryDependentFields() && !pattern.contexts.isFixed() && !pattern.namedContextScope
 				&& !pattern.hasRepeatedSlot() && !pattern.rejectsNullContextAtBind();
 	}
 
@@ -1611,7 +1683,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private static boolean sameTerm(Term left, Term right) {
-		return left.slot == right.slot && left.constant == right.constant && left.bindConstant == right.bindConstant;
+		return left.slot == right.slot && left.constant == right.constant && left.bindConstant == right.bindConstant
+				&& left.preserveExisting == right.preserveExisting && left.readOnly == right.readOnly
+				&& left.equalFields == right.equalFields;
 	}
 
 	static int endpointPosition(StatementPattern sp, Var endpoint) {
@@ -1759,7 +1833,16 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			// node before compileTuple reaches this branch)
 			return null;
 		}
-		SlotPlan left = compileTupleOrIsland(lateral.getLeftArg(), duplicateInsensitive);
+		Set<String> previousRequired = requiredAggregateNames;
+		SlotPlan left;
+		try {
+			// These bindings are consumed by the RHS even when the enclosing projection omits them.
+			// Duplicate-insensitive pruning must not turn their left producer into an unbound identity.
+			requiredAggregateNames = withRequired(previousRequired, lateral.getRightInputBindingNames());
+			left = compileTupleOrIsland(lateral.getLeftArg(), duplicateInsensitive);
+		} finally {
+			requiredAggregateNames = previousRequired;
+		}
 		if (left == null) {
 			return null;
 		}
@@ -1812,9 +1895,26 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return visibleInputs.toArray(String[]::new);
 	}
 
+	private record ValuesFallbackContext(Set<String> required, Set<String> lateralInputs,
+			Set<String> inheritedFrames, Set<String> inheritedLateralInputs, boolean scopeChanges,
+			boolean computedValueInterning, boolean rootScoped, boolean finalResult) {
+	}
+
+	private final IdentityHashMap<TupleExpr, ValuesFallbackContext> valuesFallbackContexts = new IdentityHashMap<>();
+
+	private ValuesFallbackContext valuesFallbackContext() {
+		return new ValuesFallbackContext(Set.copyOf(requiredAggregateNames), Set.copyOf(lateralFrameInputNames),
+				Set.copyOf(inheritedFrameInputNames), Set.copyOf(inheritedLateralFrameInputNames), islandScopeChanges,
+				allowComputedValueInterning, rootEvaluationScoped, finalTupleResult);
+	}
+
 	private QueryAlgebraBindingAnalysis lexicalBindingAnalysis;
 
 	private SlotPlan compileTupleRoot(TupleExpr expr, boolean duplicateInsensitive) {
+		if (!compilingValuesFallback) {
+			resetValuesFallbackCompilation();
+			valuesFallbackContexts.clear();
+		}
 		// The caller already selected this operand's lexical entry frame. Re-entering a semantic subquery for the
 		// operand itself would recurse into the same boundary; only descendant boundaries need new frames.
 		TupleExpr previous = lexicalCompileRoot;
@@ -1833,6 +1933,28 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	SlotPlan compileTuple(TupleExpr expr, boolean duplicateInsensitive) {
+		ValuesFallbackContext fallbackContext = null;
+		if (compilingValuesFallback) {
+			// Never reuse an operand compiled under a narrower required-name or lexical frame contract.
+			// One immutable context is admitted per AST occurrence; a different context declines this fold
+			// instead of generating a combinatorial set of alternative subtrees.
+			if (!valuesFallbackNamesMatch()) {
+				return null;
+			}
+			fallbackContext = valuesFallbackContext();
+			if (valuesFallbackPlans.containsKey(expr)) {
+				return fallbackContext.equals(valuesFallbackContexts.get(expr)) ? valuesFallbackPlans.get(expr) : null;
+			}
+		}
+		SlotPlan plan = compileTupleUncached(expr, compilingValuesFallback ? false : duplicateInsensitive);
+		if (compilingValuesFallback) {
+			valuesFallbackPlans.put(expr, plan);
+			valuesFallbackContexts.put(expr, fallbackContext);
+		}
+		return plan;
+	}
+
+	private SlotPlan compileTupleUncached(TupleExpr expr, boolean duplicateInsensitive) {
 		Set<String> demotedVisible = demotedIslands.get(expr);
 		if (demotedVisible != null) {
 			// M-A4 wide-query demotion: this subtree's internal-only variables must not claim slots
@@ -1982,23 +2104,24 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return null;
 			}
 			ValueExpr condition = leftJoin.getCondition();
+			NativeBooleanFilter filter = null;
+			long conditionMask = 0L;
 			if (condition != null) {
-				NativeBooleanFilter filter = compileBoolean(condition,
+				filter = compileBoolean(condition,
 						SlotPlan.assuredMask(left) | SlotPlan.assuredMask(right));
 				if (filter == null) {
 					return island(leftJoin);
 				}
-				// A placeable condition keeps the arm's memo mask intact so the left-join acceleration tiers
-				// (per-key memo, replay, payload hash, sweep) stay available; -1 pins the filter in place and
-				// degrades every probe to a per-row nested loop.
-				right = SlotPlan.filter(right, filter, placeableFilterMask(condition));
+				conditionMask = placeableFilterMask(condition);
 			}
 			if (lexicalFrame) {
 				// A non-well-designed OPTIONAL may read bindings supplied by its lexical outer frame even when those
 				// names do not occur in this LeftJoin's own left arm. The mutable row is that exact frame. Keep the
 				// operator as a position-pinned nested loop: do not prune its right arm, materialize it independently,
 				// memoize it by an incomplete local mask, or expose it to join reordering.
-				return SlotPlan.lexicalFrameLeftJoin(left, right, optionalProblemSlots(leftJoin));
+				return SlotPlan.lexicalFrameLeftJoin(left,
+						filter == null ? right : SlotPlan.filter(right, filter, conditionMask),
+						optionalProblemSlots(leftJoin));
 			}
 			// Mirrors LeftJoinQueryEvaluationStep: the right operand is re-evaluated per left row with the left
 			// bindings pushed in unless that re-evaluation is not replay-stable. Operands that must not see the
@@ -2017,12 +2140,16 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				for (String name : sharedBindingNames(leftJoin.getLeftArg(), leftJoin.getRightArg())) {
 					sharedMask |= 1L << slot(name);
 				}
-				return SlotPlan.lexicalLeftJoin(left, right, slotsOf(sharedMask), subqueryHashJoin);
+				// The right producer owns its independent frame. The OPTIONAL condition belongs to the
+				// compatible merged pair and must not be evaluated while that producer is materialized.
+				return SlotPlan.lexicalLeftJoin(left, right, slotsOf(sharedMask), subqueryHashJoin,
+						filter, conditionMask);
 			}
 			// A lexical boundary inside the right arm that is parameterized by a frame the left arm binds (a subquery
 			// nested in GRAPH ?g whose ?g comes from the left) cannot be materialized once in the entry frame: it must
 			// be opened per left row so the active frame is bound when its subquery evaluates.
-			return SlotPlan.leftJoin(left, right);
+			// Per-left probing retains the existing filter placement and its memo/payload/sweep masks.
+			return SlotPlan.leftJoin(left, filter == null ? right : SlotPlan.filter(right, filter, conditionMask));
 		}
 		if (expr instanceof org.eclipse.rdf4j.query.algebra.Union) {
 			org.eclipse.rdf4j.query.algebra.Union union = (org.eclipse.rdf4j.query.algebra.Union) expr;
@@ -2206,11 +2333,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			SlotPlan zeroLength = compileZeroLengthPath((ZeroLengthPath) expr);
 			return zeroLength != null ? zeroLength : island(expr);
 		}
-		if (isSubqueryBoundary(expr)) {
-			SlotPlan nativeScope = compileNativeSubquery(expr);
-			return nativeScope != null ? nativeScope : island(expr);
-		}
-		if (TupleExprs.isVariableScopeChange(expr)) {
+		// The current root already owns its lexical scope. If its native operator declines, another
+		// cloned semantic-subquery attempt would restart the same root indefinitely instead of islanding it.
+		if (expr != lexicalCompileRoot && (isSubqueryBoundary(expr) || TupleExprs.isVariableScopeChange(expr))) {
 			SlotPlan nativeScope = compileNativeSubquery(expr);
 			return nativeScope != null ? nativeScope : island(expr);
 		}
@@ -2230,6 +2355,30 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * it. Unknown plan kinds contribute nothing.
 	 */
 	static long subqueryFrameInputMask(SlotPlan plan) {
+		return subqueryFrameInputMask(plan, null);
+	}
+
+	static long subqueryFrameInputMask(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Long> facts) {
+		if (facts == null) {
+			if (!(plan instanceof NativeValuesFoldPlan)) {
+				return subqueryFrameInputMaskUncached(plan, null);
+			}
+			facts = new java.util.IdentityHashMap<>();
+		}
+		Long previous = facts.get(plan);
+		if (previous != null) {
+			return previous;
+		}
+		long result = subqueryFrameInputMaskUncached(plan, facts);
+		facts.put(plan, result);
+		return result;
+	}
+
+	static long subqueryFrameInputMaskUncached(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Long> facts) {
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return guard.inputMask | subqueryFrameInputMask(guard.folded, facts)
+					| subqueryFrameInputMask(guard.original, facts);
+		}
 		if (LmdbNativeInteriorPlans.carrier(plan)) {
 			return LmdbNativeInteriorPlans.frameInputMask(plan);
 		}
@@ -2242,39 +2391,39 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (plan instanceof MultiJoinPlan multiJoin) {
 			long mask = 0L;
 			for (SlotPlan child : multiJoin.children) {
-				mask |= subqueryFrameInputMask(child);
+				mask |= subqueryFrameInputMask(child, facts);
 			}
 			return mask;
 		}
 		if (plan instanceof JoinPlan join) {
-			return subqueryFrameInputMask(join.left) | subqueryFrameInputMask(join.right);
+			return subqueryFrameInputMask(join.left, facts) | subqueryFrameInputMask(join.right, facts);
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
-			return subqueryFrameInputMask(leftJoin.left) | subqueryFrameInputMask(leftJoin.right);
+			return subqueryFrameInputMask(leftJoin.left, facts) | subqueryFrameInputMask(leftJoin.right, facts);
 		}
 		if (plan instanceof UnionPlan union) {
-			return subqueryFrameInputMask(union.left) | subqueryFrameInputMask(union.right);
+			return subqueryFrameInputMask(union.left, facts) | subqueryFrameInputMask(union.right, facts);
 		}
 		if (plan instanceof OrderedUnionPlan union) {
-			return subqueryFrameInputMask(union.left) | subqueryFrameInputMask(union.right);
+			return subqueryFrameInputMask(union.left, facts) | subqueryFrameInputMask(union.right, facts);
 		}
 		if (plan instanceof MinusPlan minus) {
-			return subqueryFrameInputMask(minus.left) | subqueryFrameInputMask(minus.right);
+			return subqueryFrameInputMask(minus.left, facts) | subqueryFrameInputMask(minus.right, facts);
 		}
 		if (plan instanceof FilterPlan filter) {
-			return subqueryFrameInputMask(filter.arg);
+			return subqueryFrameInputMask(filter.arg, facts);
 		}
 		if (plan instanceof ExtensionPlan extension) {
-			return subqueryFrameInputMask(extension.arg);
+			return subqueryFrameInputMask(extension.arg, facts);
 		}
 		if (plan instanceof RowDistinctPlan distinct) {
-			return subqueryFrameInputMask(distinct.arg);
+			return subqueryFrameInputMask(distinct.arg, facts);
 		}
 		if (plan instanceof DrainGuardPlan guard) {
-			return subqueryFrameInputMask(guard.delegate) | subqueryFrameInputMask(guard.drained);
+			return subqueryFrameInputMask(guard.delegate, facts) | subqueryFrameInputMask(guard.drained, facts);
 		}
 		if (plan instanceof EntryBindingCompatibilityPlan entry) {
-			return subqueryFrameInputMask(entry.arg);
+			return subqueryFrameInputMask(entry.arg, facts);
 		}
 		return 0L;
 	}
@@ -2436,7 +2585,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 						: structural;
 				NativeValuePositionAnalysis positions = recipePositions == null ? null
 						: recipePositions.copySubtree(recipe, copy);
-				GenericSubplanDescriptor workerDescriptor = GenericSubplanDescriptor.create(copy, workerStrategy, positions);
+				GenericSubplanDescriptor workerDescriptor = GenericSubplanDescriptor.create(copy, workerStrategy,
+						positions);
 				return workerStrategy.withValuePositions(positions,
 						() -> prepareNativeSubquery(workerDescriptor, workerContext, workerStrategy, worker.source(),
 								recipeFrames, recipeLateralFrames, recipeDeclaredInputs));

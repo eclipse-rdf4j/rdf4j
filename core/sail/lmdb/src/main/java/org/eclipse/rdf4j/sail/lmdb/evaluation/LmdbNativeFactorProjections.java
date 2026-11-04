@@ -27,8 +27,10 @@ import org.eclipse.rdf4j.sail.lmdb.factor.FactorProductCursor;
  */
 final class LmdbNativeFactorProjections implements NativeFactorProjections {
 	private final LmdbNativeFactorCursor input;
+	private final boolean sourcesExternallyRetained;
 	private final RowState row;
 	private final FactorProductCursor[] readers;
+	private final boolean[] productPending;
 	private final long[] demands;
 	private final boolean[] exact;
 	private int current = -1;
@@ -41,10 +43,12 @@ final class LmdbNativeFactorProjections implements NativeFactorProjections {
 		if (outputs.length == 0 || outputs.length != exact.length)
 			throw new IllegalArgumentException("projection schema mismatch");
 		this.input = input;
+		this.sourcesExternallyRetained = input.borrowedSourcesExternallyRetained();
 		this.row = row;
 		this.exact = exact.clone();
 		demands = new long[outputs.length];
 		readers = new FactorProductCursor[outputs.length];
+		productPending = new boolean[outputs.length];
 		for (int p = 0; p < outputs.length; p++) {
 			for (int slot : outputs[p]) {
 				Objects.checkIndex(slot, row.slots.length);
@@ -89,8 +93,22 @@ final class LmdbNativeFactorProjections implements NativeFactorProjections {
 		try {
 			current = -1;
 			active = false;
-			while (input.next()) {
-				if (LmdbNativeFactorRows.cancelled(row, ++tick)) {
+			while (true) {
+				if (row.cancellation.isCancellationRequested()) {
+					close();
+					return false;
+				}
+				if (!sourcesExternallyRetained)
+					releaseReaders();
+				if (row.cancellation.isCancellationRequested()) {
+					close();
+					return false;
+				}
+				if (!input.next()) {
+					close();
+					return false;
+				}
+				if (LmdbNativeFactorRows.cancelled(row, ++tick) || row.cancellation.isCancellationRequested()) {
 					close();
 					return false;
 				}
@@ -100,12 +118,11 @@ final class LmdbNativeFactorProjections implements NativeFactorProjections {
 					// Count only on demand. A null aggregate argument and a presence-only consumer must not
 					// overflow merely because an unobserved product is larger than a signed long.
 					readers[p].bind(input.factors(), demands[p], input.multiplicity(), false);
+					productPending[p] = true;
 				}
 				active = true;
 				return true;
 			}
-			close();
-			return false;
 		} catch (IOException | RuntimeException | Error failure) {
 			LmdbNativeFactorAlgebra.closeSuppressing(this, failure);
 			throw failure;
@@ -123,7 +140,16 @@ final class LmdbNativeFactorProjections implements NativeFactorProjections {
 				close();
 				return false;
 			}
-			if (!readers[projection].next())
+			boolean found = readers[projection].next();
+			// Replacement happens on the first read after bind, before a projection can become current.
+			if (productPending[projection]) {
+				productPending[projection] = false;
+				if (row.cancellation.isCancellationRequested()) {
+					close();
+					return false;
+				}
+			}
+			if (!found)
 				return false;
 			current = projection;
 			return true;
@@ -156,6 +182,19 @@ final class LmdbNativeFactorProjections implements NativeFactorProjections {
 		FactorProductCursor reader = readers[current];
 		FactorEnvironment factors = input.factors();
 		return factors.countProduct(~reader.expandedMask(), reader.exactMultiplicity());
+	}
+
+	private void releaseReaders() {
+		Throwable failure = null;
+		for (FactorProductCursor reader : readers) {
+			try { reader.release(); }
+			catch (RuntimeException | Error problem) {
+				if (failure == null) failure = problem;
+				else if (failure != problem) failure.addSuppressed(problem);
+			}
+		}
+		if (failure instanceof RuntimeException problem) throw problem;
+		if (failure instanceof Error problem) throw problem;
 	}
 
 	@Override

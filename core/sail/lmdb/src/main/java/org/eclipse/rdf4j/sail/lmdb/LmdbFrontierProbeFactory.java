@@ -23,6 +23,8 @@ import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -43,7 +45,18 @@ final class LmdbFrontierProbeFactory {
 	}
 
 	static FrontierLeafProbe probe(ValueStore valueStore, StatementPattern pattern, int planeMask) {
-		if (valueStore == null || pattern == null) {
+		return probe(valueStore, pattern, planeMask, LmdbFrontierReadPopulation.PHYSICAL_DEFAULT);
+	}
+
+	static FrontierLeafProbe probe(ValueStore valueStore, StatementPattern pattern, int planeMask,
+			LmdbFrontierReadPopulation population) {
+		if (valueStore == null || pattern == null || population == null
+				|| population == LmdbFrontierReadPopulation.UNSUPPORTED
+				|| planeMask == 0 || (planeMask & ~FrontierLeafProbe.BOTH_PLANES) != 0) {
+			return null;
+		}
+		if (pattern.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS
+				&& pattern.getScope() != StatementPattern.Scope.NAMED_CONTEXTS) {
 			return null;
 		}
 		long[] ids = new long[4];
@@ -56,7 +69,10 @@ final class LmdbFrontierProbeFactory {
 				if (value == null) {
 					continue;
 				}
-				long id = valueStore.getId(value);
+				long id = population == LmdbFrontierReadPopulation.STORE_DEFAULTS && component == 3
+						&& (RDF4J.NIL.equals(value) || SESAME.NIL.equals(value))
+								? 0L
+								: valueStore.getId(value);
 				if (id == LmdbValue.UNKNOWN_ID || component < 3 && id <= 0L || component == 3 && id < 0L) {
 					return null;
 				}
@@ -66,7 +82,7 @@ final class LmdbFrontierProbeFactory {
 			if ((boundMask & FrontierLeafProbe.CONTEXT) == 0) {
 				if (pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS) {
 					namedContextsOnly = true;
-				} else {
+				} else if (population == LmdbFrontierReadPopulation.PHYSICAL_DEFAULT) {
 					boundMask |= FrontierLeafProbe.CONTEXT;
 					ids[3] = 0L;
 				}
@@ -79,13 +95,25 @@ final class LmdbFrontierProbeFactory {
 	}
 
 	static FrontierLeafProbe probeForLineage(ValueStore valueStore, TupleExpr expression, int planeMask) {
-		return probeForLineage(valueStore, expression, Map.of(), planeMask);
+		return probeForLineage(valueStore, expression, planeMask, LmdbFrontierReadPopulation.PHYSICAL_DEFAULT);
+	}
+
+	static FrontierLeafProbe probeForLineage(ValueStore valueStore, TupleExpr expression, int planeMask,
+			LmdbFrontierReadPopulation population) {
+		return probeForLineage(valueStore, expression, Map.of(), planeMask, population);
 	}
 
 	static FrontierLeafProbe probeForLineage(ValueStore valueStore, TupleExpr expression,
 			Map<String, Value> fixedBindings, int planeMask) {
+		return probeForLineage(valueStore, expression, fixedBindings, planeMask,
+				LmdbFrontierReadPopulation.PHYSICAL_DEFAULT);
+	}
+
+	static FrontierLeafProbe probeForLineage(ValueStore valueStore, TupleExpr expression,
+			Map<String, Value> fixedBindings, int planeMask,
+			LmdbFrontierReadPopulation population) {
 		StatementLineage lineage = statementLineage(expression);
-		return lineage == null ? null : probe(valueStore, lineage, fixedBindings, planeMask);
+		return lineage == null ? null : probe(valueStore, lineage, fixedBindings, planeMask, population);
 	}
 
 	static boolean hasStatementLineage(TupleExpr expression) {
@@ -138,24 +166,42 @@ final class LmdbFrontierProbeFactory {
 
 	static FrontierJoinProbe joinProbe(ValueStore valueStore, StatementPattern left, StatementPattern right,
 			int planeMask) {
+		return joinProbe(valueStore, left, right, planeMask, LmdbFrontierReadPopulation.PHYSICAL_DEFAULT);
+	}
+
+	static FrontierJoinProbe joinProbe(ValueStore valueStore, StatementPattern left, StatementPattern right,
+			int planeMask,
+			LmdbFrontierReadPopulation population) {
 		List<StatementLineage> leftSurface = statementLineages(left);
 		List<StatementLineage> rightSurface = statementLineages(right);
 		return leftSurface != null && rightSurface != null && leftSurface.size() == 1 && rightSurface.size() == 1
-				? joinProbe(valueStore, leftSurface.getFirst(), rightSurface.getFirst(), planeMask)
+				? joinProbe(valueStore, leftSurface.getFirst(), rightSurface.getFirst(), planeMask, population)
 				: null;
 	}
 
 	static FrontierJoinProbe joinProbeForLineage(ValueStore valueStore, TupleExpr left, TupleExpr right,
 			int planeMask) {
+		return joinProbeForLineage(valueStore, left, right, planeMask, LmdbFrontierReadPopulation.PHYSICAL_DEFAULT);
+	}
+
+	static FrontierJoinProbe joinProbeForLineage(ValueStore valueStore, TupleExpr left, TupleExpr right,
+			int planeMask,
+			LmdbFrontierReadPopulation population) {
 		List<StatementLineage> leftSurface = statementLineages(left);
 		List<StatementLineage> rightSurface = statementLineages(right);
 		return leftSurface != null && rightSurface != null && leftSurface.size() == 1 && rightSurface.size() == 1
-				? joinProbe(valueStore, leftSurface.getFirst(), rightSurface.getFirst(), planeMask)
+				? joinProbe(valueStore, leftSurface.getFirst(), rightSurface.getFirst(), planeMask, population)
 				: null;
 	}
 
 	static FrontierJoinProbe joinProbeForLineage(ValueStore valueStore, List<? extends TupleExpr> factors,
 			int planeMask) {
+		return joinProbeForLineage(valueStore, factors, planeMask, LmdbFrontierReadPopulation.PHYSICAL_DEFAULT);
+	}
+
+	static FrontierJoinProbe joinProbeForLineage(ValueStore valueStore, List<? extends TupleExpr> factors,
+			int planeMask,
+			LmdbFrontierReadPopulation population) {
 		List<StatementLineage> pair = new ArrayList<>(2);
 		for (TupleExpr factor : factors) {
 			List<StatementLineage> surface = statementLineages(factor);
@@ -164,16 +210,16 @@ final class LmdbFrontierProbeFactory {
 			}
 			pair.addAll(surface);
 		}
-		return pair.size() == 2 ? joinProbe(valueStore, pair.get(0), pair.get(1), planeMask) : null;
+		return pair.size() == 2 ? joinProbe(valueStore, pair.get(0), pair.get(1), planeMask, population) : null;
 	}
 
 	private static FrontierJoinProbe joinProbe(ValueStore valueStore, StatementLineage left, StatementLineage right,
-			int planeMask) {
+			int planeMask, LmdbFrontierReadPopulation population) {
 		if (left == null || right == null) {
 			return null;
 		}
-		FrontierLeafProbe leftProbe = probe(valueStore, left.pattern(), planeMask);
-		FrontierLeafProbe rightProbe = probe(valueStore, right.pattern(), planeMask);
+		FrontierLeafProbe leftProbe = probe(valueStore, left.pattern(), planeMask, population);
+		FrontierLeafProbe rightProbe = probe(valueStore, right.pattern(), planeMask, population);
 		if (leftProbe == null || rightProbe == null) {
 			return null;
 		}
@@ -200,11 +246,24 @@ final class LmdbFrontierProbeFactory {
 
 	static FrontierJoinProgram joinProgramForLineage(ValueStore valueStore, List<? extends TupleExpr> factors,
 			int planeMask) {
-		return joinProgramForLineage(valueStore, factors, Map.of(), planeMask);
+		return joinProgramForLineage(valueStore, factors, planeMask, LmdbFrontierReadPopulation.PHYSICAL_DEFAULT);
+	}
+
+	static FrontierJoinProgram joinProgramForLineage(ValueStore valueStore, List<? extends TupleExpr> factors,
+			int planeMask,
+			LmdbFrontierReadPopulation population) {
+		return joinProgramForLineage(valueStore, factors, Map.of(), planeMask, population);
 	}
 
 	static FrontierJoinProgram joinProgramForLineage(ValueStore valueStore, List<? extends TupleExpr> factors,
 			Map<String, Value> fixedBindings, int planeMask) {
+		return joinProgramForLineage(valueStore, factors, fixedBindings, planeMask,
+				LmdbFrontierReadPopulation.PHYSICAL_DEFAULT);
+	}
+
+	static FrontierJoinProgram joinProgramForLineage(ValueStore valueStore, List<? extends TupleExpr> factors,
+			Map<String, Value> fixedBindings, int planeMask,
+			LmdbFrontierReadPopulation population) {
 		if (factors == null) {
 			return null;
 		}
@@ -216,11 +275,11 @@ final class LmdbFrontierProbeFactory {
 			}
 			lineages.addAll(surface);
 		}
-		return joinLineageProgram(valueStore, lineages, fixedBindings, planeMask);
+		return joinLineageProgram(valueStore, lineages, fixedBindings, planeMask, population);
 	}
 
 	private static FrontierJoinProgram joinLineageProgram(ValueStore valueStore, List<StatementLineage> lineages,
-			Map<String, Value> fixedBindings, int planeMask) {
+			Map<String, Value> fixedBindings, int planeMask, LmdbFrontierReadPopulation population) {
 		if (valueStore == null || lineages == null || lineages.size() < 2
 				|| lineages.size() > MAXIMUM_JOIN_PROGRAM_PATTERNS) {
 			return null;
@@ -236,7 +295,7 @@ final class LmdbFrontierProbeFactory {
 		LinkedHashMap<String, Integer> firstComponents = new LinkedHashMap<>();
 		for (int pattern = 0; pattern < lineages.size(); pattern++) {
 			StatementLineage lineage = lineages.get(pattern);
-			probes[pattern] = probe(valueStore, lineage, bindings, planeMask);
+			probes[pattern] = probe(valueStore, lineage, bindings, planeMask, population);
 			if (probes[pattern] == null) {
 				return null;
 			}
@@ -279,12 +338,18 @@ final class LmdbFrontierProbeFactory {
 	}
 
 	private static FrontierLeafProbe probe(ValueStore valueStore, StatementLineage lineage,
-			Map<String, Value> fixedBindings, int planeMask) {
-		if (valueStore == null || lineage == null) {
+			Map<String, Value> fixedBindings, int planeMask, LmdbFrontierReadPopulation population) {
+		if (valueStore == null || lineage == null || population == null
+				|| population == LmdbFrontierReadPopulation.UNSUPPORTED
+				|| planeMask == 0 || (planeMask & ~FrontierLeafProbe.BOTH_PLANES) != 0) {
 			return null;
 		}
 		Map<String, Value> bindings = fixedBindings == null ? Map.of() : fixedBindings;
 		StatementPattern pattern = lineage.pattern();
+		if (pattern.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS
+				&& pattern.getScope() != StatementPattern.Scope.NAMED_CONTEXTS) {
+			return null;
+		}
 		long[] ids = new long[4];
 		int boundMask = 0;
 		boolean namedContextsOnly = false;
@@ -298,7 +363,10 @@ final class LmdbFrontierProbeFactory {
 				if (value == null) {
 					continue;
 				}
-				long id = valueStore.getId(value);
+				long id = population == LmdbFrontierReadPopulation.STORE_DEFAULTS && component == 3
+						&& (RDF4J.NIL.equals(value) || SESAME.NIL.equals(value))
+								? 0L
+								: valueStore.getId(value);
 				if (id == LmdbValue.UNKNOWN_ID || component < 3 && id <= 0L || component == 3 && id < 0L) {
 					return null;
 				}
@@ -308,7 +376,7 @@ final class LmdbFrontierProbeFactory {
 			if ((boundMask & FrontierLeafProbe.CONTEXT) == 0) {
 				if (pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS) {
 					namedContextsOnly = true;
-				} else {
+				} else if (population == LmdbFrontierReadPopulation.PHYSICAL_DEFAULT) {
 					boundMask |= FrontierLeafProbe.CONTEXT;
 					ids[3] = 0L;
 				}

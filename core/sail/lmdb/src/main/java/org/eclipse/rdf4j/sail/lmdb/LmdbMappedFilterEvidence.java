@@ -47,6 +47,26 @@ final class LmdbMappedFilterEvidence {
 	}
 
 	Optional<FilterEvidence> estimate(StatementPattern pattern, ValueExpr condition) {
+		return estimate(pattern, condition, LmdbFrontierReadPopulation.PHYSICAL_DEFAULT, FrontierLeafProbe.BOTH_PLANES,
+				-1L);
+	}
+
+	Optional<FilterEvidence> estimate(StatementPattern pattern, ValueExpr condition,
+			LmdbFrontierReadPopulation population, int planeMask, long snapshotEpoch) {
+		if (population == null || population == LmdbFrontierReadPopulation.UNSUPPORTED) {
+			return Optional.empty();
+		}
+		if (snapshotEpoch < 0L) {
+			return estimate(pattern, condition, population, planeMask, statistics::estimateLeafCurrent);
+		}
+		try (var view = statistics.openView(snapshotEpoch)) {
+			return estimate(pattern, condition, population, planeMask, view::estimateLeaf);
+		}
+	}
+
+	private Optional<FilterEvidence> estimate(StatementPattern pattern, ValueExpr condition,
+			LmdbFrontierReadPopulation population, int planeMask,
+			java.util.function.Function<FrontierLeafProbe, FrontierLeafEstimate> estimates) {
 		BindingSetAssignment anchor = FilterValuesAnchorSupport.safeValuesAnchor(condition);
 		boolean completeTermSemantics = anchor != null;
 		if (anchor == null) {
@@ -59,11 +79,11 @@ final class LmdbMappedFilterEvidence {
 			return Optional.empty();
 		}
 		FrontierLeafProbe baseProbe = LmdbFrontierProbeFactory.probe(
-				valueStore, pattern, FrontierLeafProbe.BOTH_PLANES);
+				valueStore, pattern, planeMask, population);
 		if (baseProbe == null) {
 			return Optional.of(uncertain(EVIDENCE_UNAVAILABLE_SOURCE));
 		}
-		FrontierLeafEstimate base = statistics.estimateLeafCurrent(baseProbe);
+		FrontierLeafEstimate base = estimates.apply(baseProbe);
 		if (!usable(base)) {
 			return Optional.of(uncertain(EVIDENCE_UNAVAILABLE_SOURCE));
 		}
@@ -91,14 +111,14 @@ final class LmdbMappedFilterEvidence {
 		boolean selectedEvidence = false;
 		for (Map<String, Value> bindings : probeBindings) {
 			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
-					valueStore, pattern, bindings, FrontierLeafProbe.BOTH_PLANES);
+					valueStore, pattern, bindings, planeMask, population);
 			if (probe == null) {
 				if (completeTermSemantics) {
 					return Optional.of(uncertain(EVIDENCE_UNAVAILABLE_SOURCE));
 				}
 				continue;
 			}
-			FrontierLeafEstimate selected = statistics.estimateLeafCurrent(probe);
+			FrontierLeafEstimate selected = estimates.apply(probe);
 			if (!usable(selected)) {
 				if (completeTermSemantics) {
 					return Optional.of(uncertain(EVIDENCE_UNAVAILABLE_SOURCE));

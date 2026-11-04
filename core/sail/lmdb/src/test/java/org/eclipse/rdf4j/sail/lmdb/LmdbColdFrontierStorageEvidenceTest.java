@@ -118,7 +118,8 @@ class LmdbColdFrontierStorageEvidenceTest {
 	void shadowModeKeepsTheSameStorageEvidenceAsOffMode() throws Exception {
 		StatementPattern pattern = pattern();
 		lenient().when(cardinalities.estimateForPlanning(pattern)).thenReturn(STORAGE_ROWS);
-		lenient().when(cardinalities.estimateExact(pattern)).thenReturn(STORAGE_ROWS);
+		lenient().when(cardinalities.estimateExactForQuery(org.mockito.ArgumentMatchers.eq(pattern),
+				any(EstimateContext.class))).thenReturn(STORAGE_ROWS);
 		lenient().when(valueStore.getId(PREDICATE)).thenReturn(7L);
 		lenient().when(statistics.estimateLeafCurrent(any(FrontierLeafProbe.class)))
 				.thenReturn(answered(4_000.0d));
@@ -194,7 +195,8 @@ class LmdbColdFrontierStorageEvidenceTest {
 	void authoritativeWithoutGenerationStillOffersCheapStorageEvidence() throws Exception {
 		StatementPattern pattern = pattern();
 		lenient().when(cardinalities.estimateForPlanning(pattern)).thenReturn(STORAGE_ROWS);
-		lenient().when(cardinalities.estimateExact(pattern)).thenReturn(STORAGE_ROWS);
+		lenient().when(cardinalities.estimateExactForQuery(org.mockito.ArgumentMatchers.eq(pattern),
+				any(EstimateContext.class))).thenReturn(STORAGE_ROWS);
 		lenient().when(valueStore.getId(PREDICATE)).thenReturn(7L);
 		lenient().when(statistics.estimateLeafCurrent(any(FrontierLeafProbe.class)))
 				.thenReturn(unavailable(FrontierFallbackReason.NO_GENERATION));
@@ -219,7 +221,8 @@ class LmdbColdFrontierStorageEvidenceTest {
 			throws Exception {
 		StatementPattern pattern = pattern();
 		lenient().when(cardinalities.estimateForPlanning(pattern)).thenReturn(STORAGE_ROWS);
-		lenient().when(cardinalities.estimateExact(pattern)).thenReturn(STORAGE_ROWS);
+		lenient().when(cardinalities.estimateExactForQuery(org.mockito.ArgumentMatchers.eq(pattern),
+				any(EstimateContext.class))).thenReturn(STORAGE_ROWS);
 		lenient().when(valueStore.getId(PREDICATE)).thenReturn(7L);
 		lenient().when(statistics.estimateLeafCurrent(any(FrontierLeafProbe.class))).thenReturn(unavailable(reason));
 
@@ -261,7 +264,7 @@ class LmdbColdFrontierStorageEvidenceTest {
 		assertTrue(authoritative.exactCandidate(pattern, context).isEmpty(),
 				"an authoritative Frontier answer must keep LMDB exact counts out of planning");
 		verify(cardinalities, never()).estimateForPlanning(any(StatementPattern.class));
-		verify(cardinalities, never()).estimateExact(any(StatementPattern.class));
+		verify(cardinalities, never()).estimateExactForQuery(any(StatementPattern.class), any(EstimateContext.class));
 	}
 
 	@Test

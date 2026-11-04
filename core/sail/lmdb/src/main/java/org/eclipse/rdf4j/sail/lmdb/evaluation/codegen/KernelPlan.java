@@ -59,6 +59,16 @@ public interface KernelPlan extends AutoCloseable {
 	interface FactorCursor extends AutoCloseable {
 		boolean next();
 
+		/**
+		 * A separately owned lifetime retains all exposed Sources and independent reader dependencies through next
+		 * and close, including dormant readers and every terminal outcome. Constant and side-effect-free; this
+		 * permits decoder reuse, never stale descriptor traversal. Producer-owned decoder retirement cannot revoke
+		 * another retained reader. Readers still close before the external owner.
+		 */
+		default boolean borrowedSourcesExternallyRetained() {
+			return false;
+		}
+
 		/** Engine slot corresponding to one registered output column. Hoist this mapping outside loops. */
 		int slot(int outputColumn);
 

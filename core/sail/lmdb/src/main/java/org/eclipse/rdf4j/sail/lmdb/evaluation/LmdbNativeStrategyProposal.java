@@ -136,7 +136,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 				return mapper.apply(value);
 			} catch (RuntimeException | Error failure) {
 				if (value instanceof AutoCloseable resource) {
-					KernelRuntime.closeResource(resource, failure);
+					Throwable retained = KernelRuntime.closeResource(resource, failure);
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 				}
 				throw failure;
 			}

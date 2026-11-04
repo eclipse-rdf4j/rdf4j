@@ -1355,7 +1355,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		try {
 			StoreProperties properties = setup.properties();
 			if (properties.propertiesFile != null
-					&& properties.propertiesFile.toPath().toAbsolutePath().normalize().getParent()
+					&& properties.propertiesFile.toPath()
+							.toAbsolutePath()
+							.normalize()
+							.getParent()
 							.equals(dir.toPath().toAbsolutePath().normalize())) {
 				properties.save();
 			}
@@ -1377,7 +1380,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			return new StandaloneSetup(properties, false);
 		}
 		if (properties.propertiesFile != null
-				&& !properties.propertiesFile.toPath().toAbsolutePath().normalize().getParent()
+				&& !properties.propertiesFile.toPath()
+						.toAbsolutePath()
+						.normalize()
+						.getParent()
 						.equals(directory.toPath().toAbsolutePath().normalize())) {
 			// The owning Sail's sidecars and native fence decide whether this dictionary may be opened.
 			return new StandaloneSetup(properties, false);
@@ -1888,7 +1894,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	/** The capacity probe and startup writer must reserve and open the same committed dictionary layout. */
-	private Set<String> initialTermIndexSpecs(LmdbStoreConfig config, Set<String> nativeSpecs, boolean freshBulkGeneration)
+	private Set<String> initialTermIndexSpecs(LmdbStoreConfig config, Set<String> nativeSpecs,
+			boolean freshBulkGeneration)
 			throws IOException {
 		Set<String> specs;
 		if (nativeSpecs != null) {
@@ -13014,7 +13021,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (lastTransactionId() != plan.plannedDictionaryTransactionId()) {
 				throw new IOException("ValueStore changed while planning the language-tag migration");
 			}
-			properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+			// The Sail's actual no-op inspection grants this owner's semantic lookup mode, not permission to
+			// add policy to an original loaded legacy sidecar. Bare dictionaries retain their existing protocol.
+			if (!deferPersistedUnusedRecovery || !properties.isLoaded() || properties.getLanguageTagKey() != null) {
+				properties.setLanguageTagKey(StoreProperties.LANGUAGE_TAG_KEY_CANONICAL);
+			}
 			languageTagKeyMode = LanguageTagKeyMode.CANONICAL;
 			return;
 		}

@@ -42,12 +42,16 @@ final class NativeResultReplay implements AutoCloseable {
 	private final NativeResultRow.Schema schema;
 	private final NativeExecutionContext context;
 	private final NativeExecutionContext.Lease lease;
+	private final NativeExecutionContext enclosingOwner;
+	private java.util.IdentityHashMap<NativeExecutionContext, NativeExecutionContext.Lease> producerAuthorities;
+	private long producerAuthorityBytes;
 	private final NativeCancellationToken cancellation;
 	private final KernelRuntime.AggregateMemory memory;
 	private final long maxBytes;
 	private NativeSpillValueCodec writerCodec;
 	/** Dictionary authority for spilling store-backed terms as IDs; null keeps the exact lexical codec only. */
 	private NativeLmdbQuerySource termSource;
+	private final NativeResultProvenanceDictionary provenance;
 	private List<NativeResultRow> resident = new ArrayList<>();
 	private DataOutputStream output;
 	private Path path;
@@ -71,6 +75,19 @@ final class NativeResultReplay implements AutoCloseable {
 	NativeResultReplay(NativeResultRow.Schema schema, NativeExecutionContext context,
 			NativeCancellationToken cancellation, LmdbQueryMemoryManager.QueryLedger ledger, long maxBytes,
 			boolean retainContext) {
+		this(schema, context, cancellation, ledger, maxBytes, retainContext ? null : context, false);
+	}
+
+	/** Actual producer and enclosing cache can differ; only the latter's closure is borrowed. */
+	NativeResultReplay(NativeResultRow.Schema schema, NativeExecutionContext context,
+			NativeCancellationToken cancellation, LmdbQueryMemoryManager.QueryLedger ledger, long maxBytes,
+			NativeExecutionContext enclosingOwner) {
+		this(schema, context, cancellation, ledger, maxBytes, enclosingOwner, true);
+	}
+
+	private NativeResultReplay(NativeResultRow.Schema schema, NativeExecutionContext context,
+			NativeCancellationToken cancellation, LmdbQueryMemoryManager.QueryLedger ledger, long maxBytes,
+			NativeExecutionContext enclosingOwner, boolean acceptedProducer) {
 		if (maxBytes < WORKSPACE_BYTES) {
 			throw new IllegalArgumentException(
 					"Result replay budget must include " + WORKSPACE_BYTES + " bytes of workspace");
@@ -79,13 +96,89 @@ final class NativeResultReplay implements AutoCloseable {
 		this.context = context;
 		this.cancellation = cancellation;
 		this.maxBytes = maxBytes;
-		this.lease = context == null || !retainContext ? null : context.retainInternalLease();
+		this.enclosingOwner = enclosingOwner;
+		this.producerAuthorityBytes = context == null ? 0L : context.producerLeaseStorageBytes(enclosingOwner);
 		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger);
-		if (!memory.tryReserve(OWNER_BYTES)) {
-			if (lease != null) {
-				lease.close();
+		this.provenance = new NativeResultProvenanceDictionary(memory, cancellation,
+				maxBytes - OWNER_BYTES - WRITER_BYTES,
+				() -> residentBytes + producerAuthorityBytes, this::ensureSpill);
+		if (producerAuthorityBytes > maxBytes - OWNER_BYTES - WRITER_BYTES
+				|| !memory.tryReserve(Math.addExact(OWNER_BYTES, producerAuthorityBytes))) {
+			Throwable failure = new QueryEvaluationException("Result replay owner refused by query memory ledger");
+			failure = KernelRuntime.closeResource(provenance, failure);
+			failure = KernelRuntime.closeResource(memory, failure);
+			NativeContextClosingIteration.throwFailure(failure);
+			throw new AssertionError("unreachable");
+		}
+		try {
+			this.lease = context == null ? null
+					: acceptedProducer
+							? context.retainAcceptedProducerLeaseOutside(enclosingOwner)
+							: context.retainProducerLeaseOutside(enclosingOwner);
+		} catch (Throwable problem) {
+			Throwable failure = KernelRuntime.closeResource(provenance, problem);
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(memory, failure));
+			throw new AssertionError("unreachable");
+		}
+	}
+
+	/** Called before a draining producer closes, including additional producers appended by a group builder. */
+	synchronized void retainProducerAuthority(NativeResultCursor acceptedProducer) {
+		NativeExecutionContext.Lease retained = null;
+		long reserved = 0L;
+		try {
+			checkAdmission();
+			NativeExecutionContext producer = acceptedProducer.executionContext();
+			if (producer == null || producer == context || producer == enclosingOwner
+					|| producerAuthorities != null && producerAuthorities.containsKey(producer)) {
+				return;
 			}
-			throw new QueryEvaluationException("Result replay owner refused by query memory ledger");
+			// The first explicit 16-entry identity table, map object and growth runway are charged separately;
+			// each added handle includes its immutable filtered owner array rather than a flat per-source guess.
+			long bytes = Math.addExact(producer.producerLeaseStorageBytes(enclosingOwner),
+					producerAuthorities == null ? 1152L : 128L);
+			checkAdmission();
+			long room = maxBytes - OWNER_BYTES - WRITER_BYTES - provenance.retainedBytes() - producerAuthorityBytes;
+			if (bytes > room) {
+				throw new QueryEvaluationException("Result replay producer authority refused by query memory budget");
+			}
+			if (bytes > room - residentBytes) {
+				ensureSpill();
+			}
+			boolean admitted = memory.tryReserve(bytes);
+			if (admitted) {
+				reserved = bytes;
+			}
+			// Ledger admission invokes real reclaimers. They may close this replay or cancel its owner.
+			checkAdmission();
+			if (!admitted && path == null && residentBytes != 0L) {
+				// One owned resident-payload spill can fund the same claim under shared pressure. This never
+				// reopens a producer or retries a row that the builder has already consumed.
+				ensureSpill();
+				admitted = memory.tryReserve(bytes);
+				if (admitted) {
+					reserved = bytes;
+				}
+				checkAdmission();
+			}
+			if (!admitted) {
+				throw new QueryEvaluationException("Result replay producer authority refused by query memory budget");
+			}
+			retained = producer.retainAcceptedProducerLeaseOutside(enclosingOwner);
+			checkAdmission();
+			long authorityBytes = Math.addExact(producerAuthorityBytes, bytes);
+			if (producerAuthorities == null) {
+				producerAuthorities = new java.util.IdentityHashMap<>(16);
+			}
+			producerAuthorities.put(producer, retained);
+			producerAuthorityBytes = authorityBytes;
+		} catch (Throwable problem) {
+			Throwable failure = problem;
+			if (reserved != 0L) {
+				long bytes = reserved;
+				failure = KernelRuntime.closeResource(() -> memory.release(bytes), failure);
+			}
+			fail(KernelRuntime.closeResource(retained, failure));
 		}
 	}
 
@@ -122,16 +215,20 @@ final class NativeResultReplay implements AutoCloseable {
 			cancellation.poll(appendTick);
 			LmdbNativeProbeDeadline.poll(appendTick++);
 			checkSchema(row);
+			int authority = provenance.intern(row.provenance());
+			row = row.withProvenance(provenance.resolve(authority));
 			long retained = retainedBytes(row);
 			// Keep room for the writer while resident rows are still being encoded. The runway belongs to the
 			// operator's bound but is charged to the shared ledger only if a spill actually opens.
-			if (path == null && retained <= maxBytes - OWNER_BYTES - WRITER_BYTES - residentBytes
+			if (path == null
+					&& retained <= maxBytes - OWNER_BYTES - WRITER_BYTES - provenance.retainedBytes()
+							- producerAuthorityBytes - residentBytes
 					&& memory.tryReserve(retained)) {
 				resident.add(row);
 				residentBytes += retained;
 			} else {
 				ensureSpill();
-				write(row);
+				write(row, authority);
 			}
 			cancellation.check();
 			LmdbNativeProbeDeadline.poll(0);
@@ -164,18 +261,16 @@ final class NativeResultReplay implements AutoCloseable {
 	}
 
 	synchronized NativeResultCursor cursor() {
-		if (!finished || closeRequested) {
-			throw new IllegalStateException("Result replay is unfinished or closed");
-		}
-		cancellation.check();
-		LmdbNativeProbeDeadline.poll(0);
+		checkReadable();
 		boolean first = !firstReaderInUse;
 		long readerBytes = path != null ? READER_BYTES : first ? 0L : RESIDENT_READER_BYTES;
 		if (!memory.tryReserve(readerBytes)) {
+			checkReadable();
 			throw new QueryEvaluationException("Independent result replay reader refused by query memory ledger");
 		}
 		DataInputStream input = null;
 		try {
+			checkReadable();
 			if (path != null) {
 				input = new DataInputStream(
 						new BufferedInputStream(Files.newInputStream(path), NativeSpillValueCodec.BUFFER_BYTES));
@@ -186,7 +281,7 @@ final class NativeResultReplay implements AutoCloseable {
 			return cursor;
 		} catch (Throwable failure) {
 			failure = KernelRuntime.closeResource(input, failure);
-			memory.release(readerBytes);
+			failure = KernelRuntime.closeResource(() -> memory.release(readerBytes), failure);
 			NativeContextClosingIteration.throwFailure(failure);
 			throw new AssertionError("unreachable");
 		}
@@ -201,12 +296,15 @@ final class NativeResultReplay implements AutoCloseable {
 	}
 
 	private void ensureSpill() throws IOException {
+		checkAdmission();
 		if (path != null) {
 			return;
 		}
 		if (!memory.tryReserve(WRITER_BYTES)) {
+			checkAdmission();
 			throw new QueryEvaluationException("Result replay spill workspace refused by query memory ledger");
 		}
+		checkAdmission();
 		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("spill", cancellation)) {
 			writerCodec = new NativeSpillValueCodec(cancellation,
 					context == null ? null : context::authoritativeQueryScopedValue, null, termSource);
@@ -217,8 +315,9 @@ final class NativeResultReplay implements AutoCloseable {
 			for (NativeResultRow row : resident) {
 				cancellation.poll(tick);
 				LmdbNativeProbeDeadline.poll(tick++);
-				write(row);
+				write(row, provenance.knownHandle(row.provenance()));
 			}
+			checkAdmission();
 			resident = null;
 			memory.release(residentBytes);
 			residentBytes = 0L;
@@ -226,7 +325,8 @@ final class NativeResultReplay implements AutoCloseable {
 		}
 	}
 
-	private void write(NativeResultRow row) throws IOException {
+	private void write(NativeResultRow row, int authority) throws IOException {
+		output.writeInt(authority);
 		for (int index = 0; index < schema.size(); index++) {
 			NativeResultCell cell = row.cell(index);
 			output.writeByte(cell.kind().ordinal());
@@ -263,6 +363,20 @@ final class NativeResultReplay implements AutoCloseable {
 		return bytes;
 	}
 
+	private void checkAdmission() {
+		checkWritable();
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
+	}
+
+	private void checkReadable() {
+		if (!finished || closeRequested) {
+			throw new IllegalStateException("Result replay is unfinished or closed");
+		}
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
+	}
+
 	private void checkWritable() {
 		if (finished || closeRequested) {
 			throw new IllegalStateException("Result replay input is closed");
@@ -295,7 +409,15 @@ final class NativeResultReplay implements AutoCloseable {
 				Files.deleteIfExists(path);
 			}
 		}, failure);
+		failure = KernelRuntime.closeResource(provenance, failure);
 		failure = KernelRuntime.closeResource(memory, failure);
+		if (producerAuthorities != null) {
+			for (NativeExecutionContext.Lease authority : producerAuthorities.values()) {
+				failure = KernelRuntime.closeResource(authority, failure);
+			}
+			producerAuthorities.clear();
+			producerAuthorities = null;
+		}
 		failure = KernelRuntime.closeResource(lease, failure);
 		if (failure != null) {
 			NativeContextClosingIteration.throwFailure(failure);
@@ -346,6 +468,7 @@ final class NativeResultReplay implements AutoCloseable {
 				if (input == null) {
 					return resident.get(Math.toIntExact(position++));
 				}
+				NativeRowProvenance authority = provenance.resolve(input.readInt());
 				NativeResultCell[] cells = new NativeResultCell[schema.size()];
 				for (int index = 0; index < cells.length; index++) {
 					int kindOrdinal = input.readUnsignedByte();
@@ -359,6 +482,12 @@ final class NativeResultReplay implements AutoCloseable {
 					cells[index] = switch (state) {
 					case UNBOUND -> NativeResultCell.unbound(kind);
 					case ERROR -> NativeResultCell.error(kind);
+					case PRESENT_NULL -> {
+						if (kind != NativeResultCell.Kind.RDF_TERM) {
+							throw new IOException("Null mapping marker cannot be a lexical summary");
+						}
+						yield NativeResultCell.presentNull();
+					}
 					case BOUND -> kind == NativeResultCell.Kind.RDF_TERM ? NativeResultCell.term(codec.read(input))
 							: NativeResultCell.lexicalLength(input.readLong());
 					};
@@ -366,7 +495,7 @@ final class NativeResultReplay implements AutoCloseable {
 				localCancellation.poll(tick);
 				LmdbNativeProbeDeadline.poll(tick++);
 				position++;
-				return new NativeResultRow(schema, cells);
+				return new NativeResultRow(schema, cells, authority);
 			} catch (Throwable failure) {
 				NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
 				throw new AssertionError("unreachable");

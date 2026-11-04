@@ -53,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -61,6 +62,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -82,6 +84,94 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LmdbNativeFilterAttemptCompletionTest {
 	@TempDir
 	File directory;
+
+
+	@ParameterizedTest(name = "nested compatibility failure, typed={0}, observerFailure={1}")
+	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	void nestedSelectCompatibilityFailureVetoesRecordingAfterItsWholeInput(boolean typed, boolean observerFailure) throws Exception {
+		String property = "rdf4j.lmdb.factor.transport.enabled";
+		String previous = System.getProperty(property); System.setProperty(property, "false");
+		try (Fixture fixture = new Fixture(directory)) {
+			RuntimeException primary = new IllegalStateException("nested compatibility failed after input");
+			RuntimeException observer = new IllegalStateException("optional filter observer failed");
+			AtomicInteger observerCalls = new AtomicInteger();
+			AtomicBoolean fail = new AtomicBoolean();
+			Literal caller = new org.eclipse.rdf4j.model.impl.SimpleLiteral("32", org.eclipse.rdf4j.model.vocabulary.XSD.INTEGER) {
+				private static final long serialVersionUID = 1L;
+				@Override public String getLabel() {
+					if (fail.get() && fixture.function.observed.get() >= 128) {
+						primary.fillInStackTrace();
+						throw primary;
+					}
+					return super.getLabel();
+				}
+			};
+			String query = "SELECT ?count WHERE { { SELECT (COUNT(*) AS ?count) WHERE { "
+					+ "?s <urn:native-attempt:p> ?v FILTER(<" + fixture.function.getURI() + ">(?v)) } } }";
+			TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			QueryBindingSet input = new QueryBindingSet(); input.setBinding("count", caller);
+			var triples = new SailDatasetTripleTermSource(fixture.repository.getValueFactory(), fixture.dataset);
+			var context = new QueryEvaluationContext.Minimal((Dataset) null);
+			var ordinary = new DefaultEvaluationStrategy(triples, null);
+			List<BindingSet> expected;
+			try (var rows = ordinary.precompileRuntimeSubtree(root.clone(), context).evaluate(input)) { expected = org.eclipse.rdf4j.query.QueryResults.asList(rows); }
+			assertThat(expected).hasSize(1);
+			assertThat(((Literal) expected.getFirst().getValue("count")).longValue()).isEqualTo(32L);
+			fixture.function.observed.set(0);
+			var strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L, fixture.statistics, false);
+			assertThat(LmdbNativeAggregateCompiler.tryCompile(root, context, strategy, (NativeLmdbQuerySource) fixture.dataset)).isNotNull();
+			QueryEvaluationStep compiled = strategy.precompileRuntimeSubtree(root, context);
+			fixture.statistics.clear();
+			fixture.function.observed.set(0); // only this actual opening may satisfy the full-input premise
+			if (observerFailure) {
+				fixture.statistics.beforeTyped = () -> {
+					observerCalls.incrementAndGet();
+					throw observer;
+				};
+			}
+			fail.set(true);
+			Throwable actual = org.assertj.core.api.Assertions.catchThrowable(() -> consumeScopeRows(compiled, input, typed));
+			assertThat(actual).as("the real RDF compatibility operation fails only after its input filter ran").isSameAs(primary);
+			assertThat(fixture.function.observed.get()).isGreaterThanOrEqualTo(128);
+			assertThat(java.util.Arrays.stream(actual.getStackTrace())
+					.anyMatch(frame -> frame.getClassName().endsWith("NativeSubSelectScopeBoundaryStep$ScopeJoinCursor")
+							&& frame.getMethodName().equals("compatible")))
+					.as("the selected typed boundary, rather than entry capture or a probe, owns the failure").isTrue();
+			assertThat(actual.getSuppressed()).isEmpty();
+			if (observerFailure) {
+				assertThat(observerCalls).hasValue(1);
+				assertThat(fixture.statistics.typed)
+						.as("the optional observer throws before it records the receipt").isEmpty();
+				assertThat(fixture.statistics.rawCalls).hasValue(0);
+			} else {
+				assertThat(observerCalls).hasValue(0);
+				assertIncomplete(fixture.statistics);
+				assertThat(fixture.statistics.typed).allSatisfy(observation -> assertThat(observation.completed()).isFalse());
+				assertThat(fixture.statistics.typed).singleElement().satisfies(observation -> {
+					assertThat(observation.passedCount()).isEqualTo(32L);
+					assertThat(observation.filteredCount()).isEqualTo(96L);
+				});
+			}
+			fixture.statistics.beforeTyped = () -> { }; fixture.statistics.clear(); fail.set(false);
+			fixture.function.observed.set(0);
+			List<BindingSet> winner = consumeScopeRows(compiled, input, typed);
+			assertThat(winner).hasSize(1);
+			assertThat(((Literal) winner.getFirst().getValue("count")).longValue()).isEqualTo(32L);
+			assertComplete(fixture.statistics, 32L, 96L);
+		} finally {
+			if (previous == null) { System.clearProperty(property); } else { System.setProperty(property, previous); }
+		}
+	}
+
+	private static List<BindingSet> consumeScopeRows(QueryEvaluationStep step, BindingSet input, boolean typed) {
+		List<BindingSet> result = new ArrayList<>();
+		if (typed) {
+			try (NativeResultCursor rows = NativeResultSteps.open(step, input)) {
+				for (NativeResultRow row; (row = rows.next()) != null;) { result.add(row.toBindingSet()); }
+			}
+		} else { try (var rows = step.evaluate(input)) { result.addAll(org.eclipse.rdf4j.query.QueryResults.asList(rows)); } }
+		return result;
+	}
 
 	@Test
 	void actualCompiledOrdinary128InputsProduce32RowsAndOneCompleteAggregate() throws Exception {
@@ -787,12 +877,16 @@ class LmdbNativeFilterAttemptCompletionTest {
 			fixture.block(parent -> {
 				try (var inherited = SyntheticValueSource.attachEvaluation(parent.source)) {
 					SyntheticValueSource evaluation = SyntheticValueSource.forEvaluation(step.source);
-					NativeExecutionContext child = evaluation.executionContext() == parent.evaluationScope().executionContext()
-							? null : evaluation.executionContext();
-					try (child; var attachment = SyntheticValueSource.attachEvaluation(evaluation);
+					NativeExecutionContext child = evaluation.executionContext() == parent.evaluationScope()
+							.executionContext()
+									? null
+									: evaluation.executionContext();
+					try (child;
+							var attachment = SyntheticValueSource.attachEvaluation(evaluation);
 							NativeGroupIteration owner = new NativeGroupIteration(evaluation, step.arg, step.layout,
 									step.groupSlots, step.aggregates, step.strictCompare, EmptyBindingSet.getInstance(),
-									step.prefixPattern, step.prefixRunPlan, step.prefixCountRunRows, step.prefixDistinctRuns,
+									step.prefixPattern, step.prefixRunPlan, step.prefixCountRunRows,
+									step.prefixDistinctRuns,
 									step.prefixRunFilter, step.prefixRootKindFilter, step.prefixMinRunCount,
 									step.existsIntersection, step.adjacencyAggregate, step.havingCondition,
 									step.originalExpr, null, step.context)) {
@@ -804,7 +898,8 @@ class LmdbNativeFilterAttemptCompletionTest {
 						try (AutoCloseable decodedInputs = row::closeDecodedInputs) {
 							NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(owner, row);
 							AtomicReference<LmdbNativeStrategyProposal<List<BindingSet>>> matrix = new AtomicReference<>();
-							try (var inventory = LmdbNativeStrategyArbiter.<List<BindingSet>>forExpr(step.originalExpr, evaluation)
+							try (var inventory = LmdbNativeStrategyArbiter
+									.<List<BindingSet>>forExpr(step.originalExpr, evaluation)
 									.estimateWith(candidate -> {
 										quotes.attach(candidate);
 										if (LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX.equals(candidate.tag)) {
@@ -813,17 +908,21 @@ class LmdbNativeFilterAttemptCompletionTest {
 											matrix.compareAndSet(null, proposal);
 										}
 									})) {
-								owner.offerCandidates(row, LmdbNativeAttemptMetrics.root(step.originalExpr), step.arg, inventory);
-								assertThat(matrix.get()).as("capture the production fallback from its real candidate inventory")
+								owner.offerCandidates(row, LmdbNativeAttemptMetrics.root(step.originalExpr), step.arg,
+										inventory);
+								assertThat(matrix.get())
+										.as("capture the production fallback from its real candidate inventory")
 										.isNotNull();
 								long matrixRuns = LmdbNativeTypeMatrix.RUNS.get();
 								List<BindingSet> discarded = matrix.get().open();
 								try {
 									assertThat(discarded).hasSize(128).allSatisfy(result -> {
-										assertThat(result.getValue("p").stringValue()).isEqualTo("urn:native-attempt:p");
+										assertThat(result.getValue("p").stringValue())
+												.isEqualTo("urn:native-attempt:p");
 										assertThat(((Literal) result.getValue("statements")).longValue()).isEqualTo(1L);
 									});
-									assertThat(LmdbNativeTypeMatrix.RUNS.get()).as("execute the retained matrix, not a generic fallback")
+									assertThat(LmdbNativeTypeMatrix.RUNS.get())
+											.as("execute the retained matrix, not a generic fallback")
 											.isGreaterThan(matrixRuns);
 								} finally {
 									if (discarded instanceof AutoCloseable resource) {
@@ -849,7 +948,8 @@ class LmdbNativeFilterAttemptCompletionTest {
 			if (selectRows) {
 				assertComplete(fixture.statistics, 128L, 0L);
 			} else {
-				assertThat(fixture.statistics.typed).as("an opened but discarded matrix candidate publishes no diagnostics")
+				assertThat(fixture.statistics.typed)
+						.as("an opened but discarded matrix candidate publishes no diagnostics")
 						.isEmpty();
 				assertThat(fixture.statistics.rawCalls).hasValue(0);
 			}
@@ -871,7 +971,8 @@ class LmdbNativeFilterAttemptCompletionTest {
 							new LmdbNativeCandidateOffers<>() {
 								@Override
 								LmdbNativeCandidateOffers<List<BindingSet>> offer(
-										LmdbNativeStrategyArbiter.Proposer<List<BindingSet>> proposer) throws IOException {
+										LmdbNativeStrategyArbiter.Proposer<List<BindingSet>> proposer)
+										throws IOException {
 									LmdbNativeStrategyProposal<List<BindingSet>> proposal = proposer.propose();
 									if (proposal != null) {
 										if (LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX.equals(proposal.tag)) {
@@ -913,7 +1014,8 @@ class LmdbNativeFilterAttemptCompletionTest {
 						.isEmpty();
 			} else {
 				assertThat(fixture.statistics.typed).as("predicate IDs do not certify the logical row population")
-						.hasSize(1).allSatisfy(observation -> {
+						.hasSize(1)
+						.allSatisfy(observation -> {
 							assertThat(observation.completed()).isFalse();
 							assertThat(observation.poisonReason()).isEqualTo("native-filter-input-incomplete");
 							assertThat(observation.passedCount()).isZero();
@@ -961,7 +1063,8 @@ class LmdbNativeFilterAttemptCompletionTest {
 			if (selected) {
 				assertThat(fixture.statistics.typed)
 						.as("the selected generic fallback retains its unqualified filter receipt")
-						.hasSize(1).allSatisfy(observation -> {
+						.hasSize(1)
+						.allSatisfy(observation -> {
 							assertThat(observation.completed()).as("observation=%s", observation).isFalse();
 							assertThat(observation.poisonReason()).as("observation=%s", observation)
 									.isEqualTo("native-filter-input-incomplete");
@@ -1013,12 +1116,16 @@ class LmdbNativeFilterAttemptCompletionTest {
 		fixture.block(parent -> {
 			try (var inherited = SyntheticValueSource.attachEvaluation(parent.source)) {
 				SyntheticValueSource evaluation = SyntheticValueSource.forEvaluation(step.source);
-				NativeExecutionContext child = evaluation.executionContext() == parent.evaluationScope().executionContext()
-						? null : evaluation.executionContext();
-				try (child; var attachment = SyntheticValueSource.attachEvaluation(evaluation);
+				NativeExecutionContext child = evaluation.executionContext() == parent.evaluationScope()
+						.executionContext()
+								? null
+								: evaluation.executionContext();
+				try (child;
+						var attachment = SyntheticValueSource.attachEvaluation(evaluation);
 						NativeGroupIteration owner = new NativeGroupIteration(evaluation, step.arg, step.layout,
 								step.groupSlots, step.aggregates, step.strictCompare, EmptyBindingSet.getInstance(),
-								step.prefixPattern, step.prefixRunPlan, step.prefixCountRunRows, step.prefixDistinctRuns,
+								step.prefixPattern, step.prefixRunPlan, step.prefixCountRunRows,
+								step.prefixDistinctRuns,
 								step.prefixRunFilter, step.prefixRootKindFilter, step.prefixMinRunCount,
 								step.existsIntersection, step.adjacencyAggregate, step.havingCondition,
 								step.originalExpr, null, step.context)) {
@@ -1126,7 +1233,8 @@ class LmdbNativeFilterAttemptCompletionTest {
 						assertThat(cursor.next()).isTrue();
 					}
 				}
-				assertThat(semantic.accepts).as("closing a reader must not drain or close its cached producer").hasValue(3);
+				assertThat(semantic.accepts).as("closing a reader must not drain or close its cached producer")
+						.hasValue(3);
 				assertThat(semantic.closes).hasValue(0);
 				if (discardPrefix) {
 					prefix.discard();
@@ -1150,8 +1258,8 @@ class LmdbNativeFilterAttemptCompletionTest {
 				assertThat(fixture.statistics.typed).isEmpty();
 			} else {
 				assertIncomplete(fixture.statistics);
-				assertThat(fixture.statistics.typed).singleElement().satisfies(outcome ->
-						assertThat(outcome.passedCount()).isEqualTo(3L));
+				assertThat(fixture.statistics.typed).singleElement()
+						.satisfies(outcome -> assertThat(outcome.passedCount()).isEqualTo(3L));
 			}
 		}
 	}
@@ -1184,7 +1292,8 @@ class LmdbNativeFilterAttemptCompletionTest {
 				assertThat(drainPlan(selected.borrow(memo), row)).isEqualTo(8);
 				selected.commit();
 			});
-			assertThat(evaluations).as("the bounded trial owns a separate producer; ordinary replay still evaluates once")
+			assertThat(evaluations)
+					.as("the bounded trial owns a separate producer; ordinary replay still evaluates once")
 					.hasValue(2);
 			assertThat(semantic.accepts).hasValue(10);
 			assertThat(semantic.closes).hasValue(1);
@@ -2643,7 +2752,8 @@ class LmdbNativeFilterAttemptCompletionTest {
 						RowCursor cursor = proposal.open();
 						if (cursor == null) {
 							assertThat(cursor).as("parallel open declined: %s; available task capacity: %s",
-									LmdbNativeParallelPipelines.LAST_REJECTION.get(), availableParallelTaskCapacity()).isNotNull();
+									LmdbNativeParallelPipelines.LAST_REJECTION.get(), availableParallelTaskCapacity())
+									.isNotNull();
 						}
 						var selection = new LmdbNativeStrategySelection<>(cursor, null, proposal.filterAttempt());
 						try (selection; cursor) {
@@ -2936,6 +3046,7 @@ class LmdbNativeFilterAttemptCompletionTest {
 				}
 				connection.commit();
 			}
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 			dataset = NativeQuerySourceAccess.openExplicitDataset(store);
 		}
 
@@ -3022,6 +3133,7 @@ class LmdbNativeFilterAttemptCompletionTest {
 	}
 
 	private static final class QuarterFunction implements Function {
+		final AtomicInteger observed = new AtomicInteger();
 		@Override
 		public String getURI() {
 			return "urn:native-attempt:quarter";
@@ -3035,6 +3147,7 @@ class LmdbNativeFilterAttemptCompletionTest {
 		@Override
 		@SuppressWarnings("deprecation")
 		public Value evaluate(ValueFactory factory, Value... values) {
+			observed.incrementAndGet();
 			return factory.createLiteral(((Literal) values[0]).intValue() % 4 == 0);
 		}
 	}

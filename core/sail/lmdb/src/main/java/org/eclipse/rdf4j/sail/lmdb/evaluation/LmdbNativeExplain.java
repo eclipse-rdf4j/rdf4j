@@ -58,6 +58,11 @@ final class LmdbNativeExplain {
 		physical.setRuntimeTelemetryEnabled(origin.isRuntimeTelemetryEnabled());
 	}
 
+	/** A physical GRAPH lowering cannot grant a scope-free proof by hiding its semantic origin. */
+	static boolean hasOwnLogicalOrigin(TupleExpr expression) {
+		return logicalOrigin(expression) == expression;
+	}
+
 	private static TupleExpr logicalOrigin(TupleExpr expression) {
 		if (expression == null) {
 			return null;
@@ -320,6 +325,41 @@ final class LmdbNativeExplain {
 	}
 
 	static String describe(SlotPlan plan, String[] slotNames, long boundMask) {
+		return describe(plan, slotNames, boundMask, new Description());
+	}
+
+	private static final class Description {
+		final java.util.IdentityHashMap<SlotPlan, java.util.Map<Long, Integer>> seen = new java.util.IdentityHashMap<>();
+		boolean retained;
+		int identities;
+	}
+
+	private static String describeRetained(SlotPlan plan, String[] slotNames, long boundMask, Description description) {
+		boolean previous = description.retained;
+		description.retained = true;
+		try {
+			return describe(plan, slotNames, boundMask, description);
+		} finally {
+			description.retained = previous;
+		}
+	}
+
+	private static String describe(SlotPlan plan, String[] slotNames, long boundMask, Description description) {
+		if (description.retained) {
+			java.util.Map<Long, Integer> masks = description.seen.computeIfAbsent(plan,
+					ignored -> new java.util.HashMap<>());
+			Integer existing = masks.get(boundMask);
+			if (existing != null) {
+				return "SharedPlan#" + existing;
+			}
+			int id = ++description.identities;
+			masks.put(boundMask, id);
+			return "SharedPlan#" + id + "(" + describeUncached(plan, slotNames, boundMask, description) + ")";
+		}
+		return describeUncached(plan, slotNames, boundMask, description);
+	}
+
+	private static String describeUncached(SlotPlan plan, String[] slotNames, long boundMask, Description description) {
 		if (plan == EmptyPlan.INSTANCE) {
 			return "Empty";
 		}
@@ -346,7 +386,7 @@ final class LmdbNativeExplain {
 				if (i > 0) {
 					sb.append(" -> ");
 				}
-				sb.append(describe(ordered.order[i], slotNames, boundMask));
+				sb.append(describe(ordered.order[i], slotNames, boundMask, description));
 			}
 			sb.append("]");
 			if (ordered.filterDepth.length > 0) {
@@ -354,68 +394,76 @@ final class LmdbNativeExplain {
 			}
 			return sb.append(")").toString();
 		}
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return "ValuesInputGuard(names=" + Arrays.toString(guard.inputNames) + ", folded="
+					+ describe(guard.folded, slotNames, boundMask, description)
+					+ ", retained=" + describeRetained(guard.original, slotNames, boundMask, description) + ")";
+		}
 		if (plan instanceof NativeAliasJoinPlan alias) {
-			return "AliasJoin(original=" + describe(alias.original, slotNames, boundMask)
+			return "AliasJoin(original=" + describe(alias.original, slotNames, boundMask, description)
 					+ ", guardedRightDriven=" + (alias.inverted == null ? "<unavailable:correlated-input>"
-							: describe(alias.inverted, slotNames, boundMask))
-					+ ", originalOrderMemo=" + describe(alias.memoized, slotNames, boundMask) + ")";
+							: describe(alias.inverted, slotNames, boundMask, description))
+					+ ", originalOrderMemo=" + describe(alias.memoized, slotNames, boundMask, description) + ")";
 		}
 		if (plan instanceof NativeAliasJoinMemoPlan memo) {
-			return "CorrelatedFragmentMemo(" + describe(memo.original, slotNames, boundMask) + ")";
+			return "CorrelatedFragmentMemo(" + describe(memo.original, slotNames, boundMask, description) + ")";
 		}
 		if (plan instanceof JoinPlan) {
 			JoinPlan join = (JoinPlan) plan;
-			return "Join(left=" + describe(join.left, slotNames, boundMask) + ", right="
-					+ describe(join.right, slotNames, boundMask) + ")";
+			return "Join(left=" + describe(join.left, slotNames, boundMask, description) + ", right="
+					+ describe(join.right, slotNames, boundMask, description) + ")";
 		}
 		if (plan instanceof LeftJoinPlan) {
 			LeftJoinPlan leftJoin = (LeftJoinPlan) plan;
 			String kind = leftJoin.lexicalProblemSlots != null ? "LexicalFrameLeftJoin"
 					: leftJoin.lexicalSharedSlots == null ? "LeftJoin"
 							: leftJoin.lexicalHashKeys ? "LexicalHashLeftJoin" : "LexicalReplayLeftJoin";
-			return kind + "(left=" + describe(leftJoin.left, slotNames, boundMask) + ", right="
-					+ describe(leftJoin.right, slotNames, boundMask) + ")";
+			String condition = leftJoin.lexicalCondition == null ? ""
+					: ", conditionMask=" + (leftJoin.lexicalConditionMask < 0L ? "sticky"
+							: describeBoundMask(leftJoin.lexicalConditionMask, slotNames));
+			return kind + "(left=" + describe(leftJoin.left, slotNames, boundMask, description) + ", right="
+					+ describe(leftJoin.right, slotNames, boundMask, description) + condition + ")";
 		}
 		if (plan instanceof LateralPlan lateral) {
 			return "Lateral(inputs=" + describeBoundMask(lateral.rightInputMask, slotNames) + ", left="
-					+ describe(lateral.left, slotNames, boundMask) + ", right="
-					+ describe(lateral.right, slotNames, boundMask | lateral.rightInputMask) + ")";
+					+ describe(lateral.left, slotNames, boundMask, description) + ", right="
+					+ describe(lateral.right, slotNames, boundMask | lateral.rightInputMask, description) + ")";
 		}
 		if (plan instanceof UnionPlan) {
 			UnionPlan union = (UnionPlan) plan;
-			return "Union(left=" + describe(union.left, slotNames, boundMask) + ", right="
-					+ describe(union.right, slotNames, boundMask) + ")";
+			return "Union(left=" + describe(union.left, slotNames, boundMask, description) + ", right="
+					+ describe(union.right, slotNames, boundMask, description) + ")";
 		}
 		if (plan instanceof OrderedUnionPlan) {
 			OrderedUnionPlan union = (OrderedUnionPlan) plan;
 			return "OrderedUnion(orderSlots=" + describeSlots(union.orderSlots, slotNames) + ", left="
-					+ describe(union.left, slotNames, boundMask) + ", right="
-					+ describe(union.right, slotNames, boundMask) + ")";
+					+ describe(union.left, slotNames, boundMask, description) + ", right="
+					+ describe(union.right, slotNames, boundMask, description) + ")";
 		}
 		if (plan instanceof MergeOrderedJoinPlan) {
 			MergeOrderedJoinPlan merge = (MergeOrderedJoinPlan) plan;
 			return "MergeOrderedJoin(keySlots=" + describeSlots(merge.keySeqSlots, slotNames) + ", join="
-					+ describe(merge.join, slotNames, boundMask) + ")";
+					+ describe(merge.join, slotNames, boundMask, description) + ")";
 		}
 		if (plan instanceof FilterPlan) {
 			FilterPlan filter = (FilterPlan) plan;
 			String filterMask = filter.filterMask < 0L ? "sticky" : describeBoundMask(filter.filterMask, slotNames);
 			return "Filter(mask=" + filterMask + ", arg="
-					+ describe(filter.arg, slotNames, boundMask) + ")";
+					+ describe(filter.arg, slotNames, boundMask, description) + ")";
 		}
 		if (plan instanceof EntryBindingCompatibilityPlan entry) {
 			return "EntryBindingCompatibility(mask=" + describeBoundMask(entry.restoredMask, slotNames) + ", arg="
-					+ describe(entry.arg, slotNames, boundMask & ~entry.restoredMask) + ")";
+					+ describe(entry.arg, slotNames, boundMask & ~entry.restoredMask, description) + ")";
 		}
 		if (plan instanceof ExtensionPlan) {
 			ExtensionPlan extension = (ExtensionPlan) plan;
 			return "Extension(copies=" + extension.copies.length + ", arg="
-					+ describe(extension.arg, slotNames, boundMask) + ")";
+					+ describe(extension.arg, slotNames, boundMask, description) + ")";
 		}
 		if (plan instanceof MinusPlan) {
 			MinusPlan minus = (MinusPlan) plan;
-			return "Minus(left=" + describe(minus.left, slotNames, boundMask) + ", right="
-					+ describe(minus.right, slotNames, boundMask) + ", sharedMask="
+			return "Minus(left=" + describe(minus.left, slotNames, boundMask, description) + ", right="
+					+ describe(minus.right, slotNames, boundMask, description) + ", sharedMask="
 					+ describeBoundMask(minus.sharedMask, slotNames) + ")";
 		}
 		if (plan instanceof ValuesPlan) {
@@ -439,8 +487,8 @@ final class LmdbNativeExplain {
 			return subquery.describe();
 		}
 		if (plan instanceof DrainGuardPlan guard) {
-			return "DrainGuard(delegate=" + describe(guard.delegate, slotNames, boundMask) + ", drained="
-					+ describe(guard.drained, slotNames, boundMask) + ")";
+			return "DrainGuard(delegate=" + describe(guard.delegate, slotNames, boundMask, description) + ", drained="
+					+ describe(guard.drained, slotNames, boundMask, description) + ")";
 		}
 		return plan.getClass().getSimpleName();
 	}

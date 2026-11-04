@@ -575,7 +575,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	/** The evaluation-local generic context (owns the query scope: NOW, BNODE labels); created lazily at first use. */
 	private volatile QueryEvaluationContext genericContext;
 	/** Structural identity, rather than context equality or first-use order, selects a subtree's view. */
-	private final Map<QueryEvaluationContext, QueryEvaluationContext> genericContexts = new IdentityHashMap<>();
+	private Map<QueryEvaluationContext, QueryEvaluationContext> genericContexts;
 	/** The root synthetic source's authority callback for retaining query-scoped representatives such as NOW. */
 	private volatile Consumer<Value> queryScopedValueRegistrar;
 	/** Caller-supplied bindings at the outermost query evaluation, distinct from nested correlation inputs. */
@@ -596,11 +596,14 @@ final class NativeExecutionContext implements AutoCloseable {
 	private boolean filterResourcesClosed;
 	private final ConcurrentHashMap<WorkerTasks, Boolean> localFilterWorkers = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<WorkerTasks, Boolean> queryFilterWorkers = new ConcurrentHashMap<>();
-	private final IdentityHashMap<NativeBooleanFilter, NativeBooleanFilter> filterResources = new IdentityHashMap<>();
+	private IdentityHashMap<NativeBooleanFilter, NativeBooleanFilter> filterResources;
 
 	synchronized NativeBooleanFilter ownFilterResource(NativeBooleanFilter filter) {
 		if (closed) {
 			throw new IllegalStateException("execution context is closed");
+		}
+		if (filterResources == null) {
+			filterResources = new IdentityHashMap<>();
 		}
 		return filterResources.computeIfAbsent(filter, CloseOnceNativeBooleanFilter::new);
 	}
@@ -725,8 +728,8 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final ConcurrentHashMap<RecordingNativeBooleanFilter, NativeFilterLease.Outcome> discardedFilterOutcomes = new ConcurrentHashMap<>();
 	private final Object filterOwnerIdentity = new Object();
 	private final ConcurrentHashMap<Object, RecordingNativeBooleanFilter> filterTemplates = new ConcurrentHashMap<>();
-	private final IdentityHashMap<NativeFilterLease.Frozen, Boolean> includedFilterMemos = new IdentityHashMap<>();
-	private final IdentityHashMap<NativeFilterLease.Frozen, Boolean> selectedFilterMemos = new IdentityHashMap<>();
+	private IdentityHashMap<NativeFilterLease.Frozen, Boolean> includedFilterMemos;
+	private IdentityHashMap<NativeFilterLease.Frozen, Boolean> selectedFilterMemos;
 
 	Object filterOwnerIdentity() {
 		return queryScopeOwner.filterOwnerIdentity;
@@ -742,6 +745,9 @@ final class NativeExecutionContext implements AutoCloseable {
 			throw new IllegalStateException("memo selected after query feedback publication");
 		}
 		// Selection may finish before a shared lazy producer. Keep its receipt, never the finished attempt lease.
+		if (selectedFilterMemos == null) {
+			selectedFilterMemos = new IdentityHashMap<>();
+		}
 		selectedFilterMemos.put(frozen, Boolean.TRUE);
 	}
 
@@ -757,6 +763,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		value.passed = frozen.passed();
 		value.rejected = frozen.rejected();
 		value.incomplete = frozen.incomplete() || !complete;
+		value.inputQualified = frozen.inputQualified();
 		mergeFilterOutcome(value);
 	}
 
@@ -816,6 +823,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	private void filterResultPartial() {
 		queryScopeOwner.filterResultPartial = true;
 	}
+
 	/** Immutable ownership graph, not retained claims: cached producers must never keep their own owners alive. */
 	private volatile NativeExecutionContext[] leaseOwners;
 
@@ -899,8 +907,14 @@ final class NativeExecutionContext implements AutoCloseable {
 			synchronized (this) {
 				if (queryBase == null) {
 					queryBase = bindings == null || bindings.isEmpty()
-							? org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance()
-							: NativeEntryBindings.snapshot(bindings);
+							&& !org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.isTrackedInput(bindings)
+							&& !org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.of(bindings)
+									.hasRetainedMetadata()
+							&& org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.from(bindings)
+									.retainedParametersForTransport()
+									.isEmpty()
+											? org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance()
+											: NativeEntryBindings.snapshot(bindings);
 				}
 			}
 		}
@@ -955,7 +969,7 @@ final class NativeExecutionContext implements AutoCloseable {
 			if (closed) {
 				throw new IllegalStateException("execution context is closed");
 			}
-			QueryEvaluationContext existing = genericContexts.get(structural);
+			QueryEvaluationContext existing = genericContexts == null ? null : genericContexts.get(structural);
 			if (existing != null) {
 				return existing;
 			}
@@ -965,6 +979,9 @@ final class NativeExecutionContext implements AutoCloseable {
 				throw new IllegalStateException("generic query scope must preserve structural views");
 			}
 			QueryEvaluationContext view = scoped.withStructuralContext(structural);
+			if (genericContexts == null) {
+				genericContexts = new IdentityHashMap<>();
+			}
 			genericContexts.put(structural, view);
 			return view;
 		}
@@ -1552,12 +1569,94 @@ final class NativeExecutionContext implements AutoCloseable {
 		return retainLease(false, false);
 	}
 
+	/** Upper bound for the retained Lease object and its actual filtered owner-reference array. */
+	long producerLeaseStorageBytes(NativeExecutionContext enclosingOwner) {
+		int count = producerOwnerCount(enclosingOwner);
+		return count == 0 ? 0L : Math.addExact(80L, Math.multiplyExact(8L, count));
+	}
+
+	private int producerOwnerCount(NativeExecutionContext enclosingOwner) {
+		if (this == enclosingOwner) {
+			return 0;
+		}
+		NativeExecutionContext[] actual = leaseOwners();
+		NativeExecutionContext[] enclosing = enclosingOwner == null ? null : enclosingOwner.leaseOwners();
+		int count = 0, outer = 0, tick = 0;
+		for (NativeExecutionContext candidate : actual) {
+			cancellation.poll(tick);
+			LmdbNativeProbeDeadline.poll(tick++);
+			while (enclosing != null && outer < enclosing.length
+					&& enclosing[outer].executionId < candidate.executionId) {
+				cancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
+				outer++;
+			}
+			if (enclosing == null || outer == enclosing.length || enclosing[outer] != candidate) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	/** A new consumer cannot extend pending-close authority without an already accepted producer cursor. */
+	Lease retainProducerLeaseOutside(NativeExecutionContext enclosingOwner) {
+		return retainProducerLeaseOutside(enclosingOwner, false);
+	}
+
+	/** Called only while an actual accepted cursor is still open, before its next EOF/close releases authority. */
+	Lease retainAcceptedProducerLeaseOutside(NativeExecutionContext enclosingOwner) {
+		return retainProducerLeaseOutside(enclosingOwner, true);
+	}
+
+	private Lease retainProducerLeaseOutside(NativeExecutionContext enclosingOwner, boolean accepted) {
+		if (this == enclosingOwner) {
+			return null;
+		}
+		if (enclosingOwner == null) {
+			return accepted ? retainActiveLease() : retainInternalLease();
+		}
+		int count = producerOwnerCount(enclosingOwner);
+		if (count == 0) {
+			return null;
+		}
+		NativeExecutionContext[] actual = leaseOwners(), enclosing = enclosingOwner.leaseOwners();
+		// Both closures are immutable and sorted by execution id. The explicit difference is linear, allocates
+		// only the pre-admitted retained array and cannot introduce an enclosing cache-owner retain cycle.
+		NativeExecutionContext[] retained = new NativeExecutionContext[count];
+		int outer = 0, target = 0, acquired = 0, tick = 0;
+		try {
+			for (NativeExecutionContext candidate : actual) {
+				cancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
+				while (outer < enclosing.length && enclosing[outer].executionId < candidate.executionId) {
+					cancellation.poll(tick);
+					LmdbNativeProbeDeadline.poll(tick++);
+					outer++;
+				}
+				if (outer == enclosing.length || enclosing[outer] != candidate) {
+					retained[target++] = candidate;
+					candidate.retainLocalLease(accepted);
+					acquired++;
+				}
+			}
+			return new Lease(retained, null);
+		} catch (RuntimeException | Error problem) {
+			NativeContextClosingIteration.throwFailure(releaseLeases(retained, acquired, problem));
+			throw new AssertionError("unreachable");
+		}
+	}
+
 	/**
 	 * Protects one advance by an already accepted consumer. A close request forbids new consumers, but an existing
 	 * reader lease may still need its cached producer. An idle producer must never retain its own state's owner.
 	 */
 	Lease retainActiveLease() {
 		return retainLease(true, false);
+	}
+
+	/** An already opened cursor may transfer its accepted result/feedback lifetime while close is pending. */
+	Lease retainAcceptedResultLease() {
+		return retainLease(true, true);
 	}
 
 	private Lease retainLease(boolean active, boolean result) {
@@ -1761,9 +1860,11 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 		Object[] states;
 		synchronized (nativeStateLock) {
-			IllegalStateException closedFailure = new IllegalStateException("execution context is closed");
-			for (NativeStateInitialization initialization : nativeStateInitializations.values()) {
-				initialization.result.completeExceptionally(closedFailure);
+			if (!nativeStateInitializations.isEmpty()) {
+				IllegalStateException closedFailure = new IllegalStateException("execution context is closed");
+				for (NativeStateInitialization initialization : nativeStateInitializations.values()) {
+					initialization.result.completeExceptionally(closedFailure);
+				}
 			}
 			nativeStateInitializations.clear();
 			states = nativeStates.values().toArray();
@@ -1787,8 +1888,11 @@ final class NativeExecutionContext implements AutoCloseable {
 				}
 			}
 		}
-		NativeBooleanFilter[] filters = filterResources.values().toArray(NativeBooleanFilter[]::new);
-		filterResources.clear();
+		NativeBooleanFilter[] filters = filterResources == null ? new NativeBooleanFilter[0]
+				: filterResources.values().toArray(NativeBooleanFilter[]::new);
+		if (filterResources != null) {
+			filterResources.clear();
+		}
 		for (NativeBooleanFilter filter : filters) {
 			try {
 				filter.close();
@@ -1837,7 +1941,9 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 		if (queryScopeOwner == this) {
 			genericContext = null;
-			genericContexts.clear();
+			if (genericContexts != null) {
+				genericContexts.clear();
+			}
 			valueCapturer = null;
 		}
 		if (failure != null) {
@@ -1864,13 +1970,22 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 		// All cached producers, filter resources and result borrowers have settled. Receipts may form a shared graph;
 		// resolving it here preserves producer completion independently of each candidate's publication lifetime.
-		for (NativeFilterLease.Frozen frozen : selectedFilterMemos.keySet()) {
-			frozen.collect(this, includedFilterMemos, true);
+		if (selectedFilterMemos != null) {
+			if (includedFilterMemos == null) {
+				includedFilterMemos = new IdentityHashMap<>();
+			}
+			for (NativeFilterLease.Frozen frozen : selectedFilterMemos.keySet()) {
+				frozen.collect(this, includedFilterMemos, true);
+			}
 		}
-		for (var included : includedFilterMemos.entrySet()) {
-			included.getKey().mergeOwnOutcomes(this, included.getValue());
+		if (includedFilterMemos != null) {
+			for (var included : includedFilterMemos.entrySet()) {
+				included.getKey().mergeOwnOutcomes(this, included.getValue());
+			}
 		}
-		selectedFilterMemos.clear();
+		if (selectedFilterMemos != null) {
+			selectedFilterMemos.clear();
+		}
 		filterPublicationDone = true;
 		boolean complete = filterRootExhausted && !filterResultPartial && !filterFailed
 				&& !Thread.currentThread().isInterrupted()
@@ -1929,7 +2044,9 @@ final class NativeExecutionContext implements AutoCloseable {
 		unqualifiedFilterOutcomes.clear();
 		discardedFilterOutcomes.clear();
 		filterTemplates.clear();
-		includedFilterMemos.clear();
+		if (includedFilterMemos != null) {
+			includedFilterMemos.clear();
+		}
 		filterEvaluationThread = null;
 		if (failure != null) {
 			NativeContextClosingIteration.throwFailure(failure);

@@ -63,6 +63,13 @@ public final class LmdbStatisticsService implements AutoCloseable {
 	private volatile long latestStoreSequence = -1L;
 	private volatile long firstUncoveredMutationMillis = -1L;
 	private volatile FrontierMutationTail mutationTail = FrontierMutationTail.EMPTY;
+	private record OwnerFreshness(boolean requiresBase, long minimumTrustedGeneration) {
+		boolean trusts(FrontierStatisticsGeneration generation) {
+			return !requiresBase && generation != null
+					&& generation.manifest().generationId() >= minimumTrustedGeneration;
+		}
+	}
+	private volatile OwnerFreshness ownerFreshness = new OwnerFreshness(false, -1L);
 
 	private LmdbStatisticsService(Path directory, FrontierFileOps fileOps,
 			FrontierStatisticsHeapGovernor heapGovernor, long diskBudgetBytes, long maximumLagMillis, Clock clock,
@@ -96,6 +103,35 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			long diskBudgetBytes, long maximumLagMillis, Executor retirementExecutor) throws IOException {
 		return new LmdbStatisticsService(directory, NioFrontierFileOps.INSTANCE, heapGovernor, diskBudgetBytes,
 				maximumLagMillis, Clock.systemUTC(), retirementExecutor);
+	}
+
+	/** Owning legacy startup calls this before exposing the service; old files remain manifest predecessors only. */
+	@org.eclipse.rdf4j.common.annotation.InternalUseOnly
+	public synchronized void requireCurrentOwnerBase() {
+		requireOpen();
+		ownerFreshness = new OwnerFreshness(true, -1L);
+		mutationTail = FrontierMutationTail.EMPTY;
+		rebuildRequired = true;
+		lastFailure = "A complete current-owner base is required for legacy native data";
+	}
+
+	/** Identity only, for publication chaining; this does not grant query evidence from the predecessor. */
+	@org.eclipse.rdf4j.common.annotation.InternalUseOnly
+	public long publicationPredecessorGeneration() {
+		FrontierStatisticsGeneration observed = current;
+		return observed == null ? -1L : observed.manifest().generationId();
+	}
+
+	/** Called only by the owner after the actual complete native snapshot builder produced this base. */
+	@org.eclipse.rdf4j.common.annotation.InternalUseOnly
+	public synchronized void publishCurrentOwnerBase(FrontierStatisticsManifest manifest) throws IOException {
+		OwnerFreshness previous = ownerFreshness;
+		publish(manifest);
+		// Publication includes mapping, directory/file durability and retirement cleanup. A failure keeps the
+		// fence closed even if the new pointer or mapped predecessor is already visible internally.
+		if (previous.requiresBase()) {
+			ownerFreshness = new OwnerFreshness(false, manifest.generationId());
+		}
 	}
 
 	/**
@@ -152,9 +188,9 @@ public final class LmdbStatisticsService implements AutoCloseable {
 		Objects.requireNonNull(mutations, "mutations");
 		Objects.requireNonNull(config, "config");
 		FrontierStatisticsGeneration observed = current;
-		if (observed == null) {
+		if (!ownerFreshness.trusts(observed)) {
 			throw new FrontierStatisticsException(FrontierFallbackReason.NO_GENERATION,
-					"Frontier signed delta requires a published base generation");
+					"Frontier signed delta requires a trusted published base generation");
 		}
 		try {
 			FrontierStatisticsManifest manifest = FrontierStatisticsDeltaBuilder.build(
@@ -173,6 +209,11 @@ public final class LmdbStatisticsService implements AutoCloseable {
 		requireOpen();
 		FrontierStatisticsGeneration old = current;
 		if (old == null || old.manifest().previousGenerationId() < 0L) {
+			return false;
+		}
+		OwnerFreshness freshness = ownerFreshness;
+		if (freshness.requiresBase()
+				|| old.manifest().previousGenerationId() < freshness.minimumTrustedGeneration()) {
 			return false;
 		}
 		FrontierStatisticsManifest previous = manifestStore.load(old.manifest().previousGenerationId());
@@ -202,9 +243,11 @@ public final class LmdbStatisticsService implements AutoCloseable {
 			if (closed) {
 				return FrontierStatisticsLease.unavailable(FrontierFallbackReason.NO_GENERATION);
 			}
+			OwnerFreshness freshness = ownerFreshness;
 			FrontierStatisticsGeneration observed = current;
-			if (observed == null) {
-				return FrontierStatisticsLease.unavailable(FrontierFallbackReason.NO_GENERATION);
+			if (!freshness.trusts(observed)) {
+				return FrontierStatisticsLease.unavailable(freshness.requiresBase()
+						? FrontierFallbackReason.GENERATION_TOO_STALE : FrontierFallbackReason.NO_GENERATION);
 			}
 			FrontierStatisticsManifest manifest = observed.manifest();
 			if (snapshotEpoch < manifest.baseEpoch()
@@ -212,6 +255,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				return FrontierStatisticsLease.unavailable(FrontierFallbackReason.GENERATION_TOO_STALE);
 			}
 			if (observed.retain()) {
+				if (freshness != ownerFreshness) { observed.release(); continue; }
 				return FrontierStatisticsLease.ready(observed);
 			}
 		}
@@ -668,6 +712,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 
 	public FrontierStatisticsStatus status() {
 		FrontierStatisticsGeneration observed = current;
+		boolean trusted = ownerFreshness.trusts(observed);
 		EnumMap<FrontierStatisticsTier, Long> diskBytes = new EnumMap<>(FrontierStatisticsTier.class);
 		for (FrontierStatisticsTier tier : FrontierStatisticsTier.values()) {
 			diskBytes.put(tier, observed == null ? 0L : observed.diskBytesByTier().getOrDefault(tier, 0L));
@@ -679,8 +724,8 @@ public final class LmdbStatisticsService implements AutoCloseable {
 		long lagMillis = firstUncoveredMutationMillis < 0L
 				? 0L
 				: Math.max(0L, clock.millis() - firstUncoveredMutationMillis);
-		FrontierFallbackReason fallback = observed == null
-				? FrontierFallbackReason.NO_GENERATION
+		FrontierFallbackReason fallback = !trusted
+				? ownerFreshness.requiresBase() ? FrontierFallbackReason.GENERATION_TOO_STALE : FrontierFallbackReason.NO_GENERATION
 				: latestStoreSequence > observed.manifest().coveredSequence()
 						? lagMillis > maximumLagMillis
 								? FrontierFallbackReason.GENERATION_TOO_STALE
@@ -689,7 +734,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 		BuildMetrics metrics = buildMetrics;
 		return new FrontierStatisticsStatus(
 				closed ? FrontierStatisticsAvailability.CLOSED
-						: observed == null ? FrontierStatisticsAvailability.NO_GENERATION
+						: !trusted ? FrontierStatisticsAvailability.NO_GENERATION
 								: FrontierStatisticsAvailability.READY,
 				fallback,
 				buildPhase,
@@ -711,12 +756,12 @@ public final class LmdbStatisticsService implements AutoCloseable {
 	/** The manifest of the currently mapped generation, if one is published. */
 	public Optional<FrontierStatisticsManifest> currentManifest() {
 		FrontierStatisticsGeneration observed = current;
-		return observed == null ? Optional.empty() : Optional.of(observed.manifest());
+		return ownerFreshness.trusts(observed) ? Optional.of(observed.manifest()) : Optional.empty();
 	}
 
 	/** Returns whether startup recovery discarded corrupt derived state that must be rebuilt. */
 	public boolean rebuildRequired() {
-		return rebuildRequired;
+		return rebuildRequired || ownerFreshness.requiresBase();
 	}
 
 	@Override
@@ -941,6 +986,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 	}
 
 	private boolean hasCompleteMutationTail() {
+		if (ownerFreshness.requiresBase()) { return false; }
 		FrontierStatisticsGeneration observed = current;
 		FrontierMutationTail tail = mutationTail;
 		long baseSequence = observed == null ? 0L : observed.manifest().coveredSequence();
@@ -949,7 +995,11 @@ public final class LmdbStatisticsService implements AutoCloseable {
 
 	private TailOverlay acquireTailOverlay() {
 		while (true) {
+			OwnerFreshness freshness = ownerFreshness;
+			// A mutation tail is not a proof of an empty old database, even when no old mapping survived startup.
+			if (freshness.requiresBase()) { return null; }
 			FrontierStatisticsGeneration observed = current;
+			if (observed != null && !freshness.trusts(observed)) { return null; }
 			FrontierMutationTail tail = mutationTail;
 			long latestSequence = latestStoreSequence;
 			long baseSequence = observed == null ? 0L : observed.manifest().coveredSequence();
@@ -963,7 +1013,7 @@ public final class LmdbStatisticsService implements AutoCloseable {
 				}
 				lease = FrontierStatisticsLease.ready(observed);
 			}
-			if (observed == current && tail == mutationTail && latestSequence == latestStoreSequence) {
+			if (freshness == ownerFreshness && observed == current && tail == mutationTail && latestSequence == latestStoreSequence) {
 				return new TailOverlay(lease, tail);
 			}
 			if (lease != null) {
@@ -1004,10 +1054,16 @@ public final class LmdbStatisticsService implements AutoCloseable {
 	}
 
 	private FrontierFallbackReason currentFallbackReason() {
-		if (closed || current == null) {
+		if (closed) {
 			return FrontierFallbackReason.NO_GENERATION;
 		}
-		if (latestStoreSequence > current.manifest().coveredSequence()) {
+		OwnerFreshness freshness = ownerFreshness;
+		FrontierStatisticsGeneration observed = current;
+		if (!freshness.trusts(observed)) {
+			return freshness.requiresBase() ? FrontierFallbackReason.GENERATION_TOO_STALE
+					: FrontierFallbackReason.NO_GENERATION;
+		}
+		if (latestStoreSequence > observed.manifest().coveredSequence()) {
 			long lagMillis = firstUncoveredMutationMillis < 0L
 					? 0L
 					: Math.max(0L, clock.millis() - firstUncoveredMutationMillis);

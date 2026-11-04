@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BindingSetSpillFile;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
@@ -287,6 +289,209 @@ class BindingSetOriginRequestEntryTest {
 				() -> assertSame(OUTPUT_VALUE, BindingSetOrigin.of(arrayParameters).parameterValue(INPUT)),
 				() -> assertTrue(BindingSetOrigin.of(occupiedLocalArray).isLocal(INPUT)),
 				() -> assertFalse(BindingSetOrigin.of(occupiedLocalArray).isRequest(INPUT)));
+	}
+
+	@Test
+	void evaluationKeysHandleDeepProducerChainsWithoutLosingHiddenRequestAuthority() {
+		MapBindingSet request = new MapBindingSet(2);
+		request.addBinding(INPUT, REQUEST_VALUE);
+		request.addBinding(PAYLOAD, OUTPUT_VALUE);
+		BindingSetOrigin origin = BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request));
+		int depth = 65_536;
+		for (int i = 0; i < depth; i++) {
+			origin = origin.producing(Set.of("layer" + i));
+		}
+
+		BindingSetOrigin.OriginKey key = origin.key(Set.of(INPUT, PAYLOAD, "layer0", "layer65535"));
+
+		assertEquals(Set.of(INPUT, PAYLOAD), key.requests());
+		assertEquals(Set.of("layer0", "layer65535"), key.locals());
+		assertSame(REQUEST_VALUE, key.parameters().get(INPUT));
+		assertSame(OUTPUT_VALUE, key.parameters().get(PAYLOAD));
+	}
+
+	@Test
+	void evaluationKeyPreservesDeepProducerMasksAndHiddenRequestRepresentative() {
+		MapBindingSet request = new MapBindingSet(2);
+		request.addBinding(INPUT, REQUEST_VALUE);
+		request.addBinding(PAYLOAD, OUTPUT_VALUE);
+		BindingSetOrigin origin = BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request));
+		int depth = 8_192;
+		for (int i = 0; i < depth; i++) {
+			origin = origin.producing(i == depth / 2 ? Set.of("layer" + i, INPUT) : Set.of("layer" + i));
+		}
+
+		BindingSetOrigin.OriginKey key = origin.key(Set.of(INPUT, PAYLOAD, "layer0", "layer8191"));
+
+		assertEquals(Set.of(PAYLOAD), key.requests());
+		assertEquals(Set.of(INPUT, "layer0", "layer8191"), key.locals());
+		assertNull(key.parameters().get(INPUT));
+		assertSame(OUTPUT_VALUE, key.parameters().get(PAYLOAD));
+	}
+
+	@Test
+	void deepProducerAuthoritySurvivesARealPhysicalSpill() {
+		Value representative = SimpleValueFactory.getInstance().createLiteral("retained", "EN");
+		MapBindingSet request = new MapBindingSet(2);
+		request.addBinding(INPUT, REQUEST_VALUE);
+		request.addBinding(PAYLOAD, representative);
+		BindingSetOrigin origin = BindingSetOrigin.of(BindingSetOrigin.optimizationInput(request));
+		Set<String> repeatedLocal = Set.of("deepLocal");
+		for (int i = 0; i < 65_536; i++) {
+			origin = origin.producing(repeatedLocal);
+		}
+		origin = origin.producing(Set.of(INPUT));
+		QueryBindingSet row = new QueryBindingSet();
+		row.setBinding(INPUT, GRAPH_VALUE);
+		BindingSetOrigin.set(row, origin);
+
+		try (var spill = new BindingSetSpillFile("rdf4j-origin-depth-", "origin depth regression")) {
+			assertTrue(spill.write(row));
+			assertTrue(spill.finishWriting());
+			try (var rows = spill.openReader()) {
+				BindingSet restored = rows.next();
+				BindingSetOrigin restoredOrigin = BindingSetOrigin.of(restored);
+				assertEquals(GRAPH_VALUE, restored.getValue(INPUT));
+				assertTrue(restoredOrigin.isLocal(INPUT));
+				assertFalse(restoredOrigin.isRequest(INPUT));
+				assertNull(restoredOrigin.parameterValue(INPUT));
+				assertEquals(REQUEST_VALUE, restoredOrigin.retainedParametersForTransport().get(INPUT));
+				Literal restoredPayload = (Literal) restoredOrigin.parameterValue(PAYLOAD);
+				Literal retainedPayload = (Literal) restoredOrigin.retainedParametersForTransport().get(PAYLOAD);
+				assertEquals("EN", restoredPayload.getLanguage().orElseThrow());
+				assertEquals("EN", retainedPayload.getLanguage().orElseThrow());
+				assertTrue(restoredOrigin.isLocal("deepLocal"));
+				assertTrue(restoredOrigin.isRequest(PAYLOAD));
+				assertNull(rows.next());
+			}
+		}
+	}
+
+	@Test
+	void newLocalMappingWritePreservesUnrelatedHiddenParametersAndGraphAuthority() {
+		MapBindingSet request = new MapBindingSet(2);
+		request.addBinding(INPUT, REQUEST_VALUE);
+		request.addBinding(PAYLOAD, OUTPUT_VALUE);
+		BindingSet hidden = BindingSetOrigin.optimizationInput(request);
+		QueryBindingSet target = new QueryBindingSet(hidden);
+		GraphFrameBindings.supply(target, PRIVATE_GRAPH, GRAPH_VALUE);
+		BindingSet source = BindingSetOrigin.produced(binding("newLocal", OUTPUT_VALUE), Set.of("newLocal"));
+
+		target.addAll(source);
+
+		BindingSetOrigin origin = BindingSetOrigin.of(target);
+		assertSame(OUTPUT_VALUE, target.getValue("newLocal"));
+		assertTrue(origin.isLocal("newLocal"));
+		assertFalse(origin.isRequest("newLocal"));
+		assertNull(origin.parameterValue("newLocal"));
+		assertFalse(target.hasBinding(INPUT));
+		assertFalse(target.hasBinding(PAYLOAD));
+		assertTrue(origin.isRequest(INPUT));
+		assertTrue(origin.isRequest(PAYLOAD));
+		assertSame(REQUEST_VALUE, origin.parameterValue(INPUT));
+		assertSame(OUTPUT_VALUE, origin.parameterValue(PAYLOAD));
+		assertTrue(GraphFrameBindings.isSupplied(target, PRIVATE_GRAPH));
+		assertSame(GRAPH_VALUE,
+				GraphFrameBindings.from(target).retainedParametersForTransport().get(PRIVATE_GRAPH));
+
+		String[] arrayNames = { INPUT, PAYLOAD, "newLocal", PRIVATE_GRAPH };
+		ArrayBindingSet arrayTarget = new ArrayBindingSet(hidden,
+				Set.of(INPUT, PAYLOAD, "newLocal", PRIVATE_GRAPH), arrayNames);
+		GraphFrameBindings.supply(arrayTarget, PRIVATE_GRAPH, GRAPH_VALUE);
+		ArrayBindingSet arraySource = new ArrayBindingSet(source, Set.of("newLocal"), new String[] { "newLocal" });
+		arrayTarget.addAll(arraySource);
+		BindingSetOrigin arrayOrigin = BindingSetOrigin.of(arrayTarget);
+		assertSame(OUTPUT_VALUE, arrayTarget.getValue("newLocal"));
+		assertTrue(arrayOrigin.isLocal("newLocal"));
+		assertTrue(arrayOrigin.isRequest(INPUT));
+		assertSame(REQUEST_VALUE, arrayOrigin.parameterValue(INPUT));
+		assertSame(OUTPUT_VALUE, arrayOrigin.parameterValue(PAYLOAD));
+		assertTrue(GraphFrameBindings.isSupplied(arrayTarget, PRIVATE_GRAPH));
+		assertSame(GRAPH_VALUE,
+				GraphFrameBindings.from(arrayTarget).retainedParametersForTransport().get(PRIVATE_GRAPH));
+	}
+
+	@Test
+	void localWriteReplacingHiddenParameterUsesCanonicalOverlayFallback() {
+		MapBindingSet request = new MapBindingSet(2);
+		request.addBinding(INPUT, REQUEST_VALUE);
+		request.addBinding(PAYLOAD, OUTPUT_VALUE);
+		QueryBindingSet target = new QueryBindingSet(BindingSetOrigin.optimizationInput(request));
+		BindingSet source = BindingSetOrigin.produced(binding(INPUT, GRAPH_VALUE), Set.of(INPUT));
+
+		target.addAll(source);
+
+		BindingSetOrigin origin = BindingSetOrigin.of(target);
+		assertSame(GRAPH_VALUE, target.getValue(INPUT));
+		assertTrue(origin.isLocal(INPUT));
+		assertFalse(origin.isRequest(INPUT));
+		assertNull(origin.parameterValue(INPUT));
+		assertFalse(origin.retainedParametersForTransport().containsKey(INPUT));
+		assertTrue(origin.isRequest(PAYLOAD));
+		assertSame(OUTPUT_VALUE, origin.parameterValue(PAYLOAD));
+	}
+
+	@Test
+	void requestAndUnknownMappingWritesKeepTheirExistingOverlaySemantics() {
+		MapBindingSet request = new MapBindingSet(2);
+		request.addBinding(INPUT, REQUEST_VALUE);
+		request.addBinding(PAYLOAD, OUTPUT_VALUE);
+		BindingSet hidden = BindingSetOrigin.optimizationInput(request);
+		QueryBindingSet requestTarget = new QueryBindingSet(hidden);
+		requestTarget.addAll(BindingSetOrigin.requestInput(binding(INPUT, GRAPH_VALUE)));
+		BindingSetOrigin requestOrigin = BindingSetOrigin.of(requestTarget);
+		assertTrue(requestOrigin.isRequest(INPUT));
+		assertFalse(requestOrigin.isLocal(INPUT));
+		assertNull(requestOrigin.parameterValue(INPUT));
+		assertFalse(requestOrigin.retainedParametersForTransport().containsKey(INPUT));
+		assertSame(OUTPUT_VALUE, requestOrigin.parameterValue(PAYLOAD));
+
+		QueryBindingSet unknownTarget = new QueryBindingSet(hidden);
+		BindingSet unknownSource = BindingSetOrigin.with(binding(INPUT, GRAPH_VALUE),
+				BindingSetOrigin.of(new QueryBindingSet()));
+		unknownTarget.addAll(unknownSource);
+		BindingSetOrigin unknownOrigin = BindingSetOrigin.of(unknownTarget);
+		assertFalse(unknownOrigin.isRequest(INPUT));
+		assertFalse(unknownOrigin.isLocal(INPUT));
+		assertNull(unknownOrigin.parameterValue(INPUT));
+		assertFalse(unknownOrigin.retainedParametersForTransport().containsKey(INPUT));
+		assertSame(OUTPUT_VALUE, unknownOrigin.parameterValue(PAYLOAD));
+	}
+
+	@Test
+	void repeatedLocalMappingWritesKeepOriginChainBoundedAndPreserveOtherAuthorities() {
+		BindingSet hidden = BindingSetOrigin.optimizationInput(binding(PAYLOAD, REQUEST_VALUE));
+		QueryBindingSet target = new QueryBindingSet(hidden);
+		target.setBinding(INPUT, OUTPUT_VALUE);
+		BindingSetOrigin.set(target, BindingSetOrigin.of(hidden).producing(Set.of(INPUT)));
+		GraphFrameBindings.supply(target, PRIVATE_GRAPH, GRAPH_VALUE);
+		int originalLayerCount = retainedOriginLayerCount(BindingSetOrigin.of(target));
+		BindingSet sameLocalMapping = BindingSetOrigin.produced(binding(INPUT, OUTPUT_VALUE), Set.of(INPUT));
+
+		for (int write = 0; write < 4; write++) {
+			target.addAll(sameLocalMapping);
+			assertSame(OUTPUT_VALUE, target.getValue(INPUT));
+			assertTrue(BindingSetOrigin.of(target).isLocal(INPUT));
+			assertFalse(BindingSetOrigin.of(target).isRequest(INPUT));
+			assertNull(BindingSetOrigin.of(target).parameterValue(INPUT));
+			assertTrue(BindingSetOrigin.of(target).isRequest(PAYLOAD));
+			assertSame(REQUEST_VALUE, BindingSetOrigin.of(target).parameterValue(PAYLOAD));
+			assertTrue(GraphFrameBindings.isSupplied(target, PRIVATE_GRAPH));
+			assertSame(GRAPH_VALUE,
+					GraphFrameBindings.from(target).retainedParametersForTransport().get(PRIVATE_GRAPH));
+			assertTrue(retainedOriginLayerCount(BindingSetOrigin.of(target)) <= originalLayerCount,
+					"repeated same-authority writes must not grow the origin chain");
+		}
+	}
+
+	private static int retainedOriginLayerCount(BindingSetOrigin origin) {
+		int[] layers = { 0 };
+		origin.visitRetainedMetadata((metadata, ignoredBytes) -> {
+			if (metadata instanceof BindingSetOrigin) {
+				layers[0]++;
+			}
+		}, ignoredValue -> { });
+		return layers[0];
 	}
 
 	private static BindingSet rootEntry(BindingSet input) {

@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -41,6 +42,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -56,7 +58,9 @@ import org.junit.jupiter.params.provider.EnumSource;
 class LmdbCooperativeCancellationPropagationTest {
 
 	private enum CallbackOutcome {
-		ACCEPTED, DECLINED, FAILED
+		ACCEPTED,
+		DECLINED,
+		FAILED
 	}
 
 	@ParameterizedTest
@@ -118,7 +122,8 @@ class LmdbCooperativeCancellationPropagationTest {
 			}
 			LmdbGcTestMaintenance.awaitPostReady(store);
 			try (SailConnection connection = store.getConnection();
-					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null, false)) {
+					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null,
+							false)) {
 				assertTrue(result.hasNext(), "the native source must hold a live reader");
 				CooperativeCancellation cancellation = assertInstanceOf(CooperativeCancellation.class, result);
 				var request = worker.submit(cancellation::requestCancellation);
@@ -130,15 +135,92 @@ class LmdbCooperativeCancellationPropagationTest {
 					release.countDown();
 				}
 				if (outcome == CallbackOutcome.FAILED) {
-					ExecutionException failure = assertThrows(ExecutionException.class, () -> request.get(5, TimeUnit.SECONDS));
+					ExecutionException failure = assertThrows(ExecutionException.class,
+							() -> request.get(5, TimeUnit.SECONDS));
 					assertSame(callbackFailure, failure.getCause());
 					assertEquals(List.of(cleanupFailure), List.of(failure.getCause().getSuppressed()));
 				} else {
-					assertEquals(outcome == CallbackOutcome.ACCEPTED, request.get(5, TimeUnit.SECONDS));
+					assertTrue(request.get(5, TimeUnit.SECONDS),
+							"the wrapper accepts cancellation locally even when its delegate declines");
 				}
 				assertEquals(1, sourceCloses.get(), "callback exit must close the source exactly once");
 				assertFalse(cancellation.requestCancellation());
 			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void declinedDelegateStillStopsLocallyAcceptedResult(@TempDir Path dataDir) {
+		AtomicInteger sourceCancellations = new AtomicInteger();
+		AtomicInteger sourcePulls = new AtomicInteger();
+		AtomicInteger sourceCloses = new AtomicInteger();
+		LmdbStore store = new LmdbStore(dataDir.toFile()) {
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+				return new LmdbStoreConnection(this) {
+					@Override
+					protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
+							Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+						return new IterationWrapper<Statement>(super.getStatementsInternal(subj, pred, obj,
+								includeInferred, contexts)) {
+							@Override
+							public boolean hasNext() {
+								sourcePulls.incrementAndGet();
+								return super.hasNext();
+							}
+
+							@Override
+							public boolean requestCancellation() {
+								sourceCancellations.incrementAndGet();
+								return false;
+							}
+
+							@Override
+							protected void handleClose() {
+								try {
+									super.handleClose();
+								} finally {
+									sourceCloses.incrementAndGet();
+								}
+							}
+						};
+					}
+				};
+			}
+		};
+		store.init();
+		try {
+			var values = SimpleValueFactory.getInstance();
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin();
+				seed.addStatement(values.createIRI("urn:cancel:s"), values.createIRI("urn:cancel:p"),
+						values.createLiteral("o"));
+				seed.commit();
+			}
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			try (SailConnection connection = store.getConnection();
+					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null,
+							false)) {
+				assertTrue(result.hasNext(), "the source must have a live row before cancellation");
+				int pullsBeforeCancellation = sourcePulls.get();
+				assertTrue(pullsBeforeCancellation > 0);
+				CooperativeCancellation cancellation = assertInstanceOf(CooperativeCancellation.class, result);
+				assertTrue(cancellation.requestCancellation(), "the wrapper itself accepts the request");
+				assertEquals(1, sourceCancellations.get(), "the delegate actually received and declined the request");
+				assertEquals(0, sourceCloses.get(), "acceptance must not prematurely close the delegate");
+				assertThrows(QueryInterruptedException.class, result::hasNext,
+						"the wrapper must stop the next pull despite its delegate's refusal");
+				assertEquals(pullsBeforeCancellation, sourcePulls.get(),
+						"the cancelled pull must fail before entering the delegate again");
+				assertEquals(0, sourceCloses.get(), "the cancellation failure is distinct from explicit cleanup");
+				assertTrue(connection.isOpen());
+				result.close();
+				assertEquals(2, sourceCancellations.get(), "close still signals after the completed refusal");
+				assertEquals(1, sourceCloses.get());
+			}
+			assertEquals(1, sourceCloses.get(), "repeated close must preserve exactly-once source cleanup");
 		} finally {
 			store.shutDown();
 		}
@@ -196,7 +278,7 @@ class LmdbCooperativeCancellationPropagationTest {
 			}
 		};
 		store.init();
-		try (var workers = Executors.newFixedThreadPool(2)) {
+		try (var workers = Executors.newFixedThreadPool(3)) {
 			var values = SimpleValueFactory.getInstance();
 			try (SailConnection seed = store.getConnection()) {
 				seed.begin();
@@ -206,7 +288,8 @@ class LmdbCooperativeCancellationPropagationTest {
 			}
 			LmdbGcTestMaintenance.awaitPostReady(store);
 			try (SailConnection connection = store.getConnection();
-					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null, false)) {
+					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null,
+							false)) {
 				assertTrue(result.hasNext(), "the native source must hold a live reader");
 				CooperativeCancellation cancellation = assertInstanceOf(CooperativeCancellation.class, result);
 				var first = workers.submit(cancellation::requestCancellation);
@@ -214,9 +297,11 @@ class LmdbCooperativeCancellationPropagationTest {
 					assertTrue(firstEntered.await(5, TimeUnit.SECONDS));
 					return cancellation.requestCancellation();
 				});
+				Future<?> closing = null;
 				try {
 					assertTrue(secondEntered.await(5, TimeUnit.SECONDS));
-					result.close();
+					closing = workers.submit(result::close);
+					closing.get(5, TimeUnit.SECONDS);
 					assertEquals(0, sourceCloses.get(), "both callbacks still retain the source");
 					releaseFirst.countDown();
 					assertTrue(first.get(5, TimeUnit.SECONDS));
@@ -229,8 +314,105 @@ class LmdbCooperativeCancellationPropagationTest {
 				} finally {
 					releaseFirst.countDown();
 					releaseSecond.countDown();
+					awaitAll(first, second, closing);
 				}
 			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static void awaitAll(Future<?>... tasks) throws Exception {
+		Exception failure = null;
+		for (Future<?> task : tasks) {
+			if (task != null) {
+				try {
+					task.get(5, TimeUnit.SECONDS);
+				} catch (Exception cleanup) {
+					if (failure == null) {
+						failure = cleanup;
+					} else if (failure != cleanup) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(CallbackOutcome.class)
+	void completedCallbacksDoNotSuppressCloseTimeForwarding(CallbackOutcome outcome, @TempDir Path dataDir) {
+		AtomicInteger requests = new AtomicInteger();
+		AtomicInteger sourceCloses = new AtomicInteger();
+		RuntimeException callbackFailure = new RuntimeException("initial cancellation callback failed");
+		LmdbStore store = new LmdbStore(dataDir.toFile()) {
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+				return new LmdbStoreConnection(this) {
+					@Override
+					protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
+							Value obj, boolean includeInferred, Resource... contexts) throws SailException {
+						return new IterationWrapper<Statement>(super.getStatementsInternal(subj, pred, obj,
+								includeInferred, contexts)) {
+							@Override
+							public boolean requestCancellation() {
+								if (requests.incrementAndGet() == 1) {
+									if (outcome == CallbackOutcome.FAILED) {
+										throw callbackFailure;
+									}
+									return outcome == CallbackOutcome.ACCEPTED;
+								}
+								return true;
+							}
+
+							@Override
+							protected void handleClose() {
+								try {
+									super.handleClose();
+								} finally {
+									sourceCloses.incrementAndGet();
+								}
+							}
+						};
+					}
+				};
+			}
+		};
+		store.init();
+		try {
+			var values = SimpleValueFactory.getInstance();
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin();
+				seed.addStatement(values.createIRI("urn:cancel:s"), values.createIRI("urn:cancel:p"),
+						values.createLiteral("o"));
+				seed.commit();
+			}
+			LmdbGcTestMaintenance.awaitPostReady(store);
+			try (SailConnection connection = store.getConnection();
+					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null,
+							false)) {
+				assertTrue(result.hasNext(), "a live native source must be opened before cancellation");
+				CooperativeCancellation cancellation = assertInstanceOf(CooperativeCancellation.class, result);
+				if (outcome == CallbackOutcome.FAILED) {
+					assertSame(callbackFailure,
+							assertThrows(RuntimeException.class, cancellation::requestCancellation));
+				} else {
+					cancellation.requestCancellation();
+				}
+				assertEquals(1, requests.get());
+				assertEquals(0, sourceCloses.get());
+				result.close();
+				assertEquals(2, requests.get(),
+						"a completed callback must not suppress the close-time signal to this delegate");
+				assertEquals(1, sourceCloses.get());
+				assertTrue(connection.isOpen(), "result cancellation must not tear down its connection");
+			}
+			assertEquals(2, requests.get(),
+					"repeated result close must not issue another callback");
+			assertEquals(1, sourceCloses.get());
 		} finally {
 			store.shutDown();
 		}
@@ -304,7 +486,8 @@ class LmdbCooperativeCancellationPropagationTest {
 			});
 			try {
 				assertTrue(closeEntered.await(5, TimeUnit.SECONDS), "the final close drain must complete first");
-				var request = workers.submit(assertInstanceOf(CooperativeCancellation.class, result)::requestCancellation);
+				var request = workers
+						.submit(assertInstanceOf(CooperativeCancellation.class, result)::requestCancellation);
 				assertFalse(request.get(5, TimeUnit.SECONDS), "a final-drained connection cannot admit a callback");
 				assertEquals(0, requests.get(), "the retired owner must not call its source");
 			} finally {
@@ -321,7 +504,9 @@ class LmdbCooperativeCancellationPropagationTest {
 	}
 
 	private enum ReentrantClose {
-		CONNECTION, STORE, RESULT
+		CONNECTION,
+		STORE,
+		RESULT
 	}
 
 	@ParameterizedTest
@@ -399,7 +584,8 @@ class LmdbCooperativeCancellationPropagationTest {
 			}
 			LmdbGcTestMaintenance.awaitPostReady(store);
 			try (SailConnection connection = store.getConnection();
-					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null, false)) {
+					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null,
+							false)) {
 				owner.set(connection);
 				resultRef.set(result);
 				assertTrue(result.hasNext(), "a live native source must be opened before cancellation");
@@ -474,7 +660,8 @@ class LmdbCooperativeCancellationPropagationTest {
 			}
 			LmdbGcTestMaintenance.awaitPostReady(store);
 			try (SailConnection connection = store.getConnection();
-					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null, false)) {
+					CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null,
+							false)) {
 				assertTrue(result.hasNext(), "a live native source must be opened before close");
 				assertSame(callbackFailure, assertThrows(RuntimeException.class, result::close));
 				assertEquals(List.of(cleanupFailure), List.of(callbackFailure.getSuppressed()));

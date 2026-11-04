@@ -496,7 +496,7 @@ final class LmdbNativeLeapfrogJoin {
 	}
 
 	private static boolean eligibleCorePattern(PatternPlan pattern) {
-		if (pattern.hasRepeatedSlot() || pattern.statementOrder != null || pattern.range != null
+		if (pattern.hasEntryDependentFields() || pattern.hasRepeatedSlot() || pattern.statementOrder != null || pattern.range != null
 				|| pattern.namedContextScope || pattern.contexts.isEmpty()) {
 			return false;
 		}

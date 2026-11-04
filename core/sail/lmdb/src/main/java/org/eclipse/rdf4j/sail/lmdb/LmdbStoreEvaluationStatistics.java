@@ -123,4 +123,9 @@ final class LmdbStoreEvaluationStatistics extends LmdbEvaluationStatistics
 	public LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot() {
 		return detachedPlanningSnapshots.openDetachedPlanningSnapshot();
 	}
+
+	@Override
+	public LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot(int planeMask) {
+		return detachedPlanningSnapshots.openDetachedPlanningSnapshot(planeMask);
+	}
 }

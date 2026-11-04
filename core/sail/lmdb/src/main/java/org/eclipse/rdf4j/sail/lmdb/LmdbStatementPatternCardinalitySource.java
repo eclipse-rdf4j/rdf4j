@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 final class LmdbStatementPatternCardinalitySource {
@@ -69,6 +70,89 @@ final class LmdbStatementPatternCardinalitySource {
 
 	double estimateForPlanning(StatementPattern pattern) {
 		return estimate(pattern, true);
+	}
+
+	/**
+	 * Query-facing exact evidence from the legacy bounded BOTH/ANY counter. The source's actual paired read, graph
+	 * selection and equality predicates must describe that counter's population; a pinned snapshot alone does not prove
+	 * the selected query population. The direct physical {@link #estimateExact(StatementPattern)} API retains its raw
+	 * selector contract.
+	 */
+	double estimateExactForQuery(StatementPattern pattern, EstimateContext context) {
+		if (pattern == null || context == null || !context.nativeEvidenceAllowed() || pattern.getSubjectVar() == null
+				|| pattern.getPredicateVar() == null || pattern.getObjectVar() == null) {
+			return -1.0d;
+		}
+		for (Var variable : pattern.getVarList()) {
+			if (variable.getName() == null) {
+				return -1.0d;
+			}
+		}
+		Value subject = constantValue(pattern.getSubjectVar());
+		Value predicate = constantValue(pattern.getPredicateVar());
+		Value graph = constantValue(pattern.getContextVar());
+		// These are query type impossibilities, independent of plane, selector and dictionary contents.
+		if (subject != null && !(subject instanceof Resource) || predicate != null && !(predicate instanceof IRI)
+				|| graph != null && !(graph instanceof Resource)) {
+			return 0.0d;
+		}
+		if (valueStore == null || tripleStore == null) {
+			return -1.0d;
+		}
+		TxnManager.Txn transaction = tripleStore.borrowedPlanningTxn();
+		ValueStore.ReadSnapshot dictionary = valueStore.borrowedPlanningSnapshot();
+		if (dictionary == null || dictionary.valueStore() != valueStore || !dictionary.isPairedWith(transaction)
+				|| context.frontierSnapshotEpoch() < 0L
+				|| transaction.nativeTransactionId() != context.frontierSnapshotEpoch()
+				|| context.frontierPlaneMask() == 0
+				|| (context.frontierPlaneMask() & ~FrontierLeafProbe.BOTH_PLANES) != 0) {
+			return -1.0d;
+		}
+		try {
+			// Missing RDF terms in S/P/O prove zero on every subset of this same-store snapshot. A context alias
+			// is a selector program, so its dictionary absence is deliberately not used as an emptiness proof.
+			for (Var variable : new Var[] { pattern.getSubjectVar(), pattern.getPredicateVar(),
+					pattern.getObjectVar() }) {
+				Value value = constantValue(variable);
+				if (value instanceof IRI && valueStore.getId(dictionary, value) == LmdbValue.UNKNOWN_ID) {
+					return 0.0d;
+				}
+			}
+			if (context.readPopulation() != LmdbFrontierReadPopulation.STORE_DEFAULTS
+					|| context.frontierPlaneMask() != FrontierLeafProbe.BOTH_PLANES
+					|| pattern.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS
+					|| graph != null || !rawEqualitiesMatchQuery(pattern)) {
+				return -1.0d;
+			}
+			return estimateExact(pattern);
+		} catch (IOException | RuntimeException failure) {
+			return -1.0d;
+		}
+	}
+
+	/** The legacy scan groups names; evaluation compares complete Var occurrences before adding equality filters. */
+	private static boolean rawEqualitiesMatchQuery(StatementPattern pattern) {
+		Var[] variables = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),
+				pattern.getContextVar() };
+		for (int left = 0; left < variables.length; left++) {
+			Var first = variables[left];
+			if (first == null) {
+				continue;
+			}
+			for (int right = left + 1; right < variables.length; right++) {
+				Var second = variables[right];
+				if (second == null) {
+					continue;
+				}
+				String firstName = repeatedVariableName(first);
+				boolean rawEquality = firstName != null && firstName.equals(repeatedVariableName(second));
+				boolean queryEquality = !first.hasValue() && first.equals(second);
+				if (rawEquality != queryEquality) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	/**

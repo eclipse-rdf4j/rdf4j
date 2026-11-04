@@ -103,10 +103,77 @@ final class LmdbEvaluationFilterServices {
 		filter.setCostFeedbackTrackingEnabled(true);
 	}
 
-	private boolean optionalOutcomeAllowed() {
-		return learned != null && adaptiveEvidenceAllowed() && runtime.adaptiveEvidenceAllowed()
+	LmdbPreparedFilterOutcome prepareNativeFilterOutcome(Filter surface, Filter origin, TripleSource source,
+			Dataset dataset) {
+		try (QueryOptimizationScope ignored = runtime.pinProviderView()) {
+			bindReadSource(source, dataset);
+			RuntimeFeedbackContract contract = origin.getRuntimeFeedbackContract();
+			if (!nativeOutcomeAllowed() || !LmdbPlanningGraphEvidence.allows(surface)
+					|| !LmdbPlanningGraphEvidence.allows(origin)
+					|| !LmdbReinvocablePositions.filterOutcomeRecordable(origin)
+					|| contract != null && (!(contract.descriptor() instanceof LmdbFilterOutcomeFeedbackDescriptor
+							|| contract.descriptor() instanceof LmdbRuntimeFeedbackDescriptor)
+							|| !contract.admits(RuntimeFeedbackContract.ADMIT_FILTER)
+							|| contract.dataEpoch() != runtime.snapshotVersion()
+							|| contract.catalogEpoch() != runtime.snapshotVersion())) {
+				return null;
+			}
+			// Legacy-only keys use the actual dictionary owner already authenticated by captureSource's paired
+			// read capability, without retaining a currently published provider or any of its mutable cells.
+			Object owner = learned != null ? learned.outcomeOwnerToken() : runtime.valueStore();
+			if (owner == null) { return null; }
+			// An origin contract authenticates that origin against its actual source, not a different synthesized
+			// surface. Validate it before preparing the independently keyed synthetic population destination.
+			LmdbFilterOutcomeFeedbackDescriptor originDescriptor = LmdbFilterOutcomeFeedbackDescriptor.captureSource(
+					owner, runtime, source, dataset, origin);
+			if (originDescriptor == null || contract != null
+					&& contract.descriptor() instanceof LmdbFilterOutcomeFeedbackDescriptor existing
+					&& !existing.equals(originDescriptor)) {
+				return null;
+			}
+			LmdbFilterOutcomeFeedbackDescriptor descriptor = surface == origin ? originDescriptor
+					: LmdbFilterOutcomeFeedbackDescriptor.captureSource(owner, runtime,
+							source, dataset, surface);
+			if (descriptor == null) { return null; }
+			LmdbFilterSelectivityStats.PreparedFilterOutcome legacySurface =
+					LmdbFilterSelectivityStats.captureFilterOutcome(surface);
+			if (learned == null) {
+				return new LmdbPreparedFilterOutcome(null, descriptor, legacySurface, this, feedbackAuthority.get());
+			}
+			PreparedOutcome prepared = bindQualifiedOutcome(descriptor);
+			return prepared == null ? null : new LmdbPreparedFilterOutcome(prepared.outcome(), descriptor, legacySurface,
+					this, prepared.authority());
+		}
+	}
+
+	private record PreparedOutcome(LmdbLearnedFilterSelectivity.BoundOutcome outcome,
+			LmdbFeedbackReadAuthority.Publication authority) {
+	}
+
+	private PreparedOutcome bindQualifiedOutcome(LmdbFilterOutcomeFeedbackDescriptor descriptor) {
+		LmdbFeedbackReadAuthority.Publication authority = feedbackAuthority.get();
+		LmdbLearnedFilterSelectivity.BoundOutcome outcome = learned.bindOutcome(runtime.valueStore(),
+				runtime.physicalTripleStore(), descriptor, this::optionalOutcomeAllowed, authority);
+		return outcome == null ? null : new PreparedOutcome(outcome, authority);
+	}
+
+	/** The qualified destination already recorded this event; retain only the separate legacy diagnostics. */
+	void recordNativeLegacyOutcome(LmdbFilterSelectivityStats.PreparedFilterOutcome surface,
+			EvaluationStatistics.FilterOutcomeObservation observation, LmdbFeedbackReadAuthority.Publication authority) {
+		try (QueryOptimizationScope ignored = runtime.pinProviderView()) {
+			LmdbFilterSelectivityStats filters = filterStatistics();
+			if (nativeOutcomeAllowed() && filters != null && surface != null) {
+				filters.recordPreparedFilterOutcome(surface, observation.passedCount(), observation.filteredCount(), authority);
+			}
+		}
+	}
+
+	private boolean nativeOutcomeAllowed() {
+		return adaptiveEvidenceAllowed() && runtime.adaptiveEvidenceAllowed()
 				&& (estimator == null || estimator.adaptiveEvidenceAllowed());
 	}
+
+	private boolean optionalOutcomeAllowed() { return learned != null && nativeOutcomeAllowed(); }
 
 	private LmdbFilterOutcomeFeedbackDescriptor outcomeDescriptor(Filter filter) {
 		return optionalOutcomeAllowed() && readIdentity != null
@@ -248,9 +315,8 @@ final class LmdbEvaluationFilterServices {
 			LmdbFilterOutcomeFeedbackDescriptor descriptor = outcomeDescriptor(filter);
 			if (descriptor != null && (!(contract.descriptor() instanceof LmdbFilterOutcomeFeedbackDescriptor existing)
 					|| existing.equals(descriptor))) {
-				LmdbFeedbackReadAuthority.Publication authority = feedbackAuthority.get();
-				learnedOutcome = learned.bindOutcome(runtime.valueStore(), runtime.physicalTripleStore(),
-						descriptor, this::optionalOutcomeAllowed, authority);
+				PreparedOutcome prepared = bindQualifiedOutcome(descriptor);
+				learnedOutcome = prepared == null ? null : prepared.outcome();
 			}
 		}
 		if (feedback == null) {

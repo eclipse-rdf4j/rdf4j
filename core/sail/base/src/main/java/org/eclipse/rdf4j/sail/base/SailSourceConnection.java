@@ -581,7 +581,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		private void expire() {
 			synchronized (interruptLock) {
-				if (closed) { return; }
+				if (closed) {
+					return;
+				}
 				// Publish before interrupting: evaluation may throw and enter cleanup before interrupt() returns.
 				timedOut.set(true);
 				deliveredInterrupt = true;

@@ -997,9 +997,16 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 			}
 			int index = decision.index;
 			LmdbNativeStrategyProposal<T> chosen = candidates.get(index);
-			LmdbNativeStrategySelection<T> selection = decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T> normal
-					? openAdaptive(normal)
-					: openLegacy(chosen);
+			LmdbNativeStrategySelection<T> selection;
+			try {
+				selection = decision.plan instanceof LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T> normal
+						? openAdaptive(normal)
+						: openLegacy(chosen);
+			} catch (IOException | RuntimeException | Error failure) {
+				Throwable retained = abortFailedOpen(chosen, failure);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+				throw failure;
+			}
 			if (selection != null) {
 				if (adaptiveModel != null) {
 					adaptiveModel.store().safetyLedger().noteNormalDecision();
@@ -1046,13 +1053,17 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 			releaseAfterOpen(fallback, "terminal fallback", selection.value(), selection.observation());
 			return selection;
 		} catch (IOException | RuntimeException | Error failure) {
-			try {
-				fallback.close();
-			} catch (RuntimeException | Error closeFailure) {
-				failure.addSuppressed(closeFailure);
-			}
+			Throwable retained = abortFailedOpen(fallback, failure);
+			retained = KernelRuntime.closeResource(fallback, retained);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 			throw failure;
 		}
+	}
+
+	/** A terminal opener failure cannot leave its used semantic filters on the retry/discard path. */
+	private static Throwable abortFailedOpen(LmdbNativeStrategyProposal<?> proposal, Throwable failure) {
+		NativeFilterLease filters = proposal.filterAttempt();
+		return filters == null ? failure : KernelRuntime.closeResource(() -> filters.abort(failure), failure);
 	}
 
 	/**
@@ -1097,12 +1108,14 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 			throw wrapped;
 		} finally {
 			Throwable retained = states.settled(failure, result != null);
-			if (retained != failure) {
-				if (result != null) {
-					discardUnpublished(result.value(), retained);
-				}
-				NativeContextClosingIteration.throwFailure(retained);
+			if (retained != failure && result != null) {
+				LmdbNativeStrategySelection<T> accepted = result;
+				Throwable settlementFailure = retained;
+				retained = KernelRuntime.closeResource(() -> accepted.failed(settlementFailure), retained);
+				retained = discardUnpublished(accepted.value(), retained);
+				retained = KernelRuntime.closeResource(accepted, retained);
 			}
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 		}
 	}
 
@@ -1138,13 +1151,11 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 		} finally {
 			try {
 				Throwable retained = states.settled(failure, false);
-				if (retained != failure) {
+				if (retained != failure && produced != null) {
 					T unpublished = produced;
-					if (unpublished != null) {
-						retained = KernelRuntime.closeResource(() -> hedgeSupport.discard(unpublished), retained);
-					}
-					NativeContextClosingIteration.throwFailure(retained);
+					retained = KernelRuntime.closeResource(() -> hedgeSupport.discard(unpublished), retained);
 				}
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 			} finally {
 				if (diagnostic != null) {
 					LmdbNativeAttemptMetrics.installDeclineCapture(previous);
@@ -2091,15 +2102,8 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 			} catch (KernelQueryCancelledException cancelled) {
 				observation.cancelled(cancelled);
 				plan.reservation().commit(chargeNanos(elapsedNanosSince(startedMillis)));
-				if (value != null) {
-					try {
-						probeHarness.discard(value);
-					} catch (Throwable closeFailure) {
-						if (closeFailure != cancelled) {
-							cancelled.addSuppressed(closeFailure);
-						}
-					}
-				}
+				Throwable retained = discardUnpublished(value, cancelled);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, cancelled);
 				throw cancelled;
 			} catch (LmdbNativeProbeDeadlineExceeded
 					| org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException expired) {
@@ -2109,13 +2113,15 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 				observation.failed(failure);
 				plan.reservation().commit(chargeNanos(elapsedNanosSince(startedMillis)));
 				scheduler.quarantine(plan.flight());
-				discardUnpublished(value, failure);
+				Throwable retained = discardUnpublished(value, failure);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 				throw failure;
 			} catch (Exception failure) {
 				observation.failed(failure);
 				plan.reservation().commit(chargeNanos(elapsedNanosSince(startedMillis)));
 				scheduler.quarantine(plan.flight());
-				discardUnpublished(value, failure);
+				Throwable retained = discardUnpublished(value, failure);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 				throw new IOException("probe trial opener failed", failure);
 			}
 			if (!timedOut && scope.deadline().expired()) {
@@ -2229,48 +2235,44 @@ final class LmdbNativeStrategyArbiter<T> extends LmdbNativeCandidateOffers<T> im
 					failure = appendFailure(failure, problem);
 				}
 			}
-			discardUnpublished(value, failure);
+			failure = discardUnpublished(value, failure);
 			NativeFilterLease filters = winner.filterAttempt();
 			if (filters != null) {
-				filters.abort(failure);
+				Throwable primary = failure;
+				failure = KernelRuntime.closeResource(() -> filters.abort(primary), failure);
 			}
 			throwCleanup(failure);
 		}
 	}
 
 	/** Opaque resource-owning values need the site's explicit disposer; cursors normally implement AutoCloseable. */
-	private void discardUnpublished(T value, Throwable failure) {
+	private Throwable discardUnpublished(T value, Throwable failure) {
 		if (value == null) {
-			return;
+			return failure;
 		}
-		try {
+		return KernelRuntime.closeResource(() -> {
 			if (probeHarness != null) {
 				probeHarness.discard(value);
 			} else if (value instanceof AutoCloseable resource) {
 				resource.close();
 			}
-		} catch (Throwable problem) {
-			appendFailure(failure, problem);
-		}
+		}, failure);
 	}
 
 	private static Throwable appendFailure(Throwable first, Throwable next) {
-		if (first == null) {
-			return next;
+		if (next == null) {
+			return first;
 		}
-		if (first != next) {
-			first.addSuppressed(next);
-		}
-		return first;
+		return KernelRuntime.closeResource(() -> {
+			if (next instanceof Exception exception) {
+				throw exception;
+			}
+			NativeContextClosingIteration.throwFailure(next);
+		}, first);
 	}
 
 	private static void throwCleanup(Throwable failure) {
-		if (failure instanceof RuntimeException problem) {
-			throw problem;
-		}
-		if (failure instanceof Error problem) {
-			throw problem;
-		}
+		KernelRuntime.rethrowCloseFailure(failure);
 	}
 
 	private static void closeAll(List<? extends LmdbNativeStrategyProposal<?>> proposals) {

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
@@ -36,20 +37,21 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
 import org.junit.jupiter.api.Test;
 
 class SailSourceReplayTransportTest {
 	@Test
-	void openingEvaluationPreservesMarkedControlAndSemanticWrapperIdentity() {
+	void openingEvaluationPreservesMarkedControlAndSemanticWrapperIdentity() throws SailException {
 		RuntimeException signal = signal();
 		for (RuntimeException failure : List.of(new QueryEvaluationException(signal),
 				new QueryEvaluationException("application envelope", signal) {
 					private static final long serialVersionUID = 1L;
 				}, new QueryInterruptedException("independent interruption", signal))) {
-			Fixture fixture = fixture(failure);
-			try (SailSourceConnection connection = fixture.connection()) {
+			try (Fixture fixture = fixture(failure);
+					SailSourceConnection connection = fixture.connection()) {
 				assertSame(failure, assertThrows(RuntimeException.class,
 						() -> connection.evaluateInternal(new SingletonSet(), null, EmptyBindingSet.getInstance(),
 								false)));
@@ -61,12 +63,12 @@ class SailSourceReplayTransportTest {
 	}
 
 	@Test
-	void openingControlKeepsIndependentCleanupFailure() {
+	void openingControlKeepsIndependentCleanupFailure() throws SailException {
 		QueryEvaluationException failure = new QueryEvaluationException(signal());
 		IllegalStateException cleanup = new IllegalStateException("dataset close failed");
-		Fixture fixture = fixture(failure);
-		doThrow(cleanup).when(fixture.dataset()).close();
-		try (SailSourceConnection connection = fixture.connection()) {
+		try (Fixture fixture = fixture(failure);
+				SailSourceConnection connection = fixture.connection()) {
+			doThrow(cleanup).when(fixture.dataset()).close();
 			assertSame(failure, assertThrows(QueryEvaluationException.class,
 					() -> connection.evaluateInternal(new SingletonSet(), null, EmptyBindingSet.getInstance(), false)));
 			verify(fixture.factory()).createEvaluationStrategy(any(), any(), any(), eq(QueryExecutionPolicy.DEFAULT));
@@ -75,10 +77,10 @@ class SailSourceReplayTransportTest {
 	}
 
 	@Test
-	void ordinaryQueryEvaluationFailureKeepsItsSailEnvelope() {
+	void ordinaryQueryEvaluationFailureKeepsItsSailEnvelope() throws SailException {
 		QueryEvaluationException failure = new QueryEvaluationException("ordinary query failure");
-		Fixture fixture = fixture(failure);
-		try (SailSourceConnection connection = fixture.connection()) {
+		try (Fixture fixture = fixture(failure);
+				SailSourceConnection connection = fixture.connection()) {
 			assertSame(failure, assertThrows(SailException.class,
 					() -> connection.evaluateInternal(new SingletonSet(), null, EmptyBindingSet.getInstance(), false))
 							.getCause());
@@ -97,11 +99,9 @@ class SailSourceReplayTransportTest {
 		});
 	}
 
-	private static Fixture fixture(RuntimeException failure) {
-		AbstractSail sail = mock(AbstractSail.class);
-		when(sail.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
-		when(sail.getDefaultIsolationLevel()).thenReturn(IsolationLevels.READ_COMMITTED);
-		when(sail.getQueryExecutionPolicy()).thenReturn(QueryExecutionPolicy.DEFAULT);
+	private static Fixture fixture(RuntimeException failure) throws SailException {
+		TestSail sail = new TestSail();
+		sail.init();
 		SnapshotSailStore store = mock(SnapshotSailStore.class);
 		SailSource source = mock(SailSource.class);
 		SailDataset dataset = mock(SailDataset.class);
@@ -126,9 +126,39 @@ class SailSourceReplayTransportTest {
 			protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 					throws SailException {
 			}
-		}, dataset, factory);
+		}, dataset, factory, sail);
 	}
 
-	private record Fixture(SailSourceConnection connection, SailDataset dataset, EvaluationStrategyFactory factory) {
+	private record Fixture(SailSourceConnection connection, SailDataset dataset, EvaluationStrategyFactory factory,
+			TestSail sail) implements AutoCloseable {
+		@Override
+		public void close() {
+			try {
+				sail.shutDown();
+			} catch (SailException e) {
+				throw new AssertionError("test Sail shutdown failed", e);
+			}
+		}
+	}
+
+	private static final class TestSail extends AbstractSail {
+		@Override
+		public boolean isWritable() {
+			return false;
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return SimpleValueFactory.getInstance();
+		}
+
+		@Override
+		protected void shutDownInternal() {
+		}
+
+		@Override
+		protected SailConnection getConnectionInternal() {
+			throw new UnsupportedOperationException("the fixture constructs its SailSourceConnection directly");
+		}
 	}
 }

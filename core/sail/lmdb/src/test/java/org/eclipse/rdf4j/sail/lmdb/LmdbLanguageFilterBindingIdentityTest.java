@@ -12,15 +12,20 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.TreeSet;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -28,6 +33,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -63,22 +69,39 @@ class LmdbLanguageFilterBindingIdentityTest {
 	@MethodSource("cases")
 	void preservesTheActualBindingSource(String storedTag, String queryTag, String query,
 			int shape, @TempDir Path directory) {
-		SailRepository lmdb = new SailRepository(new LmdbStore(directory.toFile()));
+		LmdbStore store = new LmdbStore(directory.toFile());
+		SailRepository lmdb = new SailRepository(store);
 		lmdb.init();
 		try {
+			IRI subject = VF.createIRI("urn:language-binding:s1");
+			IRI label = VF.createIRI("urn:language-binding:label");
 			try (RepositoryConnection connection = lmdb.getConnection()) {
 				connection.begin();
-				connection.add(VF.createIRI("urn:language-binding:s1"), VF.createIRI("urn:language-binding:label"),
-						VF.createLiteral("abc", storedTag));
-				connection.add(VF.createIRI("urn:language-binding:s2"), VF.createIRI("urn:language-binding:label"),
+				connection.add(subject, label, VF.createLiteral("abc", storedTag));
+				connection.add(VF.createIRI("urn:language-binding:s2"), label,
 						VF.createLiteral("other", storedTag));
 				connection.add(VF.createIRI("urn:language-binding:s3"), VF.createIRI("urn:language-binding:other"),
 						VF.createLiteral("abc", storedTag));
-				connection.add(VF.createIRI("urn:language-binding:s1"), VF.createIRI("urn:language-binding:marker"),
-						VF.createLiteral("marker"));
+				connection.add(subject, VF.createIRI("urn:language-binding:marker"), VF.createLiteral("marker"));
 				connection.commit();
 			}
-			String outputTag = shape >= 9 ? queryTag : storedTag;
+			// Capture the original query result before a direct dictionary read can warm the producer value.
+			List<String> initialRows = rows(lmdb, query, queryTag, shape == 10);
+			assertEquals(LmdbStoreFormat.CURRENT_VERSION, store.getFormat().getVersion());
+			assertTrue(store.getFormat().usesCanonicalLanguageTags(),
+					"format 7 persists RDF language tags in its canonical lower-case representation");
+			String storedProducerTag;
+			try (var connection = lmdb.getConnection(); var statements = connection.getStatements(subject, label, null)) {
+				assertTrue(statements.hasNext(), "direct statement readback establishes the actual producer representative");
+				Literal producer = (Literal) statements.next().getObject();
+				storedProducerTag = producer.getLanguage().orElseThrow();
+				assertEquals("abc", producer.getLabel());
+				assertEquals(storedTag.toLowerCase(Locale.ROOT), storedProducerTag,
+						"the current store's actual producer value follows its persisted format-7 policy");
+				assertFalse(statements.hasNext(), "the producer statement must have one unambiguous stored representative");
+			}
+			// Query VALUES/request inputs still carry queryTag; only statement-produced output uses storedProducerTag.
+			String outputTag = shape >= 9 ? queryTag : storedProducerTag;
 			List<String> expected = new ArrayList<>();
 			expected.add(row("s1", "abc", outputTag));
 			if (shape == 3) {
@@ -87,10 +110,59 @@ class LmdbLanguageFilterBindingIdentityTest {
 				expected.add(row("s3", "abc", outputTag));
 			}
 			Collections.sort(expected);
-			assertEquals(expected, rows(lmdb, query, queryTag, shape == 10),
+			assertEquals(expected, initialRows,
 					"stored producers and explicit input bindings own their respective output representation");
 		} finally {
 			lmdb.shutDown();
+		}
+	}
+
+	@Test
+	void authenticFormatTwoRetainsUppercaseProducerAndInputRepresentatives(@TempDir Path temporaryDirectory)
+			throws Exception {
+		LmdbCompatibilityFixtures.extract("canonical-iri-format-2.zip", temporaryDirectory);
+		Path storeDirectory = temporaryDirectory.resolve("store");
+		// This authentic release fixture must be opened with its recorded index and inline-literal settings.
+		SailRepository legacy = CanonicalIriCompatibilityProcess.repository(storeDirectory, false);
+		LmdbStore store = (LmdbStore) legacy.getSail();
+		legacy.init();
+		try {
+			assertEquals(LmdbStoreFormat.LEGACY_VERSION, store.getFormat().getVersion());
+			assertFalse(store.getFormat().usesCanonicalLanguageTags());
+			IRI subject = VF.createIRI("urn:language-binding:legacy");
+			IRI label = VF.createIRI("urn:language-binding:label");
+			String valueLabel = "format-two-new-producer-2026";
+			try (RepositoryConnection connection = legacy.getConnection()) {
+				connection.begin();
+				connection.add(subject, label, VF.createLiteral(valueLabel, "EN"));
+				connection.commit();
+			}
+			String producerQuery = PROJECT + "?s :label ?o FILTER(?o = \"" + valueLabel + "\"@en) }";
+			List<String> producerRows = rows(legacy, producerQuery, "en", false);
+
+			String producerTag;
+			try (RepositoryConnection connection = legacy.getConnection();
+					var statements = connection.getStatements(subject, label, null)) {
+				assertTrue(statements.hasNext(), "direct readback establishes the authentic format-2 producer value");
+				Literal produced = (Literal) statements.next().getObject();
+				producerTag = produced.getLanguage().orElseThrow();
+				assertEquals(valueLabel, produced.getLabel());
+				assertEquals("EN", producerTag, "format 2 preserves the newly written language-tag bytes");
+				assertFalse(statements.hasNext());
+			}
+			assertEquals(List.of(row("legacy", valueLabel, producerTag)),
+					producerRows,
+					"optimized statement-produced output must retain the actual format-2 representative");
+
+			String valuesQuery = PROJECT + "VALUES ?o { \"" + valueLabel + "\"@en } ?s :label ?o }";
+			assertEquals(List.of(row("legacy", valueLabel, "en")), rows(legacy, valuesQuery, "en", false),
+					"an explicit VALUES input retains its own language spelling");
+			String requestQuery = PROJECT + "?s :label ?o }";
+			assertEquals(List.of(row("legacy", valueLabel, "en")),
+					rowsWithObjectBinding(legacy, requestQuery, VF.createLiteral(valueLabel, "en")),
+					"an external request input retains its own language spelling");
+		} finally {
+			legacy.shutDown();
 		}
 	}
 
@@ -102,10 +174,15 @@ class LmdbLanguageFilterBindingIdentityTest {
 
 	private static List<String> rows(SailRepository repository, String query, String queryTag,
 			boolean externalBinding) {
+		return rowsWithObjectBinding(repository, query,
+				externalBinding ? VF.createLiteral("abc", queryTag) : null);
+	}
+
+	private static List<String> rowsWithObjectBinding(SailRepository repository, String query, Value objectBinding) {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			TupleQuery prepared = connection.prepareTupleQuery(PREFIX + query);
-			if (externalBinding) {
-				prepared.setBinding("o", VF.createLiteral("abc", queryTag));
+			if (objectBinding != null) {
+				prepared.setBinding("o", objectBinding);
 			}
 			List<String> rows = new ArrayList<>();
 			try (var result = prepared.evaluate()) {

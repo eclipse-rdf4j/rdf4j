@@ -12,9 +12,13 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 
 /**
@@ -24,7 +28,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
  */
 final class NativeFilterLease {
 
-	private final IdentityHashMap<NativeBooleanFilter, Entry> borrowed = new IdentityHashMap<>();
+	private IdentityHashMap<NativeBooleanFilter, Entry> borrowed;
 	private final IdentityHashMap<SlotPlan, SlotPlan> plans = new IdentityHashMap<>();
 	private final ArrayList<Entry> entries = new ArrayList<>();
 	private final boolean suppressFeedback;
@@ -43,8 +47,8 @@ final class NativeFilterLease {
 	private NativeExecutionContext ownerContext;
 	private final boolean capture;
 	private Frozen capturedMemo;
-	private final IdentityHashMap<Frozen, Boolean> inclusions = new IdentityHashMap<>();
-	private final IdentityHashMap<RecordingNativeBooleanFilter, Outcome> outcomes = new IdentityHashMap<>();
+	private IdentityHashMap<Frozen, Boolean> inclusions;
+	private IdentityHashMap<RecordingNativeBooleanFilter, Outcome> outcomes;
 
 	NativeFilterLease() {
 		this(false);
@@ -107,6 +111,9 @@ final class NativeFilterLease {
 			throw new IllegalArgumentException("memo outcomes crossed evaluation owners");
 		}
 		bindOwner(owner);
+		if (inclusions == null) {
+			inclusions = new IdentityHashMap<>();
+		}
 		inclusions.put(frozen, Boolean.TRUE);
 	}
 
@@ -176,7 +183,7 @@ final class NativeFilterLease {
 	}
 
 	static record FrozenOutcome(Object template, long opens, long terminals, long exhausted,
-			long passed, long rejected, boolean incomplete) {
+			long passed, long rejected, boolean incomplete, boolean inputQualified) {
 	}
 
 	synchronized Frozen freeze(boolean complete) {
@@ -188,20 +195,20 @@ final class NativeFilterLease {
 		try {
 			if (failure != null) {
 				// Keep only failed-root diagnostics; a previously selected receipt settles without complete evidence.
-				for (Outcome outcome : outcomes.values()) {
+				for (Outcome outcome : outcomes()) {
 					outcome.incomplete = true;
 					outcome.context.mergeDiscardedFilterOutcome(outcome);
 				}
 				rethrow(failure);
 			}
-			FrozenOutcome[] values = new FrozenOutcome[outcomes.size()];
+			FrozenOutcome[] values = new FrozenOutcome[outcomes().size()];
 			int index = 0;
-			for (Outcome outcome : outcomes.values()) {
+			for (Outcome outcome : outcomes()) {
 				values[index++] = new FrozenOutcome(outcome.template.outcomeIdentity, outcome.opens,
 						outcome.terminals, outcome.exhausted, outcome.passed, outcome.rejected,
-						outcome.incomplete || !complete);
+						outcome.incomplete || !complete, outcome.inputQualified);
 			}
-			Frozen[] children = inclusions.keySet().toArray(Frozen[]::new);
+			Frozen[] children = inclusions().toArray(Frozen[]::new);
 			for (Frozen child : children) {
 				if (child.owner != ownerContext.filterOwnerIdentity()) {
 					throw new IllegalStateException("memo capture included another evaluation");
@@ -251,8 +258,11 @@ final class NativeFilterLease {
 			}
 			parent = outer;
 			if (facade.entry.recorder == null) {
-				Entry semantic = borrowed.get(original);
+				Entry semantic = borrowed == null ? null : borrowed.get(original);
 				if (semantic == null) {
+					if (borrowed == null) {
+						borrowed = new IdentityHashMap<>();
+					}
 					semantic = new Entry(this, original, null, false);
 					borrowed.put(original, semantic);
 					entries.add(semantic);
@@ -261,11 +271,14 @@ final class NativeFilterLease {
 			}
 			original = facade.entry.attempt;
 		}
-		Entry existing = borrowed.get(original);
+		Entry existing = borrowed == null ? null : borrowed.get(original);
 		if (existing != null) {
 			return existing.facade;
 		}
 
+		if (borrowed == null) {
+			borrowed = new IdentityHashMap<>();
+		}
 		NativeBooleanFilter attempt;
 		RecordingNativeBooleanFilter recorder = null;
 		if (original instanceof RecordingNativeBooleanFilter recording) {
@@ -296,6 +309,10 @@ final class NativeFilterLease {
 	}
 
 	private SlotPlan borrowPlan(SlotPlan plan) {
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return new NativeValuesFoldPlan(borrow(guard.folded), borrow(guard.original), guard.inputNames,
+					guard.inputSlots);
+		}
 		if (LmdbNativeInteriorPlans.carrier(plan)) {
 			return LmdbNativeInteriorPlans.borrow(plan, this);
 		}
@@ -334,7 +351,9 @@ final class NativeFilterLease {
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
 			return new LeftJoinPlan(borrow(leftJoin.left), borrow(leftJoin.right), leftJoin.lexicalSharedSlots,
-					leftJoin.lexicalHashKeys, leftJoin.lexicalProblemSlots);
+					leftJoin.lexicalHashKeys, leftJoin.lexicalProblemSlots,
+					leftJoin.lexicalCondition == null ? null : borrow(leftJoin.lexicalCondition),
+					leftJoin.lexicalConditionMask);
 		}
 		if (plan instanceof UnionPlan union) {
 			return new UnionPlan(borrow(union.left), borrow(union.right));
@@ -394,10 +413,12 @@ final class NativeFilterLease {
 		}
 		finished = true;
 		// Retain diagnostics only for a terminal failed root. A discarded trial never trains or poisons its winner.
-		for (Outcome outcome : outcomes.values()) {
+		for (Outcome outcome : outcomes()) {
 			outcome.context.mergeDiscardedFilterOutcome(outcome);
 		}
-		outcomes.clear();
+		if (outcomes != null) {
+			outcomes.clear();
+		}
 		Throwable failure = null;
 		for (int i = entries.size() - 1; i >= 0; i--) {
 			Entry entry = entries.get(i);
@@ -438,7 +459,7 @@ final class NativeFilterLease {
 		try {
 			// Acceptance is a separate gate from EOF. Child summaries merge only after every owner closed successfully.
 			if (!capture && !suppressFeedback && (publishFeedback || primary != null)) {
-				for (Outcome outcome : outcomes.values()) {
+				for (Outcome outcome : outcomes()) {
 					if (failure != null) {
 						outcome.incomplete = true;
 					}
@@ -449,19 +470,19 @@ final class NativeFilterLease {
 					}
 				}
 			}
-			if (!capture && !suppressFeedback && publishFeedback && !inclusions.isEmpty()) {
+			if (!capture && !suppressFeedback && publishFeedback && !inclusions().isEmpty()) {
 				if (parent == null) {
-					for (Frozen frozen : inclusions.keySet()) {
+					for (Frozen frozen : inclusions()) {
 						ownerContext.mergeFrozenFilterOutcomes(frozen);
 					}
 				} else {
-					for (Frozen frozen : inclusions.keySet()) {
+					for (Frozen frozen : inclusions()) {
 						parent.include(frozen, ownerContext);
 					}
 				}
 			}
 			if (capture && primary != null) {
-				for (Outcome outcome : outcomes.values()) {
+				for (Outcome outcome : outcomes()) {
 					outcome.context.mergeDiscardedFilterOutcome(outcome);
 				}
 			}
@@ -473,9 +494,7 @@ final class NativeFilterLease {
 			}
 			clearReferences();
 		}
-		if (primary == null && failure != null) {
-			rethrow(failure);
-		}
+		KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	private Throwable closeEntries(Throwable primary, boolean publishFeedback) {
@@ -506,31 +525,37 @@ final class NativeFilterLease {
 		return failure;
 	}
 
+	/** The lease monitor protects lazy allocation and every use of these attempt-local registries. */
+	private Collection<Outcome> outcomes() {
+		return outcomes == null ? Collections.emptyList() : outcomes.values();
+	}
+
+	private Set<Frozen> inclusions() {
+		return inclusions == null ? Collections.emptySet() : inclusions.keySet();
+	}
+
 	private void clearReferences() {
 		plans.clear();
-		borrowed.clear();
+		if (borrowed != null) {
+			borrowed.clear();
+		}
 		entries.clear();
-		outcomes.clear();
-		inclusions.clear();
+		if (outcomes != null) {
+			outcomes.clear();
+		}
+		if (inclusions != null) {
+			inclusions.clear();
+		}
 		parent = null;
 		ownerContext = null;
 	}
 
 	private static Throwable addFailure(Throwable primary, Throwable later) {
-		if (primary == null) {
-			return later;
-		}
-		if (primary != later) {
-			primary.addSuppressed(later);
-		}
-		return primary;
+		return KernelRuntime.closeResource(() -> rethrow(later), primary);
 	}
 
 	private static void rethrow(Throwable failure) {
-		if (failure instanceof RuntimeException runtimeException) {
-			throw runtimeException;
-		}
-		throw (Error) failure;
+		KernelRuntime.rethrowCloseFailure(failure);
 	}
 
 	void unqualified(RecordingNativeBooleanFilter template, NativeExecutionContext context) {
@@ -550,9 +575,12 @@ final class NativeFilterLease {
 		}
 		bindOwner(context);
 		context.registerFilterTemplate(template.origin);
-		Outcome result = outcomes.get(template.origin);
+		Outcome result = outcomes == null ? null : outcomes.get(template.origin);
 		if (result == null) {
 			result = new Outcome(template.origin, context);
+			if (outcomes == null) {
+				outcomes = new IdentityHashMap<>();
+			}
 			outcomes.put(template.origin, result);
 		} else if (result.context != context) {
 			throw new IllegalStateException("native filter attempt crossed evaluation owners");
@@ -566,9 +594,12 @@ final class NativeFilterLease {
 			throw new IllegalStateException("native parent attempt already finalized");
 		}
 		bindOwner(other.context);
-		Outcome result = outcomes.get(other.template);
+		Outcome result = outcomes == null ? null : outcomes.get(other.template);
 		if (result == null) {
 			result = new Outcome(other.template, other.context);
+			if (outcomes == null) {
+				outcomes = new IdentityHashMap<>();
+			}
 			outcomes.put(other.template, result);
 		}
 		result.merge(other);
@@ -580,6 +611,7 @@ final class NativeFilterLease {
 		final NativeExecutionContext context;
 		long opens, terminals, exhausted, passed, rejected;
 		boolean incomplete;
+		boolean inputQualified = true;
 
 		Outcome(RecordingNativeBooleanFilter template, NativeExecutionContext context) {
 			this.template = template;
@@ -608,6 +640,7 @@ final class NativeFilterLease {
 			passed += other.passed;
 			rejected += other.rejected;
 			incomplete |= other.incomplete;
+			inputQualified &= other.inputQualified;
 		}
 
 		void publish(boolean rootComplete) {
@@ -617,7 +650,11 @@ final class NativeFilterLease {
 					: EvaluationStatistics.FilterOutcomeObservation.incomplete(passed, rejected,
 							"native-filter-input-incomplete");
 			try {
-				template.statistics.recordFilterOutcome(template.filter, observation);
+				if (template.preparedOutcome == null) {
+					template.statistics.recordFilterOutcome(template.filter, observation);
+				} else {
+					template.preparedOutcome.record(observation, inputQualified);
+				}
 			} catch (RuntimeException ignored) {
 				// Optional feedback may not change query semantics; Error identity is preserved.
 			}
@@ -639,6 +676,11 @@ final class NativeFilterLease {
 					: template.attempt == null
 							? context.openFilterOutcome(template)
 							: template.attempt.open(template, context);
+			if (outcome != null && template.preparedOutcome != null) {
+				synchronized (outcome) {
+					outcome.inputQualified &= template.preparedOutcome.acceptsInput(row.base);
+				}
+			}
 		}
 
 		@Override

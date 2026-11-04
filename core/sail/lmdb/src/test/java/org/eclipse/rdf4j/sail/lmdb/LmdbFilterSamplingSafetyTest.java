@@ -19,6 +19,9 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -64,7 +67,7 @@ class LmdbFilterSamplingSafetyTest {
 		SamplingStore store = new SamplingStore(directory);
 		try {
 			registry.add(function);
-			store.init();
+			initSamplingStore(store);
 			seed(store);
 			AtomicInteger admissions = observeAdmissions(store);
 			StatementPattern pattern = pattern();
@@ -103,7 +106,7 @@ class LmdbFilterSamplingSafetyTest {
 		SamplingStore store = new SamplingStore(directory);
 		try {
 			registry.add(function);
-			store.init();
+			initSamplingStore(store);
 			seed(store);
 			AtomicInteger admissions = observeAdmissions(store);
 			StatementPattern pattern = pattern();
@@ -135,7 +138,7 @@ class LmdbFilterSamplingSafetyTest {
 		SamplingStore store = new SamplingStore(directory);
 		try {
 			registry.add(function);
-			store.init();
+			initSamplingStore(store);
 			seed(store);
 			AtomicInteger admissions = observeAdmissions(store);
 			StatementPattern pattern = pattern();
@@ -168,7 +171,7 @@ class LmdbFilterSamplingSafetyTest {
 		SamplingStore store = new SamplingStore(directory);
 		try {
 			registry.add(function);
-			store.init();
+			initSamplingStore(store);
 			seed(store);
 			AtomicInteger admissions = observeAdmissions(store);
 			StatementPattern pattern = pattern();
@@ -198,7 +201,7 @@ class LmdbFilterSamplingSafetyTest {
 		SamplingStore store = new SamplingStore(directory);
 		try {
 			registry.add(function);
-			store.init();
+			initSamplingStore(store);
 			seed(store);
 			AtomicInteger admissions = observeAdmissions(store);
 			StatementPattern pattern = pattern();
@@ -229,6 +232,115 @@ class LmdbFilterSamplingSafetyTest {
 		}
 	}
 
+	@Test
+	void cachedFilterReadRacingFailedResetCannotReturnRetainedSample(@TempDir Path directory) throws Exception {
+		SamplingFunction function = new SamplingFunction(false, Function.Determinism.DETERMINISTIC);
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		SamplingStore store = new SamplingStore(directory);
+		try {
+			registry.add(function);
+			store.setExperimentalQueryOptimizations(true);
+			initSamplingStore(store);
+			seed(store);
+			AtomicInteger admissions = observeAdmissions(store);
+			StatementPattern pattern = pattern();
+			Filter filter = new Filter(pattern.clone(), new FunctionCall(function.getURI(), new Var("value")));
+			capturePhysicalStoreFilter(filter, pattern);
+			PatternFilterSampleEstimate priming = store.stats.estimateLiveFilterPass(filter, pattern);
+			assertEquals(1.0d, priming.passRatio(), "deterministic sample must be established; functionCalls="
+					+ function.invocations.get() + ", sourceAdmissions=" + admissions.get());
+
+			CountDownLatch passedInitialHealthCheck = new CountDownLatch(1);
+			CountDownLatch continueCacheRead = new CountDownLatch(1);
+			GatedFilter racingFilter = new GatedFilter(pattern.clone(),
+					new FunctionCall(function.getURI(), new Var("value")), passedInitialHealthCheck, continueCacheRead);
+			capturePhysicalStoreFilter(racingFilter, pattern);
+			racingFilter.arm();
+			FutureTask<PatternFilterSampleEstimate> cachedRead = new FutureTask<>(
+					() -> store.stats.estimateCachedFilterPass(racingFilter, pattern));
+			Thread reader = new Thread(cachedRead, "filter-cache-read-before-reset");
+			reader.setDaemon(true);
+			reader.start();
+
+			try {
+				assertTrue(passedInitialHealthCheck.await(10, TimeUnit.SECONDS),
+						"the cached reader must pass its initial provider check before reset");
+				AssertionError injected = new AssertionError("injected reset observer failure during cached filter read");
+				store.stats.setLearnedStateObserver(new LmdbFilterSelectivityStats.LearnedStateObserver() {
+					@Override
+					public void learnedStateReset() {
+						throw injected;
+					}
+				});
+				assertTrue(injected == org.junit.jupiter.api.Assertions.assertThrows(AssertionError.class,
+						store.stats::reset));
+			} finally {
+				continueCacheRead.countDown();
+			}
+
+			assertEquals(-1.0d, cachedRead.get(10, TimeUnit.SECONDS).passRatio(),
+					"the provider health check must be repeated under the sampled-cache monitor");
+		} finally {
+			registry.remove(function);
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void liveSampleRacingFailedResetDoesNotPublishIntoUnavailableCache(@TempDir Path directory) throws Exception {
+		SamplingFunction function = new SamplingFunction(false, Function.Determinism.DETERMINISTIC);
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		SamplingStore store = new SamplingStore(directory);
+		try {
+			registry.add(function);
+			store.setExperimentalQueryOptimizations(true);
+			initSamplingStore(store);
+			seed(store);
+			AtomicInteger admissions = observeAdmissions(store);
+			StatementPattern pattern = pattern();
+			CountDownLatch passedInitialHealthCheck = new CountDownLatch(1);
+			CountDownLatch continueSampling = new CountDownLatch(1);
+			GatedFilter filter = new GatedFilter(pattern.clone(),
+					new FunctionCall(function.getURI(), new Var("value")), passedInitialHealthCheck, continueSampling);
+			capturePhysicalStoreFilter(filter, pattern);
+			filter.arm();
+			long revisionBeforeSample = store.stats.planningRevision();
+			FutureTask<PatternFilterSampleEstimate> liveSample = new FutureTask<>(
+					() -> store.stats.estimateLiveFilterPass(filter, pattern));
+			Thread reader = new Thread(liveSample, "filter-live-sample-before-reset");
+			reader.setDaemon(true);
+			reader.start();
+
+			long revisionAfterFailure;
+			try {
+				assertTrue(passedInitialHealthCheck.await(10, TimeUnit.SECONDS),
+						"the live sampler must pass its initial provider check before reset");
+				AssertionError injected = new AssertionError("injected reset observer failure during live filter sample");
+				store.stats.setLearnedStateObserver(new LmdbFilterSelectivityStats.LearnedStateObserver() {
+					@Override
+					public void learnedStateReset() {
+						throw injected;
+					}
+				});
+				assertTrue(injected == org.junit.jupiter.api.Assertions.assertThrows(AssertionError.class,
+						store.stats::reset));
+				revisionAfterFailure = store.stats.planningRevision();
+			} finally {
+				continueSampling.countDown();
+			}
+
+			PatternFilterSampleEstimate sampled = liveSample.get(10, TimeUnit.SECONDS);
+			assertEquals(1.0d, sampled.passRatio(), "the in-flight source sample remains a fresh result");
+			assertTrue(admissions.get() > 0, "the route must use the real paired native source");
+			assertEquals(revisionAfterFailure, store.stats.planningRevision(),
+					"a fresh sample may return, but must not publish into an unavailable learned cache");
+			assertTrue(revisionAfterFailure >= revisionBeforeSample);
+		} finally {
+			registry.remove(function);
+			store.shutDown();
+		}
+	}
+
 	private static StatementPattern pattern() {
 		return new StatementPattern(new Var("subject"), Var.of("predicate", PREDICATE), new Var("value"));
 	}
@@ -238,6 +350,11 @@ class LmdbFilterSamplingSafetyTest {
 		// The separate argument may be a clone of the filter's child; both belong to this documented fixture input.
 		PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
 		PlanningGraphDomains.capture(pattern, PlanningGraphDomain.defaultGraph());
+	}
+
+	private static void initSamplingStore(SamplingStore store) throws Exception {
+		store.init();
+		LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
 	}
 
 	private static void seed(SamplingStore store) throws Exception {
@@ -287,9 +404,15 @@ class LmdbFilterSamplingSafetyTest {
 		private final String iri = "urn:filter-sampling-safety:function:" + UUID.randomUUID();
 		private final AtomicBoolean volatileResult;
 		private final AtomicInteger invocations = new AtomicInteger();
+		private final Function.Determinism determinism;
 
 		private SamplingFunction(boolean volatileResult) {
+			this(volatileResult, Function.Determinism.UNSPECIFIED);
+		}
+
+		private SamplingFunction(boolean volatileResult, Function.Determinism determinism) {
 			this.volatileResult = new AtomicBoolean(volatileResult);
+			this.determinism = determinism;
 		}
 
 		@Override
@@ -300,6 +423,11 @@ class LmdbFilterSamplingSafetyTest {
 		@Override
 		public boolean mustReturnDifferentResult() {
 			return volatileResult.get();
+		}
+
+		@Override
+		public Function.Determinism getDeterminism() {
+			return determinism;
 		}
 
 		@Override
@@ -331,6 +459,40 @@ class LmdbFilterSamplingSafetyTest {
 								background);
 						return stats;
 					});
+		}
+	}
+
+	private static final class GatedFilter extends Filter {
+
+		private final CountDownLatch reachedConditionRead;
+		private final CountDownLatch continueConditionRead;
+		private final AtomicBoolean armed = new AtomicBoolean();
+
+		private GatedFilter(StatementPattern pattern, ValueExpr condition, CountDownLatch reachedConditionRead,
+				CountDownLatch continueConditionRead) {
+			super(pattern, condition);
+			this.reachedConditionRead = reachedConditionRead;
+			this.continueConditionRead = continueConditionRead;
+		}
+
+		private void arm() {
+			armed.set(true);
+		}
+
+		@Override
+		public ValueExpr getCondition() {
+			if (armed.compareAndSet(true, false)) {
+				reachedConditionRead.countDown();
+				try {
+					if (!continueConditionRead.await(10, TimeUnit.SECONDS)) {
+						throw new IllegalStateException("Timed out waiting to continue the sampled-cache read");
+					}
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("Interrupted while gating the sampled-cache read", e);
+				}
+			}
+			return super.getCondition();
 		}
 	}
 }

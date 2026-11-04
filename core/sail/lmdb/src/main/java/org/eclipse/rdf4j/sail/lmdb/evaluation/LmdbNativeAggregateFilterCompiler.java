@@ -111,12 +111,14 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		Term s = compileCorrelatedTerm(pattern.getSubjectVar(), NativePatternField.SUBJECT, bindingScope);
 		Term p = compileCorrelatedTerm(pattern.getPredicateVar(), NativePatternField.PREDICATE, bindingScope);
 		Term o = compileCorrelatedTerm(pattern.getObjectVar(), NativePatternField.OBJECT, bindingScope);
-		Term c = compileCorrelatedTerm(pattern.getContextVar(), NativePatternField.CONTEXT, bindingScope);
+		Term c = selectedContextTerm(pattern,
+				compileCorrelatedTerm(pattern.getContextVar(), NativePatternField.CONTEXT, bindingScope));
 		if (s == null || p == null || o == null || c == null) {
 			return null;
 		}
 		return new StatementPatternExistsFilter(source, s, p, o, c, contexts,
-				pattern.getScope() == Scope.NAMED_CONTEXTS);
+				pattern.getScope() == Scope.NAMED_CONTEXTS && !contexts.isFixed()
+						&& !(c.isConstant() && c.constant == NULL_CONTEXT_ID));
 	}
 
 	Term compileCorrelatedTerm(Var var, NativePatternField field) {
@@ -662,7 +664,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		}
 		// Preserve both the slot-aware reads and the evaluation source when semantic expressions re-enter native
 		// EXISTS.
-		return new NativeValueOutcomeBooleanFilter(compileSemanticValue(strategy, expr, slotAwareContext()),
+		return NativeValueOutcomeBooleanFilter.prepareShared(descriptor, strategy, slotAwareContext(), null,
 				genericReadMask(expr));
 	}
 
@@ -686,8 +688,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 					.prepare(() -> compileProjectedValue(compilingStrategy, pinned, compileContext, bindingScope));
 			return new NativeValueOutcomeBooleanFilter(descriptor, perEvaluation, fallback, -1L);
 		}
-		return new NativeValueOutcomeBooleanFilter(
-				compileProjectedValue(compilingStrategy, pinned, compileContext, bindingScope), -1L);
+		return NativeValueOutcomeBooleanFilter.prepareShared(descriptor, compilingStrategy, compileContext,
+				bindingScope, -1L);
 	}
 
 	/**

@@ -53,7 +53,8 @@ class ValueStoreStartupTermIndexCapacityTest {
 	@ValueSource(strings = "opsc,posc")
 	void standaloneBootstrapPersistsOnlyItsDictionaryLayout(String requested) throws Exception {
 		Set<String> expected = requested == null || requested.isEmpty()
-				? Set.of("spoc", "cspo") : Set.of("spoc", "cspo", "opsc", "posc");
+				? Set.of("spoc", "cspo")
+				: Set.of("spoc", "cspo", "opsc", "posc");
 		LmdbStoreConfig config = config().setTripleTermIndexes(requested);
 		ValueStore values = new ValueStore(directory.toFile(), config);
 		try {
@@ -189,10 +190,14 @@ class ValueStoreStartupTermIndexCapacityTest {
 	}
 
 	private static void assertLayout(ValueStore values, Set<String> expected) throws IOException {
-		Set<String> indexes = values.getLmdbStats().keySet().stream().filter(name -> name.startsWith("term-"))
+		Set<String> indexes = values.getLmdbStats()
+				.keySet()
+				.stream()
+				.filter(name -> name.startsWith("term-"))
 				.collect(Collectors.toSet());
 		Set<String> expectedDatabases = expected.stream()
-				.map(spec -> TripleIndex.nativeDatabaseName("term-" + spec, true)).collect(Collectors.toSet());
+				.map(spec -> TripleIndex.nativeDatabaseName("term-" + spec, true))
+				.collect(Collectors.toSet());
 		assertThat(indexes).isEqualTo(expectedDatabases);
 	}
 
@@ -211,7 +216,8 @@ class ValueStoreStartupTermIndexCapacityTest {
 				if (remove) {
 					LmdbUtil.E(mdb_drop(txn, dbi.get(0), true));
 				} else {
-					MDBVal key = MDBVal.calloc(nativeStack).mv_data(nativeStack.bytes(ValueStore.TERM_INDEX_MANIFEST_KEY));
+					MDBVal key = MDBVal.calloc(nativeStack)
+							.mv_data(nativeStack.bytes(ValueStore.TERM_INDEX_MANIFEST_KEY));
 					MDBVal value = MDBVal.calloc(nativeStack).mv_data(nativeStack.bytes((byte) 1));
 					LmdbUtil.E(mdb_put(txn, dbi.get(0), key, value, 0));
 				}

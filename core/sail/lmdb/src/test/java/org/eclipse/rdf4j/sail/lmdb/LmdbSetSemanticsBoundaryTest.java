@@ -30,13 +30,18 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -168,17 +173,50 @@ class LmdbSetSemanticsBoundaryTest {
 	}
 
 	@Test
-	void preservesVolatileJoinEvaluationsForDuplicateLeftRows() {
+	void preservesIndependentVolatileJoinResultAsSingleReplayValue() {
+		BindingSetAssignment assignment = duplicateXRows();
+		// The ordinary Join RHS has no left-input scope, so this volatile result is evaluated once and replayed.
+		QueryRoot root = new QueryRoot(new Distinct(
+				new Join(assignment, uuidExtension(new SingletonSet()))));
+		assertEquals(1, evaluate(root.clone(), false, EMPTY_SOURCE).size());
+		assertEquals(1, evaluate(root.clone(), true, EMPTY_SOURCE).size());
+	}
+
+	@Test
+	void preservesInScopeVolatileExtensionForDuplicateJoinRows() {
+		BindingSetAssignment assignment = duplicateXRows();
+		Extension extension = uuidExtension(new Join(assignment, new SingletonSet()));
+		QueryRoot root = new QueryRoot(new Distinct(extension));
+		assertTwoDistinctUuids(root);
+	}
+
+	@Test
+	void preservesVolatileLateralRightEvaluationsForDuplicateRows() {
+		BindingSetAssignment assignment = duplicateXRows();
+		Filter rightInput = new Filter(new SingletonSet(), new Bound(Var.of("x")));
+		QueryRoot root = new QueryRoot(new Distinct(
+				new Lateral(assignment, uuidExtension(rightInput), Set.of("x"))));
+		assertTwoDistinctUuids(root);
+	}
+
+	private static void assertTwoDistinctUuids(QueryRoot root) {
+		for (boolean optimize : List.of(false, true)) {
+			List<String> uuids = values(evaluate(root.clone(), optimize, EMPTY_SOURCE), "u");
+			assertEquals(2, uuids.size());
+			assertEquals(2, uuids.stream().distinct().count(), "each in-scope evaluation produces its own UUID");
+		}
+	}
+
+	private static BindingSetAssignment duplicateXRows() {
 		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingNames(Set.of("x"));
+		assignment.setDeclaredBindingNames(Set.of("x"));
 		BindingSet row = new ListBindingSet(List.of("x"), SimpleValueFactory.getInstance().createLiteral(1));
 		assignment.setBindingSets(List.of(row, row));
-		// An in-scope extension is evaluated for each incoming join row. A parser-created
-		// nested BIND group has a new scope and is instead evaluated independently.
-		QueryRoot root = new QueryRoot(new Distinct(new Join(assignment,
-				new Extension(new SingletonSet(), new ExtensionElem(new FunctionCall("UUID"), "u")))));
-		assertEquals(2, evaluate(root.clone(), false, EMPTY_SOURCE).size());
-		assertEquals(2, evaluate(root.clone(), true, EMPTY_SOURCE).size());
+		return assignment;
+	}
+
+	private static Extension uuidExtension(TupleExpr argument) {
+		return new Extension(argument, new ExtensionElem(new FunctionCall("UUID"), "u"));
 	}
 
 	@ParameterizedTest

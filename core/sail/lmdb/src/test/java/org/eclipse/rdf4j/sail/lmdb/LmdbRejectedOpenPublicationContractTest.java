@@ -199,6 +199,10 @@ class LmdbRejectedOpenPublicationContractTest {
 	void knownButUntrustedMarkerRetainsExistingRecoveryAndDowngradePolicy(Generation generation, boolean repair,
 			@TempDir(cleanup = CleanupMode.NEVER) Path directory) throws Exception {
 		generation.create(directory);
+		LmdbStoreFormat initialFormat = LmdbStoreFormat.resolve(directory.toFile(), discovered(directory), config());
+		int initialVersion = initialFormat.getVersion();
+		assertEquals(generation == Generation.LEGACY ? LmdbStoreFormat.LEGACY_VERSION
+				: LmdbStoreFormat.CURRENT_VERSION, initialVersion);
 		LmdbCompatibilityFixtures.nativePut(directory, "ref_counts", MARKER_KEY, Marker.KNOWN_SHORT_HEADER.bytes());
 		LmdbStoreConfig config = config().setLegacyReferenceCountRepairEnabled(repair);
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
@@ -255,7 +259,7 @@ class LmdbRejectedOpenPublicationContractTest {
 		}
 		StoreProperties properties = new StoreProperties(directory.toFile());
 		assertTrue(properties.load());
-		assertEquals(generation == Generation.LEGACY ? "2" : "6", properties.getVersion());
+		assertEquals(initialVersion, Integer.parseInt(properties.getVersion()), "recovery must preserve the persisted generation format");
 	}
 
 	@ParameterizedTest(name = "{0}, repair={1}")

@@ -32,10 +32,13 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPreparedFilterOutcome;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -226,6 +229,8 @@ final class PlannedNativeBooleanFilter implements NativeBooleanFilter {
 final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 	/** The shared evaluator (compile-once mode); null in per-evaluation mode. */
 	private final NativeBindingSetValueEvaluator evaluator;
+	/** Minted only while this exact shared evaluator is prepared from its pinned descriptor. */
+	private final boolean replaySafe;
 	private final long readMask;
 	/** Per-evaluation mode (M-A1a): the pinned condition, compiled once per evaluation through the row's context. */
 	private final GenericSubplanDescriptor descriptor;
@@ -234,11 +239,37 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 	private volatile NativeBindingSetValueEvaluator sharedFallback;
 
 	NativeValueOutcomeBooleanFilter(NativeBindingSetValueEvaluator evaluator, long readMask) {
+		this(evaluator, readMask, false);
+	}
+
+	private NativeValueOutcomeBooleanFilter(NativeBindingSetValueEvaluator evaluator, long readMask,
+			boolean replaySafe) {
 		this.evaluator = evaluator;
+		this.replaySafe = replaySafe;
 		this.readMask = readMask;
 		this.descriptor = null;
 		this.perEvaluationCompile = null;
 		this.sharedFallbackCompile = null;
+	}
+
+	/**
+	 * The compiler's shared mode only: prepare the exact pinned expression under its captured value positions and
+	 * lexical input projection. A raw evaluator cannot grant this proof, and a repeatability proof grants neither a
+	 * correlation mask nor a worker rebind recipe. The existing query-scoped mode remains independent below.
+	 */
+	static NativeValueOutcomeBooleanFilter prepareShared(GenericSubplanDescriptor descriptor,
+			LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context,
+			Filter.ConditionBindingScope bindingScope, long readMask) {
+		ValueExpr expression = descriptor.pinnedExpr();
+		NativeBindingSetValueEvaluator prepared = descriptor.prepare(() -> bindingScope == null
+				? LmdbNativeAggregateFilterCompiler.compileSemanticValue(strategy, expression, context)
+				: LmdbNativeAggregateFilterCompiler.compileProjectedValue(strategy, expression, context, bindingScope));
+		var safety = QueryEvaluationUtility.querySafetySnapshot(expression, strategy.getQueryExecutionPolicy());
+		boolean replaySafe = descriptor.repeatable() && descriptor.shareableAcrossEvaluations()
+				&& safety.isRepeatable(expression) && !safety.mayRaiseQueryFatalError(expression)
+				&& !safety.usesMappingParameterizedEvaluation(expression)
+				&& !NativeExpressionFacts.of(expression).scopeChanging();
+		return new NativeValueOutcomeBooleanFilter(prepared, readMask, replaySafe);
 	}
 
 	/**
@@ -251,6 +282,7 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 			Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluationCompile,
 			Supplier<NativeBindingSetValueEvaluator> sharedFallbackCompile, long readMask) {
 		this.evaluator = null;
+		this.replaySafe = false;
 		this.readMask = readMask;
 		this.descriptor = descriptor;
 		this.perEvaluationCompile = perEvaluationCompile;
@@ -291,6 +323,12 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public NativePredicateCapabilities capabilities() {
+		return replaySafe ? NativePredicateCapabilities.snapshot(readMask, true, false)
+				: NativeBooleanFilter.super.capabilities();
+	}
+
+	@Override
 	public long batchReadMask() {
 		return readMask;
 	}
@@ -305,6 +343,8 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	final RecordingNativeBooleanFilter origin;
 	final Object outcomeIdentity;
 	final NativeFilterLease attempt;
+	final LmdbPreparedFilterOutcome preparedOutcome;
+	final boolean logicalInputPopulation;
 	// Compatibility diagnostics: all live counts now belong to per-open primitive invocations.
 	final AtomicLong passed = new AtomicLong();
 	final AtomicLong filtered = new AtomicLong();
@@ -319,7 +359,29 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics,
+			AdaptiveFilterMetadata adaptive, LmdbPreparedFilterOutcome preparedOutcome) {
+		this(delegate, filter, statistics, adaptive, null, null, preparedOutcome);
+	}
+
+	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics,
+			AdaptiveFilterMetadata adaptive, LmdbPreparedFilterOutcome preparedOutcome, boolean logicalInputPopulation) {
+		this(delegate, filter, statistics, adaptive, null, null, preparedOutcome, logicalInputPopulation);
+	}
+
+	RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics,
 			AdaptiveFilterMetadata adaptive, RecordingNativeBooleanFilter origin, NativeFilterLease attempt) {
+		this(delegate, filter, statistics, adaptive, origin, attempt, origin == null ? null : origin.preparedOutcome);
+	}
+
+	private RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics,
+			AdaptiveFilterMetadata adaptive, RecordingNativeBooleanFilter origin, NativeFilterLease attempt,
+			LmdbPreparedFilterOutcome preparedOutcome) {
+		this(delegate, filter, statistics, adaptive, origin, attempt, preparedOutcome, true);
+	}
+
+	private RecordingNativeBooleanFilter(NativeBooleanFilter delegate, Filter filter, EvaluationStatistics statistics,
+			AdaptiveFilterMetadata adaptive, RecordingNativeBooleanFilter origin, NativeFilterLease attempt,
+			LmdbPreparedFilterOutcome preparedOutcome, boolean logicalInputPopulation) {
 		this.delegate = delegate;
 		this.filter = filter;
 		this.statistics = statistics;
@@ -327,13 +389,20 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 		this.origin = origin == null ? this : origin;
 		this.outcomeIdentity = this.origin == this ? new Object() : this.origin.outcomeIdentity;
 		this.attempt = attempt;
+		this.preparedOutcome = preparedOutcome;
+		this.logicalInputPopulation = origin == null ? logicalInputPopulation : origin.logicalInputPopulation;
 	}
 
 	@Override
 	public NativeBooleanFilter open(RowState row) {
 		NativeBooleanFilter opened = delegate.open(row);
 		try {
-			return new NativeFilterLease.Invocation(this, opened, row);
+			NativeBooleanFilter invocation = new NativeFilterLease.Invocation(this, opened, row);
+			if (!logicalInputPopulation) {
+				// Physical membership decisions do not certify the removed VALUES join's logical population.
+				invocation.incompleteInput();
+			}
+			return invocation;
 		} catch (RuntimeException | Error failure) {
 			try {
 				opened.close();

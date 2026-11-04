@@ -1468,7 +1468,8 @@ class LmdbQuadSynopsisServiceTest {
 			pauseBeforeSnapshot.set(true);
 			Future<Boolean> first = executor.submit(service::forceFlush);
 			try {
-				assertTrue(snapshotEntered.await(10, TimeUnit.SECONDS), "the rebuild must stop before copying source rows");
+				assertTrue(snapshotEntered.await(10, TimeUnit.SECONDS),
+						"the rebuild must stop before copying source rows");
 				boolean deletion = !"add".equals(change);
 				boolean addition = !"delete".equals(change);
 				if (deletion) {
@@ -1481,10 +1482,13 @@ class LmdbQuadSynopsisServiceTest {
 				}
 				List<Statement> expectedSource = List.copyOf(source.statements);
 				releaseSnapshot.countDown();
-				assertFalse(first.get(10, TimeUnit.SECONDS), "completed updates overlapping the scan must leave a retry pending");
-				assertEquals(expectedSource, capturedSnapshot.get(), "the rejected source snapshot already includes the updates");
+				assertFalse(first.get(10, TimeUnit.SECONDS),
+						"completed updates overlapping the scan must leave a retry pending");
+				assertEquals(expectedSource, capturedSnapshot.get(),
+						"the rejected source snapshot already includes the updates");
 				assertEquals(previousScans + 1, scans.get());
-				assertEquals(previousVersion, service.snapshotVersion(), "a rejected scan must not publish a new version");
+				assertEquals(previousVersion, service.snapshotVersion(),
+						"a rejected scan must not publish a new version");
 				assertEquals(previousIdentity, service.snapshotIdentity());
 				assertEquals(previousRows, service.publishedRows());
 				assertFalse(service.isReadyNonBlocking());

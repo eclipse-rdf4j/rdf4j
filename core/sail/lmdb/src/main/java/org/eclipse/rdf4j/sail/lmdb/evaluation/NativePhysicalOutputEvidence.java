@@ -20,7 +20,6 @@ import java.util.Map;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSource;
 
 /** The output proof of one executable quote. It retains immutable facts, never a cursor, lease or mutable row. */
@@ -39,9 +38,22 @@ final class NativePhysicalOutputEvidence {
 			states = List.copyOf(states);
 		}
 
+		Column expressionValue() {
+			if (!states.contains(NativeResultCell.State.PRESENT_NULL)) {
+				return this;
+			}
+			return new Column(definition, kind, domain, demand,
+					states.stream()
+							.map(state -> state == NativeResultCell.State.PRESENT_NULL
+									? NativeResultCell.State.UNBOUND
+									: state)
+							.distinct()
+							.toList());
+		}
+
 		Column length(Object resultDefinition) {
 			return new Column(resultDefinition, NativeResultCell.Kind.RDF_TERM, Domain.LENGTH_INTEGER,
-					NativeAggregateResultDemand.FULL_VALUE, STATES);
+					NativeAggregateResultDemand.FULL_VALUE, EXPRESSION_STATES);
 		}
 	}
 
@@ -75,8 +87,11 @@ final class NativePhysicalOutputEvidence {
 			NativeAggregatePhysicalPlan.ColdAnchor anchor) {
 	}
 
-	private static final List<NativeResultCell.State> STATES = List.of(NativeResultCell.State.BOUND,
+	/** Scalar evaluation creates a value, absence or error; copying a frame may additionally retain a null key. */
+	static final List<NativeResultCell.State> EXPRESSION_STATES = List.of(NativeResultCell.State.BOUND,
 			NativeResultCell.State.UNBOUND, NativeResultCell.State.ERROR);
+	private static final List<NativeResultCell.State> RDF_MAPPING_STATES = List.of(NativeResultCell.State.BOUND,
+			NativeResultCell.State.UNBOUND, NativeResultCell.State.ERROR, NativeResultCell.State.PRESENT_NULL);
 	private final Receipt receipt;
 	private final NativeAggregateCostQuotes.Input quotedInput;
 	private final Map<String, Column> columns;
@@ -102,7 +117,7 @@ final class NativePhysicalOutputEvidence {
 			String name = iteration.layout.slotName(group);
 			groupNames.add(name);
 			columns.put(name, new Column(new Object(), NativeResultCell.Kind.RDF_TERM, Domain.RDF_TERM,
-					NativeAggregateResultDemand.FULL_VALUE, STATES));
+					NativeAggregateResultDemand.FULL_VALUE, RDF_MAPPING_STATES));
 		}
 		for (AggregateSpec aggregate : iteration.aggregates) {
 			AggregateRecipe recipe = AggregateRecipe.of(aggregate);
@@ -116,7 +131,8 @@ final class NativePhysicalOutputEvidence {
 			Object definition = aggregate.definition == null ? aggregate : aggregate.definition;
 			columns.put(aggregate.name, new Column(definition,
 					summary ? NativeResultCell.Kind.LEXICAL_SUMMARY : NativeResultCell.Kind.RDF_TERM,
-					summary ? Domain.LEXICAL_LENGTH : Domain.RDF_TERM, aggregate.resultDemand, STATES));
+					summary ? Domain.LEXICAL_LENGTH : Domain.RDF_TERM, aggregate.resultDemand,
+					summary ? EXPRESSION_STATES : RDF_MAPPING_STATES));
 		}
 		NativeCancellationToken cancellation = iteration.cancellation;
 		Receipt receipt = new Receipt(new Object(), output, iteration.source.idSpace(), backingSpace(iteration.source),
@@ -143,7 +159,8 @@ final class NativePhysicalOutputEvidence {
 				return null;
 			}
 			Column column = definitions.computeIfAbsent(sourceSlots[index], ignored -> new Column(new Object(),
-					NativeResultCell.Kind.RDF_TERM, Domain.RDF_TERM, NativeAggregateResultDemand.FULL_VALUE, STATES));
+					NativeResultCell.Kind.RDF_TERM, Domain.RDF_TERM, NativeAggregateResultDemand.FULL_VALUE,
+					EXPRESSION_STATES));
 			Column previous = columns.putIfAbsent(targetNames[index], column);
 			if (previous != null && previous != column) {
 				return null;
@@ -159,15 +176,28 @@ final class NativePhysicalOutputEvidence {
 	}
 
 	static boolean sameEntry(BindingSet expected, BindingSet actual) {
-		if (!expected.equals(actual)) {
+		if (expected == actual) {
+			return true;
+		}
+		var names = expected.getBindingNames();
+		var otherNames = actual.getBindingNames();
+		if (names.size() != otherNames.size()) {
 			return false;
 		}
-		for (String name : expected.getBindingNames()) {
-			if (GraphFrameBindings.isSupplied(expected, name) != GraphFrameBindings.isSupplied(actual, name)) {
+		for (String name : names) {
+			pollEntryProof();
+			// A receipt owns the chosen representatives, including opaque/native/remote capabilities and null
+			// markers. RDF equality can invoke user code or decode a cold shell, and does not prove that identity.
+			if (!otherNames.contains(name) || expected.getValue(name) != actual.getValue(name)) {
 				return false;
 			}
 		}
-		return true;
+		return NativeRowProvenance.sameAuthority(expected, actual, NativePhysicalOutputEvidence::pollEntryProof);
+	}
+
+	private static void pollEntryProof() {
+		NativeCancellationToken.checkCurrent();
+		LmdbNativeProbeDeadline.poll(0);
 	}
 
 	boolean matchesGrouping(SlotPlan input, int[] groups, AggregateSpec[] aggregates, NativeSlotLayout layout,

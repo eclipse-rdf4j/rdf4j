@@ -34,6 +34,53 @@ public final class PackedCostTestSupport {
 	private PackedCostTestSupport() {
 	}
 
+	/** Encodes an already prepared real query, without capturing or promoting graph authority. */
+	public static PreparedLeafCall preparedLeaf(TupleExpr prepared) {
+		PackedQuery captured = PackedQueryCodec.encodeForPlanning(prepared, null,
+				PackedStatementPatternSemanticsCodec.NONE);
+		PackedQueryView query = new PackedQueryView(captured);
+		for (int relation = 1; relation <= query.relationCount(); relation++) {
+			if (query.isStatementPattern(relation)) {
+				PackedCostContext context = new PackedCostContext();
+				context.reset(new int[0], 0, 0, 1.0d, 0);
+				return new PreparedLeafCall(query, relation, context);
+			}
+		}
+		throw new IllegalArgumentException("Prepared query has no statement leaf");
+	}
+
+	public record PreparedLeafCall(PackedQueryView query, int relationId, PackedCostContext emptyContext) {
+	}
+
+	/** A finite prefix encoded from the caller's already prepared real query, without graph recapture. */
+	public static PreparedFiniteCall preparedFinite(TupleExpr prepared) {
+		PackedQuery captured = PackedQueryCodec.encodeForPlanning(prepared, null, PackedStatementPatternSemanticsCodec.NONE);
+		PackedQueryView query = new PackedQueryView(captured);
+		int assignment = 0;
+		int statement = 0;
+		for (int relation = 1; relation <= query.relationCount(); relation++) {
+			if (query.isBindingSetAssignment(relation)) {
+				if (assignment != 0) {
+					throw new IllegalArgumentException("finite control expects one actual VALUES prefix");
+				}
+				assignment = relation;
+			} else if (query.isStatementPattern(relation)) {
+				statement = relation;
+			}
+		}
+		if (assignment == 0 || statement == 0) {
+			throw new IllegalArgumentException("prepared query did not retain the finite statement access");
+		}
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[] { assignment }, 0, 1, query.bindingAssignmentRowCount(assignment), 0);
+		context.setAssuredBindingRelationId(assignment);
+		return new PreparedFiniteCall(query, statement, context);
+	}
+
+	public record PreparedFiniteCall(PackedQueryView query, int relationId, PackedCostContext prefixContext) {
+	}
+
+
 	/** The caller supplies its fixture's source proof; missing facts are never promoted by the construction bridge. */
 	private static PackedQuery encodeInDomain(TupleExpr expression, PlanningGraphDomain inputDomain) {
 		return encodeInDomain(expression, inputDomain, PackedStatementPatternSemanticsCodec.NONE);

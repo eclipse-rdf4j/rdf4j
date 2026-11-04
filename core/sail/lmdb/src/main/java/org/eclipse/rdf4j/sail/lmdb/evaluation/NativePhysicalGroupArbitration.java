@@ -76,11 +76,14 @@ final class NativePhysicalGroupArbitration {
 			}
 			return new Selection(selected, arbiter.winningTag(), arbiter.winningPredictedWork(), started);
 		} catch (IOException | RuntimeException | Error failure) {
+			Throwable retained = failure;
 			if (selected != null) {
-				selected.failed(failure);
-				KernelRuntime.closeResource(selected.value(), failure);
-				KernelRuntime.closeResource(selected, failure);
+				LmdbNativeStrategySelection<NativeResultCursor> accepted = selected;
+				retained = KernelRuntime.closeResource(() -> accepted.failed(failure), retained);
+				retained = KernelRuntime.closeResource(accepted.value(), retained);
+				retained = KernelRuntime.closeResource(accepted, retained);
 			}
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 			throw failure;
 		}
 	}

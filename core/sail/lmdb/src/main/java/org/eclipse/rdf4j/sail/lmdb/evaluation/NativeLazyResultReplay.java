@@ -50,8 +50,11 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 	private final long maxBytes;
 	private final NativeFilterLease feedback;
 	private final List<Cursor> readers = new ArrayList<>();
+	private final NativeResultProvenanceDictionary provenance;
 	private List<NativeResultRow> resident = new ArrayList<>();
 	private volatile NativeResultCursor producer;
+	private NativeExecutionContext.Lease producerAuthority;
+	private long producerAuthorityBytes;
 	private volatile Throwable terminalFailure;
 	private volatile boolean closeRequested;
 	private DataOutputStream output;
@@ -77,9 +80,19 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		this.codec = new NativeSpillValueCodec(this.cancellation,
 				context == null ? null : context::authoritativeQueryScopedValue);
 		this.memory = KernelRuntime.AggregateMemory.forLedger(context == null ? null : context.memoryLedger());
+		this.provenance = new NativeResultProvenanceDictionary(memory, this.cancellation, maxBytes - WORKSPACE_BYTES,
+				() -> residentBytes + producerAuthorityBytes, this::spill);
 		NativeExecutionContext.Lease activeLease = null;
 		Throwable failure = null;
 		try {
+			NativeExecutionContext actualProducer = producer.executionContext();
+			producerAuthorityBytes = actualProducer == null ? 0L : actualProducer.producerLeaseStorageBytes(context);
+			if (producerAuthorityBytes > maxBytes - WORKSPACE_BYTES || !memory.tryReserve(producerAuthorityBytes)) {
+				throw new QueryEvaluationException(
+						"Lazy result replay producer authority refused by query memory budget");
+			}
+			producerAuthority = actualProducer == null ? null
+					: actualProducer.retainAcceptedProducerLeaseOutside(context);
 			// nativeState has not published this owner and no reader can retain it yet. Keep native source
 			// access alive throughout the initial advance without introducing an idle cached-state lease.
 			activeLease = context == null ? null : context.retainActiveLease();
@@ -158,14 +171,16 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		for (int index = 0; index < cells.length; index++) {
 			cells[index] = next.cell(schema.name(index));
 		}
-		NativeResultRow row = new NativeResultRow(schema, cells);
+		int authority = provenance.intern(next.provenance());
+		NativeResultRow row = new NativeResultRow(schema, cells, provenance.resolve(authority));
 		long retained = retainedBytes(row);
-		if (path == null && retained <= maxBytes - WORKSPACE_BYTES - residentBytes && memory.tryReserve(retained)) {
+		if (path == null && retained <= maxBytes - WORKSPACE_BYTES - provenance.retainedBytes() - producerAuthorityBytes
+				- residentBytes && memory.tryReserve(retained)) {
 			resident.add(row);
 			residentBytes = Math.addExact(residentBytes, retained);
 		} else {
 			spill();
-			write(row);
+			write(row, authority);
 		}
 		cancellation.check();
 		LmdbNativeProbeDeadline.poll(0);
@@ -187,7 +202,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 			for (NativeResultRow row : resident) {
 				cancellation.check();
 				LmdbNativeProbeDeadline.poll(0);
-				write(row);
+				write(row, provenance.knownHandle(row.provenance()));
 				position++;
 				for (Cursor reader : readers) {
 					if (reader.position == position) {
@@ -203,7 +218,8 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		}
 	}
 
-	private void write(NativeResultRow row) throws IOException {
+	private void write(NativeResultRow row, int authority) throws IOException {
+		output.writeInt(authority);
 		for (int index = 0; index < schema.size(); index++) {
 			NativeResultCell cell = row.cell(index);
 			output.writeByte(cell.kind().ordinal());
@@ -289,7 +305,11 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 			}
 		}, failure);
 		resident = null;
-		return KernelRuntime.closeResource(memory, failure);
+		failure = KernelRuntime.closeResource(provenance, failure);
+		failure = KernelRuntime.closeResource(memory, failure);
+		failure = KernelRuntime.closeResource(producerAuthority, failure);
+		producerAuthority = null;
+		return failure;
 	}
 
 	private Throwable settleFeedback(boolean complete, Throwable failure) {
@@ -298,8 +318,8 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		}
 		feedbackSettled = true;
 		if (failure != null) {
-			feedback.abort(failure);
-			return failure;
+			Throwable primary = failure;
+			return KernelRuntime.closeResource(() -> feedback.abort(primary), primary);
 		}
 		try {
 			feedback.freeze(complete);
@@ -409,6 +429,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 				}
 			}
 			long before = countedInput.count;
+			NativeRowProvenance authority = provenance.resolve(input.readInt());
 			NativeResultCell[] cells = new NativeResultCell[schema.size()];
 			for (int index = 0; index < cells.length; index++) {
 				localCancellation.check();
@@ -422,12 +443,18 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 				cells[index] = switch (NativeResultCell.State.values()[stateOrdinal]) {
 				case UNBOUND -> NativeResultCell.unbound(kind);
 				case ERROR -> NativeResultCell.error(kind);
+				case PRESENT_NULL -> {
+					if (kind != NativeResultCell.Kind.RDF_TERM) {
+						throw new IOException("Null mapping marker cannot be a lexical summary");
+					}
+					yield NativeResultCell.presentNull();
+				}
 				case BOUND -> kind == NativeResultCell.Kind.RDF_TERM ? NativeResultCell.term(readerCodec.read(input))
 						: NativeResultCell.lexicalLength(input.readLong());
 				};
 			}
 			offset = Math.addExact(offset, countedInput.count - before);
-			return new NativeResultRow(schema, cells);
+			return new NativeResultRow(schema, cells, authority);
 		}
 
 		@Override

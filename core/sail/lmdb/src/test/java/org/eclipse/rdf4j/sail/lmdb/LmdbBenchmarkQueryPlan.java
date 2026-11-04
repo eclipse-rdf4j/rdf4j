@@ -103,6 +103,13 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 		return prepare(store, connection, query, maxExecutionTimeSeconds, true, false);
 	}
 
+	/** Allows a deliberately written test control to expose the same native telemetry as the selected plan. */
+	public static LmdbBenchmarkQueryPlan prepareWrittenOrder(LmdbStore store, SailRepositoryConnection connection,
+			String query, int maxExecutionTimeSeconds, RuntimeTelemetryMode runtimeTelemetryMode) {
+		return prepare(store, connection, query, maxExecutionTimeSeconds, true, OptimizationMode.NONE,
+				runtimeTelemetryMode);
+	}
+
 	public static LmdbBenchmarkQueryPlan prepareExactSequence(LmdbStore store, SailRepositoryConnection connection,
 			String query, int maxExecutionTimeSeconds) {
 		return prepare(store, connection, query, maxExecutionTimeSeconds, true, OptimizationMode.EXACT_SEQUENCE);

@@ -31,7 +31,8 @@ final class LmdbNativeStoreCostModel {
 	static final int MAX_VARIANTS = 4_096;
 	private static final double ALPHA = 1.0 / 32.0;
 	private static final double LOG_RATIO_LIMIT = Math.log(64.0);
-	private static final int FEATURE_COUNT = LmdbNativeCostVector.Feature.values().length;
+	private static final LmdbNativeCostVector.Feature[] FEATURES = LmdbNativeCostVector.Feature.values();
+	private static final int FEATURE_COUNT = FEATURES.length;
 
 	private final ConcurrentHashMap<LmdbNativePhysicalVariantKey, FeatureStats> variants = new ConcurrentHashMap<>();
 	private final Object admissionLock = new Object();
@@ -191,7 +192,7 @@ final class LmdbNativeStoreCostModel {
 			LmdbNativeCostVector actual) {
 		double[] mean = old.logFeatureRatioMean.clone();
 		double[] variance = old.logFeatureRatioVariance.clone();
-		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+		for (LmdbNativeCostVector.Feature feature : FEATURES) {
 			int index = feature.ordinal();
 			double expectedCount = estimated.expected(feature);
 			if (expectedCount <= 0.0) {
@@ -215,11 +216,21 @@ final class LmdbNativeStoreCostModel {
 
 	record Correction(double[] featureRatios, boolean exact) {
 
+		private static final Correction IDENTITY = createIdentity();
+
 		Correction {
 			featureRatios = featureRatios.clone();
 		}
 
 		static Correction identity() {
+			return IDENTITY;
+		}
+
+		boolean isIdentity() {
+			return this == IDENTITY;
+		}
+
+		private static Correction createIdentity() {
 			double[] ratios = new double[FEATURE_COUNT];
 			Arrays.fill(ratios, 1.0);
 			return new Correction(ratios, false);

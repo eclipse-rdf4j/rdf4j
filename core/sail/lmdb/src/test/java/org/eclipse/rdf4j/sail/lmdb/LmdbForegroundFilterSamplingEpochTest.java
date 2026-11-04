@@ -1950,6 +1950,17 @@ class LmdbForegroundFilterSamplingEpochTest {
 		}
 
 		@Override
+		StratifiedSampleResult sampleTriplesStratified(TxnManager.Txn txn, long subj, long pred, long obj,
+				long context, int budget, int strata, boolean stratified, java.util.function.BooleanSupplier shouldContinue,
+				Predicate<StratifiedSampleRow> sink) throws IOException {
+			return super.sampleTriplesStratified(txn, subj, pred, obj, context, budget, strata, stratified,
+					shouldContinue, row -> {
+						pause.pauseAfterRead(row.quad());
+						return sink.test(row);
+					});
+		}
+
+		@Override
 		int sampleTriplesStratified(TxnManager.Txn txn, long subj, long pred, long obj, long context, boolean explicit,
 				int strata, int rowsPerStratum, Predicate<long[]> sink) throws IOException {
 			return super.sampleTriplesStratified(txn, subj, pred, obj, context, explicit, strata, rowsPerStratum,

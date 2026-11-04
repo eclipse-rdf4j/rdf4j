@@ -15,14 +15,18 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.OptionalLong;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -34,6 +38,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.junit.jupiter.api.Test;
@@ -53,16 +60,34 @@ class LmdbLearnedFilterSurfaceTest {
 	void multiRelationFilterGeneralizesAcrossConstants(@TempDir File dataDir) {
 		LmdbStore store = initializedStore(dataDir);
 		try {
-			EvaluationStatistics statistics = committedStatistics(store);
-			statistics.recordFilterOutcome(filter("5"), 20L, 80L);
+			recordFilterOutcome(store, filter("5"), 20L, 80L);
 
-			EvaluationStatistics.FilterPassEstimate exact = statistics.estimateFilterPass(filter("5"));
-			EvaluationStatistics.FilterPassEstimate generalized = statistics.estimateFilterPass(filter("6"));
+			try (PlanningStatisticsRead read = openPlanningStatistics(store)) {
+				LmdbEvaluationStatistics statistics = read.statistics();
+				LmdbLearnedFilterEvidence exactEvidence = statistics.estimatorRuntime()
+						.learnedFilterEvidence(filter("5"));
+				assertNotNull(exactEvidence, "the completed current-owner observation is present in the raw surface");
+				assertEquals(0.2d, exactEvidence.passRatio(), 0.000_001d);
+				assertEquals(100L, exactEvidence.evidenceCount());
+				LmdbLearnedFilterEvidence generalizedEvidence = statistics.estimatorRuntime()
+						.learnedFilterEvidence(filter("6"));
+				assertNotNull(generalizedEvidence, "the generalized surface is present before confidence selection");
+				assertTrue(generalizedEvidence.generalized());
+				assertEquals(0.2d, generalizedEvidence.passRatio(), 0.000_001d);
+				assertEquals(100L, generalizedEvidence.evidenceCount());
 
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, exact.getSource());
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, generalized.getSource());
-			assertEquals(0.2d, generalized.getPassRatio(), 0.000_001d);
-			assertEquals(100L, generalized.getEvidenceCount());
+				EvaluationStatistics.FilterPassEstimate exact = statistics.estimateFilterPass(filter("5"));
+				EvaluationStatistics.FilterPassEstimate generalized = statistics.estimateFilterPass(filter("6"));
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, exact.getSource());
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, generalized.getSource());
+				assertEquals(0.2d, generalized.getPassRatio(), 0.000_001d);
+				assertEquals(100L, generalized.getEvidenceCount());
+			}
+
+			EvaluationStatistics.FilterPassEstimate unbound = store.getBackingStore().getEvaluationStatistics()
+					.estimateFilterPass(filter("6"));
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, unbound.getSource(),
+					"an unbound statistics reader cannot consume current-owner feedback");
 		} finally {
 			store.shutDown();
 		}
@@ -72,19 +97,30 @@ class LmdbLearnedFilterSurfaceTest {
 	void multiRelationFilterSurfacePersistsAcrossRestart(@TempDir File dataDir) {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
-			committedStatistics(writer).recordFilterOutcome(filter("5"), 20L, 80L);
+			recordFilterOutcome(writer, filter("5"), 20L, 80L);
 		} finally {
 			writer.shutDown();
 		}
 
 		LmdbStore reader = initializedStore(dataDir);
 		try {
-			EvaluationStatistics.FilterPassEstimate estimate = reader.getBackingStore()
-					.getEvaluationStatistics()
+			try (PlanningStatisticsRead read = openPlanningStatistics(reader)) {
+				LmdbLearnedFilterEvidence evidence = read.statistics().estimatorRuntime()
+						.learnedFilterEvidence(filter("6"));
+				assertNotNull(evidence, "the persisted learned template is present in the raw surface");
+				assertTrue(evidence.generalized());
+				assertEquals(0.2d, evidence.passRatio(), 0.000_001d);
+				assertEquals(100L, evidence.evidenceCount());
+
+				EvaluationStatistics.FilterPassEstimate estimate = read.statistics().estimateFilterPass(filter("6"));
+				assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource());
+				assertEquals(0.2d, estimate.getPassRatio(), 0.000_001d);
+				assertEquals(100L, estimate.getEvidenceCount());
+			}
+			EvaluationStatistics.FilterPassEstimate unbound = reader.getBackingStore().getEvaluationStatistics()
 					.estimateFilterPass(filter("6"));
-			assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource());
-			assertEquals(0.2d, estimate.getPassRatio(), 0.000_001d);
-			assertEquals(100L, estimate.getEvidenceCount());
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, unbound.getSource(),
+					"an unbound statistics reader cannot consume persisted adaptive evidence");
 		} finally {
 			reader.shutDown();
 		}
@@ -96,18 +132,19 @@ class LmdbLearnedFilterSurfaceTest {
 				.setSketchEstimatorEvidenceMode("snapshot-only"));
 		writer.init();
 		try {
-			committedStatistics(writer).recordFilterOutcome(filter("5"), 20L, 80L);
+			recordFilterOutcome(writer, filter("5"), 20L, 80L);
 		} finally {
 			writer.shutDown();
 		}
 
 		LmdbStore adaptiveReader = initializedStore(dataDir);
 		try {
-			EvaluationStatistics.FilterPassEstimate estimate = adaptiveReader.getBackingStore()
-					.getEvaluationStatistics()
-					.estimateFilterPass(filter("6"));
-			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource(),
-					"Snapshot-only execution must not publish evidence consumed by a later adaptive session.");
+			try (PlanningStatisticsRead read = openPlanningStatistics(adaptiveReader)) {
+				assertNoLearnedFilterEvidence(read.statistics(), filter("5"),
+						"snapshot-only recording must not publish exact evidence");
+				assertNoLearnedFilterEvidence(read.statistics(), filter("6"),
+						"snapshot-only recording must not publish generalized evidence");
+			}
 		} finally {
 			adaptiveReader.shutDown();
 		}
@@ -117,7 +154,7 @@ class LmdbLearnedFilterSurfaceTest {
 	void filterSidecarUsesVersionEightAndRejectsStamplessVersionFive(@TempDir File dataDir) throws IOException {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
-			committedStatistics(writer).recordFilterOutcome(filter("5"), 20L, 80L);
+			recordFilterOutcome(writer, filter("5"), 20L, 80L);
 		} finally {
 			writer.shutDown();
 		}
@@ -139,11 +176,12 @@ class LmdbLearnedFilterSurfaceTest {
 		Files.write(sidecar, versionFive);
 		LmdbStore reader = initializedStore(dataDir);
 		try {
-			EvaluationStatistics.FilterPassEstimate estimate = reader.getBackingStore()
-					.getEvaluationStatistics()
-					.estimateFilterPass(filter("6"));
-			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource(),
-					"Stampless evidence is ambiguous after the mutation coordinate changed and must be relearned");
+			try (PlanningStatisticsRead read = openPlanningStatistics(reader)) {
+				assertNoLearnedFilterEvidence(read.statistics(), filter("5"),
+						"stampless evidence must not be loaded as an exact surface");
+				assertNoLearnedFilterEvidence(read.statistics(), filter("6"),
+						"stampless evidence must not be loaded as a generalized surface");
+			}
 		} finally {
 			reader.shutDown();
 		}
@@ -153,7 +191,7 @@ class LmdbLearnedFilterSurfaceTest {
 	void snapshotOnlyOpenDoesNotUpgradeLegacyAdaptiveFilterSidecar(@TempDir File dataDir) throws IOException {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
-			committedStatistics(writer).recordFilterOutcome(filter("5"), 20L, 80L);
+			recordFilterOutcome(writer, filter("5"), 20L, 80L);
 		} finally {
 			writer.shutDown();
 		}
@@ -185,7 +223,7 @@ class LmdbLearnedFilterSurfaceTest {
 	void snapshotOnlyPlanningWithoutSketchesIgnoresExistingAdaptiveEvidence(@TempDir File dataDir) throws IOException {
 		LmdbStore writer = initializedStore(dataDir);
 		try {
-			committedStatistics(writer).recordFilterOutcome(filter("5"), 20L, 80L);
+			recordFilterOutcome(writer, filter("5"), 20L, 80L);
 		} finally {
 			writer.shutDown();
 		}
@@ -197,19 +235,34 @@ class LmdbLearnedFilterSurfaceTest {
 					.orElseThrow();
 		}
 		byte[] before = Files.readAllBytes(sidecar);
+		LmdbStore adaptiveReader = initializedStore(dataDir);
+		try {
+			try (PlanningStatisticsRead read = openPlanningStatistics(adaptiveReader)) {
+				LmdbLearnedFilterEvidence persisted = read.statistics().estimatorRuntime()
+						.learnedFilterEvidence(filter("6"));
+				assertNotNull(persisted, "the adaptive sidecar contains evidence before the snapshot-only check");
+				assertTrue(persisted.generalized());
+			}
+		} finally {
+			adaptiveReader.shutDown();
+		}
 		LmdbStore snapshotOnly = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setSketchEstimatorEnabled(false)
 				.setSketchEstimatorEvidenceMode("snapshot-only")
 				.setOptimizerSamplingEnabled(true)
 				.setBackgroundRawSamplingEnabled(true));
 		snapshotOnly.init();
+		awaitPostReadyInitialization(snapshotOnly);
 		try {
-			EvaluationStatistics statistics = snapshotOnly.getBackingStore().getEvaluationStatistics();
-			statistics.getCardinality(filter("6"));
-			EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter("6"));
-
-			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, estimate.getSource());
-			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource());
+			try (PlanningStatisticsRead read = openPlanningStatistics(snapshotOnly)) {
+				LmdbEvaluationStatistics statistics = read.statistics();
+			assertFalse(statistics.estimatorRuntime().adaptiveEvidenceAllowed(),
+					"snapshot-only policy must disable adaptive evidence before the lookup");
+				statistics.getCardinality(filter("6"));
+				EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter("6"));
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, estimate.getSource());
+				assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource());
+			}
 			assertEquals(0, snapshotOnly.getBackingStore().runBackgroundFilterSamplingCycle(5_000L));
 		} finally {
 			snapshotOnly.shutDown();
@@ -223,14 +276,19 @@ class LmdbLearnedFilterSurfaceTest {
 	void incompleteObservationDoesNotTrainSurface(@TempDir File dataDir) {
 		LmdbStore store = initializedStore(dataDir);
 		try {
-			EvaluationStatistics statistics = committedStatistics(store);
-			statistics.recordFilterOutcome(filter("5"),
+			recordFilterOutcome(store, filter("5"),
 					EvaluationStatistics.FilterOutcomeObservation.incomplete(2L, 8L, "early-close"));
 
-			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER,
-					statistics.estimateFilterPass(filter("5")).getSource());
+			try (PlanningStatisticsRead read = openPlanningStatistics(store)) {
+				assertNoLearnedFilterEvidence(read.statistics(), filter("5"),
+						"an incomplete observation must not publish exact evidence");
+				assertNoLearnedFilterEvidence(read.statistics(), filter("6"),
+						"an incomplete observation must not publish generalized evidence");
+			}
+			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
-					statistics.estimateFilterPass(filter("6")).getSource());
+					statistics.estimateFilterPass(filter("6")).getSource(),
+					"an unbound statistics reader remains a supplemental no-reuse control");
 		} finally {
 			store.shutDown();
 		}
@@ -280,18 +338,99 @@ class LmdbLearnedFilterSurfaceTest {
 		assertNotEquals(FilterSurfaceKey.generalized(unscoped), FilterSurfaceKey.generalized(scoped));
 	}
 
-	/** Statistics bound to a committed snapshot: these tests replay observations that committed queries produced. */
-	private static LmdbEvaluationStatistics committedStatistics(LmdbStore store) {
-		LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
-				.getEvaluationStatistics();
-		statistics.bindExecutionSnapshot(OptionalLong.of(0L));
-		return statistics;
+	/** Records the characterized outcome through a current paired read session. */
+	private static void recordFilterOutcome(LmdbStore store, Filter filter, long passedCount, long filteredCount) {
+		recordFilterOutcome(store, filter,
+				EvaluationStatistics.FilterOutcomeObservation.completed(passedCount, filteredCount));
+	}
+
+	private static void recordFilterOutcome(LmdbStore store, Filter filter,
+			EvaluationStatistics.FilterOutcomeObservation observation) {
+		awaitPostReadyInitialization(store);
+		assertTrue(LmdbReinvocablePositions.filterOutcomeRecordable(filter),
+				"the synthetic completed count must describe a standalone filter input");
+		try (PlanningStatisticsRead read = openPlanningStatistics(store)) {
+			assertTrue(read.statistics().feedbackPublicationAllowed(),
+					"a live paired source must authorize the synthetic observation");
+			read.statistics().prepareFilterOutcome(filter, read.source(), null);
+			read.statistics().recordFilterOutcome(filter, observation);
+		}
+	}
+
+	private static PlanningStatisticsRead openPlanningStatistics(LmdbStore store) {
+		SailDataset owner = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
+		try {
+			SailDatasetTripleTermSource source = new SailDatasetTripleTermSource(store.getValueFactory(), owner);
+			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
+					.getEvaluationStatistics();
+			LmdbPinnedReadTxnSource borrowed = source.unwrapDataset(LmdbPinnedReadTxnSource.class).orElseThrow();
+			SailClosable view = borrowed.enterPlanningReadView().orElseThrow();
+			try {
+				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime().pinQueryPlanningReads(
+						borrowed.pinnedReadTxn().orElseThrow(), borrowed.pinnedValueSnapshot().orElseThrow());
+				try {
+					statistics.bindExecutionSource(source, null);
+					assertTrue(statistics.estimatorRuntime().hasPairedPlanningAuthority(),
+							"the fixture owns the actual paired planning readers");
+					return new PlanningStatisticsRead(owner, source, view, pin, statistics);
+				} catch (RuntimeException | Error failure) {
+					closeAfterFailure(failure, pin::close);
+					throw failure;
+				}
+			} catch (RuntimeException | Error failure) {
+				closeAfterFailure(failure, view::close);
+				throw failure;
+			}
+		} catch (RuntimeException | Error failure) {
+			closeAfterFailure(failure, owner::close);
+			throw failure;
+		}
+	}
+
+	private static void closeAfterFailure(Throwable primary, Runnable close) {
+		try {
+			close.run();
+		} catch (RuntimeException | Error cleanup) {
+			if (cleanup != primary) {
+				primary.addSuppressed(cleanup);
+			}
+		}
+	}
+
+	private static void assertNoLearnedFilterEvidence(LmdbEvaluationStatistics statistics, Filter filter,
+			String reason) {
+		assertNull(statistics.estimatorRuntime().learnedFilterEvidence(filter), reason + " (raw evidence)");
+		EvaluationStatistics.FilterPassEstimate estimate = statistics.estimateFilterPass(filter);
+		assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_FILTER, estimate.getSource(), reason);
+		assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE, estimate.getSource(), reason);
+	}
+
+	private record PlanningStatisticsRead(SailDataset owner, SailDatasetTripleTermSource source,
+			SailClosable view, TripleStore.PlanningReadPin pin, LmdbEvaluationStatistics statistics)
+			implements AutoCloseable {
+		@Override
+		public void close() {
+			try (owner; view; pin) {
+			}
+		}
 	}
 
 	private static LmdbStore initializedStore(File dataDir) {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
 		store.init();
+		awaitPostReadyInitialization(store);
 		return store;
+	}
+
+	private static void awaitPostReadyInitialization(LmdbStore store) {
+		try {
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30, TimeUnit.SECONDS);
+		} catch (IOException | InterruptedException failure) {
+			if (failure instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			throw new AssertionError("the test requires completed LMDB provider publication", failure);
+		}
 	}
 
 	private static Filter filter(String constant) {

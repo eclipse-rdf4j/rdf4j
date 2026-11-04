@@ -107,7 +107,8 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
-			Projection projection, QueryEvaluationContext context, NativeTupleFacts movementFacts, WorkerFactory workerFactory,
+			Projection projection, QueryEvaluationContext context, NativeTupleFacts movementFacts,
+			WorkerFactory workerFactory,
 			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
 		this.movementFacts = movementFacts;
 		this.step = step;
@@ -618,7 +619,9 @@ final class NativeSubqueryPlan implements SlotPlan {
 					NativeResultCell cell = solution.cell(plan.outNames[i]);
 					if (cell.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) {
 						row.bindSummary(plan.outSlots[i], cell);
-					} else if (cell.state() == NativeResultCell.State.BOUND && !row.bindOrCheckTerm(plan.outSlots[i],
+					} else if (cell.state() == NativeResultCell.State.PRESENT_NULL) {
+						row.bindReturnedNull(plan.outSlots[i]);
+					} else if (cell.state() == NativeResultCell.State.BOUND && !row.bindReturnedTerm(plan.outSlots[i],
 							plan.idOfOrIntern(row, cell.value(), plan.outSlots[i]))) {
 						compatible = false;
 						break;

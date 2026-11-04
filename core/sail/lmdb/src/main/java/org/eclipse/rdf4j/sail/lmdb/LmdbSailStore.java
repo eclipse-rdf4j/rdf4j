@@ -2783,6 +2783,7 @@ class LmdbSailStore implements SailStore {
 	private final int bulkOperationSize;
 	private final int estimatorAddChunkSize;
 	private final LmdbFrontierPlannerSettings frontierPlannerSettings;
+	private final boolean legacyPlanningEvidenceRequiresFreshOwner;
 	private final Path frontierStatisticsDirectory;
 
 	private final ExecutorService tripleStoreExecutor = createTripleStoreExecutor();
@@ -7275,6 +7276,7 @@ class LmdbSailStore implements SailStore {
 		this.adaptiveEvidenceAllowed = !"snapshot-only"
 				.equalsIgnoreCase(config.getSketchEstimatorEvidenceMode());
 		this.frontierPlannerSettings = LmdbFrontierPlannerSettings.from(config);
+		this.legacyPlanningEvidenceRequiresFreshOwner = format.isLegacy();
 		this.frontierStatisticsDirectory = new File(dataDir, "frontier-statistics-v2").toPath();
 		this.cascadesPlanCache = new PackedPlanCache(CASCADES_PLAN_CACHE_CAPACITY, 16,
 				frontierPlannerSettings.packedPlanCacheBudgetBytes());
@@ -7283,14 +7285,16 @@ class LmdbSailStore implements SailStore {
 			UUID durableStoreId = null;
 			UUID savedStoreId = null;
 			try {
-				durableStoreId = properties.getOrCreateStoreId();
+				durableStoreId = properties.hasResolvedOwnerIdentity() ? properties.resolvedOwnerIdentity()
+						: properties.getOrCreateStoreId();
 				savedStoreId = properties.savedStoreId();
 			} catch (IllegalStateException e) {
 				logger.warn("Frontier and learned evidence cannot use a durable LMDB store identity", e);
 			}
 			this.estimatorPersistenceLocation = EstimatorPersistenceLocation.forStore(
 					new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath(),
-					durableStoreId != null && durableStoreId.equals(savedStoreId) ? durableStoreId : null);
+					properties.hasResolvedOwnerIdentity() ? durableStoreId
+							: durableStoreId != null && durableStoreId.equals(savedStoreId) ? durableStoreId : null);
 			this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
 					? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config),
 							derivedStateBuildExecutor)
@@ -7928,6 +7932,11 @@ class LmdbSailStore implements SailStore {
 					&& (Files.isRegularFile(estimatorPath.resolve("synopsis-v8.bin"))
 							|| Files.isRegularFile(estimatorPath.resolve("metadata.bin")));
 			if (sketchBasedJoinEstimator != null) {
+				if (legacyPlanningEvidenceRequiresFreshOwner) {
+					// Set the in-memory fence before persistence is configured or a loaded snapshot is exposed.
+					// The existing resolver then marks only its own recognized destination for a complete rebuild.
+					sketchBasedJoinEstimator.synopsisService().requestRebuild();
+				}
 				sketchBasedJoinEstimator.configurePersistence(estimatorPersistenceLocation.logicalPath(),
 						snapshotExists);
 			}
@@ -7942,14 +7951,15 @@ class LmdbSailStore implements SailStore {
 							config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
 							config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled(),
 							identitySupplier, config.getSketchEstimatorColdSynopsisCapacity(),
-							() -> adaptiveEvidenceAllowed, this::statementMutationStamp, alternateLocation)
+							() -> adaptiveEvidenceAllowed, this::statementMutationStamp, alternateLocation,
+							!legacyPlanningEvidenceRequiresFreshOwner, !legacyPlanningEvidenceRequiresFreshOwner)
 					: statsFactory.create(alternateLocation == null ? estimatorPath : null, tripleStore, valueStore,
 							config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
 							config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
 			loaded.setSamplingViewSupplier(() -> beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
 			LmdbOperatorFeedbackStats loadedFeedback = new LmdbOperatorFeedbackStats(estimatorPath,
 					identitySupplier, () -> adaptiveEvidenceAllowed, this::statementMutationStamp,
-					alternateLocation);
+					alternateLocation, !legacyPlanningEvidenceRequiresFreshOwner);
 			loadedFeedback.setPlanExecutionPublisher(frontierPlannerSettings.pipelinePlanCache()::observeExecution);
 			beforeSketchProviderPublicationForTest();
 			boolean discarded = false;
@@ -8261,6 +8271,9 @@ class LmdbSailStore implements SailStore {
 		} catch (IllegalArgumentException | IOException failure) {
 			logger.warn("Frontier Statistics V2 cannot open; conventional estimates remain available", failure);
 			return;
+		}
+		if (legacyPlanningEvidenceRequiresFreshOwner) {
+			opened.requireCurrentOwnerBase();
 		}
 		boolean published = false;
 		try (FrontierReaders readers = admitFrontierReaders(1, true)) {
@@ -11410,13 +11423,11 @@ class LmdbSailStore implements SailStore {
 			long snapshotSequence = snapshot.coveredSequence();
 			logger.info("Starting Frontier Statistics V2 rebuild: epoch={}, sequence={}, configuredWorkers={}",
 					snapshotEpoch, snapshotSequence, derivedStateBuildExecutor.configuredThreads());
-			FrontierStatisticsStatus before = service.status();
 			if (frontierSnapshotAlreadyCovered(service, snapshot)) {
 				return true;
 			}
-			long previousGeneration = before.availability() == FrontierStatisticsAvailability.READY
-					? before.generationId()
-					: -1L;
+			// An untrusted loaded generation still owns the predecessor chain; consumer availability cannot replace it.
+			long previousGeneration = service.publicationPredecessorGeneration();
 			long generation = Math.max(snapshotEpoch == 0L ? 1L : snapshotEpoch,
 					previousGeneration == Long.MAX_VALUE ? Long.MAX_VALUE : previousGeneration + 1L);
 			if (generation == previousGeneration) {
@@ -11437,7 +11448,7 @@ class LmdbSailStore implements SailStore {
 					derivedStateBuildExecutor, observer);
 			service.recordBuildProgress(FrontierStatisticsBuildPhase.PUBLISHING, 0.0d, -1L,
 					0.0d, Double.NaN, Double.NaN);
-			service.publish(manifest);
+			service.publishCurrentOwnerBase(manifest);
 			clearFrontierBaseRebuildPending();
 			Txn metadataReader = readers.readers[1];
 			acknowledgeFrontierCoverage(manifest.coveredSequence(), metadataReader);
@@ -11514,20 +11525,46 @@ class LmdbSailStore implements SailStore {
 				providers.filters(),
 				providers.feedback(), statementPatternCardinalitySource, cascadesPlanCache,
 				frontierPlannerSettings, () -> mayHaveInferred, () -> adaptiveEvidenceAllowed, providers.statistics(),
-				this::openDetachedPlanningSnapshot, this::maskPlanningReadView, learnedFilterSelectivity,
+				LmdbDetachedPlanningSnapshotProvider.forPlanes(this::openDetachedPlanningSnapshot),
+				this::maskPlanningReadView, learnedFilterSelectivity,
 				queryExecutionPolicy, this::tryOpenDirectDomainReadView, () -> publishedProviders);
 	}
 
 	private LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot() {
-		LmdbSailDataset dataset;
+		return openDetachedPlanningSnapshot(org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.EXPLICIT);
+	}
+
+	private LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot(int planeMask) {
+		int explicit = org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.EXPLICIT;
+		int inferred = org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.INFERRED;
+		if (planeMask != explicit && planeMask != inferred && planeMask != (explicit | inferred)) {
+			throw new IllegalArgumentException("Detached planning requires a representable read-plane mask");
+		}
+		SailDataset first = null;
+		SailDataset second = null;
+		SailDataset dataset;
 		try (DatasetAdmission admission = beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
-			dataset = datasetForReadView(true, admission.view(), IsolationLevels.SNAPSHOT_READ);
+			first = datasetForReadView(planeMask == explicit, admission.view(), IsolationLevels.SNAPSHOT_READ);
+			if (planeMask == (explicit | inferred)) {
+				second = datasetForReadView(true, admission.view(), IsolationLevels.SNAPSHOT_READ);
+				dataset = org.eclipse.rdf4j.sail.base.SailDatasetReadComposition.union(first, second);
+			} else {
+				dataset = first;
+			}
+		} catch (RuntimeException | Error failure) {
+			if (second != null) {
+				attemptClose(failure, second::close);
+			}
+			if (first != null) {
+				attemptClose(failure, first::close);
+			}
+			throw failure;
 		}
 		try {
 			return new LmdbDetachedPlanningSnapshot(dataset,
 					new SailDatasetTripleTermSource(valueStore, dataset));
 		} catch (RuntimeException | Error failure) {
-			dataset.close();
+			attemptClose(failure, dataset::close);
 			throw failure;
 		}
 	}
@@ -11701,6 +11738,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		if (contexts.length == 0) {
 			RecordIterator records = source.statements(subjID, predID, objID, LmdbValue.UNKNOWN_ID,
 					nativeSourceObservationForTest);
@@ -11798,6 +11836,7 @@ class LmdbSailStore implements SailStore {
 			return IterationConstants.EMPTY_STATEMENT_ITERATION;
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		if (contexts.length <= 1) {
 			long contextID = orderedContextId(contexts);
 			if (contexts.length == 1 && contexts[0] != null) {
@@ -11917,6 +11956,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		if (contexts.length == 0) {
 			return source.count(subjID, predID, objID, LmdbValue.UNKNOWN_ID);
 		}
@@ -11975,6 +12015,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		if (contexts.length == 0) {
 			return source.has(subjID, predID, objID, LmdbValue.UNKNOWN_ID);
 		}
@@ -12185,6 +12226,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		List<Long> contextIDList = new ArrayList<>(contexts.length);
 		List<Resource> knownContextList = new ArrayList<>(contexts.length);
 		if (contexts.length == 0) {
@@ -12353,6 +12395,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		List<Long> contextIDList = new ArrayList<>(contexts.length);
 		if (contexts.length == 0) {
 			contextIDList.add(LmdbValue.UNKNOWN_ID);
@@ -14396,7 +14439,8 @@ class LmdbSailStore implements SailStore {
 						boolean workerSubmitted = false;
 						try {
 							if (freshImportEligible && freshValueSession == null && !freshValueSessionInvalidated
-									&& !mayHaveInferred && (!nativeCheckpoints || explicit && noneWriteStates.size() == 1
+									&& !mayHaveInferred
+									&& (!nativeCheckpoints || explicit && noneWriteStates.size() == 1
 											&& noneWriteStates.containsKey(owner))) {
 								Boolean empty = tripleStore.tryIsEmptyForImport();
 								if (Boolean.TRUE.equals(empty)) {
@@ -14441,35 +14485,35 @@ class LmdbSailStore implements SailStore {
 														}
 														if (queued != null) {
 															Operation op = queued;
-																if (op == COMMIT_TRANSACTION) {
-																	tripleStore.commit();
-																	nextTransactionAsync = false;
-																	asyncTransactionFinished = true;
-																	signalAsyncProgress();
-																	break;
-																} else if (op instanceof AsyncDrainOperation drain) {
-																	completedAsyncDrain = drain;
-																	signalAsyncProgress();
-																} else if (op == ROLLBACK_TRANSACTION) {
-																	try {
-																		tripleStore.rollback(asyncNativeTransaction);
-																	} catch (IOException | RuntimeException
-																			| Error rollbackFailure) {
-																		// Recovery may succeed, but the caller must
-																		// still
-																		// retain
-																		// this cleanup failure.
-																		asyncRollbackException = rollbackFailure;
-																		throw rollbackFailure;
-																	}
-																	nextTransactionAsync = false;
-																	asyncTransactionFinished = true;
-																	signalAsyncProgress();
-																	break;
-																} else {
-																	op.execute();
-																	signalAsyncProgress();
+															if (op == COMMIT_TRANSACTION) {
+																tripleStore.commit();
+																nextTransactionAsync = false;
+																asyncTransactionFinished = true;
+																signalAsyncProgress();
+																break;
+															} else if (op instanceof AsyncDrainOperation drain) {
+																completedAsyncDrain = drain;
+																signalAsyncProgress();
+															} else if (op == ROLLBACK_TRANSACTION) {
+																try {
+																	tripleStore.rollback(asyncNativeTransaction);
+																} catch (IOException | RuntimeException
+																		| Error rollbackFailure) {
+																	// Recovery may succeed, but the caller must
+																	// still
+																	// retain
+																	// this cleanup failure.
+																	asyncRollbackException = rollbackFailure;
+																	throw rollbackFailure;
 																}
+																nextTransactionAsync = false;
+																asyncTransactionFinished = true;
+																signalAsyncProgress();
+																break;
+															} else {
+																op.execute();
+																signalAsyncProgress();
+															}
 														} else {
 															if (!running.get()) {
 																logger.warn(
@@ -16260,6 +16304,7 @@ class LmdbSailStore implements SailStore {
 			if (closed) {
 				throw new SailException("Mutation dataset is closed");
 			}
+			Resource[] requestedContexts = LmdbContextRequests.distinct(contexts);
 			boolean boundProbe = subject != null && predicate != null && object != null;
 			List<Statement> pendingMatches = new ArrayList<>();
 			if (boundProbe) {
@@ -16268,7 +16313,7 @@ class LmdbSailStore implements SailStore {
 					NoneWriteState state = noneWriteStates.get(controller.writerOwner());
 					PendingNoneBatch pending = state == null ? null : state.pending;
 					if (pending != null && pending.explicit == controller.explicit) {
-						pendingMatches.addAll(pending.pendingMatches(subject, predicate, object, contexts));
+						pendingMatches.addAll(pending.pendingMatches(subject, predicate, object, requestedContexts));
 					}
 				} finally {
 					sinkStoreAccessLock.unlock();
@@ -16283,7 +16328,7 @@ class LmdbSailStore implements SailStore {
 
 				@Override
 				public boolean hasNext() {
-					while (!isClosed() && offset == page.size() && contextIndex < Math.max(1, contexts.length)) {
+					while (!isClosed() && offset == page.size() && contextIndex < Math.max(1, requestedContexts.length)) {
 						loadPage();
 					}
 					return !isClosed() && offset < page.size();
@@ -16308,14 +16353,14 @@ class LmdbSailStore implements SailStore {
 								long s = subject == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(subject);
 								long p = predicate == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(predicate);
 								long o = object == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(object);
-								Resource context = contexts.length == 0 ? null : contexts[contextIndex];
-								long c = contexts.length == 0 ? LmdbValue.UNKNOWN_ID
+								Resource context = requestedContexts.length == 0 ? null : requestedContexts[contextIndex];
+								long c = requestedContexts.length == 0 ? LmdbValue.UNKNOWN_ID
 										: context == null ? 0L : valueStore.getId(context);
 								long[][] quads = new long[0][];
 								if (!(subject != null && s == LmdbValue.UNKNOWN_ID
 										|| predicate != null && p == LmdbValue.UNKNOWN_ID
 										|| object != null && o == LmdbValue.UNKNOWN_ID
-										|| contexts.length > 0 && context != null && c == LmdbValue.UNKNOWN_ID)) {
+										|| requestedContexts.length > 0 && context != null && c == LmdbValue.UNKNOWN_ID)) {
 									quads = controller.collectNoneQuads(s, p, o, c, controller.explicit,
 											Math.max(1, Math.min(bulkOperationSize, NoneWriteState.MAX_CHUNK_ROWS)),
 											after);
@@ -17071,8 +17116,8 @@ class LmdbSailStore implements SailStore {
 						openNanos, lmdbWork, observer, false);
 			}
 			boolean directAllowed = !encounterOrderRequired || directAdjacency != null
-					&& directAdjacency.ordinaryPreservesEncounterOrder(view, subj, pred, obj, context, explicit,
-							encounterIndex);
+					&& (directAdjacency.ordinaryPreservesEncounterOrder(view, subj, pred, obj, context, explicit,
+							encounterIndex) || directAdjacency.mayAttemptShadowComparison(view));
 			RecordIterator direct = directAllowed
 					? tryDirect(order, subj, pred, obj, context, null, null, observer)
 					: null;
@@ -18693,8 +18738,10 @@ class LmdbSailStore implements SailStore {
 							evidenceRegime(adjacencyView), lmdbKey, openNanos, lmdbWork, observer, false);
 				}
 				boolean directAllowed = !encounterOrderRequired || directAdjacency != null
-						&& directEligible() && directAdjacency.ordinaryPreservesEncounterOrder(adjacencyView,
-								subj, pred, obj, context, explicit, encounterIndex);
+						&& directEligible()
+						&& (directAdjacency.ordinaryPreservesEncounterOrder(adjacencyView, subj, pred, obj, context,
+								explicit, encounterIndex)
+								|| directAdjacency.mayAttemptShadowComparison(adjacencyView));
 				RecordIterator direct = directAllowed
 						? tryDirect(order, subj, pred, obj, context, null, null, observer)
 						: null;

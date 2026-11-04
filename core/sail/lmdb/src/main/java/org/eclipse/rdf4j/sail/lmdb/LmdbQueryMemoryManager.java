@@ -173,6 +173,11 @@ public final class LmdbQueryMemoryManager {
 		private long usedBytes;
 		private boolean closed;
 
+		/** One aggregate owner's lifecycle is serialized by the same authority as its byte claims. */
+		public AggregateReservation openAggregateReservation() {
+			return new AggregateReservation(this);
+		}
+
 		public Reservation reserve(long bytes, Reclaimable reclaimable) {
 			if (bytes < 0L) {
 				throw new IllegalArgumentException("Reservation size must not be negative");
@@ -212,6 +217,80 @@ public final class LmdbQueryMemoryManager {
 				closed = true;
 				for (Reservation reservation : reservations.toArray(Reservation[]::new)) {
 					reservation.releaseAll();
+				}
+			}
+		}
+	}
+
+	/**
+	 * Growable aggregate allocation with terminal owner semantics. All state shares the manager monitor, including
+	 * reentrant reclamation, so no aggregate monitor can invert the manager's lock order. Explicit aggregate/ledger
+	 * closure makes later cleanup releases harmless; spending an open owner's claim does not waive over-release.
+	 */
+	@Experimental
+	public final class AggregateReservation implements AutoCloseable {
+		private final QueryLedger owner;
+		private Reservation reservation;
+		private boolean closed;
+
+		private AggregateReservation(QueryLedger owner) {
+			this.owner = owner;
+		}
+
+		public boolean tryReserve(long bytes) {
+			if (bytes < 0L) {
+				throw new IllegalArgumentException("allocation size must not be negative");
+			}
+			synchronized (LmdbQueryMemoryManager.this) {
+				if (closed || owner.closed) {
+					return false;
+				}
+				if (bytes == 0L) {
+					return true;
+				}
+				Reservation claim = reservation;
+				if (claim == null) {
+					// A zero-byte anchor gives every fallible growth one stable identity. Reentrant owner
+					// close retires that anchor, so the existing post-reclaimer growth fence rejects it.
+					claim = owner.reserve(0L, null);
+					if (claim == null) {
+						return false;
+					}
+					reservation = claim;
+				}
+				return claim.tryGrow(bytes);
+			}
+		}
+
+		public void release(long bytes) {
+			if (bytes < 0L) {
+				throw new IllegalArgumentException("released size must not be negative");
+			}
+			synchronized (LmdbQueryMemoryManager.this) {
+				if (bytes == 0L || closed || owner.closed) {
+					return;
+				}
+				// An open owner with no claim is spent, not terminally closed. This distinction must be
+				// checked under the same monitor as a reclaimer and the waiting release.
+				if (reservation == null) {
+					throw new IllegalArgumentException("Cannot release more bytes than reserved");
+				}
+				reservation.release(bytes);
+				if (reservation.closed) {
+					reservation = null;
+				}
+			}
+		}
+
+		@Override
+		public void close() {
+			synchronized (LmdbQueryMemoryManager.this) {
+				if (!closed) {
+					closed = true;
+					if (reservation != null) {
+						reservation.releaseAll();
+						reservation = null;
+					}
 				}
 			}
 		}

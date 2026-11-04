@@ -63,15 +63,21 @@ class NativeContextCancellationBoundaryTest {
 		};
 		NativeContextClosingIteration result = new NativeContextClosingIteration(source, context);
 		try (var workers = Executors.newFixedThreadPool(2);
-				AutoCloseable cleanup = () -> { release.countDown(); result.close(); }) {
+				AutoCloseable cleanup = () -> {
+					release.countDown();
+					result.close();
+				}) {
 			var request = workers.submit(result::requestCancellation);
 			assertTrue(entered.await(5, TimeUnit.SECONDS));
 			workers.submit(result::close).get(5, TimeUnit.SECONDS);
 			assertFalse(context.isClosed());
 			assertEquals(0, sourceCloses.get());
 			assertEquals(0, stateCloses.get());
+			assertTrue(context.cancellation().isCancellationRequested(),
+					"the owning result has cancelled its root token while its declining callback is held");
 			release.countDown();
-			assertFalse(request.get(5, TimeUnit.SECONDS));
+			assertTrue(request.get(5, TimeUnit.SECONDS),
+					"the owning context accepted cancellation even though the delegate declined it");
 			assertTrue(context.isClosed());
 			assertEquals(1, sourceCloses.get());
 			assertEquals(1, stateCloses.get());
@@ -108,7 +114,10 @@ class NativeContextCancellationBoundaryTest {
 		};
 		NativeContextClosingIteration result = new NativeContextClosingIteration(source, context);
 		try (var workers = Executors.newFixedThreadPool(2);
-				AutoCloseable cleanup = () -> { release.countDown(); result.close(); }) {
+				AutoCloseable cleanup = () -> {
+					release.countDown();
+					result.close();
+				}) {
 			var request = workers.submit(result::requestCancellation);
 			assertTrue(entered.await(5, TimeUnit.SECONDS));
 			workers.submit(result::close).get(5, TimeUnit.SECONDS);
@@ -147,7 +156,11 @@ class NativeContextCancellationBoundaryTest {
 		};
 		NativeContextClosingIteration result = new NativeContextClosingIteration(source, context, false);
 		try (var workers = Executors.newFixedThreadPool(2);
-				AutoCloseable cleanup = () -> { release.countDown(); result.close(); context.close(); }) {
+				AutoCloseable cleanup = () -> {
+					release.countDown();
+					result.close();
+					context.close();
+				}) {
 			var request = workers.submit(result::requestCancellation);
 			assertTrue(entered.await(5, TimeUnit.SECONDS));
 			workers.submit(result::close).get(5, TimeUnit.SECONDS);
@@ -184,7 +197,10 @@ class NativeContextCancellationBoundaryTest {
 		};
 		NativeContextClosingIteration result = new NativeContextClosingIteration(source, context);
 		try (var workers = Executors.newFixedThreadPool(2);
-				AutoCloseable cleanup = () -> { releaseClose.countDown(); result.close(); }) {
+				AutoCloseable cleanup = () -> {
+					releaseClose.countDown();
+					result.close();
+				}) {
 			var close = workers.submit(result::close);
 			assertTrue(closeEntered.await(5, TimeUnit.SECONDS));
 			assertFalse(workers.submit(result::requestCancellation).get(5, TimeUnit.SECONDS));
@@ -207,7 +223,7 @@ class NativeContextCancellationBoundaryTest {
 			@Override
 			public boolean requestCancellation() {
 				callbacks.incrementAndGet();
-			return true;
+				return true;
 			}
 
 			@Override
@@ -328,7 +344,11 @@ class NativeContextCancellationBoundaryTest {
 		NativeContextClosingIteration result = new NativeContextClosingIteration(source, context, false);
 		owner.set(result);
 		try (var workers = Executors.newFixedThreadPool(2);
-				AutoCloseable cleanup = () -> { sourceMayReturn.countDown(); result.close(); context.close(); }) {
+				AutoCloseable cleanup = () -> {
+					sourceMayReturn.countDown();
+					result.close();
+					context.close();
+				}) {
 			var sourceClose = workers.submit(result::close);
 			assertTrue(sourceEntered.await(5, TimeUnit.SECONDS));
 			var contextClose = workers.submit(context::close);
@@ -381,7 +401,10 @@ class NativeContextCancellationBoundaryTest {
 		};
 		NativeContextClosingIteration result = new NativeContextClosingIteration(source, context);
 		try (var workers = Executors.newFixedThreadPool(2);
-				AutoCloseable cleanup = () -> { releaseClose.countDown(); result.close(); }) {
+				AutoCloseable cleanup = () -> {
+					releaseClose.countDown();
+					result.close();
+				}) {
 			var first = workers.submit(result::close);
 			assertTrue(closeEntered.await(5, TimeUnit.SECONDS));
 			var second = workers.submit(() -> {
@@ -395,8 +418,10 @@ class NativeContextCancellationBoundaryTest {
 			assertFalse(second.isDone(), "the racing closer must not pass unfinished cleanup");
 			releaseClose.countDown();
 			if (fail) {
-				assertSame(failure, assertThrows(ExecutionException.class, () -> first.get(5, TimeUnit.SECONDS)).getCause());
-				assertSame(failure, assertThrows(ExecutionException.class, () -> second.get(5, TimeUnit.SECONDS)).getCause());
+				assertSame(failure,
+						assertThrows(ExecutionException.class, () -> first.get(5, TimeUnit.SECONDS)).getCause());
+				assertSame(failure,
+						assertThrows(ExecutionException.class, () -> second.get(5, TimeUnit.SECONDS)).getCause());
 			} else {
 				first.get(5, TimeUnit.SECONDS);
 				second.get(5, TimeUnit.SECONDS);
@@ -407,7 +432,8 @@ class NativeContextCancellationBoundaryTest {
 	}
 
 	private static boolean blocked(Thread thread) {
-		return thread != null && (thread.getState() == Thread.State.WAITING || thread.getState() == Thread.State.BLOCKED);
+		return thread != null
+				&& (thread.getState() == Thread.State.WAITING || thread.getState() == Thread.State.BLOCKED);
 	}
 
 	private static void awaitState(BooleanSupplier condition, String message) {

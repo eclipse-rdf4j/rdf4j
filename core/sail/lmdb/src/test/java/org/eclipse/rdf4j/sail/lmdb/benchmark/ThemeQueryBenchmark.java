@@ -138,17 +138,37 @@ public class ThemeQueryBenchmark {
 
 	private static final long DEFAULT_WAIT_FOR_SKETCHES_TIMEOUT_SECONDS = 300L;
 
-	@Param({ "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" // "11",
-			// "12"
+	@Param({
+			"0",
+			"1",
+			"2",
+			"3",
+//			"4",
+//			"5",
+//			"6",
+//			"7",
+//			"8",
+//			"9",
+//			"10",
+//			"11",
+//			"12"
 	})
 	public int z_queryIndex;
 
-	@Param({ "MEDICAL_RECORDS", "SOCIAL_MEDIA", "LIBRARY" // "ENGINEERING",
-			// "HIGHLY_CONNECTED",
-			// "TRAIN",
-			// "ELECTRICAL_GRID",
-			// "PHARMA",
-			// "SPARSE",
+	@Param({
+			"MEDICAL_RECORDS",
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA",
+//			"ADAPTIVE_FILTER_PLACEMENT",
+//			"ANALYTICS",
+//			"EXPLORATION",
+//			"DATA_TRANSFORMATION"
+//			 "SPARSE",
 	})
 	public String themeName;
 
@@ -608,9 +628,6 @@ public class ThemeQueryBenchmark {
 		LmdbStoreConfig config = ConfigUtil.createConfig();
 		boolean sketchProfile = sketchEstimatorEnabled || waitForSketchesEnabled();
 		config.setSketchEstimatorEnabled(sketchProfile);
-		config.setExperimentalQueryOptimizations(sketchProfile);
-		config.setDirectAdjacencyEnabled(
-				Boolean.parseBoolean(System.getProperty(WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, "false")));
 		config.setValueOverlayEnabled(
 				Boolean.parseBoolean(System.getProperty(WAIT_FOR_VALUE_OVERLAY_PROPERTY, "false")));
 		return config;
@@ -768,6 +785,12 @@ public class ThemeQueryBenchmark {
 				.addReflectiveGetter("lmdbStore.writable", store, "isWritable")
 				.addReflectiveGetter("lmdbConfig.tripleIndexes", storeConfig, "getTripleIndexes")
 				.addReflectiveGetter("lmdbConfig.forceSync", storeConfig, "getForceSync")
+                .addReflectiveGetter("lmdbConfig.nativeEvaluationEnabled", storeConfig, "getNativeEvaluationEnabled")
+                .addReflectiveGetter("lmdbConfig.experimentalQueryOptimizations", storeConfig,
+                        "isExperimentalQueryOptimizations")
+                .addReflectiveGetter("lmdbConfig.sketchEstimatorEnabled", storeConfig, "getSketchEstimatorEnabled")
+                .addReflectiveGetter("lmdbConfig.directAdjacencyEnabled", storeConfig, "getDirectAdjacencyEnabled")
+                .addReflectiveGetter("lmdbStore.directAdjacencyReadiness", store, "getDirectAdjacencyReadinessDescription")
 				.addReflectiveField("lmdbConfig.autoGrow", storeConfig, "autoGrow")
 				.addReflectiveGetter("lmdbConfig.valueDbSize", storeConfig, "getValueDBSize")
 				.addReflectiveGetter("lmdbConfig.tripleDbSize", storeConfig, "getTripleDBSize");
@@ -967,6 +990,9 @@ public class ThemeQueryBenchmark {
 		static LmdbStoreConfig createConfig() {
 			LmdbStoreConfig config = new LmdbStoreConfig(DEFAULT_TRIPLE_INDEXES);
 			config.setSketchEstimatorEnabled(false);
+			config.setExperimentalQueryOptimizations(true);
+			config.setNativeEvaluationEnabled(true);
+			config.setDirectAdjacencyEnabled(true);
 			config.setForceSync(false);
 			// 1 GiB
 			config.setValueDBSize(1_073_741_824L);
@@ -1144,7 +1170,7 @@ public class ThemeQueryBenchmark {
 	}
 
 	private void waitForDirectAdjacencyIfEnabled() throws IOException {
-		if (!Boolean.parseBoolean(System.getProperty(WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, "false"))) {
+		if (!Boolean.parseBoolean(System.getProperty(WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, "true"))) {
 			return;
 		}
 		repository.init();

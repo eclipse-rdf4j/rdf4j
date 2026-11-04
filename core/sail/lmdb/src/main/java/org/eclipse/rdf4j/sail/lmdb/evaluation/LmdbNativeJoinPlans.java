@@ -170,12 +170,19 @@ final class MultiJoinPlan implements SlotPlan {
 	 * ordinary algebra compiler builds a {@code MultiJoinPlan} before native lowering allocates columns for an
 	 * enclosing OPTIONAL or join, so its cached order can start a correlated child with an unbound key. This method
 	 * re-plans only from the declared bound mask and the existing work model; an uncertain estimate keeps the compiler
-	 * order. It is deliberately uncached because the lowering mask includes columns owned by the current builder.
+	 * order. A neutral canonical stored range bag may request the same bounded refinement before a kernel proposal
+	 * quotes and captures its input. Nested lowering disables that separate capability; extra-binding behavior is
+	 * unchanged. It is deliberately uncached because the lowering mask includes columns owned by the current builder.
 	 */
 	OrderedPlan derivedPlanForLowering(RowState row, long guaranteedMask) {
+		return derivedPlanForLowering(row, guaranteedMask, true);
+	}
+
+	OrderedPlan derivedPlanForLowering(RowState row, long guaranteedMask, boolean allowNeutralRange) {
 		long initialBoundMask = row.boundMask() | guaranteedMask;
 		long loweringOnlyMask = guaranteedMask & ~row.boundMask();
-		if (loweringOnlyMask == 0L || children.length < 2) {
+		if (children.length < 2 || loweringOnlyMask == 0L
+				&& (!allowNeutralRange || !LmdbNativeNeutralRangeOrder.allows(this, row, initialBoundMask))) {
 			return derive(initialBoundMask, false);
 		}
 		SlotPlan[] order = costedLoweringOrder(row, initialBoundMask);
@@ -200,6 +207,10 @@ final class MultiJoinPlan implements SlotPlan {
 		for (int pass = 0; pass < order.length; pass++) {
 			boolean improved = false;
 			for (int index = 0; index + 1 < order.length; index++) {
+				if (order[index] instanceof PatternPlan first && !first.canCommuteWith(order[index + 1])
+						|| order[index + 1] instanceof PatternPlan second && !second.canCommuteWith(order[index])) {
+					continue;
+				}
 				SlotPlan[] candidate = order.clone();
 				SlotPlan child = candidate[index];
 				candidate[index] = candidate[index + 1];
@@ -553,6 +564,14 @@ final class MultiJoinPlan implements SlotPlan {
 			if (!(ordered[i] instanceof PatternPlan) || ((PatternPlan) ordered[i]).hasRepeatedSlot()) {
 				continue;
 			}
+			boolean movable = true;
+			for (int other = 0; other < n; other++) {
+				if (other != i && !((PatternPlan) ordered[i]).canCommuteWith(ordered[other])) {
+					movable = false;
+					break;
+				}
+			}
+			if (!movable) { continue; }
 			exclusive[i] = produced[i] & ~sharedOrSeed;
 			boolean joinsRest = (produced[i] & sharedOrSeed) != 0L;
 			if (exclusive[i] != 0L && joinsRest && allowsSink(allowedSinks, ordered[i])) {
@@ -842,6 +861,8 @@ final class LateralPlan implements SlotPlan {
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		if ((SlotPlan.fixedValueOutputMask(right) & left.producedMask()) != 0L
+				|| right instanceof PatternPlan selector && (selector.readOnlyMask() & left.producedMask()) != 0L) { return null; }
 		if (right instanceof PatternPlan pattern) {
 			BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenLateral(left, pattern, rightInputMask, row,
 					capacity);
@@ -1221,6 +1242,13 @@ final class JoinPlan implements SlotPlan {
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		// A common fixed-valued output is preservation, not an equijoin key. The native nested/factor cursor
+		// retains logical left-to-right invocation; batch payload/hash builds require the stronger equality proof.
+		if (right instanceof PatternPlan selector && (selector.readOnlyMask() & left.producedMask()) != 0L
+				|| (SlotPlan.fixedValueOutputMask(left) & right.producedMask()) != 0L
+				|| (SlotPlan.fixedValueOutputMask(right) & left.producedMask()) != 0L) {
+			return null;
+		}
 		if (right instanceof PatternPlan pattern) {
 			BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenPayload(left, pattern, row, capacity);
 			if (wildcard != null) {

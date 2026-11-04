@@ -51,6 +51,32 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbFilterSelectivityStatsEvidencePolicyTest {
 
 	@Test
+	void failedResetWithdrawsAlreadyIssuedFilterFeedbackLease(@TempDir Path dataDir) {
+		LmdbFilterSelectivityStats stats = stats(dataDir, mock(TripleStore.class), new AtomicBoolean(true));
+		StatementPattern pattern = new StatementPattern(new Var("subject"), new Var("predicate"), new Var("value"));
+		Filter filter = new Filter(pattern, new Compare(new Var("value"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("keep"))));
+		PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
+		LmdbFilterSelectivityStats.ResolvedFilterCells lease = stats.resolveRuntimeFeedbackTarget(filter);
+		assertNotNull(lease, "the ordinary query can hold a provider feedback lease before reset");
+
+		AssertionError injected = new AssertionError("injected reset observer failure with an open feedback lease");
+		stats.setLearnedStateObserver(new LmdbFilterSelectivityStats.LearnedStateObserver() {
+			@Override
+			public void learnedStateReset() {
+				throw injected;
+			}
+		});
+		assertTrue(injected == assertThrows(AssertionError.class, stats::reset));
+		try {
+			assertFalse(stats.recordRuntimeFeedback(lease, 1L, 3L),
+					"a lease issued before failed reset cannot publish into the unavailable provider");
+		} finally {
+			stats.releaseRuntimeFeedbackTarget(lease);
+		}
+	}
+
+	@Test
 	void persistenceCannotStampEvidenceWithAnUnappliedStatementMutation(@TempDir Path dataDir) {
 		Path estimatorPath = dataDir.resolve("join-estimator.rjes");
 		SketchSnapshotIdentity identity = new SketchSnapshotIdentity(11L, 22L, 33L);

@@ -42,60 +42,69 @@ class TimeLimitIterationTest {
 
 	@Test
 	void closingLastIterationStopsTimerThread() throws InterruptedException {
-		TimeLimitIteration<Object> iteration = timedIteration(TimeUnit.DAYS.toMillis(1));
-		Thread timerThread = findTimerThread();
+		try (TimeLimitIteration<Object> iteration = timedIteration(TimeUnit.DAYS.toMillis(1))) {
+			Thread timerThread = captureSchedulerThread();
 
-		assertNotNull(timerThread);
-		iteration.close();
-		timerThread.join(TimeUnit.SECONDS.toMillis(1));
+			assertNotNull(timerThread);
+			iteration.close();
+			timerThread.join(TimeUnit.SECONDS.toMillis(1));
 
-		assertFalse(timerThread.isAlive());
+			assertFalse(timerThread.isAlive());
+		}
 	}
 
 	@Test
 	void closingOneOfTwoIterationsKeepsTimerUntilLastClose() throws InterruptedException {
-		TimeLimitIteration<Object> first = timedIteration(TimeUnit.DAYS.toMillis(1));
-		TimeLimitIteration<Object> second = timedIteration(TimeUnit.DAYS.toMillis(1));
-		Thread timerThread = findTimerThread();
+		try (TimeLimitIteration<Object> first = timedIteration(TimeUnit.DAYS.toMillis(1));
+				TimeLimitIteration<Object> second = timedIteration(TimeUnit.DAYS.toMillis(1))) {
+			Thread timerThread = captureSchedulerThread();
 
-		assertNotNull(timerThread);
-		first.close();
-		assertTrue(timerThread.isAlive());
+			assertNotNull(timerThread);
+			first.close();
+			assertTrue(timerThread.isAlive());
 
-		second.close();
-		timerThread.join(TimeUnit.SECONDS.toMillis(1));
-		assertFalse(timerThread.isAlive());
+			second.close();
+			timerThread.join(TimeUnit.SECONDS.toMillis(1));
+			assertFalse(timerThread.isAlive());
+		}
 	}
 
 	@Test
 	void deadlineStillFiresAfterTimerRecreation() throws InterruptedException {
-		TimeLimitIteration<Object> first = timedIteration(TimeUnit.DAYS.toMillis(1));
-		Thread firstTimerThread = findTimerThread();
+		Thread firstTimerThread;
+		try (TimeLimitIteration<Object> first = timedIteration(TimeUnit.DAYS.toMillis(1))) {
+			firstTimerThread = captureSchedulerThread();
 
-		assertNotNull(firstTimerThread);
-		first.close();
-		firstTimerThread.join(TimeUnit.SECONDS.toMillis(1));
-		assertFalse(firstTimerThread.isAlive());
+			assertNotNull(firstTimerThread);
+			first.close();
+			firstTimerThread.join(TimeUnit.SECONDS.toMillis(1));
+			assertFalse(firstTimerThread.isAlive());
+		}
 
 		CloseTrackingIteration delegate = new CloseTrackingIteration();
-		TimeLimitIteration<Object> second = timedIteration(delegate, TimeUnit.MILLISECONDS.toMillis(100));
-		Thread secondTimerThread = findTimerThread();
+		try (TimeLimitIteration<Object> anchor = timedIteration(TimeUnit.DAYS.toMillis(1))) {
+			Thread secondTimerThread = captureSchedulerThread();
+			try (TimeLimitIteration<Object> second = timedIteration(delegate, TimeUnit.MILLISECONDS.toMillis(100))) {
+				// The target now owns this generation, so its expiration alone must release the remaining lease.
+				anchor.close();
 
-		assertNotNull(secondTimerThread);
-		assertNotSame(firstTimerThread, secondTimerThread);
-		assertTrue(delegate.closed.await(2, TimeUnit.SECONDS));
-		secondTimerThread.join(TimeUnit.SECONDS.toMillis(1));
-		assertFalse(secondTimerThread.isAlive());
-		assertEquals(1, delegate.closeCount.get());
-		second.close();
+				assertNotNull(secondTimerThread);
+				assertNotSame(firstTimerThread, secondTimerThread);
+				assertTrue(delegate.closed.await(2, TimeUnit.SECONDS));
+				secondTimerThread.join(TimeUnit.SECONDS.toMillis(1));
+				assertFalse(secondTimerThread.isAlive());
+				assertEquals(1, delegate.closeCount.get());
+			}
+		}
 	}
 
 	@Test
 	void timeoutReleasesOnlyItsOwnSchedulerLease() throws InterruptedException {
 		TimeLimitIteration<Object> guard = timedIteration(TimeUnit.DAYS.toMillis(1));
-		Thread timerThread = findTimerThread();
+		Thread timerThread;
 
 		try {
+			timerThread = captureSchedulerThread();
 			CloseTrackingIteration delegate = new CloseTrackingIteration();
 			timedIteration(delegate, TimeUnit.MILLISECONDS.toMillis(100));
 
@@ -127,14 +136,28 @@ class TimeLimitIterationTest {
 		};
 	}
 
-	private static Thread findTimerThread() {
-		return Thread.getAllStackTraces()
-				.keySet()
-				.stream()
-				.filter(Thread::isAlive)
-				.filter(thread -> thread.getName().equals("TimeLimitIteration scheduler"))
-				.findFirst()
-				.orElse(null);
+	private static Thread captureSchedulerThread() throws InterruptedException {
+		AtomicReference<Thread> thread = new AtomicReference<>();
+		CountDownLatch captured = new CountDownLatch(1);
+		TimeLimitScheduler.Task capture = new TimeLimitScheduler.Task(() -> {
+		}, null, action -> {
+			// Capture wake's scheduler thread rather than an action dispatched onto a virtual thread.
+			thread.set(Thread.currentThread());
+			try {
+				action.run();
+			} finally {
+				captured.countDown();
+			}
+		});
+		try {
+			capture.schedule(new TimeLimitScheduler.Deadline(0, System.nanoTime()));
+			assertTrue(captured.await(5, TimeUnit.SECONDS), "the real scheduler executes the identity probe");
+			assertNotNull(thread.get());
+			assertEquals("TimeLimitIteration scheduler", thread.get().getName());
+			return thread.get();
+		} finally {
+			capture.cancel();
+		}
 	}
 
 	private static void awaitTimerWaitingOrStopped(Thread timerThread) {
@@ -664,22 +687,26 @@ class TimeLimitIterationTest {
 	void aFailureOfHasNextCausedByTheTimeLimitIsReportedAsTheTimeLimit() {
 		AtomicReference<TimeLimitIteration<String>> limited = new AtomicReference<>();
 		CloseableIteration<String> source = new FailingWhenClosedIteration(limited, true);
-		limited.set(new ClosingTestTimeLimitIteration(source));
+		try (TimeLimitIteration<String> iteration = new ClosingTestTimeLimitIteration(source)) {
+			limited.set(iteration);
 
-		assertThatThrownBy(() -> limited.get().hasNext())
-				.isInstanceOf(TimeLimitReached.class)
-				.satisfies(failure -> assertThat(failure.getSuppressed())
-						.singleElement()
-						.isInstanceOf(IllegalStateException.class));
+			assertThatThrownBy(() -> limited.get().hasNext())
+					.isInstanceOf(TimeLimitReached.class)
+					.satisfies(failure -> assertThat(failure.getSuppressed())
+							.singleElement()
+							.isInstanceOf(IllegalStateException.class));
+		}
 	}
 
 	@Test
 	void aFailureOfNextCausedByTheTimeLimitIsReportedAsTheTimeLimit() {
 		AtomicReference<TimeLimitIteration<String>> limited = new AtomicReference<>();
 		CloseableIteration<String> source = new FailingWhenClosedIteration(limited, false);
-		limited.set(new ClosingTestTimeLimitIteration(source));
+		try (TimeLimitIteration<String> iteration = new ClosingTestTimeLimitIteration(source)) {
+			limited.set(iteration);
 
-		assertThatThrownBy(() -> limited.get().next()).isInstanceOf(TimeLimitReached.class);
+			assertThatThrownBy(() -> limited.get().next()).isInstanceOf(TimeLimitReached.class);
+		}
 	}
 
 	@Test

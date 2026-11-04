@@ -60,6 +60,11 @@ final class LmdbFeedbackReadAuthority {
 		this.logicalRevision = logicalRevision;
 	}
 
+	/** Same physical owner/pair/lifetime proof, without claiming a selected-graph lexical or merge identity. */
+	static LmdbFeedbackReadAuthority capturePhysicalSource(LmdbEstimatorRuntime runtime, TripleSource source) {
+		return capture(runtime, source, null);
+	}
+
 	static LmdbFeedbackReadAuthority capture(LmdbEstimatorRuntime runtime, TripleSource source, Dataset dataset) {
 		LmdbFilterOutcomeFeedbackDescriptor.ReadIdentity identity = LmdbFilterOutcomeFeedbackDescriptor
 				.readIdentity(runtime, source, dataset);

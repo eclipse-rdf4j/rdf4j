@@ -195,8 +195,8 @@ public final class LmdbStoreFormat {
 	static LmdbStoreFormat fromProperties(StoreProperties properties, LmdbStoreConfig config) {
 		int version = properties.getVersion() == null && !properties.isLoaded()
 				&& !properties.hasPersistedProperties()
-				? CURRENT_VERSION
-				: supportedVersion(properties.getVersion());
+						? CURRENT_VERSION
+						: supportedVersion(properties.getVersion());
 		validateCapabilities(properties, config, version);
 		return new LmdbStoreFormat(version, config.getInlineLiterals(), properties.usesOrderedNumericIds(),
 				properties.usesCoreDatatypeLiteralReferences(), properties.usesCanonicalLanguageTags(),
@@ -210,7 +210,8 @@ public final class LmdbStoreFormat {
 	static LmdbStoreFormat resolveDictionary(File directory, StoreProperties properties, LmdbStoreConfig config)
 			throws IOException {
 		// A supplied owner profile can already authorize a fresh generation or carry one-use paired observations.
-		// Loading it again would turn its newly authored sidecar into a persisted reopen and discard those observations.
+		// Loading it again would turn its newly authored sidecar into a persisted reopen and discard those
+		// observations.
 		// Public standalone construction has independently loaded its sidecar before reaching this resolver.
 		if (!properties.isLoaded() && properties.getVersion() == null && !properties.hasNativeGeneration()) {
 			properties.load();

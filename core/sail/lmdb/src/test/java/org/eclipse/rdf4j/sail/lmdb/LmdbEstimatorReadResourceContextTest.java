@@ -439,7 +439,7 @@ class LmdbEstimatorReadResourceContextTest {
 	}
 
 	private record Fixture(LmdbStore store, LmdbSailStore backing, ValueStore values) implements AutoCloseable {
-		private static Fixture create(Path directory) {
+		private static Fixture create(Path directory) throws Exception {
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 			config.setFrontierEstimatorMode(FrontierEstimatorMode.OFF);
 			config.setExperimentalQueryOptimizations(true);
@@ -447,15 +447,27 @@ class LmdbEstimatorReadResourceContextTest {
 			config.setSketchEstimatorMemoryBudgetBytes(4L * 1024L * 1024L);
 			LmdbStore store = new LmdbStore(directory.toFile(), config);
 			store.init();
-			LmdbSailStore backing = store.getBackingStore();
-			assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations(),
-					"fixture must explicitly select the supported experimental sketch owner");
-			assertTrue(backing.getSketchBasedJoinEstimator() != null,
-					"the requested real sketch estimator must exist before exercising its resource lifecycle");
-			backing.getSketchBasedJoinEstimator().stop();
-			Fixture fixture = new Fixture(store, backing, (ValueStore) backing.getValueFactory());
-			fixture.add("first");
-			return fixture;
+			try {
+				LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
+				LmdbSailStore backing = store.getBackingStore();
+				assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations(),
+						"fixture must explicitly select the supported experimental sketch owner");
+				assertTrue(backing.getSketchBasedJoinEstimator() != null,
+						"the requested real sketch estimator must exist before exercising its resource lifecycle");
+				backing.getSketchBasedJoinEstimator().stop();
+				Fixture fixture = new Fixture(store, backing, (ValueStore) backing.getValueFactory());
+				fixture.add("first");
+				return fixture;
+			} catch (Exception | Error failure) {
+				try {
+					store.shutDown();
+				} catch (RuntimeException | Error cleanup) {
+					if (failure != cleanup) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+				throw failure;
+			}
 		}
 
 		private void add(String name) {

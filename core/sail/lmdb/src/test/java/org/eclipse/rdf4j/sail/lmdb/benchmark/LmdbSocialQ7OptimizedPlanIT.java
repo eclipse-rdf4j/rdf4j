@@ -14,16 +14,24 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -36,6 +44,8 @@ import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.CleanupMode;
+import org.junit.jupiter.api.io.TempDir;
 
 class LmdbSocialQ7OptimizedPlanIT {
 
@@ -50,7 +60,8 @@ class LmdbSocialQ7OptimizedPlanIT {
 
 	@Test
 	@Timeout(120)
-	void finiteAnchorsStayLocalAndSelfLoopProbesStayBound() throws Exception {
+	void finiteAnchorsStayLocalAndSelfLoopProbesStayBound(
+			@TempDir(cleanup = CleanupMode.NEVER) Path evidence) throws Exception {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = Theme.SOCIAL_MEDIA.name();
 		benchmark.z_queryIndex = 7;
@@ -63,6 +74,7 @@ class LmdbSocialQ7OptimizedPlanIT {
 		try {
 			benchmark.setup();
 			TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
+			captureCandidateEvidence(optimized, evidence);
 			String plan = new QueryModelTreeToGenericPlanNode(optimized, Set.of(), Explanation.Level.Optimized)
 					.getGenericPlanNode()
 					.toString();
@@ -90,6 +102,94 @@ class LmdbSocialQ7OptimizedPlanIT {
 				restoreProperty(PROFILING_PROPERTY, previousProfiling);
 			}
 		}
+	}
+
+
+	/** Diagnostic-only capture after the existing planning call, before any original quality assertion. */
+	private static void captureCandidateEvidence(TupleExpr optimized, Path evidence) throws IOException {
+		List<QueryModelNode> nodes = new ArrayList<>();
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr) {
+					nodes.add(node);
+				}
+				super.meetNode(node);
+			}
+		});
+		Map<QueryModelNode, Integer> ordinals = new IdentityHashMap<>();
+		for (int index = 0; index < nodes.size(); index++) {
+			ordinals.put(nodes.get(index), index);
+		}
+		StringBuilder inventory = new StringBuilder();
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(optimized,
+				EmptyBindingSet.getInstance());
+		String text = null;
+		String json = null;
+		for (QueryModelNode node : nodes) {
+			QueryModelNode parent = node.getParentNode();
+			while (parent != null && !(parent instanceof TupleExpr)) {
+				parent = parent.getParentNode();
+			}
+			inventory.append("node=").append(ordinals.get(node)).append(" parent=")
+					.append(parent == null ? "none" : ordinals.get(parent))
+					.append(" type=").append(node.getClass().getSimpleName());
+			if (node instanceof StatementPattern pattern) {
+				inventory.append(" scope=").append(pattern.getScope())
+						.append(" S=").append(term(pattern.getSubjectVar()))
+						.append(" P=").append(term(pattern.getPredicateVar()))
+						.append(" O=").append(term(pattern.getObjectVar()))
+						.append(" C=").append(term(pattern.getContextVar()))
+						.append(" Sinput=").append(analysis.bindingState(pattern.getSubjectVar(), analysis.contextAt(pattern)))
+						.append(" Oinput=").append(analysis.bindingState(pattern.getObjectVar(), analysis.contextAt(pattern)));
+			} else if (node instanceof BindingSetAssignment assignment) {
+				inventory.append(" valuesOutputs=").append(new TreeSet<>(assignment.getBindingNames()));
+			} else if (node instanceof Difference difference) {
+				var left = analysis.outputFacts(difference.getLeftArg());
+				var right = analysis.outputFacts(difference.getRightArg());
+				inventory.append(" leftGuaranteedKnown=").append(left.guaranteedOutputsKnown())
+						.append(" leftGuaranteed=").append(new TreeSet<>(left.guaranteedOutputs()))
+						.append(" rightGuaranteedKnown=").append(right.guaranteedOutputsKnown())
+						.append(" rightGuaranteed=").append(new TreeSet<>(right.guaranteedOutputs()));
+			}
+			for (String key : List.of("optimizer.cascadesMode", "optimizer.cascadesCompleteness",
+					"optimizer.cascadesApproximate", "optimizer.cascadesLimitCauses", "optimizer.cascadesPlanCacheHit",
+					"optimizer.pipelinePlanCacheHit", "optimizer.semiAntiAlgorithm", "optimizer.semiAntiKind",
+					"optimizer.filterAlgorithmHint", "optimizer.physicalJoinImplementation", "optimizer.joinAlgorithmHint",
+					"plannedEstimateSource", "plannedLookupComponents", "plannedIndexAccessMode", "plannedCostScope",
+					"optimizer.costEventPhase", "optimizer.costEventCostScope", "optimizer.costEventContextFingerprint",
+					"optimizer.dependentCostSource")) {
+				inventory.append(' ').append(key).append('=').append(node.getStringMetricPlanned(key));
+			}
+			for (String key : List.of("optimizer.cascadesWorkUnits", "optimizer.cascadesCandidateEvaluations",
+					"optimizer.cascadesRuleWork", "optimizer.cascadesPredicateProbes", "optimizer.cascadesDphypPairProbes",
+					"optimizer.cascadesPartitionProbes", "optimizer.cascadesRetainedCandidates",
+					"optimizer.cascadesRootCostWorkRows", "optimizer.costEventOrdinal", "optimizer.costEventPrefixRows",
+					"optimizer.costEventRows", "optimizer.costEventObjective", "plannedWorkRows", "plannedAccessRows",
+					"plannedRepeatedInvocations", "plannedIndexPrefixLength", "plannedCostSequentialRows",
+					"plannedCostRandomSeeks", "plannedCostIteratorOpens", "plannedCostExpressionEvaluations",
+					"plannedCostHashBuildRows", "plannedCostHashProbeRows", "plannedCostResultRows")) {
+				inventory.append(' ').append(key).append('=').append(node.getDoubleMetricPlanned(key));
+			}
+			inventory.append('\n');
+			if (text == null) {
+				text = node.getStringMetricPlanned("optimizer.packedExplanation");
+			}
+			if (json == null) {
+				json = node.getStringMetricPlanned("optimizer.packedExplanationJson");
+			}
+		}
+		Files.writeString(evidence.resolve("selected-node-inventory.txt"), inventory);
+		Files.writeString(evidence.resolve("packed-candidates.txt"), text == null ? "missing\n" : text);
+		Files.writeString(evidence.resolve("packed-candidates.json"), json == null ? "null\n" : json);
+		Files.writeString(evidence.resolve("capture-status.txt"), "afterOriginalOptimize=true\nextraQueries=0\n"
+				+ "extraSessions=0\ntextPresent=" + (text != null) + "\njsonPresent=" + (json != null)
+				+ "\nmissingDoubleMetricSentinel=-1\n");
+		System.out.println("Q7 candidate evidence: " + evidence);
+	}
+
+	private static String term(Var variable) {
+		return variable == null ? "absent" : variable.hasValue() ? variable.getValue().toString() : "?" + variable.getName();
 	}
 
 	private static void assertBefore(String value, List<String> firsts, String second, String message) {

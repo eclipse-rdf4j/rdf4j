@@ -93,7 +93,7 @@ public class LmdbLearnedFilterResidualWiringTest {
 	private String previousRangePushdown;
 
 	@BeforeEach
-	public void setUp() {
+	public void setUp() throws Exception {
 		previousRangePushdown = System.setProperty(RANGE_PUSHDOWN_PROPERTY, "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
 		config.setExperimentalQueryOptimizations(true);
@@ -109,6 +109,8 @@ public class LmdbLearnedFilterResidualWiringTest {
 			}
 			connection.commit();
 		}
+		// These fixtures require settled domain/provider publication before opening their measured read view.
+		LmdbTestUtil.awaitBackgroundMaintenance(store, 30, java.util.concurrent.TimeUnit.SECONDS);
 	}
 
 	@AfterEach

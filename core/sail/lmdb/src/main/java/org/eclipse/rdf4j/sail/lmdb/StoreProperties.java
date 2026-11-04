@@ -83,6 +83,9 @@ class StoreProperties {
 
 	protected final File propertiesFile;
 	private final StorePropertiesFileOps fileOps;
+	/** Owner-scoped durable logical receipt, independent of savedStoreId's properties-file receipt. */
+	private boolean ownerIdentityResolved;
+	private UUID ownerIdentity;
 	/** Serializes publications without holding the state monitor during filesystem operations. */
 	private final Object saveLock = new Object();
 	/** Identity changes whenever a serialized property is mutated. Guarded by this object's monitor. */
@@ -147,6 +150,8 @@ class StoreProperties {
 	RdfTermDomainQualification.DiscoveryPair rdfTermDomainDiscoveryPair;
 	/** Construction-only signal from the paired Sail owner; never persisted. */
 	boolean deferRdfTermDomainInitialization;
+	/** Original admitted legacy policy had no domain authority; rebuild proof belongs only to this owner. */
+	boolean ownerLocalLegacyRdfTermDomains;
 	protected String tripleTermIndexes;
 	protected String storeId;
 	protected String languageTagKey;
@@ -190,6 +195,16 @@ class StoreProperties {
 		this.propertiesFile = new File(dir, FILE_NAME);
 		this.fileOps = Objects.requireNonNull(fileOps, "fileOps");
 	}
+
+	StorePropertiesFileOps fileOperations() { return fileOps; }
+
+	synchronized void resolveOwnerIdentity(UUID identity) {
+		ownerIdentity = identity;
+		ownerIdentityResolved = true;
+	}
+
+	synchronized boolean hasResolvedOwnerIdentity() { return ownerIdentityResolved; }
+	synchronized UUID resolvedOwnerIdentity() { return ownerIdentity; }
 
 	boolean isMemoryOnly() {
 		return propertiesFile == null;
@@ -243,8 +258,11 @@ class StoreProperties {
 				rdfTermDomainValuesTransactionAtOpen = -1L;
 				rdfTermDomainTriplesTransactionAtOpen = -1L;
 				rdfTermDomainDiscoveryPair = null;
+				ownerLocalLegacyRdfTermDomains = false;
 				tripleTermIndexes = properties.getProperty(TRIPLE_TERM_INDEXES_KEY);
 				storeId = properties.getProperty(STORE_ID_KEY);
+				ownerIdentityResolved = false;
+				ownerIdentity = null;
 				savedRdfTermDomainsVersion = predicateObjectDomainsVersion;
 				savedStoreId = storeId;
 				savedSnapshotKnown = true;
@@ -317,7 +335,8 @@ class StoreProperties {
 		boolean known = savedSnapshotKnown;
 		// A failed force may follow a successful replacement, so no prior file receipt is certain while saving.
 		savedSnapshotKnown = false;
-		return new SaveSnapshot(loadedProperties, savedProperties, known, version, tripleIndexes, predicateObjectDomainsVersion,
+		return new SaveSnapshot(loadedProperties, savedProperties, known, version, tripleIndexes,
+				predicateObjectDomainsVersion,
 				rdfTermDomainQualification, tripleTermIndexes, storeId, languageTagKey, refCountsVersion,
 				numericIdEncoding, literalReferenceEncoding, inlineLiterals, canonicalLanguageTags, dateTimeIdEncoding,
 				revision);
@@ -437,6 +456,9 @@ class StoreProperties {
 	}
 
 	synchronized void recreateNativeGeneration() {
+		ownerLocalLegacyRdfTermDomains = false;
+		ownerIdentityResolved = false;
+		ownerIdentity = null;
 		recreatingNativeGeneration = true;
 		nativeGenerationPresent = false;
 		preparedBulkStore = null;

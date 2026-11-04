@@ -152,9 +152,9 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierMutation;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator.Component;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -1336,7 +1336,9 @@ class TripleStore implements Closeable {
 					rebuildRdfTermDomains();
 					// The sidecar uses forced atomic publication, even when ordinary LMDB writes use MDB_NOSYNC.
 					environmentLifecycle.sync(env);
-					properties.setRdfTermDomainsVersion(currentVersion);
+					if (!properties.ownerLocalLegacyRdfTermDomains) {
+						properties.setRdfTermDomainsVersion(currentVersion);
+					}
 					loadRdfTermDomainCache();
 					rdfTermDomainValueEnvironmentGeneration = valueStore.environmentGeneration();
 					predicateGuaranteeIndexReadable = true;
@@ -1428,7 +1430,8 @@ class TripleStore implements Closeable {
 		return predicateGuaranteeIndexReadable && valueStore != null
 				&& rdfTermDomainValueEnvironmentGeneration == valueStore.environmentGeneration()
 				&& (pairedRdfTermDomainOwner
-						? properties.hasAvailableRdfTermDomainsVersion(currentRdfTermDomainsVersion())
+						? properties.ownerLocalLegacyRdfTermDomains
+								|| properties.hasAvailableRdfTermDomainsVersion(currentRdfTermDomainsVersion())
 						: currentRdfTermDomainsVersion().equals(properties.getRdfTermDomainsVersion()));
 	}
 
@@ -1596,7 +1599,9 @@ class TripleStore implements Closeable {
 				: readAllRdfTermDomains(triples);
 		Map<Long, PendingRdfTermDomain> rebuilt = new HashMap<>();
 		Set<Long> removed = new HashSet<>();
-		try (SailClosable ignored = valueStore.pinPlanningReads(values)) {
+		try (ValueResolutionScope resolution = valueStore.openValueResolutionScope();
+				SailClosable exposure = resolution.activate();
+				SailClosable ignored = valueStore.pinPlanningReads(values)) {
 			if (startup == RdfTermDomainStartup.REBUILD_ALL) {
 				for (boolean explicit : new boolean[] { true, false }) {
 					try (RecordIterator records = getTriplesSortedByPredicateObjectPinned(triples, explicit)) {
@@ -1818,8 +1823,11 @@ class TripleStore implements Closeable {
 			if (!plan.needsWrite()) {
 				predicateObjectDomainCache = plan.previous();
 			}
-			properties.setRdfTermDomainsVersion(currentRdfTermDomainsVersion());
-			// The version must be durably published before any paired reader can use this generation.
+			if (!properties.ownerLocalLegacyRdfTermDomains) {
+				properties.setRdfTermDomainsVersion(currentRdfTermDomainsVersion());
+			}
+			// Marked owners require durable version publication. Original unmarked legacy owners instead retain
+			// only this pending full rebuild, validated pair/floors and the final cleanup visibility gate.
 			pendingDeferredRdfTermDomainPublication = new DeferredRdfTermDomainPublication(plan, qualifiedTriples);
 			return true;
 		} catch (IOException | RuntimeException | Error failure) {
@@ -1859,7 +1867,8 @@ class TripleStore implements Closeable {
 		long values = valueStore.currentOwnedDomainTransaction();
 		return triples >= 0L && values >= 0L && triples == pending.tripleTransaction()
 				&& values == pending.plan().valueTransaction()
-				&& properties.hasAvailableRdfTermDomainsVersion(currentRdfTermDomainsVersion());
+				&& (properties.ownerLocalLegacyRdfTermDomains
+						|| properties.hasAvailableRdfTermDomainsVersion(currentRdfTermDomainsVersion()));
 	}
 
 	/** Called immediately after successful validation while the same final visibility gate remains held. */
@@ -5604,6 +5613,11 @@ class TripleStore implements Closeable {
 	/** Exact row count only when every constraint belongs to one contiguous physical key prefix. */
 	private long countIndexPrefix(Txn txn, TripleIndex index, long subj, long pred, long obj, long context,
 			boolean explicit) throws IOException {
+		return countIndexPrefix(txn, index, subj, pred, obj, context, explicit, exactIndexCancellation());
+	}
+
+	private long countIndexPrefix(Txn txn, TripleIndex index, long subj, long pred, long obj, long context,
+			boolean explicit, BooleanSupplier cancelled) throws IOException {
 		if (exactIndexReader == null || !txn.isReadOnly()
 				|| index.getRangePrefixLength(subj, pred, obj, context) != Integer
 						.bitCount(boundMask(subj, pred, obj, context))) {
@@ -5617,7 +5631,7 @@ class TripleStore implements Closeable {
 			}
 			LmdbPageCardinalityEstimator.ExactCount count = view.countEntriesExact(index.getName(explicit),
 					lower, LmdbExactPrefixRunCursor.length(lower), true,
-					upper, LmdbExactPrefixRunCursor.length(upper), false, exactIndexCancellation());
+					upper, LmdbExactPrefixRunCursor.length(upper), false, cancelled);
 			if (count == null) {
 				return -1L;
 			}
@@ -6918,6 +6932,430 @@ class TripleStore implements Closeable {
 				startValues[i] = 0;
 			}
 		}
+	}
+
+	/** An owned quad observed on one physical statement plane. */
+	record StratifiedSampleRow(boolean explicit, long[] quad) {
+	}
+
+	/** Examined native keys and qualified pattern population for one plane. */
+	record StratifiedPlaneMetrics(int examinedKeys, int patternMatchedRows, long patternMass,
+			boolean patternMassKnown, boolean complete) {
+	}
+
+	/** Result of one bounded collection; range probes that returned keys are included in examinedKeys. */
+	record StratifiedSampleResult(List<StratifiedSampleRow> rows, StratifiedPlaneMetrics explicit,
+			StratifiedPlaneMetrics inferred, boolean stoppedByControl, long rangeProbeOperations,
+			double exactPageQuote, double exactPageAllowance) {
+	}
+
+	private static final class FilterSamplePlane {
+		final boolean explicit;
+		final int dbi;
+		final TripleIndex index;
+		final long physicalEntries;
+		final double countPageQuote;
+		final GroupMatcher matcher;
+		final List<FilterSampleCursor> ranges = new ArrayList<>();
+		byte[] firstKey;
+		byte[] lastKey;
+		long firstCursor;
+		long lastCursor;
+		int examinedKeys;
+		int matchedRows;
+		long mass = -1L;
+		boolean massKnown;
+		boolean complete;
+
+		FilterSamplePlane(boolean explicit, TripleIndex index, MDBStat stat, GroupMatcher matcher) {
+			this.explicit = explicit;
+			this.dbi = index.getDB(explicit);
+			this.index = index;
+			this.physicalEntries = stat.ms_entries();
+			this.countPageQuote = Math.max(1D, 2D * stat.ms_depth() + stat.ms_branch_pages() + stat.ms_leaf_pages());
+			this.matcher = matcher;
+			if (physicalEntries == 0L) {
+				mass = 0L;
+				massKnown = true;
+				complete = true;
+			}
+		}
+	}
+
+	private static final class FilterSampleCursor {
+		final FilterSamplePlane plane;
+		final ByteBuffer start;
+		final MDBVal boundary;
+		final boolean backwards;
+		long handle;
+		boolean started;
+		boolean exhausted;
+
+		FilterSampleCursor(FilterSamplePlane plane, ByteBuffer start, MDBVal boundary, boolean backwards,
+				long handle, boolean started) {
+			this.plane = plane;
+			this.start = start;
+			this.boundary = boundary;
+			this.backwards = backwards;
+			this.handle = handle;
+			this.started = started;
+		}
+	}
+
+	private static final class FilterSampleBudget {
+		final int limit;
+		final BooleanSupplier shouldContinue;
+		int examined;
+		long probes;
+		boolean stopped;
+
+		FilterSampleBudget(int limit, BooleanSupplier shouldContinue) {
+			this.limit = limit;
+			this.shouldContinue = shouldContinue;
+		}
+
+		boolean mayRead() {
+			checkPlanningInterrupted();
+			if (!shouldContinue.getAsBoolean()) {
+				stopped = true;
+				return false;
+			}
+			return examined < limit;
+		}
+
+		int read(FilterSamplePlane plane, long cursor, MDBVal key, MDBVal value, int operation) throws IOException {
+			int result = mdb_cursor_get(cursor, key, value, operation);
+			probes++;
+			if (result == MDB_SUCCESS) {
+				examined++;
+				plane.examinedKeys++;
+			} else if (result != MDB_NOTFOUND) {
+				E(result);
+			}
+			return result;
+		}
+	}
+
+	/**
+	 * Collects both physical planes with one native-key budget. Every successful endpoint, range seek and cursor
+	 * advance is charged once; rows already read during setup are reused as observations. Half-open ranges keep
+	 * observations distinct. All native cursors and the admitted read lock are released before calling the sink.
+	 */
+	StratifiedSampleResult sampleTriplesStratified(Txn txn, long subj, long pred, long obj, long context,
+			int scanBudget, int maximumStrata, boolean stratified, BooleanSupplier shouldContinue,
+			Predicate<StratifiedSampleRow> sink) throws IOException {
+		if (scanBudget < 0 || maximumStrata < 1) {
+			throw new IllegalArgumentException("Invalid filter sample budget or stratum count");
+		}
+		Objects.requireNonNull(shouldContinue, "shouldContinue");
+		Objects.requireNonNull(sink, "sink");
+		if (scanBudget == 0) {
+			StratifiedPlaneMetrics unknown = new StratifiedPlaneMetrics(0, 0, -1L, false, false);
+			return new StratifiedSampleResult(List.of(), unknown, unknown, false, 0L, 0D, 0D);
+		}
+		StratifiedSampleResult result = planningReadWithGeneration(txn, (stack, nativeTxn, selected) -> {
+			TripleIndex index = selected.best[boundMask(subj, pred, obj, context)];
+			if (index == null) {
+				StratifiedPlaneMetrics unknown = new StratifiedPlaneMetrics(0, 0, -1L, false, false);
+				return new StratifiedSampleResult(List.of(), unknown, unknown, false, 0L, 0D, scanBudget);
+			}
+			GroupMatcher matcher = index.createMatcher(subj, pred, obj, context);
+			FilterSamplePlane explicitPlane = filterSamplePlane(stack, nativeTxn, index, true, matcher);
+			FilterSamplePlane inferredPlane = filterSamplePlane(stack, nativeTxn, index, false, matcher);
+			List<FilterSamplePlane> planes = List.of(explicitPlane, inferredPlane);
+			FilterSampleBudget budget = new FilterSampleBudget(scanBudget, shouldContinue);
+			List<StratifiedSampleRow> rows = new ArrayList<>(Math.min(scanBudget, 1024));
+			List<Long> openCursors = new ArrayList<>();
+			double quote = 0D;
+			try {
+				for (FilterSamplePlane plane : planes) {
+					if (!plane.complete && budget.mayRead()) {
+						seekFirstSample(stack, nativeTxn, plane, subj, pred, obj, context, budget, rows, openCursors);
+					}
+				}
+				for (FilterSamplePlane plane : planes) {
+					if (!plane.complete && plane.firstKey != null && budget.mayRead()) {
+						seekLastSample(stack, nativeTxn, plane, subj, pred, obj, context, budget, rows, openCursors);
+					}
+				}
+				if (!budget.stopped) {
+					quote = certifySampleMasses(txn, index, planes, subj, pred, obj, context, scanBudget, budget);
+				}
+				int activePlanes = (int) planes.stream()
+						.filter(p -> !p.complete && p.firstKey != null && p.lastKey != null).count();
+				int remainingKeys = scanBudget - budget.examined;
+				int divisor = Math.max(1, activePlanes);
+				// Once endpoints have consumed part of the budget, size the first stratum round from what remains.
+				// Otherwise low starts can consume the budget before the upper ranges are visited. When fewer keys
+				// remain than active planes, the already collected endpoints cover each plane and the last key is fair.
+				int strata = stratified ? Math.min(Math.min(16, maximumStrata),
+						Math.max(1, remainingKeys / divisor)) : 1;
+				if (!budget.stopped) {
+					for (FilterSamplePlane plane : planes) {
+						if (!plane.complete && plane.firstKey != null && plane.lastKey != null) {
+							buildSampleRanges(stack, plane, strata, openCursors);
+						}
+					}
+					collectSampleRanges(stack, nativeTxn, planes, budget, rows, openCursors);
+				}
+			} finally {
+				for (long cursor : openCursors) {
+					if (cursor != 0L) {
+						mdb_cursor_close(cursor);
+					}
+				}
+			}
+			for (FilterSamplePlane plane : planes) {
+				if (plane.complete) {
+					plane.mass = plane.matchedRows;
+					plane.massKnown = true;
+				}
+			}
+			return new StratifiedSampleResult(List.copyOf(rows), sampleMetrics(explicitPlane),
+					sampleMetrics(inferredPlane), budget.stopped, budget.probes, quote, scanBudget);
+		});
+		if (!result.stoppedByControl()) {
+			for (StratifiedSampleRow row : result.rows()) {
+				checkPlanningInterrupted();
+				if (!shouldContinue.getAsBoolean()) {
+					return new StratifiedSampleResult(result.rows(), result.explicit(), result.inferred(), true,
+							result.rangeProbeOperations(), result.exactPageQuote(), result.exactPageAllowance());
+				}
+				if (!sink.test(row)) {
+					return new StratifiedSampleResult(result.rows(), result.explicit(), result.inferred(), true,
+							result.rangeProbeOperations(), result.exactPageQuote(), result.exactPageAllowance());
+				}
+				checkPlanningInterrupted();
+				if (!shouldContinue.getAsBoolean()) {
+					return new StratifiedSampleResult(result.rows(), result.explicit(), result.inferred(), true,
+							result.rangeProbeOperations(), result.exactPageQuote(), result.exactPageAllowance());
+				}
+			}
+		}
+		return result;
+	}
+
+	private FilterSamplePlane filterSamplePlane(MemoryStack stack, long txn, TripleIndex index, boolean explicit,
+			GroupMatcher matcher) throws IOException {
+		MDBStat stat = MDBStat.malloc(stack);
+		E(mdb_stat(txn, index.getDB(explicit), stat));
+		return new FilterSamplePlane(explicit, index, stat, matcher);
+	}
+
+	private static long openFilterSampleCursor(MemoryStack stack, long txn, FilterSamplePlane plane,
+			List<Long> opened) throws IOException {
+		PointerBuffer pointer = stack.mallocPointer(1);
+		E(mdb_cursor_open(txn, plane.dbi, pointer));
+		long cursor = pointer.get(0);
+		opened.add(cursor);
+		return cursor;
+	}
+
+	private void seekFirstSample(MemoryStack stack, long txn, FilterSamplePlane plane, long subj, long pred, long obj,
+			long context, FilterSampleBudget budget, List<StratifiedSampleRow> rows, List<Long> opened) throws IOException {
+		plane.firstCursor = openFilterSampleCursor(stack, txn, plane, opened);
+		ByteBuffer min = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+		plane.index.getMinKey(min, subj, pred, obj, context);
+		min.flip();
+		ByteBuffer max = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+		plane.index.getMaxKey(max, subj, pred, obj, context);
+		max.flip();
+		MDBVal key = sampleValue(stack, min);
+		MDBVal value = MDBVal.malloc(stack);
+		int rc = budget.read(plane, plane.firstCursor, key, value, MDB_SET_RANGE);
+		if (rc == MDB_NOTFOUND || mdb_cmp(txn, plane.dbi, key, sampleValue(stack, max)) > 0) {
+			plane.complete = true;
+			return;
+		}
+		plane.firstKey = sampleKeyBytes(key);
+		addFilterSample(plane, key, rows);
+	}
+
+	private void seekLastSample(MemoryStack stack, long txn, FilterSamplePlane plane, long subj, long pred, long obj,
+			long context, FilterSampleBudget budget, List<StratifiedSampleRow> rows, List<Long> opened) throws IOException {
+		plane.lastCursor = openFilterSampleCursor(stack, txn, plane, opened);
+		ByteBuffer max = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+		plane.index.getMaxKey(max, subj, pred, obj, context);
+		max.flip();
+		MDBVal maxValue = sampleValue(stack, max);
+		MDBVal key = sampleValue(stack, max);
+		MDBVal value = MDBVal.malloc(stack);
+		int rc = budget.read(plane, plane.lastCursor, key, value, MDB_SET_RANGE);
+		if (rc == MDB_NOTFOUND) {
+			if (!budget.mayRead()) { return; }
+			rc = budget.read(plane, plane.lastCursor, key, value, MDB_LAST);
+		} else if (mdb_cmp(txn, plane.dbi, key, maxValue) > 0) {
+			if (!budget.mayRead()) { return; }
+			rc = budget.read(plane, plane.lastCursor, key, value, MDB_PREV);
+		}
+		if (rc == MDB_NOTFOUND) { return; }
+		plane.lastKey = sampleKeyBytes(key);
+		if (Arrays.compareUnsigned(plane.firstKey, plane.lastKey) > 0) {
+			throw new IllegalStateException("Filter sample endpoints are not ordered");
+		}
+		if (Arrays.equals(plane.firstKey, plane.lastKey)) {
+			plane.complete = true;
+		} else {
+			addFilterSample(plane, key, rows);
+		}
+	}
+
+	private static void addFilterSample(FilterSamplePlane plane, MDBVal key, List<StratifiedSampleRow> rows) {
+		if (plane.matcher == null || plane.matcher.matches(key.mv_data())) {
+			long[] quad = new long[4];
+			plane.index.keyToQuad(key.mv_data(), quad);
+			plane.matchedRows++;
+			rows.add(new StratifiedSampleRow(plane.explicit, quad));
+		}
+	}
+
+	private static byte[] sampleKeyBytes(MDBVal key) {
+		ByteBuffer buffer = key.mv_data().duplicate();
+		byte[] result = new byte[buffer.remaining()];
+		buffer.get(result);
+		return result;
+	}
+
+	private static MDBVal sampleValue(MemoryStack stack, ByteBuffer buffer) {
+		MDBVal result = MDBVal.malloc(stack);
+		ByteBuffer direct = stack.malloc(buffer.remaining());
+		direct.put(buffer.duplicate()).flip();
+		result.mv_data(direct);
+		return result;
+	}
+
+	private static ByteBuffer sampleBuffer(MemoryStack stack, byte[] key) {
+		ByteBuffer direct = stack.malloc(key.length);
+		direct.put(key).flip();
+		return direct;
+	}
+
+	private void buildSampleRanges(MemoryStack stack, FilterSamplePlane plane, int strata, List<Long> opened) {
+		long[] first = new long[4];
+		long[] last = new long[4];
+		Varint.readListUnsigned(ByteBuffer.wrap(plane.firstKey), first);
+		Varint.readListUnsigned(ByteBuffer.wrap(plane.lastKey), last);
+		List<byte[]> starts = new ArrayList<>();
+		starts.add(plane.firstKey);
+		long[] split = new long[4];
+		byte[] previous = plane.firstKey;
+		for (int index = 1; index < strata; index++) {
+			bucketStart((double) index / strata, first, last, split);
+			ByteBuffer encoded = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
+			Varint.writeListUnsigned(encoded, split);
+			encoded.flip();
+			byte[] candidate = new byte[encoded.remaining()];
+			encoded.get(candidate);
+			if (Arrays.compareUnsigned(candidate, previous) > 0
+					&& Arrays.compareUnsigned(candidate, plane.lastKey) < 0) {
+				starts.add(candidate);
+				previous = candidate;
+			}
+		}
+		if (starts.size() == 1) {
+			plane.ranges.add(new FilterSampleCursor(plane, null, sampleValue(stack, ByteBuffer.wrap(plane.lastKey)),
+					false, plane.firstCursor, true));
+			return;
+		}
+		plane.ranges.add(new FilterSampleCursor(plane, null, sampleValue(stack, ByteBuffer.wrap(starts.get(1))),
+				false, plane.firstCursor, true));
+		for (int index = 1; index < starts.size() - 1; index++) {
+			plane.ranges.add(new FilterSampleCursor(plane, sampleBuffer(stack, starts.get(index)),
+					sampleValue(stack, ByteBuffer.wrap(starts.get(index + 1))), false, 0L, false));
+		}
+		plane.ranges.add(new FilterSampleCursor(plane, null,
+				sampleValue(stack, ByteBuffer.wrap(starts.get(starts.size() - 1))), true, plane.lastCursor, true));
+	}
+
+	private void collectSampleRanges(MemoryStack stack, long txn, List<FilterSamplePlane> planes,
+			FilterSampleBudget budget, List<StratifiedSampleRow> rows, List<Long> opened) throws IOException {
+		List<FilterSampleCursor> cursors = new ArrayList<>();
+		int largest = planes.stream().mapToInt(p -> p.ranges.size()).max().orElse(0);
+		for (int index = 0; index < largest; index++) {
+			for (FilterSamplePlane plane : planes) {
+				if (index < plane.ranges.size()) { cursors.add(plane.ranges.get(index)); }
+			}
+		}
+		MDBVal key = MDBVal.malloc(stack);
+		MDBVal value = MDBVal.malloc(stack);
+		int active = cursors.size();
+		while (active > 0 && budget.mayRead()) {
+			for (FilterSampleCursor cursor : cursors) {
+				if (cursor.exhausted) { continue; }
+				if (!budget.mayRead()) { break; }
+				if (cursor.handle == 0L) {
+					cursor.handle = openFilterSampleCursor(stack, txn, cursor.plane, opened);
+				}
+				int operation;
+				if (!cursor.started) {
+					key.mv_data(cursor.start.duplicate());
+					operation = MDB_SET_RANGE;
+					cursor.started = true;
+				} else {
+					operation = cursor.backwards ? MDB_PREV : MDB_NEXT;
+				}
+				int rc = budget.read(cursor.plane, cursor.handle, key, value, operation);
+				if (rc == MDB_NOTFOUND) {
+					cursor.exhausted = true;
+					active--;
+					continue;
+				}
+				int comparison = mdb_cmp(txn, cursor.plane.dbi, key, cursor.boundary);
+				if (cursor.backwards ? comparison < 0 : comparison >= 0) {
+					cursor.exhausted = true;
+					active--;
+					continue;
+				}
+				addFilterSample(cursor.plane, key, rows);
+			}
+		}
+		for (FilterSamplePlane plane : planes) {
+			if (!budget.stopped && !plane.ranges.isEmpty()) {
+				plane.complete = plane.ranges.stream().allMatch(cursor -> cursor.exhausted);
+			}
+		}
+	}
+
+	private double certifySampleMasses(Txn txn, TripleIndex index, List<FilterSamplePlane> planes, long subj,
+			long pred, long obj, long context, int budgetLimit, FilterSampleBudget budget) throws IOException {
+		int mask = boundMask(subj, pred, obj, context);
+		if (mask == 0) {
+			for (FilterSamplePlane plane : planes) {
+				plane.mass = plane.physicalEntries;
+				plane.massKnown = true;
+			}
+			return 0D;
+		}
+		if (exactIndexReader == null || !txn.isReadOnly()
+				|| index.getRangePrefixLength(subj, pred, obj, context) != Integer.bitCount(mask)) {
+			return 0D;
+		}
+		double quote = planes.stream().filter(p -> !p.massKnown).mapToDouble(p -> p.countPageQuote).sum();
+		if (quote > budgetLimit) { return quote; }
+		BooleanSupplier normal = exactIndexCancellation();
+		BooleanSupplier cancelled = () -> {
+			if (!budget.shouldContinue.getAsBoolean()) {
+				budget.stopped = true;
+				return true;
+			}
+			return normal.getAsBoolean();
+		};
+		try {
+			for (FilterSamplePlane plane : planes) {
+				if (!plane.massKnown) {
+					long count = countIndexPrefix(txn, index, subj, pred, obj, context, plane.explicit, cancelled);
+					if (count >= 0L) { plane.mass = count; plane.massKnown = true; }
+				}
+			}
+		} catch (java.util.concurrent.CancellationException cancelledCount) {
+			if (!budget.stopped) { throw cancelledCount; }
+		}
+		return quote;
+	}
+
+	private static StratifiedPlaneMetrics sampleMetrics(FilterSamplePlane plane) {
+		return new StratifiedPlaneMetrics(plane.examinedKeys, plane.matchedRows, plane.mass, plane.massKnown,
+				plane.complete);
 	}
 
 	/**
@@ -9571,8 +10009,10 @@ class TripleStore implements Closeable {
 		if (owned != null) {
 			directAdjacencyCommitListener.abort(owned);
 		}
-		return new DerivedCommit(directAdjacencyCommitListener == null ? null : directAdjacencyCommitListener.prepare(
-				LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.overflowed(nextRevision), nextRevision), nextRevision);
+		return new DerivedCommit(directAdjacencyCommitListener == null ? null
+				: directAdjacencyCommitListener.prepare(
+						LmdbDirectAdjacencyCommitDelta.SealedDirectDelta.overflowed(nextRevision), nextRevision),
+				nextRevision);
 	}
 
 	/**
@@ -11486,7 +11926,8 @@ class TripleStore implements Closeable {
 				}
 				if (retirement == null || !retirement.unsettled()) {
 					writeTxn = 0;
-					if (preparedDirect != null && preparedDirect.prepared != null && directAdjacencyCommitListener != null) {
+					if (preparedDirect != null && preparedDirect.prepared != null
+							&& directAdjacencyCommitListener != null) {
 						try {
 							directAdjacencyCommitListener.abort(preparedDirect.prepared);
 						} catch (RuntimeException | Error cleanup) {

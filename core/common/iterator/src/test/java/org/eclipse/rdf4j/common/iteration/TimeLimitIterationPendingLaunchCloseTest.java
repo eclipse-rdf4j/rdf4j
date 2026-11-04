@@ -192,6 +192,13 @@ class TimeLimitIterationPendingLaunchCloseTest {
 					throw first;
 				}
 				if (attempt == 2) {
+					if (successfulInFlight) {
+						start("cleanup", () -> {
+							action.run();
+							return null;
+						});
+						return;
+					}
 					accepted.add(action);
 					launchHeld.countDown();
 					awaitObserved(releaseLaunch, "fallback release");
@@ -361,7 +368,8 @@ class TimeLimitIterationPendingLaunchCloseTest {
 		@Override
 		public boolean hasNext() {
 			pullEntered.countDown();
-			// Keep consumption owned through both escalation stages; this fixture tests launch admission and retirement.
+			// Keep consumption owned through both escalation stages; this fixture tests launch admission and
+			// retirement.
 			boolean interrupted = false;
 			try {
 				while (true) {
@@ -373,7 +381,9 @@ class TimeLimitIterationPendingLaunchCloseTest {
 					}
 				}
 			} finally {
-				if (interrupted) { Thread.currentThread().interrupt(); }
+				if (interrupted) {
+					Thread.currentThread().interrupt();
+				}
 			}
 		}
 

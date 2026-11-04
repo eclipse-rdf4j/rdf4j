@@ -2807,6 +2807,16 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 						context);
 	}
 
+	/**
+	 * A SHADOW walk can be attempted without an encounter-order witness because its rows are compared only; the
+	 * statement source always returns LMDB's result. Keep this separate from {@link #ordinaryPreservesEncounterOrder}
+	 * so a comparison-only walk never claims that adjacency can serve in the requested order.
+	 */
+	boolean mayAttemptShadowComparison(LmdbAdjacencyReadView view) {
+		return view != null && view.servesSnapshot() && !closed && options.mode() == DirectAdjacencyMode.SHADOW
+				&& !writeTransactionBlocksAdjacency();
+	}
+
 	private static boolean sameVaryingOrder(String direct, String index, long subject, long predicate, long object,
 			long context) {
 		if (index == null || index.length() != 4 || direct.length() != 4) {

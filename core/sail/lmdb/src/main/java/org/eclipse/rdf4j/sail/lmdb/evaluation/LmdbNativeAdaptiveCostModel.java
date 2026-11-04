@@ -34,6 +34,7 @@ import java.util.WeakHashMap;
  * "half the rows in half the time" is not a valid extrapolation).
  */
 final class LmdbNativeAdaptiveCostModel {
+	private static final LmdbNativeCostVector.Feature[] FEATURES = LmdbNativeCostVector.Feature.values();
 
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.costCalibration.enabled";
 	static final String RECORD_PROPERTY = "rdf4j.lmdb.costCalibration.record";
@@ -543,8 +544,11 @@ final class LmdbNativeAdaptiveCostModel {
 
 	private static LmdbNativeCostVector applyFeatureCorrection(LmdbNativeCostVector vector,
 			LmdbNativeStoreCostModel.Correction correction) {
+		if (correction.isIdentity()) {
+			return vector;
+		}
 		LmdbNativeCostVector.Builder builder = LmdbNativeCostVector.builder();
-		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+		for (LmdbNativeCostVector.Feature feature : FEATURES) {
 			double ratio = correction.featureRatio(feature);
 			builder.add(feature, finite(vector.low(feature) * ratio), finite(vector.expected(feature) * ratio),
 					finite(vector.high(feature) * ratio));
