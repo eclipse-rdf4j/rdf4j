@@ -16,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -39,10 +41,15 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeDecisionTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeDecisionTestAccess.Captured;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeDecisionTestAccess.CapturedDecision;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeDecisionTestAccess.Selected;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * Differential tests for factorized tail aggregation over star joins: every query is evaluated once on the native LMDB
@@ -50,6 +57,7 @@ import org.junit.jupiter.api.io.TempDir;
  * dataset is a star: hubs fan out over two predicates with different cardinalities, one hub has no matches on the
  * second branch (inner-join semantics must drop it), values include duplicates, and one triple lives in a named graph.
  */
+@Isolated
 public class LmdbNativeFactorizedTailAggregationTest {
 
 	private static final String EX = "http://example.com/";
@@ -550,8 +558,10 @@ public class LmdbNativeFactorizedTailAggregationTest {
 		// 16 ms, ran 120 ms; wcoj quoted and ran 18 ms).
 		String grouped = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s (COUNT(*) AS ?c) WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b . } GROUP BY ?s";
+		// Project only the shared key so either derived prefix order leaves a COUNT suffix. Keep bag semantics:
+		// DISTINCT would switch the suffix to EXISTS and permit a keys-only prefix. ENUM legitimately rescans.
 		String plain = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?s ?a ?b WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b . }";
+				+ "SELECT ?s WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b . }";
 		Map<String, Map<String, Double>> groupFeatures;
 		Map<String, Map<String, Double>> rowFeatures;
 		try (SailRepositoryConnection conn = repository.getConnection()) {
@@ -575,6 +585,9 @@ public class LmdbNativeFactorizedTailAggregationTest {
 					.explain(Explanation.Level.Telemetry)
 					.toGenericPlanNode());
 		}
+		assertThat(strategy(plain, "factorizedRows"))
+				.as("the row comparison must retain its physical COUNT suffix, not ENUM promotion work")
+				.contains("enumBranches=0", "countBranches=1", "existsBranches=0");
 		assertThat(groupFeatures).containsKeys("nestedLoop", "factorizedTail");
 		assertThat(rowFeatures).containsKeys("nestedLoop", "factorizedRows");
 		List<String> access = List.of("INDEX_SEEK", "SCANNED_ROW", "DECODED_ROW");
@@ -617,31 +630,44 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	}
 
 	@Test
-	public void orderedFactorizedTopKQuotesItsSortAndOnlyTheLimitedExpansion() {
+	public void orderedFactorizedTopKQuotesItsSortAndOnlyTheLimitedExpansion() throws Exception {
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s ?a ?b WHERE { ?s ex:p1 ?a . ?s ex:p2 ?b . } ORDER BY ?s LIMIT 10";
-		Map<String, Map<String, Double>> features;
-		// the ORDER BY decision records its quotes only with a rival: the interpreted ordered kernel
+		List<CapturedDecision> decisions = new ArrayList<>();
+		List<Selected> selections = new ArrayList<>();
+		// This emitted-slot order cannot stream from the all-pattern IR join. Its sole specialist still has a quote,
+		// even though the compact telemetry feature metric records only decisions with multiple admitted rivals.
 		String previousInterpreter = System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "true");
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			features = NativeProposalFeatures.offering(conn.prepareTupleQuery(query)
-					.explain(Explanation.Level.Telemetry)
-					.toGenericPlanNode(), "orderedFactorizedTopK");
+		try (AutoCloseable capture = LmdbNativeDecisionTestAccess.captureGroups(decisions);
+				AutoCloseable selected = LmdbNativeDecisionTestAccess.captureSelections(selections);
+				SailRepositoryConnection conn = repository.getConnection()) {
+			conn.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
 		} finally {
 			restoreProperty("rdf4j.lmdb.kernelInterpreter.enabled", previousInterpreter);
 		}
-		Map<String, Double> topK = features.get("orderedFactorizedTopK");
-		Map<String, Double> kernel = features.get("irKernelInterpreted");
-		assertThat(kernel).as("the ordered kernel at the same decision: %s", features).isNotNull();
-		// the kernel still carries the input's plain work interval (no sort of its own yet)
-		assertThat(kernel.getOrDefault("SORT_N_LOG2_N", 0D)).isZero();
-		// the prefix rows are admitted into a bounded heap and only the first 10 rows are expanded; the quote used
-		// to be the input's plain work interval, identical for every ordered strategy
-		assertThat(topK.getOrDefault("SORT_N_LOG2_N", 0D)).as("top-k sort: %s", features).isGreaterThan(0D);
-		assertThat(topK.getOrDefault("GENERATED_ROW", 0D)).as("top-k expansion: %s", features)
+		List<CapturedDecision> ordered = decisions.stream()
+				.filter(decision -> decision.point().equals("ORDER"))
+				.toList();
+		assertThat(ordered).as("one actual ORDER decision, including a singleton admission").hasSize(1);
+		assertThat(ordered.getFirst().candidates()).extracting(Captured::id).containsExactly("orderedFactorizedTopK");
+		Captured offer = ordered.getFirst().candidates().getFirst();
+		assertThat(offer.admitted()).isTrue();
+		assertThat(selections).filteredOn(selection -> selection.point().equals("ORDER"))
+				.singleElement()
+				.satisfies(selection -> assertThat(selection.id()).isEqualTo("orderedFactorizedTopK"));
+		Map<String, Double> topK = new LinkedHashMap<>();
+		List<String> names = LmdbNativeDecisionTestAccess.featureNames();
+		assertThat(offer.expectedFeatures()).hasSize(names.size());
+		for (int i = 0; i < names.size(); i++) {
+			topK.put(names.get(i), offer.expectedFeatures()[i]);
+		}
+		// The prefix enters a bounded heap and only the first 10 rows are expanded. These are the exact offer's
+		// feature counts, not a rival's input-only quote or a fabricated second admission.
+		assertThat(topK.getOrDefault("SORT_N_LOG2_N", 0D)).as("top-k sort: %s", topK).isGreaterThan(0D);
+		assertThat(topK.getOrDefault("GENERATED_ROW", 0D)).as("top-k expansion: %s", topK)
 				.isLessThanOrEqualTo(10D);
 		assertThat(topK.getOrDefault("INDEX_SEEK", 0D) + topK.getOrDefault("SCANNED_ROW", 0D))
-				.as("top-k access: %s", features)
+				.as("top-k access: %s", topK)
 				.isGreaterThan(0D);
 	}
 

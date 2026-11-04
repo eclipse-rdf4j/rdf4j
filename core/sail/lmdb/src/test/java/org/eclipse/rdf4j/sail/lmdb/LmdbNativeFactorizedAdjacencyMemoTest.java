@@ -137,18 +137,11 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 	void tailBranchSkipsValueMemoWhenProbeIsCacheBacked() {
 		long engagedBefore = JoinDispatchTestAccess.factorizedEngaged();
 		long skipsBefore = JoinDispatchTestAccess.factorizedCacheBackedMemoSkips();
-		List<String> rows;
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			rows = QueryResults
-					.asList(conn.prepareTupleQuery("PREFIX ex: <" + EX + ">\nSELECT ?s ?y WHERE {\n"
-							+ "  ?s ex:p1 ?a .\n"
-							+ "  ?a ex:p2 ?y .\n"
-							+ "}").evaluate())
-					.stream()
-					.map(LmdbNativeFactorizedAdjacencyMemoTest::canonical)
-					.sorted()
-					.collect(Collectors.toList());
-		}
+		// This is a cache-backed factorized-tail contract, independent of the automatic price winner.
+		List<String> rows = queryRows("PREFIX ex: <" + EX + ">\nSELECT ?s ?y WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?a ex:p2 ?y .\n"
+				+ "}", "factorizedRows");
 		assertThat(rows).hasSize(64 * 3);
 		assertThat(JoinDispatchTestAccess.factorizedEngaged())
 				.as("the factorized rows path must engage for this shape")
@@ -175,7 +168,7 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
 			JaninoPipelineTestAccess.resetAll();
 			long factorizedBefore = JoinDispatchTestAccess.factorizedEngaged();
-			List<String> factorizedRows = queryRows(query);
+			List<String> factorizedRows = queryRows(query, "factorizedRows");
 			assertThat(factorizedRows).hasSize(expectedRowCount);
 			assertThat(JoinDispatchTestAccess.factorizedEngaged())
 					.as("the fixture must be eligible for factorized rows")

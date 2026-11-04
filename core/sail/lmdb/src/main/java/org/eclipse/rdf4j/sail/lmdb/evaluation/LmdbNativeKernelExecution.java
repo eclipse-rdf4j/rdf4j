@@ -1045,7 +1045,8 @@ final class LmdbNativeKernelExecution {
 				? parallelStartupWork()
 				: LmdbNativeWork.ZERO;
 		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
-		boolean scanVariables = Boolean.FALSE.equals(wildcardFamily) && !row.source.mayHaveWildcardViews();
+		boolean scanVariables = Boolean.FALSE.equals(wildcardFamily)
+				&& (row.source == null || !row.source.mayHaveWildcardViews());
 		return new LmdbNativeStrategyProposal<>(
 				() -> openWithFusedRuntime(arg, row,
 						() -> tryOpenRows(arg, row, originalExpr, false, null, null, null, scanVariables,
