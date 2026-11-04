@@ -264,6 +264,7 @@ test('Contexts and result terms navigate through independently loaded Explore ro
 	await waitForRoute(page, 'explore', { url: url => url.searchParams.get('resource') === blankResource });
 	await expect(page.locator('#resource')).toHaveValue(blankResource);
 	await expectRoleRows(page, 'outgoing', 1);
+	health.expectNavigation();
 	await page.goBack();
 	await waitForRoute(page, 'explore', { url: graphUrl });
 	await expectRoleRows(page, 'graph', 8);

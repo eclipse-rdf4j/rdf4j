@@ -2066,6 +2066,10 @@ namespace workbench {
         /** Keep part of the page budget available for one bounded worker write or identity-filter batch. */
         var ROW_STORE_BUDGET_TEMPORARY_RESERVE = 32 * 1024 * 1024;
 
+        function rowStoreTemporaryReserve(maxBytes: number): number {
+            return Math.min(Math.floor(maxBytes / 2), ROW_STORE_BUDGET_TEMPORARY_RESERVE);
+        }
+
         interface RowStoreBudgetWaiter {
             reservation: SharedRowStoreBudgetReservation;
             bytes: number;
@@ -2129,8 +2133,7 @@ namespace workbench {
                 if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
                     throw new RangeError('A row-store memory budget must be a positive safe byte count.');
                 }
-                this.retainedLimit = maxBytes - Math.min(Math.floor(maxBytes / 2),
-                    ROW_STORE_BUDGET_TEMPORARY_RESERVE);
+                this.retainedLimit = maxBytes - rowStoreTemporaryReserve(maxBytes);
             }
 
             get usedBytes(): number {
@@ -2307,6 +2310,165 @@ namespace workbench {
             }
         }
 
+        interface RowTextBatch {
+            start: number;
+            count: number;
+            lengths: number[];
+            reservedBytes: number;
+            writers: number;
+            retained: boolean;
+        }
+
+        interface RowTextWriter {
+            encode(rows: any[][]): string;
+            release(): void;
+        }
+
+        /**
+         * The one row-length index shared by memory and every worker attempt. Its backing arrays are admitted with
+         * the source rows, so a spill never needs another retained allocation before it can free those rows.
+         */
+        class RowStoreTextIndex {
+            private batches: RowTextBatch[] = [];
+            private rowCount = 0;
+
+            constructor(private releaseBytes: (bytes: number) => void) {
+            }
+
+            appendBytes(count: number): number {
+                // Include the array, index entry and one writer's pinned reference, even before it can acquire
+                // temporary memory. catchUp and drain allow only one active writer per index, including retries.
+                return count ? count * 16 + 160 : 0;
+            }
+
+            /** The caller has already reserved these bytes together with the source rows, in one allocation. */
+            append(count: number): void {
+                if (!count) { return; }
+                this.batches.push({ start: this.rowCount, count: count, lengths: new Array(count),
+                    reservedBytes: this.appendBytes(count), writers: 0, retained: true });
+                this.rowCount += count;
+            }
+
+            /**
+             * Pin the exact slots before a write waits for temporary memory. A concurrent truncate may detach or
+             * shorten their batches and append replacement rows, but cannot reclaim this write's backing arrays.
+             */
+            writer(start: number, count: number): RowTextWriter {
+                var end = start + count;
+                if (start < 0 || end > this.rowCount) {
+                    throw new Error('The stored row lengths must be admitted before a worker write.');
+                }
+                var parts: RowTextBatch[] = [];
+                for (var index = this.firstBatch(start); index < this.batches.length; index++) {
+                    var batch = this.batches[index];
+                    if (batch.start >= end) { break; }
+                    var first = Math.max(start, batch.start);
+                    var last = Math.min(end, batch.start + batch.count);
+                    if (first < last) {
+                        batch.writers++;
+                        parts.push(batch);
+                    }
+                }
+                var released = false;
+                return {
+                    encode: (rows: any[][]): string => {
+                        if (released || rows.length !== count) {
+                            throw new Error('The worker write no longer owns its admitted row lengths.');
+                        }
+                        var lines = new Array(rows.length);
+                        var row = 0;
+                        for (var partIndex = 0; partIndex < parts.length; partIndex++) {
+                            var part = parts[partIndex];
+                            // Starts never change. The snapshot's next start preserves this batch's original end
+                            // even when a truncate shortens it or replaces the following batches while we wait.
+                            var first = Math.max(start, part.start) - part.start;
+                            var last = (partIndex + 1 < parts.length ? parts[partIndex + 1].start : end) - part.start;
+                            for (var offset = first; offset < last; offset++) {
+                                var line = JSON.stringify(rows[row]);
+                                lines[row++] = line;
+                                part.lengths[offset] = line.length;
+                            }
+                        }
+                        if (row !== count) {
+                            throw new Error('The worker write is missing admitted row lengths.');
+                        }
+                        return lines.join('\n');
+                    },
+                    release: () => {
+                        if (released) { return; }
+                        released = true;
+                        parts.forEach(part => {
+                            part.writers--;
+                            this.releaseDetached(part);
+                        });
+                        parts = [];
+                    }
+                };
+            }
+
+            textCharacters(first: number, end: number, maximum: number): number {
+                if (first < end && (first < 0 || end > this.rowCount)) {
+                    throw storageError('The stored row window has no admitted text lengths.');
+                }
+                var characters = 2 + Math.max(0, end - first - 1);
+                for (var index = this.firstBatch(first);
+                        index < this.batches.length && characters <= maximum; index++) {
+                    var batch = this.batches[index];
+                    if (batch.start >= end) { break; }
+                    var overlapStart = Math.max(first, batch.start);
+                    var overlapEnd = Math.min(end, batch.start + batch.count);
+                    for (var row = overlapStart; row < overlapEnd; row++) {
+                        var length = batch.lengths[row - batch.start];
+                        if (!Number.isSafeInteger(length) || length < 0) {
+                            throw storageError('The stored row window has no recorded text length.');
+                        }
+                        characters += length;
+                        if (characters > maximum) { break; }
+                    }
+                }
+                return characters;
+            }
+
+            truncate(count: number): void {
+                while (this.batches.length && this.batches[this.batches.length - 1].start >= count) {
+                    var batch = this.batches.pop();
+                    batch.retained = false;
+                    this.releaseDetached(batch);
+                }
+                var last = this.batches[this.batches.length - 1];
+                if (last && last.start + last.count > count) {
+                    // A partial backing array remains allocated, even when no writer currently holds it.
+                    last.count = count - last.start;
+                }
+                this.rowCount = count;
+            }
+
+            /** Input batches may be tiny: locate a window without walking every earlier append. */
+            private firstBatch(row: number): number {
+                var first = 0;
+                var end = this.batches.length;
+                while (first < end) {
+                    var middle = first + Math.floor((end - first) / 2);
+                    var batch = this.batches[middle];
+                    if (batch.start + batch.count <= row) {
+                        first = middle + 1;
+                    } else {
+                        end = middle;
+                    }
+                }
+                return first;
+            }
+
+            private releaseDetached(batch: RowTextBatch): void {
+                if (!batch.retained && !batch.writers && batch.reservedBytes) {
+                    var bytes = batch.reservedBytes;
+                    batch.reservedBytes = 0;
+                    batch.lengths = [];
+                    this.releaseBytes(bytes);
+                }
+            }
+        }
+
         /** A single page may share this budget among its independent row stores and identity indexes. */
         export function createRowStoreBudget(maxBytes: number = MEMORY_BYTE_LIMIT): RowStoreBudget {
             return new SharedRowStoreBudget(maxBytes);
@@ -2332,6 +2494,9 @@ namespace workbench {
             var memoryId = 'memory-' + (++memoryRowStoreCount);
             var rows: any[][] = [];
             var bytes = 0;
+            /** A moving copy may still reference rows removed by a concurrent source truncate. */
+            var copying = false;
+            var deferredSourceBytes = 0;
             /**
              * memory: no move yet; moving: a move runs; stored: the rows live in the worker store, except those that
              * still wait to be written; failed: memory only.
@@ -2362,6 +2527,9 @@ namespace workbench {
             var pendingWindows: Array<{ release: () => void }> = [];
             var memoryReservation = config.memoryBudget
                 ? config.memoryBudget.createReservation('retained') : null;
+            var rowTextIndex = new RowStoreTextIndex(function(releasedBytes: number) {
+                if (memoryReservation) { memoryReservation.shrink(releasedBytes); }
+            });
             var unregisterPressureHandler = config.memoryBudget
                 ? config.memoryBudget.registerPressureHandler(function() {
                     if (state === 'memory') {
@@ -2433,6 +2601,59 @@ namespace workbench {
                 notifyMove(true);
             }
 
+            /** Keep the original admission while a copy still holds its source slice, even before encoding starts. */
+            function releaseSourceBytes(releasedBytes: number): void {
+                if (!memoryReservation || releasedBytes <= 0) { return; }
+                if (copying) {
+                    // Conservatively include rows beyond the captured slice until this bounded copy finishes.
+                    deferredSourceBytes += releasedBytes;
+                } else {
+                    memoryReservation.shrink(releasedBytes);
+                }
+            }
+
+            function finishCopy(): void {
+                copying = false;
+                var releasedBytes = deferredSourceBytes;
+                deferredSourceBytes = 0;
+                releaseSourceBytes(releasedBytes);
+            }
+
+            function copyRows(store: RowStore, batch: any[][]): Promise<number> {
+                copying = true;
+                var result: Promise<number>;
+                try {
+                    result = store.append(batch);
+                } catch (error) {
+                    finishCopy();
+                    return Promise.reject(error);
+                }
+                return result.then(function(count: number) {
+                    finishCopy();
+                    return count;
+                }, function(error: any) {
+                    finishCopy();
+                    throw error;
+                });
+            }
+
+            /**
+             * Coalesced records must fit the protected transfer space even when retained memory is full. One
+             * indivisible row is still attempted on its own; the normal budget/timeout errors apply if it cannot fit.
+             */
+            function writeEnd(first: number, end: number): number {
+                if (!config.memoryBudget) { return end; }
+                var limit = rowStoreTemporaryReserve(config.memoryBudget.maxBytes);
+                var transferBytes = 0;
+                end = Math.min(end, first + SPILL_COPY_BATCH_ROWS);
+                for (var index = first; index < end; index++) {
+                    var nextBytes = estimateJsonCharacters(rows[index]) * 4 + 16 + (index > first ? 4 : 0);
+                    if (index > first && transferBytes + nextBytes > limit) { return index; }
+                    transferBytes += nextBytes;
+                }
+                return end;
+            }
+
             /** Brings the worker store in step with memory, then switches to it in the same turn as the last check. */
             function catchUp(store: RowStore, copied: number, isCurrent: () => boolean): Promise<void> {
                 if (!isCurrent()) {
@@ -2447,8 +2668,8 @@ namespace workbench {
                     });
                 }
                 if (copied < rows.length) {
-                    var end = Math.min(rows.length, copied + SPILL_COPY_BATCH_ROWS);
-                    return store.append(rows.slice(copied, end)).then(function() {
+                    var end = writeEnd(copied, Math.min(rows.length, copied + SPILL_COPY_BATCH_ROWS));
+                    return copyRows(store, rows.slice(copied, end)).then(function() {
                         notifyMove(false);
                         return catchUp(store, end, isCurrent);
                     });
@@ -2460,17 +2681,17 @@ namespace workbench {
                 rows = [];
                 bytes = 0;
                 batches = [];
-                if (memoryReservation && releasedBytes) {
-                    memoryReservation.shrink(releasedBytes);
-                }
+                releaseSourceBytes(releasedBytes);
                 finishMove('stored');
                 return Promise.resolve();
             }
 
             /**
              * Writes the rows that wait in memory to the worker store, one write at a time, each holding the batches
-             * that came meanwhile (up to SPILL_COPY_BATCH_ROWS rows, at least one batch). An append does not wait for
-             * it: the stream reads its next record while the worker writes, and rows leave memory once written.
+             * that came meanwhile (up to SPILL_COPY_BATCH_ROWS rows, at least one batch without a shared budget).
+             * Budgeted writes can split a batch to fit temporary headroom, with at least one row per write. An append
+             * does not wait for it: the stream reads the next record while the worker writes, then written rows leave
+             * memory.
              */
             function drain(): void {
                 if (state !== 'stored' || writing || writesHeld || writeFailure || disposed || !rows.length) {
@@ -2478,29 +2699,47 @@ namespace workbench {
                 }
                 var count = 0;
                 var chunkBytes = 0;
+                var partialBytes = 0;
                 var taken = 0;
-                while (taken < batches.length) {
-                    var size = batches[taken].end - written - count;
-                    if (taken > 0 && count + size > SPILL_COPY_BATCH_ROWS) {
-                        break;
-                    }
-                    count += size;
-                    chunkBytes += batches[taken].bytes;
-                    taken++;
-                }
                 var target = stored;
-                writing = target.append(rows.slice(0, count)).then(function() {
+                // Publish the pending write before sizing or reserving it: grow may synchronously request pressure
+                // relief, and that handler must not re-enter this same drain while it waits for temporary memory.
+                writing = Promise.resolve().then(function() {
+                    while (taken < batches.length) {
+                        var size = batches[taken].end - written - count;
+                        if (taken > 0 && count + size > SPILL_COPY_BATCH_ROWS) {
+                            break;
+                        }
+                        count += size;
+                        chunkBytes += batches[taken].bytes;
+                        taken++;
+                    }
+                    var limited = writeEnd(0, count);
+                    if (limited < count) {
+                        count = limited;
+                        chunkBytes = 0;
+                        taken = 0;
+                        while (taken < batches.length && batches[taken].end <= written + count) {
+                            chunkBytes += batches[taken++].bytes;
+                        }
+                        var first = taken ? batches[taken - 1].end - written : 0;
+                        for (var index = first; index < count; index++) {
+                            partialBytes += estimateRowBytes(rows[index]);
+                        }
+                        chunkBytes += partialBytes;
+                    }
+                    return target.append(rows.slice(0, count));
+                }).then(function() {
                     writing = null;
                     if (disposed || stored !== target) {
                         return;
                     }
                     rows.splice(0, count);
                     batches.splice(0, taken);
+                    if (partialBytes) { batches[0].bytes -= partialBytes; }
                     written += count;
                     bytes -= chunkBytes;
-                    if (memoryReservation && chunkBytes) {
-                        memoryReservation.shrink(chunkBytes);
-                    }
+                    releaseSourceBytes(chunkBytes);
                     notifyMove(false);
                     drain();
                 }, function(error: any) {
@@ -2547,7 +2786,7 @@ namespace workbench {
                         abandonWorker();
                     }
                 };
-                createWorkerRowStore(config, function(abandon) { abandonWorker = abandon; })
+                createWorkerRowStore(config, rowTextIndex, function(abandon) { abandonWorker = abandon; })
                     .then(function(store: RowStore) {
                         notifyMove(false);
                         return catchUp(store, 0, isCurrent);
@@ -2627,6 +2866,7 @@ namespace workbench {
                     }
                     // A batch larger than memory is still taken when nothing else waits: it is written next.
                     if (!rows.length || rows.length + batch.length <= rowLimit && bytes + batchBytes <= byteLimit) {
+                        rowTextIndex.append(batch.length);
                         for (var index = 0; index < batch.length; index++) {
                             rows.push(batch[index]);
                         }
@@ -2641,6 +2881,7 @@ namespace workbench {
                     startMove();
                 }
                 if (rows.length + batch.length <= rowLimit && bytes + batchBytes <= byteLimit) {
+                    rowTextIndex.append(batch.length);
                     for (var index = 0; index < batch.length; index++) {
                         rows.push(batch[index]);
                     }
@@ -2665,7 +2906,10 @@ namespace workbench {
                 }
                 var accepted = false;
                 var reserved = false;
-                return memoryReservation.grow(batchBytes, timeout).then(function() {
+                // Admit rows and their eventual worker index atomically. The copy loop must not wait for retained
+                // memory that only finishing that same copy could release.
+                var admittedBytes = batchBytes + rowTextIndex.appendBytes(batch.length);
+                return memoryReservation.grow(admittedBytes, timeout).then(function() {
                     reserved = true;
                     return appendReserved(batch, batchBytes).then(function(result: number) {
                         accepted = true;
@@ -2673,7 +2917,7 @@ namespace workbench {
                     });
                 }).then(null, function(error: any) {
                     if (!accepted && reserved) {
-                        memoryReservation.shrink(batchBytes);
+                        memoryReservation.shrink(admittedBytes);
                     }
                     throw error;
                 });
@@ -2826,21 +3070,21 @@ namespace workbench {
                             if (count >= written) {
                                 var previousBytes = bytes;
                                 rows.length = count - written;
+                                rowTextIndex.truncate(count);
                                 bytes = estimateBatchBytes(rows);
-                                if (memoryReservation && previousBytes > bytes) {
-                                    memoryReservation.shrink(previousBytes - bytes);
-                                }
+                                releaseSourceBytes(previousBytes - bytes);
                                 batches = rows.length ? [{ end: count, bytes: bytes }] : [];
                                 return count;
                             }
                             var previousBytes = bytes;
                             rows = [];
                             bytes = 0;
-                            if (memoryReservation && previousBytes) {
-                                memoryReservation.shrink(previousBytes);
-                            }
+                            // These unwritten rows are discarded even if truncating the stored prefix fails.
+                            rowTextIndex.truncate(written);
+                            releaseSourceBytes(previousBytes);
                             batches = [];
                             return stored.truncate(count).then(function(result: number) {
+                                rowTextIndex.truncate(result);
                                 written = result;
                                 return result;
                             });
@@ -2857,10 +3101,9 @@ namespace workbench {
                     }
                     var previousBytes = bytes;
                     rows.length = count;
+                    rowTextIndex.truncate(count);
                     bytes = estimateBatchBytes(rows);
-                    if (memoryReservation && previousBytes > bytes) {
-                        memoryReservation.shrink(previousBytes - bytes);
-                    }
+                    releaseSourceBytes(previousBytes - bytes);
                     if (state === 'moving') {
                         truncatedTo = Math.min(truncatedTo, count);
                     }
@@ -2876,14 +3119,20 @@ namespace workbench {
                     batches = [];
                     unregisterPressureHandler();
                     pendingWindows.splice(0).forEach(window => window.release());
-                    if (memoryReservation) {
-                        memoryReservation.release();
-                    }
                     if (abandonMove) {
                         abandonMove();
                     }
+                    rowTextIndex.truncate(0);
+                    // A stored write still holds its source slice until the worker closes. Unload may abandon
+                    // its append promise, so final release follows disposal rather than depending on that promise.
                     notifyMove(true);
-                    disposePromise = stored ? stored.dispose() : Promise.resolve();
+                    var disposal = stored ? stored.dispose() : Promise.resolve();
+                    disposePromise = disposal.then(function() {
+                        if (memoryReservation) { memoryReservation.release(); }
+                    }, function(error: any) {
+                        if (memoryReservation) { memoryReservation.release(); }
+                        throw error;
+                    });
                     return disposePromise;
                 }
             };
@@ -2899,7 +3148,7 @@ namespace workbench {
          * the requests it still owes are rejected, and the store is flagged for cleanup (its database may exist). A
          * move to browser storage that takes too long uses it.
          */
-        function createWorkerRowStore(config: RowStoreOptions,
+        function createWorkerRowStore(config: RowStoreOptions, rowTextIndex: RowStoreTextIndex,
                                       onAbandon?: (abandon: () => void) => void): Promise<RowStore> {
             var worker: any;
             try {
@@ -2918,12 +3167,9 @@ namespace workbench {
             var registry = rowStoreRegistryStorage();
             var created = Date.now();
             var bytes = 0;
-            var rowTextBatches: Array<{ start: number; count: number; lengths: number[]; reservedBytes: number }> = [];
             var storedRowCount = 0;
             var transferReservation = config.memoryBudget
                 ? config.memoryBudget.createReservation('temporary') : null;
-            var rowTextReservation = config.memoryBudget
-                ? config.memoryBudget.createReservation('retained') : null;
             var readReservation = config.memoryBudget
                 ? config.memoryBudget.createReservation('temporary') : null;
             var pendingOwnedReservations: RowStoreBudgetReservation[] = [];
@@ -3042,9 +3288,6 @@ namespace workbench {
                     transferReservationReleased = true;
                     transferReservation.release();
                 }
-                if (rowTextReservation) {
-                    rowTextReservation.release();
-                }
                 if (readReservation) {
                     readReservation.release();
                 }
@@ -3079,37 +3322,11 @@ namespace workbench {
                 if (textChars > maximumChars) {
                     return budgetLimit + 1;
                 }
-                for (var batchIndex = 0; batchIndex < rowTextBatches.length; batchIndex++) {
-                    var batch = rowTextBatches[batchIndex];
-                    var batchEnd = batch.start + batch.count;
-                    var overlapStart = Math.max(first, batch.start);
-                    var overlapEnd = Math.min(end, batchEnd);
-                    for (var rowIndex = overlapStart; rowIndex < overlapEnd; rowIndex++) {
-                        textChars += batch.lengths[rowIndex - batch.start];
-                        if (textChars > maximumChars) {
-                            return budgetLimit + 1;
-                        }
-                    }
-                }
+                textChars = rowTextIndex.textCharacters(first, end, maximumChars);
+                if (textChars > maximumChars) { return budgetLimit + 1; }
                 // Include worker text, transferred text, parsed terms, and object/array overhead together.
                 var bytes = textChars * 8 + rowCount * 256 + 256;
                 return Number.isSafeInteger(bytes) ? bytes : budgetLimit + 1;
-            }
-
-            function truncateRowTextLengths(count: number): void {
-                var releasedBytes = 0;
-                while (rowTextBatches.length && rowTextBatches[rowTextBatches.length - 1].start >= count) {
-                    releasedBytes += rowTextBatches.pop().reservedBytes;
-                }
-                var last = rowTextBatches[rowTextBatches.length - 1];
-                if (last && last.start + last.count > count) {
-                    // Keep the full reservation for a partial batch while its backing array remains allocated.
-                    last.count = count - last.start;
-                }
-                storedRowCount = count;
-                if (releasedBytes && rowTextReservation) {
-                    rowTextReservation.shrink(releasedBytes);
-                }
             }
 
             function readWindow(start: number, count: number, owned: boolean): Promise<RowStoreWindow> {
@@ -3168,20 +3385,23 @@ namespace workbench {
                         if (!Array.isArray(rows)) {
                             return Promise.reject(new Error('Query rows must be provided as a batch.'));
                         }
-                        var reservedBytes = estimateBatchTextCharacters(rows) * 4 + rows.length * 16;
-                        var rowTextBytes = rows.length ? rows.length * 16 + 64 : 0;
+                        if (disposed) { return Promise.reject(workerClosedError()); }
+                        var lengths: RowTextWriter;
+                        var reservedBytes: number;
+                        try {
+                            // Estimation may invoke accessors. Do not pin any metadata until it succeeds.
+                            reservedBytes = estimateBatchTextCharacters(rows) * 4 + rows.length * 16;
+                            lengths = rowTextIndex.writer(storedRowCount, rows.length);
+                        } catch (error) {
+                            return Promise.reject(error);
+                        }
                         var heldTransfer = false;
-                        var heldRowText = false;
-                        var rowTextReservationRequest = rowTextReservation && rowTextBytes
-                            ? rowTextReservation.grow(rowTextBytes, config.storageTimeout) : Promise.resolve();
-                        return rowTextReservationRequest.then(function() {
-                            heldRowText = !!rowTextReservation && rowTextBytes > 0;
-                            return transferReservation
-                                ? transferReservation.grow(reservedBytes, config.storageTimeout) : undefined;
-                        }).then(function() {
+                        var request = transferReservation
+                            ? transferReservation.grow(reservedBytes, config.storageTimeout) : Promise.resolve();
+                        return request.then(function() {
                             heldTransfer = !!transferReservation;
-                            var lengths = new Array(rows.length);
-                            var text = encodeRowBatch(rows, lengths);
+                            if (disposed) { throw workerClosedError(); }
+                            var text = lengths.encode(rows);
                             var actualBytes = text.length * 4 + rows.length * 16;
                             var adjust = Promise.resolve();
                             if (transferReservation && actualBytes > reservedBytes) {
@@ -3193,27 +3413,22 @@ namespace workbench {
                             }
                             return adjust.then(() => send('append', { text: text, rowCount: rows.length }))
                                 .then(result => {
-                                    if (rows.length) {
-                                        rowTextBatches.push({ start: storedRowCount, count: rows.length, lengths: lengths,
-                                            reservedBytes: rowTextBytes });
-                                        storedRowCount += rows.length;
-                                        heldRowText = false;
-                                    }
+                                    if (disposed) { throw workerClosedError(); }
+                                    storedRowCount += rows.length;
                                     bytes += text.length;
                                     registerSoon();
                                     return result.count;
                                 });
                         }).then(function(result: number) {
+                            lengths.release();
                             if (heldTransfer && transferReservation) {
                                 transferReservation.shrink(reservedBytes);
                             }
                             return result;
                         }, function(error: any) {
+                            lengths.release();
                             if (heldTransfer && transferReservation) {
                                 transferReservation.shrink(reservedBytes);
-                            }
-                            if (heldRowText && rowTextReservation) {
-                                rowTextReservation.shrink(rowTextBytes);
                             }
                             throw error;
                         });
@@ -3233,7 +3448,7 @@ namespace workbench {
                             }
                             return send('truncate', { count: count }).then(result => {
                                 bytes = current.count > 0 ? Math.round(bytes * result.count / current.count) : 0;
-                                truncateRowTextLengths(count);
+                                storedRowCount = count;
                                 registerSoon();
                                 return result.count;
                             });
