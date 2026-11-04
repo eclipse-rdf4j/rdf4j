@@ -38,6 +38,10 @@ public final class PackedRuleProofs {
 	static final long MINUS_CORRELATED_NOT_EXISTS = 1L << 13;
 	static final long FILTER_COMMUTATION = 1L << 14;
 	static final long TYPED_SEMI_ANTI = 1L << 15;
+	static final long UNION_JOIN_DISTRIBUTION = 1L << 16;
+	static final long UNION_COMMON_BGP_FACTOR = 1L << 17;
+	static final long OPTIONAL_BRANCH_REORDER = 1L << 18;
+	static final long OPTIONAL_BGP_INJECTION = 1L << 19;
 
 	private PackedRuleProofs() {
 	}
@@ -64,6 +68,10 @@ public final class PackedRuleProofs {
 		case 1014 -> MINUS_CORRELATED_NOT_EXISTS;
 		case 1015 -> FILTER_COMMUTATION;
 		case 1016 -> TYPED_SEMI_ANTI;
+		case 1017 -> UNION_JOIN_DISTRIBUTION;
+		case 1018 -> UNION_COMMON_BGP_FACTOR;
+		case 1019 -> OPTIONAL_BRANCH_REORDER;
+		case 1020 -> OPTIONAL_BGP_INJECTION;
 		default -> 0L;
 		};
 	}
@@ -73,7 +81,7 @@ public final class PackedRuleProofs {
 			return 0;
 		}
 		int ordinal = Long.numberOfTrailingZeros(proofBit);
-		return ordinal < 16 ? 1001 + ordinal : 0;
+		return ordinal < 20 ? 1001 + ordinal : 0;
 	}
 
 	public static List<RuleProof> materialize(long ruleMask) {
@@ -114,6 +122,14 @@ public final class PackedRuleProofs {
 				"deterministic filters with assured dependencies commute over their common input");
 		add(proofs, ruleMask, TYPED_SEMI_ANTI, "packed-typed-semi-anti", "typedSemiAnti",
 				"pure existence predicate exposes streaming, memoized, and materialized physical alternatives");
+		add(proofs, ruleMask, UNION_JOIN_DISTRIBUTION, "packed-union-join-distribution", "pureUnionRegion",
+				"join distributes over a pure UNION while retaining every branch occurrence and binding multiplicity");
+		add(proofs, ruleMask, UNION_COMMON_BGP_FACTOR, "packed-union-common-bgp-factor", "commonBgpFactors",
+				"identical basic graph pattern factors are shared across UNION without removing duplicate factors or arms");
+		add(proofs, ruleMask, OPTIONAL_BRANCH_REORDER, "packed-optional-branch-reorder", "independentOptionalBranches",
+				"conditionless OPTIONAL branches share only assured base bindings and introduce disjoint bindings");
+		add(proofs, ruleMask, OPTIONAL_BGP_INJECTION, "packed-optional-bgp-injection", "duplicateFreeFullDomainBgp",
+				"a fully exposed duplicate-free basic graph pattern in a fixed graph constrains its OPTIONAL body");
 		return List.copyOf(proofs);
 	}
 

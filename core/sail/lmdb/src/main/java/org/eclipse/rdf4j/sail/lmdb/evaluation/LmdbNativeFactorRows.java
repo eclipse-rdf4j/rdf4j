@@ -75,6 +75,10 @@ final class LmdbNativeFactorRows {
 	static LmdbNativeFactorCursor join(JoinPlan plan, RowState row) throws IOException {
 		if (!enabled() || row.encounterOrderRequired)
 			return null;
+		RowCursor memoized = LmdbNativeSupportJoin.tryOpen(plan.left, plan.right, row, false);
+		if (memoized != null) {
+			return scalar(memoized, row.slots.length);
+		}
 		long reads = memoReadMask(plan.right);
 		// A known dependency set alone does not grant replay permission to unknown future plan kinds.
 		if (reads < 0L || !SlotPlan.encounterOrderReplaySafe(plan.right))
@@ -266,10 +270,13 @@ final class LmdbNativeFactorRows {
 			remaining.clear();
 			Throwable failure = KernelRuntime.closeResource(product, null);
 			try {
-				if (mark >= 0) row.rollback(mark);
+				if (mark >= 0)
+					row.rollback(mark);
 			} catch (RuntimeException | Error problem) {
-				if (failure == null) failure = problem;
-				else if (failure != problem) failure.addSuppressed(problem);
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
 			}
 			failure = KernelRuntime.closeResource(input, failure);
 			KernelRuntime.rethrowCloseFailure(failure);
@@ -499,7 +506,8 @@ final class LmdbNativeFactorRows {
 						BorrowedFactorBatch.Cursor previous = reader;
 						reader = null;
 						boundBatch = null;
-						if (previous != null) previous.close();
+						if (previous != null)
+							previous.close();
 						reader = batch.cursor(READ_WINDOW);
 						boundBatch = batch;
 					}
@@ -584,17 +592,23 @@ final class LmdbNativeFactorRows {
 			factors = null;
 			Throwable failure = KernelRuntime.closeResource(previous, null);
 			if (product != null) {
-				try { product.release(); }
-				catch (RuntimeException | Error problem) {
-					if (failure == null) failure = problem;
-					else if (failure != problem) failure.addSuppressed(problem);
+				try {
+					product.release();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null)
+						failure = problem;
+					else if (failure != problem)
+						failure.addSuppressed(problem);
 				}
 			}
 			if (tupleFilter != null) {
-				try { tupleFilter.releaseInput(); }
-				catch (RuntimeException | Error problem) {
-					if (failure == null) failure = problem;
-					else if (failure != problem) failure.addSuppressed(problem);
+				try {
+					tupleFilter.releaseInput();
+				} catch (RuntimeException | Error problem) {
+					if (failure == null)
+						failure = problem;
+					else if (failure != problem)
+						failure.addSuppressed(problem);
 				}
 			}
 			KernelRuntime.rethrowCloseFailure(failure);
@@ -602,7 +616,8 @@ final class LmdbNativeFactorRows {
 
 		@Override
 		public void close() {
-			if (closed) return;
+			if (closed)
+				return;
 			closed = true;
 			result.clear();
 			factors = null;
@@ -615,16 +630,23 @@ final class LmdbNativeFactorRows {
 			SelectedFactorSource previousSelection = selected;
 			selected = null;
 			failure = KernelRuntime.closeResource(previousSelection, failure);
-			try { if (mark >= 0) row.rollback(mark); }
-			catch (RuntimeException | Error problem) {
-				if (failure == null) failure = problem;
-				else if (failure != problem) failure.addSuppressed(problem);
+			try {
+				if (mark >= 0)
+					row.rollback(mark);
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
 			}
 			failure = KernelRuntime.closeResource(input, failure);
-			try { filter.close(); }
-			catch (RuntimeException | Error problem) {
-				if (failure == null) failure = problem;
-				else if (failure != problem) failure.addSuppressed(problem);
+			try {
+				filter.close();
+			} catch (RuntimeException | Error problem) {
+				if (failure == null)
+					failure = problem;
+				else if (failure != problem)
+					failure.addSuppressed(problem);
 			}
 			KernelRuntime.rethrowCloseFailure(failure);
 		}
