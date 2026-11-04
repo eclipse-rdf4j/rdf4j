@@ -30,12 +30,37 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizerRuleCatalog;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.RuleProof;
 import org.junit.jupiter.api.Test;
 
 class OptimizerRuleCatalogTest {
 
 	private static final String CATALOG_CLASS = "org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizerRuleCatalog";
+
+	@Test
+	void optionalAndUnionProofsHaveDistinctRegistrations() {
+		List<String> proofIds = List.of("packed-union-join-distribution", "packed-union-common-bgp-factor",
+				"packed-optional-branch-reorder", "packed-optional-bgp-injection");
+		for (int ordinal = 0; ordinal < proofIds.size(); ordinal++) {
+			int descriptorId = 1017 + ordinal;
+			long bit = 1L << (16 + ordinal);
+			assertThat(OptimizerRuleCatalog.descriptorById(descriptorId))
+					.as("each new equivalence has its own guard descriptor")
+					.isNotNull();
+			assertThat(OptimizerRuleCatalog.descriptorById(descriptorId).runtimeProofId())
+					.isEqualTo(proofIds.get(ordinal));
+			assertThat(PackedRuleProofs.requiredMaskForDescriptor(descriptorId)).isEqualTo(bit);
+			assertThat(PackedRuleProofs.descriptorIdForProof(bit)).isEqualTo(descriptorId);
+			assertThat(PackedRuleProofs.materialize(bit)).extracting(RuleProof::ruleId)
+					.containsExactly(proofIds.get(ordinal));
+			assertThat(PackedRuleProofs.dependsOnPredicateRangeData(bit))
+					.as("structural equivalences do not invent predicate-range or coverage dependencies")
+					.isFalse();
+		}
+		assertThat(PackedRuleProofs.descriptorIdForProof(1L << 20)).isZero();
+		assertThat(PackedRuleProofs.descriptorIdForProof((1L << 16) | (1L << 17))).isZero();
+	}
 
 	@Test
 	void productionRegistrationRequiresRuntimeProofDescriptor() {
@@ -52,7 +77,7 @@ class OptimizerRuleCatalogTest {
 		}
 
 		List<RuleProof> runtimeProofs = PackedRuleProofs.materialize(-1L);
-		assertThat(runtimeProofs).hasSize(16);
+		assertThat(runtimeProofs).hasSize(20);
 		for (RuleProof proof : runtimeProofs) {
 			Object descriptor = descriptorsByRuntimeProof.get(proof.ruleId());
 			assertThat(descriptor)

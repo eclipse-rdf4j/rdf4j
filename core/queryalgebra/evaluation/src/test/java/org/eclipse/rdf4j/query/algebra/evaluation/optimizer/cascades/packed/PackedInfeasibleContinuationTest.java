@@ -143,9 +143,15 @@ class PackedInfeasibleContinuationTest {
 		int nullableProvider = 0;
 		int requiredConsumer = 0;
 		for (int relation = 1; relation <= query.relationCount(); relation++) {
-			if (query.relOperator(relation) == PackedRelOp.UNION) {
+			// Saturation also contains a UNION of JOINs that each assure the mandatory endpoint VALUES.
+			// Identify the authored SP/VALUES UNION independently of the assurance facts tested below.
+			if (query.relOperator(relation) == PackedRelOp.UNION && query.relChildCount(relation) == 2
+					&& query.relOperator(query.relChild(relation, 0)) == PackedRelOp.STATEMENT_PATTERN
+					&& query.relOperator(query.relChild(relation, 1)) == PackedRelOp.BINDING_SET_ASSIGNMENT) {
+				assertEquals(0, nullableProvider, "the authored SP/VALUES UNION must be unique");
 				nullableProvider = relation;
 			} else if (query.relOperator(relation) == PackedRelOp.SERVICE) {
+				assertEquals(0, requiredConsumer, "the authored SERVICE consumer must be unique");
 				requiredConsumer = relation;
 			}
 		}

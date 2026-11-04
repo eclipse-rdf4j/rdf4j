@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 @Experimental
 public final class OptimizerRuleCatalog {
 	private static final int CATALOG_SCHEMA_EPOCH = 2;
-	private static final String CATALOG_SOURCE_REVISION = "95794d6806c84ccab72acd166907cf9ed295208f";
+	private static final String CATALOG_SOURCE_REVISION = "cce41a89a50258459da9aabe9498f91bc4771222";
 	private static final String REWRITE_RESEARCH_SHA256 = "ba30c6092f2ed926d587734588ea7ff95d799e6892eea450711d3b37ddfeb29e";
 	private static final String OPTIMIZER_RESEARCH_SHA256 = "060dee0b961f096587e7c2e42330537b029da444b9f9180cb1de583dfa5ed7d3";
 
@@ -253,6 +253,28 @@ public final class OptimizerRuleCatalog {
 				"FILTER EXISTS/NOT EXISTS", "SEMI_JOIN/ANTI_JOIN", "typedSemiAnti",
 				"PackedCorrelatedMinusAlternativeTest#typedSemiAntiAlternativesSupportComposedLocalRightHandSides",
 				"PackedSearchTest#independentExistsRemainsOpaqueToJoinEnumeration"));
+		entries.add(productionRule(1017, "union-join-distribution", "packed-union-join-distribution",
+				"JOIN with UNION operand", "UNION of branch-specific JOINs", "pureUnionRegion",
+				"PackedUnionAlternativesTest#joinOverUnionHasCostedAlternativeWithoutLosingOriginal",
+				"PackedUnionAlternativesTest#observableOrIndependentInputsBlockDistribution",
+				"one binary distribution per UNION operand of each original JOIN; generated rows are not expanded"));
+		entries.add(productionRule(1018, "union-common-bgp-factor", "packed-union-common-bgp-factor",
+				"UNION of JOINs with common BGP", "JOIN of common BGP with residual UNION", "commonBgpFactors",
+				"PackedUnionAlternativesTest#commonBgpMatchingCountsRepeatedAtomsAsAMultiset",
+				"PackedUnionAlternativesTest#factoringDoesNotMoveABgpAcrossVolatileEvaluation",
+				"one maximal common-BGP factorization per original binary UNION; at most 64 factors per arm"));
+		entries.add(productionRule(1019, "optional-branch-reorder", "packed-optional-branch-reorder",
+				"chain of independent conditionless OPTIONALs", "OPTIONAL chain with a branch inserted earlier",
+				"independentOptionalBranches",
+				"PackedOptionalAlternativesTest#independentOptionalOrdersCompeteWithoutLosingDuplicateOrUnmatchedRows",
+				"PackedOptionalAlternativesTest#possiblyUnboundBaseDoesNotMakeOptionalBranchesIndependent",
+				"last-branch insertion moves in original prefixes of at most eight independent branches; original retained"));
+		entries.add(productionRule(1020, "optional-bgp-injection", "packed-optional-bgp-injection",
+				"BGP OPTIONAL body", "BGP OPTIONAL (BGP JOIN body)", "duplicateFreeFullDomainBgp",
+				"PackedOptionalAlternativesTest#parsedFixedGraphBgpInjectionRetainsTheActiveGraph",
+				"PackedOptionalAlternativesTest#inclusiveDefaultGraphCannotProveDuplicateFreeBgpSeed",
+				"one candidate per original OPTIONAL; fully exposed duplicate-free BGP in a fixed graph; "
+						+ "at most 64 statement occurrences across both operands and depth 64"));
 
 		for (RewriteRuleCatalog.Entry entry : RewriteRuleCatalog.entries()) {
 			entries.add(researchRule(entry));
@@ -346,12 +368,20 @@ public final class OptimizerRuleCatalog {
 
 	private static OptimizerRuleDescriptor productionRule(int descriptorId, String stableId, String runtimeProofId,
 			String before, String after, String proofId, String positiveTest, String negativeTest) {
+		return productionRule(descriptorId, stableId, runtimeProofId, before, after, proofId, positiveTest,
+				negativeTest,
+				"local proof regime; fixpoint certification required");
+	}
+
+	private static OptimizerRuleDescriptor productionRule(int descriptorId, String stableId, String runtimeProofId,
+			String before, String after, String proofId, String positiveTest, String negativeTest,
+			String completeness) {
 		return new OptimizerRuleDescriptor(descriptorId, stableId, Kind.LOGICAL_EQUIVALENCE, Disposition.IMPLEMENTED,
 				before, after, OptimizationGoal.BAG_SEMANTICS, Set.of("scope-local"),
 				Set.of("SPARQL errors preserved", "graph scope preserved"), Set.of(proofId), runtimeProofId,
 				"runtime proof bit plus result-bag contract", LOGICAL_RULE_PROGRAM,
 				"PackedLogicalRuleProgram -> PackedMemo", List.of(positiveTest), List.of(negativeTest),
-				"optimizer.rule.rejected." + stableId, "local proof regime; fixpoint certification required");
+				"optimizer.rule.rejected." + stableId, completeness);
 	}
 
 	private static OptimizerRuleDescriptor researchRule(RewriteRuleCatalog.Entry entry) {

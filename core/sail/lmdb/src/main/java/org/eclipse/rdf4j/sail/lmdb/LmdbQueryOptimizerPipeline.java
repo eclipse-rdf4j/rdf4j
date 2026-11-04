@@ -79,7 +79,9 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	private static final DisjunctiveConstraintOptimizer DISJUNCTIVE_CONSTRAINT_OPTIMIZER = new DisjunctiveConstraintOptimizer();
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
-	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
+	// Keep shared inputs available: packed search costs both distribution and BGP factoring alternatives.
+	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer(
+			false);
 	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
 
 	private final EvaluationStrategy strategy;
