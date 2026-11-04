@@ -32,8 +32,18 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 
 		String properties();
 
+		/** True when the complete quoted work finishes before the first result can reach the consumer. */
+		default boolean blocksBeforeOutput() {
+			return false;
+		}
+
 		default KeyProperties keyProperties() {
 			return null;
+		}
+
+		/** Refines adaptive workload bands from this same captured quote without changing its cost evidence. */
+		default LmdbNativePhysicalVariantKey variantKey(LmdbNativePhysicalVariantKey base, Work quotedWork) {
+			return base;
 		}
 
 		/** Resource facts from this producer's same successful quote; absence is an unproved cold choice. */

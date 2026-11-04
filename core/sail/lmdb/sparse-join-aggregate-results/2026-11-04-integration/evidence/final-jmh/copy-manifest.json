@@ -1,0 +1,84 @@
+{
+  "status": "all five primary cases and the longer-warmup follow-up complete; no further measurements planned",
+  "copied_at_utc": "2026-11-04T21:30:31.324745+00:00",
+  "files": [
+    {
+      "source": "target/sparse-integrated-jmh-uniform.json",
+      "destination": "uniform/results.json",
+      "bytes": 14696,
+      "sha256": "08461d6fc32305079d7a0883c3f8e095afad54403d37777740516b3bd3b361a6"
+    },
+    {
+      "source": "sparse-integrated-jmh-uniform.log",
+      "destination": "uniform/console.log",
+      "bytes": 12641,
+      "sha256": "d6dc6ccd32a7344b02e061cfae9d70b2634403b561d4725d9cff408cbed12ff0"
+    },
+    {
+      "source": "target/sparse-integrated-jmh-hot.json",
+      "destination": "hot/results.json",
+      "bytes": 7400,
+      "sha256": "758d5df6faca64b9c06b0ed3d6e35bad38bfcecb56fb561df33171d3308d03f0"
+    },
+    {
+      "source": "sparse-integrated-jmh-hot.log",
+      "destination": "hot/console.log",
+      "bytes": 6582,
+      "sha256": "fce2d615d59797125590a073d521ce18d19eeab85f03f8d9d74ca87c64522ef2"
+    },
+    {
+      "source": "target/sparse-integrated-jmh-asymmetric.json",
+      "destination": "asymmetric/results.json",
+      "bytes": 7346,
+      "sha256": "bffabd08f5684a0ae711d78936b80fe12e7bd19f086b508ee4eab8c75cd6c7bc"
+    },
+    {
+      "source": "sparse-integrated-jmh-asymmetric.log",
+      "destination": "asymmetric/console.log",
+      "bytes": 6575,
+      "sha256": "f21954db5d7cc26afbc920254699c8f21045fd2dd062a5f0c46d5637bd820c57"
+    },
+    {
+      "source": "target/sparse-integrated-jmh-disjoint-empty.json",
+      "destination": "disjoint-empty/results.json",
+      "bytes": 7452,
+      "sha256": "bd136c8d5736c8715b21daf54ac84fb9d089f7a9ee12f0bc6f61d075ffe6d928"
+    },
+    {
+      "source": "sparse-integrated-jmh-disjoint-empty.log",
+      "destination": "disjoint-empty/console.log",
+      "bytes": 6515,
+      "sha256": "8eefe06935d49e6c8bd1ba7c14231321feca4ff33c1f32571697a46991341b5a"
+    },
+    {
+      "source": "sparse-integrated-jmh-disjoint-empty-full.log",
+      "destination": "disjoint-empty/full-console.log",
+      "bytes": 34820,
+      "sha256": "b341654591fe079c74a1e83e2b3d17424be063e97cafce9cc352b1b541cb3809"
+    },
+    {
+      "source": "target/sparse-integrated-jmh-disjoint-long-warmup.json",
+      "destination": "disjoint-long-warmup/results.json",
+      "bytes": 4953,
+      "sha256": "1f15b28c02071e2f65087a8c855bc936d35c358db1c44aa2bd40df16318e0927"
+    },
+    {
+      "source": "sparse-integrated-jmh-disjoint-long-warmup.log",
+      "destination": "disjoint-long-warmup/console.log",
+      "bytes": 5501,
+      "sha256": "403a5890b4d7219297c3a7446ada100a012f8e0f2851f222fd0e9e8d0ec688ca"
+    },
+    {
+      "source": "sparse-integrated-jmh-disjoint-long-warmup-full.log",
+      "destination": "disjoint-long-warmup/full-console.log",
+      "bytes": 24508,
+      "sha256": "4e7fc7ec38a247c46556ed8a8c2b27acb972083862993d6f403cc6b9886d96fe"
+    },
+    {
+      "source": "target/sparse-integrated-jmh-commands.json",
+      "destination": "commands.json",
+      "bytes": 4860,
+      "sha256": "3f7043c555dd9ac6f104bcc65249f76ffbe600ed13b73c750c4a0e4abf98749c"
+    }
+  ]
+}

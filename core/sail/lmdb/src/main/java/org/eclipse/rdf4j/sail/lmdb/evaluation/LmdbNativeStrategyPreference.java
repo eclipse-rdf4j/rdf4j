@@ -299,6 +299,7 @@ final class LmdbNativeStrategyPreference {
 		return switch (family) {
 		case LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
 				LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE,
+				LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE,
 				LmdbNativeAttemptMetrics.PATH_ADAPTIVE_FILTER_PLACEMENT, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
 				LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, LmdbNativeCensusAggregate.PATH,
 				LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM, LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM,

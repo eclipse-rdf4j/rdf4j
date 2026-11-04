@@ -510,8 +510,14 @@ final class NativeAggregateCostQuotes {
 			evidence = evidence
 					.withMissingProof("FULL GROUP_CONCAT additional text materialization/copy work is unproved");
 		}
-		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(legacy.variantKey(),
-				LmdbNativeCostVector.builder().add(OPEN, 1D).build(),
+		// A fully materializing producer pays its complete contraction, storage and output preparation even when
+		// a downstream LIMIT consumes one row. Streaming producers retain their existing incremental quote.
+		LmdbNativeCostVector startup = actual != null && actual.producer() != null
+				&& actual.producer().blocksBeforeOutput() ? operations
+						: LmdbNativeCostVector.builder().add(OPEN, 1D).build();
+		LmdbNativePhysicalVariantKey variantKey = producerWork == null ? legacy.variantKey()
+				: actual.producer().variantKey(legacy.variantKey(), producerWork);
+		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(variantKey, startup,
 				operations, outputExpected, dependency ? 1D : legacy.structuralUncertainty(), evidence);
 		NativeAggregatePhysicalPlan.ColdAnchor anchor = producerWork == null ? null
 				: actual.producer().coldAnchor(row, producerWork);

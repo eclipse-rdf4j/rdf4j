@@ -1,0 +1,24 @@
+{
+  "status": "completed final longer-warmup disjoint control",
+  "copied_at_utc": "2026-11-04T21:30:31.318299+00:00",
+  "files": [
+    {
+      "source": "target/sparse-integrated-jmh-disjoint-long-warmup.json",
+      "destination": "results.json",
+      "bytes": 4953,
+      "sha256": "1f15b28c02071e2f65087a8c855bc936d35c358db1c44aa2bd40df16318e0927"
+    },
+    {
+      "source": "sparse-integrated-jmh-disjoint-long-warmup.log",
+      "destination": "console.log",
+      "bytes": 5501,
+      "sha256": "403a5890b4d7219297c3a7446ada100a012f8e0f2851f222fd0e9e8d0ec688ca"
+    },
+    {
+      "source": "sparse-integrated-jmh-disjoint-long-warmup-full.log",
+      "destination": "full-console.log",
+      "bytes": 24508,
+      "sha256": "4e7fc7ec38a247c46556ed8a8c2b27acb972083862993d6f403cc6b9886d96fe"
+    }
+  ]
+}

@@ -529,6 +529,43 @@ class LmdbNativeAdaptiveArbitrationTest {
 				"a confirmed slower parallel arm must settle until the regime changes");
 	}
 
+	@Test
+	void unmeasuredSparseAggregateReceivesBoundedTrialDespitePessimisticFamilyEvidence() {
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel();
+		LmdbNativeAdaptiveCostModel model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+		LmdbNativeAdaptiveArbitration.Priced<String> incumbent = pricedWithCompletions(
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 0,
+				80_000_000, 100_000_000, 130_000_000, 6);
+		LmdbNativeAdaptiveArbitration.Priced<String> sparse = pricedWithFamilyEvidence(
+				LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE, 1,
+				300_000_000, 500_000_000, 800_000_000);
+		LmdbNativeProbeConfig config = LmdbNativeProbeConfig.defaults();
+		long deadline = Math.min(config.maxDeadlineNanos(),
+				Math.min((long) (incumbent.prediction().expectedNanos() / config.gamma()),
+						(long) (incumbent.prediction().expectedNanos() * config.maxSlowdownFraction())));
+		assertTrue(sparse.prediction().low95Nanos() > deadline,
+				"the family-only quote would reject an optional probe before sparse earns its own timing");
+		store.safetyLedger().earn(1_000_000_000_000L);
+
+		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<String> probe = LmdbNativeAdaptiveArbitration.maybeProbe(
+				List.of(incumbent, sparse), incumbent, model,
+				new LmdbNativeAdaptiveArbitration.ProbeContext(config, new LmdbNativeQueryProbeBudget(), true));
+
+		assertTrue(probe != null,
+				"an unmeasured sparse aggregate must receive the bounded specialist trial despite family-only timing");
+		try {
+			assertSame(sparse.candidate(), probe.trial());
+			assertSame(incumbent.candidate(), probe.fallback(),
+					"the exactly measured IR winner remains available when the sparse trial cannot finish");
+			assertEquals(deadline, probe.deadlineNanos(),
+					"specialist enrollment must preserve the useful, relative-slowdown and absolute deadline caps");
+		} finally {
+			probe.reservation().refund();
+			store.probeScheduler().probeAbandoned(probe.flight());
+		}
+	}
+
 	/** The named specialist matrix is explored under a deadline with the known winner retained as fallback. */
 	@Test
 	void specialistFamiliesReceiveMandatoryBoundedTrialsWithFallback() {

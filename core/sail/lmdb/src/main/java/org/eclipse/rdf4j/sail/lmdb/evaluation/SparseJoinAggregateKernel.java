@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime.MemoryAccoun
  */
 final class SparseJoinAggregateKernel {
 
-	private static final int BATCH_SIZE = 256;
+	static final int BATCH_SIZE = 256;
 
 	/**
 	 * Caller-owned adjacency cursor. Row keys are unique. Within a row, neighbor IDs are unsigned ordered; repeated

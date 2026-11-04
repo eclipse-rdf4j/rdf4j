@@ -136,7 +136,7 @@ public final class LmdbNativeForceableStrategies {
 		d.put(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
 				"Aggregation answered directly from the in-memory adjacency index.");
 		d.put(LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE,
-				"Opt-in sparse multiplication of two predicate planes for grouped COUNT.");
+				"Weighted sparse multiplication of two predicate planes for grouped COUNT, selected by the native planner.");
 		d.put(LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION,
 				"Aggregation answered structurally from an EXISTS-style set intersection.");
 		d.put(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS, "GROUP BY answered via prefix-run enumeration.");

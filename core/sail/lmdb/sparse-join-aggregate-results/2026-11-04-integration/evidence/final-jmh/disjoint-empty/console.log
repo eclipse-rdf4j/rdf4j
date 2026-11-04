@@ -1,0 +1,116 @@
+Maven packaging skipped by --no-build.
+Running benchmark with jar /workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar
+# JMH version: 1.37
+# VM version: JDK 25.0.5, OpenJDK 64-Bit Server VM, 25.0.5+8-LTS
+# VM invoker: /workspace/scratch/0c324f9a00f9/review-tools/jdk-25.0.5+8/bin/java
+# VM options: -Xms1G -Xmx3G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery
+# Parameters: (blocks = 1, count = bound, distribution = uniform, endpoints = 256, fanout = 8, having = empty, joinKeys = 512, leftFanout = 0, multiplicity = 1, overlap = 0, parallel = false, rightFanout = 0, strategy = autoDisabled)
+# Run progress: 0.00% complete, ETA 00:00:48
+# Fork: 1 of 2
+# Warmup Iteration   1: 05:22:42,730 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+6.492 ms/op
+# Warmup Iteration   2: 4.231 ms/op
+# Warmup Iteration   3: 3.058 ms/op
+Iteration   1: 2.117 ms/op
+Iteration   2: 1.919 ms/op
+Iteration   3: 1.599 ms/op
+Iteration   4: 1.340 ms/op
+Iteration   5: 1.071 ms/op
+# Run progress: 16.67% complete, ETA 00:00:49
+# Fork: 2 of 2
+# Warmup Iteration   1: 05:22:52,611 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+6.072 ms/op
+# Warmup Iteration   2: 3.916 ms/op
+# Warmup Iteration   3: 3.051 ms/op
+Iteration   1: 2.434 ms/op
+Iteration   2: 1.766 ms/op
+Iteration   3: 1.413 ms/op
+Iteration   4: 1.224 ms/op
+Iteration   5: 1.062 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery":
+  1.595 ±(99.9%) 0.695 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25.0.5, OpenJDK 64-Bit Server VM, 25.0.5+8-LTS
+# VM invoker: /workspace/scratch/0c324f9a00f9/review-tools/jdk-25.0.5+8/bin/java
+# VM options: -Xms1G -Xmx3G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery
+# Parameters: (blocks = 1, count = bound, distribution = uniform, endpoints = 256, fanout = 8, having = empty, joinKeys = 512, leftFanout = 0, multiplicity = 1, overlap = 0, parallel = false, rightFanout = 0, strategy = auto)
+# Run progress: 33.33% complete, ETA 00:00:39
+# Fork: 1 of 2
+# Warmup Iteration   1: 05:23:02,548 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+11.021 ms/op
+# Warmup Iteration   2: 6.164 ms/op
+# Warmup Iteration   3: 4.563 ms/op
+Iteration   1: 3.573 ms/op
+Iteration   2: 3.680 ms/op
+Iteration   3: 2.709 ms/op
+Iteration   4: 2.117 ms/op
+Iteration   5: 1.542 ms/op
+# Run progress: 50.00% complete, ETA 00:00:29
+# Fork: 2 of 2
+# Warmup Iteration   1: 05:23:12,542 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+8.949 ms/op
+# Warmup Iteration   2: 4.271 ms/op
+# Warmup Iteration   3: 3.238 ms/op
+Iteration   1: 2.906 ms/op
+Iteration   2: 2.295 ms/op
+Iteration   3: 1.851 ms/op
+Iteration   4: 1.578 ms/op
+Iteration   5: 1.441 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery":
+  2.369 ±(99.9%) 1.243 ms/op [Average]
+# JMH version: 1.37
+# VM version: JDK 25.0.5, OpenJDK 64-Bit Server VM, 25.0.5+8-LTS
+# VM invoker: /workspace/scratch/0c324f9a00f9/review-tools/jdk-25.0.5+8/bin/java
+# VM options: -Xms1G -Xmx3G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery
+# Parameters: (blocks = 1, count = bound, distribution = uniform, endpoints = 256, fanout = 8, having = empty, joinKeys = 512, leftFanout = 0, multiplicity = 1, overlap = 0, parallel = false, rightFanout = 0, strategy = sparseJoinAggregate)
+# Run progress: 66.67% complete, ETA 00:00:19
+# Fork: 1 of 2
+# Warmup Iteration   1: 05:23:22,587 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+10.241 ms/op
+# Warmup Iteration   2: 6.643 ms/op
+# Warmup Iteration   3: 5.207 ms/op
+Iteration   1: 5.137 ms/op
+Iteration   2: 3.613 ms/op
+Iteration   3: 2.834 ms/op
+Iteration   4: 2.336 ms/op
+Iteration   5: 2.733 ms/op
+# Run progress: 83.33% complete, ETA 00:00:10
+# Fork: 2 of 2
+# Warmup Iteration   1: 05:23:33,031 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+10.013 ms/op
+# Warmup Iteration   2: 7.039 ms/op
+# Warmup Iteration   3: 5.816 ms/op
+Iteration   1: 4.034 ms/op
+Iteration   2: 4.120 ms/op
+Iteration   3: 3.781 ms/op
+Iteration   4: 3.162 ms/op
+Iteration   5: 2.305 ms/op
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery":
+  3.405 ±(99.9%) 1.360 ms/op [Average]
+# Run complete. Total time: 00:01:00
+Benchmark                                   (blocks)  (count)  (distribution)  (endpoints)  (fanout)  (having)  (joinKeys)  (leftFanout)  (multiplicity)  (overlap)  (parallel)  (rightFanout)           (strategy)  Mode  Cnt  Score   Error  Units
+SparseJoinAggregateBenchmark.completeQuery         1    bound         uniform          256         8     empty         512             0               1          0       false              0         autoDisabled  avgt   10  1.595 ± 0.695  ms/op
+SparseJoinAggregateBenchmark.completeQuery         1    bound         uniform          256         8     empty         512             0               1          0       false              0                 auto  avgt   10  2.369 ± 1.243  ms/op
+SparseJoinAggregateBenchmark.completeQuery         1    bound         uniform          256         8     empty         512             0               1          0       false              0  sparseJoinAggregate  avgt   10  3.405 ± 1.360  ms/op
+Benchmark result is saved to target/sparse-integrated-jmh-disjoint-empty.json

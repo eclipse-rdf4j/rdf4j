@@ -37,8 +37,22 @@ class SparseJoinAggregateAdmissionTest {
 
 	@Test
 	void executesForcedSparseJoinAggregateThroughSparql(@TempDir Path directory) {
+		executesSparseJoinAggregate(directory, "true");
+	}
+
+	@Test
+	void executesSparseJoinAggregateWithoutFeatureOptIn(@TempDir Path directory) {
+		executesSparseJoinAggregate(directory, null);
+	}
+
+	private static void executesSparseJoinAggregate(Path directory, String configured) {
 		String property = "rdf4j.lmdb.sparseJoinAggregate.enabled";
-		String previous = System.setProperty(property, "true");
+		String previous = System.getProperty(property);
+		if (configured == null) {
+			System.clearProperty(property);
+		} else {
+			System.setProperty(property, configured);
+		}
 		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)

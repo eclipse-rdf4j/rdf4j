@@ -1,0 +1,985 @@
+{
+  "status": "historical pre-capacity-fix evidence; not final verification or performance",
+  "copied_at_utc": "2026-11-04T21:11:16.782057+00:00",
+  "repository_head": "03a16b126371ff8cc523c7b68ee1f875d867f298",
+  "files": [
+    {
+      "source": "target/sparse-default-symmetric/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/automatic-comparison.csv",
+      "bytes": 4280,
+      "sha256": "f283f8e792fed81a041e1e4e653687f09cd3a599a787207f592a1878f437ffea"
+    },
+    {
+      "source": "target/sparse-default-symmetric/commands.sh",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/commands.sh",
+      "bytes": 1016,
+      "sha256": "90abc8958a2de062808bc82a369937e497ecd7d6ae70c2271fe7c7e3af23b061"
+    },
+    {
+      "source": "target/sparse-default-symmetric/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/comparison.csv",
+      "bytes": 11528,
+      "sha256": "fc1ec145bca603d4fff35dbcf873798a1b02f0d4cb1c0e66cdd715a72ff63533"
+    },
+    {
+      "source": "target/sparse-default-symmetric/environment.txt",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/environment.txt",
+      "bytes": 7823,
+      "sha256": "330f8d904cad65b3ab0a8509ed3cf08cca436238ce24d5332eb0419709fd9046"
+    },
+    {
+      "source": "target/sparse-default-symmetric/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/fork-0.csv",
+      "bytes": 88234,
+      "sha256": "ab5b806218639fcc08854f313fbd6abb3f94c8bb0a8ccd9c4d13c80a2e204e6e"
+    },
+    {
+      "source": "target/sparse-default-symmetric/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/fork-0.log",
+      "bytes": 38171,
+      "sha256": "bccded70f42500c27c35bfcc63432347bf3592ca1a917c3432b7e53d82d0bd53"
+    },
+    {
+      "source": "target/sparse-default-symmetric/fork-1.csv",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/fork-1.csv",
+      "bytes": 88012,
+      "sha256": "cc00dcc97aecaade5abf693469c931fcf07fc1fa82b62bd2ca416d526a265ba8"
+    },
+    {
+      "source": "target/sparse-default-symmetric/fork-1.log",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/fork-1.log",
+      "bytes": 37868,
+      "sha256": "48d47521a17a37c33b13f62eb0a5d74606ba93f25c7f728d71646c0b6f455982"
+    },
+    {
+      "source": "target/sparse-default-symmetric/summary.csv",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/summary.csv",
+      "bytes": 12248,
+      "sha256": "25c8887cb74844bba5924a3b768688bef9d93d943f188078e45526a7a305a8a7"
+    },
+    {
+      "source": "target/sparse-default-symmetric/summary.md",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/summary.md",
+      "bytes": 7066,
+      "sha256": "0ceb0d2f20a8996b1fbe2d2e0600f04739283a4c8c1efc86ebb732ada2838d1c"
+    },
+    {
+      "source": "target/sparse-default-symmetric/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-initial/symmetric/working-tree.patch",
+      "bytes": 162508,
+      "sha256": "3cf756f94f7118f475f2fe181c14af23d48fde30e20bb556ab3efd7d4c910cdc"
+    },
+    {
+      "source": "sparse-default-symmetric.log",
+      "destination": "evidence/pre-capacity-fix-initial/driver-logs/symmetric.log",
+      "bytes": 76143,
+      "sha256": "ca1399ab2b4436a4f21c878e4fb6f27ccf32e7b6d1d2434beb5941776e4dba2a"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/automatic-comparison.csv",
+      "bytes": 2499,
+      "sha256": "160ccc0b56ce206d128e89d42377b7da8de533fdb6132f482a79856b510b8b11"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/commands.sh",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/commands.sh",
+      "bytes": 994,
+      "sha256": "df09e6f8655831e06b7f819e0b927ad67b68accfbf48d0de2528754bd613ffce"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/comparison.csv",
+      "bytes": 5782,
+      "sha256": "34124f4feb98c27cc1712aaaf8677e0bd1a9e983a77c53dd665310cc6abe85be"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/environment.txt",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/environment.txt",
+      "bytes": 7856,
+      "sha256": "08a8857ae9ae7db4a2af9a727e51c3a303480596678ccc6c2ea8f92b5a226b22"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/fork-0.csv",
+      "bytes": 36958,
+      "sha256": "07c8d4d3921938d76831b74702d56d075246c66395ba5f030a1c4fbdbe46b193"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/fork-0.log",
+      "bytes": 17748,
+      "sha256": "38664e476f86a5f43407892f18523aa1c54cbac9da38a54d718be5704b5d671b"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/fork-1.csv",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/fork-1.csv",
+      "bytes": 38196,
+      "sha256": "e49ea2e58fe610d4e9492996c488993ae737f0efa668e54117ce622f9f6c6ea7"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/fork-1.log",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/fork-1.log",
+      "bytes": 18977,
+      "sha256": "64a7f788a3232cad1c0f9d3dfe038181a7d90b81fcaaee7b3c8f8bfe37f0a38e"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/summary.csv",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/summary.csv",
+      "bytes": 6090,
+      "sha256": "5b2e3e20e034779a54455b97a1c7406aed1b803787e7bd83163bd4bbc6c73e43"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/summary.md",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/summary.md",
+      "bytes": 4491,
+      "sha256": "24e3e6204df0f8bb2e5632c8c843712dad97708752a3edeba8150b00dc410997"
+    },
+    {
+      "source": "target/sparse-default-asymmetric/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-initial/asymmetric/working-tree.patch",
+      "bytes": 162508,
+      "sha256": "3cf756f94f7118f475f2fe181c14af23d48fde30e20bb556ab3efd7d4c910cdc"
+    },
+    {
+      "source": "sparse-default-asymmetric.log",
+      "destination": "evidence/pre-capacity-fix-initial/driver-logs/asymmetric.log",
+      "bytes": 36830,
+      "sha256": "41d1d21a3f84732ff33da2040d2b422c56dab7833828a95fd4eeb8208299cc8c"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/automatic-comparison.csv",
+      "bytes": 3864,
+      "sha256": "b731fa66b5f0f34913ccd15624830fc0038c4c7a327c184a01a7c7b0adf6e34b"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/commands.sh",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/commands.sh",
+      "bytes": 1052,
+      "sha256": "945e9912a982dfe3a08b13ccd3e9cf3d9b00ab1917e1050782b26e545698a51d"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/comparison.csv",
+      "bytes": 8732,
+      "sha256": "17150e60f9575a4d6c76ed0b18eb85518d5a5a5bb51687668d3e3f599db4699c"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/environment.txt",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/environment.txt",
+      "bytes": 7891,
+      "sha256": "64ba56c031ced289b0ef054c5f2a12409b2006e9fc13b022689abb2ac8149881"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/fork-0.csv",
+      "bytes": 63991,
+      "sha256": "c4de8a0ad962c1e6e8da39a0cd883da1e757b15898b4ecbc8994ed28d2072bc5"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/fork-0.log",
+      "bytes": 28633,
+      "sha256": "629cda556a34e5bb60a3e252aabedfbba97fdfcea8975451c997f6880c5589e5"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/fork-1.csv",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/fork-1.csv",
+      "bytes": 63943,
+      "sha256": "eddf15d608283cd8b4e4c8baa113769b86786db03081b18f88785564966adec7"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/fork-1.log",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/fork-1.log",
+      "bytes": 28603,
+      "sha256": "25b5034467c644b1ccb6d77e143f6b53f23276dbc53d471fdab06839392857a4"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/summary.csv",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/summary.csv",
+      "bytes": 9192,
+      "sha256": "1bb666c08ec019dd6402bb2f27bfde63c980f7c915c635dc01a8d6e7798c80ed"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/summary.md",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/summary.md",
+      "bytes": 5459,
+      "sha256": "085e97e5d4ce54192c6967bd67844c7925786a7021ff0efa92679a260271e31a"
+    },
+    {
+      "source": "target/sparse-default-hot-weighted/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-initial/hot-weighted/working-tree.patch",
+      "bytes": 162508,
+      "sha256": "3cf756f94f7118f475f2fe181c14af23d48fde30e20bb556ab3efd7d4c910cdc"
+    },
+    {
+      "source": "sparse-default-hot-weighted.log",
+      "destination": "evidence/pre-capacity-fix-initial/driver-logs/hot-weighted.log",
+      "bytes": 57343,
+      "sha256": "c46fa94f8e0a483f730dfc52045b79cc9e24f9ccad1dbe38e58f53a3d4b0246a"
+    },
+    {
+      "source": "target/sparse-default-overlap/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/automatic-comparison.csv",
+      "bytes": 3362,
+      "sha256": "479728d050d11e7204128740dfc41f647ccd04a156a12547637ad5b75835a327"
+    },
+    {
+      "source": "target/sparse-default-overlap/commands.sh",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/commands.sh",
+      "bytes": 1022,
+      "sha256": "d951afa27bdb9d927e6505c01e7132552762e69af351701d1150f4c6dc87c123"
+    },
+    {
+      "source": "target/sparse-default-overlap/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/comparison.csv",
+      "bytes": 8143,
+      "sha256": "0a21c63124bd0cb62e1decac29c2aaf8d8d3a54cf667e3c9d02de19fc352a3b9"
+    },
+    {
+      "source": "target/sparse-default-overlap/environment.txt",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/environment.txt",
+      "bytes": 7921,
+      "sha256": "7ce70d702977e9c6f55345eac0b1af3beb7ce9326758b99636fab375144f9fda"
+    },
+    {
+      "source": "target/sparse-default-overlap/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/fork-0.csv",
+      "bytes": 56059,
+      "sha256": "19247b25084bc8337cf69fbffb578ce46e26f17005a9cb2c93fbe6e77f8352de"
+    },
+    {
+      "source": "target/sparse-default-overlap/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/fork-0.log",
+      "bytes": 25662,
+      "sha256": "f89be0bdded5157d3714df61a1fa6291a223e3c9d8e0dc89c37991205c102d09"
+    },
+    {
+      "source": "target/sparse-default-overlap/fork-1.csv",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/fork-1.csv",
+      "bytes": 58751,
+      "sha256": "d1ae3980df64a134c7e6e9989277e8ac1a6fc47979b27a84bb344e2227a3b1a5"
+    },
+    {
+      "source": "target/sparse-default-overlap/fork-1.log",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/fork-1.log",
+      "bytes": 26823,
+      "sha256": "eb4f252d75856d32090ddef0e332ec7e14ab85ef579350c345e6a72a0474f314"
+    },
+    {
+      "source": "target/sparse-default-overlap/summary.csv",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/summary.csv",
+      "bytes": 8524,
+      "sha256": "05dcec692c45572ad8c300e1d4a55f5849708195b4fd7050c73cc4379f01e7d5"
+    },
+    {
+      "source": "target/sparse-default-overlap/summary.md",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/summary.md",
+      "bytes": 5380,
+      "sha256": "07a98e5657fb100dc2f98523958b5ad7e08f115f358d55446f86411cb90cb58b"
+    },
+    {
+      "source": "target/sparse-default-overlap/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-initial/overlap/working-tree.patch",
+      "bytes": 162508,
+      "sha256": "3cf756f94f7118f475f2fe181c14af23d48fde30e20bb556ab3efd7d4c910cdc"
+    },
+    {
+      "source": "sparse-default-overlap.log",
+      "destination": "evidence/pre-capacity-fix-initial/driver-logs/overlap.log",
+      "bytes": 52587,
+      "sha256": "a2684039d7eebd62bf26a15966b83dbf603de857d3be0a5c85e38b26df627f48"
+    },
+    {
+      "source": "target/sparse-default-parallel/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/automatic-comparison.csv",
+      "bytes": 1485,
+      "sha256": "524071e9d8412257ae6ef962f53de88c4fa4ec99192d7e5befa171add348af37"
+    },
+    {
+      "source": "target/sparse-default-parallel/commands.sh",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/commands.sh",
+      "bytes": 1006,
+      "sha256": "db7402c162497ab64de82adf8bb6cc01880d266c61fecf9ed158cf07229321fe"
+    },
+    {
+      "source": "target/sparse-default-parallel/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/comparison.csv",
+      "bytes": 3122,
+      "sha256": "e949890c8d141ecad9f6a6210ac0c21704a76b4d08992c3120db6986b01c955c"
+    },
+    {
+      "source": "target/sparse-default-parallel/environment.txt",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/environment.txt",
+      "bytes": 7951,
+      "sha256": "6710ab64a49a381ad9bde1538e9dbf7c1a95e55392d60989c20bc84ac19fd972"
+    },
+    {
+      "source": "target/sparse-default-parallel/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/fork-0.csv",
+      "bytes": 21343,
+      "sha256": "28094e4cf0df26d8babcf64c842f6e0acc61e17173fa82ab8c3623e1d54f605a"
+    },
+    {
+      "source": "target/sparse-default-parallel/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/fork-0.log",
+      "bytes": 12014,
+      "sha256": "f527d39b21475cac89f501bae934793addcbb37f5afb5e1cad363c768381049b"
+    },
+    {
+      "source": "target/sparse-default-parallel/fork-1.csv",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/fork-1.csv",
+      "bytes": 18474,
+      "sha256": "deaf9d4c72584354be950a1c253562e1ff4a2b5bc9ed4713f16e09b8d0545ce7"
+    },
+    {
+      "source": "target/sparse-default-parallel/fork-1.log",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/fork-1.log",
+      "bytes": 10780,
+      "sha256": "eab66e463130061ce90ac23bbea04aab5ad906746a20ed8d4f5c1b9f9f5913db"
+    },
+    {
+      "source": "target/sparse-default-parallel/summary.csv",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/summary.csv",
+      "bytes": 3215,
+      "sha256": "800bf7b06ff2b646f5ff92db9640cc657fa8be576746b992dc4d71ca931a9cba"
+    },
+    {
+      "source": "target/sparse-default-parallel/summary.md",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/summary.md",
+      "bytes": 3409,
+      "sha256": "91f9d219b5c09827340e882be0e785b9b0128e11cd0cc299956d19f27917c448"
+    },
+    {
+      "source": "target/sparse-default-parallel/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-initial/parallel/working-tree.patch",
+      "bytes": 162508,
+      "sha256": "3cf756f94f7118f475f2fe181c14af23d48fde30e20bb556ab3efd7d4c910cdc"
+    },
+    {
+      "source": "sparse-default-parallel.log",
+      "destination": "evidence/pre-capacity-fix-initial/driver-logs/parallel.log",
+      "bytes": 22897,
+      "sha256": "51267b0ae9ce214c874a7be76e8f3b7903887b19d586888d309b34956f86bd76"
+    },
+    {
+      "source": "target/sparse-default-suite-commands.json",
+      "destination": "evidence/pre-capacity-fix-initial/suite-commands.json",
+      "bytes": 2228,
+      "sha256": "0381d86def417292837c7b96e889b961ca8fff749e01b085f0ba0f20d9994805"
+    },
+    {
+      "source": "target/sparse-final-symmetric/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/automatic-comparison.csv",
+      "bytes": 4940,
+      "sha256": "5d15fc5c78ebd1c30a23cbd017bd4cfeef460456dd5383803f369b052b359ab6"
+    },
+    {
+      "source": "target/sparse-final-symmetric/commands.sh",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/commands.sh",
+      "bytes": 1012,
+      "sha256": "401866dcc991e780591c614ab10ba646823d0796d7af14778ae8ceec3378f5c2"
+    },
+    {
+      "source": "target/sparse-final-symmetric/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/comparison.csv",
+      "bytes": 12115,
+      "sha256": "2cf779fb8641aa275a564eea9b3d5c432d5be2004c60b396e0349c5586fded0f"
+    },
+    {
+      "source": "target/sparse-final-symmetric/environment.txt",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/environment.txt",
+      "bytes": 8383,
+      "sha256": "169f6f6336f588af11c27e3367518422ab159d668fd3a3b7124c8d20ff4b7bd7"
+    },
+    {
+      "source": "target/sparse-final-symmetric/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/fork-0.csv",
+      "bytes": 88210,
+      "sha256": "d9597fb2a64fea60f8d05e5b3849e805ddc231eaeb5ed67b061628161af0e477"
+    },
+    {
+      "source": "target/sparse-final-symmetric/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/fork-0.log",
+      "bytes": 38169,
+      "sha256": "1e6088a714973e169b9bac8ef5d5f12b3302de3aa668615653a9a2376145e6ac"
+    },
+    {
+      "source": "target/sparse-final-symmetric/fork-1.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/fork-1.csv",
+      "bytes": 89656,
+      "sha256": "3ac445318f49144ac2e3ca89b3eec07ab936b77f4123e38a90972fe9f1424045"
+    },
+    {
+      "source": "target/sparse-final-symmetric/fork-1.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/fork-1.log",
+      "bytes": 37860,
+      "sha256": "8170b9f20fa4e196a5ad9885e1048f16e00150eaec75d13a284eda8c0285b9c2"
+    },
+    {
+      "source": "target/sparse-final-symmetric/summary.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/summary.csv",
+      "bytes": 12899,
+      "sha256": "e7b0820150e43305cf9dea062436f40c8a9cf05cf8907cb7269c22ba5ba9e843"
+    },
+    {
+      "source": "target/sparse-final-symmetric/summary.md",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/summary.md",
+      "bytes": 7065,
+      "sha256": "4f85dc8f8d5233ce984fe98cfa6a1258203d2dd5f9781734f1659d795866051d"
+    },
+    {
+      "source": "target/sparse-final-symmetric/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-provisional-final/symmetric/working-tree.patch",
+      "bytes": 178298,
+      "sha256": "498cdf5edefcf217ba63e05f8efec66777e64ff8c6f1e73c301187016b4c3dbb"
+    },
+    {
+      "source": "sparse-final-symmetric.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/driver-logs/symmetric.log",
+      "bytes": 76131,
+      "sha256": "ccaa1a6cefa4ec724c6034e2ae1c4f4c1a611b15b0496bd356e20964123ee4df"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/automatic-comparison.csv",
+      "bytes": 2285,
+      "sha256": "2b9484ddc1f2881f3f8a8d1c8522991b1b6476e3f646f5adcd2bf5a183fdfe96"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/commands.sh",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/commands.sh",
+      "bytes": 990,
+      "sha256": "da3cfbac9ea337255a6b537f986599c38d7837351edef70e13607d63bd276450"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/comparison.csv",
+      "bytes": 5571,
+      "sha256": "5a824b1c3f6687e1f5ad9bbdc7c18fcd9017e13de29c0e54522e2deef56c37f3"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/environment.txt",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/environment.txt",
+      "bytes": 8414,
+      "sha256": "d9a031179b11326bbaeba8f49c7764efff5cc58b717819d33a68a95926c83a64"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/fork-0.csv",
+      "bytes": 37164,
+      "sha256": "e4f45cd4b44cc90c81c7bbfecdd5ae738aadc60d95b8bec09ba1a1d233037b48"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/fork-0.log",
+      "bytes": 17773,
+      "sha256": "7133fe325111692c7f32b6305efc5d61cd18e0e0c6e25b29d7c8c66ebad7c2ea"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/fork-1.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/fork-1.csv",
+      "bytes": 37394,
+      "sha256": "30c2f1421e407741d149eea2c790428c0a8bf42db197f681b19855e06b6e4655"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/fork-1.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/fork-1.log",
+      "bytes": 18186,
+      "sha256": "1e171c35df16581eee85436f2007ac7ab7bcbb1f7fa81a9134008eb41eed18cd"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/summary.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/summary.csv",
+      "bytes": 5881,
+      "sha256": "bd29c4793ad3d58a9f76fccd19b340f0fe0563a0f38865b7df06e30ab0d37a9a"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/summary.md",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/summary.md",
+      "bytes": 4491,
+      "sha256": "48ba0ecfd9ac8cc6ab1937997b186be3ebe00a1b87d36c10e78016d1d3d83eaa"
+    },
+    {
+      "source": "target/sparse-final-asymmetric/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-provisional-final/asymmetric/working-tree.patch",
+      "bytes": 178298,
+      "sha256": "498cdf5edefcf217ba63e05f8efec66777e64ff8c6f1e73c301187016b4c3dbb"
+    },
+    {
+      "source": "sparse-final-asymmetric.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/driver-logs/asymmetric.log",
+      "bytes": 36062,
+      "sha256": "f3a522696debe3cd9284aa4d49dd89ad0f2f52f0b2c5bc420aa5949d3ea4b020"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/automatic-comparison.csv",
+      "bytes": 3900,
+      "sha256": "5e66b2a54f99dbcb375d0d3c3966cd7dbd04c53e4a64c017f22eb3c9fc9db2c7"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/commands.sh",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/commands.sh",
+      "bytes": 1048,
+      "sha256": "1196bde29a0086327113975753848f948b4f017e16c4c42680a8e6b92c3e7950"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/comparison.csv",
+      "bytes": 8807,
+      "sha256": "7640709a448fc09c9b2d283b372f9ff65c4f459d56f6c47c03ce965d3b9d3856"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/environment.txt",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/environment.txt",
+      "bytes": 8447,
+      "sha256": "5865920a1d899923a08b62e34ac4fcfb982f7b687f676e7ad2c02ed276dc6c13"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/fork-0.csv",
+      "bytes": 64008,
+      "sha256": "ee8b847ac7dd4e26159dbc0a919aa88804b4f1b51bc3de6979d8fa84cbde3be2"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/fork-0.log",
+      "bytes": 28640,
+      "sha256": "0b620f30efc3476ed71b8402b391404e185daed726f17a21cbd271b0ac3f72ad"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/fork-1.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/fork-1.csv",
+      "bytes": 63937,
+      "sha256": "0fd56c9604bab69143092ec70cba63c5717982b0410951df16184f42b4202894"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/fork-1.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/fork-1.log",
+      "bytes": 28603,
+      "sha256": "b819d6144796b045be4d5bcdbd8cb10696830a0da327a1616db654b9eedaa5ca"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/summary.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/summary.csv",
+      "bytes": 9256,
+      "sha256": "424fb08f684acf43dae1f1b2bef7ceff711d3b803a85332987c750c8a050c716"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/summary.md",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/summary.md",
+      "bytes": 5454,
+      "sha256": "82006d9138df2827e4639068b52b51358e983e4ce62d1b0b2809719fa613f313"
+    },
+    {
+      "source": "target/sparse-final-hot-weighted/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-provisional-final/hot-weighted/working-tree.patch",
+      "bytes": 178298,
+      "sha256": "498cdf5edefcf217ba63e05f8efec66777e64ff8c6f1e73c301187016b4c3dbb"
+    },
+    {
+      "source": "sparse-final-hot-weighted.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/driver-logs/hot-weighted.log",
+      "bytes": 57348,
+      "sha256": "86de5d4efeecb173979fe600c20cdc37afe74e742040732013d73fdfde55c747"
+    },
+    {
+      "source": "target/sparse-final-overlap/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/automatic-comparison.csv",
+      "bytes": 3935,
+      "sha256": "a73d339eb2cd5ba9fded57adc47859c0271ac69d389faae20226a5ceceb7673a"
+    },
+    {
+      "source": "target/sparse-final-overlap/commands.sh",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/commands.sh",
+      "bytes": 1018,
+      "sha256": "3e5100f0cf8d57e922b82b5ca9ed28b3dcd01506723e2fdc20a622238245da6d"
+    },
+    {
+      "source": "target/sparse-final-overlap/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/comparison.csv",
+      "bytes": 8705,
+      "sha256": "352b54b1bd7dbf801af26c7c5d5fac6345c8ee34240afa6091fff72e4fbf86ad"
+    },
+    {
+      "source": "target/sparse-final-overlap/environment.txt",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/environment.txt",
+      "bytes": 8475,
+      "sha256": "3ac075c12bf03361d34201677aa648e1ddf6eb12b70101c0047be535879b9671"
+    },
+    {
+      "source": "target/sparse-final-overlap/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/fork-0.csv",
+      "bytes": 56653,
+      "sha256": "77ce11be8fd1ece71ace45a2cb39a2794ac7ec0a5af6a153d001c22fdc27ad19"
+    },
+    {
+      "source": "target/sparse-final-overlap/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/fork-0.log",
+      "bytes": 26066,
+      "sha256": "5dd38720b827120760e0299b1cf8c3c5fc213b25a728ff099877c1b5821adbe1"
+    },
+    {
+      "source": "target/sparse-final-overlap/fork-1.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/fork-1.csv",
+      "bytes": 64599,
+      "sha256": "58543773ee5ca0f2b837413a6bc8f02d1ec31560fa4c82c368a2cfda47b45510"
+    },
+    {
+      "source": "target/sparse-final-overlap/fork-1.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/fork-1.log",
+      "bytes": 29256,
+      "sha256": "fcacf8e6320fdb693da300737149142fab581c6f69b2763aacadb377d0eb7da2"
+    },
+    {
+      "source": "target/sparse-final-overlap/summary.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/summary.csv",
+      "bytes": 9069,
+      "sha256": "34703dabaa345b8229daa2afc8f4afc2ddffaba548d0f9684fa0861d0caa4528"
+    },
+    {
+      "source": "target/sparse-final-overlap/summary.md",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/summary.md",
+      "bytes": 5382,
+      "sha256": "bc061073aed78eca7211db8487345a8f0b6992d3b02f8059d62e5f5edad15ed5"
+    },
+    {
+      "source": "target/sparse-final-overlap/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-provisional-final/overlap/working-tree.patch",
+      "bytes": 178298,
+      "sha256": "498cdf5edefcf217ba63e05f8efec66777e64ff8c6f1e73c301187016b4c3dbb"
+    },
+    {
+      "source": "sparse-final-overlap.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/driver-logs/overlap.log",
+      "bytes": 55422,
+      "sha256": "a2bd80e61ab64a77a53dbbec6064338621c8e49f5c07b86c27229857290c6834"
+    },
+    {
+      "source": "target/sparse-final-parallel/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/automatic-comparison.csv",
+      "bytes": 1493,
+      "sha256": "130e0fe4e2d2fd9a372de7da4bfec615780c5bf8360dd98402c5a42e30107f7c"
+    },
+    {
+      "source": "target/sparse-final-parallel/commands.sh",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/commands.sh",
+      "bytes": 1002,
+      "sha256": "367f3934e0596033c17eac9dc8bd9e18f6c2f491350c9815df6f58f537509d78"
+    },
+    {
+      "source": "target/sparse-final-parallel/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/comparison.csv",
+      "bytes": 3134,
+      "sha256": "33fc38c327a7682a570a65fb6e6cd0a7bf1b7b79c1264dc099b28e3d2b3dc8f1"
+    },
+    {
+      "source": "target/sparse-final-parallel/environment.txt",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/environment.txt",
+      "bytes": 8503,
+      "sha256": "0b7689897a7d0db1e48596614d01c70f4bef83aed459ed2c7797c5067a58e65a"
+    },
+    {
+      "source": "target/sparse-final-parallel/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/fork-0.csv",
+      "bytes": 21364,
+      "sha256": "338587bc3be3856bcfa3d5262ddebf4155c8dbade4e0730e69d88b789fd718c1"
+    },
+    {
+      "source": "target/sparse-final-parallel/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/fork-0.log",
+      "bytes": 12014,
+      "sha256": "b31a620bd9412cb2f1dcca6110e8f2f050d07d8968c00025241dfb40a88ca775"
+    },
+    {
+      "source": "target/sparse-final-parallel/fork-1.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/fork-1.csv",
+      "bytes": 18470,
+      "sha256": "4b884203a2c417dab684d5f7f278d0df799fe27cb7020b777d0a3abc260a279e"
+    },
+    {
+      "source": "target/sparse-final-parallel/fork-1.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/fork-1.log",
+      "bytes": 10780,
+      "sha256": "0ada69dd6f6d1314b49206a2007facae4eaf3ae2ee587e3bd1804666be75b5a6"
+    },
+    {
+      "source": "target/sparse-final-parallel/summary.csv",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/summary.csv",
+      "bytes": 3230,
+      "sha256": "643dc44cf2a06c92a4d45ac8fd3dc3ba4c0f9ce2126b75b65aa51f40d64b7b9b"
+    },
+    {
+      "source": "target/sparse-final-parallel/summary.md",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/summary.md",
+      "bytes": 3409,
+      "sha256": "173d010d5f51e9f04eb9133102f3dba50d8993bbac774a8eb51a9ed8f7db6422"
+    },
+    {
+      "source": "target/sparse-final-parallel/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-provisional-final/parallel/working-tree.patch",
+      "bytes": 178298,
+      "sha256": "498cdf5edefcf217ba63e05f8efec66777e64ff8c6f1e73c301187016b4c3dbb"
+    },
+    {
+      "source": "sparse-final-parallel.log",
+      "destination": "evidence/pre-capacity-fix-provisional-final/driver-logs/parallel.log",
+      "bytes": 22895,
+      "sha256": "3a4d08f1de9582ebac2e2610b7795e566e94f9553107c6ee74fc50990903abeb"
+    },
+    {
+      "source": "target/sparse-final-suite-commands.json",
+      "destination": "evidence/pre-capacity-fix-provisional-final/suite-commands.json",
+      "bytes": 2218,
+      "sha256": "4d28a80092918ab163aadbe952efda0c80051c2f5140eae26cc1bbd9bde4d555"
+    },
+    {
+      "source": "target/sparse-generator-smoke/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-generator-smoke/automatic-comparison.csv",
+      "bytes": 14580,
+      "sha256": "4d68dec3a8e18f009c78e95405c0108a9e7ef27bb2f96d8956ad1440f6f7aaea"
+    },
+    {
+      "source": "target/sparse-generator-smoke/commands.sh",
+      "destination": "evidence/pre-capacity-fix-generator-smoke/commands.sh",
+      "bytes": 548,
+      "sha256": "7fdfde9f50038deebc032080ef9a1ec09e38f36ef72d90211b4d14b1ca3f03e4"
+    },
+    {
+      "source": "target/sparse-generator-smoke/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-generator-smoke/comparison.csv",
+      "bytes": 42360,
+      "sha256": "61d110c934e069237c3a6fbd5f6cc4ac3bc17adb0b7407533d41f0764626ef81"
+    },
+    {
+      "source": "target/sparse-generator-smoke/environment.txt",
+      "destination": "evidence/pre-capacity-fix-generator-smoke/environment.txt",
+      "bytes": 7791,
+      "sha256": "81724d0d0b10692ab8c2e19dfef5c183f034d12a4b4efae9866e13a15e0ca685"
+    },
+    {
+      "source": "target/sparse-generator-smoke/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-generator-smoke/fork-0.csv",
+      "bytes": 154145,
+      "sha256": "d76dc742f535f0e04eda239e01a940d779869cf115fcb8c20e939d88d887fee7"
+    },
+    {
+      "source": "target/sparse-generator-smoke/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-generator-smoke/fork-0.log",
+      "bytes": 148229,
+      "sha256": "48bb58250b73938070d027cec2d824ee7ce1f79486d3eff4fbf82452ae71d8c2"
+    },
+    {
+      "source": "target/sparse-generator-smoke/summary.csv",
+      "destination": "evidence/pre-capacity-fix-generator-smoke/summary.csv",
+      "bytes": 44383,
+      "sha256": "43bc6bc6e14601d353b6f4a0ac2101704af5fd027be0f297ce2dc61d8515a27a"
+    },
+    {
+      "source": "target/sparse-generator-smoke/summary.md",
+      "destination": "evidence/pre-capacity-fix-generator-smoke/summary.md",
+      "bytes": 19705,
+      "sha256": "760ed3e44566e905af9cd1cb32228d4f659f208cd80207925f651151a401b61b"
+    },
+    {
+      "source": "target/sparse-generator-smoke/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-generator-smoke/working-tree.patch",
+      "bytes": 162508,
+      "sha256": "3cf756f94f7118f475f2fe181c14af23d48fde30e20bb556ab3efd7d4c910cdc"
+    },
+    {
+      "source": "sparse-generator-smoke.log",
+      "destination": "evidence/pre-capacity-fix-generator-smoke/driver.log",
+      "bytes": 148331,
+      "sha256": "7e1e46b0fd7d0d1e4fb495cd8a65d327a62b403d200ccfbe1a049b973ce549a3"
+    },
+    {
+      "source": "target/sparse-final-trace/automatic-comparison.csv",
+      "destination": "evidence/pre-capacity-fix-trace/automatic-comparison.csv",
+      "bytes": 2235,
+      "sha256": "264e9f4cbb546149f87ef7242fa17e61f333b5e7c24c28e0365b765a4faad17b"
+    },
+    {
+      "source": "target/sparse-final-trace/commands.sh",
+      "destination": "evidence/pre-capacity-fix-trace/commands.sh",
+      "bytes": 525,
+      "sha256": "a71aa2a7757445fe2153fbdf605ad673d84fe199d5fe804ea5250f7a218540ca"
+    },
+    {
+      "source": "target/sparse-final-trace/comparison.csv",
+      "destination": "evidence/pre-capacity-fix-trace/comparison.csv",
+      "bytes": 5434,
+      "sha256": "01918397120e86705e311ea93d86bd81a59e9b91887db67d07ee92251cca7869"
+    },
+    {
+      "source": "target/sparse-final-trace/environment.txt",
+      "destination": "evidence/pre-capacity-fix-trace/environment.txt",
+      "bytes": 8564,
+      "sha256": "ac77de5cf86dae1d820e1a13ec5e08f3437cf2a1faae5383d373a5f9cb2939d4"
+    },
+    {
+      "source": "target/sparse-final-trace/fork-0.csv",
+      "destination": "evidence/pre-capacity-fix-trace/fork-0.csv",
+      "bytes": 39989,
+      "sha256": "5451e5c40f10a2d008e232666dc356b20a11dc80c25fa678bb22c90cdd84c956"
+    },
+    {
+      "source": "target/sparse-final-trace/fork-0.log",
+      "destination": "evidence/pre-capacity-fix-trace/fork-0.log",
+      "bytes": 92466,
+      "sha256": "a398967f8105221e45538be3033cda06a0d8d228b8e93f14dcd79758fdbcbfa2"
+    },
+    {
+      "source": "target/sparse-final-trace/summary.csv",
+      "destination": "evidence/pre-capacity-fix-trace/summary.csv",
+      "bytes": 5734,
+      "sha256": "fa8aafc71ea77be019748e6cebe224b398791884c049f9b22413dc31079801aa"
+    },
+    {
+      "source": "target/sparse-final-trace/summary.md",
+      "destination": "evidence/pre-capacity-fix-trace/summary.md",
+      "bytes": 4430,
+      "sha256": "12237d3b20ca8c45e195fb0f2e76a37c033b53fd900ec791b891bef018b8a955"
+    },
+    {
+      "source": "target/sparse-final-trace/working-tree.patch",
+      "destination": "evidence/pre-capacity-fix-trace/working-tree.patch",
+      "bytes": 178298,
+      "sha256": "498cdf5edefcf217ba63e05f8efec66777e64ff8c6f1e73c301187016b4c3dbb"
+    },
+    {
+      "source": "sparse-final-trace.log",
+      "destination": "evidence/pre-capacity-fix-trace/driver.log",
+      "bytes": 92564,
+      "sha256": "3ab24f28822bc07447ec250af816ce1a0921b3f0199c01475116fd446bbaa39d"
+    },
+    {
+      "source": "target/sparse-initial-hot-jmh.json",
+      "destination": "evidence/pre-capacity-fix-isolated-jmh/results.json",
+      "bytes": 6929,
+      "sha256": "211891bc10a52e818e8edb775f5943dd691419c1a29dbfec141f349fad2e83ee"
+    },
+    {
+      "source": "sparse-initial-hot-jmh.log",
+      "destination": "evidence/pre-capacity-fix-isolated-jmh/console.log",
+      "bytes": 6238,
+      "sha256": "fbc711e8819e8f6f03e81b398dfff3c1eb98dd9b3fb0799910cebd7a1b685269"
+    },
+    {
+      "source": "review-tests.log",
+      "destination": "evidence/pre-capacity-fix-verification/review-tests.log",
+      "bytes": 58960,
+      "sha256": "8daf5c9aa04799408c80c3751bf1a570ea0ab1fc93a7bec7a48337263b00832a"
+    },
+    {
+      "source": "review-tests-offline.log",
+      "destination": "evidence/pre-capacity-fix-verification/review-tests-offline.log",
+      "bytes": 53120,
+      "sha256": "d35d5bd81752a37c423dc7262ad537108f83410a443bf0cc7b71a83bbfc7a263"
+    },
+    {
+      "source": "sparse-benchmark-summary-tests.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-benchmark-summary-tests.log",
+      "bytes": 102,
+      "sha256": "4a160235c0add54f7a5997815d0e01a072210439de4899c702c94dd3cd814662"
+    },
+    {
+      "source": "initial-evidence.txt",
+      "destination": "evidence/pre-capacity-fix-verification/initial-evidence.txt",
+      "bytes": 18658,
+      "sha256": "886b5adead097eee11361bdc67a5d37580db57f59b396edfa74d7416595dc33d"
+    },
+    {
+      "source": "sparse-integration-admission-red.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-admission-red.log",
+      "bytes": 61430,
+      "sha256": "6fc430c53ce9cac30f3168d074486eaa61a423de5eda50aea54a000810ccdd1a"
+    },
+    {
+      "source": "sparse-integration-constants-red.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-constants-red.log",
+      "bytes": 61523,
+      "sha256": "7f739d8e6272c775f1f2e5f619cbab791914796a3efbb6a282f45168fb6c4583"
+    },
+    {
+      "source": "sparse-integration-cost-red.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-cost-red.log",
+      "bytes": 55032,
+      "sha256": "134df053a2b202e3fcd37a6a7735bfbef7118b74071d47b3b3e1c69e5a125339"
+    },
+    {
+      "source": "sparse-integration-fibers-red.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-fibers-red.log",
+      "bytes": 63072,
+      "sha256": "4027ec0c377f6ca06d60e5190b5306f86048ae00e7608eda1ffface2decbbffc"
+    },
+    {
+      "source": "sparse-integration-contract-tests.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-contract-tests.log",
+      "bytes": 87511,
+      "sha256": "ed074cbbe8fdb5e9c9821f59a1f009a07f92e8bb786036740fe8e319cf339b44"
+    },
+    {
+      "source": "sparse-integration-cost-contract-red.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-cost-contract-red.log",
+      "bytes": 67145,
+      "sha256": "d9a36deb0511e597617df67124df594d37b00cfc80b7e2d670ec45e0d65785a7"
+    },
+    {
+      "source": "sparse-integration-scoped-red.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-scoped-red.log",
+      "bytes": 59948,
+      "sha256": "11c67428506ff0a27174b3bbf9b47bf048a7c58e9bdfe3f511ed2676038b585b"
+    },
+    {
+      "source": "sparse-integration-estimate-red.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-estimate-red.log",
+      "bytes": 58130,
+      "sha256": "85cbe5361319bb3bfab29978c23243f3b0da6b49b747ce8fd6036eb7bd0cd335"
+    },
+    {
+      "source": "sparse-integration-key-red.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-key-red.log",
+      "bytes": 58128,
+      "sha256": "7e83108ad3d62c7e3cc22554e47928d43f8d65afbe70283fad4216e692a3587d"
+    },
+    {
+      "source": "sparse-integration-exploration-red.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-exploration-red.log",
+      "bytes": 57660,
+      "sha256": "f1614f872042619503450926b4f6c762362b75081d4005ff624eb4456794ae62"
+    },
+    {
+      "source": "sparse-integration-green.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-green.log",
+      "bytes": 83400,
+      "sha256": "e8ac229c2bff659826bf4b6bedfe16e047564c07700a15990e0fc2b6c34bed9b"
+    },
+    {
+      "source": "sparse-integration-grouping-isolated.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-grouping-isolated.log",
+      "bytes": 57661,
+      "sha256": "9eb0b32419f38c8b049c3d5ee937cc19a5b6668f9b5ad7b3e5bf2e172fc4481c"
+    },
+    {
+      "source": "sparse-integration-final-green.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-final-green.log",
+      "bytes": 78051,
+      "sha256": "4daf549668eee0b70d509506ee26f5ed9168fa5a015b1abf3de7f63fc2a58823"
+    },
+    {
+      "source": "sparse-integration-final-isolated.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-final-isolated.log",
+      "bytes": 74906,
+      "sha256": "1833f79048d408d9d4695bb2d67bcf7e379bbc18a099861f378ca8fc921e70e8"
+    },
+    {
+      "source": "sparse-integration-tests.log",
+      "destination": "evidence/pre-capacity-fix-verification/sparse-integration-tests.log",
+      "bytes": 58855,
+      "sha256": "fc8d89a3f23c600751fca4b8e63486f34051cf61e37a600e882074203b47b61d"
+    }
+  ]
+}

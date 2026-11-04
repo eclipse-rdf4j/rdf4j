@@ -1,0 +1,349 @@
+Picked up JAVA_TOOL_OPTIONS: -XX:ActiveProcessorCount=4
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# JMH version: 1.37
+# VM version: JDK 25.0.5, OpenJDK 64-Bit Server VM, 25.0.5+8-LTS
+# VM invoker: /workspace/scratch/0c324f9a00f9/review-tools/jdk-25.0.5+8/bin/java
+# VM options: -Xms1G -Xmx3G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery
+# Parameters: (blocks = 1, count = bound, distribution = uniform, endpoints = 256, fanout = 8, having = empty, joinKeys = 512, leftFanout = 0, multiplicity = 1, overlap = 0, parallel = false, rightFanout = 0, strategy = autoDisabled)
+
+# Run progress: 0.00% complete, ETA 00:00:48
+# Fork: 1 of 2
+Picked up JAVA_TOOL_OPTIONS: -XX:ActiveProcessorCount=4
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 05:22:42,730 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+05:22:42,730 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c5a96c8 - No custom configurators were discovered as a service.
+05:22:42,730 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c5a96c8 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:22:42,731 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c5a96c8 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:22:42,731 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback-test.xml] at [jar:file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar!/logback-test.xml]
+05:22:42,775 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - <level> element is deprecated. Near [level] on line 9
+05:22:42,775 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - Please use "level" attribute within <logger> or <root> elements instead.
+05:22:42,814 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Scan attribute not set.
+05:22:42,820 |-INFO in ch.qos.logback.classic.model.processor.CallerInstructionLogic@30a8dd06 - No contradictions in caller extraction instruction were detected
+05:22:42,822 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+05:22:42,822 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+05:22:42,826 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+05:22:42,861 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - NOTE: Writing to the console can be slow. Try to avoid logging to the 
+05:22:42,861 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+05:22:42,861 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+05:22:42,862 |-INFO in ch.qos.logback.classic.model.processor.LevelModelHandler - ROOT level set to WARN
+05:22:42,862 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to Logger[ROOT]
+05:22:42,863 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@3d62663 - End of configuration.
+05:22:42,863 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@2988a714 - Registering current configuration as safe fallback point
+05:22:42,866 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c5a96c8 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 133 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000009f1558a0 in an unnamed module (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+SPARSE_JOIN_FIRST strategy=autoDisabled fanout=8x8 distribution=uniform overlap=0 blocks=1 multiplicity=1 having=empty count=bound query_ns=505530721
+SPARSE_JOIN_ROUTE requested=autoDisabled sparse_setting=false witness_stage=trial_setup fanout=8x8 distribution=uniform overlap=0 parallel=false blocks=1 multiplicity=1 having=empty threshold=1 count=bound actual=irAggregateInterpreted plan= work=
+6.492 ms/op
+# Warmup Iteration   2: 4.231 ms/op
+# Warmup Iteration   3: 3.058 ms/op
+Iteration   1: 2.117 ms/op
+Iteration   2: 1.919 ms/op
+Iteration   3: 1.599 ms/op
+Iteration   4: 1.340 ms/op
+Iteration   5: 1.071 ms/op
+
+# Run progress: 16.67% complete, ETA 00:00:49
+# Fork: 2 of 2
+Picked up JAVA_TOOL_OPTIONS: -XX:ActiveProcessorCount=4
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 05:22:52,611 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+05:22:52,612 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - No custom configurators were discovered as a service.
+05:22:52,612 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:22:52,613 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:22:52,613 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback-test.xml] at [jar:file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar!/logback-test.xml]
+05:22:52,664 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - <level> element is deprecated. Near [level] on line 9
+05:22:52,664 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - Please use "level" attribute within <logger> or <root> elements instead.
+05:22:52,717 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Scan attribute not set.
+05:22:52,726 |-INFO in ch.qos.logback.classic.model.processor.CallerInstructionLogic@1885dd36 - No contradictions in caller extraction instruction were detected
+05:22:52,728 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+05:22:52,728 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+05:22:52,733 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+05:22:52,772 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - NOTE: Writing to the console can be slow. Try to avoid logging to the 
+05:22:52,772 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+05:22:52,772 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+05:22:52,773 |-INFO in ch.qos.logback.classic.model.processor.LevelModelHandler - ROOT level set to WARN
+05:22:52,773 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to Logger[ROOT]
+05:22:52,774 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@cd81593 - End of configuration.
+05:22:52,774 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@6e16ae67 - Registering current configuration as safe fallback point
+05:22:52,776 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 161 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000000571558a0 in an unnamed module (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+SPARSE_JOIN_FIRST strategy=autoDisabled fanout=8x8 distribution=uniform overlap=0 blocks=1 multiplicity=1 having=empty count=bound query_ns=518843746
+SPARSE_JOIN_ROUTE requested=autoDisabled sparse_setting=false witness_stage=trial_setup fanout=8x8 distribution=uniform overlap=0 parallel=false blocks=1 multiplicity=1 having=empty threshold=1 count=bound actual=irAggregateInterpreted plan= work=
+6.072 ms/op
+# Warmup Iteration   2: 3.916 ms/op
+# Warmup Iteration   3: 3.051 ms/op
+Iteration   1: 2.434 ms/op
+Iteration   2: 1.766 ms/op
+Iteration   3: 1.413 ms/op
+Iteration   4: 1.224 ms/op
+Iteration   5: 1.062 ms/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery":
+  1.595 ±(99.9%) 0.695 ms/op [Average]
+  (min, avg, max) = (1.062, 1.595, 2.434), stdev = 0.460
+  CI (99.9%): [0.899, 2.290] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 25.0.5, OpenJDK 64-Bit Server VM, 25.0.5+8-LTS
+# VM invoker: /workspace/scratch/0c324f9a00f9/review-tools/jdk-25.0.5+8/bin/java
+# VM options: -Xms1G -Xmx3G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery
+# Parameters: (blocks = 1, count = bound, distribution = uniform, endpoints = 256, fanout = 8, having = empty, joinKeys = 512, leftFanout = 0, multiplicity = 1, overlap = 0, parallel = false, rightFanout = 0, strategy = auto)
+
+# Run progress: 33.33% complete, ETA 00:00:39
+# Fork: 1 of 2
+Picked up JAVA_TOOL_OPTIONS: -XX:ActiveProcessorCount=4
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 05:23:02,548 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+05:23:02,549 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - No custom configurators were discovered as a service.
+05:23:02,549 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:23:02,549 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:23:02,550 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback-test.xml] at [jar:file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar!/logback-test.xml]
+05:23:02,602 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - <level> element is deprecated. Near [level] on line 9
+05:23:02,602 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - Please use "level" attribute within <logger> or <root> elements instead.
+05:23:02,647 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Scan attribute not set.
+05:23:02,654 |-INFO in ch.qos.logback.classic.model.processor.CallerInstructionLogic@1885dd36 - No contradictions in caller extraction instruction were detected
+05:23:02,655 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+05:23:02,655 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+05:23:02,660 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+05:23:02,713 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - NOTE: Writing to the console can be slow. Try to avoid logging to the 
+05:23:02,713 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+05:23:02,713 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+05:23:02,714 |-INFO in ch.qos.logback.classic.model.processor.LevelModelHandler - ROOT level set to WARN
+05:23:02,714 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to Logger[ROOT]
+05:23:02,715 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@cd81593 - End of configuration.
+05:23:02,715 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@6e16ae67 - Registering current configuration as safe fallback point
+05:23:02,718 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 167 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000000581558a0 in an unnamed module (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+SPARSE_JOIN_FIRST strategy=auto fanout=8x8 distribution=uniform overlap=0 blocks=1 multiplicity=1 having=empty count=bound query_ns=608702476
+SPARSE_JOIN_ROUTE requested=auto sparse_setting=default witness_stage=trial_setup fanout=8x8 distribution=uniform overlap=0 parallel=false blocks=1 multiplicity=1 having=empty threshold=1 count=bound actual=sparseJoinAggregate plan=SPARSE_JOIN_COUNT[streamSlot=1,streamDirection=S,streamContexts=UNRESTRICTED,retainedSlot=2,retainedDirection=S,retainedContexts=UNRESTRICTED,contextBuffers=0,thresholdPruning=false;retention=right-plane];streamBinding=x;retainedBinding=y work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=0, prunedRows=0, prunedProducts=0, outputGroups=0]
+11.021 ms/op
+# Warmup Iteration   2: 6.164 ms/op
+# Warmup Iteration   3: 4.563 ms/op
+Iteration   1: 3.573 ms/op
+Iteration   2: 3.680 ms/op
+Iteration   3: 2.709 ms/op
+Iteration   4: 2.117 ms/op
+Iteration   5: 1.542 ms/op
+
+# Run progress: 50.00% complete, ETA 00:00:29
+# Fork: 2 of 2
+Picked up JAVA_TOOL_OPTIONS: -XX:ActiveProcessorCount=4
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 05:23:12,542 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+05:23:12,543 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - No custom configurators were discovered as a service.
+05:23:12,543 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:23:12,544 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:23:12,544 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback-test.xml] at [jar:file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar!/logback-test.xml]
+05:23:12,596 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - <level> element is deprecated. Near [level] on line 9
+05:23:12,596 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - Please use "level" attribute within <logger> or <root> elements instead.
+05:23:12,639 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Scan attribute not set.
+05:23:12,647 |-INFO in ch.qos.logback.classic.model.processor.CallerInstructionLogic@1885dd36 - No contradictions in caller extraction instruction were detected
+05:23:12,649 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+05:23:12,649 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+05:23:12,655 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+05:23:12,692 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - NOTE: Writing to the console can be slow. Try to avoid logging to the 
+05:23:12,692 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+05:23:12,692 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+05:23:12,693 |-INFO in ch.qos.logback.classic.model.processor.LevelModelHandler - ROOT level set to WARN
+05:23:12,693 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to Logger[ROOT]
+05:23:12,694 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@cd81593 - End of configuration.
+05:23:12,694 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@6e16ae67 - Registering current configuration as safe fallback point
+05:23:12,697 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 150 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000007d1458a0 in an unnamed module (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+SPARSE_JOIN_FIRST strategy=auto fanout=8x8 distribution=uniform overlap=0 blocks=1 multiplicity=1 having=empty count=bound query_ns=544167686
+SPARSE_JOIN_ROUTE requested=auto sparse_setting=default witness_stage=trial_setup fanout=8x8 distribution=uniform overlap=0 parallel=false blocks=1 multiplicity=1 having=empty threshold=1 count=bound actual=sparseJoinAggregate plan=SPARSE_JOIN_COUNT[streamSlot=1,streamDirection=S,streamContexts=UNRESTRICTED,retainedSlot=2,retainedDirection=S,retainedContexts=UNRESTRICTED,contextBuffers=0,thresholdPruning=false;retention=right-plane];streamBinding=x;retainedBinding=y work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=0, prunedRows=0, prunedProducts=0, outputGroups=0]
+8.949 ms/op
+# Warmup Iteration   2: 4.271 ms/op
+# Warmup Iteration   3: 3.238 ms/op
+Iteration   1: 2.906 ms/op
+Iteration   2: 2.295 ms/op
+Iteration   3: 1.851 ms/op
+Iteration   4: 1.578 ms/op
+Iteration   5: 1.441 ms/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery":
+  2.369 ±(99.9%) 1.243 ms/op [Average]
+  (min, avg, max) = (1.441, 2.369, 3.680), stdev = 0.822
+  CI (99.9%): [1.126, 3.612] (assumes normal distribution)
+
+
+# JMH version: 1.37
+# VM version: JDK 25.0.5, OpenJDK 64-Bit Server VM, 25.0.5+8-LTS
+# VM invoker: /workspace/scratch/0c324f9a00f9/review-tools/jdk-25.0.5+8/bin/java
+# VM options: -Xms1G -Xmx3G
+# Blackhole mode: compiler (auto-detected, use -Djmh.blackhole.autoDetect=false to disable)
+# Warmup: 3 iterations, 1 s each
+# Measurement: 5 iterations, 1 s each
+# Timeout: 10 min per iteration
+# Threads: 1 thread, will synchronize iterations
+# Benchmark mode: Average time, time/op
+# Benchmark: org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery
+# Parameters: (blocks = 1, count = bound, distribution = uniform, endpoints = 256, fanout = 8, having = empty, joinKeys = 512, leftFanout = 0, multiplicity = 1, overlap = 0, parallel = false, rightFanout = 0, strategy = sparseJoinAggregate)
+
+# Run progress: 66.67% complete, ETA 00:00:19
+# Fork: 1 of 2
+Picked up JAVA_TOOL_OPTIONS: -XX:ActiveProcessorCount=4
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 05:23:22,587 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+05:23:22,587 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c5a96c8 - No custom configurators were discovered as a service.
+05:23:22,587 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c5a96c8 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:23:22,588 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c5a96c8 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:23:22,589 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback-test.xml] at [jar:file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar!/logback-test.xml]
+05:23:22,648 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - <level> element is deprecated. Near [level] on line 9
+05:23:22,648 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - Please use "level" attribute within <logger> or <root> elements instead.
+05:23:22,694 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Scan attribute not set.
+05:23:22,701 |-INFO in ch.qos.logback.classic.model.processor.CallerInstructionLogic@30a8dd06 - No contradictions in caller extraction instruction were detected
+05:23:22,703 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+05:23:22,703 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+05:23:22,709 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+05:23:22,760 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - NOTE: Writing to the console can be slow. Try to avoid logging to the 
+05:23:22,760 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+05:23:22,760 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+05:23:22,761 |-INFO in ch.qos.logback.classic.model.processor.LevelModelHandler - ROOT level set to WARN
+05:23:22,761 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to Logger[ROOT]
+05:23:22,762 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@3d62663 - End of configuration.
+05:23:22,762 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@2988a714 - Registering current configuration as safe fallback point
+05:23:22,765 |-INFO in ch.qos.logback.classic.util.ContextInitializer@7c5a96c8 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 175 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x00000000721558a0 in an unnamed module (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+SPARSE_JOIN_FIRST strategy=sparseJoinAggregate fanout=8x8 distribution=uniform overlap=0 blocks=1 multiplicity=1 having=empty count=bound query_ns=614933289
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate sparse_setting=true witness_stage=trial_setup fanout=8x8 distribution=uniform overlap=0 parallel=false blocks=1 multiplicity=1 having=empty threshold=1 count=bound actual=sparseJoinAggregate plan=SPARSE_JOIN_COUNT[streamSlot=1,streamDirection=S,streamContexts=UNRESTRICTED,retainedSlot=2,retainedDirection=S,retainedContexts=UNRESTRICTED,contextBuffers=0,thresholdPruning=false;retention=right-plane];streamBinding=x;retainedBinding=y work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=0, prunedRows=0, prunedProducts=0, outputGroups=0]
+10.241 ms/op
+# Warmup Iteration   2: 6.643 ms/op
+# Warmup Iteration   3: 5.207 ms/op
+Iteration   1: 5.137 ms/op
+Iteration   2: 3.613 ms/op
+Iteration   3: 2.834 ms/op
+Iteration   4: 2.336 ms/op
+Iteration   5: 2.733 ms/op
+
+# Run progress: 83.33% complete, ETA 00:00:10
+# Fork: 2 of 2
+Picked up JAVA_TOOL_OPTIONS: -XX:ActiveProcessorCount=4
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.openjdk.jmh.util.Utils (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.openjdk.jmh.util.Utils
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+# Warmup Iteration   1: 05:23:33,031 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+05:23:33,034 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - No custom configurators were discovered as a service.
+05:23:33,034 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:23:33,036 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+05:23:33,037 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback-test.xml] at [jar:file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar!/logback-test.xml]
+05:23:33,102 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - <level> element is deprecated. Near [level] on line 9
+05:23:33,102 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - Please use "level" attribute within <logger> or <root> elements instead.
+05:23:33,154 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Scan attribute not set.
+05:23:33,162 |-INFO in ch.qos.logback.classic.model.processor.CallerInstructionLogic@1885dd36 - No contradictions in caller extraction instruction were detected
+05:23:33,164 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+05:23:33,164 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+05:23:33,169 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+05:23:33,211 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - NOTE: Writing to the console can be slow. Try to avoid logging to the 
+05:23:33,211 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+05:23:33,211 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+05:23:33,212 |-INFO in ch.qos.logback.classic.model.processor.LevelModelHandler - ROOT level set to WARN
+05:23:33,212 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to Logger[ROOT]
+05:23:33,213 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@cd81593 - End of configuration.
+05:23:33,213 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@6e16ae67 - Registering current configuration as safe fallback point
+05:23:33,216 |-INFO in ch.qos.logback.classic.util.ContextInitializer@74b64b89 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 178 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000005e1558a0 in an unnamed module (file:/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+SPARSE_JOIN_FIRST strategy=sparseJoinAggregate fanout=8x8 distribution=uniform overlap=0 blocks=1 multiplicity=1 having=empty count=bound query_ns=619082943
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate sparse_setting=true witness_stage=trial_setup fanout=8x8 distribution=uniform overlap=0 parallel=false blocks=1 multiplicity=1 having=empty threshold=1 count=bound actual=sparseJoinAggregate plan=SPARSE_JOIN_COUNT[streamSlot=1,streamDirection=S,streamContexts=UNRESTRICTED,retainedSlot=2,retainedDirection=S,retainedContexts=UNRESTRICTED,contextBuffers=0,thresholdPruning=false;retention=right-plane];streamBinding=x;retainedBinding=y work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=0, prunedRows=0, prunedProducts=0, outputGroups=0]
+10.013 ms/op
+# Warmup Iteration   2: 7.039 ms/op
+# Warmup Iteration   3: 5.816 ms/op
+Iteration   1: 4.034 ms/op
+Iteration   2: 4.120 ms/op
+Iteration   3: 3.781 ms/op
+Iteration   4: 3.162 ms/op
+Iteration   5: 2.305 ms/op
+
+
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark.completeQuery":
+  3.405 ±(99.9%) 1.360 ms/op [Average]
+  (min, avg, max) = (2.305, 3.405, 5.137), stdev = 0.900
+  CI (99.9%): [2.045, 4.765] (assumes normal distribution)
+
+
+# Run complete. Total time: 00:01:00
+
+REMEMBER: The numbers below are just data. To gain reusable insights, you need to follow up on
+why the numbers are the way they are. Use profilers (see -prof, -lprof), design factorial
+experiments, perform baseline and negative tests that provide experimental control, make sure
+the benchmarking environment is safe on JVM/OS/HW level, ask for reviews from the domain experts.
+Do not assume the numbers tell you what you want them to tell.
+
+NOTE: Current JVM experimentally supports Compiler Blackholes, and they are in use. Please exercise
+extra caution when trusting the results, look into the generated code to check the benchmark still
+works, and factor in a small probability of new VM bugs. Additionally, while comparisons between
+different JVMs are already problematic, the performance difference caused by different Blackhole
+modes can be very significant. Please make sure you use the consistent Blackhole mode for comparisons.
+
+Benchmark                                   (blocks)  (count)  (distribution)  (endpoints)  (fanout)  (having)  (joinKeys)  (leftFanout)  (multiplicity)  (overlap)  (parallel)  (rightFanout)           (strategy)  Mode  Cnt  Score   Error  Units
+SparseJoinAggregateBenchmark.completeQuery         1    bound         uniform          256         8     empty         512             0               1          0       false              0         autoDisabled  avgt   10  1.595 ± 0.695  ms/op
+SparseJoinAggregateBenchmark.completeQuery         1    bound         uniform          256         8     empty         512             0               1          0       false              0                 auto  avgt   10  2.369 ± 1.243  ms/op
+SparseJoinAggregateBenchmark.completeQuery         1    bound         uniform          256         8     empty         512             0               1          0       false              0  sparseJoinAggregate  avgt   10  3.405 ± 1.360  ms/op
+
+Benchmark result is saved to target/sparse-integrated-jmh-disjoint-empty.json

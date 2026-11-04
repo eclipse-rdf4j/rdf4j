@@ -12,24 +12,31 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -75,6 +82,137 @@ class SparseJoinAggregateAdapterTest {
 	}
 
 	@Test
+	void unrestrictedRunsPreservePhysicalWeightsWithoutExpandingQuads() {
+		long[] physicalNeighbors = { 100L, 101L, 101L, 102L, 103L };
+		long[] physicalWeights = { 1L << 33, 3L, 5L, 7L, 11L };
+		long runSize = Arrays.stream(physicalWeights).sum();
+		NativeAdjacency.KeyRunCursor cursor = mock(NativeAdjacency.KeyRunCursor.class);
+		when(cursor.advance()).thenReturn(true, false);
+		when(cursor.key()).thenReturn(42L);
+		when(cursor.runSize()).thenReturn(runSize);
+		when(cursor.distinctNeighborCount()).thenReturn(4L);
+		when(cursor.supportsPhysicalFiberCopy()).thenReturn(true);
+		doThrow(new AssertionError("physical fibers must not expand to quad neighbors"))
+				.when(cursor).copyNeighbors(anyLong(), anyInt(), any(long[].class), anyInt());
+		doThrow(new AssertionError("unrestricted physical fibers must not decode contexts"))
+				.when(cursor).copyContexts(anyLong(), anyInt(), any(long[].class), anyInt());
+		AtomicInteger nextFiber = new AtomicInteger();
+		long[] expectedOffset = { 0L };
+		doAnswer(call -> {
+			assertEquals(expectedOffset[0], call.<Long>getArgument(0));
+			int first = nextFiber.get();
+			int copied = Math.min(call.<Integer>getArgument(1), physicalNeighbors.length - first);
+			System.arraycopy(physicalNeighbors, first, call.getArgument(2), call.getArgument(3), copied);
+			System.arraycopy(physicalWeights, first, call.getArgument(4), call.getArgument(5), copied);
+			for (int i = first; i < first + copied; i++) {
+				expectedOffset[0] += physicalWeights[i];
+			}
+			nextFiber.addAndGet(copied);
+			return copied;
+		}).when(cursor).copyFibers(anyLong(), anyInt(), any(long[].class), anyInt(), any(long[].class), anyInt());
+
+		try (KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+			var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, false, null, memory);
+			assertTrue(rows.nextRow());
+			assertEquals(42L, rows.key());
+			long[] ids = new long[2];
+			long[] weights = new long[2];
+			assertEquals(2, rows.read(ids, weights));
+			assertArrayEquals(new long[] { 100L, 101L }, ids);
+			assertArrayEquals(new long[] { 1L << 33, 3L }, weights);
+			assertEquals(2, rows.read(ids, weights));
+			assertArrayEquals(new long[] { 101L, 102L }, ids);
+			assertArrayEquals(new long[] { 5L, 7L }, weights);
+			assertEquals(1, rows.read(ids, weights));
+			assertEquals(103L, ids[0]);
+			assertEquals(11L, weights[0]);
+			assertEquals(0, rows.read(ids, weights));
+			assertFalse(rows.nextRow());
+			assertEquals(runSize, expectedOffset[0]);
+			assertEquals(physicalNeighbors.length, nextFiber.get());
+		}
+	}
+
+	@Test
+	void boundedCursorPreservesPhysicalFiberCapabilityAndCopies() {
+		NativeAdjacency.KeyRunCursor delegate = mock(NativeAdjacency.KeyRunCursor.class);
+		when(delegate.advance()).thenReturn(true);
+		when(delegate.supportsPhysicalFiberCopy()).thenReturn(true, false);
+		long[] ids = new long[2];
+		long[] weights = new long[2];
+		when(delegate.copyFibers(7L, 2, ids, 0, weights, 0)).thenReturn(2);
+		try (NativeAdjacency.KeyRunCursor cursor = NativeAdjacency.boundedKeyRunCursor(delegate, 0L, 1L)) {
+			assertTrue(cursor.advance());
+			assertTrue(cursor.supportsPhysicalFiberCopy());
+			assertEquals(2, cursor.copyFibers(7L, 2, ids, 0, weights, 0));
+			verify(delegate).copyFibers(7L, 2, ids, 0, weights, 0);
+			assertFalse(cursor.supportsPhysicalFiberCopy());
+			assertFalse(cursor.advance());
+		}
+		verify(delegate).close();
+	}
+
+	@Test
+	void physicalFiberCapabilityIsCheckedForEveryRow() {
+		NativeAdjacency.KeyRunCursor cursor = mock(NativeAdjacency.KeyRunCursor.class);
+		AtomicInteger row = new AtomicInteger(-1);
+		when(cursor.advance()).thenAnswer(call -> row.incrementAndGet() < 2);
+		when(cursor.runSize()).thenReturn(3L);
+		when(cursor.supportsPhysicalFiberCopy()).thenAnswer(call -> row.get() == 0);
+		doAnswer(call -> {
+			assertEquals(0, row.get());
+			call.<long[]>getArgument(2)[0] = 100L;
+			call.<long[]>getArgument(4)[0] = 3L;
+			return 1;
+		}).when(cursor).copyFibers(anyLong(), anyInt(), any(long[].class), anyInt(), any(long[].class), anyInt());
+		doAnswer(call -> {
+			assertEquals(1, row.get());
+			System.arraycopy(new long[] { 200L, 200L, 201L }, 0, call.getArgument(2), 0, 3);
+			return 3;
+		}).when(cursor).copyNeighbors(anyLong(), anyInt(), any(long[].class), anyInt());
+		try (KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+			var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, false, null, memory);
+			long[] ids = new long[3];
+			long[] weights = new long[3];
+			assertTrue(rows.nextRow());
+			assertEquals(1, rows.read(ids, weights));
+			assertEquals(100L, ids[0]);
+			assertEquals(3L, weights[0]);
+			assertEquals(0, rows.read(ids, weights));
+			assertTrue(rows.nextRow());
+			assertEquals(2, rows.read(ids, weights));
+			assertEquals(200L, ids[0]);
+			assertEquals(2L, weights[0]);
+			assertEquals(201L, ids[1]);
+			assertEquals(1L, weights[1]);
+			assertEquals(0, rows.read(ids, weights));
+			assertFalse(rows.nextRow());
+		}
+	}
+
+	@Test
+	void physicalFibersRejectInvalidMultiplicities() {
+		for (long invalid : new long[] { 0L, -1L, 2L, Long.MAX_VALUE }) {
+			NativeAdjacency.KeyRunCursor cursor = mock(NativeAdjacency.KeyRunCursor.class);
+			when(cursor.advance()).thenReturn(true);
+			when(cursor.runSize()).thenReturn(1L);
+			when(cursor.supportsPhysicalFiberCopy()).thenReturn(true);
+			doAnswer(call -> {
+				call.<long[]>getArgument(2)[0] = 100L;
+				call.<long[]>getArgument(4)[0] = invalid;
+				return 1;
+			}).when(cursor).copyFibers(anyLong(), anyInt(), any(long[].class), anyInt(), any(long[].class), anyInt());
+			try (KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+				var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, false, null, memory);
+				assertTrue(rows.nextRow());
+				IllegalStateException failure = assertThrows(IllegalStateException.class,
+						() -> rows.read(new long[2], new long[2]));
+				assertEquals("Invalid adjacency fiber multiplicity", failure.getMessage());
+			}
+		}
+	}
+
+	@Test
 	void rejectedContextBatchesDoNotTerminateTheRun() {
 		long[] neighbors = new long[600];
 		long[] contexts = new long[600];
@@ -93,6 +231,7 @@ class SparseJoinAggregateAdapterTest {
 			assertEquals(0, rows.read(ids, weights));
 			assertFalse(rows.nextRow());
 			assertEquals(600, cursor.copied);
+			assertEquals(0, cursor.fiberCopies);
 		}
 	}
 
@@ -108,6 +247,28 @@ class SparseJoinAggregateAdapterTest {
 			assertEquals(1, rows.read(ids, weights));
 			assertEquals(100L, ids[0]);
 			assertEquals(2L, weights[0]);
+			assertEquals(0, cursor.fiberCopies);
+		}
+	}
+
+	@Test
+	void unrestrictedScalarRunsKeepCancellationBounded() {
+		long[] neighbors = new long[4096];
+		Arrays.fill(neighbors, 100L);
+		Rows cursor = new Rows(new long[] { 42L }, new long[][] { neighbors }, null);
+		KernelCancellation cancellation = KernelCancellation.forOrdinaryExecution(null,
+				() -> cursor.copied >= 256, null);
+		try (KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+			var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, false, cancellation, memory);
+			assertTrue(rows.nextRow());
+			long[] ids = new long[256];
+			long[] weights = new long[256];
+			assertEquals(1, rows.read(ids, weights));
+			assertEquals(100L, ids[0]);
+			assertEquals(256L, weights[0]);
+			assertThrows(KernelQueryCancelledException.class, () -> rows.read(ids, weights));
+			assertEquals(256, cursor.copied);
+			assertEquals(0, cursor.fiberCopies);
 		}
 	}
 
@@ -156,6 +317,61 @@ class SparseJoinAggregateAdapterTest {
 			assertTrue(result instanceof AutoCloseable);
 			((AutoCloseable) result).close();
 			assertEquals(baseline, fixture.ledger.usedBytes());
+		}
+	}
+
+	@Test
+	void probeCanCompleteSpillingReplayBeyondPrivateRowBuffer() throws Exception {
+		String rowLimit = "rdf4j.lmdb.adaptiveProbe.bufferRows";
+		String previousLimit = System.setProperty(rowLimit, "8");
+		String previousBytes = System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "8192");
+		try (Fixture fixture = new Fixture();
+				var scope = LmdbNativeProbeDeadline.enter(System.nanoTime() + TimeUnit.SECONDS.toNanos(30))) {
+			long[] rightEndpoints = new long[256];
+			Arrays.setAll(rightEndpoints, index -> 101L + index);
+			Rows rightRows = new Rows(new long[] { 10L }, new long[][] { rightEndpoints }, null);
+			when(fixture.right.openKeyRunCursor()).thenReturn(rightRows);
+			long baseline = fixture.ledger.usedBytes();
+			List<BindingSet> result = assertDoesNotThrow(() -> fixture.plan.evaluate(fixture.owner, fixture.row),
+					"ledger-bounded replay must not stop at the probe's private output-array row ceiling");
+			try (NativeReplayBindingList replay = assertInstanceOf(NativeReplayBindingList.class, result)) {
+				assertEquals(512, replay.size());
+				assertTrue(fixture.ledger.usedBytes() > baseline, "the unpublished replay must remain accounted");
+				assertTrue(fixture.ledger.usedBytes() - baseline <= 8192L,
+						"the small resident budget must bound the replay even when all 512 groups are retained");
+				boolean[][] seen = new boolean[2][rightEndpoints.length];
+				for (BindingSet binding : replay) {
+					assertEquals(3, binding.size());
+					int left = Integer.parseInt(binding.getValue("a").stringValue().substring("urn:adapter:".length()))
+							- 1;
+					int right = Integer.parseInt(binding.getValue("b").stringValue().substring("urn:adapter:".length()))
+							- 101;
+					assertTrue(left >= 0 && left < seen.length);
+					assertTrue(right >= 0 && right < rightEndpoints.length);
+					assertFalse(seen[left][right], "every endpoint pair must occur exactly once");
+					seen[left][right] = true;
+					assertEquals(SimpleValueFactory.getInstance().createLiteral(BigInteger.ONE),
+							binding.getValue("count"));
+				}
+			}
+			assertFalse(scope.deadline().capacityTripped());
+			assertEquals(baseline, fixture.ledger.usedBytes(), "closing the result must release every replay claim");
+			assertEquals(1, fixture.leftRows.closes);
+			assertEquals(1, rightRows.closes);
+			verify(fixture.left).close();
+			verify(fixture.right).close();
+			verify(fixture.probe).close();
+		} finally {
+			if (previousLimit == null) {
+				System.clearProperty(rowLimit);
+			} else {
+				System.setProperty(rowLimit, previousLimit);
+			}
+			if (previousBytes == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousBytes);
+			}
 		}
 	}
 
@@ -250,6 +466,7 @@ class SparseJoinAggregateAdapterTest {
 		private final long[][] contexts;
 		private int row = -1;
 		int copied;
+		int fiberCopies;
 		int closes;
 		RuntimeException failureOnSecond;
 
@@ -290,6 +507,14 @@ class SparseJoinAggregateAdapterTest {
 		@Override
 		public long contextAt(long offset) {
 			return contexts == null ? NULL_CONTEXT_ID : contexts[row][(int) offset];
+		}
+
+		@Override
+		public int copyFibers(long offset, int length, long[] neighborTarget, int neighborOffset,
+				long[] multiplicityTarget, int multiplicityOffset) {
+			fiberCopies++;
+			return NativeAdjacency.KeyRunCursor.super.copyFibers(offset, length, neighborTarget, neighborOffset,
+					multiplicityTarget, multiplicityOffset);
 		}
 
 		@Override

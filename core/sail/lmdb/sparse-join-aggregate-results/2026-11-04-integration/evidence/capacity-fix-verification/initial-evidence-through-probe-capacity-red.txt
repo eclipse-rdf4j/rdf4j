@@ -1,0 +1,159 @@
+Apache Maven 3.9.11 (3e54c93a704957b63ee3494413a2b544fd3d825b)
+Maven home: /workspace/scratch/0c324f9a00f9/review-tools/apache-maven-3.9.11
+Java version: 25.0.5, vendor: Eclipse Adoptium, runtime: /workspace/scratch/0c324f9a00f9/review-tools/jdk-25.0.5+8
+Default locale: en, platform encoding: UTF-8
+OS name: "linux", version: "6.18.57", arch: "amd64", family: "unix"
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/workspace/scratch/0c324f9a00f9/review-tools/apache-maven-3.9.11/lib/guice-5.1.0-classes.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+[INFO] Scanning for projects...
+[WARNING] The POM for org.apache.maven.wagon:wagon-ssh-external:jar:3.5.3 is missing, no dependency information available
+[ERROR] [ERROR] Some problems were encountered while processing the POMs:
+[ERROR] Unresolveable build extension: Plugin org.apache.maven.wagon:wagon-ssh-external:3.5.3 or one of its dependencies could not be resolved:
+	Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact org.apache.maven.wagon:wagon-ssh-external:jar:3.5.3 has not been downloaded from it before.
+ @ 
+[ERROR] Non-resolvable import POM: The following artifacts could not be resolved: com.fasterxml.jackson:jackson-bom:pom:2.22.4 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact com.fasterxml.jackson:jackson-bom:pom:2.22.4 has not been downloaded from it before. @ line 700, column 16
+[ERROR] Non-resolvable import POM: The following artifacts could not be resolved: tools.jackson:jackson-bom:pom:3.2.4 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact tools.jackson:jackson-bom:pom:3.2.4 has not been downloaded from it before. @ line 707, column 16
+[ERROR] Non-resolvable import POM: The following artifacts could not be resolved: org.eclipse.jetty:jetty-bom:pom:12.1.14 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact org.eclipse.jetty:jetty-bom:pom:12.1.14 has not been downloaded from it before. @ line 726, column 16
+[ERROR] Non-resolvable import POM: The following artifacts could not be resolved: org.eclipse.jetty.ee11:jetty-ee11-bom:pom:12.1.14 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact org.eclipse.jetty.ee11:jetty-ee11-bom:pom:12.1.14 has not been downloaded from it before. @ line 733, column 16
+[ERROR] Non-resolvable import POM: The following artifacts could not be resolved: io.netty:netty-bom:pom:4.2.19.Final (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact io.netty:netty-bom:pom:4.2.19.Final has not been downloaded from it before. @ line 740, column 16
+[ERROR] Non-resolvable import POM: The following artifacts could not be resolved: io.opentelemetry:opentelemetry-bom:pom:1.66.0 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact io.opentelemetry:opentelemetry-bom:pom:1.66.0 has not been downloaded from it before. @ line 747, column 16
+[ERROR] Non-resolvable import POM: The following artifacts could not be resolved: org.junit:junit-bom:pom:6.1.3 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact org.junit:junit-bom:pom:6.1.3 has not been downloaded from it before. @ line 1107, column 16
+ @ 
+[ERROR] The build could not read 1 project -> [Help 1]
+[ERROR]   
+[ERROR]   The project org.eclipse.rdf4j:rdf4j:6.2.0-SNAPSHOT (/workspace/scratch/0c324f9a00f9/rdf4j-review-6369/pom.xml) has 8 errors
+[ERROR]     Unresolveable build extension: Plugin org.apache.maven.wagon:wagon-ssh-external:3.5.3 or one of its dependencies could not be resolved:
+[ERROR]     	Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact org.apache.maven.wagon:wagon-ssh-external:jar:3.5.3 has not been downloaded from it before.
+[ERROR]     -> [Help 2]
+[ERROR]     Non-resolvable import POM: The following artifacts could not be resolved: com.fasterxml.jackson:jackson-bom:pom:2.22.4 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact com.fasterxml.jackson:jackson-bom:pom:2.22.4 has not been downloaded from it before. @ line 700, column 16 -> [Help 3]
+[ERROR]     Non-resolvable import POM: The following artifacts could not be resolved: tools.jackson:jackson-bom:pom:3.2.4 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact tools.jackson:jackson-bom:pom:3.2.4 has not been downloaded from it before. @ line 707, column 16 -> [Help 3]
+[ERROR]     Non-resolvable import POM: The following artifacts could not be resolved: org.eclipse.jetty:jetty-bom:pom:12.1.14 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact org.eclipse.jetty:jetty-bom:pom:12.1.14 has not been downloaded from it before. @ line 726, column 16 -> [Help 3]
+[ERROR]     Non-resolvable import POM: The following artifacts could not be resolved: org.eclipse.jetty.ee11:jetty-ee11-bom:pom:12.1.14 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact org.eclipse.jetty.ee11:jetty-ee11-bom:pom:12.1.14 has not been downloaded from it before. @ line 733, column 16 -> [Help 3]
+[ERROR]     Non-resolvable import POM: The following artifacts could not be resolved: io.netty:netty-bom:pom:4.2.19.Final (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact io.netty:netty-bom:pom:4.2.19.Final has not been downloaded from it before. @ line 740, column 16 -> [Help 3]
+[ERROR]     Non-resolvable import POM: The following artifacts could not be resolved: io.opentelemetry:opentelemetry-bom:pom:1.66.0 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact io.opentelemetry:opentelemetry-bom:pom:1.66.0 has not been downloaded from it before. @ line 747, column 16 -> [Help 3]
+[ERROR]     Non-resolvable import POM: The following artifacts could not be resolved: org.junit:junit-bom:pom:6.1.3 (absent): Cannot access central (https://repo.maven.apache.org/maven2) in offline mode and the artifact org.junit:junit-bom:pom:6.1.3 has not been downloaded from it before. @ line 1107, column 16 -> [Help 3]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/ProjectBuildingException
+[ERROR] [Help 2] http://cwiki.apache.org/confluence/display/MAVEN/PluginManagerException
+[ERROR] [Help 3] http://cwiki.apache.org/confluence/display/MAVEN/UnresolvableModelException
+
+Graph-scoped pricing test-first evidence (before production changes)
+Command: Maven test selector SparseJoinAggregateCostTest#wholePlaneMetadataBoundsGraphFilteredWorkWithoutClaimingContraction+namedAndMultipleContextFiltersChargeBothRawScansAndBoundedScratch+contextProcessingModesBelongToThePhysicalRecipe,SparseJoinAggregateSemanticsTest#orderedSlicesPreserveAggregateAliasesAndHaving
+Full command/output: sparse-integration-scoped-red.log
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest
+-------------------------------------------------------------------------------
+Tests run: 3, Failures: 3, Errors: 0, Skipped: 0, Time elapsed: 0.542 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest
+org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.wholePlaneMetadataBoundsGraphFilteredWorkWithoutClaimingContraction -- Time elapsed: 0.521 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: whole-plane cardinalities remain conservative bounds after graph filtering ==> expected: not <null>
+	at org.junit.jupiter.api.Assertions.assertNotNull(Assertions.java:345)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.wholePlaneMetadataBoundsGraphFilteredWorkWithoutClaimingContraction(SparseJoinAggregateCostTest.java:157)
+
+org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.contextProcessingModesBelongToThePhysicalRecipe -- Time elapsed: 0.009 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: not equal but was: <SPARSE_JOIN_COUNT[streamSlot=0,streamDirection=S,retainedSlot=2,retainedDirection=S,thresholdPruning=false;retention=right-plane]>
+	at org.junit.jupiter.api.Assertions.assertNotEquals(Assertions.java:2920)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.contextProcessingModesBelongToThePhysicalRecipe(SparseJoinAggregateCostTest.java:194)
+
+org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.namedAndMultipleContextFiltersChargeBothRawScansAndBoundedScratch -- Time elapsed: 0.004 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: not <null>
+	at org.junit.jupiter.api.Assertions.assertNotNull(Assertions.java:336)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.namedAndMultipleContextFiltersChargeBothRawScansAndBoundedScratch(SparseJoinAggregateCostTest.java:176)
+
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateSemanticsTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.496 s -- in org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateSemanticsTest
+
+Final broad run: 411 tests, 1 failure, 0 errors. Unchanged process-wide FD equality test observed baseline 140 then 139.
+Full log: sparse-integration-final-green.log
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.NativePhysicalGroupingCostTest
+-------------------------------------------------------------------------------
+Tests run: 69, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 5.294 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.evaluation.NativePhysicalGroupingCostTest
+org.eclipse.rdf4j.sail.lmdb.evaluation.NativePhysicalGroupingCostTest.idleSpilledOwnersDoNotRetainOneFileDescriptorPerGroup -- Time elapsed: 0.054 s <<< FAILURE!
+org.opentest4j.MultipleFailuresError: 
+idle spill owners preserve exact results without retaining per-group file descriptors (4 failures)
+	org.opentest4j.AssertionFailedError: idle spilled groups must keep no file descriptor beyond the warmed baseline ==> expected: <140> but was: <139>
+	org.opentest4j.AssertionFailedError: scoped spill reads must not retain per-group descriptors ==> expected: <140> but was: <139>
+	org.opentest4j.AssertionFailedError: closing all owners returns process descriptors to the warmed baseline ==> expected: <140> but was: <139>
+	org.opentest4j.AssertionFailedError: closing the query source preserves the descriptor baseline ==> expected: <140> but was: <139>
+	at org.junit.jupiter.api.AssertAll.assertAll(AssertAll.java:80)
+	at org.junit.jupiter.api.Assertions.assertAll(Assertions.java:3145)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.NativePhysicalGroupingCostTest.idleSpilledOwnersDoNotRetainOneFileDescriptorPerGroup(NativePhysicalGroupingCostTest.java:1546)
+	Suppressed: org.opentest4j.AssertionFailedError: idle spilled groups must keep no file descriptor beyond the warmed baseline ==> expected: <140> but was: <139>
+		... 2 more
+	Suppressed: org.opentest4j.AssertionFailedError: scoped spill reads must not retain per-group descriptors ==> expected: <140> but was: <139>
+		... 2 more
+	Suppressed: org.opentest4j.AssertionFailedError: closing all owners returns process descriptors to the warmed baseline ==> expected: <140> but was: <139>
+		... 2 more
+	Suppressed: org.opentest4j.AssertionFailedError: closing the query source preserves the descriptor baseline ==> expected: <140> but was: <139>
+		... 2 more
+
+
+Expected-cost correction test-first evidence
+Command selector: SparseJoinAggregateCostTest#uniformSharedDegreesEstimateProductsSeparatelyFromSkewBounds+asymmetricSharedDomainsKeepExpectedGroupsSeparateFromTheirUpperBound
+Full log: sparse-integration-estimate-red.log
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest
+-------------------------------------------------------------------------------
+Tests run: 2, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.891 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest
+org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.asymmetricSharedDomainsKeepExpectedGroupsSeparateFromTheirUpperBound -- Time elapsed: 0.863 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: the larger shared domain limits expected overlap under uniformity and containment ==> expected: <2048.0> but was: <65536.0>
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:975)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.asymmetricSharedDomainsKeepExpectedGroupsSeparateFromTheirUpperBound(SparseJoinAggregateCostTest.java:108)
+
+org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.uniformSharedDegreesEstimateProductsSeparatelyFromSkewBounds -- Time elapsed: 0.006 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: uniform shared-key degrees estimate Fleft * Fright / max(shared domains) ==> expected: <524288.0> but was: <4194304.0>
+	at org.junit.jupiter.api.Assertions.assertEquals(Assertions.java:975)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.uniformSharedDegreesEstimateProductsSeparatelyFromSkewBounds(SparseJoinAggregateCostTest.java:88)
+
+
+Adaptive-key test-first evidence; full class22tests2expectedfailures; estimate correction and compatibility controls passed.
+Full log: sparse-integration-key-red.log
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest
+-------------------------------------------------------------------------------
+Tests run: 22, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.993 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest
+org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.sparseAdaptiveKeysSeparateBranchingFromUnitSharedDegrees -- Time elapsed: 0.019 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: equal input sizes with different join expansion need different timing evidence ==> expected: not equal but was: <0>
+	at org.junit.jupiter.api.Assertions.assertNotEquals(Assertions.java:2106)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.sparseAdaptiveKeysSeparateBranchingFromUnitSharedDegrees(SparseJoinAggregateCostTest.java:149)
+
+org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.sparseAdaptiveKeysSeparateInputSizesWithoutChangingThePhysicalRecipe -- Time elapsed: 0.007 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: completed timings for a small plane must not become exact evidence for a much larger plane ==> expected: not equal but was: <0>
+	at org.junit.jupiter.api.Assertions.assertNotEquals(Assertions.java:2106)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateCostTest.sparseAdaptiveKeysSeparateInputSizesWithoutChangingThePhysicalRecipe(SparseJoinAggregateCostTest.java:128)
+
+
+Bounded specialist exploration test-first evidence; cost class22 tests passed; new sparse trial test fails before family registration.
+Full log: sparse-integration-exploration-red.log
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAdaptiveArbitrationTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.080 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAdaptiveArbitrationTest
+org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAdaptiveArbitrationTest.unmeasuredSparseAggregateReceivesBoundedTrialDespitePessimisticFamilyEvidence -- Time elapsed: 0.061 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: an unmeasured sparse aggregate must receive the bounded specialist trial despite family-only timing ==> expected: <true> but was: <false>
+	at org.junit.jupiter.api.Assertions.assertTrue(Assertions.java:232)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAdaptiveArbitrationTest.unmeasuredSparseAggregateReceivesBoundedTrialDespitePessimisticFamilyEvidence(LmdbNativeAdaptiveArbitrationTest.java:555)
+
+
+
+Sparse probe replay capacity regression, before production fix
+Selection: SparseJoinAggregateAdapterTest#probeCanCompleteSpillingReplayBeyondPrivateRowBuffer
+Log: sparse-integration-probe-capacity-red.log
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateAdapterTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 1.081 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateAdapterTest
+org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateAdapterTest.probeCanCompleteSpillingReplayBeyondPrivateRowBuffer -- Time elapsed: 1.059 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: ledger-bounded replay must not stop at the probe's private output-array row ceiling ==> Unexpected exception thrown: org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException: kernel execution cancelled by probe deadline
+	at org.junit.jupiter.api.Assertions.assertDoesNotThrow(Assertions.java:3388)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateAdapterTest.probeCanCompleteSpillingReplayBeyondPrivateRowBuffer(SparseJoinAggregateAdapterTest.java:335)
+Caused by: org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException: kernel execution cancelled by probe deadline
+

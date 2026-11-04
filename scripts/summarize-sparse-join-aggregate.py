@@ -12,17 +12,39 @@ from collections import defaultdict
 from pathlib import Path
 
 
-PARAMETERS = ("endpoints", "join_keys", "fanout", "blocks", "multiplicity", "having", "threshold", "count_expression")
+PARAMETERS = ("endpoints", "join_keys", "fanout", "left_fanout", "right_fanout", "distribution", "overlap",
+              "parallel", "blocks", "multiplicity", "having", "threshold", "count_expression")
+
+
+def normalize(row):
+    """Historical CSVs describe serial, symmetric, uniform, fully overlapping fixtures."""
+    row.setdefault("left_fanout", row["fanout"])
+    row.setdefault("right_fanout", row["fanout"])
+    row.setdefault("distribution", "uniform")
+    row.setdefault("overlap", "100")
+    row.setdefault("parallel", "false")
+    row.setdefault("sparse_plan", "")
+    row.setdefault("shared_join_keys", str(int(row["join_keys"]) * int(row["overlap"]) // 100))
+    row.setdefault("route_witness_scope", "separate_executed_explanation")
+    row.setdefault("route_witness_stage", "historical_before_samples")
+    # The original harness deliberately disabled sparse for auto and forced packed.
+    row.setdefault("sparse_setting", "true" if row["strategy"] in ("sparseJoinAggregate", "autoSparse")
+                   else "legacy_false")
+    return row
 
 
 def summarize(directory):
     samples = defaultdict(list)
     first = defaultdict(list)
     witnesses = defaultdict(set)
+    witness_stages = defaultdict(set)
+    plan_witnesses = defaultdict(set)
+    dimensions = defaultdict(set)
     metadata = {}
     for path in sorted(directory.glob("fork-*.csv")):
         with path.open(newline="", encoding="utf-8") as source:
             for row in csv.DictReader(source):
+                row = normalize(row)
                 case = tuple(row[name] for name in PARAMETERS)
                 key = (case, row["strategy"], row["fork"])
                 if row["phase"] == "warm":
@@ -31,17 +53,16 @@ def summarize(directory):
                     first[(case, row["strategy"])].append(int(row["total_ns"]) / 1_000_000)
                 metadata[(case, row["strategy"])] = row
                 witnesses[(case, row["strategy"])].add(row["actual_paths"])
+                witness_stages[(case, row["strategy"])].add(row["route_witness_stage"])
+                if row["sparse_plan"]:
+                    plan_witnesses[(case, row["strategy"])].add(row["sparse_plan"])
+                if row["strategy"] == "sparseJoinAggregate":
+                    streamed = re.search(r"\bleftRows=(\d+)", row.get("sparse_work", ""))
+                    retained = re.search(r"\brightEndpoints=(\d+)", row.get("sparse_work", ""))
+                    if streamed and retained:
+                        dimensions[case].add((int(streamed[1]), int(retained[1])))
     if not samples:
         raise ValueError("No warmed samples in fork-*.csv")
-
-    dimensions = {}
-    for (case, route), row in metadata.items():
-        if route != "sparseJoinAggregate":
-            continue
-        left = re.search(r"\bleftRows=(\d+)", row.get("sparse_work", ""))
-        right = re.search(r"\brightEndpoints=(\d+)", row.get("sparse_work", ""))
-        if left and right:
-            dimensions[case] = (int(left[1]), int(right[1]))
 
     medians = defaultdict(dict)
     counts = defaultdict(int)
@@ -58,70 +79,121 @@ def summarize(directory):
                    max_fork_median_ms=max(forks.values()), first_query_median_ms=statistics.median(first[(case, route)]),
                    output_density=data["output_density"], nonzero_groups=data["nonzero_groups"],
                    retained_groups=data["retained_groups"],
-                   route_witnesses=" | ".join(sorted(witnesses[(case, route)])))
+                   shared_join_keys=data["shared_join_keys"], sparse_setting=data["sparse_setting"],
+                   route_witnesses=" | ".join(sorted(witnesses[(case, route)])),
+                   route_witness_scope=data["route_witness_scope"],
+                   route_witness_stages=" | ".join(sorted(witness_stages[(case, route)])),
+                   sparse_plan_witnesses=" | ".join(sorted(plan_witnesses[(case, route)])))
         add_dimensions(row, dimensions.get(case), data)
         summary.append(row)
     write_csv(directory / "summary.csv", summary)
 
     comparisons = []
+    automatic = []
     for case in sorted({case for case, _ in medians}):
-        sparse = medians.get((case, "sparseJoinAggregate"))
-        if not sparse:
-            continue
-        for baseline in ("auto", "packedFtreeAggregate"):
-            control = medians.get((case, baseline))
-            if not control:
-                continue
-            if sparse.keys() != control.keys():
-                raise ValueError(f"Unpaired forks for {case}: {baseline} versus sparseJoinAggregate")
-            ratios = [control[fork] / sparse[fork] for fork in sparse]
-            data = metadata[(case, "sparseJoinAggregate")]
-            row = dict(zip(PARAMETERS, case))
-            row.update(baseline=baseline, forks=len(sparse), baseline_median_ms=statistics.median(control.values()),
-                       sparse_median_ms=statistics.median(sparse.values()),
-                       median_paired_speedup=statistics.median(ratios), min_paired_speedup=min(ratios),
-                       max_paired_speedup=max(ratios), output_density=data["output_density"],
-                       nonzero_groups=data["nonzero_groups"], retained_groups=data["retained_groups"])
-            add_dimensions(row, dimensions.get(case), data)
-            comparisons.append(row)
+        automatic_row = compare(case, "autoDisabled", "auto", medians, metadata, witnesses, plan_witnesses, dimensions)
+        if automatic_row is not None:
+            automatic.append(automatic_row)
+        for baseline in ("autoDisabled", "auto", "packedFtreeAggregate"):
+            row = compare(case, baseline, "sparseJoinAggregate", medians, metadata, witnesses, plan_witnesses, dimensions)
+            if row is not None:
+                # Retain the historical column for consumers of forced-sparse comparisons.
+                row["sparse_median_ms"] = row["candidate_median_ms"]
+                comparisons.append(row)
     if comparisons:
         write_csv(directory / "comparison.csv", comparisons)
+    if automatic:
+        write_csv(directory / "automatic-comparison.csv", automatic)
 
     with (directory / "summary.md").open("w", encoding="utf-8") as out:
         out.write("# Sparse join aggregate measurements\n\n")
         out.write("Complete-query latency includes preparation, optimization, sparse setup/remapping, aggregation "
                   "and result collection. Exact validation is outside the timer. Each latency is the median of "
-                  "per-fork warmed medians; speedup is the median of paired baseline/sparse ratios within each "
-                  "fork. Values above 1 favor sparse. The range is the minimum–maximum paired ratio across "
+                  "per-fork warmed medians; speedup is the median of paired baseline/candidate ratios within each "
+                  "fork. Values above 1 favor the candidate named in the table. The range is the minimum–maximum paired ratio across "
                   "forks, not a confidence interval. No samples are removed.\n\n")
         out.write("First-use samples are separate in summary.csv. Stores and persistent adjacency are already "
                   "built; no cold-disk claims are made. Consult environment.txt, commands.sh and raw fork CSVs "
                   "for the machine, exact invocation and all samples.\n\n")
-        if not comparisons:
-            out.write("No paired sparse/control cases were present; see summary.csv for available routes.\n")
-            return
-        out.write("| Fanout | Blocks | Max weight | Count | HAVING | Density nominal/observed | "
-                  "Retained/total groups | Control | "
-                  "Control ms | Sparse ms | Paired speedup | Fork range |\n")
-        out.write("| ---: | ---: | ---: | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | --- |\n")
-        for row in comparisons:
-            threshold = row["having"] if row["having"] == "none" else f'{row["having"]} ≥ {row["threshold"]}'
-            observed = row["observed_output_density"]
-            density = f'{float(row["output_density"]):.2%}'
-            if observed != "":
-                density += f" / {observed:.2%}"
-            out.write(f'| {row["fanout"]} | {row["blocks"]} | {row["multiplicity"]} | '
-                      f'{row["count_expression"]} | {threshold} | '
-                      f'{density} | {row["retained_groups"]}/{row["nonzero_groups"]} | '
-                      f'{row["baseline"]} | {row["baseline_median_ms"]:.3f} | {row["sparse_median_ms"]:.3f} | '
-                      f'{row["median_paired_speedup"]:.3f}× | '
-                      f'{row["min_paired_speedup"]:.3f}–{row["max_paired_speedup"]:.3f}× |\n')
+        out.write("Route witnesses come from separate executed explanations before and after the warmed batch, "
+                  "not from instrumentation of each timed invocation. Historical CSVs contain only the earlier "
+                  "witnesses. Consult summary.csv for their scope, stages and observed path union.\n\n")
+        out.write("Observed compact-domain dimensions use the forced sparse reference route and name its physical "
+                  "streamed/retained roles, which may transpose the written query sides. All witnessed dimension "
+                  "pairs and orientation plans are retained; density is unchanged by transposition.\n\n")
+        if automatic:
+            out.write("## Automatic planner integration\n\n")
+            out.write("`auto` has no sparse-property override. `autoDisabled` explicitly disables the candidate; "
+                      "both leave route selection to the planner. Results are also in automatic-comparison.csv.\n\n")
+            write_table(out, automatic)
+        if comparisons:
+            out.write("## Forced sparse comparisons\n\n")
+            out.write("These measure forced sparse against each available control, separately from the automatic "
+                      "integration comparison. Historical `auto` rows used the disabled planner; their "
+                      "summary.csv sparse_setting is legacy_false.\n\n")
+            write_table(out, comparisons)
+        if not comparisons and not automatic:
+            out.write("No paired candidate/control cases were present; see summary.csv for available routes.\n")
+
+
+def compare(case, baseline, candidate, medians, metadata, witnesses, plan_witnesses, dimensions):
+    control = medians.get((case, baseline))
+    treatment = medians.get((case, candidate))
+    if not control or not treatment:
+        return None
+    if treatment.keys() != control.keys():
+        raise ValueError(f"Unpaired forks for {case}: {baseline} versus {candidate}")
+    ratios = [control[fork] / treatment[fork] for fork in treatment]
+    data = metadata[(case, candidate)]
+    row = dict(zip(PARAMETERS, case))
+    row.update(baseline=baseline, candidate=candidate, forks=len(treatment),
+               baseline_median_ms=statistics.median(control.values()),
+               candidate_median_ms=statistics.median(treatment.values()),
+               median_paired_speedup=statistics.median(ratios), min_paired_speedup=min(ratios),
+               max_paired_speedup=max(ratios), output_density=data["output_density"],
+               nonzero_groups=data["nonzero_groups"], retained_groups=data["retained_groups"],
+               shared_join_keys=data["shared_join_keys"],
+               baseline_route_witnesses=" | ".join(sorted(witnesses[(case, baseline)])),
+               candidate_route_witnesses=" | ".join(sorted(witnesses[(case, candidate)])),
+               baseline_sparse_plan_witnesses=" | ".join(sorted(plan_witnesses[(case, baseline)])),
+               candidate_sparse_plan_witnesses=" | ".join(sorted(plan_witnesses[(case, candidate)])))
+    add_dimensions(row, dimensions.get(case), data)
+    return row
+
+
+def write_table(out, rows):
+    out.write("| Left×right fanout | Distribution | Shared keys | Parallel | Blocks | Max weight | Count | HAVING | "
+              "Density nominal/observed | Retained/total groups | Control → candidate | "
+              "Control ms | Candidate ms | Paired speedup | Fork range |\n")
+    out.write("| ---: | --- | ---: | --- | ---: | ---: | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | --- |\n")
+    for row in rows:
+        threshold = row["having"] if row["having"] == "none" else f'{row["having"]} ≥ {row["threshold"]}'
+        observed = row["observed_output_density"]
+        density = f'{float(row["output_density"]):.2%}'
+        if observed != "":
+            density += f" / {observed:.2%}"
+        out.write(f'| {row["left_fanout"]}×{row["right_fanout"]} | {row["distribution"]} | '
+                  f'{row["shared_join_keys"]}/{row["join_keys"]} | {row["parallel"]} | '
+                  f'{row["blocks"]} | {row["multiplicity"]} | '
+                  f'{row["count_expression"]} | {threshold} | '
+                  f'{density} | {row["retained_groups"]}/{row["nonzero_groups"]} | '
+                  f'{row["baseline"]} → {row["candidate"]} | {row["baseline_median_ms"]:.3f} | '
+                  f'{row["candidate_median_ms"]:.3f} | {row["median_paired_speedup"]:.3f}× | '
+                  f'{row["min_paired_speedup"]:.3f}–{row["max_paired_speedup"]:.3f}× |\n')
+    out.write("\n")
 
 
 def add_dimensions(row, dimensions, data):
-    left, right = dimensions or ("", "")
-    row.update(observed_left_endpoints=left, observed_right_endpoints=right,
-               observed_output_density=int(data["nonzero_groups"]) / (left * right) if left and right else "")
+    pairs = sorted(dimensions or ())
+    streamed, retained = pairs[0] if len(pairs) == 1 else ("", "")
+    products = {left * right for left, right in pairs}
+    domain = next(iter(products)) if len(products) == 1 else 0
+    # Keep old columns as physical-role aliases, never imply written-query sides after transposition.
+    row.update(observed_left_endpoints=streamed, observed_right_endpoints=retained,
+               observed_streamed_endpoints=streamed, observed_retained_endpoints=retained,
+               observed_endpoint_dimension_witnesses=" | ".join(f"{left}x{right}" for left, right in pairs),
+               dimension_reference_route="sparseJoinAggregate" if pairs else "",
+               observed_output_density=int(data["nonzero_groups"]) / domain if domain else "")
 
 
 def write_csv(path, rows):

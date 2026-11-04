@@ -13,10 +13,17 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.GROUP_UPDATE;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.HASH_BUILD_ROW;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.HASH_PROBE;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.MEMBERSHIP_TEST;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.SCANNED_ROW;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -29,13 +36,14 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
- * Opt-in sparse multiplication of two mandatory predicate planes, grouped by their non-shared endpoints. The recognizer
- * deliberately proves a small non-null COUNT fragment: arbitrary expressions, graph variables, filters, DISTINCT and
- * optional inputs continue through the existing aggregate alternatives.
+ * Sparse multiplication of two mandatory predicate planes, grouped by their non-shared endpoints. The recognizer
+ * proves non-null COUNT inputs, including constants and aliases. Arbitrary expressions, graph variables, filters,
+ * DISTINCT and optional inputs continue through the existing aggregate alternatives.
  */
 final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.Producer {
 
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.sparseJoinAggregate.enabled";
+	private static final long BATCH_ARRAY_BYTES = 16L + Long.BYTES * (long) SparseJoinAggregateKernel.BATCH_SIZE;
 
 	private final PatternPlan left;
 	private final PatternPlan right;
@@ -43,26 +51,40 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 	private final int rightEndpoint;
 	private final int shared;
 	private final long minimumCount;
+	private final long inputMask;
 	private final long[] leftContexts;
 	private final long[] rightContexts;
+	private final Metadata metadata;
 
 	private LmdbSparseJoinAggregatePlan(PatternPlan left, PatternPlan right, int leftEndpoint, int rightEndpoint,
-			int shared, long minimumCount) {
+			int shared, long minimumCount, long inputMask) {
+		this(left, right, leftEndpoint, rightEndpoint, shared, minimumCount, inputMask, null);
+	}
+
+	private LmdbSparseJoinAggregatePlan(PatternPlan left, PatternPlan right, int leftEndpoint, int rightEndpoint,
+			int shared, long minimumCount, long inputMask, Metadata metadata) {
 		this.left = left;
 		this.right = right;
 		this.leftEndpoint = leftEndpoint;
 		this.rightEndpoint = rightEndpoint;
 		this.shared = shared;
 		this.minimumCount = minimumCount;
+		this.inputMask = inputMask;
+		this.metadata = metadata;
 		leftContexts = acceptedContexts(left);
 		rightContexts = acceptedContexts(right);
 	}
 
 	static LmdbSparseJoinAggregatePlan tryCreate(SlotPlan input, int[] groups, AggregateSpec[] aggregates,
 			ValueExpr having) {
-		if (!Boolean.getBoolean(ENABLED_PROPERTY) || groups.length != 2 || groups[0] == groups[1]
+		if (!enabled() || groups.length != 2 || groups[0] == groups[1]
 				|| aggregates.length == 0) {
 			return null;
+		}
+		List<ExtensionPlan> extensions = new ArrayList<>();
+		while (input instanceof ExtensionPlan extension) {
+			extensions.add(extension);
+			input = extension.arg;
 		}
 		PatternPlan left;
 		PatternPlan right;
@@ -94,6 +116,19 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 			return null;
 		}
 		long guaranteedBindings = leftMask | rightMask;
+		// Resolve only assignments whose value is guaranteed to be bound, in their actual evaluation order.
+		// No expression is evaluated or discarded here: computed/error/effectful assignments stay on the ordinary path.
+		for (int i = extensions.size() - 1; i >= 0; i--) {
+			for (CopyBinding copy : extensions.get(i).copies) {
+				if (copy.computed != null || copy.computedValue != null || copy.semanticValue != null
+						|| copy.termChecked || (guaranteedBindings & (1L << copy.targetSlot)) != 0L
+						|| (copy.sourceSlot >= 0 ? (guaranteedBindings & (1L << copy.sourceSlot)) == 0L
+								: copy.constant == UNKNOWN || copy.constant == NULL_CONTEXT_ID)) {
+					return null;
+				}
+				guaranteedBindings |= 1L << copy.targetSlot;
+			}
+		}
 		for (AggregateSpec aggregate : aggregates) {
 			if (aggregate.kind != AggKind.COUNT || aggregate.distinct
 					|| aggregate.slot >= 0 && (guaranteedBindings & (1L << aggregate.slot)) == 0L
@@ -103,7 +138,12 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 			}
 		}
 		return new LmdbSparseJoinAggregatePlan(left, right, leftEndpoint, rightEndpoint, shared,
-				minimumCount(having, aggregates));
+				minimumCount(having, aggregates), guaranteedBindings);
+	}
+
+	static boolean enabled() {
+		String configured = System.getProperty(ENABLED_PROPERTY);
+		return configured == null || Boolean.parseBoolean(configured);
 	}
 
 	private static boolean eligible(PatternPlan pattern) {
@@ -138,12 +178,14 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 	}
 
 	boolean handles(RowState row) {
-		long inputMask = (1L << leftEndpoint) | (1L << rightEndpoint) | (1L << shared);
-		if (!Boolean.getBoolean(ENABLED_PROPERTY) || row.slots[leftEndpoint] != UNKNOWN
-				|| row.slots[rightEndpoint] != UNKNOWN || row.slots[shared] != UNKNOWN
-				|| (row.boundMask() & inputMask) != 0L || row.summaryCell(leftEndpoint) != null
-				|| row.summaryCell(rightEndpoint) != null || row.summaryCell(shared) != null) {
+		if (!enabled() || (row.boundMask() & inputMask) != 0L) {
 			return false;
+		}
+		for (long remaining = inputMask; remaining != 0L; remaining &= remaining - 1L) {
+			int slot = Long.numberOfTrailingZeros(remaining);
+			if (row.slots[slot] != UNKNOWN || row.summaryCell(slot) != null) {
+				return false;
+			}
 		}
 		NativeLmdbQuerySource source = row.source;
 		while (source instanceof SyntheticValueSource synthetic) {
@@ -152,16 +194,245 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		return source.hasCanonicalIds();
 	}
 
+	/** Bind one immutable orientation before it is offered, quoted, or opened by the common arbiter. */
+	LmdbSparseJoinAggregatePlan prepare(RowState row) {
+		if (!handles(row)) {
+			return null;
+		}
+		if (metadata != null) {
+			return this;
+		}
+		Metadata facts = metadata(row);
+		if (facts == null) {
+			// Missing metadata does not make a legal forced or previously measured strategy disappear.
+			return this;
+		}
+		Metadata transposed = new Metadata(facts.right, facts.left);
+		int contextBuffers = contextBuffers();
+		if (transposed.retainedBytes(minimumCount, contextBuffers) < facts.retainedBytes(minimumCount, contextBuffers)) {
+			return new LmdbSparseJoinAggregatePlan(right, left, rightEndpoint, leftEndpoint, shared, minimumCount,
+					inputMask, transposed);
+		}
+		return new LmdbSparseJoinAggregatePlan(left, right, leftEndpoint, rightEndpoint, shared, minimumCount,
+				inputMask, facts);
+	}
+
 	@Override
 	public NativeAggregatePhysicalPlan.Work quote(RowState row) {
-		// Input cardinality alone does not prove remapping cost, intersection fanout or output density. Keep this
-		// candidate unpriced until the common arbiter has measured it; a missing quote must never mean free setup.
-		return null;
+		if (!handles(row)) {
+			return null;
+		}
+		Metadata facts = metadata == null ? metadata(row) : metadata;
+		return facts == null ? null : facts.work(minimumCount, contextChecks(leftContexts, left.namedContextScope),
+				contextChecks(rightContexts, right.namedContextScope));
+	}
+
+	@Override
+	public boolean blocksBeforeOutput() {
+		return true;
+	}
+
+	@Override
+	public NativeAggregatePhysicalPlan.KeyProperties keyProperties() {
+		// One streamed endpoint partitions the output; compact ordinals index the other endpoint's accumulator.
+		// The dictionaries used to remap inputs are separately charged as HASH_BUILD_ROW/HASH_PROBE work.
+		return new NativeAggregatePhysicalPlan.KeyProperties(
+				LmdbNativePhysicalVariantKey.GroupingMode.PARTITIONED_GROUPS, false);
+	}
+
+	@Override
+	public LmdbNativePhysicalVariantKey variantKey(LmdbNativePhysicalVariantKey base,
+			NativeAggregatePhysicalPlan.Work quotedWork) {
+		double scans = quotedWork.input().scanned() + quotedWork.input().inherited().expected(SCANNED_ROW);
+		double products = quotedWork.extra().expected(GROUP_UPDATE);
+		// Coarse work and expansion bands separate timing histories without embedding raw cardinalities. Both
+		// expressions are symmetric under transposition; orientation remains a separate physical property.
+		return base.toBuilder()
+				.cardinalityBucket(workBucket(scans + products + quotedWork.input().rows()))
+				.fanoutBucket(workBucket(products / Math.max(1D, scans)))
+				.build();
+	}
+
+	private static int workBucket(double count) {
+		return count <= 1D ? 0 : Math.min(63, Math.getExponent(count) + 1);
+	}
+
+	@Override
+	public NativeAggregatePhysicalPlan.ColdAnchor coldAnchor(RowState row,
+			NativeAggregatePhysicalPlan.Work quotedWork) {
+		if (quotedWork == null || !handles(row) || contextBuffers() != 0) {
+			// Whole-plane bounds can price filtered execution, but cannot certify useful contraction in its graphs.
+			return null;
+		}
+		Metadata facts = metadata == null ? metadata(row) : metadata;
+		if (facts == null || !facts.hasContractionOpportunity()) {
+			return null;
+		}
+		long retainedBytes = facts.retainedBytes(minimumCount, 0);
+		if (retainedBytes == Long.MAX_VALUE || retainedBytes > LmdbNativeHashJoin.queryMemory().perQueryMaxBytes()) {
+			return null;
+		}
+		return new NativeAggregatePhysicalPlan.ColdAnchor(
+				"complete canonical predicate planes admit direct weighted fiber-product accumulation without "
+						+ "reconstructing joined binding mappings; endpoint/shared cardinalities admit branching or "
+						+ "prove repeated context fibers, while domain overlap and group cardinality remain bounded",
+				"the chosen retained plane, compact dictionaries and one endpoint accumulator require at most "
+						+ retainedBytes + " kernel bytes including transient growth; allocations use the query ledger "
+						+ "and completed groups use ledger-bounded replay");
 	}
 
 	@Override
 	public String properties() {
-		return "SPARSE_JOIN_COUNT[setup=right-plane-remap;minimum=" + minimumCount + ";retention=right-plane]";
+		return "SPARSE_JOIN_COUNT[streamSlot=" + leftEndpoint + ",streamDirection="
+				+ (left.s.slot == leftEndpoint ? "S" : "O")
+				+ ",streamContexts=" + contextMode(leftContexts, left.namedContextScope)
+				+ ",retainedSlot=" + rightEndpoint
+				+ ",retainedDirection=" + (right.s.slot == shared ? "S" : "O")
+				+ ",retainedContexts=" + contextMode(rightContexts, right.namedContextScope)
+				+ ",contextBuffers=" + contextBuffers()
+				+ ",thresholdPruning=" + (minimumCount > 1L) + ";retention=right-plane]";
+	}
+
+	private int contextBuffers() {
+		return (leftContexts != null || left.namedContextScope ? 1 : 0)
+				+ (rightContexts != null || right.namedContextScope ? 1 : 0);
+	}
+
+	private static long contextChecks(long[] acceptedContexts, boolean namedOnly) {
+		return (acceptedContexts == null ? 0L : acceptedContexts.length) + (namedOnly ? 1L : 0L);
+	}
+
+	private static String contextMode(long[] acceptedContexts, boolean namedOnly) {
+		return acceptedContexts != null ? namedOnly ? "SCOPED_NAMED" : "SCOPED"
+				: namedOnly ? "NAMED" : "UNRESTRICTED";
+	}
+
+	private Metadata metadata(RowState row) {
+		row.cancellation.check();
+		// Filtering only removes rows, so whole-plane headers bound scoped execution as well. Preparation never
+		// enumerates rows or payloads to price a candidate; every fact is bounded, revision-valid source metadata.
+		Plane leftPlane = Plane.read(row.source, left, leftEndpoint);
+		Plane rightPlane = Plane.read(row.source, right, rightEndpoint);
+		return leftPlane == null || rightPlane == null ? null : new Metadata(leftPlane, rightPlane);
+	}
+
+	private record Plane(long quads, long endpoints, long shared) {
+		static Plane read(NativeLmdbQuerySource source, PatternPlan pattern, int endpoint) {
+			OptionalLong quads = source.exactPredicateCount(pattern.p.constant);
+			OptionalLong endpoints = source.adjacencyKeyDomainCardinality(pattern.p.constant,
+					pattern.s.slot == endpoint);
+			OptionalLong shared = source.adjacencyKeyDomainCardinality(pattern.p.constant,
+					pattern.s.slot != endpoint);
+			if (quads.isEmpty() || endpoints.isEmpty() || shared.isEmpty()) {
+				return null;
+			}
+			long count = quads.getAsLong(), endpointCount = endpoints.getAsLong(), sharedCount = shared.getAsLong();
+			if (count < 0L || endpointCount < 0L || sharedCount < 0L || endpointCount > count || sharedCount > count
+					|| (count == 0L) != (endpointCount == 0L) || (count == 0L) != (sharedCount == 0L)) {
+				return null;
+			}
+			return new Plane(count, endpointCount, sharedCount);
+		}
+
+		long fibers() {
+			return Math.min(quads, boundedMultiply(endpoints, shared));
+		}
+	}
+
+	private record Metadata(Plane left, Plane right) {
+		NativeAggregatePhysicalPlan.Work work(long minimumCount, long leftContextChecks, long rightContextChecks) {
+			double leftFibers = left.fibers(), rightFibers = right.fibers();
+			double productBound = Math.min(leftFibers * right.endpoints,
+					Math.min(rightFibers * left.endpoints,
+							(double) left.endpoints * right.endpoints * Math.min(left.shared, right.shared)));
+			long sharedDomain = Math.max(left.shared, right.shared);
+			// Uniform shared-key degrees and containment estimate overlap; they do not prove it or bound skew.
+			double products = sharedDomain == 0L ? 0D
+					: Math.min(productBound, leftFibers * rightFibers / sharedDomain);
+			double endpointPairs = (double) left.endpoints * right.endpoints;
+			double groups = Math.min(products, endpointPairs);
+			double groupBound = Math.min(productBound, endpointPairs);
+			double scans = (leftContextChecks == 0L ? leftFibers : left.quads)
+					+ (rightContextChecks == 0L ? rightFibers : right.quads);
+			double contextTests = (double) left.quads * leftContextChecks + (double) right.quads * rightContextChecks;
+			// The common aggregate quote charges completed-group finalization and output materialization. This
+			// producer separately charges the sparse product updates, both input traversals and remapping setup.
+			// These are conservative cardinality estimates, not measured counts or an assertion of domain overlap.
+			NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(groups, 0D, 2D, 0D, 0D,
+					0D, groupBound, LmdbNativeCostVector.bounds(SCANNED_ROW, 0D, scans,
+							(double) left.quads + right.quads));
+			// Without threshold buffering, one logical left fiber may arrive in several physical chunks. Charge
+			// an upper bound using quads for those repeated products; buffering coalesces them before multiplying.
+			double productHigh = minimumCount > 1L ? productBound : (double) left.quads * right.endpoints;
+			LmdbNativeCostVector extra = LmdbNativeCostVector.builder()
+					.add(HASH_BUILD_ROW, 0D, right.shared + rightFibers,
+							3D * (right.shared + (double) right.quads))
+					.add(HASH_PROBE, 0D, leftFibers, left.quads)
+					.add(MEMBERSHIP_TEST, 0D, contextTests, contextTests)
+					.add(GROUP_UPDATE, 0D, products, productHigh)
+					.build();
+			return new NativeAggregatePhysicalPlan.Work(input, extra,
+					rightFibers + right.shared + right.endpoints);
+		}
+
+		boolean hasContractionOpportunity() {
+			// Repeated endpoints alone do not establish a branching join: every shared key could have unit degree.
+			// Requiring both domains to branch is symmetric under transposition. Proven context multiplicity is an
+			// independent compression opportunity. Neither condition claims actual overlap or a runtime speed ratio.
+			return left.quads > 0L && right.quads > 0L
+					&& (left.fibers() < left.quads || right.fibers() < right.quads
+							|| left.quads > Math.max(left.endpoints, left.shared)
+									&& right.quads > Math.max(right.endpoints, right.shared));
+		}
+
+		/** Conservative peak: final arrays plus every growth's old array, all admitted by the same ledger. */
+		long retainedBytes(long minimumCount, int contextBuffers) {
+			long sharedCapacity = capacity(boundedAdd(right.shared, 1L), 16L);
+			long fiberCapacity = capacity(right.fibers(), 64L);
+			long endpointCapacity = capacity(right.endpoints, 16L);
+			if (sharedCapacity < 0L || fiberCapacity < 0L || endpointCapacity < 0L) {
+				return Long.MAX_VALUE;
+			}
+			long bytes = boundedAdd(512L + 2L * BATCH_ARRAY_BYTES,
+					boundedAdd(mapBytes(right.shared), mapBytes(right.endpoints)));
+			bytes = boundedAdd(bytes, boundedAdd(16L + 4L * sharedCapacity, 32L + 12L * fiberCapacity));
+			bytes = boundedAdd(bytes, boundedAdd(32L, boundedMultiply(12L, right.endpoints)));
+			if (minimumCount > 1L) {
+				long leftCapacity = capacity(Math.min(left.shared, right.shared), 16L);
+				if (leftCapacity < 0L) {
+					return Long.MAX_VALUE;
+				}
+				bytes = boundedAdd(bytes, 16L + 8L * sharedCapacity);
+				bytes = boundedAdd(bytes, 16L + 8L * endpointCapacity);
+				bytes = boundedAdd(bytes, 32L + 12L * leftCapacity);
+			}
+			// Adapter context arrays have a fixed capacity and never grow, so they need one claim apiece alongside
+			// the kernel's transient old-plus-new growth bound. Both orientations have the same buffer count.
+			return boundedAdd(boundedMultiply(2L, bytes), BATCH_ARRAY_BYTES * contextBuffers);
+		}
+	}
+
+	private static long mapBytes(long entries) {
+		long tableCapacity = capacity(boundedAdd(boundedMultiply(entries, 4L) / 3L, 1L), 32L);
+		long keyCapacity = capacity(entries, 16L);
+		return tableCapacity < 0L || keyCapacity < 0L ? Long.MAX_VALUE
+				: 176L + 12L * tableCapacity + 8L * keyCapacity;
+	}
+
+	private static long capacity(long size, long minimum) {
+		if (size > 1L << 30) {
+			return -1L;
+		}
+		long requested = Math.max(minimum, size);
+		return requested <= 1L ? 1L : Long.highestOneBit(requested - 1L) << 1;
+	}
+
+	private static long boundedAdd(long left, long right) {
+		return left > Long.MAX_VALUE - right ? Long.MAX_VALUE : left + right;
+	}
+
+	private static long boundedMultiply(long left, long right) {
+		return right != 0L && left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
 	}
 
 	List<BindingSet> evaluate(NativeGroupIteration owner, RowState row) {
@@ -203,6 +474,9 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 					minimumCount, output, inputs.memory, cancellation);
 			inputs.scan.complete();
 			KernelRuntime.rethrowCloseFailure(inputs.close(null));
+			LmdbNativeExplain.setRuntimeMetric(owner.explainTarget, "sparseJoinAggregatePlan", properties()
+					+ ";streamBinding=" + owner.layout.slotName(leftEndpoint)
+					+ ";retainedBinding=" + owner.layout.slotName(rightEndpoint));
 			LmdbNativeExplain.setRuntimeMetric(owner.explainTarget, "sparseJoinAggregateWork", statistics.toString());
 			return results.finish();
 		} catch (KernelRuntime.AllocationDeniedException e) {
@@ -263,7 +537,6 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		private final NativeGroupIteration owner;
 		private final NativeReplayBindingList.Builder results;
 		private final KernelCancellation cancellation;
-		private int size;
 
 		SparseOutput(NativeGroupIteration owner, NativeReplayBindingList.Builder results,
 				KernelCancellation cancellation) {
@@ -274,7 +547,8 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 
 		@Override
 		public void accept(long leftId, long rightId, long count) {
-			KernelRuntime.checkMaterializationCapacity(cancellation, size);
+			// Replay bounds resident bytes and spills; total output rows are not a growing private array.
+			KernelRuntime.checkCancelled(cancellation);
 			QueryBindingSet result = new QueryBindingSet(2 + owner.aggregates.length);
 			result.addBinding(owner.slotNames[leftEndpoint],
 					owner.source.lazyValue(leftId, owner.layout.positionMask(leftEndpoint)));
@@ -285,7 +559,6 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 				result.addBinding(aggregate.name, value);
 			}
 			results.add(result);
-			size++;
 		}
 	}
 
@@ -299,6 +572,7 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		private long[] contexts;
 		private long offset;
 		private long size;
+		private boolean physicalFibers;
 
 		WeightedRuns(NativeAdjacency.KeyRunCursor cursor, long[] acceptedContexts, boolean namedOnly,
 				KernelCancellation cancellation, KernelRuntime.MemoryAccount memory) {
@@ -317,6 +591,7 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 				return false;
 			}
 			size = cursor.runSize();
+			physicalFibers = acceptedContexts == null && !namedOnly && cursor.supportsPhysicalFiberCopy();
 			return true;
 		}
 
@@ -327,6 +602,9 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 
 		@Override
 		public int read(long[] neighbors, long[] weights) {
+			if (physicalFibers) {
+				return readPhysicalFibers(neighbors, weights);
+			}
 			while (offset < size) {
 				KernelRuntime.checkCancelled(cancellation);
 				int requested = (int) Math.min(neighbors.length, size - offset);
@@ -362,6 +640,28 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 				}
 			}
 			return 0;
+		}
+
+		private int readPhysicalFibers(long[] neighbors, long[] weights) {
+			if (offset == size) {
+				return 0;
+			}
+			KernelRuntime.checkCancelled(cancellation);
+			int requested = (int) Math.min(neighbors.length, size - offset);
+			int copied = cursor.copyFibers(offset, requested, neighbors, 0, weights, 0);
+			if (copied <= 0 || copied > requested) {
+				throw new IllegalStateException("Incomplete adjacency fiber run");
+			}
+			long nextOffset = offset;
+			for (int i = 0; i < copied; i++) {
+				long weight = weights[i];
+				if (weight <= 0L || weight > size - nextOffset) {
+					throw new IllegalStateException("Invalid adjacency fiber multiplicity");
+				}
+				nextOffset += weight;
+			}
+			offset = nextOffset;
+			return copied;
 		}
 
 		private boolean accepts(long context) {

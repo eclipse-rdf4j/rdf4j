@@ -9,10 +9,23 @@ GROUP BY ?x ?y
 # Optionally: HAVING(COUNT(?z) >= threshold)
 ```
 
-The default routes are `auto` (the existing serial planner, with the experimental
-sparse candidate disabled), `packedFtreeAggregate` (the existing forced packed factorized
-aggregate), and `sparseJoinAggregate` (the experimental forced sparse aggregate).
-`autoSparse` optionally measures planner choice with the candidate enabled.
+The default routes compare normal automatic planning against its explicit disabled
+baseline and a forced sparse control:
+
+| Route | Sparse property | Route selection |
+| --- | --- | --- |
+| `auto` | No override; use the production default | Automatic |
+| `autoDisabled` | `false` | Automatic |
+| `sparseJoinAggregate` | `true` | Forced sparse |
+| `packedFtreeAggregate` | No override | Forced packed factorized aggregate |
+| `autoSparse` | `true` | Automatic; retained for older command lines |
+
+`auto` clears a caller-supplied sparse property so it measures the normal default.
+The separate `autoDisabled` route provides the counterfactual planner baseline.
+The optional `packedFtreeAggregate` control remains available through `--routes`.
+Historical result directories retain their original meaning: their `auto` route
+disabled sparse. The summarizer accepts those CSVs and labels that setting
+`legacy_false`; it does not reinterpret historical `auto` rows as default-enabled runs.
 Forced routes must appear in the executed explanation or the run fails. All
 routes use the same loaded store and full adjacency index. The specialized
 `factorizedTail` route cannot admit this shape: its existing admission rule
@@ -24,6 +37,11 @@ The default `bound` count mode uses `COUNT(?z)`: both mandatory patterns bind
 the existing serial packed f-tree path declines the full-mapping reducer used by
 `COUNT(*)`. Every route in a comparison receives the same query. No route gets
 different parallelism or a rewritten aggregate to make it eligible.
+`--parallel false` preserves the historical serial default. `--parallel true`
+enables parallel execution equally for every route, leaving other competitors
+available; the normal automatic planner can then choose their parallel plans.
+The matching JMH parameter is `parallel`. Its value is recorded as a separate
+CSV/summary dimension, and old CSVs normalize to `false`.
 Result caching is
 explicitly disabled. No competing aggregate is disabled to make sparse win.
 
@@ -53,7 +71,7 @@ To measure the `COUNT(*)` syntax separately, use its supported controls:
 
 ```bash
 scripts/run-sparse-join-aggregate-benchmarks.sh --no-build \
-  --counts star --routes auto,sparseJoinAggregate --forks 3 \
+  --counts star --routes autoDisabled,auto,sparseJoinAggregate --forks 3 \
   --output target/sparse-join-count-star
 ```
 
@@ -68,11 +86,18 @@ query, including warmup and first-use queries, is checked against an independent
 exact integer oracle. The assertion checks endpoint bindings, each count, the
 number of groups, and duplicate groups. Validation happens after the timer stops.
 
-Executed-route explanations are sampled after first use and again after warmup.
+Executed-route explanations are sampled after first use, after warmup, and after
+the warmed measurement batch.
 The CSV `actual_paths` and `sparse_work` fields record those witnesses; the latter
-includes sparse multiplication/pruning counters when available. The unforced
-planner may adapt between invocations. Forced-route admission still fails loudly
-if a requested strategy cannot execute.
+includes sparse multiplication/pruning counters when available. `sparse_plan`
+records the runtime orientation, including streamed/retained slots and bindings
+when available; `sparse_plan_witnesses` retains their union in the summary. The unforced
+planner may adapt between invocations. These are **separate executed explanation
+queries**, not instrumentation of every timed query. `route_witness_scope` and
+`route_witness_stage` make that distinction explicit. The final explanation is
+stored as `phase=witness` with zero timings; it is excluded from all latency
+statistics. Forced-route admission still fails loudly if a requested strategy
+cannot execute.
 The summary unions route witnesses across all recorded forks and phases rather
 than assigning the last observed planner choice to an entire case.
 
@@ -80,13 +105,25 @@ The output contains raw samples (`fork-*.csv`), route logs, exact commands, JVM
 and CPU information, container CPU/memory limits where available, the base commit
 and working-tree status/diff, including untracked implementation and benchmark
 sources for an uncommitted feature. `summary.csv` and `summary.md` report medians of
-per-fork warmed medians; `comparison.csv` pairs baseline/sparse ratios within
-each fork and reports their median and range. A speedup above 1 favors sparse.
+per-fork warmed medians. `automatic-comparison.csv` pairs `autoDisabled`/`auto`
+ratios within each fork and reports their median and range. This measures the
+effect of normal planner integration, including any cases where the planner
+selects another route. `comparison.csv` separately pairs each available control
+against forced sparse; its historical `sparse_median_ms` column remains available.
+A speedup above 1 favors the candidate named in the comparison.
 The range across forks is not a confidence interval. No outliers are dropped.
 The summaries can be regenerated with Python 3:
 
 ```bash
 python3 scripts/summarize-sparse-join-aggregate.py target/sparse-join-results
+```
+
+The summarizer's small self-check covers old CSV input, asymmetric/skew/overlap/parallel
+case separation, paired automatic ratios, transposed orientation witnesses, and
+exclusion of witness rows from latency samples:
+
+```bash
+python3 scripts/test-summarize-sparse-join-aggregate.py
 ```
 
 Compare per-fork medians and distributions rather
@@ -114,16 +151,45 @@ between independent processes, not hardware portability.
 
 ## Workload controls and exact semantics
 
-Each of `joinKeys` shared values has `fanout` distinct left neighbors and
-`fanout` distinct right neighbors. A deterministic mixing function selects
-neighbor intervals. `blocks` partitions both endpoint domains and limits joins
+`--fanouts` retains the symmetric degree grid. `--fanout-pairs` accepts explicit
+left/right degrees such as `1x32,32x1`; the two options are mutually exclusive.
+In JMH, `leftFanout` and `rightFanout` independently override `fanout`; zero means
+inherit the old `fanout` parameter. Raw CSVs retain `fanout` as the left degree
+for older consumers and add unambiguous `left_fanout` and `right_fanout` columns.
+
+Each relation has `joinKeys` distinct join-key values. `--overlaps` selects the
+percentage present in both relations, rounded down to a whole number of keys.
+The right relation's keys are shifted so the overlap is exactly
+`floor(joinKeys * overlap / 100)`. Nonmatching keys remain in both stored relations;
+reducing overlap does not simply shrink the input. `shared_join_keys` records the
+exact intersection size. At zero overlap, the correct output is empty even when
+HAVING is absent, and all timed results are still checked.
+
+The `uniform` distribution preserves the original deterministic mixing function
+that selects neighbor intervals. With `hot`, approximately seven eighths of keys
+concentrate their neighbor intervals in the first eighth of each endpoint block,
+expanded when necessary to accommodate the requested fanout. The remaining keys
+use the full block. Left and right concentration choices use independent hashes.
+This creates endpoint-frequency skew while preserving each key's distinct degree;
+it is a controlled synthetic hotspot, not a claim to model a power-law RDF graph.
+
+`blocks` partitions both endpoint domains and limits joins
 to pairs within the same partition. Thus fanout and possible output density can
 be varied separately. Blocks must divide both endpoint and join-key counts, and
-fanout must not exceed `endpoints / blocks`. The raw CSV `output_density` is the
+each fanout must not exceed `endpoints / blocks`. The raw CSV `output_density` is the
 actual nonzero count divided by the **nominal domain** `endpoints²`. Some nominal
 endpoints have no incidences at low fanout. The summary also reports observed
-left/right endpoint counts and compact-domain density using the sparse route's
-`leftRows` and `rightEndpoints` telemetry when available.
+streamed/retained endpoint counts and compact-domain density using the forced
+sparse reference route's `leftRows` and `rightEndpoints` telemetry when available.
+These are physical execution roles and may transpose the written-query sides.
+The summary names them `observed_streamed_endpoints` and
+`observed_retained_endpoints`; the older `observed_left_endpoints` and
+`observed_right_endpoints` columns remain deprecated aliases for compatibility.
+`dimension_reference_route` identifies the forced sparse reference, including
+when its dimensions accompany a control row. If witnessed orientations have
+different role counts, scalar counts are left blank and all streamed×retained
+pairs appear in `observed_endpoint_dimension_witnesses`. Their common product
+still determines compact-domain density because transposition does not change it.
 
 For maximum multiplicity `m`, shared value `z` has left weight `1 + z % m` and
 right weight `1 + (z / 3) % m`. Each incidence is repeated in that many distinct
@@ -143,7 +209,65 @@ Threshold `none` omits HAVING; `median` uses the median positive exact count;
 `empty` uses one above the largest exact count. Integers select literal
 thresholds. Median does not imply exactly 50% retention when counts tie, so the
 CSV reports the actual threshold and retained group count. Even `empty` cases
-must execute the requested route and return exactly zero groups.
+must execute the requested route and return exactly zero groups. For a fixture
+whose join is already empty, `median` and `empty` both use threshold 1.
+
+## Bounded integration comparison
+
+Use separate, discriminating suites instead of multiplying all generator controls
+together. The following commands use two JVM forks, two warmups and five timed
+queries per case. Increase those counts for final performance claims. Each suite
+has its own output directory and includes `autoDisabled`, normal `auto`, and forced
+sparse by default. Do not run these suites concurrently.
+
+```bash
+# Symmetric sparse/dense controls: nine query cases.
+scripts/run-sparse-join-aggregate-benchmarks.sh --no-build \
+  --forks 2 --warmups 2 --iterations 5 --fanout-pairs 1x1,8x8,32x32 \
+  --blocks 1 --multiplicities 1 --thresholds none,median,empty \
+  --endpoints 256 --join-keys 512 --output target/sparse-default-symmetric
+
+# Unequal left/right materialization and expansion: four query cases.
+scripts/run-sparse-join-aggregate-benchmarks.sh --no-build \
+  --forks 2 --warmups 2 --iterations 5 --fanout-pairs 1x32,32x1 \
+  --blocks 1 --multiplicities 1 --thresholds none,median \
+  --endpoints 256 --join-keys 512 --output target/sparse-default-asymmetric
+
+# Repeated contexts and concentrated endpoint frequencies: six query cases.
+scripts/run-sparse-join-aggregate-benchmarks.sh --no-build \
+  --forks 2 --warmups 2 --iterations 5 --fanout-pairs 8x8,32x32 \
+  --distributions hot --blocks 1 --multiplicities 4 --thresholds none,median,empty \
+  --endpoints 256 --join-keys 512 --output target/sparse-default-hot-weighted
+
+# Unmatched input work, including an empty join: six query cases.
+scripts/run-sparse-join-aggregate-benchmarks.sh --no-build \
+  --forks 2 --warmups 2 --iterations 5 --fanout-pairs 8x8 --overlaps 25,0 \
+  --blocks 1 --multiplicities 1 --thresholds none,median,empty \
+  --endpoints 256 --join-keys 512 --output target/sparse-default-overlap
+```
+
+For a quick validation of every new generator dimension before measuring, use
+small domains and one timed sample. This verifies fixture/oracle/route behavior;
+it is not performance evidence:
+
+```bash
+scripts/run-sparse-join-aggregate-benchmarks.sh --no-build \
+  --forks 1 --warmups 0 --iterations 1 --fanout-pairs 1x8,8x1 \
+  --distributions uniform,hot --overlaps 0,25,100 --blocks 1 --multiplicities 4 \
+  --thresholds none,median,empty --endpoints 32 --join-keys 32 \
+  --output target/sparse-generator-smoke
+```
+
+After the serial suites, a targeted parallel supplement checks the same low/high
+fanout controls with parallel competitors available. It adds only two query cases;
+all three routes receive `parallel=true`, and no competing strategy is disabled:
+
+```bash
+scripts/run-sparse-join-aggregate-benchmarks.sh --no-build \
+  --parallel true --forks 2 --warmups 2 --iterations 5 --fanout-pairs 1x1,32x32 \
+  --blocks 1 --multiplicities 1 --thresholds none \
+  --endpoints 256 --join-keys 512 --output target/sparse-default-parallel
+```
 
 ## Sustained JMH alternative
 
@@ -156,11 +280,22 @@ scripts/run-single-benchmark.sh --no-build \
   --module core/sail/lmdb \
   --class org.eclipse.rdf4j.sail.lmdb.benchmark.SparseJoinAggregateBenchmark \
   --method completeQuery --forks 3 --warmup-iterations 3 --measurement-iterations 5 \
-  --param strategy=auto,packedFtreeAggregate,sparseJoinAggregate \
+  --param strategy=autoDisabled,auto,sparseJoinAggregate \
+  --param parallel=false \
   --param fanout=1,8,32 --param blocks=1,8 --param multiplicity=1,4 \
   --param having=none,median,empty --param endpoints=256 --param joinKeys=512 \
   -- -rf json -rff target/sparse-join-jmh.json
+
+# Preserve the default plan guard's full log before another helper invocation overwrites it.
+cp core/sail/lmdb/target/benchmark-output.log target/sparse-join-jmh-full.log
 ```
+
+With the default query-plan risk guard, the helper's console output is compacted;
+the full log above retains trial-setup route witnesses that may be omitted from
+redirected console output. These are separate setup explanation queries, not
+instrumentation of every JMH invocation. Keep a uniquely named full log for each
+run, alongside its JSON, command and build identity. Inspect iteration sequences
+for continuing warmup or adaptive changes before describing results as steady state.
 
 Invocation teardown has harness overhead; retain the raw bounded sweep and JMH
 results separately. These synthetic two-pattern workloads do not establish the

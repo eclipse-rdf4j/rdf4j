@@ -1,0 +1,24 @@
+{
+  "status": "completed final short-warmup disjoint control; longer-warmup follow-up pending",
+  "copied_at_utc": "2026-11-04T21:27:01.326529+00:00",
+  "files": [
+    {
+      "source": "target/sparse-integrated-jmh-disjoint-empty.json",
+      "destination": "results.json",
+      "bytes": 7452,
+      "sha256": "bd136c8d5736c8715b21daf54ac84fb9d089f7a9ee12f0bc6f61d075ffe6d928"
+    },
+    {
+      "source": "sparse-integrated-jmh-disjoint-empty.log",
+      "destination": "console.log",
+      "bytes": 6515,
+      "sha256": "8eefe06935d49e6c8bd1ba7c14231321feca4ff33c1f32571697a46991341b5a"
+    },
+    {
+      "source": "sparse-integrated-jmh-disjoint-empty-full.log",
+      "destination": "full-console.log",
+      "bytes": 34820,
+      "sha256": "b341654591fe079c74a1e83e2b3d17424be063e97cafce9cc352b1b541cb3809"
+    }
+  ]
+}

@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.io.FileUtil;
@@ -65,8 +66,8 @@ import org.openjdk.jmh.annotations.Warmup;
  * <p>
  * Blocks restrict which endpoint pairs can meet, independently of the fanout of each join key. Multiplicities are
  * physical repeated triples in different contexts, never duplicate additions of the same quad. The unrestricted
- * patterns therefore exercise the store's weighted default-context scan. {@code auto} uses the existing serial planner
- * with the experimental sparse route disabled; {@code autoSparse} also admits the experimental candidate.
+ * patterns therefore exercise the store's weighted default-context scan. {@code auto} uses the normal planner
+ * with no sparse-property override; {@code autoDisabled} supplies the explicit disabled baseline.
  *
  * <p>
  * The main method is a bounded, fresh-process sweep for reproduction scripts. JMH provides the sustained measurement
@@ -87,11 +88,29 @@ public class SparseJoinAggregateBenchmark {
 	private static final String NATIVE_PROPERTY = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String SPARSE = "sparseJoinAggregate";
 
-	@Param({ "auto", "packedFtreeAggregate", "sparseJoinAggregate" })
+	@Param({ "autoDisabled", "auto", "sparseJoinAggregate" })
 	public String strategy = "auto";
 
 	@Param({ "1", "8", "32" })
 	public int fanout = 8;
+
+	/** Zero inherits {@link #fanout}, preserving existing JMH invocations. */
+	@Param({ "0" })
+	public int leftFanout;
+
+	/** Zero inherits {@link #fanout}, preserving existing JMH invocations. */
+	@Param({ "0" })
+	public int rightFanout;
+
+	@Param({ "uniform" })
+	public String distribution = "uniform";
+
+	/** Percentage of join keys present in both relations; each relation always has {@link #joinKeys} keys. */
+	@Param({ "100" })
+	public int overlap = 100;
+
+	@Param({ "false" })
+	public boolean parallel;
 
 	@Param({ "1", "8" })
 	public int blocks = 1;
@@ -130,6 +149,8 @@ public class SparseJoinAggregateBenchmark {
 	private String queryText;
 	private String actualPaths;
 	private String sparseWork;
+	private String sparsePlan;
+	private String routeWitnessStage;
 	private QueryRun lastRun;
 
 	@Setup(Level.Trial)
@@ -138,21 +159,27 @@ public class SparseJoinAggregateBenchmark {
 		selectQuery();
 		runVerified();
 		System.out.printf(Locale.ROOT,
-				"SPARSE_JOIN_FIRST strategy=%s fanout=%d blocks=%d multiplicity=%d having=%s count=%s query_ns=%d%n",
-				strategy, fanout, blocks, multiplicity, having, count, lastRun.totalNanos());
-		verifyRoute();
+				"SPARSE_JOIN_FIRST strategy=%s fanout=%dx%d distribution=%s overlap=%d blocks=%d multiplicity=%d having=%s count=%s query_ns=%d%n",
+				strategy, leftDegree(), rightDegree(), distribution, overlap, blocks, multiplicity, having, count,
+				lastRun.totalNanos());
+		verifyRoute("trial_setup");
 	}
 
 	private void createFixture() throws IOException {
 		if (endpoints < 1 || joinKeys < 1 || blocks < 1 || endpoints % blocks != 0
-				|| joinKeys % blocks != 0 || fanout < 1 || fanout > endpoints / blocks || multiplicity < 1) {
+				|| joinKeys % blocks != 0 || leftDegree() < 1 || rightDegree() < 1
+				|| leftDegree() > endpoints / blocks || rightDegree() > endpoints / blocks || multiplicity < 1
+				|| overlap < 0 || overlap > 100) {
 			throw new IllegalArgumentException("Positive sizes required; blocks must divide endpoints and joinKeys, "
-					+ "and fanout must not exceed endpoints / blocks");
+					+ "fanouts must not exceed endpoints / blocks, and overlap must be between 0 and 100");
+		}
+		if (!"uniform".equals(distribution) && !"hot".equals(distribution)) {
+			throw new IllegalArgumentException("Unsupported distribution: " + distribution);
 		}
 		saveProperty(SPARSE_PROPERTY);
 		saveProperty(PARALLEL_PROPERTY);
 		saveProperty(NATIVE_PROPERTY);
-		System.setProperty(PARALLEL_PROPERTY, "false");
+		System.setProperty(PARALLEL_PROPERTY, Boolean.toString(parallel));
 		System.setProperty(NATIVE_PROPERTY, "true");
 		dataDir = Files.createTempDirectory("rdf4j-sparse-join-");
 		LmdbStore store = new LmdbStore(dataDir.toFile(), new LmdbStoreConfig("spoc,psoc,posc,ospc")
@@ -182,37 +209,51 @@ public class SparseJoinAggregateBenchmark {
 		expectedCounts = new long[Math.multiplyExact(endpoints, endpoints)];
 		seen = new int[expectedCounts.length];
 		int width = endpoints / blocks;
+		int leftDegree = leftDegree();
+		int rightDegree = rightDegree();
+		int rightOffset = joinKeys - sharedJoinKeys();
+		int distinctJoinKeys = Math.addExact(joinKeys, rightOffset);
 		long loadStart = System.nanoTime();
 		connection.begin();
-		for (int z = 0; z < joinKeys; z++) {
+		for (int z = 0; z < distinctJoinKeys; z++) {
 			IRI join = vf.createIRI(EX, "z" + z);
 			int base = (z % blocks) * width;
-			int leftStart = Math.floorMod(mix(z * 2 + 1), width);
-			int rightStart = Math.floorMod(mix(z * 2 + 2), width);
+			int leftStart = neighborStart(z, 1, width, leftDegree);
+			int rightStart = neighborStart(z, 2, width, rightDegree);
 			int leftWeight = 1 + z % multiplicity;
 			int rightWeight = 1 + (z / 3) % multiplicity;
-			for (int a = 0; a < fanout; a++) {
-				int x = base + (leftStart + a) % width;
-				int y = base + (rightStart + a) % width;
-				for (int copy = 0; copy < leftWeight; copy++) {
-					connection.add(left[x], p, join, contexts[copy]);
+			if (z < joinKeys) {
+				for (int a = 0; a < leftDegree; a++) {
+					int x = base + (leftStart + a) % width;
+					for (int copy = 0; copy < leftWeight; copy++) {
+						connection.add(left[x], p, join, contexts[copy]);
+					}
 				}
-				for (int copy = 0; copy < rightWeight; copy++) {
-					connection.add(join, q, right[y], contexts[copy]);
+				statements = Math.addExact(statements, (long) leftDegree * leftWeight);
+			}
+			if (z >= rightOffset) {
+				for (int b = 0; b < rightDegree; b++) {
+					int y = base + (rightStart + b) % width;
+					for (int copy = 0; copy < rightWeight; copy++) {
+						connection.add(join, q, right[y], contexts[copy]);
+					}
 				}
+				statements = Math.addExact(statements, (long) rightDegree * rightWeight);
+			}
+			if (z >= joinKeys || z < rightOffset) {
+				continue;
 			}
 			// Independent integer oracle: enumerate incidences in the generated relations, before storage/optimization.
 			long weight = Math.multiplyExact((long) leftWeight, rightWeight);
-			for (int a = 0; a < fanout; a++) {
+			for (int a = 0; a < leftDegree; a++) {
 				int x = base + (leftStart + a) % width;
-				for (int b = 0; b < fanout; b++) {
+				for (int b = 0; b < rightDegree; b++) {
 					int y = base + (rightStart + b) % width;
 					int pair = x * endpoints + y;
 					expectedCounts[pair] = Math.addExact(expectedCounts[pair], weight);
 				}
 			}
-			statements = Math.addExact(statements, (long) fanout * (leftWeight + rightWeight));
-			joinedRows = Math.addExact(joinedRows, Math.multiplyExact((long) fanout * fanout, weight));
+			joinedRows = Math.addExact(joinedRows, Math.multiplyExact((long) leftDegree * rightDegree, weight));
 		}
 		connection.commit();
 		loadNanos = System.nanoTime() - loadStart;
@@ -224,6 +265,28 @@ public class SparseJoinAggregateBenchmark {
 		allGroups = (int) Arrays.stream(expectedCounts).filter(count -> count > 0).count();
 	}
 
+	private int leftDegree() {
+		return leftFanout == 0 ? fanout : leftFanout;
+	}
+
+	private int rightDegree() {
+		return rightFanout == 0 ? fanout : rightFanout;
+	}
+
+	private int sharedJoinKeys() {
+		return (int) ((long) joinKeys * overlap / 100);
+	}
+
+	private int neighborStart(int key, int side, int width, int degree) {
+		int hash = mix(key * 2 + side);
+		// Most join keys concentrate in one eighth of a block; the rest retain full-domain coverage.
+		if ("hot".equals(distribution) && Math.floorMod(mix(key ^ (side * 0x9e3779b9)), 8) != 0) {
+			int hotWidth = Math.max(degree, width / 8);
+			return Math.floorMod(hash, hotWidth - degree + 1);
+		}
+		return Math.floorMod(hash, width);
+	}
+
 	private static int mix(int value) {
 		value ^= value >>> 16;
 		value *= 0x7feb352d;
@@ -233,12 +296,18 @@ public class SparseJoinAggregateBenchmark {
 	}
 
 	private void selectQuery() {
-		System.setProperty(SPARSE_PROPERTY, Boolean.toString(SPARSE.equals(strategy) || "autoSparse".equals(strategy)));
+		if ("autoDisabled".equals(strategy)) {
+			System.setProperty(SPARSE_PROPERTY, "false");
+		} else if (SPARSE.equals(strategy) || "autoSparse".equals(strategy)) {
+			System.setProperty(SPARSE_PROPERTY, "true");
+		} else {
+			System.clearProperty(SPARSE_PROPERTY);
+		}
 		long[] sorted = Arrays.stream(expectedCounts).filter(count -> count > 0).sorted().toArray();
 		threshold = switch (having) {
 		case "none" -> 0;
-		case "median" -> sorted[sorted.length / 2];
-		case "empty" -> Math.addExact(sorted[sorted.length - 1], 1);
+		case "median" -> sorted.length == 0 ? 1 : sorted[sorted.length / 2];
+		case "empty" -> sorted.length == 0 ? 1 : Math.addExact(sorted[sorted.length - 1], 1);
 		default -> Long.parseLong(having);
 		};
 		retainedGroups = (int) Arrays.stream(expectedCounts).filter(count -> count > 0 && count >= threshold).count();
@@ -257,7 +326,7 @@ public class SparseJoinAggregateBenchmark {
 	private SailTupleQuery prepareQuery() {
 		SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(queryText);
 		query.setLmdbResultCacheRequested(false);
-		if (!"auto".equals(strategy) && !"autoSparse".equals(strategy)) {
+		if (!isAutomatic()) {
 			query.setForcedLmdbExecutionStrategy(strategy);
 		}
 		return query;
@@ -312,7 +381,12 @@ public class SparseJoinAggregateBenchmark {
 		verifyResults();
 	}
 
-	private void verifyRoute() {
+	private boolean isAutomatic() {
+		return "auto".equals(strategy) || "autoSparse".equals(strategy) || "autoDisabled".equals(strategy);
+	}
+
+	private void verifyRoute(String stage) {
+		routeWitnessStage = stage;
 		GenericPlanNode plan = prepareQuery().explain(Explanation.Level.Telemetry).toGenericPlanNode();
 		Set<String> paths = new LinkedHashSet<>();
 		collectMetric(plan, "nativeExecutionPath", paths);
@@ -320,13 +394,19 @@ public class SparseJoinAggregateBenchmark {
 		Set<String> work = new LinkedHashSet<>();
 		collectMetric(plan, "sparseJoinAggregateWork", work);
 		sparseWork = String.join(";", work);
-		if (!"auto".equals(strategy) && !"autoSparse".equals(strategy)
+		Set<String> orientations = new LinkedHashSet<>();
+		collectMetric(plan, "sparseJoinAggregatePlan", orientations);
+		sparsePlan = String.join(";", orientations);
+		if (!isAutomatic()
 				&& paths.stream().noneMatch(path -> path.equals(strategy) || path.startsWith(strategy + "("))) {
 			throw new IllegalStateException("Forced strategy " + strategy + " did not execute; actual=" + actualPaths);
 		}
-		System.out.println("SPARSE_JOIN_ROUTE requested=" + strategy + " fanout=" + fanout + " blocks=" + blocks
+		System.out.println("SPARSE_JOIN_ROUTE requested=" + strategy + " sparse_setting="
+				+ System.getProperty(SPARSE_PROPERTY, "default") + " witness_stage=" + stage
+				+ " fanout=" + leftDegree() + "x" + rightDegree() + " distribution=" + distribution
+				+ " overlap=" + overlap + " parallel=" + parallel + " blocks=" + blocks
 				+ " multiplicity=" + multiplicity + " having=" + having + " threshold=" + threshold + " count=" + count
-				+ " actual=" + actualPaths + " work=" + sparseWork);
+				+ " actual=" + actualPaths + " plan=" + sparsePlan + " work=" + sparseWork);
 	}
 
 	private static void collectMetric(GenericPlanNode node, String metric, Set<String> values) {
@@ -378,7 +458,8 @@ public class SparseJoinAggregateBenchmark {
 	public static void main(String[] args) throws Exception {
 		Map<String, String> options = new HashMap<>();
 		Set<String> allowed = Set.of("output", "routes", "thresholds", "warmups", "iterations", "fork", "fanouts",
-				"blocks", "multiplicities", "endpoints", "join-keys", "counts");
+				"fanout-pairs", "distributions", "overlaps", "parallel", "blocks", "multiplicities", "endpoints", "join-keys",
+				"counts");
 		for (int i = 0; i < args.length; i += 2) {
 			if (i + 1 == args.length || !args[i].startsWith("--")) {
 				throw new IllegalArgumentException("Expected --option value pairs");
@@ -390,12 +471,16 @@ public class SparseJoinAggregateBenchmark {
 			options.put(option, args[i + 1]);
 		}
 		Path output = Path.of(options.getOrDefault("output", "sparse-join-aggregate.csv"));
-		String[] routes = options.getOrDefault("routes", "auto,packedFtreeAggregate,sparseJoinAggregate").split(",");
+		String[] routes = options.getOrDefault("routes", "autoDisabled,auto,sparseJoinAggregate").split(",");
 		String[] thresholds = options.getOrDefault("thresholds", "none,median,empty").split(",");
 		String[] counts = options.getOrDefault("counts", "bound").split(",");
 		int warmups = Integer.parseInt(options.getOrDefault("warmups", "3"));
 		int iterations = Integer.parseInt(options.getOrDefault("iterations", "7"));
 		int fork = Integer.parseInt(options.getOrDefault("fork", "0"));
+		String parallel = options.getOrDefault("parallel", "false");
+		if (!"true".equals(parallel) && !"false".equals(parallel)) {
+			throw new IllegalArgumentException("parallel must be true or false");
+		}
 		if (warmups < 0 || iterations < 1) {
 			throw new IllegalArgumentException("warmups must be nonnegative and iterations must be positive");
 		}
@@ -403,52 +488,90 @@ public class SparseJoinAggregateBenchmark {
 			csv.println(
 					"fork,fixture,phase,sample,strategy,actual_paths,endpoints,join_keys,fanout,blocks,multiplicity,"
 							+ "having,count_expression,threshold,statements,joined_rows,nonzero_groups,retained_groups,output_density,"
-							+ "load_ns,adjacency_ns,prepare_ns,evaluate_drain_ns,total_ns,sparse_work");
+							+ "load_ns,adjacency_ns,prepare_ns,evaluate_drain_ns,total_ns,sparse_work,"
+							+ "left_fanout,right_fanout,distribution,overlap,shared_join_keys,sparse_setting,"
+							+ "route_witness_scope,route_witness_stage,parallel,sparse_plan");
 			int fixture = 0;
-			for (int fanout : integers(options.getOrDefault("fanouts", "1,8,32"))) {
-				for (int blocks : integers(options.getOrDefault("blocks", "1,8"))) {
-					for (int multiplicity : integers(options.getOrDefault("multiplicities", "1,4"))) {
-						SparseJoinAggregateBenchmark benchmark = new SparseJoinAggregateBenchmark();
-						benchmark.fanout = fanout;
-						benchmark.blocks = blocks;
-						benchmark.multiplicity = multiplicity;
-						benchmark.endpoints = Integer.parseInt(options.getOrDefault("endpoints", "256"));
-						benchmark.joinKeys = Integer.parseInt(options.getOrDefault("join-keys", "512"));
-						try {
-							benchmark.createFixture();
-							for (String count : counts) {
-								benchmark.count = count;
-								for (String having : thresholds) {
-									for (int route = 0; route < routes.length; route++) {
-										// Rotate routes across fixtures/forks to reduce systematic order bias.
-										benchmark.strategy = routes[Math.floorMod(route + fixture + fork,
-												routes.length)];
-										benchmark.having = having;
-										benchmark.selectQuery();
-										benchmark.runVerified();
-										QueryRun first = benchmark.lastRun;
-										benchmark.verifyRoute();
-										benchmark.write(csv, fork, fixture, "first", 0, first);
-										for (int i = 0; i < warmups; i++) {
-											benchmark.runVerified();
-										}
-										benchmark.verifyRoute();
-										for (int i = 0; i < iterations; i++) {
-											benchmark.runVerified();
-											benchmark.write(csv, fork, fixture, "warm", i, benchmark.lastRun);
-										}
-										csv.flush();
-									}
+			for (FixtureSpec spec : fixtures(options)) {
+				SparseJoinAggregateBenchmark benchmark = new SparseJoinAggregateBenchmark();
+				benchmark.fanout = spec.leftFanout();
+				benchmark.leftFanout = spec.leftFanout();
+				benchmark.rightFanout = spec.rightFanout();
+				benchmark.distribution = spec.distribution();
+				benchmark.overlap = spec.overlap();
+				benchmark.parallel = Boolean.parseBoolean(parallel);
+				benchmark.blocks = spec.blocks();
+				benchmark.multiplicity = spec.multiplicity();
+				benchmark.endpoints = Integer.parseInt(options.getOrDefault("endpoints", "256"));
+				benchmark.joinKeys = Integer.parseInt(options.getOrDefault("join-keys", "512"));
+				try {
+					benchmark.createFixture();
+					for (String count : counts) {
+						benchmark.count = count;
+						for (String having : thresholds) {
+							for (int route = 0; route < routes.length; route++) {
+								// Rotate routes across fixtures/forks to reduce systematic order bias.
+								benchmark.strategy = routes[Math.floorMod(route + fixture + fork, routes.length)];
+								benchmark.having = having;
+								benchmark.selectQuery();
+								benchmark.runVerified();
+								QueryRun first = benchmark.lastRun;
+								benchmark.verifyRoute("after_first");
+								benchmark.write(csv, fork, fixture, "first", 0, first);
+								for (int i = 0; i < warmups; i++) {
+									benchmark.runVerified();
 								}
+								benchmark.verifyRoute("before_warm_samples");
+								for (int i = 0; i < iterations; i++) {
+									benchmark.runVerified();
+									benchmark.write(csv, fork, fixture, "warm", i, benchmark.lastRun);
+								}
+								benchmark.verifyRoute("after_warm_samples");
+								benchmark.write(csv, fork, fixture, "witness", -1,
+										new QueryRun(List.of(), 0, 0, 0));
+								csv.flush();
 							}
-						} finally {
-							benchmark.tearDown();
 						}
-						fixture++;
+					}
+				} finally {
+					benchmark.tearDown();
+				}
+				fixture++;
+			}
+		}
+	}
+
+	private record FixtureSpec(int leftFanout, int rightFanout, int blocks, int multiplicity, String distribution,
+			int overlap) {
+	}
+
+	private static List<FixtureSpec> fixtures(Map<String, String> options) {
+		if (options.containsKey("fanouts") && options.containsKey("fanout-pairs")) {
+			throw new IllegalArgumentException("Use either --fanouts or --fanout-pairs");
+		}
+		String[] pairs = options.containsKey("fanout-pairs") ? options.get("fanout-pairs").split(",")
+				: Arrays.stream(integers(options.getOrDefault("fanouts", "1,8,32")))
+						.mapToObj(fanout -> fanout + "x" + fanout)
+						.toArray(String[]::new);
+		List<FixtureSpec> fixtures = new ArrayList<>();
+		for (String pair : pairs) {
+			String[] degrees = pair.split("x");
+			if (degrees.length != 2) {
+				throw new IllegalArgumentException("Expected leftxright fanout pair: " + pair);
+			}
+			int left = Integer.parseInt(degrees[0]);
+			int right = Integer.parseInt(degrees[1]);
+			for (int blocks : integers(options.getOrDefault("blocks", "1,8"))) {
+				for (int multiplicity : integers(options.getOrDefault("multiplicities", "1,4"))) {
+					for (String distribution : options.getOrDefault("distributions", "uniform").split(",")) {
+						for (int overlap : integers(options.getOrDefault("overlaps", "100"))) {
+							fixtures.add(new FixtureSpec(left, right, blocks, multiplicity, distribution, overlap));
+						}
 					}
 				}
 			}
 		}
+		return fixtures;
 	}
 
 	private static int[] integers(String values) {
@@ -456,12 +579,17 @@ public class SparseJoinAggregateBenchmark {
 	}
 
 	private void write(PrintWriter csv, int fork, int fixture, String phase, int sample, QueryRun run) {
-		csv.printf(Locale.ROOT,
-				"%d,%d,%s,%d,%s,\"%s\",%d,%d,%d,%d,%d,%s,%s,%d,%d,%d,%d,%d,%.9f,%d,%d,%d,%d,%d,\"%s\"%n",
-				fork, fixture, phase, sample, strategy, actualPaths.replace("\"", "\"\""), endpoints, joinKeys,
-				fanout, blocks, multiplicity, having, count, threshold, statements, joinedRows, allGroups,
-				retainedGroups,
-				(double) allGroups / ((long) endpoints * endpoints), loadNanos, adjacencyNanos, run.prepareNanos(),
-				run.evaluateDrainNanos(), run.totalNanos(), sparseWork.replace("\"", "\"\""));
+		Object[] values = { fork, fixture, phase, sample, strategy, actualPaths, endpoints, joinKeys,
+				leftDegree(), blocks, multiplicity, having, count, threshold, statements, joinedRows, allGroups,
+				retainedGroups, String.format(Locale.ROOT, "%.9f", (double) allGroups / ((long) endpoints * endpoints)),
+				loadNanos, adjacencyNanos, run.prepareNanos(), run.evaluateDrainNanos(), run.totalNanos(), sparseWork,
+				leftDegree(), rightDegree(), distribution, overlap, sharedJoinKeys(),
+				System.getProperty(SPARSE_PROPERTY, "default"), "separate_executed_explanation", routeWitnessStage,
+				parallel, sparsePlan };
+		StringJoiner line = new StringJoiner(",");
+		for (Object value : values) {
+			line.add("\"" + value.toString().replace("\"", "\"\"") + "\"");
+		}
+		csv.println(line);
 	}
 }

@@ -1,0 +1,18 @@
+{
+  "status": "completed final route-isolated JMH suite",
+  "copied_at_utc": "2026-11-04T21:24:00.665331+00:00",
+  "files": [
+    {
+      "source": "target/sparse-integrated-jmh-uniform.json",
+      "destination": "results.json",
+      "bytes": 14696,
+      "sha256": "08461d6fc32305079d7a0883c3f8e095afad54403d37777740516b3bd3b361a6"
+    },
+    {
+      "source": "sparse-integrated-jmh-uniform.log",
+      "destination": "console.log",
+      "bytes": 12641,
+      "sha256": "d6dc6ccd32a7344b02e061cfae9d70b2634403b561d4725d9cff408cbed12ff0"
+    }
+  ]
+}

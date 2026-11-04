@@ -1261,6 +1261,12 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		}
 
 		@Override
+		public boolean supportsPhysicalFiberCopy() {
+			// A multi-page equal-neighbor fiber may otherwise walk its entire extent chain before returning.
+			return directBaseRun && baseCursor.singlePageRow();
+		}
+
+		@Override
 		public int copyFibers(long runOffset, int length, long[] neighborTarget, int neighborOffset,
 				long[] multiplicityTarget, int multiplicityOffset) {
 			if (!directBaseRun) {

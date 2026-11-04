@@ -571,7 +571,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				// projection — supportedOrder still declines expression keys at the above-projection peel sites,
 				// where names would need alias remapping inside the expression.
 				String hidden = "#orderKey" + i;
-				pendingAggregateExpressions.add(new PendingAggregateExpression(slot(hidden), orderExpr));
+				pendingAggregateExpressions.add(new PendingAggregateExpression(hidden, slot(hidden), orderExpr));
 				orderSourceNames[i] = hidden;
 				required.addAll(VarNameCollector.process(orderExpr));
 			}

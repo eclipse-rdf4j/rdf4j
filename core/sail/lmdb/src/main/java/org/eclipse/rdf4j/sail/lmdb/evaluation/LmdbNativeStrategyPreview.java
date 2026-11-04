@@ -185,8 +185,9 @@ final class LmdbNativeStrategyPreview {
 		case "wildcardPredicateBatch", "wildcardPredicateReduced" -> "No supported wildcard-predicate batch shape";
 		case "typeMatrix" -> "No type-matrix aggregate recognized, or incoming bindings prevent type-matrix execution";
 		case "adjacencyAggregate" -> "No adjacency aggregate matching the group keys, aggregates and incoming bindings";
-		case "sparseJoinAggregate" ->
-			"Sparse join aggregation is disabled or the two-pattern COUNT fragment is ineligible";
+		case "sparseJoinAggregate" -> LmdbSparseJoinAggregatePlan.enabled()
+				? "No sparse aggregate matching two mandatory predicate planes, endpoint group keys and bound COUNT inputs"
+				: "Sparse join aggregation is explicitly disabled";
 		case "existsIntersection" -> "No aggregate over a recognized EXISTS intersection";
 		case "prefixRunGroups" -> "No aggregate prefix-run plan over an unbound leading pattern";
 		case "orderedDistinctGroups" -> "No replay-safe aggregate with an ordered DISTINCT input";

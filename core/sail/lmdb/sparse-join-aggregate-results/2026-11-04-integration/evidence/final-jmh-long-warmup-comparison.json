@@ -1,0 +1,8 @@
+{
+  "metric": "ratio of unpaired mean operation times; not a paired median ratio or a ratio confidence interval",
+  "disabled_mean_ms": 0.7205299801558008,
+  "automatic_mean_ms": 0.8991015523877925,
+  "auto_minus_disabled_ms": 0.17857157223199172,
+  "automatic_percent_change": 24.783364627434246,
+  "disabled_over_automatic": 0.8013888734173025
+}

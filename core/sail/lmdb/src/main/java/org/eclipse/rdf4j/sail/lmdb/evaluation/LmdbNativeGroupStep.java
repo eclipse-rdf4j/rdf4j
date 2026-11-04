@@ -1323,16 +1323,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(arg,
 							NativeAggregatePhysicalPlan.Retention.STREAMING, adjacencyAggregate)));
 		}
-		if (sparseJoinAggregate != null && sparseJoinAggregate.handles(row)) {
+		LmdbSparseJoinAggregatePlan sparse = sparseJoinAggregate == null ? null : sparseJoinAggregate.prepare(row);
+		if (sparse != null) {
 			arbiter.offer(() -> estimatedProposal(() -> {
-				List<BindingSet> result = sparseJoinAggregate.evaluate(this, row);
+				List<BindingSet> result = sparse.evaluate(this, row);
 				if (result != null) {
 					metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE);
 				}
 				return result;
 			}, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE, LmdbNativeWork.UNKNOWN)
 					.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(arg,
-							NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE, sparseJoinAggregate)));
+							NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE, sparse)));
 		}
 		if (typeMatrix != null && base.isEmpty()) {
 			arbiter.offer(() -> estimatedProposal(this::evaluateTypeMatrixFallback,

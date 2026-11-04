@@ -16,12 +16,16 @@ is checked against the exact weighted oracle after the timer stops.
   --no-build                 Use the existing LMDB target/jmh-benchmarks.jar
   --output DIR               Results directory (default target/sparse-join-TIMESTAMP)
   --forks N                  Independent JVM processes (default 3)
-  --fanouts LIST             Distinct neighbors per join key (default 1,8,32)
+  --fanouts LIST             Symmetric neighbors per join key (default 1,8,32)
+  --fanout-pairs LIST        Explicit leftxright degrees, e.g. 1x32,32x1
+  --distributions LIST       uniform or hot endpoint frequencies (default uniform)
+  --overlaps LIST            Shared join-key percentages, 0 through 100 (default 100)
+  --parallel true|false      Same parallel setting for every route (default false)
   --blocks LIST              Endpoint partitions (default 1,8)
   --multiplicities LIST      Maximum context weight (default 1,4)
   --thresholds LIST          none,median,empty or integer thresholds
   --counts LIST              bound for COUNT(?z), star for COUNT(*) (default bound)
-  --routes LIST              auto,packedFtreeAggregate,sparseJoinAggregate (default)
+  --routes LIST              autoDisabled,auto,sparseJoinAggregate (default)
   --endpoints N              Each endpoint domain size (default 256)
   --join-keys N              Number of shared values (default 512)
   --warmups N                Untimed verified queries per case (default 3)
@@ -43,6 +47,7 @@ build=true
 output="${repo_root}/target/sparse-join-$(date -u +%Y%m%dT%H%M%SZ)"
 forks=3
 heap=3G
+parallel=false
 runner_args=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -50,12 +55,17 @@ while [[ $# -gt 0 ]]; do
         --output) output="$2"; shift 2 ;;
         --forks) forks="$2"; shift 2 ;;
         --heap) heap="$2"; shift 2 ;;
-        --fanouts|--blocks|--multiplicities|--thresholds|--counts|--routes|--endpoints|--join-keys|--warmups|--iterations)
+        --parallel) parallel="$2"; runner_args+=("$1" "$2"); shift 2 ;;
+        --fanouts|--fanout-pairs|--distributions|--overlaps|--blocks|--multiplicities|--thresholds|--counts|--routes|--endpoints|--join-keys|--warmups|--iterations)
             runner_args+=("$1" "$2"); shift 2 ;;
         --help|-h) usage; exit 0 ;;
         *) printf 'Unknown argument: %s\n' "$1" >&2; usage >&2; exit 2 ;;
     esac
 done
+if [[ "${parallel}" != true && "${parallel}" != false ]]; then
+    printf '%s\n' '--parallel must be true or false' >&2
+    exit 2
+fi
 if [[ ! "${forks}" =~ ^[1-9][0-9]*$ ]]; then
     printf '%s\n' '--forks must be a positive integer' >&2
     exit 2
@@ -101,8 +111,11 @@ fi
     done
     printf 'heap=%s\nforks=%s\n' "${heap}" "${forks}"
     if command -v sha256sum >/dev/null 2>&1; then sha256sum "${jar_path}"; fi
-    printf '%s\n' 'Native evaluation and serial execution are enabled for all routes.'
-    printf '%s\n' 'auto uses sparse=false; sparseJoinAggregate and autoSparse use sparse=true.'
+    printf '%s\n' 'Native evaluation is enabled for all routes.'
+    printf 'parallel=%s (same setting for every route)\n' "${parallel}"
+    printf '%s\n' 'auto leaves sparse at its normal default; autoDisabled explicitly sets sparse=false.'
+    printf '%s\n' 'sparseJoinAggregate and legacy autoSparse explicitly set sparse=true.'
+    printf '%s\n' 'Route witnesses are separate executed explanations, not instrumentation of each timed query.'
     printf '%s\n' 'first means first query for that route/threshold on an already loaded, adjacency-built store.'
     printf '%s\n' 'No filesystem-cache eviction is performed; first is not cold-disk latency.'
     printf '%s\n' 'Query time includes parse/prepare, optimize, per-query setup/remap, aggregate and result collection.'
@@ -120,6 +133,7 @@ done < <(git ls-files --others --exclude-standard -z -- \
     core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/SparseJoinAggregateBenchmark.java \
     scripts/run-sparse-join-aggregate-benchmarks.sh \
     scripts/summarize-sparse-join-aggregate.py \
+    scripts/test-summarize-sparse-join-aggregate.py \
     scripts/sparse-join-aggregate-benchmarks.md)
 for ((fork = 0; fork < forks; fork++)); do
     command=("${java_command}" -Xms1G "-Xmx${heap}" -cp "${jar_path}" "${benchmark_class}"

@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.NativeAggregateMetadataCostTest
+-------------------------------------------------------------------------------
+Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.420 s -- in org.eclipse.rdf4j.sail.lmdb.evaluation.NativeAggregateMetadataCostTest
