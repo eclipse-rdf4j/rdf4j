@@ -711,6 +711,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	final long prefixMinRunCount;
 	final LmdbNativeExistsIntersection existsIntersection;
 	final LmdbAdjacencyAggregatePlan adjacencyAggregate;
+	final LmdbSparseJoinAggregatePlan sparseJoinAggregate;
 	LmdbNativeTypeMatrix typeMatrix;
 	List<NativeGroupStep.Alternative> alternatives = List.of();
 	/** The externally enforced HAVING condition, offered to the aggregate kernel as a sinkable pre-filter. */
@@ -837,6 +838,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		this.prefixMinRunCount = prefixMinRunCount;
 		this.existsIntersection = existsIntersection;
 		this.adjacencyAggregate = adjacencyAggregate;
+		this.sparseJoinAggregate = LmdbSparseJoinAggregatePlan.tryCreate(arg, groupSlots, aggregates, havingCondition);
 		this.havingCondition = havingCondition;
 		this.explainTarget = explainTarget;
 		this.cancellation = cancellation;
@@ -1320,6 +1322,17 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			}, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, adjacencyAggregate.estimateWork(row))
 					.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(arg,
 							NativeAggregatePhysicalPlan.Retention.STREAMING, adjacencyAggregate)));
+		}
+		if (sparseJoinAggregate != null && sparseJoinAggregate.handles(row)) {
+			arbiter.offer(() -> estimatedProposal(() -> {
+				List<BindingSet> result = sparseJoinAggregate.evaluate(this, row);
+				if (result != null) {
+					metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE);
+				}
+				return result;
+			}, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE, LmdbNativeWork.UNKNOWN)
+					.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(arg,
+							NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE, sparseJoinAggregate)));
 		}
 		if (typeMatrix != null && base.isEmpty()) {
 			arbiter.offer(() -> estimatedProposal(this::evaluateTypeMatrixFallback,

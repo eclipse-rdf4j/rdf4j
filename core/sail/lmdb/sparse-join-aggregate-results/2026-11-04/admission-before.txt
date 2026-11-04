@@ -1,0 +1,32 @@
+Description: Add a sparse-only weighted two-pattern join aggregate.
+Command: /workspace/scratch/4fecb353a8fb/mvn-task -B -ntp -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Dtest=SparseJoinAggregateAdmissionTest -DskipITs -Dformatter.skip=true test
+Report: core/sail/lmdb/target/surefire-reports/org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateAdmissionTest.txt
+
+-------------------------------------------------------------------------------
+Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateAdmissionTest
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 0.988 s <<< FAILURE! -- in org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateAdmissionTest
+org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateAdmissionTest.executesForcedSparseJoinAggregateThroughSparql(Path) -- Time elapsed: 0.966 s <<< ERROR!
+org.eclipse.rdf4j.query.QueryEvaluationException: org.eclipse.rdf4j.query.QueryEvaluationException: Unknown LMDB execution strategy 'sparseJoinAggregate'. Valid values: (empty), NOT_ACTIVATED, prefixRun, orderedDistinct, wcoj, packedFtree, factorizedRows, batch, wildcardPredicateBatch, wildcardPredicateReduced, parallelPipelines, adaptiveFilterPlacement, nestedLoop, irKernel, irKernelInterpreted, irKernelWildcard, irKernelWildcardInterpreted, irKernelParallel, irKernelParallelInterpreted, irKernelDistinct, irKernelDistinctInterpreted, irKernelDistinctParallel, irKernelDistinctParallelInterpreted, orderedFactorizedSort, orderedFactorizedTopK, indexedCount, adjacencyAggregate, existsIntersection, prefixRunGroups, orderedDistinctGroups, packedFtreeAggregate, factorizedTail, parallelAggregation, janinoAggregate, orderedSinglePatternGroups, irAggregate, irAggregateInterpreted, irAggregateWildcard, irAggregateWildcardInterpreted, irAggregateParallel, irAggregateParallelInterpreted.
+	at org.eclipse.rdf4j.repository.sail.SailTupleQuery.evaluate(SailTupleQuery.java:88)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateAdmissionTest.executesForcedSparseJoinAggregateThroughSparql(SparseJoinAggregateAdmissionTest.java:79)
+Caused by: org.eclipse.rdf4j.sail.SailException: org.eclipse.rdf4j.query.QueryEvaluationException: Unknown LMDB execution strategy 'sparseJoinAggregate'. Valid values: (empty), NOT_ACTIVATED, prefixRun, orderedDistinct, wcoj, packedFtree, factorizedRows, batch, wildcardPredicateBatch, wildcardPredicateReduced, parallelPipelines, adaptiveFilterPlacement, nestedLoop, irKernel, irKernelInterpreted, irKernelWildcard, irKernelWildcardInterpreted, irKernelParallel, irKernelParallelInterpreted, irKernelDistinct, irKernelDistinctInterpreted, irKernelDistinctParallel, irKernelDistinctParallelInterpreted, orderedFactorizedSort, orderedFactorizedTopK, indexedCount, adjacencyAggregate, existsIntersection, prefixRunGroups, orderedDistinctGroups, packedFtreeAggregate, factorizedTail, parallelAggregation, janinoAggregate, orderedSinglePatternGroups, irAggregate, irAggregateInterpreted, irAggregateWildcard, irAggregateWildcardInterpreted, irAggregateParallel, irAggregateParallelInterpreted.
+	at org.eclipse.rdf4j.sail.base.SailSourceConnection.evaluateInternal(SailSourceConnection.java:325)
+	at org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.openEvaluation(LmdbStoreConnection.java:1067)
+	at org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.lambda$evaluateInternal$0(LmdbStoreConnection.java:1029)
+	at org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.openReplayPlan(LmdbStoreConnection.java:1398)
+	at org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.openReplayPlan(LmdbStoreConnection.java:1357)
+	at org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.evaluateInternal(LmdbStoreConnection.java:1039)
+	at org.eclipse.rdf4j.sail.helpers.AbstractSailConnection.evaluate(AbstractSailConnection.java:848)
+	at org.eclipse.rdf4j.repository.sail.SailTupleQuery.evaluate(SailTupleQuery.java:65)
+	... 1 more
+Caused by: org.eclipse.rdf4j.query.QueryEvaluationException: Unknown LMDB execution strategy 'sparseJoinAggregate'. Valid values: (empty), NOT_ACTIVATED, prefixRun, orderedDistinct, wcoj, packedFtree, factorizedRows, batch, wildcardPredicateBatch, wildcardPredicateReduced, parallelPipelines, adaptiveFilterPlacement, nestedLoop, irKernel, irKernelInterpreted, irKernelWildcard, irKernelWildcardInterpreted, irKernelParallel, irKernelParallelInterpreted, irKernelDistinct, irKernelDistinctInterpreted, irKernelDistinctParallel, irKernelDistinctParallelInterpreted, orderedFactorizedSort, orderedFactorizedTopK, indexedCount, adjacencyAggregate, existsIntersection, prefixRunGroups, orderedDistinctGroups, packedFtreeAggregate, factorizedTail, parallelAggregation, janinoAggregate, orderedSinglePatternGroups, irAggregate, irAggregateInterpreted, irAggregateWildcard, irAggregateWildcardInterpreted, irAggregateParallel, irAggregateParallelInterpreted.
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategy.resolveForcedExecutionStrategy(LmdbNativeEvaluationStrategy.java:206)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategy.<init>(LmdbNativeEvaluationStrategy.java:181)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategy.<init>(LmdbNativeEvaluationStrategy.java:166)
+	at org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory.createEvaluationStrategy(LmdbNativeEvaluationStrategyFactory.java:43)
+	at org.eclipse.rdf4j.sail.lmdb.LmdbStore$AdaptiveEvaluationStrategyFactory.createEvaluationStrategy(LmdbStore.java:1107)
+	at org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory.createEvaluationStrategy(EvaluationStrategyFactory.java:75)
+	at org.eclipse.rdf4j.sail.base.SailSourceConnection.getEvaluationStrategy(SailSourceConnection.java:236)
+	at org.eclipse.rdf4j.sail.base.SailSourceConnection.evaluateInternal(SailSourceConnection.java:287)
+	... 8 more

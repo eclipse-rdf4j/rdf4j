@@ -123,6 +123,7 @@ final class LmdbNativeStrategyPreference {
 			LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT,
 			LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
 			LmdbNativeAttemptMetrics.PATH_PREFIX_RUN,
 			LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,

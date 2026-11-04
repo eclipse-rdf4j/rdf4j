@@ -1,0 +1,246 @@
+02:53:50,206 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.6.6
+02:53:50,207 |-INFO in ch.qos.logback.classic.util.ContextInitializer@358c99f5 - No custom configurators were discovered as a service.
+02:53:50,207 |-INFO in ch.qos.logback.classic.util.ContextInitializer@358c99f5 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+02:53:50,208 |-INFO in ch.qos.logback.classic.util.ContextInitializer@358c99f5 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+02:53:50,211 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback-test.xml] at [jar:file:/workspace/scratch/4fecb353a8fb/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar!/logback-test.xml]
+02:53:50,274 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - <level> element is deprecated. Near [level] on line 9
+02:53:50,274 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - Please use "level" attribute within <logger> or <root> elements instead.
+02:53:50,338 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Scan attribute not set.
+02:53:50,346 |-INFO in ch.qos.logback.classic.model.processor.CallerInstructionLogic@3ee0fea4 - No contradictions in caller extraction instruction were detected
+02:53:50,347 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [STDOUT]
+02:53:50,348 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+02:53:50,355 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+02:53:50,410 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - NOTE: Writing to the console can be slow. Try to avoid logging to the
+02:53:50,410 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - console in production environments, especially in high volume systems.
+02:53:50,410 |-INFO in ch.qos.logback.core.ConsoleAppender[STDOUT] - See also https://logback.qos.ch/codes.html#slowConsole
+02:53:50,411 |-INFO in ch.qos.logback.classic.model.processor.LevelModelHandler - ROOT level set to WARN
+02:53:50,411 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [STDOUT] to Logger[ROOT]
+02:53:50,412 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@48524010 - End of configuration.
+02:53:50,412 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@4b168fa9 - Registering current configuration as safe fallback point
+02:53:50,415 |-INFO in ch.qos.logback.classic.util.ContextInitializer@358c99f5 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 205 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by org.lwjgl.system.Library$$Lambda/0x000000002b114c10 in an unnamed module (file:/workspace/scratch/4fecb353a8fb/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by org.lwjgl.system.MemoryBackendUnsafeLegacy (file:/workspace/scratch/4fecb353a8fb/rdf4j/core/sail/lmdb/target/jmh-benchmarks.jar)
+WARNING: Please consider reporting this to the maintainers of class org.lwjgl.system.MemoryBackendUnsafeLegacy
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=222, leftRows=229, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=510]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=222, leftRows=229, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=510]
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=irAggregateInterpreted work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=222, leftRows=229, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=510]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=222, leftRows=229, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=510]
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=1 having=empty threshold=3 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=1 having=empty threshold=3 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=1 having=empty threshold=3 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=1 having=empty threshold=3 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=1 having=empty threshold=3 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=222, leftRows=229, leftFibers=512, multiplyAdds=173, prunedRows=146, prunedProducts=117, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=1 having=empty threshold=3 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=222, leftRows=229, leftFibers=512, multiplyAdds=173, prunedRows=146, prunedProducts=117, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=229, leftRows=222, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=510]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=229, leftRows=222, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=510]
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=irAggregateInterpreted work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=229, leftRows=222, leftFibers=512, multiplyAdds=414, prunedRows=53, prunedProducts=21, outputGroups=255]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=229, leftRows=222, leftFibers=512, multiplyAdds=414, prunedRows=53, prunedProducts=21, outputGroups=255]
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=irAggregateInterpreted work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=4 having=empty threshold=17 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=1 multiplicity=4 having=empty threshold=17 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=4 having=empty threshold=17 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=229, leftRows=222, leftFibers=512, multiplyAdds=191, prunedRows=143, prunedProducts=75, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=1 multiplicity=4 having=empty threshold=17 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=229, leftRows=222, leftFibers=512, multiplyAdds=191, prunedRows=143, prunedProducts=75, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=4 having=empty threshold=17 count=bound actual=irAggregateInterpreted work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=1 multiplicity=4 having=empty threshold=17 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=219, leftRows=226, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=502]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=219, leftRows=226, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=502]
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=irAggregate | packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=1 having=median threshold=1 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=219, leftRows=226, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=502]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=1 having=median threshold=1 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=219, leftRows=226, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=502]
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=1 having=median threshold=1 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=1 having=median threshold=1 count=bound actual=irAggregateInterpreted work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=1 having=median threshold=1 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=1 having=median threshold=1 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=1 having=empty threshold=3 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=219, leftRows=226, leftFibers=512, multiplyAdds=156, prunedRows=149, prunedProducts=126, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=1 having=empty threshold=3 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=219, leftRows=226, leftFibers=512, multiplyAdds=156, prunedRows=149, prunedProducts=126, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=1 having=empty threshold=3 count=bound actual=irAggregateInterpreted work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=1 having=empty threshold=3 count=bound actual=irAggregateInterpreted work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=1 having=empty threshold=3 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=1 having=empty threshold=3 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=irAggregateInterpreted work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=irAggregateInterpreted work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=226, leftRows=219, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=502]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=226, leftRows=219, leftFibers=512, multiplyAdds=512, prunedRows=0, prunedProducts=0, outputGroups=502]
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=4 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=4 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=4 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=4 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=4 having=median threshold=8 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=226, leftRows=219, leftFibers=512, multiplyAdds=357, prunedRows=79, prunedProducts=22, outputGroups=252]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=4 having=median threshold=8 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=226, leftRows=219, leftFibers=512, multiplyAdds=357, prunedRows=79, prunedProducts=22, outputGroups=252]
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=4 having=empty threshold=25 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=1 blocks=8 multiplicity=4 having=empty threshold=25 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=4 having=empty threshold=25 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=1 blocks=8 multiplicity=4 having=empty threshold=25 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=4 having=empty threshold=25 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=226, leftRows=219, leftFibers=512, multiplyAdds=101, prunedRows=174, prunedProducts=68, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=1 blocks=8 multiplicity=4 having=empty threshold=25 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=512, rightEndpoints=226, leftRows=219, leftFibers=512, multiplyAdds=101, prunedRows=174, prunedProducts=68, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=25895]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=25895]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=25895]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=25895]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=1 having=median threshold=1 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=1 having=empty threshold=5 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=1 having=empty threshold=5 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=1 having=empty threshold=5 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=1 having=empty threshold=5 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=1 having=empty threshold=5 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=1 having=empty threshold=5 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=25895]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=25895]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=14427]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=14427]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=irAggregateInterpreted work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=4 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=4 having=empty threshold=57 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=31912, prunedRows=12, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=1 multiplicity=4 having=empty threshold=57 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=31912, prunedRows=12, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=4 having=empty threshold=57 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=1 multiplicity=4 having=empty threshold=57 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=4 having=empty threshold=57 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=1 multiplicity=4 having=empty threshold=57 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=8111]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=8111]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=1 having=median threshold=4 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=1 having=median threshold=4 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=1 having=median threshold=4 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=1 having=median threshold=4 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=1 having=median threshold=4 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=4853]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=1 having=median threshold=4 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=4853]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=1 having=empty threshold=11 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=1 having=empty threshold=11 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=1 having=empty threshold=11 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=1 having=empty threshold=11 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=1 having=empty threshold=11 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=31603, prunedRows=9, prunedProducts=469, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=1 having=empty threshold=11 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=31603, prunedRows=9, prunedProducts=469, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=8111]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32768, prunedRows=0, prunedProducts=0, outputGroups=8111]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=4 having=median threshold=21 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=4 having=median threshold=21 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=4 having=median threshold=21 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32336, prunedRows=5, prunedProducts=0, outputGroups=4093]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=4 having=median threshold=21 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=32336, prunedRows=5, prunedProducts=0, outputGroups=4093]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=4 having=median threshold=21 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=4 having=median threshold=21 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=4 having=empty threshold=113 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=8 blocks=8 multiplicity=4 having=empty threshold=113 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=4 having=empty threshold=113 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=14041, prunedRows=149, prunedProducts=191, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=8 blocks=8 multiplicity=4 having=empty threshold=113 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=4096, rightEndpoints=256, leftRows=256, leftFibers=4096, multiplyAdds=14041, prunedRows=149, prunedProducts=191, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=4 having=empty threshold=113 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=8 blocks=8 multiplicity=4 having=empty threshold=113 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=65536]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=65536]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=1 having=median threshold=8 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=35766]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=1 having=median threshold=8 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=35766]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=1 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=1 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=1 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=1 having=median threshold=8 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=1 having=empty threshold=21 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=1 having=empty threshold=21 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=1 having=empty threshold=21 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=1 having=empty threshold=21 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=1 having=empty threshold=21 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=1 having=empty threshold=21 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=65536]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=65536]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=4 having=median threshold=52 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=4 having=median threshold=52 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=4 having=median threshold=52 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=4 having=median threshold=52 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=4 having=median threshold=52 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=32850]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=4 having=median threshold=52 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=32850]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=4 having=empty threshold=133 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=1 multiplicity=4 having=empty threshold=133 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=4 having=empty threshold=133 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=1 multiplicity=4 having=empty threshold=133 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=4 having=empty threshold=133 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=1 multiplicity=4 having=empty threshold=133 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=8192]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=8192]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=1 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=1 having=median threshold=64 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=1 having=median threshold=64 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=1 having=median threshold=64 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=8192]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=1 having=median threshold=64 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=8192]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=1 having=median threshold=64 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=1 having=median threshold=64 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=1 having=empty threshold=65 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=1 having=empty threshold=65 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=1 having=empty threshold=65 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=0, prunedRows=256, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=1 having=empty threshold=65 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=0, prunedRows=256, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=1 having=empty threshold=65 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=1 having=empty threshold=65 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=8192]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=524288, prunedRows=0, prunedProducts=0, outputGroups=8192]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=irAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=4 having=none threshold=0 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=4 having=median threshold=507 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=262144, prunedRows=128, prunedProducts=0, outputGroups=4096]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=4 having=median threshold=507 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=262144, prunedRows=128, prunedProducts=0, outputGroups=4096]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=4 having=median threshold=507 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=4 having=median threshold=507 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=4 having=median threshold=507 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=4 having=median threshold=507 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=4 having=empty threshold=769 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=0, prunedRows=256, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=sparseJoinAggregate fanout=32 blocks=8 multiplicity=4 having=empty threshold=769 count=bound actual=sparseJoinAggregate work=Statistics[rightRows=512, rightFibers=16384, rightEndpoints=256, leftRows=256, leftFibers=16384, multiplyAdds=0, prunedRows=256, prunedProducts=0, outputGroups=0]
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=4 having=empty threshold=769 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=auto fanout=32 blocks=8 multiplicity=4 having=empty threshold=769 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=4 having=empty threshold=769 count=bound actual=packedFtreeAggregate work=
+SPARSE_JOIN_ROUTE requested=packedFtreeAggregate fanout=32 blocks=8 multiplicity=4 having=empty threshold=769 count=bound actual=packedFtreeAggregate work=

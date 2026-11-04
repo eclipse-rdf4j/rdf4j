@@ -1,0 +1,29 @@
+Sparse join aggregate verification — 2026-11-04 UTC
+Base: ec7e48248eb20c4f7681d8ea5cbed3100718527a
+Java: Eclipse Temurin 25.0.5; Maven 3.9.16
+
+Final test selection (all passed):
+SparseJoinAggregateAdmissionTest: tests=1, failures=0, errors=0, skipped=0
+SparseJoinAggregateKernelTest: tests=16, failures=0, errors=0, skipped=0
+SparseJoinAggregateSemanticsTest: tests=7, failures=0, errors=0, skipped=0
+SparseJoinAggregateAdapterTest: tests=7, failures=0, errors=0, skipped=0
+LmdbNativeAggregateExplanationRouteTest: tests=16, failures=0, errors=0, skipped=0
+LmdbNativeStrategyPreferenceOrderTest: tests=5, failures=0, errors=0, skipped=0
+LmdbNativeStrategyArbiterTest: tests=90, failures=0, errors=0, skipped=0
+LmdbNativeAdjacencyBatchContractTest: tests=5, failures=0, errors=0, skipped=0
+NativeAdjacencyAggregateOutputMemoryTest: tests=6, failures=0, errors=0, skipped=0
+
+TOTAL: 153 tests; 0 failures; 0 errors; 0 skipped.
+The randomized kernel test checks 120 independently generated weighted matrices at six thresholds (720 exact comparisons).
+
+Commands (mvn-task supplies this environment's Java/proxy configuration; use Maven with Java 25 on another machine):
+mvn -B -ntp -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb process-resources
+mvn -B -ntp -Dmaven.compiler.showWarnings=false -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Pbenchmarks,quick install
+mvn -B -ntp -o -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -Pbenchmarks -Dtest=SparseJoinAggregateAdmissionTest,SparseJoinAggregateKernelTest,SparseJoinAggregateSemanticsTest,SparseJoinAggregateAdapterTest,LmdbNativeAggregateExplanationRouteTest,LmdbNativeStrategyPreferenceOrderTest,LmdbNativeStrategyArbiterTest,LmdbNativeAdjacencyBatchContractTest,NativeAdjacencyAggregateOutputMemoryTest -DskipITs -Dformatter.skip=true -DforkCount=1 -Drdf4j.lmdb.test.maxHeap=2G -Djunit.jupiter.execution.parallel.enabled=false test
+
+Before these module loops, the unchanged full base passed the repository-required root quick clean install; dependencies were installed into .m2_repo. Missing formatter dependencies were downloaded, then validation returned to offline mode.
+The full repository test suite was not run. The selection covers the new public route/kernel/semantics/resource behavior and existing aggregate explanations, strategy preference/arbitration, adjacency batching, and output memory.
+
+Initial red evidence: admission-before.txt. The unchanged base rejected sparseJoinAggregate as an unknown execution strategy. Production code was added after this failure was observed.
+Project Spotless formatter passed. Exact required headers were checked for all seven new Java files. git diff --check passed.
+Performance runs start only after builds/tests have ended; query results are independently checked after their timing interval.
