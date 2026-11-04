@@ -14,6 +14,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const { evidencePath, evidenceScreenshots, openQueryPage, runQuery, waitForRoute } = require('./workbench-test-helpers');
+const { createExploreNavigationTracker, unexpectedHttpErrorConsoleMessages } = require('./workbench-browser-health');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -73,7 +74,10 @@ function fixtureStatements() {
 }
 
 function monitorPage(page) {
-	const health = { pageErrors: [], consoleErrors: [], failedRequests: [], errorResponses: [] };
+	const navigation = createExploreNavigationTracker(page,
+		`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore`);
+	const health = { pageErrors: [], consoleErrors: [], failedRequests: [], errorResponses: [],
+		expectNavigation: () => navigation.expectNavigation() };
 	page.on('pageerror', error => health.pageErrors.push(error.message));
 	page.on('console', message => {
 		if (message.type() === 'error') {
@@ -84,7 +88,7 @@ function monitorPage(page) {
 		const url = requestEvent.url();
 		const error = requestEvent.failure()?.errorText || 'unknown';
 		if (error !== 'net::ERR_ABORTED' && !/\/favicon\.ico(?:$|\?)/.test(url)) {
-			health.failedRequests.push({ url, error });
+			health.failedRequests.push(navigation.recordFailure({ url, error, method: requestEvent.method() }));
 		}
 	});
 	page.on('response', response => {
@@ -103,7 +107,8 @@ async function assertPageHealth(page, health, route) {
 		.toHaveCount(0);
 	expect(health.pageErrors, `uncaught browser errors on ${page.url()}`).toEqual([]);
 	expect(health.consoleErrors, `browser console errors on ${page.url()}`).toEqual([]);
-	expect(health.failedRequests, `failed browser requests on ${page.url()}`).toEqual([]);
+	expect(health.failedRequests.filter(failure => !failure.expectedRouteAbort),
+		`failed browser requests on ${page.url()}`).toEqual([]);
 	expect(health.errorResponses, `HTTP errors on ${page.url()}`).toEqual([]);
 	const surfaceText = await surface.innerText();
 	expect(surfaceText.trim(), `meaningful Workbench content on ${page.url()}`).not.toBe('');
@@ -119,7 +124,7 @@ async function assertFailurePageHealth(page, health) {
 	expect(health.errorResponses).toHaveLength(1);
 	expect(health.errorResponses[0].status).toBe(400);
 	expect(new URL(health.errorResponses[0].url).searchParams.get('resource')).toBe('"unterminated');
-	expect(health.consoleErrors).toEqual([expect.stringMatching(/^Failed to load resource: the server responded with a status of 400/)]);
+	expect(unexpectedHttpErrorConsoleMessages(health.consoleErrors, 400)).toEqual([]);
 	health.consoleErrors.length = 0;
 	health.errorResponses.length = 0;
 	expect(health.pageErrors).toEqual([]);
@@ -254,6 +259,7 @@ test('Contexts and result terms navigate through independently loaded Explore ro
 		.filter({ hasText: /^<_:.*>$/ }).first();
 	await expect(blank).toBeVisible();
 	const blankResource = new URL(await blank.getAttribute('href'), page.url()).searchParams.get('resource');
+	health.expectNavigation();
 	await blank.click();
 	await waitForRoute(page, 'explore', { url: url => url.searchParams.get('resource') === blankResource });
 	await expect(page.locator('#resource')).toHaveValue(blankResource);
@@ -264,6 +270,7 @@ test('Contexts and result terms navigate through independently loaded Explore ro
 	const literal = page.locator('[data-explore-role="graph"] a[href^="explore?resource="]')
 		.filter({ hasText: 'Literal target' }).first();
 	await expect(literal).toBeVisible();
+	health.expectNavigation();
 	await literal.click();
 	await waitForRoute(page, 'explore', { url: url => url.searchParams.get('resource') === '"Literal target"' });
 	await expectRoleRows(page, 'incoming', 1);
@@ -428,6 +435,7 @@ test('a self-link appears in every matching role on desktop and mobile', async (
 	const health = monitorPage(page);
 	for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 900 }]) {
 		await page.setViewportSize(viewport);
+		health.expectNavigation();
 		await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore?resource=${encodeURIComponent('<urn:explore:self>')}`,
 			{ waitUntil: 'domcontentloaded' });
 		await waitForRoute(page, 'explore');
@@ -452,6 +460,7 @@ test('a stored blank node retains its identity from Query through Explore into G
 	await expect(reference).toBeVisible();
 	const resource = new URL(await reference.getAttribute('href'), page.url()).searchParams.get('resource');
 	expect(resource).toMatch(/^<_:.*>$/);
+	health.expectNavigation();
 	await reference.click();
 	await waitForRoute(page, 'explore', { url: url => url.searchParams.get('resource') === resource });
 	await expect(page.locator('#resource')).toHaveValue(resource);
@@ -459,6 +468,7 @@ test('a stored blank node retains its identity from Query through Explore into G
 	await page.getByRole('button', { name: 'Add to graph' }).first().click();
 	const openGraph = page.getByRole('link', { name: 'Open graph' });
 	await expect(openGraph).toBeVisible();
+	health.expectNavigation();
 	await openGraph.click();
 	await waitForRoute(page, 'graph');
 	const node = page.locator('.graph-node.blank').filter({ hasText: 'Blank node target' }).first();
