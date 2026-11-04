@@ -13702,6 +13702,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean mayHaveWildcardViews() {
+			return directAdjacency != null;
+		}
+
+		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 			return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
 		}
@@ -13883,6 +13888,14 @@ class LmdbSailStore implements SailStore {
 						observer, null, subj, pred, obj, context, true);
 			}
 			return statements(subj, pred, obj, context, observer);
+		}
+
+		@Override
+		public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+				int targetPartitions) {
+			// planSplitKeys adds at most target - 1 splits; toRootScanPartitions adds one interval. This bound
+			// depends only on that algorithm, not on source contents, a transaction read or successful admission.
+			return OptionalLong.of(Math.max(1L, targetPartitions));
 		}
 
 		@Override
@@ -15202,6 +15215,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean mayHaveWildcardViews() {
+			return directAdjacency != null;
+		}
+
+		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 			return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
 		}
@@ -15478,6 +15496,14 @@ class LmdbSailStore implements SailStore {
 					nativeSourceLock.unlockRead(readStamp);
 				}
 			}
+		}
+
+		@Override
+		public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+				int targetPartitions) {
+			// Same split algorithm as ParallelSnapshotSource: at most target - 1 split keys plus one interval.
+			// The constant bound needs neither a native-source read lock nor any storage work.
+			return OptionalLong.of(Math.max(1L, targetPartitions));
 		}
 
 		@Override

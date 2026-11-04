@@ -276,8 +276,8 @@ class LmdbNativePackedAlgebraTest {
 		// compared the whole forced value against "packedFtree", so a preference list led by it fell through to
 		// the ordinary ladder and nestedLoop ran instead (source-validated review finding, 2026-11-03)
 		String query = "SELECT ?u WHERE { { ?s ex:p ?p } UNION { ?s ex:p ?p } BIND(UUID() AS ?u) }";
-		assertEquals("packedFtree", executionPath(query, "packedFtree"));
-		assertEquals("packedFtree", executionPath(query, "packedFtree,nestedLoop"));
+		assertEquals("packedFtree(serial)", executionPath(query, "packedFtree"));
+		assertEquals("packedFtree(serial)", executionPath(query, "packedFtree,nestedLoop"));
 		List<BindingSet> rows = evaluate(query, "packedFtree,nestedLoop", null);
 		assertEquals(20, rows.size());
 		assertEquals(20, rows.stream().map(r -> r.getValue("u")).collect(Collectors.toSet()).size());
@@ -339,9 +339,9 @@ class LmdbNativePackedAlgebraTest {
 	@Test
 	void telemetryConfirmsBothForcedFamiliesRatherThanGenericFallback() {
 		assertPath("SELECT * WHERE { ?s ex:p ?p OPTIONAL { ?s ex:r ?r } BIND(?p + 1 AS ?x) }",
-				"packedFtree", "packedFtree");
+				"packedFtree", "packedFtree(serial)");
 		assertPath("SELECT (COUNT(*) AS ?n) WHERE { ?s ex:p ?p OPTIONAL { ?s ex:r ?r } BIND(?p + 1 AS ?x) }",
-				"packedFtreeAggregate", "packedFtreeAggregate");
+				"packedFtreeAggregate", "packedFtreeAggregate(serial)");
 	}
 
 	private void assertPath(String query, String forced, String expected) {

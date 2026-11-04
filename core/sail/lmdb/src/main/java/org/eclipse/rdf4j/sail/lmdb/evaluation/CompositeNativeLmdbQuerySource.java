@@ -195,6 +195,26 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+			int targetPartitions) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			OptionalLong bound = active.rootScanPartitionCountUpperBound(subj, pred, obj, context, targetPartitions);
+			return bound.isPresent() && bound.getAsLong() >= 0L ? bound : OptionalLong.empty();
+		}
+		long total = 0L;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalLong bound = source.rootScanPartitionCountUpperBound(subj, pred, obj, context, targetPartitions);
+			if (bound.isEmpty() || bound.getAsLong() < 0L) {
+				return OptionalLong.empty();
+			}
+			long count = bound.getAsLong();
+			total = count > Long.MAX_VALUE - total ? Long.MAX_VALUE : total + count;
+		}
+		return OptionalLong.of(total);
+	}
+
+	@Override
 	public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
 			int targetPartitions) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
@@ -545,6 +565,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	public OptionalDouble meanNodePredicates(boolean bySubject) {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		return active == null ? OptionalDouble.empty() : active.meanNodePredicates(bySubject);
+	}
+
+	@Override
+	public boolean mayHaveWildcardViews() {
+		for (NativeLmdbQuerySource source : sources) {
+			if (source.mayHaveWildcardViews()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override
@@ -1345,6 +1375,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+				int targetPartitions) {
+			return delegate.rootScanPartitionCountUpperBound(subj, pred, obj, context, targetPartitions);
+		}
+
+		@Override
 		public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
 				int targetPartitions) throws IOException {
 			return delegate.planRootScanPartitions(subj, pred, obj, context, targetPartitions);
@@ -1420,6 +1456,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
 			return delegate.adjacencyKeyDomainCardinality(predicate, bySubject);
+		}
+
+		@Override
+		public boolean mayHaveWildcardViews() {
+			return delegate.mayHaveWildcardViews();
 		}
 
 		@Override

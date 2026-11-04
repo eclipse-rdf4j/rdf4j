@@ -78,6 +78,36 @@ final class LmdbNativeParallelKernelRows {
 		return Boolean.parseBoolean(System.getProperty(ENABLED_PROPERTY, "true"));
 	}
 
+	/** Number of independent kernel instances for an adjacency root, shared with cost-only DISTINCT merge pricing. */
+	static long rootWindowCount(long rootKeys, int workers) {
+		return LmdbNativeKernelPartitions.rangeCount(rootKeys, workers, RANGES_PER_WORKER);
+	}
+
+	/**
+	 * Expected page population under uniform output across the actual root windows, capped by the worker's fill size.
+	 * The population is worker-emitted rows, not globally deduplicated keys unless the caller proves additivity across
+	 * windows. Skew and rejecting branches can change page occupancy; this estimate does not narrow a work ceiling.
+	 * Zero means that no supported positive page estimate is available.
+	 */
+	static int expectedOutputPageRows(double totalWorkerOutputRows, long exactRootKeys, int quotedWorkers) {
+		if (!Double.isFinite(totalWorkerOutputRows) || totalWorkerOutputRows <= 0D || exactRootKeys <= 0L
+				|| quotedWorkers < 2) {
+			return 0;
+		}
+		long windows = rootWindowCount(exactRootKeys, quotedWorkers);
+		return (int) Math.max(1D, Math.min(FILL_ROWS, Math.ceil(totalWorkerOutputRows / windows)));
+	}
+
+	/** Proposal and opener must agree on this heuristic, including exact DISTINCT forcing. */
+	static boolean meetsWorkThreshold(double estimatedWork) {
+		return estimatedWork >= LmdbNativeParallelPipelines.minimumWorkEstimate()
+				|| LmdbNativeForceableStrategies.forces(LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED);
+	}
+
 	/**
 	 * How many times a {@code HashBuild} preamble is expected to run for one query invocation: this engine creates one
 	 * kernel instance per work unit ({@code threads * RANGES_PER_WORKER} units) and every instance re-drains the build
@@ -105,6 +135,15 @@ final class LmdbNativeParallelKernelRows {
 			LmdbNativeKernelBindings.VariablePredicateViews queryVariableViews,
 			LmdbNativeKernelBindings.BoundDomains domains, SlotPlan arg, RowState row,
 			TupleExpr explainTarget, Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory) {
+		return tryOpen(lowered, queryViews, queryVariableViews, domains, arg, row, explainTarget, kernelFactory, null);
+	}
+
+	static RowCursor tryOpen(LmdbNativeKernelLowering.Lowered lowered,
+			NativeLmdbQuerySource.NativeAdjacency[] queryViews,
+			LmdbNativeKernelBindings.VariablePredicateViews queryVariableViews,
+			LmdbNativeKernelBindings.BoundDomains domains, SlotPlan arg, RowState row,
+			TupleExpr explainTarget, Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory,
+			LmdbNativeParallelPipelines.TaskReservation quotedReservation) {
 		if (!enabled() || !LmdbNativeParallelPipelines.enabled()) {
 			return null;
 		}
@@ -180,15 +219,13 @@ final class LmdbNativeParallelKernelRows {
 		if (rootScan >= 0 && !LmdbNativeParallelPipelines.rangePartitionEnabled()) {
 			return debugDecline(explainTarget, "range-partition-disabled");
 		}
-		int desiredWorkers = LmdbNativeParallelPipelines.configuredThreads();
+		int desiredWorkers = quotedReservation == null ? LmdbNativeParallelPipelines.configuredThreads()
+				: quotedReservation.grantedWorkers();
 		if (desiredWorkers < 2) {
 			return debugDecline(explainTarget, "single-thread");
 		}
 		double totalWork = arg.estimate(row);
-		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate()) && !LmdbNativeForceableStrategies
-				.forces(LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
-						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL,
-						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED)) {
+		if (!meetsWorkThreshold(totalWork)) {
 			return debugDecline(explainTarget, "below-threshold");
 		}
 		long rootKeys = 0L;
@@ -213,6 +250,9 @@ final class LmdbNativeParallelKernelRows {
 			if (rootWildcard >= 0) {
 				if (rootKeys < 2L) {
 					return debugDecline(explainTarget, "root-too-small");
+				}
+				if (quotedReservation != null && rootKeys < desiredWorkers) {
+					return debugDecline(explainTarget, "quoted-worker-group-exceeds-root-units");
 				}
 				desiredWorkers = (int) Math.min(desiredWorkers, rootKeys);
 			} else if (rootKeys < 2L * desiredWorkers) {
@@ -239,8 +279,9 @@ final class LmdbNativeParallelKernelRows {
 			}
 			probeKernel.close();
 		}
-		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines.tryReserveTasks(false,
-				desiredWorkers);
+		LmdbNativeParallelPipelines.TaskReservation reservation = quotedReservation == null
+				? LmdbNativeParallelPipelines.tryReserveTasks(false, desiredWorkers)
+				: quotedReservation;
 		if (reservation == null) {
 			return debugDecline(explainTarget, "task-budget");
 		}

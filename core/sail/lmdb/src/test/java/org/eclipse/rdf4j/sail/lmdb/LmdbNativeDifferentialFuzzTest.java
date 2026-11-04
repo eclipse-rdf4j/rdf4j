@@ -37,6 +37,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -893,17 +895,20 @@ public class LmdbNativeDifferentialFuzzTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "automatic", "irKernelWildcard", "irKernelWildcardInterpreted" })
+	@ValueSource(strings = { "automatic", "irKernel", "irKernelInterpreted" })
 	public void repeatedVariableJoinRetainsUnionDomainsAndMultiplicity(String execution) {
 		String previous = System.getProperty(NATIVE_FLAG);
 		Map<String, String> previousExecution = new HashMap<>();
 		for (String property : List.of("rdf4j.lmdb.janinoCodegen.enabled", "rdf4j.lmdb.janinoCodegen.synchronous",
-				"rdf4j.lmdb.kernelInterpreter.enabled", "rdf4j.lmdb.janinoCodegen.wildcardPredicates")) {
+				"rdf4j.lmdb.kernelInterpreter.enabled", "rdf4j.lmdb.janinoCodegen.scanSources")) {
 			previousExecution.put(property, System.setProperty(property, "true"));
 		}
 		try {
 			for (boolean experimental : new boolean[] { false, true }) {
-				LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true);
+				// This fixture deliberately exercises variable predicates through index scans, not wildcard views.
+				LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(false)
+						.setDirectAdjacencyBuildOnStart(false);
 				config.setExperimentalQueryOptimizations(experimental);
 				SailRepository isolated = new SailRepository(
 						new LmdbStore(new File(dataDir, "union-domain-" + experimental),
@@ -936,6 +941,7 @@ public class LmdbNativeDifferentialFuzzTest {
 							List<String> rows = new ArrayList<>();
 							try (SailRepositoryConnection connection = isolated.getConnection()) {
 								SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+								prepared.setLmdbResultCacheRequested(false);
 								if (experimental && nativeEngine && !"automatic".equals(execution)) {
 									prepared.setForcedLmdbExecutionStrategy(execution);
 								}
@@ -946,6 +952,13 @@ public class LmdbNativeDifferentialFuzzTest {
 										rows.add(row.getValue("b").stringValue() + "|" + row.getValue("p").stringValue()
 												+ "|" + row.getValue("c").stringValue());
 									}
+								}
+								if (experimental && nativeEngine && !"automatic".equals(execution)) {
+									assertThat(executionPaths(prepared.explain(Explanation.Level.Executed)
+											.toGenericPlanNode()))
+													.as("the requested scan kernel family and tier must execute: %s",
+															execution)
+													.contains(execution);
 								}
 							}
 							List<String> expected = new ArrayList<>();
@@ -985,6 +998,18 @@ public class LmdbNativeDifferentialFuzzTest {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
 		}
+	}
+
+	private static List<String> executionPaths(GenericPlanNode node) {
+		List<String> paths = new ArrayList<>();
+		String path = node.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH);
+		if (path != null) {
+			paths.addAll(List.of(path.split(" \\| ")));
+		}
+		if (node.getPlans() != null) {
+			node.getPlans().forEach(child -> paths.addAll(executionPaths(child)));
+		}
+		return paths;
 	}
 
 	@Test

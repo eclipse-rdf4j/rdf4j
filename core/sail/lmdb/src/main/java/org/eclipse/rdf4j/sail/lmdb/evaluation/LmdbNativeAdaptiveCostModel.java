@@ -547,7 +547,7 @@ final class LmdbNativeAdaptiveCostModel {
 		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
 			double ratio = correction.featureRatio(feature);
 			builder.add(feature, finite(vector.low(feature) * ratio), finite(vector.expected(feature) * ratio),
-					finite(vector.high(feature) * ratio));
+					LmdbNativeCostVector.upperMultiply(vector.high(feature), ratio));
 		}
 		return builder.build();
 	}

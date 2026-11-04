@@ -755,6 +755,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean mayHaveWildcardViews() {
+		return delegate.mayHaveWildcardViews();
+	}
+
+	@Override
 	public OptionalLong predicateDomainCardinality() {
 		// synthetic ids stand for query constants absent from the store: they add no predicate to the catalog
 		return delegate.predicateDomainCardinality();
@@ -796,6 +801,13 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public boolean hasStatementsInSource() {
 		return delegate.hasStatementsInSource();
+	}
+
+	@Override
+	public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+			int targetPartitions) {
+		return anySynthetic(subj, pred, obj, context) ? OptionalLong.of(0L)
+				: delegate.rootScanPartitionCountUpperBound(subj, pred, obj, context, targetPartitions);
 	}
 
 	@Override

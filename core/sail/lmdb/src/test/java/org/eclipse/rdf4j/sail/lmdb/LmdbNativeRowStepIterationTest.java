@@ -15,6 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -1454,6 +1456,8 @@ class LmdbNativeRowStepIterationTest {
 		String previousJanino = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
 		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		String previousFactorized = System.getProperty("rdf4j.lmdb.factorizedRows.enabled");
+		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
 		RecordingNativeSource source = new RecordingNativeSource();
 		try {
 			NativeSlotLayout layout = new NativeSlotLayout(Map.of("s1", 0, "o1", 1, "s2", 2, "o2", 3), null);
@@ -1461,9 +1465,14 @@ class LmdbNativeRowStepIterationTest {
 			PatternPlan left = pattern(0, P1, 1);
 			PatternPlan right = pattern(2, P2, 3);
 			MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { left, right }, new MaskedFilter[0]);
+			// Exercise the lazy factorized consumer even when a different producer has a lower automatic quote.
+			LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+			when(strategy.forcedExecutionStrategyName()).thenReturn("factorizedRows");
+			when(strategy.getQueryExecutionPolicy()).thenReturn(org.eclipse.rdf4j.query.QueryExecutionPolicy.DEFAULT);
+			when(strategy.captureEvaluationValues(source)).thenReturn(source);
 			NativeRowsStep step = new NativeRowsStep(source, join, layout, new int[] { 0, 1, 2, 3 },
 					new String[] { "s1", "o1", "s2", "o2" }, false, new int[0], new boolean[0], 0, -1, true,
-					null, null, null, Set.of(), null, null);
+					strategy, null, null, Set.of(), null, null);
 			long engagements = LmdbNativeFactorizedRows.ENGAGED.get();
 
 			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
@@ -1481,6 +1490,7 @@ class LmdbNativeRowStepIterationTest {
 		} finally {
 			restoreProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, previousInterpreter);
 			restoreProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousJanino);
+			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", previousFactorized);
 		}
 	}
 

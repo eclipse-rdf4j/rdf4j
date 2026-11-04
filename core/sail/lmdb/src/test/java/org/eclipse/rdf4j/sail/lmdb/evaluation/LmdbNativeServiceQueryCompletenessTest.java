@@ -34,6 +34,9 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -95,6 +98,7 @@ class LmdbNativeServiceQueryCompletenessTest {
 		};
 		LmdbStore remoteStore = new LmdbStore(new File(directory, "remote"),
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(false)
 						.setDirectAdjacencyBuildOnStart(false));
 		remoteStore.setFederatedServiceResolver(resolver);
 		remoteStore.setEvaluationStrategyFactory(new StrictEvaluationStrategyFactory(resolver));
@@ -129,6 +133,7 @@ class LmdbNativeServiceQueryCompletenessTest {
 		endpoints.put("urn:query-boundary:broken", brokenService);
 		LmdbStore localStore = new LmdbStore(new File(directory, "local"),
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(false)
 						.setDirectAdjacencyBuildOnStart(false));
 		localStore.setFederatedServiceResolver(resolver);
 		localStore.setEvaluationStrategyFactory(new LmdbNativeEvaluationStrategyFactory(resolver));
@@ -207,6 +212,18 @@ class LmdbNativeServiceQueryCompletenessTest {
 		String route = routeFor(routeFamily, aggregate, compiled);
 		List<BindingSet> nativeRows = evaluate(text, true, route);
 		assertEquals(bag(oracle), bag(nativeRows), name);
+		if ("scan".equals(routeFamily)) {
+			// Dynamic predicates in this index-only fixture must use the ordinary scan kernel, not borrow a
+			// wildcard-view name. Keep the SERVICE/resume bag contract and prove the exact requested tier.
+			try (var connection = local.getConnection()) {
+				SailTupleQuery audit = (SailTupleQuery) connection.prepareTupleQuery(text);
+				audit.setForcedLmdbExecutionStrategy(route);
+				audit.setLmdbResultCacheRequested(false);
+				audit.setMaxExecutionTime(15);
+				assertTrue(executionPaths(audit.explain(Explanation.Level.Executed).toGenericPlanNode())
+						.contains(route), name + " must execute " + route);
+			}
+		}
 		if (name.equals("rows-distinct")) {
 			assertEquals(List.of("10", "20"), nativeRows.stream()
 					.map(row -> row.getValue("v").stringValue())
@@ -227,7 +244,7 @@ class LmdbNativeServiceQueryCompletenessTest {
 		if ("adaptive-control".equals(routeFamily)) {
 			return null;
 		}
-		String route = "wildcard".equals(routeFamily) ? "irKernelWildcard" : aggregate ? "irAggregate" : "irKernel";
+		String route = aggregate ? "irAggregate" : "irKernel";
 		return compiled ? route : route + "Interpreted";
 	}
 
@@ -256,6 +273,18 @@ class LmdbNativeServiceQueryCompletenessTest {
 			query.setMaxExecutionTime(15);
 			return QueryResults.asList(query.evaluate());
 		}
+	}
+
+	private static List<String> executionPaths(GenericPlanNode node) {
+		List<String> paths = new ArrayList<>();
+		String path = node.getStringMetricActual(TelemetryMetricNames.NATIVE_EXECUTION_PATH);
+		if (path != null) {
+			paths.addAll(List.of(path.split(" \\| ")));
+		}
+		if (node.getPlans() != null) {
+			node.getPlans().forEach(child -> paths.addAll(executionPaths(child)));
+		}
+		return paths;
 	}
 
 	private static List<String> bag(List<BindingSet> results) {

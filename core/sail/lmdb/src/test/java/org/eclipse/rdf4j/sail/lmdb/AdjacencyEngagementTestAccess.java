@@ -128,6 +128,12 @@ public final class AdjacencyEngagementTestAccess {
 		return adjacency == null ? "ABSENT" : adjacency.snapshotMetrics().state;
 	}
 
+	/** Failure-only test context: includes the applier phase/note without starting or retrying maintenance. */
+	public static String publicationDiagnostics(LmdbStore store) {
+		LmdbDirectAdjacencyStore adjacency = adjacency(store);
+		return adjacency == null ? "adjacency-absent" : adjacency.publicationDiagnostics();
+	}
+
 	/**
 	 * Builds the adjacency base synchronously on the calling thread. Returns false when there is no adjacency index.
 	 * Preferred over {@code awaitDirectAdjacencyReady} in tests because it does not depend on background scheduling.

@@ -174,7 +174,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 			double low = 0D, high = 0D;
 			for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
 				low = boundedAdd(low, operations.low(feature));
-				high = boundedAdd(high, operations.high(feature));
+				high = LmdbNativeCostVector.upperAdd(high, operations.high(feature));
 			}
 			// This is a physical-operation bound, never a completed runtime or a statement-row estimate.
 			return LmdbNativeWork.between(low, high);
@@ -348,7 +348,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 				LmdbNativeCostVector heap = LmdbNativeCostVector.bounds(
 						LmdbNativeCostVector.Feature.SORT_N_LOG2_N, 0D,
 						Math.min(Double.MAX_VALUE, comparisons),
-						Math.min(Double.MAX_VALUE, 2D * comparisons));
+						LmdbNativeCostVector.upperMultiply(2D, comparisons));
 				return new NativeAggregatePhysicalPlan.Work(new NativeAggregateCostQuotes.Input(visits, visits,
 						1D + visiblePlanes * (1D + channels.length), 0D, 0D, minimumUpdates, visits,
 						LmdbNativeCostVector.zero()), heap);

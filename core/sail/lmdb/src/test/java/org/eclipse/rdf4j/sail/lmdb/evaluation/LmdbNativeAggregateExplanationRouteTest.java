@@ -349,7 +349,7 @@ class LmdbNativeAggregateExplanationRouteTest {
 						.contains(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
 		assertThat(eligible(explain(query, null, Explanation.Level.Optimized)))
 				.as("automatic applicability must retain a complete legal composed packed algorithm")
-				.contains(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
+				.contains(LmdbNativePackedFtree.AGGREGATE_SERIAL);
 	}
 
 	@Test

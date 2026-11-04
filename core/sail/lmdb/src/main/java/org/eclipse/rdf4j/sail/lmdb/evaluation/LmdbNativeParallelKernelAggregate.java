@@ -134,6 +134,14 @@ final class LmdbNativeParallelKernelAggregate {
 		return !"false".equals(System.getProperty(ENABLED_PROPERTY));
 	}
 
+	/** Shared admission threshold for ordinary aggregate producers; type matrices use their own physical gate. */
+	static boolean meetsWorkThreshold(double estimatedWork) {
+		return estimatedWork >= LmdbNativeParallelPipelines.minimumWorkEstimate()
+				|| LmdbNativeForceableStrategies.forces(LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
+	}
+
 	/** Prefer exact root windows if page windows cannot supply enough independent work. */
 	static LmdbNativeKernelPartitions.PartitionPlan preferRootPartitions(
 			LmdbNativeKernelPartitions.PartitionPlan preferred, long minimumUnits,
@@ -185,9 +193,22 @@ final class LmdbNativeParallelKernelAggregate {
 			TypeMatrixContext[] queryTypeMatrices, LmdbNativeKernelBindings.BoundDomains domains, SlotPlan arg,
 			RowState row, NativeGroupIteration emitter, TupleExpr explainTarget,
 			Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory, String executionRoute) {
+		return tryEvaluate(lowered, queryViews, queryVariableViews, queryNodeDomainIntersections, queryTypeMatrices,
+				domains, arg, row, emitter, explainTarget, kernelFactory, executionRoute, null);
+	}
+
+	static List<BindingSet> tryEvaluate(LmdbNativeKernelLowering.Lowered lowered,
+			NativeLmdbQuerySource.NativeAdjacency[] queryViews,
+			LmdbNativeKernelBindings.VariablePredicateViews queryVariableViews,
+			NativeLmdbQuerySource.NodeDomainIntersection[] queryNodeDomainIntersections,
+			TypeMatrixContext[] queryTypeMatrices, LmdbNativeKernelBindings.BoundDomains domains, SlotPlan arg,
+			RowState row, NativeGroupIteration emitter, TupleExpr explainTarget,
+			Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory, String executionRoute,
+			LmdbNativeParallelPipelines.TaskReservation quotedReservation) {
 		return LmdbNativeAttemptMetrics.withDeclineRoute(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
 				executionRoute, () -> tryEvaluate(lowered, queryViews, queryVariableViews, queryNodeDomainIntersections,
-						queryTypeMatrices, domains, arg, row, emitter, explainTarget, kernelFactory));
+						queryTypeMatrices, domains, arg, row, emitter, explainTarget, kernelFactory,
+						LmdbNativeParallelPipelines.pool(), quotedReservation));
 	}
 
 	/** Package-private execution seam for deterministic accepted-task lifecycle tests. */
@@ -199,12 +220,25 @@ final class LmdbNativeParallelKernelAggregate {
 			LmdbNativeKernelBindings.BoundDomains domains, SlotPlan arg, RowState row,
 			NativeGroupIteration emitter, TupleExpr explainTarget,
 			Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory, ExecutorService workerExecutor) {
+		return tryEvaluate(lowered, queryViews, queryVariableViews, queryNodeDomainIntersections, queryTypeMatrices,
+				domains, arg, row, emitter, explainTarget, kernelFactory, workerExecutor, null);
+	}
+
+	private static List<BindingSet> tryEvaluate(LmdbNativeKernelLowering.Lowered lowered,
+			NativeLmdbQuerySource.NativeAdjacency[] queryViews,
+			LmdbNativeKernelBindings.VariablePredicateViews queryVariableViews,
+			NativeLmdbQuerySource.NodeDomainIntersection[] queryNodeDomainIntersections,
+			TypeMatrixContext[] queryTypeMatrices,
+			LmdbNativeKernelBindings.BoundDomains domains, SlotPlan arg, RowState row,
+			NativeGroupIteration emitter, TupleExpr explainTarget,
+			Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory, ExecutorService workerExecutor,
+			LmdbNativeParallelPipelines.TaskReservation quotedReservation) {
 		if (!enabled() || !LmdbNativeParallelPipelines.enabled()) {
 			return null;
 		}
 		if (lowered.kernel.terminal instanceof LmdbNativeKernelIr.TypeMatrixAggregate typeMatrix) {
 			return tryEvaluateTypeMatrix(lowered, typeMatrix, queryTypeMatrices, domains, row, emitter, explainTarget,
-					kernelFactory, workerExecutor);
+					kernelFactory, workerExecutor, quotedReservation);
 		}
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		KernelGroupLayout layout = bindings.groupLayout;
@@ -317,17 +351,15 @@ final class LmdbNativeParallelKernelAggregate {
 		if (rootScan >= 0 && !LmdbNativeParallelPipelines.rangePartitionEnabled()) {
 			return debugDecline(explainTarget, "range-partition-disabled");
 		}
-		int desiredWorkers = LmdbNativeParallelPipelines.configuredThreads();
+		int desiredWorkers = quotedReservation == null ? LmdbNativeParallelPipelines.configuredThreads()
+				: quotedReservation.grantedWorkers();
 		if (desiredWorkers < 2) {
 			return debugDecline(explainTarget, "single-thread");
 		}
 		double totalWork = rootNodeDomainIntersection >= 0
 				? queryNodeDomainIntersections[rootNodeDomainIntersection].estimatedWork()
 				: arg.estimate(row);
-		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate()) && !LmdbNativeForceableStrategies
-				.forces(LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
-						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
-						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED)) {
+		if (!meetsWorkThreshold(totalWork)) {
 			return debugDecline(explainTarget, "below-threshold");
 		}
 		long rootKeys = 0L;
@@ -408,10 +440,16 @@ final class LmdbNativeParallelKernelAggregate {
 				if (rootKeys < 2L) {
 					return debugDecline(explainTarget, "root-too-small");
 				}
+				if (quotedReservation != null && rootKeys < desiredWorkers) {
+					return debugDecline(explainTarget, "quoted-worker-group-exceeds-root-units");
+				}
 				desiredWorkers = (int) Math.min(desiredWorkers, rootKeys);
 			} else if (rootNodeDomainIntersection >= 0) {
 				if (rootKeys < 2L) {
 					return debugDecline(explainTarget, "root-too-small");
+				}
+				if (quotedReservation != null && rootKeys < desiredWorkers) {
+					return debugDecline(explainTarget, "quoted-worker-group-exceeds-root-units");
 				}
 				desiredWorkers = (int) Math.min(desiredWorkers, rootKeys);
 			} else if (rootKeys < 2L * desiredWorkers) {
@@ -460,8 +498,9 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 		LmdbNativeKernelIr.Kernel workerKernelFinal = workerKernel;
 		Supplier<JaninoKernel> workerFactory = () -> kernelFactory.apply(workerKernelFinal);
-		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines.tryReserveTasks(false,
-				desiredWorkers);
+		LmdbNativeParallelPipelines.TaskReservation reservation = quotedReservation == null
+				? LmdbNativeParallelPipelines.tryReserveTasks(false, desiredWorkers)
+				: quotedReservation;
 		if (reservation == null) {
 			return debugDecline(explainTarget, "task-budget");
 		}
@@ -531,14 +570,15 @@ final class LmdbNativeParallelKernelAggregate {
 			LmdbNativeKernelIr.TypeMatrixAggregate terminal, TypeMatrixContext[] queryTypeMatrices,
 			LmdbNativeKernelBindings.BoundDomains domains, RowState row, NativeGroupIteration emitter,
 			TupleExpr explainTarget, Function<LmdbNativeKernelIr.Kernel, JaninoKernel> kernelFactory,
-			ExecutorService workerExecutor) {
+			ExecutorService workerExecutor, LmdbNativeParallelPipelines.TaskReservation quotedReservation) {
 		if (queryTypeMatrices == null || terminal.view >= queryTypeMatrices.length) {
 			return debugDecline(explainTarget, "type-matrix-view-unavailable");
 		}
 		if (!LmdbNativeKernelPartitions.entryReseedable(emitter.source, emitter.layout, emitter.base, row)) {
 			return debugDecline(explainTarget, "correlated-entry");
 		}
-		int desiredWorkers = LmdbNativeParallelPipelines.configuredThreads();
+		int desiredWorkers = quotedReservation == null ? LmdbNativeParallelPipelines.configuredThreads()
+				: quotedReservation.grantedWorkers();
 		if (desiredWorkers < 2) {
 			return debugDecline(explainTarget, "single-thread");
 		}
@@ -566,9 +606,13 @@ final class LmdbNativeParallelKernelAggregate {
 		if (tasks.size() < 2) {
 			return debugDecline(explainTarget, "root-too-small");
 		}
+		if (quotedReservation != null && tasks.size() < desiredWorkers) {
+			return debugDecline(explainTarget, "quoted-worker-group-exceeds-root-units");
+		}
 		desiredWorkers = Math.min(desiredWorkers, tasks.size());
-		LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines.tryReserveTasks(false,
-				desiredWorkers);
+		LmdbNativeParallelPipelines.TaskReservation reservation = quotedReservation == null
+				? LmdbNativeParallelPipelines.tryReserveTasks(false, desiredWorkers)
+				: quotedReservation;
 		if (reservation == null || reservation.grantedWorkers() < 2) {
 			if (reservation != null) {
 				reservation.close();

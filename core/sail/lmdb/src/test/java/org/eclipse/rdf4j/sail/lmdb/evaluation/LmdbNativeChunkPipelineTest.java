@@ -390,7 +390,7 @@ public class LmdbNativeChunkPipelineTest {
 			long masksBefore = LmdbNativeChunkPipeline.SIP_MASKS.get();
 			long maskedBefore = LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get();
 
-			List<String> nativeRows = rows(multi, query);
+			List<String> nativeRows = rows(multi, "factorizedRows", query);
 			String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
 			List<String> genericRows;
 			try {
@@ -745,6 +745,14 @@ public class LmdbNativeChunkPipelineTest {
 	private static List<String> rows(SailRepository repo, String query) {
 		try (SailRepositoryConnection conn = repo.getConnection()) {
 			return canonicalRows(conn, query);
+		}
+	}
+
+	private static List<String> rows(SailRepository repo, String forcedStrategy, String query) {
+		try (SailRepositoryConnection conn = repo.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			return canonicalRows(prepared);
 		}
 	}
 

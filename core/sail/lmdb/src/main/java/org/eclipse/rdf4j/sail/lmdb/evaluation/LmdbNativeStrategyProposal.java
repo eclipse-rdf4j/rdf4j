@@ -115,6 +115,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private NativeAggregateExecutionEvent.Descriptor aggregateExecution;
 	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
 	private LmdbNativeStrategyProposal<?> mappedOrigin;
+	private LmdbNativeParallelPipelines.TaskReservation parallelReservation;
 	private LmdbNativeCostQuote costQuote;
 	private Set<String> dominates = Set.of();
 
@@ -129,7 +130,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 				return mapper.apply(value);
 			} catch (RuntimeException | Error failure) {
 				if (value instanceof AutoCloseable resource) {
-					KernelRuntime.closeResource(resource, failure);
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(
+							KernelRuntime.closeResource(resource, failure), failure);
 				}
 				throw failure;
 			}
@@ -143,6 +145,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		result.executionResourceWitness = executionResourceWitness;
 		result.mappedOrigin = this;
 		result.costQuote = costQuote;
+		result.parallelShape = parallelShape;
 		result.dominates = dominates;
 		return result;
 	}
@@ -162,6 +165,20 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 * The shape a parallel variant's speed-up and merge are priced from when its quote comes from the typed estimate.
 	 */
 	LmdbNativeStaticPrior.ParallelShape parallelShape;
+
+	/** The quote owns this exact worker group; admission waits until its selected opener runs. */
+	LmdbNativeStrategyProposal<T> withParallelReservation(LmdbNativeParallelPipelines.TaskReservation reservation) {
+		if (opened || closed || parallelReservation != null) {
+			throw new IllegalStateException("A parallel reservation belongs to one unopened proposal");
+		}
+		parallelReservation = reservation;
+		return this;
+	}
+
+	int parallelWorkers() {
+		return parallelReservation != null ? parallelReservation.grantedWorkers()
+				: mappedOrigin != null ? mappedOrigin.parallelWorkers() : 0;
+	}
 
 	LmdbNativeStrategyProposal<T> withParallelShape(LmdbNativeStaticPrior.ParallelShape shape) {
 		this.parallelShape = shape;
@@ -719,10 +736,25 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			throw new IllegalStateException("strategy proposal already opened");
 		}
 		opened = true;
-		if (beforeOpen != null) {
-			beforeOpen.run();
+		try {
+			if (parallelReservation != null && !parallelReservation.admit()) {
+				parallelReservation.close();
+				return null;
+			}
+			if (beforeOpen != null) {
+				beforeOpen.run();
+			}
+			T result = aggregateExecution == null ? opener.open() : aggregateExecution.open(opener);
+			if (result == null && parallelReservation != null) {
+				parallelReservation.close();
+			}
+			return result;
+		} catch (IOException | RuntimeException | Error failure) {
+			if (parallelReservation != null) {
+				parallelReservation.close();
+			}
+			throw failure;
 		}
-		return aggregateExecution == null ? opener.open() : aggregateExecution.open(opener);
 	}
 
 	/** Runs {@code hook} on the opening thread immediately before this proposal's opener. */
@@ -741,7 +773,13 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}
 		closed = true;
 		if (!opened) {
-			releaseIfUnused.run();
+			try {
+				releaseIfUnused.run();
+			} finally {
+				if (parallelReservation != null) {
+					parallelReservation.close();
+				}
+			}
 		}
 	}
 

@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -49,6 +50,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * The partitioning contract for scan-rooted kernels (plan:
@@ -65,6 +67,8 @@ import org.junit.jupiter.api.io.TempDir;
  * partition of the full scan. Not a cover (which would duplicate rows) and not a subset (which would drop them) — every
  * quad exactly once.
  */
+// This fixture changes process-wide worker/tier properties and observes shared physical-run counters.
+@Isolated
 public class LmdbNativeKernelScanPartitionTest {
 
 	private static final String EX = "http://example.com/scanpartition/";
@@ -236,7 +240,10 @@ public class LmdbNativeKernelScanPartitionTest {
 		assertEquals(sorted(rows(ROWS_SCAN_JOIN, "irKernelParallel")), sorted(expected));
 		String telemetry = explanation(ROWS_SCAN_JOIN);
 		assertTrue(telemetry.contains("irKernelParallelInterpreted="), telemetry);
-		assertTrue(telemetry.contains("irKernelWildcardInterpreted="), telemetry);
+		assertTrue(telemetry.contains("irKernelInterpreted="), telemetry);
+		// This index-only fixture disables wildcard views. A variable predicate remains an ordinary scan,
+		// not an eligible wildcard-view rival; the forced parallel execution above proves partitioning.
+		assertFalse(telemetry.contains("irKernelWildcardInterpreted="), telemetry);
 	}
 
 	private static List<String> sorted(List<String> rows) {
