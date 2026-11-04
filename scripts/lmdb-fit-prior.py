@@ -13,6 +13,7 @@ Usage: lmdb-fit-prior.py core/sail/lmdb/target/strategy-regret.tsv [more.tsv ...
 before the fit), so the remaining coefficients are fitted around prices that are already measured elsewhere.
 --strategies / --exclude restrict the rows to (or drop) the named strategy families.
 """
+import math
 import sys
 
 # the static prior as LmdbNativeMachineCostModel.defaultPrior sets it (2026-11-03); keep in step with that method
@@ -27,32 +28,61 @@ HAND_PRIOR = {
 def load(paths):
     names, rows = None, []
     for path in paths:
+        file_names = None
         with open(path, encoding="utf-8") as handle:
-            for line in handle:
+            for line_number, line in enumerate(handle, 1):
                 line = line.rstrip("\n")
                 if not line:
                     continue
                 if line.startswith("#"):
                     header = line.split("\t")[-1]
-                    names = header[header.index("(") + 1:header.rindex(")")].split(",")
+                    if not header.startswith("features("):
+                        continue
+                    if not header.endswith(")"):
+                        raise ValueError(f"Feature header is malformed at {path}:{line_number}")
+                    file_names = header[len("features("):-1].split(",")
+                    if (any(not name or name != name.strip() for name in file_names)
+                            or len(set(file_names)) != len(file_names)):
+                        raise ValueError(f"Feature names must be nonempty and unique at {path}:{line_number}")
+                    if names is None:
+                        names = file_names
+                    elif file_names != names:
+                        raise ValueError(f"Feature schema mismatch at {path}:{line_number}: "
+                                         f"expected {names}, found {file_names}")
                     continue
+                if file_names is None:
+                    raise ValueError(f"Feature header is required before measurements at {path}:{line_number}")
                 cells = line.split("\t")
                 median, features = cells[6], cells[13] if len(cells) > 13 else ""
-                if median == "NaN" or not features:
+                if not features:
                     continue
+                elapsed = float(median)
+                if not math.isfinite(elapsed):
+                    continue  # Censored/failed runs are not exact targets for least-squares fitting.
+                if elapsed < 0.0:
+                    raise ValueError(f"Elapsed nanoseconds must be nonnegative at {path}:{line_number}")
+                if not math.isfinite(float(cells[11])):
+                    continue  # The quote ceiling, not its finite expected floor, establishes boundedness.
                 vector = [float(value) for value in features.split(",")]
-                if any(value >= 1e14 for value in vector):
-                    continue  # unbounded quote, not a measurement of a price
-                rows.append((vector, float(median), cells))
+                if len(vector) != len(names):
+                    raise ValueError(f"Feature count mismatch at {path}:{line_number}: "
+                                     f"expected {len(names)}, found {len(vector)}")
+                if any(not math.isfinite(value) or value < 0.0 for value in vector):
+                    raise ValueError(f"Feature counts must be finite and nonnegative at {path}:{line_number}")
+                rows.append((vector, elapsed, cells))
     return names, rows
 
 
 def nnls(rows, dimension, iterations=20000):
-    """Projected gradient descent on sum((x.c - t)^2) with c >= 0, features scaled to unit variance."""
+    """Projected gradient descent on sum((x.c - t)^2) with c >= 0, columns scaled by their maxima."""
+    if dimension == 0:
+        return []  # Every coefficient may be pinned.
     scale = [max(1e-9, max(abs(vector[i]) for vector, _, _ in rows)) for i in range(dimension)]
     scaled = [([value / scale[i] for i, value in enumerate(vector)], target) for vector, target, _ in rows]
     coefficients = [0.0] * dimension
-    step = 1.0 / (len(scaled) * dimension)
+    # The squared-error gradient has Lipschitz bound 2 * rows * columns after scaling.
+    # Use its reciprocal: twice this step oscillates forever for identical constant columns.
+    step = 0.5 / (len(scaled) * dimension)
     for _ in range(iterations):
         gradient = [0.0] * dimension
         for vector, target in scaled:
@@ -83,7 +113,10 @@ def parse(argv):
         if argv[i] == "--pin":
             for item in argv[i + 1].split(","):
                 name, value = item.split("=")
-                pins[name.strip()] = float(value)
+                coefficient = float(value)
+                if not name.strip() or not math.isfinite(coefficient) or coefficient < 0.0:
+                    raise ValueError(f"Pinned coefficient must be named, finite and nonnegative: {item}")
+                pins[name.strip()] = coefficient
             i += 2
         elif argv[i] == "--strategies":
             keep = set(argv[i + 1].split(","))
@@ -104,6 +137,9 @@ def main(argv):
     if not rows:
         print("no priced measurements found", file=sys.stderr)
         return 1
+    unknown_pins = set(pins) - set(names)
+    if unknown_pins:
+        raise ValueError(f"Pinned features are absent from the measurements: {sorted(unknown_pins)}")
     hand = [HAND_PRIOR.get(name, 0.0) for name in names]
     pinned = [pins.get(name) for name in names]
     free = [i for i, value in enumerate(pinned) if value is None]
@@ -111,7 +147,9 @@ def main(argv):
     reduced = []
     for vector, target, cells in rows:
         held = sum(vector[i] * pinned[i] for i in range(len(names)) if pinned[i] is not None)
-        reduced.append(([vector[i] for i in free], max(0.0, target - held), cells))
+        # Negative residual targets are valid: an overprediction by the pinned features must
+        # still oppose increasing the free coefficients in the original least-squares objective.
+        reduced.append(([vector[i] for i in free], target - held, cells))
     fitted_free = nnls(reduced, len(free))
     fitted = list(pinned)
     for index, value in zip(free, fitted_free):
