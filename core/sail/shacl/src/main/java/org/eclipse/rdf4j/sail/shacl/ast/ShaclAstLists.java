@@ -12,6 +12,7 @@ package org.eclipse.rdf4j.sail.shacl.ast;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Iterator;
@@ -48,7 +49,7 @@ public class ShaclAstLists {
 		// so we don't add rdf:List when writing it out either.
 
 		int counter = 0;
-		Resource originalHead = head;
+		String idPrefix = blankNodeIdPrefix(head);
 
 		Iterator<? extends Value> iter = values.iterator();
 		while (iter.hasNext()) {
@@ -56,7 +57,7 @@ public class ShaclAstLists {
 			model.add(head, RDF.FIRST, value);
 
 			if (iter.hasNext()) {
-				Resource next = bnode(originalHead.stringValue() + uuid + counter++);
+				Resource next = bnode(idPrefix + uuid + counter++);
 				model.add(head, RDF.REST, next);
 				head = next;
 			} else {
@@ -103,4 +104,15 @@ public class ShaclAstLists {
 
 	}
 
+	/**
+	 * Blank node IDs may not contain characters such as ':' or '/', so the string value of an IRI list head can't be
+	 * used directly in the IDs of the list's generated rest nodes. A name-based UUID is valid, stable for a given head
+	 * (the same list always produces the same rest nodes) and distinct for distinct heads.
+	 */
+	private static String blankNodeIdPrefix(Resource head) {
+		if (head.isBNode()) {
+			return head.stringValue();
+		}
+		return UUID.nameUUIDFromBytes(head.stringValue().getBytes(StandardCharsets.UTF_8)).toString();
+	}
 }
