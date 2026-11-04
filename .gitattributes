@@ -27,3 +27,5 @@ core/queryparser/sparql/JavaCC/patches/*.diff -whitespace
 *.png binary
 *.jpg binary
 *.gif binary
+# Preserve hash-verified upstream legal evidence verbatim, including line endings.
+/scripts/third-party-licenses/** -text -whitespace

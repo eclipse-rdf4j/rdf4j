@@ -4694,6 +4694,21 @@ body.workbench-body #footer.workbench-footer {
 body.workbench-body #footer.workbench-footer > div {
 	padding-top: 10px;
 	border-top: 1px solid var(--workbench-soft-rule);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 8px 20px;
+}
+
+body.workbench-body .workbench-footer__legal {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 16px;
+}
+
+body.workbench-body .workbench-footer__legal a {
+	color: inherit;
+	text-underline-offset: 2px;
 }
 
 /* Desktop: the page and the footer keep a gutter from the sidebar rail (the grid has no column gap there). This sits

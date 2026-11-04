@@ -1,0 +1,199 @@
+Source entries: org/mapdb/Serializer.java#L1-L15, org/mapdb/volume/Volume.java#L1-L15, org/mapdb/Atomic.java#L1-L15
+/*
+ *  Copyright (c) 2012 Jan Kotek
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+Source entries: org/mapdb/serializer/CompressLZF.java#L1-L18
+/*
+ * This code comes from H2 database project and was modified for MapDB a bit.
+ * Re-licensed under Apache 2 license with Thomas Mueller permission
+ *
+ *  Copyright (c) 2004-2011 H2 Group
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+Source entries: org/mapdb/serializer/CompressLZF.java#L21-L70
+/*
+ * Original H2 license
+ *
+ * Copyright 2004-2011 H2 Group. Multiple-Licensed under the H2 License,
+ * Version 1.0, and under the Eclipse Public License, Version 1.0
+ * (http://h2database.com/html/license.html).
+ *
+ * This code is based on the LZF algorithm from Marc Lehmann. It is a
+ * re-implementation of the C code:
+ * http://cvs.schmorp.de/liblzf/lzf_c.c?view=markup
+ * http://cvs.schmorp.de/liblzf/lzf_d.c?view=markup
+ *
+ * According to a mail from Marc Lehmann, it's OK to use his algorithm:
+ * Date: 2010-07-15 15:57
+ * Subject: Re: Question about LZF licensing
+ * ...
+ * The algorithm is not copyrighted (and cannot be copyrighted afaik) - as long
+ * as you wrote everything yourself, without copying my code, that's just fine
+ * (looking is of course fine too).
+ * ...
+ *
+ * Still I would like to keep his copyright info:
+ *
+ * Copyright (c) 2000-2005 Marc Alexander Lehmann <schmorp@schmorp.de>
+ * Copyright (c) 2005 Oren J. Maurice <oymaurice@hazorea.org.il>
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *   1.  Redistributions of source code must retain the above copyright notice,
+ *       this list of conditions and the following disclaimer.
+ *
+ *   2.  Redistributions in binary form must reproduce the above copyright
+ *       notice, this list of conditions and the following disclaimer in the
+ *       documentation and/or other materials provided with the distribution.
+ *
+ *   3.  The name of the author may not be used to endorse or promote products
+ *       derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ''AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
+Source entries: org/mapdb/HTreeMap.kt#L862-L862
+//expiration based on maximal Map size
+
+Source entries: org/mapdb/HTreeMap.kt#L868-L868
+//expiration based on TTL
+
+Source entries: org/mapdb/HTreeMap.kt#L873-L873
+//expiration based on maximal store size
+
+Source entries: org/mapdb/IndexTreeLongLongMap.kt#L96-L96
+//TODO assert max size based on levels
+
+Source entries: org/mapdb/BTreeMap.kt#L20-L70
+/**
+ * A scalable concurrent {@link ConcurrentNavigableMap} implementation.
+ * The map is sorted according to the {@linkplain Comparable natural
+ * ordering} of its keys, or by a {@link Comparator} provided at map
+ * creation time.
+ *
+ * Insertion, removal,
+ * update, and access operations safely execute concurrently by
+ * multiple threads.  Iterators are <i>weakly consistent</i>, returning
+ * elements reflecting the state of the map at some point at or since
+ * the creation of the iterator.  They do <em>not</em> throw {@link
+ * ConcurrentModificationException}, and may proceed concurrently with
+ * other operations. Ascending key ordered views and their iterators
+ * are faster than descending ones.
+ *
+ *
+ * By default BTreeMap does not track its size and {@code size()} traverses collection to count its entries.
+ * There is option to enable counter, in that case {@code size()} returns instantly
+ *
+ * Additionally, the bulk operations <tt>putAll</tt>, <tt>equals</tt>, and
+ * <tt>clear</tt> are <em>not</em> guaranteed to be performed
+ * atomically. For example, an iterator operating concurrently with a
+ * <tt>putAll</tt> operation might view only some of the added
+ * elements. NOTE: there is an optional
+ *
+ * This class and its views and iterators implement all of the
+ * <em>optional</em> methods of the {@link Map} and {@link Iterator}
+ * interfaces. Like most other concurrent collections, this class does
+ * <em>not</em> permit the use of <tt>null</tt> keys or values because some
+ * null return values cannot be reliably distinguished from the absence of
+ *
+ * Theoretical design of BTreeMap is based on 1986 paper
+ * <a href="http://www.sciencedirect.com/science/article/pii/0022000086900218">
+ * Concurrent operations on B∗-trees with overtaking</a>
+ * written by Yehoshua Sagiv.
+ * More practical aspects of BTreeMap implementation are based on
+ * <a href="http://cs.au.dk/~tyoung/btree/index.html">demo application</a> from Thomas Dinsdale-Young.
+ * Also more work from Thomas: <a href="http://www.doc.ic.ac.uk/research/technicalreports/2011/#10">A Simple Abstraction for Complex Concurrent Indexes</a>
+ *
+ * B-Linked-Tree used here does not require locking for read.
+ * Updates and inserts locks only one, two or three nodes.
+ * </p><p>
+ *
+ * This B-Linked-Tree structure does not support removal well, entry deletion does not collapse tree nodes. Massive
+ * deletion causes empty nodes and performance lost. There is workaround in form of compaction process, but it is not
+ * implemented yet.
+ * </p>
+ *
+ * @author Jan Kotek
+ * @author some parts by Doug Lea and JSR-166 group
+ */
+
+Source entries: org/mapdb/volume/CleanerUtil.java#L1-L17
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: org/mapdb/volume/CleanerUtil.java#L35-L43
+/**
+ * sun.misc.Cleaner has moved in OpenJDK 9 and
+ * sun.misc.Unsafe#invokeCleaner(ByteBuffer) is the replacement.
+ * This class is a hack to use sun.misc.Cleaner in Java 8 and
+ * use the replacement in Java 9+.
+ * This implementation is based on Hadoop class
+ * https://github.com/apache/hadoop/blob/5d084d7eca32cfa647a78ff6ed3c378659f5b186/hadoop-common-project/hadoop-common/src/main/java/org/apache/hadoop/util/CleanerUtil.java
+ * Some adaptations have been done to handle the attachment() of the byte buffer (explained in Bug #776)
+ */
+
+Source entries: org/mapdb/volume/Volume.java#L105-L108
+/**
+     * If {@code sun.misc.Unsafe} is available it will use Volume based on Unsafe.
+     * If Unsafe is not available for some reason (Android), use DirectByteBuffer instead.
+     */
+
+Source entries: org/mapdb/Atomic.java#L17-L23
+/*
+ * Adopted from Apache Harmony with following copyright:
+ *
+ * Written by Doug Lea with assistance from members of JCP JSR-166
+ * Expert Group and released to the public domain, as explained at
+ * http://creativecommons.org/licenses/publicdomain
+ */
+

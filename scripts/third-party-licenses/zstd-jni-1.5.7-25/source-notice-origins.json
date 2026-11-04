@@ -1,0 +1,27 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/github/luben/zstd-jni/1.5.7-25/zstd-jni-1.5.7-25-sources.jar",
+  "archiveSha256": "8edcb741c3eac427ff47ad80b170f0e87559797463151aedd0594a532178a307",
+  "blocks": [
+    {
+      "commentSha256": "35cda90f365745bef14a84efc7201f82a268e2c3b7b71e43eedc008400fbf66d",
+      "sources": [
+        {
+          "entry": "META-INF/versions/22/com/github/luben/zstd/Zstd.java",
+          "sourceSha256": "98bd80ed038fd84edfb9cf04ec230fbb3eb2fbf80c79d1d6965596d59709e016",
+          "startByte": 66385,
+          "endByteExclusive": 67594,
+          "startLine": 1529,
+          "endLine": 1553
+        },
+        {
+          "entry": "com/github/luben/zstd/Zstd.java",
+          "sourceSha256": "3a225dc71fb7d7a03000a093a828f64cedf02e20929a7fd04787b7e5957b47a5",
+          "startByte": 52681,
+          "endByteExclusive": 53890,
+          "startLine": 1197,
+          "endLine": 1221
+        }
+      ]
+    }
+  ]
+}

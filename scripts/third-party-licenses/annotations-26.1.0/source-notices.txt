@@ -1,0 +1,17 @@
+Source entries: org/jetbrains/annotations/Async.java#L1-L15, org/jetbrains/annotations/ApiStatus.java#L1-L15, org/jetbrains/annotations/Contract.java#L1-L15, org/jetbrains/annotations/MustBeInvokedByOverriders.java#L1-L15, org/jetbrains/annotations/TestOnly.java#L1-L15, org/jetbrains/annotations/VisibleForTesting.java#L1-L15, org/jetbrains/annotations/UnknownNullability.java#L1-L15, org/jetbrains/annotations/NonNls.java#L1-L15, org/jetbrains/annotations/BlockingExecutor.java#L1-L15, org/jetbrains/annotations/NonBlockingExecutor.java#L1-L15, org/jetbrains/annotations/Range.java#L1-L15, org/jetbrains/annotations/Debug.java#L1-L15, org/jetbrains/annotations/PropertyKey.java#L1-L15, org/jetbrains/annotations/UnmodifiableView.java#L1-L15, org/jetbrains/annotations/Nls.java#L1-L15, org/jetbrains/annotations/NotNull.java#L1-L15, org/jetbrains/annotations/Unmodifiable.java#L1-L15, org/jetbrains/annotations/Blocking.java#L1-L15, org/jetbrains/annotations/Nullable.java#L1-L15, org/jetbrains/annotations/NonBlocking.java#L1-L15, org/intellij/lang/annotations/Identifier.java#L1-L15, org/intellij/lang/annotations/Pattern.java#L1-L15, org/intellij/lang/annotations/JdkConstants.java#L1-L15, org/intellij/lang/annotations/Flow.java#L1-L15, org/intellij/lang/annotations/PrintFormat.java#L1-L15, org/intellij/lang/annotations/Subst.java#L1-L15, org/intellij/lang/annotations/MagicConstant.java#L1-L15, org/intellij/lang/annotations/RegExp.java#L1-L15, org/intellij/lang/annotations/Language.java#L1-L15
+/*
+ * Copyright 2000-2021 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+

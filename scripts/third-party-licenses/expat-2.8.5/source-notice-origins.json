@@ -1,0 +1,417 @@
+{
+  "sourceArchive": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz",
+  "archiveSha256": "920dde485e15eda0cce8d2310b41d492c534e5e3d89ad407a0b4176dd2ff88fe",
+  "scope": "License-bearing C/C++ block comments from upstream lib/ source directories and selected Graphviz plugin sources. This is source evidence, not a claim that every source file was linked into the binary.",
+  "blocks": [
+    {
+      "commentSha256": "01e671f08e13005a0bbfa48ec62ff995e87a7454a63607bcf8ccd03ae691666f",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/random_dev_urandom.c",
+          "sourceSha256": "4d2a204c94285b0c459397619acfca5a8f5d690fbd8f419ac45879074e6afebd",
+          "startByte": 0,
+          "endByteExclusive": 1645,
+          "startLine": 1,
+          "endLine": 33
+        },
+        {
+          "entry": "expat-2.8.5/lib/random_arc4random.c",
+          "sourceSha256": "33b936335d0bbe1bb36b0da65d82e2d656fef9cf2e49660101c74a3f4f9d5c37",
+          "startByte": 0,
+          "endByteExclusive": 1645,
+          "startLine": 1,
+          "endLine": 33
+        }
+      ]
+    },
+    {
+      "commentSha256": "06f3d6b1ffaf8c9d8705b46c0b2a7e94b709dcf93b4d671d0037258695b74876",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/xmlrole.h",
+          "sourceSha256": "8a0b61cd6efcd7427acbc86759e9013e7a61755097a1f82cbb2a79c011af5ee5",
+          "startByte": 0,
+          "endByteExclusive": 1845,
+          "startLine": 1,
+          "endLine": 36
+        }
+      ]
+    },
+    {
+      "commentSha256": "12c8cb0e4bc4ed9328e6fff5deeb77e18303ee5b039e8469a47dd3cc1a4159ee",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/xmltok_impl.c",
+          "sourceSha256": "4dcd7ae88dd90bbc89d0e41ba6affb46a107ee28df3b49cb84cdf228b7cc7981",
+          "startByte": 0,
+          "endByteExclusive": 2450,
+          "startLine": 1,
+          "endLine": 44
+        }
+      ]
+    },
+    {
+      "commentSha256": "18ac4d6659e26c3a0687960fdfa95d8e03b94f4994ab34f604cab83e3a8e1e5e",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/xmltok.c",
+          "sourceSha256": "47ffd58f56f61284fd84cecd94ddad4c79cde922f57994c1525f8df1eb9272eb",
+          "startByte": 0,
+          "endByteExclusive": 2953,
+          "startLine": 1,
+          "endLine": 53
+        }
+      ]
+    },
+    {
+      "commentSha256": "2f9aaea04f8b621eda65aef577466fe914cbbb21080b7ec2f5b4c5389bc6ce34",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/nametab.h",
+          "sourceSha256": "8f78e64f11e2b23df8b32cb5528cfeda6215acd6abf6bcf1ad59fdc7b1ffd105",
+          "startByte": 0,
+          "endByteExclusive": 1633,
+          "startLine": 1,
+          "endLine": 33
+        }
+      ]
+    },
+    {
+      "commentSha256": "349432d6c6f2d34f3e81b7ca0b5f462803b388150c76a09319ab3b710c3aa540",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/latin1tab.h",
+          "sourceSha256": "b0daf8a75c690e895421f765ddb2ae2fbc1ba14694e06a3215dba84f1ff3427d",
+          "startByte": 0,
+          "endByteExclusive": 1784,
+          "startLine": 1,
+          "endLine": 35
+        },
+        {
+          "entry": "expat-2.8.5/lib/utf8tab.h",
+          "sourceSha256": "3fa349a3a19143366e80a58d9aa950152ef9cd7903f557f971051410b47f335c",
+          "startByte": 0,
+          "endByteExclusive": 1784,
+          "startLine": 1,
+          "endLine": 35
+        },
+        {
+          "entry": "expat-2.8.5/lib/asciitab.h",
+          "sourceSha256": "5792cb56f285c8876b988d875a70d49019bc7e6d5ebcd0f8224b24e695301832",
+          "startByte": 0,
+          "endByteExclusive": 1784,
+          "startLine": 1,
+          "endLine": 35
+        },
+        {
+          "entry": "expat-2.8.5/lib/iasciitab.h",
+          "sourceSha256": "a9cd6f2cf5199ae3c29d22ee4913736fcd984f62132146a0352c88549700e83f",
+          "startByte": 0,
+          "endByteExclusive": 1784,
+          "startLine": 1,
+          "endLine": 35
+        }
+      ]
+    },
+    {
+      "commentSha256": "35ae42fb50484cf5184c202e2bc4c78d04785bb5e442e8d6703562d1e417fbb6",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/xmlparse.c",
+          "sourceSha256": "73e23fc6220bc12f13eda7022444f6d4d1027aaf025cc7e8d4284c3c297d37d7",
+          "startByte": 0,
+          "endByteExclusive": 4774,
+          "startLine": 1,
+          "endLine": 81
+        }
+      ]
+    },
+    {
+      "commentSha256": "474f879fe3fa3d4bea2c4c3ef9630623d732f26603a7a8ea3a84cb55d1c2ba61",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/ascii.h",
+          "sourceSha256": "5ce49460794894b78f97060f634c129d13f2e9cc9b8dacd829f4be2dbc6e0649",
+          "startByte": 0,
+          "endByteExclusive": 1845,
+          "startLine": 1,
+          "endLine": 36
+        }
+      ]
+    },
+    {
+      "commentSha256": "49464dcba10f247a03512e5491ddb22b25218a3602ed8d6d020e5e92309a4921",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/xmltok.h",
+          "sourceSha256": "623dea24bc27712e2e205a0c0517c79e211234f8d1051fe46d780839f754cf9e",
+          "startByte": 0,
+          "endByteExclusive": 1912,
+          "startLine": 1,
+          "endLine": 37
+        }
+      ]
+    },
+    {
+      "commentSha256": "5298c137ff939d152fc69bf104914830c198502fc3a03eb8cfd951c6aba08e90",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/xmltok_ns.c",
+          "sourceSha256": "ea723a3470d3eed5c4a4e873bec2f996c605326fad25709b45452664261c5465",
+          "startByte": 0,
+          "endByteExclusive": 2002,
+          "startLine": 1,
+          "endLine": 38
+        }
+      ]
+    },
+    {
+      "commentSha256": "554d706b7ba6c59c847f311e7dba43aa4491a5c30e16af99e1cdb40339145cc1",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/internal.h",
+          "sourceSha256": "0123d00963768b5779544cc54dcccad311824b192a38d3489c4fb1fbbfa33b17",
+          "startByte": 0,
+          "endByteExclusive": 2688,
+          "startLine": 1,
+          "endLine": 54
+        }
+      ]
+    },
+    {
+      "commentSha256": "5f1165b2bdc3baf4989500d1119e2bf855e36fa185bd9482929ea97ae3fe5e6c",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/xmlrole.c",
+          "sourceSha256": "b1ad87cc3c0d4722358a7dfb1642df7f62066d1613a0a56dc9289e7112fb3f0c",
+          "startByte": 0,
+          "endByteExclusive": 2233,
+          "startLine": 1,
+          "endLine": 42
+        }
+      ]
+    },
+    {
+      "commentSha256": "6525a0678a9eadaedbbb76797c3cf2568082710d892f8f4a0570c3542fbee64f",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/hash_table.h",
+          "sourceSha256": "ad93851f86df1f4e8f85488dbac53cab3539e59d701ad747c7beea354d69e0dc",
+          "startByte": 0,
+          "endByteExclusive": 1597,
+          "startLine": 1,
+          "endLine": 32
+        }
+      ]
+    },
+    {
+      "commentSha256": "756ff919254a48bf3eda248cf20a15bc1bc7a35a4402193368139a941de35f8e",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/random_getentropy.c",
+          "sourceSha256": "ba99df7b694ff0b62d2871cc13b87e75d1a715af6045102ee7aff120ec1ae332",
+          "startByte": 0,
+          "endByteExclusive": 1635,
+          "startLine": 1,
+          "endLine": 33
+        },
+        {
+          "entry": "expat-2.8.5/lib/random_arc4random_buf.c",
+          "sourceSha256": "e9a72469deea3c7faed0fd45e3ac7d81e8ce4e63b52ef7bb647baf71f3d0fd78",
+          "startByte": 0,
+          "endByteExclusive": 1635,
+          "startLine": 1,
+          "endLine": 33
+        }
+      ]
+    },
+    {
+      "commentSha256": "7a49519b0f02636eb0ff4f0df7fbceef8ac2eb46f691ae72301e18af924ea977",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/random_rand_s.h",
+          "sourceSha256": "941134a3796e544bf44c428cd1e1553506c9f344a5c0c4479a8a819745a0c0ff",
+          "startByte": 0,
+          "endByteExclusive": 1627,
+          "startLine": 1,
+          "endLine": 33
+        }
+      ]
+    },
+    {
+      "commentSha256": "7b46fc2569b99b7d05fadcf931bbecbb95382eae416413efd48bf9b8507dd5d8",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/expat.h",
+          "sourceSha256": "17cd1fc3b4c61d00de96091ceed0a3721d5bac9755c6d04e89d9f8a79d037c12",
+          "startByte": 0,
+          "endByteExclusive": 2522,
+          "startLine": 1,
+          "endLine": 46
+        }
+      ]
+    },
+    {
+      "commentSha256": "7bb7a54a62788674de0b533e32e58c0ed5bbea396249da21a7d727452e0c75e9",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/random_arc4random_buf.h",
+          "sourceSha256": "fccc4650a76f0b4df0b1123abeb248087a22d4eba9acbd1188cd44e21de4377b",
+          "startByte": 0,
+          "endByteExclusive": 1565,
+          "startLine": 1,
+          "endLine": 32
+        },
+        {
+          "entry": "expat-2.8.5/lib/random_dev_urandom.h",
+          "sourceSha256": "65a0bf3666927824029dd52dc4b6af3218719999ab9f45db8d8406645960f5ab",
+          "startByte": 0,
+          "endByteExclusive": 1565,
+          "startLine": 1,
+          "endLine": 32
+        },
+        {
+          "entry": "expat-2.8.5/lib/random_arc4random.h",
+          "sourceSha256": "dd1a23b22604b61e1942e9fccdefe4d876cdf55477cd2e61904e50af162c15bf",
+          "startByte": 0,
+          "endByteExclusive": 1565,
+          "startLine": 1,
+          "endLine": 32
+        },
+        {
+          "entry": "expat-2.8.5/lib/random_getentropy.h",
+          "sourceSha256": "8a122afb95decf1fcf960cf92004d0305d7c9154f84c1ac739e67ef554e02e59",
+          "startByte": 0,
+          "endByteExclusive": 1565,
+          "startLine": 1,
+          "endLine": 32
+        },
+        {
+          "entry": "expat-2.8.5/lib/random_getrandom.h",
+          "sourceSha256": "06738fafa3ec5b0148a699efeaa55aa80b8956b78a95bf5f78fcd9e0be998c48",
+          "startByte": 0,
+          "endByteExclusive": 1565,
+          "startLine": 1,
+          "endLine": 32
+        }
+      ]
+    },
+    {
+      "commentSha256": "834ed313a32689933990b506f1df1947652677a4e1e4c501e3bbfa465fc2b84c",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/expat_external.h",
+          "sourceSha256": "2249eae72c6bc9021b7110267507cca98ff6a269fb8b5af5bcb508858e83bfc1",
+          "startByte": 0,
+          "endByteExclusive": 2255,
+          "startLine": 1,
+          "endLine": 42
+        }
+      ]
+    },
+    {
+      "commentSha256": "8d40a705b829aec3375a34319a0d9d373b60b9133d77f3cc0588385971af7bc5",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/xmltok_impl.h",
+          "sourceSha256": "a5053c69219d12788088de9bd670537e1c784302766c331afe6b253460d0417d",
+          "startByte": 0,
+          "endByteExclusive": 1707,
+          "startLine": 1,
+          "endLine": 34
+        }
+      ]
+    },
+    {
+      "commentSha256": "92318f903d1cc398ecddbbc7bcdfc4b874da44466c4223a4509c0d09a21c8fee",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/winconfig.h",
+          "sourceSha256": "0ab6446eb98abc492ae341ef7607b535e44dedf52633fdc7c6e1a1361aec3922",
+          "startByte": 0,
+          "endByteExclusive": 1843,
+          "startLine": 1,
+          "endLine": 36
+        }
+      ]
+    },
+    {
+      "commentSha256": "92c29dcf0114ccd90affbc83c856c3790d9cc76b59dde118713ccdb2b702c6d8",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/xcsinc.c",
+          "sourceSha256": "1210979a688301412f46e058d0497fa3c1c63c296c2e015834cda0f0b314875d",
+          "startByte": 0,
+          "endByteExclusive": 1613,
+          "startLine": 1,
+          "endLine": 32
+        }
+      ]
+    },
+    {
+      "commentSha256": "cf5105511fba946f19b0d85a4f99b1aa4c9b015cfe0397fcdbdcdd3f40172f43",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/fallthrough.h",
+          "sourceSha256": "5e42477487bca7e7caac6b832ab940f39a1a20b8765c945374e4f6c2670f55b6",
+          "startByte": 0,
+          "endByteExclusive": 1555,
+          "startLine": 1,
+          "endLine": 32
+        }
+      ]
+    },
+    {
+      "commentSha256": "d49ad00437f6d539a82f240daaa7d466d7b737716c8c992aa7b2aa7f6612c45e",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/random_getrandom.c",
+          "sourceSha256": "7d813973f1b021bd6576820180df180d3b07e5c47072ce083b7cb2029bcaed6d",
+          "startByte": 0,
+          "endByteExclusive": 1778,
+          "startLine": 1,
+          "endLine": 35
+        }
+      ]
+    },
+    {
+      "commentSha256": "dedb8be4543763901f50e325d3b601a1a1d4b40f7ffca55fd43ded8390d1c65f",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/memory_sanitizer.h",
+          "sourceSha256": "377ca054fdc531360f42a5cb7c522bcbf88b6c67aebc2e29544c37d14e836bde",
+          "startByte": 0,
+          "endByteExclusive": 1571,
+          "startLine": 1,
+          "endLine": 32
+        }
+      ]
+    },
+    {
+      "commentSha256": "e2b6d69c477ee2f44be5f7da94c853599719021eaf30fb285aa3a18706215113",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/siphash.h",
+          "sourceSha256": "12ecc9915bccb793ea8bb543cc7d002e226f4e4d6b97ec9839dca41cbe4e2e27",
+          "startByte": 0,
+          "endByteExclusive": 3892,
+          "startLine": 1,
+          "endLine": 99
+        }
+      ]
+    },
+    {
+      "commentSha256": "ff3a6dcf8bf24f2ada05336f9170601eb2ef50a81d79a56c3d3dc2f66b2afd9a",
+      "sources": [
+        {
+          "entry": "expat-2.8.5/lib/random_rand_s.c",
+          "sourceSha256": "39ae3d8d337517ae2db5935a501cc9d6f55cc12e8ba552c03ea78eda6bdc2200",
+          "startByte": 0,
+          "endByteExclusive": 1836,
+          "startLine": 1,
+          "endLine": 36
+        }
+      ]
+    }
+  ]
+}

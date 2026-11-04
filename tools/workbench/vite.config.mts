@@ -14,6 +14,7 @@ import { rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { createLicenseInventory } from "./scripts/license-bundle-inventory.mjs";
 
 /**
  * Builds the React graph explorer island into target/frontend, next to the classic scripts emitted by
@@ -25,6 +26,10 @@ import { defineConfig, type Plugin } from "vite";
  */
 const frontendRoot = fileURLToPath(new URL("./src/main/frontend", import.meta.url));
 const outDir = fileURLToPath(new URL("./target/frontend", import.meta.url));
+const licenseInventory = createLicenseInventory({
+  projectRoot: fileURLToPath(new URL(".", import.meta.url)),
+  outputFile: fileURLToPath(new URL("./target/licensing/npm-modules.json", import.meta.url)),
+});
 
 /**
  * target/frontend is shared with the classic tsc output, so Vite must not empty it (emptyOutDir: false). Instead the
@@ -51,7 +56,7 @@ function cleanExplorerOutput(): Plugin {
 export default defineConfig({
   root: frontendRoot,
   base: "./",
-  plugins: [cleanExplorerOutput(), react()],
+  plugins: [cleanExplorerOutput(), react(), licenseInventory.mainPlugin],
   build: {
     outDir,
     emptyOutDir: false,
@@ -77,6 +82,7 @@ export default defineConfig({
     },
   },
   worker: {
+    plugins: () => [licenseInventory.workerPlugin()],
     format: "es",
     rollupOptions: {
       output: {

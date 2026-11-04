@@ -1,0 +1,6 @@
+Source entries: io/opentelemetry/common/ComponentLoader.java#L1-L4, io/opentelemetry/common/ServiceLoaderComponentLoader.java#L1-L4, io/opentelemetry/common/impl/ApiUsageLogger.java#L1-L4
+/*
+ * Copyright The OpenTelemetry Authors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+

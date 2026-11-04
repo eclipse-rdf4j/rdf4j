@@ -1,0 +1,148 @@
+Source entries: io/opentelemetry/api/DefaultOpenTelemetry.java#L1-L4, io/opentelemetry/api/GlobalOpenTelemetry.java#L1-L4, io/opentelemetry/api/OpenTelemetry.java#L1-L4, io/opentelemetry/api/package-info.java#L1-L4, io/opentelemetry/api/baggage/Baggage.java#L1-L4, io/opentelemetry/api/baggage/BaggageBuilder.java#L1-L4, io/opentelemetry/api/baggage/BaggageContextKey.java#L1-L4, io/opentelemetry/api/baggage/BaggageEntry.java#L1-L4, io/opentelemetry/api/baggage/BaggageEntryMetadata.java#L1-L4, io/opentelemetry/api/baggage/ImmutableBaggage.java#L1-L4, io/opentelemetry/api/baggage/ImmutableEntry.java#L1-L4, io/opentelemetry/api/baggage/ImmutableEntryMetadata.java#L1-L4, io/opentelemetry/api/baggage/package-info.java#L1-L4, io/opentelemetry/api/baggage/propagation/BaggageCodec.java#L1-L4, io/opentelemetry/api/baggage/propagation/Element.java#L1-L4, io/opentelemetry/api/baggage/propagation/Parser.java#L1-L4, io/opentelemetry/api/baggage/propagation/W3CBaggagePropagator.java#L1-L4, io/opentelemetry/api/baggage/propagation/package-info.java#L1-L4, io/opentelemetry/api/common/ArrayBackedAttributes.java#L1-L4, io/opentelemetry/api/common/ArrayBackedAttributesBuilder.java#L1-L4, io/opentelemetry/api/common/AttributeKey.java#L1-L4, io/opentelemetry/api/common/AttributeType.java#L1-L4, io/opentelemetry/api/common/Attributes.java#L1-L4, io/opentelemetry/api/common/AttributesBuilder.java#L1-L4, io/opentelemetry/api/common/Empty.java#L1-L4, io/opentelemetry/api/common/JsonEncoding.java#L1-L4, io/opentelemetry/api/common/KeyValue.java#L1-L4, io/opentelemetry/api/common/KeyValueImpl.java#L1-L4, io/opentelemetry/api/common/KeyValueList.java#L1-L4, io/opentelemetry/api/common/Value.java#L1-L4, io/opentelemetry/api/common/ValueArray.java#L1-L4, io/opentelemetry/api/common/ValueBoolean.java#L1-L4, io/opentelemetry/api/common/ValueBytes.java#L1-L4, io/opentelemetry/api/common/ValueDouble.java#L1-L4, io/opentelemetry/api/common/ValueEmpty.java#L1-L4, io/opentelemetry/api/common/ValueLong.java#L1-L4, io/opentelemetry/api/common/ValueString.java#L1-L4, io/opentelemetry/api/common/ValueType.java#L1-L4, io/opentelemetry/api/common/package-info.java#L1-L4, io/opentelemetry/api/impl/InstrumentationUtil.java#L1-L4, io/opentelemetry/api/internal/ConfigUtil.java#L1-L4, io/opentelemetry/api/internal/Contract.java#L1-L4, io/opentelemetry/api/internal/GuardedBy.java#L1-L4, io/opentelemetry/api/internal/ImmutableKeyValuePairs.java#L1-L4, io/opentelemetry/api/internal/ImmutableSpanContext.java#L1-L4, io/opentelemetry/api/internal/IncubatingUtil.java#L1-L4, io/opentelemetry/api/internal/InternalAttributeKeyImpl.java#L1-L4, io/opentelemetry/api/internal/OtelEncodingUtils.java#L1-L4, io/opentelemetry/api/internal/PercentEscaper.java#L1-L4, io/opentelemetry/api/internal/ReadOnlyArrayMap.java#L1-L4, io/opentelemetry/api/internal/StringUtils.java#L1-L4, io/opentelemetry/api/internal/TemporaryBuffers.java#L1-L4, io/opentelemetry/api/internal/Utils.java#L1-L4, io/opentelemetry/api/internal/package-info.java#L1-L4, io/opentelemetry/api/logs/DefaultLogger.java#L1-L4, io/opentelemetry/api/logs/DefaultLoggerProvider.java#L1-L4, io/opentelemetry/api/logs/LogRecordBuilder.java#L1-L4, io/opentelemetry/api/logs/Logger.java#L1-L4, io/opentelemetry/api/logs/LoggerBuilder.java#L1-L4, io/opentelemetry/api/logs/LoggerProvider.java#L1-L4, io/opentelemetry/api/logs/Severity.java#L1-L4, io/opentelemetry/api/logs/package-info.java#L1-L4, io/opentelemetry/api/metrics/BatchCallback.java#L1-L4, io/opentelemetry/api/metrics/DefaultMeter.java#L1-L4, io/opentelemetry/api/metrics/DefaultMeterProvider.java#L1-L4, io/opentelemetry/api/metrics/DoubleCounter.java#L1-L4, io/opentelemetry/api/metrics/DoubleCounterBuilder.java#L1-L4, io/opentelemetry/api/metrics/DoubleGauge.java#L1-L4, io/opentelemetry/api/metrics/DoubleGaugeBuilder.java#L1-L4, io/opentelemetry/api/metrics/DoubleHistogram.java#L1-L4, io/opentelemetry/api/metrics/DoubleHistogramBuilder.java#L1-L4, io/opentelemetry/api/metrics/DoubleUpDownCounter.java#L1-L4, io/opentelemetry/api/metrics/DoubleUpDownCounterBuilder.java#L1-L4, io/opentelemetry/api/metrics/LongCounter.java#L1-L4, io/opentelemetry/api/metrics/LongCounterBuilder.java#L1-L4, io/opentelemetry/api/metrics/LongGauge.java#L1-L4, io/opentelemetry/api/metrics/LongGaugeBuilder.java#L1-L4, io/opentelemetry/api/metrics/LongHistogram.java#L1-L4, io/opentelemetry/api/metrics/LongHistogramBuilder.java#L1-L4, io/opentelemetry/api/metrics/LongUpDownCounter.java#L1-L4, io/opentelemetry/api/metrics/LongUpDownCounterBuilder.java#L1-L4, io/opentelemetry/api/metrics/Meter.java#L1-L4, io/opentelemetry/api/metrics/MeterBuilder.java#L1-L4, io/opentelemetry/api/metrics/MeterProvider.java#L1-L4, io/opentelemetry/api/metrics/ObservableDoubleCounter.java#L1-L4, io/opentelemetry/api/metrics/ObservableDoubleGauge.java#L1-L4, io/opentelemetry/api/metrics/ObservableDoubleMeasurement.java#L1-L4, io/opentelemetry/api/metrics/ObservableDoubleUpDownCounter.java#L1-L4, io/opentelemetry/api/metrics/ObservableLongCounter.java#L1-L4, io/opentelemetry/api/metrics/ObservableLongGauge.java#L1-L4, io/opentelemetry/api/metrics/ObservableLongMeasurement.java#L1-L4, io/opentelemetry/api/metrics/ObservableLongUpDownCounter.java#L1-L4, io/opentelemetry/api/metrics/ObservableMeasurement.java#L1-L4, io/opentelemetry/api/metrics/package-info.java#L1-L4, io/opentelemetry/api/trace/ArrayBasedTraceState.java#L1-L4, io/opentelemetry/api/trace/ArrayBasedTraceStateBuilder.java#L1-L4, io/opentelemetry/api/trace/DefaultTracer.java#L1-L4, io/opentelemetry/api/trace/DefaultTracerBuilder.java#L1-L4, io/opentelemetry/api/trace/DefaultTracerProvider.java#L1-L4, io/opentelemetry/api/trace/ImmutableTraceFlags.java#L1-L4, io/opentelemetry/api/trace/PropagatedSpan.java#L1-L4, io/opentelemetry/api/trace/Span.java#L1-L4, io/opentelemetry/api/trace/SpanBuilder.java#L1-L4, io/opentelemetry/api/trace/SpanContext.java#L1-L4, io/opentelemetry/api/trace/SpanContextKey.java#L1-L4, io/opentelemetry/api/trace/SpanId.java#L1-L4, io/opentelemetry/api/trace/SpanKind.java#L1-L4, io/opentelemetry/api/trace/StatusCode.java#L1-L4, io/opentelemetry/api/trace/TraceFlags.java#L1-L4, io/opentelemetry/api/trace/TraceFlagsBuilder.java#L1-L4, io/opentelemetry/api/trace/TraceId.java#L1-L4, io/opentelemetry/api/trace/TraceState.java#L1-L4, io/opentelemetry/api/trace/TraceStateBuilder.java#L1-L4, io/opentelemetry/api/trace/Tracer.java#L1-L4, io/opentelemetry/api/trace/TracerBuilder.java#L1-L4, io/opentelemetry/api/trace/TracerProvider.java#L1-L4, io/opentelemetry/api/trace/package-info.java#L1-L4, io/opentelemetry/api/trace/propagation/W3CTraceContextPropagator.java#L1-L4, io/opentelemetry/api/trace/propagation/package-info.java#L1-L4, io/opentelemetry/api/trace/propagation/internal/W3CTraceContextEncoding.java#L1-L4, io/opentelemetry/api/trace/propagation/internal/package-info.java#L1-L4
+/*
+ * Copyright The OpenTelemetry Authors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+Source entries: io/opentelemetry/api/baggage/propagation/BaggageCodec.java#L12-L27
+/**
+ * Note: This class is based on code from Apache Commons Codec. It is comprised of code from these
+ * classes:
+ *
+ * <ul>
+ *   <li><a
+ *       href="https://github.com/apache/commons-codec/blob/482df6cabfb288acb6ab3e4a732fdb93aecfa7c2/src/main/java/org/apache/commons/codec/net/URLCodec.java">org.apache.commons.codec.net.URLCodec</a>
+ *   <li><a
+ *       href="https://github.com/apache/commons-codec/blob/482df6cabfb288acb6ab3e4a732fdb93aecfa7c2/src/main/java/org/apache/commons/codec/net/Utils.java">org.apache.commons.codec.net.Utils</a>
+ * </ul>
+ *
+ * <p>Implements baggage-octet decoding in accordance with th <a
+ * href="https://w3c.github.io/baggage/#definition">Baggage header content</a> specification. All
+ * US-ASCII characters excluding CTLs, whitespace, DQUOTE, comma, semicolon and backslash are
+ * encoded in `www-form-urlencoded` encoding scheme.
+ */
+
+Source entries: io/opentelemetry/api/internal/Contract.java#L8-L22
+/*
+ * Copyright 2000-2021 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: io/opentelemetry/api/internal/PercentEscaper.java#L7-L19
+/*
+ * Copyright (C) 2008 The Guava Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+Source entries: io/opentelemetry/api/internal/PercentEscaper.java#L25-L66
+/**
+ * Note: This class is based on code from guava. It is comprised of code from three classes:
+ *
+ * <ul>
+ *   <li><a
+ *       href="https://github.com/google/guava/blob/46093e2517b4f49c019ecff6dbe90cc22e8003b5/guava/src/com/google/common/escape/Escaper.java">com.google.common.escape.Escaper</a>
+ *   <li><a
+ *       href="https://github.com/google/guava/blob/46093e2517b4f49c019ecff6dbe90cc22e8003b5/guava/src/com/google/common/escape/UnicodeEscaper.java">com.google.common.escape.UnicodeEscaper</a>
+ *   <li><a
+ *       href="https://github.com/google/guava/blob/46093e2517b4f49c019ecff6dbe90cc22e8003b5/guava/src/com/google/common/net/PercentEscaper.java">com.google.common.net.PercentEscaper</a>
+ * </ul>
+ *
+ * <p>Escapes some set of Java characters using a UTF-8 based percent encoding scheme. The set of
+ * safe characters (those which remain unescaped) can be specified on construction.
+ *
+ * <p>This class is primarily used for creating URI escapers in {@code UrlEscapers} but can be used
+ * directly if required. While URI escapers impose specific semantics on which characters are
+ * considered 'safe', this class has a minimal set of restrictions.
+ *
+ * <p>When escaping a String, the following rules apply:
+ *
+ * <ul>
+ *   <li>All specified safe characters remain unchanged.
+ *   <li>If {@code plusForSpace} was specified, the space character " " is converted into a plus
+ *       sign {@code "+"}.
+ *   <li>All other characters are converted into one or more bytes using UTF-8 encoding and each
+ *       byte is then represented by the 3-character string "%XX", where "XX" is the two-digit,
+ *       uppercase, hexadecimal representation of the byte value.
+ * </ul>
+ *
+ * <p>For performance reasons the only currently supported character encoding of this class is
+ * UTF-8.
+ *
+ * <p><b>Note:</b> This escaper produces <a
+ * href="https://url.spec.whatwg.org/#percent-encode">uppercase</a> hexadecimal sequences.
+ *
+ * <p>This class is internal and is hence not for public use. Its APIs are unstable and can change
+ * at any time.
+ *
+ * @author David Beaumont
+ * @since 15.0
+ */
+
+Source entries: io/opentelemetry/api/internal/ReadOnlyArrayMap.java#L7-L19
+/*
+ * Copyright 2013-2020 The OpenZipkin Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+Source entries: io/opentelemetry/api/internal/ReadOnlyArrayMap.java#L201-L203
+// By abstracting this, {@link #keySet()} {@link #values()} and {@link #entrySet()} only
+    // implement need implement two methods based on {@link #<E>}: this method and and {@link
+    // #contains(Object)}.
+
+Source entries: io/opentelemetry/api/logs/LogRecordBuilder.java#L231-L236
+/**
+   * Set {@code exception.type}, {@code exception.message}, and {@code exception.stacktrace}
+   * attributes based on the {@code throwable}.
+   *
+   * @since 1.60.0
+   */
+
+Source entries: io/opentelemetry/api/trace/Span.java#L372-L382
+/**
+   * Updates the {@code Span} name.
+   *
+   * <p>If used, this will override the name provided via {@code Span.Builder}.
+   *
+   * <p>Upon this update, any sampling behavior based on {@code Span} name will depend on the
+   * implementation.
+   *
+   * @param name the {@code Span} name.
+   * @return this.
+   */
+
+Source entries: io/opentelemetry/api/trace/TraceState.java#L78-L82
+/**
+   * Returns a {@code Builder} based on this {@code TraceState}.
+   *
+   * @return a {@code Builder} based on this {@code TraceState}.
+   */
+

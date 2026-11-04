@@ -1,0 +1,1096 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-api/1.66.0/opentelemetry-api-1.66.0-sources.jar",
+  "archiveSha256": "8309e5950e8f06ca699b58e82bfa42df77bd8553bd9da9c778cba54057316b29",
+  "blocks": [
+    {
+      "commentSha256": "69e6a2d07573af06af1613cec2ac54b4ec63cf012b9d2c8a9c76be3cc9e15043",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/api/DefaultOpenTelemetry.java",
+          "sourceSha256": "169a5d1e7f6291e1aaad37db5dce20671c2546ebcc73a51d1fad3bddd681507c",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/GlobalOpenTelemetry.java",
+          "sourceSha256": "9145542dfe8ba4bd57253544d7e01a1a87be9f8b50488399500b76f44e3fc6e3",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/OpenTelemetry.java",
+          "sourceSha256": "c3df5c04ddca381c00e4963a658a519565a8555270d301abcac863a0f13b1286",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/package-info.java",
+          "sourceSha256": "f37fcce65d7e3e10fc357f8908d4d56c6357c816e94fd9156ee1303e795c7786",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/Baggage.java",
+          "sourceSha256": "bbf383511126cf849401752f2578b4b7f41f9ba07483152c3d55ebcfe02ddfd5",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/BaggageBuilder.java",
+          "sourceSha256": "b06b9cf17f04d416a00545bb59b6d53192369c7377f67a4ea7903403b0af6d63",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/BaggageContextKey.java",
+          "sourceSha256": "d78d5d45d9363ca16aea02992774d44d99acb5252fe506cb6abff7736c8a4146",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/BaggageEntry.java",
+          "sourceSha256": "ea03c59e2b9240706aefe6b72020c5d9e861c4f3ffabd7b24cad8f26432f921c",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/BaggageEntryMetadata.java",
+          "sourceSha256": "c84f4131e19e52d9c27d17d9760d8307a320d96a3d1196db0183de536a43296a",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/ImmutableBaggage.java",
+          "sourceSha256": "178488af0c12d4cc0957ce606c5e1b31c040c4e7f259c8d9795e4b5f7b0d7633",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/ImmutableEntry.java",
+          "sourceSha256": "299c9036b0bd750a172358f8546a735a0b2019432509a8a097d17ef84e4ee78e",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/ImmutableEntryMetadata.java",
+          "sourceSha256": "a108cb4fd6e7ac04164634727173fd74b5efc435704451a41710283a5e2c24b6",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/package-info.java",
+          "sourceSha256": "91157f9c67df7ea4f4a60e201e488e471ee1c03553d155ca4ca353ed554fb65e",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/propagation/BaggageCodec.java",
+          "sourceSha256": "5c5cb04413f090ca8ffb1b37b8b07308ffd0e28890be3c64ae47439d94572f46",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/propagation/Element.java",
+          "sourceSha256": "cf9c3b9e589597627409f7efa4df043460d7d42c860869d11596015844eb0871",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/propagation/Parser.java",
+          "sourceSha256": "df1f9c2d702eaa86bf07d6a973fcbd446588625ef20327d43256870d424e118e",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/propagation/W3CBaggagePropagator.java",
+          "sourceSha256": "7c2381adbf5277fb18d5a48ad379612c0c7025ae5867b377d145ee16a370acbc",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/baggage/propagation/package-info.java",
+          "sourceSha256": "bc067ded2e8028287b591c5b069aaf0ba92157966745fd295f5eff71ac79305c",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/ArrayBackedAttributes.java",
+          "sourceSha256": "53e1b57166909a545e6a930b7b5df19f9d3a99120280380fe79c8b3a2bbc9f03",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/ArrayBackedAttributesBuilder.java",
+          "sourceSha256": "b57c522647762b1b0393e3129c1d06ebd80f413addf200d068eaa7ab416224f4",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/AttributeKey.java",
+          "sourceSha256": "765cd49c8b88d58a7229f11971eaba6c25af954c89f891fce64630642ce9ea82",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/AttributeType.java",
+          "sourceSha256": "19fb56e1bfdd03c75e6753e9c80200ac4306114294697c6b294dd04acba474e2",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/Attributes.java",
+          "sourceSha256": "88aa6d4c14781ebb50902014273895f1c3da2d676c3738871def2c49de881d86",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/AttributesBuilder.java",
+          "sourceSha256": "39aebbf1c2d99981ac4d7e3fdfdff6c2b31553bdd4003a647f1ed6689221c526",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/Empty.java",
+          "sourceSha256": "e24f2ae2c7a42e4896ada9ecc27066512fcb98d810e881b47481919a906e6ac2",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/JsonEncoding.java",
+          "sourceSha256": "4de8688d999912f52266ca029660bc59dcefa24ba6f4d66c25b82cc97e109e5a",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/KeyValue.java",
+          "sourceSha256": "6df43e0df7e373a9509927f0b5732f8b364c4c002e7670a9911c1d8120d70026",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/KeyValueImpl.java",
+          "sourceSha256": "5a05858713624bb1a0e24e6fdad7a6328b382c31415373d6a28a11cf9ea859e8",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/KeyValueList.java",
+          "sourceSha256": "3832275c549d0ce9c1adf69fc4a69ac3711fa6c6a55b096d3197a3a3354326a0",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/Value.java",
+          "sourceSha256": "010f61e60f2fbf2cb2648d6f1a171c7be17e74af7742b2a7a5b67eb9581559e7",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/ValueArray.java",
+          "sourceSha256": "8207dfe84dafa8c1d84a0fa0ca0a5e517c9738519133d58270804b64a6698bc6",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/ValueBoolean.java",
+          "sourceSha256": "bcd6bafdba0b6410ae1ddbbb177b9dc7a240141847cba5c523d1c0fa33e53e20",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/ValueBytes.java",
+          "sourceSha256": "b37b129a75ba851e702806b5651cd76fc425db3ed197d60c00a9d668cab623a1",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/ValueDouble.java",
+          "sourceSha256": "257fcc65025f0ff3be9d3e0811a4fa83b2ce82ba77b2d743b21427f7f00e3345",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/ValueEmpty.java",
+          "sourceSha256": "3c8852a3b36ff45b8a29cae78e62a691342de0cddfccf796b2b9b1a2a6378d99",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/ValueLong.java",
+          "sourceSha256": "796ff6c70dc44ab4bb217d3a69809da19ebfeb77f09a7bfcbc226c2e756131aa",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/ValueString.java",
+          "sourceSha256": "c15443287089fa4ef0df2350c040579359fe177b13f7e5d2ada7c67b82ba99b5",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/ValueType.java",
+          "sourceSha256": "72a5e9d4f74b82b1314b25019380e549e598800167b13e132496a9efa19e49ea",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/common/package-info.java",
+          "sourceSha256": "96f6382d8e96cf60492a66249bca09a023a4698f4ef4076332f1a0dbb0654d27",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/impl/InstrumentationUtil.java",
+          "sourceSha256": "9d966c2fda5b4166d184015ece6573c7719daa54461b5509418f5635aef0adfa",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/ConfigUtil.java",
+          "sourceSha256": "95da8cd0a0e284682fa1453709b57eec49b2759161e2a4204ec7c77e6c5a491b",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/Contract.java",
+          "sourceSha256": "78de484f10ef2c7a7a99a8310c90a8255c64315416e94f07795ee2eddddb0a6c",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/GuardedBy.java",
+          "sourceSha256": "ef7c2d0ab8e1e6b071d31392c1b9ea75a58832e83196c8d0757eb166e57f432b",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/ImmutableKeyValuePairs.java",
+          "sourceSha256": "462c7c307b081ea7b4ad07c82eff4698e69437d1a811493765c43e8f13748f1d",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/ImmutableSpanContext.java",
+          "sourceSha256": "e1302eb20e11aeb27eddb81afee9b55e00b55664b93991ab32c164dcbf14868c",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/IncubatingUtil.java",
+          "sourceSha256": "5f65270869bf3f71924a88de859aea03b69e2d57fb4346af3b6f8d01c566ff83",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/InternalAttributeKeyImpl.java",
+          "sourceSha256": "5d2a0fe6b866078c0b01163d4fe77351fe12f666ccd062ea677531995665f138",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/OtelEncodingUtils.java",
+          "sourceSha256": "5d21f140212ca20ddcd0ac5132f2300c3447e7fd44c5a4e47a74cb1745ce0c85",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/PercentEscaper.java",
+          "sourceSha256": "d1d90473b1411c720c689b2d1c34ad5b0d5e0953d52357a33e0f97c5c9b8a89f",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/ReadOnlyArrayMap.java",
+          "sourceSha256": "e30202e18e869214300e50be258eaaec06215408be4ecca20cc62a871053c943",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/StringUtils.java",
+          "sourceSha256": "7ea2cd1cfe3b1dad51524e07b7a1313b23429e21f9da9f9b7ef984b8c9272600",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/TemporaryBuffers.java",
+          "sourceSha256": "13ee4d87225e95d82a193c09977675b8de0c06ad25646de586d8ca4d42b631be",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/Utils.java",
+          "sourceSha256": "0d34de6912ce5cbc632369cadb74bc35bd43a65968a5e6a83218329407bf0179",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/internal/package-info.java",
+          "sourceSha256": "06469572455d563043fbb972cc77ac3d1906dc6d5e3719c56a10b8b134228788",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/logs/DefaultLogger.java",
+          "sourceSha256": "54e758dd50d715fa47bd08cc36f7c051aaf155706bf5e57b7196cb56d6325ef6",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/logs/DefaultLoggerProvider.java",
+          "sourceSha256": "e94ed784331e7ba8361290fb377b20a08f0cf17fb1a629f457e55356cfca9aed",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/logs/LogRecordBuilder.java",
+          "sourceSha256": "756e1e434d1c4082ebaba10c487bd4277faa5ce8cedaf32186e9a21ed99c1aaa",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/logs/Logger.java",
+          "sourceSha256": "489b8d1624b5bf08ba7a80e11898b982cbdfa8c2dc8fad5dd40a3c3a77abb856",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/logs/LoggerBuilder.java",
+          "sourceSha256": "47b7739dd2ef79f09ff0c750e172ea0142f607e994510a61218c35f1b37e2080",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/logs/LoggerProvider.java",
+          "sourceSha256": "435b485bd48cb0bb9166421a8803df8fd8fc9d6aee510fc9423410fa79367971",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/logs/Severity.java",
+          "sourceSha256": "91c9fcabf16cba96266b0a9dae10bb2ae435d001b309af1c9aa7c1d9b0288710",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/logs/package-info.java",
+          "sourceSha256": "e02b1750e1bf45b95797779c009bb991d4ffb826b8a7d67ee0fbf6477db83362",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/BatchCallback.java",
+          "sourceSha256": "2349304c7f272dd3b72e675b14e66b58c76c3e769b7f44854cccf409c5b14599",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/DefaultMeter.java",
+          "sourceSha256": "fc00e5597680c58de17ddf7e2841eeb794d8c9bb0b11341284b5ec5322583ff8",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/DefaultMeterProvider.java",
+          "sourceSha256": "d51a51163ca89eb4369a5579a2574674a38341195c552efca6fa17f81fb5ae09",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/DoubleCounter.java",
+          "sourceSha256": "b7c1e5c8b743df5c58c0faf5e9e0a8d72d3835ad63596a65bac16a75f38455c0",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/DoubleCounterBuilder.java",
+          "sourceSha256": "2e0b2d265a9cc85616ad117c6f804724d09d4d638d09e152d6d72981a4980e11",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/DoubleGauge.java",
+          "sourceSha256": "ad5ab2360ca7e2a34bbe65b0a1ab4f634af74b47092ff82ef27c0a2e44f2fa25",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/DoubleGaugeBuilder.java",
+          "sourceSha256": "a62b78cba659b9b531d12033d75587a32bf44929c6c2099fcd06d375d164e9ba",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/DoubleHistogram.java",
+          "sourceSha256": "50bacb1d33a3eae6adfb9533837d99462fbd25a0b2e0818f5099ebad91a25216",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/DoubleHistogramBuilder.java",
+          "sourceSha256": "9c33c62936cbc73f4107c3771613d133488686eb350abd864ca088e36948eaa0",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/DoubleUpDownCounter.java",
+          "sourceSha256": "52ddff689d55550a3c221ca79b4c5f0922539b77c8a64a373169da4e38d8cde2",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/DoubleUpDownCounterBuilder.java",
+          "sourceSha256": "f8a9d600a67c0980bf3fa301b2ad4a4086ad9a7fe26ffe4a3153d26825c982f3",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/LongCounter.java",
+          "sourceSha256": "57c5c426835c01b975d12aed192e67e72c31362e41ac95157cb6d8f4518a8e65",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/LongCounterBuilder.java",
+          "sourceSha256": "fab908b79f441700019f2fa3db05ab3ae90ac3af80d08c46dd727bc089f1d130",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/LongGauge.java",
+          "sourceSha256": "669e28a91e09889fec4dd28ea7edefde2b50db5121a3bf795fb6922d411c7c79",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/LongGaugeBuilder.java",
+          "sourceSha256": "7a10a2352060a7cfac1495e96c1c38faf9dd2d448c16a0af12d46666fb4312c5",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/LongHistogram.java",
+          "sourceSha256": "481cec9e6d7958516629249a0a2a84731164b2f038bab1d0802dc3911f890701",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/LongHistogramBuilder.java",
+          "sourceSha256": "91e1f7881ea510c514ba07ce7396d601fd4f23c135399562ba0e88b07fa4fe2c",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/LongUpDownCounter.java",
+          "sourceSha256": "85d7e8eab163b0666a5a881e1e726a50d0a3e5a768e45d2736b0539a88bbaa77",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/LongUpDownCounterBuilder.java",
+          "sourceSha256": "9c0b9eea075c568f87efa7f21cb15d5aae7f7ccf167045de2c9e62f76ee819dd",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/Meter.java",
+          "sourceSha256": "c34b390da680f082de8022a931ddab3a67a2f12d4c022558ac8b87f197e0ba4f",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/MeterBuilder.java",
+          "sourceSha256": "445ed3bf2fc45630070c40f2867229733509e4b80cbda376a3c4969d424fe116",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/MeterProvider.java",
+          "sourceSha256": "e44195fbf6ddcb66b40bba3c2aab247c8907dd2001a0df47476014188fd43754",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/ObservableDoubleCounter.java",
+          "sourceSha256": "b8fe089e07b800d641de5e1927405ba14b796377e68b47da47d264ad354d80e2",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/ObservableDoubleGauge.java",
+          "sourceSha256": "9505d550bf5c7b084a1a59d9a0e241b9fceb03fa836a31add4030c86cf584f2e",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/ObservableDoubleMeasurement.java",
+          "sourceSha256": "94d3df1d2fe4cd76cf729fbcf3adafa5c32bfb4193caa5bc269910d18c8e31f6",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/ObservableDoubleUpDownCounter.java",
+          "sourceSha256": "f993215430ce25e771ea9c74204b22a3a806d0ffc5a0a7454d5981a5971c7a80",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/ObservableLongCounter.java",
+          "sourceSha256": "c91d7c0159f34533554daa5954b6f6e06a9b01fe230d7836e3dfcf84395f3ea0",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/ObservableLongGauge.java",
+          "sourceSha256": "3a920f56e9e75290066d5bf0442a7af01588b6cd7c00f13adc9cc44217004e59",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/ObservableLongMeasurement.java",
+          "sourceSha256": "e9213e737b99aa86c4db7796a0137f651253aad3254b03e219f51574d2c4b922",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/ObservableLongUpDownCounter.java",
+          "sourceSha256": "adfe151c2d50396e16b3f794f6378c7433760385eb391cae1d5b29354b269c83",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/ObservableMeasurement.java",
+          "sourceSha256": "bc59786d30fdeb80915c0f9323f0db21b3db1f590a448ea44a3a28e7502e1cef",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/metrics/package-info.java",
+          "sourceSha256": "7e9b7df68f7af2291ad83e71ceb078fc7a2f6a87b6bae7332a10589e3c14ff05",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/ArrayBasedTraceState.java",
+          "sourceSha256": "52cc85575b5edaae7112025d6dc2b59df0c4fff64997899be46f6e4245213053",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/ArrayBasedTraceStateBuilder.java",
+          "sourceSha256": "96b1a396ecdb64d0907a13d40103cd7dc29e3fb8cc4de108d05d33f4a5664eff",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/DefaultTracer.java",
+          "sourceSha256": "91488784231abb6e21a1b8776bfc20e5f254ab8f446a24d9b5033420f356d04c",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/DefaultTracerBuilder.java",
+          "sourceSha256": "f5e88337c18360bda3ddf564923a9921f4598694c94509050d233573b8115da3",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/DefaultTracerProvider.java",
+          "sourceSha256": "708021057e4de7eeec6ac5773715f313b9d4e58c848ee1ba01f86efb55e94a2e",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/ImmutableTraceFlags.java",
+          "sourceSha256": "6fba43b399c8a57887ad9f24f1cdfbf75fdb32790fb3be26cafdf3837d1cf35f",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/PropagatedSpan.java",
+          "sourceSha256": "f1a36b66205bcddf82327fd807e119f71a767a973a455b1ca93f5668decea6fd",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/Span.java",
+          "sourceSha256": "6ef2d4d699a0e45c6c0b0dceed8d5bc2d9bb6d900749ad4da071f6253ed4ce74",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/SpanBuilder.java",
+          "sourceSha256": "46607b0ffcca882090fbd582ce41820bd30f3ff442d363f61339b84197ad81e1",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/SpanContext.java",
+          "sourceSha256": "e1c03df3910e349a0aa16dd57249c6ffb106a97e09deadaf382a4c212bf689ff",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/SpanContextKey.java",
+          "sourceSha256": "75a6a99a479b6d44acbe21ff16f46f3d2754903747a27c57f2b4b6059640a43a",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/SpanId.java",
+          "sourceSha256": "62018e8d3b231f2b005b2a5c9c9e623dc4ff9b2bdd83ee31191a6d3d66f991c4",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/SpanKind.java",
+          "sourceSha256": "440dae6549429cbbe7e2e8288fdb4b4a877ebb1a800d4cf683a9150418375032",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/StatusCode.java",
+          "sourceSha256": "d3feea897f4ba1771bd50572c52b5120afd0313876d733919bdcf850cdf3bc90",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/TraceFlags.java",
+          "sourceSha256": "2e7b13e5be7b1b7a732ed5c7d6d874b3c79305e747d681dcd7f630bdb3c54709",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/TraceFlagsBuilder.java",
+          "sourceSha256": "fee5e18fa1337da8d268a3a69649559b3d176700b1cf011d10319e5b0af23fd9",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/TraceId.java",
+          "sourceSha256": "082feefaeb1c72c687c19f67a5b2846cdf570e6189e624b00c183b57fe0c3efa",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/TraceState.java",
+          "sourceSha256": "32195027d7824cbd14b7f6c5a3019f50412c9d3a3deff3609089922f722acf49",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/TraceStateBuilder.java",
+          "sourceSha256": "ef085ed6795f3d2cc749c561b10585cedc30c62add9468ed1d973864e7da6b51",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/Tracer.java",
+          "sourceSha256": "a87f24e52081bd53116b81d0e7971d90b05db44ae81f30832c0b35f00053a3a9",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/TracerBuilder.java",
+          "sourceSha256": "16a08dce95f27cbfb9489e5368b8c93211b228c453fe75be3274d8d65aa64689",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/TracerProvider.java",
+          "sourceSha256": "5df8aa32855b8cfd8e126673214e0fb47d0a23609a9188d3d2bb685b3f07e27a",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/package-info.java",
+          "sourceSha256": "d03a0202a0b9a2947ff6f2e2d9d4a0591eab6f9ec7189bdec8d6d5f882474087",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/propagation/W3CTraceContextPropagator.java",
+          "sourceSha256": "a52bdca03735ea24983d242243cb134980ef8e60974ba507931271172878317f",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/propagation/package-info.java",
+          "sourceSha256": "babb6ca5bfb0d7b1dc8f4b0b6373451c4a6963919ae91932b7eba909c65d3fa5",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/propagation/internal/W3CTraceContextEncoding.java",
+          "sourceSha256": "70fb0784cb72143a507d18f32f8af117688527bfc0011c4aee693161741cbd06",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/api/trace/propagation/internal/package-info.java",
+          "sourceSha256": "3adcc25610979b7c9b34eb9522dbc3c6b62d6a1f3cfbb6d28ddf100dd02cacc8",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "af9b9f553f4c65e1c8e1b93b6411346817f3a38eb78cad1a2cfe1443b1d44570",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/api/baggage/propagation/BaggageCodec.java",
+          "sourceSha256": "5c5cb04413f090ca8ffb1b37b8b07308ffd0e28890be3c64ae47439d94572f46",
+          "startByte": 251,
+          "endByteExclusive": 1122,
+          "startLine": 12,
+          "endLine": 27
+        }
+      ]
+    },
+    {
+      "commentSha256": "f6f448de51747a08a23dbcf9045a01247ff00ddc90c5d1b07d0013efe921e1fa",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/api/internal/Contract.java",
+          "sourceSha256": "78de484f10ef2c7a7a99a8310c90a8255c64315416e94f07795ee2eddddb0a6c",
+          "startByte": 110,
+          "endByteExclusive": 711,
+          "startLine": 8,
+          "endLine": 22
+        }
+      ]
+    },
+    {
+      "commentSha256": "0b19ca24f04af93bb59bff37e1b3f0d24ea89e8636c89d09c4cf399d76b06266",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/api/internal/PercentEscaper.java",
+          "sourceSha256": "d1d90473b1411c720c689b2d1c34ad5b0d5e0953d52357a33e0f97c5c9b8a89f",
+          "startByte": 109,
+          "endByteExclusive": 703,
+          "startLine": 7,
+          "endLine": 19
+        }
+      ]
+    },
+    {
+      "commentSha256": "f945e9c8234dfbbbbc3bea40820925a5733797c624c2bbe3ad0b904745f0e829",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/api/internal/PercentEscaper.java",
+          "sourceSha256": "d1d90473b1411c720c689b2d1c34ad5b0d5e0953d52357a33e0f97c5c9b8a89f",
+          "startByte": 784,
+          "endByteExclusive": 2877,
+          "startLine": 25,
+          "endLine": 66
+        }
+      ]
+    },
+    {
+      "commentSha256": "51e15f7bd9be474dca339a95540f2d7a5841de30bd6a970c4441dd9d51a9788f",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/api/internal/ReadOnlyArrayMap.java",
+          "sourceSha256": "e30202e18e869214300e50be258eaaec06215408be4ecca20cc62a871053c943",
+          "startByte": 109,
+          "endByteExclusive": 709,
+          "startLine": 7,
+          "endLine": 19
+        }
+      ]
+    },
+    {
+      "commentSha256": "9594ae8d5ca1530403c7037bdf024637592c157699f7df897c3544cab83f16a2",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/api/internal/ReadOnlyArrayMap.java",
+          "sourceSha256": "e30202e18e869214300e50be258eaaec06215408be4ecca20cc62a871053c943",
+          "startByte": 4557,
+          "endByteExclusive": 4766,
+          "startLine": 201,
+          "endLine": 203
+        }
+      ]
+    },
+    {
+      "commentSha256": "ea387c6ef465e902b62be01e6776a03d0e84a5de3ecdb565ff3a9a7c3411c0d6",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/api/logs/LogRecordBuilder.java",
+          "sourceSha256": "756e1e434d1c4082ebaba10c487bd4277faa5ce8cedaf32186e9a21ed99c1aaa",
+          "startByte": 8118,
+          "endByteExclusive": 8292,
+          "startLine": 231,
+          "endLine": 236
+        }
+      ]
+    },
+    {
+      "commentSha256": "cdeb4ef8a47fb5ae87c8e8a69b38092af853546559c4e1472b8b03c4a717a34d",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/api/trace/Span.java",
+          "sourceSha256": "6ef2d4d699a0e45c6c0b0dceed8d5bc2d9bb6d900749ad4da071f6253ed4ce74",
+          "startByte": 13570,
+          "endByteExclusive": 13884,
+          "startLine": 372,
+          "endLine": 382
+        }
+      ]
+    },
+    {
+      "commentSha256": "6256fb6882193968c898c9cabf54a489196eba1de6ecb88b8bd96eb9c7848b9e",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/api/trace/TraceState.java",
+          "sourceSha256": "32195027d7824cbd14b7f6c5a3019f50412c9d3a3deff3609089922f722acf49",
+          "startByte": 2804,
+          "endByteExclusive": 2948,
+          "startLine": 78,
+          "endLine": 82
+        }
+      ]
+    }
+  ]
+}

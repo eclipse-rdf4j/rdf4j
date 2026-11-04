@@ -1,0 +1,536 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/codehaus/janino/janino/3.1.12/janino-3.1.12-sources.jar",
+  "archiveSha256": "4f4f79b38f4ebe206ba213ce6a1de248ca6fa9b8abfb0fc79de48ac0e714bf6a",
+  "blocks": [
+    {
+      "commentSha256": "a542b3ff9439891b490c9b38a908566f6bb83cd35914371d84bdfa18907aac93",
+      "sources": [
+        {
+          "entry": "org/codehaus/janino/Access.java",
+          "sourceSha256": "5b9773da1c7e9e66b264b859a6387aa67c098e845fb6febf5c726041365413a1",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/AntCompilerAdapter.java",
+          "sourceSha256": "1e9a2bccb54247c2043538c945bee918211be7a9f2b466a80bf218e59708600c",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/CachingJavaSourceClassLoader.java",
+          "sourceSha256": "94363d5929ce1977783812d9e60894f56deb14887defa2b91c61150df744c709",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/ClassBodyEvaluator.java",
+          "sourceSha256": "ed5ba86e3b5d02523526d689f977db2a9e05d2e319b7b7282162894d8d3b36ef",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/ClassFileIClass.java",
+          "sourceSha256": "23ea57cf6d8983ac6e833f9acca3100f22217a8054ff3658dc8fbb1b79eaf008",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/ClassLoaderIClassLoader.java",
+          "sourceSha256": "c905fb85de55645f0385d0f97195a30bda9ba2a455b8c2232ac06d96a98d00df",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/Compiler.java",
+          "sourceSha256": "5778dd49f3a5f7cb41d6a57fbe06a0a1e7f51937577aeee2250c5240ac944ecf",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/CompilerFactory.java",
+          "sourceSha256": "b6d38bc32ae6e4b4adfc177886e67a95ce1dd0d04774c515bf33567a8ffdf7a5",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/Descriptor.java",
+          "sourceSha256": "c484206aa90794a90803a01336ca8ffc6a69c802621f077e3f88884b20077b2e",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/ExpressionEvaluator.java",
+          "sourceSha256": "0c98266c478587e8795c96c3d7e5f0559a4d8d296d0386188f82b4fc0040b0fe",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/FilterWarningHandler.java",
+          "sourceSha256": "b73ecfbb3d18d277d6892c2944a9ccb271f3cc4fb37e6e3f96a756da95cac568",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/IClass.java",
+          "sourceSha256": "6fd652a1a35d92b1af69f2335950f0f36c30b6b31ad9e6f04d11cedd39f343fb",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/IClassLoader.java",
+          "sourceSha256": "d316b9ca59c3b63b3c968062c47d944bd1c7e4efe7b4f1ff9d045f4372baf751",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/Java.java",
+          "sourceSha256": "194db65364a638ce0e4ee0401e8ee4715c31095626e2d22860140560052e9b4c",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/JavaSourceClassLoader.java",
+          "sourceSha256": "a8b3f9918b53b8c54c3265bd668f12bf228289f86aabeae44846eebcdea2983b",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/JavaSourceIClassLoader.java",
+          "sourceSha256": "b8d3f36561499303da704de80341eb8ccd66cef04bda2ac749ab7f2addd821b1",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/MethodDescriptor.java",
+          "sourceSha256": "f2db661c6122bc394384b277e195905633cd0e1528f390becade1f506ed1752b",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/Mod.java",
+          "sourceSha256": "adc5e97e9497fa6265298dac3eb15b011e645c789f0460e3a6b8aee4f59de2da",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/Opcode.java",
+          "sourceSha256": "3c4c9294295cc0a4e34f2b053688c7ae36593dae930078a4ff6a2ccef30300a6",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/Parser.java",
+          "sourceSha256": "aaa19bcd325abf5cbe7a97863f611a1dce99f0c744984e47e3c6337d72df05c6",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/ReflectionIClass.java",
+          "sourceSha256": "e9a9b79f1e3122a0aa6ce1a73256b7826fd5ce1f898a68b45a280dc12e548fdb",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/ResourceFinderIClassLoader.java",
+          "sourceSha256": "3f19e2ca1b10a61155fc844ce07700124997cd5decef996b4761b51f39aeb382",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/samples/DeclarationCounter.java",
+          "sourceSha256": "dbcb5068b2ded2047c01b585aa0ea7449cfdeb5f1fa17b35459e542b90df1b25",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/Scanner.java",
+          "sourceSha256": "b98d78b858edc059db987bfe129903d3a6889a60c084cf5a79e84df6ec420678",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/ScriptEvaluator.java",
+          "sourceSha256": "6ba934972352ae4ce591b3ad1e8e6383f227bea87fa7d74d906387819366ed28",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/SimpleCompiler.java",
+          "sourceSha256": "9586276ac27d473272b3230e8517b23989c5238ae37db2216536903f22b17a72",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/TokenStreamImpl.java",
+          "sourceSha256": "b4fbfc81d7e43e9a23bc6b4facb669e64330a09285d2768257f5bffd69ba567b",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/tools/HprofScrubber.java",
+          "sourceSha256": "aa4c279c5983c3ee06cfb35049a11b02f3dd7a1923aa8e204a98e6fdfcfdf821",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/UnicodeUnescapeException.java",
+          "sourceSha256": "a6a86ba41e1b0c4cba8a05258f5af37ec805947b2cf3b3a4753ddc0094902d0f",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/UnicodeUnescapeReader.java",
+          "sourceSha256": "f0303b31c9b4f784b37cc4283a76b30077cad1cdbc3caf62f4e9268ea8adec5e",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/Unparser.java",
+          "sourceSha256": "1efacf1e5d135731c9d27e71804b4020d2a69b258419e7676d444ab530d1d50b",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/AbstractTraverser.java",
+          "sourceSha256": "c5a65fe705cad0d54ce6a4747f97e54c4e92d5f53fb3261fce01111f90cf50c8",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/AutoIndentWriter.java",
+          "sourceSha256": "4c823a3e6a620df7624c611f0236f9cb670228a674081da22abaa178d0932a44",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/ClassFile.java",
+          "sourceSha256": "b76f496bfb0e2457550bc8f1bdbfa65634d0d1472ab081c6666e948366f5ac9a",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/Traverser.java",
+          "sourceSha256": "30c4f726dce68a15aa533c7bd78ba0bb2a553df7a47ea64cf35e983bf4263ece",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/Visitor.java",
+          "sourceSha256": "e47a817f79a84ad43b14068cdfb7735a4f4a3720ebce7832fd64a7e0a2658da0",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "779a7de72faebaf7f3fddc057f77dd21d318828afd8bdffbaefd583ecd523a20",
+      "sources": [
+        {
+          "entry": "org/codehaus/janino/CodeContext.java",
+          "sourceSha256": "f92f75d9d7f4c028c13db2d72fdf3ffc000603e1fffd0f5d3f8b76c95d4c8060",
+          "startByte": 2,
+          "endByteExclusive": 1742,
+          "startLine": 2,
+          "endLine": 25
+        }
+      ]
+    },
+    {
+      "commentSha256": "e90b47f351ecfa9d3d53acb1b2f68afb36791a747db960b977e1b2605711da27",
+      "sources": [
+        {
+          "entry": "org/codehaus/janino/IParameterizedType.java",
+          "sourceSha256": "a3ec041e63521dc8cdca1f47b53b015d2310e31bf6b66ea794b946428155b157",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/IType.java",
+          "sourceSha256": "dd715b154f06ec8e03f8abadb8ae02d9b6ef4974d8c4712ee4867f2d73c5fb6a",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/ITypeVariable.java",
+          "sourceSha256": "44587a710e7407058478103e593276da0afd07f3c72c6cb77e20abee96984485",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/ITypeVariableOrIClass.java",
+          "sourceSha256": "b8dbb4993f746152ce9d50e35f0984192ee898a07b324c3cd658df59c1fa75d2",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/IWildcardType.java",
+          "sourceSha256": "07e1be9c216497d26c58f36bf41493190392de27d7f8af6340ae1da28c34163b",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/charstream/CharStream.java",
+          "sourceSha256": "0006cb9deffd6bee1d9fe9c0126486fc23a47ee8959eb49e3a3c160234470298",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/charstream/StringCharStream.java",
+          "sourceSha256": "fadf451dbeaae3373d74b68b2d2705909e7166bae6c23c2f8fe5c2447453dacf",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/charstream/UnexpectedCharacterException.java",
+          "sourceSha256": "0c017c6f5f4df0d2dd888843107c9ad53cefac4c662f8abc7c39bbc765e72dac",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/signature/SignatureParser.java",
+          "sourceSha256": "22bd918d5e4f8690ca431e2cd9b0a912941642e72f08ae86f6f68e7b1d58814a",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "60650d4caed23c2f6b01f5cf09dce1c7ceadf5d876151bdbf5409cd0f13c4361",
+      "sources": [
+        {
+          "entry": "org/codehaus/janino/JaninoOption.java",
+          "sourceSha256": "9633038c13375ae18f3f70c3b3d196be7b5db020b8908a779a9e148d1de2cdb9",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "ea178975e9f49547eb62770b765b77b069e83ab09ada21d567d4073e02bfbd05",
+      "sources": [
+        {
+          "entry": "org/codehaus/janino/package-info.java",
+          "sourceSha256": "3b98356947a75051c5572bf0898a13e95cf36ca11dff88736abdeff409d89bef",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/samples/package-info.java",
+          "sourceSha256": "74e8a14283970bd8a1662d4cf18795c1c3caee2adf4ca24f98a62f7209d792c4",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/tools/package-info.java",
+          "sourceSha256": "af17c9360214d50d8f72660ccdde13906dcd10ed9a6ca7bb9ab91a4ed162eb3f",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/package-info.java",
+          "sourceSha256": "f5a4c7515480d069afb90a5f8099ad6eb88d73d4cf08105115780dd384a42e51",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "6c478900415ddef8b4a7f8bde91b89ade75102ae609c9a2133f3d19000a690ea",
+      "sources": [
+        {
+          "entry": "org/codehaus/janino/StackMap.java",
+          "sourceSha256": "b52315aef2b6c7d1f6d2644cc19daa3231baf8bda2d8d10905e710ced3e661ed",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "ea55c8006385444dbad2cf5a6cd6bae3436b4a7992c1817f016e14e4963bf576",
+      "sources": [
+        {
+          "entry": "org/codehaus/janino/Token.java",
+          "sourceSha256": "53fac60d7d2ed56dea53606281b470733f443ba9f9fa54d8e8db8c1e0671ac24",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/TokenStream.java",
+          "sourceSha256": "1675a6caf17237ce9f632b4796b8a8d48657c9b0a58cf981543558a811e62a4e",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/TokenType.java",
+          "sourceSha256": "d9521a35e38394c6f4b4ca039e8c74c06ba9da1944f3c5040f0af9c358c4fdab",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/Annotatable.java",
+          "sourceSha256": "f5ab8e540253d03e525685fcc6b8f316f1f7ba8b67eedca25508f6790f757ff8",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "fcc7a248e716d9285fa26d346891093da7b107c4f5b4a0580a20591469430160",
+      "sources": [
+        {
+          "entry": "org/codehaus/janino/UnitCompiler.java",
+          "sourceSha256": "0bf6c5a706150ad0cc0c2708725de7fb8f7df1cc6a12c86f7a6aa1e33cb2b0df",
+          "startByte": 2,
+          "endByteExclusive": 1742,
+          "startLine": 2,
+          "endLine": 25
+        }
+      ]
+    },
+    {
+      "commentSha256": "f478aa6f8aa1e2af249ee9afc97afd9a00d0dfa5e6f39c290628f98d5fc90235",
+      "sources": [
+        {
+          "entry": "org/codehaus/janino/util/charstream/package-info.java",
+          "sourceSha256": "a56013bdcaf4f1288a3d80a8201b8d78103cda12e553495459b0bdcf412c9a85",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/janino/util/signature/package-info.java",
+          "sourceSha256": "46b2f72b447781c2357cd06afd85a38da532e595e3c0e7c8735d12f0043dd7a7",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "fb9c93e2d252ee1e8e1b897bcb89bf6989c55872f19c21a7e8ceb90e6ef4a950",
+      "sources": [
+        {
+          "entry": "org/codehaus/janino/util/DeepCopier.java",
+          "sourceSha256": "1a1f526185b5a159f986cdec67345cd52206902425ba80f613ccc431ce8ce179",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-armv7/1.23.0/native-linux-armv7-1.23.0-sources.jar",
+  "archiveSha256": "f3889105be351907e2c0eb8257adc6d167ffcc28d2d385483baa6f4207664100",
+  "blocks": [
+    {
+      "commentSha256": "269974a7b6406e9f1aadae96666154a1288426133d9b2412441293a68bfa1429",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/linux/armv7/NativeLoader.java",
+          "sourceSha256": "77f5caf11987c6f7d9f068092bbd88875a688daad29ceb95684e0b5a1c6713af",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    }
+  ]
+}

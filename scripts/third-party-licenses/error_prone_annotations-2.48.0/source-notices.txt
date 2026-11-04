@@ -1,0 +1,119 @@
+Source entries: com/google/errorprone/annotations/FormatMethod.java#L1-L15, com/google/errorprone/annotations/MustBeClosed.java#L1-L15, com/google/errorprone/annotations/CompatibleWith.java#L1-L15, com/google/errorprone/annotations/DoNotMock.java#L1-L15, com/google/errorprone/annotations/RestrictedApi.java#L1-L15, com/google/errorprone/annotations/FormatString.java#L1-L15
+/*
+ * Copyright 2016 The Error Prone Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: com/google/errorprone/annotations/ThreadSafeTypeParameter.java#L1-L15, com/google/errorprone/annotations/ImmutableTypeParameter.java#L1-L15
+/*
+ * Copyright 2018 The Error Prone Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: com/google/errorprone/annotations/CanIgnoreReturnValue.java#L1-L15, com/google/errorprone/annotations/concurrent/LazyInit.java#L1-L15, com/google/errorprone/annotations/CompileTimeConstant.java#L1-L15, com/google/errorprone/annotations/ForOverride.java#L1-L15, com/google/errorprone/annotations/Var.java#L1-L15, com/google/errorprone/annotations/RequiredModifiers.java#L1-L15, com/google/errorprone/annotations/Immutable.java#L1-L15, com/google/errorprone/annotations/IncompatibleModifiers.java#L1-L15, com/google/errorprone/annotations/SuppressPackageLocation.java#L1-L15, module-info.java#L1-L15
+/*
+ * Copyright 2015 The Error Prone Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: com/google/errorprone/annotations/concurrent/LockMethod.java#L1-L15, com/google/errorprone/annotations/concurrent/UnlockMethod.java#L1-L15, com/google/errorprone/annotations/NoAllocation.java#L1-L15
+/*
+ * Copyright 2014 The Error Prone Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: com/google/errorprone/annotations/concurrent/GuardedBy.java#L1-L15, com/google/errorprone/annotations/OverridingMethodsMustInvokeSuper.java#L1-L15, com/google/errorprone/annotations/DoNotCall.java#L1-L15, com/google/errorprone/annotations/CheckReturnValue.java#L1-L15
+/*
+ * Copyright 2017 The Error Prone Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: com/google/errorprone/annotations/ThreadSafe.java#L1-L15
+/*
+ * Copyright 2023 The Error Prone Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: com/google/errorprone/annotations/Modifier.java#L1-L15, com/google/errorprone/annotations/InlineMeValidationDisabled.java#L1-L15, com/google/errorprone/annotations/Keep.java#L1-L15, com/google/errorprone/annotations/InlineMe.java#L1-L15
+/*
+ * Copyright 2021 The Error Prone Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+

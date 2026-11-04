@@ -1,0 +1,3560 @@
+{
+  "sourceArchive": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz",
+  "archiveSha256": "beea483ab130f456c1c3905f4f2e40778a9c493c3d73ae8012367d552d71ca84",
+  "scope": "License-bearing C/C++ block comments from upstream lib/ source directories and selected Graphviz plugin sources. This is source evidence, not a claim that every source file was linked into the binary.",
+  "blocks": [
+    {
+      "commentSha256": "0b050cff6def7003f80089f0c765e9c5b20c805aa9f0b4460086a02f8aab94af",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/color_palette.c",
+          "sourceSha256": "3890047dd52332ca70562769d3ed5894f4e55e00087757734dc4b69338a11282",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        }
+      ]
+    },
+    {
+      "commentSha256": "272bed5903e03674e6355a5219def6cdf7ff31d9fd0589ca6a295953bd170b4b",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvrender_core_json.c",
+          "sourceSha256": "d831908ccc23b53f6edbfbe2d439e14f81969db795c17c25ee4f18c58ce22548",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        }
+      ]
+    },
+    {
+      "commentSha256": "2918e2dd604d54c5f070b7bb606c0bfe02a83f3980e03f30af9b02c8756e0a92",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/solve_VPSC.h",
+          "sourceSha256": "602651715ff43ad01e83a40bd8be335be65ba2b771deb84f5e331eefb8003a35",
+          "startByte": 0,
+          "endByteExclusive": 587,
+          "startLine": 1,
+          "endLine": 17
+        }
+      ]
+    },
+    {
+      "commentSha256": "296ed9b0670dc591acb05cb43a2eadf30c9ecd9af9d6850e482485a96068e20c",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/csolve_VPSC.h",
+          "sourceSha256": "a1baf07b0e08266f39fc85b59c9d68b88bb769b52128f94435420f8cf27a95fc",
+          "startByte": 0,
+          "endByteExclusive": 561,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/csolve_VPSC.cpp",
+          "sourceSha256": "9fc130d047c5004c0089d11e89f2a8022253c14461be9b222f2f7cb0a6da0a03",
+          "startByte": 0,
+          "endByteExclusive": 561,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    },
+    {
+      "commentSha256": "32284a82087eb07062b06783056ad866b8423960f517c2d0ea685e0d0e112cf7",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/rbtree/red_black_tree.c",
+          "sourceSha256": "f0966287fbca1567bce8671d870b8e7bcf80c19ff42e48ae0394b9e092c9c95c",
+          "startByte": 0,
+          "endByteExclusive": 180,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/rbtree/test_red_black_tree.c",
+          "sourceSha256": "9c1764f9b2fb3968e6b986a7ef506e3f6eb872efa0ccfc882df3a65c281b3f44",
+          "startByte": 0,
+          "endByteExclusive": 180,
+          "startLine": 1,
+          "endLine": 3
+        }
+      ]
+    },
+    {
+      "commentSha256": "3f832ebe1d7741df20fe4cb988c52366076fc460348540934a0567488633412b",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/common/htmlparse.c",
+          "sourceSha256": "3004295044c446ce4c47ea74a457ce1f82c7908b6c9c1d89c8a0b80fe364f183",
+          "startByte": 49,
+          "endByteExclusive": 837,
+          "startLine": 3,
+          "endLine": 19
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/grammar.c",
+          "sourceSha256": "cff31863b4dc52caddd4c43c09c3bdd75e18691cb6cc4e0158b2e7399e080a8f",
+          "startByte": 49,
+          "endByteExclusive": 837,
+          "startLine": 3,
+          "endLine": 19
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exparse.c",
+          "sourceSha256": "2640c52c105773954e51551b4c5ebf80873707d4cde4d81e0cbb7cc5082308b8",
+          "startByte": 49,
+          "endByteExclusive": 837,
+          "startLine": 3,
+          "endLine": 19
+        }
+      ]
+    },
+    {
+      "commentSha256": "41bdc79a822a14bb96391840759409d63a5041a0063eb93cc4a67e54911c9b15",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/blocks.h",
+          "sourceSha256": "aec3ebdf9f65c3e85fbdd97ba68db8be2c93fedfe5fafad741ed4a9617331d2e",
+          "startByte": 0,
+          "endByteExclusive": 777,
+          "startLine": 1,
+          "endLine": 20
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/blocks.cpp",
+          "sourceSha256": "ba44dc1768c046fee56ca22c8513f673df94798a99bcc6a966916aef8efa619a",
+          "startByte": 0,
+          "endByteExclusive": 777,
+          "startLine": 1,
+          "endLine": 20
+        }
+      ]
+    },
+    {
+      "commentSha256": "448e72c4f5d6f5acf36e0fe6b07c8b7cbe813d297ae65cf2cf0aba9134955a7f",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/acyclic.c",
+          "sourceSha256": "b317701c943fcc5b2a1fb5c222dec57551cdb8bc76bbee9bcaf1ba06adec8835",
+          "startByte": 0,
+          "endByteExclusive": 554,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    },
+    {
+      "commentSha256": "45037a74d20edd4e0f8aeea18b5e8ac861fd907386eb3bbaf125d98153932bb2",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/solve_VPSC.cpp",
+          "sourceSha256": "3e18402748e6ebda548dbba7295d62aef68ceffadfce802fefaea956258c012c",
+          "startByte": 0,
+          "endByteExclusive": 596,
+          "startLine": 1,
+          "endLine": 18
+        }
+      ]
+    },
+    {
+      "commentSha256": "453acc3d511ae45185a6859e3ed7b59a0052d7126157adceefb1a67c7c5b3c6f",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/common/ellipse.c",
+          "sourceSha256": "b17d0b7670a4e046b345ac283772f32ae483b928956e95064f82248e4fd21aa7",
+          "startByte": 37,
+          "endByteExclusive": 551,
+          "startLine": 3,
+          "endLine": 11
+        }
+      ]
+    },
+    {
+      "commentSha256": "4a6799bd8a73e32f2895f28e4638efa6ca7112ce7e4210819c50613b5e71990e",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/variable.h",
+          "sourceSha256": "f4076e89c564ec9dea81c7f20798e2c5a9e6c7d147459967e62d4efc33287ef2",
+          "startByte": 0,
+          "endByteExclusive": 490,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/variable.cpp",
+          "sourceSha256": "b12f11c61088bc2af00f4f80201139e805a462a8400451433b7987c75c06458f",
+          "startByte": 0,
+          "endByteExclusive": 490,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "517ec55746eb61df20237d26bcd70778718b54debdc5a14c3ae0dd865e367d50",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/common/htmlparse.h",
+          "sourceSha256": "43f9eb116a41ca9f4579a0acef1e13c4f53cc9c16c8abd01dfa2187228f2e542",
+          "startByte": 49,
+          "endByteExclusive": 832,
+          "startLine": 3,
+          "endLine": 19
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/grammar.h",
+          "sourceSha256": "37785f667945d5b073a9ad047f8514717f1b7a1b72a856128c622a35c490a8aa",
+          "startByte": 49,
+          "endByteExclusive": 832,
+          "startLine": 3,
+          "endLine": 19
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exparse.h",
+          "sourceSha256": "03e91b52515de6dbb320fe88e50b9173aa406bffa8cd349a76cd7bd36e5db8d3",
+          "startByte": 49,
+          "endByteExclusive": 832,
+          "startLine": 3,
+          "endLine": 19
+        }
+      ]
+    },
+    {
+      "commentSha256": "5349a5b077337065291dc9b2457443d6fe6d07dcf84885773c5baa62a385efcc",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/block.cpp",
+          "sourceSha256": "04859651a39473898f9e15db2d4c1011f26c393be5fb442415b771d98deb06b8",
+          "startByte": 0,
+          "endByteExclusive": 711,
+          "startLine": 1,
+          "endLine": 18
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/block.h",
+          "sourceSha256": "cd821fae79fe1f29c194a323cd1d2a4e901e9632238e6b35e61cf132e451bb46",
+          "startByte": 0,
+          "endByteExclusive": 711,
+          "startLine": 1,
+          "endLine": 18
+        }
+      ]
+    },
+    {
+      "commentSha256": "544f2a3895b6de69c0848b71cc5c86e0d994cd8dff9dbb9d0736b093ee331984",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/furtherest_point.h",
+          "sourceSha256": "733f1e2801aee7791092d58fc330f064b562db4e203f7b57d3c8fe86516758bd",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/lab.h",
+          "sourceSha256": "aaaac4dd6d6e0fdb3e7631f5f4835a7d157c5acdb5fc704dd1a50c1f01afeaba",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/lab_gamut.c",
+          "sourceSha256": "788ec960ebc923795dc9762d1ff0f50dce42e5be39ffc61b0abdd6dc9ab05cb9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/intersection.h",
+          "sourceSha256": "d38f0d2bedcd1246f901dc0cc9d810422f519e656317519ac0e3d4de610f0c64",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        }
+      ]
+    },
+    {
+      "commentSha256": "5455a0f359210831de5a4f6de2a3da6bd80b467dde1257c572157531ffcdff68",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/unflatten.c",
+          "sourceSha256": "050c4c97bc80328b5df626c8e853674fa84032e16ada7e0d0465dec34f640280",
+          "startByte": 196,
+          "endByteExclusive": 607,
+          "startLine": 9,
+          "endLine": 18
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/tred.c",
+          "sourceSha256": "22b9d142102b9a663ef8abcd8793ca219ec6ec4519694fda10074c375104aeca",
+          "startByte": 240,
+          "endByteExclusive": 651,
+          "startLine": 12,
+          "endLine": 21
+        }
+      ]
+    },
+    {
+      "commentSha256": "5f695211e64b62368d2b12e0b72732601184695e0564fe538ab0128f38b04386",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/node_distinct_coloring.h",
+          "sourceSha256": "a6b67641efaa4096f03bbe136b0f6f1057ff98b30c6375534a3aeef5575601f6",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/edge_distinct_coloring.h",
+          "sourceSha256": "4235d23efce5cd84fa90ee96b0740ad386948b4ab2dcb54395937a7326b146d1",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/lab_gamut.h",
+          "sourceSha256": "94d46af6eebf0cee8e81e3762e99529c1f3aa9c996ef06f024681689a071ebba",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        }
+      ]
+    },
+    {
+      "commentSha256": "6051c5a4514e5354a9d3b6dac48a980ee1ae43abe3980e32c39c9da46553c94e",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/quad_prog_vpsc.h",
+          "sourceSha256": "b074c9264a31060fd75c19d0bcd106be8cb141540a0690f936b924640d8fe15a",
+          "startByte": 0,
+          "endByteExclusive": 491,
+          "startLine": 1,
+          "endLine": 14
+        }
+      ]
+    },
+    {
+      "commentSha256": "67092883b645d88d10ecfec7dcaa881233f2a33b5ca5485266b123c5c5a39e20",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/common/htmltable.c",
+          "sourceSha256": "6d817a166f22041df7cb3057805e57b8d63e0daa71de2546f43c102192ba5794",
+          "startByte": 37,
+          "endByteExclusive": 552,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/postproc.c",
+          "sourceSha256": "510b666f0e010478efb1283509634c22cdc3e42a2b27b11ea0eaaf412388d997",
+          "startByte": 37,
+          "endByteExclusive": 552,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/psusershape.c",
+          "sourceSha256": "1eacf29d6b100c3e7a06d59d7f4ed958d5aa258618b6f6ede22074477b4fde1e",
+          "startByte": 37,
+          "endByteExclusive": 552,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/geom.c",
+          "sourceSha256": "59c75270d63d70df0a955139c9300366ef18de8cee85fc66298f580a2a9efc7b",
+          "startByte": 56,
+          "endByteExclusive": 571,
+          "startLine": 4,
+          "endLine": 12
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/input.c",
+          "sourceSha256": "021555be20f0e13fecac12cc6aa532c323281dfb6d0687e2ec353f60358ce21b",
+          "startByte": 37,
+          "endByteExclusive": 552,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/colorprocs.h",
+          "sourceSha256": "2122718a438ae208a71ae3af2a054225a446ff564fecf05c88adc58413677451",
+          "startByte": 36,
+          "endByteExclusive": 551,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/ns.c",
+          "sourceSha256": "2adadb84df9c7b79c398457ccc04ba4edd1b16d952dd55b0b772b2b5d8c1cabd",
+          "startByte": 130,
+          "endByteExclusive": 645,
+          "startLine": 7,
+          "endLine": 15
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/arrows.c",
+          "sourceSha256": "d2dff9825d1aab524cba866f2f3148fc93f8ae3d2e8d1f58cc5669e678471e11",
+          "startByte": 111,
+          "endByteExclusive": 626,
+          "startLine": 4,
+          "endLine": 12
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/const.h",
+          "sourceSha256": "d095f8a983d9fb8507d1823b728c8efdf9d899db2401354e05870639caf7c78b",
+          "startByte": 36,
+          "endByteExclusive": 551,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/pointset.h",
+          "sourceSha256": "75b04101dc895a9227d621607f8d394f697a24270e6665d3530ff28328a43d49",
+          "startByte": 107,
+          "endByteExclusive": 622,
+          "startLine": 7,
+          "endLine": 15
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/routespl.c",
+          "sourceSha256": "14bbd3fc6fd2ad445a66c7b265c639f2bc6fba91f59bf049099677689d007ce1",
+          "startByte": 37,
+          "endByteExclusive": 552,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/colxlate.c",
+          "sourceSha256": "40dd5d5e339e49543ba2daaf997d770ae42a1ec00fe3b497868065296a71de0d",
+          "startByte": 69,
+          "endByteExclusive": 584,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/taper.c",
+          "sourceSha256": "89a12263e8353efda4f5b3970b25d8bf37a8b8de9873c91d28464b60b23b139e",
+          "startByte": 37,
+          "endByteExclusive": 552,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/output.c",
+          "sourceSha256": "38b96026633e0c61672abf4dca43a74e200810a6a35754af15d72d9bd9d949ec",
+          "startByte": 37,
+          "endByteExclusive": 552,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/arith.h",
+          "sourceSha256": "3f29a8b42b99faeb5ac3a07dc35c37e783fce91dcbbaa383863df617cf05fd4f",
+          "startByte": 35,
+          "endByteExclusive": 550,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/pointset.c",
+          "sourceSha256": "ca5199df6ace771e02b9c8ef72c9a077bed36af3eac15f3ca1074aad732a06c0",
+          "startByte": 36,
+          "endByteExclusive": 551,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/emit.c",
+          "sourceSha256": "b9999e1906a022a40dd53ffecd3d49941014c67b0b8253150ff50bfc2a360ad9",
+          "startByte": 78,
+          "endByteExclusive": 593,
+          "startLine": 7,
+          "endLine": 15
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/geom.h",
+          "sourceSha256": "aaf5fb3bd9ab1a97a248e02ccbab5e852cca5461350760efa306449b828ab4ad",
+          "startByte": 192,
+          "endByteExclusive": 707,
+          "startLine": 10,
+          "endLine": 18
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/color.h",
+          "sourceSha256": "7806a2b1c66b27ef6eedde31a640620cc9686084feeab70e1b15dc1ec088c5ef",
+          "startByte": 35,
+          "endByteExclusive": 550,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/textspan.c",
+          "sourceSha256": "26c68006123726c815d5e1cfff8538cd29f7fa83f5cdede0a05f6c2c20313c7a",
+          "startByte": 73,
+          "endByteExclusive": 588,
+          "startLine": 7,
+          "endLine": 15
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/usershape.h",
+          "sourceSha256": "c4fce98191af11b10063d7cf2e4adcebc814447677bae818bc5cf09b49768093",
+          "startByte": 62,
+          "endByteExclusive": 577,
+          "startLine": 4,
+          "endLine": 12
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/macros.h",
+          "sourceSha256": "3035445bfc71bc0acbe4c80319d3ddcbbf042ffd185cde36b9fc3c16df85aea0",
+          "startByte": 36,
+          "endByteExclusive": 551,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/labels.c",
+          "sourceSha256": "1f7c421fecbe3fe15a67b86c992f547ef3b351220825601b7ac26bdea7d2e64f",
+          "startByte": 37,
+          "endByteExclusive": 552,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/topfish/hierarchy.c",
+          "sourceSha256": "f1c3d75e73d2d179783df441e3b2d6b9bad2dcfa417ad9f1f0d2f71c85e1d527",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/topfish/rescale_layout.c",
+          "sourceSha256": "75ac0be19c4b918f7230b6d5eca9e98497d4148c95ab0409a8d149f13943e4ec",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/topfish/hierarchy.h",
+          "sourceSha256": "4c5c8ecb851b86099bf0ed5a995ec38e1187ddc0a99c523b510a3f974c72cb26",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/layout.c",
+          "sourceSha256": "a95835680a747c15a200eb99ca5f2d617ceffe800e439dfc7be3bb95e527d1ca",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/grid.c",
+          "sourceSha256": "4011be0b57270c40b40bf991a7bb0eff6f65b57da6bfe20673f9a007cd754450",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/comp.c",
+          "sourceSha256": "7520ab2d94d0283a06ba27fc08cb616ddd47d72b4ae74eb143382d844f9a426e",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/clusteredges.c",
+          "sourceSha256": "5ba0d966f23a084b9322c3aba3704943ea3cc9415a707230242290a02a0ffd8a",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/xlayout.h",
+          "sourceSha256": "7d1a680b5d53fec3733d9b08e463d0701e69a1f6a7a5fba1b6ec8dd028600360",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/dbg.h",
+          "sourceSha256": "4885bf47da2d41cbbaf68a43d6f70791fc4843d457c83d10577a9d642e2376fa",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/clusteredges.h",
+          "sourceSha256": "3f824eb2390fc8217ea1d64915245a30ea5ab0a85d6fe192a69f8c5c3baf7beb",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/dbg.c",
+          "sourceSha256": "69957656b374e61e29f0271b0aaa7e346a299e91526eff9afa974a9fa953f231",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/comp.h",
+          "sourceSha256": "c17d440e9afc15a6210a0efb701cadf7efe5258293252e82ce67c45b53ea730f",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/tlayout.h",
+          "sourceSha256": "cc43b70bf0dc9568662418725512db11f232d412aeb0a88093e09c52431ca4a9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/grid.h",
+          "sourceSha256": "56771a753946d18f72f848fc95d72695dc0fec43ba94f45256f74ee6eef03507",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ast/strmatch.c",
+          "sourceSha256": "84db6edc59461ed8728129ae6434e693c67fd553c4120c0808ea7db5ee665dc0",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ast/stresc.c",
+          "sourceSha256": "bd97a91b0ca9dc2af2bfa5e32bc9a4768edf171446582fecdff015894e442f32",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ast/fmtesc.c",
+          "sourceSha256": "c30142751186ebabbb74945c465f21d64cbf447222a82022b1c4005d3e1d5823",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ast/chrtoi.c",
+          "sourceSha256": "609802969b1cb818a5ba136aaefb54b62e2cbb8170b8a8c282b161f12d7e8cf2",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ast/ast.h",
+          "sourceSha256": "1c75ddc0b5bb209105c6e086c6922aff1e4911a50da4c1d763816bf19cd1b011",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ast/chresc.c",
+          "sourceSha256": "5874ba238ce797be984df0d9ab4d60d373c272506f9923373f7b4a6b701ac4b6",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/circular.c",
+          "sourceSha256": "1c326b55b1433e3a6b6925f9df3960c7cb65e229c820d7d2d6b220851b21ad1d",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/edgelist.h",
+          "sourceSha256": "01b81b55585ddc6ae4ab1582a2610047482bbaf08c179ef776407a3bd27d30dd",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/blocktree.c",
+          "sourceSha256": "593d21e566ba56fa0c5e1155d4cdba70918b00eb8f6c209a995058b47fc01525",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/block.c",
+          "sourceSha256": "50cbc097fca7b031681956ff59547a793af262bf25f22ffa3d5886a09e57e3f9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/circular.h",
+          "sourceSha256": "6669e24460297285dbfebb68f25a8ac51039cfc231430df9f5f120d8ac12acf6",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/nodelist.h",
+          "sourceSha256": "afc1081f6070c8b10530ea6b0897fb97d0963fb1df954973ab7f3f639881fef1",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/edgelist.c",
+          "sourceSha256": "2e981f677122ec414998d17a25e015610c91bfe04fb2aabbce5ab2a8a5cc3b19",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/block.h",
+          "sourceSha256": "6deb93855e3d040c201c61599d743009be8848b5ee7e46d4c05b354938f98587",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/circo.h",
+          "sourceSha256": "192c9d7f46efafe7a464abecfc59bb1fc0ddac0d51796b1808359e15c0918227",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/nodelist.c",
+          "sourceSha256": "acc0bd13f68d7c45f9a2d2ec3036a82fc3afe0361069270cfd3c0cf963976b8a",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/circularinit.c",
+          "sourceSha256": "4f2c779970e883ee78eb85bb6c0c27f0a182a399dc35173f5b6a477c7cd9ec47",
+          "startByte": 129,
+          "endByteExclusive": 644,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/blockpath.h",
+          "sourceSha256": "314eac3a87070fa08d309ce32e6e98d7033bf35d07a44fbb4436a69b6ca78e93",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/blocktree.h",
+          "sourceSha256": "b4be5d79fdd3c1bd9ca26caabe09cf4cfd639ec76e6abf8a66bff7ba53780951",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/blockpath.c",
+          "sourceSha256": "bf6ebf95ee0ac02f33a433aba6f5a74f9af4dd13412fcb4a5102aeee6a47f750",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/circpos.h",
+          "sourceSha256": "f10460dc22bd54df90b5b914f1391eb5767dbdcb79dad316c3d491d0dd713fa7",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/circogen/circpos.c",
+          "sourceSha256": "574e893736de0ec7040dae809a6d2a637496c85ff6bba4352dafc405f3c42e34",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/twopigen/circle.h",
+          "sourceSha256": "cbbce0b7f6581d162d8b13333ad985c8f78835b84f89110a2b82b9bfe831d65f",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/twopigen/circle.c",
+          "sourceSha256": "0979a4ca0c9a58a809354440d8a61f06766e08325e8fbe74425c8f9c0e66f196",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvconfig.h",
+          "sourceSha256": "a44fac919e21a8772615236b571130388f3a9175d93576b01772611d1d2565dd",
+          "startByte": 31,
+          "endByteExclusive": 546,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvplugin_textlayout.h",
+          "sourceSha256": "ca79a3d8e87faf3fae68fdc11cba362aca34e34c0d6691f9406e133f78d81838",
+          "startByte": 34,
+          "endByteExclusive": 549,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvplugin_layout.h",
+          "sourceSha256": "51e59f472cb8615c3eeeddfd6bcec5f34894608598c0fb1cac102c3b1f4eefc7",
+          "startByte": 34,
+          "endByteExclusive": 549,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvdevice.c",
+          "sourceSha256": "d5b127e939b7768c88ad6672628590b9e815ac268d04343520a82507e192dbbb",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvplugin_device.h",
+          "sourceSha256": "4ff5122e9fd03d5b0bd51dae8737f45801ec3cb75b522a3912770f7c216aca10",
+          "startByte": 34,
+          "endByteExclusive": 549,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvcext.h",
+          "sourceSha256": "17d11061fb77dc69dcaad63a825dec0589e2c9785a76e3d1459bbfd0e698d5c7",
+          "startByte": 31,
+          "endByteExclusive": 546,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvio.h",
+          "sourceSha256": "dbffb20166ea35c0e419bf6d37544cfabe0c8d0a8ae775786c2c85c888d98e30",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvplugin_loadimage.h",
+          "sourceSha256": "c8df604d5f53d21f9a89a2ccd1d5571e1193c0577875d7fdb8aff32da0769d4e",
+          "startByte": 34,
+          "endByteExclusive": 549,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvcjob.h",
+          "sourceSha256": "4d564f2214457892251a5681b93794fb9d5e00a6d21674775cd54797a343440b",
+          "startByte": 31,
+          "endByteExclusive": 546,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvloadimage.c",
+          "sourceSha256": "f9848d547f64b0cdb844ccc02a082c622b26627328f4503eb8cd6c4097eac04c",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvlayout.c",
+          "sourceSha256": "5e92bf7dd190b863765b2448cb68ac7e5a5b7a3b5824aa7dd876fc67c31d94c0",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvcint.h",
+          "sourceSha256": "35ed91d5d3a75804a427920df9029f827421bdfc1267464cca10ad8daf697037",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvc.h",
+          "sourceSha256": "0e2a27fd0409dfdbcaea4b8321eb9b3818fb54d01117d8681d69317c47b96bb6",
+          "startByte": 325,
+          "endByteExclusive": 840,
+          "startLine": 14,
+          "endLine": 22
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvcproc.h",
+          "sourceSha256": "9748164329e2c4aec8323a5c9b29385f0ee140f9e1c8828de14c8bbb52a088d9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvrender.c",
+          "sourceSha256": "0e308801398295bb132fbdcc674b409b75fd2ab337a35646d6c32c33c8078b3a",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvplugin.h",
+          "sourceSha256": "2286301f69395e8f0edec0dd298a899d3e80fe7d88f5dc206dbd6f42ec509bde",
+          "startByte": 102,
+          "endByteExclusive": 617,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvcontext.c",
+          "sourceSha256": "615121ac4afb8a566e3d5253aeb99881bfbc502549e371c5b7ea9df5e312e1f1",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvevent.c",
+          "sourceSha256": "5d40bca30b93ac596cfa13c8faf44d43f1215c2185083c2db5fedff6ebb83471",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvjobs.c",
+          "sourceSha256": "2acdb9a89aba1f06e927a88c7f290d769555d89f6592f68e05aed83f62c36b96",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvplugin_render.h",
+          "sourceSha256": "e2515ff0d8e7f5754222120217f8c9d1a3dfd1bb4e2a8e0284c63afae66c1275",
+          "startByte": 34,
+          "endByteExclusive": 549,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvtextlayout.c",
+          "sourceSha256": "f33b60cd24795327cf89ac412c32832686570feeb10d4bca334e72ecc2c0a072",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvtool_tred.c",
+          "sourceSha256": "1aaadbe26cb391f2e7f8185579e6b586677facbae97d6502aefa0c489f0126ca",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvplugin.c",
+          "sourceSha256": "3c38949e0e00300a55fc88e9bb8ec67dab366532d09ccdc54a8fabf97b2caec1",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvc.c",
+          "sourceSha256": "f156543c84de1c92ba8b1db6580329fa94631859bc8159a85531a2442ae05f6a",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/cvt.c",
+          "sourceSha256": "f2b2e918bfe5a018e4da786293513f0ab742b0abaf2fd16291995cb5180b9496",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/solvers.h",
+          "sourceSha256": "104db2af2db2337ae99771d4ebd10dd1292aa4d9df65bbc3f4a5d266aed0d283",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/pathgeom.h",
+          "sourceSha256": "7499a0869bc311abc25b3b2edf6b8e1227d5469065013c31f9ac65cdff871465",
+          "startByte": 35,
+          "endByteExclusive": 550,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/solvers.c",
+          "sourceSha256": "36615996f6e36e64f2a34981f64b9a858a4bfc7b9f88773fc2fe918e70c37006",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/route.c",
+          "sourceSha256": "6db8082cf21d3403e4c4c5959c355b708c7912156c532fe3f99137b6dbf93eb4",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/vispath.h",
+          "sourceSha256": "63352cb3ab31f16d78f5148a966d33b5d9fd007fe6028f95564f5e6c0bfede43",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/shortestpth.c",
+          "sourceSha256": "c2ed1cbd899c0c13b12715138d705a685c1d0d2fb88ff236cb256bc16aa4bc77",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/visibility.c",
+          "sourceSha256": "ea9da954eae3cb986b23e0a223f463af1821d718573540ae4815f7cd9ab79ff3",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/triang.c",
+          "sourceSha256": "ddf0edd52d5c467c1baa6194c94915be967ac948d638535e246239a3109db31e",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/pathplan.h",
+          "sourceSha256": "2e89dc10a1feaa362f271f50eea76232b2f0307218d7a521baeb6c64339b38ab",
+          "startByte": 359,
+          "endByteExclusive": 874,
+          "startLine": 14,
+          "endLine": 22
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/vis.h",
+          "sourceSha256": "f44452fdf2d7c0b6837f3198016068b0792d7927d7916244a68002ba4e2b855d",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/shortest.c",
+          "sourceSha256": "6b8dd871fc98e2f49f5be5fadcae03ec60fc95357ef1047f06d0f32adcade9e3",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/trap.h",
+          "sourceSha256": "8b8faf7b16b3b549388b3d0374d645a0654f635eb4f809e3d4f8919a77dd1df6",
+          "startByte": 180,
+          "endByteExclusive": 695,
+          "startLine": 9,
+          "endLine": 17
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/maze.h",
+          "sourceSha256": "2ab28306e40b0684944a6aa6b7f6f449135899fca3e73b2079a3712c79a3fef3",
+          "startByte": 90,
+          "endByteExclusive": 605,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/rawgraph.h",
+          "sourceSha256": "076bc6c8869cf011a1bec6693110fbf6a1e0a34e30a9f05648c9723e96cdad61",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/maze.c",
+          "sourceSha256": "d5ace89e5429dcc05ac1f11528ae3ffbd357c1d65c28cebb32843d192c3033e0",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/sgraph.c",
+          "sourceSha256": "8de1e4e95e64168bf873e61836bb9d625258d7f696665a7e373422392dd343f1",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/ortho.c",
+          "sourceSha256": "3953aa18daf9292c409eb46dfbb2d4e3a2a4e94adfcbb28f634ed19647b6a657",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/rawgraph.c",
+          "sourceSha256": "922382eeaadabe2b4182d87b2941b58be6242bfb5f1c68bd53ba6a1ccf3b4d0d",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/structures.h",
+          "sourceSha256": "1deb0029eaa06957b61910e8f46732de03d71f207c32b3e76b5bfff26d5c4f60",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/partition.c",
+          "sourceSha256": "44249abf0b5928cab67e5cf82ebc0ad0e7d3ea4a59990644823bf379d78bfda3",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/osage/osage.h",
+          "sourceSha256": "d1e467db44755410cf4222f5b0c3a92e24c8834df9ea07fd602a40d03f0bbd31",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/osage/osageinit.c",
+          "sourceSha256": "72de09d17714425eaeb629908942f4e086f68aa7f32682c8a00e665666710cb5",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/dotprocs.h",
+          "sourceSha256": "1947bf01c09b2c5e402f8b52969b70ce03b8590cec3292b744a4632e82df3c84",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/flat.c",
+          "sourceSha256": "ec4e5f6a5aede6e3e80c945faf365d9419c14add407f24d79c803e552d2d01ff",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/rank.c",
+          "sourceSha256": "2af4b6296a242e8d959b7ce2447186d78cb4bcea66713242301d0c15049f5f2f",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/conc.c",
+          "sourceSha256": "6d2ea96ad30d5e3702f920f6919e89935e08ecfbc73f8377a998d7b9587b4dc9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/fastgr.c",
+          "sourceSha256": "b21dad4cbfeda903b7caff1158577f9ca1d54a6aa0461f317e96d9f78ed2ac19",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/sameport.c",
+          "sourceSha256": "72b2423dacc4b3de994d346a8ee5cb6c7130c0266e3547c2a9dab70d22e6d76b",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/acyclic.c",
+          "sourceSha256": "93470b6b987f6e83248e2294e7df354b364f2801d7502fb95e8fa7e85369e3ba",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/cluster.c",
+          "sourceSha256": "e46471231468b0602ed3d8a002c9040800bbf3677cddbc13f6455ef4b51414d9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/decomp.c",
+          "sourceSha256": "a5264f9b136e70e98f6fd67ab03ec8b22f104fe89a1cd3a1defdcaa114371235",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/dot.h",
+          "sourceSha256": "11cde54de72fdb0f67309a0738f2760824e51638cf6f7015c4fd198e30101307",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/dotinit.c",
+          "sourceSha256": "7635faf2e1d5abf4c17423348d862d74fbcdab9ea9f69adda18633374e4200f8",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/class2.c",
+          "sourceSha256": "911e95881c3e4fa84030eedb4db6fa2c953c35073c8f47202cbbe57f87ec5ed7",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/class1.c",
+          "sourceSha256": "fce98c30fc1bae6af1d3fa142ec21ec966b35f59c12400bc07d25edafaaacb73",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/position.c",
+          "sourceSha256": "c361de59c10fc4fc5dfa54a42dca80cb97e62f1b11528db65cadee703f14376b",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/compound.c",
+          "sourceSha256": "f3058c9e0769800f957e915d1890ebad8399860910b8a47eeef380f0fa6e1719",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/mq.c",
+          "sourceSha256": "a2ba6357e79716c054db76b6ba25e2b136986e1de4ccd5689ac231053973c215",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/QuadTree.c",
+          "sourceSha256": "db1ef7ee16deb7308a05a2ed9ab9740ce457c25cbfb1a4b66f7de17393ba5ead",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/mq.h",
+          "sourceSha256": "596a244ca4c045b1599573d5433d86d1509811d82a9caeda5ac850c3031c82a8",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/general.h",
+          "sourceSha256": "525fb52fa3b2ec50585f74b0a4117e09f2c21798a331d3adb7b0536d7e0a15aa",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/general.c",
+          "sourceSha256": "372c5d0bab84cbb5105334791042fd0ab01f114f4f8e8ae8ce8e69fa1a4dbe00",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/color_palette.h",
+          "sourceSha256": "2c00d91cf42caf3d2a780b3527bec1a8014cd2fd7489c31248f27da7e0b6dfe9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/clustering.h",
+          "sourceSha256": "6f35f52cf1ec86d22669ef8ae105fa3372c8a3b4b845bf427f10d6526e60cee4",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/SparseMatrix.c",
+          "sourceSha256": "4bc37a48246127f2d12b989b749814c8fecf56426701eca35d24d89c63660ef4",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/QuadTree.h",
+          "sourceSha256": "ba63f57ebf5e367e69a0522a036aa048651de0d0a03ecb3d916480076c6a53b8",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/SparseMatrix.h",
+          "sourceSha256": "1ee12df5861a9b3541f1decc25aebf2c1769cdaf491d4b897a7c84aa74215844",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/clustering.c",
+          "sourceSha256": "99c0e49d8f2b90654ed5e5e9e18ebc39f2e66fbebc1072b5d9089a7e201979c2",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/obj.c",
+          "sourceSha256": "3d2c75ad83096c4e1008806621ff5cc385767f1f93892dbf53caad0643e11cf7",
+          "startByte": 133,
+          "endByteExclusive": 648,
+          "startLine": 5,
+          "endLine": 13
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/write.c",
+          "sourceSha256": "0788897bc335e6eb978ad0844ca14b420520e4575dd351e4b81d5027860616e0",
+          "startByte": 144,
+          "endByteExclusive": 659,
+          "startLine": 9,
+          "endLine": 17
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/id.c",
+          "sourceSha256": "d9bb99a869bc2f22eb9d26de6128e816cca6d7cae25d7e4221dfb9bead11e068",
+          "startByte": 41,
+          "endByteExclusive": 556,
+          "startLine": 5,
+          "endLine": 13
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/ingraphs.h",
+          "sourceSha256": "6dffe97c910b1b23136183a26058a2b1e532627e634115637e504bb2593edab5",
+          "startByte": 264,
+          "endByteExclusive": 779,
+          "startLine": 11,
+          "endLine": 19
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/io.c",
+          "sourceSha256": "e041c04744e04c1bd51f1a9e0c0595ea810984647d99f3587957b22b86dc2787",
+          "startByte": 41,
+          "endByteExclusive": 556,
+          "startLine": 5,
+          "endLine": 13
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/subg.c",
+          "sourceSha256": "db1d06117f646b2ebef83c9235e545075cf2059ae512d371f0cd157b2eae333e",
+          "startByte": 107,
+          "endByteExclusive": 622,
+          "startLine": 7,
+          "endLine": 15
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/attr.c",
+          "sourceSha256": "8a85668a9bee496b4b2b32d05df21c961386911afdd07b635f565b00e3544a3d",
+          "startByte": 113,
+          "endByteExclusive": 628,
+          "startLine": 7,
+          "endLine": 15
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/imap.c",
+          "sourceSha256": "73a580cf17c671a38beecabf5b004bacab28079c534db7c501fa4e72b4be326f",
+          "startByte": 41,
+          "endByteExclusive": 556,
+          "startLine": 5,
+          "endLine": 13
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/apply.c",
+          "sourceSha256": "cbc336ea87cd749bc2c5fdaffc67c700b199500eed8f3425f5bc8e3976646caa",
+          "startByte": 41,
+          "endByteExclusive": 556,
+          "startLine": 5,
+          "endLine": 13
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/rec.c",
+          "sourceSha256": "817b751834fa5202a986ea742413e4142facb6370d161eb4457d3cdff3d612f3",
+          "startByte": 64,
+          "endByteExclusive": 579,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/edge.c",
+          "sourceSha256": "c58931292dce6d16992285ed8dcd619f7003521b440661e12c6ab30b67bcb0c6",
+          "startByte": 65,
+          "endByteExclusive": 580,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/ingraphs.c",
+          "sourceSha256": "2091c151955ec9f23a5151ce51e98cd5eb4855d7bba8948c925d5ed556664e57",
+          "startByte": 78,
+          "endByteExclusive": 593,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/graph.c",
+          "sourceSha256": "5b46b299c55b2197533694e93d4e7a9479c0b370f22625cece5f740059297829",
+          "startByte": 66,
+          "endByteExclusive": 581,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/refstr.c",
+          "sourceSha256": "242e01992fe455d3bd70d597e8c8977f2e150004b86bf4ecf111afccd19dc820",
+          "startByte": 75,
+          "endByteExclusive": 590,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/node.c",
+          "sourceSha256": "897c4d07da9e5ee9f3b6a6a85036d1ae649308dd341b7c8bb69eb377898ba92b",
+          "startByte": 60,
+          "endByteExclusive": 575,
+          "startLine": 4,
+          "endLine": 12
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/cghdr.h",
+          "sourceSha256": "76e796fa403f32bcd98b4aeb63a86c550fe2ea2a5206b5bb5dea6e1c00a14e5b",
+          "startByte": 63,
+          "endByteExclusive": 578,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/dijkstra.c",
+          "sourceSha256": "119c5ac8a53ce0348a6fc3d36010e045060facf2e700230d8342b159e7bb30e7",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/kkutils.h",
+          "sourceSha256": "a287eb5208e6f1651ae6859f5e9b8da0ef9c6a21659a4c79665450d8225a1408",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/smart_ini_x.c",
+          "sourceSha256": "cb79cc594cdd1ef95eb76ec78726fee937fe5f23371d9b4f85532cd83606c437",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/quad_prog_solver.h",
+          "sourceSha256": "8367d94c0933618468ae1fcedfa0edc997215dffb1b24391bf14cc680210611f",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/embed_graph.c",
+          "sourceSha256": "85e6917e591d96496e9cdac1f4da1f2b46d8be842fa659fc38a837e7e5710264",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/adjust.c",
+          "sourceSha256": "f98bd20e164a4998985bf56fc8d0a2c789d7fedc9fefdc02aed5ed155984a6d8",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/constraint.c",
+          "sourceSha256": "af4a84e5bede68c52518f88eab4fef099c8198f3168ed2a4dd3ee8533f25891f",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/geometry.h",
+          "sourceSha256": "6451441363439e12c2426d4d3169669848694548a2e2eecc87afd77354c9373a",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/pca.c",
+          "sourceSha256": "3e05d9c5cc71841b42d08390bcb5df67a274e84888c57c55e3d929632a377fc9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/voronoi.c",
+          "sourceSha256": "f46e2865216cd13ac4b9dbc0967a7a09d495ae7d605150ad02380ac91a570e70",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/stress.h",
+          "sourceSha256": "99d02385f6dbddd868970e91e1f6c366d9ac69363fd4a1de67a68c62071e38d7",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/edges.h",
+          "sourceSha256": "0b55f8daa5760c4eef05f31e0a5dd4dfd3dd60fac3676988b65f78a4e33070a9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/call_tri.h",
+          "sourceSha256": "7cc7e0ae9f97aef145dc7fcf41c18ea2b81b1147b0ddbe039e3ef33648dd91ba",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/legal.c",
+          "sourceSha256": "f0bfebca18c292e4129dc3da8e3361217fefe5cece13c9928d77fce6ef87323c",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/overlap.h",
+          "sourceSha256": "6cfaefcb3011559d7e82428f406b058c058921c60fbeaad5b4274ebfb2450c3f",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/hedges.c",
+          "sourceSha256": "a7b2c6e626c9b2dba38e6980aea3b0c7bfafdb98ff36f7794e936ce75ad398ad",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/adjust.h",
+          "sourceSha256": "6661e18ba12e5ef391a2495cb19a93bdf5679d3c5e7a7b9417dcaf51c0cd7af9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/delaunay.h",
+          "sourceSha256": "df822a6bf31f9d34db5d36abed3ab4d1c760a4d3c21be9d0f159bb01c3de4741",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/overlap.c",
+          "sourceSha256": "df1110fb1815ec0a96cc4eda024c5e9067efb30c7d523dbf1c0429215ef92090",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/fPQ.h",
+          "sourceSha256": "8fde40d2e01c4ba842f73f0f405361712f6f4e3fe9746d281d457cd6b631d201",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/matrix_ops.c",
+          "sourceSha256": "730b782c38bd12f7f148a054a6dac53311e71f36d235e18cae4a09b988cb0279",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/closest.c",
+          "sourceSha256": "dbfb59e5c844e2303d2a71a8f923a094c20c71af3fef8f453da4b79a8a965d2e",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/geometry.c",
+          "sourceSha256": "d5a6d0363a2cfc2ce3bde1ce7606fc62fc1c9ee735ba596b9ca342ca0aba942e",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/defs.h",
+          "sourceSha256": "452ebfe23dc71159bf8409c00698c9ed2747095e9bf7be970347491eee5ff2d7",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/kkutils.c",
+          "sourceSha256": "3076c384e9fe3a39faeb48173450f2602daa56e92ac1c1027899f1a5da1b8353",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/call_tri.c",
+          "sourceSha256": "d2da8842d96c9b223693a7732510db2dac0803f0d8f2252b7a52536eb47c6a75",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/poly.h",
+          "sourceSha256": "0cf7c4f700fdfccca56a411b358a23e33a204631d8e3694b68d380e6888db84a",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/poly.c",
+          "sourceSha256": "bf75a5cb2cf1661b77cd38bfd2c479e9a76317e7de7278c5d1756211a39f5026",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/multispline.h",
+          "sourceSha256": "b52e07c986279d01562e4a43dd0d91f64984cc5a0320ed48532021ad9b8bd985",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/quad_prog_solve.c",
+          "sourceSha256": "9d11a759437c71bdca122f0af52952e0030120b5ae9457290464231f261d19ab",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/circuit.c",
+          "sourceSha256": "b538d235e3d503c2365d9c96aa61ddc4d6c4b65e876ca0f617e89f3df32bd543",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/edges.c",
+          "sourceSha256": "2418e4ec52cec75d3efde2619a3f2c49934b0bb3211a15bb1e5cfbfa285466b0",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/site.c",
+          "sourceSha256": "8c07f4c6abe8ca749f2872db503dc8cfb0f83a729fea6a0e90596ef1d00a3723",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/stress.c",
+          "sourceSha256": "e20675831216fe2158f548af2f14530286e32da6a4f78f5afe97a52d70f30a70",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/neatosplines.c",
+          "sourceSha256": "e115be9d26637ad8441eb45154025d585622afaccdfed5975dea750aedcadd58",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/constrained_majorization.c",
+          "sourceSha256": "595e45395e92c690348c199e316f8465710fdec228ab6f1f20b621fd5cd4f218",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/conjgrad.c",
+          "sourceSha256": "94eb8521e311d5bc3769f4962bb8da65ba2e20908b8b91b2d4f6d0df04ff884a",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/info.c",
+          "sourceSha256": "a159a6456871141a7af117fe48a56fb264f935d0a7ec42c92f429a8f450b09dc",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/multispline.c",
+          "sourceSha256": "6b11ad6f91226ae7a349e4396a97a4d92baad6d5365f37a4e1745b54b0f18c64",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/delaunay.c",
+          "sourceSha256": "ba495a8bcada7e631ed5ef6a2d8a3c93d683aec5913d9aa9e9e90f61118fc2f0",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/hedges.h",
+          "sourceSha256": "b0b3dc73ed3e581e0130879f807cebcb0476bd5d81a07111deacc9e9e87387c8",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/sparsegraph.h",
+          "sourceSha256": "cd89544bb5cc21decdc2689641a05aa2a6ff5ccc6dc222b3db405bd6feb40171",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/matrix_ops.h",
+          "sourceSha256": "65773bd6ee7fd91134d9f77250d627089ed29f011fe7dd79be871c9d46b7454b",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/digcola.h",
+          "sourceSha256": "0f50e59df4a80716d65668422044a4d8ede95361fca3e9408c0e49fa64bad80d",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/opt_arrangement.c",
+          "sourceSha256": "be360d12be348807557d62fe1051e1574fce694afaf842fb9ad50bff27d66808",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/neato.h",
+          "sourceSha256": "b6a95c14cf5a8ab6b82d424d69401bfd674d05c12ac96fa2bd5affd29c1cdfba",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/matinv.c",
+          "sourceSha256": "b7202b300b1a521c89c5a1700979f167f8fa480328be7bce889f63c81314c767",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/lu.c",
+          "sourceSha256": "874eb6dca72ae6ef8c9efd78ff52f3f1e0130623b15bbe2f0e9ecd7c6b78b1b5",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/heap.c",
+          "sourceSha256": "f8aee73a9bdb121382b235d76718da5703696fa107ede50abc9de7aff341a5f1",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/compute_hierarchy.c",
+          "sourceSha256": "63c44195c2fe5995aa2ffbd3daba93ce3d808828370164953245b04cda081a3c",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/conjgrad.h",
+          "sourceSha256": "09e7261fe56842a96c1bcc700e4ec82fc3644d2b420efe9115e6bb2ab2b06de3",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvpr/gprstate.h",
+          "sourceSha256": "71d65cccd24432422d473a523b70a60285054c2babf53965d783f4186be2eae3",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvpr/actions.h",
+          "sourceSha256": "e04b1c67bbb9a43b5d6a69847e85b11dc4c9f5f7821b3d05878581ea67cf93db",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvpr/gprstate.c",
+          "sourceSha256": "6e72711e236e2f6faa0d1a67ce69dc3fff98c7c6599faf47fe5b0b78af6521dd",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvpr/compile.h",
+          "sourceSha256": "e5e2a47f55fd063f02ae419c9906640787a6b6c829bc26efeb7682d730f2e804",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvpr/gvpr.h",
+          "sourceSha256": "4d318f42a8f1a68ed61c890a83434fb3f3abe9b79ff7db2107b67f66e9954743",
+          "startByte": 127,
+          "endByteExclusive": 642,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvpr/parse.h",
+          "sourceSha256": "dc8aa114825aa209a5436c44926eb14db89ac795cbf4bde692219cfb416294bd",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exnospace.c",
+          "sourceSha256": "7eb57e86aa85cc0b057cc3669a37e51fae04625f59b01f5136a0efadaafdd9ef",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exlib.h",
+          "sourceSha256": "d68f3eba1e073766339edf9087c7c203ca3dc7e948030e4611842ea9a8d150a2",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exexpr.c",
+          "sourceSha256": "72b0f5abb505bfbcbea52b4698118ef4ff984066b2a8518cbd13cd4e2f924a90",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/excontext.c",
+          "sourceSha256": "eb561e7f2de65243b81823b5967c8c8ddc060fc20321f93cb54aec9f2803a30b",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exdata.c",
+          "sourceSha256": "318b679e1abf82fa38d40224daba93aef43a983b39ce8edba109961f10fcf847",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exzero.c",
+          "sourceSha256": "59ab53286610b3fbc1ed666d3735cbd4d1db9f6a9d0edf79d7e7b5150810b101",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exgram.h",
+          "sourceSha256": "4fba1a5f1edbe81da69167e86f6ac9f44ff1ec2ae3eb3de757e4e08c646c2ede",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exeval.c",
+          "sourceSha256": "bb6d55820e327a7670818c7dae5a1562cfa45fbe2b65985582250ec71fd6e807",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exopen.c",
+          "sourceSha256": "4050b5d23ded3c6d6320af3100fe0a97f0ba601266e6a50606557d36420d051a",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/excc.c",
+          "sourceSha256": "77292bd3f31247d932980ef0742b4baf72b64d62d0deed0e8637555ac60ba188",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/extype.c",
+          "sourceSha256": "f16425e76bb6d009f6128625f0d421d20361b750624c13377376a90ca51aa280",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/extoken.c",
+          "sourceSha256": "d641aeaad707be5e1c61b5b2344250124d69982e4895e5e99b259ce886fe8590",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pack/pack.h",
+          "sourceSha256": "0fa136cfb42dee1b6f31a5875a15926825e799f111c042e19da6f35358a82588",
+          "startByte": 729,
+          "endByteExclusive": 1244,
+          "startLine": 22,
+          "endLine": 30
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfio/sfvscanf.c",
+          "sourceSha256": "292fb36d4ef8413e6d68f525f155a56b60747a79e6a6ad968787191d13dfd742",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfio/sftable.c",
+          "sourceSha256": "8b1b6a5c9b4d15f5f01f6d4903ee7455dc94e5a06c55ece5a472e10e0437cfd2",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfio/sfcvt.c",
+          "sourceSha256": "9bdf5da86e5f44ec78902beb4f6d6f9d5ca06e82498aa8593c1ba9476a51daa5",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfio/sfio.h",
+          "sourceSha256": "d498e75c553d2483b1acd410c7267b158f16175622414aefc157cff301ebea4b",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfio/sfprint.c",
+          "sourceSha256": "01969fd85126ea7d950ded36cad37bb356fcba1b0b126e4a292ef9efdfb53cab",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfio/Sfio_f/_sfslen.c",
+          "sourceSha256": "c479970f5f3beeae17ba1ec4a6190b1b07e8202b29b3f3af7c3ea6c60f395040",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfio/sfextern.c",
+          "sourceSha256": "9d986a413569ded564436d401985e4b5bd6eb3ddabf5ec9f32a42371d439fa7c",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/intersection.c",
+          "sourceSha256": "1ee900672c46185f5de4c36795f9630594ad8baa4f085ceb29d3d1833d245fb9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/furtherest_point.c",
+          "sourceSha256": "565e5e316faff50f6cc392eeedbf04d14c37991fbdce0abfe05f67ef1144774c",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/edge_distinct_coloring.c",
+          "sourceSha256": "4f28bee029017b3d572d84e92209283ede5fbac9c07183382cf02c4ce0e97381",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/node_distinct_coloring.c",
+          "sourceSha256": "041f9c8ef016a99e53574b806e3298b43b5681b19408d3d8c7a76b722fa00ee3",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/edgepaint/lab.c",
+          "sourceSha256": "f2c2e06f461e77798fac6bc5c8c85e4140b69f7d0fa92260a8345df4f560cdce",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompmouse.c",
+          "sourceSha256": "a9f07fd3663038d8bb2c1da54527b7ae64b09b2a38da556063f7b1607ada8a41",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompbutton.h",
+          "sourceSha256": "20c4f4d8f1d17ef44bd933fd54374dff3ace6880f747eb3ce9b8ac74b6e7328c",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glutils.c",
+          "sourceSha256": "3c220f32bc0a0154e02945a8b31f94ee2c395463e86e1d9ff8ee0a9b32333bcc",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcomplabel.c",
+          "sourceSha256": "9131bc5fad212b6d255c40cfbbe41837687a319b59fd75dfe94f1117b39b10e3",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompbutton.c",
+          "sourceSha256": "bb7702d46576e10f1324c0335ca7d682b6a84728dc6514e21af876ecc8a7d3cd",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcomppanel.c",
+          "sourceSha256": "8dfeeb63786c27a606aadd9d761cbf4cc8e7ded82e9d4ab7c873afbcf5261c4d",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompset.h",
+          "sourceSha256": "3c35ce8665b8221668a899ee7ee0986ad3f28e0c6c13bb2511fa70331ad95872",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompimage.c",
+          "sourceSha256": "5298be78977d29428ae3e1d83ecccdbfd74bcab2f674ff720039e29369b340dc",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcomptexture.c",
+          "sourceSha256": "3edaeb3b30ffa1b1ac146a69ba1c43a3caaa09ceee55d724161a50ea1ee196c9",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcomptexture.h",
+          "sourceSha256": "9eeff75f15ee35a438a4b6be93e17226c4fab21b7f86cf22bfab9972dd4348b4",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompfont.h",
+          "sourceSha256": "4ed27b815bee73f8387f3b2655204a1097999d7c48c02860b53a0e3d6dc9ce92",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glutils.h",
+          "sourceSha256": "1ab9ac3cce7dab22fc4bcee1c67dbb95d7c3c74abdba565ffab64199bd34cdc6",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompmouse.h",
+          "sourceSha256": "e441b11cfe367bc627657d0f83e8fb1f2eee5348c5606706735141e44d155852",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcomptextpng.c",
+          "sourceSha256": "cca3b799fd259d0c73100202b00dbfef701430f76eafd5075b465e495e5db999",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompset.c",
+          "sourceSha256": "546cd6c386109f8b0a6249f5b922e0f773eddc4708c71782627119a4073d8072",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompimage.h",
+          "sourceSha256": "d0f81fea84dae5d4dbfe0552812fd4e99f9bece0c1b6649a1ff98cfd5b9c81c7",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompfont.c",
+          "sourceSha256": "7c0dac85522f1f7167e85ac4ea96ba89834240b870f1f3d8845d9e97c315805b",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcompdefs.h",
+          "sourceSha256": "69794f052f50452cae68bd946b1f116503431fc4c5894f82e3d8e410f15015a5",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glpangofont.c",
+          "sourceSha256": "97c66b745241794cc57b52f3e3b631c1b36e8af37f916b09e015f89631238419",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/patchwork/patchwork.c",
+          "sourceSha256": "2a003858989efb53692fb1e2e766274c5e2fc8fada597c4395af28a85b6f9883",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/patchwork/patchwork.h",
+          "sourceSha256": "c326095d2e0f04e759adb51147a7c38b334913f4c7b4bd0f36a81e299d278b56",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/patchwork/tree_map.c",
+          "sourceSha256": "89d94e438a76955816b28327565a86fad6d576b747670ba7538f383d3a21ec4e",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/patchwork/tree_map.h",
+          "sourceSha256": "402ecdb61063eec2b6c09c5bace74befc4b0d469137262881e1a319e3ac924b8",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/patchwork/patchworkinit.c",
+          "sourceSha256": "75ace6471b959857b8148cb791f07be67683ec8ab16c612ff80bfb48a0c3dbdc",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfdpgen/spring_electrical.h",
+          "sourceSha256": "34ff5252b1fc16c2e2382d589ea0b455f2f648a27757c2d669cbabc58f30562c",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfdpgen/post_process.h",
+          "sourceSha256": "bc99f38dd0c22e99d9135943c26e752dbeb16c03dd599d95b0e449904401c2fe",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfdpgen/sfdp.h",
+          "sourceSha256": "2a26b408e573e223608699c940f3790ea33d9db328f489acd493fc4c06bddaa1",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfdpgen/Multilevel.c",
+          "sourceSha256": "a986d593a825355534bfdd7ec58ba1d2750e414fa1d7f6b227faeb447f239213",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfdpgen/sfdpinit.c",
+          "sourceSha256": "af3c30abcc3892aae11e3961a9807c796b04a04bdb2596d0f2297e58a5125824",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfdpgen/sparse_solve.c",
+          "sourceSha256": "d6e6be0998450ed84c909ec97fc20f0d2a99526c01628cf33903ea9588b948ac",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/dot_layout/gvlayout_dot_layout.c",
+          "sourceSha256": "006521d2cedb60d2fce9eac35b9c65feae892d5822f469e26533bd551423fb55",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/dot_layout/gvplugin_dot_layout.c",
+          "sourceSha256": "e8af072bbe1636a25ed82a67133c716d16a5a93e0486fffd4c726e4f7cc2abd2",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvrender_core_pic.c",
+          "sourceSha256": "79a30931685297456ce811503b28bf63cac7a2d40c748670ba903d65b7a9faa2",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvrender_core_fig.c",
+          "sourceSha256": "eee924e6c41026f5b9c2392bea1e8f36ffb13c0d54247b50fc38c81c8bce16be",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvrender_core_map.c",
+          "sourceSha256": "24871ad60dc55b32e257db9c27cbfab38d1cc9f9450b8ba4e446cf02bbe1fe6c",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvrender_core_dot.c",
+          "sourceSha256": "3fed5084661cf90d1063304db2137e224918d77a3a31b6d5d990585b32c716da",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvrender_core_ps.c",
+          "sourceSha256": "3b0589c5c5e24b3234cab193d7d9c15d7143888717d86af7d95147f3bd70c629",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvrender_core_tk.c",
+          "sourceSha256": "4bf40c5422edf79e1b0c8dd532e248ad9918c10a8e1656064234dfcb217dee9a",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvrender_core_svg.c",
+          "sourceSha256": "f9a922fe27ad7d564a8895399b9c6d141d9f56c00db30c6bbbbb0a28c6238a05",
+          "startByte": 0,
+          "endByteExclusive": 515,
+          "startLine": 1,
+          "endLine": 9
+        }
+      ]
+    },
+    {
+      "commentSha256": "6ba3517e697694309735b7131e7d037fc03dd55ecf6fbf4615c894b9a2a7e9fc",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/randomkit.h",
+          "sourceSha256": "2e014ee4903ab1c6270a5f27c678ddcb357ebd0c49635f9a7ebcdb2edb661d4e",
+          "startByte": 22,
+          "endByteExclusive": 1170,
+          "startLine": 3,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "75e34060c2ffe83c78b59b7d3d5acf86ac0365fef8ad16fae450886303e1553a",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/rbtree/red_black_tree.h",
+          "sourceSha256": "86b0f83cae90ea82b6c3a7c0b18d173ece97197e733b6e58ffd8beadde2a2cdc",
+          "startByte": 0,
+          "endByteExclusive": 179,
+          "startLine": 1,
+          "endLine": 3
+        }
+      ]
+    },
+    {
+      "commentSha256": "9dc43ed91f801558a095bdd5d4df1aea4e12cadd634f480f78ab093187b3bd0f",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/label/index.h",
+          "sourceSha256": "68bca82d917b74f887644b77c480a0816a4e2d5a0e41ecf43741166ad79bae20",
+          "startByte": 570,
+          "endByteExclusive": 1240,
+          "startLine": 17,
+          "endLine": 30
+        }
+      ]
+    },
+    {
+      "commentSha256": "a7b66834e1475bd4aa214cb0f5e6c41864ed8e12cb85f59ba2f6d6e9f37f3bea",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/common/ellipse.c",
+          "sourceSha256": "b17d0b7670a4e046b345ac283772f32ae483b928956e95064f82248e4fd21aa7",
+          "startByte": 626,
+          "endByteExclusive": 2257,
+          "startLine": 14,
+          "endLine": 49
+        }
+      ]
+    },
+    {
+      "commentSha256": "c3b3831b86599f18dbcee2835440a35786d4cac16fe1571550bebb3f5b5ac53f",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/randomkit.c",
+          "sourceSha256": "f92ca7f67b6f1a972fc5b95581772b1df8482608fbbb40e1d0cbe6e616ee1dc3",
+          "startByte": 22,
+          "endByteExclusive": 3131,
+          "startLine": 3,
+          "endLine": 63
+        }
+      ]
+    },
+    {
+      "commentSha256": "c80564db958dedc5c8a19ccf6e761a3465291fa7b26306dd91a5c1010ba8329a",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/common/htmlparse.c",
+          "sourceSha256": "3004295044c446ce4c47ea74a457ce1f82c7908b6c9c1d89c8a0b80fe364f183",
+          "startByte": 839,
+          "endByteExclusive": 1532,
+          "startLine": 21,
+          "endLine": 32
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/htmlparse.h",
+          "sourceSha256": "43f9eb116a41ca9f4579a0acef1e13c4f53cc9c16c8abd01dfa2187228f2e542",
+          "startByte": 834,
+          "endByteExclusive": 1527,
+          "startLine": 21,
+          "endLine": 32
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/grammar.c",
+          "sourceSha256": "cff31863b4dc52caddd4c43c09c3bdd75e18691cb6cc4e0158b2e7399e080a8f",
+          "startByte": 839,
+          "endByteExclusive": 1532,
+          "startLine": 21,
+          "endLine": 32
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/grammar.h",
+          "sourceSha256": "37785f667945d5b073a9ad047f8514717f1b7a1b72a856128c622a35c490a8aa",
+          "startByte": 834,
+          "endByteExclusive": 1527,
+          "startLine": 21,
+          "endLine": 32
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exparse.c",
+          "sourceSha256": "2640c52c105773954e51551b4c5ebf80873707d4cde4d81e0cbb7cc5082308b8",
+          "startByte": 839,
+          "endByteExclusive": 1532,
+          "startLine": 21,
+          "endLine": 32
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exparse.h",
+          "sourceSha256": "03e91b52515de6dbb320fe88e50b9173aa406bffa8cd349a76cd7bd36e5db8d3",
+          "startByte": 834,
+          "endByteExclusive": 1527,
+          "startLine": 21,
+          "endLine": 32
+        }
+      ]
+    },
+    {
+      "commentSha256": "d64380dc03dffaf4ff809c45f31e5b5a4df915dca919cf2da86b05013b348ea2",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/generate-constraints.h",
+          "sourceSha256": "b6d6694c57aa766e3d89e91f3a394b3ca27e49c103d0272d5e15a273c21e08e0",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 17
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/generate-constraints.cpp",
+          "sourceSha256": "b1eee99c997e1e7c9f147886d633269e22f42cdd46910855d76993ae8bb79b98",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 17
+        }
+      ]
+    },
+    {
+      "commentSha256": "f6462f90efb3f0ac405e12226f9180b17c140e70ec75fa03dc6a64ebcb2fc6f5",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvrender_core_pov.c",
+          "sourceSha256": "e0feedb36146a3d324315b9d15f07ae63ef15573eed8d5b392b4f12dbe989304",
+          "startByte": 0,
+          "endByteExclusive": 299,
+          "startLine": 1,
+          "endLine": 5
+        }
+      ]
+    },
+    {
+      "commentSha256": "f8b917b3efb38bd326dc89afb7adf538dccad774dbd8db974a0e0151b087d11f",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/constrained_majorization_ipsep.c",
+          "sourceSha256": "188466f4730a3b57fff5abd8eea8af8b2bae5b67dc03108b62e86f87db5e6366",
+          "startByte": 0,
+          "endByteExclusive": 494,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/quad_prog_vpsc.c",
+          "sourceSha256": "4b2f386d908f5f535b98db1393be9c6ca7d4ec439b0319503416e4dadea0b51c",
+          "startByte": 0,
+          "endByteExclusive": 494,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "f9b4b90456b724874c65181e57a1379306d8b4a46ebc3c67c6a17d04d6a7e6c9",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/constraint.cpp",
+          "sourceSha256": "24f22b902992b95a23c4dfc469571d60e069da84bf716698041dc6121d1b04d0",
+          "startByte": 0,
+          "endByteExclusive": 586,
+          "startLine": 1,
+          "endLine": 17
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/vpsc/constraint.h",
+          "sourceSha256": "d39c2560ff94e2c131fbd91882b5adc6377feafb899e6caee949fe0d82c443de",
+          "startByte": 0,
+          "endByteExclusive": 586,
+          "startLine": 1,
+          "endLine": 17
+        }
+      ]
+    },
+    {
+      "commentSha256": "feb814f1047c61cc455d465876510d81a422575017fb7f22fe37c034db49763a",
+      "sources": [
+        {
+          "entry": "graphviz-16.1.0/lib/common/render.h",
+          "sourceSha256": "66e2930bf992c14a7f15e725a66279266d4f8290452a261876b515fbe36d0dcb",
+          "startByte": 43,
+          "endByteExclusive": 557,
+          "startLine": 5,
+          "endLine": 13
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/geomprocs.h",
+          "sourceSha256": "a80663648516ab15ba28827dd80e4fc9000dc9a8806840f09ad55ed1d16d6bfa",
+          "startByte": 164,
+          "endByteExclusive": 678,
+          "startLine": 9,
+          "endLine": 17
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/globals.c",
+          "sourceSha256": "8e65e2f93712df2413944234c82815bcf9778a9db9e41aa67301bc91245d09a0",
+          "startByte": 63,
+          "endByteExclusive": 577,
+          "startLine": 4,
+          "endLine": 12
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/utils.h",
+          "sourceSha256": "3f005696e62bf3c773d01015f5b2e8e3623b7d4874870c0bac4d43e20b273990",
+          "startByte": 36,
+          "endByteExclusive": 550,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/args.c",
+          "sourceSha256": "290f0999e29c5c7909c3b873feb7ac11a1b05b7560ec85547c660a63b29a9d7c",
+          "startByte": 36,
+          "endByteExclusive": 550,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/globals.h",
+          "sourceSha256": "77872f9f32173b5bb38a9eea504bfa22dca6c82f5b4016aa4067afd5e74d5713",
+          "startByte": 68,
+          "endByteExclusive": 582,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/htmllex.h",
+          "sourceSha256": "7c10a68c00f613b16e4e90fc14e9f7acc03d9e3abbeee4748c5b969aa8d35cee",
+          "startByte": 36,
+          "endByteExclusive": 550,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/textspan.h",
+          "sourceSha256": "09f39e31a35e884730acea8650bfe428d57fc65375e6828878b552ec8da88e11",
+          "startByte": 133,
+          "endByteExclusive": 647,
+          "startLine": 8,
+          "endLine": 16
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/htmltable.h",
+          "sourceSha256": "3907fc9726b4da913177df57d45c380cd5ef1f49a8bfc8abe917d03547bc9a69",
+          "startByte": 37,
+          "endByteExclusive": 551,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/shapes.c",
+          "sourceSha256": "7aa43601484b4abb8269b9190287446c742cec2424b6d4b7846a56b4956603bd",
+          "startByte": 105,
+          "endByteExclusive": 619,
+          "startLine": 4,
+          "endLine": 12
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/splines.c",
+          "sourceSha256": "fa8be9a6c50557975c5f3226e78913ee5a8c39b235995353dc7e61319b274873",
+          "startByte": 106,
+          "endByteExclusive": 620,
+          "startLine": 4,
+          "endLine": 12
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/types.h",
+          "sourceSha256": "74c6c3f78a2b2bc06a36943097ae2f4f142892b48704406ec77fb1317a502290",
+          "startByte": 152,
+          "endByteExclusive": 666,
+          "startLine": 8,
+          "endLine": 16
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/htmllex.c",
+          "sourceSha256": "355c6a1c22d0ce0b496ff94252f7896b6f967590d4c6a979e1e748efd5d76c77",
+          "startByte": 36,
+          "endByteExclusive": 550,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/utils.c",
+          "sourceSha256": "48bb6e435bae1f37a4ce7424c12afc85acbe74b7e819db59b11f9e60d2cf0c22",
+          "startByte": 36,
+          "endByteExclusive": 550,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/common/timing.c",
+          "sourceSha256": "5aac03a46ca3397ed3904f6f9a38e9db1e521a2706042759e745ea9114791066",
+          "startByte": 36,
+          "endByteExclusive": 550,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/fdp.h",
+          "sourceSha256": "e23c8940b2aba11873bcc846cc6bf5aaa0ab2e8c82494de71c2fe38cf88b5b70",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/xlayout.c",
+          "sourceSha256": "1e47e0e229cd97662be99aeb6d27c87e7e00febde69953fcaac171665a5aac73",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/tlayout.c",
+          "sourceSha256": "5a84278593ec10c04d8473f539d559ddf53f955575b4b7d61eb36a10d8d739b2",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/fdpgen/fdpinit.c",
+          "sourceSha256": "d714619bbca55b48ce0163e1a78325a4224329f6470870741bc9c35312582c4b",
+          "startByte": 88,
+          "endByteExclusive": 602,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ast/error.c",
+          "sourceSha256": "2ac7a3858fa0ed968365156afafba7b51e445a9f7be6c112132edc0eefbafc87",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ast/error.h",
+          "sourceSha256": "e4451765cc6305d3af6f3acf20755e507b43edb97fa2a03e368d370c5ec2c0c6",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/twopigen/twopiinit.c",
+          "sourceSha256": "8807f5cbd458ca5f0be8253d8a21209d0fd26bf688957c66eeb7277b92057cc0",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvusershape.c",
+          "sourceSha256": "b80d90a6434a005e8ce6301fbc9de80c5958c6be3e8328a387cad6147a5d610d",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvcommon.h",
+          "sourceSha256": "f528989d7eb86b94b4cbb8f904cd1a75a586d542a357881932613b01fa8ea898",
+          "startByte": 31,
+          "endByteExclusive": 545,
+          "startLine": 3,
+          "endLine": 11
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvc/gvconfig.c",
+          "sourceSha256": "e0fc7893193e12684ff5f648bd47ebfb920ca232b73d23e3732bf2cd242c6cff",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/inpoly.c",
+          "sourceSha256": "e468710a4de288a4f956306bb02a83aaa61b748ba5ecb66b5dd3b059f6b6a28c",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/util.c",
+          "sourceSha256": "3cd1bd427584b00366e8d7a8398a4ab312e4b2a6f1a7321153d8f014b8eb1097",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/pathutil.h",
+          "sourceSha256": "9d1a2cde9818a6a2c6bc01168704c05b34da98c58892784a4ecd89491ac2eff1",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pathplan/tri.h",
+          "sourceSha256": "6a8f6f0fb7d745f0f99425151f18a60e1b54dd8e97dff2c34ae4b725c9fa9c47",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/partition.h",
+          "sourceSha256": "bff91d8d845b0d31037afccd4903f5c1c3f3f1486e848df1562fc215aa7ef9cd",
+          "startByte": 79,
+          "endByteExclusive": 593,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/trapezoid.c",
+          "sourceSha256": "f8ef01e00f777c433e41bbfb72d8765a7df00b87b1bf728b22d2fb55e0ead763",
+          "startByte": 146,
+          "endByteExclusive": 660,
+          "startLine": 9,
+          "endLine": 17
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/fPQ.h",
+          "sourceSha256": "ac5584b312ce28b8c6411c45c26d890f4b42370c4635ba7c9f6c4cbab222e951",
+          "startByte": 88,
+          "endByteExclusive": 602,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/sgraph.h",
+          "sourceSha256": "72339b117a312b2f4f8140daaadd77ee16e4b81aa50743ec124a1c0939857601",
+          "startByte": 1,
+          "endByteExclusive": 515,
+          "startLine": 2,
+          "endLine": 10
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/fPQ.c",
+          "sourceSha256": "8ec5f208c655b5d826eae1466c780903cebc31fa3f14c94888e9844d326ebad4",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/ortho/ortho.h",
+          "sourceSha256": "7681c26a99f9e61a48fdca03f9d20d2f56eec0b80c6fb065155b7c6e73f15de3",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/mingle/nearest_neighbor_graph_ann.cpp",
+          "sourceSha256": "db8513ec71e7a799832a93c1c84b3636e3cf305047b4b82d707809d0e1bbc51c",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/mingle/agglomerative_bundling.h",
+          "sourceSha256": "778eaea3f1da796c0c10b4fddda54e435a5987eca7e66108e2e0fc28f722cfb2",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/mingle/ink.cpp",
+          "sourceSha256": "7d3b73f41d2d472ecc186948bbbbb8193828fff1a1c73e8a0802b743e63cad2c",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/mingle/edge_bundling.cpp",
+          "sourceSha256": "1162a9397e89f89c93934893b42082abdd563d1ff3a628898e257fe45392f124",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/mingle/agglomerative_bundling.cpp",
+          "sourceSha256": "8ac442a265cd500447b2d0a8dca65086199a4940ae24e37e84018be36ab94dc4",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/mingle/nearest_neighbor_graph.cpp",
+          "sourceSha256": "1dfcee916074324597a3c841c0c8e27f599d22f6e9bb17d5822310b4e18c4977",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/mingle/edge_bundling.h",
+          "sourceSha256": "7a76af064bb76f886292745abb64fbe11efcb645f329ac3a83dddad7d8843835",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/mingle/nearest_neighbor_graph.h",
+          "sourceSha256": "1f9661645abe06174aa58f032aeb3cce8d445a0acbe46b2aef2dcc5afad21bf4",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/mingle/ink.h",
+          "sourceSha256": "7231296bc8b7d4efab4e779bec40b13b3b523e545c6b84dbec22826296c2f84d",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/mingle/nearest_neighbor_graph_ann.h",
+          "sourceSha256": "af4d19725c85a7145b3ceabff2d97870eafdf8a6e36e2f4b2f423f2dbe64e8d6",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/aspect.c",
+          "sourceSha256": "c655105f30645c04897cdc934b45e5c6c4b06b7e83079e309d6d9e6a3b867910",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/dotsplines.c",
+          "sourceSha256": "58ada393d7f57def0b7843ddf8d9acc02cec515c71702583d7d29334063a205f",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/mincross.c",
+          "sourceSha256": "49bc8fa4d6f3f0426857ad7d015bcc66a6201ae9bb441f8da619ee24634441f2",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/dotgen/aspect.h",
+          "sourceSha256": "8e5bf27bc8a762748ba55c784a647cd7da38b37f2d3adb94de0d7c03176aa144",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/DotIO.h",
+          "sourceSha256": "e7fd39476d5ff764e4afab0018506dd6091ceed4441e2d455f887f09c6dcf945",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/colorutil.c",
+          "sourceSha256": "651bdf43b9270857a51d20003a37cfa14828ad222d5efb4eb03c2bdd3252ba1a",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/colorutil.h",
+          "sourceSha256": "f592965d65882264562fe3e7873db97cda1fe94aeb5b2d60a7ed4934fa107625",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sparse/DotIO.c",
+          "sourceSha256": "50ff5a356f4e3d6449f9cdfe5e2acb1b15e65883f7a2fb8b9464abbd8222767b",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/scan.c",
+          "sourceSha256": "942cdc4af4067ecca11dc5ac6ff29879799520f989f4296d297e6e27548bba0e",
+          "startByte": 22315,
+          "endByteExclusive": 22829,
+          "startLine": 736,
+          "endLine": 744
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/cgraph.h",
+          "sourceSha256": "66e53ec6c369aaebf99bd9a54216cc24bd0017d68949c1196529d06029d1b373",
+          "startByte": 750,
+          "endByteExclusive": 1264,
+          "startLine": 20,
+          "endLine": 28
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/agerror.c",
+          "sourceSha256": "cbc3210e8ef447c8ebc47d767db1c7609b1e1db4f23a05a450ed6ddbd7c5160d",
+          "startByte": 66,
+          "endByteExclusive": 580,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/cgraph/utils.c",
+          "sourceSha256": "bebf79ad035b840e9654fadc80ac598874372ccfe707c1c2eaafc863cba51734",
+          "startByte": 64,
+          "endByteExclusive": 578,
+          "startLine": 6,
+          "endLine": 14
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/embed_graph.h",
+          "sourceSha256": "ae1d1ca45257021cdf320dced5665feb37b4434de598c3e871933a7345c058b8",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/heap.h",
+          "sourceSha256": "a4f105f81ae4baefa7ad46de0855b3af24e9cc097ab8f82064a437abc2bf3a84",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/closest.h",
+          "sourceSha256": "12a996e8a8de6b91da49886ed05d9294449d15a9506baa90a8199f591c378956",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/neatoinit.c",
+          "sourceSha256": "330a7eb6cc1324f10757b31de8c8ed91331809f423a043eac39c49669cdc0f9a",
+          "startByte": 182,
+          "endByteExclusive": 696,
+          "startLine": 8,
+          "endLine": 16
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/solve.c",
+          "sourceSha256": "ee203b6e35571333671931e9b1a1cba5413cf5a51a7397116deec21558deb6ec",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/stuff.c",
+          "sourceSha256": "e3ccc855cea09d2733962f92dec653e578795b6695599824c4f7d53f3ac7bc05",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/voronoi.h",
+          "sourceSha256": "223f74b36913cfef2f2d6d70e70e7c62aff2fd44c118b0eb382d5605b7ea1508",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/pca.h",
+          "sourceSha256": "8fd387574aabcb82e0d5a3e1d776a35acd3c0d6b3552a0842b73233d408418db",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/dijkstra.h",
+          "sourceSha256": "0dc23c7006fbc1d3b523c67ef3ac8e49b9a5741a9473fe099908480a0dba1aa0",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/info.h",
+          "sourceSha256": "9896c9f964b292f20224f5f1997727dd1d74ed1416b37a228a3a58abe4fea5d5",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/bfs.h",
+          "sourceSha256": "de9491491d265c87da2b2b86caed730397f5e38d55986141ba3c9bc0f54229dc",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/site.h",
+          "sourceSha256": "a92385fab960bd457a7d45529bc990945158346487d6721e3b9ece30eae1b106",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/neatoprocs.h",
+          "sourceSha256": "f9141f4384fb88b2e6e9779e38df8176a21b2c23d2a6d8e1e3781ba9adef471b",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/neatogen/bfs.c",
+          "sourceSha256": "e7bbe13136e76b7e4baf05f8002b2a8674390259d87892747483cc91c7937d25",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvpr/parse.c",
+          "sourceSha256": "ad9501037aed7a37865888b509de487641a1d01fd04967ca522a94fc53fb0222",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvpr/compile.c",
+          "sourceSha256": "b5941f8007de1bbe06046b5625c446b2e3aae2c14ae2b064e35f648202e6f8d0",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvpr/actions.c",
+          "sourceSha256": "031329ce7fa221aca7d666f86a0053bfb2df5dcb5992f0ce637defa6db017ba7",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/gvpr/gvpr.c",
+          "sourceSha256": "928b9f98b6caea89e824b5def9551ab668f5c2e99df590c20744f8ad321034c8",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/util/agxbuf.h",
+          "sourceSha256": "0f70923963cbf35954ad0ed4c0e7cf017a2fa3cba9b7d8e2a7eec72de6253536",
+          "startByte": 1300,
+          "endByteExclusive": 1814,
+          "startLine": 25,
+          "endLine": 33
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/exerror.c",
+          "sourceSha256": "846fac9204fd2109efeed39f04147c65fbe3da72c7b417da039efc47bbbb7a6b",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/expr/expr.h",
+          "sourceSha256": "d4a6ce5b6cc7efd8d35d8d557ff6586d5159f9974232dba5d4cb91606d4c0cfd",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pack/ccomps.c",
+          "sourceSha256": "37360149e54e556482db8f822d82e03006747f059ec90e9e4fcac33dcffac2b4",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/pack/pack.c",
+          "sourceSha256": "696fed7581c91915653ae8dddc98447076bb4983d30658442dc780eeb2faa444",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfio/sfhdr.h",
+          "sourceSha256": "8042f4fc8503054cb99c6f4f6754c07922fd5ac94f9ae9e640459c1be463194e",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcomplabel.h",
+          "sourceSha256": "12a37b21112367434804a23e0a54db07a83b7527a51abc0f4dc5d2645bd5f26e",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcomptextpng.h",
+          "sourceSha256": "edd99f0a2d028ed85040be646dfb3447104d8fd4f0b3e93720faf5988d6ded3b",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glcomppanel.h",
+          "sourceSha256": "0bade0461cbc559e4645843a4a7b7e20594ee7de0408a2b977713279506d7cdd",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/glcomp/glpangofont.h",
+          "sourceSha256": "f40ed5b93cc58d4dc6cc27dc0a2370db825922fd5aa4a1deecd018a24cd5a182",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/xdot/xdot.c",
+          "sourceSha256": "44cdd2b900f5f285c7bc1e185ec4fb2db16d58bcb902722c681fb989d036f537",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/xdot/xdot.h",
+          "sourceSha256": "aac54a96596731aa337fd27014e45d8093874bb64ec487c71e1f82b4ee6ad3fa",
+          "startByte": 443,
+          "endByteExclusive": 957,
+          "startLine": 15,
+          "endLine": 23
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/label/node.h",
+          "sourceSha256": "c5c2d1fb8a80e9b20a8bac93ddf2a1977919a65c0fcb84552f0f0b862a2b5df0",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/label/xlabels.h",
+          "sourceSha256": "b5efdca01d49ca1adc2f07ee23507cdc25f7fe530e6c1abaed2a77812af9421d",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/label/rectangle.c",
+          "sourceSha256": "47ae233688434a2b19affc83dd0863f22d35cc327911444ffd085ec63b283e19",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/label/split.q.h",
+          "sourceSha256": "e37553ac83e8f0ba620b042494284f459a0a3887bbba3fa0fa62aec0c03b7bf5",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/label/xlabels.c",
+          "sourceSha256": "848717ce2bf969ca98c1cc78cbe87c409c58725b4c678267c81c2b8f045877bb",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/label/split.q.c",
+          "sourceSha256": "a837194fa4cbfb1c64894e395606f4b8168ab13ac94d148114ab4b17a8e2c516",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/label/index.h",
+          "sourceSha256": "68bca82d917b74f887644b77c480a0816a4e2d5a0e41ecf43741166ad79bae20",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/label/index.c",
+          "sourceSha256": "32d0a190ba2c03025a278f511135a2fab445e0bcd0b5ad1fa637409f379379d7",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/label/rectangle.h",
+          "sourceSha256": "ace092076245b776f58f44677a2c2ce4f6b0eac80875a7a56509e403976f54f4",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/label/node.c",
+          "sourceSha256": "28ad22f16c58090abb937d09b1d826ce7e16fdddbb06d89ca4637a66e0597002",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfdpgen/spring_electrical.c",
+          "sourceSha256": "061fde29ae73321d5fb350ffe0fb229974234a8be0ca653237c8f124e2839a73",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfdpgen/sparse_solve.h",
+          "sourceSha256": "69b75eff386c85cebf270af2b16021acb053e7d1213de307a499c74a524489b3",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfdpgen/post_process.c",
+          "sourceSha256": "d83d28ed4c59daa75da41b3f35867a208e63aecaf3ffa55036d5793f0bf58c6b",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/lib/sfdpgen/Multilevel.h",
+          "sourceSha256": "f5a547d6e171d05d8cf62dca533fc7b88231f73e29fc9f3180f96c781d116741",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/neato_layout/gvlayout_neato_layout.c",
+          "sourceSha256": "80828cfe68534624c2ba812ac9182a62883c02e1f333c764bbf244d75ef94a81",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/neato_layout/gvplugin_neato_layout.c",
+          "sourceSha256": "159e7861ed0a83e7c55ea7605f1315d2d48df310376cbeaf879f3b1b0dcc9dd4",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvplugin_core.c",
+          "sourceSha256": "20a8569109460fdfd70daac2659ba5406136432a4f1c15ffe6f670e6ccd99060",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        },
+        {
+          "entry": "graphviz-16.1.0/plugin/core/gvloadimage_core.c",
+          "sourceSha256": "1136f2c0086049ac959d2ef400088454203519a480c220d8ec1dcaccb0e9caac",
+          "startByte": 0,
+          "endByteExclusive": 514,
+          "startLine": 1,
+          "endLine": 9
+        }
+      ]
+    }
+  ]
+}

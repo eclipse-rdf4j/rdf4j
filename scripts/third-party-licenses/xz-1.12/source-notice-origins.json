@@ -1,0 +1,1045 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/tukaani/xz/1.12/xz-1.12-sources.jar",
+  "archiveSha256": "c35c682fa8b617c1f6f21270df14bad4e11df2fe46962dfe45e765b7aec0181b",
+  "blocks": [
+    {
+      "commentSha256": "1f08677b4ed9f0fd6f1c30af1fcce83dece9e5da8fb4441d661009e46aa4140a",
+      "sources": [
+        {
+          "entry": "org/tukaani/xz/ARM64Options.java",
+          "sourceSha256": "be3419b4d2060f6b84f6a4d361b6ba2ad88cdfb44c4b453831eec7d56fc9b91c",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/ARMOptions.java",
+          "sourceSha256": "3862d4e13b5a748809a26f0734258c5162ed1d1fafb66b9bbe0daaf5b340ad4a",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/ARMThumbOptions.java",
+          "sourceSha256": "7770434db61ccc47b7f5e926e28bbd5232b3b94580334b6b6cc6589113a602f8",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/ArrayCache.java",
+          "sourceSha256": "8c00769bc00de7544c76e6e8a9bfcace04ce333c44126385ee604051fed54282",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/BCJCoder.java",
+          "sourceSha256": "138e9424bf46de082b4a753840f23a713630793b542db26bfba94530a59afbe6",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/BCJDecoder.java",
+          "sourceSha256": "f580a0165f577775f1cbfa721982ddf2b5bc8f1168add88af724ea82d9358607",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/BCJEncoder.java",
+          "sourceSha256": "1946edcc881b6694da3105e2f1b914144953222518a74165e53ef89ba2e87788",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/BCJOptions.java",
+          "sourceSha256": "5a9caa0894ace95a6027a071be3a4293fa3e2333460ceb566e02e78f9c99f43c",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/BasicArrayCache.java",
+          "sourceSha256": "68eec23dd312ac64a7ebae87a8d6df76ca61a97d8ce17fda899c88e20522fa1e",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/BlockInputStream.java",
+          "sourceSha256": "b7130ac3b90052daec2b291a2da3a7f27c818a16352d6d3f554162ba4047611d",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/BlockOutputStream.java",
+          "sourceSha256": "d4534c64b47cdeae9365f0faacc549c80e33d9f3cb814edfde2cbeba2551317e",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/CloseIgnoringInputStream.java",
+          "sourceSha256": "fdf1de6da4a32441c6a70c1252a0aef4bd0b38d938df26c26e04155c479cbb57",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/CorruptedInputException.java",
+          "sourceSha256": "c302d47bc2d7fab5c0340d18b24e20f69dd8f7492db438674747c70d2882e0ba",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/CountingInputStream.java",
+          "sourceSha256": "6dbb69fbecd76352d97e01d0fd2ed1923a0ebdbb2ef7a9a37a329620cf73bb13",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/CountingOutputStream.java",
+          "sourceSha256": "cbc8f0cfbcd881e5630eef65da8c8c869d6559c6a42db5b19c5598e9da17f623",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/DeltaCoder.java",
+          "sourceSha256": "49636eec47fcb39ce4cd224d70654fadd34500f50d4a9b4cec781d5331ab71b7",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/DeltaDecoder.java",
+          "sourceSha256": "5a8670383645c8e6f20a25f59a4c53360e97d3941a31923c28b91ca49bec69fc",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/DeltaEncoder.java",
+          "sourceSha256": "b74b4b9e97e3dba1fb4c5ec898315a75f5015631cb5fa0b71c31bb823c7ee50b",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/DeltaInputStream.java",
+          "sourceSha256": "f4d17411c09f1843172943e117ae1d6bb0285bf890b5262ed839071639cab59b",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/DeltaOptions.java",
+          "sourceSha256": "5886ea85262a376a7dec95f71d39289ddcd94f6e373270897f5ccdb23ceb0f48",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/DeltaOutputStream.java",
+          "sourceSha256": "ca989d72ca8c2bfdf92927d3035c6aa804b9eb6910dedba04ec5909b3f8e0dbf",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/FilterCoder.java",
+          "sourceSha256": "b0ba3cb809ac3398086da8bc24d78427c00b867e33802452a87ddad3168c04b7",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/FilterDecoder.java",
+          "sourceSha256": "686694ef8ec53757da8f528369f0a70635d0aa09a5e7fb0b79c34fa478a7dd77",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/FilterEncoder.java",
+          "sourceSha256": "557b96fa8f9a10fe4b99555c6fa2e617866652bccc979ac8249e03149bed0298",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/FinishableOutputStream.java",
+          "sourceSha256": "8d2b1b43cb4a2d17bca73ce6414802910e5d1aa3907fa48447650173db4eeb3b",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/FinishableWrapperOutputStream.java",
+          "sourceSha256": "42bf6bf95cde73c82690e878eb5b8a77ecb59093e55d081ebbeba580f05b7e29",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/IA64Options.java",
+          "sourceSha256": "cbeaacd56ca740550cc4b7d39b63d02bb7393263e2b7cad95a175a969f6f7554",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/IndexIndicatorException.java",
+          "sourceSha256": "85104bbcdadd7efabaf5ab121e2bde90280732fd1be368cb8c7f0cb2a0007e38",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/LZMA2Coder.java",
+          "sourceSha256": "0a5ca88256cf981a319e3e46375c8dc2fd266c806337e4b1c1f82c5381f847d8",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/LZMA2Decoder.java",
+          "sourceSha256": "bf666513cf477c3d180be5c4bb3ee3a23ffba36cddc17f940e24f8223e3cddca",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/LZMA2Encoder.java",
+          "sourceSha256": "4d3755fb8a3f5545b5a2cbb88a3173644383e2b3446fc37973acedf350193dfb",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/LZMA2Options.java",
+          "sourceSha256": "d51bab93a00c894ed26dd6b9446e8f8d8b95be736dc29d501f512b72567c900a",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/MemoryLimitException.java",
+          "sourceSha256": "5b4b0cd66b19c25167d51df1b9b41ba20a6f12a82d948160203c0a58ee798871",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/PowerPCOptions.java",
+          "sourceSha256": "5a8aeabfef68dfddb656387d49dfd2a75d080c298de9a5c8a75da563086eb978",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/RISCVOptions.java",
+          "sourceSha256": "149748e2545672af9d3e4a055d9edec2db23028cb83d3d5db8f7f4852fa790ea",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/RawCoder.java",
+          "sourceSha256": "2a077b619f4f5e099dfd62b33a0e50a804b8709aff0050b872b2f6e9dd33c7f6",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/ResettableArrayCache.java",
+          "sourceSha256": "2ea3631774bd8ac095770e88bd2f16db920a0c99e146c2c042b43f7fb4faba0d",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/SPARCOptions.java",
+          "sourceSha256": "f8a1ba0453721a24c1e81d5fdeb5e344f80b25d417c25f2cae7bba4a998e1c2f",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/SeekableFileInputStream.java",
+          "sourceSha256": "e11762332409ec3a595c70c5f00f763041a4db9b364e5882e0e557d74f6dc840",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/SeekableInputStream.java",
+          "sourceSha256": "d6e1cad4b4e5fed64364a6a35c2fd5b49ceb3fd623a9ec58280e6510e7df9dce",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/SeekableXZInputStream.java",
+          "sourceSha256": "a95424ef0162e70931e16635db3add176e2cff066fbd3ab757b938fe4f716a13",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/SimpleInputStream.java",
+          "sourceSha256": "84f20886221dc8438321d3f7472079354f5d8d8ed8ed23177d8b0aee3b35c4d3",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/SimpleOutputStream.java",
+          "sourceSha256": "5d1f164fceddc01668c2213841d83570247e534cd197464f667b119e8e3e5e41",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/SingleXZInputStream.java",
+          "sourceSha256": "5633583cf35445fbccd5893ea8748bc3158aa98d1b4042c6cca53e6c2475ed09",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/UncompressedLZMA2OutputStream.java",
+          "sourceSha256": "8d98c0ce304c7b0191e42a4db109ac4093bb1fe2db2da8cc3ada7d86b90722be",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/UnsupportedOptionsException.java",
+          "sourceSha256": "c8c92c7b387451de22018e51e4f640072e58cef83335cceb9d4ebe4cfba0d160",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/X86Options.java",
+          "sourceSha256": "9d0e9a4aab8518dada6b2d00348c0d12e8a1892c4c18ea16148adcb8426f77b5",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/XZ.java",
+          "sourceSha256": "33d9472be11b1ab47aad02fbe369f17e6d3a6dffa40af6a0ee7d105f6f2c6e3a",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/XZFormatException.java",
+          "sourceSha256": "aa16b590837dc28ee04324dd2f3d665f1f7ed7dcaf9ab0a9a89f980d01dd564c",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/XZIOException.java",
+          "sourceSha256": "5be3880a047eeeffd33d9f5dc9bcdb29e0a8190809d63b0baccbd38cd75ea089",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/XZInputStream.java",
+          "sourceSha256": "e5567a0e8063d7dae3d37f6cb9c17a93975b0fc2fef738a26a0c868acbbfb5f0",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/XZOutputStream.java",
+          "sourceSha256": "3ef63724b6cc14ef02d0220093c13862b82b27f684d7e6306170e029d3ceecbd",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/check/CRC32.java",
+          "sourceSha256": "e7ef1cb7ee344d7db3b6f77fcf35b3bc1bec616de43f7d7be67f89feb8e654cf",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/check/Check.java",
+          "sourceSha256": "4d520812dc46941a97c11b4309ea4a44adce1edea69d4fc7af7e25faa3f855cb",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/check/None.java",
+          "sourceSha256": "450b2710f61f5c8b4e8c8e3ed609468baedc1503b66eb4274f074570e68392f0",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/check/SHA256.java",
+          "sourceSha256": "5db264b4e64df9680230abc16c8aba1c957afa33fb6447996b9482326b3b5860",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/common/ByteArrayView.java",
+          "sourceSha256": "8a2b6405af975a12085ba7fdc13518f5edba987958486a4b7cbe1d039345232a",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/common/DecoderUtil.java",
+          "sourceSha256": "1e0e2d1523c3e2fc14b5d74af0055ee20b801dce0041cd11953219a7002260fe",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/common/EncoderUtil.java",
+          "sourceSha256": "a964c9fa82c81e12931951fb8e66ea0e2ee61c56e87a705eb025a22f0f5b1a5d",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/common/StreamFlags.java",
+          "sourceSha256": "b9467c0d90a721d39c92657fc4b36f263ff7a7d74e396731fdf0d2ee05e1c9c5",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/common/Util.java",
+          "sourceSha256": "62fd9196a926c9ece873c2f3658a453a125fed9500d6614d827520901879aa30",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/index/BlockInfo.java",
+          "sourceSha256": "1b3d0e3309c37ff67f44f3dfa86ed14f621a33c8e50c7d6a84aa34771f43d356",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/index/IndexBase.java",
+          "sourceSha256": "67f330b32a84efdc51d8210bc3fdf27cbe8db25ad6c70cf313e663c76856c6d8",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/index/IndexDecoder.java",
+          "sourceSha256": "dd290ac6cd019009532fef4ccef37594852cccb17c95a98dd313d4f53636a4a4",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/index/IndexEncoder.java",
+          "sourceSha256": "b6fa1b687d217344c293fd0f820bb9847fc47d59b93a324416f013b7fe901353",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/index/IndexHash.java",
+          "sourceSha256": "a6038e051c2781d2f55b83a2e08431080da6b5bf0f2f300dbf32d7ff3d0e1193",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/index/IndexRecord.java",
+          "sourceSha256": "b1bcb48ca72a6ba70fc30b709f7bf1bc4bcfd5892387e73657af9fc3a638c87a",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/lz/MatchLength.java",
+          "sourceSha256": "a5b7d951bf087d74f007f951a112af2968447670cd8d6536ad97e61bdddaa903",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/package-info.java",
+          "sourceSha256": "831f51fb8b37fa51d9ea486344fa2c2609ff3050b32902b0270f131f59f00902",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/simple/RISCVDecoder.java",
+          "sourceSha256": "1cd0eb0ba89f5ada38d8cd79586c9d98db10717106a1c9d665192ff029f466b8",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/simple/RISCVEncoder.java",
+          "sourceSha256": "532198cad09c1b8d100fd4eadc2e34bf3278c8d707a57531c0acce30b49c4ce7",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "org/tukaani/xz/simple/SimpleFilter.java",
+          "sourceSha256": "785b0978ace5d6969e6eb3a0c0552287777d1ef2db66318d2e1b3fc7df5a4294",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "META-INF/versions/9/module-info.java",
+          "sourceSha256": "814b4272665556fed91a588dab6e0b931c507d34fe1872f4bfb41a24aa029d66",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "META-INF/versions/9/org/tukaani/xz/common/ByteArrayView.java",
+          "sourceSha256": "66f072c6f7c75ebf37afaca1cf200d0d38cd78ab745bc6185684f0c1fa856bc2",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "META-INF/versions/9/org/tukaani/xz/lz/BasicMatchLengthFinder.java",
+          "sourceSha256": "d38a508be93019927faaf510164aeaf717a7a560f1a41e907358b49000a814a7",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "META-INF/versions/9/org/tukaani/xz/lz/MatchLength.java",
+          "sourceSha256": "3679c60944eff12d33db470b5289d55b9e79c7a1d963165545a795adc0b83cdb",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "META-INF/versions/9/org/tukaani/xz/lz/MatchLengthFinder.java",
+          "sourceSha256": "bfae835c79da4b3c51f4d14114f5c459182172c373f7b94fd459b75666c203cb",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        },
+        {
+          "entry": "META-INF/versions/9/org/tukaani/xz/lz/UnalignedLongLEMatchLengthFinder.java",
+          "sourceSha256": "f89fbbe97b0595a59d27301afe7a2fe0af17289e4de88d9193b39a064155d0a3",
+          "startByte": 0,
+          "endByteExclusive": 165,
+          "startLine": 1,
+          "endLine": 3
+        }
+      ]
+    },
+    {
+      "commentSha256": "c932e1fee2cdb029e9a86120c3f1fb5713e60e44a71e6b4c42898b28f90b1190",
+      "sources": [
+        {
+          "entry": "org/tukaani/xz/FilterOptions.java",
+          "sourceSha256": "be30da300401eb707ae579851b072d8cdc68dc2f4e014ff503c0a8a4603913d3",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/LZMA2InputStream.java",
+          "sourceSha256": "84fba20e3696f0ada7c72cc785e19e23de40523261481ff4cd63ba5719fe2a4e",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/LZMA2OutputStream.java",
+          "sourceSha256": "150ba4e831ac936d603b975b4f57269f5798d85eeca3eb0ba071383a6021c03f",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/LZMAInputStream.java",
+          "sourceSha256": "44fb5ba4c87e8928fbe78d278079311947fa07036edc41e4ee58d9ccce88d33c",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/LZMAOutputStream.java",
+          "sourceSha256": "a8d924f651e74551cfc0445b2380d6f3435d3ea5f88ad094173311c240a2f834",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lz/BT4.java",
+          "sourceSha256": "afaa21b5ad3f2507f538c47a63b9a211325d7fabc78b61da8c3924bd0862ff4a",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lz/CRC32Hash.java",
+          "sourceSha256": "303d5fb10c3b5e849f745c54a88e412c44f364b582627c41b9b0b85f73498791",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lz/HC4.java",
+          "sourceSha256": "3176b193cb1cde56cecab9e90842e3382d008c37afcd0e5cd1d450534e0d94a8",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lz/Hash234.java",
+          "sourceSha256": "66cb031289d54885ae82b2aabd29a2b65d9d023e873f05aeb1a954f2531e03cf",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lz/LZDecoder.java",
+          "sourceSha256": "3c3f30a2cc03ca7a2baf1693af12fdfaaa28122738b1c9f029c6c6dd18af1efa",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lz/LZEncoder.java",
+          "sourceSha256": "7b157c6fd3924858c2fc6b9c797272d86d43866f59c277163edc142bef470a72",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lz/Matches.java",
+          "sourceSha256": "b296bd36a0a51052c7e86f1de0c49ce6a42073efd855366409f2b1756943c0bd",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lzma/LZMACoder.java",
+          "sourceSha256": "d45961f5dfb2696e20a38133d9cdc3dc921776444a0fd2c0003362bcbf24c6ba",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lzma/LZMADecoder.java",
+          "sourceSha256": "03e2bddb1c7e4e458dfed4ce5b0374747ded787f2dec0eb67791ca80f08f1076",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lzma/LZMAEncoder.java",
+          "sourceSha256": "d39264d63ee0dc692e02ec15a381b8df6fe235dae965f98aaec94b09fefdcdb6",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lzma/LZMAEncoderFast.java",
+          "sourceSha256": "0e14c68495f8745a4a15222d06ad135783434fad92dd23d2683a7678d0db17d2",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lzma/LZMAEncoderNormal.java",
+          "sourceSha256": "dbe4ff9d633951e6dbea2d1c01645744add7cae31c39af637b584696dfb495ad",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lzma/Optimum.java",
+          "sourceSha256": "cc24662d84cd34b9a99f89a2c425cf65773db185c93b7a055c53ff3422f60a9c",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/lzma/State.java",
+          "sourceSha256": "3cddb5b975440ec79533644e11636c112c6b97f4d04bb6f0ca98700717a171ae",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/rangecoder/RangeCoder.java",
+          "sourceSha256": "8e8c38ae9604c2d7c52c72af9b479be75b839df080e0c7cc29a185007684032b",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/rangecoder/RangeDecoder.java",
+          "sourceSha256": "ee870168746bedd22f6d9cc743b0d04688e1412f0f31afacc693f346b8866e75",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/rangecoder/RangeDecoderFromBuffer.java",
+          "sourceSha256": "fc7781d2164461c3af4c63f13a964e3e113841403e1d7afe38d9133b54b86fac",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/rangecoder/RangeDecoderFromStream.java",
+          "sourceSha256": "0f9498aa914bad132ca234f23eacf629ed89defbabbfa91600ef71b27d120e99",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/rangecoder/RangeEncoder.java",
+          "sourceSha256": "737dc87637ba90236e8cafee52a915b9ed893092286b8a2d17eb27d125ca1eac",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/rangecoder/RangeEncoderToBuffer.java",
+          "sourceSha256": "f9d6986abf51cda8cee27ee08312753cf71668edd0eebb29725013d534909d9b",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/rangecoder/RangeEncoderToStream.java",
+          "sourceSha256": "206ee3fcde08ddd34b427e24c4b80457f8ff97f63b713eeb033d9fa1366da3ef",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/simple/ARM.java",
+          "sourceSha256": "07e55b54647996a92815ca989390a70feb1a6aa5f13e3bc787ac14239098e0a5",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/simple/ARM64.java",
+          "sourceSha256": "23d25a30a0514d47f265f086affd3a3a633aa2b72d3d78b374a9a34df06296d2",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/simple/ARMThumb.java",
+          "sourceSha256": "58e2ce0b7428bb01fe5f674033bccb7192473dffbda760d990a83f92943cd931",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/simple/IA64.java",
+          "sourceSha256": "473d77d99605f3753de5ea15c20786627489037194b04d97297d7ab0e07038e7",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/simple/PowerPC.java",
+          "sourceSha256": "8fa3cadc0c0dabef3bcb2f98de171bebbb657c7a53fde7bb743a8b1003c642a8",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/simple/SPARC.java",
+          "sourceSha256": "ca4d14dea5aad6382bbf16186cf27492a97bcc242c0a37ffb28b780250b091b8",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/simple/X86.java",
+          "sourceSha256": "7e0f349f6463fdc27b82c420dc0baff92decaffc42fe040e164bdc07099a2242",
+          "startByte": 0,
+          "endByteExclusive": 223,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "480fbe43eacf71f38b0d7779cfa98b8e9ef4c532e945f3389d6abeb3f9b18a41",
+      "sources": [
+        {
+          "entry": "org/tukaani/xz/ResettableArrayCache.java",
+          "sourceSha256": "2ea3631774bd8ac095770e88bd2f16db920a0c99e146c2c042b43f7fb4faba0d",
+          "startByte": 661,
+          "endByteExclusive": 745,
+          "startLine": 23,
+          "endLine": 25
+        }
+      ]
+    },
+    {
+      "commentSha256": "5713b24c5cc152e7b21705f61cbb22c2ce575ff467fae1b5cba40d92ea95b9e8",
+      "sources": [
+        {
+          "entry": "org/tukaani/xz/SeekableXZInputStream.java",
+          "sourceSha256": "a95424ef0162e70931e16635db3add176e2cff066fbd3ab757b938fe4f716a13",
+          "startByte": 36513,
+          "endByteExclusive": 37028,
+          "startLine": 1000,
+          "endLine": 1007
+        }
+      ]
+    },
+    {
+      "commentSha256": "e64913d27278b96374fbffa3314a04002f1f80893b97e14c99fbabcabacb60fe",
+      "sources": [
+        {
+          "entry": "org/tukaani/xz/check/CRC64.java",
+          "sourceSha256": "2fb58d04a9cdeb32b38c7dcf47fbbc2a7f6e24f390cfd171534c24a419bffd98",
+          "startByte": 0,
+          "endByteExclusive": 229,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "META-INF/versions/9/org/tukaani/xz/check/CRC64.java",
+          "sourceSha256": "bf95610b407ca6a7911feecf29fe1e78153f4e46d0a3f0c536e33163af92dd50",
+          "startByte": 0,
+          "endByteExclusive": 229,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "3673cecb417d912b0b266856eaf0a53056dc0edd2474d341e2941e5bf264de9c",
+      "sources": [
+        {
+          "entry": "org/tukaani/xz/delta/DeltaCoder.java",
+          "sourceSha256": "382af1a540deb26f14a0b0d3331a66c7e76b931a18e321de9f2e075873d625bd",
+          "startByte": 0,
+          "endByteExclusive": 229,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/delta/DeltaDecoder.java",
+          "sourceSha256": "df98028f73d426489e4a255234a173c640ad81052c29d00196b27a32d504080b",
+          "startByte": 0,
+          "endByteExclusive": 229,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "org/tukaani/xz/delta/DeltaEncoder.java",
+          "sourceSha256": "752d4280b17eaa37131195ff5585117adbcf365f5aa5f4c2334ba0f8761eadbe",
+          "startByte": 0,
+          "endByteExclusive": 229,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "02a0479be882571d56428501e7e50695d531e71f0cc9fb69e591e424c86f05e7",
+      "sources": [
+        {
+          "entry": "org/tukaani/xz/lz/HC4.java",
+          "sourceSha256": "3176b193cb1cde56cecab9e90842e3382d008c37afcd0e5cd1d450534e0d94a8",
+          "startByte": 1703,
+          "endByteExclusive": 1862,
+          "startLine": 50,
+          "endLine": 52
+        }
+      ]
+    },
+    {
+      "commentSha256": "bcabe91a112ab141623d22d51d67a57db850a912bb2bd097b9d5c4fc0fcb15ec",
+      "sources": [
+        {
+          "entry": "org/tukaani/xz/package-info.java",
+          "sourceSha256": "831f51fb8b37fa51d9ea486344fa2c2609ff3050b32902b0270f131f59f00902",
+          "startByte": 167,
+          "endByteExclusive": 2336,
+          "startLine": 5,
+          "endLine": 62
+        }
+      ]
+    },
+    {
+      "commentSha256": "ed2020ed55b886f1c1759571a3505ac2b26ccb4d6ec8f97e5d49e5b164abb1ee",
+      "sources": [
+        {
+          "entry": "org/tukaani/xz/simple/RISCVEncoder.java",
+          "sourceSha256": "532198cad09c1b8d100fd4eadc2e34bf3278c8d707a57531c0acce30b49c4ce7",
+          "startByte": 3522,
+          "endByteExclusive": 3753,
+          "startLine": 88,
+          "endLine": 92
+        }
+      ]
+    },
+    {
+      "commentSha256": "cded5903621ee72d0441b0d5e0756190c5c47b12b17a8e8a2afbc947451829d0",
+      "sources": [
+        {
+          "entry": "META-INF/versions/9/org/tukaani/xz/common/ByteArrayView.java",
+          "sourceSha256": "66f072c6f7c75ebf37afaca1cf200d0d38cd78ab745bc6185684f0c1fa856bc2",
+          "startByte": 1024,
+          "endByteExclusive": 1461,
+          "startLine": 27,
+          "endLine": 33
+        }
+      ]
+    },
+    {
+      "commentSha256": "abc29298639e7024c00c166a129f2b1cea82a3ce8a1a8bfc4ceff527a753a2f8",
+      "sources": [
+        {
+          "entry": "META-INF/versions/9/org/tukaani/xz/lz/UnalignedLongLEMatchLengthFinder.java",
+          "sourceSha256": "f89fbbe97b0595a59d27301afe7a2fe0af17289e4de88d9193b39a064155d0a3",
+          "startByte": 240,
+          "endByteExclusive": 873,
+          "startLine": 9,
+          "endLine": 19
+        }
+      ]
+    }
+  ]
+}
