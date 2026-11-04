@@ -80,6 +80,29 @@ test('late queued requests belong to the old controller but same-resource revisi
     assert.equal(tracker.recordFailure(revisit).expectedRouteAbort, true);
 });
 
+test('Back navigation cancels the blank-node controller without excusing the returning graph controller', () => {
+    const page = new EventEmitter();
+    const tracker = createExploreNavigationTracker(page, EXPLORE);
+    observe(page, sectionRequest({ resource: '<urn:graph>', 'query-request-id': 'explore-clock-graph-1' }));
+    tracker.expectNavigation();
+
+    const blank = sectionRequest({ resource: '<_:stored-node>', section: 'range', kind: 'count',
+        'query-request-id': 'explore-clock-blank-29' });
+    observe(page, blank);
+    const beforeBack = tracker.recordFailure(blank);
+    assert.equal(beforeBack.expectedRouteAbort, false, 'leaving the graph did not mark the blank-node controller');
+
+    tracker.expectNavigation();
+    assert.equal(tracker.recordFailure(blank).expectedRouteAbort, true,
+        'Back explicitly marks the pending blank-node count request as departing');
+    assert.equal(beforeBack.expectedRouteAbort, false, 'Back cannot forgive an earlier active-route failure');
+
+    const returnedGraph = sectionRequest({ resource: '<urn:graph>', 'query-request-id': 'explore-clock-returned-1' });
+    observe(page, returnedGraph);
+    assert.equal(tracker.recordFailure(returnedGraph).expectedRouteAbort, false,
+        'the fresh graph controller remains strict after Back');
+});
+
 test('scope includes origin, repository, canonical resource, method and section identity', () => {
     const page = new EventEmitter();
     const tracker = createExploreNavigationTracker(page, EXPLORE);
