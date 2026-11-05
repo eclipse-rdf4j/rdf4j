@@ -1485,15 +1485,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						}
 					});
 
-			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.BACKUP_JOURNAL_ENABLED, null))
-					.ifPresent(lit -> {
-						try {
-							setBackupJournalEnabled(lit.booleanValue());
-						} catch (IllegalArgumentException e) {
-							throw new SailConfigException("Boolean value required for "
-									+ LmdbStoreSchema.BACKUP_JOURNAL_ENABLED + " property, found " + lit);
-						}
-					});
+			Literal backupJournalEnabledLiteral = singleBooleanLiteral(m, implNode,
+					LmdbStoreSchema.BACKUP_JOURNAL_ENABLED);
+			if (backupJournalEnabledLiteral != null) {
+				setBackupJournalEnabled(
+						parseBoolean(backupJournalEnabledLiteral, LmdbStoreSchema.BACKUP_JOURNAL_ENABLED));
+			}
 
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FORCE_SYNC, null)).ifPresent(lit -> {
 				try {

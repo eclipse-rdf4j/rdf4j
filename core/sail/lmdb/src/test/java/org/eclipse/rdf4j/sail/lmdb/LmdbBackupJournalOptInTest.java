@@ -40,9 +40,117 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbBackupJournalOptInTest {
+
+	@Test
+	void symlinkParentCannotPutBackupInsideLiveStore(@TempDir Path directory) throws Exception {
+		LmdbStore store = open(directory.resolve("store"), false);
+		try {
+			Path child = Files.createDirectory(store.getDataDir().toPath().resolve("child"));
+			Path alias = Files.createSymbolicLink(directory.resolve("alias"), child);
+			var service = (LmdbBackupServiceImpl) store.getBackupService();
+			service.setAfterFullBackupTransactionIdCaptured(() -> {
+				throw new AssertionError("Unsafe destination reached snapshot copying");
+			});
+			assertThrows(SailException.class, () -> full(store, alias.resolve("../snapshots")));
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void symlinkParentRestoreUsesFilesystemDestination(@TempDir Path directory) throws Exception {
+		LmdbStore store = open(directory.resolve("store"), false);
+		try {
+			add(store, "one");
+			Path backup = directory.resolve("backup");
+			BackupResult full = full(store, backup);
+			Path actualParent = Files.createDirectories(directory.resolve("outside/child"));
+			Path alias = Files.createSymbolicLink(directory.resolve("alias"), actualParent);
+			Path requested = alias.resolve("../nested/restore");
+			Path restored = store.getBackupService()
+					.restore(new PointInTimeRestoreRequest(backup, requested,
+							full.getEndTransactionId(), true));
+			assertTrue(Files.isRegularFile(requested.resolve("triples/data.mdb")));
+			assertTrue(Files.isSameFile(restored, directory.resolve("outside/nested/restore")));
+			assertFalse(Files.exists(directory.resolve("nested")));
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void symlinkParentBackupUsesOneDestinationForSnapshotsAndJournals(@TempDir Path directory) throws Exception {
+		LmdbStore store = open(directory.resolve("store"), true);
+		try {
+			Path child = Files.createDirectories(directory.resolve("outside/child"));
+			Path alias = Files.createSymbolicLink(directory.resolve("alias"), child);
+			Path requested = alias.resolve("../nested/backup");
+			BackupResult full = full(store, requested);
+			add(store, "delta");
+			BackupResult delta = incremental(store, requested, full.getEndTransactionId());
+			assertTrue(Files.isDirectory(requested.resolve("txlog")));
+			assertTrue(Files.isSameFile(full.getArtifactPath().getParent().getParent().getParent(), requested));
+			assertFalse(Files.exists(directory.resolve("nested")));
+			Path restored = store.getBackupService()
+					.restore(new PointInTimeRestoreRequest(requested,
+							directory.resolve("restore"), delta.getEndTransactionId(), true));
+			LmdbStore copy = open(restored, false);
+			try (var connection = copy.getConnection()) {
+				assertEquals(1, connection.size());
+			} finally {
+				copy.shutDown();
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false,NONE", "false,false,ZIP", "false,true,NONE", "false,true,ZIP",
+			"true,false,NONE", "true,false,ZIP", "true,true,NONE", "true,true,ZIP" })
+	void restoreUsesSnapshotInlining(boolean inline, boolean journal, BackupCompression compression,
+			@TempDir Path directory) throws Exception {
+		LmdbStoreConfig sourceConfig = new LmdbStoreConfig().setBackupJournalEnabled(journal);
+		sourceConfig.setInlineLiterals(inline);
+		LmdbStore source = new LmdbStore(directory.resolve("source").toFile(), sourceConfig);
+		source.init();
+		LmdbStoreConfig recoveryConfig = new LmdbStoreConfig();
+		recoveryConfig.setInlineLiterals(!inline);
+		LmdbStore recovery = new LmdbStore(directory.resolve("recovery").toFile(), recoveryConfig);
+		recovery.init();
+		try {
+			add(source, "base");
+			Path backup = directory.resolve("backup");
+			BackupResult full = source.getBackupService()
+					.createBackup(BackupRequest.builder(backup, BackupType.FULL)
+							.compression(compression)
+							.build());
+			for (int step = 0; step < (journal ? 2 : 1); step++) {
+				long target = full.getEndTransactionId();
+				if (step == 1) {
+					add(source, "delta");
+					target = incremental(source, backup, target).getEndTransactionId();
+				}
+				Path restored = recovery.getBackupService()
+						.restore(new PointInTimeRestoreRequest(backup,
+								directory.resolve("restore-" + step), target, true));
+				LmdbStore copy = new LmdbStore(restored.toFile(), sourceConfig);
+				copy.init();
+				try (var connection = copy.getConnection()) {
+					assertEquals(step + 1, connection.size());
+				} finally {
+					copy.shutDown();
+				}
+			}
+		} finally {
+			recovery.shutDown();
+			source.shutDown();
+		}
+	}
 
 	@Test
 	void symlinkCannotPutFullBackupInsideLiveStore(@TempDir Path directory) throws Exception {

@@ -500,7 +500,8 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "nativeEvaluationEnabled", "directAdjacencyEnabled", "valueOverlayEnabled" })
+	@ValueSource(strings = { "nativeEvaluationEnabled", "directAdjacencyEnabled", "valueOverlayEnabled",
+			"backupJournalEnabled" })
 	void rejectsMalformedAcceleratorBoolean(String property) {
 		IRI predicate = Values.iri(LmdbStoreSchema.NAMESPACE + property);
 		BNode implNode = bnode();
@@ -512,7 +513,8 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "nativeEvaluationEnabled", "directAdjacencyEnabled", "valueOverlayEnabled" })
+	@ValueSource(strings = { "nativeEvaluationEnabled", "directAdjacencyEnabled", "valueOverlayEnabled",
+			"backupJournalEnabled" })
 	void rejectsNonLiteralAcceleratorBoolean(String property) {
 		IRI predicate = Values.iri(LmdbStoreSchema.NAMESPACE + property);
 		BNode implNode = bnode();
@@ -523,7 +525,8 @@ class LmdbStoreConfigTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "nativeEvaluationEnabled", "directAdjacencyEnabled", "valueOverlayEnabled" })
+	@ValueSource(strings = { "nativeEvaluationEnabled", "directAdjacencyEnabled", "valueOverlayEnabled",
+			"backupJournalEnabled" })
 	void rejectsConflictingAcceleratorBooleanValues(String property) {
 		IRI predicate = Values.iri(LmdbStoreSchema.NAMESPACE + property);
 		BNode implNode = bnode();

@@ -108,7 +108,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 
 	LmdbBackupServiceImpl(LmdbStore store, LmdbSailStore backingStore, LmdbStoreConfig config,
 			PostCommitBackupPublisher postCommitPublisher) {
-		this.storeRoot = store.getDataDir().toPath().toAbsolutePath().normalize();
+		this.storeRoot = store.getDataDir().toPath().toAbsolutePath();
 		this.backingStore = backingStore;
 		this.config = config;
 		this.journalState = backingStore.backupJournalState();
@@ -154,11 +154,11 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 			if (request.getType() == BackupType.INCREMENTAL) {
 				ensureIncrementalBaseline(request);
 			}
-			Path backupDir = request.getBackupDirectory();
+			Path backupDir = canonicalPath(request.getBackupDirectory());
 			ensureBackupDirectoryIsOutsideStore(backupDir);
 			txLogPublicationLock.lock();
 			try {
-				Path requestedRoot = backupDir.toAbsolutePath().normalize();
+				Path requestedRoot = backupDir;
 				if (!requestedRoot.equals(txLogRoot)) {
 					createDurableDirectories(requestedRoot);
 					if (journalState.enabled()) {
@@ -172,7 +172,8 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 			}
 			Files.createDirectories(backupDir);
 			cleanupStaleTemporaryBackups(backupDir);
-			return request.getType() == BackupType.FULL ? createFullBackup(request) : createIncrementalBackup(request);
+			return request.getType() == BackupType.FULL ? createFullBackup(request, backupDir)
+					: createIncrementalBackup(request, backupDir);
 		} catch (RuntimeException e) {
 			recordFailure("create-backup", null, e);
 			throw e;
@@ -191,8 +192,9 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		Path staging = null;
 		try {
 			ensureOpen();
-			Path restoreDir = validateRestoreDestination(request);
-			BackupResult base = listByType(request.getBackupDirectory(), BackupType.FULL).stream()
+			Path backupDirectory = canonicalPath(request.getBackupDirectory());
+			Path restoreDir = validateRestoreDestination(request.getRestoreDirectory(), backupDirectory);
+			BackupResult base = listByType(backupDirectory, BackupType.FULL).stream()
 					.filter(it -> it.getEndTransactionId() <= request.getTargetTransactionId())
 					.max(Comparator.comparingLong(BackupResult::getEndTransactionId)
 							.thenComparing(BackupResult::getCreatedAt))
@@ -208,7 +210,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				throw new SailException("A full-only snapshot can only restore its exact transaction boundary");
 			}
 			// Validate complete coverage and generation identity before touching the destination.
-			List<Path> logs = collectRestoreDeltaLogs(request.getBackupDirectory(), base.getEndTransactionId(),
+			List<Path> logs = collectRestoreDeltaLogs(backupDirectory, base.getEndTransactionId(),
 					request.getTargetTransactionId(), request.isVerifyBeforeRestore(), continuity.generation(),
 					temporaryLogDirs);
 			Files.createDirectories(restoreDir.getParent());
@@ -220,7 +222,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 					request.isVerifyBeforeRestore(), continuity.generation() != null || !continuity.journaled());
 			writeBackupDirectory(staging, restoreDir.resolve("backup"));
 			forceBackupArtifact(staging);
-			validateRestoreDestination(request);
+			validateRestoreDestination(restoreDir, backupDirectory);
 			// Both directories are siblings. No non-atomic fallback may expose a partially restored store.
 			Files.move(staging, restoreDir, StandardCopyOption.ATOMIC_MOVE);
 			staging = null;
@@ -244,11 +246,10 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		}
 	}
 
-	private Path validateRestoreDestination(PointInTimeRestoreRequest request) throws IOException {
-		Path requested = request.getRestoreDirectory().toAbsolutePath().normalize();
+	private Path validateRestoreDestination(Path requested, Path backupDirectory) throws IOException {
 		Path target = canonicalPath(requested);
 		if (pathsOverlap(target, canonicalPath(storeRoot))
-				|| pathsOverlap(target, canonicalPath(request.getBackupDirectory()))) {
+				|| pathsOverlap(target, canonicalPath(backupDirectory))) {
 			throw new SailException("Restore destination must not overlap the live store or backup directory");
 		}
 		if (Files.exists(requested, LinkOption.NOFOLLOW_LINKS)) {
@@ -269,12 +270,13 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	}
 
 	private static Path canonicalPath(Path path) throws IOException {
-		Path absolute = path.toAbsolutePath().normalize();
+		Path absolute = path.toAbsolutePath();
 		if (Files.exists(absolute, LinkOption.NOFOLLOW_LINKS)) {
 			return absolute.toRealPath();
 		}
 		Path parent = absolute.getParent();
-		return parent == null ? absolute : canonicalPath(parent).resolve(absolute.getFileName());
+		// Resolve existing ancestors before collapsing parent components after a symlink.
+		return parent == null ? absolute : canonicalPath(parent).resolve(absolute.getFileName()).normalize();
 	}
 
 	@Override
@@ -404,9 +406,9 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		return statuses;
 	}
 
-	private BackupResult createFullBackup(BackupRequest request) throws IOException {
-		ensureBackupDirectoryIsOutsideStore(request.getBackupDirectory());
-		Path parent = request.getBackupDirectory().resolve(FULL_DIR);
+	private BackupResult createFullBackup(BackupRequest request, Path backupDirectory) throws IOException {
+		ensureBackupDirectoryIsOutsideStore(backupDirectory);
+		Path parent = backupDirectory.resolve(FULL_DIR);
 		Path tempContainer = parent.resolve(".tmp-" + UUID.randomUUID());
 		Path snapshotDir = tempContainer.resolve("snapshot");
 		Files.createDirectories(snapshotDir);
@@ -438,7 +440,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				deleteRecursively(container);
 				throw e;
 			}
-			applyRetention(request);
+			applyRetention(request, backupDirectory);
 			return result;
 		} finally {
 			if (!promoted) {
@@ -467,7 +469,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 			throw new SailException(
 					"Incremental backup requires a fresh full baseline from the current journal generation");
 		}
-		for (BackupResult full : listByType(request.getBackupDirectory(), BackupType.FULL)) {
+		for (BackupResult full : listByType(canonicalPath(request.getBackupDirectory()), BackupType.FULL)) {
 			if (full.getEndTransactionId() >= baseline && full.getEndTransactionId() <= since.getAsLong()
 					&& Files.exists(full.getArtifactPath())) {
 				BackupContinuity continuity = readContinuity(full);
@@ -480,7 +482,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				"No retained full baseline from the current journal generation in the backup directory");
 	}
 
-	private BackupResult createIncrementalBackup(BackupRequest request) throws IOException {
+	private BackupResult createIncrementalBackup(BackupRequest request, Path backupDirectory) throws IOException {
 		OptionalLong since = request.getSinceTransactionId();
 		if (since.isEmpty()) {
 			throw new SailException("Incremental backup requires sinceTransactionId");
@@ -491,7 +493,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		}
 		String backupId = "incr-" + since.getAsLong() + "-" + currentTxn + "-" + System.currentTimeMillis()
 				+ "-" + UUID.randomUUID();
-		Path parent = request.getBackupDirectory().resolve(INCREMENTAL_DIR);
+		Path parent = backupDirectory.resolve(INCREMENTAL_DIR);
 		Path tempContainer = parent.resolve(".tmp-" + backupId + "-" + UUID.randomUUID());
 		Path container = parent.resolve(backupId);
 		Files.createDirectories(tempContainer);
@@ -499,7 +501,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		Files.createDirectories(deltaDir);
 		boolean promoted = false;
 		try {
-			List<Path> logs = listTransactionLogs(request.getBackupDirectory(), since.getAsLong(), currentTxn);
+			List<Path> logs = listTransactionLogs(backupDirectory, since.getAsLong(), currentTxn);
 			validateLogCoverage(logs, since.getAsLong(), currentTxn, journalState.generation());
 			for (Path log : logs) {
 				Files.copy(log, deltaDir.resolve(log.getFileName()), StandardCopyOption.REPLACE_EXISTING);
@@ -690,6 +692,12 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		LmdbStoreConfig replayConfig = new LmdbStoreConfig();
 		replayConfig.parse(model, node);
 		replayConfig.setBackupJournalEnabled(false);
+		StoreProperties snapshotProperties = new StoreProperties(restoreDirectory.toFile());
+		snapshotProperties.load();
+		Boolean inlineLiterals = snapshotProperties.getInlineLiterals();
+		if (inlineLiterals != null) {
+			replayConfig.setInlineLiterals(inlineLiterals);
+		}
 		LmdbStore restored = new LmdbStore(restoreDirectory.toFile(), replayConfig);
 		restored.init();
 		try (SailConnection connection = restored.getConnection()) {
@@ -1071,12 +1079,12 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				Boolean.parseBoolean(props.getProperty("verified")));
 	}
 
-	private void applyRetention(BackupRequest request) throws IOException {
+	private void applyRetention(BackupRequest request, Path backupDirectory) throws IOException {
 		int retain = request.getRetentionCount();
 		if (retain <= 0) {
 			return;
 		}
-		List<BackupResult> fullBackups = listByType(request.getBackupDirectory(), BackupType.FULL);
+		List<BackupResult> fullBackups = listByType(backupDirectory, BackupType.FULL);
 		if (fullBackups.size() <= retain) {
 			return;
 		}
@@ -1086,8 +1094,8 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 			BackupResult old = fullBackups.get(i);
 			deleteRecursively(old.getArtifactPath().getParent());
 		}
-		deleteIncrementalBackupsBefore(request.getBackupDirectory(), oldestRetainedTxn);
-		deleteTransactionLogsUpTo(request.getBackupDirectory(), oldestRetainedTxn);
+		deleteIncrementalBackupsBefore(backupDirectory, oldestRetainedTxn);
+		deleteTransactionLogsUpTo(backupDirectory, oldestRetainedTxn);
 	}
 
 	private void cleanupStaleTemporaryBackups(Path backupDirectory) throws IOException {
