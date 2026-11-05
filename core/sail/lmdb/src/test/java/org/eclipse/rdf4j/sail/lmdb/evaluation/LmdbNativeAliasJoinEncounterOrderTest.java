@@ -1207,13 +1207,11 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 	private static String renderStrategyEvent(RecordedEvent event) {
 		return "decisionId=" + event.getLong("decisionId")
 				+ ", decisionPoint=" + event.getString("decisionPoint")
-				+ ", phase=" + event.getString("phase")
-				+ ", strategy=" + event.getString("strategy")
-				+ ", status=" + event.getString("status")
-				+ ", forcedStrategy=" + event.getString("forcedStrategy")
-				+ ", selectionReason=" + event.getString("selectionReason")
-				+ ", availabilityReason=" + event.getString("availabilityReason")
-				+ ", failureType=" + event.getString("failureType");
+				+ ", candidate=" + event.getString("candidate")
+				+ ", winner=" + event.getBoolean("winner")
+				+ ", reason=" + event.getString("reason")
+				+ ", declineReason=" + event.getString("declineReason")
+				+ ", eliminatedBy=" + event.getString("eliminatedBy");
 	}
 
 	private static String correlatedAliasQuery(String select, String suffix) {

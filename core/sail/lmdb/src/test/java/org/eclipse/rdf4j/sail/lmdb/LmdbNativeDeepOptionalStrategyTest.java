@@ -61,7 +61,6 @@ public class LmdbNativeDeepOptionalStrategyTest {
 			"singleSlotGroups", "aggState");
 	private static final String[] PROPERTIES = {
 			NATIVE_FLAG,
-			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.resumable",
 			"rdf4j.lmdb.janinoCodegen.synchronous",
@@ -81,7 +80,6 @@ public class LmdbNativeDeepOptionalStrategyTest {
 			previousProperties.put(property, System.getProperty(property));
 		}
 		System.setProperty(NATIVE_FLAG, "true");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.resumable", "true");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "true");

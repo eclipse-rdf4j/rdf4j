@@ -252,7 +252,7 @@ class LmdbNativeAggregateExplanationRouteTest {
 			if (parallelWorkers != null) {
 				assertThat(parallelWorkers).as("the effectful route must not engage parallel workers").isEqualTo(0L);
 			}
-			String decision = findMetric(telemetry, LmdbNativeExplain.ADAPTIVE_COST_DECISION);
+			String decision = findMetric(telemetry, LmdbNativeExplain.DECISION_OUTCOME);
 			if (decision != null) {
 				String winner = decision.split(";", 2)[0];
 				assertThat(winner).startsWith("winner=").doesNotContain("Wildcard").doesNotContain("Parallel");

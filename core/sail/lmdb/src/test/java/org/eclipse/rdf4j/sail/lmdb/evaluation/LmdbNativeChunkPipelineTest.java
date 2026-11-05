@@ -63,7 +63,6 @@ public class LmdbNativeChunkPipelineTest {
 		setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 		setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 		setProperty("rdf4j.lmdb.parallel.enabled", "false");
-		setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 	}
 
 	@org.junit.jupiter.api.AfterAll

@@ -18,14 +18,46 @@ import java.util.List;
 import java.util.OptionalLong;
 
 /**
- * Nanoseconds per physical feature, fixed for the process. It turns a {@link LmdbNativeCostQuote} into a time interval
- * that candidates of different families can be compared on. The default coefficients are the machine prior the adaptive
- * model used to start from; milestone M4 replaces them with a calibrated, checked-in vector.
+ * Nanoseconds per physical feature, fixed for the process and checked in. It turns a {@link LmdbNativeCostQuote} into a
+ * time interval that candidates of different families can be compared on. The coefficients marked measured come from
+ * the regret harness fits ({@code scripts/lmdb-fit-prior.py}) on an Apple silicon developer machine.
  */
 final class LmdbNativeStaticPrior {
 
-	static final LmdbNativeStaticPrior DEFAULT = new LmdbNativeStaticPrior(
-			LmdbNativeMachineCostModel.defaultPriorCoefficients());
+	static final LmdbNativeStaticPrior DEFAULT = new LmdbNativeStaticPrior(defaultCoefficients());
+
+	private static double[] defaultCoefficients() {
+		double[] result = new double[LmdbNativeCostVector.Feature.values().length];
+		result[LmdbNativeCostVector.Feature.OPEN.ordinal()] = 5_000D;
+		// measured 2026-11-02 (15000-person FOAF stores): parallel row strategies pay about 8 ms before the first
+		// row on fifteen workers, i.e. about 0.5 ms per worker, not 50 µs
+		result[LmdbNativeCostVector.Feature.WORKER_START.ordinal()] = 500_000D;
+		// per-feature values below marked "measured" come from the regret harness fits on 3000- and 15000-person
+		// FOAF stores (2026-11-02, scripts/lmdb-fit-prior.py); the rest are the original hand prior
+		result[LmdbNativeCostVector.Feature.INDEX_SEEK.ordinal()] = 200D; // measured 130 to 230
+		result[LmdbNativeCostVector.Feature.BRANCH_OPEN.ordinal()] = 100D;
+		result[LmdbNativeCostVector.Feature.SCANNED_ROW.ordinal()] = 1D; // measured 0.3 to 0.5
+		result[LmdbNativeCostVector.Feature.DECODED_ROW.ordinal()] = 2D; // measured 0 to 0.2
+		// per-row prices re-fitted 2026-11-03 (regret harness runs j and k, 3000 people, scripts/lmdb-fit-prior.py
+		// with the physical prices above pinned): an interpreted kernel row 118 to 126 ns, a compiled kernel row
+		// 93 to 131 ns (the IR aggregates 86 to 87), a batch or factorized row 124 to 249 ns, a group update 105 to
+		// 455 ns, a hash probe 74 ns; the generic cursor chain's row measured 200 to 435 ns and is priced through
+		// LmdbNativePlanExecutionProfile.GENERIC_ROW_PREMIUM on top of the interpreted row
+		result[LmdbNativeCostVector.Feature.INTERPRETED_ROW.ordinal()] = 120D;
+		result[LmdbNativeCostVector.Feature.BATCH_ROW.ordinal()] = 150D;
+		result[LmdbNativeCostVector.Feature.GENERATED_ROW.ordinal()] = 110D;
+		result[LmdbNativeCostVector.Feature.MEMBERSHIP_TEST.ordinal()] = 14D;
+		result[LmdbNativeCostVector.Feature.HASH_BUILD_ROW.ordinal()] = 45D;
+		result[LmdbNativeCostVector.Feature.HASH_PROBE.ordinal()] = 40D;
+		result[LmdbNativeCostVector.Feature.GROUP_UPDATE.ordinal()] = 150D;
+		result[LmdbNativeCostVector.Feature.DISTINCT_UPDATE.ordinal()] = 35D;
+		result[LmdbNativeCostVector.Feature.SORT_N_LOG2_N.ordinal()] = 22D;
+		// measured 2026-11-02 (regret harness, 3000-person FOAF stores): 226 to 262 ns per materialised output row
+		// end to end, consistently across strategies; the earlier 25 ns was a guess
+		result[LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION.ordinal()] = 250D;
+		result[LmdbNativeCostVector.Feature.GENERATED_SOURCE_BYTE_CACHE_MISS.ordinal()] = 1.5D;
+		return result;
+	}
 
 	private final double[] coefficients;
 
@@ -122,6 +154,13 @@ final class LmdbNativeStaticPrior {
 				product *= domain;
 			}
 			return product;
+		}
+
+		/** The first statement pattern of {@code plan} in execution order, or null when it has none. */
+		static PatternPlan firstPattern(SlotPlan plan) {
+			List<PatternPlan> patterns = new ArrayList<>();
+			collectPatterns(plan, patterns);
+			return patterns.isEmpty() ? null : patterns.get(0);
 		}
 
 		private static void collectPatterns(SlotPlan plan, List<PatternPlan> into) {

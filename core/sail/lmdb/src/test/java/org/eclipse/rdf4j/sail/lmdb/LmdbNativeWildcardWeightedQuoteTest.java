@@ -45,8 +45,7 @@ public class LmdbNativeWildcardWeightedQuoteTest {
 	private static final String EX = "http://example.com/";
 	private static final String[] PROPERTIES = { "rdf4j.lmdb.nativeQueryEngine.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled", "rdf4j.lmdb.kernelInterpreter.enabled",
-			"rdf4j.lmdb.costCalibration.enabled", "rdf4j.lmdb.adaptiveProbe.enabled",
-			"rdf4j.lmdb.adaptiveHedge.enabled", "rdf4j.lmdb.nativeBatch.enabled",
+			"rdf4j.lmdb.nativeBatch.enabled",
 			LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY };
 
 	@TempDir
@@ -64,9 +63,6 @@ public class LmdbNativeWildcardWeightedQuoteTest {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
-		System.setProperty("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-		System.setProperty("rdf4j.lmdb.adaptiveHedge.enabled", "false");
 		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "true");
 		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY, "true");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,cspo")

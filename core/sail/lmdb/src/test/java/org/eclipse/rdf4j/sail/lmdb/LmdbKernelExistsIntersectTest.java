@@ -72,8 +72,6 @@ class LmdbKernelExistsIntersectTest {
 		String previousParallelWork = System.getProperty("rdf4j.lmdb.parallel.minWorkEstimate");
 		String previousParallelStartup = System.getProperty("rdf4j.lmdb.parallel.startupWork");
 		String previousParallelAggregate = System.getProperty("rdf4j.lmdb.irAggregateParallel.enabled");
-		String previousAdaptiveCost = System.getProperty("rdf4j.lmdb.costCalibration.enabled");
-		String previousAdaptiveProbe = System.getProperty("rdf4j.lmdb.adaptiveProbe.enabled");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janinoEnabled));
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
@@ -85,8 +83,6 @@ class LmdbKernelExistsIntersectTest {
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "true");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
-		System.setProperty("rdf4j.lmdb.adaptiveProbe.enabled", "false");
 		try {
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
 					.setNativeEvaluationEnabled(true)
@@ -143,7 +139,6 @@ class LmdbKernelExistsIntersectTest {
 									+ ", interpreterEnabled=" + interpreterEnabled + ", parallelEnabled="
 									+ parallelEnabled);
 				}
-				KernelExecutionTestAccess.resetCostCalibration();
 				try (SailRepositoryConnection connection = repository.getConnection()) {
 					String plan = prepare(connection, forcedStrategy)
 							.explain(Explanation.Level.Telemetry)
@@ -200,8 +195,6 @@ class LmdbKernelExistsIntersectTest {
 			restore("rdf4j.lmdb.parallel.minWorkEstimate", previousParallelWork);
 			restore("rdf4j.lmdb.parallel.startupWork", previousParallelStartup);
 			restore("rdf4j.lmdb.irAggregateParallel.enabled", previousParallelAggregate);
-			restore("rdf4j.lmdb.costCalibration.enabled", previousAdaptiveCost);
-			restore("rdf4j.lmdb.adaptiveProbe.enabled", previousAdaptiveProbe);
 		}
 	}
 

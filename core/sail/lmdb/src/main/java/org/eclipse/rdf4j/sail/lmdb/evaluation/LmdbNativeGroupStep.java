@@ -307,9 +307,9 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 				NativeGroupResultCursor.GroupingPlan bound = plans.get(chosen);
 				NativeAggregateCostQuotes.Input child = NativeAggregateCostQuotes.describe(bound.input(), row,
 						row.boundMask());
-				LmdbNativeCostEstimate chosenEstimate = chosen.adaptiveEstimate(-1D);
+				NativePhysicalWorkQuote chosenEstimate = chosen.typedQuote();
 				if (chosenEstimate == null) {
-					chosenEstimate = chosen.directTimingEstimate();
+					chosenEstimate = chosen.directTimingQuote();
 				}
 				double highRows = groupSlots.length == 0 ? 1D : child.highRows();
 				double lowRows = groupSlots.length == 0 && havingCondition == null ? 1D : 0D;
@@ -1737,7 +1737,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					LmdbNativeDecisionPoint.GROUP, offers.strategies(), explainTarget)
 							.label(decisionPoint())
 							.sharedRow(row)
-							.forcing(forcedExecutionStrategy);
+							.forcing(forcedExecutionStrategy)
+							.advice(LmdbNativeAdvisoryLearner.scope(row, originalArg))
+							.eager();
 			if (LmdbNativeStrategyPreview.active()) {
 				if (existsIntersection != null) {
 					QueryExplanationContext.withRuntimeCondition(

@@ -88,21 +88,6 @@ class LmdbAdjacencyAggregateMetadataTest {
 	}
 
 	@Test
-	void globalAdjacencyRootHeapKeyDoesNotClaimGroupingOrHashing() throws Exception {
-		String previous = System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");
-		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
-		try {
-			Fixture fixture = new Fixture();
-			LmdbNativePhysicalVariantKey key = fixture.globalPhysicalKey();
-			assertThat(key.groupingMode()).isEqualTo(LmdbNativePhysicalVariantKey.GroupingMode.NONE);
-			assertThat(key.requiresHashing()).isFalse();
-			assertThat(key.physicalOrderAndProperties()).contains("rootHeap=true");
-		} finally {
-			restore(previous);
-		}
-	}
-
-	@Test
 	void coldRootWitnessNeedsTheSameSuccessfulCanonicalVisibleQuote() throws Exception {
 		String previous = System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");
 		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
@@ -283,26 +268,6 @@ class LmdbAdjacencyAggregateMetadataTest {
 
 		LmdbNativeWork quote(Term context) {
 			return LmdbAdjacencyAggregatePlan.tryCreate(pattern(context), new int[0], aggregates).estimateWork(row());
-		}
-
-		LmdbNativePhysicalVariantKey globalPhysicalKey() {
-			PatternPlan input = pattern(Term.unbound());
-			LmdbAdjacencyAggregatePlan physical = LmdbAdjacencyAggregatePlan.tryCreate(input, new int[0], aggregates);
-			assertThat(physical).isNotNull();
-			try (NativeGroupIteration owner = new NativeGroupIteration(source, input, layout, new int[0], aggregates,
-					false, EmptyBindingSet.getInstance(), null, null, false, false, null, 0L, null, physical, null,
-					null);
-					LmdbNativeStrategyProposal<List<BindingSet>> proposal = new LmdbNativeStrategyProposal<>(
-							() -> List.of(), LmdbNativeWork.exact(1D),
-							LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, () -> {
-							})) {
-				RowState row = row();
-				assertThat(owner.initialize(row)).isTrue();
-				proposal.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(input,
-						NativeAggregatePhysicalPlan.Retention.STREAMING, physical));
-				new NativeAggregateCostQuotes(owner, row, null, false).attach(proposal);
-				return proposal.adaptiveEstimate(-1D).variantKey();
-			}
 		}
 
 		NativeAggregatePhysicalPlan.ColdAnchor coldAnchor(Term context, boolean bareStreaming) {

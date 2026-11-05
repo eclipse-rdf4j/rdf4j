@@ -92,7 +92,6 @@ class LmdbNativeHashJoinBatchTest {
 		setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 		setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
-		setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 	}
 
 	@AfterEach

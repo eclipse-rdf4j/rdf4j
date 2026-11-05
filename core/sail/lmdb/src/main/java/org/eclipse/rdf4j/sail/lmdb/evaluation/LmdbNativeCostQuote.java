@@ -255,6 +255,22 @@ record LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector st
 		return new LmdbNativeCostQuote(startup, streaming, rows, ordered, distinct, chunked);
 	}
 
+	/** {@code total} minus {@code startup} per feature and bound, retaining an unknown remainder ceiling. */
+	static LmdbNativeCostVector remainder(LmdbNativeCostVector total, LmdbNativeCostVector startup) {
+		LmdbNativeCostVector.Builder builder = LmdbNativeCostVector.builder();
+		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+			double low = Math.max(0D, total.low(feature) - startup.low(feature));
+			double expected = Math.max(low, total.expected(feature) - startup.expected(feature));
+			double high = Double.isInfinite(total.high(feature)) ? Double.POSITIVE_INFINITY
+					: Math.max(expected, total.high(feature)
+							- (Double.isFinite(startup.high(feature)) ? startup.high(feature) : 0D));
+			if (high > 0D) {
+				builder.add(feature, low, expected, high);
+			}
+		}
+		return builder.build();
+	}
+
 	/** Every feature of a complete run. */
 	LmdbNativeCostVector total() {
 		LmdbNativeCostVector total = startup.plus(streaming);

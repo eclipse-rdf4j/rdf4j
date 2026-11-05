@@ -58,7 +58,6 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			PARALLEL_FLAG,
 			JANINO_CODEGEN_FLAG,
 			"rdf4j.lmdb.kernelInterpreter.enabled",
-			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.factorizedRows.enabled",
 			"rdf4j.lmdb.wcoj.enabled",
 			"rdf4j.lmdb.nativeBatch.enabled",
@@ -83,7 +82,6 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 		System.setProperty(PARALLEL_FLAG, "false");
 		System.setProperty(JANINO_CODEGEN_FLAG, "false");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
 		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
 		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
@@ -161,7 +159,6 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 		String previousJanino = System.getProperty(JANINO_CODEGEN_FLAG);
 		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
 		String previousSynchronous = System.getProperty("rdf4j.lmdb.janinoCodegen.synchronous");
-		String previousCalibration = System.getProperty("rdf4j.lmdb.costCalibration.enabled");
 		int expectedRowCount = 64 * 3;
 		try {
 			System.setProperty(JANINO_CODEGEN_FLAG, "false");
@@ -177,7 +174,6 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			System.setProperty(JANINO_CODEGEN_FLAG, "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
-			System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 
 			// 192 rows do not amortise the kernel's fixed cost against the nested loop, so the compiled kernel is
 			// forced: this test is about the kernel executing the shape and the factorized path standing aside
@@ -205,7 +201,6 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			restoreProperty(JANINO_CODEGEN_FLAG, previousJanino);
 			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", previousThreshold);
 			restoreProperty("rdf4j.lmdb.janinoCodegen.synchronous", previousSynchronous);
-			restoreProperty("rdf4j.lmdb.costCalibration.enabled", previousCalibration);
 			JaninoPipelineTestAccess.resetAll();
 		}
 	}

@@ -157,21 +157,21 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
-	 * The owning store's persistence and regime signals for the adaptive cost model, or {@code null} when the source
-	 * has no backing store directory (tests, synthetic sources) — the model then degrades to a single steady regime
-	 * with no persistence. Wrappers delegate to their backing store, exactly like {@link #costModelIdentity()}.
+	 * What the advisory learner needs from the owning store, or {@code null} when the source has no backing store
+	 * directory (tests, synthetic sources), which leaves the learner off for it. Wrappers delegate to their backing
+	 * store, exactly like {@link #costModelIdentity()}.
 	 */
 	default LmdbNativeCostModelContext costModelContext() {
 		return null;
 	}
 
 	/**
-	 * Releases the adaptive model registered under a closing store's {@link #costModelIdentity()} token. This is an
-	 * internal lifecycle bridge for the LMDB store package; query-source wrappers must not call it when only a dataset
-	 * or evaluation closes because their backing persistent store is still live.
+	 * Releases the learner registered under a closing store's {@link #costModelIdentity()} token. This is an internal
+	 * lifecycle bridge for the LMDB store package; query-source wrappers must not call it when only a dataset or
+	 * evaluation closes because their backing persistent store is still live.
 	 */
 	static void releaseCostModel(Object identity) {
-		LmdbNativeAdaptiveCostModel.release(identity);
+		LmdbNativeAdvisoryLearner.release(identity);
 	}
 
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;

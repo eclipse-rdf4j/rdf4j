@@ -126,10 +126,6 @@ class LmdbNativeGoldenDecisionsTest {
 	 */
 	static final Map<String, String> STATIC_DECISION_PROPERTIES = Map.of(
 			NATIVE_FLAG, "true",
-			"rdf4j.lmdb.adaptiveProbe.enabled", "false",
-			"rdf4j.lmdb.adaptiveHedge.enabled", "false",
-			"rdf4j.lmdb.costCalibration.enabled", "false",
-			"rdf4j.lmdb.costModel.persist.enabled", "false",
 			// compiled readiness must not depend on background compile timing between runs
 			"rdf4j.lmdb.janinoCodegen.synchronous", "true",
 			// parallel strategies are priced per worker, so the decision must not depend on the machine's core count

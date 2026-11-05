@@ -133,8 +133,6 @@ public class LmdbTypeMatrixTest {
 		captureProperty("rdf4j.lmdb.parallel.minWorkEstimate");
 		captureProperty("rdf4j.lmdb.parallel.startupWork");
 		captureProperty("rdf4j.lmdb.irAggregateParallel.enabled");
-		captureProperty("rdf4j.lmdb.costCalibration.enabled");
-		captureProperty("rdf4j.lmdb.adaptiveProbe.enabled");
 		captureProperty("rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled");
 		captureProperty(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY);
 		captureProperty(SYNOPSIS_PROPERTY);
@@ -472,8 +470,6 @@ public class LmdbTypeMatrixTest {
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "true");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
-		System.setProperty("rdf4j.lmdb.adaptiveProbe.enabled", "false");
 	}
 
 	@ParameterizedTest(name = "serialJaninoEnabled={0}")

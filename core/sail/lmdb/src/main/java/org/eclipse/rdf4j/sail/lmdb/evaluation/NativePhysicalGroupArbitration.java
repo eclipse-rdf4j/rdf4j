@@ -60,7 +60,8 @@ final class NativePhysicalGroupArbitration {
 		LmdbNativeDispatchLoop<Void, NativeResultCursor> loop = new LmdbNativeDispatchLoop<>(
 				LmdbNativeDecisionPoint.GROUP_PHYSICAL, offers.strategies(), iteration.explainTarget)
 						.label(iteration.decisionPoint())
-						.forcing(iteration.forcedExecutionStrategy);
+						.forcing(iteration.forcedExecutionStrategy)
+						.advice(LmdbNativeAdvisoryLearner.scope(row, iteration.arg));
 		if (preview) {
 			loop.preview(null);
 			if (fullAttempt != null) {
@@ -74,7 +75,9 @@ final class NativePhysicalGroupArbitration {
 		if (selected == null) {
 			throw new QueryEvaluationException("No legal native physical aggregate candidate could open");
 		}
-		return new Selection(selected.value(), selected.id(), selected.expectedNanos(), started);
+		LmdbNativeCostObservation observation = selected.observation();
+		return new Selection(observation == null ? selected.value() : observation.observed(selected.value()),
+				selected.id(), selected.expectedNanos(), started);
 	}
 
 	private static void offerTyped(LmdbNativeOfferBridge<NativeResultCursor> arbiter,

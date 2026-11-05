@@ -63,7 +63,6 @@ class LmdbNativeMergeJoinTest {
 	private String previousFactorizedRowsEnabled;
 	private String previousChunkPipelineEnabled;
 	private String previousAccumulateJoinEnabled;
-	private String previousCostCalibrationEnabled;
 	private String previousParallelEnabled;
 
 	@BeforeEach
@@ -74,7 +73,6 @@ class LmdbNativeMergeJoinTest {
 		previousFactorizedRowsEnabled = System.getProperty("rdf4j.lmdb.factorizedRows.enabled");
 		previousChunkPipelineEnabled = System.getProperty("rdf4j.lmdb.chunkPipeline.enabled");
 		previousAccumulateJoinEnabled = System.getProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY);
-		previousCostCalibrationEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
 		previousParallelEnabled = System.getProperty(PARALLEL_FLAG);
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
 		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
@@ -82,8 +80,6 @@ class LmdbNativeMergeJoinTest {
 		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
 		System.setProperty("rdf4j.lmdb.chunkPipeline.enabled", "false");
 		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "false");
-		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
-		LmdbNativeCostCalibration.reset();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
@@ -126,8 +122,6 @@ class LmdbNativeMergeJoinTest {
 		restoreProperty("rdf4j.lmdb.factorizedRows.enabled", previousFactorizedRowsEnabled);
 		restoreProperty("rdf4j.lmdb.chunkPipeline.enabled", previousChunkPipelineEnabled);
 		restoreProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, previousAccumulateJoinEnabled);
-		restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCostCalibrationEnabled);
-		LmdbNativeCostCalibration.reset();
 		repository.shutDown();
 	}
 

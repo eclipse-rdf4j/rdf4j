@@ -69,7 +69,7 @@ public class LmdbExistsIntersectionQueryTest {
 	private final Map<String, String> previousProperties = new HashMap<>();
 
 	@BeforeEach
-	public void resetCostCalibration() {
+	public void resetKernelMetrics() {
 		captureProperty(SYNOPSIS_PROPERTY);
 		captureProperty(LmdbNativeExistsIntersection.PARALLEL_MIN_ESTIMATE_PROPERTY);
 		captureProperty("rdf4j.lmdb.janinoCodegen.enabled");
@@ -78,7 +78,6 @@ public class LmdbExistsIntersectionQueryTest {
 		// activation and compiled/interpreted parity are covered by LmdbKernelExistsIntersectTest.
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
-		LmdbNativeCostCalibration.reset();
 	}
 
 	@AfterEach

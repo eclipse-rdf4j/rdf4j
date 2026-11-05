@@ -86,8 +86,6 @@ class LmdbNativeFactorizedRangeParityTest {
 		set("rdf4j.lmdb.factorizedRows.enabled", "true");
 		set("rdf4j.lmdb.factorizedRows.keysOnlyRoot.enabled", "true");
 		set(NativeBatch.ENABLED_PROPERTY, "false");
-		set("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-		set("rdf4j.lmdb.adaptiveHedge.enabled", "false");
 		store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc").setForceSync(false)
 				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)

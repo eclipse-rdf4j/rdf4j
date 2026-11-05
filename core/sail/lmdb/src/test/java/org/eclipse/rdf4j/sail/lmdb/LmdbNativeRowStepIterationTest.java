@@ -65,34 +65,20 @@ class LmdbNativeRowStepIterationTest {
 	private static final long P3 = 300;
 
 	@Test
-	void limitCloseDoesNotRecordCalibrationAsCompleted() {
-		String previousEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
-		String previousRecording = System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
-		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
-		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
-		LmdbNativeCostCalibration.reset();
-		try {
-			RecordingPlan plan = new RecordingPlan(2, LmdbNativeWork.exact(5_000D));
-			NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, NativeSlotLayout.empty(),
-					new int[0], new String[0], false, new int[0], new boolean[0], 0, 1, true, null, null, null,
-					Set.of(), null, null);
+	void limitCloseClosesTheProducerOnce() {
+		RecordingPlan plan = new RecordingPlan(2, LmdbNativeWork.exact(5_000D));
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, NativeSlotLayout.empty(),
+				new int[0], new String[0], false, new int[0], new boolean[0], 0, 1, true, null, null, null,
+				Set.of(), null, null);
 
-			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
-				assertThat(iteration.hasNext()).isTrue();
-				iteration.next();
-				assertThat(iteration.hasNext()).isFalse();
-			}
-
-			assertThat(plan.nextCalls).as("LIMIT must close without exhausting the second available row").isOne();
-			assertThat(plan.closeCalls).as("the LIMIT-truncated producer closes exactly once").isOne();
-			assertThat(LmdbNativeCostCalibration.observations(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP))
-					.as("a LIMIT-satisfied close is partial execution, not completed calibration evidence")
-					.isZero();
-		} finally {
-			LmdbNativeCostCalibration.reset();
-			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousEnabled);
-			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+			assertThat(iteration.hasNext()).isFalse();
 		}
+
+		assertThat(plan.nextCalls).as("LIMIT must close without exhausting the second available row").isOne();
+		assertThat(plan.closeCalls).as("the LIMIT-truncated producer closes exactly once").isOne();
 	}
 
 	@Test
@@ -647,20 +633,15 @@ class LmdbNativeRowStepIterationTest {
 	}
 
 	@Test
-	void batchedLimitCloseDoesNotRecordCalibrationAsCompleted() {
-		String previousEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
-		String previousRecording = System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
+	void batchedLimitCloseClosesTheProducerOnce() {
 		String previousBatch = System.getProperty(NativeBatch.ENABLED_PROPERTY);
 		String previousInterpreter = System.getProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY);
 		String previousJanino = System.getProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY);
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
-		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
-		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
 		System.setProperty(NativeBatch.ENABLED_PROPERTY, "true");
 		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
-		LmdbNativeCostCalibration.reset();
 		try {
 			NativeSlotLayout layout = oneSlotLayout("x");
 			BareRecordingPlan plan = new BareRecordingPlan(LmdbNativeWork.exact(5_000D));
@@ -677,13 +658,7 @@ class LmdbNativeRowStepIterationTest {
 			assertThat(plan.openBatchCalls).as("the batch fixture must exercise the batch producer").hasValue(1);
 			assertThat(plan.openCalls).hasValue(0);
 			assertThat(plan.batchCloseCalls).as("the LIMIT-truncated batch closes exactly once").hasValue(1);
-			assertThat(LmdbNativeCostCalibration.observations(LmdbNativeAttemptMetrics.PATH_BATCH))
-					.as("a LIMIT-truncated batch is not completed calibration evidence")
-					.isZero();
 		} finally {
-			LmdbNativeCostCalibration.reset();
-			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousEnabled);
-			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
 			restoreProperty(NativeBatch.ENABLED_PROPERTY, previousBatch);
 			restoreProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, previousInterpreter);
 			restoreProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, previousJanino);
@@ -692,135 +667,79 @@ class LmdbNativeRowStepIterationTest {
 	}
 
 	@Test
-	void offsetAndLimitCloseDoesNotRecordCalibrationAsCompleted() {
-		String previousEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
-		String previousRecording = System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
-		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
-		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
-		LmdbNativeCostCalibration.reset();
-		try {
-			RecordingPlan plan = new RecordingPlan(3, LmdbNativeWork.exact(5_000D));
-			NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, NativeSlotLayout.empty(),
-					new int[0], new String[0], false, new int[0], new boolean[0], 1L, 1L, true, null, null, null,
-					Set.of(), null, null);
+	void offsetAndLimitCloseClosesTheProducerOnce() {
+		RecordingPlan plan = new RecordingPlan(3, LmdbNativeWork.exact(5_000D));
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, NativeSlotLayout.empty(),
+				new int[0], new String[0], false, new int[0], new boolean[0], 1L, 1L, true, null, null, null,
+				Set.of(), null, null);
 
-			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
-				assertThat(iteration.hasNext()).isTrue();
-				iteration.next();
-				assertThat(iteration.hasNext()).isFalse();
-			}
-
-			assertThat(plan.nextCalls).as("OFFSET consumes one row before the limited result").isEqualTo(2);
-			assertThat(plan.closeCalls).isOne();
-			assertThat(LmdbNativeCostCalibration.observations(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP))
-					.as("OFFSET plus LIMIT still ends in a partial close")
-					.isZero();
-		} finally {
-			LmdbNativeCostCalibration.reset();
-			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousEnabled);
-			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+			assertThat(iteration.hasNext()).isFalse();
 		}
+
+		assertThat(plan.nextCalls).as("OFFSET consumes one row before the limited result").isEqualTo(2);
+		assertThat(plan.closeCalls).isOne();
 	}
 
 	@Test
-	void distinctOffsetAndLimitCloseDoesNotRecordCalibrationAsCompleted() {
-		String previousEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
-		String previousRecording = System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
-		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
-		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
-		LmdbNativeCostCalibration.reset();
-		try {
-			DistinctRecordingPlan plan = new DistinctRecordingPlan(new long[] { 41L, 41L, 42L },
-					LmdbNativeWork.exact(5_000D));
-			NativeSlotLayout layout = oneSlotLayout("x");
-			NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, layout, new int[] { 0 },
-					new String[] { "x" }, true, new int[0], new boolean[0], 1L, 1L, true, null, null, null,
-					Set.of(), null, null);
+	void distinctOffsetAndLimitCloseClosesTheProducerOnce() {
+		DistinctRecordingPlan plan = new DistinctRecordingPlan(new long[] { 41L, 41L, 42L },
+				LmdbNativeWork.exact(5_000D));
+		NativeSlotLayout layout = oneSlotLayout("x");
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, layout, new int[] { 0 },
+				new String[] { "x" }, true, new int[0], new boolean[0], 1L, 1L, true, null, null, null,
+				Set.of(), null, null);
 
-			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
-				assertThat(iteration.hasNext()).isTrue();
-				assertThat(iteration.next().getValue("x")).isEqualTo(VF.createIRI("urn:test:id:42"));
-				assertThat(iteration.hasNext()).isFalse();
-			}
-
-			assertThat(plan.nextCalls)
-					.as("DISTINCT and OFFSET inspect every source row before the limited result; a bounded probe may also observe EOF")
-					.isGreaterThanOrEqualTo(3);
-			assertThat(plan.closeCalls).isOne();
-			assertThat(LmdbNativeCostCalibration.observations(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP))
-					.as("DISTINCT plus LIMIT still ends in a partial close")
-					.isZero();
-		} finally {
-			LmdbNativeCostCalibration.reset();
-			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousEnabled);
-			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(iteration.next().getValue("x")).isEqualTo(VF.createIRI("urn:test:id:42"));
+			assertThat(iteration.hasNext()).isFalse();
 		}
+
+		assertThat(plan.nextCalls)
+				.as("DISTINCT and OFFSET inspect every source row before the limited result; a bounded probe may also observe EOF")
+				.isGreaterThanOrEqualTo(3);
+		assertThat(plan.closeCalls).isOne();
 	}
 
 	@Test
-	void factorizedMultiplicityLimitCloseDoesNotRecordCalibrationAsCompleted() {
-		String previousEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
-		String previousRecording = System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
-		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
-		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
-		LmdbNativeCostCalibration.reset();
-		try {
-			FactorizedRecordingPlan plan = new FactorizedRecordingPlan(3L, LmdbNativeWork.exact(5_000D));
-			NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, NativeSlotLayout.empty(),
-					new int[0], new String[0], false, new int[0], new boolean[0], 0L, 1L, true, null, null, null,
-					Set.of(), null, null);
+	void factorizedMultiplicityLimitCloseClosesTheProducerOnce() {
+		FactorizedRecordingPlan plan = new FactorizedRecordingPlan(3L, LmdbNativeWork.exact(5_000D));
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, NativeSlotLayout.empty(),
+				new int[0], new String[0], false, new int[0], new boolean[0], 0L, 1L, true, null, null, null,
+				Set.of(), null, null);
 
-			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
-				assertThat(iteration.hasNext()).isTrue();
-				iteration.next();
-				assertThat(iteration.hasNext()).isFalse();
-			}
-
-			assertThat(plan.nextCalls).as("LIMIT stops inside factorized multiplicity").isOne();
-			assertThat(plan.closeCalls).isOne();
-			assertThat(LmdbNativeCostCalibration.observations(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP))
-					.as("factorized multiplicity truncated by LIMIT is not completed evidence")
-					.isZero();
-		} finally {
-			LmdbNativeCostCalibration.reset();
-			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousEnabled);
-			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+			assertThat(iteration.hasNext()).isFalse();
 		}
+
+		assertThat(plan.nextCalls).as("LIMIT stops inside factorized multiplicity").isOne();
+		assertThat(plan.closeCalls).isOne();
 	}
 
 	@Test
-	void cancellationCloseDoesNotRecordCalibrationAsCompleted() {
-		String previousEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
-		String previousRecording = System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
-		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
-		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
-		LmdbNativeCostCalibration.reset();
-		try {
-			RecordingPlan plan = new RecordingPlan(2, LmdbNativeWork.exact(5_000D));
-			NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, NativeSlotLayout.empty(),
-					new int[0], new String[0], false, new int[0], new boolean[0], 0L, -1L, true, null, null, null,
-					Set.of(), null, null);
+	void cancellationCloseClosesTheProducerOnce() {
+		RecordingPlan plan = new RecordingPlan(2, LmdbNativeWork.exact(5_000D));
+		NativeRowsStep step = new NativeRowsStep(new RecordingNativeSource(), plan, NativeSlotLayout.empty(),
+				new int[0], new String[0], false, new int[0], new boolean[0], 0L, -1L, true, null, null, null,
+				Set.of(), null, null);
 
-			try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
-				assertThat(iteration.hasNext()).isTrue();
-				iteration.next();
-				assertThat(iteration).isInstanceOf(org.eclipse.rdf4j.common.iteration.CooperativeCancellation.class);
-				assertThat(
-						((org.eclipse.rdf4j.common.iteration.CooperativeCancellation) iteration).requestCancellation())
-								.isTrue();
-				assertThat(iteration.hasNext()).isFalse();
-			}
-
-			assertThat(plan.nextCalls).isOne();
-			assertThat(plan.closeCalls).isOne();
-			assertThat(LmdbNativeCostCalibration.observations(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP))
-					.as("cooperative cancellation is not completed calibration evidence")
-					.isZero();
-		} finally {
-			LmdbNativeCostCalibration.reset();
-			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousEnabled);
-			restoreProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, previousRecording);
+		try (CloseableIteration<BindingSet> iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(iteration.hasNext()).isTrue();
+			iteration.next();
+			assertThat(iteration).isInstanceOf(org.eclipse.rdf4j.common.iteration.CooperativeCancellation.class);
+			assertThat(
+					((org.eclipse.rdf4j.common.iteration.CooperativeCancellation) iteration).requestCancellation())
+							.isTrue();
+			assertThat(iteration.hasNext()).isFalse();
 		}
+
+		assertThat(plan.nextCalls).isOne();
+		assertThat(plan.closeCalls).isOne();
 	}
 
 	@ParameterizedTest(name = "bare owner={0}")

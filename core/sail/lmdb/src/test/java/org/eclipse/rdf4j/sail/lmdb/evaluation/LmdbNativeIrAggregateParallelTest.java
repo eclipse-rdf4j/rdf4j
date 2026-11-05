@@ -259,7 +259,6 @@ class LmdbNativeIrAggregateParallelTest {
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
-		KernelExecutionTestAccess.resetCostCalibration();
 	}
 
 	@AfterEach

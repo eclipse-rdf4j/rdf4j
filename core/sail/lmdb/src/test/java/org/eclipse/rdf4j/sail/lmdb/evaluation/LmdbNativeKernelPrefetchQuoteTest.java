@@ -64,8 +64,6 @@ class LmdbNativeKernelPrefetchQuoteTest {
 		set(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
 		set(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "true");
 		set("rdf4j.lmdb.parallel.enabled", "false");
-		set("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-		set("rdf4j.lmdb.adaptiveHedge.enabled", "false");
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(false)
 				.setNativeEvaluationEnabled(true)

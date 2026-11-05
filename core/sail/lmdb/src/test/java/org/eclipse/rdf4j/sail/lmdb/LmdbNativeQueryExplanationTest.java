@@ -104,7 +104,6 @@ public class LmdbNativeQueryExplanationTest {
 
 	@BeforeEach
 	public void setUp() {
-		KernelExecutionTestAccess.resetCostCalibration();
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")
 				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)

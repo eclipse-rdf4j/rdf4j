@@ -197,7 +197,6 @@ class LmdbNativeFeatureFlagForkTest {
 			System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 			System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
-			System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 			System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate",
 					disabled == Scenario.PARALLEL ? "0" : Long.toString(Long.MAX_VALUE));
 			System.setProperty("rdf4j.lmdb.parallel.threads", "2");

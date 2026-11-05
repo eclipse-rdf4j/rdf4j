@@ -51,8 +51,8 @@ final class NativeAggregateCostQuotes {
 	private final StringBuilder telemetry;
 	private final List<SnapshotRow> snapshotRows;
 
-	private record SnapshotRow(String strategy, LmdbNativeCostEstimate physical,
-			LmdbNativeCostEstimate estimate, String dominance,
+	private record SnapshotRow(String strategy, NativePhysicalWorkQuote physical,
+			NativePhysicalWorkQuote estimate, String dominance,
 			LmdbNativeStrategyProposal.ExpectedPlanningPrior expectedPlanningPrior,
 			LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness) {
 	}
@@ -134,36 +134,28 @@ final class NativeAggregateCostQuotes {
 	<T> LmdbNativeStrategyProposal<T> attach(LmdbNativeStrategyProposal<T> proposal, String displayTag) {
 		offered.add(proposal);
 		registerSharedHeaderProof(proposal);
-		LmdbNativeCostEstimate legacy = proposal.adaptiveEstimate(-1D);
+		NativePhysicalWorkQuote legacy = proposal.typedQuote();
 		NativeAggregatePhysicalPlan actual = proposal.aggregatePhysicalPlan();
 		proposal.observeAggregateOpening(NativeAggregateExecutionEvent.describe(owner, displayTag, actual));
 		// A proposal whose static work is unknown quotes a direct-timing placeholder whose only missing proof is
 		// the absence of a physical work quote. The physical quote built here is that quote, so the placeholder's
 		// reason is not a refusal to conserve; a genuine legacy refusal (mapped origin, declined producer) is.
 		PhysicalQuote quoted = physicalQuote(proposal.tag,
-				legacy == null ? proposal.directTimingEstimate() : legacy, actual, legacy == null);
-		LmdbNativeCostEstimate physical = quoted == null ? null : quoted.estimate();
+				legacy == null ? proposal.directTimingQuote() : legacy, actual, legacy == null);
+		NativePhysicalWorkQuote physical = quoted == null ? null : quoted.estimate();
 		if (quoted != null && quoted.coldAnchor() != null) {
 			proposal.withColdAnchor(quoted.coldAnchor());
 		}
-		LmdbNativeCostEstimate estimate = physical == null ? legacy : physical;
+		NativePhysicalWorkQuote estimate = physical == null ? legacy : physical;
 		String representation = physicalRepresentation(actual);
 		if (representation != null) {
 			if (estimate == null) {
-				estimate = proposal.directTimingEstimate();
+				estimate = proposal.directTimingQuote();
 			}
-			LmdbNativePhysicalVariantKey key = estimate.variantKey();
-			LmdbNativePhysicalVariantKey.Builder physicalKey = key.toBuilder()
-					.physicalOrderAndProperties(key.physicalOrderAndProperties() + representation);
-			if (actual != null && actual.keyProperties() != null) {
-				physicalKey.groupingMode(actual.keyProperties().groupingMode())
-						.requiresHashing(actual.keyProperties().requiresHashing());
-			}
-			estimate = estimate.withVariantKey(physicalKey.build());
 		}
 		if (physical != null || representation != null) {
 			if (estimate.workEvidence().isComplete()) {
-				proposal.withPhysicalEstimate(estimate);
+				proposal.withPhysicalQuote(estimate);
 			} else {
 				proposal.withIncompletePhysicalWork(estimate, estimate.workEvidence().missingProof());
 			}
@@ -183,8 +175,8 @@ final class NativeAggregateCostQuotes {
 		return proposal;
 	}
 
-	private static void appendQuote(StringBuilder json, String strategy, LmdbNativeCostEstimate physical,
-			LmdbNativeCostEstimate estimate, String proof,
+	private static void appendQuote(StringBuilder json, String strategy, NativePhysicalWorkQuote physical,
+			NativePhysicalWorkQuote estimate, String proof,
 			LmdbNativeStrategyProposal.ExpectedPlanningPrior expectedPlanningPrior,
 			LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness) {
 		if (json.length() > 1) {
@@ -366,16 +358,16 @@ final class NativeAggregateCostQuotes {
 	private record HeaderEnumeration(long predicate, boolean bySubject, long units) {
 	}
 
-	LmdbNativeCostEstimate physical(String strategy, LmdbNativeCostEstimate legacy,
+	NativePhysicalWorkQuote physical(String strategy, NativePhysicalWorkQuote legacy,
 			NativeAggregatePhysicalPlan actual) {
 		PhysicalQuote quote = physicalQuote(strategy, legacy, actual, false);
 		return quote == null ? null : quote.estimate();
 	}
 
-	private record PhysicalQuote(LmdbNativeCostEstimate estimate, NativeAggregatePhysicalPlan.ColdAnchor coldAnchor) {
+	private record PhysicalQuote(NativePhysicalWorkQuote estimate, NativeAggregatePhysicalPlan.ColdAnchor coldAnchor) {
 	}
 
-	private PhysicalQuote physicalQuote(String strategy, LmdbNativeCostEstimate legacy,
+	private PhysicalQuote physicalQuote(String strategy, NativePhysicalWorkQuote legacy,
 			NativeAggregatePhysicalPlan actual, boolean legacyIsDirectTimingPlaceholder) {
 		if (legacy == null) {
 			return null;
@@ -524,15 +516,15 @@ final class NativeAggregateCostQuotes {
 			evidence = evidence
 					.withMissingProof("FULL GROUP_CONCAT additional text materialization/copy work is unproved");
 		}
-		LmdbNativeCostEstimate estimate = new LmdbNativeCostEstimate(legacy.variantKey(),
+		NativePhysicalWorkQuote estimate = NativePhysicalWorkQuote.of(
 				LmdbNativeCostVector.builder().add(OPEN, 1D).build(),
-				operations, outputExpected, dependency ? 1D : legacy.structuralUncertainty(), evidence);
+				operations, outputExpected, evidence);
 		NativeAggregatePhysicalPlan.ColdAnchor anchor = producerWork == null ? null
 				: actual.producer().coldAnchor(row, producerWork);
 		return new PhysicalQuote(estimate, anchor);
 	}
 
-	private static PhysicalQuote incomplete(LmdbNativeCostEstimate partial, String reason) {
+	private static PhysicalQuote incomplete(NativePhysicalWorkQuote partial, String reason) {
 		return new PhysicalQuote(partial.withWorkEvidence(partial.workEvidence().withMissingProof(reason)), null);
 	}
 

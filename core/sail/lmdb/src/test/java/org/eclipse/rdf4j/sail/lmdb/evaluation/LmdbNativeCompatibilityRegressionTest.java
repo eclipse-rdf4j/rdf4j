@@ -325,7 +325,6 @@ class LmdbNativeCompatibilityRegressionTest {
 				Map.entry("rdf4j.lmdb.janinoCodegen.thresholdRows", "0"),
 				Map.entry("rdf4j.lmdb.janinoCodegen.synchronous", "true"),
 				Map.entry("rdf4j.lmdb.janinoCodegen.scanSources", "true"),
-				Map.entry("rdf4j.lmdb.costCalibration.enabled", "false"),
 				Map.entry("rdf4j.lmdb.wcoj.enabled", "false"),
 				Map.entry("rdf4j.lmdb.packedFtree.enabled", "false"),
 				Map.entry("rdf4j.lmdb.factorizedRows.enabled", "false"),

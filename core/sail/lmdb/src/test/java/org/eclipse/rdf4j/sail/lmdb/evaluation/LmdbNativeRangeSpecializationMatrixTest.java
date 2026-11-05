@@ -158,14 +158,11 @@ class LmdbNativeRangeSpecializationMatrixTest {
 		set(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "true");
 		set(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY, "false");
 		set("rdf4j.lmdb.native.rangePushdown", "true");
-		set("rdf4j.lmdb.costCalibration.enabled", "false");
 		set("rdf4j.lmdb.wcoj.enabled", "false");
 		set("rdf4j.lmdb.parallel.enabled", "false");
 		set("rdf4j.lmdb.factorizedRows.enabled", "true");
 		set("rdf4j.lmdb.packedFtree.enabled", "true");
 		set(NativeBatch.ENABLED_PROPERTY, "true");
-		set("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-		set("rdf4j.lmdb.adaptiveHedge.enabled", "false");
 		store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc").setForceSync(false)
 				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)

@@ -97,8 +97,6 @@ class LmdbNativeZeroEstimateHashQuoteTest {
 		set("rdf4j.lmdb.packedFtree.enabled", "false");
 		set("rdf4j.lmdb.factorizedRows.enabled", "false");
 		set(NativeBatch.ENABLED_PROPERTY, "false");
-		set("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-		set("rdf4j.lmdb.adaptiveHedge.enabled", "false");
 		set("rdf4j.lmdb.directAdjacency.plannerStats.enabled", "false");
 		store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc").setForceSync(false)
 				.setNativeEvaluationEnabled(true)

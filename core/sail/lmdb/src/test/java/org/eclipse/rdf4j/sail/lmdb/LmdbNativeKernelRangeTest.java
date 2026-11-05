@@ -46,7 +46,6 @@ class LmdbNativeKernelRangeTest {
 	private static final String EX = "http://example.com/";
 	private static final String[] PROPERTIES = {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
-			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.janinoCodegen.synchronous",
@@ -75,7 +74,6 @@ class LmdbNativeKernelRangeTest {
 		}
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		// Route contracts use stable strategy preference, independent of earlier runtime cost samples.
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");

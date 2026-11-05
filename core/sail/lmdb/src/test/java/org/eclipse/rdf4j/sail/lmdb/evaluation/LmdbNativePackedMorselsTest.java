@@ -73,7 +73,7 @@ class LmdbNativePackedMorselsTest {
 			LmdbNativePackedMorsels.OUTPUT_ROWS_PROPERTY, LmdbNativePackedMorsels.QUEUE_PAGES_PROPERTY,
 			"rdf4j.lmdb.packedFtree.enabled", "rdf4j.lmdb.packedFtree.algebra.enabled",
 			"rdf4j.lmdb.factor.transport.enabled", "rdf4j.lmdb.janinoCodegen.factorMarginals",
-			"rdf4j.lmdb.costCalibration.enabled", "rdf4j.lmdb.janinoCodegen.enabled" };
+			"rdf4j.lmdb.janinoCodegen.enabled" };
 	private static final String STAR = "?s a ex:Root; ex:p ?p; ex:q ?q . ";
 	private static final String COMPOSED = "{ " + STAR + " } UNION { " + STAR + " } "
 			+ "OPTIONAL { ?s ex:r ?r } BIND(COALESCE(?r, 0) AS ?key) ";
@@ -116,7 +116,6 @@ class LmdbNativePackedMorselsTest {
 		System.setProperty(LmdbNativePackedMorsels.ROWS_PROPERTY, "7");
 		System.setProperty(LmdbNativePackedMorsels.OUTPUT_ROWS_PROPERTY, "5");
 		System.setProperty(LmdbNativePackedMorsels.QUEUE_PAGES_PROPERTY, "1");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
 				.setNativeEvaluationEnabled(true)

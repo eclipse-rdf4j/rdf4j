@@ -70,9 +70,6 @@ class LmdbNativeOrderedPatternAdmissionTest {
 		set(LmdbNativeKernelIr.RESUMABLE_PROPERTY, "true");
 		set("rdf4j.lmdb.parallel.enabled", "false");
 		set("rdf4j.lmdb.orderedFactorizedRows.enabled", "true");
-		set("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-		set("rdf4j.lmdb.adaptiveHedge.enabled", "false");
-		set("rdf4j.lmdb.costCalibration.enabled", "false");
 		repository = new SailRepository(new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
 				.setForceSync(false)
 				.setNativeEvaluationEnabled(true)

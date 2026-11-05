@@ -41,7 +41,11 @@ final class LmdbNativeExplain {
 	static final String STRATEGY_PROPOSAL_COSTS = "nativeStrategyProposalCosts";
 	/** Per admitted candidate, its expected feature counts: {@code tag=FEATURE:count|FEATURE:count,...}. */
 	static final String STRATEGY_PROPOSAL_FEATURES = "nativeStrategyProposalFeatures";
-	static final String ADAPTIVE_COST_DECISION = "nativeAdaptiveCostDecision";
+	static final String DECISION_OUTCOME = "nativeDecisionOutcome";
+	/** One metric per decision: {@code nativeDecision.<point>.<n>}, with {@code n} counting that point on the node. */
+	static final String DECISION_PREFIX = "nativeDecision.";
+	/** A point that dispatches per entry row keeps its first decisions; the rest would only repeat them. */
+	private static final int MAX_DECISIONS_PER_POINT = 8;
 	static final String RUNTIME_ENTRY_PLAN = "nativeRuntimeEntryPlan";
 	static final String INITIAL_BOUND_MASK = "nativeInitialBoundMask";
 
@@ -149,9 +153,41 @@ final class LmdbNativeExplain {
 		setRuntimeMetric(expr, STRATEGY_PROPOSAL_FEATURES, rendered);
 	}
 
-	/** Records the typed prediction interval and evidence that selected the physical strategy. */
-	static void recordAdaptiveCostDecision(TupleExpr expr, String rendered) {
-		setRuntimeMetric(expr, ADAPTIVE_COST_DECISION, rendered);
+	/** Records which strategy won a decision, why, and its expected price. */
+	static void recordDecisionOutcome(TupleExpr expr, String rendered) {
+		setRuntimeMetric(expr, DECISION_OUTCOME, rendered);
+	}
+
+	/**
+	 * Records one rendered decision record and returns its slot. A re-ranking of the same dispatch passes the slot it
+	 * got back, so a retry replaces its first ranking instead of counting as another decision.
+	 */
+	static int recordDecision(TupleExpr expr, LmdbNativeDecisionPoint point, int slot, String rendered) {
+		expr = logicalOrigin(expr);
+		if (expr == null || rendered == null || !recordsExecutionPaths(expr)) {
+			return slot;
+		}
+		String prefix = DECISION_PREFIX + point.name() + '.';
+		synchronized (expr) {
+			int taken = slot;
+			if (taken < 0) {
+				taken = 0;
+				while (taken < MAX_DECISIONS_PER_POINT && expr.getStringMetricActual(prefix + taken) != null) {
+					taken++;
+				}
+			}
+			if (taken >= MAX_DECISIONS_PER_POINT) {
+				return taken;
+			}
+			expr.setStringMetricActual(prefix + taken, rendered);
+			if (expr instanceof QueryRoot root) {
+				TupleExpr arg = root.getArg();
+				synchronized (arg) {
+					arg.setStringMetricActual(prefix + taken, rendered);
+				}
+			}
+			return taken;
+		}
 	}
 
 	/**

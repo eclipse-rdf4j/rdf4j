@@ -39,8 +39,12 @@ final class LmdbNativeDispatchLoop<C, T> {
 	private static final Logger logger = LoggerFactory.getLogger(LmdbNativeDispatchLoop.class);
 	private static final AtomicLong DECISIONS = new AtomicLong();
 
-	/** The opened executable, which strategy opened it, and the record that explains why. */
-	record Selection<T>(T value, String id, double expectedNanos, LmdbNativeDecisionRecord record) {
+	/**
+	 * The opened executable, which strategy opened it, and the record that explains why. {@code observation} is the
+	 * timing a lazily consumed value reports to the learner, or null when nothing observes this run.
+	 */
+	record Selection<T>(T value, String id, double expectedNanos, LmdbNativeDecisionRecord record,
+			LmdbNativeCostObservation observation) {
 	}
 
 	private final LmdbNativeDecisionPoint point;
@@ -53,6 +57,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 	private RowState sharedRow;
 	private RowState.AttemptStart sharedRowStart;
 	private LmdbNativeStaticPrior prior = LmdbNativeStaticPrior.DEFAULT;
+	private LmdbNativeAdvisoryLearner.Scope advice;
+	private boolean eager;
 
 	LmdbNativeDispatchLoop(LmdbNativeDecisionPoint point, List<? extends LmdbNativeStrategy<C, T>> strategies,
 			TupleExpr explainTarget) {
@@ -100,6 +106,37 @@ final class LmdbNativeDispatchLoop<C, T> {
 	LmdbNativeDispatchLoop<C, T> prior(LmdbNativeStaticPrior prior) {
 		this.prior = prior;
 		return this;
+	}
+
+	/** The learned advice for this decision; null, the default, prices every candidate as quoted. */
+	LmdbNativeDispatchLoop<C, T> advice(LmdbNativeAdvisoryLearner.Scope scope) {
+		this.advice = scope;
+		return this;
+	}
+
+	/** Opening runs a strategy of this point to the end of its rows, so the open time is the whole run. */
+	LmdbNativeDispatchLoop<C, T> eager() {
+		this.eager = true;
+		return this;
+	}
+
+	private LmdbNativeSelector.Ranking rank(List<LmdbNativeCandidate<T>> candidates) {
+		return LmdbNativeSelector.rank(candidates, prior, sliceRows, distinctConsumer, advice);
+	}
+
+	/** Starts this run's observation, reporting at once when opening was the whole run. */
+	private LmdbNativeCostObservation observation(LmdbNativeCandidate<T> chosen, double quotedExpected,
+			long openStarted) {
+		if (advice == null) {
+			return null;
+		}
+		LmdbNativeCostObservation observation = advice.observation(chosen.id(), chosen.quote(), quotedExpected);
+		observation.opened(System.nanoTime() - openStarted);
+		if (eager) {
+			observation.completed();
+			return null;
+		}
+		return observation;
 	}
 
 	/** Overrides the label used in explanations and errors, for sites that qualify the point. */
@@ -210,7 +247,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 				}
 				entries.add(new LmdbNativeDecisionRecord.Entry(candidates.get(i).id(), true, null,
 						ranking.nanos()[i], ranking.expectedNanos()[i], ranking.eliminatedBy()[i],
-						consumedQuote(candidates.get(i))));
+						consumedQuote(candidates.get(i)), ranking.quotedExpectedNanos()[i]));
 			}
 			for (String id : asked) {
 				if (declines.containsKey(id)) {
@@ -252,14 +289,13 @@ final class LmdbNativeDispatchLoop<C, T> {
 		try {
 			admitted.admit(context);
 			admitted.applyForcing();
-			LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(admitted.candidates, prior, sliceRows,
-					distinctConsumer);
+			LmdbNativeSelector.Ranking ranking = rank(admitted.candidates);
 			String mode = forcedTag == null ? "normal" : "forced";
 			if (directTag != null) {
 				for (int i = 0; i < admitted.candidates.size(); i++) {
 					if (directTag.equals(admitted.candidates.get(i).id())) {
 						ranking = new LmdbNativeSelector.Ranking(i, ranking.nanos(), ranking.expectedNanos(),
-								new String[admitted.candidates.size()], directReason);
+								ranking.quotedExpectedNanos(), new String[admitted.candidates.size()], directReason);
 						mode = "direct";
 						break;
 					}
@@ -290,8 +326,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 				admitted.releaseAll();
 				return null;
 			}
-			LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(admitted.candidates, prior, sliceRows,
-					distinctConsumer);
+			LmdbNativeSelector.Ranking ranking = rank(admitted.candidates);
 			chosen = ranking.winner() < 0 ? null : admitted.candidates.remove(ranking.winner());
 			admitted.releaseAll();
 			return chosen;
@@ -349,38 +384,49 @@ final class LmdbNativeDispatchLoop<C, T> {
 			String mode = forcedTag == null || !admitted.forcingApplies ? "normal" : "forced";
 			boolean retry = false;
 			boolean forcedReturnedNull = false;
+			int decisionSlot = -1;
+			int rankingRound = 0;
 			while (!admitted.candidates.isEmpty()) {
 				if (retry) {
 					restoreSharedRow();
 				}
-				LmdbNativeSelector.Ranking ranking = LmdbNativeSelector.rank(admitted.candidates, prior, sliceRows,
-						distinctConsumer);
+				LmdbNativeSelector.Ranking ranking = rank(admitted.candidates);
 				if (ranking.winner() < 0) {
 					break;
 				}
 				LmdbNativeCandidate<T> chosen = admitted.candidates.get(ranking.winner());
 				LmdbNativeDecisionRecord record = admitted.record(ranking, retry ? "retry " + mode : mode);
+				rankingRound++;
 				observe(record, label);
 				if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
-					LmdbNativeExplain.recordAdaptiveCostDecision(explainTarget, "winner=" + chosen.id() + ";reason="
+					decisionSlot = LmdbNativeExplain.recordDecision(explainTarget, point, decisionSlot,
+							record.metric());
+					LmdbNativeExplain.recordDecisionOutcome(explainTarget, "winner=" + chosen.id() + ";reason="
 							+ ranking.reason() + ";kind=" + (retry ? "RETRY" : "NORMAL") + ";expectedNanos="
 							+ String.format(java.util.Locale.ROOT, "%.0f", ranking.expectedNanos()[ranking.winner()]));
+				}
+				if (NativeStrategyDecisionEvent.enabled()) {
+					NativeStrategyDecisionEvent.commit(decisionId, rankingRound, label, record, advice);
 				}
 				logSelected(explainTarget, decisionId, label, chosen.id(), retry ? "retry " + mode : mode,
 						ranking.reason());
 				retry = true;
 				startAttemptOnSharedRow();
+				long openStarted = advice == null ? 0L : System.nanoTime();
 				T value = forcedTag == null || !admitted.forcingApplies ? chosen.opener().open()
 						: openCapturingDeclines(chosen, admitted);
 				if (value != null) {
-					admitted.candidates.remove(ranking.winner());
+					int winner = ranking.winner();
+					admitted.candidates.remove(winner);
 					try {
 						admitted.releaseAll();
+						recordPriceEliminations(record);
 						SelectionObserver listener = selectionObserver;
 						if (listener != null) {
 							listener.selected(explainTarget, label, chosen.id(), record);
 						}
-						return new Selection<>(value, chosen.id(), ranking.expectedNanos()[ranking.winner()], record);
+						return new Selection<>(value, chosen.id(), ranking.expectedNanos()[winner], record,
+								observation(chosen, ranking.quotedExpectedNanos()[winner], openStarted));
 					} catch (RuntimeException | Error failure) {
 						// The result has not been handed to the caller if cleanup or observation fails.
 						if (value instanceof AutoCloseable resource) {
@@ -410,6 +456,19 @@ final class LmdbNativeDispatchLoop<C, T> {
 		} catch (IOException | RuntimeException | Error failure) {
 			admitted.releaseAll(failure);
 			throw failure;
+		}
+	}
+
+	/** A candidate that lost on price is a decline with a reason, next to the ones that never offered themselves. */
+	private void recordPriceEliminations(LmdbNativeDecisionRecord record) {
+		if (!LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
+			return;
+		}
+		for (LmdbNativeDecisionRecord.Entry entry : record.entries()) {
+			if (entry.eliminatedBy() != null) {
+				LmdbNativeExplain.recordStrategyDecline(explainTarget, entry.id(),
+						"outranked (" + entry.eliminatedBy() + ")");
+			}
 		}
 	}
 

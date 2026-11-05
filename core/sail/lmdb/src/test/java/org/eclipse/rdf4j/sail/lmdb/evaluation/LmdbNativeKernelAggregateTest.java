@@ -263,9 +263,6 @@ public class LmdbNativeKernelAggregateTest {
 		save(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
 		save(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, "true");
-		save(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
-		save(LmdbNativeCostCalibration.ENABLED_PROPERTY + ".record", "true");
-		save(LmdbNativeCostCalibration.EXPLORATION_PROPERTY, "false");
 		save("rdf4j.lmdb.janinoCodegen.debug", "true");
 		save(LmdbNativeJaninoCodegen.DUMP_DIR_PROPERTY, "target/kernel-dump");
 
@@ -442,12 +439,6 @@ public class LmdbNativeKernelAggregateTest {
 	public void resetCounters() {
 		KernelExecutionTestAccess.resetMetrics();
 		LmdbNativeJaninoCodegen.resetForTests();
-		LmdbNativeCostCalibration.reset();
-		for (int i = 0; i < 100; i++) {
-			// Existing row-kernel engagement cases retain their calibration setup. Aggregate operator contracts use
-			// explicit executor requests and do not need fabricated aggregate timing evidence.
-			LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, 1_000_000D, 1_000L);
-		}
 	}
 
 	private void warmAggregateSeeds() {
@@ -575,22 +566,16 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void nullRejectedOptionalsRetainColdJaninoAggregateEngagement() {
 		List<String> expected = genericRows(NULL_REJECTED_OPTIONALS_COUNT_QUERY);
-		String previousCalibration = System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
-		try {
-			LmdbNativeCostCalibration.reset();
-			awaitColdAggregateEngagement(NULL_REJECTED_OPTIONALS_COUNT_QUERY);
-			String executedPlan = KernelExecutionTestAccess.aggOpened() == 0L
-					? explanation(NULL_REJECTED_OPTIONALS_COUNT_QUERY, Explanation.Level.Executed)
-					: "";
-			assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
-					"the enabled Janino aggregate was never attempted from a cold preference tie (planned="
-							+ KernelExecutionTestAccess.aggPlanned() + ", declined="
-							+ KernelExecutionTestAccess.aggDeclined() + ", compileFailures="
-							+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")\n" + executedPlan);
-			assertEquals(expected, rows(NULL_REJECTED_OPTIONALS_COUNT_QUERY));
-		} finally {
-			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCalibration);
-		}
+		awaitColdAggregateEngagement(NULL_REJECTED_OPTIONALS_COUNT_QUERY);
+		String executedPlan = KernelExecutionTestAccess.aggOpened() == 0L
+				? explanation(NULL_REJECTED_OPTIONALS_COUNT_QUERY, Explanation.Level.Executed)
+				: "";
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"the enabled Janino aggregate was never attempted from a cold preference tie (planned="
+						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
+						+ KernelExecutionTestAccess.aggDeclined() + ", compileFailures="
+						+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")\n" + executedPlan);
+		assertEquals(expected, rows(NULL_REJECTED_OPTIONALS_COUNT_QUERY));
 	}
 
 	@Test

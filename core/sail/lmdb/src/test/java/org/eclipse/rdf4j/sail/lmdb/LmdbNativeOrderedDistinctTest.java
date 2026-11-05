@@ -110,7 +110,6 @@ class LmdbNativeOrderedDistinctTest {
 		String previousInterpreter = System.getProperty(INTERPRETER_FLAG);
 		System.setProperty(JANINO_FLAG, "false");
 		System.setProperty(INTERPRETER_FLAG, "false");
-		KernelExecutionTestAccess.resetCostCalibration();
 		SailRepository repository = repository("group-argument", "spoc");
 		try {
 			addNumericGroups(repository);

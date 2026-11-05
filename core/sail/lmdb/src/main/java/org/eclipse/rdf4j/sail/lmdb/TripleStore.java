@@ -263,6 +263,21 @@ class TripleStore implements Closeable {
 		void execute(IndexRebuildWork work) throws IOException;
 	}
 
+	/**
+	 * A fingerprint of the active index set, independent of index order; it changes when an index is added or dropped.
+	 */
+	long indexGeneration() {
+		long fingerprint = 0L;
+		for (TripleIndex index : indexes) {
+			long sequence = 1125899906842597L;
+			for (char field : index.getFieldSeq()) {
+				sequence = 31L * sequence + field;
+			}
+			fingerprint += sequence * sequence;
+		}
+		return fingerprint;
+	}
+
 	private static final class IndexGeneration {
 		final List<TripleIndex> indexes;
 		final TripleIndex[] best = new TripleIndex[16];

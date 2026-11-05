@@ -368,15 +368,8 @@ final class LmdbNativeKernelExecution {
 						|| output.kind == LmdbNativeKernelIr.AGG_ROW_STATE
 								&& lowered.bindings.groupLayout.outs[index].spec.distinct;
 			}
-			LmdbNativePhysicalVariantKey.GroupingMode grouping = aggregate.groupCols.length == 0
-					? LmdbNativePhysicalVariantKey.GroupingMode.NONE
-					: streaming || orderedEvents ? LmdbNativePhysicalVariantKey.GroupingMode.STREAMING_GROUPS
-							: LmdbNativePhysicalVariantKey.GroupingMode.HASHED;
-			NativeAggregatePhysicalPlan.KeyProperties keyProperties = new NativeAggregatePhysicalPlan.KeyProperties(
-					grouping, hashing);
 			return new NativeAggregatePhysicalPlan(input, storage,
-					new NativeAggregateKernelInput(input, lowered, interpreted, parallel, workers, storage,
-							keyProperties));
+					new NativeAggregateKernelInput(input, lowered, interpreted, parallel, workers, storage, hashing));
 		}
 	}
 
@@ -1047,12 +1040,25 @@ final class LmdbNativeKernelExecution {
 		double rows = LmdbNativeWork.rowsOut(arg, row, boundMask);
 		boolean scanVariables = Boolean.FALSE.equals(wildcardFamily)
 				&& (row.source == null || !row.source.mayHaveWildcardViews());
-		return new LmdbNativeStrategyProposal<>(
+		LmdbNativeStrategyProposal<RowCursor> proposal = new LmdbNativeStrategyProposal<>(
 				() -> openWithFusedRuntime(arg, row,
 						() -> tryOpenRows(arg, row, originalExpr, false, null, null, null, scanVariables,
 								parallelExecution, requestedTier, reservation, wildcardFamily)),
 				work, startup, rows, tag, () -> {
 				}).withPlanningWork(planning).withParallelReservation(reservation);
+		return Boolean.FALSE.equals(wildcardFamily)
+				? proposal.withDominates(ordinaryKernelDominates(interpretedTier))
+				: proposal;
+	}
+
+	/**
+	 * Both families are quoted from the same plan, so price cannot tell them apart. FOAF 3000 with adjacency
+	 * (2026-11-05): with an ordinary kernel admitted the wildcard peer cannot open on one-bound-endpoint shapes, and
+	 * costs 68.8 ms against 27.6 ms with both endpoints bound and 51.8 ms against 46.7 ms with both free. The peer
+	 * stays reachable: a dispatch retry drops the ordinary kernel, and its edge with it, when that kernel cannot open.
+	 */
+	static Set<String> ordinaryKernelDominates(boolean interpreted) {
+		return Set.of(rowRoute(interpreted, false, true));
 	}
 
 	/** Kill switch for the DISTINCT-sinking kernel tiers (proposal and positional rung alike). */

@@ -140,8 +140,6 @@ class LmdbNativeNodeDomainIntersectionQuoteTest {
 			set("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 			set("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 			set("rdf4j.lmdb.parallel.enabled", "false");
-			set("rdf4j.lmdb.costCalibration.enabled", "false");
-			set("rdf4j.lmdb.adaptiveProbe.enabled", "false");
 			set(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "true");
 			set(LmdbNativeKernelLowering.ROW_EXISTS_PROPERTY, "true");
 			source = mock(NativeLmdbQuerySource.class, delegatesTo(new StatsSource(STATEMENTS)));

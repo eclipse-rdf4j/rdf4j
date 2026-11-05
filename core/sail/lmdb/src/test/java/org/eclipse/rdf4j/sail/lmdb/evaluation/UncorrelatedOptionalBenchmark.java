@@ -73,7 +73,7 @@ public class UncorrelatedOptionalBenchmark {
 			"rdf4j.lmdb.factorizedTail.enabled", "rdf4j.lmdb.chunkPipeline.enabled",
 			"rdf4j.lmdb.packedFtree.enabled", "rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.adaptiveFilterPlacement.enabled", "rdf4j.lmdb.prefixRun.enabled",
-			"rdf4j.lmdb.costCalibration.enabled", "rdf4j.lmdb.leftjoin.hash.enabled",
+			"rdf4j.lmdb.leftjoin.hash.enabled",
 			"rdf4j.lmdb.leftjoin.memo.enabled", "rdf4j.lmdb.leftjoin.sweep.enabled",
 			"rdf4j.lmdb.directAdjacency.exactEmptyPruning.enabled" };
 

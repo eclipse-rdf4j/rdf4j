@@ -133,22 +133,8 @@ class LmdbNativeUnknownUpperBoundContractTest {
 	}
 
 	@Test
-	void subtractingTwoUnknownFeatureCeilingsCannotEraseTheRemainder() throws Exception {
-		Method subtract = LmdbNativeOfferBridge.class.getDeclaredMethod("subtract",
-				LmdbNativeCostVector.class, LmdbNativeCostVector.class);
-		subtract.setAccessible(true);
-		assertUnknown((LmdbNativeCostVector) subtract.invoke(null, unknown(), unknown()), 0D, 0D);
-	}
-
-	@Test
-	void featureCorrectionCannotTurnUnknownIntoFinite() throws Exception {
-		double[] ratios = new double[Feature.values().length];
-		Arrays.fill(ratios, 0.5D);
-		Method correction = LmdbNativeAdaptiveCostModel.class.getDeclaredMethod("applyFeatureCorrection",
-				LmdbNativeCostVector.class, LmdbNativeStoreCostModel.Correction.class);
-		correction.setAccessible(true);
-		assertUnknown((LmdbNativeCostVector) correction.invoke(null, unknown(),
-				new LmdbNativeStoreCostModel.Correction(ratios, true)), 1.5D, 1.5D);
+	void subtractingTwoUnknownFeatureCeilingsCannotEraseTheRemainder() {
+		assertUnknown(LmdbNativeCostQuote.remainder(unknown(), unknown()), 0D, 0D);
 	}
 
 	@Test

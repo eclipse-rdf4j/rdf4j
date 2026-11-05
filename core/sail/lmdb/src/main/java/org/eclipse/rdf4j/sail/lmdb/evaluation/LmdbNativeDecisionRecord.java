@@ -34,19 +34,25 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 	/**
 	 * One strategy or candidate in the decision.
 	 *
-	 * @param id            strategy tag
-	 * @param admitted      whether the strategy produced a candidate
-	 * @param declineReason the strategy's own reason when not admitted
-	 * @param nanos         the priced interval of the candidate, or null when declined
-	 * @param expectedNanos the expected price, or NaN
-	 * @param eliminatedBy  what removed the candidate from the frontier, or null when it stayed eligible
-	 * @param features      the priced feature vector (after slice proration), or null when declined
+	 * @param id                  strategy tag
+	 * @param admitted            whether the strategy produced a candidate
+	 * @param declineReason       the strategy's own reason when not admitted
+	 * @param nanos               the priced interval of the candidate, or null when declined
+	 * @param expectedNanos       the expected price, or NaN
+	 * @param eliminatedBy        what removed the candidate from the frontier, or null when it stayed eligible
+	 * @param features            the priced feature vector (after slice proration), or null when declined
+	 * @param quotedExpectedNanos the expected price as quoted, before learned advice, or NaN
 	 */
 	record Entry(String id, boolean admitted, String declineReason, LmdbNativeWork nanos, double expectedNanos,
-			String eliminatedBy, LmdbNativeCostVector features) {
+			String eliminatedBy, LmdbNativeCostVector features, double quotedExpectedNanos) {
 
 		static Entry declined(String id, String reason) {
-			return new Entry(id, false, reason, null, Double.NaN, null, null);
+			return new Entry(id, false, reason, null, Double.NaN, null, null, Double.NaN);
+		}
+
+		/** Where the price came from: the quote alone, or the quote narrowed by learned advice; null when declined. */
+		String provenance() {
+			return !admitted ? null : expectedNanos == quotedExpectedNanos ? "quoted" : "advised";
 		}
 	}
 
@@ -75,6 +81,30 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 			} else {
 				out.append(' ').append(render(entry));
 				if (entry.eliminatedBy() != null) {
+					out.append(" eliminated: ").append(entry.eliminatedBy());
+				}
+			}
+		}
+		return out.toString();
+	}
+
+	/** The explain metric of this decision on one line: the winner and why, then every entry with its fate. */
+	String metric() {
+		StringBuilder out = new StringBuilder("winner=").append(winnerId())
+				.append("; mode=")
+				.append(mode)
+				.append("; reason=")
+				.append(reason);
+		for (int i = 0; i < entries.size(); i++) {
+			Entry entry = entries.get(i);
+			out.append("; ").append(entry.id()).append(' ');
+			if (!entry.admitted()) {
+				out.append("declined: ").append(entry.declineReason());
+			} else {
+				out.append(render(entry));
+				if (i == winner) {
+					out.append(" WINNER");
+				} else if (entry.eliminatedBy() != null) {
 					out.append(" eliminated: ").append(entry.eliminatedBy());
 				}
 			}

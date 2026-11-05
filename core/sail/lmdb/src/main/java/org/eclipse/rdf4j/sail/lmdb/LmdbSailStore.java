@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,7 +44,6 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
-import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
@@ -6962,15 +6960,7 @@ class LmdbSailStore implements SailStore {
 			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
-			LmdbDirectAdjacencyStore adjacencyForContext = directAdjacency;
-			costModelContext = new LmdbNativeCostModelContext(
-					dataDir.toPath(),
-					UUID.nameUUIDFromBytes(dataDir.getAbsolutePath().getBytes(StandardCharsets.UTF_8)),
-					adjacencyForContext == null ? () -> 0L : adjacencyForContext::epochCount,
-					adjacencyForContext == null ? () -> "DISABLED"
-							: () -> adjacencyForContext.maintenanceState().name(),
-					costModelDataGeneration::get,
-					() -> 0L);
+			costModelContext = new LmdbNativeCostModelContext(dataDir.toPath(), tripleStore::indexGeneration);
 			postReadyInitialization = () -> initializePostReadyMaintenance(config, statsFactory,
 					directAdjacencyOptions.buildOnStart());
 			valueStore.setStartupValueOverlayScheduling(valueOverlayStartupScheduling);

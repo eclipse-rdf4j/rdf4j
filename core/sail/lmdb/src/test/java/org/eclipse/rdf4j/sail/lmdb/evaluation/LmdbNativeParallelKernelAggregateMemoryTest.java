@@ -119,8 +119,6 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 			"rdf4j.lmdb.parallel.minWorkEstimate",
 			"rdf4j.lmdb.parallel.rangePartition.enabled",
 			"rdf4j.lmdb.parallel.startupWork",
-			LmdbNativeCostCalibration.ENABLED_PROPERTY,
-			LmdbNativeAdaptiveCostModel.RECORD_PROPERTY,
 			LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY };
 
 	@TempDir
@@ -134,9 +132,6 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		for (String property : PROPERTIES) {
 			previousProperties.put(property, System.getProperty(property));
 		}
-		// These tests exercise byte admission, so they must not depend on machine-learning state left by prior tests.
-		set(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
-		set(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "false");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)

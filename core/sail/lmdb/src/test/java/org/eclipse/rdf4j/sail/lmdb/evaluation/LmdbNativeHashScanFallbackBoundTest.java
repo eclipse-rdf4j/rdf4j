@@ -99,8 +99,6 @@ class LmdbNativeHashScanFallbackBoundTest {
 		set("rdf4j.lmdb.packedFtree.enabled", "false");
 		set("rdf4j.lmdb.factorizedRows.enabled", "false");
 		set(NativeBatch.ENABLED_PROPERTY, "false");
-		set("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-		set("rdf4j.lmdb.adaptiveHedge.enabled", "false");
 		set(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "true");
 		set(LmdbNativeKernelLowering.MIXED_BINDING_PROPERTY, "false");
 		store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc").setForceSync(false)

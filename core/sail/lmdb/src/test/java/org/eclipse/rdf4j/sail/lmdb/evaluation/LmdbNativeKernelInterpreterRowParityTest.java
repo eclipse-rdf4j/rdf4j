@@ -364,7 +364,6 @@ class LmdbNativeKernelInterpreterRowParityTest {
 	private void assertParityInterpreterServed(String query) {
 		List<String> compiled = canonical(rows(query, true));
 		LmdbNativeKernelExecution.resetMetrics();
-		KernelExecutionTestAccess.resetCostCalibration();
 		List<String> interpreted = canonical(rows(query, false));
 		assertThat(interpreted).isEqualTo(compiled);
 		assertThat(LmdbNativeKernelExecution.OPENED.get())
@@ -376,7 +375,6 @@ class LmdbNativeKernelInterpreterRowParityTest {
 	private void assertOrderedParity(String query) {
 		List<String> compiled = ordered(rows(query, true));
 		LmdbNativeKernelExecution.resetMetrics();
-		KernelExecutionTestAccess.resetCostCalibration();
 		List<String> interpreted = ordered(rows(query, false));
 		assertThat(interpreted).isEqualTo(compiled);
 		assertThat(LmdbNativeKernelExecution.OPENED.get())
@@ -387,7 +385,6 @@ class LmdbNativeKernelInterpreterRowParityTest {
 	private void assertParityStaysSemanticNative(String query) {
 		List<String> compiled = canonical(rows(query, true));
 		LmdbNativeKernelExecution.resetMetrics();
-		KernelExecutionTestAccess.resetCostCalibration();
 		long compiledBefore = KernelExecutionTestAccess.semanticNativeCompiles();
 		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
 		long islandsBefore = KernelExecutionTestAccess.islandCompiles();

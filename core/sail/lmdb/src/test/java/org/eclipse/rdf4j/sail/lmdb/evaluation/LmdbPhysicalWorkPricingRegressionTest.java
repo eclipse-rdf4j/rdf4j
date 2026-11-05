@@ -805,7 +805,7 @@ class LmdbPhysicalWorkPricingRegressionTest {
 				LmdbNativeWork.between(0D, 100D), LmdbNativeWork.between(90D, 100D), 100D,
 				"nestedLoop", null, false);
 
-		LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(1D);
+		NativePhysicalWorkQuote estimate = proposal.typedQuote();
 
 		assertThat(estimate).isNotNull();
 		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
@@ -823,7 +823,7 @@ class LmdbPhysicalWorkPricingRegressionTest {
 		LmdbNativeStrategyProposal<Object> proposal = new LmdbNativeStrategyProposal<>(() -> null,
 				LmdbNativeWork.exact(100D), LmdbNativeWork.UNKNOWN, 100D, "nestedLoop", null, false);
 
-		LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(1D);
+		NativePhysicalWorkQuote estimate = proposal.typedQuote();
 
 		assertThat(estimate).isNotNull();
 		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
@@ -1524,12 +1524,10 @@ class LmdbPhysicalWorkPricingRegressionTest {
 						.add(LmdbNativeCostVector.Feature.SCANNED_ROW, source.statementRows)
 						.add(LmdbNativeCostVector.Feature.INTERPRETED_ROW, filterCalls.get())
 						.build();
-				LmdbNativeCostEstimate typedEstimate = new LmdbNativeCostEstimate(
-						LmdbNativePhysicalVariantKey.builder("last-match-filter-slice-control").build(),
-						LmdbNativeCostVector.zero(), typedCompleteOpen, estimatedRows, 0D);
-				LmdbNativeCostEstimate typedSlice = typedEstimate.forConsumption(1D / estimatedRows);
-				assertThat(typedSlice.estimatedOutputRows()).isEqualTo(1D);
-				assertThat(typedSlice.total().high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+				LmdbNativeCostVector typedSlice = new LmdbNativeCostQuote(LmdbNativeCostVector.zero(),
+						typedCompleteOpen,
+						estimatedRows, false, false).forSlice(1D);
+				assertThat(typedSlice.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
 						.as("LIMIT 1 may still need the last row and its full physical prefix")
 						.isGreaterThanOrEqualTo(source.statementRows);
 				assertThat(sliced.high())

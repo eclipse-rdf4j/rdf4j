@@ -70,8 +70,6 @@ public class LmdbNativeParallelAggregationTest {
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String MERGE_FLAG = "rdf4j.lmdb.chunkPipeline.merge.enabled";
 	private static final String EXTERNAL_ROOT_CANDIDATE_FLAG = "rdf4j.lmdb.chunkPipeline.externalRoot.experimental";
-	private static final String COST_CALIBRATION_FLAG = "rdf4j.lmdb.costCalibration.enabled";
-	private static final String COST_EXPLORATION_FLAG = "rdf4j.lmdb.costCalibration.explore";
 	private static final String PARALLEL_STARTUP_WORK_FLAG = LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY;
 	private static final String PACKED_FTREE_FLAG = "rdf4j.lmdb.packedFtree.enabled";
 	private static final String FACTORIZED_TAIL_FLAG = "rdf4j.lmdb.factorizedTail.enabled";
@@ -88,8 +86,8 @@ public class LmdbNativeParallelAggregationTest {
 	@BeforeEach
 	public void setUp() {
 		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, THREADS_FLAG,
-				MAX_TASKS_FLAG, MERGE_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG, COST_CALIBRATION_FLAG,
-				COST_EXPLORATION_FLAG, PARALLEL_STARTUP_WORK_FLAG, PACKED_FTREE_FLAG, FACTORIZED_TAIL_FLAG, JANINO_FLAG,
+				MAX_TASKS_FLAG, MERGE_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG,
+				PARALLEL_STARTUP_WORK_FLAG, PACKED_FTREE_FLAG, FACTORIZED_TAIL_FLAG, JANINO_FLAG,
 				KERNEL_INTERPRETER_FLAG);
 		System.setProperty(PARALLEL_FLAG, "true");
 		System.setProperty(THRESHOLD_FLAG, "0");
@@ -98,15 +96,12 @@ public class LmdbNativeParallelAggregationTest {
 		// These operator-level tests validate the parallel implementation. Remove startup work from the fixture so the
 		// common arbiter selects that proposal without restoring the former call-order priority.
 		System.setProperty(PARALLEL_STARTUP_WORK_FLAG, "0");
-		System.setProperty(COST_CALIBRATION_FLAG, "false");
-		System.setProperty(COST_EXPLORATION_FLAG, "false");
 		System.setProperty(PACKED_FTREE_FLAG, "false");
 		// DISTINCT value marginals are now also supported by the factorized tail. These operator tests isolate the
 		// ordinary parallel sink, including its external-root chunk implementation and exact worker merge contracts.
 		System.setProperty(FACTORIZED_TAIL_FLAG, "false");
 		System.setProperty(JANINO_FLAG, "false");
 		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
-		LmdbNativeCostCalibration.reset();
 		repository = new SailRepository(new LmdbStore(dataDir, config(false)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -162,7 +157,6 @@ public class LmdbNativeParallelAggregationTest {
 				repository.shutDown();
 			}
 		} finally {
-			LmdbNativeCostCalibration.reset();
 			restoreProperties(previousProperties);
 		}
 	}

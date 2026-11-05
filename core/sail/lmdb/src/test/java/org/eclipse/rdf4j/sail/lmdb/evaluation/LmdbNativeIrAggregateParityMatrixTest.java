@@ -91,7 +91,6 @@ class LmdbNativeIrAggregateParityMatrixTest {
 		// query discards kernels while the strategy arbiter is still warming the same shape, making a forced generated
 		// request indistinguishable from a genuinely unsupported route.
 		LmdbNativeJaninoCodegen.resetForTests();
-		KernelExecutionTestAccess.resetCostCalibration();
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)

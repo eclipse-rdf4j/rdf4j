@@ -2785,7 +2785,6 @@ class LmdbDirectAdjacencyQueryTest {
 	void pagedBaseServesExactCountAndPredicateAnalytics() throws IOException {
 		// This is a cold AUTO physical-route assertion, not a latency contest after earlier tests or forced
 		// capability probes have trained the process-wide cost model.
-		KernelExecutionTestAccess.resetCostCalibration();
 		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		openPreferStore();

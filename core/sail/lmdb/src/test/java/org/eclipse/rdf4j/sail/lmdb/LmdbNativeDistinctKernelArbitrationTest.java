@@ -55,7 +55,6 @@ public class LmdbNativeDistinctKernelArbitrationTest {
 			NATIVE_FLAG,
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.kernelInterpreter.enabled",
-			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.parallel.minWorkEstimate",
@@ -88,7 +87,6 @@ public class LmdbNativeDistinctKernelArbitrationTest {
 		// Deterministic kernel engagement: interpreter tier only, no compile-threshold churn, no learned state.
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "true");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")

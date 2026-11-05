@@ -66,7 +66,7 @@ class LmdbNativeOfferBridgeLifecycleTest {
 		IllegalStateException failure = new IllegalStateException("physical quote failed");
 		AtomicInteger releases = new AtomicInteger();
 		LmdbNativeStrategyProposal<String> proposal = spy(proposal(releases::incrementAndGet));
-		doThrow(failure).when(proposal).adaptiveEstimate(-1D);
+		doThrow(failure).when(proposal).typedQuote();
 		LmdbNativeOfferBridge<String> bridge = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.ROW);
 		bridge.offer(() -> proposal);
 

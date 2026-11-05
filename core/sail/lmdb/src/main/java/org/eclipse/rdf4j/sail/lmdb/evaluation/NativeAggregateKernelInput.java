@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildca
 /** Pricing facts from the same lowered producer and projection schedule that a candidate opens. */
 record NativeAggregateKernelInput(SlotPlan input, LmdbNativeKernelLowering.Lowered lowered,
 		boolean interpreted, boolean parallel, int workers, NativeAggregatePhysicalPlan.Retention storage,
-		NativeAggregatePhysicalPlan.KeyProperties keyProperties)
+		boolean requiresHashing)
 		implements NativeAggregatePhysicalPlan.Producer {
 
 	@Override
@@ -176,7 +176,7 @@ record NativeAggregateKernelInput(SlotPlan input, LmdbNativeKernelLowering.Lower
 		LmdbNativeCostVector.Builder extra = LmdbNativeCostVector.builder()
 				.add(interpreted ? INTERPRETED_ROW : GENERATED_ROW, Math.min(Double.MAX_VALUE, low),
 						Math.min(Double.MAX_VALUE, high), high);
-		if (storage == NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE && keyProperties.requiresHashing()
+		if (storage == NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE && requiresHashing
 				&& lowered.kernel.terminal instanceof LmdbNativeKernelIr.Aggregate aggregate) {
 			int keyChannels = aggregate.groupCols.length == 0 ? 0 : 1;
 			for (int index = 0; index < aggregate.outputs.length; index++) {

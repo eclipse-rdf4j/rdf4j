@@ -384,19 +384,6 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		}
 
 		@Override
-		public NativeAggregatePhysicalPlan.KeyProperties keyProperties() {
-			if (quote.physical != null) {
-				return new NativeAggregatePhysicalPlan.KeyProperties(LmdbNativePhysicalVariantKey.GroupingMode.NONE,
-						false);
-			}
-			// A grouped recipe without a physical quote retains per-group membership state: input-sized hashing,
-			// not the bounded page/root-domain work that lets the ungrouped census keep its cold prior.
-			return groupFields.length == 0 ? null
-					: new NativeAggregatePhysicalPlan.KeyProperties(
-							LmdbNativePhysicalVariantKey.GroupingMode.HASHED, true);
-		}
-
-		@Override
 		public String properties() {
 			return "CENSUS[coverage=PAGE_HEADERS,reduction=WEIGHTED_KIND_CONTRIBUTIONS,output=BOUNDED_REPLAY]";
 		}

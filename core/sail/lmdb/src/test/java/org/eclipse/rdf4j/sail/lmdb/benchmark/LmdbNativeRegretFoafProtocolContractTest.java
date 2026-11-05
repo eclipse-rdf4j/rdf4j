@@ -127,7 +127,8 @@ class LmdbNativeRegretFoafProtocolContractTest {
 		Map<String, String> all = LmdbNativeStrategyRegretHarnessTest.selectQueries("");
 
 		assertThat(all).hasSize(FoafCliqueQueryCatalog.allScenarios().size()
-				+ LmdbNativeGoldenDecisionsTest.SHAPE_QUERIES.size());
+				+ LmdbNativeGoldenDecisionsTest.SHAPE_QUERIES.size()
+				+ LmdbNativeStrategyRegretHarnessTest.VARIABLE_PREDICATE_QUERIES.size());
 		assertThat(all).containsKeys("starThreeProps", "objectBoundOnly", "distinctCities");
 	}
 

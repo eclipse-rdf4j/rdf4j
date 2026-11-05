@@ -55,7 +55,7 @@ class LmdbNativePackedAlgebraTest {
 	private static final String EX = "urn:packed:algebra:";
 	private static final String PREFIX = "PREFIX ex: <" + EX + ">\n";
 	private static final String NATIVE = "rdf4j.lmdb.nativeQueryEngine.enabled";
-	private static final String[] PROPERTIES = { NATIVE, "rdf4j.lmdb.costCalibration.enabled",
+	private static final String[] PROPERTIES = { NATIVE,
 			"rdf4j.lmdb.janinoCodegen.enabled", "rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.packedFtree.enabled", "rdf4j.lmdb.packedFtree.algebra.enabled",
 			"rdf4j.lmdb.factor.transport.enabled", "rdf4j.lmdb.janinoCodegen.factorMarginals" };
@@ -71,7 +71,6 @@ class LmdbNativePackedAlgebraTest {
 			previous.put(property, System.getProperty(property));
 			System.setProperty(property, "true");
 		}
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")

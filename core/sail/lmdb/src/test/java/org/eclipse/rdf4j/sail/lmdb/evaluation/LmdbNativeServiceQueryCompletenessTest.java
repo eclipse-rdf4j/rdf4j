@@ -88,7 +88,6 @@ class LmdbNativeServiceQueryCompletenessTest {
 		set("rdf4j.lmdb.parallel.enabled", "false");
 		set("rdf4j.lmdb.irAggregateParallel.enabled", "false");
 		set("rdf4j.lmdb.irKernelParallel.enabled", "false");
-		set("rdf4j.lmdb.costModel.persist.enabled", "false");
 		Map<String, FederatedService> endpoints = new HashMap<>();
 		FederatedServiceResolver resolver = url -> {
 			FederatedService service = endpoints.get(url);

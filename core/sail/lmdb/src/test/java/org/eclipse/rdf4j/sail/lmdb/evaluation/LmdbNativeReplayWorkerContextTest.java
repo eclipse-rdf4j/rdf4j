@@ -98,7 +98,6 @@ class LmdbNativeReplayWorkerContextTest {
 		set("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		set("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 		set("rdf4j.lmdb.packedFtree.enabled", "false");
-		set("rdf4j.lmdb.costCalibration.enabled", "false");
 		set("rdf4j.lmdb.factorizedRows.enabled", "false");
 		set("rdf4j.lmdb.factorizedTail.enabled", "false");
 		set("rdf4j.lmdb.chunkPipeline.enabled", "false");
@@ -106,7 +105,6 @@ class LmdbNativeReplayWorkerContextTest {
 		set("rdf4j.lmdb.prefixRun.enabled", "false");
 		set("rdf4j.lmdb.wcoj.enabled", "false");
 
-		set("rdf4j.lmdb.costCalibration.explore", "false");
 		store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true));
 		repository = new SailRepository(store);
 		try (var connection = repository.getConnection()) {

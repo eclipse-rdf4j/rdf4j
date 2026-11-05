@@ -73,6 +73,30 @@ class LmdbNativeStrategyRegretHarnessTest {
 	private static final int WARMUPS = 2;
 	private static final long SEED = 12345L;
 
+	/**
+	 * Row shapes with an unbound predicate joined to fixed patterns. Neither the clique catalogue nor the golden shapes
+	 * reach these, and they are where the wildcard-view kernels compete with their ordinary scan peers.
+	 */
+	static final Map<String, String> VARIABLE_PREDICATE_QUERIES = variablePredicateQueries();
+
+	private static Map<String, String> variablePredicateQueries() {
+		String foaf = "PREFIX foaf: <http://xmlns.com/foaf/0.1/>\n";
+		Map<String, String> queries = new LinkedHashMap<>();
+		queries.put("variablePredicateOutgoing",
+				foaf + "SELECT ?p ?prop ?value WHERE { ?p foaf:age ?age . ?p ?prop ?value }");
+		queries.put("variablePredicateTwoHop",
+				foaf + "SELECT ?a ?prop ?value WHERE { ?a foaf:knows ?b . ?b ?prop ?value }");
+		queries.put("variablePredicateIncoming",
+				foaf + "SELECT ?s ?prop ?b WHERE { ?b foaf:age ?age . ?s ?prop ?b }");
+		queries.put("variablePredicateLink",
+				foaf + "SELECT ?a ?prop ?b WHERE { ?a foaf:knows ?b . ?a ?prop ?b }");
+		queries.put("variablePredicateSweepFilter",
+				foaf + "SELECT ?s ?prop ?o WHERE { ?s ?prop ?o FILTER(?prop != foaf:knows) }");
+		queries.put("variablePredicateSweepOptional",
+				foaf + "SELECT ?s ?prop ?o ?age WHERE { ?s ?prop ?o OPTIONAL { ?o foaf:age ?age } }");
+		return queries;
+	}
+
 	/** Index sets to measure; default the fixture's three. */
 	private static final List<String> INDEX_SETS = List.of(System
 			.getProperty("rdf4j.lmdb.regret.indexes", String.join(";", LmdbNativeGoldenDecisionsTest.INDEX_SETS))
@@ -186,6 +210,7 @@ class LmdbNativeStrategyRegretHarnessTest {
 			queries.put(scenario.benchmarkMethodName(), scenario.query());
 		}
 		queries.putAll(LmdbNativeGoldenDecisionsTest.SHAPE_QUERIES);
+		queries.putAll(VARIABLE_PREDICATE_QUERIES);
 		if (selection.isBlank()) {
 			return queries;
 		}

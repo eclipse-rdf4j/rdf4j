@@ -274,8 +274,6 @@ class LmdbNativeSampledCardinalityQuoteBoundTest {
 			set("rdf4j.lmdb.factorizedRows.enabled", "false");
 			set("rdf4j.lmdb.factor.transport.enabled", "false");
 			set("rdf4j.lmdb.factorizedSink.enabled", "false");
-			set("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-			set("rdf4j.lmdb.adaptiveHedge.enabled", "false");
 			set(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
 			set(LmdbNativeHashJoin.ENABLED_PROPERTY, "false");
 			set(LmdbNativeKernelLowering.HASH_JOIN_PROPERTY, "false");

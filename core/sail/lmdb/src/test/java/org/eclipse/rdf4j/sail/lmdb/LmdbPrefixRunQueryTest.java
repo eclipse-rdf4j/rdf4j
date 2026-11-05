@@ -53,7 +53,6 @@ public class LmdbPrefixRunQueryTest {
 
 	@BeforeEach
 	public void isolatePrefixRunTier() {
-		KernelExecutionTestAccess.resetCostCalibration();
 		disable("rdf4j.lmdb.janinoCodegen.enabled");
 		disable("rdf4j.lmdb.kernelInterpreter.enabled");
 		disable("rdf4j.lmdb.packedFtree.enabled");

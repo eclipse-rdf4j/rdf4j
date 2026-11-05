@@ -417,7 +417,6 @@ class LmdbNativeKernelInterpreterParityTest {
 	 * across arms.
 	 */
 	private List<String> run(String query, boolean janino) {
-		KernelExecutionTestAccess.resetCostCalibration();
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janino));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			// This suite tests the kernel tiers themselves, not the selector: the measured selector may legitimately

@@ -58,7 +58,6 @@ public class LmdbNativeAggregateParallelWarmupTest {
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.kernelInterpreter.enabled",
 			"rdf4j.lmdb.kernelInterpreter.warmup",
-			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.parallel.maxTasks",
@@ -92,7 +91,6 @@ public class LmdbNativeAggregateParallelWarmupTest {
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "true");
 		// Static ladder decides (irAggregate outranks its rivals once the short-circuits below are off), so the
 		// parallel rung is reached deterministically instead of via learned dispatch.
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
 		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "4");

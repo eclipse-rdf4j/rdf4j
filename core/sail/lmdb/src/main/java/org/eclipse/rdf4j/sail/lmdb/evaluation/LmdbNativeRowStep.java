@@ -902,6 +902,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 						originalExpr)
 								.sharedRow(row)
 								.forcing(forcedExecutionStrategyName())
+								.advice(LmdbNativeAdvisoryLearner.scope(row, arg))
+								.eager()
 								.dispatch(null);
 				if (ordered != null) {
 					row.acceptScalarFilterAttempt();
@@ -1539,11 +1541,13 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 							.slice(consumableRows(), distinct)
 							.sharedRow(row)
 							.forcing(forcedStrategy)
+							.advice(LmdbNativeAdvisoryLearner.scope(row, arg))
 							.dispatch(null);
 			if (selection == null) {
 				throw new IllegalStateException("native nested-loop fallback declined");
 			}
 			NativeUnorderedInput selected = selection.value();
+			selected.observe(selection.observation());
 			String winningTag = selection.id();
 			if (LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT.equals(winningTag)) {
 				if (distinctPlan == null) {
@@ -1823,6 +1827,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 								NativeSliceMath.limitPlusOffset(limit, Math.max(0L, offset))),
 						originalExpr)
 								.forcing(forcedExecutionStrategyName())
+								.advice(LmdbNativeAdvisoryLearner.scope(row, arg))
 								.preview(null);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
@@ -1869,6 +1874,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					.slice(consumableRows(), distinct)
 					.label(orderSlots.length == 0 ? "row/join dispatch" : "row/join dispatch (ORDER BY fallback input)")
 					.forcing(forcedExecutionStrategyName())
+					.advice(LmdbNativeAdvisoryLearner.scope(row, arg))
 					.preview(null, directTag, directReason);
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
@@ -2225,7 +2231,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		}, proposal.work, proposal.startupWork, proposal.estRows, proposal.tag, proposal::close)
 				.withOptionalPlanningWork(proposal.planningWork())
 				.withCostQuote(proposal.costQuote() != null ? proposal.costQuote()
-						: cursorQuote(proposal.tag, row, proposal.parallelWorkers())),
+						: cursorQuote(proposal.tag, row, proposal.parallelWorkers()))
+				.withDominates(proposal.dominates()),
 				row);
 	}
 
@@ -3342,7 +3349,8 @@ final class NativeUnorderedInput implements AutoCloseable {
 	boolean closed;
 	boolean exhausted;
 	Runnable scalarFilterAcceptanceGuard;
-	double expectedEarlyCloseRows = Double.NaN;
+	/** Times this input's pulls for the learner when one observes the run; null otherwise. */
+	private LmdbNativeCostObservation observation;
 
 	/**
 	 * Who owes the DISTINCT dedup for this input. {@code HASH}: the caller runs its global hash tracker (any ordinary
@@ -3410,9 +3418,20 @@ final class NativeUnorderedInput implements AutoCloseable {
 		}
 	}
 
+	void observe(LmdbNativeCostObservation observation) {
+		this.observation = observation;
+	}
+
 	boolean advance() throws IOException {
+		LmdbNativeCostObservation observing = observation;
 		try {
-			return row.advance(cursor);
+			if (observing == null) {
+				return row.advance(cursor);
+			}
+			long started = observing.beginPull();
+			boolean advanced = row.advance(cursor);
+			observing.endPull(started);
+			return advanced;
 		} catch (IOException | RuntimeException | Error failure) {
 			// This input owns the attempt even if its row later restores or replaces the mutable carrier pointer.
 			// Keep a trial-private failure local until its arbiter decides whether it escapes.
@@ -3422,22 +3441,19 @@ final class NativeUnorderedInput implements AutoCloseable {
 	}
 
 	int fill() throws IOException {
+		LmdbNativeCostObservation observing = observation;
 		try {
-			return row.fill(batchCursor, batch);
+			if (observing == null) {
+				return row.fill(batchCursor, batch);
+			}
+			long started = observing.beginPull();
+			int filled = row.fill(batchCursor, batch);
+			observing.endPull(started);
+			return filled;
 		} catch (IOException | RuntimeException | Error failure) {
 			failScalarFilterAttempt(failure, false);
 			throw failure;
 		}
-	}
-
-	void firstOutput() {
-		// the adaptive observation that used to be notified here is gone; the regret harness measures end to end
-	}
-
-	/** Reports a LIMIT-satisfied close so the observation stays eligible for its consumed fraction (G5). */
-	void expectedEarlyCloseAfterRows(double rows) {
-		// Defer selection completion until producer cleanup and the owner's final acceptance guard both succeed.
-		expectedEarlyCloseRows = rows;
 	}
 
 	void markExhausted() {
@@ -3494,6 +3510,9 @@ final class NativeUnorderedInput implements AutoCloseable {
 		} else if (selectedInputAccepted && scalarFilterAttempt != null) {
 			scalarFilterAttempt.accept();
 		}
+		if (failure == null && completed && selectedInputAccepted && observation != null) {
+			observation.completed();
+		}
 		if (scalarFilterAttempt != null && row.scalarFilterAttempt == scalarFilterAttempt) {
 			row.scalarFilterAttempt = scalarFilterAttempt.parent();
 		}
@@ -3540,7 +3559,6 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 				int physicalRow = active.batch.selection[batchIndex++];
 				active.batch.copyToRow(physicalRow, active.row.slots);
 				active.row.recomputeBoundMask();
-				active.firstOutput();
 				return true;
 			}
 			if (repeatedFactorizedRows > 0L) {
@@ -3556,7 +3574,6 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 				active.markExhausted();
 				return false;
 			}
-			active.firstOutput();
 			if (active.cursor instanceof FactorizedRowCursor) {
 				repeatedFactorizedRows = ((FactorizedRowCursor) active.cursor).multiplicity() - 1L;
 			}
@@ -3748,9 +3765,6 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 				cancellation.check();
 				break;
 			}
-			if (unorderedInput != null) {
-				unorderedInput.firstOutput();
-			}
 			if (closed) {
 				return null;
 			}
@@ -3790,9 +3804,6 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 					cancellation.check();
 					return null;
 				}
-				if (unorderedInput != null) {
-					unorderedInput.firstOutput();
-				}
 				row.recordExactValuesMatched(batch.selectedCount);
 				if (step.distinct && !distinctHandledByCursor) {
 					batch.selectedCount = distinctRows.selectBatch(batch, batch.selection, batch.selectedCount);
@@ -3815,15 +3826,8 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		return null;
 	}
 
-	/**
-	 * Decrements the LIMIT budget; when the last slot is consumed the producer's observation is marked as an expected
-	 * early close for the fraction actually consumed (gap-analysis G5), so a LIMIT-truncated run stays eligible
-	 * learning evidence instead of an unexplained early close.
-	 */
 	private void consumeLimitSlot() {
-		if (--remainingLimit == 0 && unorderedInput != null) {
-			unorderedInput.expectedEarlyCloseAfterRows(step.limit);
-		}
+		--remainingLimit;
 	}
 
 	private boolean initialize() throws IOException {

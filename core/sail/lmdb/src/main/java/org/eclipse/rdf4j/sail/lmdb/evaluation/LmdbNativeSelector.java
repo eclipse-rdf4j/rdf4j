@@ -20,17 +20,19 @@ import java.util.List;
  * interval lies above another's, and selects the lowest expected price among the survivors. Registry order breaks exact
  * ties only. A last-resort candidate competes only when no ordinary candidate is admitted.
  * <p>
- * The rule is a pure function of its inputs: no clock, no learned state, no declaration-order dependence beyond the
- * final tie break. That is what makes a decision reproducible and explainable.
+ * The rule is a pure function of its inputs: no clock, no declaration-order dependence beyond the final tie break.
+ * Learned state enters only as the advice of a {@link LmdbNativeAdvisoryLearner.Scope}, which narrows a price inside
+ * its quoted interval and is applied before any comparison; without a scope a decision depends on the quotes and the
+ * prior alone. That is what makes a decision reproducible and explainable.
  */
 final class LmdbNativeSelector {
 
 	/**
-	 * The outcome of ranking: the winner's index (or -1), and per candidate its priced interval, expected price and
-	 * what eliminated it (null while eligible).
+	 * The outcome of ranking: the winner's index (or -1), and per candidate its priced interval, expected price, the
+	 * expected price as quoted before any learned advice, and what eliminated it (null while eligible).
 	 */
-	record Ranking(int winner, LmdbNativeWork[] nanos, double[] expectedNanos, String[] eliminatedBy,
-			String reason) {
+	record Ranking(int winner, LmdbNativeWork[] nanos, double[] expectedNanos, double[] quotedExpectedNanos,
+			String[] eliminatedBy, String reason) {
 	}
 
 	private LmdbNativeSelector() {
@@ -63,13 +65,26 @@ final class LmdbNativeSelector {
 
 	static <T> Ranking rank(List<LmdbNativeCandidate<T>> candidates, LmdbNativeStaticPrior prior,
 			double sliceRows, int parallelWorkers, boolean distinctConsumer) {
+		return rank(candidates, prior, sliceRows, parallelWorkers, distinctConsumer, null);
+	}
+
+	static <T> Ranking rank(List<LmdbNativeCandidate<T>> candidates, LmdbNativeStaticPrior prior,
+			double sliceRows, boolean distinctConsumer, LmdbNativeAdvisoryLearner.Scope advice) {
+		return rank(candidates, prior, sliceRows, Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers()),
+				distinctConsumer, advice);
+	}
+
+	static <T> Ranking rank(List<LmdbNativeCandidate<T>> candidates, LmdbNativeStaticPrior prior,
+			double sliceRows, int parallelWorkers, boolean distinctConsumer, LmdbNativeAdvisoryLearner.Scope advice) {
 		int n = candidates.size();
 		LmdbNativeWork[] nanos = new LmdbNativeWork[n];
 		double[] expected = new double[n];
+		double[] quotedExpected = new double[n];
 		int[] candidateWorkers = new int[n];
 		String[] eliminatedBy = new String[n];
 		if (n == 0) {
-			return new Ranking(-1, nanos, expected, eliminatedBy, "No strategy was admitted at this decision point");
+			return new Ranking(-1, nanos, expected, quotedExpected, eliminatedBy,
+					"No strategy was admitted at this decision point");
 		}
 		boolean ordinary = false;
 		boolean bounded = false;
@@ -84,6 +99,13 @@ final class LmdbNativeSelector {
 			LmdbNativeWork priced = prior.price(vector);
 			nanos[i] = LmdbNativeWork.between(priced.low() + fixed, priced.high() + fixed);
 			expected[i] = prior.expected(vector) + fixed;
+			quotedExpected[i] = expected[i];
+			if (advice != null) {
+				LmdbNativeAdvisoryLearner.Narrowed narrowed = advice.narrow(candidate.id(), candidate.quote(), nanos[i],
+						expected[i]);
+				nanos[i] = narrowed.nanos();
+				expected[i] = narrowed.expectedNanos();
+			}
 			ordinary |= !candidates.get(i).lastResort();
 			bounded |= !candidates.get(i).lastResort() && nanos[i].known();
 		}
@@ -177,6 +199,6 @@ final class LmdbNativeSelector {
 			reason = String.format("Lowest expected price (%.0f ns) among %d eligible candidates",
 					expected[winner], eligible);
 		}
-		return new Ranking(winner, nanos, expected, eliminatedBy, reason);
+		return new Ranking(winner, nanos, expected, quotedExpected, eliminatedBy, reason);
 	}
 }

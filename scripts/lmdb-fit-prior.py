@@ -16,7 +16,7 @@ before the fit), so the remaining coefficients are fitted around prices that are
 import math
 import sys
 
-# the static prior as LmdbNativeMachineCostModel.defaultPrior sets it (2026-11-03); keep in step with that method
+# the static prior as LmdbNativeStaticPrior.defaultCoefficients sets it (2026-11-03); keep in step with that method
 HAND_PRIOR = {
     "OPEN": 5000.0, "WORKER_START": 500000.0, "INDEX_SEEK": 200.0, "BRANCH_OPEN": 100.0, "SCANNED_ROW": 1.0,
     "DECODED_ROW": 2.0, "INTERPRETED_ROW": 120.0, "BATCH_ROW": 150.0, "GENERATED_ROW": 110.0, "MEMBERSHIP_TEST": 14.0,

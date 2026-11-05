@@ -146,11 +146,11 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 		if (proposal.costQuote() != null) {
 			return withQuotedWorkerStartup(proposal, proposal.costQuote());
 		}
-		// A physical quote (aggregate producers) or the family-typed estimate the adaptive model used are feature
-		// vectors already; only strategies with neither fall back to the raw interval.
-		LmdbNativeCostEstimate typed = proposal.adaptiveEstimate(-1D);
+		// A physical quote (aggregate producers) or the family-typed quote are feature vectors already; only
+		// strategies with neither fall back to the raw interval.
+		NativePhysicalWorkQuote typed = proposal.typedQuote();
 		if (typed != null) {
-			LmdbNativeCostVector streaming = subtract(typed.total(), typed.startup());
+			LmdbNativeCostVector streaming = typed.quote().streaming();
 			LmdbNativeCostVector startup = typed.startup();
 			double workerStarts = startup.expected(LmdbNativeCostVector.Feature.WORKER_START);
 			if (workerStarts > 0D && workerStarts < 2D) {
@@ -171,7 +171,7 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 				}
 			}
 			return withQuotedWorkerStartup(proposal,
-					new LmdbNativeCostQuote(startup, streaming, typed.estimatedOutputRows(), false, false));
+					new LmdbNativeCostQuote(startup, streaming, typed.outputRows(), false, false));
 		}
 		LmdbNativeWork comparable = proposal.planningWork() != null ? proposal.planningWork() : proposal.work;
 		LmdbNativeWork startup = bounded(proposal.startupWork == null ? LmdbNativeWork.ZERO : proposal.startupWork,
@@ -202,22 +202,6 @@ final class LmdbNativeOfferBridge<T> extends LmdbNativeCandidateOffers<T> {
 			}
 		}
 		return result.build();
-	}
-
-	/** {@code total} minus {@code startup} per feature and bound, retaining an unknown remainder ceiling. */
-	private static LmdbNativeCostVector subtract(LmdbNativeCostVector total, LmdbNativeCostVector startup) {
-		LmdbNativeCostVector.Builder builder = LmdbNativeCostVector.builder();
-		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
-			double low = Math.max(0D, total.low(feature) - startup.low(feature));
-			double expected = Math.max(low, total.expected(feature) - startup.expected(feature));
-			double high = Double.isInfinite(total.high(feature)) ? Double.POSITIVE_INFINITY
-					: Math.max(expected, total.high(feature)
-							- (Double.isFinite(startup.high(feature)) ? startup.high(feature) : 0D));
-			if (high > 0D) {
-				builder.add(feature, low, expected, high);
-			}
-		}
-		return builder.build();
 	}
 
 	/** {@code total} minus {@code startup}, bound by bound, never below zero, keeping an unknown ceiling unknown. */

@@ -245,13 +245,6 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 	}
 
 	@Override
-	public NativeAggregatePhysicalPlan.KeyProperties keyProperties() {
-		return new NativeAggregatePhysicalPlan.KeyProperties(groupSlot < 0
-				? LmdbNativePhysicalVariantKey.GroupingMode.NONE
-				: LmdbNativePhysicalVariantKey.GroupingMode.STREAMING_GROUPS, false);
-	}
-
-	@Override
 	public NativeAggregatePhysicalPlan.Work quote(RowState row) {
 		row.cancellation.check();
 		if (!handles(row) || subject != UNKNOWN || object != UNKNOWN || acceptedContexts != null

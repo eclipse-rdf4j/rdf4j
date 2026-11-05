@@ -96,7 +96,6 @@ public class ParallelismBenchmark {
 	private static final String ADAPTIVE_FILTER_PLACEMENT_ENABLED = "rdf4j.lmdb.adaptiveFilterPlacement.enabled";
 	private static final String JANINO_CODEGEN_ENABLED = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String KERNEL_INTERPRETER_ENABLED = "rdf4j.lmdb.kernelInterpreter.enabled";
-	private static final String COST_CALIBRATION_ENABLED = "rdf4j.lmdb.costCalibration.enabled";
 	private static final String PARALLEL_ENABLED = "rdf4j.lmdb.parallel.enabled";
 	private static final String PARALLEL_MIN_ROOT_ESTIMATE = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String PARALLEL_THREADS = "rdf4j.lmdb.parallel.threads";
@@ -179,7 +178,7 @@ public class ParallelismBenchmark {
 			for (String property : List.of(NATIVE_ENABLED, NATIVE_BATCH_ENABLED, MERGE_JOIN_ENABLED,
 					HASH_JOIN_ENABLED, HASH_JOIN_MIN_ROWS, HASH_JOIN_MAX_BUILD_ROWS, FACTORIZED_ROWS_ENABLED,
 					WCOJ_ENABLED, PACKED_FTREE_ENABLED, PREFIX_RUN_ENABLED, ADAPTIVE_FILTER_PLACEMENT_ENABLED,
-					JANINO_CODEGEN_ENABLED, KERNEL_INTERPRETER_ENABLED, COST_CALIBRATION_ENABLED, PARALLEL_ENABLED,
+					JANINO_CODEGEN_ENABLED, KERNEL_INTERPRETER_ENABLED, PARALLEL_ENABLED,
 					PARALLEL_MIN_ROOT_ESTIMATE, PARALLEL_THREADS, PARALLEL_MAX_TASKS, PARALLEL_STARTUP_WORK,
 					RANGE_PARTITION_ENABLED)) {
 				previousProperties.put(property, System.getProperty(property));
@@ -205,7 +204,6 @@ public class ParallelismBenchmark {
 			System.setProperty(ADAPTIVE_FILTER_PLACEMENT_ENABLED, "false");
 			System.setProperty(JANINO_CODEGEN_ENABLED, "false");
 			System.setProperty(KERNEL_INTERPRETER_ENABLED, "false");
-			System.setProperty(COST_CALIBRATION_ENABLED, "false");
 			System.setProperty(PARALLEL_ENABLED, Boolean.toString(selected.parallelEnabled));
 			System.setProperty(PARALLEL_MIN_ROOT_ESTIMATE, "0");
 			System.setProperty(PARALLEL_THREADS, Integer.toString(Math.max(2, workersPerQuery)));

@@ -274,8 +274,6 @@ class LmdbNativeMultiJoinBatchMaterializationBoundsTest {
 			set("rdf4j.lmdb.parallel.enabled", "false");
 			set("rdf4j.lmdb.packedFtree.enabled", "false");
 			set("rdf4j.lmdb.factorizedRows.enabled", "false");
-			set("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-			set("rdf4j.lmdb.adaptiveHedge.enabled", "false");
 			set(LmdbNativeMergeJoin.ENABLED_PROPERTY, Boolean.toString(merge));
 			set(LmdbNativeMergeJoin.MIN_ROWS_PROPERTY, "0");
 			set(LmdbNativeHashJoin.ENABLED_PROPERTY, "true");

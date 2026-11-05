@@ -65,9 +65,7 @@ class LmdbNativeKernelAggregatePollPointTest {
 			"rdf4j.lmdb.directAdjacency.scanAggregates.enabled",
 			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
-			"rdf4j.lmdb.irAggregateParallel.enabled",
-			"rdf4j.lmdb.adaptiveProbe.enabled",
-			"rdf4j.lmdb.adaptiveHedge.enabled" };
+			"rdf4j.lmdb.irAggregateParallel.enabled" };
 
 	@TempDir
 	File dataDir;
@@ -97,9 +95,6 @@ class LmdbNativeKernelAggregatePollPointTest {
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "1");
 		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "false");
-		System.setProperty("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-		System.setProperty("rdf4j.lmdb.adaptiveHedge.enabled", "false");
-		KernelExecutionTestAccess.resetCostCalibration();
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)

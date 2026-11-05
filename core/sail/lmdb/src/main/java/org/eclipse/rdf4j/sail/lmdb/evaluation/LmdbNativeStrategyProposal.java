@@ -102,7 +102,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private Runnable beforeOpen;
 	private boolean opened;
 	private boolean closed;
-	private LmdbNativeCostEstimate physicalEstimate;
+	private NativePhysicalWorkQuote physicalQuote;
 	private NativeAggregatePhysicalPlan aggregatePhysicalPlan;
 	private NativeAggregatePhysicalPlan.ColdAnchor coldAnchor;
 	private ExpectedPlanningPrior expectedPlanningPrior;
@@ -136,7 +136,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 				throw failure;
 			}
 		}, work, startupWork, estRows, mappedTag, this::close, probeable);
-		result.physicalEstimate = physicalEstimate;
+		result.physicalQuote = physicalQuote;
 		result.aggregatePhysicalPlan = aggregatePhysicalPlan;
 		result.coldAnchor = coldAnchor;
 		result.expectedPlanningPrior = expectedPlanningPrior;
@@ -279,17 +279,17 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			return ExpectedPlanningPrior.blocking(0D);
 		}
 		ExpectedPlanningPrior prior = expectedPlanningPrior;
-		if (physicalEstimate != null) {
-			if (!physicalEstimate.workEvidence().isComplete()) {
+		if (physicalQuote != null) {
+			if (!physicalQuote.workEvidence().isComplete()) {
 				if (prior == null || executionResourceWitness == null && coldAnchor == null) {
 					return null;
 				}
-			} else if (samePhysicalWork(physicalEstimate.startup(), physicalEstimate.total())) {
+			} else if (samePhysicalWork(physicalQuote.startup(), physicalQuote.total())) {
 				double total = prior == null
 						? work.known() ? midpoint(work) : Double.NaN
 						: prior.expectedTotalWork();
 				return preserveProvenWorkBounds(ExpectedPlanningPrior.blocking(total));
-			} else if (prior == null && !physicalEstimate.startup().isZero()) {
+			} else if (prior == null && !physicalQuote.startup().isZero()) {
 				// Typed startup counts and compatibility work use different units. Without a producer-supplied scalar
 				// expected prior, a nonzero partial typed startup cannot justify slicing the compatibility scalar.
 				return null;
@@ -304,7 +304,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			prior = new ExpectedPlanningPrior(total, beforeFirst);
 		} else if (!work.known()
 				&& (executionResourceWitness == null && coldAnchor == null
-						&& (physicalEstimate == null || !physicalEstimate.workEvidence().isComplete()))) {
+						&& (physicalQuote == null || !physicalQuote.workEvidence().isComplete()))) {
 			return null;
 		}
 		prior = preserveProvenWorkBounds(prior);
@@ -395,18 +395,17 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		return proposal.mappedOrigin == null ? proposal : proposal.mappedOrigin;
 	}
 
-	LmdbNativeStrategyProposal<T> withPhysicalEstimate(LmdbNativeCostEstimate estimate) {
-		if (opened || closed || physicalEstimate != null) {
-			throw new IllegalStateException("A physical estimate belongs to one unopened proposal");
+	LmdbNativeStrategyProposal<T> withPhysicalQuote(NativePhysicalWorkQuote quote) {
+		if (opened || closed || physicalQuote != null) {
+			throw new IllegalStateException("A physical quote belongs to one unopened proposal");
 		}
-		physicalEstimate = Objects.requireNonNull(estimate);
+		physicalQuote = Objects.requireNonNull(quote);
 		return this;
 	}
 
-	LmdbNativeStrategyProposal<T> withIncompletePhysicalWork(LmdbNativeCostEstimate partialEstimate, String reason) {
-		return withPhysicalEstimate(Objects.requireNonNull(partialEstimate)
-				.withWorkEvidence(
-						partialEstimate.workEvidence().withMissingProof(reason)));
+	LmdbNativeStrategyProposal<T> withIncompletePhysicalWork(NativePhysicalWorkQuote partialQuote, String reason) {
+		return withPhysicalQuote(Objects.requireNonNull(partialQuote)
+				.withWorkEvidence(partialQuote.workEvidence().withMissingProof(reason)));
 	}
 
 	LmdbNativeStrategyProposal<T> withAggregatePhysicalPlan(NativeAggregatePhysicalPlan plan) {
@@ -505,7 +504,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		return LmdbNativeWork.between(lower, work.high());
 	}
 
-	/** A proportional estimate is useful to the adaptive model, but must not narrow a proven interval. */
+	/** A proportional estimate is useful for ranking, but must not narrow a proven interval. */
 	private double expectedWork(double sliceRows) {
 		double total = midpoint(planningWork != null ? planningWork : work);
 		if (!Double.isFinite(sliceRows) || sliceRows < 0D || !Double.isFinite(estRows) || estRows <= 0D) {
@@ -517,46 +516,25 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	/**
-	 * Converts the legacy scalar proposal into the typed compatibility estimate consumed by the adaptive arbiter.
-	 * Strategy implementations can migrate to richer vectors later without maintaining a second selection path; this
-	 * bridge already separates interpreted, batched, generated, factorized, and parallel execution units.
+	 * The quote of a proposal whose work is unknown (for example WCOJ): zero feature counts, because there is nothing
+	 * to compare, and evidence that says so.
 	 */
-	/**
-	 * Direct-timing estimate for a proposal whose work is UNKNOWN (for example WCOJ): zero feature counts — there is
-	 * nothing to compare — but a stable variant key, so the arm can accumulate wall-clock evidence in the model's
-	 * DIRECT posterior lane. Until its first completed or censored observation, such an arm quotes ORDINAL_ONLY and
-	 * participates only in the static ladder; one bounded probe (or one ladder-won execution) makes it numerically
-	 * comparable. This is what makes "unpriceable" arm-local instead of contagious to the whole candidate set.
-	 */
-	LmdbNativeCostEstimate directTimingEstimate() {
-		String family = baseTag(tag);
-		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
-				.physicalOrderAndProperties(family)
-				.groupingMode(groupingMode(family))
-				.distinctMode(distinctMode(family))
-				.sortMode(sortMode(family))
-				.executionMode(executionMode(family))
-				.propertyPreserving(propertyPreserving(family))
-				.requiresHashing(requiresHashing(family))
-				.build();
+	NativePhysicalWorkQuote directTimingQuote() {
 		LmdbNativeCostVector zero = LmdbNativeCostVector.zero();
-		return new LmdbNativeCostEstimate(key, zero, zero, 0D, 0.5,
+		return NativePhysicalWorkQuote.of(zero, zero, 0D,
 				NativePhysicalWorkEvidence.incomplete("the selected executable has no complete physical work quote"));
 	}
 
-	LmdbNativeCostEstimate adaptiveEstimate(double sliceRows) {
-		if (physicalEstimate != null) {
-			double rows = physicalEstimate.estimatedOutputRows();
-			if (Double.isFinite(sliceRows) && sliceRows >= 0D && rows > 0D && sliceRows < rows) {
-				return physicalEstimate.forConsumption(sliceRows / rows);
-			}
-			// A slice that covers the whole result drains the strategy completely: the full-run quote and its
-			// complete-drain work evidence stay intact instead of being re-labelled as a partial consumption.
-			return physicalEstimate;
+	/**
+	 * This proposal's feature-count quote: the physical one a producer attached, else its scalar work converted to the
+	 * row feature of its execution family; null when the work has no ceiling. The planning quote is the price this
+	 * strategy is compared on; the hard interval keeps backing proofs and bounds.
+	 */
+	NativePhysicalWorkQuote typedQuote() {
+		if (physicalQuote != null) {
+			return physicalQuote;
 		}
-		// The planning quote is the price this strategy is compared on, exactly as the point estimate was before
-		// conservative intervals existed; the hard interval keeps backing proofs and bounds.
-		LmdbNativeWork effective = comparableWork(sliceRows);
+		LmdbNativeWork effective = comparableWork(-1D);
 		if (!effective.known()) {
 			return null;
 		}
@@ -566,7 +544,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		double startupHigh = Math.min(startupWork.known() ? startupWork.high() : effective.high(), effective.high());
 		double startupExpected = startupLow + (startupHigh - startupLow) * 0.5D;
 		double totalExpected = Math.max(startupExpected,
-				Math.max(effective.low(), Math.min(effective.high(), expectedWork(sliceRows))));
+				Math.max(effective.low(), Math.min(effective.high(), expectedWork(-1D))));
 
 		LmdbNativeCostVector.Builder startup = LmdbNativeCostVector.builder()
 				.add(LmdbNativeCostVector.Feature.OPEN, 1D);
@@ -597,30 +575,10 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}
 
 		double outputRows = Double.isFinite(estRows) && estRows >= 0D ? estRows : 0D;
-		int consumptionBucket = 100;
-		if (sliceRows >= 0D && outputRows > 0D && sliceRows < outputRows) {
-			double fraction = sliceRows / outputRows;
-			outputRows = sliceRows;
-			consumptionBucket = (int) Math.round(fraction * 100D);
-		}
 		if (outputRows > 0D) {
 			total.add(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, outputRows);
 		}
-		double uncertainty = totalExpected > 0D
-				? Math.min(4D, (effective.high() - effective.low()) / (2D * totalExpected))
-				: 0D;
-		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
-				.physicalOrderAndProperties(family)
-				.cardinalityBucket(cardinalityBucket(totalExpected))
-				.groupingMode(groupingMode(family))
-				.distinctMode(distinctMode(family))
-				.sortMode(sortMode(family))
-				.executionMode(executionMode(family))
-				.consumptionFractionBucket(consumptionBucket)
-				.propertyPreserving(propertyPreserving(family))
-				.requiresHashing(requiresHashing(family))
-				.build();
-		return new LmdbNativeCostEstimate(key, startup.build(), total.build(), outputRows, uncertainty);
+		return NativePhysicalWorkQuote.of(startup.build(), total.build(), outputRows);
 	}
 
 	private static String baseTag(String value) {
@@ -641,9 +599,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE ->
 			LmdbNativeCostVector.Feature.GENERATED_ROW;
-		// The interpreted kernel tier walks the same IR per row; pricing it with the 4 ns GENERATED_ROW prior
-		// would systematically under-cost it, so it carries the interpreted row feature explicitly (and thereby
-		// derives ExecutionMode.INTERPRETED, separating its variant keys from the compiled tier's).
+		// The interpreted kernel tier walks the same IR per row, so it carries the interpreted row feature.
 		case LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED,
@@ -665,63 +621,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		};
 	}
 
-	private static LmdbNativePhysicalVariantKey.ExecutionMode executionMode(String family) {
-		if (isParallel(family)) {
-			return LmdbNativePhysicalVariantKey.ExecutionMode.PARALLEL;
-		}
-		if (family.contains("factorized") || family.contains("Factorized")) {
-			return LmdbNativePhysicalVariantKey.ExecutionMode.FACTORIZED;
-		}
-		return switch (rowFeature(family)) {
-		case GENERATED_ROW -> LmdbNativePhysicalVariantKey.ExecutionMode.GENERATED;
-		case BATCH_ROW -> LmdbNativePhysicalVariantKey.ExecutionMode.BATCH;
-		default -> LmdbNativeAttemptMetrics.PATH_NESTED_LOOP.equals(family)
-				? LmdbNativePhysicalVariantKey.ExecutionMode.NESTED_FALLBACK
-				: LmdbNativePhysicalVariantKey.ExecutionMode.INTERPRETED;
-		};
-	}
-
-	private static LmdbNativePhysicalVariantKey.GroupingMode groupingMode(String family) {
-		if (family.contains("ordered") || family.contains("Ordered") || family.contains("prefix")) {
-			return LmdbNativePhysicalVariantKey.GroupingMode.STREAMING_GROUPS;
-		}
-		return family.contains("Aggregate") || family.contains("aggregate") || family.contains("Groups")
-				|| LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL.equals(family)
-						? LmdbNativePhysicalVariantKey.GroupingMode.HASHED
-						: LmdbNativePhysicalVariantKey.GroupingMode.NONE;
-	}
-
-	private static LmdbNativePhysicalVariantKey.DistinctMode distinctMode(String family) {
-		return family.contains("Distinct") || family.contains("distinct")
-				? LmdbNativePhysicalVariantKey.DistinctMode.HASH
-				: LmdbNativePhysicalVariantKey.DistinctMode.NONE;
-	}
-
-	private static LmdbNativePhysicalVariantKey.SortMode sortMode(String family) {
-		return family.contains("Sort") || family.contains("TopK")
-				? LmdbNativePhysicalVariantKey.SortMode.ENFORCED
-				: family.contains("ordered") || family.contains("Ordered") || family.contains("prefix")
-						? LmdbNativePhysicalVariantKey.SortMode.PRESERVED
-						: LmdbNativePhysicalVariantKey.SortMode.NONE;
-	}
-
 	private static boolean isParallel(String family) {
 		return family.contains("Parallel") || family.contains("parallel");
-	}
-
-	private static boolean propertyPreserving(String family) {
-		return family.contains("ordered") || family.contains("Ordered") || family.contains("prefix")
-				|| LmdbNativeAttemptMetrics.PATH_WCOJ.equals(family);
-	}
-
-	private static boolean requiresHashing(String family) {
-		return family.contains("Hash") || family.contains("hash") || family.contains("factorized")
-				|| family.contains("Factorized") || family.contains("Aggregate") || family.contains("aggregate")
-				|| LmdbNativeAttemptMetrics.PATH_BATCH.equals(family);
-	}
-
-	private static int cardinalityBucket(double count) {
-		return count <= 1D ? 0 : Math.min(63, Math.getExponent(count) + 1);
 	}
 
 	private static double midpoint(LmdbNativeWork interval) {

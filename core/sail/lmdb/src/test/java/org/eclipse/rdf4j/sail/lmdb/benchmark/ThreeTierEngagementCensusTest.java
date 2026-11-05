@@ -306,7 +306,6 @@ class ThreeTierEngagementCensusTest {
 		try {
 			datasets.forEach(dataset -> fixtures.put(dataset, ThreeTierParityFixtures.openIsolated(dataset, regime)));
 			for (ThreeTierParityCorpus cell : cells) {
-				KernelExecutionTestAccess.resetCostCalibration();
 				Fixture fixture = fixtures.get(cell.dataset());
 				LmdbStore store = fixture.store();
 				// Warm first (and, in the Janino regime, wait for compilation) so the counted execution reflects the
