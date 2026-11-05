@@ -96,6 +96,34 @@ class LmdbStoreConfigTest {
 
 	private static final IRI READ_ONLY_REPLAY_MAX_RETRIES = LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES;
 
+    @Test
+    void backupJournalRequiresExplicitOptInAndRoundTrips() {
+        LmdbStoreConfig defaults = new LmdbStoreConfig();
+        assertThat(defaults.getBackupJournalEnabled()).isFalse();
+        Model model = new LinkedHashModel();
+        Resource node = defaults.export(model);
+        LmdbStoreConfig parsed = new LmdbStoreConfig();
+        parsed.parse(model, node);
+        assertThat(parsed.getBackupJournalEnabled()).isFalse();
+        model.clear();
+        node = defaults.setBackupJournalEnabled(true).export(model);
+        parsed.parse(model, node);
+        assertThat(parsed.getBackupJournalEnabled()).isTrue();
+        model.remove(node, LmdbStoreSchema.BACKUP_JOURNAL_ENABLED, null);
+        model.add(node, LmdbStoreSchema.BACKUP_JOURNAL_ENABLED, Values.literal(false));
+        parsed.parse(model, node);
+        assertThat(parsed.getBackupJournalEnabled()).isFalse();
+    }
+
+    @Test
+    void rejectsMalformedBackupJournalConfiguration() {
+        Model model = new LinkedHashModel();
+        LmdbStoreConfig config = new LmdbStoreConfig();
+        Resource node = config.export(model);
+        model.add(node, LmdbStoreSchema.BACKUP_JOURNAL_ENABLED, Values.literal("not-a-boolean"));
+        assertThatThrownBy(() -> config.parse(model, node)).isInstanceOf(SailConfigException.class);
+    }
+
 	@Test
 	void asyncValueCleanupDefaultsToEnabledWithOmittedConfiguration() {
 		LmdbStoreConfig config = new LmdbStoreConfig();

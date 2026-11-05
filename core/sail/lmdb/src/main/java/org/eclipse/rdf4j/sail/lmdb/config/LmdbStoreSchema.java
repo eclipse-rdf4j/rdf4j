@@ -50,6 +50,9 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI FORCE_SYNC;
 
+	/** Startup-only opt-in for durable incremental/PITR backup journaling. */
+	public final static IRI BACKUP_JOURNAL_ENABLED;
+
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#noReadahead</tt>
 	 */
@@ -230,6 +233,7 @@ public class LmdbStoreSchema {
 		TRIPLE_TERM_INDEXES = factory.createIRI(NAMESPACE, "tripleTermIndexes");
 		TRIPLE_DB_SIZE = factory.createIRI(NAMESPACE, "tripleDBSize");
 		FORCE_SYNC = factory.createIRI(NAMESPACE, "forceSync");
+		BACKUP_JOURNAL_ENABLED = factory.createIRI(NAMESPACE, "backupJournalEnabled");
 		NO_READAHEAD = factory.createIRI(NAMESPACE, "noReadahead");
 		VALUE_DB_SIZE = factory.createIRI(NAMESPACE, "valueDBSize");
 		VALUE_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueCacheSize");
