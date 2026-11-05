@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.Closeable;
+import java.io.IOException;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -79,6 +80,16 @@ public interface RecordIterator extends Closeable {
 
 	default long getSourceRowsFilteredActual() {
 		return -1;
+	}
+
+	/**
+	 * Removes the last record returned by this iterator (optional operation).
+	 *
+	 * @throws IOException                   if an I/O error occurs
+	 * @throws UnsupportedOperationException if the <tt>remove</tt> operation is not supported by this iterator
+	 */
+	default void remove() throws IOException {
+		throw new UnsupportedOperationException("remove");
 	}
 
 	/**

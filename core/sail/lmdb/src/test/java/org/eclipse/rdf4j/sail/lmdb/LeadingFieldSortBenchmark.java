@@ -92,7 +92,7 @@ public class LeadingFieldSortBenchmark {
 
 	@Benchmark
 	public void sortByLeadingField(Blackhole blackhole) {
-		tripleStore.sortStatementIndicesByLeadingField(statementIndices, statementIndices.length, targetIndex, subj,
+		tripleStore.sortStatementIndicesByLeadingFields(statementIndices, statementIndices.length, targetIndex, subj,
 				pred, obj, context);
 		blackhole.consume(statementIndices[0]);
 		blackhole.consume(statementIndices[statementIndices.length - 1]);
