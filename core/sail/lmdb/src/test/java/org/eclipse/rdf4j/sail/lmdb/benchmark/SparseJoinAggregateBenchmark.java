@@ -66,8 +66,8 @@ import org.openjdk.jmh.annotations.Warmup;
  * <p>
  * Blocks restrict which endpoint pairs can meet, independently of the fanout of each join key. Multiplicities are
  * physical repeated triples in different contexts, never duplicate additions of the same quad. The unrestricted
- * patterns therefore exercise the store's weighted default-context scan. {@code auto} uses the normal planner
- * with no sparse-property override; {@code autoDisabled} supplies the explicit disabled baseline.
+ * patterns therefore exercise the store's weighted default-context scan. {@code auto} uses the normal planner with no
+ * sparse-property override; {@code autoDisabled} supplies the explicit disabled baseline.
  *
  * <p>
  * The main method is a bounded, fresh-process sweep for reproduction scripts. JMH provides the sustained measurement
@@ -458,7 +458,8 @@ public class SparseJoinAggregateBenchmark {
 	public static void main(String[] args) throws Exception {
 		Map<String, String> options = new HashMap<>();
 		Set<String> allowed = Set.of("output", "routes", "thresholds", "warmups", "iterations", "fork", "fanouts",
-				"fanout-pairs", "distributions", "overlaps", "parallel", "blocks", "multiplicities", "endpoints", "join-keys",
+				"fanout-pairs", "distributions", "overlaps", "parallel", "blocks", "multiplicities", "endpoints",
+				"join-keys",
 				"counts");
 		for (int i = 0; i < args.length; i += 2) {
 			if (i + 1 == args.length || !args[i].startsWith("--")) {

@@ -2020,13 +2020,13 @@ public interface NativeLmdbQuerySource {
 			}
 
 			/**
-			 * Whether the positioned run copies physical fibers without scanning one entry per represented context
-			 * row. The capability may change after each {@link #advance()}. A true result permits a bounded fiber
-			 * batch between cancellation polls, independent of the fibers' logical multiplicities. The scalar
-			 * fallback in {@link #copyFibers(long, int, long[], int, long[], int)} does not provide this guarantee;
-			 * consumers requiring bounded cancellation must keep their bounded quad-copy path when this is false.
-			 * Current CSF providers advertise this only for single-page rows: an extent chain can span arbitrarily
-			 * many pages for one logical fiber, so its complete traversal is not a bounded fiber batch.
+			 * Whether the positioned run copies physical fibers without scanning one entry per represented context row.
+			 * The capability may change after each {@link #advance()}. A true result permits a bounded fiber batch
+			 * between cancellation polls, independent of the fibers' logical multiplicities. The scalar fallback in
+			 * {@link #copyFibers(long, int, long[], int, long[], int)} does not provide this guarantee; consumers
+			 * requiring bounded cancellation must keep their bounded quad-copy path when this is false. Current CSF
+			 * providers advertise this only for single-page rows: an extent chain can span arbitrarily many pages for
+			 * one logical fiber, so its complete traversal is not a bounded fiber batch.
 			 */
 			default boolean supportsPhysicalFiberCopy() {
 				return false;

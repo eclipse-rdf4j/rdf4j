@@ -17,8 +17,8 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Featur
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.MEMBERSHIP_TEST;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.SCANNED_ROW;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -375,7 +375,8 @@ class SparseJoinAggregateCostTest {
 		return quotedEstimate(fixture, fixture.plan.prepare(fixture.row));
 	}
 
-	private static LmdbNativeCostEstimate quotedEstimate(Fixture fixture, NativeAggregatePhysicalPlan.Producer producer) {
+	private static LmdbNativeCostEstimate quotedEstimate(Fixture fixture,
+			NativeAggregatePhysicalPlan.Producer producer) {
 		LmdbNativeStrategyProposal<List<BindingSet>> proposal = new LmdbNativeStrategyProposal<>(List::of,
 				LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE, () -> {
 				});

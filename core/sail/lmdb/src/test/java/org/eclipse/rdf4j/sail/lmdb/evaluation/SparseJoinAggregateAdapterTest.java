@@ -93,9 +93,11 @@ class SparseJoinAggregateAdapterTest {
 		when(cursor.distinctNeighborCount()).thenReturn(4L);
 		when(cursor.supportsPhysicalFiberCopy()).thenReturn(true);
 		doThrow(new AssertionError("physical fibers must not expand to quad neighbors"))
-				.when(cursor).copyNeighbors(anyLong(), anyInt(), any(long[].class), anyInt());
+				.when(cursor)
+				.copyNeighbors(anyLong(), anyInt(), any(long[].class), anyInt());
 		doThrow(new AssertionError("unrestricted physical fibers must not decode contexts"))
-				.when(cursor).copyContexts(anyLong(), anyInt(), any(long[].class), anyInt());
+				.when(cursor)
+				.copyContexts(anyLong(), anyInt(), any(long[].class), anyInt());
 		AtomicInteger nextFiber = new AtomicInteger();
 		long[] expectedOffset = { 0L };
 		doAnswer(call -> {

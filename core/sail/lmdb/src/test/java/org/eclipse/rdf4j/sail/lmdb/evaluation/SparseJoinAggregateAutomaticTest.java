@@ -83,7 +83,8 @@ class SparseJoinAggregateAutomaticTest {
 		assertNull(System.getProperty(SPARSE_PROPERTY));
 		Observation actual = executeFixture(directory, true);
 		assertEquals(expectedCounts(), actual.counts());
-		assertTrue(hasSparsePath(actual.paths()), () -> "Expected automatic sparse execution, observed " + actual.paths());
+		assertTrue(hasSparsePath(actual.paths()),
+				() -> "Expected automatic sparse execution, observed " + actual.paths());
 	}
 
 	@Test

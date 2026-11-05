@@ -36,9 +36,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
- * Sparse multiplication of two mandatory predicate planes, grouped by their non-shared endpoints. The recognizer
- * proves non-null COUNT inputs, including constants and aliases. Arbitrary expressions, graph variables, filters,
- * DISTINCT and optional inputs continue through the existing aggregate alternatives.
+ * Sparse multiplication of two mandatory predicate planes, grouped by their non-shared endpoints. The recognizer proves
+ * non-null COUNT inputs, including constants and aliases. Arbitrary expressions, graph variables, filters, DISTINCT and
+ * optional inputs continue through the existing aggregate alternatives.
  */
 final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.Producer {
 
@@ -209,7 +209,8 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		}
 		Metadata transposed = new Metadata(facts.right, facts.left);
 		int contextBuffers = contextBuffers();
-		if (transposed.retainedBytes(minimumCount, contextBuffers) < facts.retainedBytes(minimumCount, contextBuffers)) {
+		if (transposed.retainedBytes(minimumCount, contextBuffers) < facts.retainedBytes(minimumCount,
+				contextBuffers)) {
 			return new LmdbSparseJoinAggregatePlan(right, left, rightEndpoint, leftEndpoint, shared, minimumCount,
 					inputMask, transposed);
 		}
@@ -223,8 +224,9 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 			return null;
 		}
 		Metadata facts = metadata == null ? metadata(row) : metadata;
-		return facts == null ? null : facts.work(minimumCount, contextChecks(leftContexts, left.namedContextScope),
-				contextChecks(rightContexts, right.namedContextScope));
+		return facts == null ? null
+				: facts.work(minimumCount, contextChecks(leftContexts, left.namedContextScope),
+						contextChecks(rightContexts, right.namedContextScope));
 	}
 
 	@Override
