@@ -78,9 +78,9 @@ class ExtensionAggregatesTest {
 
 	@SuppressWarnings("unchecked")
 	private static Value nary(AbstractNAryAggregateFactory factory, boolean distinct, Value[][] rows) {
-		ExtensionCollector collector = factory.getCollector();
+		ExtensionCollector collector = factory.getCollector(2);
 		AggregateNAryFunction<ExtensionCollector, Value> function = factory
-				.buildFunction((i, bs) -> bs.getValue(i == 0 ? "x" : "y"));
+				.buildFunction(2, (i, bs) -> bs.getValue(i == 0 ? "x" : "y"));
 		Set<List<Value>> seen = new HashSet<>();
 		for (Value[] r : rows) {
 			function.processAggregate(row(r[0], r[1]), distinct ? seen::add : v -> true, collector);

@@ -528,7 +528,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			}
 			if (nAryFactory.isPresent()) {
 				validateNAryAggregateArity(aggOperator, nAryFactory.get(), argumentCount);
-				return createNAryCustomAggregate(ge, operator, aggOperator, nAryFactory.get());
+				return createNAryCustomAggregate(ge, operator, aggOperator, nAryFactory.get(), argumentCount);
 			}
 			if (unaryFactory.isPresent()) {
 				if (argumentCount != 1) {
@@ -583,15 +583,17 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private AggregatePredicateCollectorSupplier<?, ?> createNAryCustomAggregate(GroupElem ge,
 			AggregateOperator operator,
-			AggregateFunctionCall aggOperator, AggregateNAryFunctionFactory factory) {
+			AggregateFunctionCall aggOperator, AggregateNAryFunctionFactory factory,
+			int arity) {
 		Supplier<Predicate<List<Value>>> predicate = createDistinctTupleValueTest(operator);
 		BiFunction<Integer, BindingSet, Value> evaluator = precompileNAryArg(aggOperator);
 		var function = factory.buildFunction(
+				arity,
 				(index, bindings) -> QueryExecutionContext.initializeExternalValue(evaluator.apply(index, bindings)));
 		return new AggregatePredicateCollectorSupplier<>((bindings, distinct, collector) -> {
 			QueryExecutionContext.initializeExternalBindings(bindings);
 			function.processAggregate(bindings, distinct, collector);
-		}, predicate, factory::getCollector, ge.getName());
+		}, predicate, () -> factory.getCollector(arity), ge.getName());
 	}
 
 	private void validateNAryAggregateArity(AggregateFunctionCall aggregateOperator,

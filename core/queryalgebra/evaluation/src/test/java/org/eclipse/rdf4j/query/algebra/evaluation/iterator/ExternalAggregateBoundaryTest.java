@@ -99,7 +99,7 @@ class ExternalAggregateBoundaryTest {
 				}
 
 				@Override
-				public AggregateNAryFunction<Collector, Value> buildFunction(
+				public AggregateNAryFunction<Collector, Value> buildFunction(int arity,
 						BiFunction<Integer, BindingSet, Value> evaluationStep) {
 					return new AggregateNAryFunction<>(evaluationStep) {
 						@Override
@@ -116,7 +116,7 @@ class ExternalAggregateBoundaryTest {
 				}
 
 				@Override
-				public AggregateCollector getCollector() {
+				public AggregateCollector getCollector(int arity) {
 					return new Collector();
 				}
 			};

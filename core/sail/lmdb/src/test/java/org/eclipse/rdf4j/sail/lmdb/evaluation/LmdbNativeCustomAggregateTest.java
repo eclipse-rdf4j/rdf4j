@@ -175,7 +175,8 @@ public class LmdbNativeCustomAggregateTest {
 		}
 
 		@Override
-		public AggregateNAryFunction buildFunction(BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
+		public AggregateNAryFunction buildFunction(int arity,
+				BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
 			return new AggregateNAryFunction<WeightedSumCollector, Value>(evaluationStepByIndex) {
 				@Override
 				public void processAggregate(BindingSet bindingSet, Predicate<List<Value>> distinctTuple,
@@ -199,7 +200,7 @@ public class LmdbNativeCustomAggregateTest {
 		}
 
 		@Override
-		public AggregateCollector getCollector() {
+		public AggregateCollector getCollector(int arity) {
 			return new WeightedSumCollector();
 		}
 	};
