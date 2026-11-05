@@ -16,7 +16,8 @@
 
 interface QueryRowStoreMessage {
     requestId: number;
-    op: 'create' | 'append' | 'read' | 'count' | 'truncate' | 'dispose';
+    op: 'create' | 'append' | 'read' | 'count' | 'truncate' | 'dispose'
+        | 'identity-create' | 'identity-add' | 'identity-filter' | 'identity-dispose';
     /** The store, named by the page; a worker serves the one store it created. */
     storeId?: string;
     /** An append's rows: each row written as JSON, one row per line (queryStream.ts encodeRowBatch). */
@@ -25,6 +26,10 @@ interface QueryRowStoreMessage {
     rowCount?: number;
     start?: number;
     count?: number;
+    /** The index, named by the page; an identity worker serves its one bounded baseline. */
+    indexId?: string;
+    /** Typed row keys for one bounded identity-index batch. */
+    keys?: string[];
 }
 
 interface QueryRowStoreResponse {
@@ -38,6 +43,10 @@ interface QueryRowStoreResponse {
     error?: string;
     /** IndexedDB cannot be opened here: the page keeps its rows in memory instead. */
     unavailable?: boolean;
+    indexId?: string;
+    baselineRows?: number;
+    addedBytes?: number;
+    unseen?: number[];
 }
 
 interface QueryRowStoreDatabase extends IDBDatabase {
@@ -66,6 +75,12 @@ var queryRowStoreBlockFormat = 'blocks-v2';
 var queryRowStoreBlockRows = 1024;
 /** The most text (UTF-16 code units) a block holds, unless it holds a single longer row. */
 var queryRowStoreBlockChars = 256 * 1024;
+/** An identity worker keeps only the first listing's bounded keys in this Set. */
+var queryRowIdentityIndexId: string = null;
+var queryRowIdentityKeys: Set<string> = null;
+var queryRowIdentityBaselineRows = 0;
+var queryRowIdentityBatchRows = 256;
+var queryRowIdentityBaselineLimit = 10000;
 
 function queryRowStoreMetadataValid(store: any): boolean {
     if (!store || !Number.isSafeInteger(store.count) || store.count < 0) {
@@ -278,9 +293,73 @@ function queryRowStoreDelete(message: QueryRowStoreMessage): Promise<QueryRowSto
         }));
 }
 
+/** Processes bounded typed row keys for one baseline-only identity index. */
+function queryRowIdentityRun(message: QueryRowStoreMessage): Promise<QueryRowStoreResponse> {
+    if (!message || !Number.isSafeInteger(message.requestId) || message.requestId < 0) {
+        return Promise.reject(new Error('Invalid row identity request.'));
+    }
+    if (message.op === 'identity-create') {
+        if (queryRowIdentityIndexId !== null || queryRowStoreId !== null
+                || typeof message.indexId !== 'string' || !message.indexId) {
+            return Promise.reject(new Error('This worker cannot create another row identity index.'));
+        }
+        queryRowIdentityIndexId = message.indexId;
+        queryRowIdentityKeys = new Set<string>();
+        queryRowIdentityBaselineRows = 0;
+        return Promise.resolve({ requestId: message.requestId, ok: true,
+            indexId: queryRowIdentityIndexId, baselineRows: 0 });
+    }
+    if (typeof message.indexId !== 'string' || message.indexId !== queryRowIdentityIndexId
+            || !queryRowIdentityKeys) {
+        return Promise.reject(new Error('This worker holds another row identity index.'));
+    }
+    if (message.op === 'identity-dispose') {
+        var indexId = queryRowIdentityIndexId;
+        queryRowIdentityKeys.clear();
+        queryRowIdentityKeys = null;
+        queryRowIdentityIndexId = null;
+        queryRowIdentityBaselineRows = 0;
+        return Promise.resolve({ requestId: message.requestId, ok: true, indexId: indexId, disposed: true });
+    }
+    if (!Array.isArray(message.keys) || message.keys.length > queryRowIdentityBatchRows
+            || message.keys.some(key => typeof key !== 'string')) {
+        return Promise.reject(new Error('A row identity request needs at most 256 string keys.'));
+    }
+    if (message.op === 'identity-add') {
+        if (queryRowIdentityBaselineRows + message.keys.length > queryRowIdentityBaselineLimit) {
+            return Promise.reject(new Error('The row identity baseline is limited to 10,000 rows.'));
+        }
+        var addedBytes = 0;
+        message.keys.forEach(key => {
+            if (!queryRowIdentityKeys.has(key)) {
+                queryRowIdentityKeys.add(key);
+                addedBytes += key.length * 2 + 16;
+            }
+        });
+        queryRowIdentityBaselineRows += message.keys.length;
+        return Promise.resolve({ requestId: message.requestId, ok: true, indexId: queryRowIdentityIndexId,
+            baselineRows: queryRowIdentityBaselineRows, addedBytes: addedBytes });
+    }
+    if (message.op === 'identity-filter') {
+        var unseen: number[] = [];
+        message.keys.forEach((key, index) => {
+            if (!queryRowIdentityKeys.has(key)) {
+                unseen.push(index);
+            }
+        });
+        return Promise.resolve({ requestId: message.requestId, ok: true,
+            indexId: queryRowIdentityIndexId, unseen: unseen });
+    }
+    return Promise.reject(new Error('Unsupported row identity operation.'));
+}
+
 function queryRowStoreRun(message: QueryRowStoreMessage): Promise<QueryRowStoreResponse> {
     if (!message || !isFinite(message.requestId) || Math.floor(message.requestId) !== message.requestId) {
         return Promise.reject(new Error('Invalid query row-store request.'));
+    }
+    if (message.op === 'identity-create' || message.op === 'identity-add'
+            || message.op === 'identity-filter' || message.op === 'identity-dispose') {
+        return queryRowIdentityRun(message);
     }
     if (typeof message.storeId !== 'string' || !message.storeId) {
         return Promise.reject(new Error('A row-store id is required.'));

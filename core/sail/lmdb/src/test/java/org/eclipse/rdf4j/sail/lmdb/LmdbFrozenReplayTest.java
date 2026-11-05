@@ -5665,9 +5665,10 @@ class LmdbFrozenReplayTest {
 
 		@Override
 		int storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
-				GlobalPreparedIndexOrdersTask orders, ExecutorService executor) throws IOException {
+				GlobalPreparedIndexOrdersTask orders, ExecutorService executor, IntConsumer addedConsumer)
+				throws IOException {
 			beforeNativeApplication(true);
-			int added = super.storeGloballyOrderedFreshTriples(quads, valueIds, count, orders, executor);
+			int added = super.storeGloballyOrderedFreshTriples(quads, valueIds, count, orders, executor, addedConsumer);
 			afterNativeApplication(added, true);
 			return added;
 		}

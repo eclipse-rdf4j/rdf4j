@@ -8,6 +8,46 @@ const { classicCompilerOptions } = require('./workbench-scripts.js');
 
 const { createExploreBrowserHarness } = require('./explore-browser-harness.js');
 const { createListBrowserHarness } = require('./list-browser-harness.js');
+const { ROLE_SECTIONS, createMemoryRowStore } = require('./explore-section-fixtures.js');
+
+function sectionController(harness, { load, onChange } = {}) {
+	const requests = [];
+	const controller = harness.workbench.explore.createSectionController({
+		url: harness.document.location.href,
+		repositoryScope: 'server/repository',
+		fetcher: async () => ({ ok: true }),
+		loadModel: async (_fetcher, rawUrl, signal, options) => {
+			const url = new URL(rawUrl);
+			requests.push(url);
+			if (load) {
+				const answer = await load(url, signal, options);
+				if (answer) { return answer; }
+			}
+			const key = url.searchParams.get('section');
+			const kind = url.searchParams.get('kind');
+			const scope = url.searchParams.get('scope');
+			const rows = key === 'outgoing' && kind === 'rows'
+				? Array.from({ length: 250 }, (_unused, index) => [
+					{ kind: 'iri', value: 'urn:resource' }, { kind: 'iri', value: 'urn:predicate' },
+					{ kind: 'literal', value: String(index) }, null
+				]) : [];
+			const count = key === 'outgoing' ? scope === 'default' ? '130' : '120' : '0';
+			return kind === 'count'
+				? { rowCount: 0, metadata: { 'explore-count': count } }
+				: { rowStore: createMemoryRowStore(rows), rowCount: rows.length,
+					vars: ROLE_SECTIONS.includes(key) ? ['subject', 'predicate', 'object', 'context'] : ['value'], metadata: {} };
+		},
+		onChange: onChange || (() => {})
+	});
+	return { controller, requests };
+}
+
+async function waitFor(predicate) {
+	for (let attempt = 0; attempt < 200 && !predicate(); attempt++) {
+		await new Promise(resolve => setImmediate(resolve));
+	}
+	assert.ok(predicate(), 'Explore section requests reached the expected state');
+}
 
 function compilePagingSource() {
     const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-paging-source-contract-'));
@@ -58,140 +98,110 @@ test('export page prefers its own preview-limit query parameter', () => {
 	assert.equal(limitExport.value, '50');
 });
 
-// Repeated list items are left out by the view since M12.1 (the router renders Explore pages again in place).
-test('explore page leaves its lists to the view, restores limits, and renders ranges', () => {
-    const harness = createExploreBrowserHarness({
-        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=http%3A%2F%2Fexample.com%2Fa&offset=2'
-            + '&limit_explore=4'
-    });
-    const firstListWrapper = harness.registerElement('div', { id: 'wrapper-1' });
-    const firstList = harness.registerElement('ul', { id: 'list-1' });
-    const itemA = harness.registerElement('li', { innerHTML: 'http://example.com/a', textContent: 'http://example.com/a' });
-    const itemB = harness.registerElement('li', { innerHTML: 'http://example.com/b', textContent: 'http://example.com/b' });
-    const itemBDuplicate = harness.registerElement('li', { innerHTML: 'http://example.com/b', textContent: 'http://example.com/b' });
-    firstList.appendChild(itemA);
-    firstList.appendChild(itemB);
-    firstList.appendChild(itemBDuplicate);
-    firstListWrapper.appendChild(firstList);
-    const surface = harness.registerElement('div', { id: 'workbench-page-surface' });
-    surface.appendChild(firstListWrapper);
-    harness.document.body.appendChild(surface);
-    // The shell's (initially empty) repository list must not be touched.
-    const popover = harness.registerElement('div', { id: 'workbench-repository-popover' });
-    const shellList = harness.registerElement('ul', { id: 'workbench-repository-options' });
-    popover.appendChild(shellList);
-    harness.document.body.appendChild(popover);
-    // The limit is the request's (ExploreServlet reads no limit_explore cookie; round-2 R10), not an older page's cookie.
-    harness.document.cookie = 'limit_explore=7; total_result_count=9';
+test('Explore restores its resource while ignoring legacy server paging preferences', () => {
+	const requested = '<http://example.com/a>';
+	const harness = createExploreBrowserHarness({
+		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource='
+			+ encodeURIComponent(requested) + '&offset=200&limit_explore=7'
+	});
+	harness.document.cookie = 'limit_explore=7; total_result_count=9';
+	harness.loadExploreScript();
+	harness.mountExplore();
 
-    harness.loadExploreScript();
-    harness.workbench.explore.mount(harness.document.body);
-
-    assert.equal(harness.document.getElementById('resource').value, 'http://example.com/a');
-    assert.equal(harness.document.getElementById('limit_explore').value, '4');
-    assert.equal(firstList.getElementsByTagName('li').length, 3, 'rendered lists are not edited');
-    assert.equal(shellList.parentNode, popover, 'shell lists outside the page surface stay mounted');
-    assert.equal(harness.heading.textContent, 'Explore');
-    assert.equal(harness.document.getElementById('explore-resource-value').textContent, 'http://example.com/a');
-    assert.equal(harness.document.getElementById('explore-result-count').textContent, 'Rows 3–6 of 9');
-    assert.equal(harness.document.getElementById('explore-resource-summary').hidden, false);
+	assert.equal(harness.resource.value, requested);
+	assert.equal(harness.heading.textContent, 'Explore');
+	assert.equal(harness.sectionOutput.children.length, 0, 'sections wait for a resolved resource response');
+	assert.equal(harness.document.getElementById('explore-result-count'), null);
+	assert.equal(harness.document.getElementById('limit_explore'), null);
 });
 
-function exploreHasMoreHarness(answer) {
-    const harness = createExploreBrowserHarness({
-        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=http%3A%2F%2Fexample.com%2Fhub'
-            + '&offset=100&limit_explore=100'
-    });
-    const total = harness.registerElement('input', { id: 'workbench-total-result-count', value: '' });
-    total.setAttribute('data-has-more', 'true');
-    harness.document.body.appendChild(total);
-    harness.document.getElementById('nextX').value = 'Next 100';
-    harness.document.cookie = 'total_result_count=9';
-    const requests = [];
-    harness.window.fetch = () => Promise.reject(new Error('fetched directly'));
-    harness.loadExploreScript();
-    harness.workbench.app = {
-        loadModel(fetcher, url) {
-            requests.push(url);
-            return answer;
-        }
-    };
-    return { harness, requests, total };
-}
+test('each Explore section has an independent count and local page window', async () => {
+	const harness = createExploreBrowserHarness({
+		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=%3Curn%3Ar%3E'
+	});
+	harness.loadExploreScript();
+	const { controller, requests } = sectionController(harness);
+	controller.start();
+	await waitFor(() => controller.sections.outgoing.status === 'ready'
+		&& controller.sections.outgoing.countStatus === 'ready'
+		&& controller.sections.types.status === 'ready');
 
-test('explore page that stopped before the end shows "of …" and fills in the counted total', async () => {
-    const { harness, requests, total } = exploreHasMoreHarness(Promise.resolve({
-        metadata: { 'total-result-count': 250 }
-    }));
-
-    harness.workbench.explore.mount(harness.document.body);
-
-    const resultCount = harness.document.getElementById('explore-result-count');
-    assert.equal(resultCount.textContent, 'Rows 101–200 of …', 'a stale total cookie is not the total');
-    assert.equal(resultCount.title, 'Counting…');
-    assert.equal(harness.document.getElementById('nextX').disabled, false, 'rows follow the page');
-    assert.equal(requests.length, 1);
-    assert.equal(new URL(requests[0]).searchParams.get('counts'), 'true');
-
-    await new Promise((resolve) => setImmediate(resolve));
-
-    assert.equal(total.value, '250');
-    assert.equal(resultCount.textContent, 'Rows 101–200 of 250');
-    assert.equal(resultCount.title, '');
+	const section = controller.sections.outgoing;
+	assert.equal(section.count, '250', 'default and named graph counts combine without a shared total');
+	assert.equal(section.rows.length, 100, 'role sections begin with the bounded local page');
+	assert.equal(section.start, 0);
+	const rowRequests = requests.filter(url => url.searchParams.get('section') === 'outgoing'
+		&& url.searchParams.get('kind') === 'rows').length;
+	await controller.page('outgoing', 'next');
+	assert.equal(section.start, 100);
+	assert.equal(section.rows[0][2].value, '100');
+	await controller.page('outgoing', 'previous');
+	assert.equal(section.start, 0);
+	assert.equal(requests.filter(url => url.searchParams.get('section') === 'outgoing'
+		&& url.searchParams.get('kind') === 'rows').length, rowRequests,
+		'local page navigation reads its section cache instead of requesting a server offset');
+	assert.ok(requests.every(url => !url.searchParams.has('offset') && !url.searchParams.has('limit_explore')));
+	controller.dispose();
 });
 
-test('explore page whose count timed out keeps "of …" and says why', async () => {
-    const { harness } = exploreHasMoreHarness(Promise.resolve({ metadata: { 'counts-timed-out': true } }));
+test('an unavailable Explore count stays local to its section', async () => {
+	const harness = createExploreBrowserHarness({
+		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=%3Curn%3Ar%3E'
+	});
+	harness.loadExploreScript();
+	const { controller } = sectionController(harness, {
+		load: async (url) => {
+			if (url.searchParams.get('section') === 'incoming' && url.searchParams.get('kind') === 'count') {
+				throw new Error('incoming count unavailable');
+			}
+		}
+	});
+	controller.start();
+	await waitFor(() => controller.sections.incoming.countStatus === 'error'
+		&& controller.sections.outgoing.countStatus === 'ready'
+		&& controller.sections.outgoing.status === 'ready');
 
-    harness.workbench.explore.mount(harness.document.body);
-    await new Promise((resolve) => setImmediate(resolve));
-
-    const resultCount = harness.document.getElementById('explore-result-count');
-    assert.equal(resultCount.textContent, 'Rows 101–200 of …');
-    assert.equal(resultCount.title, 'Counting took longer than five minutes');
-    assert.equal(harness.document.getElementById('nextX').disabled, false);
+	assert.match(controller.sections.incoming.countError, /incoming count unavailable/);
+	assert.equal(controller.sections.outgoing.count, '250');
+	assert.equal(controller.sections.outgoing.rows.length, 100);
+	controller.dispose();
 });
 
-test('explore page that is left before its count arrives ignores the late answer', async () => {
-    let answer;
-    const { harness, total } = exploreHasMoreHarness(new Promise((resolve) => { answer = resolve; }));
-
-    const unmount = harness.workbench.explore.mount(harness.document.body);
-    unmount();
-    answer({ metadata: { 'total-result-count': 250 } });
-    await new Promise((resolve) => setImmediate(resolve));
-
-    assert.equal(total.value, '');
+test('a disposed Explore route ignores a late section count answer', async () => {
+	const harness = createExploreBrowserHarness({
+		href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=%3Curn%3Ar%3E'
+	});
+	harness.loadExploreScript();
+	let releaseCount;
+	let changes = 0;
+	const { controller } = sectionController(harness, {
+		onChange: () => changes++,
+		load: async (url) => {
+			if (url.searchParams.get('section') === 'outgoing' && url.searchParams.get('kind') === 'count'
+					&& url.searchParams.get('scope') === 'default') {
+				return new Promise(resolve => { releaseCount = () => resolve({ rowCount: 0,
+					metadata: { 'explore-count': '250' } }); });
+			}
+		}
+	});
+	controller.start();
+	await waitFor(() => typeof releaseCount === 'function');
+	controller.dispose();
+	const beforeLateAnswer = changes;
+	releaseCount();
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(changes, beforeLateAnswer, 'a late count cannot repaint a route after disposal');
 });
 
-test('explore page without a resource empties the summary a previous page filled', () => {
-    const harness = createExploreBrowserHarness({
-        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore'
-    });
-    const resourceValue = harness.document.getElementById('explore-resource-value');
-    const resultCount = harness.document.getElementById('explore-result-count');
-    resourceValue.textContent = 'http://example.com/a';
-    resultCount.textContent = 'Rows 1–4 of 9';
+test('Explore without a resource has no section requests or retained result UI', () => {
+	const harness = createExploreBrowserHarness({ href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore' });
+	harness.loadExploreScript();
+	harness.document.cookie = 'total_result_count=9';
+	harness.mountExplore();
 
-    harness.loadExploreScript();
-    harness.workbench.explore.mount(harness.document.body);
-
-    assert.equal(resourceValue.textContent, '');
-    assert.equal(resultCount.textContent, '');
-    assert.equal(harness.summary.hidden, true);
-});
-
-test('explore page whose summary has no spans still restores the resource', () => {
-    const harness = createExploreBrowserHarness({
-        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=http%3A%2F%2Fexample.com%2Fa',
-        withoutSummarySpans: true
-    });
-
-    harness.loadExploreScript();
-    harness.workbench.explore.mount(harness.document.body);
-
-    assert.equal(harness.document.getElementById('resource').value, 'http://example.com/a');
-    assert.equal(harness.summary.hidden, true, 'without its spans the summary stays hidden');
+	assert.equal(harness.resource.value, '');
+	assert.equal(harness.sectionOutput.children.length, 0);
+	assert.equal(harness.document.getElementById('explore-result-count'), null);
 });
 
 test('paging helpers cover url, query, and cookie branches', () => {
