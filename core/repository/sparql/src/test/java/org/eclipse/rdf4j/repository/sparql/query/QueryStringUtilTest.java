@@ -12,13 +12,18 @@
 package org.eclipse.rdf4j.repository.sparql.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -27,6 +32,103 @@ import org.junit.jupiter.api.Test;
 public class QueryStringUtilTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	public void updateReplacesOnlyVariableTokens() {
+		String source = "INSERT { <urn:s> <urn:p> ?value } WHERE { <urn:s> <urn:q?value> ?value . "
+				+ "FILTER(CONTAINS(\"?value\", \"x\")) # ?value\n }";
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("value", VF.createIRI("urn:bound"));
+
+		assertEquals("INSERT { <urn:s> <urn:p> <urn:bound> } WHERE { <urn:s> <urn:q?value> <urn:bound> . "
+				+ "FILTER(CONTAINS(\"?value\", \"x\")) # ?value\n }",
+				QueryStringUtil.getUpdateString(source, bindings));
+	}
+
+	@Test
+	public void updateMatchesCompleteUnicodeAndDollarVariableNames() throws Exception {
+		String source = "DELETE WHERE { ?x <urn:p> ?xy . ?x <urn:q> $xé }";
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("x", VF.createIRI("urn:x"));
+		bindings.addBinding("xé", VF.createIRI("urn:unicode"));
+
+		String result = QueryStringUtil.getUpdateString(source, bindings);
+		assertEquals("DELETE WHERE { <urn:x> <urn:p> ?xy . <urn:x> <urn:q> <urn:unicode> }", result);
+		SyntaxTreeBuilder.parseUpdateSequence(result);
+	}
+
+	@Test
+	public void updateLeavesLongStringsEscapesAndWindowsLineEndingsIntact() throws Exception {
+		String source = "DELETE { ?s <urn:p> ?value } WHERE {\r\n\t?s <urn:p> ?value . "
+				+ "FILTER(CONTAINS('''?value \\' still literal''', \"\\\"?value\")) # ?value\r\n}";
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("value", VF.createIRI("urn:bound"));
+
+		String result = QueryStringUtil.getUpdateString(source, bindings);
+		assertEquals("DELETE { ?s <urn:p> <urn:bound> } WHERE {\r\n\t?s <urn:p> <urn:bound> . "
+				+ "FILTER(CONTAINS('''?value \\' still literal''', \"\\\"?value\")) # ?value\r\n}", result);
+		SyntaxTreeBuilder.parseUpdateSequence(result);
+	}
+
+	@Test
+	public void updatePreservesUnicodeEscapePositionsAndNestedGraphIris() throws Exception {
+		String source = "DELETE { GRAPH <urn:g?value> { ?s <urn:p> ?value } } WHERE { "
+				+ "GRAPH <urn:g?value> { ?s <urn:p> \"" + '\\' + "u003Fvalue\" . ?s <urn:p> ?value } }";
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("value", VF.createIRI("urn:bound"));
+
+		String result = QueryStringUtil.getUpdateString(source, bindings);
+		assertEquals("DELETE { GRAPH <urn:g?value> { ?s <urn:p> <urn:bound> } } WHERE { "
+				+ "GRAPH <urn:g?value> { ?s <urn:p> \"" + '\\' + "u003Fvalue\" . ?s <urn:p> <urn:bound> } }",
+				result);
+		SyntaxTreeBuilder.parseUpdateSequence(result);
+	}
+
+	@Test
+	public void updateIgnoresRegexPunctuationInBindingNames() {
+		String source = "DELETE WHERE { ?s <urn:p> ?x . ?s <urn:q> ?y }";
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("x|y", VF.createIRI("urn:bound"));
+		bindings.addBinding("[", VF.createIRI("urn:other"));
+
+		assertEquals(source, QueryStringUtil.getUpdateString(source, bindings));
+	}
+
+	@Test
+	public void updateDoesNotSubstituteInsideReplacementText() throws Exception {
+		String source = "DELETE WHERE { ?s <urn:p> ?first . ?s <urn:q> ?second }";
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("first", VF.createLiteral("?second"));
+		bindings.addBinding("second", VF.createIRI("urn:second"));
+
+		String result = QueryStringUtil.getUpdateString(source, bindings);
+		assertEquals("DELETE WHERE { ?s <urn:p> \"?second\" . ?s <urn:q> <urn:second> }", result);
+		SyntaxTreeBuilder.parseUpdateSequence(result);
+	}
+
+	@Test
+	public void deprecatedOperationUsesLexicalGroupBoundary() throws Exception {
+		OperationProbe operation = new OperationProbe(
+				"select ?other ?value # ?ghost {\nwhere { ?other <urn:p?value> ?value . "
+						+ "filter(str(?other) = \"{ ?value\") }");
+		operation.setBinding("value", VF.createIRI("urn:bound"));
+		operation.setBinding("ghost", VF.createIRI("urn:ghost"));
+
+		assertEquals(Set.of("value"), operation.bindingNames());
+		assertEquals("select ?other  # ?ghost {\nwhere { ?other <urn:p?value> <urn:bound> . "
+				+ "filter(str(?other) = \"{ ?value\") }", operation.render());
+		SyntaxTreeBuilder.parseQuery(operation.render());
+	}
+
+	@Test
+	public void deprecatedDescribeWithoutGroupSubstitutesVariable() throws Exception {
+		OperationProbe operation = new OperationProbe("DESCRIBE ?value");
+		operation.setBinding("value", VF.createIRI("urn:bound"));
+
+		assertTrue(operation.bindingNames().contains("value"));
+		assertEquals("DESCRIBE <urn:bound>", operation.render());
+		SyntaxTreeBuilder.parseQuery(operation.render());
+	}
 
 	@Test
 	public void testIRI() {
@@ -115,6 +217,10 @@ public class QueryStringUtilTest {
 
 		String render() {
 			return getQueryString();
+		}
+
+		Set<String> bindingNames() {
+			return getBindingNames();
 		}
 
 		@Override
