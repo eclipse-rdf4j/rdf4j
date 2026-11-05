@@ -99,8 +99,12 @@ test('the phone menu sheet opens and closes without scrolling the page behind it
 	const product = '<http://www4.wiwiss.fu-berlin.de/bizer/bsbm/v01/vocabulary/Product>';
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'explore') + '?resource=' + encodeURIComponent(product));
 	await waitForRoute(page, 'explore');
-	await page.evaluate(() => window.scrollTo(0, 1500));
-	await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBe(1500);
+	await expect(page.locator('[data-explore-role="incoming"] [data-workbench-row-index]').first()).toBeVisible();
+	await expect(page.locator('#explore-section-output [role="status"]').filter({ hasText: 'Loading…' })).toHaveCount(0);
+	await expect(page.locator('#explore-section-output .explore-group__count').filter({ hasText: '…' })).toHaveCount(0);
+	await page.evaluate(() => window.scrollTo({ top: 1500, behavior: 'instant' }));
+	await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(0);
+	const scrolledTo = await page.evaluate(() => Math.round(window.scrollY));
 
 	const button = await page.locator('#workbench-menu-button').evaluate((element) => {
 		const box = element.getBoundingClientRect();
@@ -109,10 +113,10 @@ test('the phone menu sheet opens and closes without scrolling the page behind it
 	expect(button.inView, 'the menu button stays in view (the context bar is sticky)').toBe(true);
 	await page.mouse.click(button.x, button.y);
 	await expect(page.locator('#workbench-menu-sheet')).toBeVisible();
-	expect(await page.evaluate(() => Math.round(window.scrollY)), 'the open sheet keeps the page in place').toBe(1500);
+	expect(await page.evaluate(() => Math.round(window.scrollY)), 'the open sheet keeps the page in place').toBe(scrolledTo);
 	await page.keyboard.press('Escape');
 	await expect(page.locator('#workbench-menu-sheet')).toBeHidden();
-	expect(await page.evaluate(() => Math.round(window.scrollY)), 'closed, the page is where it was').toBe(1500);
+	expect(await page.evaluate(() => Math.round(window.scrollY)), 'closed, the page is where it was').toBe(scrolledTo);
 });
 
 async function namespacesOf(request, repositoryId) {
@@ -255,31 +259,34 @@ test('Explore with a malformed resource keeps the form and says what is wrong', 
 	await expect(page.locator('#workbench-outlet .workbench-callout--error')).toContainText('Malformed value: <not valid');
 });
 
-// C19, C20, C21: Explore's Result limit applies when it is changed; the pager is labelled with the page size; and the
-// truncation notice reads 'may be truncated'.
-test('Explore applies a new Result limit at once and labels its pager with the page size', async ({ page, request }) => {
+// C19, C20, C21: Explore pages each cached section locally and reports the visible range.
+test('Explore pages a cached section and labels the visible range', async ({ page, request }) => {
 	const loaded = await request.post(`${serverBaseUrl()}/repositories/${encodeURIComponent(REPOSITORY_ID)}/statements`, {
 		headers: { 'Content-Type': 'application/n-triples' },
-		data: Array.from({ length: 12 }, (_, index) => `<urn:pager> <urn:p> "${index}" .`).join('\n')
+		data: Array.from({ length: 112 }, (_, index) => `<urn:pager> <urn:p> "${index}" .`).join('\n')
 	});
 	expect([200, 204]).toContain(loaded.status());
 	await page.setViewportSize({ width: 1280, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'explore') + '?resource=' + encodeURIComponent('<urn:pager>'));
 	await waitForRoute(page, 'explore');
-	await expect(page.locator('#explore-results tbody tr')).toHaveCount(12);
-	await expect(page.locator('#previousX')).toHaveText('Previous 100');
-	await expect(page.locator('#nextX')).toHaveText('Next 100');
-	await expect(page.locator('#limit_explore')).toHaveValue('100');
-
-	await page.locator('#explore-result-options-toggle').click();
-	await page.locator('#limit_explore').selectOption('10');
-	await waitForRoute(page, 'explore', { url: /limit_explore=10/ });
-	await expect(page.locator('#explore-results tbody tr')).toHaveCount(10);
-	await expect(page.locator('#limit_explore')).toHaveValue('10');
-	await expect(page.locator('#previousX')).toHaveText('Previous 10');
-	await expect(page.locator('#nextX')).toHaveText('Next 10');
-	await expect(page.locator('#nextX')).toBeEnabled();
-	await expect(page.locator('#result-limited')).toHaveText('The results shown may be truncated.');
+	const outgoing = page.locator('[data-explore-role="outgoing"]');
+	const pager = outgoing.locator('.workbench-window-controls');
+	const previous = pager.getByRole('button', { name: 'Previous', exact: true });
+	const next = pager.getByRole('button', { name: 'Next', exact: true });
+	await expect(outgoing.locator('.explore-group__count')).toHaveText('112');
+	await expect(pager.getByRole('status')).toHaveText('Showing 1–100 of 112 cached');
+	await expect(previous).toBeDisabled();
+	await expect(next).toBeEnabled();
+	const url = page.url();
+	await next.click();
+	await expect(pager.getByRole('status')).toHaveText('Showing 101–112 of 112 cached');
+	await expect(outgoing.locator('[data-workbench-row-index]').first()).toHaveAttribute('data-workbench-row-index', '100');
+	await expect(previous).toBeEnabled();
+	await expect(next).toBeDisabled();
+	await previous.click();
+	await expect(pager.getByRole('status')).toHaveText('Showing 1–100 of 112 cached');
+	await expect(previous).toBeDisabled();
+	expect(page.url()).toBe(url);
 });
 
 // C12: a failed write's status shows the error glyph, not the add (+) glyph the icon lookup fell back to.
