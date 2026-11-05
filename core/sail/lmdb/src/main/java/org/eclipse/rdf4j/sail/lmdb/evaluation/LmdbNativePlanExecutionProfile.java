@@ -286,7 +286,8 @@ final class LmdbNativePlanExecutionProfile {
 	/** An island's own work estimate, or the sweep where it has none. */
 	private LmdbNativeCostVector island(SlotPlan plan, long mask) {
 		LmdbNativeWork work = plan.estimateWork(row, mask);
-		return work.known() ? LmdbNativeCostQuote.ofWork(work, Double.NaN).total() : sweep();
+		return work.known() ? LmdbNativeCostQuote.ofWork(work, Double.NaN).total()
+				: LmdbNativeCostVectors.unpriced(plan, row, mask, rowFeature());
 	}
 
 	/**

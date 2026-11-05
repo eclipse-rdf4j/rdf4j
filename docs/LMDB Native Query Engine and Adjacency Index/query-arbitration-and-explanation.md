@@ -9,13 +9,21 @@ Every decision point runs on [`LmdbNativeDispatchLoop`](../../../core/sail/lmdb/
 [`LmdbNativeSelector`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSelector.java) is the one ranking rule, applied to the admitted candidates:
 
 1. Each candidate is priced by [`LmdbNativeStaticPrior`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeStaticPrior.java), then narrowed by learned advice if the [advisory learner](query-cost-learning-and-adaptation.md) is on.
-2. A last-resort candidate competes only when nothing else was admitted, and an unpriced candidate only when no candidate has a price. A quote has a price when it has a finite ceiling or an estimate above its floor; a floor alone is not one.
+2. A last-resort candidate competes only when nothing else was admitted, and an unpriced candidate only when no candidate has a price. A quote has a price when it has a finite ceiling or an expectation above its floor; a floor alone is not one.
 3. Structural dominance edges are applied, all at once, so `A -> B -> C` does not depend on visiting order. A dominated candidate goes regardless of price.
 4. A parallel candidate must cut the best serial expected price by the share its worker count demands: 30 % on four workers, 50 % on eight.
-5. A candidate whose whole interval lies above a rival's whole interval is eliminated. A finite ceiling is therefore a proof: sampled row counts and the store's statement count set a quote's expectation and never its bounds, so an estimated quote renders as `low..unbounded` and eliminates nobody.
+5. A candidate whose whole proven interval lies above a rival's whole proven interval is eliminated. A finite ceiling here is a proof: a sampled row count or the store's statement count never sets one.
 6. The lowest expected price among the survivors wins, with registry order breaking exact ties only.
 
 A finite consumer slice prorates streaming work before pricing. Every rule operates only over the candidates the actual dispatch site offered. A strategy being forceable, passing compile-time recognition and successfully opening are three different facts.
+
+## Proven and estimated intervals
+
+A candidate has two intervals. The proven one lives in its quote's vectors, and it is the only one that can eliminate a candidate. Many quotes have no proven ceiling, because nothing the store keeps bounds a join's output below the product of its inputs. `SlotPlan.estimateWork` is the same strict channel.
+
+The estimated interval is what explain, the trace and the JFR event show: `expected / (rowDown × 32) .. expected × rowUp × 3`, limited by the proven ceiling. `LmdbNativeRowSpread` says how far a row estimate can be from the rows a plan really emits: 1.5× for a pattern's population, 3× down and 2× up for a probe priced by a predicate's mean fan-out, and 16× for a count from a plan's structure, such as a path's reach or a subquery's annotated size. The errors of a join's estimates are independent, so they add in quadrature on a log scale. A UNION keeps the wider side, and a filter, MINUS or DISTINCT can reject every row, so its floor is zero. A probe's ceiling stops at the most one key can hold, `statements - keys + 1`, so a functional predicate has no upward spread when adjacency gives an exact key count. The ÷32 and ×3 are the error of the prices themselves: the prior prices a feature the same on every query, and it errs high much further than low.
+
+The estimate is a report, and a run can fall outside it: about 97 % of measured runs land inside on the regret harness. It decides nothing. A plan kind with no statistic behind its rows shows its proven interval, which can be `low..unbounded`.
 
 ## Open decline, retry and forced strategy
 

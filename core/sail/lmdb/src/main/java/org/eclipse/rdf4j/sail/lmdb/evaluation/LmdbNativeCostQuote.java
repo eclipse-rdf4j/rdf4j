@@ -24,15 +24,17 @@ import java.util.Objects;
  * high; a statistical estimate carries its band; an upper bound only has a zero low. {@link LmdbNativeStaticPrior}
  * turns the counts into a time interval.
  *
- * @param startup    features paid once, before the first row (opens, worker starts, hash builds, sorts)
- * @param streaming  features paid per produced row and prorated by the share of the result a slice consumes
- * @param outputRows estimated rows produced, or NaN when unknown
- * @param ordered    whether the output is ordered on the keys the decision point asked for
- * @param distinct   whether the output is duplicate free on this decision's requested output keys
- * @param chunked    optional producer work that must complete a root chunk or output buffer before exposing a row
+ * @param startup     features paid once, before the first row (opens, worker starts, hash builds, sorts)
+ * @param streaming   features paid per produced row and prorated by the share of the result a slice consumes
+ * @param outputRows  estimated rows produced, or NaN when unknown
+ * @param ordered     whether the output is ordered on the keys the decision point asked for
+ * @param distinct    whether the output is duplicate free on this decision's requested output keys
+ * @param chunked     optional producer work that must complete a root chunk or output buffer before exposing a row
+ * @param inputSpread how far the rows of the input this quote was calculated from can be off. It widens the estimated
+ *                    interval the selector reports and never the bounds of these vectors, which stay what is proven.
  */
 record LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector streaming, double outputRows,
-		boolean ordered, boolean distinct, ChunkedWork chunked) {
+		boolean ordered, boolean distinct, ChunkedWork chunked, LmdbNativeRowSpread inputSpread) {
 
 	/**
 	 * Explicit absent ceiling. No finite physical count, including Double.MAX_VALUE, collides with this value. Only the
@@ -49,6 +51,11 @@ record LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector st
 	LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector streaming, double outputRows,
 			boolean ordered, boolean distinct) {
 		this(startup, streaming, outputRows, ordered, distinct, null);
+	}
+
+	LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector streaming, double outputRows,
+			boolean ordered, boolean distinct, ChunkedWork chunked) {
+		this(startup, streaming, outputRows, ordered, distinct, chunked, LmdbNativeRowSpread.EXACT);
 	}
 
 	/**
@@ -250,15 +257,19 @@ record LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector st
 	}
 
 	LmdbNativeCostQuote ordered(boolean value) {
-		return new LmdbNativeCostQuote(startup, streaming, outputRows, value, distinct, chunked);
+		return new LmdbNativeCostQuote(startup, streaming, outputRows, value, distinct, chunked, inputSpread);
 	}
 
 	LmdbNativeCostQuote distinct(boolean value) {
-		return new LmdbNativeCostQuote(startup, streaming, outputRows, ordered, value, chunked);
+		return new LmdbNativeCostQuote(startup, streaming, outputRows, ordered, value, chunked, inputSpread);
 	}
 
 	LmdbNativeCostQuote withOutputRows(double rows) {
-		return new LmdbNativeCostQuote(startup, streaming, rows, ordered, distinct, chunked);
+		return new LmdbNativeCostQuote(startup, streaming, rows, ordered, distinct, chunked, inputSpread);
+	}
+
+	LmdbNativeCostQuote withInputSpread(LmdbNativeRowSpread spread) {
+		return new LmdbNativeCostQuote(startup, streaming, outputRows, ordered, distinct, chunked, spread);
 	}
 
 	/** {@code total} minus {@code startup} per feature and bound, retaining an unknown remainder ceiling. */

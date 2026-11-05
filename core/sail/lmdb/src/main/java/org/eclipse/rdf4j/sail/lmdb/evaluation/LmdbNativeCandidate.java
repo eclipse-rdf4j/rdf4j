@@ -54,6 +54,10 @@ record LmdbNativeCandidate<T>(String id, LmdbNativeCostQuote quote, Opener<T> op
 		return new LmdbNativeCandidate<>(id, quote, opener, release, false, Set.of());
 	}
 
+	LmdbNativeCandidate<T> withInputSpread(LmdbNativeRowSpread spread) {
+		return new LmdbNativeCandidate<>(id, quote.withInputSpread(spread), opener, release, lastResort, dominates);
+	}
+
 	LmdbNativeCandidate<T> asLastResort() {
 		return new LmdbNativeCandidate<>(id, quote, opener, release, true, dominates);
 	}

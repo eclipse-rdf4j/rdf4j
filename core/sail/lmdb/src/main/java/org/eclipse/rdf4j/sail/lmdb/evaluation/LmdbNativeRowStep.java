@@ -1533,7 +1533,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			}
 		}
 		LmdbNativeOffers<NativeUnorderedInput> offers = new LmdbNativeOffers<NativeUnorderedInput>(
-				LmdbNativeDecisionPoint.ROW).fallbackEstimate(LmdbNativeCostVectors.sweepWork(row));
+				LmdbNativeDecisionPoint.ROW).fallbackEstimate(LmdbNativeCostVectors.sweepWork(row))
+						.inputSpread(LmdbNativeCostVectors.rowSpread(arg, row, row.boundMask()));
 		offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, offers);
 		{
 			LmdbNativeDispatchLoop.Selection<NativeUnorderedInput> selection = new LmdbNativeDispatchLoop<>(
@@ -1597,7 +1598,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				: work.known() ? work
 						: LmdbNativeCostVectors.sweepWork(row),
 				rows)
-				.ordered(true);
+				.ordered(true)
+				.withInputSpread(LmdbNativeCostVectors.rowSpread(arg, row, row.boundMask()));
 		List<LmdbNativeStrategy<Void, List<BindingSet>>> strategies = new ArrayList<>(5);
 		// A pending compiled kernel declines its own candidate. The independently offered interpreter can then
 		// serve under its actual tier, and neither serial candidate may silently open a parallel worker group.
@@ -1611,7 +1613,9 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		String factorizedTag = emitCap == Long.MAX_VALUE
 				? LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_SORT
 				: LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K;
-		LmdbNativeCostQuote factorizedQuote = orderedFactorizedQuote(row, emitCap, rows, quote);
+		LmdbNativeCostQuote orderedFactorized = orderedFactorizedQuote(row, emitCap, rows, quote);
+		LmdbNativeCostQuote factorizedQuote = orderedFactorized == null ? null
+				: orderedFactorized.withInputSpread(quote.inputSpread());
 		strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, factorizedTag,
 				context -> factorizedQuote == null ? LmdbNativeAdmission.declined("not-multi-join")
 						: LmdbNativeAdmission.of(LmdbNativeCandidate.of(factorizedTag, factorizedQuote,
@@ -1847,7 +1851,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan join && join.children.length > 0 ? join : null;
 		try {
 			LmdbNativeOffers<NativeUnorderedInput> offers = new LmdbNativeOffers<NativeUnorderedInput>(
-					LmdbNativeDecisionPoint.ROW).fallbackEstimate(LmdbNativeCostVectors.sweepWork(row));
+					LmdbNativeDecisionPoint.ROW).fallbackEstimate(LmdbNativeCostVectors.sweepWork(row))
+							.inputSpread(LmdbNativeCostVectors.rowSpread(arg, row, row.boundMask()));
 			NativeTupleDistinctPlan distinctPlan = distinct ? LmdbNativeOrderPlanner.tuple(arg, sourceSlots, row)
 					: null;
 			offerUnorderedStrategies(row, distinctPlan, multiJoin, (arg.producedMask() & row.boundMask()) != 0L,

@@ -28,11 +28,12 @@ import java.util.List;
 final class LmdbNativeSelector {
 
 	/**
-	 * The outcome of ranking: the winner's index (or -1), and per candidate its priced interval, expected price, the
-	 * expected price as quoted before any learned advice, and what eliminated it (null while eligible).
+	 * The outcome of ranking: the winner's index (or -1), and per candidate its proven interval, expected price, the
+	 * expected price as quoted before any learned advice, what eliminated it (null while eligible), and the interval a
+	 * run is estimated to land in. Only the proven interval can eliminate a candidate.
 	 */
 	record Ranking(int winner, LmdbNativeWork[] nanos, double[] expectedNanos, double[] quotedExpectedNanos,
-			String[] eliminatedBy, String reason) {
+			String[] eliminatedBy, String reason, LmdbNativeWork[] estimated) {
 	}
 
 	private LmdbNativeSelector() {
@@ -82,9 +83,10 @@ final class LmdbNativeSelector {
 		double[] quotedExpected = new double[n];
 		int[] candidateWorkers = new int[n];
 		String[] eliminatedBy = new String[n];
+		LmdbNativeWork[] estimated = new LmdbNativeWork[n];
 		if (n == 0) {
 			return new Ranking(-1, nanos, expected, quotedExpected, eliminatedBy,
-					"No strategy was admitted at this decision point");
+					"No strategy was admitted at this decision point", estimated);
 		}
 		boolean[] hasPrice = new boolean[n];
 		boolean ordinary = false;
@@ -109,6 +111,7 @@ final class LmdbNativeSelector {
 				nanos[i] = narrowed.nanos();
 				expected[i] = narrowed.expectedNanos();
 			}
+			estimated[i] = estimatedInterval(expected[i], nanos[i], candidate.quote().inputSpread());
 			ordinary |= !candidates.get(i).lastResort();
 			anyPriced |= !candidates.get(i).lastResort() && hasPrice[i];
 		}
@@ -201,6 +204,25 @@ final class LmdbNativeSelector {
 			reason = String.format("Lowest expected price (%.0f ns) among %d eligible candidates",
 					expected[winner], eligible);
 		}
-		return new Ranking(winner, nanos, expected, quotedExpected, eliminatedBy, reason);
+		return new Ranking(winner, nanos, expected, quotedExpected, eliminatedBy, reason, estimated);
+	}
+
+	/**
+	 * The interval a run is estimated to land in: its expected price, widened by how far the rows of its input can be
+	 * off and by how far the prices themselves can be off. Measured cost error barely grows with a plan's depth, so one
+	 * spread around the expectation does what per-feature estimates did with far wider intervals. This is a report: it
+	 * can be wrong, so it eliminates nothing and the vectors keep the proven bounds. Stays at the proven interval when
+	 * nothing estimates the input's rows.
+	 */
+	private static LmdbNativeWork estimatedInterval(double expected, LmdbNativeWork proven,
+			LmdbNativeRowSpread spread) {
+		if (!spread.known()) {
+			return proven;
+		}
+		double high = expected * spread.up() * LmdbNativeStaticPrior.MODEL_SPREAD_UP;
+		return LmdbNativeWork.between(expected / (spread.down() * LmdbNativeStaticPrior.MODEL_SPREAD_DOWN),
+				proven.known()
+						? Math.max(expected, Math.min(high, proven.high() * LmdbNativeStaticPrior.MODEL_SPREAD_UP))
+						: high);
 	}
 }

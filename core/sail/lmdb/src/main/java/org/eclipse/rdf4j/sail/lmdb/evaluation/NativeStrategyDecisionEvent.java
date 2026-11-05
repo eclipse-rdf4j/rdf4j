@@ -72,8 +72,9 @@ final class NativeStrategyDecisionEvent extends Event {
 				event.variant = entry.id().substring(base.length());
 				event.admitted = entry.admitted();
 				event.declineReason = entry.declineReason();
-				event.lowNanos = entry.nanos() == null ? Double.NaN : entry.nanos().low();
-				event.highNanos = entry.nanos() == null || !entry.nanos().known() ? Double.NaN : entry.nanos().high();
+				LmdbNativeWork interval = entry.estimated() == null ? entry.nanos() : entry.estimated();
+				event.lowNanos = interval == null ? Double.NaN : interval.low();
+				event.highNanos = interval == null || !interval.known() ? Double.NaN : interval.high();
 				event.expectedNanos = entry.expectedNanos();
 				event.provenance = entry.provenance();
 				event.eliminatedBy = entry.eliminatedBy();

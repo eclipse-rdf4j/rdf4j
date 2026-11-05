@@ -37,17 +37,18 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 	 * @param id                  strategy tag
 	 * @param admitted            whether the strategy produced a candidate
 	 * @param declineReason       the strategy's own reason when not admitted
-	 * @param nanos               the priced interval of the candidate, or null when declined
+	 * @param nanos               the proven interval of the candidate, or null when declined
 	 * @param expectedNanos       the expected price, or NaN
 	 * @param eliminatedBy        what removed the candidate from the frontier, or null when it stayed eligible
 	 * @param features            the priced feature vector (after slice proration), or null when declined
 	 * @param quotedExpectedNanos the expected price as quoted, before learned advice, or NaN
+	 * @param estimated           the interval a run is estimated to land in, or null when declined
 	 */
 	record Entry(String id, boolean admitted, String declineReason, LmdbNativeWork nanos, double expectedNanos,
-			String eliminatedBy, LmdbNativeCostVector features, double quotedExpectedNanos) {
+			String eliminatedBy, LmdbNativeCostVector features, double quotedExpectedNanos, LmdbNativeWork estimated) {
 
 		static Entry declined(String id, String reason) {
-			return new Entry(id, false, reason, null, Double.NaN, null, null, Double.NaN);
+			return new Entry(id, false, reason, null, Double.NaN, null, null, Double.NaN, null);
 		}
 
 		/** Where the price came from: the quote alone, or the quote narrowed by learned advice; null when declined. */
@@ -144,10 +145,11 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 		if (entry.nanos() == null) {
 			return "unpriced";
 		}
-		String rendered = String.format("%.0f..%s ns (expected %.0f)", entry.nanos().low(),
-				entry.nanos().known() ? String.format("%.0f", entry.nanos().high()) : "unbounded",
+		LmdbNativeWork interval = entry.estimated() == null ? entry.nanos() : entry.estimated();
+		String rendered = String.format("%.0f..%s ns (expected %.0f)", interval.low(),
+				interval.known() ? String.format("%.0f", interval.high()) : "unbounded",
 				entry.expectedNanos());
-		if (!entry.nanos().known() && entry.features() != null) {
+		if (!interval.known() && entry.features() != null) {
 			// name the feature counts that have no ceiling, so an unbounded quote can be traced to its source
 			StringBuilder unbounded = new StringBuilder();
 			for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {

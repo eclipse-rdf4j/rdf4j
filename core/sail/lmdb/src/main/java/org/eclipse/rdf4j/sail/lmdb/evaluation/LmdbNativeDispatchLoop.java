@@ -261,7 +261,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 				}
 				entries.add(new LmdbNativeDecisionRecord.Entry(candidates.get(i).id(), true, null,
 						ranking.nanos()[i], ranking.expectedNanos()[i], ranking.eliminatedBy()[i],
-						consumedQuote(candidates.get(i)), ranking.quotedExpectedNanos()[i]));
+						consumedQuote(candidates.get(i)), ranking.quotedExpectedNanos()[i], ranking.estimated()[i]));
 			}
 			for (String id : asked) {
 				if (declines.containsKey(id)) {
@@ -309,7 +309,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 				for (int i = 0; i < admitted.candidates.size(); i++) {
 					if (directTag.equals(admitted.candidates.get(i).id())) {
 						ranking = new LmdbNativeSelector.Ranking(i, ranking.nanos(), ranking.expectedNanos(),
-								ranking.quotedExpectedNanos(), new String[admitted.candidates.size()], directReason);
+								ranking.quotedExpectedNanos(), new String[admitted.candidates.size()], directReason,
+								ranking.estimated());
 						mode = "direct";
 						break;
 					}

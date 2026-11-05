@@ -587,6 +587,41 @@ final class PatternPlan implements SlotPlan {
 		return profile == null ? rows : Math.min(rows, profile.entries());
 	}
 
+	/**
+	 * How far {@link #estimateForBoundMask(long, NativeLmdbQuerySource)} can lie from the real rows, by what backs it.
+	 * A probe's ceiling also stops at the most one key can hold, so a functional predicate has no spread upwards.
+	 */
+	LmdbNativeRowSpread rowSpread(long boundMask, NativeLmdbQuerySource source) {
+		if ((producedMask & boundMask) == 0L && Double.isFinite(staticEstimate)) {
+			return LmdbNativeRowSpread.SCAN;
+		}
+		if (fanOutForBoundMask(boundMask, source).isEmpty()) {
+			return LmdbNativeRowSpread.STRUCTURAL;
+		}
+		double rows = estimateForBoundMask(boundMask, source);
+		double largestKey = largestKeyRows(boundMask, source);
+		return rows > 0D && Double.isFinite(largestKey) ? LmdbNativeRowSpread.PROBE.upAtMost(largestKey / rows)
+				: LmdbNativeRowSpread.PROBE;
+	}
+
+	/**
+	 * The most rows one bound end of a constant predicate can reach: with {@code keys} distinct keys sharing
+	 * {@code quads} statements every other key holds at least one. NaN without an exact key count, which a sampled
+	 * distinct count cannot stand in for.
+	 */
+	private double largestKeyRows(long boundMask, NativeLmdbQuerySource source) {
+		boolean subjectKnown = termKnown(s, boundMask);
+		if (!p.isConstant() || subjectKnown == termKnown(o, boundMask)) {
+			return Double.NaN;
+		}
+		java.util.OptionalLong keys = source.adjacencyKeyDomainCardinality(p.constant, subjectKnown);
+		OptionalDouble fanOut = source.meanFanOut(p.constant, subjectKnown);
+		if (keys.isEmpty() || fanOut.isEmpty() || keys.getAsLong() <= 0L) {
+			return Double.NaN;
+		}
+		return 1D + keys.getAsLong() * Math.max(0D, fanOut.getAsDouble() - 1D);
+	}
+
 	/** A binding can restrict a relation's result, but must not cap the physical work of finding it. */
 	double workRowsForBoundMask(long boundMask, NativeLmdbQuerySource source) {
 		double rows = estimateForBoundMask(boundMask, source);

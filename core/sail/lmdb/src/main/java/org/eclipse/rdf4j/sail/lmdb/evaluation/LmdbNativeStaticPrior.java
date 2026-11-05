@@ -332,6 +332,17 @@ final class LmdbNativeStaticPrior {
 		return coefficients[feature.ordinal()];
 	}
 
+	/**
+	 * How far above its real time a quote can lie even when its counts are right: the prior prices a feature the same
+	 * on every query, and it errs high much further than low, parallel aggregates most of all. Tuned with
+	 * {@link #MODEL_SPREAD_UP} on the 3000-person regret harness, 2026-11-05: with the row spreads alone about 70 % of
+	 * measured runs land inside their estimated interval, and with both about 97 %.
+	 */
+	static final double MODEL_SPREAD_DOWN = 32D;
+
+	/** How far below its real time a quote can lie even when its counts are right. */
+	static final double MODEL_SPREAD_UP = 3D;
+
 	/** The time interval of a feature vector, in nanoseconds; an unbounded count gives an unbounded ceiling. */
 	LmdbNativeWork price(LmdbNativeCostVector vector) {
 		double low = vector.dotLow(coefficients);

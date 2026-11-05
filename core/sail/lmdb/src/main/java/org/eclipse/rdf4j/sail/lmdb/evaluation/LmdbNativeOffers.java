@@ -30,6 +30,7 @@ final class LmdbNativeOffers<T> extends LmdbNativeCandidateOffers<T> {
 	private final List<LmdbNativeStrategy<Void, T>> strategies = new ArrayList<>();
 	private final UnaryOperator<LmdbNativeStrategyProposal<T>> attach;
 	private LmdbNativeWork fallbackEstimate;
+	private LmdbNativeRowSpread inputSpread = LmdbNativeRowSpread.EXACT;
 	private int anonymous;
 
 	LmdbNativeOffers(LmdbNativeDecisionPoint point) {
@@ -48,6 +49,12 @@ final class LmdbNativeOffers<T> extends LmdbNativeCandidateOffers<T> {
 	 */
 	LmdbNativeOffers<T> fallbackEstimate(LmdbNativeWork estimate) {
 		this.fallbackEstimate = estimate != null && estimate.known() ? estimate : null;
+		return this;
+	}
+
+	/** How far the rows of the input every strategy here reads can lie from the estimate they were quoted on. */
+	LmdbNativeOffers<T> inputSpread(LmdbNativeRowSpread spread) {
+		this.inputSpread = spread;
 		return this;
 	}
 
@@ -98,7 +105,8 @@ final class LmdbNativeOffers<T> extends LmdbNativeCandidateOffers<T> {
 					if (attach != null) {
 						proposal = attach.apply(proposal);
 					}
-					LmdbNativeCandidate<T> candidate = LmdbNativeStrategyProposal.candidate(proposal, fallbackEstimate);
+					LmdbNativeCandidate<T> candidate = LmdbNativeStrategyProposal.candidate(proposal, fallbackEstimate)
+							.withInputSpread(inputSpread);
 					return LmdbNativeAdmission.of(lastResort ? candidate.asLastResort() : candidate);
 				} catch (RuntimeException | Error failure) {
 					// Admission has not transferred ownership to the dispatch loop until a candidate is returned.

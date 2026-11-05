@@ -263,6 +263,11 @@ final class NativeSubqueryPlan implements SlotPlan {
 	}
 
 	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		return LmdbNativeCostVectors.algebraRows(projection, row == null ? null : row.source);
+	}
+
+	@Override
 	public long producedMask() {
 		return producedMask;
 	}
