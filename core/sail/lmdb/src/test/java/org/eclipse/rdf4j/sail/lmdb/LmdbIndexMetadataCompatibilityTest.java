@@ -167,7 +167,8 @@ class LmdbIndexMetadataCompatibilityTest {
 		var subject = factory.createIRI("urn:retired-reindex:subject");
 		var term = factory.createTripleTerm(factory.createIRI("urn:retired-reindex:inner"), predicate,
 				factory.createLiteral("retired triple term"));
-		LmdbStore store = new LmdbStore(directory.toFile(), config("cspo"));
+		// Seed a durable retirement record explicitly; ordinary stores retain the async default.
+		LmdbStore store = new LmdbStore(directory.toFile(), config("cspo").setAsyncValueCleanup(false));
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		// Post-ready maintenance drains retirement records no pinned reader still needs. Let it finish first, or a

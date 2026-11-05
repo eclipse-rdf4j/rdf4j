@@ -88,6 +88,17 @@ function fakeWindow(href) {
     return win;
 }
 
+/** window.sessionStorage, as much as the router uses. */
+function fakeStorage() {
+    const values = new Map();
+    return {
+        values,
+        getItem(key) { return values.has(key) ? values.get(key) : null; },
+        setItem(key, value) { values.set(key, String(value)); },
+        removeItem(key) { values.delete(key); }
+    };
+}
+
 function fakeElement(attributes) {
     const values = Object.assign({}, attributes);
     return {
@@ -159,6 +170,7 @@ function loadRouter(options) {
     const recordingConsole = Object.assign(Object.create(console), {
         error: (...args) => consoleErrors.push(args)
     });
+    window.sessionStorage = fakeStorage();
     const context = vm.createContext({ console: recordingConsole, URL, URLSearchParams, Promise, window, document,
         workbench, FormData: FakeFormData,
         setTimeout, clearTimeout, AbortController: settings.noAbortController ? undefined : AbortController });
@@ -2324,3 +2336,88 @@ for (const initial of [true, false]) {
         });
     }
 }
+
+// Explore remembers what was explored: opening Explore again from the menu (or the repository switcher, or the
+// Repositories list) shows the resource last explored in that repository, on that server, in this tab.
+const EXPLORED = 'explore?resource=%3Chttp%3A%2F%2Fexample.org%2Falice%3E&limit_explore=50&offset=50';
+
+test('Explore opens again on the resource last explored in the repository', async () => {
+    const harness = loadRouter();
+    harness.start();
+    await visit(harness, EXPLORED, harness.model('explore'));
+    await visit(harness, 'summary');
+
+    const back = harness.router.navigate(base + 'explore', { history: 'push' });
+    await settle();
+
+    assert.equal(harness.loadModelCalls.at(-1).url, base + EXPLORED);
+    assert.equal(await back, 'committed');
+    assert.equal(harness.window.location.href, base + EXPLORED);
+});
+
+test('the resource explored on the first page is remembered too', async () => {
+    const harness = loadRouter({ href: base + EXPLORED });
+    harness.session.url = base + EXPLORED;
+    harness.session.model = harness.model('explore');
+    harness.start();
+    await visit(harness, 'summary');
+
+    harness.router.navigate(base + 'explore', { history: 'push' });
+    await settle();
+
+    assert.equal(harness.loadModelCalls.at(-1).url, base + EXPLORED);
+});
+
+test('another repository\'s Explore does not open on the resource explored in this one', async () => {
+    const harness = loadRouter();
+    harness.start();
+    await visit(harness, EXPLORED, harness.model('explore'));
+
+    harness.router.navigate('https://example.test/workbench/repositories/repo-2/explore', { history: 'push' });
+    await settle();
+
+    assert.equal(harness.loadModelCalls.at(-1).url, 'https://example.test/workbench/repositories/repo-2/explore');
+});
+
+test('the same repository on another server does not open on the resource explored on the first', async () => {
+    const harness = loadRouter();
+    let server = 'sha256:' + '1'.repeat(64) + ':scope';
+    const viewContext = harness.workbench.app.viewContext;
+    harness.workbench.app.viewContext = (...args) => Object.assign(viewContext(...args), { serverIdentity: server });
+    harness.start();
+    await visit(harness, EXPLORED, harness.model('explore'));
+    server = 'sha256:' + '2'.repeat(64) + ':scope';
+    await visit(harness, 'summary');
+
+    harness.router.navigate(base + 'explore', { history: 'push' });
+    await settle();
+
+    assert.equal(harness.loadModelCalls.at(-1).url, base + 'explore');
+});
+
+test('exploring with an empty resource forgets the resource explored before', async () => {
+    const harness = loadRouter();
+    harness.start();
+    await visit(harness, EXPLORED, harness.model('explore'));
+    await visit(harness, 'explore?resource=', harness.model('explore'));
+    await visit(harness, 'summary');
+
+    harness.router.navigate(base + 'explore', { history: 'push' });
+    await settle();
+
+    assert.equal(harness.loadModelCalls.at(-1).url, base + 'explore');
+});
+
+test('Back to an Explore page that had no resource shows it as it was', async () => {
+    const harness = loadRouter({ href: base + 'explore' });
+    harness.session.url = base + 'explore';
+    harness.session.model = harness.model('explore');
+    harness.start();
+    await visit(harness, EXPLORED, harness.model('explore'));
+
+    harness.window.goTo(base + 'explore', harness.window.history.entries[0][1]);
+    harness.window.dispatch('popstate', { state: null });
+    await settle();
+
+    assert.equal(harness.loadModelCalls.at(-1).url, base + 'explore');
+});

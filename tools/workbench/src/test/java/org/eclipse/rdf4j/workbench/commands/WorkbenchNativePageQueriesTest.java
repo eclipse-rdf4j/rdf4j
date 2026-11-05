@@ -16,6 +16,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -35,6 +37,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -46,16 +49,18 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
-import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
-import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
+import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -73,6 +78,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /** Executes the built-in page handlers and then inspects their actual generated queries without result caching. */
 class WorkbenchNativePageQueriesTest {
@@ -89,7 +95,7 @@ class WorkbenchNativePageQueriesTest {
 		LmdbStore nativeStore = new LmdbStore(directory.resolve("native").toFile(),
 				new LmdbStoreConfig().setNativeEvaluationEnabled(true)
 						.setDirectAdjacencyEnabled(adjacency));
-		SailRepository nativeRepository = new SailRepository(nativeStore);
+		CapturedSailRepository nativeRepository = new CapturedSailRepository(nativeStore);
 		SailRepository reference = new SailRepository(new LmdbStore(directory.resolve("reference").toFile(),
 				new LmdbStoreConfig().setNativeEvaluationEnabled(false)
 						.setDirectAdjacencyEnabled(false)));
@@ -102,32 +108,32 @@ class WorkbenchNativePageQueriesTest {
 						.as(nativeStore.getDirectAdjacencyReadinessDescription())
 						.isTrue();
 			}
-			CapturedRepository captured = new CapturedRepository(nativeRepository);
-			List<String> classicCases = verifyClassicQueries(adjacency, nativeRepository, reference);
+			ClassicCases classicCases = verifyClassicQueries(adjacency, nativeRepository, reference);
 			for (Page page : pages()) {
-				captured.currentFamily = page.id();
-				List<JsonNode> actual = run(page, captured);
+				nativeRepository.currentFamily = page.id();
+				List<JsonNode> actual = run(page, nativeRepository);
 				List<JsonNode> expected = run(page, reference);
 				if (page.id().equals("export-preview") || page.id().startsWith("remove-preview")) {
 					assertUnorderedPageEquals(page.id(), actual, expected);
-				} else if (page.id().equals("explore-page")) {
-					Page complete = new Page("explore-complete", "explore", ExploreServlet::new,
-							Map.of("resource", page.params().get("resource"), "limit_explore", "0", "offset", "0"));
-					List<JsonNode> fullNative = run(complete, captured);
-					List<JsonNode> fullReference = run(complete, reference);
-					assertUnorderedPageEquals(complete.id(), fullNative, fullReference);
-					assertThat(pageRows(actual)).as("pagination follows this store's stable index order")
-							.containsExactlyElementsOf(pageRows(fullNative).subList(1, 3));
-					assertThat(withoutRows(actual)).containsExactlyElementsOf(withoutRows(expected));
+				} else if (page.id().equals("explore-section-rows-label")
+						|| page.id().equals("explore-section-rows-comment")) {
+					assertThat(withoutRows(actual)).as(page.id() + " metadata")
+							.containsExactlyElementsOf(withoutRows(expected));
+					assertThat(pageRows(actual)).as(page.id() + " language-preferred values")
+							.containsExactlyElementsOf(pageRows(expected));
+				} else if (page.route().equals("explore")) {
+					assertUnorderedPageEquals(page.id(), actual, expected);
 				} else {
 					assertThat(actual).as(page.id()).containsExactlyElementsOf(expected);
 				}
 			}
-			assertThat(captured.queries).as("Types, graph counts, resource-role counts and every Remove binding mask")
-					.hasSize(46);
+			assertThat(nativeRepository.queries).as("generated page and Explore section queries").isNotEmpty();
+			assertThat(nativeRepository.queries).anyMatch(query -> query.family().startsWith("explore-section-"));
+			assertThat(nativeRepository.queries).anyMatch(query -> query.family().startsWith("remove-counts-"));
+			nativeRepository.captureQueries = false;
 			int index = 0;
 			List<Map<String, String>> queryCases = new ArrayList<>();
-			for (CapturedQuery capture : captured.queries) {
+			for (CapturedQuery capture : nativeRepository.queries) {
 				String id = capture.family() + "-" + index++;
 				queryCases.add(Map.of("id", id, "producerCase", capture.family(), "query", id + ".rq",
 						"plan", id + ".json", "settings", id + "-settings.json"));
@@ -147,21 +153,28 @@ class WorkbenchNativePageQueriesTest {
 			AppConfiguration config = mock(AppConfiguration.class);
 			when(config.getDataDir()).thenReturn(directory.resolve("query-storage").toFile());
 			try (QueryStorage.Lease storage = QueryStorage.acquire(config)) {
-				assertThat(storage.storage().checkAccess(captured)).isTrue();
+				assertThat(storage.storage().checkAccess(nativeRepository)).isTrue();
 			}
-			assertThat(captured.apiReads).as("Summary, Graphs and Explore also use direct repository reads")
-					.anyMatch(read -> read.startsWith("getContextIDs"))
-					.anyMatch(read -> read.startsWith("size"))
-					.anyMatch(read -> read.startsWith("exportStatements"))
-					.anyMatch(read -> read.startsWith("getStatements"))
-					.anyMatch(read -> read.startsWith("getNamespaces"))
-					.anyMatch(read -> read.startsWith("getNamespace "))
-					.anyMatch(read -> read.startsWith("hasStatement"));
+			assertThat(nativeRepository.apiReads)
+					.as("Summary, Graphs, Export and Remove retain their repository read paths")
+					.anyMatch(read -> read.endsWith(":getContextIDs"))
+					.anyMatch(read -> read.contains(":size "))
+					.anyMatch(read -> read.contains(":exportStatements "))
+					.anyMatch(read -> read.contains(":getStatements "))
+					.anyMatch(read -> read.endsWith(":getNamespaces"))
+					.anyMatch(read -> read.contains(":getNamespace "))
+					.anyMatch(read -> read.contains(":hasStatement "));
+			assertThat(nativeRepository.apiReads).noneMatch(read -> (read.startsWith("explore-section-")
+					|| read.startsWith("classic-section-link-"))
+					&& (read.contains(":getStatements ") || read.endsWith(":exportStatements")));
 			Path artifact = artifacts(adjacency).resolve("api-reads.json");
-			Files.writeString(artifact, JSON.writerWithDefaultPrettyPrinter().writeValueAsString(captured.apiReads));
+			Files.writeString(artifact,
+					JSON.writerWithDefaultPrettyPrinter().writeValueAsString(nativeRepository.apiReads));
 			Files.writeString(artifacts(adjacency).resolve("coverage-manifest.json"),
 					JSON.writerWithDefaultPrettyPrinter()
-							.writeValueAsString(Map.of("pageQueries", queryCases, "classicQueries", classicCases,
+							.writeValueAsString(Map.of("pageQueries", queryCases,
+									"classicQueries", classicCases.queries(), "classicExploreLinks",
+									classicCases.exploreLinks(),
 									"nativeEvaluation", true, "directAdjacency", adjacency, "resultCacheRequested",
 									false)));
 		}
@@ -173,7 +186,17 @@ class WorkbenchNativePageQueriesTest {
 	}
 
 	private static List<JsonNode> withoutRows(List<JsonNode> records) {
-		return records.stream().filter(record -> !"rows".equals(record.path("type").asText())).toList();
+		return records.stream()
+				.filter(record -> !"rows".equals(record.path("type").asText()))
+				.map(record -> {
+					if (!"metadata".equals(record.path("type").asText())) {
+						return record;
+					}
+					JsonNode normalized = record.deepCopy();
+					((ObjectNode) normalized.path("values")).remove("query-request-id");
+					return normalized;
+				})
+				.toList();
 	}
 
 	private static List<JsonNode> pageRows(List<JsonNode> records) {
@@ -184,11 +207,12 @@ class WorkbenchNativePageQueriesTest {
 		return result;
 	}
 
-	private static List<String> verifyClassicQueries(boolean adjacency, Repository nativeRepository,
+	private static ClassicCases verifyClassicQueries(boolean adjacency, CapturedSailRepository nativeRepository,
 			Repository reference)
 			throws Exception {
 		Path output = artifacts(adjacency).resolve("classic-bridge.stderr.log");
 		List<String> cases = new ArrayList<>();
+		List<String> exploreLinks = new ArrayList<>();
 		for (String resource : List.of("<" + NS + "focus>", "<_:focus>", "<" + NS + "unknown>")) {
 			JsonNode generated;
 			try (TestProcess child = TestProcess.start(
@@ -229,8 +253,27 @@ class WorkbenchNativePageQueriesTest {
 					}
 				}
 			}
+			String sectionLink = generated.path("section").asText();
+			assertThat(sectionLink).startsWith("explore?resource=");
+			exploreLinks.add(sectionLink);
+			String linkedResource = URLDecoder.decode(sectionLink.substring("explore?resource=".length()),
+					StandardCharsets.UTF_8);
+			String id = "classic-explore-section-link-" + resource.hashCode();
+			nativeRepository.currentFamily = id;
+			Page linked = new Page(id, "explore", ExploreServlet::new, Map.of("resource", linkedResource));
+			List<JsonNode> actual = run(linked, nativeRepository);
+			List<JsonNode> expected = run(linked, reference);
+			assertThat(actual).as("the actual Explore section resource link resolves through the metadata route")
+					.containsExactlyElementsOf(expected);
+			JsonNode metadata = actual.stream()
+					.filter(record -> "metadata".equals(record.path("type").asText()))
+					.findFirst()
+					.orElseThrow()
+					.path("values");
+			assertThat(metadata.path("explore-resource").asText()).isEqualTo(linkedResource);
+			assertThat(pageRows(actual)).as("the linked Explore metadata route contains no whole-store rows").isEmpty();
 		}
-		return cases;
+		return new ClassicCases(cases, exploreLinks);
 	}
 
 	private static void assertTupleQueryMatches(TupleQuery actualQuery, SailTupleQuery referenceQuery) {
@@ -314,17 +357,7 @@ class WorkbenchNativePageQueriesTest {
 		pages.add(new Page("clear-counts", "clear", ClearServlet::new, Map.of("counts", "true")));
 		pages.add(new Page("export-preview", "export", ExportServlet::new, Map.of("action", "preview")));
 		pages.add(new Page("namespace-list", "namespaces", NamespacesServlet::new, Map.of()));
-		for (String resource : List.of("<" + NS + "focus>", "<_:focus>", "\"quoted \\\" text\"@en",
-				"\"42\"^^<http://www.w3.org/2001/XMLSchema#int>", "<" + RDF4J.NIL + ">", "<" + NS + "unknown>")) {
-			pages.add(new Page("explore-counts-" + pages.size(), "explore", ExploreServlet::new,
-					Map.of("counts", "true", "resource", resource)));
-		}
-		pages.add(new Page("explore-counts-prefixed", "explore", ExploreServlet::new,
-				Map.of("counts", "true", "resource", "native:focus")));
-		pages.add(new Page("explore-page", "explore", ExploreServlet::new,
-				Map.of("resource", "<" + NS + "focus>", "offset", "1", "limit_explore", "2")));
-		pages.add(new Page("explore-empty-page", "explore", ExploreServlet::new,
-				Map.of("resource", "<" + NS + "unknown>", "limit_explore", "2")));
+		addExploreSectionPages(pages);
 		List<Map<String, String>> scopes = List.of(Map.of(), Map.of("context", ""),
 				Map.of("context", "<" + NS + "graph>"), Map.of("context", "<_:graph>"));
 		for (int scope = 0; scope < scopes.size(); scope++) {
@@ -349,6 +382,47 @@ class WorkbenchNativePageQueriesTest {
 			}
 		}
 		return pages;
+	}
+
+	private static void addExploreSectionPages(List<Page> pages) {
+		String resource = "<" + NS + "focus>";
+		List<String> sections = List.of("outgoing", "incoming", "predicate", "graph", "types", "superClasses",
+				"subClasses", "properties", "superProperties", "subProperties", "domain", "range", "label", "comment");
+		for (String section : sections) {
+			Map<String, String> params = new LinkedHashMap<>();
+			params.put("resource", resource);
+			params.put("section", section);
+			params.put("kind", "rows");
+			if ("label".equals(section) || "comment".equals(section)) {
+				params.put("language", "en");
+			}
+			if ("outgoing".equals(section)) {
+				params.put("load", "more");
+			}
+			pages.add(new Page("explore-section-rows-" + section, "explore", ExploreServlet::new,
+					Map.copyOf(params)));
+		}
+
+		for (String section : List.of("outgoing", "incoming", "predicate")) {
+			for (String scope : List.of("default", "named")) {
+				pages.add(new Page("explore-section-count-" + section + "-" + scope, "explore", ExploreServlet::new,
+						Map.of("resource", resource, "section", section, "kind", "count", "scope", scope)));
+			}
+		}
+		pages.add(new Page("explore-section-count-graph", "explore", ExploreServlet::new,
+				Map.of("resource", resource, "section", "graph", "kind", "count", "scope", "named")));
+		for (String section : List.of("types", "subClasses")) {
+			pages.add(new Page("explore-section-count-" + section, "explore", ExploreServlet::new,
+					Map.of("resource", resource, "section", section, "kind", "count")));
+		}
+
+		for (String alternateResource : List.of("<_:focus>", "\"quoted \\\" text\"@en",
+				"\"42\"^^<http://www.w3.org/2001/XMLSchema#int>", "<" + RDF4J.NIL + ">", "<" + NS + "unknown>",
+				"native:focus")) {
+			pages.add(
+					new Page("explore-section-resource-" + alternateResource.hashCode(), "explore", ExploreServlet::new,
+							Map.of("resource", alternateResource, "section", "outgoing", "kind", "rows")));
+		}
 	}
 
 	private static List<JsonNode> run(Page page, Repository repository) throws Exception {
@@ -396,6 +470,9 @@ class WorkbenchNativePageQueriesTest {
 			connection.add(blank, predicate, focus, graph);
 			connection.add(values.createIRI(NS, "other"), focus, blank);
 			connection.add(values.createIRI(NS, "graphSubject"), predicate, focus, blank);
+			connection.add(focus, RDFS.LABEL, values.createLiteral("Focus", "en"));
+			connection.add(focus, RDFS.LABEL, values.createLiteral("Fokus", "de"), graph);
+			connection.add(focus, RDFS.COMMENT, values.createLiteral("A native query fixture."));
 			connection.commit();
 		}
 		try (InferencerConnection connection = (InferencerConnection) repository.getSail().getConnection()) {
@@ -412,76 +489,102 @@ class WorkbenchNativePageQueriesTest {
 		}
 	}
 
+	private record ClassicCases(List<String> queries, List<String> exploreLinks) {
+	}
+
 	private record CapturedQuery(String family, QueryLanguage language, String text, String baseURI, TupleQuery query) {
 	}
 
-	private static final class CapturedRepository extends RepositoryWrapper {
+	private static final class CapturedSailRepository extends SailRepository {
 		private final List<CapturedQuery> queries = Collections.synchronizedList(new ArrayList<>());
 		private final List<String> apiReads = Collections.synchronizedList(new ArrayList<>());
 		private volatile String currentFamily;
+		private volatile boolean captureQueries = true;
 
-		private CapturedRepository(Repository delegate) {
-			super(delegate);
+		private CapturedSailRepository(LmdbStore sail) {
+			super(sail);
+		}
+
+		private void recordApiRead(String read) {
+			apiReads.add(currentFamily + ":" + read);
 		}
 
 		@Override
-		public RepositoryConnection getConnection() {
-			return new RepositoryConnectionWrapper(this, super.getConnection()) {
-				@Override
-				public TupleQuery prepareTupleQuery(QueryLanguage language, String query, String baseURI) {
-					TupleQuery prepared = super.prepareTupleQuery(language, query, baseURI);
-					queries.add(new CapturedQuery(currentFamily, language, query, baseURI, prepared));
-					return prepared;
-				}
+		public SailRepositoryConnection getConnection() throws RepositoryException {
+			if (!isInitialized()) {
+				init();
+			}
+			try {
+				return new CapturedSailRepositoryConnection(this, getSail().getConnection());
+			} catch (SailException failure) {
+				throw new RepositoryException(failure);
+			}
+		}
+	}
 
-				@Override
-				public RepositoryResult<Resource> getContextIDs() {
-					apiReads.add("getContextIDs");
-					return super.getContextIDs();
-				}
+	private static final class CapturedSailRepositoryConnection extends SailRepositoryConnection {
+		private final CapturedSailRepository repository;
 
-				@Override
-				public RepositoryResult<Namespace> getNamespaces() {
-					apiReads.add("getNamespaces");
-					return super.getNamespaces();
-				}
+		private CapturedSailRepositoryConnection(CapturedSailRepository repository, SailConnection connection) {
+			super(repository, connection);
+			this.repository = repository;
+		}
 
-				@Override
-				public String getNamespace(String prefix) {
-					apiReads.add("getNamespace " + prefix);
-					return super.getNamespace(prefix);
-				}
+		@Override
+		public SailTupleQuery prepareTupleQuery(QueryLanguage language, String query, String baseURI) {
+			SailTupleQuery prepared = super.prepareTupleQuery(language, query, baseURI);
+			if (repository.captureQueries) {
+				repository.queries.add(new CapturedQuery(repository.currentFamily, language, query, baseURI, prepared));
+			}
+			return prepared;
+		}
 
-				@Override
-				public RepositoryResult<Statement> getStatements(Resource subject, IRI predicate, Value object,
-						boolean inferred, Resource... contexts) {
-					apiReads.add("getStatements " + subject + " " + predicate + " " + object + " " + inferred
-							+ " " + Arrays.toString(contexts));
-					return super.getStatements(subject, predicate, object, inferred, contexts);
-				}
+		@Override
+		public RepositoryResult<Resource> getContextIDs() {
+			repository.recordApiRead("getContextIDs");
+			return super.getContextIDs();
+		}
 
-				@Override
-				public boolean hasStatement(Resource subject, IRI predicate, Value object, boolean inferred,
-						Resource... contexts) {
-					apiReads.add("hasStatement " + subject + " " + predicate + " " + object + " " + inferred
-							+ " " + Arrays.toString(contexts));
-					return super.hasStatement(subject, predicate, object, inferred, contexts);
-				}
+		@Override
+		public RepositoryResult<Namespace> getNamespaces() {
+			repository.recordApiRead("getNamespaces");
+			return super.getNamespaces();
+		}
 
-				@Override
-				public long size(Resource... contexts) {
-					apiReads.add("size " + Arrays.toString(contexts));
-					return super.size(contexts);
-				}
+		@Override
+		public String getNamespace(String prefix) {
+			repository.recordApiRead("getNamespace " + prefix);
+			return super.getNamespace(prefix);
+		}
 
-				@Override
-				public void exportStatements(Resource subject, IRI predicate, Value object, boolean inferred,
-						RDFHandler handler, Resource... contexts) {
-					apiReads.add("exportStatements " + subject + " " + predicate + " " + object + " " + inferred
-							+ " " + Arrays.toString(contexts));
-					super.exportStatements(subject, predicate, object, inferred, handler, contexts);
-				}
-			};
+		@Override
+		public RepositoryResult<Statement> getStatements(Resource subject, IRI predicate, Value object,
+				boolean inferred, Resource... contexts) {
+			repository.recordApiRead("getStatements " + subject + " " + predicate + " " + object + " " + inferred
+					+ " " + Arrays.toString(contexts));
+			return super.getStatements(subject, predicate, object, inferred, contexts);
+		}
+
+		@Override
+		public boolean hasStatement(Resource subject, IRI predicate, Value object, boolean inferred,
+				Resource... contexts) {
+			repository.recordApiRead("hasStatement " + subject + " " + predicate + " " + object + " " + inferred
+					+ " " + Arrays.toString(contexts));
+			return super.hasStatement(subject, predicate, object, inferred, contexts);
+		}
+
+		@Override
+		public long size(Resource... contexts) {
+			repository.recordApiRead("size " + Arrays.toString(contexts));
+			return super.size(contexts);
+		}
+
+		@Override
+		public void exportStatements(Resource subject, IRI predicate, Value object, boolean inferred,
+				RDFHandler handler, Resource... contexts) {
+			repository.recordApiRead("exportStatements " + subject + " " + predicate + " " + object + " " + inferred
+					+ " " + Arrays.toString(contexts));
+			super.exportStatements(subject, predicate, object, inferred, handler, contexts);
 		}
 	}
 }

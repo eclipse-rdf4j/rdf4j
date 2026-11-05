@@ -148,8 +148,8 @@ class Rdf4jServerWorkbenchApplicationTest {
 	private FilterRegistrationBean<CacheFilter> cacheFilter;
 
 	@Autowired
-	@Qualifier("revalidatedEntryFilter")
-	private FilterRegistrationBean<CacheFilter> revalidatedEntryFilter;
+	@Qualifier("revalidatedAssetFilter")
+	private FilterRegistrationBean<CacheFilter> revalidatedAssetFilter;
 
 	private ListAppender<ILoggingEvent> loggingAppender;
 	private Logger loggingFilterLogger;
@@ -300,17 +300,27 @@ class Rdf4jServerWorkbenchApplicationTest {
 		assertThat(cacheFilter.isAsyncSupported()).isTrue();
 	}
 
+	/** Like the WAR, the runner serves the namespaces the Workbench query editor falls back on. */
 	@Test
-	void theExplorerEntryIsRevalidatedAfterTheLongCacheHeaderLikeTheWar() {
-		assertThat(revalidatedEntryFilter.getUrlPatterns()).containsExactlyInAnyOrder(
-				"/rdf4j-workbench/scripts/graph-explorer/graph-explorer.mjs",
-				"/rdf4j-workbench/scripts/graph-explorer/query-graph-renderer.mjs",
-				"/rdf4j-workbench/styles/graph-explorer.css");
-		assertThat(revalidatedEntryFilter.getInitParameters()).containsEntry("Cache-Control", "0");
+	void theWorkbenchFallbackNamespacesAreServedLikeTheWar() throws IOException {
+		ResponseEntity<String> response = restTemplate.getForEntity(
+				"http://localhost:" + port + "/rdf4j-workbench/fallback-namespaces", String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getHeaders().getContentType()).isNotNull()
+				.satisfies(type -> assertThat(type.isCompatibleWith(MediaType.APPLICATION_JSON)).isTrue());
+		assertThat(JSON_MAPPER.readTree(response.getBody()).isObject()).isTrue();
+	}
+
+	@Test
+	void scriptsAndStylesheetsAreRevalidatedAfterTheLongCacheHeaderLikeTheWar() {
+		assertThat(revalidatedAssetFilter.getUrlPatterns()).containsExactlyInAnyOrder(
+				"/rdf4j-workbench/scripts/*", "/rdf4j-workbench/styles/*");
+		assertThat(revalidatedAssetFilter.getInitParameters()).containsEntry("Cache-Control", "0");
 		assertThat(cacheFilter.getInitParameters()).containsEntry("Cache-Control", "600");
-		assertThat(revalidatedEntryFilter.getOrder()).as("runs after, so its header wins")
+		assertThat(revalidatedAssetFilter.getOrder()).as("runs after, so its header wins")
 				.isGreaterThan(cacheFilter.getOrder());
-		assertThat(revalidatedEntryFilter.isAsyncSupported()).isTrue();
+		assertThat(revalidatedAssetFilter.isAsyncSupported()).isTrue();
 	}
 
 	@Test

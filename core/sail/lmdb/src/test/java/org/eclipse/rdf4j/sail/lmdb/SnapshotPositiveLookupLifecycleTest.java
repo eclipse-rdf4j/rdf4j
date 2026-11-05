@@ -140,7 +140,9 @@ class SnapshotPositiveLookupLifecycleTest {
 				assertCanonicalWarm(store.values, snapshot, input, originalId);
 
 				removeStatement(store);
-				assertTrue(store.getBackingStore().hasRetiredValueIds(),
+				assertTrue(
+						store.getBackingStore().asyncValueCleanupCoordinator().metrics().unacknowledgedCandidates() > 0
+								|| store.getBackingStore().hasRetiredValueIds(),
 						"The actual old TripleStore horizon must protect the removed dictionary association");
 				growDictionary(store, originalValueMap);
 				assertEquals(originalTripleMap, store.triples.mapSizeBytes());
@@ -157,7 +159,9 @@ class SnapshotPositiveLookupLifecycleTest {
 						"The detached view must not learn a new memo from its advancing fallback reader");
 				assertOldStatement(reader, input, originalId);
 				commitStatement(store, SUBJECT, OBJECT);
-				assertTrue(store.getBackingStore().hasRetiredValueIds());
+				assertTrue(
+						store.getBackingStore().asyncValueCleanupCoordinator().metrics().unacknowledgedCandidates() > 0
+								|| store.getBackingStore().hasRetiredValueIds());
 				assertOldStatement(reader, input, originalId);
 				try (SailDataset current = store.getBackingStore()
 						.getExplicitSailSource()
@@ -174,6 +178,9 @@ class SnapshotPositiveLookupLifecycleTest {
 			assertEquals(Long.MAX_VALUE, store.triples.getTxnManager().minPinnedSnapshotRevision(),
 					"Closing the detached reader must release its pinned dictionary and triple-store horizon");
 			removeStatement(store);
+			assertTrue(store.getBackingStore()
+					.asyncValueCleanupCoordinator()
+					.awaitEmpty(10, java.util.concurrent.TimeUnit.SECONDS));
 			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 			LmdbGcTestMaintenance.reclaimUnusedValues(store, 4096);
 			assertFalse(store.getBackingStore().hasRetiredValueIds(),

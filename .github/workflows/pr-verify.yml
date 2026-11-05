@@ -76,6 +76,8 @@ jobs:
       - name: Test
         id: test
         run: exec mvn -B --fail-at-end -pl core/sail/lmdb test -DskipITs -PskipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+      - name: Require complete LMDB recovery unit-test reports
+        run: python3 scripts/lmdb-crashlab/validate_java_reports.py --kind unit --reports-dir core/sail/lmdb/target/surefire-reports
       - name: Verify synchronous validation profile
         id: sync_validation
         run: exec mvn -B --fail-at-end -pl core/sail/lmdb -Dtest=LmdbSyncValidationProfileProbe test -DskipITs -PskipSlowTests,lmdb-sync-validation,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
@@ -212,6 +214,8 @@ jobs:
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
         run: exec mvn -B --fail-at-end verify -PskipUnitTests,skipSlowTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
+      - name: Require complete LMDB lifecycle integration-test reports
+        run: python3 scripts/lmdb-crashlab/validate_java_reports.py --kind integration --reports-dir core/sail/lmdb/target/failsafe-reports
       - name: Publish Test Report
         if: failure()
         uses: ScalableCapital/action-surefire-report@v2.0.5

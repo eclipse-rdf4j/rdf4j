@@ -287,7 +287,9 @@ class LmdbValueRetirementRecoveryTest {
 	void readOnlyRollbackOrCloseCannotAbortPostReadyRetirement(boolean close, @TempDir File dataDir)
 			throws Exception {
 		var factory = SimpleValueFactory.getInstance();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true);
+		// Exercise the durable PostReady writer, not the async coordinator's differently locked drain.
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true)
+				.setAsyncValueCleanup(false);
 		IRI subject = factory.createIRI("urn:retirement:owned-post-ready-subject");
 		TripleTerm quoted = factory.createTripleTerm(subject, PREDICATE, factory.createLiteral("live inner value"));
 		TripleTerm nested = factory.createTripleTerm(subject, PREDICATE, quoted);
@@ -470,7 +472,8 @@ class LmdbValueRetirementRecoveryTest {
 
 	@Test
 	void failedTripleCommitPreservesLiveQuotedValuesAcrossReopen(@TempDir File dataDir) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true);
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setForceSync(true)
+				.setAsyncValueCleanup(false);
 		IRI subject = SimpleValueFactory.getInstance().createIRI("urn:retirement:failed-commit-subject");
 		TripleTerm quoted = SimpleValueFactory.getInstance()
 				.createTripleTerm(subject, PREDICATE,

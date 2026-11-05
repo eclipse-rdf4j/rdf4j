@@ -12,18 +12,29 @@
 
 package org.eclipse.rdf4j.sail.nativerdf;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
+import org.eclipse.rdf4j.common.io.FileUtil;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -32,7 +43,10 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * @author Håvard Ottestad
@@ -40,6 +54,10 @@ import org.junit.jupiter.api.io.TempDir;
 public class QueryBenchmarkTest {
 
 	private static SailRepository repository;
+	private static File ownedDirectory;
+	private static final SimpleValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
+	private static final IRI LOWERCASE_DISTRIBUTION = VALUE_FACTORY.createIRI("http://www.w3.org/ns/dcat#distribution");
+	private static final IRI UPPERCASE_DISTRIBUTION = VALUE_FACTORY.createIRI("http://www.w3.org/ns/dcat#Distribution");
 
 	private static final String query1;
 	private static final String query2;
@@ -49,11 +67,11 @@ public class QueryBenchmarkTest {
 
 	static {
 		try {
-			query1 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query1.qr"), StandardCharsets.UTF_8);
-			query2 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query2.qr"), StandardCharsets.UTF_8);
-			query3 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query3.qr"), StandardCharsets.UTF_8);
-			query4 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query4.qr"), StandardCharsets.UTF_8);
-			query5 = IOUtils.toString(getResourceAsStream("benchmarkFiles/query5.qr"), StandardCharsets.UTF_8);
+			query1 = readQuery(getResourceAsStream("benchmarkFiles/query1.qr"));
+			query2 = readQuery(getResourceAsStream("benchmarkFiles/query2.qr"));
+			query3 = readQuery(getResourceAsStream("benchmarkFiles/query3.qr"));
+			query4 = readQuery(getResourceAsStream("benchmarkFiles/query4.qr"));
+			query5 = readQuery(getResourceAsStream("benchmarkFiles/query5.qr"));
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -62,7 +80,8 @@ public class QueryBenchmarkTest {
 	static List<Statement> statementList;
 
 	@BeforeAll
-	public static void beforeClass(@TempDir File dataDir) throws IOException {
+	public static void beforeClass(@TempDir(cleanup = CleanupMode.NEVER) File dataDir) throws IOException {
+		ownedDirectory = dataDir;
 		System.out.println("Before class");
 
 		repository = new SailRepository(new NativeStore(dataDir, "spoc,ospc,psoc"));
@@ -70,7 +89,9 @@ public class QueryBenchmarkTest {
 		System.out.println("Adding statements");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
+			try (InputStream data = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+				connection.add(data, "", RDFFormat.TURTLE);
+			}
 			connection.commit();
 		}
 
@@ -99,6 +120,12 @@ public class QueryBenchmarkTest {
 
 	}
 
+	static String readQuery(InputStream input) throws IOException {
+		try (input) {
+			return IOUtils.toString(input, StandardCharsets.UTF_8);
+		}
+	}
+
 	private static InputStream getResourceAsStream(String name) {
 		if (name.endsWith(".gz")) {
 			return BenchmarkResources.openDecompressedStream(name);
@@ -107,10 +134,24 @@ public class QueryBenchmarkTest {
 	}
 
 	@AfterAll
-	public static void afterClass() {
-		repository.shutDown();
+	public static void afterClass() throws IOException {
+		cleanupRepository(repository, ownedDirectory);
 		repository = null;
 		statementList = null;
+		ownedDirectory = null;
+	}
+
+	static void cleanupRepository(SailRepository owner, File directory) throws IOException {
+		if (owner != null) {
+			owner.shutDown();
+		}
+		// JUnit must not delete native files when shutdown fails; this owner deletes only safely closed data.
+		if (directory != null) {
+			FileUtil.deleteDir(directory);
+			if (directory.exists()) {
+				throw new IOException("Unable to delete owned benchmark directory: " + directory);
+			}
+		}
 	}
 
 	@Test
@@ -184,39 +225,126 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void simpleUpdateQueryIsolationReadCommitted() {
-		System.out.println("simpleUpdateQueryIsolationReadCommitted");
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query2).execute();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query3).execute();
-			connection.commit();
-		}
-		hasStatement();
-
+		assertUpdateTransitions(IsolationLevels.READ_COMMITTED);
 	}
 
 	@Test
 	public void simpleUpdateQueryIsolationNone() {
-		System.out.println("simpleUpdateQueryIsolationNone");
+		assertUpdateTransitions(IsolationLevels.NONE);
+	}
 
+	private static void assertUpdateTransitions(IsolationLevel isolation) {
+		withRestoredTypeStatements(() -> {
+			Set<Statement> initialTypes;
+			long initialSize;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				initialTypes = readTypeStatements(connection);
+				initialSize = connection.size();
+			}
+			assertTrue(
+					initialTypes.stream().anyMatch(statement -> UPPERCASE_DISTRIBUTION.equals(statement.getObject())),
+					"the original fixture must contain Distribution rows actually transformed by query3");
+			Set<Statement> afterQuery2 = transformTypeObject(initialTypes, LOWERCASE_DISTRIBUTION,
+					UPPERCASE_DISTRIBUTION);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(isolation);
+				connection.prepareUpdate(query2).execute();
+				connection.commit();
+			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertEquals(initialSize, connection.size(), "query2 must preserve the total statement count");
+				assertTrue(afterQuery2.equals(readTypeStatements(connection)),
+						"query2 must transform lowercase types while preserving every other type row and context");
+			}
+			Set<Statement> afterQuery3 = transformTypeObject(afterQuery2, UPPERCASE_DISTRIBUTION,
+					LOWERCASE_DISTRIBUTION);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(isolation);
+				connection.prepareUpdate(query3).execute();
+				connection.commit();
+			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertEquals(initialSize, connection.size(), "query3 must preserve the total statement count");
+				assertTrue(afterQuery3.equals(readTypeStatements(connection)),
+						"query3 must transform uppercase types while preserving every other type row and context");
+			}
+		});
+	}
+
+	private static Set<Statement> transformTypeObject(Set<Statement> statements, IRI oldType, IRI newType) {
+		Set<Statement> result = new LinkedHashSet<>();
+		for (Statement statement : statements) {
+			result.add(oldType.equals(statement.getObject())
+					? VALUE_FACTORY.createStatement(statement.getSubject(), RDF.TYPE, newType, statement.getContext())
+					: statement);
+		}
+		return result;
+	}
+
+	private static void withRestoredTypeStatements(Runnable action) {
+		restoreTypeStatements();
+		try (FixtureRestore restore = QueryBenchmarkTest::restoreTypeStatements) {
+			action.run();
+		}
+	}
+
+	@FunctionalInterface
+	private interface FixtureRestore extends AutoCloseable {
+		@Override
+		void close();
+	}
+
+	@Test
+	void failedUpdateAssertionStillRestoresOriginalTypes() {
+		AssertionError failure = new AssertionError("assertion after committed update");
+		assertSame(failure, assertThrows(AssertionError.class, () -> withRestoredTypeStatements(() -> {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
+				connection.prepareUpdate(query3).execute();
+				connection.commit();
+			}
+			throw failure;
+		})));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query2).execute();
+			assertTrue(new LinkedHashSet<>(statementList).equals(readTypeStatements(connection)),
+					"failed update assertions must not contaminate the shared fixture");
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void updateFixturePreservesOriginalTypesForLaterQueries(boolean noneIsolation) throws Exception {
+		restoreTypeStatements();
+		try (AutoCloseable restore = QueryBenchmarkTest::restoreTypeStatements) {
+			if (noneIsolation) {
+				simpleUpdateQueryIsolationNone();
+			} else {
+				simpleUpdateQueryIsolationReadCommitted();
+			}
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertTrue(new LinkedHashSet<>(statementList).equals(readTypeStatements(connection)),
+						"update fixtures must not alter the shared dataset seen by later query tests");
+			}
+		}
+	}
+
+	private static Set<Statement> readTypeStatements(SailRepositoryConnection connection) {
+		try (RepositoryResult<Statement> statements = connection.getStatements(null, RDF.TYPE, null, false)) {
+			Set<Statement> result = new LinkedHashSet<>();
+			while (statements.hasNext()) {
+				result.add(statements.next());
+			}
+			return result;
+		}
+	}
+
+	private static void restoreTypeStatements() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.remove((Resource) null, RDF.TYPE, null);
+			connection.add(statementList);
 			connection.commit();
 		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query3).execute();
-			connection.commit();
-		}
-		hasStatement();
-
 	}
 
 	private boolean hasStatement() {

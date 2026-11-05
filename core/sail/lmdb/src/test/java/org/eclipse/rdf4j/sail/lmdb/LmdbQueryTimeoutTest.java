@@ -358,6 +358,9 @@ class LmdbQueryTimeoutTest {
 			try (RepositoryConnection seed = repository.getConnection()) {
 				seed.add(SUBJECT, VALUE_PREDICATE, Values.literal("snapshot"));
 			}
+			// The seed outgrows the small TripleStore map and starts background growth. A growth attempt taken while
+			// that episode runs joins it, and admission reopens when its driver finishes.
+			awaitGrowthReopened(store.getBackingStore());
 			Future<Void> query = executor.submit(() -> {
 				try (RepositoryConnection reader = repository.getConnection()) {
 					TupleQuery tupleQuery = reader.prepareTupleQuery(
@@ -378,6 +381,7 @@ class LmdbQueryTimeoutTest {
 			});
 			assertThat(queryPrepared.await(5, TimeUnit.SECONDS)).isTrue();
 			growthAttempt = store.getBackingStore().beginMapGrowthAttempt(new Object());
+			assertThat(store.getBackingStore().growthAdmissionClosed()).isTrue();
 			startEvaluation.countDown();
 			assertThat(evaluationStarted.await(5, TimeUnit.SECONDS)).isTrue();
 			long waitStartedAt = System.nanoTime();
@@ -495,6 +499,17 @@ class LmdbQueryTimeoutTest {
 				+ TimeUnit.MILLISECONDS.toNanos(DEADLINE_MARGIN_MILLIS) - (System.nanoTime() - startNanos);
 		if (remainingNanos > 0) {
 			new CountDownLatch(1).await(remainingNanos, TimeUnit.NANOSECONDS);
+		}
+	}
+
+	private static void awaitGrowthReopened(LmdbSailStore backingStore) {
+		long timeoutAt = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (backingStore.growthAdmissionClosed()
+				|| backingStore.growthMetricsSnapshot().currentPhase() != LmdbSailStore.GrowthPhase.OPEN) {
+			if (System.nanoTime() >= timeoutAt) {
+				throw new AssertionError("the background map growth started by the seed did not finish");
+			}
+			Thread.onSpinWait();
 		}
 	}
 

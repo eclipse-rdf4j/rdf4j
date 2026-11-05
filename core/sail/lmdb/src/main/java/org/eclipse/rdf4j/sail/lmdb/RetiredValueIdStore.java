@@ -93,6 +93,33 @@ final class RetiredValueIdStore {
 	 */
 	private volatile long pendingCount;
 	private volatile long pendingChangeCount;
+	private volatile boolean nativeDeleteMetricsEnabled;
+	private volatile long nativeDeleteAttempts;
+	private volatile long nativeDeleteSuccesses;
+
+	void enableNativeDeleteMetrics() {
+		nativeDeleteMetricsEnabled = true;
+	}
+
+	long nativeDeleteAttempts() {
+		return nativeDeleteAttempts;
+	}
+
+	long nativeDeleteSuccesses() {
+		return nativeDeleteSuccesses;
+	}
+
+	private int trackedDelete(long transaction, int database, MDBVal key, MDBVal data) {
+		boolean measured = nativeDeleteMetricsEnabled;
+		if (measured) {
+			nativeDeleteAttempts++;
+		}
+		int result = mdb_del(transaction, database, key, data);
+		if (measured && result == MDB_SUCCESS) {
+			nativeDeleteSuccesses++;
+		}
+		return result;
+	}
 
 	static final class DrainBatch {
 		/** IDs whose by-ID record matches their ordered-index entry: candidates for reclamation. */
@@ -329,6 +356,29 @@ final class RetiredValueIdStore {
 		return pendingCount + pendingChangeCount > 0;
 	}
 
+	/** An already-unused ID cannot be recycled while replay has installed another current retirement for it. */
+	boolean hasCurrentRetirement(MemoryStack stack, long transaction, long id) throws IOException {
+		if (!hasPending()) {
+			return false;
+		}
+		stack.push();
+		try {
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal value = MDBVal.calloc(stack);
+			ByteBuffer encoded = stack.malloc(MAX_VARINT);
+			Varint.writeUnsigned(encoded, id);
+			key.mv_data(encoded.flip());
+			int result = mdb_get(transaction, retiredByIdDbi, key, value);
+			if (result == MDB_NOTFOUND) {
+				return false;
+			}
+			E(result);
+			return true;
+		} finally {
+			stack.pop();
+		}
+	}
+
 	/** Whether the open writer recorded retirement changes that its commit must publish. */
 	boolean hasTransactionChanges() {
 		return pendingChangeCount > 0;
@@ -486,7 +536,7 @@ final class RetiredValueIdStore {
 			if (recordRc == MDB_SUCCESS) {
 				ByteBuffer recordBb = recordVal.mv_data().duplicate();
 				if (Varint.readUnsigned(recordBb) == epoch && Varint.readUnsigned(recordBb) == revision) {
-					E(mdb_del(writeTxn, retiredByIdDbi, keyVal, null));
+					E(trackedDelete(writeTxn, retiredByIdDbi, keyVal, null));
 				}
 			} else if (recordRc != MDB_NOTFOUND) {
 				E(recordRc);
@@ -494,11 +544,46 @@ final class RetiredValueIdStore {
 		}
 	}
 
+	/**
+	 * For an async worker holding publication, clears only each candidate's exact current by-ID/sequence pair. Older
+	 * superseded sequence entries remain harmless stale entries for normal bounded draining. This operation shares the
+	 * reclamation transaction: an abort preserves both the dictionary and its durable retirement authority.
+	 */
+	void removeCurrentRetirements(MemoryStack stack, long writeTxn, Collection<Long> ids) throws IOException {
+		MDBVal idKey = MDBVal.calloc(stack);
+		MDBVal record = MDBVal.calloc(stack);
+		MDBVal sequenceKey = MDBVal.calloc(stack);
+		ByteBuffer idBytes = stack.malloc(MAX_VARINT);
+		ByteBuffer sequenceBytes = stack.malloc(3 * MAX_VARINT);
+		for (Long id : ids) {
+			idBytes.clear();
+			Varint.writeUnsigned(idBytes, id);
+			idKey.mv_data(idBytes.flip());
+			int rc = mdb_get(writeTxn, retiredByIdDbi, idKey, record);
+			if (rc == MDB_NOTFOUND) {
+				continue;
+			}
+			E(rc);
+			ByteBuffer current = record.mv_data();
+			if (current.remaining() > 2 * MAX_VARINT) {
+				throw new IOException("Malformed current retirement record for value " + id);
+			}
+			sequenceBytes.clear();
+			sequenceBytes.put(current);
+			Varint.writeUnsigned(sequenceBytes, id);
+			sequenceKey.mv_data(sequenceBytes.flip());
+			if (E(trackedDelete(writeTxn, retiredSeqDbi, sequenceKey, null)) == MDB_SUCCESS) {
+				pendingChangeCount--;
+			}
+			E(trackedDelete(writeTxn, retiredByIdDbi, idKey, null));
+		}
+	}
+
 	private void deleteSeqKey(long writeTxn, MDBVal keyVal, ByteBuffer keyBb, byte[] seqKey) throws IOException {
 		keyBb.clear();
 		keyBb.put(seqKey);
 		keyVal.mv_data(keyBb.flip());
-		if (E(mdb_del(writeTxn, retiredSeqDbi, keyVal, null)) == MDB_SUCCESS) {
+		if (E(trackedDelete(writeTxn, retiredSeqDbi, keyVal, null)) == MDB_SUCCESS) {
 			pendingChangeCount--;
 		}
 	}

@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -55,6 +56,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore.LanguageTagKeyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -109,6 +111,14 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 				connection.begin();
 				connection.clear();
 				connection.commit();
+				// Settle the finite deleted seed before taking the later duplicate-batch count baseline.
+				assertThat(initial.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS))
+						.isTrue();
+				LmdbGcTestMaintenance.drainRetirements(initial.getBackingStore());
+				// An empty hint queue does not exclude the worker's follow-up durable-unused maintenance.
+				try (SailClosable publication = initial.getBackingStore().getExplicitSailSource().beginPublication()) {
+					LmdbGcTestMaintenance.reclaimUnusedValues(initial, 4096);
+				}
 			}
 		} finally {
 			repository.shutDown();

@@ -57,6 +57,8 @@ import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.backup.BackupCapableSail;
+import org.eclipse.rdf4j.sail.backup.SailBackupService;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
@@ -78,7 +80,8 @@ import org.slf4j.LoggerFactory;
  *           from one release to the next.
  */
 @Experimental
-public class LmdbStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
+public class LmdbStore extends AbstractNotifyingSail
+		implements FederatedServiceResolverClient, BackupCapableSail {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbStore.class);
 
@@ -143,6 +146,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	private LmdbSailStore backingStore;
 	private boolean offlineMaintenance;
 	private PreparedBulkStore.Snapshot preparedBulkSnapshot;
+	private LmdbBackupServiceImpl backupService;
+	private PostCommitBackupPublisher postCommitPublisher;
 
 	// used to decide if store is writable, is true if the store was writable during initialization
 	private boolean isWritable;
@@ -304,6 +309,99 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true"));
 	}
 
+	/** Returns the configured asyncValueCleanup setting. */
+	public boolean getAsyncValueCleanup() {
+		return config.getAsyncValueCleanup();
+	}
+
+	/** Configures asyncValueCleanup before initialization; live changes are rejected. */
+	public void setAsyncValueCleanup(boolean enabled) {
+		configureValueCleanup(() -> config.setAsyncValueCleanup(enabled));
+	}
+
+	/** Returns the configured asyncValueCleanupMaxCandidates setting. */
+	public int getAsyncValueCleanupMaxCandidates() {
+		return config.getAsyncValueCleanupMaxCandidates();
+	}
+
+	/** Configures asyncValueCleanupMaxCandidates before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupMaxCandidates(int maxCandidates) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupMaxCandidates(maxCandidates));
+	}
+
+	/** Returns the configured asyncValueCleanupMaxBytes setting. */
+	public long getAsyncValueCleanupMaxBytes() {
+		return config.getAsyncValueCleanupMaxBytes();
+	}
+
+	/** Configures asyncValueCleanupMaxBytes before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupMaxBytes(long maxBytes) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupMaxBytes(maxBytes));
+	}
+
+	/** Returns the configured asyncValueCleanupBatchSize setting. */
+	public int getAsyncValueCleanupBatchSize() {
+		return config.getAsyncValueCleanupBatchSize();
+	}
+
+	/** Configures asyncValueCleanupBatchSize before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupBatchSize(int batchSize) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupBatchSize(batchSize));
+	}
+
+	/** Returns the configured asyncValueCleanupMaxPendingProducers setting. */
+	public int getAsyncValueCleanupMaxPendingProducers() {
+		return config.getAsyncValueCleanupMaxPendingProducers();
+	}
+
+	/** Configures asyncValueCleanupMaxPendingProducers before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupMaxPendingProducers(int maxPendingProducers) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupMaxPendingProducers(maxPendingProducers));
+	}
+
+	/** Returns the bounded optional cleanup-pressure pause for safe new writers. */
+	public long getAsyncValueCleanupPressureTimeoutMillis() {
+		return config.getAsyncValueCleanupPressureTimeoutMillis();
+	}
+
+	/** Configures the cleanup-pressure pause before initialization; zero disables this optional pause. */
+	public void setAsyncValueCleanupPressureTimeoutMillis(long timeoutMillis) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupPressureTimeoutMillis(timeoutMillis));
+	}
+
+	/** Returns the configured asyncValueCleanupAdmissionTimeoutMillis setting. */
+	public long getAsyncValueCleanupAdmissionTimeoutMillis() {
+		return config.getAsyncValueCleanupAdmissionTimeoutMillis();
+	}
+
+	/** Configures asyncValueCleanupAdmissionTimeoutMillis before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupAdmissionTimeoutMillis(long timeoutMillis) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupAdmissionTimeoutMillis(timeoutMillis));
+	}
+
+	/** Returns the configured asyncValueCleanupShutdownTimeoutMillis setting. */
+	public long getAsyncValueCleanupShutdownTimeoutMillis() {
+		return config.getAsyncValueCleanupShutdownTimeoutMillis();
+	}
+
+	/** Configures asyncValueCleanupShutdownTimeoutMillis before initialization; live changes are rejected. */
+	public void setAsyncValueCleanupShutdownTimeoutMillis(long timeoutMillis) {
+		configureValueCleanup(() -> config.setAsyncValueCleanupShutdownTimeoutMillis(timeoutMillis));
+	}
+
+	private void configureValueCleanup(Runnable update) {
+		initializationLock.writeLock().lock();
+		try {
+			if (isInitialized()) {
+				throw new IllegalStateException(
+						"Async value cleanup settings must be configured before initialization");
+			}
+			update.run();
+		} finally {
+			initializationLock.writeLock().unlock();
+		}
+	}
+
 	public boolean getPageCardinalityEstimator() {
 		return config.getPageCardinalityEstimator();
 	}
@@ -454,7 +552,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 				ownerIdentity = separateLegacyIdentity ? LegacyStoreIdentity.resolve(dataDir, properties, format)
 						: properties.getOrCreateStoreId();
 			} catch (IllegalStateException | IOException e) {
-				logger.warn("A durable logical identity is unavailable; UUID-owned alternate estimator persistence is disabled", e);
+				logger.warn(
+						"A durable logical identity is unavailable; UUID-owned alternate estimator persistence is disabled",
+						e);
 			}
 			// Existing/fresh properties retain their ordinary durable UUID receipt. A loaded legacy policy instead
 			// keeps its exact bytes; the separate logical receipt grants no native-generation or freshness authority.
@@ -464,6 +564,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
 			properties.completeNativeGenerationRecreation();
+			postCommitPublisher = backingStore.backupPublisher();
+			backupService = new LmdbBackupServiceImpl(this, backingStore, config, postCommitPublisher);
+			postCommitPublisher.setBackupService(backupService);
 			properties.save();
 			if (resetInitialImport) {
 				LmdbInitialRunImport.completeReset(dataDir.toPath(), format);
@@ -498,6 +601,27 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			};
 		} catch (Throwable e) {
 			// LmdbStore initialization failed, release any allocated files
+			try {
+				if (backingStore != null) {
+					backingStore.close();
+				}
+			} catch (Throwable cleanupFailure) {
+				e.addSuppressed(cleanupFailure);
+			}
+			try {
+				if (postCommitPublisher != null) {
+					postCommitPublisher.close();
+				}
+			} catch (Throwable cleanupFailure) {
+				e.addSuppressed(cleanupFailure);
+			}
+			try {
+				if (backupService != null) {
+					backupService.close();
+				}
+			} catch (Throwable cleanupFailure) {
+				e.addSuppressed(cleanupFailure);
+			}
 			dirLock.release();
 			logger.error("LmdbStore initialization failed for data directory: " + dataDir.getAbsolutePath(), e);
 
@@ -514,7 +638,25 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		logger.debug("Shutting down LmdbStore...");
 
 		try {
-			store.close();
+			try {
+				if (format != null && !format.isLegacy()) {
+					backingStore.ensureNamespacePersistenceCertain();
+				}
+				// Stop admission and settle native/publication owners before draining external publication.
+				backingStore.close();
+			} finally {
+				try {
+					if (postCommitPublisher != null) {
+						postCommitPublisher.close();
+						postCommitPublisher = null;
+					}
+				} finally {
+					if (backupService != null) {
+						backupService.close();
+						backupService = null;
+					}
+				}
+			}
 			if (format != null && !format.isLegacy()) {
 				try {
 					PreparedBulkStore.refreshAfterCleanClose(getDataDir().toPath(),
@@ -566,6 +708,15 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	@Override
+	protected void prepareForShutdown() throws SailException {
+		// Failure must precede the AbstractSail lifecycle transition: the worker retains both native
+		// environments and the directory lock until a later shutdown can safely finish.
+		if (backingStore != null) {
+			backingStore.stopAsyncValueCleanupForShutdown();
+		}
+	}
+
+	@Override
 	protected boolean cancelConnectionsOnShutdown() {
 		return true;
 	}
@@ -602,7 +753,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			overflowFormat.initializeProperties(overflowProperties);
 		}
 		LmdbSailStore overflowStore = new LmdbSailStore(directory, overflowProperties, config,
-				useSketchBasedJoinEstimator, overflowFormat, getQueryExecutionPolicy());
+				useSketchBasedJoinEstimator, overflowFormat, getQueryExecutionPolicy(), false, true);
 		overflowStore.enableMultiThreading = false;
 		return overflowStore;
 	}
@@ -728,6 +879,14 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			throw new IllegalStateException("LMDB store is not initialized");
 		}
 		return current.getMapGrowthCount();
+	}
+
+	@Override
+	public SailBackupService getBackupService() {
+		if (backupService == null) {
+			throw new IllegalStateException("LmdbStore is not initialized");
+		}
+		return backupService;
 	}
 
 	EvaluationStrategyFactory getConnectionEvaluationStrategyFactory() {

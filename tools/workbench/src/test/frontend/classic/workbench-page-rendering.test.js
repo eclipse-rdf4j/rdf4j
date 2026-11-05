@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 const { renderPageResultTables } = require('./page-result-table-harness.js');
+const { createExploreModel } = require('./explore-section-fixtures.js');
 
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
@@ -635,36 +636,28 @@ test('representative non-query templates keep Workbench form and table hooks', (
     }
 });
 
-test('Explore preserves its persisted datatype option and reports a result-limited page', () => {
+test('Explore preserves its datatype option and reports local cached section pages', async () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
     const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
-    // The metadata the Explore servlet sends: the resolved resource and the total; the limit in use is the
-    // request's limit_explore, 100 without one (review fix A12; round 2 R10: the servlet reads no cookie for it).
-    const model = {
-        viewId: 'explore',
-        vars: ['subject', 'predicate', 'object', 'context'],
-        rows: [[{ kind: 'iri', value: 'urn:example:resource' }, { kind: 'iri', value: 'urn:example:p' },
-            { kind: 'iri', value: 'urn:example:o' }, null]],
-        rowCount: 100,
-        metadata: { 'explore-resource': '<urn:example:resource>', 'total-result-count': 150 }
-    };
+    const rows = Array.from({ length: 100 }, (_, index) => [
+        { kind: 'iri', value: 'urn:example:resource' }, { kind: 'iri', value: `urn:example:p${index}` },
+        { kind: 'iri', value: 'urn:example:o' }, null
+    ]);
+    const model = createExploreModel({
+        metadata: { resource: '<urn:example:resource>', 'explore-resource': '<urn:example:resource>' },
+        sections: { outgoing: { rows, totalRows: 250, count: '250' } }
+    });
     const output = collectTemplateText(workbench.views.pageTemplate(model, context, runtime)).join(' ');
 
     assert.ok(output.includes('id="explore-show-datatypes"'), 'Explore should keep the existing datatype control id');
-    assert.ok(output.includes('name="show-datatypes" value="show-dataypes"'),
-        'Explore should preserve the request value consumed by the existing endpoint');
-    assert.ok(output.includes('id="result-limited"'), 'a full default-limit page should identify truncated results');
-
-    workbench.__testWindow.location = { search: '?resource=%3Curn%3Aexample%3Aresource%3E&limit_explore=0' };
-    const unlimited = collectTemplateText(workbench.views.pageTemplate(model, context, runtime)).join(' ');
-    assert.ok(!unlimited.includes('id="result-limited"'), 'unlimited Explore results should not show the truncation notice');
-
-    // A limit_explore cookie from an earlier page does not set this page's limit: 10 rows of a limit of 100.
-    workbench.getCookie = (name) => name === 'limit_explore' ? '10' : '';
-    workbench.__testWindow.location = { search: '?resource=%3Curn%3Aexample%3Aresource%3E' };
-    const ten = collectTemplateText(workbench.views.pageTemplate({ ...model, rowCount: 10 }, context, runtime)).join(' ');
-    assert.ok(!ten.includes('id="result-limited"'), 'the cookie is not the limit the server used');
+    assert.ok(output.includes('name="show-datatypes" checked'),
+        'Explore should preserve the existing checked state for its datatype option');
+    const page = await renderPageResultTables(workbench, model, context);
+    const markup = flattenTemplateMarkup(page.template).replace(/\s+/g, ' ');
+    assert.ok(markup.includes('Showing 1–100 of 250 cached'), 'the local cache page reports its exact window');
+    assert.ok(markup.includes('>Next</button>'), 'another cached page remains reachable');
+    assert.ok(!markup.includes('id="result-limited"'), 'Explore has no page-wide server truncation notice');
 });
 
 test('Add template preserves isolation options and offers an editable target graph', () => {
@@ -812,11 +805,13 @@ test('every navigable built-in route has a registered ordinary-DOM template', ()
         ['namespaces', { vars: ['prefix', 'namespace'], rows: [['ex', 'urn:example:']],
             pickerRows: [['ex', 'urn:example:']], rowCount: 1,
             expected: ['namespaces-results', 'namespaces-filter', 'urn:<wbr>example:'] }],
-        ['contexts', { vars: ['context'], rows: [['urn:graph']], expected: ['contexts-results', 'urn:graph'] }],
-        ['types', { vars: ['type', 'count'], rows: [['urn:Type', '3']], expected: ['types-results', 'urn:Type'] }],
+        ['contexts', { vars: ['context'], rows: [[{ kind: 'iri', value: 'urn:graph' }]],
+            expected: ['contexts-results', 'urn:graph'] }],
+        ['types', { vars: ['type', 'count'], rows: [[{ kind: 'iri', value: 'urn:Type' }, '3']],
+            expected: ['types-results', 'urn:Type'] }],
         // Explore's statements are a shared result table, laid out once its host is in the page (resultTable).
-        ['explore', { vars: ['subject', 'predicate', 'object'], rows: [['urn:s', 'urn:p', 'urn:o']],
-            expected: ['explore-form', 'explore-results', 'data-workbench-result-table'] }],
+        ['explore', { metadata: { resource: '<urn:s>', 'explore-resource': '<urn:s>' },
+            expected: ['explore-form', 'explore-section-output', 'explore-show-datatypes'] }],
         ['query', { vars: [], rows: [], expected: ['query-form', 'query-results'] }],
         ['saved-queries', { vars: ['query', 'queryName', 'queryText'],
             rows: [['urn:saved:1', 'Example query', 'SELECT * WHERE {}']], expected: ['saved-queries', 'urn:saved:1'] }],
@@ -1028,6 +1023,26 @@ test('saved-query cards show a readable owner while retaining its opaque selecto
     const values = collectTemplateText(template).join(' ');
     assert.ok(values.includes('alice'), 'the visible owner is readable');
     assert.ok(values.includes(owner), 'forms retain the opaque storage selector');
+});
+
+// A saved query's card shows what the query does, not only its name: its text after the prologue (PREFIX, BASE and
+// comment lines), on one line that the stylesheet shortens to the card's width, with the whole text as its tooltip.
+test('saved-query cards preview the query after its prologue', () => {
+    const workbench = loadWorkbench();
+    const queryText = 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n# the labels\nBASE <http://example.org/>\n'
+        + 'SELECT ?s ?label\nWHERE {\n  ?s rdfs:label ?label\n}\nLIMIT 10';
+    const row = { query: 'urn:saved:1', queryName: 'Labels', queryText,
+        user: 'alice', queryLn: 'SPARQL', infer: 'true', rowsPerPage: '20', shared: 'false' };
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'saved-queries', vars: Object.keys(row), rows: [Object.values(row)], metadata: {}
+    }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
+    // The flattened markup does not escape attribute values, so the tooltip runs up to the code element.
+    const preview = /<p class="saved-query-row__preview" title="?([\s\S]*?)"?><code>([^<]*)<\/code><\/p>/.exec(markup);
+    assert.ok(preview, 'the card has a preview line');
+    assert.equal(preview[2], 'SELECT ?s ?label WHERE { ?s rdfs:label ?label } LIMIT 10');
+    assert.equal(preview[1], queryText, 'the tooltip is the whole query');
+    assert.ok(markup.indexOf('saved-query-row__preview') > markup.indexOf('saved-query-row__heading'),
+        'the preview follows the name');
 });
 
 test('modification and browse views preserve their action form identifiers', () => {
@@ -2090,13 +2105,11 @@ test('page tables label their columns for people instead of showing raw variable
     }, context, runtime);
     // The repository list keeps Icon and Actions fixed while ID, Title and Access remain sortable.
     assert.deepEqual(headings(repositories), ['Repository', 'ID', 'Title', 'Access', 'Actions']);
-    const explore = await renderPageResultTables(workbench, {
-        viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'],
-        rows: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' }, { kind: 'iri', value: 'urn:o' }, null]],
-        rowCount: 1, metadata: { resource: '<urn:s>' }
-    }, context);
-    // Rows about the explored resource are grouped by role; the Outgoing table names its two columns.
-    assert.deepEqual(explore.headers('explore-outgoing'), ['Predicate', 'Object']);
+    const explore = await renderPageResultTables(workbench, createExploreModel({ sections: {
+        outgoing: { rows: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' },
+            { kind: 'iri', value: 'urn:o' }, null]] }
+    } }), context);
+    assert.deepEqual(explore.headers('explore-outgoing'), ['Predicate', 'Object', 'Graph']);
 });
 
 test('summary and information render key/value lists instead of simple tables', () => {
@@ -2118,6 +2131,62 @@ test('summary and information render key/value lists instead of simple tables', 
     assert.match(information, /<dl class="workbench-kv"/);
     assert.doesNotMatch(information, /table class="simple"/);
     assert.doesNotMatch(information, /<th>[^<]*:<\/th>/);
+});
+
+// Memory used is shown against the maximum: a meter and the share, besides the two amounts the server reports.
+test('Information shows the memory in use as a share of the maximum', () => {
+    const workbench = loadWorkbench();
+    const render = (used, maximum) => flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'information', vars: ['version', 'os', 'jvm', 'user', 'memory-used', 'maximum-memory'],
+        rows: [['6.2.0', 'macOS', 'Java 25', 'tester', used, maximum]], rowCount: 1, metadata: {}
+    }, { basePath: '/workbench', repositoryId: '', workbench: {} }, fakeRuntime()));
+    const memory = render('1810 MB', '30688 MB');
+    assert.match(memory, /<dt>Memory used<\/dt><dd>1810 MB <meter class="workbench-memory-meter" min="0" max="?30688"? value="?1810"?\s+aria-label="Memory used of the maximum"><\/meter> <span class="workbench-memory-share">6% of the maximum<\/span><\/dd>/);
+    assert.match(memory, /<dt>Maximum memory<\/dt><dd>30688 MB<\/dd>/);
+    // A share that rounds to 0% or 100% without being so is not shown as either.
+    assert.match(render('113 MB', '30688 MB'), /less than 1% of the maximum/);
+    assert.match(render('30650 MB', '30688 MB'), /more than 99% of the maximum/);
+    assert.match(render('30688 MB', '30688 MB'), />100% of the maximum/);
+    const unknown = render('a lot', '30688 MB');
+    assert.doesNotMatch(unknown, /<meter/, 'amounts the Workbench cannot read stay as the server wrote them');
+    assert.match(unknown, /<dt>Memory used<\/dt><dd>a lot<\/dd>/);
+});
+
+// Summary says what kind of store the repository is, from the sail types in its configuration: the store, then what
+// the sails stacked on it add. A type the Workbench does not know is named as configured.
+// Explain names its keyboard shortcut in its tooltip, as Execute does (Shift with Ctrl, or Cmd on Apple platforms).
+test('the Explain button names its shortcut as Execute does', () => {
+    const workbench = loadWorkbench();
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate({ viewId: 'query', vars: [], rows: [], metadata: {} },
+        { basePath: '/workbench', repositoryId: 'repo', workbench: {} }, fakeRuntime()));
+    const explain = /<button id="explain-trigger"[^>]*>/.exec(markup);
+    assert.ok(explain, 'the query page has an Explain button');
+    assert.match(explain[0], /title="?Explain \(Shift\+Ctrl\+Enter\)"?/);
+    assert.match(markup, /title="?Execute \(Ctrl\+Enter\)"?/);
+});
+
+test('Summary names the store and the sails stacked on it', () => {
+    const workbench = loadWorkbench();
+    const store = (turtle) => {
+        const markup = flattenTemplateMarkup(workbench.views.pageTemplate({
+            viewId: 'summary', vars: ['id', 'description', 'location', 'server', 'size', 'contexts'],
+            rows: [['repo', 'Repo', 'http://example.test/repositories/repo', 'http://example.test', '1', '0']],
+            rowCount: 1, metadata: { 'config-model-turtle': turtle }
+        }, { basePath: '/workbench', repositoryId: 'repo', workbench: {}, locale: 'en-US' }, fakeRuntime()));
+        const match = /<dt>Store<\/dt><dd>([^<]*)<\/dd>/.exec(markup);
+        return match ? match[1] : null;
+    };
+    assert.equal(store('[] config:rep.impl [ config:rep.type "openrdf:SailRepository" ; config:sail.impl [ '
+        + 'config:sail.type "openrdf:MemoryStore" ] ] .'), 'Memory Store');
+    assert.equal(store('config:sail.impl [ config:sail.type "rdf4j:ShaclSail" ; config:delegate [ '
+        + 'config:sail.type "rdf4j:SchemaCachingRDFSInferencer" ; config:delegate [ config:sail.type "rdf4j:LmdbStore" ] ] ]'),
+        'LMDB Store with SHACL validation and RDFS inference');
+    assert.equal(store('sail:sailType "ex:AuditSail" ; sail:delegate [ sail:sailType "openrdf:NativeStore" ]'),
+        'Native Store with ex:AuditSail', 'legacy configuration names its sails the same way');
+    assert.equal(store('config:rep.impl [ config:rep.type "openrdf:SPARQLRepository" ]'), 'SPARQL endpoint');
+    assert.equal(store('config:rep.impl [ config:rep.type "openrdf:HTTPRepository" ]'), 'Remote RDF4J repository');
+    assert.equal(store('config:rep.impl [ config:rep.type "fedx:FedXRepository" ]'), 'Federation');
+    assert.equal(store(''), null, 'no configuration, no Store row');
 });
 
 test('Summary is one card with Repository and Size sections and the configuration disclosure (M5.4)', () => {

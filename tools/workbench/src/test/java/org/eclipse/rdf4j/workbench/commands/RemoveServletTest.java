@@ -27,6 +27,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigInteger;
@@ -34,13 +35,19 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.StreamSupport;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.StoredBNodeIdResolver;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -54,15 +61,24 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONWriter;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
+import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
@@ -71,11 +87,13 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockServletContext;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 
+import jakarta.servlet.ServletConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -371,8 +389,12 @@ public class RemoveServletTest {
 	}
 
 	@Test
-	public void previewAsksARemoteServerWhichBlankNodesItStores() throws Exception {
+	public void remoteWorkbenchReadsNegotiateOriginsForPageAndGenericWriters() throws Exception {
 		AtomicReference<String> originRequested = new AtomicReference<>();
+		AtomicReference<String> graphOriginRequested = new AtomicReference<>();
+		AtomicReference<String> genericWriterOriginRequested = new AtomicReference<>();
+		AtomicReference<AtomicReference<String>> contextOriginTarget = new AtomicReference<>(graphOriginRequested);
+		byte[] binaryContexts = binaryContextResponse();
 		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/protocol", exchange -> {
 			byte[] protocolVersion = "12".getBytes(StandardCharsets.UTF_8);
@@ -393,6 +415,15 @@ public class RemoveServletTest {
 				body.write(list);
 			}
 		});
+		server.createContext("/repositories/remote/contexts", exchange -> {
+			contextOriginTarget.get().set(exchange.getRequestHeaders().getFirst(BNodeOriginTransport.HEADER));
+			exchange.getResponseHeaders().set("Content-Type", TupleQueryResultFormat.BINARY.getDefaultMIMEType());
+			exchange.getResponseHeaders().set(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION);
+			exchange.sendResponseHeaders(200, binaryContexts.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(binaryContexts);
+			}
+		});
 		server.createContext("/repositories/remote/statements", exchange -> {
 			originRequested.set(exchange.getRequestHeaders().getFirst(BNodeOriginTransport.HEADER));
 			byte[] statements = "_:node <urn:test:p> \"value\" .\n".getBytes(StandardCharsets.UTF_8);
@@ -404,14 +435,37 @@ public class RemoveServletTest {
 		});
 		server.start();
 		try {
-			HTTPRepository repository = new HTTPRepository(
-					"http://127.0.0.1:" + server.getAddress().getPort() + "/repositories/remote");
+			String repositoryURL = "http://127.0.0.1:" + server.getAddress().getPort() + "/repositories/remote";
+			HTTPRepository repository = new HTTPRepository(repositoryURL);
 
 			List<JsonNode> records = preview(repository, new MockHttpServletResponse(), "pred", "<urn:test:p>");
 
 			assertThat(rows(records)).hasSize(1);
 			// A remote server says which of its blank nodes it stores only when the statements request asks.
 			assertThat(originRequested.get()).isEqualTo(BNodeOriginTransport.VERSION);
+
+			contextOriginTarget.set(genericWriterOriginRequested);
+			HTTPRepository genericRepository = new HTTPRepository(repositoryURL);
+			TupleResultBuilder genericWriterBuilder = new TupleResultBuilder(
+					new SPARQLResultsJSONWriter(new ByteArrayOutputStream()), SimpleValueFactory.getInstance());
+			try (RepositoryConnection connection = genericRepository.getConnection()) {
+				genericWriterBuilder.repositoryOrigins(connection);
+				try (RepositoryResult<Resource> contexts = connection.getContextIDs()) {
+					assertThat(contexts.hasNext()).isTrue();
+					contexts.next();
+				}
+			} finally {
+				genericRepository.shutDown();
+			}
+			assertThat(genericWriterOriginRequested.get()).isEqualTo(BNodeOriginTransport.VERSION);
+
+			contextOriginTarget.set(graphOriginRequested);
+			List<JsonNode> graphRecords = request(new HTTPRepository(repositoryURL), new MockHttpServletResponse());
+			assertThat(graphOriginRequested.get()).isEqualTo(BNodeOriginTransport.VERSION);
+			assertThat(rows(graphRecords)).singleElement().satisfies(row -> {
+				assertThat(row.get(0).path("value").asText()).isEqualTo("stored-graph");
+				assertThat(row.get(0).path("reference").asBoolean()).isTrue();
+			});
 		} finally {
 			server.stop(0);
 		}
@@ -440,6 +494,77 @@ public class RemoveServletTest {
 				.asText()).isEqualTo("context");
 		assertThat(rows(records)).singleElement()
 				.satisfies(row -> assertThat(row.get(0).path("value").asText()).isEqualTo("urn:test:g"));
+	}
+
+	@Test
+	public void pageDataUsesItsGraphListingConnectionValueFactoryForBlankNodes() throws Exception {
+		Repository delegate = store();
+		StoredBNodeValueFactory valueFactory = new StoredBNodeValueFactory();
+		Resource graph = valueFactory.createBNode("stored-graph");
+		Repository repository = new RepositoryWrapper(delegate) {
+			@Override
+			public RepositoryConnection getConnection() throws RepositoryException {
+				return new RepositoryConnectionWrapper(this, super.getConnection()) {
+					@Override
+					public ValueFactory getValueFactory() {
+						return valueFactory;
+					}
+
+					@Override
+					public RepositoryResult<Resource> getContextIDs() {
+						return new RepositoryResult<>(new CloseableIteratorIteration<>(List.of(graph).iterator()));
+					}
+				};
+			}
+		};
+
+		List<JsonNode> records = request(repository, new MockHttpServletResponse());
+
+		assertThat(rows(records)).singleElement().satisfies(row -> {
+			assertThat(row.get(0).path("value").asText()).isEqualTo("stored-graph");
+			assertThat(row.get(0).path("reference").asBoolean()).isTrue();
+		});
+	}
+
+	/** The page names the repository's prefixes, so its preview shortens IRIs as the Query and Explore tables do. */
+	@Test
+	public void pageDataNamesTheRepositoryPrefixes() throws Exception {
+		Repository repository = store();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.setNamespace("test", "urn:test:");
+		}
+		List<JsonNode> records = request(repository, new MockHttpServletResponse());
+
+		assertThat(records.stream()
+				.filter(record -> "namespaces".equals(record.path("type").asText()))
+				.flatMap(record -> StreamSupport.stream(record.path("values").spliterator(), false))
+				.filter(namespace -> "test".equals(namespace.path("prefix").asText()))
+				.map(namespace -> namespace.path("name").asText()))
+						.containsExactly("urn:test:");
+	}
+
+	/** Namespaces configured in workbench.properties name IRIs as if the repository had stored them. */
+	@Test
+	public void pageDataNamesTheConfiguredPrefixesAfterTheRepositoryOwn() throws Exception {
+		Repository repository = store();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.setNamespace("test", "urn:test:");
+		}
+		Properties properties = new Properties();
+		properties.setProperty("namespaces", "test:urn:configured: acme:https://acme.example/vocab#");
+		MockServletContext context = new MockServletContext();
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
+				WorkbenchPolicy.fromProperties(properties, Set.of()));
+		List<JsonNode> records = request(repository,
+				new TestServletConfig("remove", context, Map.of("cookie-max-age", "300")),
+				new MockHttpServletResponse());
+
+		assertThat(records.stream()
+				.filter(record -> "namespaces".equals(record.path("type").asText()))
+				.flatMap(record -> StreamSupport.stream(record.path("values").spliterator(), false))
+				.filter(namespace -> List.of("test", "acme").contains(namespace.path("prefix").asText()))
+				.map(namespace -> namespace.path("prefix").asText() + "=" + namespace.path("name").asText()))
+						.containsExactly("test=urn:test:", "acme=https://acme.example/vocab#");
 	}
 
 	private static Repository store() {
@@ -543,6 +668,19 @@ public class RemoveServletTest {
 		return request(repository, response, withPreview);
 	}
 
+	private static byte[] binaryContextResponse() throws Exception {
+		StoredBNodeValueFactory valueFactory = new StoredBNodeValueFactory();
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("contextID", valueFactory.createBNode("stored-graph"));
+		BindingSet encoded = BNodeOriginTransport.map(row, BNodeOriginTransport.encoder(valueFactory));
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		var writer = QueryResultIO.createTupleWriter(TupleQueryResultFormat.BINARY, bytes);
+		writer.startQueryResult(List.of("contextID"));
+		writer.handleSolution(encoded);
+		writer.endQueryResult();
+		return bytes.toByteArray();
+	}
+
 	private static List<String> vars(List<JsonNode> records) {
 		List<String> names = new ArrayList<>();
 		records.stream()
@@ -564,10 +702,16 @@ public class RemoveServletTest {
 
 	private static List<JsonNode> request(Repository repository, MockHttpServletResponse response,
 			String... parameters) throws Exception {
+		return request(repository, TestServletConfig.withParams("remove", "cookie-max-age", "300"), response,
+				parameters);
+	}
+
+	private static List<JsonNode> request(Repository repository, ServletConfig config,
+			MockHttpServletResponse response, String... parameters) throws Exception {
 		RemoveServlet countingServlet = new RemoveServlet();
 		countingServlet.setRepository(repository);
 		countingServlet.setRepositoryManager(mock(RepositoryManager.class));
-		countingServlet.init(TestServletConfig.withParams("remove", "cookie-max-age", "300"));
+		countingServlet.init(config);
 		try {
 			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/remove");
 			request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
@@ -612,5 +756,12 @@ public class RemoveServletTest {
 					return values.stream();
 				})
 				.toList();
+	}
+
+	private static final class StoredBNodeValueFactory extends SimpleValueFactory implements StoredBNodeIdResolver {
+		@Override
+		public boolean hasStoredBNodeId(String id) {
+			return "stored-graph".equals(id);
+		}
 	}
 }

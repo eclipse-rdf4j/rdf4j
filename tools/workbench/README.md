@@ -11,7 +11,7 @@ The Workbench (`rdf4j-http-workbench`) is the browser UI for RDF4J Server. This 
 | `src/main/frontend/static/scripts/` | Hand-written or vendored JavaScript only (see below), served as is |
 | `src/main/frontend/static/styles/` | Plain CSS, served as is |
 | `src/test/frontend/` | All Node front-end tests (`npm test`): `classic/`, `graph-explorer/`, and pure-Node layout `benchmarks/` |
-| `package.json`, `tsconfig.classic.json`, `tsconfig.json`, `vite.config.ts` | The npm project that builds and tests both front ends |
+| `package.json`, `tsconfig.classic.json`, `tsconfig.json`, `vite.config.mts` | The npm project that builds and tests both front ends |
 
 All commands below run from the **repository root** unless stated otherwise.
 
@@ -285,7 +285,10 @@ TSX or CSS, either:
 
 - rebuild and restart: `mvn -B -ntp -T 1C -o -Dmaven.repo.local=.m2_repo -pl tools/server-boot -am -Pquick install`, or
 - for quick iteration, run `npm run build` in `tools/workbench` and copy the changed files from `target/frontend/`
-  (or `src/main/frontend/static/`) into that extracted directory of the running server and reload the page, or
+  (or `src/main/frontend/static/`) into that extracted directory of the running server and reload the page. When
+  copying whole directories, copy `target/frontend/` first and `src/main/frontend/static/` second: `target/frontend/`
+  holds the static files as of the last Maven build, so the other order puts old CSS back. The server sends scripts
+  and styles with `Cache-Control: max-age=600`, so reload without the browser cache, or
 - for the graph explorer only, use `npm run dev` against the running server-boot.
 
 ### Jetty Maven plugin
@@ -407,6 +410,10 @@ cd e2e && RDF4J_SERVER_BASE_URL=http://127.0.0.1:8080/rdf4j-server RDF4J_WORKBEN
 
 Both URLs default to `127.0.0.1:8080`. On Linux, `run.sh` sets `FONTCONFIG_FILE=e2e/fontconfig/fonts.conf` so
 layout-sensitive specs see the same font metrics as CI; set it yourself when running Playwright directly.
+Start that server with the system properties `run.sh` passes, or `workbench-connection-recovery.spec.js` and the
+Add-from-URL tests fail: `-Dorg.eclipse.rdf4j.workbench.accepted-server-prefixes="/rdf4j-server http://127.0.0.1:"`
+and `-Dorg.eclipse.rdf4j.workbench.add-url-allowed-origins=http://127.0.0.1:8080,http://127.0.0.1:9`.
+Run one Playwright process at a time: every run empties the shared `e2e/test-results` directory.
 Use `npx playwright test --ui` for the interactive runner. Reports go to `e2e/playwright-report/`.
 
 ## What CI runs

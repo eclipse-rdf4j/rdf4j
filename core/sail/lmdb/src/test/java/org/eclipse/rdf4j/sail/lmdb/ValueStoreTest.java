@@ -176,6 +176,12 @@ public class ValueStoreTest {
 		return new ValueStore(directory, config);
 	}
 
+	/** These focused cases require the durable policy's automatic reclamation on writer admission. */
+	private void useWriterDrivenReclamation() throws IOException {
+		valueStore.close();
+		valueStore = createValueStore(new LmdbStoreConfig().setAsyncValueCleanup(false));
+	}
+
 	private LmdbStoreConfig hashCacheEnabledConfig() {
 		return new LmdbStoreConfig().setValueHashCacheEnabled(true);
 	}
@@ -584,7 +590,10 @@ public class ValueStoreTest {
 
 	@Test
 	public void testGcValues() throws Exception {
-		Value[] values = new Value[] { RDF.TYPE, RDFS.CLASS, Values.iri("some:iri"),
+		useWriterDrivenReclamation();
+		Value[] values = new Value[] {
+				RDF.TYPE, RDFS.CLASS,
+				Values.iri("some:iri"),
 				Values.literal("This is a literal."),
 				Values.tripleTerm(Values.iri("other:iri"), RDF.TYPE, RDFS.CLASS) };
 		long[] ids = new long[values.length];
@@ -1080,6 +1089,7 @@ public class ValueStoreTest {
 		valueStore.gcIds(Collections.singleton(firstId), new HashSet<>());
 		valueStore.commit();
 		reopenValueStore(hashCacheEnabledConfig());
+		reclaimUnusedAfterExplicitMaintenance();
 		LmdbBNode second = valueStore.createBNode("hash-second");
 		int secondHash = second.hashCode();
 		long secondId;
@@ -1094,12 +1104,17 @@ public class ValueStoreTest {
 		assertEquals(secondHash, lazyValue.hashCode());
 		assertNotEquals("recycled IDs must not keep the previous hash", firstHash, lazyValue.hashCode());
 		assertFalse("hashCode should not initialize recycled lazy bnodes after restart", isInitialized(lazyValue));
+		LmdbBNode warm = new LmdbBNode(lazyValue.getInternalIdentity().revision(), secondId);
+		assertFalse(isInitialized(warm));
+		assertEquals(secondHash, warm.hashCode());
+		assertFalse("the runtime hash cache should keep subsequent recycled lazy bnodes uninitialized",
+				isInitialized(warm));
 	}
 
 	@Test
 	public void testStaleBNodeHashCodeIgnoresReusedIdAfterClear() throws Exception {
 		valueStore.close();
-		valueStore = createValueStore(hashCacheEnabledConfig());
+		valueStore = createValueStore(hashCacheEnabledConfig().setAsyncValueCleanup(false));
 		LmdbBNode first = valueStore.createBNode("hash-first");
 		int firstHash = first.hashCode();
 		long firstId;
@@ -1315,6 +1330,11 @@ public class ValueStoreTest {
 		@Override
 		<T> T readTransaction(long env, LmdbUtil.Transaction<T> transaction) throws IOException {
 			readTransactionCount++;
+			Value lookup = borrowedLookup;
+			if (lookup != null) {
+				borrowedLookup = null;
+				borrowedLookupId = getId(lookup);
+			}
 			return super.readTransaction(env, transaction);
 		}
 
@@ -1494,6 +1514,7 @@ public class ValueStoreTest {
 
 	@Test
 	public void testRetiredIdsBecomeReusableAfterAllLazyValuesAreCollected() throws Exception {
+		useWriterDrivenReclamation();
 		long id = storeBNodes("collectable-held")[0];
 		LmdbValue held = valueStore.getLazyValue(id);
 		RevisionCollection revisionCollected = trackRevisionCollection(held);
@@ -1511,6 +1532,7 @@ public class ValueStoreTest {
 
 	@Test
 	public void testRolledBackEvictionKeepsRetiredIdsEligibleForReclamation() throws Exception {
+		useWriterDrivenReclamation();
 		long id = storeBNodes("eviction-rollback")[0];
 		RevisionCollection revisionCollected = trackRevisionCollection(valueStore.getLazyValue(id));
 		retireValues(Set.of(id));
@@ -1527,6 +1549,7 @@ public class ValueStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void testDirectDictionarySnapshotKeepsRetiredAndReusedIdSemantics(boolean rollbackFirst) throws Exception {
+		useWriterDrivenReclamation();
 		long id = storeBNodes("strict-original")[0];
 		Value original = Values.bnode("strict-original");
 		Value replacement = Values.bnode("strict-replacement");
@@ -2272,8 +2295,7 @@ public class ValueStoreTest {
 		CountDownLatch nativeAbortStarted = new CountDownLatch(1);
 		AtomicBoolean pauseMaintenance = new AtomicBoolean();
 		AtomicInteger environmentsClosed = new AtomicInteger();
-		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig()) {
-
+		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig().setAsyncValueCleanup(false)) {
 			@Override
 			protected void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds)
 					throws IOException {
@@ -2367,8 +2389,7 @@ public class ValueStoreTest {
 		CountDownLatch releaseMaintenance = new CountDownLatch(1);
 		CountDownLatch clearStarted = new CountDownLatch(1);
 		AtomicBoolean armed = new AtomicBoolean();
-		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig()) {
-
+		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig().setAsyncValueCleanup(false)) {
 			@Override
 			protected void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds)
 					throws IOException {
@@ -2435,8 +2456,7 @@ public class ValueStoreTest {
 		valueStore.close();
 		AtomicBoolean restartArmed = new AtomicBoolean();
 		AtomicBoolean checkpointed = new AtomicBoolean();
-		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig()) {
-
+		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig().setAsyncValueCleanup(false)) {
 			@Override
 			protected void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds)
 					throws IOException {
@@ -2478,8 +2498,7 @@ public class ValueStoreTest {
 		CountDownLatch nativeCommitted = new CountDownLatch(1);
 		CountDownLatch releaseSettlement = new CountDownLatch(1);
 		AtomicBoolean pauseCommit = new AtomicBoolean();
-		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig()) {
-
+		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig().setAsyncValueCleanup(false)) {
 			@Override
 			int commitWriteTransaction(long transaction) {
 				int result = super.commitWriteTransaction(transaction);
@@ -3301,8 +3320,14 @@ public class ValueStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void testLazyBorrowDoesNotReadReusedIdFromOlderDictionary(boolean rollback) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig();
+		LmdbStoreConfig config = new LmdbStoreConfig().setAsyncValueCleanup(false);
+		valueStore.close();
+		CountingValueStore observed = new CountingValueStore(new File(dataDir, "values"), config);
+		valueStore = observed;
 		try (TripleStore triples = new TripleStore(new File(dataDir, "borrow-reused-id-triples"), config, valueStore)) {
+			valueStore.startTransaction(true);
+			long anchorId = valueStore.storeValue(Values.literal("borrowed datatype anchor".repeat(16)));
+			valueStore.commit();
 			long id = storeBNodes("borrow-retired-old-value")[0];
 			RevisionCollection collected = trackRevisionCollection(valueStore.getLazyValue(id));
 			retireValues(Set.of(id));
@@ -3333,6 +3358,13 @@ public class ValueStoreTest {
 				}
 				assertEquals("An older native dictionary containing this ID must not supply its retired meaning",
 						"borrow-reused-new-value", escaped.stringValue());
+				assertEquals(replacementId, valueStore.getId(escaped));
+				assertEquals("The older supplied snapshot must not trust the replacement's cached numeric identity",
+						LmdbValue.UNKNOWN_ID, valueStore.getId(oldSnapshot, escaped));
+				observed.borrowedLookup = escaped;
+				valueStore.literalDatatypeId(oldSnapshot, anchorId);
+				assertEquals("A nested global lookup must retain its borrowed OLD snapshot after actual ID reuse",
+						Long.valueOf(LmdbValue.UNKNOWN_ID), observed.borrowedLookupId);
 			}
 		}
 	}
@@ -3340,7 +3372,7 @@ public class ValueStoreTest {
 	@Test
 	public void testLateValueCompletionDoesNotRestoreRetiredCacheAssociation() throws Exception {
 		valueStore.close();
-		valueStore = createValueStore(hashCacheEnabledConfig());
+		valueStore = createValueStore(hashCacheEnabledConfig().setAsyncValueCleanup(false));
 		long id = storeBNodes("late-completion-original")[0];
 		LmdbValue original = valueStore.getLazyValue(id);
 		RevisionCollection collected = trackRevisionCollection(original);
@@ -3374,7 +3406,7 @@ public class ValueStoreTest {
 		CountDownLatch releaseHashAccess = new CountDownLatch(1);
 		AtomicReference<Thread> hashThread = new AtomicReference<>();
 		AtomicBoolean pauseHash = new AtomicBoolean();
-		valueStore = new ValueStore(new File(dataDir, "values"), hashCacheEnabledConfig()) {
+		valueStore = new ValueStore(new File(dataDir, "values"), hashCacheEnabledConfig().setAsyncValueCleanup(false)) {
 
 			@Override
 			int getStoredHash(long id, long revisionId) {
@@ -3517,6 +3549,7 @@ public class ValueStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void testEscapedValuesResolveWithOnlyOlderPairedReadersAtCapacity(boolean nested) throws Exception {
+		useWriterDrivenReclamation();
 		LmdbStoreConfig config = new LmdbStoreConfig();
 		List<ValueStore.ReadSnapshot> snapshots = new ArrayList<>();
 		ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -3579,10 +3612,15 @@ public class ValueStoreTest {
 			"false,false,checkpoint", "false,true,checkpoint", "true,false,checkpoint", "true,true,checkpoint" })
 	public void testWriterLazyAssociationSettlesWithItsNativeTransaction(boolean reclaim, boolean nested,
 			String settlement) throws Exception {
+		// Only the reuse cases require automatic writer-side reclamation; other settlement cases keep defaults.
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		if (reclaim) {
+			config.setAsyncValueCleanup(false);
+		}
+
 		valueStore.close();
 		AtomicBoolean failCommit = new AtomicBoolean();
-		valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig()) {
-
+		valueStore = new ValueStore(new File(dataDir, "values"), config) {
 			@Override
 			int commitWriteTransaction(long transaction) {
 				if (failCommit.compareAndSet(true, false)) {
@@ -3943,6 +3981,7 @@ public class ValueStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void testUncommittedWriterLazyDoesNotBorrowCommittedAssociation(boolean nested) throws Exception {
+		useWriterDrivenReclamation();
 		long id = storeBNodes("uncommitted-retired")[0];
 		try (ValueResolutionScope scope = valueStore.openValueResolutionScope();
 				SailClosable ignored = scope.activate()) {
@@ -4174,7 +4213,8 @@ public class ValueStoreTest {
 	public void testRetiredIdsRemainReclaimableWhenGrowthCheckpointsBeforeFreeingThem(
 			boolean rollbackReclamationBeforeRetry) throws Exception {
 		valueStore.close();
-		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(8L * 1024 * 1024)
+		LmdbStoreConfig config = new LmdbStoreConfig().setAsyncValueCleanup(false)
+				.setValueDBSize(8L * 1024 * 1024)
 				.setAutoGrow(true)
 				.setInlineLiterals(false);
 		File valuesDirectory = new File(dataDir,
@@ -4713,6 +4753,7 @@ public class ValueStoreTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void testRepeatedRetirementCannotDeleteReusedId(boolean tripleTerm) throws Exception {
+		useWriterDrivenReclamation();
 		Value original = tripleTerm ? Values.tripleTerm(RDF.TYPE, RDF.TYPE, Values.literal(1))
 				: Values.bnode("original");
 		Value replacement = tripleTerm ? Values.tripleTerm(RDF.TYPE, RDF.TYPE, Values.literal(2))
@@ -6075,6 +6116,94 @@ public class ValueStoreTest {
 		assertFalse(isInitialized(warm));
 		assertEquals(expectedHash, warm.hashCode());
 		assertFalse("the runtime hash cache should keep subsequent lazy bnodes uninitialized", isInitialized(warm));
+	}
+
+	@Test
+	public void autoGrowWaitsForEnvironmentCopy() throws Exception {
+		CountDownLatch copyStarted = new CountDownLatch(1);
+		CountDownLatch allowCopyToComplete = new CountDownLatch(1);
+		CountDownLatch resizeAttempted = new CountDownLatch(1);
+		CountDownLatch resizeEntered = new CountDownLatch(1);
+		IRI value = Values.iri("urn:copy:committed-value");
+		valueStore.startTransaction(true);
+		long id = valueStore.storeValue(value);
+		valueStore.commit();
+		Path snapshot = dataDir.toPath().resolve("snapshot");
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<?> copy = executor.submit(() -> {
+				try {
+					valueStore.withEnvironmentCopyLock(() -> {
+						copyStarted.countDown();
+						try {
+							if (!allowCopyToComplete.await(10, TimeUnit.SECONDS)) {
+								throw new AssertionError("Timed out waiting to complete the environment copy");
+							}
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(e);
+						}
+						valueStore.copyEnvironment(snapshot, true);
+					});
+				} catch (IOException e) {
+					throw new AssertionError(e);
+				}
+			});
+			assertTrue(copyStarted.await(10, TimeUnit.SECONDS));
+
+			Future<?> resize = executor.submit(() -> {
+				try {
+					resizeAttempted.countDown();
+					valueStore.withMapResizeLock(() -> {
+						resizeEntered.countDown();
+					});
+				} catch (IOException e) {
+					throw new AssertionError(e);
+				}
+			});
+			assertTrue(resizeAttempted.await(10, TimeUnit.SECONDS));
+			assertFalse("resize admission must wait until the guarded native copy completes",
+					resizeEntered.await(200, TimeUnit.MILLISECONDS));
+
+			allowCopyToComplete.countDown();
+			copy.get(10, TimeUnit.SECONDS);
+			resize.get(10, TimeUnit.SECONDS);
+			assertEquals(0L, resizeEntered.getCount());
+			Path originalDictionary = new File(dataDir, "values").toPath();
+			Files.copy(originalDictionary.resolve(StoreProperties.FILE_NAME),
+					snapshot.resolve(StoreProperties.FILE_NAME));
+			Files.copy(originalDictionary.resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE),
+					snapshot.resolve(LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE));
+			ValueStore restored = new ValueStore(snapshot.toFile(), new LmdbStoreConfig());
+			try {
+				assertEquals(value, restored.getValue(id));
+			} finally {
+				restored.close();
+			}
+		} finally {
+			allowCopyToComplete.countDown();
+			executor.shutdownNow();
+			assertTrue("copy and resize workers must terminate before fixture teardown",
+					executor.awaitTermination(10, TimeUnit.SECONDS));
+		}
+	}
+
+	@Test
+	public void failedEnvironmentCopyReleasesResizeBarrier() throws Exception {
+		Path snapshot = Files.createDirectory(dataDir.toPath().resolve("failed-snapshot"));
+		Files.createFile(snapshot.resolve("data.mdb"));
+		assertThrows(IOException.class, () -> valueStore.copyEnvironment(snapshot, true));
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try {
+			executor.submit(() -> {
+				valueStore.withMapResizeLock(() -> {
+				});
+				return null;
+			}).get(5, TimeUnit.SECONDS);
+		} finally {
+			executor.shutdownNow();
+			assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+		}
 	}
 
 }

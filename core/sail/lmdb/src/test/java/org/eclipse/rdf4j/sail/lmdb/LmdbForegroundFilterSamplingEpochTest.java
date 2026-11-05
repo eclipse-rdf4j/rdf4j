@@ -418,9 +418,12 @@ class LmdbForegroundFilterSamplingEpochTest {
 				awaitRevisionCollection(subjectRevisionCollected);
 				awaitRevisionCollection(nameRevisionCollected);
 			}
-			sail.valueStore().forceEvictionOfValues();
-			sail.valueStore().startTransaction(true);
-			sail.valueStore().commit();
+			// Direct dictionary maintenance must share publication ownership with the async cleanup worker.
+			try (SailClosable publication = sail.getBackingStore().getExplicitSailSource().beginPublication()) {
+				sail.valueStore().forceEvictionOfValues();
+				sail.valueStore().startTransaction(true);
+				sail.valueStore().commit();
+			}
 
 			IRI replacementSubject = valueFactory.createIRI("urn:test:replacement-subject");
 			Literal replacementName = valueFactory.createLiteral("replacement-value-" + "y".repeat(32));
@@ -475,15 +478,21 @@ class LmdbForegroundFilterSamplingEpochTest {
 				connection.remove(replacementSubject, NAME, replacementName);
 				connection.commit();
 			}
+			// The paired sample has closed; hand queued hints to the durable drain before checking retirement.
+			assertTrue(sail.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS));
+			LmdbGcTestMaintenance.drainRetirements(sail.getBackingStore());
 			assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(sampledSubject),
 					"After the paired sample closes and a later write advances the epoch, the deleted subject is retired");
 			assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(sampledName),
 					"After the paired sample closes and a later write advances the epoch, the deleted literal is retired");
 			awaitRevisionCollection(subjectRevisionCollected);
 			awaitRevisionCollection(nameRevisionCollected);
-			sail.valueStore().forceEvictionOfValues();
-			sail.valueStore().startTransaction(true);
-			sail.valueStore().commit();
+			// Direct dictionary maintenance must share publication ownership with the async cleanup worker.
+			try (SailClosable publication = sail.getBackingStore().getExplicitSailSource().beginPublication()) {
+				sail.valueStore().forceEvictionOfValues();
+				sail.valueStore().startTransaction(true);
+				sail.valueStore().commit();
+			}
 		} finally {
 			pause.release.countDown();
 			if (estimateFuture != null && !estimateFuture.isDone()) {
@@ -851,8 +860,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 					assertFalse(publicationOpen.get(),
 							"A fresh current-view estimate must run after publication closes");
 				}
-				LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(
-						IsolationLevels.SNAPSHOT_READ, null);
+				LmdbSailStore.DatasetAdmission admission = pause.admitSamplingView(backing);
 				nestedView.set(admission.view());
 				return admission;
 			});
@@ -932,23 +940,22 @@ class LmdbForegroundFilterSamplingEpochTest {
 			LmdbFilterSelectivityStats freshStats = new LmdbFilterSelectivityStats(
 					dataDirectory.resolve("open-publication-fresh-filter-estimator.rjes"), sail.tripleStore(),
 					sail.valueStore(), true, 20_000L, ROW_COUNT, false);
-			freshStats.setSamplingViewSupplier(
-					() -> backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
+			freshStats.setSamplingViewSupplier(() -> pause.admitSamplingView(backing));
 			double currentRatio = (ROW_COUNT - 1.0d) / ROW_COUNT;
-			int beforeFreshAdmission = pause.readSnapshotReservationCount();
+			int beforeFreshAdmission = pause.samplingViewAdmissionCount();
 			PatternFilterSampleEstimate freshEstimate = freshStats.estimateFilterPass(filter,
 					pattern);
 			assertEquals(currentRatio, freshEstimate.passRatio(), 0.0d,
 					"After publication closes, a fresh estimator sees the committed nonmatching replacement");
-			assertEquals(1, pause.readSnapshotReservationCount() - beforeFreshAdmission,
+			assertEquals(1, pause.samplingViewAdmissionCount() - beforeFreshAdmission,
 					"The independent current-data control must admit a new paired view");
 
-			int beforeCurrentAdmission = pause.readSnapshotReservationCount();
+			int beforeCurrentAdmission = pause.samplingViewAdmissionCount();
 			PatternFilterSampleEstimate currentEstimate = stats.estimateFilterPass(filter,
 					pattern);
 			assertEquals(currentRatio, currentEstimate.passRatio(), 0.0d,
 					"The old-view result must not have replaced current-cache authority");
-			assertEquals(1, pause.readSnapshotReservationCount() - beforeCurrentAdmission,
+			assertEquals(1, pause.samplingViewAdmissionCount() - beforeCurrentAdmission,
 					"The original stats object must resample the current view after the scope closes");
 		} finally {
 			startEstimate.countDown();
@@ -959,6 +966,43 @@ class LmdbForegroundFilterSamplingEpochTest {
 			sampler.shutdownNow();
 			assertTrue(sampler.awaitTermination(10, TimeUnit.SECONDS),
 					"The open-publication sampler must terminate");
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDirectory.toFile());
+		}
+	}
+
+	@Test
+	void publicationDuringReservationRetriesWithoutAnotherSamplingAdmission() throws Exception {
+		Path dataDirectory = Files.createTempDirectory("lmdb-filter-sampling-admission-retry");
+		SamplingPause pause = new SamplingPause();
+		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
+		SailRepository repository = new SailRepository(sail);
+		try {
+			repository.init();
+			awaitSamplingInitialization(sail);
+			seedMatchedRows(repository, sail, ROW_COUNT);
+			LmdbSailStore backing = sail.getBackingStore();
+			LmdbFilterSelectivityStats stats = sail.filterStats();
+			stats.setSamplingViewSupplier(() -> pause.admitSamplingView(backing));
+			Filter filter = filter(FILTER_QUERY);
+			int beforeReservations = pause.readSnapshotReservationCount();
+			int beforeAdmissions = pause.samplingViewAdmissionCount();
+			// Publish between reservation and validation, without changing the sampled statement data.
+			pause.afterSnapshotReservation.set(() -> {
+				try (SailSource source = backing.getExplicitSailSource(new Object());
+						SailSink sink = source.sink(IsolationLevels.SNAPSHOT_READ)) {
+					sink.setNamespace("admission-retry", "urn:test:admission-retry:");
+					sink.flush();
+				}
+			});
+			var estimate = stats.estimateFilterPass(filter, (StatementPattern) filter.getArg());
+			assertEquals(1.0d, estimate.passRatio(), 0.0d);
+			assertEquals(ROW_COUNT, estimate.sampleSize());
+			assertTrue(pause.readSnapshotReservationCount() - beforeReservations >= 2,
+					"A publication during reservation must force the paired-view admission to retry");
+			assertEquals(1, pause.samplingViewAdmissionCount() - beforeAdmissions,
+					"Retried reservations must still produce exactly one admitted sampling view");
+		} finally {
 			repository.shutDown();
 			LmdbTestUtil.deleteDir(dataDirectory.toFile());
 		}
@@ -1319,9 +1363,14 @@ class LmdbForegroundFilterSamplingEpochTest {
 				}
 				connection.commit();
 			}
-			sail.valueStore().forceEvictionOfValues();
-			sail.valueStore().startTransaction(true);
-			sail.valueStore().commit();
+			// The sampler is paused before read-view admission, so no native pin prevents queue progress.
+			assertTrue(backing.asyncValueCleanupCoordinator().awaitEmpty(3, TimeUnit.SECONDS));
+			// Direct dictionary maintenance must share publication ownership with the async cleanup worker.
+			try (SailClosable publication = sail.getBackingStore().getExplicitSailSource().beginPublication()) {
+				sail.valueStore().forceEvictionOfValues();
+				sail.valueStore().startTransaction(true);
+				sail.valueStore().commit();
+			}
 			LmdbGcTestMaintenance.drainRetirements(backing);
 			assertEquals(LmdbValue.UNKNOWN_ID, sail.valueStore().getId(NAME),
 					"The old predicate is absent from the dictionary before the drained request acquires a view");
@@ -1789,7 +1838,9 @@ class LmdbForegroundFilterSamplingEpochTest {
 		private final AtomicLong objectId = new AtomicLong(Long.MIN_VALUE);
 		private final AtomicInteger pairedLookupCount = new AtomicInteger();
 		private final ThreadLocal<Integer> readSnapshotReservationCount = ThreadLocal.withInitial(() -> 0);
+		private final ThreadLocal<Integer> samplingViewAdmissionCount = ThreadLocal.withInitial(() -> 0);
 		private final AtomicBoolean valueSnapshotReserved = new AtomicBoolean();
+		private final ThreadLocal<Runnable> afterSnapshotReservation = new ThreadLocal<>();
 		private final Map<Long, String> resolvedValues = new ConcurrentHashMap<>();
 		private final CountDownLatch rowRead = new CountDownLatch(1);
 		private final CountDownLatch release = new CountDownLatch(1);
@@ -1811,6 +1862,17 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 		private int readSnapshotReservationCount() {
 			return readSnapshotReservationCount.get();
+		}
+
+		private LmdbSailStore.DatasetAdmission admitSamplingView(LmdbSailStore backing) {
+			LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(
+					IsolationLevels.SNAPSHOT_READ, null);
+			samplingViewAdmissionCount.set(samplingViewAdmissionCount.get() + 1);
+			return admission;
+		}
+
+		private int samplingViewAdmissionCount() {
+			return samplingViewAdmissionCount.get();
 		}
 
 		private boolean isSamplingThread() {
@@ -1951,7 +2013,8 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 		@Override
 		StratifiedSampleResult sampleTriplesStratified(TxnManager.Txn txn, long subj, long pred, long obj,
-				long context, int budget, int strata, boolean stratified, java.util.function.BooleanSupplier shouldContinue,
+				long context, int budget, int strata, boolean stratified,
+				java.util.function.BooleanSupplier shouldContinue,
 				Predicate<StratifiedSampleRow> sink) throws IOException {
 			return super.sampleTriplesStratified(txn, subj, pred, obj, context, budget, strata, stratified,
 					shouldContinue, row -> {
@@ -2014,7 +2077,18 @@ class LmdbForegroundFilterSamplingEpochTest {
 		@Override
 		ReadSnapshotReservation reserveReadSnapshot() throws IOException {
 			pause.valueSnapshotReserved();
-			return super.reserveReadSnapshot();
+			ReadSnapshotReservation reservation = super.reserveReadSnapshot();
+			try {
+				Runnable afterReservation = pause.afterSnapshotReservation.get();
+				pause.afterSnapshotReservation.remove();
+				if (afterReservation != null) {
+					afterReservation.run();
+				}
+				return reservation;
+			} catch (RuntimeException | Error failure) {
+				reservation.close();
+				throw failure;
+			}
 		}
 
 		@Override
