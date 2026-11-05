@@ -213,17 +213,18 @@ applies because they are separate LMDB environments.
 ## Durability and uncertain outcomes
 
 `forceSync` remains `false` by default. In that mode the LMDB environments use `MDB_NOSYNC` and `MDB_NOMETASYNC`, so
-an acknowledged commit has weaker power-loss durability. Set `forceSync=true` when the application requires LMDB's
-synchronous commit behavior, and ensure the filesystem and storage stack honor flushes. Even with `forceSync=true`,
-the ValueStore and TripleStore are separate environments: dictionary additions are committed before the authoritative
+ordinary acknowledged commits have weaker power-loss durability. Journaled backup commits additionally force
+dictionary state before the authoritative triples commit and force both environments before external publication can
+acknowledge the change, even with `forceSync=false`. Set `forceSync=true` when synchronous commit behavior is required
+for all native writes, and ensure the filesystem and storage stack honor flushes.
+
+The ValueStore and TripleStore are separate environments: dictionary additions are committed before the authoritative
 triple/namespace transaction. With explicit `asyncValueCleanup=false`, durable retirement intents are committed in
 that dictionary transaction too. The default [asynchronous value cleanup](/documentation/programming/lmdb-store/#dictionary-value-cleanup)
-instead releases bounded cleanup work to its worker after successful publication and permits losing that work in a crash.
+instead releases bounded cleanup work to its worker after successful publication and may lose that work in a crash.
 Older configurations omitting `asyncValueCleanup` also select this new default; set it explicitly to false to retain the
-durable-retirement policy.
-An interrupted write can therefore leave unreferenced
-dictionary entries for later cleanup. Retirement and recovery recheck committed triple liveness before an ID can be
-reused.
+durable-retirement policy. An interrupted write can leave unreferenced dictionary entries for later cleanup.
+Retirement and recovery recheck committed triple liveness before an ID can be reused.
 
 If an I/O failure leaves the namespace commit outcome uncertain, the store refuses further use with:
 
