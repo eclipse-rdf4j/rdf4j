@@ -144,6 +144,20 @@ public class SPARQLQueries {
 	}
 
 	/**
+	 * Serializes query bindings, inlining unprojected ordinary triple-pattern terms only when every occurrence of the
+	 * variable is safe to replace. Other bindings use scoped VALUES mappings. Variables needed by projections,
+	 * expressions or independent scopes are never removed by the inline rewrite. Unsupported binding scopes and
+	 * conflicting locally owned VALUES bindings fail explicitly. Callers transporting blank nodes must first verify
+	 * ownership and translate their IDs into the receiving repository's canonical namespace.
+	 *
+	 * @throws UnsupportedOperationException if the binding semantics cannot safely be serialized
+	 * @throws MalformedQueryException       if the input is not a SPARQL query
+	 */
+	public static String withQueryBindings(String query, BindingSet bindings) {
+		return QueryBindingRewriter.rewrite(query, bindings);
+	}
+
+	/**
 	 * Adds one initial solution mapping to the outer WHERE group. Callers transporting blank nodes must first verify
 	 * ownership and translate their IDs into the receiving repository's canonical namespace. This method preserves body
 	 * variables, specializes bound GRAPH selectors, and rejects query shapes whose initial-binding semantics cannot
@@ -445,7 +459,7 @@ public class SPARQLQueries {
 		return new UnsupportedOperationException("Unsupported initial-binding transport: " + shape);
 	}
 
-	private static void appendBindingValue(Value value, StringBuilder result) {
+	static void appendBindingValue(Value value, StringBuilder result) {
 		if (value instanceof RemoteBNode) {
 			throw unsupportedBindings("remote blank node requires a verified canonical mapping");
 		} else if (value instanceof BNode blank) {
