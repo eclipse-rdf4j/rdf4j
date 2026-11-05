@@ -264,7 +264,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		StringBuilder telemetry = new StringBuilder("[");
 		NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row, telemetry);
 		LmdbNativeOffers<NativeResultCursor> offers = new LmdbNativeOffers<NativeResultCursor>(
-				LmdbNativeDecisionPoint.GROUP_PHYSICAL).ceiling(LmdbNativeCostVectors.sweepWork(row));
+				LmdbNativeDecisionPoint.GROUP_PHYSICAL).fallbackEstimate(LmdbNativeCostVectors.sweepWork(row));
 		// A streaming producer must never be drained merely to choose its representation.
 		offerGroupingPlan(offers, quotes, tablePlan(iteration), row);
 		GroupingPlan ordered = orderedPlan(iteration, row);

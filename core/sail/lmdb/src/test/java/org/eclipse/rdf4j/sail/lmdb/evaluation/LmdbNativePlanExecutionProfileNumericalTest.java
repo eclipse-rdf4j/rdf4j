@@ -48,10 +48,10 @@ class LmdbNativePlanExecutionProfileNumericalTest {
 	void theGenericPremiumSaturatesAHugeFiniteInterpretedRowCount(Mode mode) {
 		FilterPlan filter = new FilterPlan(largeInput(), mock(NativeBooleanFilter.class), 0L);
 		LmdbNativeCostVector vector = LmdbNativePlanExecutionProfile.profile(filter, null, 0L, mode);
-		assertThat(vector.low(Feature.INTERPRETED_ROW)).isEqualTo(Double.MAX_VALUE);
+		// the row count is a sample: it sets the expectation, and the input proves neither bound
+		assertThat(vector.low(Feature.INTERPRETED_ROW)).isZero();
 		assertThat(vector.expected(Feature.INTERPRETED_ROW)).isEqualTo(Double.MAX_VALUE);
-		assertThat(vector.high(Feature.INTERPRETED_ROW)).isEqualTo(
-				mode == Mode.SEQUENTIAL ? Double.POSITIVE_INFINITY : Double.MAX_VALUE);
+		assertThat(vector.high(Feature.INTERPRETED_ROW)).isPositive().isInfinite();
 	}
 
 	@ParameterizedTest
@@ -60,7 +60,7 @@ class LmdbNativePlanExecutionProfileNumericalTest {
 		ExtensionPlan extension = new ExtensionPlan(largeInput(),
 				new CopyBinding[] { CopyBinding.constant(0, 1L), CopyBinding.constant(1, 2L) });
 		LmdbNativeCostVector vector = LmdbNativePlanExecutionProfile.profile(extension, null, 0L, mode);
-		assertThat(vector.low(Feature.INTERPRETED_ROW)).isEqualTo(Double.MAX_VALUE);
+		assertThat(vector.low(Feature.INTERPRETED_ROW)).isZero();
 		assertThat(vector.expected(Feature.INTERPRETED_ROW)).isEqualTo(Double.MAX_VALUE);
 		assertThat(vector.high(Feature.INTERPRETED_ROW)).isPositive().isInfinite();
 	}

@@ -78,6 +78,19 @@ class LmdbFitPriorInputTest(unittest.TestCase):
         line = next(line for line in output.getvalue().splitlines() if line.startswith("SCANNED_ROW"))
         self.assertAlmostEqual(float(line.split()[2]), 0.0, places=6)
 
+    def test_joint_r_squared_scores_the_measurements_not_the_pinned_residuals(self):
+        path = self.write_measurements("joint.tsv", ["OPEN", "SCANNED_ROW"],
+                                       [([1.0, 1.0], 110.0), ([2.0, 1.0], 190.0),
+                                        ([3.0, 1.0], 310.0), ([4.0, 1.0], 390.0)])
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            status = FIT.main([str(path), "--pin", "OPEN=100"])
+        self.assertEqual(status, 0)
+        # The pin explains all but +-10 of each measurement. Against the residuals alone the
+        # same fit would score 0.0, which is not a statement about the model it prints.
+        line = next(line for line in output.getvalue().splitlines() if "per-strategy fixed cost" in line)
+        self.assertAlmostEqual(float(line.rsplit(" ", 1)[1]), 1.0 - 400.0 / 46400.0, places=3)
+
     def test_multiple_files_with_reordered_features_are_rejected(self):
         first = self.write_measurements("first.tsv", ["OPEN", "SCANNED_ROW"], [([1.0, 2.0], 10.0)])
         second = self.write_measurements("second.tsv", ["SCANNED_ROW", "OPEN"], [([2.0, 1.0], 10.0)])
@@ -111,6 +124,15 @@ class LmdbFitPriorInputTest(unittest.TestCase):
         names, rows = FIT.load([str(path)])
         self.assertEqual(names, ["SCANNED_ROW"])
         self.assertEqual(rows, [], "The expected feature floor cannot establish that a quote is bounded")
+
+    def test_an_estimate_without_a_ceiling_is_a_fit_target(self):
+        path = self.write_measurements("estimated.tsv", ["SCANNED_ROW"], [([5.0], 10.0)])
+        lines = path.read_text(encoding="utf-8").splitlines()
+        cells = lines[1].split("\t")
+        cells[9], cells[10], cells[11] = "5", "0", "Infinity"
+        path.write_text(lines[0] + "\n" + "\t".join(cells) + "\n", encoding="utf-8")
+        _, rows = FIT.load([str(path)])
+        self.assertEqual(len(rows), 1)
 
     def test_finite_large_quote_is_not_mistaken_for_an_unbounded_quote(self):
         path = self.write_measurements("large.tsv", ["SCANNED_ROW"], [([1e14], 10.0)])

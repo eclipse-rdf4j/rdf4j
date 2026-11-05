@@ -436,6 +436,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 					if (!handlesBudgetRefusals) {
 						throw refused;
 					}
+					rethrowAttachedFailure(refused);
 					if (!retriesBudgetRefusals) {
 						throw budgetExhausted(refused);
 					}
@@ -494,6 +495,20 @@ final class LmdbNativeDispatchLoop<C, T> {
 		admitted.declines.putIfAbsent(id, BUDGET_DECLINE);
 		if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
 			LmdbNativeExplain.recordStrategyDecline(explainTarget, id, BUDGET_DECLINE);
+		}
+	}
+
+	/** A refusal is control flow, but a cleanup failure suppressed under it is real and a re-rank would discard it. */
+	private static void rethrowAttachedFailure(KernelRuntime.AllocationDeniedException refused) {
+		Throwable attached = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(refused);
+		if (attached instanceof Error error) {
+			throw error;
+		}
+		if (attached instanceof RuntimeException runtime) {
+			throw runtime;
+		}
+		if (attached != null) {
+			throw new QueryEvaluationException(attached);
 		}
 	}
 

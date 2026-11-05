@@ -29,7 +29,7 @@ final class LmdbNativeOffers<T> extends LmdbNativeCandidateOffers<T> {
 	private final LmdbNativeDecisionPoint point;
 	private final List<LmdbNativeStrategy<Void, T>> strategies = new ArrayList<>();
 	private final UnaryOperator<LmdbNativeStrategyProposal<T>> attach;
-	private LmdbNativeWork ceiling;
+	private LmdbNativeWork fallbackEstimate;
 	private int anonymous;
 
 	LmdbNativeOffers(LmdbNativeDecisionPoint point) {
@@ -43,11 +43,11 @@ final class LmdbNativeOffers<T> extends LmdbNativeCandidateOffers<T> {
 	}
 
 	/**
-	 * The ceiling a proposal without a finite interval is priced at: the sweep the site's strategies degrade to. No
-	 * admitted strategy may quote an unbounded interval while the store can say how many statements it holds.
+	 * What a proposal without a finite interval is expected to cost: the sweep the site's strategies degrade to. It
+	 * lets the selector rank such a proposal while the store can say how many statements it holds, and proves nothing.
 	 */
-	LmdbNativeOffers<T> ceiling(LmdbNativeWork ceiling) {
-		this.ceiling = ceiling != null && ceiling.known() ? ceiling : null;
+	LmdbNativeOffers<T> fallbackEstimate(LmdbNativeWork estimate) {
+		this.fallbackEstimate = estimate != null && estimate.known() ? estimate : null;
 		return this;
 	}
 
@@ -98,7 +98,7 @@ final class LmdbNativeOffers<T> extends LmdbNativeCandidateOffers<T> {
 					if (attach != null) {
 						proposal = attach.apply(proposal);
 					}
-					LmdbNativeCandidate<T> candidate = LmdbNativeStrategyProposal.candidate(proposal, ceiling);
+					LmdbNativeCandidate<T> candidate = LmdbNativeStrategyProposal.candidate(proposal, fallbackEstimate);
 					return LmdbNativeAdmission.of(lastResort ? candidate.asLastResort() : candidate);
 				} catch (RuntimeException | Error failure) {
 					// Admission has not transferred ownership to the dispatch loop until a candidate is returned.

@@ -170,9 +170,10 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 	/**
 	 * Plain COUNT(*) over one constant graph (the default graph through rdf4j:nil included) with nothing else to
 	 * reduce: the store's per-context statement count answers it without visiting a plane or page. With no named graphs
-	 * the default graph's entry is the whole store.
+	 * the default graph's entry is the whole store. The catalog combines the explicit and inferred planes, so when it
+	 * cannot answer for this source's plane the graph is counted from its pages, which is also what the recipe prices.
 	 */
-	private boolean metadataCountOnly() {
+	private boolean metadataCountOnly() throws IOException {
 		// the context constant itself needs the context id and nothing else may
 		if (groupFields.length != 0 || kindMask != 0 || (idMask & ~(1 << C)) != 0 || constants[S] != UNKNOWN
 				|| constants[P] != UNKNOWN || constants[O] != UNKNOWN || constants[C] == UNKNOWN) {
@@ -188,7 +189,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 				return false;
 			}
 		}
-		return true;
+		return source.countsContextFromMetadata(constants[C]);
 	}
 
 	private RecipeCount countRecipe(NativeProbe probe, WildcardAdjacency wildcard,

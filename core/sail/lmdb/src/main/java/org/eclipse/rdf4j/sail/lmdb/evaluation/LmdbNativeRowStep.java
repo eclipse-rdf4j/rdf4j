@@ -1533,7 +1533,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			}
 		}
 		LmdbNativeOffers<NativeUnorderedInput> offers = new LmdbNativeOffers<NativeUnorderedInput>(
-				LmdbNativeDecisionPoint.ROW).ceiling(LmdbNativeCostVectors.sweepWork(row));
+				LmdbNativeDecisionPoint.ROW).fallbackEstimate(LmdbNativeCostVectors.sweepWork(row));
 		offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, offers);
 		{
 			LmdbNativeDispatchLoop.Selection<NativeUnorderedInput> selection = new LmdbNativeDispatchLoop<>(
@@ -1847,7 +1847,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan join && join.children.length > 0 ? join : null;
 		try {
 			LmdbNativeOffers<NativeUnorderedInput> offers = new LmdbNativeOffers<NativeUnorderedInput>(
-					LmdbNativeDecisionPoint.ROW).ceiling(LmdbNativeCostVectors.sweepWork(row));
+					LmdbNativeDecisionPoint.ROW).fallbackEstimate(LmdbNativeCostVectors.sweepWork(row));
 			NativeTupleDistinctPlan distinctPlan = distinct ? LmdbNativeOrderPlanner.tuple(arg, sourceSlots, row)
 					: null;
 			offerUnorderedStrategies(row, distinctPlan, multiJoin, (arg.producedMask() & row.boundMask()) != 0L,
@@ -2030,9 +2030,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		}
 		// A sampled logical output estimate is not the physical producer's ceiling. Factorized plans carry
 		// their raw-prefix/ordinary-suffix bound explicitly, without changing logical demand or expected work.
-		double ceiling = physicalRowsHigh >= 0D ? physicalRowsHigh
-				: Double.isFinite(quote.outputRows()) && quote.outputRows() >= 0D ? quote.outputRows()
-						: LmdbNativeCostQuote.UNBOUNDED_COUNT;
+		double ceiling = physicalRowsHigh >= 0D ? physicalRowsHigh : LmdbNativeCostQuote.UNBOUNDED_COUNT;
 		LmdbNativeCostVector consumer = LmdbNativeCostVector.zero();
 		if (distinct) {
 			// A keys-only view or factorized tail can decline at bind time and enumerate the raw suffix instead.

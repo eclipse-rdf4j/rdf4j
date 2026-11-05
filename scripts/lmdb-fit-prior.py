@@ -61,8 +61,8 @@ def load(paths):
                     continue  # Censored/failed runs are not exact targets for least-squares fitting.
                 if elapsed < 0.0:
                     raise ValueError(f"Elapsed nanoseconds must be nonnegative at {path}:{line_number}")
-                if not math.isfinite(float(cells[11])):
-                    continue  # The quote ceiling, not its finite expected floor, establishes boundedness.
+                if not math.isfinite(float(cells[11])) and not float(cells[9]) > float(cells[10]):
+                    continue  # A floor with neither a ceiling nor an estimate above it prices nothing.
                 vector = [float(value) for value in features.split(",")]
                 if len(vector) != len(names):
                     raise ValueError(f"Feature count mismatch at {path}:{line_number}: "
@@ -99,6 +99,13 @@ def r_squared(rows, coefficients):
     total = sum((t - mean) ** 2 for t in targets) or 1.0
     residual = sum((sum(c * v for c, v in zip(coefficients, vector)) - target) ** 2 for vector, target, _ in rows)
     return 1.0 - residual / total
+
+
+def joint_r_squared(measured, extended, coefficients):
+    """R^2 against the measurements: what a pin held out of the fitted targets is part of the prediction."""
+    scored = [(vector + [original - fitted], original, cells)
+              for (_, original, _), (vector, fitted, cells) in zip(measured, extended)]
+    return r_squared(scored, coefficients + [1.0])
 
 
 def base_id(tag):
@@ -161,19 +168,19 @@ def main(argv):
         support = sum(1 for vector, _, _ in rows if vector[i] > 0)
         mark = "  (pinned)" if pinned[i] is not None else ""
         print(f"{name:32s} {hand[i]:12.1f} {fitted[i]:12.1f} {support:10d}{mark}")
-    rows = reduced if pins else rows
+    fit_rows = reduced if pins else rows
     names_fit = [names[i] for i in free] if pins else names
     # second model: shared slopes plus one fixed intercept per strategy (the cost a strategy pays before its first
     # row: compilation, worker group, catalog acquisition), fitted jointly
-    strategies = sorted({base_id(cells[4]) for _, _, cells in rows})
+    strategies = sorted({base_id(cells[4]) for _, _, cells in fit_rows})
     index = {s: i for i, s in enumerate(strategies)}
     extended = []
-    for vector, target, cells in rows:
+    for vector, target, cells in fit_rows:
         one_hot = [0.0] * len(strategies)
         one_hot[index[base_id(cells[4])]] = 1.0
         extended.append((vector + one_hot, target, cells))
     joint = nnls(extended, len(names_fit) + len(strategies))
-    print(f"\nR^2 fitted (shared slopes + per-strategy fixed cost): {r_squared(extended, joint):.3f}")
+    print(f"\nR^2 fitted (shared slopes + per-strategy fixed cost): {joint_r_squared(rows, extended, joint):.3f}")
     print(f"{'feature':32s} {'fitted ns':>12s}")
     for i, name in enumerate(names_fit):
         print(f"{name:32s} {joint[i]:12.1f}")

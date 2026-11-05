@@ -14810,6 +14810,12 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean countsContextFromMetadata(long context) throws IOException {
+			checkOpen();
+			return !hasStatementsInSource() || tripleStore.countContextIfAuthoritative(txn, context, explicit) >= 0;
+		}
+
+		@Override
 		public boolean has(long subj, long pred, long obj, long context) throws IOException {
 			return has(subj, pred, obj, context, null);
 		}
@@ -16477,6 +16483,18 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 				return tripleStore.countTriples(txn, subj, pred, obj, context, explicit);
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
+			}
+		}
+
+		@Override
+		public boolean countsContextFromMetadata(long context) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			try {
+				assertNativeSourceOpen();
+				return !hasStatementsInSource()
+						|| tripleStore.countContextIfAuthoritative(txn, context, explicit) >= 0;
 			} finally {
 				nativeSourceLock.unlockRead(readStamp);
 			}

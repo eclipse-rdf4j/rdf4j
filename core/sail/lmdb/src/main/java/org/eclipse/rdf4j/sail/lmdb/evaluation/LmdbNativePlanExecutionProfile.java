@@ -176,10 +176,11 @@ final class LmdbNativePlanExecutionProfile {
 
 	private LmdbNativeCostVector price(SlotPlan plan, long mask, long assuredMask) {
 		if (plan instanceof FilterPlan filter) {
-			double rows = rows(filter.arg, mask);
-			return price(filter.arg, mask, assuredMask).plus(perRow(Feature.INTERPRETED_ROW, rows))
-					.plus(witness(filter.filter, rows, mask | filter.arg.producedMask(),
-							assuredAfter(filter.arg, mask, assuredMask)));
+			return price(filter.arg, mask, assuredMask)
+					.plus(LmdbNativeCostVectors.perInputRow(Feature.INTERPRETED_ROW, 1D, filter.arg, row, mask))
+					.plus(LmdbNativeCostVectors.expectationOnly(
+							witness(filter.filter, rows(filter.arg, mask), mask | filter.arg.producedMask(),
+									assuredAfter(filter.arg, mask, assuredMask))));
 		}
 		if (plan instanceof MinusPlan minus) {
 			return minus(minus, mask, assuredMask);
@@ -200,14 +201,12 @@ final class LmdbNativePlanExecutionProfile {
 			return price(union.left, mask, assuredMask).plus(price(union.right, mask, assuredMask));
 		}
 		if (plan instanceof ExtensionPlan extension) {
-			double rows = rows(extension.arg, mask);
-			return price(extension.arg, mask, assuredMask)
-					.plus(LmdbNativeCostVectors.perRowProduct(Feature.INTERPRETED_ROW, rows, extension.copies.length,
-							row));
+			return price(extension.arg, mask, assuredMask).plus(LmdbNativeCostVectors.perInputRow(
+					Feature.INTERPRETED_ROW, extension.copies.length, extension.arg, row, mask));
 		}
 		if (plan instanceof RowDistinctPlan distinct) {
 			return price(distinct.arg, mask, assuredMask)
-					.plus(perRow(Feature.MEMBERSHIP_TEST, rows(distinct.arg, mask)));
+					.plus(LmdbNativeCostVectors.perInputRow(Feature.MEMBERSHIP_TEST, 1D, distinct.arg, row, mask));
 		}
 		if (plan instanceof NativeAliasJoinPlan alias) {
 			return price(alias.original, mask, assuredMask);
@@ -366,7 +365,8 @@ final class LmdbNativePlanExecutionProfile {
 	}
 
 	private LmdbNativeCostVector filter(NativeBooleanFilter filter, double rows, long mask, long assuredMask) {
-		return perRow(Feature.INTERPRETED_ROW, rows).plus(witness(filter, rows, mask, assuredMask));
+		return perRow(Feature.INTERPRETED_ROW, rows)
+				.plus(LmdbNativeCostVectors.expectationOnly(witness(filter, rows, mask, assuredMask)));
 	}
 
 	/** The access work an EXISTS witness in {@code filter} does over {@code rows} rows bound by {@code mask}. */
@@ -381,7 +381,7 @@ final class LmdbNativePlanExecutionProfile {
 		// Ownership facades must preserve planning shape; evaluation and closing still use the leased filter.
 		filter = NativeFilterLease.inspect(filter);
 		if (Double.isNaN(rows) && witnessOf(filter)) {
-			// an unknown row count under a witness: the sweep ceiling, never a NaN factor
+			// an unknown row count under a witness: the sweep estimate, never a NaN factor
 			return sweep();
 		}
 		if (filter instanceof RecordingNativeBooleanFilter recording) {
@@ -690,6 +690,11 @@ final class LmdbNativePlanExecutionProfile {
 		if (Double.isNaN(leftRows)) {
 			return left.plus(sweep());
 		}
+		// MinusPlan.estimateWork: the right side has no common bound across its alternatives, so this is expected work.
+		return left.plus(LmdbNativeCostVectors.expectationOnly(minusProbes(minus, leftRows, mask, assuredMask)));
+	}
+
+	private LmdbNativeCostVector minusProbes(MinusPlan minus, double leftRows, long mask, long assuredMask) {
 		SlotPlan right = minus.right;
 		long correlatedMask = mask | (minus.left.producedMask() & minus.sharedMask);
 		// the batch cursor is vectorised for a pattern right side; any other right side wraps the row cursor
@@ -698,7 +703,7 @@ final class LmdbNativePlanExecutionProfile {
 				: LmdbNativeCostVector.zero();
 		if (minus.sharedMask == 0L) {
 			// nothing to correlate on: the right side is drained once
-			return left.plus(price(right, mask, assuredMask)).plus(conversion);
+			return price(right, mask, assuredMask).plus(conversion);
 		}
 		if (mode == Mode.KERNEL) {
 			long availableMask = mask | minus.left.producedMask();
@@ -707,13 +712,13 @@ final class LmdbNativePlanExecutionProfile {
 					&& LmdbNativeKernelLowering.minusWitnessEligible(minus, availableMask, adjacencyUnavailable())) {
 				// Possible adjacency is not proof that every view will bind. Keep the likely witness price, but
 				// allow the native PlanRows producer used by a scan retry in the complete feature bounds.
-				return left.plus(withFallbackBounds(kernelWitness(right, leftRows, correlatedMask), nativeProducer));
+				return withFallbackBounds(kernelWitness(right, leftRows, correlatedMask), nativeProducer);
 			}
-			return left.plus(nativeProducer);
+			return nativeProducer;
 		}
 		if (right instanceof PatternPlan pattern && PatternMembershipProbe.tryCreate(pattern) != null) {
 			// a single pattern: an existence probe per left row while the membership structure warms up
-			return left.plus(firstMatch(LmdbNativeCostVectors.pattern(pattern, row, correlatedMask)).scale(leftRows))
+			return firstMatch(LmdbNativeCostVectors.pattern(pattern, row, correlatedMask)).scale(leftRows)
 					.plus(perRow(Feature.MEMBERSHIP_TEST, leftRows))
 					.plus(conversion);
 		}
@@ -725,7 +730,7 @@ final class LmdbNativePlanExecutionProfile {
 				: price(right, mask, assuredMask).plus(LmdbNativeCostVector.point(Feature.BRANCH_OPEN, 1D));
 		LmdbNativeCostVector memo = memoReadMask(right) >= 0L ? perRow(Feature.MEMBERSHIP_TEST, leftRows)
 				: LmdbNativeCostVector.zero();
-		return left.plus(perProbe.scale(leftRows)).plus(memo).plus(conversion);
+		return perProbe.scale(leftRows).plus(memo).plus(conversion);
 	}
 
 	/** False means only that adjacency remains possible, not that every requested view can bind. */
@@ -760,6 +765,11 @@ final class LmdbNativePlanExecutionProfile {
 		if (Double.isNaN(leftRows)) {
 			return left.plus(sweep());
 		}
+		// LeftJoinPlan.estimateWork: the cursor can retain and replay the right side, so this is expected work.
+		return left.plus(LmdbNativeCostVectors.expectationOnly(leftJoinProbes(leftJoin, leftRows, mask, assuredMask)));
+	}
+
+	private LmdbNativeCostVector leftJoinProbes(LeftJoinPlan leftJoin, double leftRows, long mask, long assuredMask) {
 		SlotPlan right = leftJoin.right;
 		long rightMask = mask | leftJoin.left.producedMask();
 		long rightAssuredMask = assuredAfter(leftJoin.left, mask, assuredMask);
@@ -768,27 +778,27 @@ final class LmdbNativePlanExecutionProfile {
 				? perRow(Feature.INTERPRETED_ROW, leftRows).plus(perRow(Feature.BATCH_ROW, leftRows))
 				: LmdbNativeCostVector.zero();
 		if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null) {
-			return left.plus(child(right, rightMask, rightAssuredMask, leftRows,
-					LmdbNativeCostVectors.rowBounds(leftJoin.left, row, mask))).plus(conversion);
+			return child(right, rightMask, rightAssuredMask, leftRows,
+					LmdbNativeCostVectors.rowBounds(leftJoin.left, row, mask)).plus(conversion);
 		}
 		boolean patternRight = right instanceof PatternPlan
 				|| right instanceof FilterPlan filter && filter.arg instanceof PatternPlan;
 		if (patternRight || mode == Mode.KERNEL) {
 			// a payload probe (or the kernel's correlated probe) per left row
-			return left.plus(price(right, rightMask, rightAssuredMask).scale(leftRows)).plus(conversion);
+			return price(right, rightMask, rightAssuredMask).scale(leftRows).plus(conversion);
 		}
 		long readMask = memoReadMask(right);
 		if (readMask >= 0L && (readMask & leftJoin.left.producedMask()) != 0L && right.producedMask() != 0L) {
 			// the fragment runs per key and its rows are replayed per left row
 			double rightRows = rows(right, rightMask);
-			return left.plus(price(right, rightMask, rightAssuredMask)
+			return price(right, rightMask, rightAssuredMask)
 					.plus(LmdbNativeCostVector.point(Feature.BRANCH_OPEN, 1D))
-					.scale(leftRows))
+					.scale(leftRows)
 					.plus(LmdbNativeCostVectors.perRowProduct(Feature.DECODED_ROW, rightRows, leftRows, row))
 					.plus(conversion);
 		}
-		return left.plus(child(right, rightMask, rightAssuredMask, leftRows,
-				LmdbNativeCostVectors.rowBounds(leftJoin.left, row, mask))).plus(conversion);
+		return child(right, rightMask, rightAssuredMask, leftRows,
+				LmdbNativeCostVectors.rowBounds(leftJoin.left, row, mask)).plus(conversion);
 	}
 
 	private static double multiply(double rows, double factor) {

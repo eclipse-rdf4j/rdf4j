@@ -294,14 +294,19 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		double startupRowHigh = Math.max(0D, startupHigh - workerStartIntercept);
 		double startupRowExpected = Math.max(startupRowLow,
 				Math.min(startupRowHigh, startupExpected - workerStartIntercept));
+		// A planning quote is sampled: it sets what this strategy is expected to cost, and proves nothing about it.
+		boolean sampled = planningWork != null;
 		if (startupRowHigh > 0D) {
-			startup.add(rowFeature, startupRowLow, startupRowExpected, startupRowHigh);
+			startup.add(rowFeature, sampled ? 0D : startupRowLow, startupRowExpected,
+					sampled ? LmdbNativeCostQuote.UNBOUNDED_COUNT : startupRowHigh);
 		}
 		double totalRowLow = Math.max(0D, effective.low() - workerStartIntercept);
 		double totalRowHigh = Math.max(0D, effective.high() - workerStartIntercept);
 		double totalRowExpected = Math.max(totalRowLow,
 				Math.min(totalRowHigh, totalExpected - workerStartIntercept));
-		if (totalRowHigh > 0D) {
+		if (sampled) {
+			total.add(rowFeature, 0D, Math.max(1D, totalRowExpected), LmdbNativeCostQuote.UNBOUNDED_COUNT);
+		} else if (totalRowHigh > 0D) {
 			total.add(rowFeature, totalRowLow, totalRowExpected, totalRowHigh);
 		}
 
@@ -420,9 +425,9 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		return candidate(proposal, null);
 	}
 
-	/** Bridges one proposal; an interval without a finite ceiling is priced at {@code ceiling} when one is known. */
-	static <T> LmdbNativeCandidate<T> candidate(LmdbNativeStrategyProposal<T> proposal, LmdbNativeWork ceiling) {
-		LmdbNativeCandidate<T> candidate = LmdbNativeCandidate.of(proposal.tag, quote(proposal, ceiling),
+	/** Bridges one proposal; an interval without a finite ceiling is priced at {@code estimate} when one is known. */
+	static <T> LmdbNativeCandidate<T> candidate(LmdbNativeStrategyProposal<T> proposal, LmdbNativeWork estimate) {
+		LmdbNativeCandidate<T> candidate = LmdbNativeCandidate.of(proposal.tag, quote(proposal, estimate),
 				proposal::open, proposal::close);
 		return proposal.dominates().isEmpty() ? candidate : candidate.dominating(proposal.dominates());
 	}
@@ -431,15 +436,19 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		return quote(proposal, null);
 	}
 
-	/** {@code work} itself when it has a ceiling, else {@code ceiling} raised to the work's floor, else unknown. */
-	private static LmdbNativeWork bounded(LmdbNativeWork work, LmdbNativeWork ceiling) {
-		if (work.known() || ceiling == null || !ceiling.known()) {
+	/** {@code work} itself when it has a ceiling, else {@code estimate} raised to the work's floor, else unknown. */
+	private static LmdbNativeWork estimated(LmdbNativeWork work, LmdbNativeWork estimate) {
+		if (work.known() || estimate == null || !estimate.known()) {
 			return work;
 		}
-		return LmdbNativeWork.between(work.low(), Math.max(work.low(), ceiling.high()));
+		return LmdbNativeWork.between(work.low(), Math.max(work.low(), estimate.high()));
 	}
 
-	static LmdbNativeCostQuote quote(LmdbNativeStrategyProposal<?> proposal, LmdbNativeWork ceiling) {
+	/**
+	 * This proposal as the selector prices it. {@code estimate} is what a proposal with no ceiling of its own is
+	 * expected to cost, the middle of that interval; it is the site's fallback sweep and bounds nothing.
+	 */
+	static LmdbNativeCostQuote quote(LmdbNativeStrategyProposal<?> proposal, LmdbNativeWork estimate) {
 		if (proposal.costQuote() != null) {
 			return withQuotedWorkerStartup(proposal, proposal.costQuote());
 		}
@@ -471,10 +480,13 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 					new LmdbNativeCostQuote(startup, streaming, typed.outputRows(), false, false));
 		}
 		LmdbNativeWork comparable = proposal.planningWork() != null ? proposal.planningWork() : proposal.work;
-		LmdbNativeWork startup = bounded(proposal.startupWork == null ? LmdbNativeWork.ZERO : proposal.startupWork,
-				ceiling);
-		LmdbNativeWork streaming = bounded(subtract(comparable, startup), ceiling);
-		return withQuotedWorkerStartup(proposal, LmdbNativeCostQuote.ofWork(startup, streaming, proposal.estRows));
+		LmdbNativeWork startup = estimated(proposal.startupWork == null ? LmdbNativeWork.ZERO : proposal.startupWork,
+				estimate);
+		LmdbNativeWork streaming = estimated(subtract(comparable, startup), estimate);
+		LmdbNativeCostQuote quote = estimate != null && estimate.known()
+				? LmdbNativeCostQuote.estimated(startup, streaming, proposal.estRows)
+				: LmdbNativeCostQuote.ofWork(startup, streaming, proposal.estRows);
+		return withQuotedWorkerStartup(proposal, quote);
 	}
 
 	/** Exact worker ownership is startup even when a physical producer reported it in its total work only. */

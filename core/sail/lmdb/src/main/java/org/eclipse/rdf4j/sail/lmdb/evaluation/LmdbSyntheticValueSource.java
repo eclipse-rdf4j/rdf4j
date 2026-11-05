@@ -716,6 +716,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean countsContextFromMetadata(long context) throws IOException {
+		return anySynthetic(-1L, -1L, -1L, context) || delegate.countsContextFromMetadata(context);
+	}
+
+	@Override
 	public boolean has(long subj, long pred, long obj, long context) throws IOException {
 		return has(subj, pred, obj, context, null);
 	}

@@ -28,8 +28,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
 import org.junit.jupiter.api.Test;
 
 /**
- * No admitted strategy may quote an unbounded interval: a plan the cost vectors cannot price is quoted as the ceiling
- * of the fallback it degrades to, a sweep of the store's smallest index with one row feature per statement.
+ * A plan the cost vectors cannot price is expected to cost the fallback it degrades to, half a sweep of the store's
+ * smallest index with one row feature per statement. That is an estimate rather than a ceiling, so the quote stays
+ * unbounded: rows are not statements, and a join or a path can emit more of them than the store holds.
  */
 class LmdbNativeCostVectorsTest {
 
@@ -46,25 +47,24 @@ class LmdbNativeCostVectorsTest {
 		}
 	};
 
-	private static RowState row(long entries) {
+	static RowState row(long entries) {
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0), null);
 		layout.freeze(List.of("s"));
 		return new RowState(new CountedSource(entries), layout, EmptyBindingSet.getInstance());
 	}
 
 	@Test
-	void anUnpriceablePlanIsQuotedAsASweepOfTheStore() {
+	void anUnpriceablePlanIsExpectedToCostHalfASweepOfTheStore() {
 		LmdbNativeCostVector vector = LmdbNativeCostVectors.plan(UNPRICED, row(1_000L), 0L,
 				Feature.INTERPRETED_ROW);
-		assertThat(vector.high(Feature.SCANNED_ROW)).isEqualTo(1_000D);
-		assertThat(vector.high(Feature.INTERPRETED_ROW)).isEqualTo(1_000D);
+		assertThat(vector.expected(Feature.SCANNED_ROW)).isEqualTo(500D);
+		assertThat(vector.expected(Feature.INTERPRETED_ROW)).isEqualTo(500D);
 		assertThat(vector.low(Feature.SCANNED_ROW)).isZero();
-		assertThat(LmdbNativeCostQuote.streaming(vector, Double.NaN).total().high(Feature.SCANNED_ROW))
-				.isLessThan(LmdbNativeCostQuote.UNBOUNDED_COUNT);
+		assertThat(vector.high(Feature.SCANNED_ROW)).isEqualTo(LmdbNativeCostQuote.UNBOUNDED_COUNT);
 	}
 
 	@Test
-	void aChainWithAnUnknownChildIsQuotedAsASweepPerPrefixRow() {
+	void aChainWithAnUnknownChildIsExpectedToSweepPerPrefixRow() {
 		// the prefix is a known plan of 10 rows; the remainder cannot be priced and degrades to one sweep per row
 		ValuesRow[] rows = new ValuesRow[10];
 		for (int i = 0; i < rows.length; i++) {
@@ -73,8 +73,9 @@ class LmdbNativeCostVectorsTest {
 		SlotPlan[] chain = { new ValuesPlan(rows), UNPRICED };
 		LmdbNativeCostVector vector = LmdbNativeCostVectors.chain(chain, 2, row(1_000L), 0L,
 				Feature.INTERPRETED_ROW);
-		assertThat(vector.high(Feature.SCANNED_ROW)).isEqualTo(10_000D);
-		assertThat(vector.high(Feature.INTERPRETED_ROW)).isEqualTo(10_010D);
+		assertThat(vector.expected(Feature.SCANNED_ROW)).isEqualTo(5_000D);
+		assertThat(vector.expected(Feature.INTERPRETED_ROW)).isEqualTo(5_010D);
+		assertThat(vector.high(Feature.SCANNED_ROW)).isEqualTo(LmdbNativeCostQuote.UNBOUNDED_COUNT);
 	}
 
 	@Test
@@ -92,13 +93,14 @@ class LmdbNativeCostVectorsTest {
 	}
 
 	@Test
-	void theBridgePricesAnUnknownIntervalAtTheSiteCeiling() {
+	void theBridgePricesAnUnknownIntervalAtTheSiteSweepEstimate() {
 		LmdbNativeStrategyProposal<String> proposal = new LmdbNativeStrategyProposal<>(() -> "x",
 				LmdbNativeWork.UNKNOWN, LmdbNativeWork.ZERO, Double.NaN, "unpriced", () -> {
 				});
 		LmdbNativeCostQuote quote = LmdbNativeStrategyProposal.candidate(proposal, LmdbNativeWork.between(0D, 2_000D))
 				.quote();
-		assertThat(quote.total().high(Feature.SCANNED_ROW)).isEqualTo(2_000D);
+		assertThat(quote.total().expected(Feature.SCANNED_ROW)).isEqualTo(1_000D);
+		assertThat(quote.total().high(Feature.SCANNED_ROW)).isEqualTo(LmdbNativeCostQuote.UNBOUNDED_COUNT);
 		LmdbNativeCostQuote unbounded = LmdbNativeStrategyProposal.candidate(proposal, null).quote();
 		assertThat(unbounded.total().high(Feature.SCANNED_ROW))
 				.isGreaterThanOrEqualTo(LmdbNativeCostQuote.UNBOUNDED_COUNT);

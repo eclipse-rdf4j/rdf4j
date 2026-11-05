@@ -208,6 +208,32 @@ class LmdbNativeDispatchLoopEdgeCaseTest {
 	}
 
 	@Test
+	void budgetRefusalCarryingACleanupFailureFailsTheQueryInsteadOfOpeningARival() {
+		IllegalStateException cleanupFailure = new IllegalStateException("refused candidate cleanup failed");
+		KernelRuntime.AllocationDeniedException refusal = new KernelRuntime.AllocationDeniedException();
+		refusal.addSuppressed(cleanupFailure);
+		AtomicInteger refusedReleases = new AtomicInteger();
+		AtomicInteger rivalOpens = new AtomicInteger();
+		AtomicInteger rivalReleases = new AtomicInteger();
+		LmdbNativeCandidate<String> refused = candidate("refused", 1D, () -> {
+			throw refusal;
+		}, refusedReleases::incrementAndGet);
+		LmdbNativeCandidate<String> rival = candidate("rival", 100D, () -> {
+			rivalOpens.incrementAndGet();
+			return "rival";
+		}, rivalReleases::incrementAndGet);
+		var loop = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(refused), strategy(rival)), null).budgetRefusals(true);
+
+		Throwable failure = catchThrowable(() -> loop.dispatch(null));
+
+		assertAll(() -> assertThat(failure).isSameAs(cleanupFailure),
+				() -> assertThat(rivalOpens).hasValue(0),
+				() -> assertThat(refusedReleases).hasValue(1),
+				() -> assertThat(rivalReleases).hasValue(1));
+	}
+
+	@Test
 	void budgetRefusalFromTheLastCandidateFailsWithAPublicException() {
 		KernelRuntime.AllocationDeniedException refusal = new KernelRuntime.AllocationDeniedException();
 		AtomicInteger releases = new AtomicInteger();

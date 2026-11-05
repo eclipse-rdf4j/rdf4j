@@ -231,6 +231,12 @@ record LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector st
 		return new LmdbNativeCostQuote(vectorOfWork(startup), vectorOfWork(streaming), outputRows, false, false);
 	}
 
+	/** The middles of two intervals as an expectation, for work that has an estimate but no ceiling. */
+	static LmdbNativeCostQuote estimated(LmdbNativeWork startup, LmdbNativeWork streaming, double outputRows) {
+		return new LmdbNativeCostQuote(LmdbNativeCostVectors.expectationOnly(vectorOfWork(startup)),
+				LmdbNativeCostVectors.expectationOnly(vectorOfWork(streaming)), outputRows, false, false);
+	}
+
 	private static LmdbNativeCostVector vectorOfWork(LmdbNativeWork work) {
 		if (work == null || work.equals(LmdbNativeWork.ZERO)) {
 			return LmdbNativeCostVector.zero();

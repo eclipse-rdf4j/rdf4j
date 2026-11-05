@@ -39,29 +39,53 @@ final class LmdbNativeCostVectors {
 	}
 
 	/**
-	 * The ceiling of the fallback an unpriceable plan degrades to: a sweep of the store's smallest index with one
-	 * {@code rowFeature} per statement. Unbounded when the source cannot say how many statements it holds.
+	 * What an unpriceable plan is expected to cost: half a sweep of the store's smallest index with one
+	 * {@code rowFeature} per statement. The statement count is an estimate and not a ceiling, so the quote stays
+	 * unbounded: a join or a path emits rows, and it can emit more of them than the store holds statements. No price at
+	 * all when the source cannot say how many statements it holds.
 	 */
 	static LmdbNativeCostVector sweep(RowState row, Feature rowFeature) {
-		double entries = statementCount(row);
-		if (Double.isNaN(entries)) {
-			return unbounded();
-		}
-		LmdbNativeCostVector scan = LmdbNativeCostVector.bounds(Feature.SCANNED_ROW, 0D, entries / 2D, entries);
+		LmdbNativeCostVector scan = perRow(Feature.SCANNED_ROW, Double.NaN, row);
 		return rowFeature == null || rowFeature == Feature.SCANNED_ROW ? scan
 				: scan.plus(perRow(rowFeature, Double.NaN, row));
 	}
 
 	/**
-	 * {@code count} occurrences of {@code feature}; an unknown count is bounded by the store's statement count (no
-	 * single plan emits more rows than a sweep of the store) when the row's source can say it, else unbounded.
+	 * {@code count} occurrences of {@code feature}. An unknown count is expected to be half the store's statement count
+	 * when the row's source can say it, and it has no ceiling either way.
 	 */
 	static LmdbNativeCostVector perRow(Feature feature, double count, RowState row) {
 		if (!Double.isNaN(count)) {
 			return perRow(feature, count);
 		}
 		double entries = statementCount(row);
-		return Double.isNaN(entries) ? unbounded() : LmdbNativeCostVector.bounds(feature, 0D, entries / 2D, entries);
+		return Double.isNaN(entries) ? unbounded()
+				: LmdbNativeCostVector.bounds(feature, 0D, entries / 2D, LmdbNativeCostQuote.UNBOUNDED_COUNT);
+	}
+
+	/**
+	 * {@code perRow} occurrences of {@code feature} for every row of {@code input}. The row count there is a sample, so
+	 * it is only the expectation: the interval comes from what a complete open of {@code input} can prove.
+	 */
+	static LmdbNativeCostVector perInputRow(Feature feature, double perRow, SlotPlan input, RowState row, long mask) {
+		double rows = rows(input, row, mask);
+		return Double.isFinite(rows)
+				? repeated(LmdbNativeCostVector.point(feature, perRow), rows, rowBounds(input, row, mask))
+				: perRowProduct(feature, rows, perRow, row);
+	}
+
+	/**
+	 * {@code vector}'s expectation with nothing proven around it: for work that sampled probe counts or a likely route
+	 * can only estimate. A finite ceiling eliminates rivals, so an estimate must never be one.
+	 */
+	static LmdbNativeCostVector expectationOnly(LmdbNativeCostVector vector) {
+		LmdbNativeCostVector.Builder builder = LmdbNativeCostVector.builder();
+		for (Feature feature : Feature.values()) {
+			if (vector.high(feature) > 0D) {
+				builder.add(feature, 0D, vector.expected(feature), LmdbNativeCostQuote.UNBOUNDED_COUNT);
+			}
+		}
+		return builder.build();
 	}
 
 	/** Keep a finite product's saturated nominal count separate from an overflowed physical ceiling. */
@@ -72,7 +96,7 @@ final class LmdbNativeCostVectors {
 		return perRow(feature, rows, row).scale(repetitions);
 	}
 
-	/** The same ceiling as a work interval, for proposals that still quote intervals. */
+	/** The same estimate as a work interval whose middle is the expectation, for proposals that quote intervals. */
 	static LmdbNativeWork sweepWork(RowState row) {
 		double entries = statementCount(row);
 		return Double.isNaN(entries) ? LmdbNativeWork.UNKNOWN : LmdbNativeWork.between(0D, 2D * entries);
@@ -217,35 +241,34 @@ final class LmdbNativeCostVectors {
 			}
 			boolean selected = multi.constrainedSlot >= 0 && (boundMask & (1L << multi.constrainedSlot)) != 0L;
 			return (selected ? total.scale(1D / multi.alternatives.length) : total)
-					.plus(perRow(rowFeature, rows(plan, row, boundMask), row));
+					.plus(perInputRow(rowFeature, 1D, plan, row, boundMask));
 		}
 		if (plan instanceof UnionPlan union) {
 			return plan(union.left, row, boundMask, rowFeature).plus(plan(union.right, row, boundMask, rowFeature));
 		}
 		if (plan instanceof FilterPlan filter) {
 			return plan(filter.arg, row, boundMask, rowFeature)
-					.plus(perRow(Feature.INTERPRETED_ROW, rows(filter.arg, row, boundMask), row));
+					.plus(perInputRow(Feature.INTERPRETED_ROW, 1D, filter.arg, row, boundMask));
 		}
 		if (plan instanceof ExtensionPlan extension) {
-			double rows = rows(extension.arg, row, boundMask);
 			return plan(extension.arg, row, boundMask, rowFeature)
-					.plus(perRowProduct(Feature.INTERPRETED_ROW, rows, extension.copies.length, row));
+					.plus(perInputRow(Feature.INTERPRETED_ROW, extension.copies.length, extension.arg, row, boundMask));
 		}
 		if (plan instanceof RowDistinctPlan distinct) {
 			return plan(distinct.arg, row, boundMask, rowFeature)
-					.plus(perRow(Feature.MEMBERSHIP_TEST, rows(distinct.arg, row, boundMask), row));
+					.plus(perInputRow(Feature.MEMBERSHIP_TEST, 1D, distinct.arg, row, boundMask));
 		}
 		if (plan instanceof JoinPlan join) {
 			return probe(join.left, join.right, row, boundMask, rowFeature);
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
-			return probe(leftJoin.left, leftJoin.right, row, boundMask, rowFeature);
+			return unprovenProbe(leftJoin.left, leftJoin.right, row, boundMask, rowFeature);
 		}
 		if (plan instanceof LateralPlan lateral) {
 			return probe(lateral.left, lateral.right, row, boundMask, rowFeature);
 		}
 		if (plan instanceof MinusPlan minus) {
-			return probe(minus.left, minus.right, row, boundMask, rowFeature);
+			return unprovenProbe(minus.left, minus.right, row, boundMask, rowFeature);
 		}
 		if (plan instanceof MultiJoinPlan multiJoin) {
 			MultiJoinPlan.OrderedPlan ordered = multiJoin.derivedPlan(boundMask);
@@ -271,6 +294,22 @@ final class LmdbNativeCostVectors {
 		}
 		LmdbNativeCostVector rightVector = plan(right, row, boundMask | left.producedMask(), rowFeature);
 		return leftVector.plus(repeated(rightVector, leftRows, rowBounds(left, row, boundMask)));
+	}
+
+	/**
+	 * Left side once, right side as OPTIONAL and MINUS run it. They can retain, replay, memoize or drain it instead of
+	 * probing it per left row, which is why {@link SlotPlan#estimateWork} leaves that side unknown. The probes are the
+	 * expectation of what it costs and bound nothing.
+	 */
+	private static LmdbNativeCostVector unprovenProbe(SlotPlan left, SlotPlan right, RowState row, long boundMask,
+			Feature rowFeature) {
+		LmdbNativeCostVector leftVector = plan(left, row, boundMask, rowFeature);
+		double leftRows = rows(left, row, boundMask);
+		if (Double.isNaN(leftRows)) {
+			return leftVector.plus(sweep(row, rowFeature));
+		}
+		LmdbNativeCostVector rightVector = plan(right, row, boundMask | left.producedMask(), rowFeature);
+		return leftVector.plus(expectationOnly(repeated(rightVector, leftRows, rowBounds(left, row, boundMask))));
 	}
 
 	/** A nested-loop chain: each child is probed once per row of the prefix before it. */
@@ -376,7 +415,7 @@ final class LmdbNativeCostVectors {
 		LmdbNativeFanOutFacts facts = LmdbNativeFanOutFacts.forFactorized(order, order.length, prefixLength, row,
 				boundMask, depth0Keys);
 		if (!facts.priceable()) {
-			// an unpriceable child keeps the sweep ceiling of the chain form
+			// an unpriceable child keeps the sweep estimate of the chain form
 			return new FactorizedRowsProfile(factorized(order, prefixLength, row, boundMask, Feature.BATCH_ROW),
 					Double.NaN);
 		}

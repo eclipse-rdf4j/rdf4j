@@ -629,6 +629,31 @@ class LmdbNativeCensusAggregateTest {
 	}
 
 	@Test
+	void graphCountOverAMixedContextCatalogDoesNotClaimAConstantTimeLookup() {
+		// The context catalog combines both planes, so with inferred statements present it cannot answer an explicit
+		// count. What runs then has to be the page walk the recipe priced, not a two-unit metadata read.
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection()) {
+			ValueFactory vf = store.getValueFactory();
+			connection.begin();
+			connection.addInferredStatement(vf.createBNode("inferred"), vf.createIRI(EX + "p2"),
+					vf.createLiteral("inferred"), vf.createIRI(EX + "g1"));
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		String count = "SELECT (COUNT(*) AS ?quads) WHERE { GRAPH <" + EX + "g1> { ?s ?p ?o } }";
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertParity(connection, count, false, LmdbNativeCensusAggregate.PATH);
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(count);
+			prepared.setIncludeInferred(false);
+			prepared.setForcedLmdbExecutionStrategy(LmdbNativeCensusAggregate.PATH);
+			assertThat(prepared.explain(Explanation.Level.Telemetry).toString())
+					.contains("nativeExecutionPath=adjacencyCensus")
+					.doesNotContain("nativeAdjacencyPlaneMetadataReadsActual=1")
+					.contains("nativeAdjacencyPagesVisitedActual=");
+		}
+	}
+
+	@Test
 	void globalCensusIsSelectedUnforcedWhenHeadersAndMetadataAnswerIt() {
 		// 24000 quads on homogeneous pages: the census answers COUNT(DISTINCT ?s/?o) from node metadata and the rest
 		// from page headers, so it must out-price the sequential path instead of quoting a payload decode per quad

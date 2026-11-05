@@ -86,8 +86,9 @@ final class LmdbNativeSelector {
 			return new Ranking(-1, nanos, expected, quotedExpected, eliminatedBy,
 					"No strategy was admitted at this decision point");
 		}
+		boolean[] hasPrice = new boolean[n];
 		boolean ordinary = false;
-		boolean bounded = false;
+		boolean anyPriced = false;
 		for (int i = 0; i < n; i++) {
 			LmdbNativeCandidate<T> candidate = candidates.get(i);
 			LmdbNativeCostVector vector = candidate.quote()
@@ -100,6 +101,8 @@ final class LmdbNativeSelector {
 			nanos[i] = LmdbNativeWork.between(priced.low() + fixed, priced.high() + fixed);
 			expected[i] = prior.expected(vector) + fixed;
 			quotedExpected[i] = expected[i];
+			// A finite ceiling is a proof and an expectation above the floor is an estimate; either one is a price.
+			hasPrice[i] = nanos[i].known() || expected[i] > nanos[i].low();
 			if (advice != null) {
 				LmdbNativeAdvisoryLearner.Narrowed narrowed = advice.narrow(candidate.id(), candidate.quote(), nanos[i],
 						expected[i]);
@@ -107,15 +110,15 @@ final class LmdbNativeSelector {
 				expected[i] = narrowed.expectedNanos();
 			}
 			ordinary |= !candidates.get(i).lastResort();
-			bounded |= !candidates.get(i).lastResort() && nanos[i].known();
+			anyPriced |= !candidates.get(i).lastResort() && hasPrice[i];
 		}
 		for (int i = 0; i < n; i++) {
 			if (ordinary && candidates.get(i).lastResort()) {
 				eliminatedBy[i] = "Last resort: considered only when no ordinary candidate is admitted";
-			} else if (bounded && !nanos[i].known()) {
-				// An unbounded quote has no ceiling to compare; its floor is not a price. It competes only when no
-				// candidate could price itself at all.
-				eliminatedBy[i] = "Unpriced: quotes no finite ceiling while priced candidates exist";
+			} else if (anyPriced && !hasPrice[i]) {
+				// A quote with neither a ceiling nor an estimate has only its floor, and a floor is not a price. It
+				// competes only when no candidate could price itself at all.
+				eliminatedBy[i] = "Unpriced: quotes neither a ceiling nor an estimate while priced candidates exist";
 			}
 		}
 		// Structural edges are evaluated simultaneously. A dominated admitted strategy still establishes its own
@@ -144,8 +147,7 @@ final class LmdbNativeSelector {
 		// its worker count demands (30 % on four workers, 50 % on eight), or the serial candidate keeps the cores
 		double serialBest = Double.POSITIVE_INFINITY;
 		for (int i = 0; i < n; i++) {
-			if (eliminatedBy[i] == null && nanos[i].known()
-					&& candidateWorkers[i] == 0) {
+			if (eliminatedBy[i] == null && hasPrice[i] && candidateWorkers[i] == 0) {
 				serialBest = Math.min(serialBest, expected[i]);
 			}
 		}

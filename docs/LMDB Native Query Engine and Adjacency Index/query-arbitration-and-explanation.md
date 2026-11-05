@@ -9,10 +9,10 @@ Every decision point runs on [`LmdbNativeDispatchLoop`](../../../core/sail/lmdb/
 [`LmdbNativeSelector`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSelector.java) is the one ranking rule, applied to the admitted candidates:
 
 1. Each candidate is priced by [`LmdbNativeStaticPrior`](../../../core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeStaticPrior.java), then narrowed by learned advice if the [advisory learner](query-cost-learning-and-adaptation.md) is on.
-2. A last-resort candidate competes only when nothing else was admitted, and an unpriced candidate only when no candidate has a ceiling.
+2. A last-resort candidate competes only when nothing else was admitted, and an unpriced candidate only when no candidate has a price. A quote has a price when it has a finite ceiling or an estimate above its floor; a floor alone is not one.
 3. Structural dominance edges are applied, all at once, so `A -> B -> C` does not depend on visiting order. A dominated candidate goes regardless of price.
 4. A parallel candidate must cut the best serial expected price by the share its worker count demands: 30 % on four workers, 50 % on eight.
-5. A candidate whose whole interval lies above a rival's whole interval is eliminated.
+5. A candidate whose whole interval lies above a rival's whole interval is eliminated. A finite ceiling is therefore a proof: sampled row counts and the store's statement count set a quote's expectation and never its bounds, so an estimated quote renders as `low..unbounded` and eliminates nobody.
 6. The lowest expected price among the survivors wins, with registry order breaking exact ties only.
 
 A finite consumer slice prorates streaming work before pricing. Every rule operates only over the candidates the actual dispatch site offered. A strategy being forceable, passing compile-time recognition and successfully opening are three different facts.

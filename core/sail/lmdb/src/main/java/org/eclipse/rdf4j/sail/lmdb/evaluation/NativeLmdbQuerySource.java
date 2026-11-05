@@ -2363,6 +2363,14 @@ public interface NativeLmdbQuerySource {
 
 	long count(long subj, long pred, long obj, long context) throws IOException;
 
+	/**
+	 * Whether {@link #count} answers a count of everything in {@code context} from the context catalog alone. When it
+	 * cannot, that count walks an index or the exact view, so it must not be priced as a lookup.
+	 */
+	default boolean countsContextFromMetadata(long context) throws IOException {
+		return false;
+	}
+
 	boolean has(long subj, long pred, long obj, long context) throws IOException;
 
 	default boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer)

@@ -487,6 +487,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean countsContextFromMetadata(long context) throws IOException {
+		for (NativeLmdbQuerySource source : activeSources) {
+			if (!source.countsContextFromMetadata(context)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	@Override
 	public boolean has(long subj, long pred, long obj, long context) throws IOException {
 		return has(subj, pred, obj, context, null);
 	}
@@ -1420,6 +1430,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public long count(long subj, long pred, long obj, long context) throws IOException {
 			return delegate.count(subj, pred, obj, context);
+		}
+
+		@Override
+		public boolean countsContextFromMetadata(long context) throws IOException {
+			return delegate.countsContextFromMetadata(context);
 		}
 
 		@Override
