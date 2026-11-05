@@ -446,32 +446,35 @@ test('a shell whose Info answer has no menu keeps the recovery links', async ({ 
 	await expect(page.locator('#navigation').getByRole('link', { name: 'Connection' })).toHaveAttribute('aria-current', 'page');
 });
 
-// R10: Explore takes its limit from the request only (its limit_explore parameter, else 100), never from the cookie a
-// previous Explore page left; the "maybe truncated" notice follows the limit the server used.
-test('the Explore truncation notice follows the limit of the request, not an earlier page\'s cookie', async ({ page, request }) => {
+// R10: an old Explore limit cookie or URL must not truncate the independently cached section.
+test('old Explore limits do not truncate a cached section', async ({ page, request }) => {
 	const exploreRepository = uniqueRepositoryId('workbench-round2-explore-limit');
 	const repositoryUrl = `${serverBaseUrl()}/repositories/${encodeURIComponent(exploreRepository)}`;
 	await createSeededRepository(request, serverBaseUrl(), exploreRepository, { graphs: [] });
 	try {
 		const loaded = await request.post(`${repositoryUrl}/statements`, {
 			headers: { 'Content-Type': 'application/n-triples' },
-			data: Array.from({ length: 10 }, (_, index) => `<urn:ten> <urn:p> "${index}" .`).join('\n')
+			data: Array.from({ length: 12 }, (_, index) => `<urn:ten> <urn:p> "${index}" .`).join('\n')
 		});
 		expect([200, 204]).toContain(loaded.status());
 		const explore = `${workbenchBaseUrlForSpec()}/repositories/${encodeURIComponent(exploreRepository)}/explore`
 			+ `?resource=${encodeURIComponent('<urn:ten>')}`;
 		await page.setViewportSize({ width: 1280, height: 900 });
 
+		await page.context().addCookies([{ name: 'limit_explore', value: '10', url: workbenchBaseUrlForSpec() }]);
 		await page.goto(explore + '&limit_explore=10');
 		await waitForRoute(page, 'explore');
-		await expect(page.locator('#result-limited')).toBeVisible();
+		const rows = page.locator('[data-explore-role="outgoing"] [data-workbench-row-index]');
+		await expect(rows).toHaveCount(12);
+		await expect(page.locator('#result-limited')).toHaveCount(0);
 		const cookies = await page.context().cookies();
 		expect(cookies.some((cookie) => cookie.name === 'limit_explore' && cookie.value === '10'),
-			'the server remembered the limit in a cookie').toBe(true);
+			'the old limit cookie is present').toBe(true);
 
 		await page.goto(explore);
 		await waitForRoute(page, 'explore');
 		await expect(page.locator('#explore-resource-card')).toBeVisible();
+		await expect(rows).toHaveCount(12);
 		await expect(page.locator('#result-limited')).toHaveCount(0);
 	} finally {
 		await deleteRepository(request, serverBaseUrl(), exploreRepository);
