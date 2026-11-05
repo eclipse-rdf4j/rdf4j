@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 const { renderPageResultTables } = require('./page-result-table-harness.js');
+const { createExploreModel } = require('./explore-section-fixtures.js');
 
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
@@ -635,38 +636,28 @@ test('representative non-query templates keep Workbench form and table hooks', (
     }
 });
 
-test('Explore preserves its persisted datatype option and reports a result-limited page', () => {
+test('Explore preserves its datatype option and reports local cached section pages', async () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
     const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} };
-    // The metadata the Explore servlet sends: the resolved resource and the total; the limit in use is the
-    // request's limit_explore, 100 without one (review fix A12; round 2 R10: the servlet reads no cookie for it).
-    const model = {
-        viewId: 'explore',
-        vars: ['subject', 'predicate', 'object', 'context'],
-        rows: [[{ kind: 'iri', value: 'urn:example:resource' }, { kind: 'iri', value: 'urn:example:p' },
-            { kind: 'iri', value: 'urn:example:o' }, null]],
-        rowCount: 100,
-        metadata: { 'explore-resource': '<urn:example:resource>', 'total-result-count': 150 }
-    };
+    const rows = Array.from({ length: 100 }, (_, index) => [
+        { kind: 'iri', value: 'urn:example:resource' }, { kind: 'iri', value: `urn:example:p${index}` },
+        { kind: 'iri', value: 'urn:example:o' }, null
+    ]);
+    const model = createExploreModel({
+        metadata: { resource: '<urn:example:resource>', 'explore-resource': '<urn:example:resource>' },
+        sections: { outgoing: { rows, totalRows: 250, count: '250' } }
+    });
     const output = collectTemplateText(workbench.views.pageTemplate(model, context, runtime)).join(' ');
 
     assert.ok(output.includes('id="explore-show-datatypes"'), 'Explore should keep the existing datatype control id');
-    assert.ok(output.includes('name="show-datatypes" value="show-dataypes"'),
-        'Explore should preserve the request value consumed by the existing endpoint');
-    // The notice's id is a template value (the shared callout), so it is read from the interleaved markup.
-    assert.ok(flattenTemplateMarkup(workbench.views.pageTemplate(model, context, runtime)).includes('id="result-limited"'),
-        'a full default-limit page should identify truncated results');
-
-    workbench.__testWindow.location = { search: '?resource=%3Curn%3Aexample%3Aresource%3E&limit_explore=0' };
-    const unlimited = flattenTemplateMarkup(workbench.views.pageTemplate(model, context, runtime));
-    assert.ok(!unlimited.includes('id="result-limited"'), 'unlimited Explore results should not show the truncation notice');
-
-    // A limit_explore cookie from an earlier page does not set this page's limit: 10 rows of a limit of 100.
-    workbench.getCookie = (name) => name === 'limit_explore' ? '10' : '';
-    workbench.__testWindow.location = { search: '?resource=%3Curn%3Aexample%3Aresource%3E' };
-    const ten = flattenTemplateMarkup(workbench.views.pageTemplate({ ...model, rowCount: 10 }, context, runtime));
-    assert.ok(!ten.includes('id="result-limited"'), 'the cookie is not the limit the server used');
+    assert.ok(output.includes('name="show-datatypes" checked'),
+        'Explore should preserve the existing checked state for its datatype option');
+    const page = await renderPageResultTables(workbench, model, context);
+    const markup = flattenTemplateMarkup(page.template).replace(/\s+/g, ' ');
+    assert.ok(markup.includes('Showing 1–100 of 250 cached'), 'the local cache page reports its exact window');
+    assert.ok(markup.includes('>Next</button>'), 'another cached page remains reachable');
+    assert.ok(!markup.includes('id="result-limited"'), 'Explore has no page-wide server truncation notice');
 });
 
 test('Add template preserves isolation options and offers an editable target graph', () => {
@@ -814,11 +805,13 @@ test('every navigable built-in route has a registered ordinary-DOM template', ()
         ['namespaces', { vars: ['prefix', 'namespace'], rows: [['ex', 'urn:example:']],
             pickerRows: [['ex', 'urn:example:']], rowCount: 1,
             expected: ['namespaces-results', 'namespaces-filter', 'urn:<wbr>example:'] }],
-        ['contexts', { vars: ['context'], rows: [['urn:graph']], expected: ['contexts-results', 'urn:graph'] }],
-        ['types', { vars: ['type', 'count'], rows: [['urn:Type', '3']], expected: ['types-results', 'urn:Type'] }],
+        ['contexts', { vars: ['context'], rows: [[{ kind: 'iri', value: 'urn:graph' }]],
+            expected: ['contexts-results', 'urn:graph'] }],
+        ['types', { vars: ['type', 'count'], rows: [[{ kind: 'iri', value: 'urn:Type' }, '3']],
+            expected: ['types-results', 'urn:Type'] }],
         // Explore's statements are a shared result table, laid out once its host is in the page (resultTable).
-        ['explore', { vars: ['subject', 'predicate', 'object'], rows: [['urn:s', 'urn:p', 'urn:o']],
-            expected: ['explore-form', 'explore-results', 'data-workbench-result-table'] }],
+        ['explore', { metadata: { resource: '<urn:s>', 'explore-resource': '<urn:s>' },
+            expected: ['explore-form', 'explore-section-output', 'explore-show-datatypes'] }],
         ['query', { vars: [], rows: [], expected: ['query-form', 'query-results'] }],
         ['saved-queries', { vars: ['query', 'queryName', 'queryText'],
             rows: [['urn:saved:1', 'Example query', 'SELECT * WHERE {}']], expected: ['saved-queries', 'urn:saved:1'] }],
@@ -2112,13 +2105,11 @@ test('page tables label their columns for people instead of showing raw variable
     }, context, runtime);
     // The repository list keeps Icon and Actions fixed while ID, Title and Access remain sortable.
     assert.deepEqual(headings(repositories), ['Repository', 'ID', 'Title', 'Access', 'Actions']);
-    const explore = await renderPageResultTables(workbench, {
-        viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'],
-        rows: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' }, { kind: 'iri', value: 'urn:o' }, null]],
-        rowCount: 1, metadata: { resource: '<urn:s>' }
-    }, context);
-    // Rows about the explored resource are grouped by role; the Outgoing table names its two columns.
-    assert.deepEqual(explore.headers('explore-outgoing'), ['Predicate', 'Object']);
+    const explore = await renderPageResultTables(workbench, createExploreModel({ sections: {
+        outgoing: { rows: [[{ kind: 'iri', value: 'urn:s' }, { kind: 'iri', value: 'urn:p' },
+            { kind: 'iri', value: 'urn:o' }, null]] }
+    } }), context);
+    assert.deepEqual(explore.headers('explore-outgoing'), ['Predicate', 'Object', 'Graph']);
 });
 
 test('summary and information render key/value lists instead of simple tables', () => {

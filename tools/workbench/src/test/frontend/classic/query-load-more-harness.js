@@ -104,7 +104,8 @@ function loadApi(windowOverrides = {}) {
         setTimeout, clearTimeout
     });
     vm.runInContext(compiledSource, context, { filename: outputPath });
-    return { api: context.workbench.queryStream, workbench: context.workbench, document, window };
+    return { api: context.workbench.queryStream, workbench: context.workbench, document, window, context,
+        json: vm.runInContext('JSON', context) };
 }
 
 function response(records) {

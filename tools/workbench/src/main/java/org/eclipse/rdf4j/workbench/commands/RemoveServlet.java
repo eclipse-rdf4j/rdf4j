@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -297,11 +298,15 @@ public class RemoveServlet extends TransformationServlet {
 			throws RepositoryException, QueryResultHandlerException {
 		List<Resource> contexts;
 		List<Namespace> namespaces;
+		ValueFactory origins;
 		try (RepositoryConnection con = repository.getConnection()) {
+			TupleResultBuilder.enableRepositoryOrigins(con);
+			origins = con.getValueFactory();
 			contexts = new ArrayList<>(Iterations.asList(con.getContextIDs()));
 			namespaces = Iterations.asList(con.getNamespaces());
 		}
 		contexts.sort(BrowseList.BY_NAME);
+		builder.repositoryOrigins(origins);
 		builder.namespaces(namespaces);
 		builder.start(CONTEXT);
 		builder.link(List.of(INFO));
