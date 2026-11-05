@@ -243,6 +243,7 @@ class LmdbSnapshotGrowthTest {
 		Path journalRoot = customJournalRoot ? storeDirectory.resolve("history/nested")
 				: storeDirectory.resolve("backup");
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc")
+				.setBackupJournalEnabled(true)
 				.setSketchEstimatorEnabled(false)
 				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF);
 		if (customJournalRoot) {
@@ -313,5 +314,48 @@ class LmdbSnapshotGrowthTest {
 		}
 		assertTrue(Files.isDirectory(snapshot.resolve("backup/txlog")),
 				"a restored snapshot publishes its new history under its own default backup root");
+	}
+
+	@Test
+	void snapshotExcludesOnlyTheOwnedStorePropertiesStagingFile(@TempDir Path directory) throws Exception {
+		Path storeDirectory = directory.resolve("store");
+		Path snapshot = directory.resolve("snapshot");
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc")
+				.setSketchEstimatorEnabled(false)
+				.setFrontierEstimatorMode(FrontierEstimatorMode.OFF);
+		LmdbStore store = new LmdbStore(storeDirectory.toFile(), config);
+		store.init();
+		var vf = SimpleValueFactory.getInstance();
+		var subject = vf.createIRI("urn:snapshot-properties:subject");
+		var predicate = vf.createIRI("urn:snapshot-properties:predicate");
+		var object = vf.createLiteral("committed");
+		try {
+			try (var connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(subject, predicate, object);
+				connection.commit();
+			}
+			LmdbTestUtil.awaitPostReadyInitialization(store, 30L, TimeUnit.SECONDS);
+			Files.writeString(storeDirectory.resolve(StoreProperties.FILE_NAME + ".tmp"), "partial property update");
+			Files.writeString(storeDirectory.resolve(StoreProperties.FILE_NAME + ".tmp.keep"), "unrelated file");
+			store.getBackingStore().createOnlineSnapshot(snapshot, true, () -> {
+			});
+			assertAll(
+					() -> assertFalse(Files.exists(snapshot.resolve(StoreProperties.FILE_NAME + ".tmp")),
+							"a concurrent properties save must not enter the snapshot"),
+					() -> assertTrue(Files.isRegularFile(snapshot.resolve(StoreProperties.FILE_NAME)),
+							"the committed store properties remain part of the snapshot"),
+					() -> assertEquals("unrelated file",
+							Files.readString(snapshot.resolve(StoreProperties.FILE_NAME + ".tmp.keep"))));
+		} finally {
+			store.shutDown();
+		}
+		LmdbStore restored = new LmdbStore(snapshot.toFile(), config);
+		restored.init();
+		try (var connection = restored.getConnection()) {
+			assertTrue(connection.hasStatement(subject, predicate, object, true));
+		} finally {
+			restored.shutDown();
+		}
 	}
 }

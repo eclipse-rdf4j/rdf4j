@@ -3039,6 +3039,10 @@ class LmdbSailStore implements SailStore {
 	private PostCommitBackupPublisher postCommitBackupPublisher;
 	private volatile Path backupJournalDirectory;
 	private final boolean backupPublicationEnabled;
+
+	private final boolean backupBoundaryTrackingEnabled;
+
+	private LmdbBackupJournalState backupJournalState;
 	private PostCommitBackupPublisher.Stage preparedBackupStage;
 	private long lastBackupPublicationAttempt = -1L;
 	private final LmdbBackupRecordBuffer pendingBackupRecords;
@@ -7375,7 +7379,8 @@ class LmdbSailStore implements SailStore {
 			int asyncQueueCapacity, boolean offlineReferenceCountMaintenance, boolean temporaryOverflow)
 			throws IOException, SailException {
 		this.opQueue = new ArrayBlockingQueue<>(asyncQueueCapacity);
-		this.backupPublicationEnabled = !temporaryOverflow;
+		this.backupBoundaryTrackingEnabled = !temporaryOverflow;
+		this.backupPublicationEnabled = !temporaryOverflow && config.getBackupJournalEnabled();
 		this.queryExecutionPolicy = Objects.requireNonNull(queryExecutionPolicy);
 		this.learnedFilterSelectivity = queryExecutionPolicy.experimentalQueryOptimizations()
 				? new LmdbLearnedFilterSelectivity()
@@ -7384,7 +7389,9 @@ class LmdbSailStore implements SailStore {
 		this.domainQualificationProperties = properties;
 		this.domainQualificationConfig = config;
 		// Keep pending backup buffers outside the store tree traversed by supplementary snapshot copying.
-		this.pendingBackupRecords = new LmdbBackupRecordBuffer(Path.of(System.getProperty("java.io.tmpdir")));
+		this.pendingBackupRecords = backupPublicationEnabled
+				? new LmdbBackupRecordBuffer(Path.of(System.getProperty("java.io.tmpdir")))
+				: null;
 		this.autoGrow = config.getAutoGrow();
 		this.asyncValueCleanup = config.getAsyncValueCleanup();
 		this.mapGrowthCoordinator = new MapGrowthCoordinator(config.getMapGrowthReadDrainTimeoutMillis());
@@ -7531,6 +7538,10 @@ class LmdbSailStore implements SailStore {
 			valueStore.setStartupValueOverlayScheduling(valueOverlayStartupScheduling);
 			logLmdbStats(Level.INFO, "on startup");
 			domainQualificationOwnerReady = true;
+			if (!temporaryOverflow) {
+				backupJournalState = LmdbBackupJournalState.open(dataDir.toPath(), backupPublicationEnabled,
+						getCurrentCommittedTxnId(), () -> PostCommitBackupPublisher.resetForNewGeneration(this));
+			}
 			if (backupPublicationEnabled) {
 				// Direct SailSource users need the same durable chain as owning LmdbStore connections.
 				// Disposable overflow input is backed up only when replayed into the authoritative store.
@@ -8554,6 +8565,10 @@ class LmdbSailStore implements SailStore {
 		return dataDir.toPath();
 	}
 
+	LmdbBackupJournalState backupJournalState() {
+		return backupJournalState;
+	}
+
 	PostCommitBackupPublisher backupPublisher() {
 		return postCommitBackupPublisher;
 	}
@@ -8609,7 +8624,11 @@ class LmdbSailStore implements SailStore {
 				// a backup runs. A restored store builds its own generation for the restored snapshot.
 				if (TRIPLES_DIR_NAME.equals(name) || VALUES_DIR_NAME.equals(name)
 						|| child.equals(frontierStatisticsDirectory)
-						|| PostCommitBackupPublisher.DIRECTORY.equals(name) || name.startsWith("backup-records-")
+						|| PostCommitBackupPublisher.DIRECTORY.equals(name)
+						|| PostCommitBackupPublisher.ARCHIVE_DIRECTORY.equals(name)
+						|| name.startsWith("backup-records-")
+						|| (StoreProperties.FILE_NAME + ".tmp").equals(name)
+						|| name.startsWith(".tmp-backup-journal-")
 						|| journal != null && LmdbBackupServiceImpl.isStoreBackupMetadata(name)
 						|| excludedJournals.contains(child.toAbsolutePath().normalize())
 						|| isRebuildableEstimatorCache(child)) {
@@ -9435,6 +9454,10 @@ class LmdbSailStore implements SailStore {
 					if (!backupRecords.isEmpty()) {
 						prepareBackupStage(previousRequiredTxn, backupRecords);
 						tripleStore.requireBackupPublication();
+					} else if (backupBoundaryTrackingEnabled && !backupPublicationEnabled) {
+						// Keep snapshot identities current without capturing or publishing recovery records.
+						// The boundary is stored in the same native commit, with the ordinary sync policy.
+						tripleStore.requireBackupPublication();
 					}
 					Set<Long> unusedIds = mutationUnusedIds();
 					if (namespacesChanged) {
@@ -9497,7 +9520,7 @@ class LmdbSailStore implements SailStore {
 					prepareBackupStage(previousRequiredTxn, backupRecords);
 					tripleStore.commitNamespaceSnapshot(currentNamespaces,
 							storeReplayDecision == null ? tripleStore.prepareReplayDecision() : storeReplayDecision,
-							backupPublicationEnabled);
+							backupBoundaryTrackingEnabled);
 					nativeCommitted = true;
 					publishCommittedDelta(previousRequiredTxn, backupRecords);
 				}
@@ -9760,6 +9783,9 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void clearPendingBackupRecords() {
+		if (pendingBackupRecords == null) {
+			return;
+		}
 		try {
 			pendingBackupRecords.clear();
 		} catch (IOException failure) {
@@ -11326,7 +11352,9 @@ class LmdbSailStore implements SailStore {
 		// already closed, and admitted publication/native owners have completed before we acquire it.
 		sinkStoreAccessLock.lock();
 		try {
-			failure = attemptClose(failure, pendingBackupRecords::close);
+			if (pendingBackupRecords != null) {
+				failure = attemptClose(failure, pendingBackupRecords::close);
+			}
 			boolean nativePairOpen = valueStore != null && tripleStore != null
 					&& valueStore.isNativeEnvironmentOpen() && tripleStore.isNativeEnvironmentOpen();
 			if (nativePairOpen) {
@@ -14760,7 +14788,7 @@ class LmdbSailStore implements SailStore {
 									: bulkOperationSize;
 							bulk = new BulkAddQuadsOperation(explicit, capacity);
 							bulk.estimatorCallback = this::queueEstimatorAdd;
-							bulk.backupCallback = this::queueBackupAdd;
+							bulk.backupCallback = backupPublicationEnabled ? this::queueBackupAdd : null;
 						} else if (bulk.size == bulk.capacity) {
 							// A weakly consistent set's size is only an allocation hint. Expand before resolving this
 							// row.
@@ -15053,7 +15081,7 @@ class LmdbSailStore implements SailStore {
 					q.pred = pred;
 					q.obj = obj;
 					configureEstimatorAdd(q);
-					q.backupCallback = this::queueBackupAdd;
+					q.backupCallback = backupPublicationEnabled ? this::queueBackupAdd : null;
 
 					if (multiThreadingActive) {
 						enqueueAsync(q);
@@ -15628,7 +15656,7 @@ class LmdbSailStore implements SailStore {
 			long retainedBytes = state.pendingBytes - pending.estimatedStorageBytes(pending.size);
 			state.pendingBytes = 0L;
 			BulkAddQuadsOperation batch = pending.prepare();
-			batch.backupCallback = this::queueBackupAdd;
+			batch.backupCallback = backupPublicationEnabled ? this::queueBackupAdd : null;
 			LmdbInitialRunImport runImport = acceptingInitialRunImport();
 			LmdbInitialRunImport ownImport = initialRunImport;
 			if (ownImport != null && ownImport.owner == writerOwner() && !ownImport.completing()
@@ -16089,7 +16117,7 @@ class LmdbSailStore implements SailStore {
 			q.pred = pred;
 			q.obj = obj;
 			q.estimatorCallback = this::queueEstimatorAdd;
-			q.backupCallback = this::queueBackupAdd;
+			q.backupCallback = backupPublicationEnabled ? this::queueBackupAdd : null;
 			submitOperation(q);
 		}
 
@@ -20405,7 +20433,8 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public OptionalLong adjacencyStatisticsGeneration() {
 			return withNativeSourceRead(() -> !hasStatementsInSource() || !directEligible()
-					? OptionalLong.empty() : directAdjacency.plannerStatisticsGeneration(adjacencyView));
+					? OptionalLong.empty()
+					: directAdjacency.plannerStatisticsGeneration(adjacencyView));
 		}
 
 		@Override

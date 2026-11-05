@@ -75,6 +75,10 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 				"\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
 @ConfigProperty(
+		predicate = "http://rdf4j.org/config/sail/lmdb#backupJournalEnabled", description = "Enable durable incremental/PITR backup journaling. Disabled by default; startup-only. Enabling requires a fresh full backup before incremental creation.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
+				"\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
+)
+@ConfigProperty(
 		predicate = "http://rdf4j.org/config/sail/lmdb#noReadahead", description = "Disable operating-system read-ahead for LMDB data files.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
 				"\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
@@ -405,6 +409,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean forceSync = false;
 
+	private boolean backupJournalEnabled = false;
+
 	private boolean noReadahead = false;
 
 	private int valueCacheSize = -1;
@@ -631,6 +637,21 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public long getValueDBSize() {
 		return valueDBSize >= 0 ? valueDBSize : VALUE_DB_SIZE;
+	}
+
+	/** Whether durable incremental/PITR journals are enabled. Full snapshots do not require this setting. */
+	public boolean getBackupJournalEnabled() {
+		return backupJournalEnabled;
+	}
+
+	/**
+	 * Enables durable incremental/PITR journaling for the next store initialization. Disabled by default. A fresh full
+	 * backup is required after first enabling, migration, or any disabled interval. Journaled commits force native and
+	 * journal storage even when {@link #getForceSync()} is false.
+	 */
+	public LmdbStoreConfig setBackupJournalEnabled(boolean enabled) {
+		backupJournalEnabled = enabled;
+		return this;
 	}
 
 	public boolean getForceSync() {
@@ -1463,6 +1484,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (valueDBSize >= 0) {
 			m.add(implNode, LmdbStoreSchema.VALUE_DB_SIZE, vf.createLiteral(valueDBSize));
 		}
+		if (backupJournalEnabled) {
+			m.add(implNode, LmdbStoreSchema.BACKUP_JOURNAL_ENABLED, vf.createLiteral(true));
+		}
 		if (forceSync) {
 			m.add(implNode, LmdbStoreSchema.FORCE_SYNC, vf.createLiteral(true));
 		}
@@ -1757,6 +1781,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 											+ " property, found " + lit);
 						}
 					});
+
+			Literal backupJournalEnabledLiteral = singleBooleanLiteral(m, implNode,
+					LmdbStoreSchema.BACKUP_JOURNAL_ENABLED);
+			if (backupJournalEnabledLiteral != null) {
+				setBackupJournalEnabled(
+						parseBoolean(backupJournalEnabledLiteral, LmdbStoreSchema.BACKUP_JOURNAL_ENABLED));
+			}
 
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.FORCE_SYNC, null)).ifPresent(lit -> {
 				try {
