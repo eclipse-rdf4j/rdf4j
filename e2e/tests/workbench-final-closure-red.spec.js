@@ -42,7 +42,7 @@ test.afterAll(async ({ request }) => {
 	await request.delete(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`);
 });
 
-test('semantic action icons and padding activate native controls while disabled paging stays inert', async ({ page }) => {
+test('semantic action icons and padding activate native controls while disabled paging stays inert', async ({ page, request }) => {
 	await page.setViewportSize({ width: 390, height: 1000 });
 	await page.goto(`${WORKBENCH_BASE_URL}/repositories/NONE/create?type=memory-rdfs-dt`, { waitUntil: 'domcontentloaded' });
 	const cancel = page.locator('form[action="create"] [data-workbench-action="cancel"] input[type="button"]');
@@ -78,13 +78,20 @@ test('semantic action icons and padding activate native controls while disabled 
 	await page.mouse.click(box.x + box.width - 2, box.y + box.height / 2);
 	await expect.poll(() => page.evaluate(() => window.__closureAction)).toBe('create');
 
-	// Query results have no paging since Load more replaced it; Explore keeps its paging buttons, which are native
-	// buttons of the shared component and disabled on a resource's only page.
-	await page.goto(`${REPOSITORY_BASE_URL}/explore?resource=%3Chttp%3A%2F%2Fexample.org%2Falice%3E`,
+	// Explore's section pager uses native buttons; Previous is disabled on the first cached page.
+	const loaded = await request.post(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}/statements`, {
+		headers: { 'Content-Type': 'application/n-triples' },
+		data: Array.from({ length: 101 }, (_, index) => `<urn:closure:pager> <urn:p> "${index}" .`).join('\n')
+	});
+	expect([200, 201, 204]).toContain(loaded.status());
+	await page.goto(`${REPOSITORY_BASE_URL}/explore?resource=${encodeURIComponent('<urn:closure:pager>')}`,
 		{ waitUntil: 'domcontentloaded' });
-	const disabledPaging = page.locator('#explore-pagination #previousX');
+	const disabledPaging = page.locator('[data-explore-role="outgoing"] .workbench-window-controls')
+		.getByRole('button', { name: 'Previous', exact: true });
 	await expect(disabledPaging).toBeVisible();
 	await expect(disabledPaging).toBeDisabled();
+	expect(await disabledPaging.evaluate(element => Number.parseFloat(getComputedStyle(element).opacity)),
+		'disabled Explore paging controls should be visibly muted').toBeLessThan(1);
 	const pagedUrl = page.url();
 	await disabledPaging.evaluate(element => {
 		window.__closureAction = '';
@@ -466,40 +473,31 @@ test('empty Explore results do not show orphaned pagination controls', async ({ 
 	await page.goto(`${REPOSITORY_BASE_URL}/explore?resource=%3Chttp%3A%2F%2Fexample.org%2Fmissing%3E`, {
 		waitUntil: 'domcontentloaded'
 	});
-	await expect(page.locator('#explore-results .workbench-empty')).toBeVisible();
-	await expect(page.locator('#explore-pagination')).toBeHidden();
+	await expect(page.locator('#explore-results > .workbench-empty')).toHaveText('No results to display.');
+	await expect(page.locator('#explore-results .workbench-window-controls')).toHaveCount(0);
 });
 
 test('Explore uses a short heading and separate readable resource metadata', async ({ page }) => {
 	await page.goto(`${REPOSITORY_BASE_URL}/explore?resource=%3Chttp%3A%2F%2Fexample.org%2Falice%3E`, { waitUntil: 'domcontentloaded' });
 	await expect(page.locator('#title_heading')).toHaveText('Explore');
-	const metadata = page.locator('#explore-resource-summary');
+	const metadata = page.locator('#explore-resource-card');
 	await expect(metadata).toBeVisible();
 	await expect(metadata).toContainText('http://example.org/alice');
-	await expect(metadata).toContainText(/Rows 1–\d+ of \d+/);
-	await expect(page.locator('#explore-pagination')).toHaveCount(1);
-	await expect(page.locator('.explore-pagination__label')).toHaveCount(0);
-	await expect(page.locator('#previousX')).toBeDisabled();
-	await expect(page.locator('#nextX')).toBeDisabled();
-	const disabledOpacity = await page.locator('#previousX, #nextX').evaluateAll(elements =>
-		elements.map(element => Number.parseFloat(getComputedStyle(element).opacity)));
-	expect(disabledOpacity.every(opacity => opacity < 1),
-		'disabled Explore paging controls should be visibly muted').toBe(true);
+	const outgoing = page.locator('[data-explore-role="outgoing"]');
+	await expect(outgoing.locator('.explore-group__count')).toHaveText('2');
+	await expect(outgoing.locator('[data-workbench-row-index]')).toHaveCount(2);
+	await expect(outgoing.locator('.workbench-window-controls')).toHaveCount(0);
 });
 
-test('Explore keeps an empty offset page recoverable with previous navigation', async ({ page }) => {
+test('Explore ignores an old offset and shows the first cached page', async ({ page }) => {
 	await page.goto(`${REPOSITORY_BASE_URL}/explore?resource=%3Chttp%3A%2F%2Fexample.org%2Falice%3E&offset=100`, {
 		waitUntil: 'domcontentloaded'
 	});
-	await expect(page.locator('#explore-results .workbench-empty')).toBeVisible();
-	await expect(page.locator('#explore-pagination')).toHaveCount(1);
-	await expect(page.locator('.explore-pagination__label')).toHaveCount(0);
-	await expect(page.locator('#previousX')).toBeEnabled();
-	await expect(page.locator('#nextX')).toBeDisabled();
-	await expect(page.locator('#explore-result-count')).toHaveText('Rows 0 of 2');
-	await expect(page.locator('#explore-results table.data')).toBeHidden();
-	await page.locator('#previousX').click();
-	await expect(page.locator('#explore-results table.data tbody tr')).not.toHaveCount(0);
+	const outgoing = page.locator('[data-explore-role="outgoing"]');
+	await expect(outgoing.locator('.explore-group__count')).toHaveText('2');
+	await expect(outgoing.locator('[data-workbench-row-index]')).toHaveCount(2);
+	await expect(outgoing.locator('[data-workbench-row-index]').first()).toHaveAttribute('data-workbench-row-index', '0');
+	await expect(outgoing.locator('.workbench-window-controls')).toHaveCount(0);
 });
 
 test('Diff modal locks background focus and restores its trigger on Escape', async ({ page }) => {
