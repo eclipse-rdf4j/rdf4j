@@ -36,7 +36,8 @@ class LmdbBackupPublicationTest {
 
 	@Test
 	void replayedOverflowIsPublishedByTheAuthoritativeStore(@TempDir Path directory) throws Exception {
-		LmdbStore store = new LmdbStore(directory.resolve("repository").toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(directory.resolve("repository").toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true));
 		store.init();
 		Path overflowDirectory = Files.createDirectory(directory.resolve("overflow"));
 		try (LmdbSailStore overflow = store.createOverflowStore(overflowDirectory.toFile(), false);

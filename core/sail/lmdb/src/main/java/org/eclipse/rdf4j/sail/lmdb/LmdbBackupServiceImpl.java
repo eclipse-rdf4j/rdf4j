@@ -18,8 +18,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -31,8 +31,8 @@ import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.OptionalLong;
 import java.util.Objects;
+import java.util.OptionalLong;
 import java.util.Properties;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -151,9 +151,9 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		backupOperationLock.lock();
 		try {
 			ensureOpen();
-            if (request.getType() == BackupType.INCREMENTAL) {
-                ensureIncrementalBaseline(request);
-            }
+			if (request.getType() == BackupType.INCREMENTAL) {
+				ensureIncrementalBaseline(request);
+			}
 			Path backupDir = request.getBackupDirectory();
 			ensureBackupDirectoryIsOutsideStore(backupDir);
 			txLogPublicationLock.lock();
@@ -162,8 +162,8 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				if (!requestedRoot.equals(txLogRoot)) {
 					createDurableDirectories(requestedRoot);
 					if (journalState.enabled()) {
-                        migrateTransactionLogs(txLogRoot, requestedRoot);
-                    }
+						migrateTransactionLogs(txLogRoot, requestedRoot);
+					}
 					persistBackupDirectory(requestedRoot);
 					txLogRoot = requestedRoot;
 				}
@@ -184,98 +184,98 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		}
 	}
 
-    @Override
-    public Path restore(PointInTimeRestoreRequest request) throws SailException {
-        backupOperationLock.lock();
-        List<Path> temporaryLogDirs = new ArrayList<>();
-        Path staging = null;
-        try {
-            ensureOpen();
-            Path restoreDir = validateRestoreDestination(request);
-            BackupResult base = listByType(request.getBackupDirectory(), BackupType.FULL).stream()
-                    .filter(it -> it.getEndTransactionId() <= request.getTargetTransactionId())
-                    .max(Comparator.comparingLong(BackupResult::getEndTransactionId)
-                            .thenComparing(BackupResult::getCreatedAt))
-                    .orElseThrow(() -> new SailException("No full backup found for requested transaction id"));
-            if (pathsOverlap(restoreDir, canonicalPath(base.getArtifactPath()))) {
-                throw new SailException("Restore destination overlaps the source snapshot");
-            }
-            if (request.isVerifyBeforeRestore() && !verify(base)) {
-                throw new SailException("Base backup checksum verification failed");
-            }
-            BackupContinuity continuity = readContinuity(base);
-            if (!continuity.journaled() && request.getTargetTransactionId() != base.getEndTransactionId()) {
-                throw new SailException("A full-only snapshot can only restore its exact transaction boundary");
-            }
-            // Validate complete coverage and generation identity before touching the destination.
-            List<Path> logs = collectRestoreDeltaLogs(request.getBackupDirectory(), base.getEndTransactionId(),
-                    request.getTargetTransactionId(), request.isVerifyBeforeRestore(), continuity.generation(),
-                    temporaryLogDirs);
-            Files.createDirectories(restoreDir.getParent());
-            staging = Files.createTempDirectory(restoreDir.getParent(), ".tmp-lmdb-restore-");
-            restoreSnapshot(base.getArtifactPath(), staging);
-            LmdbBackupJournalState.disableRestoredStore(staging);
-            writeBackupDirectory(staging, staging.resolve("backup"));
-            applyDeltaLogs(logs, staging, base.getEndTransactionId(), request.getTargetTransactionId(),
-                    request.isVerifyBeforeRestore(), continuity.generation() != null || !continuity.journaled());
-            writeBackupDirectory(staging, restoreDir.resolve("backup"));
-            forceBackupArtifact(staging);
-            validateRestoreDestination(request);
-            // Both directories are siblings. No non-atomic fallback may expose a partially restored store.
-            Files.move(staging, restoreDir, StandardCopyOption.ATOMIC_MOVE);
-            staging = null;
-            StoreProperties.forceParentDirectory(restoreDir.getParent());
-            return request.getRestoreDirectory();
-        } catch (IOException e) {
-            throw new SailException(e);
-        } finally {
-            try {
-                if (staging != null) {
-                    deleteRecursively(staging);
-                }
-                for (Path temporaryLogDir : temporaryLogDirs) {
-                    deleteRecursively(temporaryLogDir);
-                }
-            } catch (IOException cleanupFailure) {
-                logger.warn("Unable to remove temporary LMDB restore files", cleanupFailure);
-            } finally {
-                backupOperationLock.unlock();
-            }
-        }
-    }
+	@Override
+	public Path restore(PointInTimeRestoreRequest request) throws SailException {
+		backupOperationLock.lock();
+		List<Path> temporaryLogDirs = new ArrayList<>();
+		Path staging = null;
+		try {
+			ensureOpen();
+			Path restoreDir = validateRestoreDestination(request);
+			BackupResult base = listByType(request.getBackupDirectory(), BackupType.FULL).stream()
+					.filter(it -> it.getEndTransactionId() <= request.getTargetTransactionId())
+					.max(Comparator.comparingLong(BackupResult::getEndTransactionId)
+							.thenComparing(BackupResult::getCreatedAt))
+					.orElseThrow(() -> new SailException("No full backup found for requested transaction id"));
+			if (pathsOverlap(restoreDir, canonicalPath(base.getArtifactPath()))) {
+				throw new SailException("Restore destination overlaps the source snapshot");
+			}
+			if (request.isVerifyBeforeRestore() && !verify(base)) {
+				throw new SailException("Base backup checksum verification failed");
+			}
+			BackupContinuity continuity = readContinuity(base);
+			if (!continuity.journaled() && request.getTargetTransactionId() != base.getEndTransactionId()) {
+				throw new SailException("A full-only snapshot can only restore its exact transaction boundary");
+			}
+			// Validate complete coverage and generation identity before touching the destination.
+			List<Path> logs = collectRestoreDeltaLogs(request.getBackupDirectory(), base.getEndTransactionId(),
+					request.getTargetTransactionId(), request.isVerifyBeforeRestore(), continuity.generation(),
+					temporaryLogDirs);
+			Files.createDirectories(restoreDir.getParent());
+			staging = Files.createTempDirectory(restoreDir.getParent(), ".tmp-lmdb-restore-");
+			restoreSnapshot(base.getArtifactPath(), staging);
+			LmdbBackupJournalState.disableRestoredStore(staging);
+			writeBackupDirectory(staging, staging.resolve("backup"));
+			applyDeltaLogs(logs, staging, base.getEndTransactionId(), request.getTargetTransactionId(),
+					request.isVerifyBeforeRestore(), continuity.generation() != null || !continuity.journaled());
+			writeBackupDirectory(staging, restoreDir.resolve("backup"));
+			forceBackupArtifact(staging);
+			validateRestoreDestination(request);
+			// Both directories are siblings. No non-atomic fallback may expose a partially restored store.
+			Files.move(staging, restoreDir, StandardCopyOption.ATOMIC_MOVE);
+			staging = null;
+			StoreProperties.forceParentDirectory(restoreDir.getParent());
+			return request.getRestoreDirectory();
+		} catch (IOException e) {
+			throw new SailException(e);
+		} finally {
+			try {
+				if (staging != null) {
+					deleteRecursively(staging);
+				}
+				for (Path temporaryLogDir : temporaryLogDirs) {
+					deleteRecursively(temporaryLogDir);
+				}
+			} catch (IOException cleanupFailure) {
+				logger.warn("Unable to remove temporary LMDB restore files", cleanupFailure);
+			} finally {
+				backupOperationLock.unlock();
+			}
+		}
+	}
 
-    private Path validateRestoreDestination(PointInTimeRestoreRequest request) throws IOException {
-        Path requested = request.getRestoreDirectory().toAbsolutePath().normalize();
-        Path target = canonicalPath(requested);
-        if (pathsOverlap(target, canonicalPath(storeRoot))
-                || pathsOverlap(target, canonicalPath(request.getBackupDirectory()))) {
-            throw new SailException("Restore destination must not overlap the live store or backup directory");
-        }
-        if (Files.exists(requested, LinkOption.NOFOLLOW_LINKS)) {
-            if (!Files.isDirectory(requested, LinkOption.NOFOLLOW_LINKS)) {
-                throw new SailException("Restore destination must be absent or an empty directory");
-            }
-            try (var children = Files.list(requested)) {
-                if (children.findAny().isPresent()) {
-                    throw new SailException("Restore destination must be absent or an empty directory");
-                }
-            }
-        }
-        return target;
-    }
+	private Path validateRestoreDestination(PointInTimeRestoreRequest request) throws IOException {
+		Path requested = request.getRestoreDirectory().toAbsolutePath().normalize();
+		Path target = canonicalPath(requested);
+		if (pathsOverlap(target, canonicalPath(storeRoot))
+				|| pathsOverlap(target, canonicalPath(request.getBackupDirectory()))) {
+			throw new SailException("Restore destination must not overlap the live store or backup directory");
+		}
+		if (Files.exists(requested, LinkOption.NOFOLLOW_LINKS)) {
+			if (!Files.isDirectory(requested, LinkOption.NOFOLLOW_LINKS)) {
+				throw new SailException("Restore destination must be absent or an empty directory");
+			}
+			try (var children = Files.list(requested)) {
+				if (children.findAny().isPresent()) {
+					throw new SailException("Restore destination must be absent or an empty directory");
+				}
+			}
+		}
+		return target;
+	}
 
-    private static boolean pathsOverlap(Path first, Path second) {
-        return first.startsWith(second) || second.startsWith(first);
-    }
+	private static boolean pathsOverlap(Path first, Path second) {
+		return first.startsWith(second) || second.startsWith(first);
+	}
 
-    private static Path canonicalPath(Path path) throws IOException {
-        Path absolute = path.toAbsolutePath().normalize();
-        if (Files.exists(absolute, LinkOption.NOFOLLOW_LINKS)) {
-            return absolute.toRealPath();
-        }
-        Path parent = absolute.getParent();
-        return parent == null ? absolute : canonicalPath(parent).resolve(absolute.getFileName());
-    }
+	private static Path canonicalPath(Path path) throws IOException {
+		Path absolute = path.toAbsolutePath().normalize();
+		if (Files.exists(absolute, LinkOption.NOFOLLOW_LINKS)) {
+			return absolute.toRealPath();
+		}
+		Path parent = absolute.getParent();
+		return parent == null ? absolute : canonicalPath(parent).resolve(absolute.getFileName());
+	}
 
 	@Override
 	public List<BackupResult> listBackups(Path backupDirectory) throws SailException {
@@ -293,13 +293,13 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	@Override
 	public UUID schedule(BackupSchedule schedule) throws SailException {
 		ensureOpen();
-        if (schedule.getRequest().getType() == BackupType.INCREMENTAL) {
-            try {
-                ensureIncrementalBaseline(schedule.getRequest());
-            } catch (IOException failure) {
-                throw new SailException(failure);
-            }
-        }
+		if (schedule.getRequest().getType() == BackupType.INCREMENTAL) {
+			try {
+				ensureIncrementalBaseline(schedule.getRequest());
+			} catch (IOException failure) {
+				throw new SailException(failure);
+			}
+		}
 		UUID id = UUID.randomUUID();
 		ScheduleState state = new ScheduleState(id, schedule, Instant.now());
 		scheduleStates.put(id, state);
@@ -422,7 +422,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				deleteRecursively(snapshotDir);
 			}
 			String sha = checksum(artifactPath);
-            forceBackupArtifact(artifactPath);
+			forceBackupArtifact(artifactPath);
 			promoteBackupContainer(tempContainer, container);
 			promoted = true;
 			Path finalArtifactPath = container.resolve(artifactPath.getFileName());
@@ -430,9 +430,9 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 					OptionalLong.empty(), finalArtifactPath, sha, request.isVerifyAfterWrite());
 			try {
 				writeMetadata(container.resolve(META_FILE), result);
-                if (journalState.enabled()) {
-                    journalState.establishBaseline(txnId);
-                }
+				if (journalState.enabled()) {
+					journalState.establishBaseline(txnId);
+				}
 				recordSuccess(result);
 			} catch (IOException | RuntimeException e) {
 				deleteRecursively(container);
@@ -447,37 +447,38 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		}
 	}
 
-	private void ensureBackupDirectoryIsOutsideStore(Path backupDirectory) {
-		Path normalizedBackupDir = backupDirectory.toAbsolutePath().normalize();
-		if (normalizedBackupDir.startsWith(storeRoot)) {
+	private void ensureBackupDirectoryIsOutsideStore(Path backupDirectory) throws IOException {
+		if (canonicalPath(backupDirectory).startsWith(canonicalPath(storeRoot))) {
 			throw new SailException("Full backup directory must not be nested inside the LMDB data directory");
 		}
 	}
 
-    private void ensureIncrementalBaseline(BackupRequest request) throws IOException {
-        if (!journalState.enabled()) {
-            throw new SailException("Incremental backup journaling is disabled; set backupJournalEnabled=true "
-                    + "before opening the store and create a fresh full backup");
-        }
-        long baseline = journalState.firstFullBaseline();
-        OptionalLong since = request.getSinceTransactionId();
-        if (since.isEmpty()) {
-            throw new SailException("Incremental backup requires sinceTransactionId");
-        }
-        if (baseline < 0 || since.getAsLong() < baseline) {
-            throw new SailException("Incremental backup requires a fresh full baseline from the current journal generation");
-        }
-        for (BackupResult full : listByType(request.getBackupDirectory(), BackupType.FULL)) {
-            if (full.getEndTransactionId() >= baseline && full.getEndTransactionId() <= since.getAsLong()
-                    && Files.exists(full.getArtifactPath())) {
-                BackupContinuity continuity = readContinuity(full);
-                if (continuity.journaled() && journalState.generation().equals(continuity.generation())) {
-                    return;
-                }
-            }
-        }
-        throw new SailException("No retained full baseline from the current journal generation in the backup directory");
-    }
+	private void ensureIncrementalBaseline(BackupRequest request) throws IOException {
+		if (!journalState.enabled()) {
+			throw new SailException("Incremental backup journaling is disabled; set backupJournalEnabled=true "
+					+ "before opening the store and create a fresh full backup");
+		}
+		long baseline = journalState.firstFullBaseline();
+		OptionalLong since = request.getSinceTransactionId();
+		if (since.isEmpty()) {
+			throw new SailException("Incremental backup requires sinceTransactionId");
+		}
+		if (baseline < 0 || since.getAsLong() < baseline) {
+			throw new SailException(
+					"Incremental backup requires a fresh full baseline from the current journal generation");
+		}
+		for (BackupResult full : listByType(request.getBackupDirectory(), BackupType.FULL)) {
+			if (full.getEndTransactionId() >= baseline && full.getEndTransactionId() <= since.getAsLong()
+					&& Files.exists(full.getArtifactPath())) {
+				BackupContinuity continuity = readContinuity(full);
+				if (continuity.journaled() && journalState.generation().equals(continuity.generation())) {
+					return;
+				}
+			}
+		}
+		throw new SailException(
+				"No retained full baseline from the current journal generation in the backup directory");
+	}
 
 	private BackupResult createIncrementalBackup(BackupRequest request) throws IOException {
 		OptionalLong since = request.getSinceTransactionId();
@@ -510,7 +511,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				deleteRecursively(deltaDir);
 			}
 			String sha = checksum(artifactPath);
-            forceBackupArtifact(artifactPath);
+			forceBackupArtifact(artifactPath);
 			promoteBackupContainer(tempContainer, container);
 			promoted = true;
 			Path finalArtifactPath = container.resolve(artifactPath.getFileName());
@@ -682,85 +683,86 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		txLogPublished.signalAll();
 	}
 
-    private void applyDeltaLogs(List<Path> logs, Path restoreDirectory, long expectedBaseline, long expectedTarget,
-            boolean verify, boolean strictBoundary) throws IOException {
-        var model = new LinkedHashModel();
-        var node = config.export(model);
-        LmdbStoreConfig replayConfig = new LmdbStoreConfig();
-        replayConfig.parse(model, node);
-        replayConfig.setBackupJournalEnabled(false);
-        LmdbStore restored = new LmdbStore(restoreDirectory.toFile(), replayConfig);
-        restored.init();
-            try (SailConnection connection = restored.getConnection()) {
-                if (strictBoundary && restored.getBackingStore().getCurrentCommittedTxnId() != expectedBaseline) {
-                    throw new SailException("Full snapshot native boundary does not match its metadata");
-                }
-				for (Path log : logs) {
-					if (verify && Files.size(log) == 0) {
-						throw new SailException("Empty transaction log file: " + log);
-					}
-					try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(log)))) {
-						List<Record> records = LmdbBackupDeltaCodec.read(in);
-						connection.begin();
-						try {
-							for (Record record : records) {
-								if (record.isNamespaceOperation()) {
-									switch (record.getNamespaceOperation()) {
-									case SET -> connection.setNamespace(record.getNamespacePrefix(),
-											record.getNamespaceName());
-									case REMOVE -> connection.removeNamespace(record.getNamespacePrefix());
-									case CLEAR -> connection.clearNamespaces();
-									default -> throw new SailException(
-											"Unsupported namespace operation in backup delta: "
-													+ record.getNamespaceOperation());
-									}
-									continue;
+	private void applyDeltaLogs(List<Path> logs, Path restoreDirectory, long expectedBaseline, long expectedTarget,
+			boolean verify, boolean strictBoundary) throws IOException {
+		var model = new LinkedHashModel();
+		var node = config.export(model);
+		LmdbStoreConfig replayConfig = new LmdbStoreConfig();
+		replayConfig.parse(model, node);
+		replayConfig.setBackupJournalEnabled(false);
+		LmdbStore restored = new LmdbStore(restoreDirectory.toFile(), replayConfig);
+		restored.init();
+		try (SailConnection connection = restored.getConnection()) {
+			if (strictBoundary && restored.getBackingStore().getCurrentCommittedTxnId() != expectedBaseline) {
+				throw new SailException("Full snapshot native boundary does not match its metadata");
+			}
+			for (Path log : logs) {
+				if (verify && Files.size(log) == 0) {
+					throw new SailException("Empty transaction log file: " + log);
+				}
+				try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(log)))) {
+					List<Record> records = LmdbBackupDeltaCodec.read(in);
+					connection.begin();
+					try {
+						for (Record record : records) {
+							if (record.isNamespaceOperation()) {
+								switch (record.getNamespaceOperation()) {
+								case SET -> connection.setNamespace(record.getNamespacePrefix(),
+										record.getNamespaceName());
+								case REMOVE -> connection.removeNamespace(record.getNamespacePrefix());
+								case CLEAR -> connection.clearNamespaces();
+								default -> throw new SailException(
+										"Unsupported namespace operation in backup delta: "
+												+ record.getNamespaceOperation());
 								}
-								Statement st = record.getStatement();
-								if (record.isAddition()) {
-									if (record.isExplicit()) {
-										connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(),
-												st.getContext());
-									} else if (connection instanceof LmdbStoreConnection lmdbConnection) {
-										lmdbConnection.addInferredStatement(st.getSubject(), st.getPredicate(),
-												st.getObject(),
-												st.getContext());
-									} else {
-										throw new SailException(
-												"Restored store does not support inferred statement replay");
-									}
-								} else if (record.isExplicit()) {
-									connection.removeStatements(st.getSubject(), st.getPredicate(), st.getObject(),
+								continue;
+							}
+							Statement st = record.getStatement();
+							if (record.isAddition()) {
+								if (record.isExplicit()) {
+									connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(),
 											st.getContext());
 								} else if (connection instanceof LmdbStoreConnection lmdbConnection) {
-									lmdbConnection.removeInferredStatement(st.getSubject(), st.getPredicate(),
+									lmdbConnection.addInferredStatement(st.getSubject(), st.getPredicate(),
 											st.getObject(),
 											st.getContext());
 								} else {
 									throw new SailException(
 											"Restored store does not support inferred statement replay");
 								}
+							} else if (record.isExplicit()) {
+								connection.removeStatements(st.getSubject(), st.getPredicate(), st.getObject(),
+										st.getContext());
+							} else if (connection instanceof LmdbStoreConnection lmdbConnection) {
+								lmdbConnection.removeInferredStatement(st.getSubject(), st.getPredicate(),
+										st.getObject(),
+										st.getContext());
+							} else {
+								throw new SailException(
+										"Restored store does not support inferred statement replay");
 							}
-							connection.commit();
-						} catch (RuntimeException e) {
-							connection.rollback();
-							throw e;
 						}
+						connection.commit();
+					} catch (RuntimeException e) {
+						connection.rollback();
+						throw e;
 					}
 				}
-                if (strictBoundary && restored.getBackingStore().getCurrentCommittedTxnId() != expectedTarget) {
-                    throw new SailException("Restored native boundary does not match the requested transaction");
-                }
-			} finally {
-				restored.shutDown();
-			}    }
+			}
+			if (strictBoundary && restored.getBackingStore().getCurrentCommittedTxnId() != expectedTarget) {
+				throw new SailException("Restored native boundary does not match the requested transaction");
+			}
+		} finally {
+			restored.shutDown();
+		}
+	}
 
 	private List<Path> collectRestoreDeltaLogs(Path backupDirectory, long fromExclusive, long toInclusive,
 			boolean verify, UUID generation, List<Path> temporaryLogDirs)
 			throws IOException {
-        if (fromExclusive == toInclusive) {
-            return List.of();
-        }
+		if (fromExclusive == toInclusive) {
+			return List.of();
+		}
 		List<BackupResult> incrementalBackups = listByType(backupDirectory, BackupType.INCREMENTAL).stream()
 				.filter(result -> result.getBaseTransactionId().isPresent())
 				.filter(result -> result.getEndTransactionId() > fromExclusive)
@@ -770,10 +772,10 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 
 		Map<Long, Path> selectedLogs = new TreeMap<>();
 		for (BackupResult incremental : incrementalBackups) {
-            BackupContinuity continuity = readContinuity(incremental);
-            if (!continuity.journaled() || !Objects.equals(generation, continuity.generation())) {
-                continue;
-            }
+			BackupContinuity continuity = readContinuity(incremental);
+			if (!continuity.journaled() || !Objects.equals(generation, continuity.generation())) {
+				continue;
+			}
 			List<Path> extracted = extractIncrementalLogs(incremental, verify);
 			if (!Files.isDirectory(incremental.getArtifactPath()) && !extracted.isEmpty()) {
 				temporaryLogDirs.add(extracted.getFirst().getParent());
@@ -795,7 +797,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	}
 
 	private static void validateLogCoverage(List<Path> logs, long fromExclusive, long toInclusive, UUID generation)
-            throws IOException {
+			throws IOException {
 		long previous = fromExclusive;
 		for (Path log : logs) {
 			long transactionId = parseTransactionId(log);
@@ -944,15 +946,15 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		try (ZipInputStream zip = new ZipInputStream(new BufferedInputStream(Files.newInputStream(zipPath)))) {
 			ZipEntry entry;
 			while ((entry = zip.getNextEntry()) != null) {
-                Path root = targetDir.toAbsolutePath().normalize();
-                Path out = root.resolve(entry.getName()).normalize();
-                if (!out.startsWith(root)) {
-                    throw new IOException("Backup ZIP entry escapes its destination: " + entry.getName());
-                }
-                if (entry.isDirectory()) {
-                    Files.createDirectories(out);
-                    continue;
-                }
+				Path root = targetDir.toAbsolutePath().normalize();
+				Path out = root.resolve(entry.getName()).normalize();
+				if (!out.startsWith(root)) {
+					throw new IOException("Backup ZIP entry escapes its destination: " + entry.getName());
+				}
+				if (entry.isDirectory()) {
+					Files.createDirectories(out);
+					continue;
+				}
 				Files.createDirectories(out.getParent());
 				try (OutputStream outStream = new BufferedOutputStream(Files.newOutputStream(out))) {
 					zip.transferTo(outStream);
@@ -1004,53 +1006,53 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		props.setProperty("artifactPath", relativeArtifactPath.toString());
 		props.setProperty("sha256", result.getSha256());
 		props.setProperty("verified", String.valueOf(result.isVerified()));
-        props.setProperty("journalMode", journalState.enabled() ? "JOURNALED" : "FULL_ONLY");
-        if (journalState.enabled()) {
-            props.setProperty("journalGeneration", journalState.generation().toString());
-        }
-        Path temporary = Files.createTempFile(path.getParent(), ".tmp-metadata-", ".properties");
-        try {
-            try (OutputStream out = Files.newOutputStream(temporary)) {
-                props.store(out, "LMDB backup metadata");
-            }
-            PostCommitBackupPublisher.forceFile(temporary);
-            Files.move(temporary, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            StoreProperties.forceParentDirectory(path.getParent());
-            StoreProperties.forceParentDirectory(path.getParent().getParent());
-        } finally {
-            Files.deleteIfExists(temporary);
-        }
-    }
+		props.setProperty("journalMode", journalState.enabled() ? "JOURNALED" : "FULL_ONLY");
+		if (journalState.enabled()) {
+			props.setProperty("journalGeneration", journalState.generation().toString());
+		}
+		Path temporary = Files.createTempFile(path.getParent(), ".tmp-metadata-", ".properties");
+		try {
+			try (OutputStream out = Files.newOutputStream(temporary)) {
+				props.store(out, "LMDB backup metadata");
+			}
+			PostCommitBackupPublisher.forceFile(temporary);
+			Files.move(temporary, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+			StoreProperties.forceParentDirectory(path.getParent());
+			StoreProperties.forceParentDirectory(path.getParent().getParent());
+		} finally {
+			Files.deleteIfExists(temporary);
+		}
+	}
 
-    private record BackupContinuity(boolean journaled, UUID generation) {
-    }
+	private record BackupContinuity(boolean journaled, UUID generation) {
+	}
 
-    private static BackupContinuity readContinuity(BackupResult result) throws IOException {
-        Properties properties = new Properties();
-        try (InputStream input = Files.newInputStream(result.getArtifactPath().getParent().resolve(META_FILE))) {
-            properties.load(input);
-        }
-        String mode = properties.getProperty("journalMode");
-        String encoded = properties.getProperty("journalGeneration");
-        if (mode == null && encoded == null) {
-            // Published legacy backups remain restorable, but cannot consume new generation journals.
-            return new BackupContinuity(true, null);
-        }
-        if ("FULL_ONLY".equals(mode) && encoded == null) {
-            return new BackupContinuity(false, null);
-        }
-        if ("JOURNALED".equals(mode) && encoded != null) {
-            try {
-                UUID generation = UUID.fromString(encoded);
-                if (generation.toString().equals(encoded) && !generation.equals(PostCommitBackupPublisher.EMPTY)) {
-                    return new BackupContinuity(true, generation);
-                }
-            } catch (IllegalArgumentException malformed) {
-                throw new IOException("Malformed backup journal generation", malformed);
-            }
-        }
-        throw new IOException("Malformed or unsupported backup journal continuity metadata");
-    }
+	private static BackupContinuity readContinuity(BackupResult result) throws IOException {
+		Properties properties = new Properties();
+		try (InputStream input = Files.newInputStream(result.getArtifactPath().getParent().resolve(META_FILE))) {
+			properties.load(input);
+		}
+		String mode = properties.getProperty("journalMode");
+		String encoded = properties.getProperty("journalGeneration");
+		if (mode == null && encoded == null) {
+			// Published legacy backups remain restorable, but cannot consume new generation journals.
+			return new BackupContinuity(true, null);
+		}
+		if ("FULL_ONLY".equals(mode) && encoded == null) {
+			return new BackupContinuity(false, null);
+		}
+		if ("JOURNALED".equals(mode) && encoded != null) {
+			try {
+				UUID generation = UUID.fromString(encoded);
+				if (generation.toString().equals(encoded) && !generation.equals(PostCommitBackupPublisher.EMPTY)) {
+					return new BackupContinuity(true, generation);
+				}
+			} catch (IllegalArgumentException malformed) {
+				throw new IOException("Malformed backup journal generation", malformed);
+			}
+		}
+		throw new IOException("Malformed or unsupported backup journal continuity metadata");
+	}
 
 	private static BackupResult readMetadata(Path path) throws IOException {
 		Properties props = new Properties();
@@ -1108,27 +1110,27 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	}
 
 	private void promoteBackupContainer(Path source, Path target) throws IOException {
-        createDurableDirectories(target.getParent());
-        Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
-        StoreProperties.forceParentDirectory(target.getParent());
+		createDurableDirectories(target.getParent());
+		Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
+		StoreProperties.forceParentDirectory(target.getParent());
 	}
 
-    private static void forceBackupArtifact(Path artifact) throws IOException {
-        if (Files.isDirectory(artifact)) {
-            try (var paths = Files.walk(artifact)) {
-                for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
-                    if (Files.isDirectory(path)) {
-                        StoreProperties.forceParentDirectory(path);
-                    } else {
-                        PostCommitBackupPublisher.forceFile(path);
-                    }
-                }
-            }
-        } else {
-            PostCommitBackupPublisher.forceFile(artifact);
-        }
-        StoreProperties.forceParentDirectory(artifact.getParent());
-    }
+	private static void forceBackupArtifact(Path artifact) throws IOException {
+		if (Files.isDirectory(artifact)) {
+			try (var paths = Files.walk(artifact)) {
+				for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+					if (Files.isDirectory(path)) {
+						StoreProperties.forceParentDirectory(path);
+					} else {
+						PostCommitBackupPublisher.forceFile(path);
+					}
+				}
+			}
+		} else {
+			PostCommitBackupPublisher.forceFile(artifact);
+		}
+		StoreProperties.forceParentDirectory(artifact.getParent());
+	}
 
 	private void recordSuccess(BackupResult result) {
 		lastSuccessfulBackup.set(result);

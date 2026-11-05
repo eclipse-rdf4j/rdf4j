@@ -94,24 +94,24 @@ final class PostCommitBackupPublisher implements LmdbSailStore.CommitListener {
 		}
 	}
 
-    /** Starts a new recovery generation without deleting the preceding generation's unpublished evidence. */
-    static void resetForNewGeneration(LmdbSailStore store) throws IOException {
-        store.valueStore().syncBackupBoundary();
-        store.getTripleStore().syncBackupBoundary();
-        Path root = store.dataDirectory();
-        LmdbBackupServiceImpl.createDurableDirectories(root.resolve("values"));
-        LmdbBackupServiceImpl.createDurableDirectories(root.resolve("triples"));
-        Path directory = root.resolve(DIRECTORY);
-        if (Files.exists(directory)) {
-            Path archive = root.resolve(ARCHIVE_DIRECTORY);
-            LmdbBackupServiceImpl.createDurableDirectories(archive);
-            Files.move(directory, archive.resolve(UUID.randomUUID().toString()), StandardCopyOption.ATOMIC_MOVE);
-            StoreProperties.forceParentDirectory(archive);
-            StoreProperties.forceParentDirectory(root);
-        }
-        writeAcknowledgement(directory, store.getTripleStore().getBackupOutboxHead(),
-                store.getCurrentCommittedTxnId());
-    }
+	/** Starts a new recovery generation without deleting the preceding generation's unpublished evidence. */
+	static void resetForNewGeneration(LmdbSailStore store) throws IOException {
+		store.valueStore().syncBackupBoundary();
+		store.getTripleStore().syncBackupBoundary();
+		Path root = store.dataDirectory();
+		LmdbBackupServiceImpl.createDurableDirectories(root.resolve("values"));
+		LmdbBackupServiceImpl.createDurableDirectories(root.resolve("triples"));
+		Path directory = root.resolve(DIRECTORY);
+		if (Files.exists(directory)) {
+			Path archive = root.resolve(ARCHIVE_DIRECTORY);
+			LmdbBackupServiceImpl.createDurableDirectories(archive);
+			Files.move(directory, archive.resolve(UUID.randomUUID().toString()), StandardCopyOption.ATOMIC_MOVE);
+			StoreProperties.forceParentDirectory(archive);
+			StoreProperties.forceParentDirectory(root);
+		}
+		writeAcknowledgement(directory, store.getTripleStore().getBackupOutboxHead(),
+				store.getCurrentCommittedTxnId());
+	}
 
 	PostCommitBackupPublisher(LmdbSailStore backingStore, LmdbBackupServiceImpl backupService) {
 		this.backingStore = backingStore;

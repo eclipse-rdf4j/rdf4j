@@ -41,7 +41,7 @@ final class LmdbBackupDeltaCodec {
 
 	private static final byte[] GENERATION_MAGIC = "R4J-LMDB-DELTA-3".getBytes(StandardCharsets.US_ASCII);
 
-    record Journal(long previousTransactionId, UUID generation, List<Record> records) {
+	record Journal(long previousTransactionId, UUID generation, List<Record> records) {
 		Journal {
 			records = List.copyOf(records);
 		}
@@ -72,26 +72,26 @@ final class LmdbBackupDeltaCodec {
 		writeJournal(outputStream, records, previousTransactionId, null);
 	}
 
-    static void write(OutputStream outputStream, List<Record> records, long previousTransactionId, UUID generation)
-            throws IOException {
-        if (previousTransactionId < 0 || generation == null || generation.equals(PostCommitBackupPublisher.EMPTY)) {
-            throw new IllegalArgumentException("A generation journal requires a valid predecessor and generation");
-        }
-        writeJournal(outputStream, records, previousTransactionId, generation);
-    }
+	static void write(OutputStream outputStream, List<Record> records, long previousTransactionId, UUID generation)
+			throws IOException {
+		if (previousTransactionId < 0 || generation == null || generation.equals(PostCommitBackupPublisher.EMPTY)) {
+			throw new IllegalArgumentException("A generation journal requires a valid predecessor and generation");
+		}
+		writeJournal(outputStream, records, previousTransactionId, generation);
+	}
 
-    private static void writeJournal(OutputStream outputStream, List<Record> records, long previousTransactionId,
-            UUID generation) throws IOException {
+	private static void writeJournal(OutputStream outputStream, List<Record> records, long previousTransactionId,
+			UUID generation) throws IOException {
 		try (DataOutputStream out = new DataOutputStream(outputStream)) {
 			out.writeInt(MAGIC.length);
 			out.write(generation != null ? GENERATION_MAGIC : previousTransactionId < 0 ? MAGIC : CHAINED_MAGIC);
 			if (previousTransactionId >= 0) {
 				out.writeLong(previousTransactionId);
 			}
-            if (generation != null) {
-                out.writeLong(generation.getMostSignificantBits());
-                out.writeLong(generation.getLeastSignificantBits());
-            }
+			if (generation != null) {
+				out.writeLong(generation.getMostSignificantBits());
+				out.writeLong(generation.getLeastSignificantBits());
+			}
 			out.writeInt(records.size());
 			for (Record record : records) {
 				writeRecord(out, record);
@@ -132,13 +132,13 @@ final class LmdbBackupDeltaCodec {
 		return readJournal(inputStream, false).previousTransactionId();
 	}
 
-    static long validateJournal(InputStream inputStream, UUID expectedGeneration) throws IOException {
-        Journal journal = readJournal(inputStream, false);
-        if (!Objects.equals(expectedGeneration, journal.generation())) {
-            throw new IOException("Backup journal generation does not match the full baseline");
-        }
-        return journal.previousTransactionId();
-    }
+	static long validateJournal(InputStream inputStream, UUID expectedGeneration) throws IOException {
+		Journal journal = readJournal(inputStream, false);
+		if (!Objects.equals(expectedGeneration, journal.generation())) {
+			throw new IOException("Backup journal generation does not match the full baseline");
+		}
+		return journal.previousTransactionId();
+	}
 
 	private static Journal readJournal(InputStream inputStream, boolean retainRecords) throws IOException {
 		ValueFactory vf = SimpleValueFactory.getInstance();
@@ -149,7 +149,7 @@ final class LmdbBackupDeltaCodec {
 			byte[] magic = new byte[MAGIC.length];
 			in.readFully(magic);
 			boolean generationJournal = java.util.Arrays.equals(GENERATION_MAGIC, magic);
-            boolean chained = generationJournal || java.util.Arrays.equals(CHAINED_MAGIC, magic);
+			boolean chained = generationJournal || java.util.Arrays.equals(CHAINED_MAGIC, magic);
 			if (!chained && !java.util.Arrays.equals(MAGIC, magic)) {
 				throw new IOException("Unexpected LMDB delta log header");
 			}
@@ -157,10 +157,10 @@ final class LmdbBackupDeltaCodec {
 			if (chained && previousTransactionId < 0) {
 				throw new IOException("Negative previous transaction ID in backup delta");
 			}
-            UUID generation = generationJournal ? new UUID(in.readLong(), in.readLong()) : null;
-            if (PostCommitBackupPublisher.EMPTY.equals(generation)) {
-                throw new IOException("Empty generation in backup delta");
-            }
+			UUID generation = generationJournal ? new UUID(in.readLong(), in.readLong()) : null;
+			if (PostCommitBackupPublisher.EMPTY.equals(generation)) {
+				throw new IOException("Empty generation in backup delta");
+			}
 			int recordCount = in.readInt();
 			if (recordCount < 0) {
 				throw new IOException("Negative record count in backup delta");

@@ -543,8 +543,8 @@ public class LmdbStore extends AbstractNotifyingSail
 			postCommitPublisher = backingStore.backupPublisher();
 			backupService = new LmdbBackupServiceImpl(this, backingStore, config, postCommitPublisher);
 			if (postCommitPublisher != null) {
-                postCommitPublisher.setBackupService(backupService);
-            }
+				postCommitPublisher.setBackupService(backupService);
+			}
 			properties.save();
 			if (resetInitialImport) {
 				LmdbInitialRunImport.completeReset(dataDir.toPath(), format);

@@ -69,7 +69,8 @@ class LmdbBackupServiceTest {
 		Path restoreDir = tempDir.resolve("restore");
 		Files.createDirectories(storeDir);
 
-		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(storeDir.toFile(),
+				new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 
@@ -125,7 +126,8 @@ class LmdbBackupServiceTest {
 			assertEquals(restoreDir, restored);
 			assertTrue(Files.exists(restored));
 
-			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
+					new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 			SailRepository restoredRepo = new SailRepository(restoredStore);
 			restoredRepo.init();
 			try {
@@ -150,7 +152,8 @@ class LmdbBackupServiceTest {
 		Path restoreDir = tempDir.resolve("restore");
 		Files.createDirectories(storeDir);
 
-		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(storeDir.toFile(),
+				new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 		try {
@@ -193,7 +196,8 @@ class LmdbBackupServiceTest {
 
 			Path restored = backupService.restore(new PointInTimeRestoreRequest(backupDir, restoreDir,
 					incremental.getEndTransactionId(), true));
-			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
+					new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 			try (SailConnection conn = restoredStore.getConnection()) {
 				assertFalse(conn.hasStatement(inferredAdded.getSubject(), inferredAdded.getPredicate(),
 						inferredAdded.getObject(), false));
@@ -217,7 +221,8 @@ class LmdbBackupServiceTest {
 		Path restoreDir = tempDir.resolve("restore");
 		Files.createDirectories(storeDir);
 
-		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(storeDir.toFile(),
+				new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 		try {
@@ -235,7 +240,8 @@ class LmdbBackupServiceTest {
 					full.getEndTransactionId(), true));
 
 			assertEquals(restoreDir, restored);
-			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
+					new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 			SailRepository restoredRepo = new SailRepository(restoredStore);
 			restoredRepo.init();
 			try (RepositoryConnection conn = restoredRepo.getConnection()) {
@@ -255,7 +261,8 @@ class LmdbBackupServiceTest {
 		Path restoreDir = tempDir.resolve("restore");
 		Files.createDirectories(storeDir);
 
-		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(storeDir.toFile(),
+				new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 		try {
@@ -307,7 +314,8 @@ class LmdbBackupServiceTest {
 
 			Path restored = backupService.restore(new PointInTimeRestoreRequest(backupDir, restoreDir,
 					incrementalAfterClear.getEndTransactionId(), true));
-			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
+					new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 			try (SailConnection conn = restoredStore.getConnection()) {
 				assertEquals("http://example.com/after#", conn.getNamespace("after"));
 				assertNull(conn.getNamespace("base"));
@@ -328,7 +336,8 @@ class LmdbBackupServiceTest {
 		Path hiddenTxLogDir = tempDir.resolve("txlog-hidden");
 		Files.createDirectories(storeDir);
 
-		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(storeDir.toFile(),
+				new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 
@@ -366,7 +375,8 @@ class LmdbBackupServiceTest {
 			Path restored = backupService.restore(new PointInTimeRestoreRequest(backupDir, restoreDir,
 					incremental.getEndTransactionId(), true));
 
-			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
+					new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 			SailRepository restoredRepo = new SailRepository(restoredStore);
 			restoredRepo.init();
 			try {
@@ -464,7 +474,8 @@ class LmdbBackupServiceTest {
 		Path hiddenTxLogDir = tempDir.resolve("txlog-hidden");
 		Files.createDirectories(storeDir);
 
-		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(storeDir.toFile(),
+				new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 
@@ -516,7 +527,8 @@ class LmdbBackupServiceTest {
 		Path nestedBackupDir = storeDir.resolve("backup");
 		Files.createDirectories(storeDir);
 
-		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(storeDir.toFile(),
+				new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 		try {
@@ -538,7 +550,8 @@ class LmdbBackupServiceTest {
 		Path backupDir = tempDir.resolve("backup");
 		Files.createDirectories(storeDir);
 
-		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(storeDir.toFile(),
+				new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 
@@ -602,7 +615,8 @@ class LmdbBackupServiceTest {
 		Files.createDirectories(storeDir);
 		Files.writeString(invalidBackupTarget, "not a directory");
 
-		LmdbStore store = new LmdbStore(storeDir.toFile(), new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(storeDir.toFile(),
+				new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 
@@ -844,10 +858,10 @@ class LmdbBackupServiceTest {
 			allowSnapshot.countDown();
 			BackupResult result = backup.get(10, TimeUnit.SECONDS);
 			mutation.get(10, TimeUnit.SECONDS);
-            if (journaled) {
-                assertEquals(result.getEndTransactionId(),
-                        store.getBackingStore().backupJournalState().firstFullBaseline());
-            }
+			if (journaled) {
+				assertEquals(result.getEndTransactionId(),
+						store.getBackingStore().backupJournalState().firstFullBaseline());
+			}
 			try (RepositoryConnection connection = repo.getConnection()) {
 				assertEquals(1, connection.size());
 				assertFalse(connection.hasStatement(statementA, false));

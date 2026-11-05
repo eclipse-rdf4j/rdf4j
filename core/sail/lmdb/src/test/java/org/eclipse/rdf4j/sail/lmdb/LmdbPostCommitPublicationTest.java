@@ -126,7 +126,8 @@ class LmdbPostCommitPublicationTest {
 	private static void crashAndRecover(Path directory, String boundary) throws Exception {
 		Path live = directory.resolve("live");
 		Path backups = directory.resolve("backups");
-		LmdbStore initial = new LmdbStore(live.toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true).setForceSync(false));
+		LmdbStore initial = new LmdbStore(live.toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true).setForceSync(false));
 		initial.init();
 		BackupResult full;
 		try {
@@ -152,7 +153,8 @@ class LmdbPostCommitPublicationTest {
 		}
 		Path log = backups.resolve("txlog").resolve(logName(full.getEndTransactionId() + 1));
 		assertEquals(boundary.equals("before-acknowledgement"), Files.exists(log));
-		LmdbStore recovered = new LmdbStore(live.toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true).setForceSync(false));
+		LmdbStore recovered = new LmdbStore(live.toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true).setForceSync(false));
 		recovered.init();
 		try {
 			BackupResult incremental = recovered.getBackupService()
@@ -173,7 +175,8 @@ class LmdbPostCommitPublicationTest {
 	}
 
 	public static void main(String[] arguments) throws Exception {
-		LmdbStore store = new LmdbStore(Path.of(arguments[0]).toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true).setForceSync(false));
+		LmdbStore store = new LmdbStore(Path.of(arguments[0]).toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true).setForceSync(false));
 		store.init();
 		Runnable crash = () -> Runtime.getRuntime().halt(0);
 		if (arguments[1].equals("before-journal")) {
@@ -228,7 +231,8 @@ class LmdbPostCommitPublicationTest {
 	@Test
 	void blockedPublisherAllowsOrderedCommitsAndCompactSnapshot(@TempDir Path directory) throws Exception {
 		Path backups = directory.resolve("backups");
-		LmdbStore store = new LmdbStore(directory.resolve("live").toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(directory.resolve("live").toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true));
 		store.init();
 		ExecutorService tasks = Executors.newFixedThreadPool(2);
 		CountDownLatch entered = new CountDownLatch(1);
@@ -296,7 +300,8 @@ class LmdbPostCommitPublicationTest {
 
 	@Test
 	void spilledRecordsRemainOwnedAfterFollowingCommit(@TempDir Path directory) throws Exception {
-		LmdbStore store = new LmdbStore(directory.resolve("live").toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(directory.resolve("live").toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true));
 		Path backups = directory.resolve("backups");
 		store.init();
 		CountDownLatch entered = new CountDownLatch(1);
@@ -338,7 +343,8 @@ class LmdbPostCommitPublicationTest {
 
 	@Test
 	void failedBackupRoutingDoesNotRedirectCommittedJournals(@TempDir Path directory) throws Exception {
-		LmdbStore store = new LmdbStore(directory.resolve("live").toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(directory.resolve("live").toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true));
 		Path backups = directory.resolve("backups");
 		store.init();
 		try {
@@ -417,7 +423,8 @@ class LmdbPostCommitPublicationTest {
 	@Test
 	void shutdownDrainsPublisherBeforeClosingService(@TempDir Path directory) throws Exception {
 		Path backups = directory.resolve("backups");
-		LmdbStore store = new LmdbStore(directory.resolve("live").toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(directory.resolve("live").toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true));
 		store.init();
 		CountDownLatch entered = new CountDownLatch(1);
 		CountDownLatch release = new CountDownLatch(1);
@@ -506,7 +513,8 @@ class LmdbPostCommitPublicationTest {
 			Path restored = reopened.getBackupService()
 					.restore(new PointInTimeRestoreRequest(backups,
 							directory.resolve("restored"), target, true));
-			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
+					new LmdbStoreConfig().setBackupJournalEnabled(true));
 			restoredStore.init();
 			try (SailConnection connection = restoredStore.getConnection()) {
 				assertEquals(1L, connection.size());

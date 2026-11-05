@@ -37,7 +37,8 @@ class LmdbBackupRecoveryTest {
 
 	@Test
 	void emptyFullSnapshotPreservesLogicalBoundaryAfterRestore(@TempDir Path directory) throws Exception {
-		LmdbStore store = new LmdbStore(directory.resolve("store").toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(directory.resolve("store").toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true));
 		store.init();
 		try {
 			Path backup = directory.resolve("backup");
@@ -45,7 +46,8 @@ class LmdbBackupRecoveryTest {
 			BackupResult full = full(service, backup);
 			Path restored = service.restore(new PointInTimeRestoreRequest(backup, directory.resolve("restore"),
 					full.getEndTransactionId(), true));
-			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
+					new LmdbStoreConfig().setBackupJournalEnabled(true));
 			restoredStore.init();
 			try {
 				assertEquals(full.getEndTransactionId(), restoredStore.getBackingStore().getCurrentCommittedTxnId());
@@ -100,7 +102,8 @@ class LmdbBackupRecoveryTest {
 			BackupResult recovered = incremental(service, backup, recoveredFull.getEndTransactionId());
 			Path restored = service.restore(new PointInTimeRestoreRequest(backup, directory.resolve("restore"),
 					recovered.getEndTransactionId(), true));
-			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
+					new LmdbStoreConfig().setBackupJournalEnabled(true));
 			restoredStore.init();
 			try {
 				assertPresent(restoredStore, "failed");
@@ -116,7 +119,8 @@ class LmdbBackupRecoveryTest {
 
 	@Test
 	void restoreFiltersIncrementalOverlappingNewerFullSnapshot(@TempDir Path directory) throws Exception {
-		LmdbStore store = new LmdbStore(directory.resolve("store").toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(directory.resolve("store").toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true));
 		store.init();
 		try {
 			Path backup = directory.resolve("backup");
@@ -134,7 +138,8 @@ class LmdbBackupRecoveryTest {
 			}
 			Path restored = service.restore(new PointInTimeRestoreRequest(backup, directory.resolve("restore"),
 					overlapping.getEndTransactionId(), true));
-			LmdbStore restoredStore = new LmdbStore(restored.toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
+					new LmdbStoreConfig().setBackupJournalEnabled(true));
 			restoredStore.init();
 			try {
 				assertPresent(restoredStore, "a");
@@ -151,7 +156,8 @@ class LmdbBackupRecoveryTest {
 
 	@Test
 	void restoreRejectsInteriorGapWithoutChecksumVerification(@TempDir Path directory) throws Exception {
-		LmdbStore store = new LmdbStore(directory.resolve("store").toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
+		LmdbStore store = new LmdbStore(directory.resolve("store").toFile(),
+				new LmdbStoreConfig().setBackupJournalEnabled(true));
 		store.init();
 		try {
 			Path backup = directory.resolve("backup");

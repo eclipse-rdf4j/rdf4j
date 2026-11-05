@@ -41,25 +41,26 @@ class LmdbBackupDeltaCodecTest {
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
 
-    @Test
-    void generationJournalsRejectDifferentOrLegacyBaselines() throws IOException {
-        UUID generation = UUID.randomUUID();
-        var record = new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.SET, "p", "urn:p:");
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        LmdbBackupDeltaCodec.write(bytes, List.of(record), 37L, generation);
-        var decoded = LmdbBackupDeltaCodec.readJournal(new ByteArrayInputStream(bytes.toByteArray()));
-        assertEquals(generation, decoded.generation());
-        assertEquals(37L, LmdbBackupDeltaCodec.validateJournal(new ByteArrayInputStream(bytes.toByteArray()), generation));
-        assertThrows(IOException.class, () -> LmdbBackupDeltaCodec.validateJournal(
-                new ByteArrayInputStream(bytes.toByteArray()), UUID.randomUUID()));
-        assertThrows(IOException.class, () -> LmdbBackupDeltaCodec.validateJournal(
-                new ByteArrayInputStream(bytes.toByteArray()), null));
-        ByteArrayOutputStream legacy = new ByteArrayOutputStream();
-        LmdbBackupDeltaCodec.write(legacy, List.of(record), 37L);
-        assertThrows(IOException.class, () -> LmdbBackupDeltaCodec.validateJournal(
-                new ByteArrayInputStream(legacy.toByteArray()), generation));
-        assertEquals(37L, LmdbBackupDeltaCodec.validateJournal(new ByteArrayInputStream(legacy.toByteArray()), null));
-    }
+	@Test
+	void generationJournalsRejectDifferentOrLegacyBaselines() throws IOException {
+		UUID generation = UUID.randomUUID();
+		var record = new LmdbBackupDeltaCodec.Record(LmdbBackupDeltaCodec.NamespaceOperation.SET, "p", "urn:p:");
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		LmdbBackupDeltaCodec.write(bytes, List.of(record), 37L, generation);
+		var decoded = LmdbBackupDeltaCodec.readJournal(new ByteArrayInputStream(bytes.toByteArray()));
+		assertEquals(generation, decoded.generation());
+		assertEquals(37L,
+				LmdbBackupDeltaCodec.validateJournal(new ByteArrayInputStream(bytes.toByteArray()), generation));
+		assertThrows(IOException.class, () -> LmdbBackupDeltaCodec.validateJournal(
+				new ByteArrayInputStream(bytes.toByteArray()), UUID.randomUUID()));
+		assertThrows(IOException.class, () -> LmdbBackupDeltaCodec.validateJournal(
+				new ByteArrayInputStream(bytes.toByteArray()), null));
+		ByteArrayOutputStream legacy = new ByteArrayOutputStream();
+		LmdbBackupDeltaCodec.write(legacy, List.of(record), 37L);
+		assertThrows(IOException.class, () -> LmdbBackupDeltaCodec.validateJournal(
+				new ByteArrayInputStream(legacy.toByteArray()), generation));
+		assertEquals(37L, LmdbBackupDeltaCodec.validateJournal(new ByteArrayInputStream(legacy.toByteArray()), null));
+	}
 
 	@Test
 	void roundTripsNestedTripleTermsAndStatementKinds() throws IOException {

@@ -143,8 +143,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostModelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeIdDomain;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -6883,7 +6883,8 @@ class LmdbSailStore implements SailStore {
 		this.dataDir = dataDir;
 		// Supplementary snapshot copying includes every child of the store directory.
 		this.pendingBackupRecords = backupPublicationEnabled
-				? new LmdbBackupRecordBuffer(Path.of(System.getProperty("java.io.tmpdir"))) : null;
+				? new LmdbBackupRecordBuffer(Path.of(System.getProperty("java.io.tmpdir")))
+				: null;
 		this.autoGrow = config.getAutoGrow();
 		this.asyncValueCleanup = config.getAsyncValueCleanup();
 		this.mapGrowthCoordinator = new MapGrowthCoordinator(config.getMapGrowthReadDrainTimeoutMillis());
@@ -6981,10 +6982,10 @@ class LmdbSailStore implements SailStore {
 					directAdjacencyOptions.buildOnStart());
 			valueStore.setStartupValueOverlayScheduling(valueOverlayStartupScheduling);
 			logLmdbStats(Level.INFO, "on startup");
-            if (!temporaryOverflow) {
-                backupJournalState = LmdbBackupJournalState.open(dataDir.toPath(), backupPublicationEnabled,
-                        getCurrentCommittedTxnId(), () -> PostCommitBackupPublisher.resetForNewGeneration(this));
-            }
+			if (!temporaryOverflow) {
+				backupJournalState = LmdbBackupJournalState.open(dataDir.toPath(), backupPublicationEnabled,
+						getCurrentCommittedTxnId(), () -> PostCommitBackupPublisher.resetForNewGeneration(this));
+			}
 			if (backupPublicationEnabled) {
 				// Direct SailSource users need the same durable chain as owning LmdbStore connections.
 				// Disposable overflow input is backed up only when replayed into the authoritative store.
@@ -7182,9 +7183,9 @@ class LmdbSailStore implements SailStore {
 		return dataDir.toPath();
 	}
 
-    LmdbBackupJournalState backupJournalState() {
-        return backupJournalState;
-    }
+	LmdbBackupJournalState backupJournalState() {
+		return backupJournalState;
+	}
 
 	PostCommitBackupPublisher backupPublisher() {
 		return postCommitBackupPublisher;
@@ -7231,9 +7232,9 @@ class LmdbSailStore implements SailStore {
 				String name = child.getFileName().toString();
 				if (TRIPLES_DIR_NAME.equals(name) || VALUES_DIR_NAME.equals(name)
 						|| PostCommitBackupPublisher.DIRECTORY.equals(name)
-                        || PostCommitBackupPublisher.ARCHIVE_DIRECTORY.equals(name)
-                        || "backup".equals(name) || name.startsWith("backup-records-")
-                        || name.startsWith(".tmp-backup-journal-")) {
+						|| PostCommitBackupPublisher.ARCHIVE_DIRECTORY.equals(name)
+						|| "backup".equals(name) || name.startsWith("backup-records-")
+						|| name.startsWith(".tmp-backup-journal-")) {
 					continue;
 				}
 				copyRecursively(child, targetDir.resolve(name));
@@ -7750,14 +7751,14 @@ class LmdbSailStore implements SailStore {
 				if (activeTransaction) {
 					drainAsyncOperations();
 					backupRecords = collectBackupRecords(previousNamespaces, currentNamespaces);
-                    if (!backupRecords.isEmpty()) {
-                        prepareBackupStage(previousRequiredTxn, backupRecords);
-                        tripleStore.requireBackupPublication();
-                    } else if (backupBoundaryTrackingEnabled && !backupPublicationEnabled) {
-                        // Keep snapshot identities current without capturing or publishing recovery records.
-                        // The boundary is stored in the same native commit, with the ordinary sync policy.
-                        tripleStore.requireBackupPublication();
-                    }
+					if (!backupRecords.isEmpty()) {
+						prepareBackupStage(previousRequiredTxn, backupRecords);
+						tripleStore.requireBackupPublication();
+					} else if (backupBoundaryTrackingEnabled && !backupPublicationEnabled) {
+						// Keep snapshot identities current without capturing or publishing recovery records.
+						// The boundary is stored in the same native commit, with the ordinary sync policy.
+						tripleStore.requireBackupPublication();
+					}
 					Set<Long> unusedIds = mutationUnusedIds();
 					if (namespacesChanged) {
 						stageNamespaceSnapshot(currentNamespaces);
@@ -7824,7 +7825,7 @@ class LmdbSailStore implements SailStore {
 					prepareBackupStage(previousRequiredTxn, backupRecords);
 					tripleStore.commitNamespaceSnapshot(currentNamespaces,
 							storeReplayDecision == null ? tripleStore.prepareReplayDecision() : storeReplayDecision,
-                            backupBoundaryTrackingEnabled);
+							backupBoundaryTrackingEnabled);
 					nativeCommitted = true;
 					publishCommittedDelta(previousRequiredTxn, backupRecords);
 				}
@@ -8069,9 +8070,9 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void clearPendingBackupRecords() {
-        if (pendingBackupRecords == null) {
-            return;
-        }
+		if (pendingBackupRecords == null) {
+			return;
+		}
 		try {
 			pendingBackupRecords.clear();
 		} catch (IOException failure) {
@@ -9057,8 +9058,8 @@ class LmdbSailStore implements SailStore {
 		sinkStoreAccessLock.lock();
 		try {
 			if (pendingBackupRecords != null) {
-                failure = attemptClose(failure, pendingBackupRecords::close);
-            }
+				failure = attemptClose(failure, pendingBackupRecords::close);
+			}
 			if (valueStore != null && tripleStore != null) {
 				failure = attemptClose(failure, () -> logLmdbStats(Level.INFO, "on shutdown"));
 			}
@@ -12434,18 +12435,18 @@ class LmdbSailStore implements SailStore {
 				for (long contextId : contexts) {
 					Consumer<long[]> removed = quad -> {
 						removeCount[0]++;
-                        if (backupPublicationEnabled || explicit && sketchBasedJoinEstimator != null) {
-                            try {
-                                Statement removedStatement = valueStore.withWriterCaptureContext(
-                                        (stack, txn) -> captureBackupStatement(quadToStatement(quad)));
-                                queueBackupRemove(removedStatement);
-                                if (explicit) {
-                                    queueEstimatorRemove(removedStatement);
-                                }
-                            } catch (IOException e) {
-                                throw new UncheckedIOException(e);
-                            }
-                        }
+						if (backupPublicationEnabled || explicit && sketchBasedJoinEstimator != null) {
+							try {
+								Statement removedStatement = valueStore.withWriterCaptureContext(
+										(stack, txn) -> captureBackupStatement(quadToStatement(quad)));
+								queueBackupRemove(removedStatement);
+								if (explicit) {
+									queueEstimatorRemove(removedStatement);
+								}
+							} catch (IOException e) {
+								throw new UncheckedIOException(e);
+							}
+						}
 						for (long id : quad) {
 							if (id != 0L && !ValueIds.isInlined(id)) {
 								// only add references, exclude inlined values
