@@ -749,7 +749,8 @@ final class LmdbNativeParallelPipelines {
 		boolean producerScanComplete;
 		boolean producerClosed;
 		boolean metricsCommitted;
-		boolean started;
+		/** A worker was submitted, or a caller took over a worker's accounting through runTask or taskFinished. */
+		volatile boolean started;
 		boolean closed;
 		boolean exhausted;
 
@@ -854,6 +855,7 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void runTask(IoTask task, MultiJoinPlan ownedPlan, NativeLmdbQuerySource.ParallelSource ownedSource) {
+			started = true;
 			runTask(task, ownedPlan, ownedSource, NativeExecutionContext.captureWorkerContext());
 		}
 
@@ -999,6 +1001,7 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void taskFinished() {
+			started = true;
 			tasks.countDown();
 		}
 
@@ -1379,12 +1382,15 @@ final class LmdbNativeParallelPipelines {
 			}
 			closed = true;
 			cancelled.set(true);
-			if (!started) {
+			// Only a cursor no worker ever ran has tasks nobody will count down. A caller that drives runTask or
+			// taskFinished itself owns that worker's cleanup, so releasing it here would close its source twice.
+			boolean noWorkerRan = !started;
+			if (noWorkerRan) {
 				releaseUnsubmittedWorkers(0);
 			}
 			closeProducer();
 			awaitTasks();
-			if (started && !exhausted && failure.get() == null && cleanupFailures.isEmpty()) {
+			if (!noWorkerRan && !exhausted && failure.get() == null && cleanupFailures.isEmpty()) {
 				CANCELLED_RUNS.incrementAndGet();
 			}
 			reservation.close();
