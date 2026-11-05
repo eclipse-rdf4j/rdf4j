@@ -24,7 +24,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Featur
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 
@@ -35,10 +34,6 @@ final class NativeAggregateCostQuotes {
 	private final TupleExpr target;
 	private final NativeGroupIteration owner;
 	private final RowState row;
-	private final List<LmdbNativeStrategyProposal<?>> offered = new ArrayList<>();
-	private LmdbNativeStrategyProposal<?> headerReduction;
-	private String catalogReduction;
-	private boolean inspectedCatalogReduction;
 	private final Input input;
 	private final Input dependencyInput;
 	private final NativeTermDomainPlan domain;
@@ -51,10 +46,7 @@ final class NativeAggregateCostQuotes {
 	private final StringBuilder telemetry;
 	private final List<SnapshotRow> snapshotRows;
 
-	private record SnapshotRow(String strategy, NativePhysicalWorkQuote physical,
-			NativePhysicalWorkQuote estimate, String dominance,
-			LmdbNativeStrategyProposal.ExpectedPlanningPrior expectedPlanningPrior,
-			LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness) {
+	private record SnapshotRow(String strategy, NativePhysicalWorkQuote physical, NativePhysicalWorkQuote estimate) {
 	}
 
 	/** Already-computed quote data only; it retains no row, producer callback, source or ranking machinery. */
@@ -66,8 +58,7 @@ final class NativeAggregateCostQuotes {
 		void publish(TupleExpr target) {
 			StringBuilder json = new StringBuilder("[");
 			for (SnapshotRow row : rows) {
-				appendQuote(json, row.strategy(), row.physical(), row.estimate(), row.dominance(),
-						row.expectedPlanningPrior(), row.executionResourceWitness());
+				appendQuote(json, row.strategy(), row.physical(), row.estimate());
 			}
 			LmdbNativeExplain.setRuntimeMetric(target, METRIC, json.append(']').toString());
 		}
@@ -132,8 +123,6 @@ final class NativeAggregateCostQuotes {
 	}
 
 	<T> LmdbNativeStrategyProposal<T> attach(LmdbNativeStrategyProposal<T> proposal, String displayTag) {
-		offered.add(proposal);
-		registerSharedHeaderProof(proposal);
 		NativePhysicalWorkQuote legacy = proposal.typedQuote();
 		NativeAggregatePhysicalPlan actual = proposal.aggregatePhysicalPlan();
 		proposal.observeAggregateOpening(NativeAggregateExecutionEvent.describe(owner, displayTag, actual));
@@ -161,14 +150,11 @@ final class NativeAggregateCostQuotes {
 			}
 		}
 		if (telemetry != null || snapshotRows != null) {
-			String proof = proposal.physicalDominanceProof(offered);
 			if (snapshotRows != null) {
-				snapshotRows.add(new SnapshotRow(displayTag, physical, estimate, proof,
-						proposal.expectedPlanningPrior(), proposal.executionResourceWitness()));
+				snapshotRows.add(new SnapshotRow(displayTag, physical, estimate));
 			}
 			if (telemetry != null) {
-				appendQuote(telemetry, displayTag, physical, estimate, proof,
-						proposal.expectedPlanningPrior(), proposal.executionResourceWitness());
+				appendQuote(telemetry, displayTag, physical, estimate);
 				LmdbNativeExplain.setRuntimeMetric(target, METRIC, telemetry.toString() + ']');
 			}
 		}
@@ -176,9 +162,7 @@ final class NativeAggregateCostQuotes {
 	}
 
 	private static void appendQuote(StringBuilder json, String strategy, NativePhysicalWorkQuote physical,
-			NativePhysicalWorkQuote estimate, String proof,
-			LmdbNativeStrategyProposal.ExpectedPlanningPrior expectedPlanningPrior,
-			LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness) {
+			NativePhysicalWorkQuote estimate) {
 		if (json.length() > 1) {
 			json.append(',');
 		}
@@ -208,34 +192,6 @@ final class NativeAggregateCostQuotes {
 		} else {
 			string(json, missing);
 		}
-		json.append(",\"physicalDominanceProof\":");
-		if (proof == null) {
-			json.append("null");
-		} else {
-			string(json, proof);
-		}
-		json.append(",\"expectedPlanningPrior\":");
-		if (expectedPlanningPrior == null) {
-			json.append("null");
-		} else {
-			json.append("{\"unit\":\"native-work\",\"expectedTotalWork\":")
-					.append(expectedPlanningPrior.expectedTotalWork())
-					.append(",\"expectedBeforeFirstOutputWork\":")
-					.append(expectedPlanningPrior.expectedBeforeFirstOutputWork())
-					.append('}');
-		}
-		json.append(",\"executionResourceWitness\":");
-		if (executionResourceWitness == null) {
-			json.append("null");
-		} else {
-			json.append("{\"queryLedgerBounded\":")
-					.append(executionResourceWitness.queryLedgerBounded())
-					.append(",\"workerSlotsReservedOnOpen\":")
-					.append(executionResourceWitness.workerSlotsReservedOnOpen())
-					.append(",\"configuredWorkerSlots\":")
-					.append(executionResourceWitness.configuredWorkerSlots())
-					.append('}');
-		}
 		json.append('}');
 	}
 
@@ -262,100 +218,6 @@ final class NativeAggregateCostQuotes {
 		return summaryInputs || summaryResults || actual != null
 				? demands.append(";physicalInputs=").append(summaryInputs).toString()
 				: null;
-	}
-
-	private void registerSharedHeaderProof(LmdbNativeStrategyProposal<?> proposal) {
-		if (LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE.equals(proposal.tag)) {
-			headerReduction = proposal;
-		}
-		if (headerReduction == null) {
-			return;
-		}
-		for (LmdbNativeStrategyProposal<?> alternative : offered) {
-			NativeAggregatePhysicalPlan actual = alternative.aggregatePhysicalPlan();
-			if (actual == null || !(actual.producer() instanceof NativeAggregateKernelInput kernel)) {
-				continue;
-			}
-			LmdbNativeKernelIr.Node producer = kernel.lowered().kernel.pipeline.get(0);
-			boolean fixed = producer instanceof LmdbNativeKernelIr.EnumerateAdjKeys keys && !keys.wildcard;
-			boolean wildcard = producer instanceof LmdbNativeKernelIr.EnumerateWildcard;
-			if (!fixed && !wildcard) {
-				continue;
-			}
-			String catalogProof = wildcard ? inspectCatalogReduction(kernel.lowered()) : null;
-			if (catalogProof != null) {
-				alternative.physicallyDominatedBy(headerReduction, catalogProof);
-				continue;
-			}
-			HeaderEnumeration enumeration = fixed ? inspectHeaderEnumeration(kernel.lowered()) : null;
-			if (enumeration != null) {
-				alternative.physicallyDominatedBy(headerReduction,
-						"same complete visible predicate metadata (predicate=" + enumeration.predicate
-								+ ",enumerationDirection=" + (enumeration.bySubject ? "SOC" : "OSC")
-								+ "); exact requested domains answer the identical global COUNT demand without opening rows; "
-								+ "the lowered EnumerateAdjKeys additionally visits at least " + enumeration.units
-								+ " visible root keys");
-			}
-		}
-	}
-
-	private String inspectCatalogReduction(LmdbNativeKernelLowering.Lowered lowered) {
-		if (lowered == null || lowered.kernel.pipeline.size() != 1
-				|| !(lowered.kernel.pipeline.get(0) instanceof LmdbNativeKernelIr.EnumerateWildcard enumerate)
-				|| enumerate.ctxActive() || lowered.bindings.wildcardRequests.length != 1
-				|| lowered.kernel.requirements.wildcardViews != 1) {
-			return null;
-		}
-		if (inspectedCatalogReduction) {
-			return catalogReduction;
-		}
-		inspectedCatalogReduction = true;
-		if (owner.adjacencyAggregate == null || owner.havingCondition != null || !owner.base.isEmpty()
-				|| !(owner.arg instanceof PatternPlan pattern) || pattern.hasRuntimeBoundSlot(row)
-				|| pattern.hasRepeatedSlot() || pattern.contexts.isFixed() || pattern.namedContextScope
-				|| pattern.range != null || !owner.adjacencyAggregate.reducesCompleteVisiblePredicateCatalog(row)) {
-			return null;
-		}
-		row.cancellation.check();
-		// Both admitted sources traverse the same complete visible predicate catalog. Only EW must additionally
-		// bind each plane and open its roots/runs to recover the totals already present in that catalog. No number
-		// of predicates, roots, quads or elapsed nanoseconds is inferred, and no payload is opened while pricing.
-		catalogReduction = "same complete visible predicate catalog; exact predicate-plane totals answer the identical "
-				+ "COUNT/P grouping demand; the actual single EnumerateWildcard additionally opens root/run cursors "
-				+ "and visits the demanded members; cardinalities remain unknown";
-		return catalogReduction;
-	}
-
-	/** Only an actual, single lowered producer with exact visible counts establishes this relation. */
-	private HeaderEnumeration inspectHeaderEnumeration(LmdbNativeKernelLowering.Lowered lowered) {
-		if (owner.adjacencyAggregate == null || owner.groupSlots.length != 0 || owner.havingCondition != null
-				|| !owner.base.isEmpty() || !(owner.arg instanceof PatternPlan pattern)
-				|| pattern.hasRuntimeBoundSlot(row) || pattern.hasRepeatedSlot() || pattern.contexts.isFixed()
-				|| pattern.namedContextScope || pattern.range != null) {
-			return null;
-		}
-		if (lowered == null || lowered.kernel.pipeline.size() != 1
-				|| !(lowered.kernel.pipeline.get(0) instanceof LmdbNativeKernelIr.EnumerateAdjKeys enumerate)
-				|| enumerate.wildcard || enumerate.ctxActive() || lowered.bindings.adjacencies.length != 1) {
-			return null;
-		}
-		LmdbNativeKernelBindings.AdjacencyRequest request = lowered.bindings.adjacencies[enumerate.adjacency];
-		if (!owner.adjacencyAggregate.reducesCompleteVisiblePlaneFromMetadata(row, request.predicate)) {
-			return null;
-		}
-		row.cancellation.check();
-		// This source contract is exact for the current visible revision and includes only nonempty roots.
-		// It is available for resident and paged representations without opening either payload. quadCount(),
-		// in contrast, intentionally declines on several legal representations; UNKNOWN there is not zero work.
-		OptionalLong roots = row.source.adjacencyKeyDomainCardinality(request.predicate, request.bySubject);
-		row.cancellation.check();
-		if (roots.isPresent() && roots.getAsLong() > 0L) {
-			return new HeaderEnumeration(request.predicate, request.bySubject, roots.getAsLong());
-		}
-		return null;
-	}
-
-	private record HeaderEnumeration(long predicate, boolean bySubject, long units) {
 	}
 
 	NativePhysicalWorkQuote physical(String strategy, NativePhysicalWorkQuote legacy,

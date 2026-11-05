@@ -130,21 +130,7 @@ final class LmdbNativeExplain {
 		}
 	}
 
-	/** Records the two jointly admissible C/D costs that drove runtime arbitration. */
-	static void recordStrategyProposalCosts(TupleExpr expr, double batchCost, double parallelCost) {
-		recordStrategyProposalCosts(expr, LmdbNativeAttemptMetrics.PATH_BATCH, batchCost,
-				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, parallelCost);
-	}
-
-	static void recordStrategyProposalCosts(TupleExpr expr, String firstTag, double firstCost, String secondTag,
-			double secondCost) {
-		recordStrategyProposalCosts(expr, firstTag + "=" + firstCost + "," + secondTag + "=" + secondCost);
-	}
-
-	/**
-	 * Records the jointly admissible strategy costs that drove runtime arbitration, for any number of candidates.
-	 * Rendered as {@code tag=cost} pairs separated by commas, the same shape the two-way form has always emitted.
-	 */
+	/** Records the admissible strategy costs of a decision, rendered as {@code tag=cost} pairs separated by commas. */
 	static void recordStrategyProposalCosts(TupleExpr expr, String rendered) {
 		setRuntimeMetric(expr, STRATEGY_PROPOSAL_COSTS, rendered);
 	}

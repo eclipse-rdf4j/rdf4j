@@ -786,8 +786,8 @@ final class LmdbNativeFactorizedRows {
 
 	double proposalCost(RowState row) {
 		return keysOnlyRoot == null
-				? LmdbNativeStrategyProposal.factorizedCost(derived, flatCount, row)
-				: LmdbNativeStrategyProposal.factorizedCost(derived, flatCount, row,
+				? LmdbNativeWork.factorizedCost(derived, flatCount, row)
+				: LmdbNativeWork.factorizedCost(derived, flatCount, row,
 						keysOnlyRoot.distinctKeyEstimate(row));
 	}
 

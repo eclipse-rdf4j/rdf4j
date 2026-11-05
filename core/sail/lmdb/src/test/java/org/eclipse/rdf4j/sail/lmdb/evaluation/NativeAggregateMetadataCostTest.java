@@ -158,25 +158,6 @@ class NativeAggregateMetadataCostTest {
 	}
 
 	@Test
-	void completeCatalogProofCoversEquivalentSerialAndParallelWildcardProducers() {
-		GenericPlanNode telemetry = explain(PREDICATES, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE);
-		JsonNode quotes = quotes(telemetry);
-		List<String> equivalent = List.of(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_WILDCARD_INTERPRETED,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
-		assertAll("the actual same catalog/demand relation must survive the execution-family choice",
-				equivalent.stream().map(strategy -> (Executable) () -> {
-					JsonNode alternative = candidate(quotes, strategy);
-					assertNotNull(alternative,
-							"the legal alternative must remain in the common inventory: " + strategy);
-					String proof = alternative.path("physicalDominanceProof").asText("");
-					assertTrue(proof.contains("complete visible predicate catalog"),
-							() -> strategy + " needs the same concrete producer/demand proof: " + quotes);
-				}));
-	}
-
-	@Test
 	void fixedPredicatePlaneProofCoversSerialAndParallelAggregateFamilies() {
 		List<String> generic = genericRows(FIXED_PREDICATE_SUBJECTS);
 		assertEquals(List.of("count=\"64\"^^<http://www.w3.org/2001/XMLSchema#integer>"), generic,
@@ -188,16 +169,10 @@ class NativeAggregateMetadataCostTest {
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
-		assertAll("all legal fixed-plane variants retain the same exact metadata proof",
-				strategies.stream().map(strategy -> (Executable) () -> {
-					JsonNode alternative = candidate(inventory, strategy);
-					assertNotNull(alternative,
-							"the legal fixed-plane variant must remain in the common inventory: " + strategy);
-					assertTrue(alternative.path("physicalDominanceProof")
-							.asText("")
-							.contains("same complete visible predicate metadata"),
-							() -> strategy + " must carry the same complete-plane proof: " + inventory);
-				}));
+		assertAll("all legal fixed-plane variants stay in the inventory",
+				strategies.stream()
+						.map(strategy -> (Executable) () -> assertNotNull(candidate(inventory, strategy),
+								"the legal fixed-plane variant must remain in the common inventory: " + strategy)));
 
 		for (String strategy : strategies) {
 			assertEquals(generic, rows(FIXED_PREDICATE_SUBJECTS, strategy),
@@ -275,8 +250,6 @@ class NativeAggregateMetadataCostTest {
 				() -> "the actual visible root-merge plan has bounded physical work: " + quotes);
 		assertEquals(0D, expected(roots, LmdbNativeCostVector.Feature.HASH_BUILD_ROW),
 				"the ordered domain union retains a cursor heap, not all distinct object terms");
-		assertFalse(roots.path("physicalDominanceProof").asText("").contains("complete visible predicate catalog"),
-				"COUNT DISTINCT object cannot be answered by predicate-plane totals");
 	}
 
 	@Test
@@ -428,17 +401,6 @@ class NativeAggregateMetadataCostTest {
 	void catalogProofDoesNotEscapeItsVisibleDemand(String query) {
 		List<String> generic = genericRows(query);
 		assertEquals(generic, rows(query, null), "unsafe catalog substitution must never alter RDF mappings");
-		GenericPlanNode telemetry = explain(query, null);
-		String inventory = metric(telemetry, NativeAggregateCostQuotes.METRIC);
-		if (inventory != null) {
-			for (JsonNode quote : parse(inventory)) {
-				assertFalse(quote.path("physicalDominanceProof")
-						.asText("")
-						.contains("complete visible predicate catalog"),
-						() -> "the catalog proof must fail closed for this different visible demand: " + query
-								+ "\n" + inventory);
-			}
-		}
 	}
 
 	private static Stream<String> nonCatalogDemands() {

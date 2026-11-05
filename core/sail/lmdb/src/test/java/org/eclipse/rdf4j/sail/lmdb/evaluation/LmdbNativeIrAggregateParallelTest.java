@@ -338,7 +338,6 @@ class LmdbNativeIrAggregateParallelTest {
 				.isTrue();
 		boolean completeWorkEvidence = irCandidate.path("workEvidenceComplete").asBoolean();
 		JsonNode partialEstimate = irCandidate.path("partialEstimate");
-		JsonNode expectedPrior = irCandidate.path("expectedPlanningPrior");
 		assertThat(completeWorkEvidence)
 				.as("the multi-stage IR lane is compared on its point-estimate planning quote, so its comparable "
 						+ "work is complete even though no typed physical total is proved: %s", irCandidate)
@@ -346,46 +345,6 @@ class LmdbNativeIrAggregateParallelTest {
 		assertThat(partialEstimate.isNull())
 				.as("expected work must not be smuggled into a model cost vector: %s", irCandidate)
 				.isTrue();
-		assertThat(expectedPrior.isObject())
-				.as("the IR candidate must retain a separate expected planning prior while hard work is incomplete; "
-						+ "candidate=%s inventory=%s", irCandidate, inventory)
-				.isTrue();
-		JsonNode expectedWork = expectedPrior.path("expectedTotalWork");
-		assertThat(expectedWork.isNumber())
-				.as("the expected planning prior must carry work units: %s", expectedPrior)
-				.isTrue();
-		assertThat(expectedWork.asDouble())
-				.as("the expected IR work must be finite and positive: %s", expectedPrior)
-				.isFinite()
-				.isPositive();
-		assertThat(expectedPrior.path("expectedBeforeFirstOutputWork").asDouble())
-				.as("aggregate output is materialized before its first row, so LIMIT cannot prorate this work")
-				.isEqualTo(expectedWork.asDouble());
-	}
-
-	@Test
-	void multiPatternAggregateProposalCarriesBudgetedExecutionResourceWitness() {
-		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
-		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
-
-		JsonNode inventory = parseQuotes(explainPlan(GROUPED_QUERY, null));
-		JsonNode candidate = candidate(inventory,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
-		assertThat(candidate).as("the interpreted parallel aggregate must pass lowering admission: %s", inventory)
-				.isNotNull();
-		JsonNode witness = candidate.path("executionResourceWitness");
-		assertThat(witness.isObject())
-				.as("normal selection needs a separate resource witness from admitted kernel ownership: %s", candidate)
-				.isTrue();
-		assertThat(witness.path("queryLedgerBounded").asBoolean())
-				.as("aggregate retained state must be charged to the query ledger: %s", witness)
-				.isTrue();
-		assertThat(witness.path("workerSlotsReservedOnOpen").asBoolean())
-				.as("parallel task slots must be reserved by the selected opener: %s", witness)
-				.isTrue();
-		assertThat(witness.has("inputReductionProof"))
-				.as("the resource witness must not claim input reduction or a cold physical anchor: %s", witness)
-				.isFalse();
 	}
 
 	@Test

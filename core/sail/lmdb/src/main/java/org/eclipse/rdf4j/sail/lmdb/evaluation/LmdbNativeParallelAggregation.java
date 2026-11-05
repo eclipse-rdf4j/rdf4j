@@ -143,7 +143,7 @@ final class LmdbNativeParallelAggregation {
 		}
 		int threads = reservation.grantedWorkers();
 		int sourceCount = threads + (morselMode ? 1 : 0);
-		double estCost = LmdbNativeStrategyProposal.parallelCost(totalWork, threads);
+		double estCost = LmdbNativeWork.parallelCost(totalWork, threads);
 		AggregateCandidate candidate = new AggregateCandidate(it, plan, parentMetrics, derived, root,
 				preflightAggregateSlots, partitions, reservation, threads, sourceCount);
 		// declare the genuinely front-loaded worker-start cost separately (gap-analysis C4): workers, snapshot
@@ -164,7 +164,7 @@ final class LmdbNativeParallelAggregation {
 				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, threads))
 				.plus(LmdbNativeStaticPrior.parallelMerge(shape, threads));
 		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
-				LmdbNativeWork.exact(LmdbNativeStrategyProposal.parallelStartupCost()), Double.NaN,
+				LmdbNativeWork.exact(LmdbNativeWork.parallelStartupCost()), Double.NaN,
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close)
 						.withCostQuote(new LmdbNativeCostQuote(startup, streaming,
 								it.groupSlots.length == 0 && it.havingCondition == null ? 1D : Double.NaN, false,

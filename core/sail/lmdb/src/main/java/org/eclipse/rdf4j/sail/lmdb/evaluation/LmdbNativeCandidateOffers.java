@@ -14,9 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.io.IOException;
 
 /**
- * The surface a dispatch site offers its strategies through while they are still expressed as proposal factories.
- * {@link LmdbNativeOfferBridge} is its implementation: it turns every offer into a {@link LmdbNativeStrategy} for the
- * {@link LmdbNativeDispatchLoop}.
+ * The surface a dispatch site offers its strategies through. {@link LmdbNativeOffers} collects them for the
+ * {@link LmdbNativeDispatchLoop}; a nested site maps its offers onto an enclosing site's result carrier by implementing
+ * this surface itself.
  */
 abstract class LmdbNativeCandidateOffers<T> {
 

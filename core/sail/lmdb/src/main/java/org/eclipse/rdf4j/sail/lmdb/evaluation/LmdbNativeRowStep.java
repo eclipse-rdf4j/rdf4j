@@ -1532,7 +1532,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				}
 			}
 		}
-		LmdbNativeOfferBridge<NativeUnorderedInput> offers = new LmdbNativeOfferBridge<NativeUnorderedInput>(
+		LmdbNativeOffers<NativeUnorderedInput> offers = new LmdbNativeOffers<NativeUnorderedInput>(
 				LmdbNativeDecisionPoint.ROW).ceiling(LmdbNativeCostVectors.sweepWork(row));
 		offerUnorderedStrategies(row, distinctPlan, multiJoin, correlatedEntry, retainedSlots, offers);
 		{
@@ -1673,7 +1673,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	}
 
 	private void offerUnorderedStrategies(RowState row, NativeTupleDistinctPlan distinctPlan, MultiJoinPlan multiJoin,
-			boolean correlatedEntry, int[] retainedSlots, LmdbNativeOfferBridge<NativeUnorderedInput> arbiter)
+			boolean correlatedEntry, int[] retainedSlots, LmdbNativeOffers<NativeUnorderedInput> arbiter)
 			throws IOException {
 		if (orderSlots.length == 0) {
 			// Emission strategy, never a sort input (the ORDER BY materializer callers all carry orderSlots).
@@ -1846,7 +1846,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		}
 		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan join && join.children.length > 0 ? join : null;
 		try {
-			LmdbNativeOfferBridge<NativeUnorderedInput> offers = new LmdbNativeOfferBridge<NativeUnorderedInput>(
+			LmdbNativeOffers<NativeUnorderedInput> offers = new LmdbNativeOffers<NativeUnorderedInput>(
 					LmdbNativeDecisionPoint.ROW).ceiling(LmdbNativeCostVectors.sweepWork(row));
 			NativeTupleDistinctPlan distinctPlan = distinct ? LmdbNativeOrderPlanner.tuple(arg, sourceSlots, row)
 					: null;

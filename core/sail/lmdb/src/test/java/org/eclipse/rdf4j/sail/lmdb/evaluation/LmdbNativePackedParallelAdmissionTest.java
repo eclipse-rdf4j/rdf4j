@@ -128,7 +128,7 @@ class LmdbNativePackedParallelAdmissionTest {
 					input, row, new int[] { 0, 1, 2 }, false, null)) {
 				assertThat(proposal).isNotNull();
 				assertThat(mockingDetails(source).getInvocations()).isNotEmpty();
-				assertThat(LmdbNativeOfferBridge.quote(proposal)
+				assertThat(LmdbNativeStrategyProposal.quote(proposal)
 						.startup()
 						.expected(LmdbNativeCostVector.Feature.WORKER_START)).isEqualTo(2D);
 				try (LmdbNativeParallelPipelines.TaskReservation remaining = LmdbNativeParallelPipelines

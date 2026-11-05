@@ -124,7 +124,7 @@ class LmdbNativeVariantDeclineIdentityTest {
 
 	@Test
 	void genuinelyAnonymousOfferKeepsItsOrdinalFallback() throws Exception {
-		LmdbNativeOfferBridge<String> offers = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.ROW);
+		LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW);
 		offers.offer(() -> null);
 		LmdbNativeDecisionRecord record = preview(offers);
 		assertThat(record.entries()).extracting(LmdbNativeDecisionRecord.Entry::id).containsExactly("offer#1");
@@ -134,7 +134,7 @@ class LmdbNativeVariantDeclineIdentityTest {
 	@ParameterizedTest
 	@ValueSource(strings = { "packedFtree", "packedFtree(parallel)" })
 	void forcingStillFindsTheCorrespondingExactRefusal(String forced) {
-		LmdbNativeOfferBridge<String> offers = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.ROW);
+		LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW);
 		offers.offer(() -> {
 			LmdbNativeAttemptMetrics.recordDecline(null, LmdbNativePackedFtree.ROWS_SERIAL, "serial-refusal");
 			return null;
@@ -174,7 +174,7 @@ class LmdbNativeVariantDeclineIdentityTest {
 			assertThat(LmdbNativePackedFtree.Planner.plan(input, row, new int[] { 0, 1, 2 })).isNull();
 		}
 		try {
-			LmdbNativeOfferBridge<NativeUnorderedInput> offers = new LmdbNativeOfferBridge<>(
+			LmdbNativeOffers<NativeUnorderedInput> offers = new LmdbNativeOffers<>(
 					LmdbNativeDecisionPoint.ROW);
 			offers.offer(named ? LmdbNativePackedFtree.ROWS_SERIAL : null,
 					() -> LmdbNativePackedFtree.proposeRows((SlotPlan) input, row, new int[] { 0, 1, 2 }, false,
@@ -188,7 +188,7 @@ class LmdbNativeVariantDeclineIdentityTest {
 		}
 	}
 
-	private static <T> LmdbNativeDecisionRecord preview(LmdbNativeOfferBridge<T> offers) throws Exception {
+	private static <T> LmdbNativeDecisionRecord preview(LmdbNativeOffers<T> offers) throws Exception {
 		try (QueryExplanationContext ignored = QueryExplanationContext.enter(Explanation.Level.Optimized)) {
 			return new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW, offers.strategies(), null).preview(null);
 		}

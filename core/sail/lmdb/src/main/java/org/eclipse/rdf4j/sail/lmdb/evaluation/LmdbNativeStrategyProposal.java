@@ -13,8 +13,6 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
-import java.util.IdentityHashMap;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
@@ -26,50 +24,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 @Experimental
 final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
-	/**
-	 * Initial scheduling cost used to select a parallel group, in native work-row units. The default biases admission
-	 * toward parallel execution; it is not a measured startup latency. Recalibrate by running
-	 * {@code ParallelismBenchmark.serialHashBatch} and {@code parallelOverlap} at several input sizes and fitting the
-	 * parallel intercept at the serial/parallel crossover.
-	 */
-	static final double PARALLEL_STARTUP_COST = 12_500D;
-	static final String PARALLEL_STARTUP_COST_PROPERTY = "rdf4j.lmdb.parallel.startupWork";
-
 	@FunctionalInterface
 	interface Opener<T> {
 		T open() throws IOException;
-	}
-
-	/** Expected planning work in native-work units; never a hard bound or an adaptive-model feature vector. */
-	record ExpectedPlanningPrior(double expectedTotalWork, double expectedBeforeFirstOutputWork) {
-		ExpectedPlanningPrior {
-			if (!Double.isFinite(expectedTotalWork) || expectedTotalWork < 0D
-					|| !Double.isFinite(expectedBeforeFirstOutputWork) || expectedBeforeFirstOutputWork < 0D
-					|| expectedBeforeFirstOutputWork > expectedTotalWork) {
-				throw new IllegalArgumentException("expected planning work must be finite, nonnegative, and ordered");
-			}
-		}
-
-		static ExpectedPlanningPrior blocking(double expectedTotalWork) {
-			return Double.isFinite(expectedTotalWork) && expectedTotalWork >= 0D
-					? new ExpectedPlanningPrior(expectedTotalWork, expectedTotalWork)
-					: null;
-		}
-
-		ExpectedPlanningPrior forSlice(double sliceRows, double estimatedRows) {
-			if (sliceRows == 0D) {
-				return blocking(0D);
-			}
-			if (!Double.isFinite(sliceRows) || sliceRows < 0D || expectedBeforeFirstOutputWork >= expectedTotalWork
-					|| !Double.isFinite(estimatedRows) || estimatedRows <= 0D) {
-				return this;
-			}
-			double fraction = Math.min(1D, sliceRows / estimatedRows);
-			double expected = expectedBeforeFirstOutputWork
-					+ fraction * (expectedTotalWork - expectedBeforeFirstOutputWork);
-			return Double.isFinite(expected) ? new ExpectedPlanningPrior(expected,
-					expectedBeforeFirstOutputWork) : null;
-		}
 	}
 
 	final Opener<T> opener;
@@ -79,13 +36,12 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 * <p>
 	 * Total work alone cannot choose correctly under a small LIMIT: a strategy that is cheapest overall may be the
 	 * worst possible choice when the consumer wants three rows, because all of its cost is front-loaded. Separating the
-	 * front-loaded part is what lets {@link #effectiveWork} answer "what will this actually cost me for the rows I am
-	 * going to ask for".
+	 * front-loaded part is what lets the selector answer "what will this actually cost me for the rows I am going to
+	 * ask for".
 	 */
 	final LmdbNativeWork startupWork;
 	/** Rows this strategy expects to emit, or NaN when unknown. Needed to prorate work against a finite slice. */
 	final double estRows;
-	double estCost;
 	/**
 	 * The same cost as an interval. Scalar-costed proposals report a degenerate interval, so a scalar comparison and a
 	 * {@linkplain LmdbNativeWork#beats domination} test agree on them; proposals that know how uncertain they are can
@@ -93,11 +49,6 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 */
 	final LmdbNativeWork work;
 	final String tag;
-	/**
-	 * Whether this proposal may be consumed as an adaptive experiment. Structural fallbacks remain ordinary ranked
-	 * candidates, but probing them would be able to remove the only legal execution path from a dispatch.
-	 */
-	final boolean probeable;
 	private final Runnable releaseIfUnused;
 	private Runnable beforeOpen;
 	private boolean opened;
@@ -105,17 +56,14 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private NativePhysicalWorkQuote physicalQuote;
 	private NativeAggregatePhysicalPlan aggregatePhysicalPlan;
 	private NativeAggregatePhysicalPlan.ColdAnchor coldAnchor;
-	private ExpectedPlanningPrior expectedPlanningPrior;
 	/**
 	 * The point-estimate planning quote the arbiter ranks with ({@link LmdbNativeWork#planning}); null when the
 	 * conservative {@link #work} interval is the only price. Never a bound, never a proof.
 	 */
 	private LmdbNativeWork planningWork;
-	LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness;
 	private NativeAggregateExecutionEvent.Descriptor aggregateExecution;
-	private IdentityHashMap<LmdbNativeStrategyProposal<?>, String> physicalDominators;
-	private LmdbNativeStrategyProposal<?> mappedOrigin;
 	private LmdbNativeParallelPipelines.TaskReservation parallelReservation;
+	private int mappedWorkers;
 	private LmdbNativeCostQuote costQuote;
 	private Set<String> dominates = Set.of();
 
@@ -135,18 +83,15 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 				}
 				throw failure;
 			}
-		}, work, startupWork, estRows, mappedTag, this::close, probeable);
+		}, work, startupWork, estRows, mappedTag, this::close);
 		result.physicalQuote = physicalQuote;
 		result.aggregatePhysicalPlan = aggregatePhysicalPlan;
 		result.coldAnchor = coldAnchor;
-		result.expectedPlanningPrior = expectedPlanningPrior;
 		result.planningWork = planningWork;
-		result.estCost = estCost;
-		result.executionResourceWitness = executionResourceWitness;
-		result.mappedOrigin = this;
 		result.costQuote = costQuote;
 		result.parallelShape = parallelShape;
 		result.dominates = dominates;
+		result.mappedWorkers = parallelWorkers();
 		return result;
 	}
 
@@ -176,8 +121,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	int parallelWorkers() {
-		return parallelReservation != null ? parallelReservation.grantedWorkers()
-				: mappedOrigin != null ? mappedOrigin.parallelWorkers() : 0;
+		return parallelReservation != null ? parallelReservation.grantedWorkers() : mappedWorkers;
 	}
 
 	LmdbNativeStrategyProposal<T> withParallelShape(LmdbNativeStaticPrior.ParallelShape shape) {
@@ -218,7 +162,6 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			return this;
 		}
 		planningWork = planning;
-		estCost = planning.high();
 		return this;
 	}
 
@@ -228,171 +171,6 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	LmdbNativeWork planningWork() {
 		return planningWork;
-	}
-
-	/**
-	 * The price the arbiter compares: the planning quote when one was attached, otherwise {@link #effectiveWork}. A
-	 * planning quote is prorated the way the arbiter has always prorated a point estimate: the front-loaded part is
-	 * paid whatever happens and the streaming remainder scales with the share of the result the consumer will ask for.
-	 */
-	LmdbNativeWork comparableWork(double sliceRows) {
-		LmdbNativeWork planning = planningWork;
-		if (planning == null) {
-			return effectiveWork(sliceRows);
-		}
-		if (!(sliceRows >= 0D) || Double.isNaN(estRows) || estRows <= 0D || sliceRows >= estRows) {
-			return planning;
-		}
-		double fraction = sliceRows / estRows;
-		double startupLow = Math.min(startupWork.low(), planning.low());
-		double startupHigh = Math.min(startupWork.known() ? startupWork.high() : planning.high(), planning.high());
-		double low = startupLow + fraction * Math.max(0D, planning.low() - startupLow);
-		double high = startupHigh + fraction * Math.max(0D, planning.high() - startupHigh);
-		return LmdbNativeWork.between(Math.min(low, high), Math.max(low, high));
-	}
-
-	LmdbNativeStrategyProposal<T> withExpectedPlanningPrior(ExpectedPlanningPrior prior) {
-		if (opened || closed || expectedPlanningPrior != null) {
-			throw new IllegalStateException("An expected planning prior belongs to one unopened proposal");
-		}
-		expectedPlanningPrior = Objects.requireNonNull(prior);
-		return this;
-	}
-
-	LmdbNativeStrategyProposal<T> withOptionalExpectedPlanningPrior(ExpectedPlanningPrior prior) {
-		return prior == null ? this : withExpectedPlanningPrior(prior);
-	}
-
-	ExpectedPlanningPrior expectedPlanningPrior() {
-		return expectedPlanningPrior;
-	}
-
-	/**
-	 * A cold planning quote for a finite consumer slice. This value is separate from {@link #effectiveWork}: it may
-	 * guide expected-cost selection, but never establishes a work bound or a typed adaptive-model feature.
-	 */
-	ExpectedPlanningPrior expectedPlanningPriorForSlice(double sliceRows) {
-		if (!Double.isFinite(sliceRows) || sliceRows < 0D) {
-			return null;
-		}
-		if (sliceRows == 0D) {
-			return ExpectedPlanningPrior.blocking(0D);
-		}
-		ExpectedPlanningPrior prior = expectedPlanningPrior;
-		if (physicalQuote != null) {
-			if (!physicalQuote.workEvidence().isComplete()) {
-				if (prior == null || executionResourceWitness == null && coldAnchor == null) {
-					return null;
-				}
-			} else if (samePhysicalWork(physicalQuote.startup(), physicalQuote.total())) {
-				double total = prior == null
-						? work.known() ? midpoint(work) : Double.NaN
-						: prior.expectedTotalWork();
-				return preserveProvenWorkBounds(ExpectedPlanningPrior.blocking(total));
-			} else if (prior == null && !physicalQuote.startup().isZero()) {
-				// Typed startup counts and compatibility work use different units. Without a producer-supplied scalar
-				// expected prior, a nonzero partial typed startup cannot justify slicing the compatibility scalar.
-				return null;
-			}
-		}
-		if (prior == null) {
-			if (!work.known()) {
-				return null;
-			}
-			double total = midpoint(work);
-			double beforeFirst = startupWork.known() ? Math.min(midpoint(startupWork), total) : 0D;
-			prior = new ExpectedPlanningPrior(total, beforeFirst);
-		} else if (!work.known()
-				&& (executionResourceWitness == null && coldAnchor == null
-						&& (physicalQuote == null || !physicalQuote.workEvidence().isComplete()))) {
-			return null;
-		}
-		prior = preserveProvenWorkBounds(prior);
-		return prior == null ? null : prior.forSlice(sliceRows, estRows);
-	}
-
-	private ExpectedPlanningPrior preserveProvenWorkBounds(ExpectedPlanningPrior prior) {
-		if (prior == null) {
-			return null;
-		}
-		// This is still the full-run quote. Validate it before forSlice can legitimately price below the full-run
-		// floor.
-		if (prior.expectedTotalWork() < work.low()
-				|| (work.known() && prior.expectedTotalWork() > work.high())) {
-			return null;
-		}
-		double startupFloor = startupWork.low();
-		if (prior.expectedTotalWork() < startupFloor) {
-			return null;
-		}
-		double expectedStartup = Math.max(prior.expectedBeforeFirstOutputWork(), startupFloor);
-		if (expectedStartup > prior.expectedTotalWork()) {
-			return null;
-		}
-		if (expectedStartup == prior.expectedBeforeFirstOutputWork()) {
-			return prior;
-		}
-		return new ExpectedPlanningPrior(prior.expectedTotalWork(), expectedStartup);
-	}
-
-	private static boolean samePhysicalWork(LmdbNativeCostVector first, LmdbNativeCostVector second) {
-		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
-			if (first.low(feature) != second.low(feature) || first.expected(feature) != second.expected(feature)
-					|| first.high(feature) != second.high(feature)) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	LmdbNativeStrategyProposal<T> withExecutionResourceWitness(
-			LmdbNativeKernelExecution.ExecutionResourceWitness witness) {
-		if (opened || closed || executionResourceWitness != null) {
-			throw new IllegalStateException("An execution resource witness belongs to one unopened proposal");
-		}
-		executionResourceWitness = Objects.requireNonNull(witness);
-		return this;
-	}
-
-	LmdbNativeStrategyProposal<T> withOptionalExecutionResourceWitness(
-			LmdbNativeKernelExecution.ExecutionResourceWitness witness) {
-		return witness == null ? this : withExecutionResourceWitness(witness);
-	}
-
-	LmdbNativeKernelExecution.ExecutionResourceWitness executionResourceWitness() {
-		return executionResourceWitness;
-	}
-
-	/** A plan-owned shared-work proof, independent of scalar calibration and completed timing confidence. */
-	void physicallyDominatedBy(LmdbNativeStrategyProposal<?> alternative, String proof) {
-		if (opened || closed || alternative == this) {
-			throw new IllegalStateException("Physical dominance belongs to distinct unopened alternatives");
-		}
-		if (physicalDominators == null) {
-			physicalDominators = new IdentityHashMap<>();
-		}
-		physicalDominators.put(Objects.requireNonNull(alternative), Objects.requireNonNull(proof));
-	}
-
-	String physicalDominanceProof(List<? extends LmdbNativeStrategyProposal<?>> remaining) {
-		if (mappedOrigin != null) {
-			return mappedOrigin.physicalDominanceProof(remaining.stream()
-					.map(LmdbNativeStrategyProposal::mappedOriginOrSelf)
-					.toList());
-		}
-		if (physicalDominators != null) {
-			for (LmdbNativeStrategyProposal<?> alternative : remaining) {
-				String proof = physicalDominators.get(alternative);
-				if (proof != null) {
-					return alternative.tag + ": " + proof;
-				}
-			}
-		}
-		return null;
-	}
-
-	private static LmdbNativeStrategyProposal<?> mappedOriginOrSelf(LmdbNativeStrategyProposal<?> proposal) {
-		return proposal.mappedOrigin == null ? proposal : proposal.mappedOrigin;
 	}
 
 	LmdbNativeStrategyProposal<T> withPhysicalQuote(NativePhysicalWorkQuote quote) {
@@ -444,75 +222,28 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		aggregateExecution = descriptor;
 	}
 
-	LmdbNativeStrategyProposal(Opener<T> opener, double estCost, String tag) {
-		this(opener, estCost, tag, () -> {
+	LmdbNativeStrategyProposal(Opener<T> opener, double estimatedWork, String tag) {
+		this(opener, estimatedWork, tag, () -> {
 		});
 	}
 
-	LmdbNativeStrategyProposal(Opener<T> opener, double estCost, String tag, Runnable releaseIfUnused) {
-		this(opener, LmdbNativeWork.exact(estCost), estCost, tag, releaseIfUnused);
+	LmdbNativeStrategyProposal(Opener<T> opener, double estimatedWork, String tag, Runnable releaseIfUnused) {
+		this(opener, LmdbNativeWork.exact(estimatedWork), tag, releaseIfUnused);
 	}
 
 	LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, String tag, Runnable releaseIfUnused) {
-		this(opener, work, work.known() ? work.high() : Double.POSITIVE_INFINITY, tag, releaseIfUnused);
-	}
-
-	private LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, double estCost, String tag,
-			Runnable releaseIfUnused) {
-		this(opener, work, LmdbNativeWork.ZERO, Double.NaN, estCost, tag, releaseIfUnused, true);
+		this(opener, work, LmdbNativeWork.ZERO, Double.NaN, tag, releaseIfUnused);
 	}
 
 	/** Full form, for strategies that know what they pay up front and how many rows they expect to emit. */
 	LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork, double estRows,
 			String tag, Runnable releaseIfUnused) {
-		this(opener, work, startupWork, estRows, work.known() ? work.high() : Double.POSITIVE_INFINITY, tag,
-				releaseIfUnused, true);
-	}
-
-	/** Full form with an explicit adaptive-probe policy. */
-	LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork, double estRows,
-			String tag, Runnable releaseIfUnused, boolean probeable) {
-		this(opener, work, startupWork, estRows, work.known() ? work.high() : Double.POSITIVE_INFINITY, tag,
-				releaseIfUnused, probeable);
-	}
-
-	private LmdbNativeStrategyProposal(Opener<T> opener, LmdbNativeWork work, LmdbNativeWork startupWork,
-			double estRows, double estCost, String tag, Runnable releaseIfUnused, boolean probeable) {
 		this.opener = opener;
 		this.work = work;
 		this.startupWork = startupWork == null ? LmdbNativeWork.ZERO : startupWork;
 		this.estRows = estRows;
-		this.estCost = estCost;
 		this.tag = tag;
-		this.probeable = probeable;
 		this.releaseIfUnused = releaseIfUnused;
-	}
-
-	/**
-	 * Bounds on work consumed when the consumer may stop after {@code sliceRows} rows.
-	 * <p>
-	 * A result-row estimate does not bound how much input is needed to produce a slice. Keep the front-loaded floor and
-	 * the complete-open ceiling; proportional consumption is only an expected value, not a proven bound.
-	 *
-	 * @param sliceRows rows the consumer can possibly consume, or a negative value when unbounded
-	 */
-	LmdbNativeWork effectiveWork(double sliceRows) {
-		if (!Double.isFinite(sliceRows) || sliceRows < 0D) {
-			return work;
-		}
-		double lower = sliceRows == 0D ? 0D : Math.min(startupWork.low(), work.high());
-		return LmdbNativeWork.between(lower, work.high());
-	}
-
-	/** A proportional estimate is useful for ranking, but must not narrow a proven interval. */
-	private double expectedWork(double sliceRows) {
-		double total = midpoint(planningWork != null ? planningWork : work);
-		if (!Double.isFinite(sliceRows) || sliceRows < 0D || !Double.isFinite(estRows) || estRows <= 0D) {
-			return total;
-		}
-		double startup = startupWork.known() ? Math.min(midpoint(startupWork), total) : 0D;
-		double fraction = Math.min(1D, sliceRows / estRows);
-		return startup + fraction * (total - startup);
 	}
 
 	/**
@@ -534,7 +265,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		if (physicalQuote != null) {
 			return physicalQuote;
 		}
-		LmdbNativeWork effective = comparableWork(-1D);
+		LmdbNativeWork effective = planningWork != null ? planningWork : work;
 		if (!effective.known()) {
 			return null;
 		}
@@ -544,7 +275,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		double startupHigh = Math.min(startupWork.known() ? startupWork.high() : effective.high(), effective.high());
 		double startupExpected = startupLow + (startupHigh - startupLow) * 0.5D;
 		double totalExpected = Math.max(startupExpected,
-				Math.max(effective.low(), Math.min(effective.high(), expectedWork(-1D))));
+				Math.max(effective.low(), Math.min(effective.high(), midpoint(effective))));
 
 		LmdbNativeCostVector.Builder startup = LmdbNativeCostVector.builder()
 				.add(LmdbNativeCostVector.Feature.OPEN, 1D);
@@ -557,7 +288,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		if (isParallel(family)) {
 			startup.add(LmdbNativeCostVector.Feature.WORKER_START, 1D);
 			total.add(LmdbNativeCostVector.Feature.WORKER_START, 1D);
-			workerStartIntercept = parallelStartupCost();
+			workerStartIntercept = LmdbNativeWork.parallelStartupCost();
 		}
 		double startupRowLow = Math.max(0D, startupLow - workerStartIntercept);
 		double startupRowHigh = Math.max(0D, startupHigh - workerStartIntercept);
@@ -684,139 +415,101 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}
 	}
 
-	static double batchCost(double leftRows, double buildRows) {
-		if (!(leftRows >= 0D) || !(buildRows >= 0D)) {
-			return Double.POSITIVE_INFINITY;
+	/** Bridges one proposal: its tag is the candidate id and its quotes become feature counts. */
+	static <T> LmdbNativeCandidate<T> candidate(LmdbNativeStrategyProposal<T> proposal) {
+		return candidate(proposal, null);
+	}
+
+	/** Bridges one proposal; an interval without a finite ceiling is priced at {@code ceiling} when one is known. */
+	static <T> LmdbNativeCandidate<T> candidate(LmdbNativeStrategyProposal<T> proposal, LmdbNativeWork ceiling) {
+		LmdbNativeCandidate<T> candidate = LmdbNativeCandidate.of(proposal.tag, quote(proposal, ceiling),
+				proposal::open, proposal::close);
+		return proposal.dominates().isEmpty() ? candidate : candidate.dominating(proposal.dominates());
+	}
+
+	static LmdbNativeCostQuote quote(LmdbNativeStrategyProposal<?> proposal) {
+		return quote(proposal, null);
+	}
+
+	/** {@code work} itself when it has a ceiling, else {@code ceiling} raised to the work's floor, else unknown. */
+	private static LmdbNativeWork bounded(LmdbNativeWork work, LmdbNativeWork ceiling) {
+		if (work.known() || ceiling == null || !ceiling.known()) {
+			return work;
 		}
-		double cost = leftRows + buildRows;
-		return Double.isFinite(cost) ? cost : Double.POSITIVE_INFINITY;
+		return LmdbNativeWork.between(work.low(), Math.max(work.low(), ceiling.high()));
 	}
 
-	static double parallelCost(double totalWork, int workers) {
-		return parallelCost(totalWork, workers, parallelStartupCost());
-	}
-
-	static double parallelCost(double totalWork, int workers, double startupCost) {
-		if (!(totalWork >= 0D) || workers <= 0) {
-			return Double.POSITIVE_INFINITY;
+	static LmdbNativeCostQuote quote(LmdbNativeStrategyProposal<?> proposal, LmdbNativeWork ceiling) {
+		if (proposal.costQuote() != null) {
+			return withQuotedWorkerStartup(proposal, proposal.costQuote());
 		}
-		double cost = totalWork / workers + startupCost;
-		return Double.isFinite(cost) ? cost : Double.POSITIVE_INFINITY;
-	}
-
-	/**
-	 * Scheduling intercept used by parallel proposals, configurable for machine calibration and deterministic tests.
-	 */
-	static double parallelStartupCost() {
-		String configured = System.getProperty(PARALLEL_STARTUP_COST_PROPERTY);
-		if (configured == null) {
-			return PARALLEL_STARTUP_COST;
-		}
-		try {
-			double parsed = Double.parseDouble(configured);
-			return Double.isFinite(parsed) && parsed >= 0D ? parsed : PARALLEL_STARTUP_COST;
-		} catch (NumberFormatException ignored) {
-			return PARALLEL_STARTUP_COST;
-		}
-	}
-
-	/** Serial factorization scans each physical leg once across its prefix keys instead of enumerating the product. */
-	static double factorizedCost(MultiJoinPlan.OrderedPlan derived, int prefixLength, RowState row) {
-		return factorizedCost(derived.order, prefixLength, row.boundMask(), row.source, row, Double.NaN);
-	}
-
-	/**
-	 * Keys-only-root variant: depth 0 enumerates the root's distinct keys instead of one row per edge, so its row count
-	 * is capped by {@code depth0RowsOverride} (NaN = no cap). Everything downstream prices identically.
-	 */
-	static double factorizedCost(MultiJoinPlan.OrderedPlan derived, int prefixLength, RowState row,
-			double depth0RowsOverride) {
-		return factorizedCost(derived.order, prefixLength, row.boundMask(), row.source, row, depth0RowsOverride);
-	}
-
-	/**
-	 * Cost core, usable without a {@link RowState} when every child is a {@link PatternPlan}. A null {@code row} makes
-	 * any non-pattern child unpriceable rather than guessing at its cardinality.
-	 */
-	static double factorizedCost(SlotPlan[] order, int prefixLength, long boundMask,
-			NativeLmdbQuerySource source) {
-		return factorizedCost(order, prefixLength, boundMask, source, null, Double.NaN);
-	}
-
-	private static double factorizedCost(SlotPlan[] order, int prefixLength, long boundMask,
-			NativeLmdbQuerySource source, RowState row, double depth0RowsOverride) {
-		if (prefixLength < 0 || prefixLength > order.length) {
-			return Double.POSITIVE_INFINITY;
-		}
-		// The prefix is a nested-loop chain, so it carries the same recurrence as
-		// LmdbNativeOrderPlanner.cumulativePatternWork. It is repeated here rather than delegated because that method
-		// discards the row count the branches need as their probe multiplier, and refuses any non-pattern child
-		// outright where this cost can still price one through the row state.
-		double prefixRows = 1D;
-		double work = 0D;
-		long entryMask = boundMask;
-		for (int i = 0; i < prefixLength; i++) {
-			double rowsPerProbe = childEstimate(order[i], entryMask, source, row);
-			if (!(rowsPerProbe >= 0D) || !Double.isFinite(rowsPerProbe)) {
-				return Double.POSITIVE_INFINITY;
+		// A physical quote (aggregate producers) or the family-typed quote are feature vectors already; only
+		// strategies with neither fall back to the raw interval.
+		NativePhysicalWorkQuote typed = proposal.typedQuote();
+		if (typed != null) {
+			LmdbNativeCostVector streaming = typed.quote().streaming();
+			LmdbNativeCostVector startup = typed.startup();
+			double workerStarts = startup.expected(LmdbNativeCostVector.Feature.WORKER_START);
+			if (workerStarts > 0D && workerStarts < 2D) {
+				// the typed estimate books one worker start and divides the streaming work by the worker count; a
+				// parallel strategy starts one worker per task and speeds up by what was measured, not by the count
+				int workers = proposal.parallelWorkers() > 0 ? proposal.parallelWorkers()
+						: Math.max(2, LmdbNativeKernelExecution.parallelProposalWorkers());
+				startup = startup.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START,
+						workers - workerStarts));
+				// the speed-up by the shape of the work when the proposal declares it (root rows, partitionable
+				// root, the partial tables an aggregate merges), else the flat measured rule
+				double speedup = proposal.parallelShape != null
+						? LmdbNativeStaticPrior.parallelSpeedup(proposal.parallelShape, workers)
+						: LmdbNativeStaticPrior.measuredParallelSpeedup(proposal.tag, workers);
+				streaming = streaming.scale(workers / speedup);
+				if (proposal.parallelShape != null) {
+					startup = startup.plus(LmdbNativeStaticPrior.parallelMerge(proposal.parallelShape, workers));
+				}
 			}
-			if (i == 0 && depth0RowsOverride >= 0D && Double.isFinite(depth0RowsOverride)) {
-				rowsPerProbe = Math.min(rowsPerProbe, depth0RowsOverride);
-			}
-			work += prefixRows * probeWork(order[i], entryMask, source, row, rowsPerProbe);
-			prefixRows *= rowsPerProbe;
-			if (!Double.isFinite(work) || !Double.isFinite(prefixRows)) {
-				return Double.POSITIVE_INFINITY;
-			}
-			entryMask |= order[i].producedMask();
+			return withQuotedWorkerStartup(proposal,
+					new LmdbNativeCostQuote(startup, streaming, typed.outputRows(), false, false));
 		}
-		// Every tail branch probes the same prefix binding, so the branches are summed with one another and the whole
-		// sum is paid once per prefix row. Summing rather than multiplying is precisely what factorization buys: the
-		// equivalent nested-loop plan would enumerate the product of the branches instead.
-		double branchWork = 0D;
-		for (int i = prefixLength; i < order.length; i++) {
-			double rowsPerProbe = childEstimate(order[i], entryMask, source, row);
-			if (!(rowsPerProbe >= 0D) || !Double.isFinite(rowsPerProbe)) {
-				return Double.POSITIVE_INFINITY;
-			}
-			branchWork += probeWork(order[i], entryMask, source, row, rowsPerProbe);
-			if (!Double.isFinite(branchWork)) {
-				return Double.POSITIVE_INFINITY;
+		LmdbNativeWork comparable = proposal.planningWork() != null ? proposal.planningWork() : proposal.work;
+		LmdbNativeWork startup = bounded(proposal.startupWork == null ? LmdbNativeWork.ZERO : proposal.startupWork,
+				ceiling);
+		LmdbNativeWork streaming = bounded(subtract(comparable, startup), ceiling);
+		return withQuotedWorkerStartup(proposal, LmdbNativeCostQuote.ofWork(startup, streaming, proposal.estRows));
+	}
+
+	/** Exact worker ownership is startup even when a physical producer reported it in its total work only. */
+	private static LmdbNativeCostQuote withQuotedWorkerStartup(LmdbNativeStrategyProposal<?> proposal,
+			LmdbNativeCostQuote quote) {
+		int workers = proposal.parallelWorkers();
+		if (workers == 0) {
+			return quote;
+		}
+		return new LmdbNativeCostQuote(withWorkerStarts(quote.startup(), workers),
+				withWorkerStarts(quote.streaming(), 0D), quote.outputRows(), quote.ordered(), quote.distinct(),
+				quote.chunked());
+	}
+
+	private static LmdbNativeCostVector withWorkerStarts(LmdbNativeCostVector vector, double workers) {
+		LmdbNativeCostVector.Builder result = LmdbNativeCostVector.builder();
+		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
+			if (feature == LmdbNativeCostVector.Feature.WORKER_START) {
+				result.add(feature, workers);
+			} else {
+				result.add(feature, vector.low(feature), vector.expected(feature), vector.high(feature));
 			}
 		}
-		double cost = work + prefixRows * branchWork;
-		return Double.isFinite(cost) ? cost : Double.POSITIVE_INFINITY;
+		return result.build();
 	}
 
-	/**
-	 * Work of one probe of {@code child} under {@code entryMask}: the access facts' expected price for a statement
-	 * pattern (it sees the index set and the adjacency path), otherwise one seek plus the rows the probe yields. This
-	 * keeps the factorized quote in the same units as the planning quotes of the strategies it competes with.
-	 */
-	private static double probeWork(SlotPlan child, long entryMask, NativeLmdbQuerySource source, RowState row,
-			double rowsPerProbe) {
-		if (child instanceof PatternPlan pattern) {
-			LmdbNativeAccessFacts facts = LmdbNativeAccessFacts.forPattern(pattern, source);
-			if (facts != null) {
-				return facts.quote(pattern.physicalMask(entryMask)).expected();
-			}
+	/** {@code total} minus {@code startup}, bound by bound, never below zero, keeping an unknown ceiling unknown. */
+	private static LmdbNativeWork subtract(LmdbNativeWork total, LmdbNativeWork startup) {
+		if (startup.equals(LmdbNativeWork.ZERO)) {
+			return total;
 		}
-		return LmdbNativeWork.SEEK + rowsPerProbe;
-	}
-
-	private static double childEstimate(SlotPlan child, long entryMask, NativeLmdbQuerySource source, RowState row) {
-		if (child instanceof PatternPlan) {
-			return ((PatternPlan) child).estimateForBoundMask(entryMask, source);
-		}
-		return row != null ? child.estimate(row) : Double.POSITIVE_INFINITY;
-	}
-
-	static String chooseTag(double batchCost, double parallelCost) {
-		return parallelCost < batchCost ? LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES
-				: LmdbNativeAttemptMetrics.PATH_BATCH;
-	}
-
-	static String onlyProposalTag(String tag, boolean batchPresent, boolean parallelPresent) {
-		return batchPresent ^ parallelPresent ? tag : null;
+		double low = Math.max(0D, total.low() - Math.min(startup.low(), total.low()));
+		double high = total.known()
+				? Math.max(low, total.high() - (startup.known() ? Math.min(startup.high(), total.high()) : 0D))
+				: Double.POSITIVE_INFINITY;
+		return LmdbNativeWork.between(low, high);
 	}
 }

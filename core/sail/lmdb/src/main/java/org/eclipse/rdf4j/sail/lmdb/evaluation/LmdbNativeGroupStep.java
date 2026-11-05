@@ -20,7 +20,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.math.BigInteger;
-import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -31,8 +30,6 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
-import java.util.Spliterator;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -272,7 +269,7 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row, null, false);
 			Map<LmdbNativeStrategyProposal<NativeGroupResultCursor.GroupingPlan>, NativeGroupResultCursor.GroupingPlan> plans = new IdentityHashMap<>();
 			Map<String, LmdbNativeStrategyProposal<NativeGroupResultCursor.GroupingPlan>> proposalsByTag = new HashMap<>();
-			LmdbNativeOfferBridge<NativeGroupResultCursor.GroupingPlan> offers = new LmdbNativeOfferBridge<NativeGroupResultCursor.GroupingPlan>(
+			LmdbNativeOffers<NativeGroupResultCursor.GroupingPlan> offers = new LmdbNativeOffers<NativeGroupResultCursor.GroupingPlan>(
 					LmdbNativeDecisionPoint.GROUP_PHYSICAL).ceiling(LmdbNativeCostVectors.sweepWork(row));
 			{
 				NativeGroupResultCursor.GroupingPlan ordered = NativeGroupResultCursor.orderedPlan(iteration, row);
@@ -473,7 +470,7 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 		if (iteration.initialize(row)) {
 			if (requiresPhysicalResults()) {
 				try (NativeGroupResultCursor owner = new NativeGroupResultCursor(this, iteration, null, false)) {
-					NativePhysicalGroupArbitration.preview(this, owner, iteration, row);
+					owner.previewPhysicalSite(row);
 				} catch (IOException failure) {
 					throw new QueryEvaluationException(failure);
 				} finally {
@@ -1381,7 +1378,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		}
 		if (typeMatrix != null && base.isEmpty()) {
 			arbiter.offer(() -> estimatedProposal(this::evaluateTypeMatrixFallback,
-					LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX, typeMatrixWork, typeMatrixOwned));
+					LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX, typeMatrixWork));
 		}
 		if (existsIntersection != null) {
 			arbiter.offer(() -> estimatedProposal(() -> {
@@ -1506,7 +1503,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		}
 		if (!typeMatrixOwned && factorized != null) {
 			MultiJoinPlan.OrderedPlan factorizedDerived = factorizedSelection.derived;
-			double factorizedCost = LmdbNativeStrategyProposal.factorizedCost(factorizedDerived,
+			double factorizedCost = LmdbNativeWork.factorizedCost(factorizedDerived,
 					factorizedDerived.order.length - factorized.branchCount(), row);
 			int factorizedPrefix = factorizedDerived.order.length - factorized.branchCount();
 			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(
@@ -1580,7 +1577,6 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				: interpretedIr && parallelIr
 						? interpretedParallelTag
 						: compiledIr ? compiledSerialTag : interpretedIr ? interpretedSerialTag : null;
-		boolean algorithmicSpecialist = algorithmicSpecialistHandlesRow(row);
 		if (forcedExecutionStrategy != null && logger.isInfoEnabled()) {
 			logger.info(
 					"LMDB forced GROUP BY shape: requested={}, input={}, originalInput={}, groupSlots={}, aggregates={}, "
@@ -1589,7 +1585,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							+ "serialTags=[{}, {}], parallelTags=[{}, {}], highestIrTag={}",
 					forcedExecutionStrategy, arg.getClass().getSimpleName(), originalArg.getClass().getSimpleName(),
 					groupSlots.length, aggregates.length, replaySafe, typeMatrixIr, typeMatrixOwned, wildcardIr,
-					compiledIr, interpretedIr, parallelIr, nodeDomainIntersectionIr, algorithmicSpecialist,
+					compiledIr, interpretedIr, parallelIr, nodeDomainIntersectionIr,
+					algorithmicSpecialistHandlesRow(row),
 					compiledSerialTag, interpretedSerialTag, compiledParallelTag, interpretedParallelTag,
 					highestIrTag);
 		}
@@ -1618,31 +1615,14 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			final LmdbNativeWork irAggregateWork = candidateWork;
 			final LmdbNativeWork irAggregatePlanning = irAggregateWork.known() ? irAggregateWork
 					: LmdbNativeWork.planning(arg, row, row.boundMask());
-			LmdbNativeStrategyProposal.ExpectedPlanningPrior serialExpectedPrior = null;
-			if (!irAggregateWork.known()) {
-				// Sampled cardinalities are useful only in this expected-only lane. Keep them out of the hard interval
-				// and
-				// the adaptive feature vector; this aggregate materializes its complete result before publishing rows.
-				double expectedSerialWork = LmdbNativeWork.expectedWork(arg, row, row.boundMask());
-				serialExpectedPrior = LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(expectedSerialWork);
-
-			}
-			final LmdbNativeStrategyProposal.ExpectedPlanningPrior irSerialExpectedPrior = serialExpectedPrior;
-			// A budgeted execution witness admits an IR tier to the cold normal frontier without a work quote. The
-			// IR kernels enumerate the same rows the interpreter would; when an algorithmic specialist (exact index
-			// runs, metadata counts, worst-case-optimal joins) owns this row, the row-enumerating tiers must compete
-			// on complete work evidence or learned timing only, never on that resource proof alone.
-			final boolean witnessIr = !algorithmicSpecialist;
 			if (parallelIr) {
 				if (compiledIr) {
 					arbiter.offer(() -> parallelKernelProposal(row, compiledAdmission, compiledParallelTag, false,
-							allowFixedContexts, irAggregateWork, irAggregatePlanning, irSerialExpectedPrior,
-							witnessIr));
+							allowFixedContexts, irAggregateWork, irAggregatePlanning));
 				}
 				if (interpretedIr) {
 					arbiter.offer(() -> parallelKernelProposal(row, interpretedAdmission, interpretedParallelTag, true,
-							allowFixedContexts, irAggregateWork, irAggregatePlanning, irSerialExpectedPrior,
-							witnessIr));
+							allowFixedContexts, irAggregateWork, irAggregatePlanning));
 				}
 			}
 			if (compiledIr) {
@@ -1652,9 +1632,6 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							allowFixedContexts);
 				}, compiledSerialTag, irAggregateWork)
 						.withPlanningWork(irAggregatePlanning)
-						.withOptionalExpectedPlanningPrior(irSerialExpectedPrior)
-						.withOptionalExecutionResourceWitness(
-								witnessIr ? compiledAdmission.executionResourceWitness(row, false) : null)
 						.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, false))
 						.withOptionalCostQuote(kernelQuote(arg, row, compiledSerialTag, compiledAdmission)));
 			}
@@ -1665,9 +1642,6 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							allowFixedContexts);
 				}, interpretedSerialTag, irAggregateWork)
 						.withPlanningWork(irAggregatePlanning)
-						.withOptionalExpectedPlanningPrior(irSerialExpectedPrior)
-						.withOptionalExecutionResourceWitness(
-								witnessIr ? interpretedAdmission.executionResourceWitness(row, false) : null)
 						.withOptionalAggregatePhysicalPlan(interpretedAdmission.physicalPlan(arg, row, false))
 						.withOptionalCostQuote(kernelQuote(arg, row, interpretedSerialTag, interpretedAdmission)));
 			}
@@ -1729,7 +1703,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	List<BindingSet> evaluateArbitrated(RowState row, LmdbNativeAttemptMetrics metrics, SlotPlan originalArg) {
 		NativeAggregateCostQuotes costQuotes = new NativeAggregateCostQuotes(this, row);
-		LmdbNativeOfferBridge<List<BindingSet>> offers = new LmdbNativeOfferBridge<List<BindingSet>>(
+		LmdbNativeOffers<List<BindingSet>> offers = new LmdbNativeOffers<List<BindingSet>>(
 				LmdbNativeDecisionPoint.GROUP, costQuotes::attach).ceiling(LmdbNativeCostVectors.sweepWork(row));
 		try {
 			offerCandidates(row, metrics, originalArg, offers);
@@ -1739,6 +1713,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							.sharedRow(row)
 							.forcing(forcedExecutionStrategy)
 							.advice(LmdbNativeAdvisoryLearner.scope(row, originalArg))
+							.budgetRefusals(!requiresSerialDispatch() && !requiresOpaqueEncounterOrder()
+									&& SlotPlan.encounterOrderReplaySafe(arg))
 							.eager();
 			if (LmdbNativeStrategyPreview.active()) {
 				if (existsIntersection != null) {
@@ -1810,8 +1786,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	private LmdbNativeStrategyProposal<List<BindingSet>> parallelKernelProposal(RowState row,
 			LmdbNativeKernelExecution.AggregateAdmission admission, String tag, boolean interpreted,
-			boolean allowFixedContexts, LmdbNativeWork serialWork, LmdbNativeWork serialPlanning,
-			LmdbNativeStrategyProposal.ExpectedPlanningPrior serialExpectedPrior, boolean witness) {
+			boolean allowFixedContexts, LmdbNativeWork serialWork, LmdbNativeWork serialPlanning) {
 		if (!admission.parallelWorkAdmitted(arg, row)) {
 			LmdbNativeAttemptMetrics.captureDecline(tag, "below-threshold");
 			return null;
@@ -1822,9 +1797,6 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			return null;
 		}
 		int workers = reservation.grantedWorkers();
-		LmdbNativeStrategyProposal.ExpectedPlanningPrior expected = serialExpectedPrior == null ? null
-				: LmdbNativeStrategyProposal.ExpectedPlanningPrior.blocking(LmdbNativeStrategyProposal.parallelCost(
-						serialExpectedPrior.expectedTotalWork(), workers));
 		return estimatedProposal(
 				() -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(arg, row, groupSlots, aggregates,
 						this, explainTarget, havingCondition, interpreted, allowFixedContexts, reservation),
@@ -1832,9 +1804,6 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				LmdbNativeKernelExecution.parallelStartupWork())
 						.withParallelReservation(reservation)
 						.withPlanningWork(LmdbNativeKernelExecution.parallelProposalWork(serialPlanning, workers))
-						.withOptionalExpectedPlanningPrior(expected)
-						.withOptionalExecutionResourceWitness(
-								witness ? admission.executionResourceWitness(row, true, workers) : null)
 						.withOptionalAggregatePhysicalPlan(admission.physicalPlan(arg, row, true, workers))
 						.withOptionalCostQuote(kernelQuote(arg, row, tag, workers, admission))
 						.withParallelShape(LmdbNativeStaticPrior.ParallelShape.aggregate(arg, row,
@@ -1843,18 +1812,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	private LmdbNativeStrategyProposal<List<BindingSet>> estimatedProposal(
 			LmdbNativeStrategyProposal.Opener<List<BindingSet>> opener, String tag, LmdbNativeWork estimatedWork) {
-		return estimatedProposal(opener, tag, estimatedWork, true);
-	}
-
-	private LmdbNativeStrategyProposal<List<BindingSet>> estimatedProposal(
-			LmdbNativeStrategyProposal.Opener<List<BindingSet>> opener, String tag, LmdbNativeWork estimatedWork,
-			boolean probeable) {
-		LmdbNativeStrategyProposal<List<BindingSet>> proposal = new LmdbNativeStrategyProposal<>(terminalOpener(opener),
-				estimatedWork, LmdbNativeWork.ZERO,
-				groupSlots.length == 0 && havingCondition == null ? 1D : Double.NaN,
-				tag, () -> {
-				}, probeable);
-		return proposal;
+		return estimatedProposal(opener, tag, estimatedWork, LmdbNativeWork.ZERO);
 	}
 
 	private LmdbNativeStrategyProposal<List<BindingSet>> estimatedProposal(

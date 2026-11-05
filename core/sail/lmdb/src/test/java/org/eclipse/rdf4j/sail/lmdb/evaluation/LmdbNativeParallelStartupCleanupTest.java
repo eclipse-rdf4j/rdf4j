@@ -107,7 +107,7 @@ class LmdbNativeParallelStartupCleanupTest {
 			AtomicInteger fallbackOpens = new AtomicInteger();
 			Throwable startupFailure = null;
 			try {
-				LmdbNativeOfferBridge<RowCursor> offers = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.ROW);
+				LmdbNativeOffers<RowCursor> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW);
 				offers.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
 					cursor.start();
 					return cursor;

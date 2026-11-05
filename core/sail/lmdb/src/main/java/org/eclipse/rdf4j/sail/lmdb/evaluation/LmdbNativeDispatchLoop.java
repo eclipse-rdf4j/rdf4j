@@ -38,6 +38,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbNativeDispatchLoop.class);
 	private static final AtomicLong DECISIONS = new AtomicLong();
+	private static final String BUDGET_DECLINE = "refused the query memory budget while opening";
 
 	/**
 	 * The opened executable, which strategy opened it, and the record that explains why. {@code observation} is the
@@ -59,6 +60,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 	private LmdbNativeStaticPrior prior = LmdbNativeStaticPrior.DEFAULT;
 	private LmdbNativeAdvisoryLearner.Scope advice;
 	private boolean eager;
+	private boolean handlesBudgetRefusals;
+	private boolean retriesBudgetRefusals;
 
 	LmdbNativeDispatchLoop(LmdbNativeDecisionPoint point, List<? extends LmdbNativeStrategy<C, T>> strategies,
 			TupleExpr explainTarget) {
@@ -117,6 +120,17 @@ final class LmdbNativeDispatchLoop<C, T> {
 	/** Opening runs a strategy of this point to the end of its rows, so the open time is the whole run. */
 	LmdbNativeDispatchLoop<C, T> eager() {
 		this.eager = true;
+		return this;
+	}
+
+	/**
+	 * Makes a query memory refusal while a candidate opens this site's to answer. With {@code retry} the candidate
+	 * counts as declined and the next one runs, which takes an input that can be evaluated a second time. When no
+	 * candidate is left, or without {@code retry}, the query fails with a public exception naming the budget.
+	 */
+	LmdbNativeDispatchLoop<C, T> budgetRefusals(boolean retry) {
+		this.handlesBudgetRefusals = true;
+		this.retriesBudgetRefusals = retry;
 		return this;
 	}
 
@@ -386,6 +400,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 			boolean forcedReturnedNull = false;
 			int decisionSlot = -1;
 			int rankingRound = 0;
+			KernelRuntime.AllocationDeniedException budgetRefusal = null;
 			while (!admitted.candidates.isEmpty()) {
 				if (retry) {
 					restoreSharedRow();
@@ -413,8 +428,21 @@ final class LmdbNativeDispatchLoop<C, T> {
 				retry = true;
 				startAttemptOnSharedRow();
 				long openStarted = advice == null ? 0L : System.nanoTime();
-				T value = forcedTag == null || !admitted.forcingApplies ? chosen.opener().open()
-						: openCapturingDeclines(chosen, admitted);
+				T value;
+				try {
+					value = forcedTag == null || !admitted.forcingApplies ? chosen.opener().open()
+							: openCapturingDeclines(chosen, admitted);
+				} catch (KernelRuntime.AllocationDeniedException refused) {
+					if (!handlesBudgetRefusals) {
+						throw refused;
+					}
+					if (!retriesBudgetRefusals) {
+						throw budgetExhausted(refused);
+					}
+					budgetRefusal = refused;
+					value = null;
+					recordBudgetDecline(chosen.id(), admitted);
+				}
 				if (value != null) {
 					int winner = ranking.winner();
 					admitted.candidates.remove(winner);
@@ -452,11 +480,26 @@ final class LmdbNativeDispatchLoop<C, T> {
 				throw forcedUnavailable(forcedDecline(admitted), forcedReturnedNull);
 			}
 			admitted.releaseAll();
+			if (budgetRefusal != null) {
+				throw budgetExhausted(budgetRefusal);
+			}
 			return null;
 		} catch (IOException | RuntimeException | Error failure) {
 			admitted.releaseAll(failure);
 			throw failure;
 		}
+	}
+
+	private void recordBudgetDecline(String id, Admitted admitted) {
+		admitted.declines.putIfAbsent(id, BUDGET_DECLINE);
+		if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
+			LmdbNativeExplain.recordStrategyDecline(explainTarget, id, BUDGET_DECLINE);
+		}
+	}
+
+	private static QueryEvaluationException budgetExhausted(KernelRuntime.AllocationDeniedException refused) {
+		return new QueryEvaluationException("No native strategy can answer this query within its memory budget",
+				refused);
 	}
 
 	/** A candidate that lost on price is a decline with a reason, next to the ones that never offered themselves. */

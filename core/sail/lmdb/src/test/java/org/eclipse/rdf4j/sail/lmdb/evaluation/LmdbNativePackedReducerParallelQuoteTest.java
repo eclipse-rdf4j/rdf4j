@@ -99,7 +99,7 @@ class LmdbNativePackedReducerParallelQuoteTest {
 			serial = LmdbNativePackedFtree.aggregateQuote(input, row, groups, aggregates);
 			proposal = LmdbNativePackedFtree.proposeParallelAggregate(input, row, groups, aggregates, owner, null);
 			assertThat(proposal).isNotNull();
-			parallel = LmdbNativeOfferBridge.quote(proposal);
+			parallel = LmdbNativeStrategyProposal.quote(proposal);
 		}
 
 		private void set(String key, String value) {

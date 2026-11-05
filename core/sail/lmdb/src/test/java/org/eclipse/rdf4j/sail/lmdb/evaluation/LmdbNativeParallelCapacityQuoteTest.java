@@ -47,7 +47,7 @@ class LmdbNativeParallelCapacityQuoteTest {
 				LmdbNativeStrategyProposal<RowCursor> proposal = fixture.rows(distinct)) {
 			assertThat(other.grantedWorkers()).isEqualTo(6);
 			assertThat(proposal).isNotNull();
-			assertThat(LmdbNativeOfferBridge.quote(proposal).startup().expected(Feature.WORKER_START))
+			assertThat(LmdbNativeStrategyProposal.quote(proposal).startup().expected(Feature.WORKER_START))
 					.as("only two of the configured eight workers are available")
 					.isEqualTo(2D);
 			assertThat(fixture.probes.get()).as("quoting never opens storage").isZero();
@@ -63,7 +63,7 @@ class LmdbNativeParallelCapacityQuoteTest {
 					LmdbNativeStrategyProposal<RowCursor> proposal = fixture.rows(false)) {
 				assertThat(other.grantedWorkers()).isEqualTo(6);
 				assertThat(proposal).isNotNull();
-				assertThat(LmdbNativeOfferBridge.quote(proposal).startup().expected(Feature.WORKER_START))
+				assertThat(LmdbNativeStrategyProposal.quote(proposal).startup().expected(Feature.WORKER_START))
 						.isEqualTo(2D);
 				assertThat(source.opened.get()).isZero();
 				try (RowCursor cursor = proposal.open()) {
@@ -100,7 +100,8 @@ class LmdbNativeParallelCapacityQuoteTest {
 				LmdbNativeParallelPipelines.TaskReservation other = LmdbNativeParallelPipelines.tryReserveTasks(false,
 						6)) {
 			assertThat(proposal).isNotNull();
-			assertThat(LmdbNativeOfferBridge.quote(proposal).startup().expected(Feature.WORKER_START)).isEqualTo(8D);
+			assertThat(LmdbNativeStrategyProposal.quote(proposal).startup().expected(Feature.WORKER_START))
+					.isEqualTo(8D);
 			assertThat(other.grantedWorkers()).isEqualTo(6);
 			try (RowCursor cursor = proposal.open()) {
 				assertThat(cursor).as("an eight-worker quote cannot silently bind two workers").isNull();
@@ -126,7 +127,7 @@ class LmdbNativeParallelCapacityQuoteTest {
 									throws java.io.IOException {
 								try (LmdbNativeStrategyProposal<List<BindingSet>> proposal = proposer.propose()) {
 									if (proposal != null) {
-										quotes.put(proposal.tag, LmdbNativeOfferBridge.quote(proposal));
+										quotes.put(proposal.tag, LmdbNativeStrategyProposal.quote(proposal));
 									}
 								}
 								return this;
@@ -177,7 +178,7 @@ class LmdbNativeParallelCapacityQuoteTest {
 						LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED, () -> {
 						}).withParallelReservation(reservation)) {
 			assertThat(reservation.grantedWorkers()).isEqualTo(2);
-			LmdbNativeCostQuote quote = LmdbNativeOfferBridge.quote(proposal);
+			LmdbNativeCostQuote quote = LmdbNativeStrategyProposal.quote(proposal);
 			assertThat(quote.startup().expected(Feature.SCANNED_ROW)).isEqualTo(7D);
 			assertThat(quote.streaming().high(Feature.SCANNED_ROW))
 					.isGreaterThanOrEqualTo(LmdbNativeCostQuote.UNBOUNDED_COUNT);
@@ -218,7 +219,7 @@ class LmdbNativeParallelCapacityQuoteTest {
 										assertThat(proposal.aggregatePhysicalPlan()).isNotNull();
 										physical.put(proposal.tag, new PhysicalAggregateQuote(
 												proposal.aggregatePhysicalPlan().producer().quote(fixture.row),
-												LmdbNativeOfferBridge.quote(costs.attach(proposal))));
+												LmdbNativeStrategyProposal.quote(costs.attach(proposal))));
 									}
 								}
 								return this;
@@ -327,7 +328,7 @@ class LmdbNativeParallelCapacityQuoteTest {
 					try (LmdbNativeStrategyProposal<RowCursor> proposal = LmdbNativeParallelPipelines.propose(step,
 							row)) {
 						assertThat(proposal).isNotNull();
-						LmdbNativeCostQuote quote = LmdbNativeOfferBridge.quote(proposal);
+						LmdbNativeCostQuote quote = LmdbNativeStrategyProposal.quote(proposal);
 						assertThat(quote.startup().expected(Feature.WORKER_START))
 								.as("the planned pipeline has two workers, not the configured maximum of eight")
 								.isEqualTo(available.grantedWorkers());

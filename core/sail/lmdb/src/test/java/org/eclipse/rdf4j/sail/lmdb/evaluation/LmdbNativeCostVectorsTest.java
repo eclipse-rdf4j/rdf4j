@@ -96,10 +96,10 @@ class LmdbNativeCostVectorsTest {
 		LmdbNativeStrategyProposal<String> proposal = new LmdbNativeStrategyProposal<>(() -> "x",
 				LmdbNativeWork.UNKNOWN, LmdbNativeWork.ZERO, Double.NaN, "unpriced", () -> {
 				});
-		LmdbNativeCostQuote quote = LmdbNativeOfferBridge.candidate(proposal, LmdbNativeWork.between(0D, 2_000D))
+		LmdbNativeCostQuote quote = LmdbNativeStrategyProposal.candidate(proposal, LmdbNativeWork.between(0D, 2_000D))
 				.quote();
 		assertThat(quote.total().high(Feature.SCANNED_ROW)).isEqualTo(2_000D);
-		LmdbNativeCostQuote unbounded = LmdbNativeOfferBridge.candidate(proposal, null).quote();
+		LmdbNativeCostQuote unbounded = LmdbNativeStrategyProposal.candidate(proposal, null).quote();
 		assertThat(unbounded.total().high(Feature.SCANNED_ROW))
 				.isGreaterThanOrEqualTo(LmdbNativeCostQuote.UNBOUNDED_COUNT);
 	}

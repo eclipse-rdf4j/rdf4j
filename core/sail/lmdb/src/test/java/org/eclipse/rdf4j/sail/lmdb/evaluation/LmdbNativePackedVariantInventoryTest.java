@@ -100,7 +100,7 @@ class LmdbNativePackedVariantInventoryTest {
 				new MaskedFilter[0]);
 		try (QueryExplanationContext ignored = QueryExplanationContext.enter(Explanation.Level.Optimized)) {
 			// Exactly the serial/parallel offer composition used by NativeRowsStep. No candidate opener is called.
-			LmdbNativeOfferBridge<NativeUnorderedInput> offers = new LmdbNativeOfferBridge<>(
+			LmdbNativeOffers<NativeUnorderedInput> offers = new LmdbNativeOffers<>(
 					LmdbNativeDecisionPoint.ROW);
 			offers.offer(() -> LmdbNativePackedFtree.proposeRows((SlotPlan) input, row, new int[] { 0, 1, 2 }, false,
 					null));

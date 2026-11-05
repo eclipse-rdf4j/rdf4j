@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.math.BigDecimal;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -82,9 +84,9 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 	private static final String PARALLEL_THEN_SERIAL_RUNG = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL + ","
 			+ LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE;
 	/**
-	 * The large-numeric budget case: every kernel rung declines the 512 KB budget at admission, and so does the
-	 * sequential path (it raises {@code AllocationDeniedException} instead of declining, which a free run would let
-	 * escape); the ordered single-pattern group walk is the exact candidate that fits, so the soft list ends on it.
+	 * The large-numeric budget case: every kernel rung declines the 512 KB budget at admission and the sequential path
+	 * refuses it while opening; the ordered single-pattern group walk is the exact candidate that fits, so the soft
+	 * list ends on it.
 	 */
 	private static final String BUDGET_DECLINING_RUNGS_THEN_ORDERED_GROUPS = String.join(",",
 			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
@@ -397,6 +399,36 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 	}
 
 	@Test
+	void unforcedDispatchReranksWhenTheCheapestCandidateRefusesTheBudget() {
+		set("rdf4j.lmdb.parallel.threads", "2");
+		set("rdf4j.lmdb.parallel.maxTasks", "2");
+		LmdbNativeHashJoin.queryMemoryOverride = LmdbQueryMemoryManager.createForTesting(128_000_000L, 128_000_000L);
+		List<BindingSet> expected = numericAggregates(PARALLEL_RUNG);
+
+		// The sequential group path is the cheapest candidate left after the kernels decline this budget, and it
+		// refuses while it opens. The ordered group walk fits, so the refusal must re-rank like any other decline.
+		LmdbQueryMemoryManager constrained = LmdbQueryMemoryManager.createForTesting(512_000L, 512_000L);
+		LmdbNativeHashJoin.queryMemoryOverride = constrained;
+
+		assertThat(numericAggregates(null))
+				.as("a budget refusal at dispatch must not fail a query another candidate can answer")
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(constrained.usedBytes()).as("the refused attempt must release its reservations").isZero();
+	}
+
+	@Test
+	void budgetNoCandidateFitsFailsTheQueryWithAPublicException() {
+		LmdbQueryMemoryManager tiny = LmdbQueryMemoryManager.createForTesting(2_000L, 2_000L);
+		LmdbNativeHashJoin.queryMemoryOverride = tiny;
+
+		assertThatThrownBy(() -> numericAggregates(null))
+				.as("the internal refusal must not reach the caller")
+				.isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("memory");
+		assertThat(tiny.usedBytes()).as("every refused attempt must release its reservations").isZero();
+	}
+
+	@Test
 	void workerPartialRetainsNumericPayloadAfterSegmentHooksClose() throws Exception {
 		set("rdf4j.lmdb.parallel.threads", "2");
 		set("rdf4j.lmdb.parallel.maxTasks", "2");
@@ -577,7 +609,9 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 
 	private static SailTupleQuery forced(SailRepositoryConnection connection, String query, String forcedStrategy) {
 		SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
-		prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+		if (forcedStrategy != null) {
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+		}
 		return prepared;
 	}
 

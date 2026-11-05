@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -260,8 +259,8 @@ final class LmdbNativeParallelPipelines {
 		}
 		int workers = reservation.grantedWorkers();
 		int sourceCount = workers + (morselMode ? 1 : 0);
-		double startupCost = LmdbNativeStrategyProposal.parallelStartupCost();
-		double estCost = LmdbNativeStrategyProposal.parallelCost(totalWork, workers, startupCost);
+		double startupCost = LmdbNativeWork.parallelStartupCost();
+		double estCost = LmdbNativeWork.parallelCost(totalWork, workers, startupCost);
 		ParallelCandidate candidate = new ParallelCandidate(step, consumerRow, plan, root, partitions, reservation,
 				workers, sourceCount);
 		// Worker threads, snapshot sources and read transactions are all created before the first row can be
@@ -750,6 +749,7 @@ final class LmdbNativeParallelPipelines {
 		boolean producerScanComplete;
 		boolean producerClosed;
 		boolean metricsCommitted;
+		boolean started;
 		boolean closed;
 		boolean exhausted;
 
@@ -803,6 +803,7 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void start() {
+			started = true;
 			int submitted = 0;
 			try {
 				for (int i = 0; i < workerPlans.length; i++) {
@@ -821,19 +822,7 @@ final class LmdbNativeParallelPipelines {
 			} catch (RuntimeException | Error problem) {
 				recordStartupFailure(problem);
 				cancelled.set(true);
-				for (int i = submitted; i < workerPlans.length; i++) {
-					Throwable filterFailure = closePlanFilters(workerPlans[i], null);
-					if (filterFailure != null) {
-						recordCleanupFailure(filterFailure);
-					}
-					try {
-						sources[i].close();
-					} catch (Throwable closeFailure) {
-						recordCleanupFailure(closeFailure);
-					} finally {
-						taskFinished();
-					}
-				}
+				releaseUnsubmittedWorkers(submitted);
 				closeProducer();
 				awaitTasks();
 				Throwable retained = retainRecordedCleanupFailures(problem);
@@ -844,6 +833,23 @@ final class LmdbNativeParallelPipelines {
 					throw error;
 				}
 				throw new QueryEvaluationException("parallel native pipeline startup cleanup failed", retained);
+			}
+		}
+
+		/** A worker that was never submitted cannot run its own cleanup or count its task down, so this does both. */
+		private void releaseUnsubmittedWorkers(int firstUnsubmitted) {
+			for (int i = firstUnsubmitted; i < workerPlans.length; i++) {
+				Throwable filterFailure = closePlanFilters(workerPlans[i], null);
+				if (filterFailure != null) {
+					recordCleanupFailure(filterFailure);
+				}
+				try {
+					sources[i].close();
+				} catch (Throwable closeFailure) {
+					recordCleanupFailure(closeFailure);
+				} finally {
+					taskFinished();
+				}
 			}
 		}
 
@@ -1373,9 +1379,12 @@ final class LmdbNativeParallelPipelines {
 			}
 			closed = true;
 			cancelled.set(true);
+			if (!started) {
+				releaseUnsubmittedWorkers(0);
+			}
 			closeProducer();
 			awaitTasks();
-			if (!exhausted && failure.get() == null && cleanupFailures.isEmpty()) {
+			if (started && !exhausted && failure.get() == null && cleanupFailures.isEmpty()) {
 				CANCELLED_RUNS.incrementAndGet();
 			}
 			reservation.close();

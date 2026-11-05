@@ -115,7 +115,8 @@ class LmdbNativePackedParallelQuoteOwnershipTest {
 						2)) {
 			assertThat(parallel).isNotNull();
 			assertThat(other).isNotNull();
-			assertThat(LmdbNativeOfferBridge.quote(parallel).startup().expected(Feature.WORKER_START)).isEqualTo(4D);
+			assertThat(LmdbNativeStrategyProposal.quote(parallel).startup().expected(Feature.WORKER_START))
+					.isEqualTo(4D);
 			assertThat(parallel.open()).isNull();
 			assertThat(fixture.source.probes.get()).isZero();
 			assertThat(fixture.source.opened.get()).isZero();
@@ -187,8 +188,9 @@ class LmdbNativePackedParallelQuoteOwnershipTest {
 										null)) {
 							assertThat(proposal).isNotNull();
 							assertThat(fixture.source.probes.get()).isZero();
-							assertThat(LmdbNativeOfferBridge.quote(proposal).startup().expected(Feature.WORKER_START))
-									.isEqualTo(4D);
+							assertThat(
+									LmdbNativeStrategyProposal.quote(proposal).startup().expected(Feature.WORKER_START))
+											.isEqualTo(4D);
 							results = proposal.open();
 						}
 					} else {
@@ -312,7 +314,7 @@ class LmdbNativePackedParallelQuoteOwnershipTest {
 					? LmdbNativePackedFtree.proposeParallelRows(join, row, new int[] { 0, 1, 2 }, false, null)
 					: LmdbNativePackedFtree.proposeRows(join, row, new int[] { 0, 1, 2 }, false, null)) {
 				assertThat(proposal).isNotNull();
-				LmdbNativeCostQuote quote = LmdbNativeOfferBridge.quote(proposal);
+				LmdbNativeCostQuote quote = LmdbNativeStrategyProposal.quote(proposal);
 				assertThat(source.opened.get()).as("quoting must not open sibling sources").isZero();
 				List<String> rows = new ArrayList<>();
 				try (NativeUnorderedInput input = proposal.open()) {

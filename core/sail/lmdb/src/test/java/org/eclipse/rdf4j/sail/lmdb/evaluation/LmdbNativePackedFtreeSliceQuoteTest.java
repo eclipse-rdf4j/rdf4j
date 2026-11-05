@@ -124,7 +124,7 @@ class LmdbNativePackedFtreeSliceQuoteTest {
 				LmdbNativeWork.ZERO, "packedFtree", () -> {
 				}).withCostQuote(quote);
 				LmdbNativeStrategyProposal<Integer> mapped = proposal.map(String::length, "packedFtree")) {
-			LmdbNativeCandidate<Integer> candidate = LmdbNativeOfferBridge.candidate(mapped);
+			LmdbNativeCandidate<Integer> candidate = LmdbNativeStrategyProposal.candidate(mapped);
 			assertThat(candidate.quote()).isSameAs(quote);
 			assertThat(candidate.quote().forSlice(1D)).isEqualTo(quote.forSlice(1D));
 		}

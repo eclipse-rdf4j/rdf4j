@@ -178,7 +178,7 @@ final class LmdbNativeMergeJoin {
 	}
 
 	private static Candidate candidate(Admission admission, RowState row, Side leftSide, Side rightSide) {
-		double estCost = LmdbNativeStrategyProposal.batchCost(
+		double estCost = LmdbNativeWork.batchCost(
 				admission.left.estimateForBoundMask(row.boundMask(), row.source),
 				admission.right.estimateForBoundMask(row.boundMask(), row.source));
 		return new Candidate(admission.keyMask, leftSide.keySeqSlots, leftSide, rightSide,

@@ -52,7 +52,7 @@ public class LmdbNativeFactorizedCostTest {
 	}
 
 	private static double cost(SlotPlan[] order, int prefixLength) {
-		return LmdbNativeStrategyProposal.factorizedCost(order, prefixLength, 0L, null);
+		return LmdbNativeWork.factorizedCost(order, prefixLength, 0L, null);
 	}
 
 	@Test

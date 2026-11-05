@@ -69,7 +69,7 @@ class LmdbNativeParallelThresholdAdmissionTest {
 			}
 			try (proposal) {
 				assertThat(proposal).isNotNull();
-				assertThat(LmdbNativeOfferBridge.quote(proposal).startup().expected(Feature.WORKER_START))
+				assertThat(LmdbNativeStrategyProposal.quote(proposal).startup().expected(Feature.WORKER_START))
 						.isEqualTo(2D);
 				Map<String, String> declines = new LinkedHashMap<>();
 				Map<String, String> previous = LmdbNativeAttemptMetrics.installDeclineCapture(declines);
@@ -131,7 +131,7 @@ class LmdbNativeParallelThresholdAdmissionTest {
 				}
 				try (proposal) {
 					assertThat(proposal).isNotNull();
-					assertThat(LmdbNativeOfferBridge.quote(proposal).startup().expected(Feature.WORKER_START))
+					assertThat(LmdbNativeStrategyProposal.quote(proposal).startup().expected(Feature.WORKER_START))
 							.isEqualTo(2D);
 					Map<String, String> declines = new LinkedHashMap<>();
 					Map<String, String> previous = LmdbNativeAttemptMetrics.installDeclineCapture(declines);
@@ -247,7 +247,7 @@ class LmdbNativeParallelThresholdAdmissionTest {
 		}
 
 		LmdbNativeDispatchLoop<Void, RowCursor> rowLoop(boolean distinct) {
-			LmdbNativeOfferBridge<RowCursor> offers = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.ROW);
+			LmdbNativeOffers<RowCursor> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW);
 			offers.offer(rowTag(distinct), () -> rows(distinct));
 			return new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW, offers.strategies(), null);
 		}
@@ -258,7 +258,7 @@ class LmdbNativeParallelThresholdAdmissionTest {
 		}
 
 		LmdbNativeDispatchLoop<Void, List<BindingSet>> aggregateLoop(NativeGroupIteration owner) {
-			LmdbNativeOfferBridge<List<BindingSet>> offers = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.GROUP);
+			LmdbNativeOffers<List<BindingSet>> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
 			offers.offer(AGGREGATE, () -> aggregateProposal(owner));
 			return new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null);
 		}

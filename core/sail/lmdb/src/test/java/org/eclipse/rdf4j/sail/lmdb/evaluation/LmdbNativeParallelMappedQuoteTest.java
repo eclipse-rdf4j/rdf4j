@@ -20,14 +20,14 @@ class LmdbNativeParallelMappedQuoteTest {
 
 	@Test
 	void changingTheResultCarrierPreservesParallelShapeAndItsQuote() {
-		double startup = LmdbNativeStrategyProposal.parallelStartupCost();
+		double startup = LmdbNativeWork.parallelStartupCost();
 		try (LmdbNativeStrategyProposal<String> proposal = new LmdbNativeStrategyProposal<>(() -> "rows",
 				LmdbNativeWork.exact(startup + 1_000_000D), LmdbNativeWork.exact(startup), 3D,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL, () -> {
 				}).withParallelShape(new LmdbNativeStaticPrior.ParallelShape(true, 200_000D, true, 3D, 1_000_000D));
 				LmdbNativeStrategyProposal<Integer> mapped = proposal.map(String::length, proposal.tag)) {
-			LmdbNativeCostQuote original = LmdbNativeOfferBridge.quote(proposal);
-			LmdbNativeCostQuote converted = LmdbNativeOfferBridge.quote(mapped);
+			LmdbNativeCostQuote original = LmdbNativeStrategyProposal.quote(proposal);
+			LmdbNativeCostQuote converted = LmdbNativeStrategyProposal.quote(mapped);
 			for (Feature feature : Feature.values()) {
 				assertThat(converted.startup().expected(feature)).as("startup feature %s", feature)
 						.isEqualTo(original.startup().expected(feature));

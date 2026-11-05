@@ -2175,12 +2175,6 @@ class LmdbDirectAdjacencyQueryTest {
 					.toGenericPlanNode();
 			assertThat(eligibleAggregateStrategies(optimized)).contains("adjacencyAggregate", "irAggregateInterpreted",
 					"nestedLoop");
-			GenericPlanNode plan = connection.prepareTupleQuery(query)
-					.explain(Explanation.Level.Telemetry)
-					.toGenericPlanNode();
-			assertThat(findMetric(plan, "nativeAggregateCostQuotesEstimated"))
-					.as("a revision-valid exact domain must prove its metadata reduction against the actual IR producer")
-					.contains("\"physicalDominanceProof\":\"");
 		}
 		LmdbPrefixRunPlan.resetMetrics();
 		assertThat(queryRows(query, "count")).containsExactly("2");

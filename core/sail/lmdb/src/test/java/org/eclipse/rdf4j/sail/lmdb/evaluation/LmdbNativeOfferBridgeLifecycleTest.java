@@ -22,13 +22,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.junit.jupiter.api.Test;
 
-class LmdbNativeOfferBridgeLifecycleTest {
+class LmdbNativeOffersLifecycleTest {
 
 	@Test
 	void failedDecorationReleasesTheProposalBeforeCandidateOwnership() {
 		IllegalStateException failure = new IllegalStateException("physical decoration failed");
 		AtomicInteger releases = new AtomicInteger();
-		LmdbNativeOfferBridge<String> bridge = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.ROW,
+		LmdbNativeOffers<String> bridge = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW,
 				proposal -> {
 					throw failure;
 				});
@@ -45,7 +45,7 @@ class LmdbNativeOfferBridgeLifecycleTest {
 		IllegalStateException failure = new IllegalStateException("physical decoration failed");
 		IllegalArgumentException cleanup = new IllegalArgumentException("reservation failed to close");
 		AtomicInteger releases = new AtomicInteger();
-		LmdbNativeOfferBridge<String> bridge = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.ROW,
+		LmdbNativeOffers<String> bridge = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW,
 				proposal -> {
 					throw failure;
 				});
@@ -67,7 +67,7 @@ class LmdbNativeOfferBridgeLifecycleTest {
 		AtomicInteger releases = new AtomicInteger();
 		LmdbNativeStrategyProposal<String> proposal = spy(proposal(releases::incrementAndGet));
 		doThrow(failure).when(proposal).typedQuote();
-		LmdbNativeOfferBridge<String> bridge = new LmdbNativeOfferBridge<>(LmdbNativeDecisionPoint.ROW);
+		LmdbNativeOffers<String> bridge = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW);
 		bridge.offer(() -> proposal);
 
 		Throwable actual = catchThrowable(() -> bridge.strategies().getFirst().admit(null));

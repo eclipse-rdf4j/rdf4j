@@ -19,8 +19,10 @@ import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeDispatchLoopEdgeCaseTest {
@@ -188,6 +190,73 @@ class LmdbNativeDispatchLoopEdgeCaseTest {
 
 		assertThat(failure).isSameAs(closeFailure);
 		assertThat(closeFailure.getSuppressed()).contains(KernelCancelledException.INSTANCE);
+	}
+
+	@Test
+	void budgetRefusalWithRetryOpensTheNextCandidate() throws IOException {
+		AtomicInteger refusedReleases = new AtomicInteger();
+		LmdbNativeCandidate<String> refused = candidate("refused", 1D, () -> {
+			throw new KernelRuntime.AllocationDeniedException();
+		}, refusedReleases::incrementAndGet);
+		LmdbNativeCandidate<String> rival = candidate("rival", 100D, () -> "rival", () -> {
+		});
+		var selection = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(refused), strategy(rival)), null).budgetRefusals(true).dispatch(null);
+
+		assertThat(selection.id()).isEqualTo("rival");
+		assertThat(refusedReleases).hasValue(1);
+	}
+
+	@Test
+	void budgetRefusalFromTheLastCandidateFailsWithAPublicException() {
+		KernelRuntime.AllocationDeniedException refusal = new KernelRuntime.AllocationDeniedException();
+		AtomicInteger releases = new AtomicInteger();
+		LmdbNativeCandidate<String> only = candidate("only", 1D, () -> {
+			throw refusal;
+		}, releases::incrementAndGet);
+		var loop = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW, List.of(strategy(only)), null)
+				.budgetRefusals(true);
+
+		Throwable failure = catchThrowable(() -> loop.dispatch(null));
+
+		assertThat(failure).isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("memory budget")
+				.hasCause(refusal);
+		assertThat(releases).hasValue(1);
+	}
+
+	@Test
+	void budgetRefusalWithoutRetryFailsWithoutOpeningARival() {
+		KernelRuntime.AllocationDeniedException refusal = new KernelRuntime.AllocationDeniedException();
+		AtomicInteger rivalOpens = new AtomicInteger();
+		LmdbNativeCandidate<String> refused = candidate("refused", 1D, () -> {
+			throw refusal;
+		}, () -> {
+		});
+		LmdbNativeCandidate<String> rival = candidate("rival", 100D, () -> {
+			rivalOpens.incrementAndGet();
+			return "rival";
+		}, () -> {
+		});
+		var loop = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(refused), strategy(rival)), null).budgetRefusals(false);
+
+		Throwable failure = catchThrowable(() -> loop.dispatch(null));
+
+		assertThat(failure).isInstanceOf(QueryEvaluationException.class).hasCause(refusal);
+		assertThat(rivalOpens).hasValue(0);
+	}
+
+	@Test
+	void siteThatLeavesBudgetRefusalsAloneKeepsTheControlSignal() {
+		KernelRuntime.AllocationDeniedException refusal = new KernelRuntime.AllocationDeniedException();
+		LmdbNativeCandidate<String> refused = candidate("refused", 1D, () -> {
+			throw refusal;
+		}, () -> {
+		});
+		var loop = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW, List.of(strategy(refused)), null);
+
+		assertThat(catchThrowable(() -> loop.dispatch(null))).isSameAs(refusal);
 	}
 
 	private static LmdbNativeStrategy<Void, String> strategy(LmdbNativeCandidate<String> candidate) {

@@ -803,7 +803,7 @@ class LmdbPhysicalWorkPricingRegressionTest {
 	void adaptiveProposalKeepsStartupExpectedInsideTotalExpected() {
 		LmdbNativeStrategyProposal<Object> proposal = new LmdbNativeStrategyProposal<>(() -> null,
 				LmdbNativeWork.between(0D, 100D), LmdbNativeWork.between(90D, 100D), 100D,
-				"nestedLoop", null, false);
+				"nestedLoop", null);
 
 		NativePhysicalWorkQuote estimate = proposal.typedQuote();
 
@@ -821,7 +821,7 @@ class LmdbPhysicalWorkPricingRegressionTest {
 	@Test
 	void unknownStartupFitsAValidFiniteTotal() {
 		LmdbNativeStrategyProposal<Object> proposal = new LmdbNativeStrategyProposal<>(() -> null,
-				LmdbNativeWork.exact(100D), LmdbNativeWork.UNKNOWN, 100D, "nestedLoop", null, false);
+				LmdbNativeWork.exact(100D), LmdbNativeWork.UNKNOWN, 100D, "nestedLoop", null);
 
 		NativePhysicalWorkQuote estimate = proposal.typedQuote();
 
@@ -1400,8 +1400,8 @@ class LmdbPhysicalWorkPricingRegressionTest {
 				RowState executionRow = limitedRow;
 				LmdbNativeStrategyProposal<RowCursor> proposal = new LmdbNativeStrategyProposal<>(
 						() -> pattern.open(executionRow), completeOpen, LmdbNativeWork.ZERO, estimatedRows,
-						"test-limit-one-free-pattern", null, false);
-				LmdbNativeWork sliced = proposal.effectiveWork(1D);
+						"test-limit-one-free-pattern", null);
+				LmdbNativeWork sliced = LmdbNativeWork.between(0D, completeOpen.high());
 				assertThat(proposal.startupWork).isEqualTo(LmdbNativeWork.ZERO);
 
 				source.resetMeasurements();
@@ -1501,8 +1501,8 @@ class LmdbPhysicalWorkPricingRegressionTest {
 				RowState executionRow = limitedRow;
 				LmdbNativeStrategyProposal<RowCursor> proposal = new LmdbNativeStrategyProposal<>(
 						() -> filtered.open(executionRow), completeOpen, LmdbNativeWork.ZERO, estimatedRows,
-						"test-limit-one-last-filter-match", null, false);
-				LmdbNativeWork sliced = proposal.effectiveWork(1D);
+						"test-limit-one-last-filter-match", null);
+				LmdbNativeWork sliced = LmdbNativeWork.between(0D, completeOpen.high());
 
 				source.resetMeasurements();
 				List<List<Long>> resultBag = new ArrayList<>();

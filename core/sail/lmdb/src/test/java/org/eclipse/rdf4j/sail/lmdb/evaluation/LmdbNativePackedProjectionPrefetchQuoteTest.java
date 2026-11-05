@@ -163,7 +163,7 @@ class LmdbNativePackedProjectionPrefetchQuoteTest {
 						() -> null, LmdbNativeWork.ZERO, "packed-copy", () -> {
 						}).withCostQuote(original);
 						LmdbNativeStrategyProposal<Object> mapped = proposal.map(value -> value, "mapped")) {
-					copied = LmdbNativeOfferBridge.quote(mapped);
+					copied = LmdbNativeStrategyProposal.quote(mapped);
 				}
 			}
 			case EXACT_STARTUP -> {
@@ -174,7 +174,7 @@ class LmdbNativePackedProjectionPrefetchQuoteTest {
 						() -> null, LmdbNativeWork.ZERO, "packed-copy", () -> {
 						}).withCostQuote(original)
 								.withParallelReservation(reservation)) {
-					copied = LmdbNativeOfferBridge.quote(proposal);
+					copied = LmdbNativeStrategyProposal.quote(proposal);
 					assertThat(copied.startup().expected(Feature.WORKER_START)).isEqualTo(2D);
 				}
 			}
@@ -231,7 +231,7 @@ class LmdbNativePackedProjectionPrefetchQuoteTest {
 							UnprovedProjection.UNEQUAL_DIRECTION);
 					return;
 				}
-				LmdbNativeCostQuote quote = LmdbNativeOfferBridge.quote(proposal);
+				LmdbNativeCostQuote quote = LmdbNativeStrategyProposal.quote(proposal);
 				double full = quote.total().expected(Feature.GENERATED_ROW);
 				double expected = Double.isFinite(quote.outputRows()) && quote.outputRows() > 1D
 						? full / quote.outputRows()
@@ -266,7 +266,7 @@ class LmdbNativePackedProjectionPrefetchQuoteTest {
 		try (LmdbNativeStrategyProposal<NativeUnorderedInput> proposal = LmdbNativePackedFtree.proposeParallelRows(
 				input, fixture.row, retained, distinct, null)) {
 			assertThat(proposal).isNotNull();
-			return LmdbNativeOfferBridge.quote(proposal);
+			return LmdbNativeStrategyProposal.quote(proposal);
 		}
 	}
 

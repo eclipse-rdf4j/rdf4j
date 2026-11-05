@@ -13,7 +13,6 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -75,17 +74,6 @@ final class LmdbNativeKernelExecution {
 		AUTO,
 		COMPILED,
 		INTERPRETED
-	}
-
-	/** Resource admission owned by one lowered aggregate recipe, separate from its physical-work proof. */
-	record ExecutionResourceWitness(boolean queryLedgerBounded, boolean workerSlotsReservedOnOpen,
-			int configuredWorkerSlots) {
-		ExecutionResourceWitness {
-			if (!queryLedgerBounded || configuredWorkerSlots < 1
-					|| workerSlotsReservedOnOpen && configuredWorkerSlots < 2) {
-				throw new IllegalArgumentException("aggregate resource admission requires its bounded owner");
-			}
-		}
 	}
 
 	private LmdbNativeKernelExecution() {
@@ -298,29 +286,6 @@ final class LmdbNativeKernelExecution {
 			return LmdbNativeParallelKernelAggregate.meetsWorkThreshold(input.estimate(row));
 		}
 
-		/**
-		 * Proves the admitted opener uses a query memory ledger and, for parallel execution, will acquire its worker
-		 * reservation before opening sibling sources. Actual budget refusal remains an execution-time decline that the
-		 * arbiter retries through the next legal recipe.
-		 */
-		ExecutionResourceWitness executionResourceWitness(RowState row, boolean parallel) {
-			return executionResourceWitness(row, parallel, parallelProposalWorkers());
-		}
-
-		ExecutionResourceWitness executionResourceWitness(RowState row, boolean parallel, int workers) {
-			if (row == null || row.memoryScope == null || lowered.bindings == null
-					|| !(lowered.kernel.terminal instanceof LmdbNativeKernelIr.Aggregate)) {
-				return null;
-			}
-			if (!parallel) {
-				return new ExecutionResourceWitness(true, false, 1);
-			}
-			if (!aggregateParallelProposalEnabled() || workers < 2) {
-				return null;
-			}
-			return new ExecutionResourceWitness(true, true, workers);
-		}
-
 		NativeAggregatePhysicalPlan physicalPlan(SlotPlan input, RowState row, boolean parallel) {
 			return physicalPlan(input, row, parallel, parallel ? parallelProposalWorkers() : 1);
 		}
@@ -449,12 +414,12 @@ final class LmdbNativeKernelExecution {
 		if (workers < 2 || !serialWork.known()) {
 			return LmdbNativeWork.UNKNOWN;
 		}
-		return LmdbNativeWork.between(LmdbNativeStrategyProposal.parallelCost(serialWork.low(), workers),
-				LmdbNativeStrategyProposal.parallelCost(serialWork.high(), workers));
+		return LmdbNativeWork.between(LmdbNativeWork.parallelCost(serialWork.low(), workers),
+				LmdbNativeWork.parallelCost(serialWork.high(), workers));
 	}
 
 	static LmdbNativeWork parallelStartupWork() {
-		return LmdbNativeWork.exact(LmdbNativeStrategyProposal.parallelStartupCost());
+		return LmdbNativeWork.exact(LmdbNativeWork.parallelStartupCost());
 	}
 
 	static boolean aggregateParallelProposalEnabled() {

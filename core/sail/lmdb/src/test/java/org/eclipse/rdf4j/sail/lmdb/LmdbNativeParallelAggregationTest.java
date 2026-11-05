@@ -70,7 +70,7 @@ public class LmdbNativeParallelAggregationTest {
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String MERGE_FLAG = "rdf4j.lmdb.chunkPipeline.merge.enabled";
 	private static final String EXTERNAL_ROOT_CANDIDATE_FLAG = "rdf4j.lmdb.chunkPipeline.externalRoot.experimental";
-	private static final String PARALLEL_STARTUP_WORK_FLAG = LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY;
+	private static final String PARALLEL_STARTUP_WORK_FLAG = LmdbNativeWork.PARALLEL_STARTUP_COST_PROPERTY;
 	private static final String PACKED_FTREE_FLAG = "rdf4j.lmdb.packedFtree.enabled";
 	private static final String FACTORIZED_TAIL_FLAG = "rdf4j.lmdb.factorizedTail.enabled";
 	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
@@ -329,7 +329,7 @@ public class LmdbNativeParallelAggregationTest {
 	@Test
 	public void singlePatternDistinctPrefersMonotonicAggregation() {
 		String previousStartup = System.setProperty(PARALLEL_STARTUP_WORK_FLAG,
-				Double.toString(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST));
+				Double.toString(LmdbNativeWork.PARALLEL_STARTUP_COST));
 		try {
 			String query = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT (COUNT(?s) AS ?c) (COUNT(DISTINCT ?a) AS ?d) WHERE { ?s ex:p1 ?a . }";
@@ -355,7 +355,7 @@ public class LmdbNativeParallelAggregationTest {
 	@Test
 	public void smallDistinctStarKeepsTheSequentialPathBelowParallelStartupCost() {
 		String previousStartup = System.setProperty(PARALLEL_STARTUP_WORK_FLAG,
-				Double.toString(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST));
+				Double.toString(LmdbNativeWork.PARALLEL_STARTUP_COST));
 		String previousTail = System.setProperty(FACTORIZED_TAIL_FLAG, "true");
 		try {
 			String query = star("(COUNT(DISTINCT ?b) AS ?d)", "");
