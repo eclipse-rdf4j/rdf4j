@@ -187,25 +187,25 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 				: detachedPlanningSnapshots.openDetachedPlanningSnapshot(readPlaneMask);
 				var planningPin = snapshot.pinPlanningReads(runtime)) {
 			long snapshotEpoch = snapshot.snapshotEpoch();
-			LmdbEstimatorRuntime.PlanningRevisions buildRevisions = runtime.capturePlanningRevisions();
-			if (beforeSnapshot.dataRevision() != buildRevisions.dataRevision()) {
-				throw new IllegalStateException("detached refresh data changed while opening its planning snapshot");
-			}
-			ensureAssumptionsCurrent(buildRevisions.dataRevision());
-			return executeAgainstSnapshot(snapshotEpoch, snapshot.tripleSource(), buildRevisions);
+			return executeAgainstSnapshot(snapshotEpoch, snapshot.tripleSource(), beforeSnapshot.dataRevision());
 		}
 	}
 
 	private LmdbPlanDecisionCache.RefreshComputation executeAgainstSnapshot(long snapshotEpoch,
 			SailDatasetTripleTermSource tripleSource,
-			LmdbEstimatorRuntime.PlanningRevisions buildRevisions) {
-		LmdbPlanDecisionCache.EvidenceSnapshot buildEvidence = LmdbPipelinePlanCache.evidence(buildRevisions);
+			long beforeSnapshotDataRevision) {
 		Dataset dataset = dataset(datasetIdentity);
 		BindingSet bindings = bindings(bindingIdentity);
 		try (var population = runtime.beginFrontierReadScope(tripleSource, dataset, readPlaneMask)) {
 			if (readPlaneMask != -1 && runtime.frontierReadPlaneMask() != readPlaneMask) {
 				throw new IllegalStateException("Detached query snapshot does not own the requested read planes");
 			}
+			LmdbEstimatorRuntime.PlanningRevisions buildRevisions = runtime.capturePlanningRevisions();
+			if (beforeSnapshotDataRevision != buildRevisions.dataRevision()) {
+				throw new IllegalStateException("detached refresh data changed while opening its planning snapshot");
+			}
+			ensureAssumptionsCurrent(buildRevisions.dataRevision());
+			LmdbPlanDecisionCache.EvidenceSnapshot buildEvidence = LmdbPipelinePlanCache.evidence(buildRevisions);
 			return executeAgainstReadScope(snapshotEpoch, tripleSource, buildRevisions, buildEvidence, dataset,
 					bindings);
 		}
@@ -270,7 +270,7 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 				packedWork.forIncumbent(summary), datasetIdentity, bindingIdentity, trackResultSize,
 				preserveObservationOrder, runtimeTelemetry, queryEvaluationMode, mode, predicateRangeVersion,
 				currentRangeIdentity, predicateRangeProofsAllowed, assumptions, buildRevisions.dataRevision(),
-				experimentalQueryOptimizations, filterReadIdentity, inputIdentity);
+				experimentalQueryOptimizations, filterReadIdentity, inputIdentity, readPlaneMask);
 		return new LmdbPlanDecisionCache.RefreshComputation(buildEvidence, currentEvidence, executable,
 				summary.physicalFingerprint(), selectedInterval, incumbentInterval,
 				LmdbPipelinePlanCache.certificate(summary, buildEvidence.globalEpoch()),

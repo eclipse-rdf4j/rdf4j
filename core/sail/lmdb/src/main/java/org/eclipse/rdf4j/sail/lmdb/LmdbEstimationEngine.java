@@ -501,8 +501,11 @@ final class LmdbEstimationEngine {
 			ResolvedEstimate resolved = evidenceResolver.resolveQualifiedForDecision(
 					evidenceSource.leafCandidates(expression, context),
 					context, () -> evidenceSource.exactCandidate(expression, context).orElse(null));
-			BagEstimate estimate = withMissingVariables(resolved.estimate(), expression);
 			RowScope domain = resolved.rowScope();
+			BagEstimate estimate = withMissingVariables(resolved.estimate(), expression);
+			if (domain == RowScope.PER_INVOCATION) {
+				estimate = evidenceSource.refineResolvedLeaf(expression, context, estimate);
+			}
 			if (!conditionOnPrefix || domain == RowScope.FOR_CONTEXT || domain == RowScope.COMPONENT) {
 				return new ResolvedEstimate(estimate, domain);
 			}

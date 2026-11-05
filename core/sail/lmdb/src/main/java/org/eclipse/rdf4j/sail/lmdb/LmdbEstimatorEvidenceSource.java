@@ -27,6 +27,10 @@ interface LmdbEstimatorEvidenceSource {
 		return Optional.empty();
 	}
 
+	default BagEstimate refineResolvedLeaf(TupleExpr expression, EstimateContext context, BagEstimate resolved) {
+		return resolved;
+	}
+
 	default Optional<JoinEvidence> joinEvidence(TupleExpr left, TupleExpr right, EstimateContext context) {
 		return Optional.empty();
 	}

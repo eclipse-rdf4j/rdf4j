@@ -3811,7 +3811,7 @@ final class LmdbPackedCostModel
 		return result;
 	}
 
-	private static JoinFactorCostModel.FactorCostEstimate correlatedStatementPatternEstimate(
+	private JoinFactorCostModel.FactorCostEstimate correlatedStatementPatternEstimate(
 			TupleExpr expression, Set<String> boundNames, double unboundOutputRows,
 			JoinFactorCostModel.FactorCostEstimate base) {
 		if (!(expression instanceof StatementPattern pattern) || !base.hasPhysicalAccessPath()
@@ -3822,23 +3822,27 @@ final class LmdbPackedCostModel
 				? unboundOutputRows
 				: finiteNonNegative(base.getOutputRows()) ? base.getOutputRows() : Double.MAX_VALUE;
 		double rowsPerInvocation = globalRows;
+		boolean adjacencyFanOutUsed = false;
 		if (fullyBoundDataPattern(pattern, boundNames)) {
 			rowsPerInvocation = Math.min(1.0d, globalRows);
 		} else {
 			BagEstimate bag = base.getBagEstimate().orElse(null);
-			if (bag != null) {
-				for (String name : boundNames) {
-					double distinctRows = bag.variable(name).distinctRows();
-					if (finitePositive(distinctRows)) {
-						rowsPerInvocation = Math.min(rowsPerInvocation, globalRows / distinctRows);
-					}
+			for (String name : boundNames) {
+				OptionalLong domain = runtime.adjacencyKeyDomain(pattern, name);
+				boolean useAdjacency = domain.isPresent() && domain.getAsLong() > 0L
+						&& domain.getAsLong() <= globalRows;
+				double distinctRows = useAdjacency ? domain.getAsLong()
+						: bag == null ? Double.NaN : bag.variable(name).distinctRows();
+				if (finitePositive(distinctRows)) {
+					rowsPerInvocation = Math.min(rowsPerInvocation, globalRows / distinctRows);
+					adjacencyFanOutUsed |= useAdjacency;
 				}
 			}
 		}
 		rowsPerInvocation = finiteNonNegative(rowsPerInvocation) ? rowsPerInvocation : globalRows;
 		double accessRows = Math.max(1.0d, rowsPerInvocation);
 		Double baseAccessWork = base.getDoubleMetrics().get(TelemetryMetricNames.PLANNED_ACCESS_WORK_ROWS);
-		if (baseAccessWork != null && finiteNonNegative(baseAccessWork)) {
+		if (!adjacencyFanOutUsed && baseAccessWork != null && finiteNonNegative(baseAccessWork)) {
 			accessRows = Math.min(accessRows, Math.max(1.0d, baseAccessWork));
 		}
 		boolean directLookup = base.getMissingLookupComponentMask() == 0

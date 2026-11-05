@@ -555,6 +555,29 @@ class LmdbNativeKernelLoweringTest {
 		assertTrue(key.contains("x{"), "the probe suffix must fold into an existential witness: " + key);
 	}
 
+	@Test
+	void distinctCountOverCommonRootUnionHasPartitionableDomain() {
+		long clazz = 9L << 7 | 1L << 1;
+		long firstPredicate = 11L << 7 | 1L << 1;
+		long secondPredicate = 12L << 7 | 1L << 1;
+		PatternPlan firstType = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(clazz), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan secondType = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(clazz), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan firstArm = new PatternPlan(Term.slot(0), Term.constant(firstPredicate), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 10D);
+		PatternPlan secondArm = new PatternPlan(Term.slot(0), Term.constant(secondPredicate), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 10D);
+		UnionPlan union = new UnionPlan(
+				new MultiJoinPlan(new SlotPlan[] { firstType, firstArm }, new MaskedFilter[0]),
+				new MultiJoinPlan(new SlotPlan[] { secondType, secondArm }, new MaskedFilter[0]));
+		LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerAggregate(union, freshRow(),
+				new int[0], new AggregateSpec[] { AggregateSpec.slot("count", 0, true, AggKind.COUNT) }, null);
+		assertNotNull(lowered, "both union arms must lower through the native aggregate path");
+		assertTrue(LmdbNativeKernelPartitions.partitionableRootDomain(lowered.kernel.pipeline) >= 0,
+				() -> "the shared root domain must remain partitionable: " + lowered.kernel.shapeKey());
+	}
+
 	/** A variable predicate has no adjacency view; with scan sources on it lowers to a direct quad scan instead. */
 	@Test
 	void variablePredicatePatternLowersToAQuadScan() {

@@ -21,7 +21,9 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,15 +31,66 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Post-production API controls: authenticated physical source planes are separate from mapped Dataset support. */
 class LmdbFrontierReadPlaneOwnershipTest {
+	@ParameterizedTest
+	@ValueSource(ints = { FrontierLeafProbe.EXPLICIT, FrontierLeafProbe.INFERRED, FrontierLeafProbe.BOTH_PLANES })
+	void successiveDetachedRefreshesPreserveTheQueryReadPlanes(int plane, @TempDir Path root) throws Exception {
+		try (var fixture = new LmdbFrontierReadOwnershipContractTest.Fixture(root, false);
+				var read = fixture.read(plane, null, null)) {
+			read.entry(null, (prepared, cascades) -> {
+				var bindings = LmdbPipelinePlanCache.BindingIdentity.of(EmptyBindingSet.getInstance());
+				var range = LmdbPipelinePlanCache.PredicateRangeIdentity.capture(prepared, bindings, read.runtime);
+				assertNotNull(range);
+				var outcome = cascades.optimizeWithResult(prepared, null, EmptyBindingSet.getInstance());
+				assertNotNull(outcome.cascadesPlan());
+				var detachedPrepared = LmdbCacheValueCopies.copy(outcome.detachedPreparedSource(), true);
+				assertNotNull(detachedPrepared, "the fixture must use the same detached value boundary as the pipeline");
+				var work = PackedCascadesPlanner.detachedRefreshWork(detachedPrepared, outcome.goal(),
+						outcome.cascadesPlan().decisionSummary(), LmdbCacheValueCopies.CODEC).orElseThrow();
+				assertEquals(PackedPlanCache.structuralKey(detachedPrepared, LmdbCacheValueCopies.CODEC),
+						PackedPlanCache.structuralKey(work.preparedSource(), LmdbCacheValueCopies.CODEC),
+						"the detached fixture must preserve its authenticated query identity");
+				var actual = (LmdbDetachedPlanningSnapshotProvider) read.statistics;
+				List<Integer> requestedPlanes = new ArrayList<>();
+				LmdbDetachedPlanningSnapshotProvider recording = new LmdbDetachedPlanningSnapshotProvider() {
+					@Override
+					public LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot() {
+						requestedPlanes.add(-1);
+						return actual.openDetachedPlanningSnapshot();
+					}
+
+					@Override
+					public LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot(int requested) {
+						requestedPlanes.add(requested);
+						return actual.openDetachedPlanningSnapshot(requested);
+					}
+				};
+				var revisions = read.runtime.capturePlanningRevisions();
+				var refresh = new LmdbDetachedPlanRefresh(read.runtime, recording, work,
+						LmdbPipelinePlanCache.DatasetIdentity.of(null), bindings, false, false, false,
+						read.strategy.getQueryEvaluationMode(), outcome.mode(), read.runtime.predicateRangeVersion(), range,
+						true, LmdbPlanAssumptions.NONE, revisions.dataRevision(), true, null, null, plane);
+				var first = refresh.execute();
+				assertNotNull(first.nextRefreshWork());
+				first.nextRefreshWork().execute();
+				assertEquals(List.of(plane, plane), requestedPlanes,
+						"both refresh generations must open the query's exact physical source population");
+				return null;
+			});
+		}
+	}
+
 	@Test
 	void selectedAndOpaqueDatasetLexicalIdentityDoesNotEraseAuthenticatedSourcePlanes(@TempDir Path root)
 			throws Exception {

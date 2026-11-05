@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Optional;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -35,6 +36,11 @@ interface LmdbPinnedReadTxnSource {
 	/** Whether this actual owner can match currently published physical metadata, without acquiring another view. */
 	default boolean isCurrentForPhysicalCost() {
 		return false;
+	}
+
+	/** Generation of usable adjacency planner statistics for this retained reader, or empty when unavailable. */
+	default OptionalLong adjacencyStatisticsGeneration() {
+		return OptionalLong.empty();
 	}
 
 	/** Borrows the dataset's admitted paired view for foreground planning; the owning dataset must remain open. */

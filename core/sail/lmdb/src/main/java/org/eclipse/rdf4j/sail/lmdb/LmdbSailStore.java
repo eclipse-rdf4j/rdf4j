@@ -20403,6 +20403,12 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public OptionalLong adjacencyStatisticsGeneration() {
+			return withNativeSourceRead(() -> !hasStatementsInSource() || !directEligible()
+					? OptionalLong.empty() : directAdjacency.plannerStatisticsGeneration(adjacencyView));
+		}
+
+		@Override
 		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
 			return withNativeSourceRead(() -> {
 				Runnable interleave = afterPlannerStatsOpenCheckForTest;

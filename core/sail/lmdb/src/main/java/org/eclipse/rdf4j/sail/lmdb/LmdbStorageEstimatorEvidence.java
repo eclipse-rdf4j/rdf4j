@@ -17,8 +17,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
@@ -75,6 +77,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	private final LmdbStatisticsService statistics;
 	private final FrontierEstimatorMode statisticsMode;
 	private final LmdbMappedFilterEvidence mappedFilters;
+	private final Supplier<LmdbFrontierReadSelection> adjacencySelection;
 
 	LmdbStorageEstimatorEvidence(ValueStore valueStore, LmdbStatementPatternCardinalitySource cardinalities,
 			LmdbQuadSynopsisService synopsis, LmdbFilterSelectivityStats filters,
@@ -113,6 +116,17 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 			LmdbOperatorFeedbackStats feedback, LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator,
 			ExactFiniteSurfaceProvider exactFiniteSurfaceProvider, LmdbStatisticsService statistics,
 			FrontierEstimatorMode statisticsMode, LmdbLearnedFilterSelectivity learned) {
+		this(valueStore, cardinalities, synopsis, filters, feedback, finiteJoinSurfaceEstimator,
+				exactFiniteSurfaceProvider, statistics, statisticsMode, learned,
+				() -> LmdbFrontierReadSelection.UNAVAILABLE);
+	}
+
+	LmdbStorageEstimatorEvidence(ValueStore valueStore, LmdbStatementPatternCardinalitySource cardinalities,
+			LmdbQuadSynopsisService synopsis, LmdbFilterSelectivityStats filters,
+			LmdbOperatorFeedbackStats feedback, LmdbFiniteJoinSurfaceEstimator finiteJoinSurfaceEstimator,
+			ExactFiniteSurfaceProvider exactFiniteSurfaceProvider, LmdbStatisticsService statistics,
+			FrontierEstimatorMode statisticsMode, LmdbLearnedFilterSelectivity learned,
+			Supplier<LmdbFrontierReadSelection> adjacencySelection) {
 		this.learned = learned;
 		this.valueStore = valueStore;
 		this.cardinalities = cardinalities;
@@ -123,8 +137,18 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		this.exactFiniteSurfaceProvider = exactFiniteSurfaceProvider;
 		this.statistics = statistics;
 		this.statisticsMode = statisticsMode == null ? FrontierEstimatorMode.OFF : statisticsMode;
+		this.adjacencySelection = Objects.requireNonNull(adjacencySelection, "adjacencySelection");
 		mappedFilters = statistics == null ? null : new LmdbMappedFilterEvidence(valueStore, statistics);
 		propertyPaths = new LmdbPropertyPathEstimator(synopsis);
+	}
+
+	@Override
+	public BagEstimate refineResolvedLeaf(TupleExpr expression, EstimateContext context, BagEstimate resolved) {
+		if (!(expression instanceof StatementPattern pattern) || !context.nativeEvidenceAllowed()
+				|| context.readPopulation() != LmdbFrontierReadPopulation.STORE_DEFAULTS) {
+			return resolved;
+		}
+		return LmdbAdjacencyPlannerEvidence.enrich(pattern, resolved, adjacencySelection.get());
 	}
 
 	@Override

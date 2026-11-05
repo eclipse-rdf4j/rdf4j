@@ -3822,12 +3822,19 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	OptionalLong keyDomainCardinality(LmdbAdjacencyReadView view, long predicate, boolean bySubject,
 			boolean explicit) {
-		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
-				|| writeTransactionBlocksAdjacency() || predicate <= 0
-				|| view.snapshotRevision() != view.state().appliedRevision() || !planeCovered(view, predicate)) {
+		if (!plannerStatisticsAvailable(view) || predicate <= 0 || !planeCovered(view, predicate)) {
 			return OptionalLong.empty();
 		}
 		return OptionalLong.of(view.state().planeStatistics().keyCount(predicate, plane(bySubject, explicit)));
+	}
+
+	OptionalLong plannerStatisticsGeneration(LmdbAdjacencyReadView view) {
+		return plannerStatisticsAvailable(view) ? OptionalLong.of(view.state().epoch()) : OptionalLong.empty();
+	}
+
+	private boolean plannerStatisticsAvailable(LmdbAdjacencyReadView view) {
+		return view != null && view.servesSnapshot() && !closed && options.mode() == DirectAdjacencyMode.PREFER
+				&& !writeTransactionBlocksAdjacency() && view.snapshotRevision() == view.state().appliedRevision();
 	}
 
 	@Override

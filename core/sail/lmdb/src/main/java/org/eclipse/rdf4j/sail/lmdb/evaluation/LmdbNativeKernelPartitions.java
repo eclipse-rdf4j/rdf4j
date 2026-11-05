@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.HashBuild;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildcard;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor;
@@ -76,6 +77,11 @@ final class LmdbNativeKernelPartitions {
 				skippedRoot[0] = true;
 				return;
 			}
+			if (kind == RequirementKind.ADJACENCY && node instanceof SipKeyProbe probe
+					&& probe.domainAdjacency != resource) {
+				// Its other adjacency is only used for lookups; a root window preserves full-view find/findBatch.
+				return;
+			}
 			if (!isPartitionedResourceReader(node, kind)) {
 				return;
 			}
@@ -120,9 +126,11 @@ final class LmdbNativeKernelPartitions {
 	 */
 	private static boolean isPartitionedResourceReader(Node node, RequirementKind kind) {
 		return switch (kind) {
-		case ADJACENCY -> node instanceof EnumerateAdjKeys enumerate && !enumerate.wildcard;
+		case ADJACENCY -> node instanceof EnumerateAdjKeys enumerate && !enumerate.wildcard
+				|| node instanceof SipKeyProbe || node instanceof SipKeyWildcard;
 		case DOMAIN -> node instanceof EnumerateDomain
 				|| node instanceof SipDomainProbe
+				|| node instanceof SipDomainWildcard
 				|| node instanceof LmdbNativeKernelIr.FilterInConstants;
 		case WILDCARD_VIEW -> node instanceof EnumerateAdjKeys enumerate && enumerate.wildcard
 				|| node instanceof EnumerateWildcard

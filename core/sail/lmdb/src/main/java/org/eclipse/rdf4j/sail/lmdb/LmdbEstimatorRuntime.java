@@ -18,6 +18,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
@@ -118,6 +119,11 @@ final class LmdbEstimatorRuntime {
 		return scope != null && scope.selection().matchesSource(source) && scope.selection().isCurrent()
 				? scope.selection()
 				: LmdbFrontierReadSelection.UNAVAILABLE;
+	}
+
+	private LmdbFrontierReadSelection currentFrontierReadSelection() {
+		FrontierReadScope scope = frontierReadScope.get();
+		return scope == null ? LmdbFrontierReadSelection.UNAVAILABLE : scope.selection();
 	}
 
 	LmdbFrontierReadPopulation frontierReadPopulation() {
@@ -232,7 +238,8 @@ final class LmdbEstimatorRuntime {
 				frontierSettings.mode());
 		LmdbStorageEstimatorEvidence evidence = new LmdbStorageEstimatorEvidence(storageAccess.valueStore(),
 				cardinalities, synopsis, providers.filters(), providers.feedback(), finiteJoinSurfaceEstimator,
-				this::exactCorrelatedSurface, providers.statistics(), frontierSettings.mode(), learned);
+				this::exactCorrelatedSurface, providers.statistics(), frontierSettings.mode(), learned,
+				this::currentFrontierReadSelection);
 		LmdbEstimationEngine engine = new LmdbEstimationEngine(evidence, new EstimateEvidenceResolver());
 		return new ProviderView(providers, access, engine,
 				new LmdbFactorCostAssembler(engine, storageAccess.physicalTripleStore()),
@@ -589,8 +596,8 @@ final class LmdbEstimatorRuntime {
 	}
 
 	/**
-	 * Revision of the planning evidence: the Frontier statistics status mixed with the quad-synopsis snapshot version,
-	 * so a synopsis rebuild refreshes cached plans through the evidence side without pretending that data changed.
+	 * Revision of the planning evidence: Frontier and synopsis versions plus the authenticated query-owned adjacency
+	 * statistics generation. A rebuilt or newly available provider can refresh a plan without a data revision change.
 	 */
 	long frontierPlanningRevision() {
 		LmdbStatisticsService statistics = providerView().providers().statistics();
@@ -598,9 +605,15 @@ final class LmdbEstimatorRuntime {
 				? 0L
 				: LmdbEstimatorRevisionSupport.frontierPlanningRevision(statistics.status());
 		long synopsisRevision = Math.max(0L, synopsis == null ? 0L : synopsis.snapshotVersion());
-		return synopsisRevision == 0L
-				? revision
-				: LmdbEstimatorRevisionSupport.mixRevision(revision, synopsisRevision) & Long.MAX_VALUE;
+		if (synopsisRevision != 0L) {
+			revision = LmdbEstimatorRevisionSupport.mixRevision(revision, synopsisRevision);
+		}
+		OptionalLong adjacencyGeneration = currentFrontierReadSelection().adjacencyStatisticsGeneration();
+		if (adjacencyGeneration.isPresent()) {
+			revision = LmdbEstimatorRevisionSupport.mixRevision(revision, 0x41444a4143454e43L);
+			revision = LmdbEstimatorRevisionSupport.mixRevision(revision, adjacencyGeneration.getAsLong());
+		}
+		return revision & Long.MAX_VALUE;
 	}
 
 	PlanningRevisions capturePlanningRevisions() {
@@ -774,9 +787,27 @@ final class LmdbEstimatorRuntime {
 
 	double packedTransitionRows(StatementPattern pattern, String joinVariable, double patternRows,
 			double prefixRows) {
-		return providerView().storage()
+		double mapped = providerView().storage()
 				.packedTransitionRows(pattern, joinVariable, patternRows, prefixRows, frontierReadPopulation(),
 						frontierReadPlaneMask(), frontierReadSnapshotEpoch());
+		if (Double.isFinite(mapped)) {
+			return mapped;
+		}
+		if (!Double.isFinite(patternRows) || patternRows < 0D || !Double.isFinite(prefixRows) || prefixRows < 0D) {
+			return Double.NaN;
+		}
+		OptionalLong domain = adjacencyKeyDomain(pattern, joinVariable);
+		if (domain.isEmpty() || domain.getAsLong() <= 0L || domain.getAsLong() > patternRows) {
+			return Double.NaN;
+		}
+		// This is conditional fan-out among keys present in the predicate. No overlap with the prefix is proved.
+		double rowsPerPrefix = patternRows / domain.getAsLong();
+		return rowsPerPrefix > Double.MAX_VALUE / Math.max(1D, prefixRows)
+				? Double.MAX_VALUE : prefixRows * rowsPerPrefix;
+	}
+
+	OptionalLong adjacencyKeyDomain(StatementPattern pattern, String variable) {
+		return LmdbAdjacencyPlannerEvidence.keyDomain(pattern, variable, currentFrontierReadSelection());
 	}
 
 	boolean describePackedDistinctCursorSkip(StatementPattern pattern, double normalRows, PackedCostEstimate output) {
