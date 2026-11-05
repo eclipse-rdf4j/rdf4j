@@ -34,6 +34,11 @@ final class LmdbStatementPatternSemanticsCodec implements PackedStatementPattern
 	}
 
 	@Override
+	public boolean supportsPackedValueRepresentations(TupleExpr source) {
+		return LmdbCacheValueCopies.packedValueRepresentationsCompatible(source);
+	}
+
+	@Override
 	public String schemaId() {
 		return "rdf4j-lmdb-raw-id-kinds";
 	}

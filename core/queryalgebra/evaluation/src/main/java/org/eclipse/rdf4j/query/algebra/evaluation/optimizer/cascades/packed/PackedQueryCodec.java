@@ -190,6 +190,9 @@ final class PackedQueryCodec {
 			boolean retainAnnotations, boolean parameterizeValues,
 			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		Objects.requireNonNull(root, "root");
+		if (!semanticsCodec.supportsPackedValueRepresentations(root)) {
+			throw new UnsupportedCascadesOperatorException(root.getClass(), "root.packedValueRepresentation");
+		}
 		PlanningGraphDomain initialDomain = PlanningGraphDomains.ambientDomain(root);
 		PackedInputFrameNormalizer.Prepared prepared = PackedInputFrameNormalizer.prepare(root,
 				node -> new UnsupportedCascadesOperatorException(node.getClass(), "root.requiredInputFrame"),

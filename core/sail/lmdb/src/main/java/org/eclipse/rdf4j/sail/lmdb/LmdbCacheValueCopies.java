@@ -256,6 +256,11 @@ final class LmdbCacheValueCopies {
 		}
 
 		@Override
+		public boolean supportsPackedValueRepresentations(TupleExpr source) {
+			return packedValueRepresentationsCompatible(source);
+		}
+
+		@Override
 		public TupleExpr cloneWithSemantics(TupleExpr source) {
 			TupleExpr result = copy(source, true);
 			if (result == null) {
@@ -295,17 +300,47 @@ final class LmdbCacheValueCopies {
 
 	/** No recursive generic semantic formatter receives an unready or arbitrary nested RDF graph. */
 	static boolean semanticIdentityReady(TupleExpr source) {
+		return valuesCompatible(source, true);
+	}
+
+	static boolean packedValueRepresentationsCompatible(TupleExpr source) {
+		return valuesCompatible(source, false);
+	}
+
+	private static boolean valuesCompatible(TupleExpr source, boolean requireFlatIdentity) {
 		List<QueryModelNode> nodes = ownedNodes(source);
 		if (nodes == null) {
 			return false;
 		}
 		LmdbQueryValueIdentity.Capture capture = new LmdbQueryValueIdentity.Capture(true);
-		for (QueryModelNode node : nodes) {
-			for (Value value : values(node)) {
-				LmdbQueryValueIdentity identity = capture.of(value);
-				if (identity == null || !identity.supportsFlatSemanticObservation()) {
+		java.util.function.Predicate<Value> compatible = value -> {
+			LmdbQueryValueIdentity identity = capture.of(value);
+			return identity != null && (!requireFlatIdentity || identity.supportsFlatSemanticObservation())
+					&& identity.supportsPackedValueRepresentation();
+		};
+		// An encoded subtree can borrow an ambient GRAPH above its owned nodes. Check that selector before
+		// PlanningGraphDomains resolves it, and never invoke caller-defined ancestor or variable methods.
+		IdentityHashMap<QueryModelNode, Boolean> ancestors = new IdentityHashMap<>();
+		for (QueryModelNode node = source.getParentNode(); node != null; node = node.getParentNode()) {
+			if (ancestors.put(node, Boolean.TRUE) != null || !known(node)) {
+				return false;
+			}
+			if (node instanceof Graph graph) {
+				Var selector = graph.getGraphName();
+				if (!known(selector) || !compatible.test(selector.getValue())) {
 					return false;
 				}
+				break;
+			}
+		}
+		for (QueryModelNode node : nodes) {
+			for (Value value : values(node)) {
+				if (!compatible.test(value)) {
+					return false;
+				}
+			}
+			if (!PlanningGraphDomains.hasCompatibleValueMetadata(node, compatible)) {
+				return false;
 			}
 		}
 		return true;

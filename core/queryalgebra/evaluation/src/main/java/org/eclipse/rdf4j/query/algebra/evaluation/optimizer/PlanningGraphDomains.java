@@ -65,6 +65,12 @@ public final class PlanningGraphDomains {
 				&& (ambient == null || ambient.value() == null || values.test(ambient.value()));
 	}
 
+	/** Checks any retained graph-selector values without walking ancestors or changing planning metadata. */
+	public static boolean hasCompatibleValueMetadata(QueryModelNode node, Predicate<Value> values) {
+		Object metadata = node.getQueryModelMetadata(KEY);
+		return metadata == null || canDetachMetadata(metadata, values);
+	}
+
 	/** Preserve both independent authority coordinates; never recapture DEFAULT from missing ancestry. */
 	public static boolean copyDetachedMetadata(Object value, QueryModelNode target,
 			Function<Value, Value> values) {

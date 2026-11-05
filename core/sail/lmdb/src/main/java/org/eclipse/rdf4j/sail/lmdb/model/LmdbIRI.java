@@ -139,7 +139,12 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	@Override
 	public Value copyInitializedValue(Function<Value, Value> childCopier) {
-		return initialized ? SimpleValueFactory.getInstance().createIRI(iriString) : null;
+		if (!initialized) {
+			return null;
+		}
+		int split = localNameIdx;
+		return split < 0 ? SimpleValueFactory.getInstance().createIRI(iriString)
+				: SimpleValueFactory.getInstance().createIRI(iriString.substring(0, split), iriString.substring(split));
 	}
 
 	private void payloadChanged() {

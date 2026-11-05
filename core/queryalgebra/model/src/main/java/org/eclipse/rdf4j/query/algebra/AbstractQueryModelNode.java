@@ -109,6 +109,11 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 		return parent;
 	}
 
+	/** Read the stored parent without invoking an untrusted node override during clone ownership checks. */
+	final QueryModelNode parentForCloneOwnership() {
+		return parent;
+	}
+
 	@Override
 	public void setParentNode(QueryModelNode parent) {
 		this.parent = parent;

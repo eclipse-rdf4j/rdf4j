@@ -103,6 +103,11 @@ public interface PackedStatementPatternSemanticsCodec {
 		return true;
 	}
 
+	/** Declines packing when a backend cannot preserve a source value's observable representation. */
+	default boolean supportsPackedValueRepresentations(TupleExpr source) {
+		return true;
+	}
+
 	/** A provider may certify an intentional clone-to-base transition; unknown subclass erasure is declined. */
 	default boolean supportsCloneOccurrence(StatementPattern source, StatementPattern copy) {
 		return source.getClass() == copy.getClass();
