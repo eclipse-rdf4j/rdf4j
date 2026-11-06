@@ -142,14 +142,14 @@ class LmdbNativeCompoundExistsTest {
 	}
 
 	@Test
-	void preparedFunctionWithIncompleteReadContractStaysPinned() {
+	void preparedFunctionKeepsItsExplicitReadContract() {
 		Exists exists = exists("?outer <urn:p> ?x FILTER(CONCAT(STR(?x), \"a\") = \"ba\")");
 		assertThat(QueryEvaluationUtility.isRepeatableWithinPreparation(exists)).isTrue();
-		assertThat(FilterBindingScope.conditionBindingReads(exists).complete()).isFalse();
+		assertThat(FilterBindingScope.conditionBindingReads(exists).complete()).isTrue();
 		LmdbNativeAggregatePlanner planner = planner();
-		planner.slot("outer");
+		int outer = planner.slot("outer");
 		planner.slot("x");
-		assertThat(planner.placeableFilterMask(exists)).isEqualTo(-1L);
+		assertThat(planner.placeableFilterMask(exists)).isEqualTo(1L << outer);
 	}
 
 	@Test
@@ -235,6 +235,40 @@ class LmdbNativeCompoundExistsTest {
 				}
 			}
 		});
+		assertThat(result[0]).isNotNull();
+		return result[0];
+	}
+
+	/**
+	 * A generated Workbench date facet in a prepared query. Preparing pins its function calls, and alias joins need the
+	 * filter's read set: without it the filter is re-evaluated for every row of a high fan-out subject.
+	 */
+	@Test
+	void pinnedFunctionsKeepASemanticFilterReadSet() {
+		ValueExpr condition = filterCondition(
+				"SELECT * WHERE { ?s <urn:rating> ?value FILTER(isLiteral(?value) && REGEX(STR(?value), \"^2\") && "
+						+ "<http://www.w3.org/2001/XMLSchema#date>(CONCAT(STR(?value), \"-01\")) = "
+						+ "\"2000-01-01\"^^<http://www.w3.org/2001/XMLSchema#date>) }");
+		QueryEvaluationUtility.pinFunctions(condition);
+		LmdbNativeAggregatePlanner planner = planner();
+		long value = 1L << planner.slot("value");
+		NativeBooleanFilter compiled = planner.compileBoolean(condition);
+		assertThat(compiled.capabilities().correlationReads()).as("declared reads").isEqualTo(value);
+		assertThat(NativePredicateCapabilities.groupedReadMask(compiled, value)).as("grouped reads").isEqualTo(value);
+	}
+
+	private static ValueExpr filterCondition(String query) {
+		ValueExpr[] result = new ValueExpr[1];
+		new SPARQLParser().parseQuery(query, null)
+				.getTupleExpr()
+				.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(Filter node) {
+						if (result[0] == null) {
+							result[0] = node.getCondition();
+						}
+					}
+				});
 		assertThat(result[0]).isNotNull();
 		return result[0];
 	}
