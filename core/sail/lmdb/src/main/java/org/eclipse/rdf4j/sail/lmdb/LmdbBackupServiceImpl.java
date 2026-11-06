@@ -113,6 +113,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		this.config = config;
 		this.journalState = backingStore.backupJournalState();
 		this.txLogRoot = resolveInitialTxLogRoot();
+		backingStore.setBackupJournalDirectory(txLogRoot.resolve(TXLOG_DIR));
 		try {
 			// Startup has no in-flight publications. Range validation still checks durable journal coverage.
 			this.lastPublishedTxnId = backingStore.getCurrentCommittedTxnId();
@@ -166,6 +167,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 					}
 					persistBackupDirectory(requestedRoot);
 					txLogRoot = requestedRoot;
+					backingStore.setBackupJournalDirectory(requestedRoot.resolve(TXLOG_DIR));
 				}
 			} finally {
 				txLogPublicationLock.unlock();
@@ -927,6 +929,15 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 			}
 		}
 		return storeRoot.resolve("backup");
+	}
+
+	static Path defaultTransactionLogDirectory(Path storeRoot) {
+		return storeRoot.resolve("backup").resolve(TXLOG_DIR).toAbsolutePath().normalize();
+	}
+
+	static boolean isStoreBackupMetadata(String name) {
+		return BACKUP_STATE_FILE.equals(name)
+				|| name.startsWith(".tmp-backup-state-") && name.endsWith(".properties");
 	}
 
 	private void persistBackupDirectory(Path backupDir) throws IOException {

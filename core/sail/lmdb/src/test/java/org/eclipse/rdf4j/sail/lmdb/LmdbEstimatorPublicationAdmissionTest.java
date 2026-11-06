@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -45,31 +46,230 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSourceException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
-import org.eclipse.rdf4j.sail.base.SailStoreStatementSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSourceException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestReporter;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+/**
+ * A snapshot reader must not retain the native writer guard while waiting for a registered publication.
+ */
 class LmdbEstimatorPublicationAdmissionTest {
 
 	private static final int DIAGNOSTIC_TIMEOUT_SECONDS = 5;
+
+	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	private static final IRI SUBJECT = VF.createIRI("urn:publication-admission:subject");
+
+	private static final IRI NAMED_SUBJECT = VF.createIRI("urn:publication-admission:named-subject");
+
+	private static final IRI PREDICATE = VF.createIRI("urn:publication-admission:predicate");
+
+	private static final IRI CONTEXT = VF.createIRI("urn:publication-admission:context");
+
+	@ParameterizedTest
+	@EnumSource(RebuildMode.class)
+	void estimatorWaitMustNotBlockThePublicationItNeeds(RebuildMode mode, @TempDir Path directory) throws Exception {
+		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc").setSketchEstimatorEnabled(true)
+				.setSketchEstimatorMemoryBudgetBytes(4L * 1024L * 1024L));
+		store.setExperimentalQueryOptimizations(true);
+		store.init();
+		assertTrue(store.getQueryExecutionPolicy().experimentalQueryOptimizations());
+		SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+		assertNotNull(estimator);
+		estimator.stop();
+		estimator.discardAndMarkForRebuild();
+		CountDownLatch publicationRegistered = new CountDownLatch(1);
+		CountDownLatch allowNativeWrite = new CountDownLatch(1);
+		CountDownLatch writerFinished = new CountDownLatch(1);
+		CountDownLatch readerStarted = new CountDownLatch(1);
+		AtomicReference<Throwable> writerFailure = new AtomicReference<>();
+		AtomicReference<Throwable> readerFailure = new AtomicReference<>();
+		AtomicReference<Thread> readerThread = new AtomicReference<>();
+		estimator.setRebuildAllowedSupplier(() -> {
+			readerThread.set(Thread.currentThread());
+			readerStarted.countDown();
+			return true;
+		});
+		Thread writer = new Thread(() -> {
+			Object owner = new Object();
+			try (SailSource source = store.getBackingStore().getExplicitSailSource(owner);
+					SailClosable publication = source.beginPublication(owner)) {
+				publicationRegistered.countDown();
+				if (!allowNativeWrite.await(DIAGNOSTIC_TIMEOUT_SECONDS * 4L, TimeUnit.SECONDS)) {
+					throw new AssertionError("the test did not release the registered publication");
+				}
+				try (SailSink sink = source.sink(IsolationLevels.NONE)) {
+					sink.approve(SUBJECT, PREDICATE, VF.createLiteral("committed"), null);
+					sink.approve(NAMED_SUBJECT, PREDICATE, VF.createLiteral("committed"), CONTEXT);
+					sink.setNamespace("admission", "urn:publication-admission:");
+					sink.flush();
+				}
+			} catch (Throwable failure) {
+				writerFailure.set(failure);
+			} finally {
+				writerFinished.countDown();
+			}
+		}, "publication-admission-writer");
+		writer.setDaemon(true);
+		Thread synchronousReader = null;
+		Throwable primaryFailure = null;
+		try {
+			writer.start();
+			assertTrue(publicationRegistered.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+					"publication must register before the estimator opens its paired snapshot");
+			if (mode == RebuildMode.BACKGROUND) {
+				estimator.startBackgroundRefresh(0);
+			} else {
+				synchronousReader = new Thread(() -> {
+					try {
+						if (mode == RebuildMode.FORCE_FLUSH) {
+							store.forceFlushSketchEstimator();
+						} else {
+							estimator.rebuild();
+						}
+					} catch (Throwable failure) {
+						readerFailure.set(failure);
+					}
+				}, "publication-admission-" + mode);
+				synchronousReader.setDaemon(true);
+				synchronousReader.start();
+			}
+			assertTrue(readerStarted.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+					"the estimator must identify the thread opening its native snapshot");
+			Thread reader = readerThread.get();
+			awaitPublicationAdmission(reader);
+			allowNativeWrite.countDown();
+			assertTrue(writerFinished.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+					"the writer must finish while the estimator waits for its publication; mode=" + mode + "\nreader="
+							+ describe(reader) + "\nwriter=" + describe(writer));
+			assertNull(writerFailure.get(), "publication must commit the native statement and namespace changes");
+			if (synchronousReader != null) {
+				synchronousReader.join(TimeUnit.SECONDS.toMillis(DIAGNOSTIC_TIMEOUT_SECONDS));
+				assertFalse(synchronousReader.isAlive(), "the estimator must finish after the publication completes");
+				assertNull(readerFailure.get());
+			} else {
+				estimator.stop();
+			}
+			assertEquals(2L, estimator.rebuild(), "a stable rebuild must scan both committed RDF statements");
+			assertTrue(estimator.isReadyNonBlocking());
+			try (SailConnection connection = store.getConnection()) {
+				Map<Statement, Integer> bag = new HashMap<>();
+				try (CloseableIteration<? extends Statement> statements = connection.getStatements(null, null, null,
+						true)) {
+					while (statements.hasNext()) {
+						bag.merge(statements.next(), 1, Integer::sum);
+					}
+				}
+				assertEquals(Map.of(VF.createStatement(SUBJECT, PREDICATE, VF.createLiteral("committed")), 1,
+						VF.createStatement(NAMED_SUBJECT, PREDICATE, VF.createLiteral("committed"), CONTEXT), 1), bag);
+				Map<String, String> namespaces = new HashMap<>();
+				try (CloseableIteration<? extends Namespace> rows = connection.getNamespaces()) {
+					while (rows.hasNext()) {
+						Namespace namespace = rows.next();
+						namespaces.put(namespace.getPrefix(), namespace.getName());
+					}
+				}
+				assertEquals(Map.of("admission", "urn:publication-admission:"), namespaces);
+			}
+		} catch (Exception | Error failure) {
+			primaryFailure = failure;
+			throw failure;
+		} finally {
+			allowNativeWrite.countDown();
+			// Failure cleanup must not start a second build while closing the store under investigation.
+			estimator.setRebuildAllowedSupplier(() -> false);
+			Thread reader = readerThread.get();
+			if (reader != null && reader.isAlive() && writerFinished.getCount() != 0) {
+				reader.interrupt();
+			}
+			Throwable cleanupFailure = captureCleanup(null, estimator::stop);
+			cleanupFailure = captureCleanup(cleanupFailure,
+					() -> writer.join(TimeUnit.SECONDS.toMillis(DIAGNOSTIC_TIMEOUT_SECONDS)));
+			if (synchronousReader != null) {
+				Thread joiningReader = synchronousReader;
+				cleanupFailure = captureCleanup(cleanupFailure,
+						() -> joiningReader.join(TimeUnit.SECONDS.toMillis(DIAGNOSTIC_TIMEOUT_SECONDS)));
+			}
+			cleanupFailure = captureCleanup(cleanupFailure, store::shutDown);
+			if (cleanupFailure != null) {
+				if (primaryFailure != null) {
+					primaryFailure.addSuppressed(cleanupFailure);
+				} else if (cleanupFailure instanceof Exception exception) {
+					throw exception;
+				} else if (cleanupFailure instanceof Error error) {
+					throw error;
+				}
+			}
+		}
+	}
+
+	private static Throwable captureCleanup(Throwable previous, Cleanup cleanup) {
+		try {
+			cleanup.run();
+		} catch (Exception | Error failure) {
+			if (previous == null) {
+				return failure;
+			}
+			if (previous != failure) {
+				previous.addSuppressed(failure);
+			}
+		}
+		return previous;
+	}
+
+	@FunctionalInterface
+	private interface Cleanup {
+
+		void run() throws Exception;
+	}
+
+	private static void awaitPublicationAdmission(Thread reader) {
+		long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(DIAGNOSTIC_TIMEOUT_SECONDS);
+		do {
+			for (StackTraceElement frame : reader.getStackTrace()) {
+				if (frame.getClassName().equals(LmdbSailStore.class.getName())
+						&& frame.getMethodName().equals("awaitStablePublication")) {
+					return;
+				}
+			}
+			Thread.onSpinWait();
+		} while (reader.isAlive() && System.nanoTime() < end);
+		throw new AssertionError("estimator did not reach publication admission: " + describe(reader));
+	}
+
+	private static String describe(Thread thread) {
+		StringBuilder description = new StringBuilder(thread.getName()).append(" state=").append(thread.getState());
+		for (StackTraceElement frame : thread.getStackTrace()) {
+			description.append("\n  at ").append(frame);
+		}
+		return description.toString();
+	}
+
+	enum RebuildMode {
+
+		SYNCHRONOUS,
+		FORCE_FLUSH,
+		BACKGROUND
+	}
+
 	private static final SimpleValueFactory VALUES = SimpleValueFactory.getInstance();
-	private static final IRI SUBJECT = VALUES.createIRI("urn:publication-admission:subject");
-	private static final IRI NAMED_SUBJECT = VALUES.createIRI("urn:publication-admission:named-subject");
-	private static final IRI PREDICATE = VALUES.createIRI("urn:publication-admission:predicate");
+
 	private static final IRI NAMED_CONTEXT = VALUES.createIRI("urn:publication-admission:context");
+
 	private static final Literal OBJECT = VALUES.createLiteral("committed");
 
 	@Test
@@ -115,8 +315,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 	}
 
 	@Test
-	void synchronousFreshSourceReleasesAdmissionAfterPostAdmissionGuardMiss(@TempDir Path directory)
-			throws Exception {
+	void synchronousFreshSourceReleasesAdmissionAfterPostAdmissionGuardMiss(@TempDir Path directory) throws Exception {
 		LmdbStore store = initializedStore(directory);
 		LmdbSailStore backingStore = store.getBackingStore();
 		LmdbSailStore.GuardedEstimatorStatementSource source = backingStore.new GuardedEstimatorStatementSource(
@@ -130,8 +329,8 @@ class LmdbEstimatorPublicationAdmissionTest {
 		CountDownLatch releaseHolderGuard = new CountDownLatch(1);
 		AtomicReference<Throwable> holderFailure = new AtomicReference<>();
 		Thread holder = new Thread(() -> {
-			try (LmdbSailStore.DatasetAdmission parent = backingStore.beginDatasetAdmission(
-					IsolationLevels.READ_COMMITTED, null)) {
+			try (LmdbSailStore.DatasetAdmission parent = backingStore
+					.beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null)) {
 				assertTrue(parent.isOutermost(), "The holder must own its real read admission");
 				holderAdmissionEntered.countDown();
 				if (!allowHolderSource.await(DIAGNOSTIC_TIMEOUT_SECONDS * 4L, TimeUnit.SECONDS)) {
@@ -171,11 +370,9 @@ class LmdbEstimatorPublicationAdmissionTest {
 			}
 			assertEquals(0, triples.availableReadTxnSlots(Integer.MAX_VALUE, 0),
 					"The filler reservations must consume the dynamically reported remaining reader capacity");
-
 			caller.start();
 			assertTrue(callerStarted.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS));
 			awaitReaderAdmission(caller);
-
 			// The caller has passed its initial guard preflight and is blocked acquiring a paired read view while the
 			// guard is still free. Now let the borrowed holder acquire the guard before one permit is released.
 			allowHolderSource.countDown();
@@ -183,12 +380,10 @@ class LmdbEstimatorPublicationAdmissionTest {
 					"The holder's borrowed source read must acquire the native guard");
 			assertEquals(0, triples.availableReadTxnSlots(Integer.MAX_VALUE, 0),
 					"The holder and fillers must still account for every ordinary reader permit");
-
 			fillers.remove(0).close();
 			awaitGuardLockWait(caller);
 			assertEquals(1, triples.availableReadTxnSlots(Integer.MAX_VALUE, 0),
 					"After losing the tryLock race, the fresh caller must release its newly acquired reader slot before retrying");
-
 			for (TxnManager.ReaderReservation filler : fillers) {
 				filler.close();
 			}
@@ -228,16 +423,14 @@ class LmdbEstimatorPublicationAdmissionTest {
 		try {
 			assertTrue(guardAcquired.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS),
 					"The first source must hold the native guard");
-			try (LmdbSailStore.DatasetAdmission parent = backingStore.beginDatasetAdmission(
-					IsolationLevels.READ_COMMITTED, null)) {
+			try (LmdbSailStore.DatasetAdmission parent = backingStore
+					.beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null)) {
 				Object parentLease = backingStore.currentReadViewLease();
 				assertTrue(parent.isOutermost());
-				assertInstanceOf(SketchStatementSourceException.class,
-						assertThrows(SketchStatementSourceException.class,
-								() -> source.getStatements(null, null, null)));
+				assertInstanceOf(SketchStatementSourceException.class, assertThrows(
+						SketchStatementSourceException.class, () -> source.getStatements(null, null, null)));
 				assertSame(parentLease, backingStore.currentReadViewLease(),
 						"A deferred borrowed read must leave its parent's paired view installed");
-
 				releaseGuard.countDown();
 				joinThread(holder, "The native guard holder must terminate");
 				try (CloseableIteration<? extends Statement> statements = source.getStatements(null, null, null)) {
@@ -430,6 +623,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 		SketchBasedJoinEstimator estimator = null;
 		Thread reader = null;
 		boolean initialized = false;
+		Throwable primaryFailure = null;
 		try {
 			store.init();
 			initialized = true;
@@ -443,11 +637,9 @@ class LmdbEstimatorPublicationAdmissionTest {
 				ownedRefreshThread.set(Thread.currentThread());
 				return true;
 			});
-
 			writer.start();
 			assertTrue(publicationRegistered.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS),
 					"The public SailSource publication must register before a sink is constructed");
-
 			if (mode == RebuildMode.BACKGROUND) {
 				estimator.startBackgroundRefresh(3);
 				reader = awaitOwnedRefreshThread(ownedRefreshThread);
@@ -455,7 +647,11 @@ class LmdbEstimatorPublicationAdmissionTest {
 				SketchBasedJoinEstimator rebuildEstimator = estimator;
 				reader = new Thread(() -> {
 					try {
-						rebuildEstimator.rebuild();
+						if (mode == RebuildMode.FORCE_FLUSH) {
+							store.forceFlushSketchEstimator();
+						} else {
+							rebuildEstimator.rebuild();
+						}
 					} catch (Throwable failure) {
 						readerFailure.set(failure);
 					}
@@ -464,14 +660,12 @@ class LmdbEstimatorPublicationAdmissionTest {
 				reader.start();
 			}
 			awaitPublicationWait(reader, mode);
-
 			allowSink.countDown();
 			assertTrue(writerFinished.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS),
-					"The writer must finish while the estimator waits for its publication; mode=" + mode
-							+ "\nreader=" + threadDescription(reader)
-							+ "\nwriter=" + threadDescription(writer));
+					"The writer must finish while the estimator waits for its publication; mode=" + mode + "\nreader="
+							+ threadDescription(reader) + "\nwriter=" + threadDescription(writer));
 			assertNull(writerFailure.get(), "The writer must complete its native statement and namespace update");
-			if (mode == RebuildMode.SYNCHRONOUS) {
+			if (mode != RebuildMode.BACKGROUND) {
 				reader.join(TimeUnit.SECONDS.toMillis(DIAGNOSTIC_TIMEOUT_SECONDS));
 				assertTrue(!reader.isAlive(), "The synchronous estimator rebuild must finish after publication");
 				assertNull(readerFailure.get(), "The synchronous estimator rebuild must complete successfully");
@@ -486,7 +680,6 @@ class LmdbEstimatorPublicationAdmissionTest {
 					"A stable post-publication rebuild must scan both committed RDF statements");
 			assertTrue(estimator.awaitReady(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS),
 					"The estimator must be ready after rebuilding the stable published contents");
-
 			try (SailConnection connection = store.getConnection()) {
 				Map<Statement, Integer> actualStatements = new HashMap<>();
 				try (CloseableIteration<? extends Statement> statements = connection.getStatements(null, null, null,
@@ -495,9 +688,10 @@ class LmdbEstimatorPublicationAdmissionTest {
 						actualStatements.merge(statements.next(), 1, Integer::sum);
 					}
 				}
-				assertEquals(Map.of(
-						VALUES.createStatement(SUBJECT, PREDICATE, OBJECT), 1,
-						VALUES.createStatement(NAMED_SUBJECT, PREDICATE, OBJECT, NAMED_CONTEXT), 1), actualStatements,
+				assertEquals(
+						Map.of(VALUES.createStatement(SUBJECT, PREDICATE, OBJECT), 1,
+								VALUES.createStatement(NAMED_SUBJECT, PREDICATE, OBJECT, NAMED_CONTEXT), 1),
+						actualStatements,
 						"The exact default and named-context statement bag must contain each committed statement once");
 				Map<String, String> actualNamespaces = new HashMap<>();
 				try (CloseableIteration<? extends Namespace> namespaces = connection.getNamespaces()) {
@@ -506,33 +700,53 @@ class LmdbEstimatorPublicationAdmissionTest {
 						actualNamespaces.put(namespace.getPrefix(), namespace.getName());
 					}
 				}
-				assertEquals(Map.of(
-						"admission", "urn:publication-admission:",
-						"admission-named", "urn:publication-admission:named:"), actualNamespaces,
-						"The complete namespace map must match the committed publication");
+				assertEquals(
+						Map.of("admission", "urn:publication-admission:", "admission-named",
+								"urn:publication-admission:named:"),
+						actualNamespaces, "The complete namespace map must match the committed publication");
 			}
+		} catch (Exception | Error failure) {
+			primaryFailure = failure;
+			throw failure;
 		} finally {
+			allowSink.countDown();
+			Throwable cleanupFailure = null;
+			if (estimator != null) {
+				// This test replaced the store-owned rebuild gate to observe its reader thread.
+				// Do not let that temporary permission start another read after shutdown admission closes.
+				estimator.setRebuildAllowedSupplier(() -> false);
+			}
 			if (mode == RebuildMode.BACKGROUND && estimator != null) {
-				estimator.stop();
+				cleanupFailure = captureCleanup(cleanupFailure, estimator::stop);
 			} else if (reader != null) {
 				reader.interrupt();
 			}
-			allowSink.countDown();
 			if (writer.isAlive()) {
-				writer.join(TimeUnit.SECONDS.toMillis(DIAGNOSTIC_TIMEOUT_SECONDS));
+				cleanupFailure = captureCleanup(cleanupFailure,
+						() -> writer.join(TimeUnit.SECONDS.toMillis(DIAGNOSTIC_TIMEOUT_SECONDS)));
 			}
-			if (reader != null && reader.isAlive() && mode == RebuildMode.SYNCHRONOUS) {
-				reader.join(TimeUnit.SECONDS.toMillis(DIAGNOSTIC_TIMEOUT_SECONDS));
+			if (reader != null && reader.isAlive() && mode != RebuildMode.BACKGROUND) {
+				Thread joiningReader = reader;
+				cleanupFailure = captureCleanup(cleanupFailure,
+						() -> joiningReader.join(TimeUnit.SECONDS.toMillis(DIAGNOSTIC_TIMEOUT_SECONDS)));
 			}
 			if (initialized) {
-				store.shutDown();
+				cleanupFailure = captureCleanup(cleanupFailure, store::shutDown);
+			}
+			if (cleanupFailure != null) {
+				if (primaryFailure != null && primaryFailure != cleanupFailure) {
+					primaryFailure.addSuppressed(cleanupFailure);
+				} else if (cleanupFailure instanceof Exception exception) {
+					throw exception;
+				} else if (cleanupFailure instanceof Error error) {
+					throw error;
+				}
 			}
 		}
 	}
 
 	@Test
-	void unboundCapturedMultiViewContextDefersEstimatorReadDuringPublication(@TempDir Path directory)
-			throws Exception {
+	void unboundCapturedMultiViewContextDefersEstimatorReadDuringPublication(@TempDir Path directory) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig().setSketchEstimatorEnabled(true);
 		config.setExperimentalQueryOptimizations(true);
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
@@ -578,15 +792,14 @@ class LmdbEstimatorPublicationAdmissionTest {
 		Thread reader = null;
 		try {
 			for (int i = 0; i < 2; i++) {
-				try (LmdbSailStore.DatasetAdmission admission = backingStore.beginDatasetAdmission(
-						IsolationLevels.READ_COMMITTED, null, observer, attempt)) {
+				try (LmdbSailStore.DatasetAdmission admission = backingStore
+						.beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null, observer, attempt)) {
 					parentViews.add(admission.view().retain());
 					capturedLeases.add(admission.readViewLease());
 				}
 			}
 			assertNull(backingStore.currentReadViewLease(),
 					"The captured parent views must not install an active thread-local read view");
-
 			reader = new Thread(() -> {
 				try (SailClosable captured = backingStore.enterCapturedReadViews(attempt, attempt.generation(),
 						capturedLeases, null)) {
@@ -604,7 +817,6 @@ class LmdbEstimatorPublicationAdmissionTest {
 				}
 			}, "unbound-captured-estimator-reader");
 			reader.setDaemon(true);
-
 			writer.start();
 			assertTrue(publicationRegistered.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS),
 					"The logical publication must be held before its native write begins");
@@ -618,7 +830,6 @@ class LmdbEstimatorPublicationAdmissionTest {
 			for (LmdbSailStore.ReadView view : parentViews) {
 				view.ensureNativeSnapshotsValid();
 			}
-
 			allowNativeWrite.countDown();
 			assertTrue(writerFinished.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS),
 					"The writer must finish after the captured source defers");
@@ -627,7 +838,6 @@ class LmdbEstimatorPublicationAdmissionTest {
 			for (LmdbSailStore.ReadView view : parentViews) {
 				view.ensureNativeSnapshotsValid();
 			}
-
 			long scannedStatements = estimator.rebuild();
 			assertEquals(2L, scannedStatements,
 					"A fresh explicit rebuild must scan both statements after the captured scope closes");
@@ -641,9 +851,10 @@ class LmdbEstimatorPublicationAdmissionTest {
 						actualStatements.merge(statements.next(), 1, Integer::sum);
 					}
 				}
-				assertEquals(Map.of(
-						VALUES.createStatement(SUBJECT, PREDICATE, OBJECT), 1,
-						VALUES.createStatement(NAMED_SUBJECT, PREDICATE, OBJECT, NAMED_CONTEXT), 1), actualStatements,
+				assertEquals(
+						Map.of(VALUES.createStatement(SUBJECT, PREDICATE, OBJECT), 1,
+								VALUES.createStatement(NAMED_SUBJECT, PREDICATE, OBJECT, NAMED_CONTEXT), 1),
+						actualStatements,
 						"The complete statement bag must preserve each default and named-context row exactly once");
 				Map<String, String> actualNamespaces = new HashMap<>();
 				try (CloseableIteration<? extends Namespace> namespaces = connection.getNamespaces()) {
@@ -652,10 +863,10 @@ class LmdbEstimatorPublicationAdmissionTest {
 						actualNamespaces.put(namespace.getPrefix(), namespace.getName());
 					}
 				}
-				assertEquals(Map.of(
-						"admission", "urn:publication-admission:",
-						"admission-named", "urn:publication-admission:named:"), actualNamespaces,
-						"The complete namespace map must match the committed publication");
+				assertEquals(
+						Map.of("admission", "urn:publication-admission:", "admission-named",
+								"urn:publication-admission:named:"),
+						actualNamespaces, "The complete namespace map must match the committed publication");
 			}
 		} finally {
 			allowNativeWrite.countDown();
@@ -713,8 +924,8 @@ class LmdbEstimatorPublicationAdmissionTest {
 		LmdbSailStore.ReadAttemptLease attempt = backingStore.registerReadAttempt(observer);
 		LmdbSailStore.ReadView parentView;
 		LmdbSailStore.ReadViewLease parentLease;
-		try (LmdbSailStore.DatasetAdmission admission = backingStore.beginDatasetAdmission(
-				IsolationLevels.READ_COMMITTED, null, observer, attempt)) {
+		try (LmdbSailStore.DatasetAdmission admission = backingStore
+				.beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null, observer, attempt)) {
 			parentView = admission.view().retain();
 			parentLease = admission.readViewLease();
 		}
@@ -770,8 +981,8 @@ class LmdbEstimatorPublicationAdmissionTest {
 		LmdbSailStore.ReadAttemptLease attempt = backingStore.registerReadAttempt(observer);
 		LmdbSailStore.ReadView parentView;
 		LmdbSailStore.ReadViewLease parentLease;
-		try (LmdbSailStore.DatasetAdmission admission = backingStore.beginDatasetAdmission(
-				IsolationLevels.READ_COMMITTED, null, observer, attempt)) {
+		try (LmdbSailStore.DatasetAdmission admission = backingStore
+				.beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null, observer, attempt)) {
 			parentView = admission.view().retain();
 			parentLease = admission.readViewLease();
 		}
@@ -811,7 +1022,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 		}
 		TxnManager triples = backingStore.getTripleStore().getTxnManager();
 		TxnManager values = ((ValueStore) backingStore.getValueFactory()).getTxnManager();
-		SketchStatementSource nativeDelegate = new SailStoreStatementSource(backingStore);
+		SketchStatementSource nativeDelegate = new LmdbSketchStatementSource(backingStore);
 		AtomicReference<LmdbSailStore.ReadViewLease> expectedOwnedLease = new AtomicReference<>();
 		SketchStatementSource observedDelegate = statementSource((subject, predicate, object, contexts) -> {
 			assertSame(expectedOwnedLease.get(), backingStore.currentReadViewLease(),
@@ -820,8 +1031,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 		});
 		LmdbSailStore.GuardedEstimatorStatementSource source = backingStore.new GuardedEstimatorStatementSource(
 				observedDelegate);
-		Map<Statement, Integer> expectedStatements = Map.of(
-				VALUES.createStatement(SUBJECT, PREDICATE, OBJECT), 1,
+		Map<Statement, Integer> expectedStatements = Map.of(VALUES.createStatement(SUBJECT, PREDICATE, OBJECT), 1,
 				VALUES.createStatement(NAMED_SUBJECT, PREDICATE, OBJECT, NAMED_CONTEXT), 1);
 		try (QueryCallbackConnection connection = new QueryCallbackConnection(store)) {
 			connection.inReadScope(() -> {
@@ -884,8 +1094,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 			sink.setNamespace("admission-named", "urn:publication-admission:named:");
 			sink.flush();
 		}
-		Map<Statement, Integer> expectedStatements = Map.of(
-				VALUES.createStatement(SUBJECT, PREDICATE, OBJECT), 1,
+		Map<Statement, Integer> expectedStatements = Map.of(VALUES.createStatement(SUBJECT, PREDICATE, OBJECT), 1,
 				VALUES.createStatement(NAMED_SUBJECT, PREDICATE, OBJECT, NAMED_CONTEXT), 1);
 		TxnManager triples = backingStore.getTripleStore().getTxnManager();
 		TxnManager values = ((ValueStore) backingStore.getValueFactory()).getTxnManager();
@@ -919,7 +1128,6 @@ class LmdbEstimatorPublicationAdmissionTest {
 					"A failed callback must return all ordinary TripleStore reader slots");
 			assertEquals(initialValueSlots, values.availableReadTxnSlots(Integer.MAX_VALUE, 0),
 					"A failed callback must return all ordinary ValueStore reader slots");
-
 			Map<Statement, Integer> laterStatements = new HashMap<>();
 			try (CloseableIteration<? extends Statement> statements = connection.getStatements(null, null, null,
 					true)) {
@@ -936,10 +1144,10 @@ class LmdbEstimatorPublicationAdmissionTest {
 					actualNamespaces.put(namespace.getPrefix(), namespace.getName());
 				}
 			}
-			assertEquals(Map.of(
-					"admission", "urn:publication-admission:",
-					"admission-named", "urn:publication-admission:named:"), actualNamespaces,
-					"The post-failure namespace lookup must remain complete and exact");
+			assertEquals(
+					Map.of("admission", "urn:publication-admission:", "admission-named",
+							"urn:publication-admission:named:"),
+					actualNamespaces, "The post-failure namespace lookup must remain complete and exact");
 		} finally {
 			store.shutDown();
 		}
@@ -969,9 +1177,10 @@ class LmdbEstimatorPublicationAdmissionTest {
 				UnsupportedOperationException failure = assertThrows(UnsupportedOperationException.class,
 						statements::remove,
 						"Removing from an observed read result must fail through its normal read operation");
-				assertTrue(List.of(failure.getStackTrace())
-						.stream()
-						.anyMatch(frame -> frame.getMethodName().equals("executeObservedRead")),
+				assertTrue(
+						List.of(failure.getStackTrace())
+								.stream()
+								.anyMatch(frame -> frame.getMethodName().equals("executeObservedRead")),
 						"The failure must pass through the observed-read ownership scope");
 			}
 			assertTrue(backingStore.currentReadResourceViews().isEmpty(),
@@ -1006,8 +1215,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 			sink.approve(NAMED_SUBJECT, PREDICATE, OBJECT, NAMED_CONTEXT);
 			sink.flush();
 		}
-		Map<Statement, Integer> expectedStatements = Map.of(
-				VALUES.createStatement(SUBJECT, PREDICATE, OBJECT), 1,
+		Map<Statement, Integer> expectedStatements = Map.of(VALUES.createStatement(SUBJECT, PREDICATE, OBJECT), 1,
 				VALUES.createStatement(NAMED_SUBJECT, PREDICATE, OBJECT, NAMED_CONTEXT), 1);
 		LmdbSailStore.MapGrowthObserver observer = (growth, token, deadlineNanos, attempts, views) -> false;
 		LmdbSailStore.ReadAttemptLease attempt = backingStore.registerReadAttempt(observer);
@@ -1017,8 +1225,8 @@ class LmdbEstimatorPublicationAdmissionTest {
 		int fullValueSlots = values.availableReadTxnSlots(Integer.MAX_VALUE, 0);
 		LmdbSailStore.ReadView parentView;
 		LmdbSailStore.ReadViewLease parentLease;
-		try (LmdbSailStore.DatasetAdmission admission = backingStore.beginDatasetAdmission(
-				IsolationLevels.READ_COMMITTED, null, observer, attempt)) {
+		try (LmdbSailStore.DatasetAdmission admission = backingStore
+				.beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null, observer, attempt)) {
 			parentView = admission.view().retain();
 			parentLease = admission.readViewLease();
 		}
@@ -1026,7 +1234,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 		int initialValueSlots = values.availableReadTxnSlots(Integer.MAX_VALUE, 0);
 		Throwable expectedFailure = kind.failure();
 		AtomicBoolean failFirst = new AtomicBoolean(true);
-		SketchStatementSource nativeSource = new SailStoreStatementSource(backingStore);
+		SketchStatementSource nativeSource = new LmdbSketchStatementSource(backingStore);
 		SketchStatementSource delegate = statementSource((subject, predicate, object, contexts) -> {
 			if (failFirst.getAndSet(false)) {
 				if (expectedFailure instanceof RuntimeException runtimeFailure) {
@@ -1057,7 +1265,6 @@ class LmdbEstimatorPublicationAdmissionTest {
 						"The failed delegated lookup must return all additional TripleStore slots");
 				assertEquals(initialValueSlots, values.availableReadTxnSlots(Integer.MAX_VALUE, 0),
 						"The failed delegated lookup must return all additional ValueStore slots");
-
 				Map<Statement, Integer> actualStatements = new HashMap<>();
 				try (CloseableIteration<? extends Statement> statements = source.getStatements(null, null, null)) {
 					while (statements.hasNext()) {
@@ -1220,6 +1427,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 	}
 
 	private static final class QueryCallbackConnection extends LmdbStoreConnection {
+
 		private QueryCallbackConnection(LmdbStore store) {
 			super(store);
 		}
@@ -1231,18 +1439,19 @@ class LmdbEstimatorPublicationAdmissionTest {
 
 	@FunctionalInterface
 	private interface ReadCallback<T> {
+
 		T execute() throws SailException;
 	}
 
 	private static SketchStatementSource statementSource(StatementSourceBehavior behavior) {
 		return new SketchStatementSource() {
+
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 					Resource... contexts) {
 				return behavior.getStatements(subject, predicate, object, contexts);
 			}
 
-			@Override
 			public ValueFactory getValueFactory() {
 				return VALUES;
 			}
@@ -1251,6 +1460,7 @@ class LmdbEstimatorPublicationAdmissionTest {
 
 	private static CloseableIteration<Statement> emptyIteration(Runnable closeAction) {
 		return new CloseableIteration<>() {
+
 			private boolean closed;
 
 			@Override
@@ -1308,7 +1518,8 @@ class LmdbEstimatorPublicationAdmissionTest {
 					inSourceCall = true;
 				}
 				if (frame.getClassName().equals("java.util.concurrent.locks.ReentrantLock")
-						&& frame.getMethodName().equals("lock")) {
+						&& (frame.getMethodName().equals("lock")
+								|| frame.getMethodName().equals("lockInterruptibly"))) {
 					inLockCall = true;
 				}
 			}
@@ -1317,8 +1528,8 @@ class LmdbEstimatorPublicationAdmissionTest {
 			}
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
-		throw new AssertionError("The fresh source caller did not reach native guard contention: "
-				+ threadDescription(thread));
+		throw new AssertionError(
+				"The fresh source caller did not reach native guard contention: " + threadDescription(thread));
 	}
 
 	private static void awaitReaderAdmission(Thread thread) {
@@ -1332,8 +1543,8 @@ class LmdbEstimatorPublicationAdmissionTest {
 			}
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
-		throw new AssertionError("The fresh source caller did not wait for paired reader admission: "
-				+ threadDescription(thread));
+		throw new AssertionError(
+				"The fresh source caller did not wait for paired reader admission: " + threadDescription(thread));
 	}
 
 	private static void joinThread(Thread thread, String message) throws InterruptedException {
@@ -1343,22 +1554,24 @@ class LmdbEstimatorPublicationAdmissionTest {
 
 	@FunctionalInterface
 	private interface StatementSourceBehavior {
+
 		CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 				Resource... contexts);
 	}
 
 	private enum DelegatedFailure {
+
 		RUNTIME_EXCEPTION,
 		ERROR
 	}
 
 	private enum CallbackFailure {
+
 		RUNTIME_EXCEPTION,
 		ERROR;
 
 		private Throwable failure() {
-			return this == RUNTIME_EXCEPTION
-					? new IllegalStateException("connection callback failed")
+			return this == RUNTIME_EXCEPTION ? new IllegalStateException("connection callback failed")
 					: new AssertionError("connection callback failed");
 		}
 	}
@@ -1386,23 +1599,32 @@ class LmdbEstimatorPublicationAdmissionTest {
 			}
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
-		throw new AssertionError("The " + mode + " estimator reader did not reach the publication wait: "
-				+ threadDescription(reader));
+		throw new AssertionError(
+				"The " + mode + " estimator reader did not reach the publication wait: " + threadDescription(reader));
 	}
 
 	private static void awaitRefreshDelay(Thread reader) {
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(DIAGNOSTIC_TIMEOUT_SECONDS);
 		do {
+			boolean inRefreshLoop = false;
+			boolean inLifecycleWait = false;
 			for (StackTraceElement frame : reader.getStackTrace()) {
-				if (frame.getClassName().equals(SketchBasedJoinEstimator.class.getName())
-						&& frame.getMethodName().equals("waitForRefreshDelay")) {
-					return;
+				if (frame.getClassName().equals(LmdbQuadSynopsisService.class.getName())
+						&& frame.getMethodName().equals("refreshLoop")) {
+					inRefreshLoop = true;
 				}
+				if (frame.getClassName().equals(Object.class.getName())
+						&& (frame.getMethodName().equals("wait") || frame.getMethodName().equals("wait0"))) {
+					inLifecycleWait = true;
+				}
+			}
+			if (inRefreshLoop && inLifecycleWait && reader.getState() == Thread.State.TIMED_WAITING) {
+				return;
 			}
 			Thread.onSpinWait();
 		} while (System.nanoTime() < deadline);
-		throw new AssertionError("The owned background refresh did not return from rebuild: "
-				+ threadDescription(reader));
+		throw new AssertionError(
+				"The owned background refresh did not return from rebuild: " + threadDescription(reader));
 	}
 
 	private static String threadDescription(Thread thread) {
@@ -1413,12 +1635,8 @@ class LmdbEstimatorPublicationAdmissionTest {
 		return description.toString();
 	}
 
-	private enum RebuildMode {
-		BACKGROUND,
-		SYNCHRONOUS
-	}
-
 	private enum UnborrowableOwnerContext {
+
 		WRITER_OWNER,
 		PREPARED_WRITE,
 		NONE_MUTATION,

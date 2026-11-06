@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryOperationContext;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -51,10 +52,12 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 
 	@Override
 	public TupleQueryResult evaluate() throws QueryEvaluationException {
-		InterruptingTimeLimit timeLimit = startEvaluationTimeLimit();
+		InterruptingTimeLimit timeLimit = null;
 		CloseableIteration<? extends BindingSet> bindingsIter = null;
 
-		try {
+		try (QueryOperationContext.Scope operation = openQueryOperation()) {
+			timeLimit = startEvaluationTimeLimit();
+			QueryOperationContext.throwIfDeadlineExpired();
 			TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 			SailConnection sailCon = getConnection().getSailConnection();
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder

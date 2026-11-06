@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -614,6 +615,233 @@ public class LmdbNativeInteriorIslandTest {
 				System.setProperty(ISLANDS_FLAG, previous);
 			}
 		}
+	}
+
+	@Test
+	public void independentNativeBoundaryHoistsWithItsCompleteHandBag() {
+		String query = "SELECT ?s ?o ?n ?c WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) WHERE { } } ?s <" + EX + "q> ?n }";
+		withIslands(() -> {
+			List<String> hand = nativeHoistHand(false).stream()
+					.map(LmdbNativeInteriorIslandTest::render)
+					.collect(Collectors.toList());
+			assertThat(genericRows(query)).containsExactlyInAnyOrderElementsOf(hand);
+			long before = LmdbNativeAggregateCompiler.ISLAND_HOISTS.get();
+			assertThat(rows(query)).containsExactlyInAnyOrderElementsOf(hand);
+			assertThat(LmdbNativeAggregateCompiler.ISLAND_HOISTS.get() - before)
+					.as("the native lexical boundary must reach the facts-gated local movement rule")
+					.isPositive();
+			String plan = scopeOptimizedPlan(query, Map.of());
+			assertThat(plan).contains("MultiJoin(", "NativeSubquery(").doesNotContain("GenericEvalPlan");
+		});
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void independentNativeBoundaryHoistPreservesDuplicateUndefAndNesting(boolean nested) {
+		String boundary = "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) ?u WHERE { VALUES ?u { 1 1 UNDEF } } }";
+		if (nested) {
+			boundary = "{ SELECT ?c ?u WHERE { " + boundary + " } }";
+		}
+		String query = "SELECT ?s ?o ?n ?c ?u WHERE { ?s <" + EX + "p> ?o . " + boundary
+				+ " ?s <" + EX + "q> ?n }";
+		withIslands(() -> {
+			List<String> hand = nativeHoistHand(true).stream()
+					.map(LmdbNativeInteriorIslandTest::render)
+					.collect(Collectors.toList());
+			assertThat(genericRows(query)).containsExactlyInAnyOrderElementsOf(hand);
+			long before = LmdbNativeAggregateCompiler.ISLAND_HOISTS.get();
+			assertThat(rows(query)).containsExactlyInAnyOrderElementsOf(hand);
+			assertThat(LmdbNativeAggregateCompiler.ISLAND_HOISTS.get() - before).isPositive();
+			assertThat(scopeOptimizedPlan(query, Map.of())).contains("MultiJoin(", "NativeSubquery(")
+					.doesNotContain("GenericEvalPlan");
+		});
+	}
+
+	@Test
+	public void volatileNativeBoundaryRemainsPinnedAndFreshForOneRetainedPreparation() {
+		String query = "SELECT ?s ?u WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT (UUID() AS ?u) WHERE { } } ?s <" + EX + "q> ?n }";
+		withIslands(() -> {
+			List<BindingSet> first;
+			List<BindingSet> second;
+			long before = LmdbNativeAggregateCompiler.ISLAND_HOISTS.get();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				var prepared = connection.prepareTupleQuery(query);
+				first = QueryResults.asList(prepared.evaluate());
+				second = QueryResults.asList(prepared.evaluate());
+			}
+			assertThat(LmdbNativeAggregateCompiler.ISLAND_HOISTS.get() - before).isZero();
+			for (List<BindingSet> result : List.of(first, second)) {
+				assertThat(result).hasSize(2);
+				assertThat(result.stream().map(row -> row.getValue("s").stringValue()).collect(Collectors.toList()))
+						.containsExactlyInAnyOrder(EX + "s1", EX + "s2");
+				assertThat(result.stream().map(row -> row.getValue("u")).collect(Collectors.toSet())).hasSize(1);
+			}
+			assertThat(first.get(0).getValue("u")).isNotEqualTo(second.get(0).getValue("u"));
+		});
+	}
+
+	@Test
+	public void independentEmptyNativeBoundaryPreservesItsEmptyBag() {
+		String query = "SELECT ?s ?c WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) WHERE { FILTER(false) } } ?s <" + EX + "q> ?n }";
+		withIslands(() -> {
+			assertThat(genericRows(query)).isEmpty();
+			assertThat(rows(query)).isEmpty();
+		});
+	}
+
+	@Test
+	public void countConsumerOpensOptimizedNativeBoundaryStreamWithItsHandBag() {
+		String query = "SELECT (COUNT(?c) AS ?rows) WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) WHERE { } } ?s <" + EX + "q> ?n }";
+		withIslands(() -> assertCountConsumerHoist(query, 2L, true, "rows"));
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void countConsumerOpensOptimizedDuplicateUndefAndNestedBoundaryStream(boolean nested) {
+		String boundary = "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) ?u WHERE { VALUES ?u { 1 1 UNDEF } } }";
+		if (nested) {
+			boundary = "{ SELECT ?c ?u WHERE { " + boundary + " } }";
+		}
+		String query = "SELECT (COUNT(?c) AS ?rows) WHERE { ?s <" + EX + "p> ?o . " + boundary
+				+ " ?s <" + EX + "q> ?n }";
+		withIslands(() -> assertCountConsumerHoist(query, 6L, true, "rows"));
+	}
+
+	@Test
+	public void countConsumerOpensOptimizedMultipleBoundaryStreamWithItsHandBag() {
+		String query = "SELECT (COUNT(?c) AS ?rows) (COUNT(?d) AS ?other) WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) ?u WHERE { VALUES ?u { 1 1 UNDEF } } } "
+				+ "{ SELECT (CONCAT(\"c\", \"d\") AS ?d) ?v WHERE { VALUES ?v { 2 2 } } } "
+				+ "?s <" + EX + "q> ?n }";
+		withIslands(() -> assertCountConsumerHoist(query, 12L, true, "rows", "other"));
+	}
+
+	@Test
+	public void countConsumerDoesNotGrantMovementThroughVolatileNativeBoundary() {
+		String query = "SELECT (COUNT(?u) AS ?rows) WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT (UUID() AS ?u) WHERE { } } ?s <" + EX + "q> ?n }";
+		withIslands(() -> assertCountConsumerHoist(query, 2L, false, "rows"));
+	}
+
+	@Test
+	public void countStarConsumerOpensOptimizedWholeVisibleBag() {
+		String query = "SELECT (COUNT(*) AS ?rows) WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) ?u WHERE { VALUES ?u { 1 1 UNDEF } } } "
+				+ "?s <" + EX + "q> ?n }";
+		withIslands(() -> assertCountConsumerHoist(query, 6L, true, "rows"));
+	}
+
+	@Test
+	public void distinctStarCountKeepsItsFullMappingAndLexicalPolicy() {
+		String query = "SELECT (COUNT(DISTINCT *) AS ?rows) WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) ?u WHERE { VALUES ?u { 1 1 UNDEF } } } "
+				+ "?s <" + EX + "q> ?n }";
+		withIslands(() -> assertCountConsumerHoist(query, 4L, false, "rows"));
+	}
+
+	private void assertCountConsumerHoist(String query, long count, boolean optimized, String... names) {
+		MapBindingSet hand = new MapBindingSet();
+		for (String name : names) {
+			hand.addBinding(name, repository.getValueFactory().createLiteral(Long.toString(count), XSD.INTEGER));
+		}
+		assertThat(scopeBindingRows(query, Map.of(), false)).as("independent generic COUNT bag")
+				.containsExactly(hand);
+		assertThat(scopeBindingRows(query, Map.of(), true)).as("native COUNT bag")
+				.containsExactly(hand);
+		withProperty(NATIVE_FLAG, "true", () -> {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation executed = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				assertThat(hasActualOptimizedHoistOpen(executed.toGenericPlanNode()))
+						.as("real selected stream opens, not planned shape or compile count: %s", executed)
+						.isEqualTo(optimized);
+			}
+		});
+	}
+
+	private static boolean hasActualOptimizedHoistOpen(GenericPlanNode node) {
+		Long opened = node.getLongMetricActual("nativeHoistOptimizedStreamsOpenedActual");
+		if (opened != null && opened > 0L) {
+			return true;
+		}
+		List<GenericPlanNode> children = node.getPlans();
+		if (children != null) {
+			for (GenericPlanNode child : children) {
+				if (hasActualOptimizedHoistOpen(child)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	@Test
+	public void finalSailSelectOpensTheOptimizedInteriorInput() {
+		String query = "SELECT ?s ?o ?n ?c WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) WHERE { } } ?s <" + EX + "q> ?n }";
+		withIslands(() -> {
+			List<String> hand = nativeHoistHand(false).stream()
+					.map(LmdbNativeInteriorIslandTest::render)
+					.collect(Collectors.toList());
+			assertThat(genericRows(query)).containsExactlyInAnyOrderElementsOf(hand);
+			assertThat(rows(query)).containsExactlyInAnyOrderElementsOf(hand);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation executed = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				assertThat(hasActualOptimizedHoistOpen(executed.toGenericPlanNode()))
+						.as("actual Sail final-result input must open the optimized alternative: %s", executed)
+						.isTrue();
+			}
+		});
+	}
+
+	@Test
+	public void repeatedIndependentBoundariesRetainTheirFullHandBag() {
+		String query = "SELECT ?s ?o ?n ?c ?d ?u ?v WHERE { ?s <" + EX + "p> ?o . "
+				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) ?u WHERE { VALUES ?u { 1 1 UNDEF } } } "
+				+ "{ SELECT (CONCAT(\"c\", \"d\") AS ?d) ?v WHERE { VALUES ?v { 2 2 } } } "
+				+ "?s <" + EX + "q> ?n }";
+		withIslands(() -> {
+			List<BindingSet> hand = new ArrayList<>();
+			for (BindingSet input : nativeHoistHand(true)) {
+				for (int copy = 0; copy < 2; copy++) {
+					MapBindingSet row = new MapBindingSet();
+					for (String name : input.getBindingNames()) {
+						row.addBinding(name, input.getValue(name));
+					}
+					row.addBinding("d", repository.getValueFactory().createLiteral("cd"));
+					row.addBinding("v", repository.getValueFactory().createLiteral("2", XSD.INTEGER));
+					hand.add(row);
+				}
+			}
+			assertThat(scopeBindingRows(query, Map.of(), false)).containsExactlyInAnyOrderElementsOf(hand);
+			assertThat(scopeBindingRows(query, Map.of(), true)).containsExactlyInAnyOrderElementsOf(hand);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				Explanation executed = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				assertThat(hasActualOptimizedHoistOpen(executed.toGenericPlanNode())).isTrue();
+			}
+		});
+	}
+
+	private List<BindingSet> nativeHoistHand(boolean duplicateUndef) {
+		ValueFactory vf = repository.getValueFactory();
+		List<BindingSet> hand = new ArrayList<>();
+		for (int subject = 1; subject <= 2; subject++) {
+			for (int copy = 0; copy < (duplicateUndef ? 3 : 1); copy++) {
+				MapBindingSet row = new MapBindingSet();
+				row.addBinding("s", vf.createIRI(EX, "s" + subject));
+				row.addBinding("o", vf.createLiteral(subject == 1 ? "alpha" : "bravo"));
+				row.addBinding("n", vf.createLiteral(subject));
+				row.addBinding("c", vf.createLiteral("ab"));
+				if (duplicateUndef && copy < 2) {
+					row.addBinding("u", vf.createLiteral("1", XSD.INTEGER));
+				}
+				hand.add(row);
+			}
+		}
+		return hand;
 	}
 
 	private void withIslands(Runnable action) {

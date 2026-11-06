@@ -316,7 +316,7 @@ final class FilterCursor implements FactorizedRowCursor {
 
 	FilterCursor(RowCursor arg, NativeBooleanFilter filter, RowState row) {
 		this.arg = arg;
-		this.filter = filter;
+		this.filter = NativeFilterLease.openInput(filter, row, arg);
 		this.row = row;
 		this.scalarFilterAttempt = row == null ? null : row.scalarFilterAttempt;
 	}
@@ -325,6 +325,10 @@ final class FilterCursor implements FactorizedRowCursor {
 	public boolean next() throws IOException {
 		while (arg.next()) {
 			LmdbNativeProbeDeadline.poll(++probePollTick);
+			// A physical factor invocation is not a logical input row when its multiplicity is non-unit.
+			if (arg instanceof FactorizedRowCursor factorized && factorized.multiplicity() != 1L) {
+				filter.incompleteInput();
+			}
 			if (row != null) {
 				row.cancellation.poll(probePollTick);
 			}
@@ -345,6 +349,9 @@ final class FilterCursor implements FactorizedRowCursor {
 				}
 			}
 		}
+		if (!row.cancellation.isCancellationRequested()) {
+			filter.inputExhausted();
+		}
 		return false;
 	}
 
@@ -355,7 +362,12 @@ final class FilterCursor implements FactorizedRowCursor {
 		}
 		closed = true;
 		Throwable failure = null;
-		failure = KernelRuntime.closeResource(arg, failure);
+		try {
+			arg.close();
+		} catch (RuntimeException | Error problem) {
+			failure = problem;
+			failure = KernelRuntime.closeResource(filter::incompleteInput, failure);
+		}
 		failure = KernelRuntime.closeResource(filter::close, failure);
 		if (scalarFilterAttempt != null && scalarFilterCalls != 0L) {
 			long calls = scalarFilterCalls;

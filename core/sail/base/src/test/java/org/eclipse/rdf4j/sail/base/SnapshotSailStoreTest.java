@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -31,12 +32,16 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -61,6 +66,9 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryOperationContext;
+import org.eclipse.rdf4j.query.QueryOperationDeadline;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.InsertData;
@@ -751,9 +759,10 @@ public class SnapshotSailStoreTest {
 		when(selected.fork()).thenReturn(fork);
 		when(fork.dataset(any())).thenReturn(dataset);
 		when(strategy.optimize(any(), any(), any())).thenAnswer(call -> call.getArgument(0));
-		when(strategy.precompile(any())).thenReturn(bindings -> {
+		when(strategy.precompile(any(TupleExpr.class))).thenReturn(bindings -> {
 			throw cause;
 		});
+		when(strategy.precompileFinalTupleResult(any(TupleExpr.class))).thenCallRealMethod();
 		doThrow(datasetCleanup).when(dataset).close();
 		doThrow(sourceCleanup).when(fork).close();
 		Sail sail = createSail(store, IsolationLevels.READ_COMMITTED, strategy);
@@ -1144,6 +1153,114 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
+	public void optimizedExplainHonorsQueryOperationDeadline() {
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink());
+		Sail sail = createSail(sailStore);
+
+		try (SailConnection connection = sail.getConnection();
+				QueryOperationContext.Scope ignored = QueryOperationContext
+						.open(QueryOperationDeadline.after(0, java.util.concurrent.TimeUnit.NANOSECONDS))) {
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertThatThrownBy(() -> connection.explain(Explanation.Level.Optimized, tupleExpr, null,
+					EmptyBindingSet.getInstance(), true, 60))
+							.isInstanceOf(QueryInterruptedException.class)
+							.hasMessage("Query evaluation took too long");
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void executedExplainPreservesExistingThreadInterrupt() {
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink());
+		Sail sail = createSail(sailStore);
+		Thread.interrupted();
+
+		try (SailConnection connection = sail.getConnection()) {
+			Thread.currentThread().interrupt();
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			connection.explain(Explanation.Level.Executed, tupleExpr, null, EmptyBindingSet.getInstance(), true, 60);
+			assertTrue(Thread.currentThread().isInterrupted());
+		} finally {
+			Thread.interrupted();
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void executedExplainClosesBlockingIterationAtDeadline() throws Exception {
+		BlockingStatementIteration blockingIteration = new BlockingStatementIteration();
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink(), LinkedHashModel::new,
+				() -> blockingIteration);
+		Sail sail = createSail(sailStore);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			Future<Explanation> future = executor.submit(() -> connection.explain(Explanation.Level.Executed, tupleExpr,
+					null, EmptyBindingSet.getInstance(), true, 1));
+
+			try {
+				assertTrue(blockingIteration.awaitHasNext(1, TimeUnit.SECONDS));
+				Explanation explanation = future.get(3, TimeUnit.SECONDS);
+				assertThat(explanation.toGenericPlanNode().getTimedOut()).isTrue();
+				assertTrue(blockingIteration.isClosed());
+			} finally {
+				blockingIteration.close();
+			}
+		} finally {
+			executor.shutdown();
+			executor.awaitTermination(5, TimeUnit.SECONDS);
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void executedExplainShorterTimeoutClosesBlockingIterationUnderLongerExecutionDeadline() throws Exception {
+		assertEarlierExplainDeadlineClosesBlockingIteration(false);
+	}
+
+	@Test
+	public void executedExplainEarlierOperationClosesBlockingIterationUnderLongerExecutionDeadline() throws Exception {
+		assertEarlierExplainDeadlineClosesBlockingIteration(true);
+	}
+
+	private void assertEarlierExplainDeadlineClosesBlockingIteration(boolean explicitOperationDeadline)
+			throws Exception {
+		BlockingStatementIteration blockingIteration = new BlockingStatementIteration();
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink(), LinkedHashModel::new,
+				() -> blockingIteration);
+		Sail sail = createSail(sailStore);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			Future<Explanation> future = executor.submit(() -> {
+				try (QueryOperationContext.Scope shared = QueryOperationContext.open(
+						QueryOperationDeadline.after(60_000L, TimeUnit.MILLISECONDS));
+						QueryOperationContext.Scope earlier = explicitOperationDeadline
+								? QueryOperationContext.open(QueryOperationDeadline.after(1L, TimeUnit.SECONDS))
+								: null) {
+					return connection.explain(Explanation.Level.Executed, tupleExpr, null,
+							EmptyBindingSet.getInstance(), true, explicitOperationDeadline ? 60 : 1);
+				}
+			});
+			try {
+				assertTrue(blockingIteration.awaitHasNext(1L, TimeUnit.SECONDS),
+						"the fixture must block inside the real statement iteration");
+				Explanation explanation = future.get(3L, TimeUnit.SECONDS);
+				assertTrue(explanation.toGenericPlanNode().getTimedOut());
+				assertTrue(blockingIteration.isClosed(), "the earliest deadline must actively close blocking work");
+			} finally {
+				blockingIteration.close();
+			}
+		} finally {
+			executor.shutdown();
+			executor.awaitTermination(5L, TimeUnit.SECONDS);
+			sail.shutDown();
+		}
+	}
+
+	@Test
 	public void testExplainPublishesTimeoutBeforeInterruptingEvaluation() throws Exception {
 		for (Explanation.Level level : List.of(Explanation.Level.Executed, Explanation.Level.Telemetry,
 				Explanation.Level.Timed)) {
@@ -1156,7 +1273,7 @@ public class SnapshotSailStoreTest {
 		CountDownLatch releaseEvaluation = new CountDownLatch(1);
 		CountDownLatch releaseTimeoutThread = new CountDownLatch(1);
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
-		when(strategy.precompile(any())).thenReturn(bindings -> new CloseableIteration<BindingSet>() {
+		when(strategy.precompileFinalTupleResult(any(TupleExpr.class))).thenReturn(bindings -> new CloseableIteration<BindingSet>() {
 			@Override
 			public boolean hasNext() {
 				evaluationStarted.countDown();
@@ -1218,10 +1335,100 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
+	public void explainTimeoutCleanupClearsInterruptDeliveredWhileClosing() throws Exception {
+		CountDownLatch evaluationStarted = new CountDownLatch(1);
+		CountDownLatch interruptEntered = new CountDownLatch(1);
+		CountDownLatch releaseInterrupt = new CountDownLatch(1);
+		AtomicReference<Explanation> result = new AtomicReference<>();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		AtomicBoolean interruptedAtReturn = new AtomicBoolean();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompileFinalTupleResult(any(TupleExpr.class))).thenReturn(bindings -> new CloseableIteration<BindingSet>() {
+			@Override
+			public boolean hasNext() {
+				evaluationStarted.countDown();
+				try {
+					assertTrue(interruptEntered.await(10, TimeUnit.SECONDS), "the real watchdog must expire");
+					return false;
+				} catch (InterruptedException unexpected) {
+					throw new AssertionError("interrupt delivery must remain gated until close owns cleanup", unexpected);
+				}
+			}
+
+			@Override
+			public BindingSet next() { throw new NoSuchElementException(); }
+
+			@Override
+			public void close() {}
+		});
+		Sail sail = createExplainTestSail(strategy);
+		Thread evaluationThread = new Thread(() -> {
+			try (SailConnection connection = sail.getConnection()) {
+				TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+				result.set(connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
+						EmptyBindingSet.getInstance(), false, 1));
+			} catch (Throwable problem) {
+				failure.set(problem);
+			} finally {
+				interruptedAtReturn.set(Thread.currentThread().isInterrupted());
+			}
+		}, "explain-timeout-close-interrupt-race") {
+			@Override
+			public void interrupt() {
+				interruptEntered.countDown();
+				boolean interrupted = false;
+				try {
+					while (true) {
+						try {
+							releaseInterrupt.await();
+							break;
+						} catch (InterruptedException cleanupSignal) {
+							// close interrupts the watchdog before taking its delivery monitor; keep delivery gated.
+							interrupted = true;
+						}
+					}
+					super.interrupt();
+				} finally {
+					if (interrupted) { Thread.currentThread().interrupt(); }
+				}
+			}
+		};
+		try {
+			evaluationThread.start();
+			assertTrue(evaluationStarted.await(10, TimeUnit.SECONDS));
+			assertTrue(interruptEntered.await(10, TimeUnit.SECONDS));
+			long waitUntil = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+			while (evaluationThread.isAlive() && evaluationThread.getState() != Thread.State.BLOCKED
+					&& System.nanoTime() < waitUntil) {
+				Thread.yield();
+			}
+			assertEquals(Thread.State.BLOCKED, evaluationThread.getState(),
+					"explanation cleanup must already be waiting for the watchdog's interrupt delivery monitor");
+			assertTrue(java.util.Arrays.stream(evaluationThread.getStackTrace()).anyMatch(frame ->
+					frame.getClassName().endsWith("SailSourceConnection$QueryDeadlineCloseTask")
+							&& frame.getMethodName().equals("close")),
+					"the blocked owner must be closing its actual explanation timeout task");
+			releaseInterrupt.countDown();
+			evaluationThread.join(TimeUnit.SECONDS.toMillis(5));
+			assertFalse(evaluationThread.isAlive());
+			assertNull(failure.get());
+			assertTrue(result.get().toGenericPlanNode().getTimedOut());
+			assertFalse(interruptedAtReturn.get(), "a watchdog interrupt delivered during close must not leak to later work");
+		} finally {
+			releaseInterrupt.countDown();
+			if (evaluationThread.isAlive()) {
+				evaluationThread.interrupt();
+				evaluationThread.join(TimeUnit.SECONDS.toMillis(10));
+			}
+			sail.shutDown();
+		}
+	}
+
+	@Test
 	public void testExplainPropagatesEvaluationFailureWithoutTimeout() {
 		IllegalStateException failure = new IllegalStateException("evaluation failed");
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
-		when(strategy.precompile(any())).thenReturn(bindings -> {
+		when(strategy.precompileFinalTupleResult(any(TupleExpr.class))).thenReturn(bindings -> {
 			throw failure;
 		});
 		Sail sail = createExplainTestSail(strategy);
@@ -1532,6 +1739,18 @@ public class SnapshotSailStoreTest {
 
 	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory,
 			ModelFactory modelFactory, Runnable onDatasetClose) {
+		return createSnapshotSailStore(sinkFactory, modelFactory, EmptyIteration::new, onDatasetClose);
+	}
+
+	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory,
+			ModelFactory modelFactory, Supplier<CloseableIteration<? extends Statement>> statementIterations) {
+		return createSnapshotSailStore(sinkFactory, modelFactory, statementIterations, () -> {
+		});
+	}
+
+	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory,
+			ModelFactory modelFactory, Supplier<CloseableIteration<? extends Statement>> statementIterations,
+			Runnable onDatasetClose) {
 		return createSnapshotSailStore(sinkFactory, modelFactory, level -> new SailDataset() {
 			@Override
 			public void close() throws SailException {
@@ -1556,7 +1775,7 @@ public class SnapshotSailStoreTest {
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 					Resource... contexts) throws SailException {
-				return new EmptyIteration<>();
+				return statementIterations.get();
 			}
 		});
 	}
@@ -1599,6 +1818,47 @@ public class SnapshotSailStoreTest {
 			public void close() throws SailException {
 			}
 		}, modelFactory);
+	}
+
+	private static final class BlockingStatementIteration implements CloseableIteration<Statement> {
+		private final CountDownLatch hasNext = new CountDownLatch(1);
+		private final CountDownLatch closed = new CountDownLatch(1);
+
+		@Override
+		public boolean hasNext() {
+			hasNext.countDown();
+			while (closed.getCount() != 0) {
+				try {
+					closed.await();
+				} catch (InterruptedException ignored) {
+					// This deliberately non-cooperative test iterator only responds to close().
+				}
+			}
+			return false;
+		}
+
+		@Override
+		public Statement next() {
+			throw new IllegalStateException("The closed iteration has no next statement");
+		}
+
+		@Override
+		public void remove() {
+			throw new IllegalStateException("The closed iteration has no statement to remove");
+		}
+
+		@Override
+		public void close() {
+			closed.countDown();
+		}
+
+		private boolean awaitHasNext(long timeout, TimeUnit unit) throws InterruptedException {
+			return hasNext.await(timeout, unit);
+		}
+
+		private boolean isClosed() {
+			return closed.getCount() == 0;
+		}
 	}
 
 	private SnapshotSailStore createOrderedSnapshotSailStore(Model initialStatements, AtomicInteger orderedReads) {
@@ -1695,6 +1955,7 @@ public class SnapshotSailStoreTest {
 		@Override
 		public Comparator<Value> getComparator() {
 			return Comparator.comparing(Value::stringValue);
+
 		}
 	}
 

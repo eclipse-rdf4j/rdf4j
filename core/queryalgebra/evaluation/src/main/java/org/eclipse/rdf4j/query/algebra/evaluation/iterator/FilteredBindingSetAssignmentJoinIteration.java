@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -47,6 +48,7 @@ final class FilteredBindingSetAssignmentJoinIteration extends LookAheadIteration
 	private int assignmentIndex;
 	private long recordedPassedCount;
 	private long recordedFilteredCount;
+	private boolean inputExhausted;
 
 	FilteredBindingSetAssignmentJoinIteration(Filter filterNode, CloseableIteration<BindingSet> leftIter,
 			List<BindingSet> assignmentRows, QueryValueEvaluationStep condition, DirectCondition directCondition,
@@ -76,6 +78,7 @@ final class FilteredBindingSetAssignmentJoinIteration extends LookAheadIteration
 			}
 			CancellationPoints.check(isCancellationRequested());
 			if (!leftIter.hasNext()) {
+				inputExhausted = true;
 				return null;
 			}
 			currentLeft = leftIter.next();
@@ -85,7 +88,7 @@ final class FilteredBindingSetAssignmentJoinIteration extends LookAheadIteration
 
 	private BindingSet compatibleJoin(BindingSet left, BindingSet right) {
 		if (right.isEmpty()) {
-			return left;
+			return BindingSetOrigin.produced(left, bindingNamesByName.keySet());
 		}
 		MutableBindingSet joined = null;
 		for (Binding binding : right) {
@@ -109,7 +112,7 @@ final class FilteredBindingSetAssignmentJoinIteration extends LookAheadIteration
 				bindingNameAccess.addBinding.accept(value, joined);
 			}
 		}
-		return joined == null ? left : joined;
+		return BindingSetOrigin.produced(joined == null ? left : joined, bindingNamesByName.keySet());
 	}
 
 	private boolean accept(BindingSet bindings) throws QueryEvaluationException {
@@ -140,9 +143,12 @@ final class FilteredBindingSetAssignmentJoinIteration extends LookAheadIteration
 		try {
 			leftIter.close();
 		} finally {
-			if (recordFilterOutcomes && (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
+			if (recordFilterOutcomes && inputExhausted
+					&& (recordedPassedCount > 0L || recordedFilteredCount > 0L)) {
 				try {
-					evaluationStatistics.recordFilterOutcome(filterNode, recordedPassedCount, recordedFilteredCount);
+					evaluationStatistics.recordFilterOutcome(filterNode,
+							EvaluationStatistics.FilterOutcomeObservation.completed(recordedPassedCount,
+									recordedFilteredCount));
 				} catch (RuntimeException e) {
 					// Estimation feedback must never break query evaluation.
 				}

@@ -29,9 +29,10 @@ public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 	private final QueryValueEvaluationStep leftStep;
 	private final QueryValueEvaluationStep rightStep;
 	private final QueryModelNode metricTarget;
+	private final Runnable shortCircuitRecorder;
 
 	public AndValueEvaluationStep(QueryValueEvaluationStep leftStep, QueryValueEvaluationStep rightStep) {
-		this(leftStep, rightStep, null);
+		this(leftStep, rightStep, (QueryModelNode) null);
 	}
 
 	public AndValueEvaluationStep(QueryValueEvaluationStep leftStep, QueryValueEvaluationStep rightStep,
@@ -40,6 +41,15 @@ public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 		this.leftStep = leftStep;
 		this.rightStep = rightStep;
 		this.metricTarget = metricTarget;
+		this.shortCircuitRecorder = null;
+	}
+
+	public AndValueEvaluationStep(QueryValueEvaluationStep leftStep, QueryValueEvaluationStep rightStep,
+			Runnable shortCircuitRecorder) {
+		this.leftStep = leftStep;
+		this.rightStep = rightStep;
+		this.metricTarget = null;
+		this.shortCircuitRecorder = shortCircuitRecorder;
 	}
 
 	@Override
@@ -71,11 +81,21 @@ public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 
 	public static QueryValueEvaluationStep supply(QueryValueEvaluationStep leftStep,
 			QueryValueEvaluationStep rightStep) {
-		return supply(leftStep, rightStep, null);
+		return supply(leftStep, rightStep, (QueryModelNode) null);
 	}
 
 	public static QueryValueEvaluationStep supply(QueryValueEvaluationStep leftStep,
 			QueryValueEvaluationStep rightStep, QueryModelNode metricTarget) {
+		return supplyInternal(leftStep, rightStep, metricTarget, null);
+	}
+
+	public static QueryValueEvaluationStep supply(QueryValueEvaluationStep leftStep,
+			QueryValueEvaluationStep rightStep, Runnable shortCircuitRecorder) {
+		return supplyInternal(leftStep, rightStep, null, shortCircuitRecorder);
+	}
+
+	private static QueryValueEvaluationStep supplyInternal(QueryValueEvaluationStep leftStep,
+			QueryValueEvaluationStep rightStep, QueryModelNode metricTarget, Runnable shortCircuitRecorder) {
 		if (leftStep.isConstant()) {
 			Result constantLeftValue = QueryEvaluationUtility
 					.getEffectiveBooleanValue(leftStep.evaluate(EmptyBindingSet.getInstance()));
@@ -92,12 +112,17 @@ public class AndValueEvaluationStep implements QueryValueEvaluationStep {
 				}
 			}
 		}
-		// A constant false right operand determines the boolean result, but the reachable left operand still
-		// has to run. An arbitrary evaluation step may be volatile or raise an observable query-fatal error.
-		return new AndValueEvaluationStep(leftStep, rightStep, metricTarget);
+		// Reachable left evaluation may be volatile or raise a query-fatal error even when right is false.
+		return shortCircuitRecorder == null
+				? new AndValueEvaluationStep(leftStep, rightStep, metricTarget)
+				: new AndValueEvaluationStep(leftStep, rightStep, shortCircuitRecorder);
 	}
 
 	private void incrementShortCircuitCount() {
+		if (shortCircuitRecorder != null) {
+			shortCircuitRecorder.run();
+			return;
+		}
 		if (metricTarget == null) {
 			return;
 		}

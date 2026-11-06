@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -64,6 +65,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
@@ -1788,8 +1790,8 @@ class LmdbDirectAdjacencyQueryTest {
 					.isGreaterThan(hitsBeforePredicate);
 
 			assertThat(dataset.source.count(-1, -1, -1, -1)).isEqualTo(5);
-			assertThat(dataset.dataset.getStatementCount(null, null, null, G1)).isEqualTo(1);
-			assertThat(dataset.dataset.getStatementCount(null, P1, null, (Resource) null)).isEqualTo(2);
+			assertThat(dataset.dataset.getStatementCount((Resource) null, null, null, G1)).isEqualTo(1);
+			assertThat(dataset.dataset.getStatementCount((Resource) null, P1, null, (Resource) null)).isEqualTo(2);
 		}
 	}
 
@@ -3687,5 +3689,43 @@ class LmdbDirectAdjacencyQueryTest {
 			assertThat(metrics.shadowMismatches).isZero();
 			assertThat(metrics.lookupHits).isZero();
 		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(DirectAdjacencyCoverage.class)
+	void publicRepositoryGetStatementsShadowComparesBoundShapesAcrossContextScopes(
+			DirectAdjacencyCoverage coverage) throws IOException {
+		System.setProperty(LmdbDirectAdjacencyOptions.SHADOW_SAMPLE_EVERY_PROPERTY, "1");
+		openStore(DirectAdjacencyMode.SHADOW, coverage,
+				coverage == DirectAdjacencyCoverage.SELECTED ? List.of(P1) : null);
+		List<Long> comparisonsByQuery = new ArrayList<>();
+		try (RepositoryConnection connection = repo.getConnection()) {
+			comparisonsByQuery.add(assertRepositoryShadowRows(connection, S1, P1, null,
+					List.of(F.createStatement(S1, P1, O1), F.createStatement(S1, P1, O2, G1))));
+			comparisonsByQuery.add(assertRepositoryShadowRows(connection, null, P1, O1,
+					List.of(F.createStatement(S1, P1, O1), F.createStatement(S2, P1, O1))));
+			comparisonsByQuery.add(assertRepositoryShadowRows(connection, S1, P1, null,
+					List.of(F.createStatement(S1, P1, O2, G1)), G1));
+			comparisonsByQuery.add(assertRepositoryShadowRows(connection, S1, P1, null,
+					List.of(F.createStatement(S1, P1, O1)), (Resource) null));
+		}
+
+		LmdbAdjacencyMetrics.Snapshot metrics = direct.snapshotMetrics();
+		assertThat(comparisonsByQuery)
+				.as("FULL and SELECTED public getStatements paths compare each bound-node result against LMDB")
+				.allSatisfy(comparisons -> assertThat(comparisons).isPositive());
+		assertThat(metrics.shadowMismatches).isZero();
+		assertThat(metrics.lookupHits).isZero();
+	}
+
+	private long assertRepositoryShadowRows(RepositoryConnection connection, Resource subject, IRI predicate,
+			Value object, List<Statement> expected, Resource... contexts) {
+		long comparisonsBefore = direct.snapshotMetrics().shadowComparisons;
+		List<Statement> actual = new ArrayList<>();
+		try (var statements = connection.getStatements(subject, predicate, object, contexts)) {
+			statements.forEachRemaining(actual::add);
+		}
+		assertThat(actual).containsExactlyElementsOf(expected);
+		return direct.snapshotMetrics().shadowComparisons - comparisonsBefore;
 	}
 }

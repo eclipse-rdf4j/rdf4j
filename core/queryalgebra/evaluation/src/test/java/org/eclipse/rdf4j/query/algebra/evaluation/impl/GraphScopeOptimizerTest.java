@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimiz
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -77,6 +78,63 @@ class GraphScopeOptimizerTest {
 			assertThat(statement.getSubjectVar().getName()).isEqualTo("s");
 			assertThat(statement.isVariableScopeChange()).isTrue();
 		});
+	}
+
+	@Test
+	void repeatedFixedGraphScopesLowerToStatementPatternContextsAndPreserveBags() {
+		IRI graph = VF.createIRI("urn:g");
+		IRI otherGraph = VF.createIRI("urn:other-graph");
+		IRI q = VF.createIRI("urn:q");
+		IRI s = VF.createIRI("urn:s");
+		IRI t = VF.createIRI("urn:t");
+		IRI a = VF.createIRI("urn:a");
+		IRI b = VF.createIRI("urn:b");
+		IRI c = VF.createIRI("urn:c");
+		IRI d = VF.createIRI("urn:d");
+		IRI e = VF.createIRI("urn:e");
+		IRI f = VF.createIRI("urn:f");
+		List<Statement> data = List.of(VF.createStatement(s, P, a, graph), VF.createStatement(s, P, b, graph),
+				VF.createStatement(s, q, c, graph), VF.createStatement(s, q, d, graph),
+				VF.createStatement(t, P, e, graph), VF.createStatement(t, q, f, graph),
+				VF.createStatement(s, P, VF.createIRI("urn:default-p")),
+				VF.createStatement(s, q, VF.createIRI("urn:default-q")),
+				VF.createStatement(s, P, VF.createIRI("urn:other-p"), otherGraph),
+				VF.createStatement(s, q, VF.createIRI("urn:other-q"), otherGraph));
+		List<BindingSet> completeRows = new ArrayList<>();
+		for (IRI object : List.of(a, b)) {
+			for (IRI value : List.of(c, d)) {
+				completeRows.add(new ListBindingSet(List.of("s", "o", "v"), s, object, value));
+			}
+		}
+		completeRows.add(new ListBindingSet(List.of("s", "o", "v"), t, e, f));
+		for (boolean subjectOnly : List.of(false, true)) {
+			String query = "SELECT " + (subjectOnly ? "?s" : "*")
+					+ " WHERE { GRAPH <urn:g> { ?s <urn:p> ?o } GRAPH <urn:g> { ?s <urn:q> ?v } }";
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new CountingTripleSource(data), null);
+			TupleExpr original = parse(query);
+			assertThat(graphs(original)).hasSize(2);
+			List<BindingSet> expected = subjectOnly
+					? completeRows.stream()
+							.<BindingSet>map(row -> new ListBindingSet(List.of("s"), row.getValue("s")))
+							.toList()
+					: completeRows;
+			assertThat(evaluate(strategy, original.clone(), EmptyBindingSet.getInstance()))
+					.as("retained GRAPH exact bag, subjectOnly=%s", subjectOnly)
+					.containsExactlyInAnyOrderElementsOf(expected);
+			TupleExpr lowered = original.clone();
+			strategy.optimize(lowered, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+			assertThat(graphs(lowered)).isEmpty();
+			assertThat(statements(lowered)).hasSize(2).allSatisfy(statement -> {
+				assertThat(statement.getScope()).isEqualTo(StatementPattern.Scope.NAMED_CONTEXTS);
+				assertThat(statement.getContextVar()).isNotNull();
+				assertThat(statement.getContextVar().hasValue()).isTrue();
+				assertThat(statement.getContextVar().getValue()).isEqualTo(graph);
+				assertThat(statement.isVariableScopeChange()).isTrue();
+			});
+			assertThat(evaluate(strategy, lowered, EmptyBindingSet.getInstance()))
+					.as("lowered repeated fixed GRAPH exact bag, subjectOnly=%s", subjectOnly)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
 	}
 
 	@Test
@@ -506,6 +564,15 @@ class GraphScopeOptimizerTest {
 		private final List<Statement> data = new ArrayList<>();
 		private int contextEnumerations;
 		private int contextAdvances;
+
+		private CountingTripleSource(List<Statement> statements) {
+			data.addAll(statements);
+			statements.stream()
+					.map(Statement::getContext)
+					.filter(context -> context != null)
+					.distinct()
+					.forEach(contextIDs::add);
+		}
 
 		private CountingTripleSource() {
 			data.add(VF.createStatement(VF.createIRI("urn:default-s"), P, VF.createIRI("urn:default-o")));

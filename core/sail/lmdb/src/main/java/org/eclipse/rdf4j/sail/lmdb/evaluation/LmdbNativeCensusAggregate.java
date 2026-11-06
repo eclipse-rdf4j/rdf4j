@@ -440,7 +440,8 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 				input = filter.getArg();
 			}
 		}
-		if (!(input instanceof StatementPattern pattern)) {
+		if (!(input instanceof StatementPattern pattern)
+				|| !NativeContextSelection.supportsCensus(pattern, context)) {
 			return null;
 		}
 		Var[] vars = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),

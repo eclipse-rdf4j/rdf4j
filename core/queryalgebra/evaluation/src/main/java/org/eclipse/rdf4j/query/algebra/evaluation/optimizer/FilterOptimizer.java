@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -169,6 +170,11 @@ public class FilterOptimizer implements QueryOptimizer {
 		if (source instanceof VariableScopeChange src && target instanceof VariableScopeChange tgt) {
 			tgt.setVariableScopeChange(src.isVariableScopeChange());
 		}
+		if (source instanceof Filter from && target instanceof Filter to) {
+			Set<String> required = new HashSet<>(to.getRequiredInputBindingNames());
+			required.addAll(from.getRequiredInputBindingNames());
+			to.setRequiredInputBindingNames(required);
+		}
 	}
 
 	private static int filterConditionCost(ValueExpr condition) {
@@ -284,24 +290,35 @@ public class FilterOptimizer implements QueryOptimizer {
 		public void meet(Filter filter) {
 			List<ValueExpr> constraints = new ArrayList<>();
 			getConjunctiveConstraints(filter.getCondition(), constraints);
-			if (constraints.size() > 1 && constraints.stream().allMatch(AlgebraEvaluationSafety::isRepeatable)) {
+			// Scalar placement honors the function volatility contract. Replaying crossed tuple operators below
+			// still requires the stronger AlgebraEvaluationSafety proof.
+			if (constraints.size() > 1 && constraints.stream().allMatch(ScalarEvaluationEffects::reorderingIsSafe)) {
 				Set<String> declarations = filter.getBindingNames();
 				if (!declarations.equals(filter.getArg().getBindingNames())) {
 					return;
 				}
 				ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+				boolean explicitScope = !filter.getConditionBindingScope().isAuto();
 				TupleExpr newArg = filter.getArg().clone();
 				for (int i = 0; i < constraints.size() - 1; i++) {
 					Filter newFilter = new Filter(newArg, FilterBindingScope
 							.conditionPreservingDeclarations(constraints.get(i).clone(), declarations));
 					transferScopeChange(filter, newFilter);
-					newFilter.setConditionBindingScope(bindingScope);
+					if (explicitScope) {
+						newFilter.setConditionBindingScope(bindingScope);
+					} else {
+						FilterBindingScope.preserve(newFilter, bindingScope);
+					}
 					newArg = newFilter;
 				}
 				filter.setCondition(FilterBindingScope.conditionPreservingDeclarations(constraints.getLast().clone(),
 						declarations));
-				filter.setConditionBindingScope(bindingScope);
 				filter.replaceChildNode(filter.getArg(), newArg);
+				if (explicitScope) {
+					filter.setConditionBindingScope(bindingScope);
+				} else {
+					FilterBindingScope.preserve(filter, bindingScope);
+				}
 				analysis.invalidate();
 			}
 			super.meet(filter);
@@ -335,8 +352,8 @@ public class FilterOptimizer implements QueryOptimizer {
 					&& !TupleExprs.isVariableScopeChange(filter)
 					&& !TupleExprs.isVariableScopeChange(childFilter)
 					&& FilterBindingScope.resolve(filter).equals(FilterBindingScope.resolve(childFilter))
-					&& AlgebraEvaluationSafety.isRepeatable(childFilter.getCondition())
-					&& AlgebraEvaluationSafety.isRepeatable(filter.getCondition())) {
+					&& ScalarEvaluationEffects.reorderingIsSafe(childFilter.getCondition())
+					&& ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
 
 				QueryModelNode parent = filter.getParentNode();
 				And merge = mergeConditionsInFilterOrder(childFilter.getArg(), childFilter.getCondition(),
@@ -347,6 +364,7 @@ public class FilterOptimizer implements QueryOptimizer {
 					return;
 				}
 				transferScopeChange(filter, newFilter); // both have same scope flag
+				transferScopeChange(childFilter, newFilter);
 				if (!filter.getConditionBindingScope().isAuto() || !childFilter.getConditionBindingScope().isAuto()) {
 					newFilter.setConditionBindingScope(FilterBindingScope.resolve(filter));
 				}
@@ -405,7 +423,7 @@ public class FilterOptimizer implements QueryOptimizer {
 			if (filter.getParentNode() == null || simplify(filter, analysis, strategy)) {
 				return;
 			}
-			if (filter.getParentNode() != null && AlgebraEvaluationSafety.isRepeatable(filter.getCondition())) {
+			if (ScalarEvaluationEffects.reorderingIsSafe(filter.getCondition())) {
 				filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost, analysis, strategy));
 			}
 		}
@@ -440,8 +458,8 @@ public class FilterOptimizer implements QueryOptimizer {
 				Set<String> declarations = filter.getBindingNames();
 				Filter candidate = new Filter(filter.getArg().clone(), simplified.condition().clone());
 				if (declarations.equals(candidate.getBindingNames())) {
-					filter.setConditionBindingScope(bindingScope);
 					filter.setCondition(simplified.condition());
+					FilterBindingScope.preserve(filter, bindingScope);
 					analysis.invalidate();
 				}
 			}
@@ -457,7 +475,11 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join join) {
-			if (placementRules.canMoveIntoJoinChild(join.getLeftArg(), join.getRightArg(), true)
+			FilterPlacementRules.StaticPlacement leftPlacement = placementRules.staticPlacementIntoJoinChild(join,
+					join.getLeftArg(), join.getRightArg(), true);
+			FilterPlacementRules.StaticPlacement rightPlacement = placementRules.staticPlacementIntoJoinChild(join,
+					join.getRightArg(), join.getLeftArg(), false);
+			if (leftPlacement != null
 					&& AlgebraEvaluationSafety.isRepeatable(join.getRightArg())) {
 				if (shouldKeepFilterAtJoin(join, join.getLeftArg())) {
 					relocate(filter, join);
@@ -465,11 +487,14 @@ public class FilterOptimizer implements QueryOptimizer {
 					// The left operand preserves the condition's required values for every row.
 					join.getLeftArg().visit(this);
 				}
-			} else if (placementRules.canMoveIntoJoinChild(join.getRightArg(), join.getLeftArg(), false)) {
+			} else if (rightPlacement != null) {
 				if (shouldKeepFilterAtJoin(join, join.getRightArg())) {
 					relocate(filter, join);
 				} else {
 					// The right operand preserves the condition's required values for every row.
+					Set<String> required = new HashSet<>(filter.getRequiredInputBindingNames());
+					required.addAll(rightPlacement.requiredInputs());
+					filter.setRequiredInputBindingNames(required);
 					join.getRightArg().visit(this);
 				}
 			} else {
@@ -487,7 +512,8 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
-			if (placementRules.canMoveIntoJoinChild(leftJoin.getLeftArg(), leftJoin.getRightArg(), true)
+			if (placementRules.staticPlacementIntoJoinChild(leftJoin, leftJoin.getLeftArg(), leftJoin.getRightArg(),
+					true) != null
 					&& placementRules.leftJoinEvaluationIsRepeatable(leftJoin)) {
 				leftJoin.getLeftArg().visit(this);
 			} else {
@@ -505,6 +531,7 @@ public class FilterOptimizer implements QueryOptimizer {
 			TupleExpr rightArg = union.getRightArg();
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
+			clone.setRequiredInputBindingNames(filter.getRequiredInputBindingNames());
 			boolean explicitScope = !filter.getConditionBindingScope().isAuto();
 			union.replaceChildNode(rightArg, clone);
 			clone.setArg(rightArg);
@@ -682,6 +709,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 			if (statistics instanceof JoinFactorCostModel costModel) {
 				Filter candidateFilter = new Filter(candidateArg.clone(), filter.getCondition().clone());
+				transferScopeChange(filter, candidateFilter);
 				candidateFilter.setConditionBindingScope(placementRules.conditionBindingScope());
 				OptionalWorkRows joinWork = estimateWorkRows(costModel, join);
 				OptionalWorkRows candidateWork = estimateWorkRows(costModel, candidateFilter);
@@ -715,6 +743,12 @@ public class FilterOptimizer implements QueryOptimizer {
 			return found[0];
 		}
 
+		private boolean extensionEvaluationIsSafe(Extension extension) {
+			return extension.getElements()
+					.stream()
+					.allMatch(element -> ScalarEvaluationEffects.reorderingIsSafe(element.getExpr()));
+		}
+
 		private OptionalWorkRows estimateWorkRows(JoinFactorCostModel costModel, TupleExpr tupleExpr) {
 			JoinFactorCostModel.FactorCostEstimate estimate = costModel.estimateFactorCost(tupleExpr, Set.of())
 					.orElse(null);
@@ -731,6 +765,7 @@ public class FilterOptimizer implements QueryOptimizer {
 			}
 
 			Filter candidateFilter = new Filter(candidateArg.clone(), filter.getCondition().clone());
+			transferScopeChange(filter, candidateFilter);
 			candidateFilter.setConditionBindingScope(placementRules.conditionBindingScope());
 			double filteredRows = statistics.getCardinality(candidateFilter);
 			if (isFiniteNonNegative(filteredRows) && filteredRows < baseRows) {

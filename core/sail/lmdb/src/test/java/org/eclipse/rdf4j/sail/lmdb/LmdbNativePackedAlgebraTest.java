@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -28,17 +30,22 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -203,6 +210,21 @@ class LmdbNativePackedAlgebraTest {
 		assertEquals(10, evaluate(query, "packedFtree", null).size());
 	}
 
+	@Test
+	void groupedFilteredUnionRetainsBothBranchBagsUnderPackedAggregate() {
+		String query = "SELECT ?s (COUNT(?p) AS ?n) (SUM(?p) AS ?sum) WHERE { "
+				+ "{ ?s ex:p ?p FILTER(?p >= 1) } UNION { ?s ex:p ?p FILTER(?p >= 1) } } GROUP BY ?s";
+		assertSameBag(query, "packedFtreeAggregate", null);
+		List<String> actual = new ArrayList<>();
+		for (BindingSet row : evaluate(query, "packedFtreeAggregate", null)) {
+			assertEquals(Set.of("s", "n", "sum"), row.getBindingNames());
+			actual.add(row.getValue("s").stringValue() + "|" + ((Literal) row.getValue("n")).longValue()
+					+ "|" + ((Literal) row.getValue("sum")).longValue());
+		}
+		actual.sort(String::compareTo);
+		assertEquals(List.of(EX + "s1|2|2", EX + "s2|4|6", EX + "s3|6|12", EX + "s4|8|20"), actual);
+	}
+
 	@ParameterizedTest(name = "packed aggregate: {0}")
 	@MethodSource("aggregateQueries")
 	void aggregatesMatchGeneric(String query) {
@@ -320,6 +342,106 @@ class LmdbNativePackedAlgebraTest {
 		if (path != null && java.util.Arrays.asList(path.split("\\|")).contains(expected))
 			return true;
 		return node.getPlans() != null && node.getPlans().stream().anyMatch(child -> hasPath(child, expected));
+	}
+
+	@Test
+	void originalOptionalUnionBagHasIndependentMemoryAndPackedSingletonOracles() {
+		String query = "SELECT * WHERE { ?s a ex:Root OPTIONAL { { ?s ex:r ?x } UNION { ?s ex:p ?x FILTER(?x = 1) } } }";
+		SailRepository memory = new SailRepository(new MemoryStore());
+		try {
+			try (SailRepositoryConnection memoryConnection = memory.getConnection();
+					SailRepositoryConnection nativeConnection = repository.getConnection()) {
+				ValueFactory values = SimpleValueFactory.getInstance();
+				for (int i = 1; i <= 4; i++) {
+					IRI subject = values.createIRI(EX, "s" + i);
+					memoryConnection.add(subject, RDF.TYPE, values.createIRI(EX, "Root"));
+					for (int value = 1; value <= i; value++) {
+						memoryConnection.add(subject, values.createIRI(EX, "p"), values.createLiteral(value));
+					}
+					if (i % 2 == 0) {
+						memoryConnection.add(subject, values.createIRI(EX, "r"), values.createLiteral(i));
+					}
+				}
+				List<BindingSet> handBag = new ArrayList<>();
+				for (int i = 1; i <= 4; i++) {
+					handBag.add(new ListBindingSet(List.of("s", "x"), values.createIRI(EX, "s" + i),
+							values.createLiteral(1)));
+					if (i % 2 == 0) {
+						handBag.add(new ListBindingSet(List.of("s", "x"), values.createIRI(EX, "s" + i),
+								values.createLiteral(i)));
+					}
+				}
+				SailTupleQuery nativeQuery = (SailTupleQuery) nativeConnection.prepareTupleQuery(PREFIX + query);
+				nativeQuery.setForcedLmdbExecutionStrategy("packedFtree");
+				var unforcedQuery = nativeConnection.prepareTupleQuery(PREFIX + query);
+				var memoryQuery = memoryConnection.prepareTupleQuery(PREFIX + query);
+				for (int round = 0; round < 3; round++) {
+					List<BindingSet> independent = QueryResults.asList(memoryQuery.evaluate());
+					assertEquals(canonical(handBag), canonical(independent), "independent six-row whole bag");
+					assertEquals(canonical(independent), canonical(QueryResults.asList(unforcedQuery.evaluate())),
+							"original unforced OPTIONAL/UNION bag, round=" + round);
+					assertEquals(canonical(independent), canonical(QueryResults.asList(nativeQuery.evaluate())),
+							"original mandatory packed OPTIONAL/UNION bag, round=" + round);
+				}
+			}
+		} finally {
+			memory.shutDown();
+		}
+		assertPath(query, "packedFtree", "packedFtree");
+	}
+
+	@Test
+	void variablePredicateHasAPrecisePackedCapabilityRejection() {
+		String query = "SELECT ?s ?p ?o WHERE { ?s ?p ?o }";
+		QueryEvaluationException failure = assertThrows(QueryEvaluationException.class,
+				() -> evaluate(query, "packedFtree", null));
+		assertTrue(failure.getMessage().contains("could not be forced at row/join dispatch"));
+		assertTrue(failure.getMessage().contains("unsupported-shape"));
+	}
+
+	@Test
+	void emptyPhysicalDemandDistinctUsesTheLogicalNativeRowsKey() {
+		String body = " WHERE { ?s ex:label ?ignored }";
+		String ordinary = "SELECT ?future" + body;
+		String distinct = "SELECT DISTINCT ?future" + body;
+		SailRepository memory = new SailRepository(new MemoryStore());
+		try {
+			try (SailRepositoryConnection memoryConnection = memory.getConnection();
+					SailRepositoryConnection nativeConnection = repository.getConnection()) {
+				ValueFactory values = SimpleValueFactory.getInstance();
+				memoryConnection.add(values.createIRI(EX, "s2"), values.createIRI(EX, "label"),
+						values.createLiteral("S2"));
+				memoryConnection.add(values.createIRI(EX, "s4"), values.createIRI(EX, "label"),
+						values.createLiteral("S4"));
+				List<BindingSet> twoEmptyMappings = List.of(EmptyBindingSet.getInstance(),
+						EmptyBindingSet.getInstance());
+				List<BindingSet> oneEmptyMapping = List.of(EmptyBindingSet.getInstance());
+				SailTupleQuery nativeOrdinary = (SailTupleQuery) nativeConnection.prepareTupleQuery(PREFIX + ordinary);
+				SailTupleQuery nativeDistinct = (SailTupleQuery) nativeConnection.prepareTupleQuery(PREFIX + distinct);
+				nativeOrdinary.setForcedLmdbExecutionStrategy("packedFtree");
+				nativeDistinct.setForcedLmdbExecutionStrategy("packedFtree");
+				var memoryOrdinary = memoryConnection.prepareTupleQuery(PREFIX + ordinary);
+				var memoryDistinct = memoryConnection.prepareTupleQuery(PREFIX + distinct);
+				for (int round = 0; round < 3; round++) {
+					List<BindingSet> ordinaryRows = QueryResults.asList(nativeOrdinary.evaluate());
+					List<BindingSet> distinctRows = QueryResults.asList(nativeDistinct.evaluate());
+					assertEquals(twoEmptyMappings, QueryResults.asList(memoryOrdinary.evaluate()));
+					assertEquals(oneEmptyMapping, QueryResults.asList(memoryDistinct.evaluate()));
+					assertEquals(twoEmptyMappings, ordinaryRows, "logical ordinary bag, round=" + round);
+					assertEquals(oneEmptyMapping, distinctRows, "logical DISTINCT bag, round=" + round);
+					assertEquals(2, ordinaryRows.size());
+					assertEquals(1, distinctRows.size());
+					for (BindingSet mapping : ordinaryRows) {
+						assertTrue(mapping.getBindingNames().isEmpty());
+					}
+					assertTrue(distinctRows.getFirst().getBindingNames().isEmpty());
+				}
+			}
+		} finally {
+			memory.shutDown();
+		}
+		assertPath(ordinary, "packedFtree", "packedFtree");
+		assertPath(distinct, "packedFtree", "packedFtree");
 	}
 
 	private void assertSameBag(String query, String forced, Value subject) {

@@ -36,6 +36,14 @@ public interface JaninoKernel {
 	 */
 	int fill(long[] rowBuffer, int maxRows);
 
+	/**
+	 * Exact input completion for filter feedback. Output exhaustion, LIMIT, close and worker END do not prove this.
+	 * Legacy or structurally opaque kernels retain native execution and return false.
+	 */
+	default boolean filterInputExhausted() {
+		return false;
+	}
+
 	/** Executes the currently bound structural morsel without draining its accumulated output. */
 	default void runBound() {
 		throw new UnsupportedOperationException("kernel does not support morsel accumulation");

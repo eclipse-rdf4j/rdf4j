@@ -37,7 +37,7 @@ public abstract class FilterIteration<E> implements CooperativeCancellation, Clo
 	/**
 	 * Flag indicating whether this iteration has been closed.
 	 */
-	private boolean closed = false;
+	private volatile boolean closed = false;
 
 	/*--------------*
 	 * Constructors *
@@ -120,6 +120,9 @@ public abstract class FilterIteration<E> implements CooperativeCancellation, Clo
 
 					result = wrappedIter.next();
 				} catch (NoSuchElementException e) {
+					if (isClosed()) {
+						return;
+					}
 					close();
 					throw e;
 				}
@@ -128,7 +131,7 @@ public abstract class FilterIteration<E> implements CooperativeCancellation, Clo
 				if (accept(candidate)) {
 					nextElement = candidate;
 				}
-			} while (nextElement == null && wrappedIter.hasNext());
+			} while (nextElement == null && !isClosed() && wrappedIter.hasNext());
 
 		} finally {
 			if (isClosed()) {
@@ -183,7 +186,7 @@ public abstract class FilterIteration<E> implements CooperativeCancellation, Clo
 	 * Calls {@link #handleClose()} upon first call and makes sure the resource closures are only executed once.
 	 */
 	@Override
-	public final void close() {
+	public final synchronized void close() {
 		if (!closed) {
 			closed = true;
 			try {

@@ -35,6 +35,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.util.IndexKeyWriters;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -57,8 +59,82 @@ import org.junit.jupiter.params.provider.ValueSource;
 class ValueStoreTermBackgroundTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String TARGET = "spoc,cspo,posc,opsc";
-	@TempDir
+	@TempDir(cleanup = CleanupMode.NEVER)
 	Path directory;
+
+	@Test
+	void propertySaveDoesNotBlockOrLoseRealTermIndexPublication() throws Exception {
+		GateFileOps files = new GateFileOps();
+		StoreProperties properties = new StoreProperties(directory.toFile(), files);
+		seed(properties, 30);
+		properties.save();
+		Set<String> target = Set.of("spoc", "cspo", "ospc");
+		try (ClosingValueStore store = open(properties, "spoc,cspo,ospc");
+				var worker = Executors.newSingleThreadExecutor()) {
+			properties.setRdfTermDomainsVersion("rdf-term-domain-v6");
+			files.armed.set(true);
+			var save = worker.submit(properties::save);
+			try {
+				assertTrue(files.forced.await(15, TimeUnit.SECONDS), "save must force its actual temporary file");
+				store.startIndexRebuildAfterStoreInitialization();
+				assertTrue(store.awaitIndexRebuild(20, TimeUnit.SECONDS), store.indexRebuildStatus());
+				assertEquals(target, TripleIndex.parseIndexSpecList(properties.getTripleTermIndexes()));
+				assertEquals(30, termCount(store));
+			} finally {
+				files.release.countDown();
+			}
+			save.get(15, TimeUnit.SECONDS);
+			properties.save();
+			StoreProperties reopened = new StoreProperties(directory.toFile());
+			assertTrue(reopened.load());
+			assertEquals("rdf-term-domain-v6", reopened.getRdfTermDomainsVersion());
+			assertEquals(target, TripleIndex.parseIndexSpecList(reopened.getTripleTermIndexes()),
+					"the real native term-index publication must remain dirty until the later save");
+			assertEquals(30, termCount(store));
+		}
+	}
+
+	private static final class GateFileOps implements StorePropertiesFileOps {
+		private final AtomicBoolean armed = new AtomicBoolean();
+		private final CountDownLatch forced = new CountDownLatch(1);
+		private final CountDownLatch release = new CountDownLatch(1);
+
+		@Override
+		public Path createDirectories(Path path) throws IOException {
+			return NioStorePropertiesFileOps.INSTANCE.createDirectories(path);
+		}
+
+		@Override
+		public void writeAndForce(Path path, byte[] bytes) throws IOException {
+			NioStorePropertiesFileOps.INSTANCE.writeAndForce(path, bytes);
+			if (armed.compareAndSet(true, false)) {
+				forced.countDown();
+				try {
+					if (!release.await(30, TimeUnit.SECONDS)) {
+						throw new IOException("properties test did not release the forced file");
+					}
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("properties save interrupted", interrupted);
+				}
+			}
+		}
+
+		@Override
+		public void moveAtomically(Path source, Path target) throws IOException {
+			NioStorePropertiesFileOps.INSTANCE.moveAtomically(source, target);
+		}
+
+		@Override
+		public void forceDirectory(Path path) throws IOException {
+			NioStorePropertiesFileOps.INSTANCE.forceDirectory(path);
+		}
+
+		@Override
+		public boolean deleteIfExists(Path path) throws IOException {
+			return NioStorePropertiesFileOps.INSTANCE.deleteIfExists(path);
+		}
+	}
 
 	@Test
 	void unchangedOldTermCohortWaitsWithoutSelfGeneratedProgressRetries() throws Exception {

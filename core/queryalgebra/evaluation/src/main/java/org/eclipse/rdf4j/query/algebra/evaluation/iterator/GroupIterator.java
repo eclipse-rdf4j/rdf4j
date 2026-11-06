@@ -18,6 +18,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -124,6 +125,13 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		this(strategy, group, parentBindings, 0, context);
 	}
 
+	@Experimental
+	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			QueryEvaluationContext context, QueryEvaluationStep arguments) throws QueryEvaluationException {
+		this(strategy, group, parentBindings, 0, context, SimpleValueFactory.getInstance(),
+				new DefaultCollectionFactory(), arguments);
+	}
+
 	@Deprecated
 	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
 			long iterationCacheSyncThreshold, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -138,17 +146,9 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 				strategy.precompile(group.getArg(), context));
 	}
 
-	@Experimental
-	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
-			QueryEvaluationContext context, QueryEvaluationStep arguments) throws QueryEvaluationException {
-		this(strategy, group, parentBindings, 0, context, SimpleValueFactory.getInstance(),
-				new DefaultCollectionFactory(),
-				arguments);
-	}
-
 	private GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
 			long iterationCacheSyncThreshold, QueryEvaluationContext context, ValueFactory vf, CollectionFactory cf,
-			QueryEvaluationStep arguments) throws QueryEvaluationException {
+			QueryEvaluationStep arguments) {
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
@@ -157,7 +157,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		this.context = context;
 		this.vf = vf;
 		this.cf = cf;
-		this.arguments = arguments;
+		this.arguments = Objects.requireNonNull(arguments, "arguments");
 	}
 
 	/*---------*

@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -32,11 +33,16 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -47,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -55,9 +62,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterPlacementTestSupport;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -72,26 +82,647 @@ class FilterInValuesOptimizerTest {
 	private static final IRI OBSERVATION = VF.createIRI("urn:observation");
 
 	@Test
-	void generatedFiniteAnchorsHaveARepeatabilityProof() {
+	void equalityFilterOnBindTargetKeepsOnlyTheComputedValue() throws Exception {
 		IRI selected = VF.createIRI("urn:selected");
 		IRI other = VF.createIRI("urn:other");
-		List<ValueExpr> conditions = List.of(in("code", selected, other, selected),
-				new Compare(Var.of("code"), new ValueConstant(selected), Compare.CompareOp.EQ),
-				new SameTerm(new ValueConstant(selected), Var.of("code")));
-		for (ValueExpr condition : conditions) {
-			QueryRoot root = new QueryRoot(new Filter(pattern("patient", FLAGS, "code"), condition));
-			new FilterInValuesOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
-			assertThat(root.getArg()).isInstanceOf(Join.class);
-			BindingSetAssignment generated = (BindingSetAssignment) ((Join) root.getArg()).getLeftArg();
-			assertThat(AlgebraEvaluationSafety.isRepeatable(generated))
-					.as("optimizer-owned finite anchor for %s", condition)
-					.isTrue();
-			assertThat(AlgebraEvaluationSafety.isRepeatable(new Not(new Exists(root.getArg().clone())))).isTrue();
+		Filter filter = equalityFilter(extensionValues("source", "alias", selected, other), "alias", selected);
+		QueryRoot original = new QueryRoot(filter);
+		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance());
+		assertThat(expected).containsExactly(new ListBindingSet(List.of("source", "alias"), selected, selected));
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimized, EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void equalityFilterOnBindTargetPreservesInputOverwriteAndUndefSemantics() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+
+		MapBindingSet sourceInput = new MapBindingSet();
+		sourceInput.addBinding("source", other);
+		QueryRoot sourceBound = new QueryRoot(
+				equalityFilter(extensionValues("source", "alias", selected, other), "alias", selected));
+		List<BindingSet> sourceExpected = evaluate(sourceBound.clone(), sourceInput);
+		assertThat(sourceExpected).isEmpty();
+		QueryRoot optimizedSourceBound = sourceBound.clone();
+		new FilterInValuesOptimizer().optimize(optimizedSourceBound, null, sourceInput);
+		assertThat(evaluate(optimizedSourceBound, sourceInput)).containsExactlyElementsOf(sourceExpected);
+
+		MapBindingSet targetInput = new MapBindingSet();
+		targetInput.addBinding("alias", other);
+		QueryRoot targetBound = new QueryRoot(
+				equalityFilter(extensionValues("source", "alias", selected, other), "alias", selected));
+		List<BindingSet> targetExpected = evaluate(targetBound.clone(), targetInput);
+		assertThat(targetExpected).containsExactly(new ListBindingSet(List.of("source", "alias"), selected, selected));
+		QueryRoot optimizedTargetBound = targetBound.clone();
+		new FilterInValuesOptimizer().optimize(optimizedTargetBound, null, targetInput);
+		assertThat(evaluate(optimizedTargetBound, targetInput)).containsExactlyElementsOf(targetExpected);
+
+		QueryRoot undef = new QueryRoot(
+				equalityFilter(extensionValues("source", "alias", selected, null), "alias", selected));
+		List<BindingSet> undefExpected = evaluate(undef.clone(), EmptyBindingSet.getInstance());
+		assertThat(undefExpected).containsExactly(new ListBindingSet(List.of("source", "alias"), selected, selected));
+		QueryRoot optimizedUndef = undef.clone();
+		new FilterInValuesOptimizer().optimize(optimizedUndef, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimizedUndef, EmptyBindingSet.getInstance())).containsExactlyElementsOf(undefExpected);
+	}
+
+	@Test
+	void equalityFilterOnBindTargetRemainsCorrectAcrossUnionAndNestedProjection() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		Union branches = new Union(extensionValues("source", "alias", selected),
+				extensionValues("source", "alias", other));
+		Projection projected = new Projection(branches,
+				new ProjectionElemList(new ProjectionElem("source"), new ProjectionElem("alias")));
+		QueryRoot original = new QueryRoot(equalityFilter(projected, "alias", selected));
+		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance());
+		assertThat(expected).containsExactly(new ListBindingSet(List.of("source", "alias"), selected, selected));
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimized, EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void equalityFilterKeepsStatementProducerLanguageRepresentative() throws Exception {
+		IRI subject = VF.createIRI("urn:subject");
+		Literal stored = VF.createLiteral("abc", "en");
+		Literal query = VF.createLiteral("abc", "EN");
+		CountingSource source = new CountingSource();
+		source.add(subject, FLAGS, stored);
+		StatementPattern producer = pattern("subject", FLAGS, "object");
+		Filter filter = new Filter(producer,
+				new Compare(Var.of("object"), new ValueConstant(query), Compare.CompareOp.EQ));
+		Projection projected = new Projection(filter, new ProjectionElemList(new ProjectionElem("object")));
+		QueryRoot original = new QueryRoot(projected);
+		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance(), source);
+		assertThat(expected).hasSize(1);
+		assertLanguageRepresentative(expected.getFirst(), "en");
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		List<BindingSet> actual = evaluate(optimized, EmptyBindingSet.getInstance(), source);
+		assertThat(actual).containsExactlyElementsOf(expected);
+		assertLanguageRepresentative(actual.getFirst(), "en");
+		assertThat(((Projection) optimized.getArg()).getArg())
+				.as("the retained FILTER must preserve the statement-produced language-tag representative")
+				.isInstanceOf(Filter.class);
+		assertThat(assignments(optimized)).isEmpty();
+	}
+
+	@Test
+	void equalityFilterKeepsStatementIriSplitRepresentative() throws Exception {
+		IRI stored = VF.createIRI("urn:split:", "value");
+		IRI filterValue = VF.createIRI("urn:split:v", "alue");
+		assertThat(stored.stringValue()).isEqualTo(filterValue.stringValue());
+		assertThat(stored.getNamespace()).isNotEqualTo(filterValue.getNamespace());
+		assertThat(stored.getLocalName()).isNotEqualTo(filterValue.getLocalName());
+
+		IRI subject = VF.createIRI("urn:split:subject");
+		CountingSource source = new CountingSource();
+		source.add(subject, FLAGS, stored);
+		Projection projection = new Projection(
+				equalityFilter(pattern("subject", FLAGS, "object"), "object", filterValue),
+				new ProjectionElemList(new ProjectionElem("object")));
+		QueryRoot original = new QueryRoot(projection);
+		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance(), source);
+		assertThat(expected).hasSize(1);
+		assertIriSplit(expected.getFirst(), "object", stored);
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		List<BindingSet> actual = evaluate(optimized, EmptyBindingSet.getInstance(), source);
+		assertThat(actual).containsExactlyElementsOf(expected);
+		assertIriSplit(actual.getFirst(), "object", stored);
+		assertThat(((Projection) optimized.getArg()).getArg())
+				.as("the retained FILTER must preserve the statement-produced IRI split")
+				.isInstanceOf(Filter.class);
+		assertThat(assignments(optimized)).isEmpty();
+	}
+
+	@Test
+	void membershipFilterKeepsStatementIriSplitRepresentative() throws Exception {
+		IRI stored = VF.createIRI("urn:split:", "value");
+		IRI filterValue = VF.createIRI("urn:split:v", "alue");
+		IRI other = VF.createIRI("urn:other");
+		IRI subject = VF.createIRI("urn:split:subject");
+		CountingSource source = new CountingSource();
+		source.add(subject, FLAGS, stored);
+		Projection projection = new Projection(
+				new Filter(pattern("subject", FLAGS, "object"), in("object", filterValue, other)),
+				new ProjectionElemList(new ProjectionElem("object")));
+		QueryRoot original = new QueryRoot(projection);
+		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance(), source);
+		assertThat(expected).hasSize(1);
+		assertIriSplit(expected.getFirst(), "object", stored);
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		List<BindingSet> actual = evaluate(optimized, EmptyBindingSet.getInstance(), source);
+		assertThat(actual).containsExactlyElementsOf(expected);
+		assertIriSplit(actual.getFirst(), "object", stored);
+		assertThat(((Projection) optimized.getArg()).getArg())
+				.as("IN on a visible statement-produced variable must retain the source FILTER")
+				.isInstanceOf(Filter.class);
+		assertThat(assignments(optimized)).isEmpty();
+	}
+
+	@Test
+	void existingSingleColumnValuesIntersectionKeepsMultiplicityWithoutClaimingGeneratedSet() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		IRI subject = VF.createIRI("urn:values:subject");
+		CountingSource source = new CountingSource();
+		source.add(subject, FLAGS, selected);
+		BindingSetAssignment existing = immutableValues("code", selected, selected, other);
+		QueryRoot original = new QueryRoot(equalityFilter(
+				new Join(existing, pattern("subject", FLAGS, "code")), "code", selected));
+		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance(), source);
+		assertThat(expected).hasSize(2);
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		List<BindingSet> actual = evaluate(optimized, EmptyBindingSet.getInstance(), source);
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		List<BindingSetAssignment> assignments = assignments(optimized);
+		assertThat(assignments).hasSize(1);
+		BindingSetAssignment retained = assignments.getFirst();
+		assertThat(assignmentRows(retained)).hasSize(2)
+				.allSatisfy(row -> assertThat(row.getValue("code")).isEqualTo(selected));
+		assertThat(retained.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES))
+				.as("a pruned user VALUES table is still a bag, not an optimizer-generated set")
+				.isEqualTo(-1L);
+	}
+
+	@Test
+	void existingValuesIntersectionPreservesAuthoredRowOrderIdentityAndBagRole() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		Literal discardedLabel = VF.createLiteral("discarded");
+		Literal firstLabel = VF.createLiteral("first");
+		Literal secondLabel = VF.createLiteral("second");
+		List<String> columns = List.of("code", "label");
+		BindingSet discarded = new ListBindingSet(columns, other, discardedLabel);
+		BindingSet first = new ListBindingSet(columns, selected, firstLabel);
+		BindingSet second = new ListBindingSet(columns, selected, secondLabel);
+		BindingSet duplicate = new ListBindingSet(columns, selected, firstLabel);
+		List<BindingSet> inputRows = List.of(discarded, first, second, duplicate);
+		BindingSetAssignment existing = new BindingSetAssignment();
+		existing.setDeclaredBindingNames(Set.of("code", "label"));
+		existing.setBindingSets(inputRows);
+		QueryRoot original = new QueryRoot(equalityFilter(existing, "code", selected));
+		List<BindingSet> expected = List.of(first, second, duplicate);
+		assertThat(evaluate(original.clone(), EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimized, EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
+		assertThat(optimized.getArg()).isInstanceOf(BindingSetAssignment.class);
+		BindingSetAssignment retained = (BindingSetAssignment) optimized.getArg();
+		List<BindingSet> retainedRows = assignmentRows(retained);
+		assertThat(retainedRows).containsExactlyElementsOf(expected);
+		assertThat(retainedRows.get(0)).isSameAs(first);
+		assertThat(retainedRows.get(1)).isSameAs(second);
+		assertThat(retainedRows.get(2)).isSameAs(duplicate);
+		assertThat(retained.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES))
+				.as("intersecting user VALUES retains its authored rows and does not claim generated-set semantics")
+				.isEqualTo(-1L);
+	}
+
+	@Test
+	void existingMultiColumnValuesIntersectionKeepsExtraColumnsAndDuplicateRows() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		IRI subject = VF.createIRI("urn:multi-values:subject");
+		Literal firstLabel = VF.createLiteral("first");
+		Literal secondLabel = VF.createLiteral("second");
+		CountingSource source = new CountingSource();
+		source.add(subject, FLAGS, selected);
+
+		List<String> columns = List.of("code", "label");
+		List<BindingSet> inputRows = List.of(
+				new ListBindingSet(columns, selected, firstLabel),
+				new ListBindingSet(columns, other, firstLabel),
+				new ListBindingSet(columns, selected, firstLabel),
+				new ListBindingSet(columns, selected, secondLabel));
+		BindingSetAssignment existing = new BindingSetAssignment();
+		existing.setDeclaredBindingNames(Set.of("code", "label"));
+		existing.setBindingSets(inputRows);
+		QueryRoot original = new QueryRoot(equalityFilter(
+				new Join(existing, pattern("subject", FLAGS, "code")), "code", selected));
+		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance(), source);
+		assertThat(expected).containsExactlyInAnyOrder(
+				new ListBindingSet(List.of("subject", "predicate", "code", "label"), subject, FLAGS, selected,
+						firstLabel),
+				new ListBindingSet(List.of("subject", "predicate", "code", "label"), subject, FLAGS, selected,
+						firstLabel),
+				new ListBindingSet(List.of("subject", "predicate", "code", "label"), subject, FLAGS, selected,
+						secondLabel));
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		List<BindingSet> actual = evaluate(optimized, EmptyBindingSet.getInstance(), source);
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		List<BindingSet> selectedRows = List.of(inputRows.get(0), inputRows.get(2), inputRows.get(3));
+		BindingSetAssignment retainedUserTable = assignments(optimized).stream()
+				.filter(assignment -> assignmentRows(assignment).size() == selectedRows.size())
+				.findFirst()
+				.orElseThrow();
+		assertThat(assignmentRows(retainedUserTable)).containsExactlyInAnyOrderElementsOf(selectedRows);
+		assertThat(retainedUserTable.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES))
+				.as("the pruned multi-column VALUES table retains labels, representatives and duplicate rows")
+				.isEqualTo(-1L);
+	}
+
+	@Test
+	void multiColumnIntersectionRetainsPossibleNameWhenOnlyDiscardedRowsBindIt() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		IRI selectedSubject = VF.createIRI("urn:subject:selected");
+		IRI otherSubject = VF.createIRI("urn:subject:other");
+		Literal hiddenRequest = VF.createLiteral("hidden-y");
+		CountingSource source = new CountingSource();
+		source.add(selectedSubject, FLAGS, selected);
+		source.add(otherSubject, FLAGS, other);
+
+		List<String> columns = List.of("code", "y");
+		List<BindingSet> inputRows = List.of(
+				new ListBindingSet(columns, selected, null),
+				new ListBindingSet(columns, selected, null),
+				new ListBindingSet(columns, other, hiddenRequest));
+		BindingSetAssignment existing = new BindingSetAssignment();
+		existing.setDeclaredBindingNames(Set.of("code", "y"));
+		existing.setBindingSets(inputRows);
+		MapBindingSet supplied = new MapBindingSet();
+		supplied.addBinding("y", hiddenRequest);
+		BindingSet optimizationInput = BindingSetOrigin.optimizationInput(supplied);
+		assertThat(optimizationInput).isEmpty();
+		assertThat(BindingSetOrigin.of(optimizationInput).isRequest("y")).isTrue();
+		assertThat(BindingSetOrigin.of(optimizationInput).parameterValue("y")).isSameAs(hiddenRequest);
+		BindingSet localInput = BindingSetOrigin.produced(optimizationInput, Set.of("y"));
+		assertThat(BindingSetOrigin.of(localInput).isLocal("y")).isTrue();
+		assertThat(BindingSetOrigin.of(localInput).isRequest("y")).isFalse();
+		assertThat(BindingSetOrigin.of(localInput).parameterValue("y")).isNull();
+		QueryRoot original = new QueryRoot(equalityFilter(
+				new Join(existing, pattern("subject", FLAGS, "code")), "code", selected));
+		List<BindingSet> expected = List.of(
+				new ListBindingSet(List.of("subject", "predicate", "code"), selectedSubject, FLAGS, selected),
+				new ListBindingSet(List.of("subject", "predicate", "code"), selectedSubject, FLAGS, selected));
+		for (BindingSet invocation : List.of(optimizationInput, localInput)) {
+			assertThat(evaluate(original.clone(), invocation, source)).containsExactlyElementsOf(expected);
+
+			QueryRoot optimized = original.clone();
+			new FilterInValuesOptimizer().optimize(optimized, null, invocation);
+			List<BindingSet> actual = evaluate(optimized, invocation, source);
+			assertThat(actual).containsExactlyElementsOf(expected);
+			assertThat(actual).allSatisfy(row -> assertRequestParameterMasked(row, "y", hiddenRequest));
+			assertThat(optimized.getArg()).isInstanceOf(Filter.class);
+			Filter retainedFilter = (Filter) optimized.getArg();
+			assertThat(retainedFilter.getCondition().toString())
+					.isEqualTo(((Filter) original.getArg()).getCondition().toString());
+			List<BindingSetAssignment> retainedTables = assignments(optimized);
+			assertThat(retainedTables).singleElement().satisfies(retained -> {
+				assertThat(retained.getBindingNames()).containsExactlyInAnyOrder("code", "y");
+				assertThat(retained.getPossibleBindingNames()).contains("y");
+				assertThat(assignmentRows(retained)).containsExactlyElementsOf(inputRows);
+				assertThat(retained.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES))
+						.as("the original table must remain intact when pruning changes its possible-name domain")
+						.isEqualTo(-1L);
+			});
 		}
 	}
 
 	@Test
-	void generatedValuesInsideNotExistsRetainMovableCorrelatedPlacements() {
+	void extensionOverwriteAfterValuesDoesNotPruneTheSourceTable() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		BindingSetAssignment existing = immutableValues("code", selected, other, selected);
+		Extension overwrite = new Extension(existing, new ExtensionElem(new ValueConstant(selected), "code"));
+		QueryRoot original = new QueryRoot(equalityFilter(overwrite, "code", selected));
+		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance());
+		assertThat(expected).hasSize(3).allSatisfy(row -> assertThat(row.getValue("code")).isEqualTo(selected));
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		List<BindingSet> actual = evaluate(optimized, EmptyBindingSet.getInstance());
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(optimized.getArg()).isInstanceOf(Filter.class);
+		Filter retainedFilter = (Filter) optimized.getArg();
+		assertThat(retainedFilter.getCondition().toString())
+				.isEqualTo(((Filter) original.getArg()).getCondition().toString());
+		assertThat(retainedFilter.getArg()).isInstanceOf(Extension.class);
+		List<BindingSetAssignment> assignments = assignments(optimized);
+		assertThat(assignments).hasSize(1);
+		BindingSetAssignment sourceTable = assignments.stream()
+				.filter(assignment -> assignmentRows(assignment).size() == 3)
+				.findFirst()
+				.orElseThrow();
+		assertThat(assignmentRows(sourceTable)).extracting(row -> row.getValue("code"))
+				.containsExactly(selected, other, selected);
+		assertThat(sourceTable.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES))
+				.as("a FILTER across an Extension overwrite must not mark or replace the original VALUES table")
+				.isEqualTo(-1L);
+	}
+
+	@Test
+	void preexistingExactValuesMarkerSurvivesASecondIntersection() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		IRI subject = VF.createIRI("urn:preexisting-marker:subject");
+		CountingSource source = new CountingSource();
+		source.add(subject, FLAGS, selected);
+		source.add(VF.createIRI("urn:preexisting-marker:other"), FLAGS, other);
+		BindingSetAssignment alreadyGenerated = immutableValues("code", selected, other);
+		alreadyGenerated.setLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES, 1L);
+		assertThat(alreadyGenerated.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES)).isEqualTo(1L);
+		QueryRoot original = new QueryRoot(equalityFilter(
+				new Join(alreadyGenerated, pattern("subject", FLAGS, "code")), "code", selected));
+		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance(), source);
+		assertThat(expected).hasSize(1);
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimized, EmptyBindingSet.getInstance(), source)).containsExactlyElementsOf(expected);
+		assertThat(assignments(optimized)).singleElement().satisfies(retained -> {
+			assertThat(assignmentRows(retained)).hasSize(1);
+			assertThat(retained.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES)).isEqualTo(1L);
+		});
+	}
+
+	private static void assertRequestParameterMasked(BindingSet row, String name, Value requested) {
+		assertThat(row.hasBinding(name)).isFalse();
+		assertThat(BindingSetOrigin.of(row).isLocal(name)).isTrue();
+		assertThat(BindingSetOrigin.of(row).isRequest(name)).isFalse();
+		assertThat(BindingSetOrigin.of(row).parameterValue(name)).isNull();
+		BindingSet frame = BindingScopeAnalysis.retain(row, Set.of());
+		assertThat(frame).isEmpty();
+		BindingSet materialized = BindingSetOrigin.materializeParameters(
+				frame, List.of(Var.of(name, requested, false, false)),
+				new QueryEvaluationContext.Minimal((org.eclipse.rdf4j.query.Dataset) null));
+		assertThat(materialized.hasBinding(name)).isFalse();
+		assertThat(BindingSetOrigin.of(materialized).parameterValue(name)).isNull();
+	}
+
+	@Test
+	void existingValuesIntersectionsSupportInEqualityAndSameTermWithoutChangingTheBag() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		List<ValueExpr> conditions = List.of(
+				in("code", selected, selected),
+				new Compare(Var.of("code"), new ValueConstant(selected), Compare.CompareOp.EQ),
+				new SameTerm(Var.of("code"), new ValueConstant(selected)));
+		List<BindingSet> expected = List.of(
+				new ListBindingSet(List.of("code"), selected),
+				new ListBindingSet(List.of("code"), selected));
+		for (ValueExpr condition : conditions) {
+			BindingSetAssignment existing = immutableValues("code", selected, selected, other);
+			QueryRoot original = new QueryRoot(new Filter(existing, condition));
+			assertThat(evaluate(original.clone(), EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
+
+			QueryRoot optimized = original.clone();
+			new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(optimized, EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
+			assertThat(optimized.getArg()).isInstanceOf(BindingSetAssignment.class);
+			assertThat(assignments(optimized)).singleElement().satisfies(retained -> {
+				assertThat(assignmentRows(retained)).containsExactlyElementsOf(expected);
+				assertThat(retained.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES))
+						.as("intersecting user-authored VALUES must not become an optimizer-generated set")
+						.isEqualTo(-1L);
+			});
+			assertThat(AlgebraEvaluationSafety.isRepeatable(optimized)).isTrue();
+			assertThat(AlgebraEvaluationSafety.isRepeatable(new Not(new Exists(optimized.getArg().clone()))))
+					.isTrue();
+		}
+	}
+
+	private static void assertIriSplit(BindingSet row, String bindingName, IRI expected) {
+		IRI actual = (IRI) row.getValue(bindingName);
+		assertThat(actual.stringValue()).isEqualTo(expected.stringValue());
+		assertThat(actual.getNamespace()).isEqualTo(expected.getNamespace());
+		assertThat(actual.getLocalName()).isEqualTo(expected.getLocalName());
+	}
+
+	private static List<BindingSetAssignment> assignments(QueryRoot root) {
+		List<BindingSetAssignment> result = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				result.add(assignment);
+			}
+		});
+		return result;
+	}
+
+	private static List<BindingSet> assignmentRows(BindingSetAssignment assignment) {
+		List<BindingSet> rows = new ArrayList<>();
+		assignment.getBindingSets().forEach(rows::add);
+		return rows;
+	}
+
+	@Test
+	void sameTermStatementFilterRetainsItsExactSingleRowBag() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		IRI selectedSubject = VF.createIRI("urn:subject:selected");
+		IRI otherSubject = VF.createIRI("urn:subject:other");
+		CountingSource source = new CountingSource();
+		source.add(selectedSubject, FLAGS, selected);
+		source.add(otherSubject, FLAGS, other);
+		QueryRoot original = new QueryRoot(new Filter(pattern("subject", FLAGS, "code"),
+				new SameTerm(Var.of("code"), new ValueConstant(selected))));
+		List<BindingSet> expected = List.of(
+				new ListBindingSet(List.of("subject", "predicate", "code"), selectedSubject, FLAGS, selected));
+		assertThat(evaluate(original.clone(), EmptyBindingSet.getInstance(), source))
+				.containsExactlyElementsOf(expected);
+		assertIriSplit(expected.getFirst(), "code", selected);
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		List<BindingSet> actual = evaluate(optimized, EmptyBindingSet.getInstance(), source);
+		assertThat(actual).containsExactlyElementsOf(expected);
+		assertIriSplit(actual.getFirst(), "code", selected);
+		assertThat(optimized.getArg()).isInstanceOf(Filter.class);
+		assertThat(assignments(optimized)).isEmpty();
+	}
+
+	@Test
+	void sameTermIntersectionOfExistingValuesRetainsItsDuplicateRows() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		IRI selectedSubject = VF.createIRI("urn:subject:selected");
+		IRI otherSubject = VF.createIRI("urn:subject:other");
+		CountingSource source = new CountingSource();
+		source.add(selectedSubject, FLAGS, selected);
+		source.add(otherSubject, FLAGS, other);
+		BindingSetAssignment existing = immutableValues("code", selected, selected, other);
+		QueryRoot original = new QueryRoot(new Filter(
+				new Join(existing, pattern("subject", FLAGS, "code")),
+				new SameTerm(Var.of("code"), new ValueConstant(selected))));
+		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance(), source);
+		assertThat(expected).hasSize(2).allSatisfy(row -> assertThat(row.getValue("code")).isEqualTo(selected));
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimized, EmptyBindingSet.getInstance(), source)).containsExactlyElementsOf(expected);
+		assertThat(assignments(optimized)).singleElement().satisfies(retained -> {
+			assertThat(assignmentRows(retained)).hasSize(2)
+					.allSatisfy(row -> assertThat(row.getValue("code")).isEqualTo(selected));
+			assertThat(retained.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES)).isEqualTo(-1L);
+		});
+	}
+
+	private static Filter equalityFilter(TupleExpr argument, String variable, Value value) {
+		return new Filter(argument,
+				new Compare(Var.of(variable), new ValueConstant(value), Compare.CompareOp.EQ));
+	}
+
+	private static Extension extensionValues(String source, String target, Value... values) {
+		return new Extension(immutableValues(source, values), new ExtensionElem(Var.of(source), target));
+	}
+
+	private static void assertLanguageRepresentative(BindingSet row, String expectedLanguage) {
+		Literal literal = (Literal) row.getValue("object");
+		assertThat(literal.getLanguage()).contains(expectedLanguage);
+	}
+
+	@Test
+	void undefinedValuesRowsCannotBePrunedBeforePatternBindsTheTarget() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		IRI subject = VF.createIRI("urn:statement:subject");
+		CountingSource source = new CountingSource();
+		source.add(subject, FLAGS, selected);
+		source.add(subject, FLAGS, other);
+		List<BindingSet> expected = List.of(
+				new ListBindingSet(List.of("subject", "predicate", "code"), subject, FLAGS, selected),
+				new ListBindingSet(List.of("subject", "predicate", "code"), subject, FLAGS, selected),
+				new ListBindingSet(List.of("subject", "predicate", "code"), subject, FLAGS, selected));
+
+		for (boolean valuesOnLeft : List.of(true, false)) {
+			BindingSetAssignment existing = immutableValues("code", null, selected, selected, other);
+			StatementPattern statement = pattern("subject", FLAGS, "code");
+			Join join = valuesOnLeft ? new Join(existing, statement) : new Join(statement, existing);
+			QueryRoot original = new QueryRoot(equalityFilter(join, "code", selected));
+			assertThat(evaluate(original.clone(), EmptyBindingSet.getInstance(), source))
+					.containsExactlyElementsOf(expected);
+
+			QueryRoot optimized = original.clone();
+			new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(optimized, EmptyBindingSet.getInstance(), source))
+					.containsExactlyElementsOf(expected);
+			assertThat(optimized.getArg()).isInstanceOf(Filter.class);
+			assertThat(assignments(optimized)).singleElement().satisfies(retained -> {
+				assertThat(assignmentRows(retained)).hasSize(4);
+				assertThat(assignmentRows(retained)).extracting(row -> row.getValue("code"))
+						.containsExactly(null, selected, selected, other);
+				assertThat(retained.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES))
+						.as("the original bag keeps UNDEF for its later pattern to bind")
+						.isEqualTo(-1L);
+			});
+		}
+	}
+
+	@Test
+	void singletonFilterDoesNotInventValuesOrMaskRequestParameterMaterialization() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		MapBindingSet supplied = new MapBindingSet();
+		supplied.addBinding("x", selected);
+		BindingSet request = BindingSetOrigin.requestInput(supplied);
+		BindingSet parameters = BindingSetOrigin.optimizationInput(supplied);
+		BindingSet invocation = BindingSetOrigin.with(request, BindingSetOrigin.of(parameters));
+		assertThat(BindingSetOrigin.of(invocation).isRequest("x")).isTrue();
+		assertThat(BindingSetOrigin.of(invocation).parameterValue("x")).isSameAs(selected);
+
+		Filter filter = new Filter(new SingletonSet(), in("x", selected, other));
+		filter.setConditionBindingScope(ConditionBindingScope.ALL);
+		QueryRoot original = new QueryRoot(filter);
+		List<BindingSet> expected = evaluate(original.clone(), invocation);
+		assertThat(expected).containsExactly(new ListBindingSet(List.of("x"), selected));
+		assertThat(BindingSetOrigin.of(expected.getFirst()).isRequest("x")).isTrue();
+		assertThat(BindingSetOrigin.of(expected.getFirst()).parameterValue("x")).isSameAs(selected);
+
+		QueryRoot optimized = original.clone();
+		new FilterInValuesOptimizer().optimize(optimized, null, invocation);
+		List<BindingSet> actual = evaluate(optimized, invocation);
+		assertThat(actual).containsExactlyElementsOf(expected);
+		assertThat(optimized.getArg()).isInstanceOf(Filter.class);
+		assertThat(assignments(optimized)).isEmpty();
+		Var valuedParameter = Var.of("x", selected, false, false);
+		BindingSet ordinaryFrame = BindingScopeAnalysis.retain(expected.getFirst(), Set.of());
+		BindingSet optimizedFrame = BindingScopeAnalysis.retain(actual.getFirst(), Set.of());
+		assertThat(ordinaryFrame).isEmpty();
+		assertThat(optimizedFrame).isEmpty();
+		BindingSet ordinaryMaterialized = BindingSetOrigin.materializeParameters(ordinaryFrame,
+				List.of(valuedParameter),
+				new QueryEvaluationContext.Minimal((org.eclipse.rdf4j.query.Dataset) null));
+		BindingSet optimizedMaterialized = BindingSetOrigin.materializeParameters(optimizedFrame,
+				List.of(valuedParameter),
+				new QueryEvaluationContext.Minimal((org.eclipse.rdf4j.query.Dataset) null));
+		assertThat(ordinaryMaterialized.getValue("x")).isSameAs(selected);
+		assertThat(optimizedMaterialized.hasBinding("x"))
+				.as("the unchanged filter preserves caller parameter materialization")
+				.isTrue();
+		assertThat(optimizedMaterialized.getValue("x")).isEqualTo(ordinaryMaterialized.getValue("x"));
+		assertThat(BindingSetOrigin.of(actual.getFirst()).isRequest("x"))
+				.as("the unchanged FILTER must not mask caller authority")
+				.isTrue();
+		assertThat(BindingSetOrigin.of(actual.getFirst()).parameterValue("x")).isSameAs(selected);
+
+		BindingSet localInvocation = BindingSetOrigin.produced(invocation, Set.of("x"));
+		QueryRoot localOriginal = original.clone();
+		List<BindingSet> localExpected = evaluate(localOriginal, localInvocation);
+		assertThat(localExpected).containsExactly(new ListBindingSet(List.of("x"), selected));
+		assertThat(BindingSetOrigin.of(localExpected.getFirst()).isLocal("x")).isTrue();
+		assertThat(BindingSetOrigin.of(localExpected.getFirst()).isRequest("x")).isFalse();
+		assertThat(BindingSetOrigin.of(localExpected.getFirst()).parameterValue("x")).isNull();
+		QueryRoot localOptimized = original.clone();
+		new FilterInValuesOptimizer().optimize(localOptimized, null, localInvocation);
+		List<BindingSet> localActual = evaluate(localOptimized, localInvocation);
+		assertThat(localActual).containsExactlyElementsOf(localExpected);
+		BindingSet localFrame = BindingScopeAnalysis.retain(localActual.getFirst(), Set.of());
+		BindingSet localMaterialized = BindingSetOrigin.materializeParameters(localFrame, List.of(valuedParameter),
+				new QueryEvaluationContext.Minimal((org.eclipse.rdf4j.query.Dataset) null));
+		assertThat(localMaterialized.hasBinding("x")).isFalse();
+		assertThat(BindingSetOrigin.of(localMaterialized).parameterValue("x")).isNull();
+	}
+
+	@Test
+	void visiblePatternFiltersKeepTheirExactBagAndProducerValues() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
+		IRI other = VF.createIRI("urn:other");
+		IRI selectedSubject = VF.createIRI("urn:subject:selected");
+		IRI otherSubject = VF.createIRI("urn:subject:other");
+		CountingSource source = new CountingSource();
+		source.add(selectedSubject, FLAGS, selected);
+		source.add(otherSubject, FLAGS, other);
+		List<ValueExpr> conditions = List.of(
+				in("code", selected, other, selected),
+				new Compare(Var.of("code"), new ValueConstant(selected), Compare.CompareOp.EQ),
+				new SameTerm(Var.of("code"), new ValueConstant(selected)));
+		for (ValueExpr condition : conditions) {
+			QueryRoot original = new QueryRoot(new Filter(pattern("patient", FLAGS, "code"), condition));
+			List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance(), source);
+			assertThat(expected).isNotEmpty();
+			QueryRoot optimized = original.clone();
+			new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+			List<BindingSet> actual = evaluate(optimized, EmptyBindingSet.getInstance(), source);
+			assertThat(actual).containsExactlyElementsOf(expected);
+			assertThat(optimized.getArg())
+					.as("without proof that generated constants preserve visible producer semantics: %s", condition)
+					.isInstanceOf(Filter.class);
+			assertThat(assignments(optimized)).isEmpty();
+			assertThat(AlgebraEvaluationSafety.isRepeatable(optimized)).isTrue();
+			assertThat(AlgebraEvaluationSafety.isRepeatable(new Not(new Exists(optimized.getArg().clone()))))
+					.isTrue();
+		}
+	}
+
+	@Test
+	void correlatedNotExistsFilterRemainsMovableWithoutSyntheticValues() {
 		BindingSetAssignment patients = immutableValues("patient", VF.createIRI("urn:patient:1"));
 		Filter conditionInput = new Filter(pattern("patient", FLAGS, "code"),
 				in("code", VF.createIRI("urn:selected")));
@@ -107,7 +738,7 @@ class FilterInValuesOptimizerTest {
 	}
 
 	@Test
-	void generatedNotExistsValuesReduceWorkAcrossUnionFanoutAndPreserveDuplicates() throws Exception {
+	void notExistsFilterPlacementReducesUnionFanoutAndPreservesDuplicates() throws Exception {
 		CountingSource source = new CountingSource();
 		IRI selected = VF.createIRI("urn:selected");
 		List<Value> patients = new ArrayList<>();
@@ -140,7 +771,9 @@ class FilterInValuesOptimizerTest {
 		QueryRoot optimized = original.clone();
 		new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
 		Filter outer = (Filter) optimized.getArg();
-		assertThat(((Exists) ((Not) outer.getCondition()).getArg()).getSubQuery()).isInstanceOf(Join.class);
+		TupleExpr notExistsBody = ((Exists) ((Not) outer.getCondition()).getArg()).getSubQuery();
+		assertThat(notExistsBody).isInstanceOf(Filter.class);
+		assertThat(((Filter) notExistsBody).getArg()).isInstanceOf(StatementPattern.class);
 		assertThat(evaluate(optimized.clone(), EmptyBindingSet.getInstance(), source))
 				.containsExactlyInAnyOrderElementsOf(expected);
 		// Every admitted first trial runs, independently of whether noisy elapsed times later commit that cut.
@@ -161,7 +794,7 @@ class FilterInValuesOptimizerTest {
 		assertThat(evaluateFixedCut(installCut(optimized, true), source))
 				.containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(source.lookups.getOrDefault(MEDICATION, 0))
-				.as("generated finite VALUES must permit rejecting a patient before either UNION arm fans out")
+				.as("the correlated NOT EXISTS filter must reject a patient before either UNION arm fans out")
 				.isLessThan(patientCount * 3 / 4);
 		assertThat(source.lookups.getOrDefault(ENCOUNTER, 0)).isLessThan(patientCount * 3 / 4);
 		assertThat(source.lookups.getOrDefault(OBSERVATION, 0)).isLessThan(patientCount * 3 / 4);
@@ -224,7 +857,7 @@ class FilterInValuesOptimizerTest {
 	}
 
 	@Test
-	void defaultPipelineKeepsGeneratedCorrelatedValuesRepeatableAndAdmitsAdaptivePlacement() throws Exception {
+	void defaultPipelineKeepsCorrelatedNotExistsRepeatableAndAdmitsAdaptivePlacement() throws Exception {
 		CountingSource source = new CountingSource();
 		IRI selected = VF.createIRI("urn:selected");
 		List<Value> patients = new ArrayList<>();
@@ -265,18 +898,37 @@ class FilterInValuesOptimizerTest {
 	}
 
 	@Test
-	void intersectingGeneratedAnchorsRemainRepeatableAndDeduplicateInConstants() {
-		IRI first = VF.createIRI("urn:first");
+	void nestedExistingValuesIntersectionsRemainRepeatableAndPreserveDuplicates() throws Exception {
+		IRI selected = VF.createIRI("urn:selected");
 		IRI shared = VF.createIRI("urn:shared");
-		IRI last = VF.createIRI("urn:last");
-		QueryRoot root = new QueryRoot(new Filter(new Filter(pattern("patient", FLAGS, "code"),
-				in("code", first, shared, first)), in("code", shared, last, shared)));
-		new FilterInValuesOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
-		assertThat(root.getArg()).isInstanceOf(Join.class);
-		BindingSetAssignment generated = (BindingSetAssignment) ((Join) root.getArg()).getLeftArg();
-		assertThat(generated.getBindingSets()).singleElement()
-				.satisfies(row -> assertThat(row.getValue("code")).isEqualTo(shared));
-		assertThat(AlgebraEvaluationSafety.isRepeatable(root)).isTrue();
+		IRI other = VF.createIRI("urn:other");
+		List<List<ValueExpr>> conditionPairs = List.of(
+				List.of(in("code", selected, shared), in("code", shared, other)),
+				List.of(new Compare(Var.of("code"), new ValueConstant(shared), Compare.CompareOp.EQ),
+						new SameTerm(Var.of("code"), new ValueConstant(shared))),
+				List.of(new SameTerm(Var.of("code"), new ValueConstant(shared)), in("code", shared, other)));
+		List<BindingSet> expected = List.of(
+				new ListBindingSet(List.of("code"), shared),
+				new ListBindingSet(List.of("code"), shared));
+		for (List<ValueExpr> pair : conditionPairs) {
+			BindingSetAssignment existing = immutableValues("code", selected, shared, shared, other, other);
+			QueryRoot original = new QueryRoot(new Filter(new Filter(existing, pair.get(0)), pair.get(1)));
+			assertThat(evaluate(original.clone(), EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
+
+			QueryRoot optimized = original.clone();
+			new FilterInValuesOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(optimized, EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
+			assertThat(optimized.getArg()).isInstanceOf(BindingSetAssignment.class);
+			assertThat(assignments(optimized)).singleElement().satisfies(retained -> {
+				assertThat(assignmentRows(retained)).containsExactlyElementsOf(expected);
+				assertThat(retained.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES))
+						.as("nested intersections preserve the user-owned bag and provenance")
+						.isEqualTo(-1L);
+			});
+			assertThat(AlgebraEvaluationSafety.isRepeatable(optimized)).isTrue();
+			assertThat(AlgebraEvaluationSafety.isRepeatable(new Not(new Exists(optimized.getArg().clone()))))
+					.isTrue();
+		}
 	}
 
 	@Test
@@ -311,7 +963,7 @@ class FilterInValuesOptimizerTest {
 	}
 
 	@Test
-	void usesGuaranteedJoinInputToAnchorFilterInValues() throws Exception {
+	void usesGuaranteedJoinInputWithoutInventingAnotherValuesTable() throws Exception {
 		IRI selected = VF.createIRI("urn:selected");
 		IRI other = VF.createIRI("urn:other");
 		MapBindingSet input = new MapBindingSet();
@@ -328,7 +980,13 @@ class FilterInValuesOptimizerTest {
 		QueryRoot optimized = original.clone();
 		new FilterInValuesOptimizer().optimize(optimized, null, input);
 
-		assertThat(((Join) optimized.getArg()).getRightArg()).isInstanceOf(Join.class);
+		Join join = (Join) optimized.getArg();
+		assertThat(join.getRightArg()).isInstanceOf(Filter.class);
+		assertThat(assignments(optimized)).singleElement().satisfies(userValues -> {
+			assertThat(assignmentRows(userValues))
+					.containsExactly(new ListBindingSet(List.of("x"), selected));
+			assertThat(userValues.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES)).isEqualTo(-1L);
+		});
 		assertThat(evaluate(optimized, EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
 	}
 

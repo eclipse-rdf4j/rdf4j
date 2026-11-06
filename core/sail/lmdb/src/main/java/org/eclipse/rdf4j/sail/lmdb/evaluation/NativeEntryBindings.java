@@ -30,7 +30,8 @@ import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
  * Immutable invocation input. Native ids are optional proofs tied to one exact term space, never permissions to intern
  * arbitrary external terms. The resolved values and GRAPH provenance remain usable after that space closes.
  */
-final class NativeEntryBindings extends AbstractBindingSet implements GraphFrameBindings.Carrier {
+final class NativeEntryBindings extends AbstractBindingSet implements GraphFrameBindings.Carrier,
+		org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.ReadOnlyCarrier {
 
 	private static final long serialVersionUID = 1L;
 
@@ -76,9 +77,12 @@ final class NativeEntryBindings extends AbstractBindingSet implements GraphFrame
 	static QueryBindingSet copyValues(BindingSet bindings) {
 		QueryBindingSet copy = new QueryBindingSet(bindings.size());
 		for (String name : bindings.getBindingNames()) {
-			copy.setBinding(name, bindings.getValue(name));
+			if (bindings.hasBinding(name)) {
+				copy.setBinding(name, bindings.getValue(name));
+			}
 		}
 		copy.setGraphFrameBindings(GraphFrameBindings.from(bindings));
+		org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.copy(bindings, copy);
 		return copy;
 	}
 
@@ -135,6 +139,16 @@ final class NativeEntryBindings extends AbstractBindingSet implements GraphFrame
 	long nativeId(String name, NativeLmdbQuerySource source) {
 		return idSpace == source.idSpace() ? nativeIds.getOrDefault(name, NativeLmdbQuerySource.UNKNOWN_ID)
 				: NativeLmdbQuerySource.UNKNOWN_ID;
+	}
+
+	@Override
+	public org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin getBindingSetOrigin() {
+		return org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.of(values);
+	}
+
+	@Override
+	public boolean isBindingSetOriginTracked() {
+		return org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.isTrackedInput(values);
 	}
 
 	@Override

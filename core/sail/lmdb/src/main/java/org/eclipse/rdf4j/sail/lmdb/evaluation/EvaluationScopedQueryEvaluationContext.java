@@ -43,6 +43,7 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 
 	private final QueryEvaluationContext structural;
 	private final QueryScope queryScope;
+	private final boolean detachedEnclosingProjection;
 
 	/** Mutable query state is shared independently of each subtree's immutable structural context. */
 	private static final class QueryScope {
@@ -70,12 +71,24 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 	}
 
 	private EvaluationScopedQueryEvaluationContext(QueryEvaluationContext structural, QueryScope queryScope) {
+		this(structural, queryScope, false);
+	}
+
+	private EvaluationScopedQueryEvaluationContext(QueryEvaluationContext structural, QueryScope queryScope,
+			boolean detachedEnclosingProjection) {
 		this.structural = structural;
 		this.queryScope = queryScope;
+		this.detachedEnclosingProjection = detachedEnclosingProjection;
 	}
 
 	EvaluationScopedQueryEvaluationContext withStructuralContext(QueryEvaluationContext context) {
-		return context == structural ? this : new EvaluationScopedQueryEvaluationContext(context, queryScope);
+		return context == structural ? this
+				: new EvaluationScopedQueryEvaluationContext(context, queryScope, detachedEnclosingProjection);
+	}
+
+	/** A pinned internal operand retains the ancestry fact lost when its algebra root was detached. */
+	EvaluationScopedQueryEvaluationContext withEnclosingProjection() {
+		return hasEnclosingProjection() ? this : new EvaluationScopedQueryEvaluationContext(structural, queryScope, true);
 	}
 
 	static QueryEvaluationContext create(QueryEvaluationContext structural, LmdbNativeEvaluationStrategy strategy) {
@@ -159,7 +172,7 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 
 	@Override
 	public boolean hasEnclosingProjection() {
-		return structural.hasEnclosingProjection();
+		return detachedEnclosingProjection || structural.hasEnclosingProjection();
 	}
 
 	@Override

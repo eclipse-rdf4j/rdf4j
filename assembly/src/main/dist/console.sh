@@ -8,6 +8,12 @@
 #*******************************************************************************
 
 JAVA_OPT=-mx512m
+JAVA_CMD=${JAVA_CMD:-java}
+VECTOR_OPT=
+
+if "$JAVA_CMD" --list-modules 2>/dev/null | grep -q '^jdk\.incubator\.vector@'; then
+	VECTOR_OPT=--add-modules=jdk.incubator.vector
+fi
 
 lib="$(dirname "${0}")/../lib"
-java $JAVA_OPT -cp "$lib/$(ls "$lib"|xargs |sed "s; ;:$lib/;g")" org.eclipse.rdf4j.console.Console $*
+"$JAVA_CMD" $JAVA_OPT $VECTOR_OPT -cp "$lib/$(ls "$lib"|xargs |sed "s; ;:$lib/;g")" org.eclipse.rdf4j.console.Console "$@"

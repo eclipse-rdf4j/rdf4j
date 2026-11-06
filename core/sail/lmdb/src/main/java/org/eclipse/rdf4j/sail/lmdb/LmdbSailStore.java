@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -23,6 +24,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
@@ -116,10 +118,11 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
-import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSourceException;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -128,10 +131,11 @@ import org.eclipse.rdf4j.sail.base.Changeset;
 import org.eclipse.rdf4j.sail.base.FrozenReplayCoverage;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetSnapshot;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
-import org.eclipse.rdf4j.sail.base.SailStoreStatementSource;
 import org.eclipse.rdf4j.sail.base.SailWriteContinuation;
 import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.base.StreamingWritePreflight;
@@ -139,16 +143,48 @@ import org.eclipse.rdf4j.sail.base.TemporaryFlushingException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.ReaderReservation;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimation.EstimatorPersistenceLocation;
+import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAttemptMetrics;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostModelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeExpressionCompiler;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeIdDomain;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierMutation;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsBuildConfig;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsBuildObserver;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsBuildPhase;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsBuilder;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsException;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsHeapGovernor;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsManifest;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsTier;
+import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
+import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSourceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.event.Level;
+
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
+import jdk.jfr.Category;
+import jdk.jfr.Enabled;
+import jdk.jfr.Event;
+import jdk.jfr.EventType;
+import jdk.jfr.Label;
+import jdk.jfr.Name;
+import jdk.jfr.StackTrace;
+import jdk.jfr.Threshold;
 
 /**
  * A disk based {@link SailStore} implementation that keeps committed statements in a {@link TripleStore}.
@@ -267,6 +303,10 @@ class LmdbSailStore implements SailStore {
 			this(kind, message, null, null);
 		}
 
+		MapResizeConflictException(MapResizeKind kind, String message, MapGrowthToken replayToken) {
+			this(kind, message, null, replayToken);
+		}
+
 		MapResizeConflictException(MapResizeKind kind, String message, Object replayOwner,
 				MapGrowthToken replayEpisode) {
 			super(message);
@@ -281,6 +321,10 @@ class LmdbSailStore implements SailStore {
 
 		MapResizeKind kind() {
 			return kind;
+		}
+
+		MapGrowthToken replayToken() {
+			return replayEpisode;
 		}
 	}
 
@@ -737,6 +781,26 @@ class LmdbSailStore implements SailStore {
 				if (attempt != null) {
 					attempt.historicalViews.put(lease, Boolean.TRUE);
 				}
+				pendingViews++;
+				return lease;
+			} finally {
+				lock.unlock();
+			}
+		}
+
+		/** A direct optional observation never waits for a growth admission or another coordinator owner. */
+		private ReadViewLease tryRegisterIndependentView() {
+			if (!lock.tryLock()) {
+				return null;
+			}
+			try {
+				checkAdmission();
+				expireAdmissionWarning();
+				if (episode != null || callbackAdmission.get() != null) {
+					return null;
+				}
+				ReadViewLease lease = new ReadViewLease(null, null, null);
+				views.put(lease, Boolean.TRUE);
 				pendingViews++;
 				return lease;
 			} finally {
@@ -1838,6 +1902,25 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private boolean tryMarkReady(ReadViewLease lease) {
+			if (!lock.tryLock()) {
+				return false;
+			}
+			try {
+				if (!views.containsKey(lease) || lease.closed || lease.invalidatedKind != null) {
+					return false;
+				}
+				if (lease.pending) {
+					lease.pending = false;
+					pendingViews--;
+					changed.signalAll();
+				}
+				return true;
+			} finally {
+				lock.unlock();
+			}
+		}
+
 		private void release(ReadAttemptLease lease) {
 			ReadView reserved = null;
 			lock.lock();
@@ -2386,6 +2469,24 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private boolean tryDeclareDictionaryTermMembership(ReadViewLease lease, Runnable declareMembership) {
+			if (!lock.tryLock()) {
+				return false;
+			}
+			try {
+				ReadView view = lease.view;
+				if (!views.containsKey(lease) || lease.closed || lease.invalidatedKind != null
+						|| episode != null && episode.dictionaryMembershipFrozen && view != null
+								&& view.valueSnapshot.nativeMapGeneration() == episode.frozenDictionaryMapGeneration) {
+					return false;
+				}
+				declareMembership.run();
+				return true;
+			} finally {
+				lock.unlock();
+			}
+		}
+
 		/** Classifies an old view only when a term operation first depends on its remapped dictionary membership. */
 		private void requestDictionaryTermReplay(ReadViewLease lease, MapGrowthToken token) {
 			ObserverNotification notification;
@@ -2582,6 +2683,24 @@ class LmdbSailStore implements SailStore {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbSailStore.class);
 	private static final String JOIN_ESTIMATOR_FILE_NAME = "join-estimator.rjes";
+	private static final int EXACT_ESTIMATOR_ADD_CHUNK_SIZE = 4096;
+	private static final int EXACT_ESTIMATOR_ADD_DEFER_THRESHOLD = 4096;
+	private static final int INITIAL_PENDING_APPROVE_CAPACITY = 32;
+	private static final boolean LMDB_STORE_PATH_EVENTS_ENABLED = Boolean.getBoolean("rdf4j.benchmark.profiling")
+			|| Boolean.getBoolean("rdf4j.lmdb.jfr");
+	private static final EventType LMDB_STORE_PATH_EVENT_TYPE = EventType.getEventType(LmdbStorePathEvent.class);
+	private static final String COUNT_RUNTIME_METRIC = "optimizer.countRuntime";
+	private static final int EXACT_STATEMENT_COUNT_CACHE_MAX_ENTRIES = 65_536;
+	private static final int EXACT_STATEMENT_LOOKUP_CACHE_MAX_ENTRIES = 65_536;
+	private static final int CASCADES_PLAN_CACHE_CAPACITY = 1_024;
+	private static final int FRONTIER_DELTA_BATCH_MUTATIONS = 16_384;
+	private static final double FRONTIER_DELETE_REBUILD_THRESHOLD = 0.10d;
+	/** Fraction of the persistent delta envelope after which signed deltas are folded into a fresh base. */
+	private static final double FRONTIER_DELTA_TIER_REBUILD_FRACTION = 0.75d;
+	/** Consecutive transient delta failures for one uncovered range before the store rebuilds the base instead. */
+	private static final int FRONTIER_MAX_TRANSIENT_DELTA_FAILURES = 8;
+	/** Longest a required base rebuild may be deferred by commits that keep resetting the quiet period. */
+	private static final long FRONTIER_REBUILD_MAX_DEFERRAL_NANOS = TimeUnit.SECONDS.toNanos(5L);
 	static final int INITIAL_BULK_OPERATION_CAPACITY = 256;
 	static final int MAX_BULK_OPERATION_CAPACITY = 64 * 1024;
 	static final int MAX_ALIGNED_WRITE_STATEMENTS = 128 * 1024;
@@ -2628,6 +2747,10 @@ class LmdbSailStore implements SailStore {
 	private static final String VALUES_DIR_NAME = "values";
 
 	private final File dataDir;
+	private final StoreProperties domainQualificationProperties;
+	private final LmdbStoreConfig domainQualificationConfig;
+	private boolean domainQualificationOwnerReady;
+	private final AtomicBoolean domainQualificationCloseStarted = new AtomicBoolean();
 	private final MapGrowthMetrics mapGrowthMetrics = new MapGrowthMetrics();
 	private final MapGrowthCoordinator mapGrowthCoordinator;
 	private final boolean autoGrow;
@@ -2641,6 +2764,7 @@ class LmdbSailStore implements SailStore {
 	private final ThreadLocal<Runnable> replayRetirementOwner = new ThreadLocal<>();
 
 	private final TripleStore tripleStore;
+	private final PackedPlanCache cascadesPlanCache;
 
 	/** Results of tuple queries whose caller asked for caching, valid until the next committed write. */
 	private final LmdbQueryResultCache queryResultCache = new LmdbQueryResultCache();
@@ -2677,6 +2801,15 @@ class LmdbSailStore implements SailStore {
 	private volatile Thread initialRunImportThread;
 	private long initialRunImportsCompleted;
 	private final int bulkOperationSize;
+	private final int estimatorAddChunkSize;
+	private final LmdbFrontierPlannerSettings frontierPlannerSettings;
+	private final boolean legacyPlanningEvidenceRequiresFreshOwner;
+	private final Path frontierStatisticsDirectory;
+
+	private final ExecutorService tripleStoreExecutor = createTripleStoreExecutor();
+	private final DerivedStateBuildExecutor derivedStateBuildExecutor = DerivedStateBuildExecutor
+			.create("rdf4j-lmdb-derived-state-");
+	private final ArrayBlockingQueue<Operation> opQueue;
 	private final boolean valueOverlayEnabled;
 	private final boolean preparedStatementBatchesEnabled;
 	private final AlignedWriteBudget alignedWriteBudget;
@@ -2684,17 +2817,15 @@ class LmdbSailStore implements SailStore {
 	private int nextBulkOperationCapacity = INITIAL_BULK_OPERATION_CAPACITY;
 	private int nextPreparedBatchCapacity = PREPARED_BATCH_MIN_STATEMENTS;
 
-	private final ExecutorService tripleStoreExecutor = createTripleStoreExecutor();
 	private final ExecutorService indexPreparationExecutor = Executors.newFixedThreadPool(
 			Math.min(3, Math.max(1, Runtime.getRuntime().availableProcessors() - 1)),
 			Thread.ofPlatform().daemon().name("LmdbIndexPrepare-", 0).factory());
 	private final ConcurrentLinkedQueue<PreparedQuadArrays> preparedQuadArrayPool = new ConcurrentLinkedQueue<>();
 	private final AtomicInteger preparedQuadArrayPoolSize = new AtomicInteger();
-	private final CircularBuffer<Operation> opQueue;
-	private final Semaphore opQueueSignal = new Semaphore(0);
 	private volatile Throwable tripleStoreException;
 	private volatile Throwable asyncRollbackException;
 	private final AtomicBoolean running = new AtomicBoolean(false);
+	private final Set<LmdbSailSink> learnedMutationSinks = Collections.newSetFromMap(new IdentityHashMap<>());
 	private volatile boolean multiThreadingActive;
 	private volatile boolean asyncTransactionFinished;
 	// Admission is serialized by sinkStoreAccessLock; completion publishes the immutable FIFO prefix.
@@ -2723,12 +2854,14 @@ class LmdbSailStore implements SailStore {
 		private final long[] predicates;
 		private final long[] objects;
 		private final long[] contexts;
+		private final Value[] objectValues;
 
 		private PreparedQuadArrays(int capacity) {
 			subjects = new long[capacity];
 			predicates = new long[capacity];
 			objects = new long[capacity];
 			contexts = new long[capacity];
+			objectValues = new Value[capacity];
 		}
 	}
 
@@ -2815,12 +2948,40 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private final SketchBasedJoinEstimator sketchBasedJoinEstimator;
+	private final EstimatorPersistenceLocation estimatorPersistenceLocation;
+	private volatile LmdbStatisticsService statisticsService;
+	private volatile FrontierStatisticsBuildConfig statisticsBuildConfig;
+	private volatile FrontierStatisticsHeapGovernor statisticsHeapGovernor;
+	private long frontierMutationTailSequence;
+	private final Object frontierMutationTailMonitor = new Object();
+	private final ReentrantLock frontierRebuildLock = new ReentrantLock();
+	private final Object frontierReaderAdmissionMonitor = new Object();
+	private final Set<Thread> frontierReaderWaiters = new HashSet<>();
+	private final Set<Thread> explicitRetirementOwners = new HashSet<>();
+	private final Map<Thread, ExplicitRetirementAttempt> unsettledRetirementAttempts = new HashMap<>();
+	/** Guarded by frontierReaderAdmissionMonitor; retained if native consumption is uncertain. */
+	private DeferredDomainNativeAttempt deferredDomainNativeAttempt;
+	private final CompletableFuture<Void> frontierInitializationCompletion = new CompletableFuture<>();
+	private final Object frontierStatisticsMonitor = new Object();
+	/** Guarded by frontierStatisticsMonitor; subsequent startup maintenance may require the active writer. */
+	private boolean postReadyWriterDependentWorkStarted;
 	private volatile LmdbFilterSelectivityStats filterSelectivityStats;
-	private Runnable postReadyInitialization;
+	private volatile LmdbOperatorFeedbackStats operatorFeedbackStats;
+	/** One coherent publication for existing and newly created query statistics. */
+	private volatile LmdbEstimatorRuntime.PublishedProviders publishedProviders = new LmdbEstimatorRuntime.PublishedProviders(
+			0L, null, null, null);
+
+	@FunctionalInterface
+	private interface PostReadyInitialization {
+		void run() throws IOException;
+	}
+
+	private PostReadyInitialization postReadyInitialization;
 	private volatile Thread postReadyThread;
 	private volatile String postReadyStatus = "NOT_STARTED";
 	private final AtomicBoolean postReadyStarted = new AtomicBoolean();
 	private final CompletableFuture<Void> postReadyInitializationCompletion = new CompletableFuture<>();
+	private final CompletableFuture<Boolean> sketchInitializationCompletion = new CompletableFuture<>();
 	private final CompletableFuture<Void> valueOverlayStartupScheduling = new CompletableFuture<>();
 	private final CompletableFuture<Void> adjacencyStartupScheduling = new CompletableFuture<>();
 	/** Advances on every committed store mutation; a component of the adaptive cost model's regime key. */
@@ -2857,12 +3018,26 @@ class LmdbSailStore implements SailStore {
 		return t;
 	});
 	private final AtomicBoolean persistScheduled = new AtomicBoolean(false);
+	private final AtomicBoolean frontierRebuildScheduled = new AtomicBoolean(false);
 	private volatile ScheduledFuture<?> persistFuture;
+	private volatile ScheduledFuture<?> frontierRebuildFuture;
 	private volatile ScheduledFuture<?> backgroundSamplingFuture;
 	private final long estimatorPersistDelayMillis = 1000L;
+	private volatile long frontierRebuildRequestedNanos;
+	private volatile boolean frontierBaseRebuildPending;
+	private volatile long frontierBaseRebuildPendingSinceNanos;
+	private volatile boolean frontierDimensionRebuildRequired;
+	private int consecutiveTransientDeltaFailures;
+	private long transientDeltaFailureCoveredSequence = -1L;
+	/** Shutdown admission and successful shutdown completion have separate lifetimes. */
+	private final ReentrantLock closeLock = new ReentrantLock();
+	private boolean closeComplete;
+	private volatile boolean closing;
 	private final long backgroundRawSamplingMaxMillisPerCycle;
+	private final boolean adaptiveEvidenceAllowed;
 	private volatile CommitListener commitListener;
 	private PostCommitBackupPublisher postCommitBackupPublisher;
+	private volatile Path backupJournalDirectory;
 	private final boolean backupPublicationEnabled;
 
 	private final boolean backupBoundaryTrackingEnabled;
@@ -2884,51 +3059,6 @@ class LmdbSailStore implements SailStore {
 	 *
 	 * @param <T> Type of elements within this buffer
 	 */
-	static final class CircularBuffer<T> {
-
-		private final T[] elements;
-		private final int mask;
-		private volatile long head = 0;
-		private volatile long tail = 0;
-
-		CircularBuffer(int size) {
-			if (Integer.bitCount(size) != 1) {
-				throw new IllegalArgumentException("CircularBuffer size must be a power of two: " + size);
-			}
-			this.elements = (T[]) new Object[size];
-			this.mask = size - 1;
-		}
-
-		boolean add(T element) {
-			long currentTail = tail;
-			if (currentTail - head == elements.length) {
-				return false;
-			}
-			elements[(int) currentTail & mask] = element;
-			tail = currentTail + 1;
-			return true;
-		}
-
-		boolean isFull() {
-			return tail - head == elements.length;
-		}
-
-		boolean isEmpty() {
-			return tail == head;
-		}
-
-		T remove() {
-			long currentHead = head;
-			if (tail == currentHead) {
-				return null;
-			}
-			int offset = (int) currentHead & mask;
-			T result = elements[offset];
-			elements[offset] = null;
-			head = currentHead + 1;
-			return result;
-		}
-	}
 
 	private static void idleSpin(int attempts) {
 		if ((attempts & 0x3FF) == 0x3FF) {
@@ -2940,17 +3070,17 @@ class LmdbSailStore implements SailStore {
 
 	private void cancelQueuedOperations() {
 		Operation operation;
-		while ((operation = opQueue.remove()) != null) {
+		while ((operation = opQueue.poll()) != null) {
 			operation.cancel();
 		}
-		opQueueSignal.drainPermits();
+		signalAsyncProgress();
 	}
 
 	private boolean enqueueOperation(Operation operation) {
-		if (!opQueue.add(operation)) {
+		if (!opQueue.offer(operation)) {
 			return false;
 		}
-		opQueueSignal.release();
+		signalAsyncWaiters();
 		return true;
 	}
 
@@ -3019,7 +3149,8 @@ class LmdbSailStore implements SailStore {
 
 	static int calculatePreparedImportStatementLimit(long maxMemoryBytes, int secondaryIndexCount) {
 		long budget = Math.min(MAX_PREPARED_IMPORT_BYTES, maxMemoryBytes / 4);
-		long bytesPerStatement = 4L * Long.BYTES + 2L * Integer.BYTES + 2L * Long.BYTES
+		// Reserve an eight-byte reference per row for the lexical object retained through actual insertion.
+		long bytesPerStatement = 5L * Long.BYTES + 2L * Integer.BYTES + 2L * Long.BYTES
 				+ 4L * PREPARED_VALUE_ESTIMATED_BYTES
 				+ (long) secondaryIndexCount * TripleIndex.MAX_KEY_LENGTH;
 		long budgetCapacity = Math.max(1L, budget / bytesPerStatement);
@@ -3361,6 +3492,7 @@ class LmdbSailStore implements SailStore {
 			}
 			boolean added = tripleStore.storeTriple(s, p, o, c, explicit);
 			if (added) {
+				tripleStore.recordRdfTermDomain(p, obj);
 				recordNoneMutation(true);
 			}
 			if (added && (explicit && estimatorCallback != null || backupCallback != null)) {
@@ -3460,6 +3592,7 @@ class LmdbSailStore implements SailStore {
 		final long[] predicates;
 		final long[] objects;
 		final long[] contexts;
+		final Value[] objectValues;
 		Statement[] statements;
 		final boolean explicit;
 		final int capacity;
@@ -3468,9 +3601,16 @@ class LmdbSailStore implements SailStore {
 		private final boolean lexicalBatch;
 		private final AtomicBoolean reservationReleased = new AtomicBoolean(false);
 		Consumer<Statement> estimatorCallback;
+		Consumer<List<Statement>> estimatorBatchCallback;
+		IntConsumer deferredEstimatorAddCallback;
+		int deferredEstimatorAddCount;
 		Future<TripleStore.PreparedSecondaryIndexes> preparedSecondaryIndexes;
 		Consumer<Statement> backupCallback;
 		int size;
+
+		BulkAddQuadsOperation(boolean explicit, boolean retainStatements, int capacity) {
+			this(explicit, capacity);
+		}
 
 		BulkAddQuadsOperation(boolean explicit, int capacity) {
 			this(explicit, capacity, new Statement[capacity]);
@@ -3493,6 +3633,14 @@ class LmdbSailStore implements SailStore {
 			this.objects = new long[capacity];
 			this.contexts = new long[capacity];
 			this.statements = statements;
+			this.objectValues = new Value[capacity];
+		}
+
+		void reset() {
+			Arrays.fill(objectValues, 0, size, null);
+			Arrays.fill(statements, 0, size, null);
+			size = 0;
+			deferredEstimatorAddCount = 0;
 		}
 
 		void setEstimatorCallback(Consumer<Statement> estimatorCallback) {
@@ -3522,7 +3670,7 @@ class LmdbSailStore implements SailStore {
 		static long estimatedStorageBytes(int capacity) {
 			// Five conservative array headers, operation/callback/control objects and four long arrays plus
 			// uncompressed statement references. Submitted NONE capacity equals its actual row count.
-			return 5L * 32L + 160L + 5L * Long.BYTES * capacity;
+			return 6L * 32L + 160L + 6L * Long.BYTES * capacity;
 		}
 
 		BulkAddQuadsOperation withConfiguredCapacity() {
@@ -3534,7 +3682,10 @@ class LmdbSailStore implements SailStore {
 			System.arraycopy(contexts, 0, expanded.contexts, 0, size);
 			System.arraycopy(statements, 0, expanded.statements, 0, size);
 			expanded.size = size;
+			System.arraycopy(objectValues, 0, expanded.objectValues, 0, size);
 			expanded.estimatorCallback = estimatorCallback;
+			expanded.estimatorBatchCallback = estimatorBatchCallback;
+			expanded.deferredEstimatorAddCallback = deferredEstimatorAddCallback;
 			expanded.backupCallback = backupCallback;
 			return expanded;
 		}
@@ -3585,6 +3736,7 @@ class LmdbSailStore implements SailStore {
 					predicates[retained] = predicates[index];
 					objects[retained] = objects[index];
 					contexts[retained] = contexts[index];
+					objectValues[retained] = objectValues[index];
 					statements[retained++] = statements[index];
 				}
 				size = retained;
@@ -3617,10 +3769,16 @@ class LmdbSailStore implements SailStore {
 						unusedIds.remove(contexts[i]);
 					}
 				}
+				deferredEstimatorAddCount = 0;
+				ArrayList<Statement> addedStatements = explicit
+						&& (estimatorBatchCallback != null || estimatorCallback != null)
+								? new ArrayList<>(size)
+								: null;
 				if (!lexicalBatch && size == 1) {
 					boolean added = tripleStore.storeTriple(subjects[0], predicates[0], objects[0], contexts[0],
 							explicit);
 					if (added) {
+						tripleStore.recordRdfTermDomain(predicates[0], objectValues[0]);
 						recordNoneMutation(true);
 					}
 					if (added && explicit && estimatorCallback != null) {
@@ -3632,9 +3790,16 @@ class LmdbSailStore implements SailStore {
 					return;
 				}
 				IntConsumer addedIndexConsumer = statementIndex -> {
-					recordNoneMutation(true);
-					if (explicit && estimatorCallback != null) {
-						estimatorCallback.accept(statements[statementIndex]);
+					try {
+						tripleStore.recordRdfTermDomain(predicates[statementIndex], objectValues[statementIndex]);
+						recordNoneMutation(true);
+					} catch (IOException failure) {
+						throw new UncheckedIOException(failure);
+					}
+					if (addedStatements != null) {
+						addedStatements.add(statements[statementIndex]);
+					} else if (deferredEstimatorAddCallback != null) {
+						deferredEstimatorAddCount++;
 					}
 					if (backupCallback != null) {
 						backupCallback.accept(statements[statementIndex]);
@@ -3652,6 +3817,7 @@ class LmdbSailStore implements SailStore {
 					tripleStore.storeTriplesAligned(subjects, predicates, objects, contexts, size, explicit,
 							LmdbSailStore.this.mayHaveInferred, addedIndexConsumer);
 				}
+				recordEstimatorAdditions(addedStatements);
 			} finally {
 				releaseReservation();
 			}
@@ -3689,6 +3855,18 @@ class LmdbSailStore implements SailStore {
 		private void releaseReservation() {
 			if (reservationHeld && reservationReleased.compareAndSet(false, true)) {
 				alignedWriteBudget.release(capacity);
+			}
+		}
+
+		private void recordEstimatorAdditions(List<Statement> addedStatements) {
+			if (addedStatements != null && !addedStatements.isEmpty()) {
+				if (estimatorBatchCallback != null) {
+					estimatorBatchCallback.accept(addedStatements);
+				} else {
+					addedStatements.forEach(estimatorCallback);
+				}
+			} else if (deferredEstimatorAddCallback != null && deferredEstimatorAddCount > 0) {
+				deferredEstimatorAddCallback.accept(deferredEstimatorAddCount);
 			}
 		}
 	}
@@ -3795,6 +3973,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void recyclePreparedQuadArrays(PreparedQuadArrays arrays) {
+		Arrays.fill(arrays.objectValues, null);
 		if (arrays.subjects.length > MAX_ALIGNED_WRITE_STATEMENTS) {
 			return;
 		}
@@ -3836,8 +4015,17 @@ class LmdbSailStore implements SailStore {
 			try {
 				TripleStore.EncodedIndexKeys preparedMainIndex = preparedSecondaryIndexes.awaitMain();
 				tripleStore.storePreparedTriples(subjects, predicates, objects, contexts, statementCount, true,
-						mayHaveInferred, backupCallback, preparedMainIndex,
-						this::awaitPreparedSecondaryIndexes);
+						mayHaveInferred, statementIndex -> {
+							try {
+								tripleStore.recordRdfTermDomain(predicates[statementIndex],
+										arrays.objectValues[statementIndex]);
+							} catch (IOException failure) {
+								throw new UncheckedIOException(failure);
+							}
+							if (backupCallback != null) {
+								backupCallback.accept(statementIndex);
+							}
+						}, preparedMainIndex, this::awaitPreparedSecondaryIndexes);
 			} finally {
 				try {
 					preparedSecondaryIndexes.cancel();
@@ -3874,7 +4062,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private GlobalPreparedImportOperation newGlobalPreparedImportOperation(int[] quads, long[] valueIds,
-			int statementCount) {
+			Value[] values, int statementCount) {
 		int reservation = preparedImportBudget.statementLimit();
 		try {
 			preparedImportBudget.reserve(reservation);
@@ -3883,7 +4071,7 @@ class LmdbSailStore implements SailStore {
 			throw new InterruptedSailException(e);
 		}
 		try {
-			return new GlobalPreparedImportOperation(quads, valueIds, statementCount, reservation);
+			return new GlobalPreparedImportOperation(quads, valueIds, values, statementCount, reservation);
 		} catch (RuntimeException | Error e) {
 			preparedImportBudget.release(reservation);
 			throw e;
@@ -3893,15 +4081,18 @@ class LmdbSailStore implements SailStore {
 	private final class GlobalPreparedImportOperation implements Operation {
 		private final int[] quads;
 		private final long[] valueIds;
+		private final Value[] values;
 		private final int statementCount;
 		private final int reservation;
 		private final AtomicBoolean reservationReleased = new AtomicBoolean();
 		private final TripleStore.GlobalPreparedIndexOrdersTask preparedOrders;
 		private IntConsumer backupCallback;
 
-		private GlobalPreparedImportOperation(int[] quads, long[] valueIds, int statementCount, int reservation) {
+		private GlobalPreparedImportOperation(int[] quads, long[] valueIds, Value[] values, int statementCount,
+				int reservation) {
 			this.quads = quads;
 			this.valueIds = valueIds;
+			this.values = values;
 			this.statementCount = statementCount;
 			this.reservation = reservation;
 			preparedOrders = tripleStore.prepareGlobalIndexOrdersAsync(indexPreparationExecutor, quads, valueIds,
@@ -3912,7 +4103,17 @@ class LmdbSailStore implements SailStore {
 		public void execute() throws IOException {
 			try {
 				tripleStore.storeGloballyOrderedFreshTriples(quads, valueIds, statementCount,
-						preparedOrders, indexPreparationExecutor, backupCallback);
+						preparedOrders, indexPreparationExecutor, statementIndex -> {
+							int offset = Math.multiplyExact(statementIndex, 4);
+							try {
+								tripleStore.recordRdfTermDomain(valueIds[quads[offset + 1]], values[quads[offset + 2]]);
+							} catch (IOException failure) {
+								throw new UncheckedIOException(failure);
+							}
+							if (backupCallback != null) {
+								backupCallback.accept(statementIndex);
+							}
+						});
 			} finally {
 				try {
 					preparedOrders.cancel();
@@ -4619,6 +4820,7 @@ class LmdbSailStore implements SailStore {
 	final class ReadView implements AutoCloseable {
 		private final Txn tripleTxn;
 		private final long tripleTxnVersion;
+		private final long tripleSnapshotEpoch;
 		private final ValueStore.ReadSnapshot valueSnapshot;
 		private final Function<Value, Value> valuePreparer;
 		private final Function<Value, Value> valueCapturer;
@@ -4634,6 +4836,7 @@ class LmdbSailStore implements SailStore {
 				long capturedNamespaceGeneration, long capturedPublicationVersion, ReadViewLease growthLease) {
 			this.tripleTxn = tripleTxn;
 			this.tripleTxnVersion = tripleTxn.version();
+			this.tripleSnapshotEpoch = tripleTxn.nativeTransactionId();
 			this.valueSnapshot = valueSnapshot;
 			this.valuePreparer = valueStore.valuePreparer(valueSnapshot);
 			this.valueCapturer = valueStore.valueCapturer(valueSnapshot);
@@ -4685,6 +4888,44 @@ class LmdbSailStore implements SailStore {
 				throw conflict;
 			} catch (IOException e) {
 				throw new SailException(e.getMessage(), e);
+			}
+		}
+
+		/** Caller holds the dictionary native read barrier during this paired-reader admission. */
+		private void requireDictionaryTermSnapshotUnderReadLock() throws IOException {
+			valueSnapshot.requireTermSnapshotUnderReadLock(
+					declare -> mapGrowthCoordinator.declareDictionaryTermMembership(growthLease, declare));
+		}
+
+		private boolean tryRequireDictionaryTermSnapshotUnderReadLock() throws IOException {
+			boolean[] declared = new boolean[1];
+			valueSnapshot.requireTermSnapshotUnderReadLock(
+					declare -> declared[0] = mapGrowthCoordinator.tryDeclareDictionaryTermMembership(growthLease,
+							declare));
+			return declared[0];
+		}
+
+		/**
+		 * Retains dictionary membership only when the paired read view can join the native read barrier immediately.
+		 * This is a conservative proof capability: map-growth races decline without scheduling replay, while lifecycle
+		 * failures and conflicts carrying cleanup failures remain visible to the caller.
+		 */
+		private boolean tryRetainDictionaryTermMembership() throws IOException {
+			var lockManager = valueStore.getTxnManager().lockManager();
+			long stamp = lockManager.tryReadLock();
+			if (stamp == 0L) {
+				return false;
+			}
+			try {
+				ensureNativeSnapshotsValid();
+				return tryRequireDictionaryTermSnapshotUnderReadLock();
+			} catch (MapResizeConflictException conflict) {
+				if (conflict.getSuppressed().length != 0) {
+					throw conflict;
+				}
+				return false;
+			} finally {
+				lockManager.unlockRead(stamp);
 			}
 		}
 
@@ -4861,28 +5102,49 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	/** Scoped ownership of already-admitted read views when the active admission is intentionally unbound. */
+	DatasetAdmission beginDatasetAdmission(IsolationLevel level, ReadView transactionView) throws SailException {
+		return beginDatasetAdmission(level, transactionView, null, null);
+	}
+
+	ReadViewLease currentReadViewLease() {
+		ReadView current = activeReadView.get();
+		return current == null ? null : current.growthLease;
+	}
+
+	ReadViewLease reservedEpochLease(ReadAttemptLease attempt) {
+		return mapGrowthCoordinator.reservedEpochLease(attempt);
+	}
+
+	void retireReservedEpoch(ReadAttemptLease attempt, Set<ReadViewLease> affectedViews) {
+		mapGrowthCoordinator.retireReservedEpoch(attempt, affectedViews);
+	}
+
+	/** Already-owned views remain relevant even when a compound operation cannot bind one active view. */
 	final class ReadResourceContext implements SailClosable {
 		private final ReadResourceContext previous;
 		private final Supplier<? extends Iterable<ReadViewLease>> ownedViews;
+		private final boolean inheritPrevious;
 		private boolean closed;
 
 		private ReadResourceContext(ReadResourceContext previous,
-				Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
+				Supplier<? extends Iterable<ReadViewLease>> ownedViews, boolean inheritPrevious) {
 			this.previous = previous;
 			this.ownedViews = ownedViews;
+			this.inheritPrevious = inheritPrevious;
 		}
 
 		private List<ReadViewLease> readViews() {
-			IdentityHashMap<ReadViewLease, Boolean> unique = new IdentityHashMap<>();
-			for (ReadResourceContext context = this; context != null; context = context.previous) {
+			Set<ReadViewLease> unique = Collections.newSetFromMap(new IdentityHashMap<>());
+			for (ReadResourceContext context = this; context != null; context = context.inheritPrevious
+					? context.previous
+					: null) {
 				for (ReadViewLease lease : Objects.requireNonNull(context.ownedViews.get(), "owned read views")) {
 					if (lease != null) {
-						unique.put(lease, Boolean.TRUE);
+						unique.add(lease);
 					}
 				}
 			}
-			return List.copyOf(unique.keySet());
+			return List.copyOf(unique);
 		}
 
 		@Override
@@ -4903,9 +5165,13 @@ class LmdbSailStore implements SailStore {
 	}
 
 	SailClosable enterReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
-		ReadResourceContext previous = activeReadResourceContext.get();
-		ReadResourceContext installed = new ReadResourceContext(previous,
-				Objects.requireNonNull(ownedViews, "ownedViews"));
+		return enterReadResourceContext(ownedViews, true);
+	}
+
+	private SailClosable enterReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews,
+			boolean inheritPrevious) {
+		ReadResourceContext installed = new ReadResourceContext(activeReadResourceContext.get(),
+				Objects.requireNonNull(ownedViews, "ownedViews"), inheritPrevious);
 		activeReadResourceContext.set(installed);
 		return installed;
 	}
@@ -4915,25 +5181,39 @@ class LmdbSailStore implements SailStore {
 		return current == null ? List.of() : current.readViews();
 	}
 
-	private ReadView retainLiveReadView(ReadViewLease lease) throws SailException {
-		ReadView view;
+	private boolean ownsEstimatorReadResources() {
+		return activeReadResourceContext.get() != null || currentWriterOwner() != null
+				|| preparedWriteContexts.containsKey(Thread.currentThread())
+				|| mapGrowthCoordinator.callbackAdmission.get() != null
+				|| replayRetirementOwner.get() != null || noneMutationReadOwner.get() != null;
+	}
+
+	private DatasetAdmission beginDatasetAdmissionForEstimator(ReadViewLease lease) {
+		ReadView current = activeReadView.get();
+		if (current != null) {
+			return beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null);
+		}
+		ReadView retained;
 		mapGrowthCoordinator.lock.lock();
 		try {
 			lease.ensureNotInvalidated();
-			view = lease.view;
-			if (lease.closed || view == null || !mapGrowthCoordinator.views.containsKey(lease)) {
-				throw new SailConflictException("The captured LMDB paired view has already finished; retry the read");
+			if (lease.closed || lease.view == null || !mapGrowthCoordinator.views.containsKey(lease)) {
+				throw deferredEstimatorStatementSource();
 			}
-			view.retain();
+			retained = lease.view.retain();
 		} finally {
 			mapGrowthCoordinator.lock.unlock();
 		}
 		try {
-			view.ensureNativeSnapshotsValid();
-			return view;
+			retained.ensureNativeSnapshotsValid();
+			activeReadView.set(retained);
+			return new DatasetAdmission(retained, null, true);
 		} catch (RuntimeException | Error failure) {
+			if (activeReadView.get() == retained) {
+				activeReadView.remove();
+			}
 			try {
-				view.close();
+				retained.close();
 			} catch (RuntimeException | Error cleanup) {
 				if (cleanup != failure) {
 					failure.addSuppressed(cleanup);
@@ -4941,74 +5221,57 @@ class LmdbSailStore implements SailStore {
 			}
 			throw failure;
 		}
-	}
-
-	private DatasetAdmission beginDatasetAdmissionForEstimator(ReadViewLease lease) throws SailException {
-		ReadView current = activeReadView.get();
-		if (current != null) {
-			current.ensureNativeSnapshotsValid();
-			ReadView retained = current.retain();
-			try {
-				return new DatasetAdmission(retained, current, false);
-			} catch (RuntimeException | Error failure) {
-				try {
-					retained.close();
-				} catch (RuntimeException | Error cleanup) {
-					if (cleanup != failure) {
-						failure.addSuppressed(cleanup);
-					}
-				}
-				throw failure;
-			}
-		}
-		ReadView borrowed = retainLiveReadView(lease);
-		try {
-			activeReadView.set(borrowed);
-			return new DatasetAdmission(borrowed, current, true);
-		} catch (RuntimeException | Error failure) {
-			try {
-				if (activeReadView.get() == borrowed) {
-					if (current == null) {
-						activeReadView.remove();
-					} else {
-						activeReadView.set(current);
-					}
-				}
-			} catch (RuntimeException | Error cleanup) {
-				if (cleanup != failure) {
-					failure.addSuppressed(cleanup);
-				}
-			}
-			try {
-				borrowed.close();
-			} catch (RuntimeException | Error cleanup) {
-				if (cleanup != failure) {
-					failure.addSuppressed(cleanup);
-				}
-			}
-			throw failure;
-		}
-	}
-
-	DatasetAdmission beginDatasetAdmission(IsolationLevel level, ReadView transactionView) throws SailException {
-		return beginDatasetAdmission(level, transactionView, null, null);
-	}
-
-	ReadViewLease currentReadViewLease() {
-		ReadView current = activeReadView.get();
-		return current == null ? null : current.growthLease;
-	}
-
-	ReadViewLease reservedEpochLease(ReadAttemptLease attempt) {
-		return mapGrowthCoordinator.reservedEpochLease(attempt);
-	}
-
-	void retireReservedEpoch(ReadAttemptLease attempt, Set<ReadViewLease> affectedViews) {
-		mapGrowthCoordinator.retireReservedEpoch(attempt, affectedViews);
 	}
 
 	SailClosable enterCapturedReadViews(ReadAttemptLease attempt, long generation, List<ReadViewLease> capturedViews,
 			ReadViewLease preferredView) {
+		return enterRetainedReadViews(attempt, generation, capturedViews, preferredView, true);
+	}
+
+	private SailClosable enterPlanningReadView(ReadView requested) {
+		ReadViewLease lease = requested.growthLease;
+		ReadAttemptLease attempt = lease.attempt;
+		SailClosable retained = enterRetainedReadViews(attempt, attempt == null ? 0L : attempt.generation,
+				List.of(lease), lease, false);
+		Thread owner = Thread.currentThread();
+		return () -> {
+			if (Thread.currentThread() != owner) {
+				throw new IllegalStateException("A query planning view must close on its owning thread");
+			}
+			retained.close();
+		};
+	}
+
+	/** A live unproved complete source must not borrow an enclosing query's view or resource candidates. */
+	private SailClosable maskPlanningReadView() {
+		ReadView previous = activeReadView.get();
+		Thread owner = Thread.currentThread();
+		SailClosable resources = enterReadResourceContext(List::of, false);
+		activeReadView.remove();
+		return new SailClosable() {
+			private boolean closed;
+
+			@Override
+			public void close() {
+				if (Thread.currentThread() != owner) {
+					throw new IllegalStateException("A query planning view must close on its owning thread");
+				}
+				if (closed) {
+					return;
+				}
+				resources.close();
+				closed = true;
+				if (previous == null) {
+					activeReadView.remove();
+				} else {
+					activeReadView.set(previous);
+				}
+			}
+		};
+	}
+
+	private SailClosable enterRetainedReadViews(ReadAttemptLease attempt, long generation,
+			List<ReadViewLease> capturedViews, ReadViewLease preferredView, boolean requireAttempt) {
 		List<ReadView> retained = new ArrayList<>(capturedViews.size());
 		ReadView previous = activeReadView.get();
 		ReadView bound = null;
@@ -5017,9 +5280,9 @@ class LmdbSailStore implements SailStore {
 			mapGrowthCoordinator.lock.lock();
 			try {
 				mapGrowthCoordinator.checkAdmission();
-				if (attempt == null || attempt.generation != generation
+				if (requireAttempt && (attempt == null || attempt.generation != generation
 						|| capturedViews.isEmpty()
-								&& (attempt.closed || !mapGrowthCoordinator.attempts.containsKey(attempt))) {
+								&& (attempt.closed || !mapGrowthCoordinator.attempts.containsKey(attempt)))) {
 					throw new SailConflictException(
 							"The dispatched LMDB read attempt has already finished; retry the read");
 				}
@@ -5078,7 +5341,11 @@ class LmdbSailStore implements SailStore {
 		}
 		ReadView installed = bound;
 		SailClosable installedResourceBinding = Objects.requireNonNull(resourceBinding, "resourceBinding");
+		AtomicBoolean bindingClosed = new AtomicBoolean();
 		return () -> {
+			if (!bindingClosed.compareAndSet(false, true)) {
+				return;
+			}
 			Throwable failure = null;
 			try {
 				installedResourceBinding.close();
@@ -5582,12 +5849,15 @@ class LmdbSailStore implements SailStore {
 
 	private void enqueueAsync(Operation operation) throws IOException {
 		boolean drain = operation instanceof AsyncDrainOperation;
-		checkAsyncProducerInterrupted();
-		while (!opQueue.add(operation)) {
+		while (true) {
+			checkAsyncProducerInterrupted();
+			if (opQueue.offer(operation)) {
+				break;
+			}
 			// Growth service can suspend or nest producer work; each capacity wait retains its registration.
 			asyncCapacityWaiters.incrementAndGet();
 			try {
-				awaitAsyncProgress(() -> !opQueue.isFull());
+				awaitAsyncProgress(() -> opQueue.remainingCapacity() != 0);
 			} finally {
 				asyncCapacityWaiters.decrementAndGet();
 			}
@@ -5604,7 +5874,7 @@ class LmdbSailStore implements SailStore {
 		while (true) {
 			long observed = asyncOperationAvailable.sequence();
 			if (!opQueue.isEmpty() || !running.get()) {
-				Operation operation = opQueue.remove();
+				Operation operation = opQueue.poll();
 				// Inspect registrations after publishing capacity. A later waiter observes the free slot;
 				// an earlier hot capacity or cold rollback waiter receives this dequeue notification.
 				if (operation == null || asyncCapacityWaiters.get() != 0 || asyncMonitorWaiters != 0) {
@@ -6385,6 +6655,35 @@ class LmdbSailStore implements SailStore {
 		return new PublicationScope(context, true);
 	}
 
+	/** Tries publication using an already acquired writer lease, without re-entering coordinator admission. */
+	private SailClosable tryBeginRetirementPublication(Object owner, WriterLease lease) {
+		if (publicationContext.get() != null) {
+			throw new SailException("Explicit retirement cannot enter a nested publication");
+		}
+		if (!publicationGate.tryLock()) {
+			return null;
+		}
+		try {
+			checkPublicationAdmission(owner);
+			if (publicationFinalizing) {
+				return null;
+			}
+			if (activePublications == 0) {
+				if ((publicationVersion & 1L) != 0) {
+					throw new IllegalStateException("LMDB publication version must be even before publication begins");
+				}
+				publicationVersion++;
+				publicationChanged = false;
+			}
+			PublicationContext context = new PublicationContext(owner, lease, false);
+			activePublications++;
+			publicationContext.set(context);
+			return new PublicationScope(context, true);
+		} finally {
+			publicationGate.unlock();
+		}
+	}
+
 	// Package-private scheduling seams allow tests to order real grant, release and admission checks.
 	void beforeWriterAuthorityRelease(Object owner) {
 	}
@@ -6710,6 +7009,208 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private enum DomainReaderWait {
+		TRIPLE_PERMIT,
+		VALUE_PERMIT,
+		TRIPLE_BARRIER,
+		VALUE_BARRIER,
+		PUBLICATION,
+		TRIPLE_NATIVE,
+		VALUE_NATIVE,
+		VALUE_SCOPE
+	}
+
+	private record DomainReadAttempt(ReadView view, DomainReaderWait reason) {
+	}
+
+	/** Opens a paired maintenance snapshot without retaining a partial family across any admission wait. */
+	private ReadView openDomainMaintenanceReadView() throws IOException {
+		TxnManager triples = tripleStore.getTxnManager();
+		TxnManager values = valueStore.getTxnManager();
+		TxnManager.NativeReaderRetry tripleRetry = null;
+		TxnManager.NativeReaderRetry valueRetry = null;
+		while (true) {
+			long publication = awaitStablePublication();
+			DomainReadAttempt attempt = tryOpenDomainMaintenanceReadView(publication, triples, values);
+			if (attempt.view() != null) {
+				return attempt.view();
+			}
+			if (attempt.reason() == DomainReaderWait.TRIPLE_NATIVE && tripleRetry == null) {
+				tripleRetry = triples.new NativeReaderRetry();
+			}
+			if (attempt.reason() == DomainReaderWait.VALUE_NATIVE && valueRetry == null) {
+				valueRetry = values.new NativeReaderRetry();
+			}
+			registerFrontierAdmissionWait();
+			try {
+				switch (attempt.reason()) {
+				case TRIPLE_PERMIT -> {
+					try (ReaderReservation ignored = triples.reserveReadTxn(false)) {
+						// The next attempt reserves the whole pair again.
+					}
+				}
+				case VALUE_PERMIT -> {
+					try (ValueStore.ReadSnapshotReservation ignored = valueStore.reserveReadSnapshot()) {
+						// The next attempt reserves the whole pair again.
+					}
+				}
+				case TRIPLE_BARRIER -> {
+					long stamp = triples.acquireReadBarrier();
+					triples.lockManager().unlockRead(stamp);
+				}
+				case VALUE_BARRIER -> {
+					long stamp = values.acquireReadBarrier();
+					values.lockManager().unlockRead(stamp);
+				}
+				case PUBLICATION -> awaitStablePublication();
+				case TRIPLE_NATIVE -> tripleRetry.awaitNext();
+				case VALUE_NATIVE -> valueRetry.awaitNext();
+				case VALUE_SCOPE -> valueStore.awaitValueReaderAdmission();
+				}
+			} finally {
+				unregisterFrontierAdmissionWait();
+			}
+		}
+	}
+
+	private DomainReadAttempt tryOpenDomainMaintenanceReadView(long expectedPublication,
+			TxnManager triples, TxnManager values) throws IOException {
+		ReadViewLease growthLease = mapGrowthCoordinator.registerView(null, null, null);
+		return tryOpenDomainReadView(expectedPublication, triples, values, growthLease, false);
+	}
+
+	private DomainReadAttempt tryOpenDomainReadView(long expectedPublication, TxnManager triples, TxnManager values,
+			ReadViewLease growthLease, boolean immediate) throws IOException {
+		ReaderReservation tripleReservation = null;
+		ValueStore.ReadSnapshotReservation valueReservation = null;
+		Txn tripleTxn = null;
+		ValueStore.ReadSnapshot valueSnapshot = null;
+		long tripleStamp = 0L;
+		long valueStamp = 0L;
+		boolean publicationLocked = false;
+		boolean handedOff = false;
+		Throwable primary = null;
+		try {
+			tripleReservation = triples.tryReserveReadTxn(false);
+			if (tripleReservation == null) {
+				return new DomainReadAttempt(null, DomainReaderWait.TRIPLE_PERMIT);
+			}
+			valueReservation = valueStore.tryReserveReadSnapshot();
+			if (valueReservation == null) {
+				return new DomainReadAttempt(null, DomainReaderWait.VALUE_PERMIT);
+			}
+			tripleStamp = triples.lockManager().tryReadLock();
+			if (tripleStamp == 0L) {
+				return new DomainReadAttempt(null, DomainReaderWait.TRIPLE_BARRIER);
+			}
+			valueStamp = values.lockManager().tryReadLock();
+			if (valueStamp == 0L) {
+				return new DomainReadAttempt(null, DomainReaderWait.VALUE_BARRIER);
+			}
+			publicationLocked = publicationGate.tryLock();
+			if (!publicationLocked || activePublications != 0 || publicationFinalizing
+					|| pendingDictionaryCheckpointGeneration != 0L || publicationVersion != expectedPublication
+					|| (publicationVersion & 1L) != 0L || immediate && namespacePersistenceFailure != null) {
+				return new DomainReadAttempt(null, DomainReaderWait.PUBLICATION);
+			}
+			checkPublicationAdmission();
+			try {
+				tripleTxn = tripleReservation.tryOpenPinnedFamilyUnderReadLock(tripleStore::getDataRevision)[0];
+			} catch (TxnManager.NativeReadersFullException full) {
+				if (immediate && full.getSuppressed().length != 0) {
+					throw full;
+				}
+				return new DomainReadAttempt(null, DomainReaderWait.TRIPLE_NATIVE);
+			}
+			try {
+				valueSnapshot = valueReservation.tryStartUnderReadLock(tripleTxn);
+			} catch (TxnManager.NativeReadersFullException full) {
+				if (immediate && full.getSuppressed().length != 0) {
+					throw full;
+				}
+				return new DomainReadAttempt(null, DomainReaderWait.VALUE_NATIVE);
+			} catch (ValueStore.ValueReadAdmissionException unavailable) {
+				if (immediate && unavailable.getSuppressed().length != 0) {
+					throw unavailable;
+				}
+				return new DomainReadAttempt(null, DomainReaderWait.VALUE_SCOPE);
+			}
+			ReadView view = new ReadView(tripleTxn, valueSnapshot, publishedNamespaces, namespaceGeneration,
+					expectedPublication, growthLease);
+			growthLease.attach(view);
+			if (immediate) {
+				try {
+					if (!view.tryRequireDictionaryTermSnapshotUnderReadLock()) {
+						return new DomainReadAttempt(null, DomainReaderWait.VALUE_SCOPE);
+					}
+				} catch (MapResizeConflictException invalidated) {
+					if (invalidated.getSuppressed().length != 0) {
+						throw invalidated;
+					}
+					return new DomainReadAttempt(null, DomainReaderWait.VALUE_SCOPE);
+				}
+			} else {
+				view.requireDictionaryTermSnapshotUnderReadLock();
+			}
+			checkPublicationAdmission();
+			if (immediate) {
+				if (!mapGrowthCoordinator.tryMarkReady(growthLease)) {
+					return new DomainReadAttempt(null, DomainReaderWait.VALUE_SCOPE);
+				}
+			} else {
+				growthLease.markReady();
+			}
+			handedOff = true;
+			return new DomainReadAttempt(view, null);
+		} catch (IOException | RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			if (publicationLocked) {
+				publicationGate.unlock();
+			}
+			if (valueStamp != 0L) {
+				values.lockManager().unlockRead(valueStamp);
+			}
+			if (tripleStamp != 0L) {
+				triples.lockManager().unlockRead(tripleStamp);
+			}
+			Throwable cleanup = null;
+			if (!handedOff) {
+				if (valueSnapshot != null) {
+					ValueStore.ReadSnapshot snapshot = valueSnapshot;
+					cleanup = attemptClose(cleanup, snapshot::close);
+				}
+				if (tripleTxn != null) {
+					Txn transaction = tripleTxn;
+					cleanup = attemptClose(cleanup, transaction::close);
+				}
+				cleanup = attemptClose(cleanup, growthLease::release);
+			}
+			if (valueReservation != null) {
+				ValueStore.ReadSnapshotReservation reservation = valueReservation;
+				cleanup = attemptClose(cleanup, reservation::close);
+			}
+			if (tripleReservation != null) {
+				ReaderReservation reservation = tripleReservation;
+				cleanup = attemptClose(cleanup, reservation::close);
+			}
+			if (cleanup != null) {
+				if (primary != null && primary != cleanup) {
+					primary.addSuppressed(cleanup);
+				} else if (primary == null) {
+					if (cleanup instanceof RuntimeException runtime) {
+						throw runtime;
+					}
+					if (cleanup instanceof Error error) {
+						throw error;
+					}
+					throw new IOException("Unable to release a domain maintenance reader", cleanup);
+				}
+			}
+		}
+	}
+
 	private void restorePublishedNamespaces() throws IOException {
 		if (namespacePersistenceFailure != null || namespaceTransactionOwner == null) {
 			return;
@@ -6731,10 +7232,31 @@ class LmdbSailStore implements SailStore {
 	private SailDataset datasetForReadView(boolean explicit, IsolationLevel level) throws SailException {
 		ReadView current = activeReadView.get();
 		if (current != null) {
-			return new LmdbSailDataset(explicit, current.retain(), level);
+			return datasetForReadView(explicit, current, level);
 		}
 		try (DatasetAdmission admission = beginDatasetAdmission(level, null)) {
-			return new LmdbSailDataset(explicit, admission.view().retain(), level);
+			return datasetForReadView(explicit, admission.view(), level);
+		}
+	}
+
+	private LmdbSailDataset datasetForReadView(boolean explicit, ReadView view) {
+		return datasetForReadView(explicit, view, IsolationLevels.SNAPSHOT_READ);
+	}
+
+	/** Retain before construction and release that ownership even if a field initializer or validation fails. */
+	private LmdbSailDataset datasetForReadView(boolean explicit, ReadView view, IsolationLevel level) {
+		ReadView retained = view.retain();
+		try {
+			return new LmdbSailDataset(explicit, retained, level);
+		} catch (RuntimeException | Error failure) {
+			try {
+				retained.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
 		}
 	}
 
@@ -6784,13 +7306,20 @@ class LmdbSailStore implements SailStore {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy, null);
 	}
 
+	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy,
+			boolean offlineReferenceCountMaintenance) throws IOException, SailException {
+		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy,
+				offlineReferenceCountMaintenance, false);
+	}
+
 	/** Internal transaction deltas are disposable input, not independently recoverable backup generations. */
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy,
-			boolean temporaryOverflow) throws IOException, SailException {
-		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy, null, null,
-				null, TripleStore::new, PersistentSetFactory::new, LmdbFilterSelectivityStats::new, 1024,
-				temporaryOverflow);
+			boolean offlineReferenceCountMaintenance, boolean temporaryOverflow) throws IOException, SailException {
+		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy,
+				null, null, null, TripleStore::new, PersistentSetFactory::new, null, 1024,
+				offlineReferenceCountMaintenance, temporaryOverflow);
 	}
 
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
@@ -6806,14 +7335,14 @@ class LmdbSailStore implements SailStore {
 			throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy,
 				duringValueOverlayWarmupScanForTest, afterValueStoreOpenForTest, null, TripleStore::new,
-				PersistentSetFactory::new, LmdbFilterSelectivityStats::new);
+				PersistentSetFactory::new, null);
 	}
 
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled, ValueStoreFactory valueStoreFactory,
 			TripleStoreFactory tripleStoreFactory) throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, valueStoreFactory, tripleStoreFactory,
-				PersistentSetFactory::new, LmdbFilterSelectivityStats::new);
+				PersistentSetFactory::new, null);
 	}
 
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
@@ -6830,8 +7359,8 @@ class LmdbSailStore implements SailStore {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
 				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
 				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()), null, null,
-				valueStoreFactory, tripleStoreFactory, PersistentSetFactory::new, LmdbFilterSelectivityStats::new,
-				asyncQueueCapacity, temporaryOverflow);
+				valueStoreFactory, tripleStoreFactory, PersistentSetFactory::new, null,
+				asyncQueueCapacity, false, temporaryOverflow);
 	}
 
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
@@ -6863,7 +7392,7 @@ class LmdbSailStore implements SailStore {
 			int asyncQueueCapacity) throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format, queryExecutionPolicy,
 				duringValueOverlayWarmupScanForTest, afterValueStoreOpenForTest, valueStoreFactory, tripleStoreFactory,
-				setFactoryFactory, statsFactory, asyncQueueCapacity, false);
+				setFactoryFactory, statsFactory, asyncQueueCapacity, false, false);
 	}
 
 	private LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
@@ -6871,17 +7400,19 @@ class LmdbSailStore implements SailStore {
 			Runnable duringValueOverlayWarmupScanForTest, Consumer<ValueStore> afterValueStoreOpenForTest,
 			ValueStoreFactory valueStoreFactory, TripleStoreFactory tripleStoreFactory,
 			PersistentSetFactoryFactory setFactoryFactory, FilterSelectivityStatsFactory statsFactory,
-			int asyncQueueCapacity, boolean temporaryOverflow) throws IOException, SailException {
-		this.opQueue = new CircularBuffer<>(asyncQueueCapacity);
+			int asyncQueueCapacity, boolean offlineReferenceCountMaintenance, boolean temporaryOverflow)
+			throws IOException, SailException {
+		this.opQueue = new ArrayBlockingQueue<>(asyncQueueCapacity);
 		this.backupBoundaryTrackingEnabled = !temporaryOverflow;
 		this.backupPublicationEnabled = !temporaryOverflow && config.getBackupJournalEnabled();
 		this.queryExecutionPolicy = Objects.requireNonNull(queryExecutionPolicy);
 		this.learnedFilterSelectivity = queryExecutionPolicy.experimentalQueryOptimizations()
 				? new LmdbLearnedFilterSelectivity()
 				: null;
-		sketchBasedJoinEstimatorEnabled &= queryExecutionPolicy.experimentalQueryOptimizations();
 		this.dataDir = dataDir;
-		// Supplementary snapshot copying includes every child of the store directory.
+		this.domainQualificationProperties = properties;
+		this.domainQualificationConfig = config;
+		// Keep pending backup buffers outside the store tree traversed by supplementary snapshot copying.
 		this.pendingBackupRecords = backupPublicationEnabled
 				? new LmdbBackupRecordBuffer(Path.of(System.getProperty("java.io.tmpdir")))
 				: null;
@@ -6889,16 +7420,44 @@ class LmdbSailStore implements SailStore {
 		this.asyncValueCleanup = config.getAsyncValueCleanup();
 		this.mapGrowthCoordinator = new MapGrowthCoordinator(config.getMapGrowthReadDrainTimeoutMillis());
 		this.bulkOperationSize = config.getBulkOperationSize();
+		this.estimatorAddChunkSize = Math.max(EXACT_ESTIMATOR_ADD_CHUNK_SIZE, bulkOperationSize);
 		this.valueOverlayEnabled = config.getValueOverlayEnabled();
 		this.preparedStatementBatchesEnabled = bulkOperationSize > 0 && !sketchBasedJoinEstimatorEnabled;
 		this.alignedWriteBudget = new AlignedWriteBudget(
 				calculateAlignedWriteStatementLimit(Runtime.getRuntime().maxMemory()));
-		this.setFactoryFactory = setFactoryFactory;
 		this.backgroundRawSamplingMaxMillisPerCycle = config.getBackgroundRawSamplingMaxMillisPerCycle();
+		this.adaptiveEvidenceAllowed = !"snapshot-only"
+				.equalsIgnoreCase(config.getSketchEstimatorEvidenceMode());
+		this.frontierPlannerSettings = LmdbFrontierPlannerSettings.from(config);
+		this.legacyPlanningEvidenceRequiresFreshOwner = format.isLegacy();
+		this.frontierStatisticsDirectory = new File(dataDir, "frontier-statistics-v2").toPath();
+		this.cascadesPlanCache = new PackedPlanCache(CASCADES_PLAN_CACHE_CAPACITY, 16,
+				frontierPlannerSettings.packedPlanCacheBudgetBytes());
+		this.setFactoryFactory = setFactoryFactory;
 		try {
+			UUID durableStoreId = null;
+			UUID savedStoreId = null;
+			try {
+				durableStoreId = properties.hasResolvedOwnerIdentity() ? properties.resolvedOwnerIdentity()
+						: properties.getOrCreateStoreId();
+				savedStoreId = properties.savedStoreId();
+			} catch (IllegalStateException e) {
+				logger.warn("Frontier and learned evidence cannot use a durable LMDB store identity", e);
+			}
+			this.estimatorPersistenceLocation = EstimatorPersistenceLocation.forStore(
+					new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath(),
+					properties.hasResolvedOwnerIdentity() ? durableStoreId
+							: durableStoreId != null && durableStoreId.equals(savedStoreId) ? durableStoreId : null);
 			this.sketchBasedJoinEstimator = sketchBasedJoinEstimatorEnabled
-					? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config))
+					? new SketchBasedJoinEstimator(new GuardedEstimatorStatementSource(), sketchEstimatorConfig(config),
+							derivedStateBuildExecutor)
 					: null;
+			if (sketchBasedJoinEstimator != null) {
+				// Publish the shutdown guard and persistence destination before any mutation or deferred work.
+				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !closing && !storeTxnStarted.get());
+				sketchBasedJoinEstimator.registerPersistencePath(estimatorPersistenceLocation);
+			}
+			RdfTermDomainQualification.beginPairedWriter(dataDir.toPath(), properties, config);
 			var valueStore = valueStoreFactory == null
 					? new ValueStore(new File(dataDir, "values"), properties, config, false,
 							duringValueOverlayWarmupScanForTest, format, true)
@@ -6907,11 +7466,22 @@ class LmdbSailStore implements SailStore {
 			if (afterValueStoreOpenForTest != null) {
 				afterValueStoreOpenForTest.accept(valueStore);
 			}
+			boolean previouslyDeferred = properties.deferRdfTermDomainInitialization;
+			properties.deferRdfTermDomainInitialization = true;
+			try {
+				tripleStore = tripleStoreFactory.create(new File(dataDir, "triples"), properties, config, valueStore);
+			} finally {
+				properties.deferRdfTermDomainInitialization = previouslyDeferred;
+			}
+			// Repair must reconstruct the original owner graph before normal startup can migrate its aliases.
+			if (!offlineReferenceCountMaintenance) {
+				// Before any estimator or statistics service opens: they must see the merged statements.
+				LmdbLanguageTagVariantMerge.mergeIfRequired(valueStore, tripleStore, estimatorPersistenceLocation);
+			}
 			valueStore.setResizeCheckpointListener(this::markDictionaryCheckpointPending);
 			valueStore.setMapGrowthAttemptSupplier(
 					() -> beginMapGrowthAttemptForCurrentWriter(MapResizeKind.VALUE_STORE));
 			valueStore.setMapGrowthRequestListener(this::requestMapGrowthForCurrentWriter);
-			tripleStore = tripleStoreFactory.create(new File(dataDir, "triples"), properties, config, valueStore);
 			tripleStore.setMapGrowthAttemptSupplier(
 					() -> beginMapGrowthAttemptForCurrentWriter(MapResizeKind.TRIPLE_STORE));
 			tripleStore.setMapGrowthRequestListener(this::requestMapGrowthForCurrentWriter);
@@ -6932,8 +7502,12 @@ class LmdbSailStore implements SailStore {
 			forceSyncInitialRunImport = config.getForceSync();
 			initialRunImportAvailable = config.getInitialRunImportEnabled() && !mayHaveInferred
 					&& tripleStore.isEmpty() && valueStore.canStartFreshValueSession();
-			// Installation is bounded. Durable queues are retained until post-ready maintenance can prove liveness.
-			valueStore.completeStoreInitialization(tripleStore::filterUsedIdsBounded);
+			// Preserve a prepared store's authoritative proof while deferring bounded reclamation until readiness.
+			if (properties.preparedBulkStore != null && !properties.preparedBulkStore.pendingUnused()) {
+				valueStore.completePreparedStoreInitialization(tripleStore::filterUsedIdsBounded);
+			} else {
+				valueStore.completeStoreInitialization(tripleStore::filterUsedIdsBounded);
+			}
 			AsyncValueRetirementCoordinator.removeUnpublishedSpool(dataDir.toPath());
 			boolean disposableCleanup = asyncValueCleanup && temporaryOverflow;
 			retirementCoordinator = disposableCleanup ? new ValueRetirementCoordinator.Disposable()
@@ -6957,6 +7531,11 @@ class LmdbSailStore implements SailStore {
 					retirementCoordinator = asyncValueCleanupCoordinator;
 				}
 			}
+			LeoRolloutProfile leoProfile = LeoRolloutProfile.fromSystemProperties();
+			boolean frontierEnabled = config.getFrontierEstimatorMode() != FrontierEstimatorMode.OFF;
+			boolean learnedServicesEnabled = sketchBasedJoinEstimator != null || frontierEnabled
+					|| leoProfile.observationEnabled();
+			UUID learnedStoreId = durableStoreId;
 			LmdbDirectAdjacencyOptions directAdjacencyOptions = LmdbDirectAdjacencyOptions.resolve(config);
 			directAdjacency = directAdjacencyOptions.mode() != DirectAdjacencyMode.DISABLED
 					? new LmdbDirectAdjacencyStore(tripleStore, valueStore, storeTxnStarted, storeTxnDirty,
@@ -6979,9 +7558,10 @@ class LmdbSailStore implements SailStore {
 					costModelDataGeneration::get,
 					() -> 0L);
 			postReadyInitialization = () -> initializePostReadyMaintenance(config, statsFactory,
-					directAdjacencyOptions.buildOnStart());
+					directAdjacencyOptions.buildOnStart(), learnedServicesEnabled, learnedStoreId);
 			valueStore.setStartupValueOverlayScheduling(valueOverlayStartupScheduling);
 			logLmdbStats(Level.INFO, "on startup");
+			domainQualificationOwnerReady = true;
 			if (!temporaryOverflow) {
 				backupJournalState = LmdbBackupJournalState.open(dataDir.toPath(), backupPublicationEnabled,
 						getCurrentCommittedTxnId(), () -> PostCommitBackupPublisher.resetForNewGeneration(this));
@@ -7019,18 +7599,30 @@ class LmdbSailStore implements SailStore {
 			directAdjacency.setStartupScheduling(adjacencyStartupScheduling);
 		}
 		Thread worker = Thread.ofPlatform().daemon().name("LmdbStore-PostReady").unstarted(() -> {
+			Throwable failure = null;
 			try {
 				if (!initialImportClosing && postReadyInitialization != null) {
 					postReadyInitialization.run();
 				}
 				postReadyStatus = initialImportClosing ? "CANCELLED" : "READY";
-			} catch (RuntimeException failure) {
-				postReadyStatus = "FAILED: " + failure.getMessage();
-				logger.warn("Optional LMDB post-ready maintenance failed; committed indexes remain available", failure);
+			} catch (IOException | RuntimeException problem) {
+				failure = problem;
+				postReadyStatus = "FAILED: " + problem.getMessage();
+				logger.warn("Optional LMDB post-ready maintenance failed; committed indexes remain available", problem);
+			} catch (Error problem) {
+				failure = problem;
+				postReadyStatus = "FAILED: " + problem.getMessage();
+				throw problem;
 			} finally {
 				valueOverlayStartupScheduling.complete(null);
 				adjacencyStartupScheduling.complete(null);
-				postReadyInitializationCompletion.complete(null);
+				completeSketchInitialization(false);
+				completeFrontierInitialization();
+				if (failure == null) {
+					postReadyInitializationCompletion.complete(null);
+				} else {
+					postReadyInitializationCompletion.completeExceptionally(failure);
+				}
 			}
 		});
 		postReadyThread = worker;
@@ -7038,74 +7630,877 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void initializePostReadyMaintenance(LmdbStoreConfig config, FilterSelectivityStatsFactory statsFactory,
-			boolean buildAdjacency) {
+			boolean buildAdjacency, boolean learnedServicesEnabled, UUID learnedStoreId) throws IOException {
 		tripleStore.startBackgroundIndexRebuild();
 		valueStore.startIndexRebuildAfterStoreInitialization();
 		if (initialImportClosing) {
 			return;
 		}
+		synchronized (frontierStatisticsMonitor) {
+			postReadyWriterDependentWorkStarted = true;
+			frontierStatisticsMonitor.notifyAll();
+		}
+		Throwable domainFailure = null;
+		try {
+			initializeDeferredRdfTermDomains();
+		} catch (IOException | RuntimeException failure) {
+			domainFailure = failure;
+		}
 		try {
 			// Publish the bounded retirement batch before optional caches capture their value generation.
-			if (!asyncValueCleanup && !initialImportClosing && valueStore.isValueReclamationEnabled()) {
+			if (!closing && !asyncValueCleanup && !initialImportClosing && valueStore.isValueReclamationEnabled()) {
 				recoverRetiredValueIds(tripleStore.getTxnManager().minPinnedSnapshotRevision(), false);
 				reclaimPersistedUnusedIdsAfterInitialization();
 			}
 			try {
-				if (directAdjacency != null && buildAdjacency) {
+				if (!closing && !initialImportClosing && directAdjacency != null && buildAdjacency) {
 					directAdjacency.triggerBuild();
 				}
 			} finally {
 				adjacencyStartupScheduling.complete(null);
 			}
 			try {
-				valueStore.startValueOverlayWarmupAfterStoreInitialization();
+				if (!closing && !initialImportClosing) {
+					valueStore.startValueOverlayWarmupAfterStoreInitialization();
+				}
 			} finally {
 				valueOverlayStartupScheduling.complete(null);
 			}
-			if (sketchBasedJoinEstimator != null && !initialImportClosing) {
-				long generationBeforeLoad = costModelDataGeneration.get();
-				Path estimatorPath = new File(dataDir, JOIN_ESTIMATOR_FILE_NAME).toPath();
-				boolean snapshotExists = Files.isRegularFile(estimatorPath.resolve("metadata.bin"));
-				LmdbFilterSelectivityStats loaded = statsFactory.create(estimatorPath, tripleStore, valueStore,
-						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
-						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
-				loaded.setSamplingViewSupplier(() -> beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
-				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
-				sketchBasedJoinEstimator.configurePersistence(estimatorPath, snapshotExists);
-				beforeSketchProviderPublicationForTest();
-				boolean discarded = false;
-				while (true) {
-					sinkStoreAccessLock.lock();
+			if (!closing && !initialImportClosing) {
+				initializeOptionalPlanningStatistics(config, statsFactory, learnedServicesEnabled, learnedStoreId);
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			if (domainFailure == null) {
+				throw failure;
+			}
+			if (failure instanceof Error error) {
+				if (error != domainFailure) {
+					error.addSuppressed(domainFailure);
+				}
+				throw error;
+			}
+			if (domainFailure != failure) {
+				domainFailure.addSuppressed(failure);
+			}
+		}
+		if (domainFailure instanceof IOException io) {
+			throw io;
+		}
+		if (domainFailure instanceof RuntimeException runtime) {
+			throw runtime;
+		}
+	}
+
+	/** Owns a detached domain writer until its native transaction and logical authority are settled. */
+	private final class DeferredDomainNativeAttempt implements Closeable {
+		private final Object owner;
+		private final Thread ownerThread = Thread.currentThread();
+		private final WriterLease lease;
+		private final WriterTransaction transaction = new WriterTransaction();
+		private final RetirementNativeTransaction nativeOwner = tripleStore.newDeferredDomainNativeWriter();
+		private SailClosable publication;
+		private boolean bound;
+		private boolean closed;
+
+		private DeferredDomainNativeAttempt(Object owner, WriterLease lease) {
+			this.owner = owner;
+			this.lease = lease;
+		}
+
+		private void bind() throws IOException {
+			tripleStore.bindDeferredDomainNativeWriter(transaction, nativeOwner);
+			bound = true;
+		}
+
+		private boolean publish(TripleStore.DeferredRdfTermDomainPlan plan) throws IOException {
+			boolean[] prepared = { false };
+			transaction.invoke(() -> prepared[0] = tripleStore.publishDeferredRdfTermDomains(plan));
+			return prepared[0];
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			if (Thread.currentThread() != ownerThread) {
+				throw new IOException("Predicate-domain native cleanup requires its admitting thread");
+			}
+			Throwable failure = null;
+			if (bound && tripleStore.currentWriterTransaction() == transaction) {
+				failure = attemptClose(failure, () -> tripleStore.rollback(transaction));
+				if (tripleStore.currentWriterTransaction() == transaction
+						&& tripleStore.canRetryRetirementRollback(transaction)) {
+					failure = attemptClose(failure, () -> tripleStore.rollback(transaction));
+				}
+			} else if (nativeOwner.canAbort()) {
+				failure = attemptClose(failure, nativeOwner::abort);
+				if (nativeOwner.canAbort()) {
+					failure = attemptClose(failure, nativeOwner::abort);
+				}
+			}
+			if (nativeOwner.unsettled() || bound && tripleStore.currentWriterTransaction() == transaction) {
+				throwDeferredDomainCleanup(failure == null
+						? new IOException("Predicate-domain native writer remains unsettled")
+						: failure);
+			}
+			if (bound) {
+				try {
+					tripleStore.releaseRetirementNativeScope(transaction);
+					bound = false;
+				} catch (IOException | RuntimeException | Error cleanup) {
+					if (failure == null) {
+						failure = cleanup;
+					} else if (failure != cleanup) {
+						failure.addSuppressed(cleanup);
+					}
+					throwDeferredDomainCleanup(failure);
+				}
+			}
+			if (publication != null) {
+				failure = attemptClose(failure, publication::close);
+			}
+			if (!lease.closed) {
+				failure = attemptClose(failure, lease::close);
+			}
+			if (publication != null) {
+				failure = attemptClose(failure, () -> completeWriterRollback(owner));
+			}
+			synchronized (writerOwnerMonitor) {
+				if (writerOwner == owner) {
+					throwDeferredDomainCleanup(failure == null
+							? new IOException("Predicate-domain writer authority remains unsettled")
+							: failure);
+				}
+			}
+			closed = true;
+			synchronized (frontierReaderAdmissionMonitor) {
+				if (deferredDomainNativeAttempt == this) {
+					deferredDomainNativeAttempt = null;
+				}
+				frontierReaderAdmissionMonitor.notifyAll();
+			}
+			throwDeferredDomainCleanup(failure);
+		}
+	}
+
+	private static void throwDeferredDomainCleanup(Throwable failure) throws IOException {
+		if (failure instanceof IOException io) {
+			throw io;
+		}
+		if (failure instanceof RuntimeException runtime) {
+			throw runtime;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure != null) {
+			throw new IOException(failure);
+		}
+	}
+
+	private DeferredDomainNativeAttempt registerDeferredDomainNativeAttempt(Object owner, WriterLease lease)
+			throws IOException {
+		try {
+			DeferredDomainNativeAttempt attempt = new DeferredDomainNativeAttempt(owner, lease);
+			synchronized (frontierReaderAdmissionMonitor) {
+				if (closing || deferredDomainNativeAttempt != null) {
+					throw new IOException("Predicate-domain native admission is unavailable");
+				}
+				deferredDomainNativeAttempt = attempt;
+			}
+			return attempt;
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				lease.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (failure != cleanup) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
+	}
+
+	RetirementNativeTransaction currentDeferredDomainNativeOwner() {
+		synchronized (frontierReaderAdmissionMonitor) {
+			return deferredDomainNativeAttempt == null ? null : deferredDomainNativeAttempt.nativeOwner;
+		}
+	}
+
+	/** Scans a paired snapshot first, then publishes only after fresh writer and generation validation. */
+	private void initializeDeferredRdfTermDomains() throws IOException {
+		IOException firstCapacity = null;
+		while (!closing && tripleStore.hasDeferredRdfTermDomainStartup()) {
+			TripleStore.DeferredRdfTermDomainPlan plan;
+			try (ReadView view = openDomainMaintenanceReadView()) {
+				view.ensureNativeSnapshotsValid();
+				plan = tripleStore.scanDeferredRdfTermDomains(view.tripleTxn(), view.valueSnapshot());
+			}
+			boolean waitForWriter = false;
+			boolean waitForSink = false;
+			boolean waitForPublication = false;
+			boolean waitForCommitBarrier = false;
+			boolean retry = false;
+			boolean prepared = false;
+			IOException capacity = null;
+			TripleStore.DomainCommitBarrierUnavailable unavailableBarrier = null;
+			Object domainOwner = new Object();
+			WriterLease lease = tryAcquireWriterLease(domainOwner);
+			if (lease == null) {
+				waitForWriter = true;
+			} else {
+				try (DeferredDomainNativeAttempt attempt = registerDeferredDomainNativeAttempt(domainOwner, lease)) {
+					if (!tripleStore.deferredDomainPlanCurrent(plan)) {
+						retry = true;
+					} else {
+						// The preceding generation check releases both read barriers before native begin can wait.
+						tripleStore.beginDeferredDomainNativeWriter(attempt.nativeOwner);
+						if (closing || Thread.currentThread().isInterrupted()) {
+							throw new IOException("Predicate-domain native admission was interrupted or closed");
+						}
+						attempt.publication = tryBeginRetirementPublication(domainOwner, lease);
+						if (attempt.publication == null) {
+							waitForPublication = true;
+						} else if (!sinkStoreAccessLock.tryLock()) {
+							waitForSink = true;
+						} else {
+							try {
+								attempt.bind();
+								if (attempt.publish(plan)) {
+									prepared = true;
+									markPublicationChanged();
+								} else {
+									retry = true;
+								}
+							} catch (TripleStore.DomainCommitBarrierUnavailable unavailable) {
+								unavailableBarrier = unavailable;
+								throw unavailable;
+							} catch (TripleStore.MapFullException | LmdbUtil.MapFullException full) {
+								capacity = full;
+								// Let owner cleanup attach any cleanup failure to this original error.
+								throw full;
+							} finally {
+								sinkStoreAccessLock.unlock();
+							}
+						}
+					}
+				} catch (TripleStore.DomainCommitBarrierUnavailable unavailable) {
+					if (unavailableBarrier != unavailable || unavailable.getSuppressed().length != 0) {
+						throw unavailable;
+					}
+					waitForCommitBarrier = true;
+				} catch (TripleStore.MapFullException | LmdbUtil.MapFullException full) {
+					if (capacity != full) {
+						// A capacity exception from owner cleanup is not a retryable write failure.
+						throw full;
+					}
+				} catch (IOException | RuntimeException | Error failure) {
+					if (prepared) {
+						abandonDeferredRdfTermDomains(failure);
+					}
+					throw failure;
+				}
+			}
+			if (prepared) {
+				try {
+					// Save without a native reader, publication scope, or sink lock; concurrent updates remain dirty.
+					domainQualificationProperties.save();
+					if (finishDeferredRdfTermDomains()) {
+						return;
+					}
+					tripleStore.abandonDeferredRdfTermDomainPublication();
+				} catch (IOException | RuntimeException | Error failure) {
+					abandonDeferredRdfTermDomains(failure);
+					throw failure;
+				}
+				continue;
+			}
+			if (capacity != null) {
+				if (firstCapacity == null) {
+					firstCapacity = capacity;
+				} else if (firstCapacity != capacity) {
+					firstCapacity.addSuppressed(capacity);
+				}
+				if (!autoGrow || capacity.getSuppressed().length != 0) {
+					throw firstCapacity;
+				}
+				try {
+					Object owner = new Object();
+					try (MapGrowthAttempt growth = mapGrowthCoordinator.begin(owner)) {
+						growth.requestQuiescence(MapResizeKind.TRIPLE_STORE);
+						if (!tripleStore.growMapForEstimatedWrite(tripleStore.mapSizeBytes(), growth)) {
+							throw new IOException("Predicate-domain rebuild could not grow the TripleStore map");
+						}
+					}
+				} catch (IOException | RuntimeException | Error growthFailure) {
+					if (firstCapacity != growthFailure) {
+						Throwable contextualFailure = growthFailure;
+						if (growthFailure instanceof IOException
+								&& growthFailure.getCause() instanceof InterruptedException) {
+							contextualFailure = new IOException(
+									"Interrupted while growing the TripleStore map for domain initialization",
+									growthFailure);
+						}
+						firstCapacity.addSuppressed(contextualFailure);
+					}
+					throw firstCapacity;
+				}
+			} else if (waitForWriter) {
+				try (WriterLease ignored = acquireWriterLease(new Object())) {
+					// Rescan after the conflicting logical writer has released its authority.
+				}
+			} else if (waitForPublication) {
+				awaitDomainPublicationAdmission();
+			} else if (waitForSink) {
+				lockForFrontierAdmission(sinkStoreAccessLock);
+				sinkStoreAccessLock.unlock();
+			} else if (waitForCommitBarrier) {
+				registerFrontierAdmissionWait();
+				try {
+					tripleStore.awaitDomainCommitBarrier();
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+			} else if (retry) {
+				tripleStore.awaitDomainIdentityReady();
+				valueStore.awaitDomainIdentityReady();
+			}
+		}
+	}
+
+	private boolean finishDeferredRdfTermDomains() throws IOException {
+		while (!closing) {
+			boolean waitForWriter = false;
+			boolean waitForSink = false;
+			boolean retry = false;
+			boolean qualified = false;
+			SailClosable publication = tryBeginPublicationScope(null);
+			if (publication == null) {
+				waitForWriter = true;
+			} else {
+				try (publication) {
+					if (!sinkStoreAccessLock.tryLock()) {
+						waitForSink = true;
+					} else {
+						try {
+							if (tripleStore.validateDeferredRdfTermDomainPublication()) {
+								qualified = true;
+							} else {
+								retry = true;
+							}
+						} finally {
+							sinkStoreAccessLock.unlock();
+						}
+					}
+				}
+			}
+			if (qualified) {
+				return activateDeferredRdfTermDomains();
+			}
+			if (waitForWriter) {
+				try (WriterLease ignored = acquireWriterLease(new Object())) {
+					// Retry the nonblocking publication admission after the conflicting writer leaves.
+				}
+			} else if (waitForSink) {
+				lockForFrontierAdmission(sinkStoreAccessLock);
+				sinkStoreAccessLock.unlock();
+			} else if (retry) {
+				tripleStore.awaitDomainIdentityReady();
+				valueStore.awaitDomainIdentityReady();
+				return false;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Publish only after the previous publication scope and its owner cleanup have succeeded. The close lock and
+	 * publication gate are acquired without waiting; sink and native generation admission are also nonblocking. Any
+	 * wait happens only after all three locks have been released.
+	 */
+	private boolean activateDeferredRdfTermDomains() throws IOException {
+		while (!closing) {
+			if (!closeLock.tryLock()) {
+				return false;
+			}
+			boolean waitForPublication = false;
+			boolean waitForSink = false;
+			boolean gate = false;
+			try {
+				gate = publicationGate.tryLock();
+				if (!gate) {
+					waitForPublication = true;
+				} else if (closing) {
+					return false;
+				} else if (activePublications != 0 || publicationFinalizing
+						|| pendingDictionaryCheckpointGeneration != 0L) {
+					waitForPublication = true;
+				} else if (!sinkStoreAccessLock.tryLock()) {
+					waitForSink = true;
+				} else {
 					try {
-						if (initialImportClosing) {
-							return;
+						if (!tripleStore.validateDeferredRdfTermDomainPublication()) {
+							return false;
 						}
-						// Native commits use this same lock. Publish an unchanged loaded generation, or an already
-						// invalidated empty provider. Commits during unpublished cleanup cannot make it stale again.
-						if (discarded || snapshotExists && costModelDataGeneration.get() == generationBeforeLoad) {
-							sketchBasedJoinEstimator.setLearnedStatsProvider(loaded);
-							sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(loaded);
-							sketchBasedJoinEstimator
-									.setPatternCardinalityProvider(statementPatternCardinalitySource::estimate);
-							filterSelectivityStats = loaded;
-							break;
-						}
+						// Invalidate read views created between scope cleanup and visibility before the volatile flag.
+						publicationVersion += 2L;
+						tripleStore.activateDeferredRdfTermDomainPublication();
+						return true;
 					} finally {
 						sinkStoreAccessLock.unlock();
 					}
-					// Discard may persist dirty buffers or await incremental work. It owns no published provider
-					// yet, so this potentially unbounded cleanup must stay outside the native commit fence.
-					sketchBasedJoinEstimator.discardAndMarkForRebuild();
-					loaded.recordStoreMutation();
-					discarded = true;
 				}
-				if (!initialImportClosing) {
+			} finally {
+				if (gate) {
+					publicationGate.unlock();
+				}
+				closeLock.unlock();
+			}
+			if (waitForPublication) {
+				awaitDomainPublicationAdmission();
+			} else if (waitForSink) {
+				lockForFrontierAdmission(sinkStoreAccessLock);
+				sinkStoreAccessLock.unlock();
+			}
+		}
+		return false;
+	}
+
+	/** Shutdown interrupts this waiter; it holds no reader, sink, writer, or close authority. */
+	private void awaitDomainPublicationAdmission() throws IOException {
+		registerFrontierAdmissionWait();
+		try {
+			publicationGate.lockInterruptibly();
+			try {
+				while (!closing && (activePublications != 0 || publicationFinalizing
+						|| pendingDictionaryCheckpointGeneration != 0L)) {
+					publicationCompleted.await();
+				}
+				if (closing) {
+					throw new IOException("LMDB store is closing");
+				}
+			} finally {
+				publicationGate.unlock();
+			}
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for predicate-domain publication", interrupted);
+		} finally {
+			unregisterFrontierAdmissionWait();
+		}
+	}
+
+	private void abandonDeferredRdfTermDomains(Throwable primary) {
+		try {
+			tripleStore.abandonDeferredRdfTermDomainPublication();
+		} catch (RuntimeException | Error cleanup) {
+			if (cleanup != primary) {
+				primary.addSuppressed(cleanup);
+			}
+		}
+	}
+
+	private void initializeOptionalPlanningStatistics(LmdbStoreConfig config,
+			FilterSelectivityStatsFactory statsFactory, boolean learnedServicesEnabled, UUID learnedStoreId)
+			throws IOException {
+		if (initialImportClosing) {
+			return;
+		}
+		if (learnedServicesEnabled) {
+			long generationBeforeLoad = costModelDataGeneration.get();
+			EstimatorPersistenceLocation.Resolved persistence = null;
+			try {
+				persistence = estimatorPersistenceLocation.resolve(true);
+			} catch (EstimatorPersistenceLocation.UnavailableException unavailable) {
+				logger.warn("Estimator persistence is unavailable; learned state remains in memory", unavailable);
+			}
+			Path estimatorPath = persistence == null ? null : persistence.directory();
+			boolean snapshotExists = estimatorPath != null
+					&& (Files.isRegularFile(estimatorPath.resolve("synopsis-v8.bin"))
+							|| Files.isRegularFile(estimatorPath.resolve("metadata.bin")));
+			if (sketchBasedJoinEstimator != null) {
+				if (legacyPlanningEvidenceRequiresFreshOwner) {
+					// Set the in-memory fence before persistence is configured or a loaded snapshot is exposed.
+					// The existing resolver then marks only its own recognized destination for a complete rebuild.
+					sketchBasedJoinEstimator.synopsisService().requestRebuild();
+				}
+				sketchBasedJoinEstimator.configurePersistence(estimatorPersistenceLocation.logicalPath(),
+						snapshotExists);
+			}
+			Supplier<SketchSnapshotIdentity> identitySupplier = sketchBasedJoinEstimator != null
+					? sketchBasedJoinEstimator::snapshotIdentity
+					: () -> learnedSnapshotIdentity(learnedStoreId);
+			EstimatorPersistenceLocation alternateLocation = persistence != null && persistence.alternate()
+					? estimatorPersistenceLocation
+					: null;
+			LmdbFilterSelectivityStats loaded = statsFactory == null
+					? new LmdbFilterSelectivityStats(estimatorPath, tripleStore, valueStore,
+							config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
+							config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled(),
+							identitySupplier, config.getSketchEstimatorColdSynopsisCapacity(),
+							() -> adaptiveEvidenceAllowed, this::statementMutationStamp, alternateLocation,
+							!legacyPlanningEvidenceRequiresFreshOwner, !legacyPlanningEvidenceRequiresFreshOwner)
+					: statsFactory.create(alternateLocation == null ? estimatorPath : null, tripleStore, valueStore,
+							config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
+							config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
+			loaded.setSamplingViewSupplier(() -> beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
+			LmdbOperatorFeedbackStats loadedFeedback = new LmdbOperatorFeedbackStats(estimatorPath,
+					identitySupplier, () -> adaptiveEvidenceAllowed, this::statementMutationStamp,
+					alternateLocation, !legacyPlanningEvidenceRequiresFreshOwner);
+			loadedFeedback.setPlanExecutionPublisher(frontierPlannerSettings.pipelinePlanCache()::observeExecution);
+			beforeSketchProviderPublicationForTest();
+			boolean discarded = false;
+			while (true) {
+				sinkStoreAccessLock.lock();
+				try {
+					if (initialImportClosing) {
+						return;
+					}
+					// The same lock fences native commit publication; never expose stale loaded sidecars. When sketches
+					// are disabled, the other sidecars validate their own identity and statement stamp and do not
+					// depend
+					// on a separate synopsis file.
+					if (discarded || (sketchBasedJoinEstimator == null || snapshotExists)
+							&& costModelDataGeneration.get() == generationBeforeLoad) {
+						if (sketchBasedJoinEstimator != null) {
+							sketchBasedJoinEstimator.setRebuildObserver(loaded.coldSynopsisRebuildObserver());
+						}
+						operatorFeedbackStats = loadedFeedback;
+						filterSelectivityStats = loaded;
+						LmdbEstimatorRuntime.PublishedProviders previous = publishedProviders;
+						publishedProviders = new LmdbEstimatorRuntime.PublishedProviders(previous.generation() + 1L,
+								loaded, loadedFeedback, previous.statistics());
+						break;
+					}
+				} finally {
+					sinkStoreAccessLock.unlock();
+				}
+				// Cleanup may wait for a refresh and must remain outside the native commit fence.
+				if (sketchBasedJoinEstimator != null) {
+					sketchBasedJoinEstimator.discardAndMarkForRebuild();
+				}
+				loaded.recordStoreMutation();
+				loadedFeedback.reset();
+				loadedFeedback.recordStoreMutation();
+				discarded = true;
+			}
+			if (!initialImportClosing) {
+				if (sketchBasedJoinEstimator != null) {
 					sketchBasedJoinEstimator.startBackgroundRefresh(3);
-					startBackgroundFilterSampling();
+				}
+				startBackgroundFilterSampling();
+			}
+		}
+		completeSketchInitialization(!initialImportClosing && sketchBasedJoinEstimator != null);
+		try {
+			initializeFrontierStatisticsAfterReady(config);
+		} finally {
+			completeFrontierInitialization();
+		}
+	}
+
+	private void completeSketchInitialization(boolean succeeded) {
+		synchronized (frontierStatisticsMonitor) {
+			sketchInitializationCompletion.complete(succeeded);
+			frontierStatisticsMonitor.notifyAll();
+		}
+	}
+
+	private void completeFrontierInitialization() {
+		synchronized (frontierStatisticsMonitor) {
+			frontierInitializationCompletion.complete(null);
+			frontierStatisticsMonitor.notifyAll();
+		}
+	}
+
+	/** The shutdown path interrupts admission waiters, without interrupting an active native operation. */
+	private void registerFrontierAdmissionWait() throws IOException {
+		synchronized (frontierReaderAdmissionMonitor) {
+			if (closing || valueStore.retirementOperationCancelled()) {
+				throw new IOException("LMDB store is closing");
+			}
+			frontierReaderWaiters.add(Thread.currentThread());
+		}
+	}
+
+	/** Mandatory reset cleanup cannot be skipped, even when cancellation precedes its wait. */
+	private void registerRetirementCleanupWait() {
+		synchronized (frontierReaderAdmissionMonitor) {
+			frontierReaderWaiters.add(Thread.currentThread());
+			if (closing || valueStore.retirementOperationCancelled()) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	/** Called without the dictionary admission monitor held. */
+	private void cancelRetirementWaiter(Thread owner) {
+		synchronized (frontierReaderAdmissionMonitor) {
+			if (frontierReaderWaiters.contains(owner)) {
+				owner.interrupt();
+			}
+		}
+	}
+
+	private void unregisterFrontierAdmissionWait() {
+		synchronized (frontierReaderAdmissionMonitor) {
+			frontierReaderWaiters.remove(Thread.currentThread());
+		}
+	}
+
+	/** Native admission and deferred cleanup remain owned by their original thread through shutdown. */
+	private void awaitExplicitRetirementOwnersForShutdown() {
+		boolean interrupted = Thread.interrupted();
+		try {
+			synchronized (frontierReaderAdmissionMonitor) {
+				while (!explicitRetirementOwners.isEmpty()) {
+					try {
+						frontierReaderAdmissionMonitor.wait();
+					} catch (InterruptedException cancellation) {
+						interrupted = true;
+					}
 				}
 			}
-		} catch (IOException failure) {
-			throw new UncheckedIOException(failure);
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	/** A failed native consumption keeps shutdown from retiring either environment or the directory owner. */
+	private void awaitDeferredDomainNativeOwnerForShutdown() {
+		boolean interrupted = Thread.interrupted();
+		try {
+			synchronized (frontierReaderAdmissionMonitor) {
+				while (currentDeferredDomainNativeOwner() != null) {
+					try {
+						frontierReaderAdmissionMonitor.wait();
+					} catch (InterruptedException cancellation) {
+						interrupted = true;
+					}
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	private ReaderReservation reserveFrontierReaders(int count) throws IOException {
+		registerFrontierAdmissionWait();
+		try {
+			ReaderReservation reservation = tripleStore.getTxnManager().reserveReadTxnPinnedFamily(count);
+			synchronized (frontierReaderAdmissionMonitor) {
+				frontierReaderWaiters.remove(Thread.currentThread());
+				if (closing) {
+					reservation.close();
+					throw new IOException("LMDB store is closing");
+				}
+			}
+			return reservation;
+		} finally {
+			unregisterFrontierAdmissionWait();
+		}
+	}
+
+	private void lockForFrontierAdmission(ReentrantLock lock) throws IOException {
+		registerFrontierAdmissionWait();
+		boolean acquired = false;
+		try {
+			lock.lockInterruptibly();
+			acquired = true;
+			synchronized (frontierReaderAdmissionMonitor) {
+				frontierReaderWaiters.remove(Thread.currentThread());
+				if (closing) {
+					throw new IOException("LMDB store is closing");
+				}
+			}
+			acquired = false; // The caller owns the lock.
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting for Frontier admission", interrupted);
+		} finally {
+			unregisterFrontierAdmissionWait();
+			if (acquired) {
+				lock.unlock();
+			}
+		}
+	}
+
+	/**
+	 * Reserves every required reader before taking the store lock. If the lock already has an owner, surrender the
+	 * reservation before waiting: that owner may need a reader to finish its commit or release a snapshot.
+	 */
+	private FrontierReaders admitFrontierReaders(int count, boolean guardSink) throws IOException {
+		TxnManager manager = tripleStore.getTxnManager();
+		TxnManager.NativeReaderRetry nativeRetry = null;
+		while (true) {
+			boolean waitForSink = false;
+			boolean waitForNativeReader = false;
+			try (ReaderReservation reservation = reserveFrontierReaders(count)) {
+				Txn[] readers = null;
+				long readStamp = 0L;
+				boolean guarded = false;
+				boolean transferred = false;
+				registerFrontierAdmissionWait();
+				try {
+					// Starting readers may itself wait for the native barrier or the environment reader table.
+					// Neither wait may retain the sink lock needed by writers and snapshot release.
+					readStamp = manager.acquireReadBarrier();
+					readers = reservation.tryOpenPinnedFamilyUnderReadLock(null);
+					if (guardSink) {
+						guarded = sinkStoreAccessLock.tryLock();
+						if (!guarded) {
+							waitForSink = true;
+						}
+					}
+					if (!waitForSink) {
+						synchronized (frontierReaderAdmissionMonitor) {
+							frontierReaderWaiters.remove(Thread.currentThread());
+							if (closing) {
+								throw new IOException("LMDB store is closing");
+							}
+						}
+						FrontierReaders result = new FrontierReaders(readers, guarded);
+						transferred = true;
+						return result;
+					}
+				} catch (TxnManager.NativeReadersFullException unavailable) {
+					waitForNativeReader = true;
+				} finally {
+					unregisterFrontierAdmissionWait();
+					if (readStamp != 0L) {
+						manager.lockManager().unlockRead(readStamp);
+					}
+					if (!transferred) {
+						if (readers != null) {
+							new FrontierReaders(readers, guarded).close();
+						} else if (guarded) {
+							sinkStoreAccessLock.unlock();
+						}
+					}
+				}
+			}
+			if (waitForSink) {
+				// Return the complete family and release the native barrier before waiting for the sink owner.
+				lockForFrontierAdmission(sinkStoreAccessLock);
+				sinkStoreAccessLock.unlock();
+			} else if (waitForNativeReader) {
+				if (nativeRetry == null) {
+					nativeRetry = manager.new NativeReaderRetry();
+				}
+				registerFrontierAdmissionWait();
+				try {
+					nativeRetry.awaitNext();
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+			}
+		}
+	}
+
+	private final class FrontierReaders implements AutoCloseable {
+		private final Txn[] readers;
+		private final boolean guarded;
+
+		private FrontierReaders(Txn[] readers, boolean guarded) {
+			this.readers = readers;
+			this.guarded = guarded;
+		}
+
+		@Override
+		public void close() {
+			Throwable failure = null;
+			try {
+				for (int i = readers.length - 1; i >= 0; i--) {
+					try {
+						readers[i].close();
+					} catch (RuntimeException | Error cleanup) {
+						if (failure == null) {
+							failure = cleanup;
+						} else if (failure != cleanup) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+				}
+			} finally {
+				if (guarded) {
+					sinkStoreAccessLock.unlock();
+				}
+			}
+			if (failure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+		}
+	}
+
+	private void initializeFrontierStatisticsAfterReady(LmdbStoreConfig config) throws IOException {
+		if (initialImportClosing || config.getFrontierEstimatorMode() == FrontierEstimatorMode.OFF
+				|| config.getFrontierSynopsisBudgetBytes() < 16L * 1024L * 1024L
+				|| config.getFrontierHeapBudgetBytes() < 1024L) {
+			return;
+		}
+		FrontierStatisticsBuildConfig buildConfig;
+		FrontierStatisticsHeapGovernor governor;
+		LmdbStatisticsService opened;
+		try {
+			buildConfig = FrontierStatisticsBuildConfig.forBudgets(
+					config.getFrontierSynopsisBudgetBytes(), config.getFrontierHeapBudgetBytes());
+			governor = FrontierStatisticsHeapGovernor.forBudget(config.getFrontierHeapBudgetBytes());
+			opened = LmdbStatisticsService.open(frontierStatisticsDirectory, governor,
+					config.getFrontierSynopsisBudgetBytes(), config.getFrontierStatisticsMaxLagMillis(),
+					estimatorPersistExec);
+		} catch (IllegalArgumentException | IOException failure) {
+			logger.warn("Frontier Statistics V2 cannot open; conventional estimates remain available", failure);
+			return;
+		}
+		if (legacyPlanningEvidenceRequiresFreshOwner) {
+			opened.requireCurrentOwnerBase();
+		}
+		boolean published = false;
+		try (FrontierReaders readers = admitFrontierReaders(1, true)) {
+			if (initialImportClosing) {
+				return;
+			}
+			Txn reader = readers.readers[0];
+			TripleStore.FrontierMutationJournalState journalState = tripleStore.frontierMutationJournalState(reader);
+			long latestSequence = journalState.latestSequence();
+			StoreSnapshotCoordinates snapshot = currentStoreSnapshotCoordinates(reader);
+			opened.recordStoreCommit(snapshot.physicalSnapshotEpoch(), latestSequence, System.currentTimeMillis());
+			FrontierStatisticsStatus status = opened.status();
+			if (!storeTxnStarted.get() && status.availability() == FrontierStatisticsAvailability.READY
+					&& !journalState.requiresBaseRebuildAfter(status.coveredSequence())) {
+				tripleStore.acknowledgeFrontierMutationsThrough(Math.min(status.coveredSequence(), latestSequence),
+						reader);
+				StoreSnapshotCoordinates acknowledged = currentStoreSnapshotCoordinates(reader);
+				opened.recordMetadataOnlySnapshotAdvance(acknowledged.physicalSnapshotEpoch(),
+						acknowledged.statementMutationStamp());
+			}
+			installCurrentFrontierMutationTail(opened, latestSequence, reader);
+			statisticsBuildConfig = buildConfig;
+			statisticsHeapGovernor = governor;
+			frontierDimensionRebuildRequired = frontierOmniDimensionsDiffer(opened, buildConfig);
+			statisticsService = opened;
+			LmdbEstimatorRuntime.PublishedProviders previous = publishedProviders;
+			publishedProviders = new LmdbEstimatorRuntime.PublishedProviders(previous.generation() + 1L,
+					previous.filters(), previous.feedback(), opened);
+			published = true;
+			if (opened.rebuildRequired() || frontierDimensionRebuildRequired
+					|| status.availability() != FrontierStatisticsAvailability.READY
+					|| status.coveredSequence() < latestSequence
+					|| journalState.requiresBaseRebuildAfter(status.coveredSequence())) {
+				requestFrontierRebuild();
+			}
+		} finally {
+			if (!published) {
+				opened.close();
+			}
 		}
 	}
 
@@ -7170,6 +8565,12 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/** Internal completion preserves the initiating maintenance failure for its owner and tests. */
+	void awaitPostReadyInitialization(long timeout, TimeUnit unit)
+			throws InterruptedException, ExecutionException, TimeoutException {
+		postReadyInitializationCompletion.get(timeout, unit);
+	}
+
 	void setCommitListener(CommitListener commitListener) {
 		this.commitListener = commitListener;
 	}
@@ -7177,6 +8578,11 @@ class LmdbSailStore implements SailStore {
 	void setPostCommitBackupPublisher(PostCommitBackupPublisher publisher) {
 		postCommitBackupPublisher = publisher;
 		setCommitListener(publisher);
+	}
+
+	void setBackupJournalDirectory(Path directory) {
+		// Snapshotting reads this without taking the publisher's lock while it owns the sink lock.
+		backupJournalDirectory = directory.toAbsolutePath().normalize();
 	}
 
 	Path dataDirectory() {
@@ -7227,26 +8633,60 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void copySupplementaryStoreFiles(Path targetDir) throws IOException {
+		Path journal = backupJournalDirectory;
+		Set<Path> excludedJournals = new HashSet<>();
+		if (journal != null) {
+			// These are independent backup history, not snapshot data. snapshotBaseline establishes a new chain
+			// for the copied native boundary, so no concurrently changing journal or source locator is needed.
+			excludedJournals.add(journal);
+			excludedJournals.add(LmdbBackupServiceImpl.defaultTransactionLogDirectory(dataDir.toPath()));
+		}
 		try (var children = Files.list(dataDir.toPath())) {
 			for (Path child : (Iterable<Path>) children::iterator) {
 				String name = child.getFileName().toString();
+				// Frontier statistics are derived from the statement snapshot and can change independently while
+				// a backup runs. A restored store builds its own generation for the restored snapshot.
 				if (TRIPLES_DIR_NAME.equals(name) || VALUES_DIR_NAME.equals(name)
+						|| child.equals(frontierStatisticsDirectory)
 						|| PostCommitBackupPublisher.DIRECTORY.equals(name)
 						|| PostCommitBackupPublisher.ARCHIVE_DIRECTORY.equals(name)
-						|| "backup".equals(name) || name.startsWith("backup-records-")
-						|| name.startsWith(".tmp-backup-journal-")) {
+						|| name.startsWith("backup-records-")
+						|| (StoreProperties.FILE_NAME + ".tmp").equals(name)
+						|| name.startsWith(".tmp-backup-journal-")
+						|| journal != null && LmdbBackupServiceImpl.isStoreBackupMetadata(name)
+						|| excludedJournals.contains(child.toAbsolutePath().normalize())
+						|| isRebuildableEstimatorCache(child)) {
 					continue;
 				}
-				copyRecursively(child, targetDir.resolve(name));
+				copyRecursively(child, targetDir.resolve(name), excludedJournals);
 			}
 		}
 	}
 
-	private static void copyRecursively(Path source, Path target) throws IOException {
+	private boolean isRebuildableEstimatorCache(Path child) throws IOException {
+		Path absolute = child.toAbsolutePath().normalize();
+		if (absolute.equals(estimatorPersistenceLocation.logicalPath())) {
+			// A legacy regular file in this slot is not owned by the current estimator and must be preserved.
+			return Files.isDirectory(child, LinkOption.NOFOLLOW_LINKS);
+		}
+		try {
+			var resolved = estimatorPersistenceLocation.resolve(false);
+			return resolved.alternate() && resolved.directory() != null
+					&& absolute.equals(resolved.directory().getParent());
+		} catch (EstimatorPersistenceLocation.UnavailableException unowned) {
+			// Unrecognized or conflicting paths do not give the estimator ownership of supplementary files.
+			return false;
+		}
+	}
+
+	private static void copyRecursively(Path source, Path target, Set<Path> excludedJournals) throws IOException {
 		if (Files.isDirectory(source)) {
 			Files.walkFileTree(source, new SimpleFileVisitor<>() {
 				@Override
 				public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+					if (excludedJournals.contains(dir.toAbsolutePath().normalize())) {
+						return FileVisitResult.SKIP_SUBTREE;
+					}
 					Path relative = source.relativize(dir);
 					Files.createDirectories(target.resolve(relative));
 					return FileVisitResult.CONTINUE;
@@ -7254,9 +8694,20 @@ class LmdbSailStore implements SailStore {
 
 				@Override
 				public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+					if (excludedJournals.contains(file.toAbsolutePath().normalize())) {
+						return FileVisitResult.CONTINUE;
+					}
 					Path relative = source.relativize(file);
 					Files.copy(file, target.resolve(relative), StandardCopyOption.REPLACE_EXISTING);
 					return FileVisitResult.CONTINUE;
+				}
+
+				@Override
+				public FileVisitResult visitFileFailed(Path file, IOException failure) throws IOException {
+					if (excludedJournals.contains(file.toAbsolutePath().normalize())) {
+						return FileVisitResult.CONTINUE;
+					}
+					throw failure;
 				}
 			});
 		} else {
@@ -7275,7 +8726,7 @@ class LmdbSailStore implements SailStore {
 		private final SketchStatementSource delegate;
 
 		GuardedEstimatorStatementSource() {
-			this(new SailStoreStatementSource(LmdbSailStore.this));
+			this(new LmdbSketchStatementSource(LmdbSailStore.this));
 		}
 
 		GuardedEstimatorStatementSource(SketchStatementSource delegate) {
@@ -7291,90 +8742,79 @@ class LmdbSailStore implements SailStore {
 				beforeSketchRefreshReadForTest();
 			}
 			boolean borrowedReadView = activeReadView.get() != null;
-			ReadResourceContext resourceContext = activeReadResourceContext.get();
-			List<ReadViewLease> resourceViews = resourceContext == null ? List.of() : resourceContext.readViews();
+			List<ReadViewLease> resourceViews = currentReadResourceViews();
 			ReadViewLease borrowedResourceView = !borrowedReadView && resourceViews.size() == 1
-					? resourceViews.get(0)
+					? resourceViews.getFirst()
 					: null;
-			boolean ownsReadResources = resourceContext != null || currentWriterOwner() != null
-					|| preparedWriteContexts.containsKey(Thread.currentThread())
-					|| mapGrowthCoordinator.callbackAdmission.get() != null
-					|| replayRetirementOwner.get() != null || noneMutationReadOwner.get() != null;
-			if (publicationContext.get() != null || sinkStoreAccessLock.isHeldByCurrentThread()) {
+			boolean ownsResources = ownsEstimatorReadResources();
+			if (publicationContext.get() != null || sinkStoreAccessLock.isHeldByCurrentThread()
+					|| !borrowedReadView && ownsResources && borrowedResourceView == null) {
 				throw deferredEstimatorStatementSource();
 			}
-			if (!borrowedReadView && ownsReadResources && borrowedResourceView == null) {
-				throw deferredEstimatorStatementSource();
-			}
-			boolean mayWaitForGuard = !refreshThread && !borrowedReadView && !ownsReadResources;
+			boolean mayWaitForGuard = !refreshThread && !borrowedReadView && !ownsResources;
 			while (true) {
-				if (mayWaitForGuard) {
-					// A synchronous fresh read may wait for the native guard only before it owns a paired read view.
-					sinkStoreAccessLock.lock();
-					try {
-						if (storeTxnStarted.get()) {
-							throw deferredEstimatorStatementSource();
-						}
-					} finally {
-						sinkStoreAccessLock.unlock();
-					}
-				}
-
 				DatasetAdmission admission;
 				try {
 					admission = borrowedResourceView == null
 							? beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null)
 							: beginDatasetAdmissionForEstimator(borrowedResourceView);
-				} catch (SailException e) {
-					throw new SketchStatementSourceException(e);
+				} catch (SailException failure) {
+					throw new SketchStatementSourceException(failure);
 				}
 				boolean locked = false;
 				CloseableIteration<? extends Statement> statements = null;
 				try {
-					// Once a paired view is active, never wait for the writer guard while retaining that view.
 					locked = sinkStoreAccessLock.tryLock();
 					if (!locked) {
 						DatasetAdmission closingAdmission = admission;
 						admission = null;
 						closingAdmission.close();
-						if (mayWaitForGuard) {
-							continue;
+						if (!mayWaitForGuard) {
+							throw deferredEstimatorStatementSource();
 						}
-						throw deferredEstimatorStatementSource();
+						// Admission, both native readers and the growth lease are gone before waiting for a writer.
+						awaitEstimatorStatementGuard();
+						continue;
 					}
-					if (storeTxnStarted.get()) {
+					if (storeTxnStarted.get() || !admission.view().isCurrentForStatistics()) {
+						// Immutable older rows remain valid query results, but cannot certify a global synopsis
+						// whose mutation sequence was captured after this read view's admission.
 						throw deferredEstimatorStatementSource();
 					}
 					statements = delegate.getStatements(subject, predicate, object, contexts);
 					DatasetAdmission closingAdmission = admission;
 					admission = null;
 					closingAdmission.close();
+					if (refreshThread) {
+						sinkStoreAccessLock.unlock();
+						return statements;
+					}
 					return new GuardedEstimatorStatementIteration(statements);
 				} catch (RuntimeException | Error failure) {
 					if (statements != null) {
 						try {
 							statements.close();
-						} catch (RuntimeException | Error cleanupFailure) {
-							if (cleanupFailure != failure) {
-								failure.addSuppressed(cleanupFailure);
+						} catch (RuntimeException | Error cleanup) {
+							if (cleanup != failure) {
+								failure.addSuppressed(cleanup);
 							}
 						}
 					}
 					if (admission != null) {
 						try {
 							admission.close();
-						} catch (RuntimeException | Error cleanupFailure) {
-							if (cleanupFailure != failure) {
-								failure.addSuppressed(cleanupFailure);
+						} catch (RuntimeException | Error cleanup) {
+							if (cleanup != failure) {
+								failure.addSuppressed(cleanup);
 							}
 						}
 					}
 					if (locked) {
 						try {
 							sinkStoreAccessLock.unlock();
-						} catch (RuntimeException | Error cleanupFailure) {
-							if (cleanupFailure != failure) {
-								failure.addSuppressed(cleanupFailure);
+						} catch (RuntimeException | Error cleanup) {
+							if (cleanup != failure) {
+								failure.addSuppressed(cleanup);
 							}
 						}
 					}
@@ -7383,14 +8823,17 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		@Override
-		public ValueFactory getValueFactory() {
-			return delegate.getValueFactory();
+		private void awaitEstimatorStatementGuard() {
+			try {
+				sinkStoreAccessLock.lockInterruptibly();
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new SketchStatementSourceException(new SailException(
+						"Interrupted while waiting for the LMDB estimator statement guard", interrupted));
+			}
+			sinkStoreAccessLock.unlock();
 		}
-	}
 
-	private SketchStatementSourceException deferredEstimatorStatementSource() {
-		return new SketchStatementSourceException(new SailException("LMDB store transaction active"));
 	}
 
 	/**
@@ -7409,7 +8852,11 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public boolean hasNext() {
-			return delegate.hasNext();
+			boolean hasNext = delegate.hasNext();
+			if (!hasNext) {
+				close();
+			}
+			return hasNext;
 		}
 
 		@Override
@@ -7452,6 +8899,10 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private SketchStatementSourceException deferredEstimatorStatementSource() {
+		return new SketchStatementSourceException(new SailException("LMDB store transaction active"));
+	}
+
 	@Override
 	public ValueFactory getValueFactory() {
 		return valueStore;
@@ -7484,25 +8935,290 @@ class LmdbSailStore implements SailStore {
 		return sketchBasedJoinEstimator;
 	}
 
+	Optional<SketchFootprint> getColdFilterSynopsisFootprint() {
+		return filterSelectivityStats == null ? Optional.empty() : filterSelectivityStats.coldSynopsisFootprint();
+	}
+
+	boolean forceFlushSketchEstimator() {
+		SketchBasedJoinEstimator estimator = sketchBasedJoinEstimator;
+		if (estimator == null || !canForceSketchFlush() || !awaitSketchInitialization() || !canForceSketchFlush()) {
+			return false;
+		}
+		// The synopsis rebuild mutex can wait before it reaches the statement source. Own neither a sink guard
+		// nor a native read view here; the source admits and guards its scan after that mutex is acquired.
+		boolean ready = estimator.forceFlush();
+		if (ready) {
+			scheduleEstimatorPersist();
+		}
+		return ready;
+	}
+
+	private boolean canForceSketchFlush() {
+		return !closing && !storeTxnStarted.get() && publicationContext.get() == null
+				&& !sinkStoreAccessLock.isHeldByCurrentThread() && activeReadView.get() == null
+				&& !ownsEstimatorReadResources();
+	}
+
+	private boolean awaitSketchInitialization() {
+		if (closing || !postReadyStarted.get() || Thread.currentThread() == postReadyThread) {
+			return false;
+		}
+		synchronized (frontierStatisticsMonitor) {
+			while (!closing && !sketchInitializationCompletion.isDone()) {
+				if (postReadyWriterDependentWorkStarted && storeTxnStarted.get()) {
+					return false;
+				}
+				try {
+					frontierStatisticsMonitor.wait();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					return false;
+				}
+			}
+			return !closing && !storeTxnStarted.get() && sketchInitializationCompletion.getNow(false);
+		}
+	}
+
+	FrontierStatisticsStatus rebuildFrontierStatistics() {
+		requireNoFrontierWriter();
+		awaitFrontierInitialization();
+		if (closing || statisticsService == null) {
+			return frontierStatisticsStatus();
+		}
+		try {
+			lockForFrontierAdmission(frontierRebuildLock);
+			try {
+				// A current generation needs only one reader. Release that probe before reserving a complete build
+				// family so no caller can retain a partial family while waiting for the second slot.
+				try (FrontierReaders readers = admitFrontierReaders(1, true)) {
+					requireNoFrontierWriter();
+					LmdbStatisticsService service = statisticsService;
+					if (closing || service == null) {
+						return frontierStatisticsStatus();
+					}
+					try (LmdbFrontierSnapshotSource snapshot = new LmdbFrontierSnapshotSource(tripleStore,
+							readers.readers[0])) {
+						if (frontierSnapshotAlreadyCovered(service, snapshot)) {
+							return frontierStatisticsStatus();
+						}
+					}
+				}
+				try (FrontierReaders readers = admitFrontierReaders(2, true)) {
+					requireNoFrontierWriter();
+					if (!closing) {
+						rebuildFrontierStatisticsV2(readers);
+					}
+					return frontierStatisticsStatus();
+				}
+			} finally {
+				frontierRebuildLock.unlock();
+				synchronized (frontierStatisticsMonitor) {
+					frontierStatisticsMonitor.notifyAll();
+				}
+			}
+		} catch (IOException failure) {
+			throw new SailException("Could not admit a Frontier statistics rebuild", failure);
+		}
+	}
+
+	private void requireNoFrontierWriter() {
+		if (storeTxnStarted.get()) {
+			throw new SailException("Cannot rebuild Frontier statistics while an LMDB write transaction is active");
+		}
+	}
+
+	private void awaitFrontierInitialization() {
+		if (closing || !postReadyStarted.get() || Thread.currentThread() == postReadyThread
+				|| domainQualificationConfig.getFrontierEstimatorMode() == FrontierEstimatorMode.OFF
+				|| domainQualificationConfig.getFrontierSynopsisBudgetBytes() < 16L * 1024L * 1024L
+				|| domainQualificationConfig.getFrontierHeapBudgetBytes() < 1024L) {
+			return;
+		}
+		synchronized (frontierStatisticsMonitor) {
+			while (!closing && !frontierInitializationCompletion.isDone()) {
+				if (postReadyWriterDependentWorkStarted) {
+					requireNoFrontierWriter();
+				}
+				try {
+					frontierStatisticsMonitor.wait();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new InterruptedSailException(interrupted);
+				}
+			}
+			requireNoFrontierWriter();
+		}
+	}
+
+	Optional<RdfTermDomain> getCachedRdfTermDomain(IRI predicate) throws IOException {
+		long predicateId = valueStore.getId(predicate);
+		if (predicateId == LmdbValue.UNKNOWN_ID) {
+			return Optional.empty();
+		}
+		return tripleStore.getCachedRdfTermDomain(predicateId);
+	}
+
+	Optional<RdfTermDomain> getPersistedRdfTermDomain(IRI predicate) throws IOException {
+		long predicateId = valueStore.getId(predicate);
+		if (predicateId == LmdbValue.UNKNOWN_ID) {
+			return Optional.empty();
+		}
+		return tripleStore.getPersistedRdfTermDomain(predicateId);
+	}
+
 	private static SketchBasedJoinEstimator.Config sketchEstimatorConfig(LmdbStoreConfig config) {
-		SketchBasedJoinEstimator.Config estimatorConfig = SketchBasedJoinEstimator.Config.defaults()
+		return SketchBasedJoinEstimator.Config.defaults()
+				.withMemoryBudgetBytes(config.getSketchEstimatorMemoryBudgetBytes())
 				.withThrottleEveryN(config.getSketchEstimatorThrottleEveryN())
 				.withThrottleMillis(config.getSketchEstimatorThrottleMillis())
-				.withEstimateCacheSeconds(60);
-		if (config.getSketchEstimatorSubjectBucketCount() >= 0) {
-			estimatorConfig.withSubjectBucketCount(config.getSketchEstimatorSubjectBucketCount());
+				.withEvidenceMode(config.getSketchEstimatorEvidenceMode())
+				.withColdSynopsisCapacity(config.getSketchEstimatorColdSynopsisCapacity());
+	}
+
+	private StoreSnapshotCoordinates currentStoreSnapshotCoordinates() throws IOException {
+		// Both coordinates are read under the TxnManager read lock, so a concurrent commit cannot reset or
+		// deactivate the read transaction underneath them (see TripleStore#snapshotCoordinates).
+		long[] coordinates = tripleStore.snapshotCoordinates();
+		return new StoreSnapshotCoordinates(coordinates[0], coordinates[1]);
+	}
+
+	private StoreSnapshotCoordinates currentStoreSnapshotCoordinates(Txn reader) throws IOException {
+		long[] coordinates = tripleStore.snapshotCoordinates(reader);
+		return new StoreSnapshotCoordinates(coordinates[0], coordinates[1]);
+	}
+
+	private long statementMutationStamp() {
+		try {
+			return tripleStore.latestFrontierMutationSequence();
+		} catch (IOException e) {
+			throw new UncheckedIOException("Could not read the LMDB statement mutation stamp", e);
 		}
-		if (config.getSketchEstimatorPredicateBucketCount() >= 0) {
-			estimatorConfig.withPredicateBucketCount(config.getSketchEstimatorPredicateBucketCount());
+	}
+
+	private void acknowledgeFrontierCoverage(long coveredSequence) throws IOException {
+		acknowledgeFrontierCoverage(coveredSequence, null);
+	}
+
+	private void acknowledgeFrontierCoverage(long coveredSequence, Txn reader) throws IOException {
+		tripleStore.acknowledgeFrontierMutationsThrough(coveredSequence, reader);
+		LmdbStatisticsService service = statisticsService;
+		if (service != null) {
+			StoreSnapshotCoordinates currentSnapshot = reader == null
+					? currentStoreSnapshotCoordinates()
+					: currentStoreSnapshotCoordinates(reader);
+			service.recordMetadataOnlySnapshotAdvance(
+					currentSnapshot.physicalSnapshotEpoch(), currentSnapshot.statementMutationStamp());
 		}
-		if (config.getSketchEstimatorObjectBucketCount() >= 0) {
-			estimatorConfig.withObjectBucketCount(config.getSketchEstimatorObjectBucketCount());
+	}
+
+	private SketchSnapshotIdentity learnedSnapshotIdentity(UUID storeId) {
+		if (storeId == null) {
+			return null;
 		}
-		if (config.getSketchEstimatorContextBucketCount() >= 0) {
-			estimatorConfig.withContextBucketCount(config.getSketchEstimatorContextBucketCount());
+		return new SketchSnapshotIdentity(
+				storeId.getMostSignificantBits(),
+				storeId.getLeastSignificantBits(),
+				statementMutationStamp());
+	}
+
+	private record StoreSnapshotCoordinates(long physicalSnapshotEpoch, long statementMutationStamp) {
+	}
+
+	private LmdbStorePathEvent beginLmdbStorePathEvent(String phase, boolean preferThreading, int statementCount,
+			int pendingApproveCount) {
+		if (!LMDB_STORE_PATH_EVENTS_ENABLED || !LMDB_STORE_PATH_EVENT_TYPE.isEnabled()) {
+			return null;
 		}
-		estimatorConfig.withContextPairSketchesEnabled(config.getSketchEstimatorContextPairSketchesEnabled());
-		return estimatorConfig;
+		LmdbStorePathEvent event = new LmdbStorePathEvent();
+		event.phase = phase;
+		event.thread = Thread.currentThread().getName();
+		event.preferThreading = preferThreading;
+		event.enableMultiThreading = enableMultiThreading;
+		event.storeTxnStartedBefore = storeTxnStarted.get();
+		event.multiThreadingActiveBefore = multiThreadingActive;
+		event.runningBefore = running.get();
+		event.nextTransactionAsyncBefore = nextTransactionAsync;
+		event.statementCount = statementCount;
+		event.pendingApproveCount = pendingApproveCount;
+		event.begin();
+		return event;
+	}
+
+	private void commitLmdbStorePathEvent(LmdbStorePathEvent event, boolean startedNewTransaction,
+			boolean activeTransaction, int valueCount, int operationCount) {
+		if (event != null) {
+			event.startedNewTransaction = startedNewTransaction;
+			event.activeTransaction = activeTransaction;
+			event.valueCount = valueCount;
+			event.operationCount = operationCount;
+			event.storeTxnStartedAfter = storeTxnStarted.get();
+			event.multiThreadingActiveAfter = multiThreadingActive;
+			event.runningAfter = running.get();
+			event.nextTransactionAsyncAfter = nextTransactionAsync;
+			event.commit();
+		}
+	}
+
+	@Name("org.eclipse.rdf4j.sail.lmdb.StorePath")
+	@Label("RDF4J LMDB Store Path")
+	@Category({ "RDF4J", "LMDB" })
+	@Enabled(true)
+	@StackTrace(false)
+	@Threshold("0 ms")
+	static final class LmdbStorePathEvent extends Event {
+		@Label("Phase")
+		String phase;
+
+		@Label("Thread")
+		String thread;
+
+		@Label("Prefer Threading")
+		boolean preferThreading;
+
+		@Label("Enable Multi Threading")
+		boolean enableMultiThreading;
+
+		@Label("Started New Transaction")
+		boolean startedNewTransaction;
+
+		@Label("Active Transaction")
+		boolean activeTransaction;
+
+		@Label("Store Transaction Started Before")
+		boolean storeTxnStartedBefore;
+
+		@Label("Store Transaction Started After")
+		boolean storeTxnStartedAfter;
+
+		@Label("Multi Threading Active Before")
+		boolean multiThreadingActiveBefore;
+
+		@Label("Multi Threading Active After")
+		boolean multiThreadingActiveAfter;
+
+		@Label("Running Before")
+		boolean runningBefore;
+
+		@Label("Running After")
+		boolean runningAfter;
+
+		@Label("Next Transaction Async Before")
+		boolean nextTransactionAsyncBefore;
+
+		@Label("Next Transaction Async After")
+		boolean nextTransactionAsyncAfter;
+
+		@Label("Statement Count")
+		int statementCount;
+
+		@Label("Pending Approve Count")
+		int pendingApproveCount;
+
+		@Label("Value Count")
+		int valueCount;
+
+		@Label("Operation Count")
+		int operationCount;
 	}
 
 	void rollback() throws SailException {
@@ -7602,7 +9318,7 @@ class LmdbSailStore implements SailStore {
 					signalAsyncWaiters();
 				}
 				while (!asyncTransactionFinished) {
-					if (tripleStoreException == null && opQueue.add(ROLLBACK_TRANSACTION)) {
+					if (tripleStoreException == null && opQueue.offer(ROLLBACK_TRANSACTION)) {
 						signalAsyncWaiters();
 						break;
 					}
@@ -7621,7 +9337,7 @@ class LmdbSailStore implements SailStore {
 				}
 				// Failed operations can leave a suffix queued after the native owner has aborted its transaction.
 				Operation abandoned;
-				while ((abandoned = opQueue.remove()) != null) {
+				while ((abandoned = opQueue.poll()) != null) {
 					try {
 						abandoned.cancel();
 					} catch (RuntimeException | Error cleanupFailure) {
@@ -7721,6 +9437,7 @@ class LmdbSailStore implements SailStore {
 		ensureNamespacePersistenceCertain();
 		sinkStoreAccessLock.lock();
 		Throwable publicationFailure = null;
+		LmdbQuadSynopsisService.StoreCommitFence estimatorFence = null;
 		try {
 			long transactionGeneration = storeTxnGeneration;
 			boolean activeTransaction = storeTxnStarted.get();
@@ -7750,6 +9467,13 @@ class LmdbSailStore implements SailStore {
 				}
 				if (activeTransaction) {
 					drainAsyncOperations();
+					if (tripleStore.hasPendingTripleMutation()) {
+						if (sketchBasedJoinEstimator == null) {
+							LmdbQuadSynopsisService.markExistingSnapshotForRebuild(estimatorPersistenceLocation);
+						} else {
+							estimatorFence = sketchBasedJoinEstimator.beginStoreCommit();
+						}
+					}
 					backupRecords = collectBackupRecords(previousNamespaces, currentNamespaces);
 					if (!backupRecords.isEmpty()) {
 						prepareBackupStage(previousRequiredTxn, backupRecords);
@@ -7779,6 +9503,7 @@ class LmdbSailStore implements SailStore {
 					}
 					commitTripleTransaction();
 					nativeCommitted = true;
+					recordCommittedFrontierCoordinates(nativeCommitGenerationBefore);
 					if (asyncValueCleanup && asyncValueCleanupCoordinator != null) {
 						afterTriplePublicationBeforeCleanupHandoffForTest();
 						asyncValueCleanupCoordinator.published(owner);
@@ -7808,15 +9533,9 @@ class LmdbSailStore implements SailStore {
 					storeNativeTransaction = null;
 					markPublicationChanged();
 					estimatorTouchedSinceStoreTxnStart.set(false);
-					if (filterSelectivityStats != null) {
-						filterSelectivityStats.recordStoreMutation();
-					}
-					if (sketchBasedJoinEstimator != null || filterSelectivityStats != null) {
-						try {
-							scheduleEstimatorPersist();
-						} catch (RuntimeException e) {
-							logger.warn("Failed to schedule join estimator persistence after commit", e);
-						}
+					completeLearnedStateAfterCommit(nativeCommitGenerationBefore);
+					if (estimatorFence != null) {
+						estimatorFence.reconciled();
 					}
 				} else if (namespacesChanged) {
 					// This transaction changes no RDF or dictionary state. Commit the namespace DB in the TripleStore
@@ -7839,7 +9558,7 @@ class LmdbSailStore implements SailStore {
 				namespaceTransactionOwner = null;
 				if (!asyncValueCleanup && activeTransaction && valueStore.hasRetiredIds()) {
 					try {
-						processRetiredValueIds(tripleStore.getTxnManager().minPinnedSnapshotRevision());
+						processRetiredValueIds(tripleStore.getTxnManager().minPinnedSnapshotRevision(), true);
 					} catch (IOException | RuntimeException maintenanceFailure) {
 						logger.warn(
 								"Unable to reclaim retired LMDB value IDs; durable intents remain for a later retry",
@@ -7888,6 +9607,9 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 				if (committed) {
+					if (activeTransaction) {
+						recordCommittedFrontierCoordinates(nativeCommitGenerationBefore);
+					}
 					if (activeTransaction && !derivedPublicationCompleted) {
 						derivedPublicationCompleted = true;
 						try {
@@ -7966,19 +9688,25 @@ class LmdbSailStore implements SailStore {
 			publicationFailure = failure;
 			throw failure;
 		} finally {
+			Throwable cleanupFailure = null;
 			try {
-				if (owner instanceof SourceWriterOwner && !storeTxnStarted.get()
-						&& namespaceTransactionOwner != owner) {
-					// Complete this native generation before another participant can enter under the store lock.
-					// Buffered sibling statements stay lexical and can acquire a fresh reservation on their next flush.
-					retireCheckpointWriterLeases(owner);
+				if (estimatorFence != null) {
+					try {
+						estimatorFence.close();
+					} catch (RuntimeException | Error failure) {
+						cleanupFailure = failure;
+					}
 				}
-			} catch (RuntimeException | Error cleanupFailure) {
-				if (publicationFailure == null) {
-					throw cleanupFailure;
-				}
-				if (publicationFailure != cleanupFailure) {
-					publicationFailure.addSuppressed(cleanupFailure);
+				try {
+					if (owner instanceof SourceWriterOwner && !storeTxnStarted.get()
+							&& namespaceTransactionOwner != owner) {
+						// Complete this native generation before another participant can enter under the store lock.
+						// Buffered sibling statements stay lexical and can acquire a fresh reservation on their next
+						// flush.
+						retireCheckpointWriterLeases(owner);
+					}
+				} catch (RuntimeException | Error failure) {
+					cleanupFailure = retainRollbackFailure(cleanupFailure, failure);
 				}
 			} finally {
 				PostCommitBackupPublisher.Stage stage = preparedBackupStage;
@@ -7992,6 +9720,15 @@ class LmdbSailStore implements SailStore {
 					} else {
 						publication.backupStages.add(stage);
 					}
+				}
+			}
+			if (cleanupFailure != null) {
+				if (publicationFailure != null) {
+					retainRollbackFailure(publicationFailure, cleanupFailure);
+				} else if (cleanupFailure instanceof Error error) {
+					throw error;
+				} else {
+					throw (RuntimeException) cleanupFailure;
 				}
 			}
 		}
@@ -8189,8 +9926,8 @@ class LmdbSailStore implements SailStore {
 		return false;
 	}
 
-	private void processRetiredValueIds(long maxRevisionInclusive) throws IOException {
-		processRetiredValueIds(maxRevisionInclusive, Math.min(4096, valueGcDrainBatchSize()));
+	private RetirementDrain processRetiredValueIds(long maxRevisionInclusive, boolean optional) throws IOException {
+		return processRetiredValueIds(maxRevisionInclusive, Math.min(4096, valueGcDrainBatchSize()), optional);
 	}
 
 	private enum RetirementDrain {
@@ -8200,23 +9937,44 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private RetirementDrain processRetiredValueIds(long maxRevisionInclusive, int maximum) throws IOException {
+		return processRetiredValueIds(maxRevisionInclusive, maximum, false);
+	}
+
+	private RetirementDrain processRetiredValueIds(long maxRevisionInclusive, int maximum, boolean optional)
+			throws IOException {
 		if (!valueStore.isValueReclamationEnabled()) {
 			return RetirementDrain.EMPTY;
 		}
 		// One publication may service one bounded batch, never the entire backlog left by a previous process.
 		{
-			RetiredValueIdStore.DrainBatch batch = valueStore.pollRetiredIds(maxRevisionInclusive, maximum);
+			RetiredValueIdStore.DrainBatch batch = optional
+					? valueStore.tryPollRetiredIds(maxRevisionInclusive, maximum)
+					: valueStore.pollRetiredIds(maxRevisionInclusive, maximum);
 			if (batch == null || batch.isEmpty()) {
 				return RetirementDrain.EMPTY;
 			}
 			WriterTransaction transaction = new WriterTransaction();
 			try {
-				valueStore.startTransaction(true, transaction);
+				if (optional) {
+					valueStore.startRetirementTransaction(transaction);
+				} else {
+					valueStore.startTransaction(true, transaction);
+				}
 				Set<Long> roots = new HashSet<>(batch.ids);
 				Set<Long> frontier = new HashSet<>();
 				Set<Long> unresolved = new HashSet<>();
-				tripleStore.filterUsedIdsBounded(roots, unresolved);
-				valueStore.gcIds(roots, frontier);
+				if (optional) {
+					if (!tripleStore.tryFilterUsedIdsBounded(roots, unresolved)
+							|| !valueStore.gcIdsIfReaderAvailable(roots, frontier,
+									ids -> tripleStore.tryFilterUsedIdsBounded(ids, null))) {
+						// No queue deletion or value reclamation has committed; the entire batch remains eligible.
+						valueStore.rollback(transaction);
+						return RetirementDrain.DEFERRED;
+					}
+				} else {
+					tripleStore.filterUsedIdsBounded(roots, unresolved);
+					valueStore.gcIds(roots, frontier);
+				}
 				valueStore.removeRetiredIds(batch);
 				frontier.addAll(unresolved);
 				// Recursive RDF-star GC expands at most three children per root. Persist that bounded
@@ -8564,7 +10322,479 @@ class LmdbSailStore implements SailStore {
 	 * admission.
 	 */
 	void recoverRetiredValueIds() throws IOException {
-		recoverRetiredValueIds(Long.MAX_VALUE, true);
+		recoverExplicitRetiredValueIds();
+	}
+
+	/** Owns every resource of one attempt and releases native owners before publication or deferred reset. */
+	private final class ExplicitRetirementAttempt implements Closeable {
+		private final WriterLease lease;
+		private final WriterTransaction transaction;
+		private final Thread ownerThread = Thread.currentThread();
+		private boolean associationReleased;
+		private boolean nativeScopeReleased;
+		private boolean admissionReleased;
+		private boolean publicationReleased;
+		private boolean closed;
+		private ValueStore.RetirementWriterAdmission admission;
+		private ValueStore.DeferredRetirementReset reset;
+		private Txn statementReader;
+		private Txn dictionaryReader;
+		private SailClosable publication;
+		private long statementBarrier;
+
+		private ExplicitRetirementAttempt(WriterLease lease, WriterTransaction transaction) {
+			this.lease = lease;
+			this.transaction = transaction;
+		}
+
+		private void leaveAdmissionWait() throws IOException {
+			synchronized (frontierReaderAdmissionMonitor) {
+				frontierReaderWaiters.remove(Thread.currentThread());
+				if (closing) {
+					throw new IOException("LMDB store is closing");
+				}
+			}
+		}
+
+		private Throwable addCloseFailure(Throwable failure, Throwable cleanup) {
+			if (failure == null) {
+				return cleanup;
+			}
+			if (failure != cleanup) {
+				failure.addSuppressed(cleanup);
+			}
+			return failure;
+		}
+
+		private void retainUnsettled(Throwable failure) throws IOException {
+			synchronized (frontierReaderAdmissionMonitor) {
+				unsettledRetirementAttempts.put(ownerThread, this);
+			}
+			throwCloseFailure(failure == null
+					? new IOException("Retirement native ownership remains unresolved on its admitting thread")
+					: failure);
+		}
+
+		private void throwCloseFailure(Throwable failure) throws IOException {
+			if (failure instanceof IOException io) {
+				throw io;
+			}
+			if (failure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			if (failure != null) {
+				throw new IOException(failure);
+			}
+		}
+
+		@Override
+		public void close() throws IOException {
+			if (closed) {
+				return;
+			}
+			if (ownerThread != Thread.currentThread()) {
+				throw new IOException("Retirement cleanup requires its admitting thread");
+			}
+			Throwable failure = null;
+			try {
+				if (statementBarrier != 0L) {
+					tripleStore.getTxnManager().lockManager().unlockRead(statementBarrier);
+					statementBarrier = 0L;
+				}
+			} catch (Throwable cleanup) {
+				failure = addCloseFailure(failure, cleanup);
+			}
+			try {
+				if (dictionaryReader != null) {
+					dictionaryReader.close();
+					dictionaryReader = null;
+				}
+			} catch (Throwable cleanup) {
+				failure = addCloseFailure(failure, cleanup);
+			}
+			try {
+				if (statementReader != null) {
+					statementReader.close();
+					statementReader = null;
+				}
+			} catch (Throwable cleanup) {
+				failure = addCloseFailure(failure, cleanup);
+			}
+			if (statementBarrier != 0L || dictionaryReader != null || statementReader != null) {
+				retainUnsettled(failure);
+			}
+			if (valueStore.currentWriterTransaction() == transaction) {
+				failure = attemptClose(failure, () -> valueStore.rollback(transaction));
+				if (valueStore.currentWriterTransaction() == transaction
+						&& valueStore.canRetryRetirementRollback(transaction)) {
+					failure = attemptClose(failure, () -> valueStore.rollback(transaction));
+				}
+			} else if (valueStore.canRetryRetirementRollback(transaction)) {
+				failure = attemptClose(failure, () -> valueStore.settleUnpublishedRetirementWriter(transaction));
+			}
+			if (valueStore.hasUnsettledRetirementWriter(transaction)
+					|| valueStore.currentWriterTransaction() == transaction) {
+				// Keep the statement writer fence until dictionary consumption is certain.
+				retainUnsettled(failure);
+			}
+			if (tripleStore.currentWriterTransaction() == transaction) {
+				failure = attemptClose(failure, () -> tripleStore.rollback(transaction));
+				if (tripleStore.currentWriterTransaction() == transaction
+						&& tripleStore.canRetryRetirementRollback(transaction)) {
+					failure = attemptClose(failure, () -> tripleStore.rollback(transaction));
+				}
+			}
+			if (tripleStore.hasUnsettledRetirementWriter(transaction)
+					|| tripleStore.currentWriterTransaction() == transaction) {
+				retainUnsettled(failure);
+			}
+			try {
+				if (!nativeScopeReleased) {
+					tripleStore.releaseRetirementNativeScope(transaction);
+					nativeScopeReleased = true;
+				}
+				if (!associationReleased) {
+					valueStore.releaseRetirementAssociation();
+					associationReleased = true;
+				}
+				if (!admissionReleased && admission != null) {
+					admission.close();
+					admissionReleased = true;
+				}
+				if (!publicationReleased) {
+					if (publication == null) {
+						lease.close();
+					} else {
+						publication.close();
+					}
+					publicationReleased = true;
+				}
+			} catch (Throwable cleanup) {
+				retainUnsettled(addCloseFailure(failure, cleanup));
+			}
+			if (reset != null) {
+				registerRetirementCleanupWait();
+				try {
+					failure = attemptClose(failure, reset::close);
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+			}
+			closed = true;
+			synchronized (frontierReaderAdmissionMonitor) {
+				unsettledRetirementAttempts.remove(ownerThread, this);
+				frontierReaderAdmissionMonitor.notifyAll();
+			}
+			throwCloseFailure(failure);
+		}
+	}
+
+	/** Explicit maintenance may scan statements; automatic startup and commit maintenance stay bounded. */
+	private void recoverExplicitRetiredValueIds() throws IOException {
+		Thread owner = Thread.currentThread();
+		ExplicitRetirementAttempt unsettled;
+		synchronized (frontierReaderAdmissionMonitor) {
+			unsettled = unsettledRetirementAttempts.get(owner);
+			if (unsettled == null && (closing || !explicitRetirementOwners.add(owner))) {
+				throw new IOException("LMDB store is closing or retirement is already active on this thread");
+			}
+		}
+		ValueStore.RetirementOperation operation = valueStore.currentRetirementOperation();
+		Throwable primary = null;
+		try {
+			if (unsettled == null) {
+				operation = valueStore.beginRetirementOperation(() -> cancelRetirementWaiter(owner));
+			} else if (operation == null) {
+				throw new IOException("Unsettled retirement has no dictionary operation owner");
+			}
+			if (unsettled != null) {
+				unsettled.close();
+				checkExplicitRetirementInterrupted();
+			}
+			recoverExplicitRetiredValueIdsOwned();
+		} catch (IOException | RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			boolean retained;
+			synchronized (frontierReaderAdmissionMonitor) {
+				retained = unsettledRetirementAttempts.containsKey(owner);
+			}
+			if (!retained) {
+				boolean released = false;
+				try {
+					if (operation != null) {
+						operation.close();
+					}
+					released = true;
+				} catch (RuntimeException | Error cleanup) {
+					if (primary == null) {
+						throw cleanup;
+					}
+					if (primary != cleanup) {
+						primary.addSuppressed(cleanup);
+					}
+				} finally {
+					synchronized (frontierReaderAdmissionMonitor) {
+						if (released) {
+							explicitRetirementOwners.remove(owner);
+						}
+						frontierReaderAdmissionMonitor.notifyAll();
+					}
+				}
+			} else {
+				synchronized (frontierReaderAdmissionMonitor) {
+					frontierReaderAdmissionMonitor.notifyAll();
+				}
+			}
+		}
+	}
+
+	private void recoverExplicitRetiredValueIdsOwned() throws IOException {
+		LmdbStartupDiagnostics.observe(LmdbStartupDiagnostics.Operation.RETIREMENT_RECOVERY);
+		TxnManager statements = tripleStore.getTxnManager();
+		TxnManager dictionary = valueStore.getTxnManager();
+		TxnManager.NativeReaderRetry statementRetry = null;
+		TxnManager.NativeReaderRetry dictionaryRetry = null;
+		long initialMapSize = valueStore.mapSizeBytes();
+		while (true) {
+			Object owner = new Object();
+			WriterTransaction transaction = new WriterTransaction();
+			TxnReplayPolicy.Decision decision = tripleStore.prepareReplayDecision().forFrozenReplay();
+			TxnManager admitting = statements;
+			TxnManager waitForReader = null;
+			boolean nativeReadersFull = false;
+			boolean waitForPublication = false;
+			boolean waitForStatementBarrier = false;
+			boolean waitForValueWriter = false;
+			boolean waitForRevision = false;
+			boolean waitForAssociation = false;
+			boolean processedBatch = false;
+			MapResizeKind growthKind = null;
+			registerFrontierAdmissionWait();
+			try {
+				try {
+					ensureNamespacePersistenceCertain();
+					boolean preflight = false;
+					try (Txn statement = statements.tryCreateImmediateReadTxn()) {
+						if (statement == null) {
+							waitForReader = statements;
+						} else {
+							admitting = dictionary;
+							try (Txn value = dictionary.tryCreateImmediateReadTxn()) {
+								if (value == null) {
+									waitForReader = dictionary;
+								} else {
+									preflight = true;
+								}
+							}
+						}
+					}
+					if (preflight) {
+						WriterLease lease = acquireWriterLease(owner);
+						try (ExplicitRetirementAttempt attempt = new ExplicitRetirementAttempt(lease, transaction)) {
+							attempt.admission = valueStore.tryReserveRetirementWriter();
+							if (attempt.admission == null) {
+								waitForValueWriter = true;
+							} else {
+								attempt.leaveAdmissionWait();
+								attempt.reset = valueStore.deferRetirementReset();
+								checkExplicitRetirementInterrupted();
+								tripleStore.startRetirementTransaction(decision, transaction);
+								checkExplicitRetirementInterrupted();
+								if (!valueStore.tryStartRetirementTransaction(transaction)) {
+									waitForAssociation = true;
+								} else {
+									checkExplicitRetirementInterrupted();
+									admitting = statements;
+									attempt.statementReader = statements.tryCreateImmediateReadTxn();
+									if (attempt.statementReader == null) {
+										waitForReader = statements;
+									} else {
+										admitting = dictionary;
+										attempt.dictionaryReader = dictionary.tryCreateImmediateReadTxn();
+										if (attempt.dictionaryReader == null) {
+											waitForReader = dictionary;
+										} else {
+											attempt.publication = tryBeginRetirementPublication(owner, lease);
+											if (attempt.publication == null) {
+												waitForPublication = true;
+											} else {
+												attempt.statementBarrier = statements.lockManager().tryReadLock();
+												if (attempt.statementBarrier == 0L) {
+													waitForStatementBarrier = true;
+												} else {
+													checkExplicitRetirementInterrupted();
+													ExplicitRetirementBatch result = processExplicitRetirementBatch(
+															transaction);
+													waitForRevision = result == ExplicitRetirementBatch.RETRY;
+													processedBatch = result == ExplicitRetirementBatch.PROCESSED;
+												}
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				} catch (FrozenStatementCapacityException capacity) {
+					if (!autoGrow || capacity.getSuppressed().length != 0
+							|| !(capacity.kind() == MapResizeKind.TRIPLE_STORE
+									? tripleStore.ownsFrozenCapacity(capacity, decision)
+									: valueStore.ownsFrozenCapacity(capacity, decision))) {
+						throw capacity;
+					}
+					growthKind = capacity.kind();
+				} catch (TxnManager.NativeReadersFullException unavailable) {
+					if (unavailable.getSuppressed().length != 0) {
+						throw unavailable;
+					}
+					waitForReader = admitting;
+					nativeReadersFull = true;
+				}
+			} finally {
+				unregisterFrontierAdmissionWait();
+			}
+
+			// Every attempt above has released the entire pair, publication and native owners before waiting.
+			if (growthKind != null) {
+				registerFrontierAdmissionWait();
+				try {
+					MapGrowthToken growth = requestMaintenanceGrowth(owner, growthKind);
+					awaitGrowthEnd(growth);
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+			} else if (waitForAssociation) {
+				registerFrontierAdmissionWait();
+				try {
+					valueStore.awaitValueReaderAdmission();
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+			} else if (waitForValueWriter) {
+				registerFrontierAdmissionWait();
+				try {
+					valueStore.awaitRetirementWriterOpportunity();
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+			} else if (waitForRevision) {
+				registerFrontierAdmissionWait();
+				try {
+					valueStore.awaitRetirementRevisionOpportunity();
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+			} else if (waitForPublication) {
+				registerFrontierAdmissionWait();
+				try (SailClosable ignored = beginPublicationScope(owner)) {
+					// Retry actual reader admission after the previous publication has settled.
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+			} else if (waitForStatementBarrier) {
+				registerFrontierAdmissionWait();
+				try {
+					long stamp = statements.acquireReadBarrier();
+					statements.lockManager().unlockRead(stamp);
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+			} else if (waitForReader != null) {
+				registerFrontierAdmissionWait();
+				try {
+					if (nativeReadersFull) {
+						if (waitForReader == statements) {
+							if (statementRetry == null) {
+								statementRetry = statements.new NativeReaderRetry();
+							}
+							statementRetry.awaitNext();
+						} else {
+							if (dictionaryRetry == null) {
+								dictionaryRetry = dictionary.new NativeReaderRetry();
+							}
+							dictionaryRetry.awaitNext();
+						}
+					} else {
+						waitForReader.awaitImmediateReadOpportunity();
+					}
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+			} else if (processedBatch) {
+				// Each further batch reacquires the native fence and rechecks the pinned snapshot horizon.
+				continue;
+			} else {
+				registerFrontierAdmissionWait();
+				try {
+					finishMaintenanceGrowth(owner, MapResizeKind.VALUE_STORE, initialMapSize);
+				} finally {
+					unregisterFrontierAdmissionWait();
+				}
+				return;
+			}
+		}
+	}
+
+	private enum ExplicitRetirementBatch {
+		DONE,
+		RETRY,
+		PROCESSED
+	}
+
+	/** Drains one eligible batch, or requests a resource-free retry of revision publication. */
+	private ExplicitRetirementBatch processExplicitRetirementBatch(WriterTransaction transaction) throws IOException {
+		boolean buffered = !unusedIds.isEmpty();
+		if (!buffered && (!valueStore.isValueReclamationEnabled() || !valueStore.hasRetiredIds())) {
+			return ExplicitRetirementBatch.DONE;
+		}
+		TxnManager manager = tripleStore.getTxnManager();
+		// Publication closes new paired snapshots; readers pinned before it still constrain reclamation.
+		long horizon = deferValueGcForPinnedReaders() ? manager.minPinnedSnapshotRevision() : Long.MAX_VALUE;
+		if (buffered) {
+			valueStore.recordRetiredIds(unusedIds, 0L);
+		}
+		RetiredValueIdStore.DrainBatch batch = valueStore.pollRetiredIds(horizon,
+				Math.min(4096, valueGcDrainBatchSize()));
+		boolean drain = batch != null && !batch.isEmpty();
+		if (drain) {
+			Set<Long> roots = new HashSet<>(batch.ids);
+			Set<Long> frontier = new HashSet<>();
+			tripleStore.filterUsedIdsForRetirement(transaction, roots);
+			valueStore.gcIdsIfReaderAvailable(roots, frontier, ids -> {
+				tripleStore.filterUsedIdsForRetirement(transaction, ids);
+				return true;
+			});
+			valueStore.removeRetiredIds(batch);
+			valueStore.recordRetiredIds(frontier, Math.min(horizon, tripleStore.getDataRevision()));
+		}
+		checkExplicitRetirementInterrupted();
+		if (buffered || drain) {
+			try {
+				if (!valueStore.tryCommitRetirementTransaction(transaction)) {
+					return ExplicitRetirementBatch.RETRY;
+				}
+			} finally {
+				if (buffered && valueStore.lastNativeCommitSucceeded()) {
+					unusedIds.clear();
+				}
+			}
+			return ExplicitRetirementBatch.PROCESSED;
+		}
+		return ExplicitRetirementBatch.DONE;
+	}
+
+	private void checkExplicitRetirementInterrupted() throws IOException {
+		if (closing || valueStore.retirementOperationCancelled()) {
+			throw new IOException("LMDB store is closing");
+		}
+		if (Thread.currentThread().isInterrupted()) {
+			throw new IOException("Interrupted during explicit value retirement");
+		}
 	}
 
 	/** Runs only after the application attempt has released its read views and logical writer admission. */
@@ -8594,7 +10824,7 @@ class LmdbSailStore implements SailStore {
 		assert sinkStoreAccessLock.isHeldByCurrentThread();
 		if (initialImportClosing || initialNoneImport != null || attempt == null
 				|| attempt.isolation() != IsolationLevels.NONE || directAdjacency == null && !valueOverlayEnabled
-				|| !tripleStore.isEmpty()) {
+				|| !Boolean.TRUE.equals(tripleStore.tryIsEmptyForImport())) {
 			return;
 		}
 		initialNoneImport = new InitialNoneImport(owner, attempt);
@@ -8705,13 +10935,12 @@ class LmdbSailStore implements SailStore {
 							throw failure;
 						}
 					}
-					// Automatic recovery can wait for publication admission after capturing its horizon. A reader
-					// admitted in that interval must protect later retirements, even if the captured horizon was MAX.
-					// Recheck under publication ownership, which excludes new paired snapshot admission.
-					long admittedHorizon = !recoverBufferedRetirements && deferValueGcForPinnedReaders()
+					// A snapshot may have been pinned since the caller observed its horizon. Publication prevents
+					// a new store snapshot from being admitted while this batch is checked and reclaimed.
+					long currentHorizon = deferValueGcForPinnedReaders()
 							? Math.min(maxRevisionInclusive, tripleStore.getTxnManager().minPinnedSnapshotRevision())
 							: maxRevisionInclusive;
-					processRetiredValueIds(admittedHorizon);
+					processRetiredValueIds(currentHorizon, false);
 				} catch (LmdbTransactionRetryException | LmdbUtil.MapFullException capacity) {
 					if (!autoGrow || capacity.getSuppressed().length != 0) {
 						throw capacity;
@@ -8800,6 +11029,39 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 			checkPublicationAdmission();
+		}
+	}
+
+	/** Publish durable coordinates without opening a reader under the store publication lock. */
+	private void recordCommittedFrontierCoordinates(long generationBeforeCommit) {
+		TripleStore.StatementCommitReceipt receipt = tripleStore.statementCommitReceiptAfter(generationBeforeCommit);
+		LmdbStatisticsService service = statisticsService;
+		if (receipt != null && service != null) {
+			service.recordStoreCommit(receipt.epoch(), receipt.sequence(), System.currentTimeMillis());
+		}
+	}
+
+	private void completeLearnedStateAfterCommit(long generationBeforeCommit) {
+		LmdbSailSink aggregate = null;
+		try {
+			for (LmdbSailSink sink : learnedMutationSinks) {
+				sink.flushPendingEstimatorAddsAfterCommit();
+				if (aggregate == null) {
+					aggregate = sink;
+				} else {
+					aggregate.recordMutatedStatements(sink.mutatedStatementsInTransaction);
+					for (long predicate : sink.learnedOptimizerTouchedPredicates()) {
+						aggregate.recordLeoTouchedPredicate(predicate);
+					}
+					sink.clearLeoTouchedPredicates();
+				}
+			}
+			if (aggregate != null) {
+				aggregate.maintainLearnedStateAfterCommit(
+						tripleStore.statementCommitReceiptAfter(generationBeforeCommit));
+			}
+		} finally {
+			learnedMutationSinks.clear();
 		}
 	}
 
@@ -9001,25 +11263,72 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void discardEstimatorStateTouchedByOpenTransaction() {
+		for (LmdbSailSink sink : learnedMutationSinks) {
+			sink.clearPendingEstimatorAdds();
+			sink.clearLeoTouchedPredicates();
+		}
+		learnedMutationSinks.clear();
 		if (estimatorTouchedSinceStoreTxnStart.getAndSet(false) && sketchBasedJoinEstimator != null) {
 			sketchBasedJoinEstimator.discardAndMarkForRebuild();
 		}
 	}
 
+	void rejectRetirementOwnerShutdown() {
+		synchronized (frontierReaderAdmissionMonitor) {
+			if (explicitRetirementOwners.contains(Thread.currentThread())) {
+				throw new SailException("An active LMDB retirement owner cannot close its own store");
+			}
+			if (deferredDomainNativeAttempt != null
+					&& deferredDomainNativeAttempt.ownerThread == Thread.currentThread()) {
+				throw new SailException("An active predicate-domain owner cannot close its own store");
+			}
+		}
+	}
+
 	@Override
 	public void close() throws SailException {
+		rejectRetirementOwnerShutdown();
 		if (Thread.currentThread() == tripleStoreOwnerThread
 				|| Thread.currentThread() == mapGrowthCoordinator.growthThread
 				|| sinkStoreAccessLock.isHeldByCurrentThread() || publicationContext.get() != null) {
 			throw new SailException("An active LMDB native/publication owner cannot close its own store");
 		}
-		// Do not put this in attemptClose: a timeout must retain both native environments and the directory lock.
-		stopAsyncValueCleanupForShutdown();
+		if (closeLock.isHeldByCurrentThread()) {
+			throw new SailException("An active LMDB shutdown owner cannot close its own store");
+		}
+		closeLock.lock();
+		try {
+			if (closeComplete) {
+				return;
+			}
+			// A timeout retains both native environments and the directory lock for a later retry.
+			stopAsyncValueCleanupForShutdown();
+			closeResources();
+			closeComplete = true;
+		} finally {
+			closeLock.unlock();
+		}
+	}
+
+	private void closeResources() throws SailException {
+		boolean publishDomainQualification = domainQualificationOwnerReady
+				&& domainQualificationCloseStarted.compareAndSet(false, true);
+		synchronized (frontierReaderAdmissionMonitor) {
+			synchronized (frontierStatisticsMonitor) {
+				closing = true;
+				frontierInitializationCompletion.complete(null);
+				frontierStatisticsMonitor.notifyAll();
+			}
+			for (Thread waiter : frontierReaderWaiters) {
+				waiter.interrupt();
+			}
+		}
+		Throwable failure = null;
 		initialImportClosing = true;
+		failure = attemptClose(failure, this::awaitExplicitRetirementOwnersForShutdown);
 		synchronized (initialRunImportMonitor) {
 			initialRunImportMonitor.notifyAll();
 		}
-		Throwable failure = null;
 		LmdbInitialRunImport abandonedRunImport = initialRunImport;
 		if (abandonedRunImport != null) {
 			// The marker stays: the next start resets the store the import left half-written.
@@ -9027,6 +11336,8 @@ class LmdbSailStore implements SailStore {
 					new IllegalStateException("The LMDB store closed during an initial run import")));
 		}
 		failure = attemptClose(failure, this::awaitPostReadyInitializationForShutdown);
+		failure = attemptClose(failure, this::awaitDeferredDomainNativeOwnerForShutdown);
+		failure = attemptClose(failure, frontierPlannerSettings::close);
 		failure = attemptClose(failure, queryResultCache::clear);
 		failure = attemptClose(failure, () -> NativeLmdbQuerySource.releaseCostModel(valueStore));
 		failure = attemptClose(failure, mapGrowthCoordinator::shutdown);
@@ -9044,15 +11355,23 @@ class LmdbSailStore implements SailStore {
 		}
 		failure = attemptClose(failure, this::shutdownAndAwaitIndexPreparationExecutor);
 		failure = attemptClose(failure, this::cancelAndDrainScheduledBackgroundSampling);
+		failure = attemptClose(failure, this::cancelAndDrainScheduledFrontierRebuild);
 		failure = attemptClose(failure, this::cancelAndDrainScheduledEstimatorPersist);
 		failure = attemptClose(failure, this::shutdownAndAwaitEstimatorPersistExecutor);
+		failure = attemptClose(failure, this::awaitFrontierRebuildShutdown);
 		if (sketchBasedJoinEstimator != null) {
 			failure = attemptClose(failure, sketchBasedJoinEstimator::close);
 		}
 		if (filterSelectivityStats != null) {
 			failure = attemptClose(failure, filterSelectivityStats::persistIfDirty);
 		}
-
+		failure = attemptClose(failure, derivedStateBuildExecutor::close);
+		if (operatorFeedbackStats != null) {
+			failure = attemptClose(failure, operatorFeedbackStats::persistIfDirty);
+		}
+		if (statisticsService != null) {
+			failure = attemptClose(failure, statisticsService::close);
+		}
 		// A direct synchronous sink uses this same lifetime barrier for every native entry. Admission has
 		// already closed, and admitted publication/native owners have completed before we acquire it.
 		sinkStoreAccessLock.lock();
@@ -9060,29 +11379,46 @@ class LmdbSailStore implements SailStore {
 			if (pendingBackupRecords != null) {
 				failure = attemptClose(failure, pendingBackupRecords::close);
 			}
-			if (valueStore != null && tripleStore != null) {
+			boolean nativePairOpen = valueStore != null && tripleStore != null
+					&& valueStore.isNativeEnvironmentOpen() && tripleStore.isNativeEnvironmentOpen();
+			if (nativePairOpen) {
 				failure = attemptClose(failure, () -> logLmdbStats(Level.INFO, "on shutdown"));
 			}
 			if (namespaceStore != null) {
 				failure = attemptClose(failure, namespaceStore::close);
 			}
-			if (failure == null && valueStore != null && tripleStore != null && tripleStore.tracksNativeOwnership()) {
-				try {
-					boolean durableSpool = asyncValueCleanupCoordinator != null
-							&& asyncValueCleanupCoordinator.hasPreparedSpool();
-					if (durableSpool) {
-						// The value close marker certifies this paired triple state. Force it first even in NOSYNC
-						// mode.
-						tripleStore.syncEnvironment();
+			if (failure == null && nativePairOpen && tripleStore.tracksNativeOwnership()) {
+				failure = attemptClose(failure, () -> {
+					try {
+						boolean durableSpool = asyncValueCleanupCoordinator != null
+								&& asyncValueCleanupCoordinator.hasPreparedSpool();
+						if (durableSpool) {
+							// Force the triple state certified by the value close marker before issuing a spool.
+							tripleStore.syncEnvironment();
+						}
+						valueStore.prepareCleanClose(tripleStore.trustedTransactionId());
+						if (durableSpool) {
+							valueStore.requestDurableCleanupClose();
+						}
+					} catch (IOException unknownWriter) {
+						valueStore.invalidateCleanCloseAfterUnknownTripleWriter();
+						logger.warn("Cannot certify clean native state before close", unknownWriter);
 					}
-					valueStore.prepareCleanClose(tripleStore.trustedTransactionId());
-					if (durableSpool) {
-						valueStore.requestDurableCleanupClose();
+				});
+			}
+			if (nativePairOpen && domainQualificationOwnerReady) {
+				failure = attemptClose(failure, () -> {
+					// Live barrier admission may be temporarily unavailable during close. A readable candidate only
+					// requests the syncs; closed-owner generations and the persisted profile still authorize
+					// publication.
+					if ((tripleStore.completeRdfTermDomainVersion() != null
+							|| tripleStore.mayQualifyRdfTermDomainsAfterClose())
+							&& tripleStore.trustedClosedTransactionId() >= 0L
+							&& valueStore.trustedClosedTransactionId() >= 0L) {
+						tripleStore.prepareDomainQualificationClose();
+						valueStore.prepareDomainQualificationClose();
 					}
-				} catch (IOException unknownWriter) {
-					valueStore.invalidateCleanCloseAfterUnknownTripleWriter();
-					logger.warn("Cannot certify clean native state before close", unknownWriter);
-				}
+				});
 			}
 			if (tripleStore != null) {
 				failure = attemptClose(failure, () -> tripleStore.getTxnManager().close());
@@ -9110,6 +11446,9 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.unlock();
 		}
 
+		if (failure == null && publishDomainQualification) {
+			failure = attemptClose(failure, this::publishRdfTermDomainQualification);
+		}
 		if (failure != null) {
 			logger.warn("Failed to close store", failure);
 			if (failure instanceof SailException sailException) {
@@ -9126,6 +11465,22 @@ class LmdbSailStore implements SailStore {
 			}
 			throw new SailException(failure);
 		}
+	}
+
+	/** Drains any admitted external rebuild before its service and executor are closed. */
+	private void awaitFrontierRebuildShutdown() {
+		frontierRebuildLock.lock();
+		try {
+			// Closing prevents a newly acquired coordination lock from admitting another build.
+		} finally {
+			frontierRebuildLock.unlock();
+		}
+	}
+
+	/** Runs only after successful complete-owner shutdown; a failed publication cannot escape as authority. */
+	void publishRdfTermDomainQualification() throws IOException {
+		RdfTermDomainQualification.publishClosed(dataDir.toPath(), domainQualificationProperties,
+				domainQualificationConfig, valueStore, tripleStore);
 	}
 
 	private void awaitNativePublicationForShutdown() {
@@ -9202,6 +11557,64 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 		return failure;
+	}
+
+	FrontierStatisticsStatus frontierStatisticsStatus() {
+		if (statisticsService != null) {
+			return statisticsService.status();
+		}
+		return new FrontierStatisticsStatus(FrontierStatisticsAvailability.NO_GENERATION,
+				org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason.NO_GENERATION,
+				FrontierStatisticsBuildPhase.IDLE, -1L, -1L, -1L, -1L, 0L, Map.of(), Map.of(),
+				0.0d, -1L, 0.0d, Double.NaN, Double.NaN, "Frontier Statistics V2 is disabled");
+	}
+
+	boolean awaitFrontierStatisticsReady(long timeoutMillis) {
+		if (timeoutMillis < 0L) {
+			throw new IllegalArgumentException("timeoutMillis must be nonnegative");
+		}
+		long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+		long deadline = System.nanoTime() + remainingNanos;
+		synchronized (frontierStatisticsMonitor) {
+			while (!closing && remainingNanos > 0L
+					&& frontierStatisticsStatus().availability() != FrontierStatisticsAvailability.READY) {
+				try {
+					TimeUnit.NANOSECONDS.timedWait(frontierStatisticsMonitor, remainingNanos);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					return false;
+				}
+				remainingNanos = deadline - System.nanoTime();
+			}
+			return frontierStatisticsStatus().availability() == FrontierStatisticsAvailability.READY;
+		}
+	}
+
+	boolean awaitFrontierStatisticsCoveredSequence(long sequence, long timeoutMillis) {
+		if (sequence < 0L || timeoutMillis < 0L) {
+			throw new IllegalArgumentException("Frontier sequence and timeout must be nonnegative");
+		}
+		long remainingNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+		long deadline = System.nanoTime() + remainingNanos;
+		synchronized (frontierStatisticsMonitor) {
+			while (!closing && remainingNanos > 0L) {
+				FrontierStatisticsStatus status = frontierStatisticsStatus();
+				if (status.availability() == FrontierStatisticsAvailability.READY
+						&& status.coveredSequence() >= sequence) {
+					return true;
+				}
+				try {
+					TimeUnit.NANOSECONDS.timedWait(frontierStatisticsMonitor, remainingNanos);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					return false;
+				}
+				remainingNanos = deadline - System.nanoTime();
+			}
+			FrontierStatisticsStatus status = frontierStatisticsStatus();
+			return status.availability() == FrontierStatisticsAvailability.READY
+					&& status.coveredSequence() >= sequence;
+		}
 	}
 
 	private void shutdownAndAwaitIndexPreparationExecutor() {
@@ -9301,8 +11714,30 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private void cancelAndDrainScheduledFrontierRebuild() {
+		ScheduledFuture<?> future = frontierRebuildFuture;
+		if (future == null) {
+			return;
+		}
+		if (future.cancel(false)) {
+			frontierRebuildScheduled.set(false);
+			return;
+		}
+		try {
+			future.get();
+		} catch (CancellationException e) {
+			// Already cancelled by the scheduler or another close path.
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new InterruptedSailException(e);
+		} catch (ExecutionException e) {
+			logger.warn("Scheduled Frontier rebuild failed during close", e.getCause());
+		}
+	}
+
 	private void startBackgroundFilterSampling() {
-		if (filterSelectivityStats == null || backgroundRawSamplingMaxMillisPerCycle <= 0L) {
+		if (!adaptiveEvidenceAllowed || filterSelectivityStats == null
+				|| backgroundRawSamplingMaxMillisPerCycle <= 0L) {
 			logger.info(
 					"LMDB background filter sampling not scheduled: filterStatsPresent={}, maxMillisPerCycle={}",
 					filterSelectivityStats != null, backgroundRawSamplingMaxMillisPerCycle);
@@ -9352,6 +11787,9 @@ class LmdbSailStore implements SailStore {
 		if (filterSelectivityStats != null) {
 			filterSelectivityStats.persistIfDirty();
 		}
+		if (operatorFeedbackStats != null) {
+			operatorFeedbackStats.persistIfDirty();
+		}
 	}
 
 	private void scheduleEstimatorPersist() {
@@ -9364,6 +11802,414 @@ class LmdbSailStore implements SailStore {
 				}
 			}, estimatorPersistDelayMillis, TimeUnit.MILLISECONDS);
 		}
+	}
+
+	private void requestFrontierRebuild() {
+		frontierRebuildRequestedNanos = System.nanoTime();
+		ensureFrontierRebuildScheduled();
+	}
+
+	private void ensureFrontierRebuildScheduled() {
+		if (statisticsService == null || closing
+				|| !frontierRebuildScheduled.compareAndSet(false, true)) {
+			return;
+		}
+		try {
+			frontierRebuildFuture = estimatorPersistExec.schedule(
+					this::runScheduledFrontierRebuild,
+					estimatorPersistDelayMillis,
+					TimeUnit.MILLISECONDS);
+		} catch (RuntimeException failure) {
+			frontierRebuildScheduled.set(false);
+			throw failure;
+		}
+	}
+
+	private void runScheduledFrontierRebuild() {
+		boolean retry = false;
+		long requestAtStart = frontierRebuildRequestedNanos;
+		try {
+			LmdbStatisticsService service = statisticsService;
+			if (service == null) {
+				return;
+			}
+			boolean baseRebuildRequired = service.rebuildRequired() || frontierDimensionRebuildRequired;
+			if (!baseRebuildRequired) {
+				// Signed deltas keep publishing while a base rebuild waits for its turn, so coverage never
+				// stalls behind the quiet period; only a delta that can never be published stops them.
+				DeltaRefreshResult deltaResult = refreshFrontierStatisticsDelta();
+				if (deltaResult == DeltaRefreshResult.BASE_REBUILD_REQUIRED) {
+					baseRebuildRequired = true;
+				} else if (!frontierBaseRebuildPending) {
+					retry = deltaResult == DeltaRefreshResult.RETRY;
+					return;
+				}
+			}
+			long now = System.nanoTime();
+			if (!frontierBaseRebuildPending) {
+				frontierBaseRebuildPendingSinceNanos = now;
+				frontierBaseRebuildPending = true;
+			}
+			boolean start = FrontierRebuildSchedulePolicy.shouldStartBaseRebuild(now, frontierRebuildRequestedNanos,
+					true, frontierBaseRebuildPendingSinceNanos,
+					TimeUnit.MILLISECONDS.toNanos(estimatorPersistDelayMillis), FRONTIER_REBUILD_MAX_DEFERRAL_NANOS);
+			if (!start || storeTxnStarted.get()) {
+				retry = true;
+				return;
+			}
+			retry = !rebuildScheduledFrontierStatistics();
+		} catch (RuntimeException failure) {
+			retry = true;
+			logger.warn("Background Frontier Statistics V2 rebuild failed", failure);
+		} finally {
+			frontierRebuildScheduled.set(false);
+			if (frontierRebuildRequestedNanos != requestAtStart) {
+				retry = true;
+			}
+			synchronized (frontierStatisticsMonitor) {
+				frontierStatisticsMonitor.notifyAll();
+			}
+			if (retry && !closing && !estimatorPersistExec.isShutdown()) {
+				try {
+					ensureFrontierRebuildScheduled();
+				} catch (RuntimeException failure) {
+					if (!estimatorPersistExec.isShutdown()) {
+						logger.warn("Failed to reschedule Frontier statistics rebuild", failure);
+					}
+				}
+			}
+		}
+	}
+
+	private DeltaRefreshResult refreshFrontierStatisticsDelta() {
+		LmdbStatisticsService service = statisticsService;
+		FrontierStatisticsBuildConfig buildConfig = statisticsBuildConfig;
+		if (service == null || buildConfig == null || closing) {
+			return DeltaRefreshResult.RETRY;
+		}
+		if (service.rebuildRequired()) {
+			return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+		}
+		FrontierStatisticsStatus before = service.status();
+		if (before.availability() != FrontierStatisticsAvailability.READY) {
+			return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+		}
+		try {
+			TripleStore.FrontierMutationJournalState journalState = tripleStore
+					.frontierMutationJournalState();
+			if (journalState.requiresBaseRebuildAfter(before.coveredSequence())) {
+				return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+			}
+			long latestSequence = journalState.latestSequence();
+			if (latestSequence <= before.coveredSequence()) {
+				acknowledgeFrontierCoverage(latestSequence);
+				service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, 0.0d, -1L,
+						before.deleteDebt(), before.auditLeafQError(), before.auditJoinQError());
+				return DeltaRefreshResult.COMPLETE;
+			}
+			List<FrontierMutation> pending = tripleStore.readFrontierMutationsAfter(
+					before.coveredSequence(), FRONTIER_DELTA_BATCH_MUTATIONS + 1);
+			if (pending.isEmpty()) {
+				return DeltaRefreshResult.RETRY;
+			}
+			List<FrontierMutation> publishable = completeTransactionPrefix(pending);
+			if (publishable.isEmpty()) {
+				logger.info("Frontier mutation transaction exceeds the bounded delta batch; rebuilding the base");
+				return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+			}
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.APPLYING_DELTAS, 0.0d, -1L,
+					before.deleteDebt(), before.auditLeafQError(), before.auditJoinQError());
+			FrontierStatisticsManifest manifest = service.publishDelta(publishable, buildConfig);
+			acknowledgeFrontierCoverage(manifest.coveredSequence());
+			consecutiveTransientDeltaFailures = 0;
+			long currentSequence = tripleStore.latestFrontierMutationSequence();
+			FrontierStatisticsStatus after = service.status();
+			double deleteDebt = after.deleteDebt();
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, 0.0d,
+					manifest.coveredSequence() >= currentSequence ? 0L : -1L,
+					deleteDebt, before.auditLeafQError(), before.auditJoinQError());
+			if (frontierBaseRefreshOverdue(after)) {
+				return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+			}
+			return manifest.coveredSequence() >= currentSequence
+					? DeltaRefreshResult.COMPLETE
+					: DeltaRefreshResult.RETRY;
+		} catch (IOException failure) {
+			return classifyDeltaFailure(failure, before.coveredSequence());
+		}
+	}
+
+	/**
+	 * Escalates deterministic delta failures (typed permanent failures, layer exhaustion) to a base rebuild at once and
+	 * bounds how often the same uncovered range may fail transiently before the base is rebuilt as well.
+	 */
+	private DeltaRefreshResult classifyDeltaFailure(IOException failure, long coveredSequence) {
+		if (transientDeltaFailureCoveredSequence != coveredSequence) {
+			transientDeltaFailureCoveredSequence = coveredSequence;
+			consecutiveTransientDeltaFailures = 0;
+		}
+		consecutiveTransientDeltaFailures++;
+		if (!FrontierRebuildSchedulePolicy.deltaFailureRequiresBaseRebuild(failure,
+				consecutiveTransientDeltaFailures, FRONTIER_MAX_TRANSIENT_DELTA_FAILURES)) {
+			logger.warn("Background Frontier Statistics V2 delta publication paused (attempt {} of {})",
+					consecutiveTransientDeltaFailures, FRONTIER_MAX_TRANSIENT_DELTA_FAILURES, failure);
+			return DeltaRefreshResult.RETRY;
+		}
+		int attempts = consecutiveTransientDeltaFailures;
+		consecutiveTransientDeltaFailures = 0;
+		if (failure instanceof FrontierStatisticsException typed && typed.requiresBaseRebuild()) {
+			logger.info("Frontier Statistics V2 delta publication cannot succeed against the current base ({}); "
+					+ "rebuilding the base", failure.getMessage());
+		} else {
+			logger.warn("Frontier Statistics V2 delta publication failed {} time(s) for the same range; rebuilding "
+					+ "the base instead of retrying", attempts, failure);
+		}
+		return DeltaRefreshResult.BASE_REBUILD_REQUIRED;
+	}
+
+	/** Whether the current generation must be replaced by a fresh base even though it may cover the journal. */
+	private boolean frontierBaseRefreshOverdue(FrontierStatisticsStatus status) {
+		if (frontierDimensionRebuildRequired || status.deleteDebt() >= FRONTIER_DELETE_REBUILD_THRESHOLD) {
+			return true;
+		}
+		FrontierStatisticsBuildConfig buildConfig = statisticsBuildConfig;
+		if (buildConfig == null) {
+			return false;
+		}
+		long deltaBytes = status.diskBytesByTier().getOrDefault(FrontierStatisticsTier.DELTAS_AND_MANIFESTS, 0L);
+		return deltaBytes >= FRONTIER_DELTA_TIER_REBUILD_FRACTION * buildConfig.deltaAndManifestBudgetBytes();
+	}
+
+	/** Whether the published Omni layout differs from the one the configured budgets would build now. */
+	private static boolean frontierOmniDimensionsDiffer(LmdbStatisticsService service,
+			FrontierStatisticsBuildConfig buildConfig) {
+		Optional<FrontierStatisticsManifest> current = service.currentManifest();
+		if (current.isEmpty() || current.get().width() == 0) {
+			return false;
+		}
+		FrontierStatisticsManifest manifest = current.get();
+		return manifest.width() != buildConfig.cellCount()
+				|| manifest.depth() != buildConfig.omniDepth()
+				|| manifest.designLaneCount() != buildConfig.designLaneCount()
+				|| manifest.auditLaneCount() != buildConfig.auditLaneCount();
+	}
+
+	private void clearFrontierBaseRebuildPending() {
+		frontierBaseRebuildPending = false;
+		frontierBaseRebuildPendingSinceNanos = 0L;
+		frontierDimensionRebuildRequired = false;
+		consecutiveTransientDeltaFailures = 0;
+	}
+
+	private void installCurrentFrontierMutationTail(long latestSequence) throws IOException {
+		installCurrentFrontierMutationTail(statisticsService, latestSequence);
+	}
+
+	private void installCurrentFrontierMutationTail(LmdbStatisticsService service, long latestSequence)
+			throws IOException {
+		installCurrentFrontierMutationTail(service, latestSequence, null);
+	}
+
+	private void installCurrentFrontierMutationTail(LmdbStatisticsService service, long latestSequence, Txn reader)
+			throws IOException {
+		synchronized (frontierMutationTailMonitor) {
+			if (service == null) {
+				return;
+			}
+			FrontierStatisticsStatus status = service.status();
+			if (status.availability() != FrontierStatisticsAvailability.READY) {
+				service.clearMutationTail();
+				frontierMutationTailSequence = latestSequence;
+				return;
+			}
+			long coveredSequence = status.coveredSequence();
+			TripleStore.FrontierMutationJournalState journalState = reader == null
+					? tripleStore.frontierMutationJournalState()
+					: tripleStore.frontierMutationJournalState(reader);
+			if (journalState.requiresBaseRebuildAfter(coveredSequence)) {
+				service.clearMutationTail();
+				frontierMutationTailSequence = latestSequence;
+				return;
+			}
+			if (latestSequence <= coveredSequence) {
+				service.installMutationTail(List.of());
+				frontierMutationTailSequence = latestSequence;
+				return;
+			}
+			List<FrontierMutation> mutations = tripleStore.readFrontierMutationsAfter(
+					coveredSequence, LmdbStatisticsService.MAXIMUM_IN_MEMORY_MUTATIONS + 1, reader);
+			if (mutations.size() <= LmdbStatisticsService.MAXIMUM_IN_MEMORY_MUTATIONS
+					&& !mutations.isEmpty() && mutations.getLast().sequence() == latestSequence) {
+				service.installMutationTail(mutations);
+			} else {
+				service.clearMutationTail();
+			}
+			frontierMutationTailSequence = latestSequence;
+		}
+	}
+
+	private void appendCurrentFrontierMutationTail(long latestSequence) throws IOException {
+		synchronized (frontierMutationTailMonitor) {
+			LmdbStatisticsService service = statisticsService;
+			if (service == null || latestSequence <= frontierMutationTailSequence) {
+				return;
+			}
+			FrontierStatisticsStatus status = service.status();
+			if (status.availability() != FrontierStatisticsAvailability.READY) {
+				service.clearMutationTail();
+				frontierMutationTailSequence = latestSequence;
+				return;
+			}
+			TripleStore.FrontierMutationJournalState journalState = tripleStore.tryFrontierMutationJournalState();
+			if (journalState == null || journalState.requiresBaseRebuildAfter(status.coveredSequence())) {
+				service.clearMutationTail();
+				frontierMutationTailSequence = latestSequence;
+				return;
+			}
+			List<FrontierMutation> mutations = tripleStore.tryReadFrontierMutationsAfter(
+					frontierMutationTailSequence, LmdbStatisticsService.MAXIMUM_IN_MEMORY_MUTATIONS + 1);
+			boolean completeRange = mutations != null
+					&& mutations.size() <= LmdbStatisticsService.MAXIMUM_IN_MEMORY_MUTATIONS
+					&& !mutations.isEmpty() && mutations.getLast().sequence() == latestSequence;
+			if (!completeRange || !service.appendMutationTail(mutations)) {
+				service.clearMutationTail();
+			}
+			frontierMutationTailSequence = latestSequence;
+		}
+	}
+
+	private static List<FrontierMutation> completeTransactionPrefix(List<FrontierMutation> pending) {
+		if (pending.size() <= FRONTIER_DELTA_BATCH_MUTATIONS) {
+			return pending;
+		}
+		long lookaheadEpoch = pending.get(FRONTIER_DELTA_BATCH_MUTATIONS).epoch();
+		int end = FRONTIER_DELTA_BATCH_MUTATIONS;
+		while (end > 0 && pending.get(end - 1).epoch() == lookaheadEpoch) {
+			end--;
+		}
+		return end == 0 ? List.of() : List.copyOf(pending.subList(0, end));
+	}
+
+	private enum DeltaRefreshResult {
+		COMPLETE,
+		RETRY,
+		BASE_REBUILD_REQUIRED
+	}
+
+	private boolean rebuildScheduledFrontierStatistics() {
+		boolean locked = false;
+		try {
+			lockForFrontierAdmission(frontierRebuildLock);
+			locked = true;
+			try (FrontierReaders readers = admitFrontierReaders(2, false)) {
+				return !closing && rebuildFrontierStatisticsV2(readers);
+			}
+		} catch (IOException failure) {
+			if (!closing) {
+				logger.warn("Could not admit the background Frontier rebuild", failure);
+			}
+			return false;
+		} finally {
+			if (locked) {
+				frontierRebuildLock.unlock();
+			}
+		}
+	}
+
+	private boolean frontierSnapshotAlreadyCovered(LmdbStatisticsService service, LmdbFrontierSnapshotSource snapshot)
+			throws IOException {
+		long epoch = snapshot.snapshotEpoch();
+		long sequence = snapshot.coveredSequence();
+		FrontierStatisticsStatus before = service.status();
+		if (!service.rebuildRequired() && before.availability() == FrontierStatisticsAvailability.READY
+				&& before.coveredEpoch() == epoch && before.coveredSequence() == sequence
+				&& !frontierBaseRefreshOverdue(before)) {
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, 0.0d, -1L,
+					0.0d, Double.NaN, Double.NaN);
+			logger.info("Aborted Frontier Statistics V2 rebuild because generation {} already covers epoch {} "
+					+ "and sequence {}", before.generationId(), epoch, sequence);
+			clearFrontierBaseRebuildPending();
+			return true;
+		}
+		return false;
+	}
+
+	private boolean rebuildFrontierStatisticsV2(FrontierReaders readers) {
+		LmdbStatisticsService service = statisticsService;
+		FrontierStatisticsBuildConfig buildConfig = statisticsBuildConfig;
+		FrontierStatisticsHeapGovernor governor = statisticsHeapGovernor;
+		if (service == null || buildConfig == null || governor == null || closing) {
+			return false;
+		}
+		long started = System.nanoTime();
+		service.recordBuildProgress(FrontierStatisticsBuildPhase.PASS_ONE, 0.0d, -1L,
+				0.0d, Double.NaN, Double.NaN);
+		try (LmdbFrontierSnapshotSource snapshot = new LmdbFrontierSnapshotSource(tripleStore, readers.readers[0])) {
+			long snapshotEpoch = snapshot.snapshotEpoch();
+			long snapshotSequence = snapshot.coveredSequence();
+			logger.info("Starting Frontier Statistics V2 rebuild: epoch={}, sequence={}, configuredWorkers={}",
+					snapshotEpoch, snapshotSequence, derivedStateBuildExecutor.configuredThreads());
+			if (frontierSnapshotAlreadyCovered(service, snapshot)) {
+				return true;
+			}
+			// An untrusted loaded generation still owns the predecessor chain; consumer availability cannot replace it.
+			long previousGeneration = service.publicationPredecessorGeneration();
+			long generation = Math.max(snapshotEpoch == 0L ? 1L : snapshotEpoch,
+					previousGeneration == Long.MAX_VALUE ? Long.MAX_VALUE : previousGeneration + 1L);
+			if (generation == previousGeneration) {
+				throw new IOException("Frontier Statistics V2 generation ID space is exhausted");
+			}
+			FrontierStatisticsBuildObserver observer = progress -> {
+				service.recordBuildProgress(progress.phase(), progress.currentStatementsPerSecond(),
+						progress.etaMillis(), 0.0d, Double.NaN, Double.NaN);
+				logger.info("Frontier Statistics V2 rebuild progress: datasetStatements={}, phase={}, visits={}/{}, "
+						+ "currentStatementsPerSecond={}, averageStatementsPerSecond={}, etaMillis={}",
+						progress.datasetStatements(), progress.phase(), progress.cumulativeVisits(),
+						progress.expectedVisits(), progress.currentStatementsPerSecond(),
+						progress.averageStatementsPerSecond(), progress.etaMillis());
+			};
+			FrontierStatisticsManifest manifest = FrontierStatisticsBuilder.build(
+					frontierStatisticsDirectory,
+					generation, previousGeneration, snapshot, governor, buildConfig,
+					derivedStateBuildExecutor, observer);
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.PUBLISHING, 0.0d, -1L,
+					0.0d, Double.NaN, Double.NaN);
+			service.publishCurrentOwnerBase(manifest);
+			clearFrontierBaseRebuildPending();
+			Txn metadataReader = readers.readers[1];
+			acknowledgeFrontierCoverage(manifest.coveredSequence(), metadataReader);
+			long latestSequence = currentStoreSnapshotCoordinates(metadataReader).statementMutationStamp();
+			installCurrentFrontierMutationTail(service, latestSequence, metadataReader);
+			long elapsedNanos = Math.max(1L, System.nanoTime() - started);
+			double rowsPerSecond = 2.0d * totalRows(manifest) * 1_000_000_000.0d / elapsedNanos;
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.IDLE, rowsPerSecond, 0L,
+					0.0d, Double.NaN, Double.NaN);
+			logger.info("Finished Frontier Statistics V2 rebuild: generation={}, datasetStatements={}, "
+					+ "statementVisits={}, elapsedMillis={}, averageStatementsPerSecond={}, configuredWorkers={}",
+					manifest.generationId(), totalRows(manifest), saturatedTwice(totalRows(manifest)),
+					elapsedNanos / 1_000_000L, rowsPerSecond, derivedStateBuildExecutor.configuredThreads());
+			return true;
+		} catch (IOException | RuntimeException failure) {
+			service.recordBuildProgress(FrontierStatisticsBuildPhase.FAILED, 0.0d, -1L,
+					0.0d, Double.NaN, Double.NaN);
+			logger.warn("Failed Frontier Statistics V2 rebuild after {} ms; rebuild remains requested",
+					Math.max(0L, System.nanoTime() - started) / 1_000_000L, failure);
+			return false;
+		}
+	}
+
+	private static long totalRows(FrontierStatisticsManifest manifest) {
+		return manifest.shards()
+				.stream()
+				.filter(shard -> shard
+						.kind() == org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsShardKind.EXACT_TOTALS)
+				.mapToLong(shard -> shard.logicalKey())
+				.findFirst()
+				.orElse(0L);
+	}
+
+	private static long saturatedTwice(long value) {
+		return value > Long.MAX_VALUE / 2L ? Long.MAX_VALUE : value * 2L;
 	}
 
 	SailException wrapTripleStoreException() {
@@ -9400,11 +12246,82 @@ class LmdbSailStore implements SailStore {
 
 	@Override
 	public EvaluationStatistics getEvaluationStatistics() {
-		return new LmdbEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator, filterSelectivityStats,
-				statementPatternCardinalitySource, learnedFilterSelectivity, queryExecutionPolicy);
+		LmdbEstimatorRuntime.PublishedProviders providers = publishedProviders;
+		return new LmdbStoreEvaluationStatistics(valueStore, tripleStore, sketchBasedJoinEstimator,
+				providers.filters(),
+				providers.feedback(), statementPatternCardinalitySource, cascadesPlanCache,
+				frontierPlannerSettings, () -> mayHaveInferred, () -> adaptiveEvidenceAllowed, providers.statistics(),
+				LmdbDetachedPlanningSnapshotProvider.forPlanes(this::openDetachedPlanningSnapshot),
+				this::maskPlanningReadView, learnedFilterSelectivity,
+				queryExecutionPolicy, this::tryOpenDirectDomainReadView, () -> publishedProviders);
 	}
 
-	/** Store-scoped learned filter selectivity. Test hook. */
+	private LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot() {
+		return openDetachedPlanningSnapshot(org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.EXPLICIT);
+	}
+
+	private LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot(int planeMask) {
+		int explicit = org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.EXPLICIT;
+		int inferred = org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe.INFERRED;
+		if (planeMask != explicit && planeMask != inferred && planeMask != (explicit | inferred)) {
+			throw new IllegalArgumentException("Detached planning requires a representable read-plane mask");
+		}
+		SailDataset first = null;
+		SailDataset second = null;
+		SailDataset dataset;
+		try (DatasetAdmission admission = beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null)) {
+			first = datasetForReadView(planeMask == explicit, admission.view(), IsolationLevels.SNAPSHOT_READ);
+			if (planeMask == (explicit | inferred)) {
+				second = datasetForReadView(true, admission.view(), IsolationLevels.SNAPSHOT_READ);
+				dataset = org.eclipse.rdf4j.sail.base.SailDatasetReadComposition.union(first, second);
+			} else {
+				dataset = first;
+			}
+		} catch (RuntimeException | Error failure) {
+			if (second != null) {
+				attemptClose(failure, second::close);
+			}
+			if (first != null) {
+				attemptClose(failure, first::close);
+			}
+			throw failure;
+		}
+		try {
+			return new LmdbDetachedPlanningSnapshot(dataset,
+					new SailDatasetTripleTermSource(valueStore, dataset));
+		} catch (RuntimeException | Error failure) {
+			attemptClose(failure, dataset::close);
+			throw failure;
+		}
+	}
+
+	/** Direct statistics may borrow one immediate current pair only outside existing read/write ownership. */
+	private ReadView tryOpenDirectDomainReadView() {
+		if (closing || activeReadView.get() != null || sinkStoreAccessLock.isHeldByCurrentThread()
+				|| ownsEstimatorReadResources()) {
+			return null;
+		}
+		long version = publicationVersion;
+		if ((version & 1L) != 0L) {
+			return null;
+		}
+		TxnManager triples = tripleStore.getTxnManager();
+		TxnManager values = valueStore.getTxnManager();
+		ReadViewLease lease = mapGrowthCoordinator.tryRegisterIndependentView();
+		if (lease == null) {
+			return null;
+		}
+		try {
+			return tryOpenDomainReadView(version, triples, values, lease, true).view();
+		} catch (IOException failure) {
+			if (Thread.currentThread().isInterrupted()) {
+				throw new InterruptedSailException("Interrupted while admitting a paired domain observation", failure);
+			}
+			throw new SailException("Unable to admit a paired domain observation", failure);
+		}
+	}
+
+	/** Store-scoped optional learned filter selectivity. */
 	LmdbLearnedFilterSelectivity learnedFilterSelectivity() {
 		return learnedFilterSelectivity;
 	}
@@ -9547,6 +12464,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		if (contexts.length == 0) {
 			RecordIterator records = source.statements(subjID, predID, objID, LmdbValue.UNKNOWN_ID,
 					nativeSourceObservationForTest);
@@ -9644,6 +12562,7 @@ class LmdbSailStore implements SailStore {
 			return IterationConstants.EMPTY_STATEMENT_ITERATION;
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		if (contexts.length <= 1) {
 			long contextID = orderedContextId(contexts);
 			if (contexts.length == 1 && contexts[0] != null) {
@@ -9763,6 +12682,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		if (contexts.length == 0) {
 			return source.count(subjID, predID, objID, LmdbValue.UNKNOWN_ID);
 		}
@@ -9821,6 +12741,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		if (contexts.length == 0) {
 			return source.has(subjID, predID, objID, LmdbValue.UNKNOWN_ID);
 		}
@@ -9941,6 +12862,15 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/**
+	 * Creates a triple term iterator based on the supplied pattern.
+	 *
+	 * @param subj The subject of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param pred The predicate of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @param obj  The object of the pattern, or <tt>null</tt> to indicate a wildcard.
+	 * @return A triple term iterator that can be used to iterate over the triple terms that match the specified
+	 *         pattern.
+	 */
 	CloseableIteration<? extends TripleTerm> createTripleTermIterator(ReadView readView, Resource subj, IRI pred,
 			Value obj) throws IOException {
 		readView.requireDictionaryTermSnapshot();
@@ -9976,8 +12906,23 @@ class LmdbSailStore implements SailStore {
 	CloseableIteration<? extends Statement> createStatementIterator(
 			ReadView readView, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
 			throws IOException {
+		return createStatementIterator(readView, null, subj, pred, obj, explicit, contexts);
+	}
+
+	CloseableIteration<? extends Statement> createStatementIterator(ReadView readView,
+			StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		return createStatementIterator(readView, null, statementPattern, null, 0L, subj, pred, obj, explicit, contexts);
+	}
+
+	private CloseableIteration<? extends Statement> createStatementIterator(ReadView readView,
+			LmdbSailDataset source, StatementPattern statementPattern,
+			Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache, long cacheTxnVersion,
+			Resource subj, IRI pred,
+			Value obj, boolean explicit, Resource... contexts) throws IOException {
 		Txn txn = readView.tripleTxn();
 		ValueStore.ReadSnapshot valueSnapshot = readView.valueSnapshot();
+		readView.ensureNativeSnapshotsValid();
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return IterationConstants.EMPTY_STATEMENT_ITERATION;
@@ -10007,62 +12952,146 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
+		List<Long> contextIDList = new ArrayList<>(contexts.length);
+		List<Resource> knownContextList = new ArrayList<>(contexts.length);
 		if (contexts.length == 0) {
-			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, LmdbValue.UNKNOWN_ID, explicit);
-			return new LmdbStatementIterator(records, valueStore, valueSnapshot, subj, pred, obj, null);
-		}
-
-		if (contexts.length == 1) {
-			if (contexts[0] == null) {
-				RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, 0L, explicit);
-				return new LmdbStatementIterator(records, valueStore, valueSnapshot, subj, pred, obj, null);
-			} else {
-				if (contexts[0].isTripleTerm()) {
-					return IterationConstants.EMPTY_STATEMENT_ITERATION;
-				}
-				long contextID = valueStore.getStatementId(valueSnapshot, contexts[0]);
-				if (contextID == LmdbValue.UNKNOWN_ID) {
-					return IterationConstants.EMPTY_STATEMENT_ITERATION;
-				}
-
-				RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
-				return new LmdbStatementIterator(records, valueStore, valueSnapshot, subj, pred, obj, contexts[0]);
-			}
-		}
-
-		long[] contextIDs = new long[contexts.length];
-		for (int i = 0; i < contexts.length; i++) {
-			Resource context = contexts[i];
-			if (context != null && context.isTripleTerm()) {
-				contextIDs[i] = LmdbValue.UNKNOWN_ID;
-			} else {
-				contextIDs[i] = context == null ? 0L : valueStore.getStatementId(valueSnapshot, context);
-			}
-		}
-
-		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contexts.length);
-		for (int i = 0; i < contexts.length; i++) {
-			long contextID = contextIDs[i];
-			if (contextID == LmdbValue.UNKNOWN_ID) {
-				continue;
-			}
-			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
-			perContextIterList
-					.add(new LmdbStatementIterator(records, valueStore, valueSnapshot, subj, pred, obj, contexts[i]));
-		}
-
-		if (perContextIterList.size() == 1) {
-			return perContextIterList.getFirst();
+			contextIDList.add(LmdbValue.UNKNOWN_ID);
+			knownContextList.add(null);
 		} else {
-			return new UnionIteration<>(perContextIterList);
+			for (Resource context : contexts) {
+				if (context == null) {
+					contextIDList.add(0L);
+					knownContextList.add(null);
+				} else if (!context.isTripleTerm()) {
+					long contextID = valueStore.getStatementId(valueSnapshot, context);
+
+					if (contextID != LmdbValue.UNKNOWN_ID) {
+						contextIDList.add(contextID);
+						knownContextList.add(context);
+					}
+				}
+			}
 		}
+
+		ArrayList<CloseableIteration<? extends Statement>> perContextIterList = new ArrayList<>(contextIDList.size());
+		LmdbValueIdFilter idFilter = LmdbValueIdFilter.fromStatementPattern(statementPattern);
+		if (statementPattern != null) {
+			statementPattern.setStringMetricActual("optimizer.idFilterRuntime", idFilter.isEmpty() ? "none" : "active");
+		}
+		boolean canUseDirectStatementLookup = canUseDirectStatementLookup(subjID, predID, objID, contextIDList,
+				idFilter);
+
+		try {
+			for (int i = 0; i < contextIDList.size(); i++) {
+				long contextID = contextIDList.get(i);
+				StatementLookupCacheKey cacheKey = null;
+				if (canUseDirectStatementLookup && exactStatementLookupCache != null) {
+					cacheKey = new StatementLookupCacheKey(cacheTxnVersion, subjID, predID, objID, contextID, explicit);
+					StatementLookupCacheEntry cachedLookup = exactStatementLookupCache.get(cacheKey);
+					if (cachedLookup != null) {
+						perContextIterList.add(new CachedStatementIteration(cachedLookup));
+						continue;
+					}
+				}
+
+				RecordIterator records;
+				try {
+					records = source == null
+							? getRecords(txn, statementPattern, subjID, predID, objID, contextID, explicit, idFilter)
+							: source.statementRecords(statementPattern, subjID, predID, objID, contextID, idFilter);
+				} catch (IOException e) {
+					System.out.println("Txn:\n" + Objects.toString(txn));
+					throw e;
+				}
+				LmdbStatementIterator iterator;
+				try {
+					iterator = new LmdbStatementIterator(records, valueStore, valueSnapshot, subj, pred,
+							obj, knownContextList.get(i));
+				} catch (RuntimeException | Error failure) {
+					try {
+						records.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (cleanup != failure) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+					throw failure;
+				}
+				if (cacheKey != null) {
+					perContextIterList.add(cacheExactStatementLookup(exactStatementLookupCache, cacheKey, iterator));
+				} else {
+					// Register before opening another context: owner close must not wait on an unregistered cursor.
+					perContextIterList.add(source == null ? iterator : source.ownSnapshotIteration(iterator));
+				}
+			}
+			if (canUseDirectStatementLookup && exactStatementLookupCache != null) {
+				requireSnapshotVersion(txn, cacheTxnVersion);
+			}
+
+			if (perContextIterList.size() == 1) {
+				return perContextIterList.getFirst();
+			} else {
+				return new UnionIteration<>(perContextIterList);
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			closeStatementIterations(perContextIterList, failure);
+			throw failure;
+		}
+	}
+
+	private RecordIterator getRecords(Txn txn, StatementPattern statementPattern, long subjID, long predID, long objID,
+			long contextID, boolean explicit, LmdbValueIdFilter idFilter) throws IOException {
+		if (statementPattern != null
+				&& LmdbDistinctCursorSkipSupport.ACCESS_MODE.equals(
+						statementPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE))) {
+			Optional<RecordIterator> distinctRecords = tripleStore.getTriplesWithDistinctCursorSkip(txn,
+					statementPattern, subjID, predID, objID, contextID, explicit, idFilter);
+			if (distinctRecords.isPresent()) {
+				return distinctRecords.get();
+			}
+		}
+		return tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit, idFilter);
+	}
+
+	private Resource currentResource(Resource value, long id) {
+		LmdbValue currentValue = currentValue(value, id);
+		return currentValue instanceof Resource ? (Resource) currentValue : null;
+	}
+
+	private IRI currentIRI(IRI value, long id) {
+		LmdbValue currentValue = currentValue(value, id);
+		return currentValue instanceof IRI ? (IRI) currentValue : null;
+	}
+
+	private LmdbValue currentValue(Value value, long id) {
+		if (value instanceof LmdbValue lmdbValue
+				&& id != LmdbValue.UNKNOWN_ID
+				&& lmdbValue.getInternalID() == id
+				&& valueStore.getRevision().equals(lmdbValue.getValueStoreRevision())) {
+			return lmdbValue;
+		}
+		return null;
 	}
 
 	long countStatementIterator(
 			ReadView readView, Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts)
 			throws IOException {
+		return countStatementIterator(readView, null, subj, pred, obj, explicit, contexts);
+	}
+
+	long countStatementIterator(ReadView readView, StatementPattern statementPattern,
+			Resource subj, IRI pred, Value obj, boolean explicit, Resource... contexts) throws IOException {
+		return countStatementIterator(readView, null, statementPattern, null, 0L, subj, pred, obj, explicit, contexts);
+	}
+
+	private long countStatementIterator(ReadView readView, LmdbSailDataset source, StatementPattern statementPattern,
+			Map<StatementCountCacheKey, Long> exactStatementCountCache, long cacheTxnVersion, Resource subj, IRI pred,
+			Value obj,
+			boolean explicit, Resource... contexts) throws IOException {
 		Txn txn = readView.tripleTxn();
 		ValueStore.ReadSnapshot valueSnapshot = readView.valueSnapshot();
+		readView.ensureNativeSnapshotsValid();
 		if (!explicit && !mayHaveInferred) {
 			// there are no inferred statements and the iterator should only return inferred statements
 			return 0;
@@ -10092,6 +13121,7 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		contexts = LmdbContextRequests.distinct(contexts);
 		List<Long> contextIDList = new ArrayList<>(contexts.length);
 		if (contexts.length == 0) {
 			contextIDList.add(LmdbValue.UNKNOWN_ID);
@@ -10110,11 +13140,117 @@ class LmdbSailStore implements SailStore {
 		}
 
 		long count = 0;
-		QueryExecutionContext.ReplayCheckpoint checkpoint = QueryExecutionContext.replayCheckpoint();
+		LmdbValueIdFilter idFilter = LmdbValueIdFilter.fromStatementPattern(statementPattern);
+		if (canUseDirectStatementCount(subjID, predID, objID, contextIDList, idFilter)) {
+			for (long contextID : contextIDList) {
+				long statementCount = exactStatementCount(txn, exactStatementCountCache, cacheTxnVersion, subjID,
+						predID, objID,
+						contextID, explicit);
+				if (statementCount >= 0) {
+					count += statementCount;
+				} else {
+					return countStatementIteratorFallback(source, txn, statementPattern, subjID, predID, objID,
+							contextIDList,
+							explicit, idFilter);
+				}
+			}
+			if (exactStatementCountCache != null) {
+				requireSnapshotVersion(txn, cacheTxnVersion);
+			}
+			if (statementPattern != null) {
+				statementPattern.setStringMetricActual(COUNT_RUNTIME_METRIC, "direct-lookup");
+			}
+			return count;
+		}
+		return countStatementIteratorFallback(source, txn, statementPattern, subjID, predID, objID, contextIDList,
+				explicit,
+				idFilter);
+	}
+
+	private long exactStatementCount(Txn txn, Map<StatementCountCacheKey, Long> exactStatementCountCache,
+			long cacheTxnVersion, long subjID,
+			long predID, long objID, long contextID, boolean explicit) throws IOException {
+		if (exactStatementCountCache == null) {
+			return tripleStore.exactStatementCount(txn, subjID, predID, objID, contextID, explicit);
+		}
+		StatementCountCacheKey cacheKey = new StatementCountCacheKey(cacheTxnVersion, subjID, predID, objID, contextID,
+				explicit);
+		Long cachedCount = exactStatementCountCache.get(cacheKey);
+		if (cachedCount != null) {
+			return cachedCount;
+		}
+		long statementCount = tripleStore.exactStatementCount(txn, subjID, predID, objID, contextID, explicit);
+		if (statementCount >= 0) {
+			cacheExactStatementCount(exactStatementCountCache, cacheKey, statementCount);
+		}
+		return statementCount;
+	}
+
+	private static void cacheExactStatementCount(Map<StatementCountCacheKey, Long> exactStatementCountCache,
+			StatementCountCacheKey cacheKey, long statementCount) {
+		if (exactStatementCountCache.size() >= EXACT_STATEMENT_COUNT_CACHE_MAX_ENTRIES) {
+			exactStatementCountCache.clear();
+		}
+		exactStatementCountCache.put(cacheKey, statementCount);
+	}
+
+	private CloseableIteration<? extends Statement> cacheExactStatementLookup(
+			Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache,
+			StatementLookupCacheKey cacheKey, LmdbStatementIterator iteration) {
+		String indexName = iteration.getIndexName();
+		List<Statement> statements = new ArrayList<>(1);
+		try (iteration) {
+			while (iteration.hasNext()) {
+				statements.add(iteration.next());
+			}
+		}
+		StatementLookupCacheEntry entry = new StatementLookupCacheEntry(List.copyOf(statements), indexName);
+		if (exactStatementLookupCache.size() >= EXACT_STATEMENT_LOOKUP_CACHE_MAX_ENTRIES) {
+			exactStatementLookupCache.clear();
+		}
+		exactStatementLookupCache.put(cacheKey, entry);
+		return new CachedStatementIteration(entry);
+	}
+
+	private static boolean canUseDirectStatementCount(long subjID, long predID, long objID, List<Long> contextIDList,
+			LmdbValueIdFilter idFilter) {
+		if (subjID < 0 || predID < 0 || objID < 0 || !idFilter.isEmpty() || contextIDList.isEmpty()) {
+			return false;
+		}
 		for (long contextID : contextIDList) {
-			try (RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit)) {
+			if (contextID < 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean canUseDirectStatementLookup(long subjID, long predID, long objID, List<Long> contextIDList,
+			LmdbValueIdFilter idFilter) {
+		if (subjID < 0 || predID < 0 || objID < 0 || !idFilter.isEmpty() || contextIDList.isEmpty()) {
+			return false;
+		}
+		for (long contextID : contextIDList) {
+			if (contextID != LmdbValue.UNKNOWN_ID && contextID < 0) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private long countStatementIteratorFallback(LmdbSailDataset source, Txn txn, StatementPattern statementPattern,
+			long subjID, long predID,
+			long objID, List<Long> contextIDList, boolean explicit, LmdbValueIdFilter idFilter) throws IOException {
+		long count = 0;
+		if (statementPattern != null) {
+			statementPattern.setStringMetricActual(COUNT_RUNTIME_METRIC, "iterator");
+		}
+		for (long contextID : contextIDList) {
+			try (RecordIterator records = source == null
+					? tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit, idFilter)
+					: source.statementRecords(null, subjID, predID, objID, contextID, idFilter)) {
 				while (true) {
-					checkpoint.checkpoint();
+					QueryExecutionContext.checkpointReplaySafepoint();
 					if (records.next() == null) {
 						break;
 					}
@@ -10123,6 +13259,61 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 		return count;
+	}
+
+	private record StatementCountCacheKey(long txnVersion, long subjID, long predID, long objID, long contextID,
+			boolean explicit) {
+	}
+
+	private record StatementLookupCacheKey(long txnVersion, long subjID, long predID, long objID, long contextID,
+			boolean explicit) {
+	}
+
+	private record StatementLookupCacheEntry(List<Statement> statements, String indexName) {
+	}
+
+	private static final class SnapshotVersionChangedException extends IOException {
+
+		private static final long serialVersionUID = 1L;
+
+		private SnapshotVersionChangedException(long expectedVersion, long actualVersion) {
+			super("LMDB snapshot version changed during exact cache access: " + expectedVersion + " -> "
+					+ actualVersion);
+		}
+	}
+
+	private static void requireSnapshotVersion(Txn txn, long expectedVersion) throws IOException {
+		txn.ensureSnapshotValid();
+		long actualVersion = txn.version();
+		if (actualVersion != expectedVersion) {
+			throw new SnapshotVersionChangedException(expectedVersion, actualVersion);
+		}
+	}
+
+	private static final class CachedStatementIteration extends CloseableIteratorIteration<Statement>
+			implements IndexReportingIterator {
+
+		private final StatementLookupCacheEntry entry;
+
+		private CachedStatementIteration(StatementLookupCacheEntry entry) {
+			super(entry.statements().iterator());
+			this.entry = entry;
+		}
+
+		@Override
+		public String getIndexName() {
+			return entry.indexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return entry.statements().size();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return entry.statements().size();
+		}
 	}
 
 	/** Stable fallback for participants of one connection-independent backing source. */
@@ -10265,7 +13456,7 @@ class LmdbSailStore implements SailStore {
 				return false;
 			}
 			try {
-				return tripleStore.isEmpty() && valueStore.canStartFreshValueSession();
+				return Boolean.TRUE.equals(tripleStore.tryIsEmptyForImport()) && valueStore.canStartFreshValueSession();
 			} catch (IOException failure) {
 				throw new SailException("Unable to inspect prepared LMDB import eligibility", failure);
 			}
@@ -10586,6 +13777,22 @@ class LmdbSailStore implements SailStore {
 	private final class LmdbSailSink implements SailSink {
 
 		private final boolean explicit;
+		private final boolean bufferEstimatorAdds;
+		private ArrayList<Statement> pendingEstimatorAdds;
+		private BatchValueCollector batchValueCollector;
+		private int[] batchSubjects;
+		private int[] batchPredicates;
+		private int[] batchObjects;
+		private int[] batchContexts;
+		private long[] batchValueIds;
+		private Statement[] batchStatements;
+		private volatile boolean estimatorTouchedInTransaction;
+		private HashSet<Long> touchedLeoPredicateIds;
+		/**
+		 * Statements approved or deprecated by the open transaction (an upper bound: re-adding an existing statement
+		 * counts). Sizes the learned-evidence decay of the commit relative to the committed store.
+		 */
+		private long mutatedStatementsInTransaction;
 		private final boolean freshImportEligible;
 		/**
 		 * A non-null owner identifies a connection-owned NONE source. Shared root sinks resolve ownership from the
@@ -10614,7 +13821,6 @@ class LmdbSailStore implements SailStore {
 		private Object sinkTransactionOwner;
 		private long backingTransactionGeneration;
 		private WriterLease writerLease;
-		private volatile boolean estimatorTouchedInTransaction;
 		private volatile boolean flushRequested;
 		private volatile boolean closed;
 
@@ -10626,6 +13832,7 @@ class LmdbSailStore implements SailStore {
 				Object sourceWriterOwner) throws SailException {
 			this.directWriterOwner = sourceWriterOwner;
 			this.explicit = explicit;
+			this.bufferEstimatorAdds = level != null && level.isCompatibleWith(IsolationLevels.READ_COMMITTED);
 			this.freshImportEligible = !(requestedWriterOwner instanceof PrivateModelWriterOwner)
 					&& explicit && level != null
 					&& (IsolationLevels.NONE.equals(level) || IsolationLevels.READ_COMMITTED.equals(level));
@@ -10807,11 +14014,28 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			try {
-				sketchBasedJoinEstimator.addStatement(st);
-				estimatorTouchedInTransaction = true;
-				estimatorTouchedSinceStoreTxnStart.set(true);
+				if (bufferEstimatorAdds) {
+					bufferEstimatorAdd(st);
+				} else {
+					submitEstimatorAdd(st);
+				}
 			} catch (RuntimeException e) {
 				recoverEstimatorAfterFailure("applying add", e);
+			}
+		}
+
+		private void queueEstimatorAdds(List<Statement> statements) {
+			if (!explicit || sketchBasedJoinEstimator == null || statements.isEmpty()) {
+				return;
+			}
+			try {
+				if (bufferEstimatorAdds) {
+					bufferEstimatorAdds(statements);
+				} else {
+					submitEstimatorAddChunk(statements);
+				}
+			} catch (RuntimeException e) {
+				recoverEstimatorAfterFailure("applying batched adds", e);
 			}
 		}
 
@@ -10827,12 +14051,196 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			try {
+				flushPendingEstimatorAdds();
 				sketchBasedJoinEstimator.deleteStatement(st);
 				estimatorTouchedInTransaction = true;
 				estimatorTouchedSinceStoreTxnStart.set(true);
 			} catch (RuntimeException e) {
 				recoverEstimatorAfterFailure("applying delete", e);
 			}
+		}
+
+		private void bufferEstimatorAdd(Statement statement) {
+			if (pendingEstimatorAdds == null) {
+				pendingEstimatorAdds = new ArrayList<>(estimatorAddChunkSize);
+			}
+			pendingEstimatorAdds.add(statement);
+			if (pendingEstimatorAdds.size() == estimatorAddChunkSize) {
+				flushFullEstimatorAddChunk();
+			}
+		}
+
+		private void bufferEstimatorAdds(List<Statement> statements) {
+			int offset = 0;
+			while (offset < statements.size()) {
+				if (pendingEstimatorAdds == null) {
+					pendingEstimatorAdds = new ArrayList<>(estimatorAddChunkSize);
+				}
+				int remainingCapacity = estimatorAddChunkSize - pendingEstimatorAdds.size();
+				int copyCount = Math.min(remainingCapacity, statements.size() - offset);
+				pendingEstimatorAdds.addAll(statements.subList(offset, offset + copyCount));
+				offset += copyCount;
+				if (pendingEstimatorAdds.size() == estimatorAddChunkSize) {
+					flushFullEstimatorAddChunk();
+				}
+			}
+		}
+
+		private void flushFullEstimatorAddChunk() {
+			ArrayList<Statement> chunk = pendingEstimatorAdds;
+			pendingEstimatorAdds = null;
+			submitEstimatorAddChunk(chunk);
+		}
+
+		private void flushPendingEstimatorAdds() {
+			if (pendingEstimatorAdds == null || pendingEstimatorAdds.isEmpty()) {
+				pendingEstimatorAdds = null;
+				return;
+			}
+			ArrayList<Statement> chunk = pendingEstimatorAdds;
+			pendingEstimatorAdds = null;
+			submitEstimatorAddChunk(chunk);
+		}
+
+		private void flushPendingEstimatorAddsAfterCommit() {
+			try {
+				flushPendingEstimatorAdds();
+			} catch (RuntimeException e) {
+				recoverEstimatorAfterFailure("flushing buffered adds", e);
+			}
+		}
+
+		private void clearPendingEstimatorAdds() {
+			pendingEstimatorAdds = null;
+		}
+
+		private void clearPendingApproves() {
+			int count = pendingApproveCount;
+			if (count > 0) {
+				Arrays.fill(pendingApproveSubjects, 0, count, null);
+				Arrays.fill(pendingApprovePredicates, 0, count, null);
+				Arrays.fill(pendingApproveObjects, 0, count, null);
+				Arrays.fill(pendingApproveContexts, 0, count, null);
+				pendingApproveCount = 0;
+			}
+		}
+
+		private void recordLeoTouchedPredicate(long predicateId) {
+			if (operatorFeedbackStats == null || predicateId < 0L) {
+				return;
+			}
+			if (touchedLeoPredicateIds == null) {
+				touchedLeoPredicateIds = new HashSet<>();
+			}
+			touchedLeoPredicateIds.add(predicateId);
+		}
+
+		private Set<Long> learnedOptimizerTouchedPredicates() {
+			return touchedLeoPredicateIds == null || touchedLeoPredicateIds.isEmpty()
+					? Set.of()
+					: Set.copyOf(touchedLeoPredicateIds);
+		}
+
+		private void recordMutatedStatements(long count) {
+			if (count > 0L) {
+				mutatedStatementsInTransaction = Math.min(Long.MAX_VALUE - count, mutatedStatementsInTransaction)
+						+ count;
+			}
+		}
+
+		private void clearLeoTouchedPredicates() {
+			touchedLeoPredicateIds = null;
+			mutatedStatementsInTransaction = 0L;
+		}
+
+		private final class BatchValueCollector {
+			private Object2IntOpenHashMap<Value> indexes;
+			private Value[] values;
+			private int count;
+
+			private BatchValueCollector(int statementCount) {
+				indexes = newValueIndexMap(statementCount);
+				values = new Value[Math.max(1, statementCount)];
+			}
+
+			private void reset(int statementCount) {
+				count = 0;
+				if (indexes == null) {
+					indexes = newValueIndexMap(statementCount);
+				} else {
+					indexes.clear();
+				}
+				int targetCapacity = Math.max(1, statementCount);
+				if (values == null || values.length < targetCapacity) {
+					values = new Value[targetCapacity];
+				}
+			}
+
+			private int add(Value value) {
+				int index = indexes.getInt(value);
+				if (index != -1) {
+					return index;
+				}
+				index = count;
+				ensureValueCapacity(index + 1);
+				indexes.put(value, index);
+				values[index] = value;
+				count++;
+				return index;
+			}
+
+			private void clear() {
+				if (indexes != null) {
+					indexes.clear();
+				}
+				if (values != null && count > 0) {
+					Arrays.fill(values, 0, count, null);
+				}
+				count = 0;
+			}
+
+			private void ensureValueCapacity(int capacity) {
+				if (capacity <= values.length) {
+					return;
+				}
+				int newCapacity = values.length + (values.length >> 1) + 1;
+				if (newCapacity < capacity) {
+					newCapacity = capacity;
+				}
+				values = Arrays.copyOf(values, newCapacity);
+			}
+		}
+
+		private void submitEstimatorAdd(Statement statement) {
+			sketchBasedJoinEstimator.addStatement(statement);
+			estimatorTouchedInTransaction = true;
+			estimatorTouchedSinceStoreTxnStart.set(true);
+		}
+
+		private void submitEstimatorAddChunk(List<Statement> statements) {
+			if (shouldDeferExactEstimatorAddChunk(statements)) {
+				submitDeferredEstimatorAddCount(statements.size());
+			} else {
+				sketchBasedJoinEstimator.addStatements(statements);
+				estimatorTouchedInTransaction = true;
+				estimatorTouchedSinceStoreTxnStart.set(true);
+			}
+		}
+
+		private void submitDeferredEstimatorAddCount(int statementCount) {
+			sketchBasedJoinEstimator.recordStoreSizeDelta(statementCount, 0L);
+			estimatorTouchedInTransaction = true;
+			estimatorTouchedSinceStoreTxnStart.set(true);
+		}
+
+		private boolean shouldDeferExactEstimatorAddChunk(List<Statement> statements) {
+			return shouldDeferExactEstimatorAddChunk(statements.size());
+		}
+
+		private boolean shouldDeferExactEstimatorAddChunk(int statementCount) {
+			return bufferEstimatorAdds
+					&& statementCount >= EXACT_ESTIMATOR_ADD_DEFER_THRESHOLD
+					&& !sketchBasedJoinEstimator.isReadyNonBlocking();
 		}
 
 		private void queueBackupAdd(Statement st) {
@@ -10849,6 +14257,9 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void discardEstimatorUpdatesIfTouched() {
+			clearPendingApproves();
+			clearPendingEstimatorAdds();
+			clearLeoTouchedPredicates();
 			if (estimatorTouchedInTransaction && estimatorTouchedSinceStoreTxnStart.getAndSet(false)
 					&& sketchBasedJoinEstimator != null) {
 				sketchBasedJoinEstimator.discardAndMarkForRebuild();
@@ -10862,11 +14273,21 @@ class LmdbSailStore implements SailStore {
 			if (sketchBasedJoinEstimator != null) {
 				sketchBasedJoinEstimator.discardAndMarkForRebuild();
 			}
+			clearPendingEstimatorAdds();
+			// The statements still commit, so the learned-evidence decay of this commit must still cover all of them:
+			// the touched predicates and the mutation extent are store-mutation facts, not join-estimator state.
 			estimatorTouchedInTransaction = false;
 			estimatorTouchedSinceStoreTxnStart.set(false);
 			logger.warn("Discarded join estimator state after failure while {}; store data remains authoritative",
 					action,
 					e);
+		}
+
+		private void configureEstimatorAdd(AddQuadOperation operation) {
+			if (!explicit || sketchBasedJoinEstimator == null) {
+				return;
+			}
+			operation.estimatorCallback = this::queueEstimatorAdd;
 		}
 
 		private void rollbackAfterMutationFailure(Throwable failure) {
@@ -11118,6 +14539,131 @@ class LmdbSailStore implements SailStore {
 			namespaceTransactionOwner = owner;
 		}
 
+		/**
+		 * Learned-state maintenance after a durable commit (filter selectivity invalidation, operator feedback decay,
+		 * Frontier Statistics bookkeeping, sidecar persistence). The data is already committed when this runs, so no
+		 * failure here may fail the commit, roll it back or stop the store: the caller would otherwise retry a write
+		 * that already landed and the estimator deltas of a durable commit would be discarded. Each service that fails
+		 * degrades toward "no evidence" (reset / refresh) rather than silently serving evidence that no longer matches
+		 * the committed store.
+		 */
+		private void maintainLearnedStateAfterCommit(TripleStore.StatementCommitReceipt receipt) {
+			StoreSnapshotCoordinates committedSnapshot;
+			try {
+				if (receipt != null) {
+					committedSnapshot = new StoreSnapshotCoordinates(receipt.epoch(), receipt.sequence());
+				} else {
+					long[] coordinates = tripleStore.trySnapshotCoordinates();
+					if (coordinates == null) {
+						degradeLearnedServices();
+						return;
+					}
+					committedSnapshot = new StoreSnapshotCoordinates(coordinates[0], coordinates[1]);
+				}
+			} catch (IOException | RuntimeException e) {
+				logger.warn("Could not read the committed LMDB snapshot coordinates after commit; learned state is"
+						+ " reset and the Frontier synopsis refreshed instead", e);
+				degradeLearnedServices();
+				return;
+			}
+			LmdbFilterSelectivityStats filterStats = filterSelectivityStats;
+			if (filterStats != null) {
+				try {
+					filterStats.recordStoreMutation(committedSnapshot.statementMutationStamp());
+				} catch (RuntimeException e) {
+					logger.warn("Post-commit filter selectivity maintenance failed; learned filter evidence is reset",
+							e);
+					resetQuietly(filterStats::reset, "filter selectivity");
+				}
+			}
+			LmdbOperatorFeedbackStats operatorStats = operatorFeedbackStats;
+			if (operatorStats != null) {
+				try {
+					operatorStats.recordStoreMutation(committedSnapshot.statementMutationStamp(),
+							learnedOptimizerTouchedPredicates(), committedMutationExtent());
+				} catch (RuntimeException e) {
+					logger.warn("Post-commit operator feedback maintenance failed; learned operator evidence is reset",
+							e);
+					resetQuietly(operatorStats::reset, "operator feedback");
+				}
+			}
+			// The mutation tracking belongs to the transaction that just committed, whether or not a learned service
+			// consumed it.
+			clearLeoTouchedPredicates();
+			LmdbStatisticsService service = statisticsService;
+			if (service != null) {
+				try {
+					service.recordStoreCommit(
+							committedSnapshot.physicalSnapshotEpoch(),
+							committedSnapshot.statementMutationStamp(), System.currentTimeMillis());
+					appendCurrentFrontierMutationTail(committedSnapshot.statementMutationStamp());
+				} catch (IOException | RuntimeException e) {
+					logger.warn("Post-commit Frontier Statistics V2 bookkeeping failed; the synopsis is refreshed from"
+							+ " the committed store", e);
+				}
+				try {
+					requestFrontierRebuild();
+				} catch (RuntimeException e) {
+					logger.warn("Failed to schedule Frontier Statistics V2 refresh after commit", e);
+				}
+			}
+
+			if (sketchBasedJoinEstimator != null || filterStats != null || operatorStats != null) {
+				try {
+					scheduleEstimatorPersist();
+				} catch (RuntimeException e) {
+					logger.warn("Failed to schedule join estimator persistence after commit", e);
+				}
+			}
+		}
+
+		/**
+		 * Fail toward "no evidence" when the committed coordinates are unknown: learned evidence cannot be stamped or
+		 * decayed for a commit whose coordinate was never observed, so it is dropped, and the Frontier synopsis is
+		 * refreshed from the committed store instead of serving a silently stale view.
+		 */
+		private void degradeLearnedServices() {
+			clearLeoTouchedPredicates();
+			LmdbFilterSelectivityStats filterStats = filterSelectivityStats;
+			if (filterStats != null) {
+				resetQuietly(filterStats::reset, "filter selectivity");
+			}
+			LmdbOperatorFeedbackStats operatorStats = operatorFeedbackStats;
+			if (operatorStats != null) {
+				resetQuietly(operatorStats::reset, "operator feedback");
+			}
+			if (statisticsService != null) {
+				try {
+					requestFrontierRebuild();
+				} catch (RuntimeException e) {
+					logger.warn("Failed to schedule Frontier Statistics V2 refresh after commit", e);
+				}
+			}
+		}
+
+		/**
+		 * Size of this commit relative to the committed store, used to scale learned-evidence decay. Unknown when the
+		 * committed statement count cannot be read; the operator feedback service then applies the flat decay.
+		 */
+		private LmdbOperatorFeedbackStats.MutationExtent committedMutationExtent() {
+			try {
+				Long count = tripleStore.tryApproximateStatementCount();
+				return count == null ? LmdbOperatorFeedbackStats.MutationExtent.UNKNOWN
+						: new LmdbOperatorFeedbackStats.MutationExtent(mutatedStatementsInTransaction, count);
+			} catch (IOException | RuntimeException e) {
+				logger.debug("Could not read the committed LMDB statement count; applying flat mutation decay", e);
+				return LmdbOperatorFeedbackStats.MutationExtent.UNKNOWN;
+			}
+		}
+
+		private void resetQuietly(Runnable reset, String service) {
+			try {
+				reset.run();
+			} catch (RuntimeException e) {
+				logger.warn("Failed to reset learned {} evidence after a post-commit maintenance failure", service, e);
+			}
+		}
+
 		@Override
 		public void setNamespace(String prefix, String name) throws SailException {
 			acquireMutationStoreAccess();
@@ -11190,7 +14736,7 @@ class LmdbSailStore implements SailStore {
 				startTransaction(true);
 				if (pendingBulkAdd == null) {
 					pendingBulkAdd = newBulkAddQuadsOperation(explicit);
-					configureBulkEstimator(pendingBulkAdd);
+					configureBulkCallbacks(pendingBulkAdd);
 					ensurePendingApproveCapacity(pendingBulkAdd.capacity);
 				}
 				int index = pendingApproveCount++;
@@ -11310,6 +14856,169 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		private BulkApproveStats approveAllBulkPipelined(Set<Statement> approved, int statementCount)
+				throws IOException {
+			int chunkCapacity = Math.max(1, Math.min(bulkOperationSize, statementCount));
+			ensureBatchStatementCapacity(chunkCapacity);
+			BatchValueCollector valueCollector = batchValueCollector(chunkCapacity);
+			BulkApproveStats stats = new BulkApproveStats();
+			int chunkSize = 0;
+			boolean collectStatements = explicit && sketchBasedJoinEstimator != null;
+
+			try {
+				for (Statement statement : approved) {
+					stats.last = statement;
+					Resource subj = statement.getSubject();
+					IRI pred = statement.getPredicate();
+					Value obj = statement.getObject();
+					Resource context = statement.getContext();
+
+					batchSubjects[chunkSize] = valueCollector.add(subj);
+					batchPredicates[chunkSize] = valueCollector.add(pred);
+					batchObjects[chunkSize] = valueCollector.add(obj);
+					batchContexts[chunkSize] = context == null ? -1 : valueCollector.add(context);
+					if (collectStatements) {
+						batchStatements[chunkSize] = statement;
+					}
+					chunkSize++;
+
+					if (chunkSize == chunkCapacity) {
+						submitPipelinedBulkChunk(valueCollector, batchSubjects, batchPredicates, batchObjects,
+								batchContexts, batchStatements, chunkSize, stats);
+						valueCollector.clear();
+						if (collectStatements) {
+							Arrays.fill(batchStatements, 0, chunkSize, null);
+						}
+						chunkSize = 0;
+					}
+				}
+
+				if (chunkSize > 0) {
+					submitPipelinedBulkChunk(valueCollector, batchSubjects, batchPredicates, batchObjects,
+							batchContexts, batchStatements, chunkSize, stats);
+				}
+			} finally {
+				if (collectStatements && chunkSize > 0) {
+					Arrays.fill(batchStatements, 0, chunkSize, null);
+				}
+				valueCollector.clear();
+			}
+
+			return stats;
+		}
+
+		private void submitPipelinedBulkChunk(BatchValueCollector valueCollector, int[] subjects, int[] predicates,
+				int[] objects, int[] contexts, Statement[] sourceStatements, int statementCount, BulkApproveStats stats)
+				throws IOException {
+			int valueCount = valueCollector.count;
+			long[] valueIds = ensureBatchValueIdCapacity(valueCount);
+			valueStore.storeValues(valueCollector.values, valueIds, valueCount);
+			stats.valueCount += valueCount;
+
+			BulkAddQuadsOperation bulk = newEstimatorBulkAddQuadsOperation(explicit, statementCount);
+			for (int i = 0; i < statementCount; i++) {
+				int contextIndex = contexts[i];
+				bulk.add(valueIds[subjects[i]], valueIds[predicates[i]], valueIds[objects[i]],
+						contextIndex < 0 ? 0 : valueIds[contextIndex]);
+				int batchIndex = bulk.size - 1;
+				bulk.objectValues[batchIndex] = valueCollector.values[objects[i]];
+				if (bulk.statements != null) {
+					bulk.statements[batchIndex] = sourceStatements[i];
+				}
+			}
+			submitOperation(bulk);
+			stats.operationCount++;
+		}
+
+		private void ensureBatchStatementCapacity(int capacity) {
+			if (batchSubjects == null || batchSubjects.length < capacity) {
+				batchSubjects = new int[capacity];
+				batchPredicates = new int[capacity];
+				batchObjects = new int[capacity];
+				batchContexts = new int[capacity];
+				if (explicit && sketchBasedJoinEstimator != null) {
+					batchStatements = new Statement[capacity];
+				}
+				return;
+			}
+			if (explicit && sketchBasedJoinEstimator != null
+					&& (batchStatements == null || batchStatements.length < capacity)) {
+				batchStatements = new Statement[capacity];
+			}
+		}
+
+		private long[] ensureBatchValueIdCapacity(int capacity) {
+			if (batchValueIds == null || batchValueIds.length < capacity) {
+				batchValueIds = new long[capacity];
+			}
+			return batchValueIds;
+		}
+
+		private final class BulkApproveStats {
+			private Statement last;
+			private int valueCount;
+			private int operationCount;
+		}
+
+		private Object2IntOpenHashMap<Value> newValueIndexMap(int statementCount) {
+			Object2IntOpenHashMap<Value> valueIndexes = new Object2IntOpenHashMap<>(Math.max(1, statementCount));
+			valueIndexes.defaultReturnValue(-1);
+			return valueIndexes;
+		}
+
+		private BatchValueCollector batchValueCollector(int statementCount) {
+			if (batchValueCollector == null) {
+				batchValueCollector = new BatchValueCollector(statementCount);
+			} else {
+				batchValueCollector.reset(statementCount);
+			}
+			return batchValueCollector;
+		}
+
+		private BulkAddQuadsOperation newEstimatorBulkAddQuadsOperation(boolean explicit, int expectedStatementCount) {
+			boolean hasEstimator = explicit && sketchBasedJoinEstimator != null;
+			boolean deferEstimatorAdds = hasEstimator && shouldDeferExactEstimatorAddChunk(expectedStatementCount);
+			boolean retainStatements = hasEstimator && !deferEstimatorAdds;
+			int capacity = Math.max(1, Math.min(bulkOperationSize, expectedStatementCount));
+			BulkAddQuadsOperation bulk = new BulkAddQuadsOperation(explicit, retainStatements, capacity);
+			configureBulkAddQuadsOperation(bulk, retainStatements, deferEstimatorAdds);
+			return bulk;
+		}
+
+		private BulkAddQuadsOperation reusableBulkAddQuadsOperation(BulkAddQuadsOperation bulk, boolean explicit,
+				int expectedStatementCount) {
+			boolean hasEstimator = explicit && sketchBasedJoinEstimator != null;
+			boolean deferEstimatorAdds = hasEstimator && shouldDeferExactEstimatorAddChunk(expectedStatementCount);
+			boolean retainStatements = hasEstimator && !deferEstimatorAdds;
+			int capacity = Math.max(1, Math.min(bulkOperationSize, expectedStatementCount));
+			if (bulk.explicit == explicit && bulk.capacity == capacity
+					&& (bulk.statements != null) == retainStatements) {
+				bulk.reset();
+				configureBulkAddQuadsOperation(bulk, retainStatements, deferEstimatorAdds);
+				return bulk;
+			}
+			return newEstimatorBulkAddQuadsOperation(explicit, expectedStatementCount);
+		}
+
+		private BulkAddQuadsOperation nextBulkAddQuadsOperation(BulkAddQuadsOperation bulk, boolean explicit,
+				int expectedStatementCount) {
+			if (multiThreadingActive) {
+				return newEstimatorBulkAddQuadsOperation(explicit, expectedStatementCount);
+			}
+			return reusableBulkAddQuadsOperation(bulk, explicit, expectedStatementCount);
+		}
+
+		private void configureBulkAddQuadsOperation(BulkAddQuadsOperation bulk, boolean retainStatements,
+				boolean deferEstimatorAdds) {
+			bulk.estimatorBatchCallback = null;
+			bulk.deferredEstimatorAddCallback = null;
+			if (retainStatements) {
+				bulk.estimatorBatchCallback = this::queueEstimatorAdds;
+			} else if (deferEstimatorAdds) {
+				bulk.deferredEstimatorAddCallback = this::submitDeferredEstimatorAddCount;
+			}
+		}
+
 		public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
 			if (approved.isEmpty()) {
 				return;
@@ -11395,7 +15104,7 @@ class LmdbSailStore implements SailStore {
 					q.subj = subj;
 					q.pred = pred;
 					q.obj = obj;
-					q.estimatorCallback = this::queueEstimatorAdd;
+					configureEstimatorAdd(q);
 					q.backupCallback = backupPublicationEnabled ? this::queueBackupAdd : null;
 
 					if (multiThreadingActive) {
@@ -11434,209 +15143,231 @@ class LmdbSailStore implements SailStore {
 		 * @throws SailException if a transaction could not be started.
 		 */
 		private void startTransaction(boolean preferThreading) throws SailException {
-			checkPublicationAdmission();
-			ensureNamespacePersistenceCertain();
-			prepareReplayDecision();
-			Object owner = writerOwner();
-			if (nativeCheckpoints && !storeTxnStarted.get()) {
-				try {
-					beginInitialNoneImport(owner, fixedWriteAttempt);
-				} catch (IOException failure) {
-					throw new SailException(failure);
-				}
-			}
-			acquireAdjacencyAdmission();
-			// Waiting for admission released the store lock; re-establish this owner's prepared decision under it.
-			prepareReplayDecision();
-			synchronized (storeTxnStarted) {
-				if (storeTxnStarted.get() && storeTransactionOwner != owner) {
-					throw new SailException("LMDB writer transaction is owned by another sink");
-				}
-				noneWriteState = nativeCheckpoints ? noneState() : null;
-				sinkTransactionOwner = owner;
-				flushRequested = false;
-				if (storeTxnStarted.compareAndSet(false, true)) {
-					storeTransactionOwner = owner;
-					WriterTransaction nativeTransaction = storeNativeTransaction == null ? new WriterTransaction()
-							: storeNativeTransaction;
-					storeNativeTransaction = nativeTransaction;
-					storeTxnDirty.set(false);
-					resetBulkOperationCapacity();
-					dictionaryCommitSucceeded = false;
-					storeTransactionThread = Thread.currentThread();
-					storeTxnGeneration++;
-					if (storeTxnGeneration == 0L) {
-						storeTxnGeneration++;
-					}
-					if (noneWriteState != null) {
-						noneWriteState.nativeGeneration = storeTxnGeneration;
-					}
-					// Own this generation before either native start or asynchronous submission can fail.
-					backingTransactionGeneration = storeTxnGeneration;
-					mapGrowthCoordinator.bindProjectedWrites(owner, storeTxnGeneration);
-					// Capture committed data before starting either writer or queuing any native writes.
-					logLmdbStats(Level.TRACE, "before writes");
-					multiThreadingActive = preferThreading && enableMultiThreading;
-					nextTransactionAsync = multiThreadingActive;
-					asyncTransactionFinished = false;
-					asyncOperationsAdmitted = 0L;
-					completedAsyncDrain = null;
-					asyncRollbackException = null;
-					boolean workerRequired = false;
-					boolean workerSubmitted = false;
+			LmdbStorePathEvent storePathEvent = beginLmdbStorePathEvent("startTransaction", preferThreading, 0,
+					pendingApproveCount);
+			boolean wasStarted = storeTxnStarted.get();
+			try {
+				checkPublicationAdmission();
+				ensureNamespacePersistenceCertain();
+				prepareReplayDecision();
+				Object owner = writerOwner();
+				if (nativeCheckpoints && !storeTxnStarted.get()) {
 					try {
-						// A NONE import keeps the session across its native chunks only while it is the sole NONE
-						// owner.
-						// resolveBatchValues ends it once anything else may have touched the dictionary.
-						if (freshImportEligible && freshValueSession == null && !freshValueSessionInvalidated
-								&& !mayHaveInferred && (!nativeCheckpoints || explicit && noneWriteStates.size() == 1
-										&& noneWriteStates.containsKey(owner))) {
-							if (tripleStore.isEmpty()) {
-								freshValueSession = valueStore.startFreshValueSessionIfEmpty();
-							}
-							if (freshValueSession == null) {
-								freshValueSessionInvalidated = true;
-							} else if (nativeCheckpoints) {
-								freshNoneImportOwner = owner;
-							}
+						beginInitialNoneImport(owner, fixedWriteAttempt);
+					} catch (IOException failure) {
+						throw new SailException(failure);
+					}
+				}
+				acquireAdjacencyAdmission();
+				// Admission may release the store lock; re-establish this owner's replay decision.
+				prepareReplayDecision();
+				synchronized (storeTxnStarted) {
+					if (storeTxnStarted.get() && storeTransactionOwner != owner) {
+						throw new SailException("LMDB writer transaction is owned by another sink");
+					}
+					noneWriteState = nativeCheckpoints ? noneState() : null;
+					sinkTransactionOwner = owner;
+					flushRequested = false;
+					if (storeTxnStarted.compareAndSet(false, true)) {
+						synchronized (frontierStatisticsMonitor) {
+							frontierStatisticsMonitor.notifyAll();
 						}
-						if (initialRunImportAvailable) {
-							initialRunImportAvailable = false;
-							claimInitialRunImport(owner);
+						storeTransactionOwner = owner;
+						WriterTransaction nativeTransaction = storeNativeTransaction == null ? new WriterTransaction()
+								: storeNativeTransaction;
+						storeNativeTransaction = nativeTransaction;
+						storeTxnDirty.set(false);
+						resetBulkOperationCapacity();
+						dictionaryCommitSucceeded = false;
+						storeTransactionThread = Thread.currentThread();
+						storeTxnGeneration++;
+						if (storeTxnGeneration == 0L) {
+							storeTxnGeneration++;
 						}
-						if (multiThreadingActive) {
-							if (running.compareAndSet(false, true)) {
-								workerRequired = true;
-								tripleStoreException = null;
-								tripleStoreExecutor.submit(() -> {
-									WriterTransaction asyncNativeTransaction = null;
-									try {
-										while (running.get()) {
-											{
-												// A running worker may be reused after its original generation
-												// completed.
-												// Admission publishes a distinct ticket before nextTransactionAsync
-												// becomes true.
-												asyncNativeTransaction = storeNativeTransaction;
-												tripleStore.startTransaction(storeReplayDecision,
-														asyncNativeTransaction);
-												tripleStoreOwnerThread = Thread.currentThread();
-												while (true) {
-													Operation queued = awaitAsyncOperation();
-													if (queued != null) {
-														Runnable beforeOperation = beforeAsyncOperationForTest;
-														if (beforeOperation != null) {
-															beforeOperation.run();
-														}
-														Operation op = queued;
-														if (op == COMMIT_TRANSACTION) {
-															tripleStore.commit();
-															nextTransactionAsync = false;
-															asyncTransactionFinished = true;
-															signalAsyncProgress();
-															break;
-														} else if (op instanceof AsyncDrainOperation drain) {
-															completedAsyncDrain = drain;
-															signalAsyncProgress();
-														} else if (op == ROLLBACK_TRANSACTION) {
-															try {
-																tripleStore.rollback(asyncNativeTransaction);
-															} catch (IOException | RuntimeException
-																	| Error rollbackFailure) {
-																// Recovery may succeed, but the caller must still
-																// retain
-																// this cleanup failure.
-																asyncRollbackException = rollbackFailure;
-																throw rollbackFailure;
+						if (noneWriteState != null) {
+							noneWriteState.nativeGeneration = storeTxnGeneration;
+						}
+						// Own this generation before either native start or asynchronous submission can fail.
+						backingTransactionGeneration = storeTxnGeneration;
+						mapGrowthCoordinator.bindProjectedWrites(owner, storeTxnGeneration);
+						// Capture committed data before starting either writer or queuing any native writes.
+						logLmdbStats(Level.TRACE, "before writes");
+						multiThreadingActive = preferThreading && enableMultiThreading;
+						nextTransactionAsync = multiThreadingActive;
+						asyncTransactionFinished = false;
+						asyncOperationsAdmitted = 0L;
+						completedAsyncDrain = null;
+						asyncRollbackException = null;
+						boolean workerRequired = false;
+						boolean workerSubmitted = false;
+						try {
+							if (freshImportEligible && freshValueSession == null && !freshValueSessionInvalidated
+									&& !mayHaveInferred
+									&& (!nativeCheckpoints || explicit && noneWriteStates.size() == 1
+											&& noneWriteStates.containsKey(owner))) {
+								Boolean empty = tripleStore.tryIsEmptyForImport();
+								if (Boolean.TRUE.equals(empty)) {
+									freshValueSession = valueStore.startFreshValueSessionIfEmpty();
+								}
+								if (empty != null && freshValueSession == null) {
+									freshValueSessionInvalidated = true;
+								} else if (freshValueSession != null && nativeCheckpoints) {
+									freshNoneImportOwner = owner;
+								}
+							}
+							if (initialRunImportAvailable) {
+								initialRunImportAvailable = false;
+								claimInitialRunImport(owner);
+							}
+							if (multiThreadingActive) {
+								if (running.compareAndSet(false, true)) {
+									workerRequired = true;
+									tripleStoreException = null;
+									tripleStoreExecutor.submit(() -> {
+										LmdbStorePathEvent asyncStorePathEvent = beginLmdbStorePathEvent("asyncWorker",
+												true, 0, 0);
+										int asyncOperationCount = 0;
+										WriterTransaction asyncNativeTransaction = null;
+										try {
+											while (running.get()) {
+												{
+													// A reused worker captures the ticket of each newly admitted
+													// generation.
+													asyncNativeTransaction = storeNativeTransaction;
+													tripleStore.startTransaction(storeReplayDecision,
+															asyncNativeTransaction);
+													tripleStoreOwnerThread = Thread.currentThread();
+													while (true) {
+														Operation queued = awaitAsyncOperation();
+														if (queued != null) {
+															asyncOperationCount++;
+															Runnable beforeOperation = beforeAsyncOperationForTest;
+															if (beforeOperation != null) {
+																beforeOperation.run();
 															}
-															nextTransactionAsync = false;
-															asyncTransactionFinished = true;
-															signalAsyncProgress();
-															break;
-														} else {
-															op.execute();
-															signalAsyncProgress();
 														}
-													} else {
-														if (!running.get()) {
-															logger.warn(
-																	"LmdbSailStore was closed while active transaction was waiting for the next operation. Forcing a rollback!");
-															tripleStore.rollback(asyncNativeTransaction);
-															asyncTransactionFinished = true;
-															break;
-														} else if (Thread.interrupted()) {
-															throw new InterruptedException();
+														if (queued != null) {
+															Operation op = queued;
+															if (op == COMMIT_TRANSACTION) {
+																tripleStore.commit();
+																nextTransactionAsync = false;
+																asyncTransactionFinished = true;
+																signalAsyncProgress();
+																break;
+															} else if (op instanceof AsyncDrainOperation drain) {
+																completedAsyncDrain = drain;
+																signalAsyncProgress();
+															} else if (op == ROLLBACK_TRANSACTION) {
+																try {
+																	tripleStore.rollback(asyncNativeTransaction);
+																} catch (IOException | RuntimeException
+																		| Error rollbackFailure) {
+																	// Recovery may succeed, but the caller must
+																	// still
+																	// retain
+																	// this cleanup failure.
+																	asyncRollbackException = rollbackFailure;
+																	throw rollbackFailure;
+																}
+																nextTransactionAsync = false;
+																asyncTransactionFinished = true;
+																signalAsyncProgress();
+																break;
+															} else {
+																op.execute();
+																signalAsyncProgress();
+															}
 														} else {
-															Thread.yield();
+															if (!running.get()) {
+																logger.warn(
+																		"LmdbSailStore was closed while active transaction was waiting for the next operation. Forcing a rollback!");
+																tripleStore.rollback(asyncNativeTransaction);
+																asyncTransactionFinished = true;
+																break;
+															} else if (Thread.interrupted()) {
+																throw new InterruptedException();
+															} else {
+																Thread.yield();
+															}
 														}
 													}
-												}
 
-											}
-											// Admission uses this monitor too: continue an admitted generation or let
-											// its producer submit a new task on the same dedicated native owner.
-											Runnable afterTransaction = afterAsyncTransactionForTest;
-											if (afterTransaction != null) {
-												afterTransaction.run();
-											}
-											synchronized (storeTxnStarted) {
-												if (!nextTransactionAsync) {
-													running.set(false);
-													return;
+												}
+												// Admission uses this monitor too: continue an admitted generation or
+												// let
+												// its producer submit a new task on the same dedicated native owner.
+												Runnable afterTransaction = afterAsyncTransactionForTest;
+												if (afterTransaction != null) {
+													afterTransaction.run();
+												}
+												synchronized (storeTxnStarted) {
+													if (!nextTransactionAsync) {
+														running.set(false);
+														return;
+													}
 												}
 											}
-										}
-									} catch (Throwable e) {
-										recordWriterCapacityFailure(storeTransactionOwner, e);
-										tripleStoreException = e;
-										try {
-											tripleStore.rollback(asyncNativeTransaction);
-										} catch (Throwable rollbackFailure) {
-											asyncRollbackException = retainRollbackFailure(asyncRollbackException,
-													rollbackFailure);
-											if (e != asyncRollbackException) {
-												retainRollbackFailure(e, rollbackFailure);
+										} catch (Throwable e) {
+											recordWriterCapacityFailure(storeTransactionOwner, e);
+											tripleStoreException = e;
+											try {
+												tripleStore.rollback(asyncNativeTransaction);
+											} catch (Throwable rollbackFailure) {
+												asyncRollbackException = retainRollbackFailure(asyncRollbackException,
+														rollbackFailure);
+												if (e != asyncRollbackException) {
+													retainRollbackFailure(e, rollbackFailure);
+												}
+											} finally {
+												synchronized (storeTxnStarted) {
+													running.set(false);
+												}
+												asyncTransactionFinished = true;
+												signalAsyncProgress();
+											}
+											Consumer<Throwable> failurePublished = afterAsyncFailureForTest;
+											if (failurePublished != null) {
+												try {
+													failurePublished.accept(e);
+												} catch (Throwable hookFailure) {
+													retainRollbackFailure(e, hookFailure);
+												}
 											}
 										} finally {
-											synchronized (storeTxnStarted) {
-												running.set(false);
-											}
-											asyncTransactionFinished = true;
-											signalAsyncProgress();
+											commitLmdbStorePathEvent(asyncStorePathEvent, false, storeTxnStarted.get(),
+													0, asyncOperationCount);
 										}
-										Consumer<Throwable> failurePublished = afterAsyncFailureForTest;
-										if (failurePublished != null) {
-											try {
-												failurePublished.accept(e);
-											} catch (Throwable hookFailure) {
-												retainRollbackFailure(e, hookFailure);
-											}
-										}
-									}
-								});
-								workerSubmitted = true;
+									});
+									workerSubmitted = true;
+								}
+							} else {
+								tripleStore.startTransaction(storeReplayDecision, nativeTransaction);
 							}
-						} else {
-							tripleStore.startTransaction(storeReplayDecision, nativeTransaction);
+							valueStore.startTransaction(true, nativeTransaction);
+							if (asyncValueCleanup && asyncValueCleanupCoordinator != null) {
+								asyncValueCleanupCoordinator.ensureWriterIdentity(storeTransactionOwner,
+										nativeTransaction);
+							}
+						} catch (Exception | Error e) {
+							if (workerRequired && !workerSubmitted) {
+								// There is no worker to consume a rollback request when executor submission itself
+								// failed.
+								running.set(false);
+								asyncTransactionFinished = true;
+							}
+							if (e instanceof Error error) {
+								throw error;
+							}
+							// Keep generation/owner intact for the enclosing mutation's complete native cleanup.
+							throw new SailException(e);
 						}
-						valueStore.startTransaction(true, nativeTransaction);
-						if (asyncValueCleanup && asyncValueCleanupCoordinator != null) {
-							asyncValueCleanupCoordinator.ensureWriterIdentity(storeTransactionOwner, nativeTransaction);
-						}
-					} catch (Exception | Error e) {
-						if (workerRequired && !workerSubmitted) {
-							// There is no worker to consume a rollback request when executor submission itself failed.
-							running.set(false);
-							asyncTransactionFinished = true;
-						}
-						if (e instanceof Error error) {
-							throw error;
-						}
-						// Keep generation/owner intact for the enclosing mutation's complete native cleanup.
-						throw new SailException(e);
 					}
+					backingTransactionGeneration = storeTxnGeneration;
+					learnedMutationSinks.add(this);
 				}
-				backingTransactionGeneration = storeTxnGeneration;
+			} finally {
+				commitLmdbStorePathEvent(storePathEvent, !wasStarted && storeTxnStarted.get(), storeTxnStarted.get(), 0,
+						0);
 			}
 		}
 
@@ -11775,6 +15506,9 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void resolveBatchValues(BulkAddQuadsOperation batch, BatchValueCache resolved) throws IOException {
+			for (int i = 0; i < batch.size; i++) {
+				batch.objectValues[i] = batch.statements[i].getObject();
+			}
 			// Deduplicate every term position inside this operation, never across chunks or public transactions;
 			// predicate and context ids may additionally be reused from earlier batches of the same approval.
 			int capacity = Math.multiplyExact(batch.size, 4);
@@ -11842,6 +15576,7 @@ class LmdbSailStore implements SailStore {
 			if (!storeFreshNoneValues(values, ids, valueCount)) {
 				valueStore.storeValues(values, ids, valueCount);
 			}
+			recordMutatedStatements(batch.size);
 			for (int i = 0; i < batch.size; i++) {
 				Statement statement = batch.statements[i];
 				batch.subjects[i] = ids[positions[4 * i]];
@@ -11858,6 +15593,9 @@ class LmdbSailStore implements SailStore {
 					batch.contexts[i] = ids[contextIndex];
 					resolved.contexts.put(statement.getContext(), batch.contexts[i]);
 				}
+			}
+			for (int i = 0; i < batch.size; i++) {
+				recordLeoTouchedPredicate(batch.predicates[i]);
 			}
 		}
 
@@ -12390,9 +16128,11 @@ class LmdbSailStore implements SailStore {
 
 		private void submitAddQuad(Resource subj, IRI pred, Value obj, boolean explicit, Resource context)
 				throws IOException {
+			recordMutatedStatements(1L);
 			AddQuadOperation q = new AddQuadOperation();
 			q.s = valueStore.storeValue(subj);
 			q.p = valueStore.storeValue(pred);
+			recordLeoTouchedPredicate(q.p);
 			q.o = valueStore.storeValue(obj);
 			q.c = context == null ? 0 : valueStore.storeValue(context);
 			q.context = context;
@@ -12435,17 +16175,18 @@ class LmdbSailStore implements SailStore {
 				for (long contextId : contexts) {
 					Consumer<long[]> removed = quad -> {
 						removeCount[0]++;
-						if (backupPublicationEnabled || explicit && sketchBasedJoinEstimator != null) {
-							try {
-								Statement removedStatement = valueStore.withWriterCaptureContext(
-										(stack, txn) -> captureBackupStatement(quadToStatement(quad)));
-								queueBackupRemove(removedStatement);
-								if (explicit) {
-									queueEstimatorRemove(removedStatement);
-								}
-							} catch (IOException e) {
-								throw new UncheckedIOException(e);
+						recordLeoTouchedPredicate(quad[1]);
+						recordMutatedStatements(1L);
+						try {
+							Statement removedStatement = valueStore.withWriterCaptureContext(
+									(stack, txn) -> captureBackupStatement(quadToStatement(quad)));
+							tripleStore.recordPredicateObjectRemoval(quad[1], removedStatement.getObject());
+							queueBackupRemove(removedStatement);
+							if (explicit) {
+								queueEstimatorRemove(removedStatement);
 							}
+						} catch (IOException e) {
+							throw new UncheckedIOException(e);
 						}
 						for (long id : quad) {
 							if (id != 0L && !ValueIds.isInlined(id)) {
@@ -12987,6 +16728,7 @@ class LmdbSailStore implements SailStore {
 							pendingApproveValueIds[pendingApprovePredicateIndexes[i]],
 							pendingApproveValueIds[pendingApproveObjectIndexes[i]],
 							contextIndex < 0 ? 0 : pendingApproveValueIds[contextIndex]);
+					pending.objectValues[pending.size - 1] = pendingApproveObjects[i];
 					if (pending.statements != null) {
 						pending.statements[pending.size - 1] = valueStore.createStatement(pendingApproveSubjects[i],
 								pendingApprovePredicates[i], pendingApproveObjects[i], pendingApproveContexts[i]);
@@ -13039,7 +16781,7 @@ class LmdbSailStore implements SailStore {
 			}
 			try {
 				return pendingPreparedApprovals != null || freshValueSession != null && !freshSessionReservedForNone
-						|| !storeTxnStarted.get() && tripleStore.isEmpty();
+						|| !storeTxnStarted.get() && Boolean.TRUE.equals(tripleStore.tryIsEmptyForImport());
 			} catch (IOException failure) {
 				throw new SailException(failure);
 			}
@@ -13109,11 +16851,13 @@ class LmdbSailStore implements SailStore {
 				}
 				BulkAddQuadsOperation operation = newBulkAddQuadsOperation(explicit, operationSize);
 				try {
+					configureBulkCallbacks(operation);
 					for (int i = 0; i < operationSize; i++) {
 						int quadOffset = Math.multiplyExact(statementOffset + i, 4);
 						int contextId = quads[quadOffset + 3];
 						operation.add(valueIds[quads[quadOffset]], valueIds[quads[quadOffset + 1]],
 								valueIds[quads[quadOffset + 2]], contextId < 0 ? 0 : valueIds[contextId]);
+						operation.objectValues[i] = values[quads[quadOffset + 2]];
 						if (operation.statements != null) {
 							operation.statements[i] = valueStore.createStatement((Resource) values[quads[quadOffset]],
 									(IRI) values[quads[quadOffset + 1]], values[quads[quadOffset + 2]],
@@ -13185,6 +16929,7 @@ class LmdbSailStore implements SailStore {
 						operation.predicates[i] = valueIds[quads[quadOffset + 1]];
 						operation.objects[i] = valueIds[quads[quadOffset + 2]];
 						operation.contexts[i] = contextId < 0 ? 0 : valueIds[contextId];
+						operation.arrays.objectValues[i] = values[quads[quadOffset + 2]];
 					}
 					operation.prepareSecondaryIndexes();
 					submitOperation(operation);
@@ -13220,8 +16965,7 @@ class LmdbSailStore implements SailStore {
 			ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session, values,
 					prepared.predicateValueIndexes());
 			GlobalPreparedImportOperation operation = newGlobalPreparedImportOperation(prepared.quads(),
-					assignment.ids(),
-					prepared.size());
+					assignment.ids(), values, prepared.size());
 			boolean submitted = false;
 			try {
 				if (backupPublicationEnabled) {
@@ -13254,6 +16998,10 @@ class LmdbSailStore implements SailStore {
 			sortForIndex(operation.subjects, operation.predicates, operation.objects, operation.contexts,
 					operation.size, fieldSequence, statementOrder, scratchOrder, sortValues, scratchValues,
 					radixCounts, radixOffsets);
+			Value[] originalObjects = Arrays.copyOf(operation.objectValues, operation.size);
+			for (int index = 0; index < operation.size; index++) {
+				operation.objectValues[index] = originalObjects[statementOrder[index]];
+			}
 			if (operation.statements != null) {
 				Statement[] original = Arrays.copyOf(operation.statements, operation.size);
 				for (int index = 0; index < operation.size; index++) {
@@ -13302,9 +17050,12 @@ class LmdbSailStore implements SailStore {
 			System.arraycopy(scratch, 0, values, 0, size);
 		}
 
-		private void configureBulkEstimator(BulkAddQuadsOperation bulk) {
+		private void configureBulkCallbacks(BulkAddQuadsOperation bulk) {
 			if (explicit && sketchBasedJoinEstimator != null) {
 				bulk.setEstimatorCallback(this::queueEstimatorAdd);
+			}
+			if (backupPublicationEnabled) {
+				bulk.backupCallback = this::queueBackupAdd;
 			}
 		}
 	}
@@ -13357,6 +17108,7 @@ class LmdbSailStore implements SailStore {
 			if (closed) {
 				throw new SailException("Mutation dataset is closed");
 			}
+			Resource[] requestedContexts = LmdbContextRequests.distinct(contexts);
 			boolean boundProbe = subject != null && predicate != null && object != null;
 			List<Statement> pendingMatches = new ArrayList<>();
 			if (boundProbe) {
@@ -13365,7 +17117,7 @@ class LmdbSailStore implements SailStore {
 					NoneWriteState state = noneWriteStates.get(controller.writerOwner());
 					PendingNoneBatch pending = state == null ? null : state.pending;
 					if (pending != null && pending.explicit == controller.explicit) {
-						pendingMatches.addAll(pending.pendingMatches(subject, predicate, object, contexts));
+						pendingMatches.addAll(pending.pendingMatches(subject, predicate, object, requestedContexts));
 					}
 				} finally {
 					sinkStoreAccessLock.unlock();
@@ -13380,7 +17132,8 @@ class LmdbSailStore implements SailStore {
 
 				@Override
 				public boolean hasNext() {
-					while (!isClosed() && offset == page.size() && contextIndex < Math.max(1, contexts.length)) {
+					while (!isClosed() && offset == page.size()
+							&& contextIndex < Math.max(1, requestedContexts.length)) {
 						loadPage();
 					}
 					return !isClosed() && offset < page.size();
@@ -13405,14 +17158,16 @@ class LmdbSailStore implements SailStore {
 								long s = subject == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(subject);
 								long p = predicate == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(predicate);
 								long o = object == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(object);
-								Resource context = contexts.length == 0 ? null : contexts[contextIndex];
-								long c = contexts.length == 0 ? LmdbValue.UNKNOWN_ID
+								Resource context = requestedContexts.length == 0 ? null
+										: requestedContexts[contextIndex];
+								long c = requestedContexts.length == 0 ? LmdbValue.UNKNOWN_ID
 										: context == null ? 0L : valueStore.getId(context);
 								long[][] quads = new long[0][];
 								if (!(subject != null && s == LmdbValue.UNKNOWN_ID
 										|| predicate != null && p == LmdbValue.UNKNOWN_ID
 										|| object != null && o == LmdbValue.UNKNOWN_ID
-										|| contexts.length > 0 && context != null && c == LmdbValue.UNKNOWN_ID)) {
+										|| requestedContexts.length > 0 && context != null
+												&& c == LmdbValue.UNKNOWN_ID)) {
 									quads = controller.collectNoneQuads(s, p, o, c, controller.explicit,
 											Math.max(1, Math.min(bulkOperationSize, NoneWriteState.MAX_CHUNK_ROWS)),
 											after);
@@ -14101,6 +17856,21 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean tryRetainDictionaryTermMembership() {
+			try {
+				checkOpen();
+				return lease.readView.tryRetainDictionaryTermMembership();
+			} catch (IOException failure) {
+				throw new QueryEvaluationException(failure);
+			} catch (MapResizeConflictException conflict) {
+				if (conflict.getSuppressed().length != 0) {
+					throw conflict;
+				}
+				return false;
+			}
+		}
+
+		@Override
 		public Object idSpace() {
 			return valueStore;
 		}
@@ -14121,20 +17891,38 @@ class LmdbSailStore implements SailStore {
 			return statementsArbitrated(null, subj, pred, obj, context, observer);
 		}
 
+		@Override
+		public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
+			return statementsArbitrated(null, subj, pred, obj, context, observer, true);
+		}
+
 		private RecordIterator statementsArbitrated(StatementOrder order, long subj, long pred, long obj, long context,
 				AdjacencyAccessObserver observer) throws IOException {
+			return statementsArbitrated(order, subj, pred, obj, context, observer, false);
+		}
+
+		private RecordIterator statementsArbitrated(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer, boolean encounterOrderRequired) throws IOException {
 			checkOpen();
 			if (!hasStatementsInSource()) {
 				return EmptyRecordIterator.INSTANCE;
 			}
 			LmdbAdjacencyReadView view = exactAdjacencyView(false);
-			if (view != null && directAdjacency.offersUniversalCandidate(view)) {
+			String encounterIndex = encounterOrderRequired
+					? tripleStore.statementEncounterIndexName(txn, subj, pred, obj, context)
+					: null;
+			StatementOrder adjacencyOrder = !encounterOrderRequired ? order
+					: directAdjacency == null ? null
+							: directAdjacency.encounterOrder(encounterIndex, subj, pred, obj, context);
+			if (view != null && directAdjacency.offersUniversalCandidate(view)
+					&& (!encounterOrderRequired || adjacencyOrder != null)) {
 				double adjacencyRows = directAdjacency.estimateResultRows(view, subj, pred, obj, context, explicit);
-				double adjacencyWork = directAdjacency.estimateUniversalWork(view, order, subj, pred, obj, context,
-						explicit, adjacencyRows);
+				double adjacencyWork = directAdjacency.estimateUniversalWork(view, adjacencyOrder, subj, pred, obj,
+						context, explicit, adjacencyRows);
 				int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
-						LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, order, false,
-						adjacencyTraversal(order, subj, pred, obj));
+						LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, adjacencyOrder, false,
+						adjacencyTraversal(adjacencyOrder, subj, pred, obj));
 				double adjacencyLow = workLow(adjacencyWork);
 				double adjacencyHigh = workHigh(adjacencyWork);
 				if (order != null && tripleStore.getIndexName(txn, order, subj, pred, obj, context).isEmpty()) {
@@ -14166,8 +17954,8 @@ class LmdbSailStore implements SailStore {
 						adjacencyHigh, adjacencyKey, adjacencyWork, lmdbLow, lmdbHigh, lmdbKey, lmdbWork);
 				if (winner == LmdbStatementAccessArbiter.Source.ADJACENCY) {
 					long started = System.nanoTime();
-					RecordIterator direct = openStatementAdjacencyCandidate(view, order, subj, pred, obj, context,
-							null, null);
+					RecordIterator direct = openStatementAdjacencyCandidate(view, adjacencyOrder, subj, pred, obj,
+							context, null, null);
 					long openNanos = System.nanoTime() - started;
 					if (direct != null) {
 						observeOutranked(observer, "LMDB", winner, order, subj, pred, obj, context);
@@ -14193,7 +17981,16 @@ class LmdbSailStore implements SailStore {
 				return LmdbStatementAccessArbiter.measured(lmdb, statementAccessEvidence, evidenceRegime(view), lmdbKey,
 						openNanos, lmdbWork, observer, false);
 			}
-			RecordIterator direct = tryDirect(order, subj, pred, obj, context, null, null, observer);
+			boolean directAllowed = !encounterOrderRequired || directAdjacency != null
+					&& (directAdjacency.ordinaryPreservesEncounterOrder(view, subj, pred, obj, context, explicit,
+							encounterIndex) || directAdjacency.mayAttemptShadowComparison(view));
+			RecordIterator direct = directAllowed
+					? tryDirect(order, subj, pred, obj, context, null, null, observer)
+					: null;
+			if (!directAllowed && observer != null) {
+				observer.ineligible("INDEX_ORDER_INCOMPATIBLE[encounter=" + encounterIndex + "]",
+						order, subj, pred, obj, context);
+			}
 			if (direct != null) {
 				return direct;
 			}
@@ -15038,11 +18835,19 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	final class LmdbSailDataset implements SailDataset, NativeLmdbQuerySource {
+	final class LmdbSailDataset
+			implements SailDataset, NativeLmdbQuerySource, LmdbPinnedReadTxnSource, LmdbPhysicalReadComposition {
 
 		private final boolean explicit;
 		private final ReadView readView;
 		private final Txn txn;
+		// The admitted view owns an immutable physical epoch/version pair. Metadata-only commits may advance that
+		// physical epoch independently of the logical statement revision used by planningDataRevision(). Native
+		// retirement invalidates this dataset; it must never renew its caches onto another owner's snapshot.
+		private final long snapshotEpoch;
+		private final long snapshotTxnVersion;
+		private final Map<StatementCountCacheKey, Long> exactStatementCountCache = new ConcurrentHashMap<>();
+		private final Map<StatementLookupCacheKey, StatementLookupCacheEntry> exactStatementLookupCache = new ConcurrentHashMap<>();
 		private final Set<CloseableIteration<?>> guardedIterations = ConcurrentHashMap.newKeySet();
 		private final Set<RecordIterator> nativeTermIterations = ConcurrentHashMap.newKeySet();
 		private final LegacySemanticScope.Owner semanticScopes = valueStore.getFormat().isLegacy()
@@ -15082,6 +18887,9 @@ class LmdbSailStore implements SailStore {
 			this.explicit = explicit;
 			this.readView = readView;
 			this.txn = readView.tripleTxn();
+			readView.ensureNativeSnapshotsValid();
+			snapshotEpoch = readView.tripleSnapshotEpoch;
+			snapshotTxnVersion = readView.tripleTxnVersion;
 			this.snapshotRevision = txn.snapshotRevision();
 			this.pinnedTxnVersion = txn.version();
 			this.adjacencyEligible = level == null || !level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
@@ -15102,11 +18910,6 @@ class LmdbSailStore implements SailStore {
 				} catch (Throwable cleanup) {
 					retainRollbackFailure(failure, cleanup);
 				}
-				try {
-					readView.close();
-				} catch (Throwable cleanup) {
-					retainRollbackFailure(failure, cleanup);
-				}
 				throw failure;
 			}
 		}
@@ -15117,8 +18920,53 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public List<LmdbPhysicalReadComposition.PlaneOccurrence> planeOccurrences() {
+			if (closed.get()) {
+				throw new SailException("The owning LMDB dataset is closed");
+			}
+			readView.ensureNativeSnapshotsValid();
+			return List.of(new LmdbPhysicalReadComposition.PlaneOccurrence(this, explicit));
+		}
+
+		@Override
+		public boolean isCurrentForPhysicalCost() {
+			if (closed.get()) {
+				throw new SailException("The owning LMDB dataset is closed");
+			}
+			readView.ensureNativeSnapshotsValid();
+			return readView.isCurrentForStatistics();
+		}
+
+		@Override
 		public Function<Value, Value> getValueCapturer() {
 			return readView.valueCapturer;
+		}
+
+		/** Validates the admitted capability without consulting a retired or reset native handle. */
+		private long refreshSnapshotState() throws SailException {
+			readView.ensureNativeSnapshotsValid();
+			return snapshotTxnVersion;
+		}
+
+		@Override
+		public OptionalLong getSnapshotEpoch() {
+			refreshSnapshotState();
+			return OptionalLong.of(snapshotEpoch);
+		}
+
+		@Override
+		public Optional<Txn> pinnedReadTxn() {
+			return closed.get() ? Optional.empty() : Optional.of(txn);
+		}
+
+		@Override
+		public Optional<ValueStore.ReadSnapshot> pinnedValueSnapshot() {
+			return closed.get() ? Optional.empty() : Optional.of(readView.valueSnapshot());
+		}
+
+		@Override
+		public Optional<SailClosable> enterPlanningReadView() {
+			return closed.get() ? Optional.empty() : Optional.of(LmdbSailStore.this.enterPlanningReadView(readView));
 		}
 
 		@Override
@@ -15242,7 +19090,12 @@ class LmdbSailStore implements SailStore {
 
 		/** Validates cached rows as well as native cursor reads after a pinned snapshot is invalidated. */
 		private <T> CloseableIteration<? extends T> guardSnapshot(CloseableIteration<? extends T> rows) {
-			if (snapshotRevision < 0L || rows instanceof EmptyIteration<?>) {
+			return snapshotRevision < 0L ? rows : ownSnapshotIteration(rows);
+		}
+
+		/** All generic iterators own their records, including latest-committed readers and cached rows. */
+		private <T> CloseableIteration<? extends T> ownSnapshotIteration(CloseableIteration<? extends T> rows) {
+			if (rows instanceof EmptyIteration<?>) {
 				return rows;
 			}
 			class SnapshotIteration extends IterationWrapper<T> {
@@ -15357,11 +19210,32 @@ class LmdbSailStore implements SailStore {
 				public long getSourceRowsFilteredActual() {
 					return reporting.getSourceRowsFilteredActual();
 				}
+
+				@Override
+				public long getDistinctCursorSkipCountActual() {
+					return reporting.getDistinctCursorSkipCountActual();
+				}
+
+				@Override
+				public long getDistinctCursorSkipSeekCountActual() {
+					return reporting.getDistinctCursorSkipSeekCountActual();
+				}
+
+				@Override
+				public long getSkipAheadSeekCountActual() {
+					return reporting.getSkipAheadSeekCountActual();
+				}
+
 			}
+
 			CloseableIteration<? extends T> guarded = rows instanceof IndexReportingIterator reporting
 					? new IndexedSnapshotIteration(reporting)
 					: new SnapshotIteration();
 			guardedIterations.add(guarded);
+			if (closed.get()) {
+				// Close may have begun while the records were opening, before registration was visible.
+				guarded.close();
+			}
 			return guarded;
 		}
 
@@ -15570,6 +19444,24 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean tryRetainDictionaryTermMembership() {
+			try {
+				return withNativeSourceRead(() -> {
+					try {
+						return readView.tryRetainDictionaryTermMembership();
+					} catch (IOException failure) {
+						throw new QueryEvaluationException(failure);
+					}
+				});
+			} catch (MapResizeConflictException conflict) {
+				if (conflict.getSuppressed().length != 0) {
+					throw conflict;
+				}
+				return false;
+			}
+		}
+
+		@Override
 		public Object idSpace() {
 			return valueStore;
 		}
@@ -15590,8 +19482,43 @@ class LmdbSailStore implements SailStore {
 			return statementsArbitrated(null, subj, pred, obj, context, observer);
 		}
 
+		/** Preserve generic ordering and the raw-filter/distinct access contract at the owning source. */
+		private RecordIterator statementRecords(StatementPattern statementPattern, long subj, long pred, long obj,
+				long context, LmdbValueIdFilter idFilter) throws IOException {
+			boolean distinctAccess = statementPattern != null && LmdbDistinctCursorSkipSupport.ACCESS_MODE.equals(
+					statementPattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
+			if (idFilter.isEmpty() && !distinctAccess) {
+				return statementsInEncounterOrder(subj, pred, obj, context, null);
+			}
+			// Native filtering and prefix skipping retain their existing cursor implementation and metrics.
+			long readStamp = acquireNativeSourceReadLock();
+			boolean releaseReadLock = true;
+			try {
+				assertNativeSourceOpen();
+				RecordIterator records = getRecords(txn, statementPattern, subj, pred, obj, context, explicit,
+						idFilter);
+				releaseReadLock = false;
+				return new NativeSourceReadLockedRecordIterator(records, readStamp);
+			} finally {
+				if (releaseReadLock) {
+					nativeSourceLock.unlockRead(readStamp);
+				}
+			}
+		}
+
+		@Override
+		public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer) throws IOException {
+			return statementsArbitrated(null, subj, pred, obj, context, observer, true);
+		}
+
 		private RecordIterator statementsArbitrated(StatementOrder order, long subj, long pred, long obj, long context,
 				AdjacencyAccessObserver observer) throws IOException {
+			return statementsArbitrated(order, subj, pred, obj, context, observer, false);
+		}
+
+		private RecordIterator statementsArbitrated(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer, boolean encounterOrderRequired) throws IOException {
 			long readStamp = acquireNativeSourceReadLock();
 			boolean releaseReadLock = true;
 			try {
@@ -15617,14 +19544,22 @@ class LmdbSailStore implements SailStore {
 				if (!hasStatementsInSource()) {
 					return EmptyRecordIterator.INSTANCE;
 				}
-				if (directEligible() && directAdjacency.offersUniversalCandidate(adjacencyView)) {
+				String encounterIndex = encounterOrderRequired
+						? tripleStore.statementEncounterIndexName(txn, subj, pred, obj, context)
+						: null;
+				StatementOrder adjacencyOrder = !encounterOrderRequired ? order
+						: directAdjacency == null ? null
+								: directAdjacency.encounterOrder(encounterIndex, subj, pred, obj, context);
+				if (directEligible() && directAdjacency.offersUniversalCandidate(adjacencyView)
+						&& (!encounterOrderRequired || adjacencyOrder != null)) {
 					double adjacencyRows = directAdjacency.estimateResultRows(adjacencyView, subj, pred, obj,
 							context, explicit);
-					double adjacencyWork = directAdjacency.estimateUniversalWork(adjacencyView, order, subj, pred,
-							obj, context, explicit, adjacencyRows);
+					double adjacencyWork = directAdjacency.estimateUniversalWork(adjacencyView, adjacencyOrder, subj,
+							pred, obj, context, explicit, adjacencyRows);
 					int adjacencyKey = LmdbStatementAccessArbiter.variantKey(
-							LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, order, false,
-							adjacencyTraversal(order, subj, pred, obj));
+							LmdbStatementAccessArbiter.Source.ADJACENCY, subj, pred, obj, context, adjacencyOrder,
+							false,
+							adjacencyTraversal(adjacencyOrder, subj, pred, obj));
 					double adjacencyLow = workLow(adjacencyWork);
 					double adjacencyHigh = workHigh(adjacencyWork);
 					if (order != null && tripleStore.getIndexName(txn, order, subj, pred, obj, context).isEmpty()) {
@@ -15658,7 +19593,7 @@ class LmdbSailStore implements SailStore {
 							adjacencyHigh, adjacencyKey, adjacencyWork, lmdbLow, lmdbHigh, lmdbKey, lmdbWork);
 					if (winner == LmdbStatementAccessArbiter.Source.ADJACENCY) {
 						long started = System.nanoTime();
-						RecordIterator direct = tryDirect(order, subj, pred, obj, context, null, null, null);
+						RecordIterator direct = tryDirect(adjacencyOrder, subj, pred, obj, context, null, null, null);
 						long openNanos = System.nanoTime() - started;
 						if (direct != null) {
 							observeOutranked(observer, "LMDB", winner, order, subj, pred, obj, context);
@@ -15686,7 +19621,18 @@ class LmdbSailStore implements SailStore {
 					return LmdbStatementAccessArbiter.measured(locked, statementAccessEvidence,
 							evidenceRegime(adjacencyView), lmdbKey, openNanos, lmdbWork, observer, false);
 				}
-				RecordIterator direct = tryDirect(order, subj, pred, obj, context, null, null, observer);
+				boolean directAllowed = !encounterOrderRequired || directAdjacency != null
+						&& directEligible()
+						&& (directAdjacency.ordinaryPreservesEncounterOrder(adjacencyView, subj, pred, obj, context,
+								explicit, encounterIndex)
+								|| directAdjacency.mayAttemptShadowComparison(adjacencyView));
+				RecordIterator direct = directAllowed
+						? tryDirect(order, subj, pred, obj, context, null, null, observer)
+						: null;
+				if (!directAllowed && observer != null) {
+					observer.ineligible("INDEX_ORDER_INCOMPATIBLE[encounter=" + encounterIndex + "]",
+							order, subj, pred, obj, context);
+				}
 				if (direct != null) {
 					// pure in-memory iterator holding its own read-view lease: release the read stamp now
 					return direct;
@@ -16542,6 +20488,13 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public OptionalLong adjacencyStatisticsGeneration() {
+			return withNativeSourceRead(() -> !hasStatementsInSource() || !directEligible()
+					? OptionalLong.empty()
+					: directAdjacency.plannerStatisticsGeneration(adjacencyView));
+		}
+
+		@Override
 		public OptionalDouble meanFanOut(long predicate, boolean bySubject) {
 			return withNativeSourceRead(() -> {
 				Runnable interleave = afterPlannerStatsOpenCheckForTest;
@@ -17164,6 +21117,16 @@ class LmdbSailStore implements SailStore {
 			}
 
 			@Override
+			public long getDistinctCursorSkipCountActual() {
+				return delegate.getDistinctCursorSkipCountActual();
+			}
+
+			@Override
+			public long getDistinctCursorSkipSeekCountActual() {
+				return delegate.getDistinctCursorSkipSeekCountActual();
+			}
+
+			@Override
 			public void close() {
 				if (!closed) {
 					try {
@@ -17206,34 +21169,77 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws SailException {
-			ensureSnapshot();
-			try {
-				return guardSnapshot(createStatementIterator(this, subj, pred, obj, contexts));
-			} catch (IOException e) {
+			return getStatements((StatementPattern) null, subj, pred, obj, contexts);
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+				IRI pred, Value obj, Resource... contexts) throws SailException {
+			QueryExecutionContext.checkpointReplaySafepoint();
+			readView.ensureNativeSnapshotsValid();
+			int ioFailures = 0;
+			while (true) {
+				long cacheTxnVersion = refreshSnapshotState();
 				try {
+					return ownSnapshotIteration(withReplaySafepoints(
+							statementPattern instanceof LmdbGraphDistinctAccess.Carrier carrier
+									? createGraphDistinctIterator(carrier, subj, pred, obj, contexts)
+									: createStatementIterator(readView, this, statementPattern,
+											exactStatementLookupCache, cacheTxnVersion, subj, pred, obj, explicit,
+											contexts)));
+				} catch (SnapshotVersionChangedException e) {
+					// A concurrent commit renewed the tracked txn. Refresh and restart without consuming the IO retry.
+				} catch (IOException e) {
+					if (ioFailures++ > 0) {
+						throw new SailException("Unable to get statements", e);
+					}
 					logger.warn("Failed to get statements, retrying", e);
-					// try once more before giving up
 					Thread.yield();
-					return guardSnapshot(createStatementIterator(this, subj, pred, obj, contexts));
-				} catch (IOException e2) {
-					throw new SailException("Unable to get statements", e);
 				}
 			}
 		}
 
+		private CloseableIteration<? extends Statement> createGraphDistinctIterator(
+				LmdbGraphDistinctAccess.Carrier carrier, Resource subject, IRI predicate, Value object,
+				Resource[] contexts) throws IOException {
+			carrier.access().validateOwner(this, explicit);
+			carrier.access().validateContextArguments(contexts);
+			if (!explicit && !mayHaveInferred) {
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
+			}
+			ValueStore.ReadSnapshot values = readView.valueSnapshot();
+			long subjectId = subject == null ? LmdbValue.UNKNOWN_ID : valueStore.getStatementId(values, subject);
+			long predicateId = predicate == null ? LmdbValue.UNKNOWN_ID : valueStore.getStatementId(values, predicate);
+			long objectId = object == null ? LmdbValue.UNKNOWN_ID : valueStore.getStatementId(values, object);
+			RecordIterator records = carrier.access().open(this, explicit, subjectId, predicateId, objectId);
+			return new LmdbStatementIterator(records, valueStore, values, subject, predicate, object, null);
+		}
+
 		@Override
 		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-			ensureSnapshot();
-			try {
-				return countStatementIterator(this, subj, pred, obj, contexts);
-			} catch (IOException e) {
+			return getStatementCount((StatementPattern) null, subj, pred, obj, contexts);
+		}
+
+		@Override
+		public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+				Resource... contexts) throws SailException {
+			QueryExecutionContext.checkpointReplaySafepoint();
+			readView.ensureNativeSnapshotsValid();
+			int ioFailures = 0;
+			while (true) {
+				long cacheTxnVersion = refreshSnapshotState();
 				try {
+					return countStatementIterator(readView, this, statementPattern, exactStatementCountCache,
+							cacheTxnVersion,
+							subj, pred, obj, explicit, contexts);
+				} catch (SnapshotVersionChangedException e) {
+					// A concurrent commit renewed the tracked txn. Refresh and restart without consuming the IO retry.
+				} catch (IOException e) {
+					if (ioFailures++ > 0) {
+						throw new SailException("Unable to count statements", e);
+					}
 					logger.warn("Failed to count statements, retrying", e);
-					// try once more before giving up
 					Thread.yield();
-					return countStatementIterator(this, subj, pred, obj, contexts);
-				} catch (IOException e2) {
-					throw new SailException("Unable to count statements", e);
 				}
 			}
 		}
@@ -17361,6 +21367,21 @@ class LmdbSailStore implements SailStore {
 			@Override
 			public long getSourceRowsFilteredActual() {
 				return indexReporter.getSourceRowsFilteredActual();
+			}
+
+			@Override
+			public long getDistinctCursorSkipCountActual() {
+				return indexReporter.getDistinctCursorSkipCountActual();
+			}
+
+			@Override
+			public long getDistinctCursorSkipSeekCountActual() {
+				return indexReporter.getDistinctCursorSkipSeekCountActual();
+			}
+
+			@Override
+			public long getSkipAheadSeekCountActual() {
+				return indexReporter.getSkipAheadSeekCountActual();
 			}
 		}
 	}

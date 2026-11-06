@@ -268,7 +268,7 @@ final class LmdbNativeParallelPipelines {
 		// estRows is a ROWS quantity (gap-analysis C1): prorating a LIMIT slice against work units made the
 		// fraction sliceRows/totalWork vanishingly small and systematically underpriced parallel pipelines under
 		// LIMIT — the exact inversion the startup split above exists to prevent.
-		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
+		return new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters), LmdbNativeWork.exact(estCost),
 				LmdbNativeWork.exact(startupCost), LmdbNativeWork.rowsOut(plan, consumerRow, consumerRow.boundMask()),
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, reservation::close);
 	}
@@ -290,7 +290,8 @@ final class LmdbNativeParallelPipelines {
 		boolean handedOff = false;
 		Throwable primaryFailure = null;
 		try {
-			sources = step.source.openParallelSources(sourceCount);
+			// Siblings borrow this opening's runtime authority; the compiled carrier has no execution context.
+			sources = consumerRow.source.openParallelSources(sourceCount);
 			if (sources == null) {
 				return reject(step, "snapshot-unavailable");
 			}
@@ -399,6 +400,11 @@ final class LmdbNativeParallelPipelines {
 			this.reservation = reservation;
 			this.workers = workers;
 			this.sourceCount = sourceCount;
+		}
+
+		RowCursor open(NativeFilterLease filters) throws IOException {
+			return LmdbNativeParallelPipelines.open(new ParallelCandidate(step, consumerRow, filters.borrow(plan), root,
+					partitions, reservation, workers, sourceCount));
 		}
 
 		RowCursor open() throws IOException {
@@ -767,6 +773,10 @@ final class LmdbNativeParallelPipelines {
 			this.input = partitions != null ? null : new ArrayBlockingQueue<>(workerPlans.length * 2);
 			this.output = new ArrayBlockingQueue<>(workerPlans.length * 2);
 			this.tasks = new NativeExecutionContext.WorkerTasks(workerPlans.length, reservation::close);
+			SyntheticValueSource filterScope = consumerRow.evaluationScope();
+			if (filterScope != null) {
+				filterScope.executionContext().registerFilterWorkers(tasks);
+			}
 			this.futures = new ArrayList<>(workerPlans.length);
 			this.reservation = reservation;
 			this.poisonRemaining = partitions == null ? workerPlans.length : 0;
@@ -809,7 +819,7 @@ final class LmdbNativeParallelPipelines {
 					} catch (Throwable closeFailure) {
 						recordCleanupFailure(closeFailure);
 					} finally {
-						taskFinished();
+						tasks.countDown(problem);
 					}
 				}
 				closeProducer();
@@ -1316,6 +1326,22 @@ final class LmdbNativeParallelPipelines {
 			}
 		}
 
+		private volatile boolean cleanupFailureReported;
+
+		private void throwOwnedCleanupFailure() {
+			// next() owns recorded execution failures and preserves their checked exception contract.
+			if (failure.get() != null) {
+				return;
+			}
+			Throwable problem = retainRecordedCleanupFailures(tasks.cleanupFailure());
+			if (!cleanupFailureReported && problem != null) {
+				if (!tasks.isCleanupOwnerThread()) {
+					cleanupFailureReported = true;
+				}
+				NativeContextClosingIteration.throwFailure(problem);
+			}
+		}
+
 		@Override
 		public void close() {
 			close(true);
@@ -1347,6 +1373,7 @@ final class LmdbNativeParallelPipelines {
 		private void shutdown() {
 			if (closed) {
 				awaitTasks();
+				throwOwnedCleanupFailure();
 				return;
 			}
 			closed = true;
@@ -1367,6 +1394,7 @@ final class LmdbNativeParallelPipelines {
 				partitions.clear();
 			}
 			output.clear();
+			throwOwnedCleanupFailure();
 		}
 	}
 

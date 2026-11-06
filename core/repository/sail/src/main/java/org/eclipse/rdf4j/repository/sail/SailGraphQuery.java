@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryOperationContext;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
@@ -57,13 +58,15 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 
 	@Override
 	public GraphQueryResult evaluate() throws QueryEvaluationException {
-		InterruptingTimeLimit timeLimit = startEvaluationTimeLimit();
+		InterruptingTimeLimit timeLimit = null;
 		CloseableIteration<? extends BindingSet> bindingsIter1 = null;
 		CloseableIteration<? extends BindingSet> bindingsIter2 = null;
 		CloseableIteration<? extends Statement> stIter = null;
 		IteratingGraphQueryResult result = null;
 		boolean allGood = false;
-		try {
+		try (QueryOperationContext.Scope operation = openQueryOperation()) {
+			timeLimit = startEvaluationTimeLimit();
+			QueryOperationContext.throwIfDeadlineExpired();
 			TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 			SailConnection sailCon = getConnection().getSailConnection();
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder

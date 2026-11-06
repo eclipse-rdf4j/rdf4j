@@ -29,9 +29,11 @@ final class NativePhysicalInputRecipe {
 		EMPTY
 	}
 
-	private record TermRecipe(int slot, long constant, boolean bindConstant) {
+	private record TermRecipe(int slot, long constant, boolean bindConstant, boolean preserveExisting, boolean readOnly,
+			int equalFields) {
 		static TermRecipe of(Term term) {
-			return new TermRecipe(term.slot, term.constant, term.bindConstant);
+			return new TermRecipe(term.slot, term.constant, term.bindConstant, term.preserveExisting, term.readOnly,
+					term.equalFields);
 		}
 	}
 
@@ -43,6 +45,7 @@ final class NativePhysicalInputRecipe {
 	}
 
 	private record Assignment(int target, int source, long constant, boolean checked, boolean nullOnError,
+			boolean assignment,
 			boolean replaySafe, NativeScalarPlan scalar) {
 	}
 
@@ -83,7 +86,7 @@ final class NativePhysicalInputRecipe {
 					return null;
 				}
 				assignments.add(new Assignment(copy.targetSlot, copy.sourceSlot, copy.constant, copy.termChecked,
-						copy.setNullOnError, copy.encounterOrderReplaySafe, scalar));
+						copy.setNullOnError, copy.assignment, copy.encounterOrderReplaySafe, scalar));
 			}
 			return new NativePhysicalInputRecipe(Kind.EXTENSION, List.copyOf(assignments), child);
 		}

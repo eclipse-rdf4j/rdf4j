@@ -80,6 +80,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private long activeBindingMask;
 	private int cachedSize = -1;
 	private int cachedHashCode;
+	BindingSetOrigin origin;
 	private GraphFrameBindings graphFrames;
 
 	@Override
@@ -153,6 +154,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			this.activeBindingMask = calculateActiveBindingMask();
 		}
 		assert !this.empty || size() == 0;
+		BindingSetOrigin.copy(toCopy, this);
 
 	}
 
@@ -167,6 +169,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.sharedSortedBindingNamesCache = sharedSortedBindingNamesCache;
 		this.empty = toCopy.empty;
 		this.cachedSize = toCopy.cachedSize;
+		this.origin = toCopy.origin;
 		this.graphFrames = toCopy.graphFrames;
 		if (toCopy.bindingNames == names) {
 			this.bindingNamesSetCache = toCopy.bindingNamesSetCache;
@@ -386,6 +389,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean isCompatible(BindingSet other) {
+		other = BindingSetOrigin.unwrap(other);
 		if (isEmpty() || other.isEmpty()) {
 			return true;
 		}
@@ -538,15 +542,27 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public void addAll(ArrayBindingSet other) {
-		GraphFrameBindings supplied = GraphFrameBindings.from(other);
-		if (graphFrames != null) {
-			other.getBindingNames().forEach(this::forgetGraphFrame);
-		}
+		addAll(other, false);
+	}
+
+	@InternalUseOnly
+	public Set<String> addAllAndGetWrittenNames(ArrayBindingSet other) {
+		return addAll(other, true);
+	}
+
+	private Set<String> addAll(ArrayBindingSet other, boolean reportWrittenNames) {
+		GraphFrameBindings sourceFrames = GraphFrameBindings.from(other);
+		boolean trackOrigin = origin != null || BindingSetOrigin.tracked(other);
+		boolean trackFrames = graphFrames != null || !sourceFrames.retainedParametersForTransport().isEmpty();
+		List<String> writtenNames = trackOrigin || trackFrames || reportWrittenNames ? new ArrayList<>() : null;
 		if (other.bindingNames == bindingNames) {
 			for (int i = 0; i < bindingNames.length; i++) {
 				if (isBoundValue(other.values[i])) {
 					this.values[i] = other.values[i];
 					this.empty = false;
+					if (writtenNames != null) {
+						writtenNames.add(bindingNames[i]);
+					}
 				}
 			}
 		} else {
@@ -555,15 +571,25 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 					Value value = other.getValue(bindingNames[i]);
 					this.values[i] = value == null ? NULL_VALUE : value;
 					this.empty = false;
+					if (writtenNames != null) {
+						writtenNames.add(bindingNames[i]);
+					}
 				}
 			}
 		}
 
-		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));
+		if (trackOrigin && !writtenNames.isEmpty()) {
+			origin = BindingSetOrigin.overlayWrittenMappings(BindingSetOrigin.of(this), BindingSetOrigin.of(other),
+					writtenNames);
+		}
+		if (trackFrames) {
+			GraphFrameBindings.overlayWrittenMappings(this, other, sourceFrames, writtenNames);
+		}
 		clearCache();
 		if (sharedSortedBindingNamesCache != null) {
 			activeBindingMask = calculateActiveBindingMask();
 		}
+		return reportWrittenNames ? Set.copyOf(writtenNames) : Set.of();
 
 	}
 
@@ -613,6 +639,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	@Override
 	public boolean equals(Object other) {
+		if (other instanceof BindingSet bindings) {
+			other = BindingSetOrigin.unwrap(bindings);
+		}
 		if (other == null) {
 			return false;
 		}

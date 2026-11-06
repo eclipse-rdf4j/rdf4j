@@ -38,6 +38,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -48,6 +49,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
@@ -58,7 +60,12 @@ import org.lwjgl.system.MemoryStack;
 
 class LmdbBoundedStartupTest {
 
-	@TempDir
+	private record RetainedCrashWriter(Process process, Path fixture, Path log) {
+	}
+
+	private static final List<RetainedCrashWriter> RETAINED_CRASH_WRITERS = new CopyOnWriteArrayList<>();
+
+	@TempDir(cleanup = CleanupMode.NEVER)
 	Path directory;
 
 	@ParameterizedTest
@@ -214,11 +221,17 @@ class LmdbBoundedStartupTest {
 					"-ea", "-cp", System.getProperty("java.class.path"), StartupCrashWriter.class.getName(),
 					storeDirectory.toString()).redirectErrorStream(true).redirectOutput(output.toFile()).start();
 			try {
-				assertTrue(writer.waitFor(60, TimeUnit.SECONDS), "crash fixture must finish native commits");
+				assertTrue(writer.waitFor(60, TimeUnit.SECONDS),
+						() -> "crash fixture must finish native commits; pid=" + writer.pid() + " log=" + output);
 				assertEquals(86, writer.exitValue(), () -> "crash fixture output: " + read(output));
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw interrupted;
 			} finally {
 				if (writer.isAlive()) {
-					writer.destroyForcibly();
+					RETAINED_CRASH_WRITERS.add(new RetainedCrashWriter(writer, directory, output));
+					System.err.println("Retained unsettled crash writer pid=" + writer.pid()
+							+ " fixture=" + directory + " log=" + output);
 				}
 			}
 		} else {

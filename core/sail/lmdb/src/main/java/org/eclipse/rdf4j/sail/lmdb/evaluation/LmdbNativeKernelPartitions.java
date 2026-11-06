@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.HashBuild;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipDomainWildcard;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.SipKeyWildcard;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor;
@@ -76,6 +77,11 @@ final class LmdbNativeKernelPartitions {
 				skippedRoot[0] = true;
 				return;
 			}
+			if (kind == RequirementKind.ADJACENCY && node instanceof SipKeyProbe probe
+					&& probe.domainAdjacency != resource) {
+				// Its other adjacency is only used for lookups; a root window preserves full-view find/findBatch.
+				return;
+			}
 			if (!isPartitionedResourceReader(node, kind)) {
 				return;
 			}
@@ -120,9 +126,11 @@ final class LmdbNativeKernelPartitions {
 	 */
 	private static boolean isPartitionedResourceReader(Node node, RequirementKind kind) {
 		return switch (kind) {
-		case ADJACENCY -> node instanceof EnumerateAdjKeys enumerate && !enumerate.wildcard;
+		case ADJACENCY -> node instanceof EnumerateAdjKeys enumerate && !enumerate.wildcard
+				|| node instanceof SipKeyProbe || node instanceof SipKeyWildcard;
 		case DOMAIN -> node instanceof EnumerateDomain
 				|| node instanceof SipDomainProbe
+				|| node instanceof SipDomainWildcard
 				|| node instanceof LmdbNativeKernelIr.FilterInConstants;
 		case WILDCARD_VIEW -> node instanceof EnumerateAdjKeys enumerate && enumerate.wildcard
 				|| node instanceof EnumerateWildcard
@@ -477,7 +485,9 @@ final class LmdbNativeKernelPartitions {
 			if (fork == null) {
 				closeForkedHooks(forked, new ParallelKernelDecline("filter-fork-unavailable"));
 			}
-			forked[i] = new FilterHook(new MaskedFilter(fork, source.mask, source.adaptive, source.plannedDepth),
+			forked[i] = new FilterHook(
+					new MaskedFilter(new CloseOnceNativeBooleanFilter(fork), source.mask, source.adaptive,
+							source.plannedDepth),
 					hooks[i].argSlots);
 		}
 		return forked;
@@ -491,6 +501,9 @@ final class LmdbNativeKernelPartitions {
 			if (forked[i] == null) {
 				closeForkedHooks(forked, new ParallelKernelDecline("filter-worker-bind-unavailable"));
 			}
+			FilterHook rebound = forked[i];
+			forked[i] = new FilterHook(new MaskedFilter(new CloseOnceNativeBooleanFilter(rebound.source.filter),
+					rebound.source.mask, rebound.source.adaptive, rebound.source.plannedDepth), rebound.argSlots);
 		}
 		return forked;
 	}
@@ -526,7 +539,7 @@ final class LmdbNativeKernelPartitions {
 			if (fork == null) {
 				closeForked(forked, new ParallelKernelDecline("filter-fork-unavailable"));
 			}
-			forked[i] = fork;
+			forked[i] = new CloseOnceNativeBooleanFilter(fork);
 		}
 		return forked;
 	}
@@ -540,7 +553,7 @@ final class LmdbNativeKernelPartitions {
 			if (fork == null) {
 				closeForked(forked, new ParallelKernelDecline("filter-worker-bind-unavailable"));
 			}
-			forked[i] = fork;
+			forked[i] = new CloseOnceNativeBooleanFilter(fork);
 		}
 		return forked;
 	}
@@ -551,37 +564,45 @@ final class LmdbNativeKernelPartitions {
 	 * wedges the dataset close exactly like the sequential route's {@code LmdbNativeKernelHooks.closeFilters}.
 	 */
 	static void closeForkedHooks(FilterHook[] forked, RuntimeException primary) {
-		RuntimeException failure = primary;
+		Throwable failure = primary;
 		for (FilterHook hook : forked) {
 			if (hook == null) {
 				continue;
 			}
 			try {
 				hook.source.filter.close();
-			} catch (RuntimeException problem) {
-				failure = suppress(failure, problem);
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
 			}
 		}
 		if (failure != null) {
-			throw failure;
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 
 	/** Residual twin of {@link #closeForkedHooks}. */
 	static void closeForked(NativeBooleanFilter[] forked, RuntimeException primary) {
-		RuntimeException failure = primary;
+		Throwable failure = primary;
 		for (NativeBooleanFilter filter : forked) {
 			if (filter == null) {
 				continue;
 			}
 			try {
 				filter.close();
-			} catch (RuntimeException problem) {
-				failure = suppress(failure, problem);
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
 			}
 		}
 		if (failure != null) {
-			throw failure;
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 

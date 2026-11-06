@@ -14,45 +14,42 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryOptimizerPipeline;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStandardQueryOptimizerPipeline;
 
 @Experimental
 @InternalUseOnly
 public final class LmdbNativeEvaluationStrategyFactory extends StrictEvaluationStrategyFactory {
 
-	@InternalUseOnly
 	public LmdbNativeEvaluationStrategyFactory(FederatedServiceResolver resolver) {
 		super(resolver);
 	}
 
 	@Override
-	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
-			EvaluationStatistics evaluationStatistics) {
-		EvaluationStatistics effectiveStatistics = evaluationStatistics == null ? new EvaluationStatistics()
-				: evaluationStatistics;
-		StrictEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(tripleSource, dataset,
-				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), effectiveStatistics,
-				isTrackResultSize());
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+			EvaluationStatistics statistics) {
+		return createEvaluationStrategy(dataset, source, statistics, QueryExecutionPolicy.DEFAULT);
+	}
+
+	@Override
+	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource source,
+			EvaluationStatistics statistics, QueryExecutionPolicy policy) {
+		EvaluationStatistics effective = statistics == null ? new EvaluationStatistics() : statistics;
+		LmdbEvaluationStrategy.bindExecutionSnapshot(effective, source, dataset);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(source, dataset,
+				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), effective, isTrackResultSize());
+		strategy.setQueryExecutionPolicy(policy);
 		QueryOptimizerPipeline pipeline = getOptimizerPipeline()
-				.orElseGet(() -> automaticPipeline(strategy, tripleSource, effectiveStatistics));
+				.orElseGet(() -> new LmdbQueryOptimizerPipeline(strategy, source, effective));
 		strategy.setOptimizerPipeline(pipeline);
 		strategy.setCollectionFactory(collectionFactorySupplier);
 		return strategy;
-	}
-
-	private QueryOptimizerPipeline automaticPipeline(StrictEvaluationStrategy strategy, TripleSource tripleSource,
-			EvaluationStatistics evaluationStatistics) {
-		if (evaluationStatistics.supportsJoinEstimation()) {
-			return new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
-		}
-		return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
 	}
 }

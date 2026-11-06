@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -242,6 +243,8 @@ public class OrderComparator implements Comparator<BindingSet> {
 			if (o2 instanceof SortKeyBindingSet keyed) {
 				o2 = keyed.row;
 			}
+			o1 = BindingSetOrigin.unwrap(o1);
+			o2 = BindingSetOrigin.unwrap(o2);
 
 			return compareBindingSets(o1, o2);
 		} catch (QueryEvaluationException | IllegalArgumentException e) {

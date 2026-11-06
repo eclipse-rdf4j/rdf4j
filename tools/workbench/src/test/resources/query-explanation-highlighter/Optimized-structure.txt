@@ -1,4 +1,4 @@
-Join (new scope) (HashJoinIteration) (costEstimate=1.3K, resultSizeEstimate=2.50, plannedWorkRows=2.5K, joinType=cross join)
+Join (new scope) (HashJoinIteration) (costEstimate=1.3K, resultSizeEstimate=2.50, plannedWorkRows=2.5K, plannedEstimateUsage=join_order_candidate, joinType=cross join)
 ╠══ StatementPattern (resultSizeEstimate=3.00) [left]
 ║     s: Var (name=s)
 ║     p: Var (name=p)

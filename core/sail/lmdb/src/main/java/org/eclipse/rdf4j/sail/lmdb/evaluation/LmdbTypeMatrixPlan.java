@@ -124,7 +124,7 @@ final class LmdbTypeMatrixPlan {
 	}
 
 	private static boolean prefixSafePattern(PatternPlan pattern) {
-		return !pattern.hasRepeatedSlot() && !pattern.namedContextScope && !pattern.contexts.isFixed()
+		return !pattern.hasEntryDependentFields() && !pattern.hasRepeatedSlot() && !pattern.namedContextScope && !pattern.contexts.isFixed()
 				&& !pattern.rejectsNullContextAtBind();
 	}
 

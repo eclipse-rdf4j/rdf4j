@@ -207,6 +207,9 @@ final class LmdbNativeAggregateCompiler {
 	 */
 	static QueryValueEvaluationStep tryCompileExists(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		if (!NativeContextSelection.supports(expr, context)) {
+			return null;
+		}
 		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
 		QueryEvaluationStep rows = planner.compileBareExists(expr);
 		if (!(rows instanceof NativeBareRowsStep)) {
@@ -230,7 +233,17 @@ final class LmdbNativeAggregateCompiler {
 	 */
 	static CompileOutcome compileRoot(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
-		CompileResult result = compile(expr, context, strategy, source, true);
+		return compileRoot(expr, context, strategy, source, false);
+	}
+
+	static CompileOutcome compileFinalTupleResult(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		return compileRoot(expr, context, strategy, source, true);
+	}
+
+	private static CompileOutcome compileRoot(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean finalTupleResult) {
+		CompileResult result = compile(expr, context, strategy, source, true, Set.of(), Set.of(), finalTupleResult);
 		if (result.step == null) {
 			if (result.capacityExceeded) {
 				return CompileOutcome.capacity();
@@ -292,14 +305,32 @@ final class LmdbNativeAggregateCompiler {
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
 			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+		return compile(expr, context, strategy, source, rootEvaluation, inheritedFrameInputNames,
+				inheritedLateralFrameInputNames, false);
+	}
+
+	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames,
+			boolean finalTupleResult) {
+		if (!NativeContextSelection.hasCompleteGraphSets(context.getDataset())) {
+			return new CompileResult(null, LmdbNativeExplain.KIND_ROW, false, false);
+		}
 		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(expr, context.getDataset(), strategy);
-		CompileResult result = strategy.withValuePositions(physical.positions(),
-				() -> compilePhysical(physical.expression(), context, strategy, source, rootEvaluation,
-						inheritedFrameInputNames, inheritedLateralFrameInputNames));
+		CompileResult result = NativeSubSelectScopeBoundaryStep.Templates.during(physical.expression(), strategy,
+				() -> strategy.withValuePositions(physical.positions(),
+						() -> compilePhysical(physical.expression(), context, strategy, source, rootEvaluation,
+								inheritedFrameInputNames, inheritedLateralFrameInputNames, finalTupleResult)));
+		if (result.step == null && physical.expression() != expr
+				&& !NativeContextSelection.supports(physical.expression(), context)) {
+			return NativeGraphFusion.withSemanticBoundaries(
+					() -> compile(expr, context, strategy, source, rootEvaluation, inheritedFrameInputNames,
+							inheritedLateralFrameInputNames, finalTupleResult));
+		}
 		if (result.step != null && !physical.guardedSelectors().isEmpty()) {
 			QueryEvaluationStep guarded = new NativeGraphAliasGuardStep(result.step, physical.guardedSelectors(),
 					() -> compile(expr, context, strategy, source, rootEvaluation, inheritedFrameInputNames,
-							inheritedLateralFrameInputNames).step);
+							inheritedLateralFrameInputNames, finalTupleResult).step);
 			return new CompileResult(guarded, result.kind, result.capacityExceeded, result.sawIsland);
 		}
 		return result;
@@ -307,13 +338,25 @@ final class LmdbNativeAggregateCompiler {
 
 	private static CompileResult compilePhysical(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
-			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames,
+			boolean finalTupleResult) {
+		if (!NativeContextSelection.supports(expr, context)) {
+			return new CompileResult(null, LmdbNativeExplain.KIND_ROW, false, false);
+		}
 		LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
 		// Root-host compiles (one evaluate() = one query evaluation) may prepare generic bridges per evaluation;
 		// interior compiles must not — their steps evaluate once per outer input mapping (M-A1a).
 		compiler.rootEvaluationScoped = rootEvaluation;
+		compiler.finalTupleResult = finalTupleResult;
 		compiler.inheritedFrameInputNames = inheritedFrameInputNames;
 		compiler.inheritedLateralFrameInputNames = inheritedLateralFrameInputNames;
+		if (!NativeRootPipeline.enabled() && NativeRootPipeline.needsProjectionModifiers(expr)) {
+			return new CompileResult(null, LmdbNativeExplain.KIND_ROW, false, false);
+		}
+		QueryEvaluationStep semanticProjection = NativeRootPipeline.projectionBoundary(expr, context, strategy, source);
+		if (semanticProjection != null) {
+			return new CompileResult(semanticProjection, LmdbNativeExplain.KIND_ROW, false, false);
+		}
 		QueryEvaluationStep step = null;
 		String kind = LmdbNativeExplain.KIND_ROW;
 		if (expr instanceof Filter && ((Filter) expr).getArg() instanceof Group) {
@@ -373,7 +416,7 @@ final class LmdbNativeAggregateCompiler {
 		return new CompileResult(step, kind, compiler.slotBudgetExceeded, compiler.sawIsland);
 	}
 
-	private static boolean hasGroupOnModifierSpine(TupleExpr expr) {
+	static boolean hasGroupOnModifierSpine(TupleExpr expr) {
 		TupleExpr node = expr;
 		if (node instanceof QueryRoot queryRoot) {
 			node = queryRoot.getArg();
@@ -515,25 +558,57 @@ final class LmdbNativeAggregateCompiler {
 	 * consult state outside declared slot masks.
 	 */
 	static long memoReadMask(SlotPlan plan) {
+		return memoReadMask(plan, null);
+	}
+
+	static long memoReadMask(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Long> facts) {
+		if (facts == null) {
+			if (!(plan instanceof NativeValuesFoldPlan)) {
+				return memoReadMaskUncached(plan, null);
+			}
+			facts = new java.util.IdentityHashMap<>();
+		}
+		Long previous = facts.get(plan);
+		if (previous != null) {
+			return previous;
+		}
+		long result = memoReadMaskUncached(plan, facts);
+		facts.put(plan, result);
+		return result;
+	}
+
+	static long memoReadMaskUncached(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Long> facts) {
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			long fast = memoReadMask(guard.folded, facts), ordinary = memoReadMask(guard.original, facts);
+			return fast < 0L || ordinary < 0L ? -1L : fast | ordinary | guard.inputMask;
+		}
 		if (plan instanceof NativeAliasJoinPlan alias) {
-			return memoReadMask(alias.original);
+			return memoReadMask(alias.original, facts);
 		}
 		if (plan instanceof NativeAliasJoinMemoPlan memo) {
-			return memoReadMask(memo.original);
+			return memoReadMask(memo.original, facts);
 		}
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
-			return memoReadMask(leaf.template);
-		if (plan instanceof PatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {
+			return memoReadMask(leaf.template, facts);
+		if (plan instanceof PatternPlan pattern) {
+			return pattern.producedMask() | pattern.readOnlyMask();
+		}
+		if (plan instanceof ValuesPlan || plan instanceof PathPlan) {
 			return plan.producedMask();
 		}
 		if (plan instanceof MultiValuePatternPlan) {
-			return plan.producedMask() | (1L << ((MultiValuePatternPlan) plan).constrainedSlot);
+			MultiValuePatternPlan multi = (MultiValuePatternPlan) plan;
+			long reads = plan.producedMask() | (1L << multi.constrainedSlot);
+			for (PatternPlan pattern : multi.alternatives) {
+				reads |= pattern.readOnlyMask();
+			}
+			return reads | (multi.fallback == null ? 0L : multi.fallback.readOnlyMask());
 		}
 		if (plan instanceof MultiJoinPlan) {
 			MultiJoinPlan multiJoin = (MultiJoinPlan) plan;
 			long mask = 0L;
 			for (SlotPlan child : multiJoin.children) {
-				long childMask = memoReadMask(child);
+				long childMask = memoReadMask(child, facts);
 				if (childMask < 0L) {
 					return -1L;
 				}
@@ -549,8 +624,8 @@ final class LmdbNativeAggregateCompiler {
 		}
 		if (plan instanceof JoinPlan) {
 			JoinPlan join = (JoinPlan) plan;
-			long left = memoReadMask(join.left);
-			long right = memoReadMask(join.right);
+			long left = memoReadMask(join.left, facts);
+			long right = memoReadMask(join.right, facts);
 			return left < 0L || right < 0L ? -1L : left | right;
 		}
 		if (plan instanceof LeftJoinPlan) {
@@ -561,22 +636,22 @@ final class LmdbNativeAggregateCompiler {
 			if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null) {
 				return -1L;
 			}
-			long left = memoReadMask(leftJoin.left);
-			long right = memoReadMask(leftJoin.right);
+			long left = memoReadMask(leftJoin.left, facts);
+			long right = memoReadMask(leftJoin.right, facts);
 			return left < 0L || right < 0L ? -1L : left | right;
 		}
 		if (plan instanceof UnionPlan) {
 			UnionPlan union = (UnionPlan) plan;
-			long left = memoReadMask(union.left);
-			long right = memoReadMask(union.right);
+			long left = memoReadMask(union.left, facts);
+			long right = memoReadMask(union.right, facts);
 			return left < 0L || right < 0L ? -1L : left | right;
 		}
 		if (plan instanceof MinusPlan) {
 			// The removal check additionally consults entry base bindings, which are constant for any one
 			// evaluation — the same lifetime every memoReadMask consumer caches within.
 			MinusPlan minus = (MinusPlan) plan;
-			long left = memoReadMask(minus.left);
-			long right = memoReadMask(minus.right);
+			long left = memoReadMask(minus.left, facts);
+			long right = memoReadMask(minus.right, facts);
 			return left < 0L || right < 0L ? -1L : left | right | minus.sharedMask;
 		}
 		if (plan instanceof FilterPlan) {
@@ -584,14 +659,14 @@ final class LmdbNativeAggregateCompiler {
 			if (filterPlan.filterMask < 0L) {
 				return -1L;
 			}
-			long argMask = memoReadMask(filterPlan.arg);
+			long argMask = memoReadMask(filterPlan.arg, facts);
 			return argMask < 0L ? -1L : argMask | filterPlan.filterMask;
 		}
 		if (plan instanceof ExtensionPlan) {
 			// M-F1: plain slot/constant copies are pure functions of the argument's row stream; computed copies keep
 			// the conservative -1 (their inline evaluators and interning carry read sets this mask cannot express).
 			ExtensionPlan extension = (ExtensionPlan) plan;
-			long argMask = memoReadMask(extension.arg);
+			long argMask = memoReadMask(extension.arg, facts);
 			if (argMask < 0L) {
 				return -1L;
 			}

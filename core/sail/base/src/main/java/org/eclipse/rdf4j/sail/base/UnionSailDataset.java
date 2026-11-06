@@ -17,7 +17,10 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.ToLongFunction;
 
@@ -31,6 +34,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -38,7 +42,7 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author Håvard M. Ottestad
  */
-class UnionSailDataset implements SailDataset, TreeOwnedDataset {
+class UnionSailDataset implements SailDataset, TreeOwnedDataset, SailDatasetReadComposition.Transparent {
 
 	private final SailDataset dataset1;
 	private final SailDataset dataset2;
@@ -64,11 +68,47 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 	}
 
 	@Override
+	public <T> Optional<T> resolveReadComposition(Class<T> leafCapability,
+			BiFunction<T, T, Optional<T>> unionCombiner) {
+		if (getClass() != UnionSailDataset.class) {
+			return Optional.empty();
+		}
+		Optional<T> first = SailDatasetReadComposition.resolveDataset(dataset1, leafCapability, unionCombiner);
+		if (first.isEmpty()) {
+			return Optional.empty();
+		}
+		Optional<T> second = SailDatasetReadComposition.resolveDataset(dataset2, leafCapability, unionCombiner);
+		return second.isEmpty() ? Optional.empty() : unionCombiner.apply(first.orElseThrow(), second.orElseThrow());
+	}
+
+	@Override
 	public String toString() {
 		return "UnionSailDataset{" +
 				"dataset1=" + dataset1 +
 				", dataset2=" + dataset2 +
 				'}';
+	}
+
+	@Override
+	public OptionalLong getSnapshotEpoch() {
+		OptionalLong first = dataset1.getSnapshotEpoch();
+		if (first.isEmpty()) {
+			return OptionalLong.empty();
+		}
+		OptionalLong second = dataset2.getSnapshotEpoch();
+		return second.isPresent() && second.getAsLong() == first.getAsLong()
+				? first
+				: OptionalLong.empty();
+	}
+
+	@Override
+	public <T> Optional<T> unwrap(Class<T> type) {
+		if (type.isInstance(this)) {
+			return Optional.of(type.cast(this));
+		}
+		// Both members are read views of the same store; the first one that matches is as good as the other.
+		Optional<T> first = dataset1.unwrap(type);
+		return first.isPresent() ? first : dataset2.unwrap(type);
 	}
 
 	@Override
@@ -184,12 +224,18 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
+		return getStatements((StatementPattern) null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementPattern statementPattern, Resource subj,
+			IRI pred, Value obj, Resource... contexts) throws SailException {
 
 		CloseableIteration<? extends Statement> iteration1 = null;
 		CloseableIteration<? extends Statement> iteration2 = null;
 		try {
-			iteration1 = dataset1.getStatements(subj, pred, obj, contexts);
-			iteration2 = dataset2.getStatements(subj, pred, obj, contexts);
+			iteration1 = dataset1.getStatements(statementPattern, subj, pred, obj, contexts);
+			iteration2 = dataset2.getStatements(statementPattern, subj, pred, obj, contexts);
 			CloseableIteration<? extends Statement> union = DualUnionIteration.getWildcardInstance(iteration1,
 					iteration2);
 			return preserveReporting(union, iteration1, iteration2);
@@ -210,8 +256,14 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 
 	@Override
 	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
-		return dataset1.getStatementCount(subj, pred, obj, contexts)
-				+ dataset2.getStatementCount(subj, pred, obj, contexts);
+		return getStatementCount(null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public long getStatementCount(StatementPattern statementPattern, Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
+		return dataset1.getStatementCount(statementPattern, subj, pred, obj, contexts)
+				+ dataset2.getStatementCount(statementPattern, subj, pred, obj, contexts);
 	}
 
 	@Override

@@ -186,48 +186,83 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 	}
 
 	@Test
-	void duplicateEmptyRowsPreserveEveryOverlappingParentCandidate() {
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingNames(Set.of("x"));
-		assignment.setBindingSets(List.of(EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance()));
+	void allUndefAssignmentPreservesOverlappingParentRow() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("x", outer);
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("x"),
+				EmptyBindingSet.getInstance());
 		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
 				new QueryEvaluationContext.Minimal(null));
 
-		for (String value : List.of("first", "second")) {
-			MapBindingSet parent = new MapBindingSet();
-			parent.addBinding("x", SimpleValueFactory.getInstance().createLiteral(value));
+		List<BindingSet> results = results(step.evaluate(parent));
 
-			assertThat(results(step.evaluate(parent))).containsExactly(parent, parent);
-		}
+		assertThat(results).containsExactly(parent);
+		assertThat(results.getFirst()).isSameAs(parent);
 	}
 
 	@Test
-	void allUndefRowBehavesLikeEmptyRowForIncomingBindings() {
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingNames(Set.of("x"));
-		assignment.setBindingSets(List.of(new ListBindingSet(List.of("x"), (Value) null)));
+	void compatibleBoundAssignmentPreservesOverlappingParentValue() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("x", outer);
+		MapBindingSet compatible = new MapBindingSet();
+		compatible.addBinding("x", outer);
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("x"), compatible);
 		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
 				new QueryEvaluationContext.Minimal(null));
-		BindingSet parent = binding("x", "parent");
 
 		assertThat(results(step.evaluate(parent))).containsExactly(parent);
 	}
 
 	@Test
-	void undefColumnsDoNotLeakIntoResultsWithoutIncomingBindings() {
-		BindingSet row = new ListBindingSet(List.of("bound", "undef"),
-				SimpleValueFactory.getInstance().createLiteral("value"), null);
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingNames(Set.of("bound", "undef"));
-		assignment.setBindingSets(List.of(row));
+	void conflictingBoundAssignmentRejectsOverlappingParentValue() {
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("x", SimpleValueFactory.getInstance().createLiteral("outer"));
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("x"), binding("x", "other"));
 		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
 				new QueryEvaluationContext.Minimal(null));
 
-		List<BindingSet> actual = results(step.evaluate(EmptyBindingSet.getInstance()));
+		assertThat(results(step.evaluate(parent))).isEmpty();
+	}
 
-		assertThat(actual).hasSize(1);
-		assertThat(actual.get(0).getBindingNames()).containsExactly("bound");
-		assertThat(actual.get(0).hasBinding("undef")).isFalse();
+	// REINFORCE: with an overlapping parent, every all-UNDEF VALUES row yields the parent once, interleaved with
+	// conflicting rows (dropped) and compatible rows (kept), and the telemetry counter sees every emitted row.
+	@Test
+	void allUndefRowsPreserveParentMultiplicityAmongConflictingAndCompatibleRows() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("x", outer);
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("x"),
+				EmptyBindingSet.getInstance(), binding("x", "other"), binding("x", "outer"),
+				EmptyBindingSet.getInstance());
+		assignment.setRuntimeTelemetryEnabled(true);
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> results = results(step.evaluate(parent));
+
+		assertThat(results).containsExactly(parent, parent, parent);
+		assertThat(assignment.getLongMetricActual(TelemetryMetricNames.BINDINGS_PROVIDED_ACTUAL)).isEqualTo(3L);
+	}
+
+	// REINFORCE: without parent overlap an all-UNDEF row still yields the parent unchanged while bound rows extend it.
+	@Test
+	void allUndefRowWithoutParentOverlapYieldsParentUnchanged() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		MapBindingSet parent = new MapBindingSet();
+		parent.addBinding("a", outer);
+		BindingSetAssignment assignment = assignmentWithDeclaredNames(Set.of("b"),
+				EmptyBindingSet.getInstance(), binding("b", "1"));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> results = results(step.evaluate(parent));
+
+		assertThat(results).hasSize(2);
+		assertThat(results.getFirst()).isSameAs(parent);
+		assertThat(results.get(1).getValue("a")).isEqualTo(outer);
+		assertThat(results.get(1).getValue("b")).isEqualTo(SimpleValueFactory.getInstance().createLiteral("1"));
 	}
 
 	private static List<BindingSet> results(CloseableIteration<BindingSet> iteration) {
@@ -242,6 +277,14 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 				.stream()
 				.map(value -> binding(bindingName, value))
 				.toList());
+		return assignment;
+	}
+
+	private static BindingSetAssignment assignmentWithDeclaredNames(Set<String> bindingNames,
+			BindingSet... bindingSets) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(bindingNames);
+		assignment.setBindingSets(List.of(bindingSets));
 		return assignment;
 	}
 
@@ -295,5 +338,50 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 		private int hasBindingReadCount(String bindingName) {
 			return hasBindingReadCounts.getOrDefault(bindingName, 0);
 		}
+	}
+
+	@Test
+	void duplicateEmptyRowsPreserveEveryOverlappingParentCandidate() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x"));
+		assignment.setBindingSets(List.of(EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance()));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		for (String value : List.of("first", "second")) {
+			MapBindingSet parent = new MapBindingSet();
+			parent.addBinding("x", SimpleValueFactory.getInstance().createLiteral(value));
+
+			assertThat(results(step.evaluate(parent))).containsExactly(parent, parent);
+		}
+	}
+
+	@Test
+	void allUndefRowBehavesLikeEmptyRowForIncomingBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x"));
+		assignment.setBindingSets(List.of(new ListBindingSet(List.of("x"), (Value) null)));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+		BindingSet parent = binding("x", "parent");
+
+		assertThat(results(step.evaluate(parent))).containsExactly(parent);
+	}
+
+	@Test
+	void undefColumnsDoNotLeakIntoResultsWithoutIncomingBindings() {
+		BindingSet row = new ListBindingSet(List.of("bound", "undef"),
+				SimpleValueFactory.getInstance().createLiteral("value"), null);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("bound", "undef"));
+		assignment.setBindingSets(List.of(row));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> actual = results(step.evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(actual).hasSize(1);
+		assertThat(actual.get(0).getBindingNames()).containsExactly("bound");
+		assertThat(actual.get(0).hasBinding("undef")).isFalse();
 	}
 }

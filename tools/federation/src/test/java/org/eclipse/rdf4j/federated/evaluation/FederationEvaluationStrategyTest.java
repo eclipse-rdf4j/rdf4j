@@ -16,7 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +41,7 @@ import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.structures.SubQuery;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
@@ -47,13 +50,27 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ActiveGraphQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -134,6 +151,370 @@ public class FederationEvaluationStrategyTest extends SPARQLBaseTest {
 
 		// we expect that the source selection cache can assure statements
 		Assertions.assertEquals(StatementSourceAssurance.HAS_REMOTE_STATEMENTS, assurance);
+	}
+
+	@Test
+	void badlyDesignedSubqueryOptionalUsesBottomUpCompatibility() throws Exception {
+		assertBadlyDesignedOptionalUsesBottomUpCompatibility(
+				right -> new Projection(right));
+	}
+
+	@Test
+	void badlyDesignedRegularOptionalUsesBottomUpCompatibility() throws Exception {
+		assertBadlyDesignedOptionalUsesBottomUpCompatibility(right -> right);
+	}
+
+	@Test
+	void subqueryOptionalWithFalseConditionUsesConditionAwarePath() throws Exception {
+		prepareTest(List.of("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+		StubFederationEvaluationStrategy strategy = new StubFederationEvaluationStrategy(federationContext());
+		QueryInfo queryInfo = new QueryInfo("SELECT * WHERE {}", null, QueryType.SELECT, 0, false,
+				federationContext(), strategy, null);
+		StatementPattern leftArg = statementPattern("root", "leftValue");
+		Projection rightArg = new Projection(statementPattern("root", "detail"));
+		FedXLeftJoin leftJoin = new FedXLeftJoin(
+				new LeftJoin(leftArg, rightArg, new ValueConstant(Values.literal(false))), queryInfo);
+		Value root = Values.iri("urn:root");
+		QueryBindingSet leftRow = new QueryBindingSet();
+		leftRow.addBinding("root", root);
+		leftRow.addBinding("leftValue", Values.literal("left"));
+
+		strategy.register(leftArg, ignored -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(leftRow).iterator()));
+		strategy.register(rightArg, bindings -> {
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			row.addBinding("detail", Values.literal("right"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		});
+
+		List<BindingSet> results = new java.util.ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.prepareLeftJoin(leftJoin,
+				new QueryEvaluationContext.Minimal(null)).evaluate(EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		Assertions.assertEquals(List.of(leftRow), results);
+	}
+
+	@Test
+	void wellDesignedOptionalWithEmptyLeftDoesNotCompileUnusedCondition() throws Exception {
+		prepareTest(List.of("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+		StubFederationEvaluationStrategy strategy = new StubFederationEvaluationStrategy(federationContext());
+		QueryInfo queryInfo = new QueryInfo("SELECT * WHERE {}", null, QueryType.SELECT, 0, false,
+				federationContext(), strategy, null);
+		StatementPattern leftArg = statementPattern("root", "leftValue");
+		StatementPattern rightArg = statementPattern("root", "detail");
+		FedXLeftJoin leftJoin = new FedXLeftJoin(
+				new LeftJoin(leftArg, rightArg, new FunctionCall("urn:test:unsupported")), queryInfo);
+		AtomicInteger rightEvaluations = new AtomicInteger();
+		strategy.register(leftArg, ignored -> QueryEvaluationStep.EMPTY_ITERATION);
+		strategy.register(rightArg, ignored -> {
+			rightEvaluations.incrementAndGet();
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		});
+
+		try (CloseableIteration<BindingSet> iteration = strategy.prepareLeftJoin(leftJoin,
+				new QueryEvaluationContext.Minimal(null)).evaluate(EmptyBindingSet.getInstance())) {
+			Assertions.assertFalse(iteration.hasNext());
+		}
+		Assertions.assertEquals(0, rightEvaluations.get());
+	}
+
+	private void assertBadlyDesignedOptionalUsesBottomUpCompatibility(
+			java.util.function.UnaryOperator<TupleExpr> rightShape) throws Exception {
+		prepareTest(List.of("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+		StubFederationEvaluationStrategy strategy = new StubFederationEvaluationStrategy(federationContext());
+		QueryInfo queryInfo = new QueryInfo("SELECT * WHERE {}", null, QueryType.SELECT, 0, false,
+				federationContext(), strategy, null);
+		StatementPattern leftArg = statementPattern("member", "memberName");
+		TupleExpr rightArg = rightShape.apply(statementPattern("outside", "rightValue"));
+		FedXLeftJoin leftJoin = new FedXLeftJoin(new LeftJoin(leftArg, rightArg), queryInfo);
+		Value inputValue = Values.iri("urn:outside:input");
+		Value foreignValue = Values.iri("urn:outside:foreign");
+		QueryBindingSet input = new QueryBindingSet();
+		input.addBinding("outside", inputValue);
+
+		strategy.register(leftArg, bindings -> {
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			row.addBinding("member", Values.iri("urn:member"));
+			row.addBinding("memberName", Values.literal("Member"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		});
+		strategy.register(rightArg, bindings -> {
+			if (bindings.hasBinding("outside")) {
+				return QueryEvaluationStep.EMPTY_ITERATION;
+			}
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			row.addBinding("outside", foreignValue);
+			row.addBinding("rightValue", Values.literal("foreign"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		});
+
+		List<BindingSet> results = new java.util.ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.prepareLeftJoin(leftJoin,
+				new QueryEvaluationContext.Minimal(null)).evaluate(input)) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		Assertions.assertTrue(results.isEmpty(),
+				"an incompatible bottom-up RHS row must suppress the bare left row: " + results);
+	}
+
+	// REINFORCE: the badly-designed path compiles the OPTIONAL condition lazily and still applies it; a rejected
+	// right row leaves the bare left row, which is then extended with the incoming problem-variable binding
+	@Test
+	void badlyDesignedRegularOptionalAppliesJoinCondition() throws Exception {
+		Value inputValue = Values.iri("urn:outside:input");
+
+		List<BindingSet> conditionFalse = evaluateBadlyDesignedOptionalWithCondition(
+				new ValueConstant(Values.literal(false)), inputValue);
+		QueryBindingSet expected = new QueryBindingSet();
+		expected.addBinding("member", Values.iri("urn:member"));
+		expected.addBinding("memberName", Values.literal("Member"));
+		expected.addBinding("outside", inputValue);
+		Assertions.assertEquals(List.of(expected), conditionFalse);
+
+		List<BindingSet> conditionTrue = evaluateBadlyDesignedOptionalWithCondition(
+				new ValueConstant(Values.literal(true)), inputValue);
+		Assertions.assertTrue(conditionTrue.isEmpty(),
+				"a joined bottom-up RHS row that conflicts with the input must be suppressed: " + conditionTrue);
+	}
+
+	private List<BindingSet> evaluateBadlyDesignedOptionalWithCondition(ValueExpr condition, Value inputValue)
+			throws Exception {
+		prepareTest(List.of("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+		StubFederationEvaluationStrategy strategy = new StubFederationEvaluationStrategy(federationContext());
+		QueryInfo queryInfo = new QueryInfo("SELECT * WHERE {}", null, QueryType.SELECT, 0, false,
+				federationContext(), strategy, null);
+		StatementPattern leftArg = statementPattern("member", "memberName");
+		StatementPattern rightArg = statementPattern("outside", "rightValue");
+		FedXLeftJoin leftJoin = new FedXLeftJoin(new LeftJoin(leftArg, rightArg, condition), queryInfo);
+		QueryBindingSet input = new QueryBindingSet();
+		input.addBinding("outside", inputValue);
+
+		strategy.register(leftArg, bindings -> {
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			row.addBinding("member", Values.iri("urn:member"));
+			row.addBinding("memberName", Values.literal("Member"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		});
+		strategy.register(rightArg, bindings -> {
+			if (bindings.hasBinding("outside")) {
+				return QueryEvaluationStep.EMPTY_ITERATION;
+			}
+			QueryBindingSet row = new QueryBindingSet(bindings);
+			row.addBinding("outside", Values.iri("urn:outside:foreign"));
+			row.addBinding("rightValue", Values.literal("foreign"));
+			return new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator());
+		});
+
+		List<BindingSet> results = new java.util.ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.prepareLeftJoin(leftJoin,
+				new QueryEvaluationContext.Minimal(null)).evaluate(input)) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+		return results;
+	}
+
+	private static StatementPattern statementPattern(String subjectName, String objectName) {
+		return new StatementPattern(
+				new Var(subjectName),
+				new Var("predicate", Values.iri("urn:predicate:" + objectName)),
+				new Var(objectName));
+	}
+
+	@Test
+	void independentNaryJoinDistinguishesRequestShadowingFromLocalAndUnknownConflicts() {
+		for (String origin : List.of("request", "local", "unknown")) {
+			StubFederationEvaluationStrategy strategy = new StubFederationEvaluationStrategy(federationContext(), true);
+			QueryInfo info = new QueryInfo(null, null, QueryType.SELECT, 0, false, federationContext(), strategy, null);
+			try {
+				SingletonSet left = new SingletonSet();
+				Extension produced = new Extension(new SingletonSet(),
+						new ExtensionElem(new ValueConstant(Values.literal(1)), "x"));
+				Projection right = new Projection(produced, new ProjectionElemList(new ProjectionElem("x")), true);
+				NJoin join = new NJoin(List.of(left, right), info);
+				strategy.register(left, input -> new CloseableIteratorIteration<>(List.of(input).iterator()));
+				// BIND produces an output which may shadow request input; VALUES instead constrains that input.
+				// Compile the independent projection through the real scope/origin wrapper; only the left input
+				// is supplied directly so that request, local and unknown authority reach the hash path unchanged.
+				MapBindingSet input = new MapBindingSet();
+				input.addBinding("x", Values.literal(2));
+				BindingSet actualInput = input;
+				if ("request".equals(origin)) {
+					actualInput = BindingSetOrigin.requestInput(input);
+				} else if ("local".equals(origin)) {
+					QueryBindingSet local = new QueryBindingSet(input);
+					BindingSetOrigin.set(local, BindingSetOrigin.of(local).producing(Set.of("x")));
+					actualInput = local;
+				}
+				try (CloseableIteration<BindingSet> rows = strategy.prepareNJoin(join,
+						new QueryEvaluationContext.Minimal(null)).evaluate(actualInput)) {
+					List<BindingSet> result = QueryResults.asList(rows);
+					Assertions.assertEquals("request".equals(origin) ? 1 : 0, result.size(), origin);
+					if (!result.isEmpty()) {
+						Assertions.assertEquals(Values.literal(1), result.getFirst().getValue("x"));
+					}
+				}
+			} finally {
+				info.close();
+			}
+		}
+	}
+
+	@Test
+	void independentRightValuesConstrainRequestInputsWhileBindOutputsCanShadowThem() {
+		for (boolean bind : List.of(false, true)) {
+			for (String origin : List.of("request", "local", "unknown")) {
+				StubFederationEvaluationStrategy strategy = new StubFederationEvaluationStrategy(federationContext(),
+						true);
+				QueryInfo info = new QueryInfo(null, null, QueryType.SELECT, 0, false, federationContext(), strategy,
+						null);
+				try {
+					TupleExpr producer;
+					if (bind) {
+						producer = new Extension(new SingletonSet(),
+								new ExtensionElem(new ValueConstant(Values.literal(1)), "x"));
+					} else {
+						BindingSetAssignment values = new BindingSetAssignment();
+						values.setBindingSets(List.of(new ListBindingSet(List.of("x"), Values.literal(1))));
+						producer = values;
+					}
+					Projection right = new Projection(producer, new ProjectionElemList(new ProjectionElem("x")), true);
+					new NJoin(List.of(new SingletonSet(), right), info);
+					// Bypass NJoin execution while retaining its real attached subselect ancestry. This identifies
+					// which rows reach hash compatibility, rather than treating a VALUES constraint as a BIND output.
+					try (CloseableIteration<BindingSet> rows = strategy.precompile(right,
+							new QueryEvaluationContext.Minimal(null)).evaluate(originInput(origin))) {
+						List<BindingSet> result = QueryResults.asList(rows);
+						Assertions.assertEquals(bind && "request".equals(origin) ? 1 : 0, result.size(),
+								"raw RHS bind=" + bind + ", origin=" + origin);
+						if (!result.isEmpty()) {
+							Assertions.assertEquals(Values.literal(1), result.getFirst().getValue("x"));
+						}
+					}
+				} finally {
+					info.close();
+				}
+			}
+		}
+	}
+
+	@Test
+	void independentNaryJoinDistinguishesActualBindShadowingFromLocalAndUnknownConflicts() {
+		for (String origin : List.of("request", "local", "unknown")) {
+			StubFederationEvaluationStrategy strategy = new StubFederationEvaluationStrategy(federationContext(), true);
+			QueryInfo info = new QueryInfo(null, null, QueryType.SELECT, 0, false, federationContext(), strategy, null);
+			try {
+				SingletonSet left = new SingletonSet();
+				Extension produced = new Extension(new SingletonSet(),
+						new ExtensionElem(new ValueConstant(Values.literal(1)), "x"));
+				Projection right = new Projection(produced, new ProjectionElemList(new ProjectionElem("x")), true);
+				Projection middle = new Projection(new Extension(new SingletonSet(),
+						new ExtensionElem(new ValueConstant(Values.literal(7)), "y")),
+						new ProjectionElemList(new ProjectionElem("y")), true);
+				NJoin join = new NJoin(List.of(left, middle, right), info);
+				strategy.register(left, input -> new CloseableIteratorIteration<>(List.of(input).iterator()));
+				try (CloseableIteration<BindingSet> rows = strategy.prepareNJoin(join,
+						new QueryEvaluationContext.Minimal(null)).evaluate(originInput(origin))) {
+					List<BindingSet> result = QueryResults.asList(rows);
+					Assertions.assertEquals("request".equals(origin) ? 1 : 0, result.size(), origin);
+					if (!result.isEmpty()) {
+						Assertions.assertEquals(Values.literal(1), result.getFirst().getValue("x"));
+						Assertions.assertEquals(Values.literal(7), result.getFirst().getValue("y"));
+					}
+				}
+			} finally {
+				info.close();
+			}
+		}
+	}
+
+	private static BindingSet originInput(String origin) {
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", Values.literal(2));
+		if ("request".equals(origin)) {
+			return BindingSetOrigin.requestInput(input);
+		}
+		if ("local".equals(origin)) {
+			QueryBindingSet local = new QueryBindingSet(input);
+			BindingSetOrigin.set(local, BindingSetOrigin.of(local).producing(Set.of("x")));
+			return local;
+		}
+		return input;
+	}
+
+	@Test
+	void independentNaryJoinKeepsNullableSharedMappings() {
+		StubFederationEvaluationStrategy strategy = new StubFederationEvaluationStrategy(federationContext(), true);
+		QueryInfo info = new QueryInfo(null, null, QueryType.SELECT, 0, false, federationContext(), strategy, null);
+		try {
+			BindingSetAssignment left = new BindingSetAssignment();
+			List<BindingSet> inputs = List.of(new ListBindingSet(List.of("x"), Values.literal(1)),
+					EmptyBindingSet.getInstance());
+			left.setBindingNames(Set.of("x"));
+			left.setBindingSets(inputs);
+			BindingSetAssignment values = new BindingSetAssignment();
+			values.setBindingSets(List.of(new ListBindingSet(List.of("x"), Values.literal(1))));
+			Projection right = new Projection(values, new ProjectionElemList(new ProjectionElem("x")), true);
+			NJoin join = new NJoin(List.of(left, right), info);
+			try (CloseableIteration<BindingSet> rows = strategy.prepareNJoin(join,
+					new QueryEvaluationContext.Minimal(null)).evaluate(EmptyBindingSet.getInstance())) {
+				List<BindingSet> result = QueryResults.asList(rows);
+				Assertions.assertEquals(2, result.size());
+				Assertions.assertTrue(result.stream().allMatch(row -> Values.literal(1).equals(row.getValue("x"))));
+			}
+		} finally {
+			info.close();
+		}
+	}
+
+	private static final class StubFederationEvaluationStrategy extends FederationEvaluationStrategy {
+		private final Map<TupleExpr, QueryEvaluationStep> steps = new IdentityHashMap<>();
+		private final boolean inheritMissingSteps;
+
+		private StubFederationEvaluationStrategy(FederationContext federationContext) {
+			this(federationContext, false);
+		}
+
+		private StubFederationEvaluationStrategy(FederationContext federationContext, boolean inheritMissingSteps) {
+			super(federationContext);
+			this.inheritMissingSteps = inheritMissingSteps;
+		}
+
+		private void register(TupleExpr expression, QueryEvaluationStep step) {
+			steps.put(expression, step);
+		}
+
+		@Override
+		public QueryEvaluationStep precompile(TupleExpr expression) {
+			if (inheritMissingSteps && !steps.containsKey(expression)) {
+				return super.precompile(expression);
+			}
+			return requiredStep(expression);
+		}
+
+		@Override
+		public QueryEvaluationStep precompile(TupleExpr expression, QueryEvaluationContext context) {
+			if (inheritMissingSteps && !steps.containsKey(expression)) {
+				return super.precompile(expression, context);
+			}
+			return requiredStep(expression);
+		}
+
+		private QueryEvaluationStep requiredStep(TupleExpr expression) {
+			QueryEvaluationStep step = steps.get(expression);
+			if (step == null) {
+				throw new AssertionError("unexpected compilation: " + expression);
+			}
+			return step;
+		}
 	}
 
 	@Test

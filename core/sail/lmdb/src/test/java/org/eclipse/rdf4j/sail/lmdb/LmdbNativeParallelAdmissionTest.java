@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -44,6 +46,76 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbNativeParallelAdmissionTest {
+
+	@Test
+	void metadataOnlyCommitMakesPinnedParentDeclineParallelSiblings(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir.toFile(), new LmdbStoreConfig("spoc,posc")
+				.setNativeEvaluationEnabled(true)
+				.setForceSync(false));
+		store.init();
+		try {
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin(IsolationLevels.SNAPSHOT);
+				seed.addStatement(store.getValueFactory().createIRI("urn:metadata-admission:subject"),
+						store.getValueFactory().createIRI("urn:metadata-admission:predicate"),
+						store.getValueFactory().createLiteral("value"));
+				seed.commit();
+			}
+			LmdbTestUtil.awaitBackgroundMaintenance(store, 30, TimeUnit.SECONDS);
+			LmdbSailStore backing = store.getBackingStore();
+			TripleStore triples = backing.getTripleStore();
+			TxnManager manager = triples.getTxnManager();
+			try (SailDataset dataset = backing.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+				NativeLmdbQuerySource source = assertInstanceOf(NativeLmdbQuerySource.class, dataset);
+				List<String> expected = records(source);
+				assertEquals(1, expected.size());
+				long originalRevision = triples.getDataRevision();
+				long originalEpoch = triples.snapshotCoordinates()[0];
+				long generationBeforeMetadata = triples.getNativeCommitGeneration();
+				int availableBefore = manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);
+				assertTrue(availableBefore >= 2, "the control must have capacity for both siblings");
+				try (SailConnection writer = store.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT);
+					writer.setNamespace("metadata-admission", "urn:metadata-admission:");
+					writer.commit();
+				}
+				long metadataEpoch = triples.snapshotCoordinates()[0];
+				assertTrue(metadataEpoch > originalEpoch, "a real metadata commit must advance the physical epoch");
+				assertEquals(originalRevision, triples.getDataRevision(),
+						"metadata alone must preserve the logical statement revision");
+				assertNull(triples.statementCommitReceiptAfter(generationBeforeMetadata),
+						"the metadata transaction must not masquerade as a statement commit");
+				assertEquals(expected, records(source), "the parent must retain its original statement snapshot");
+				NativeLmdbQuerySource.ParallelSource[] stale = source.openParallelSources(2);
+				try {
+					assertNull(stale, "unchanged statement rows cannot authorize physically newer siblings");
+				} finally {
+					close(stale);
+				}
+				assertEquals(availableBefore, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+						"declining the stale family must release every reserved reader");
+				try (SailDataset fresh = backing.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+					NativeLmdbQuerySource freshSource = assertInstanceOf(NativeLmdbQuerySource.class, fresh);
+					NativeLmdbQuerySource.ParallelSource[] siblings = freshSource.openParallelSources(2);
+					try {
+						assertNotNull(siblings, "a fresh parent must admit the same two-worker family");
+						assertEquals(2, siblings.length);
+						assertEquals(metadataEpoch, siblings[0].snapshotId());
+						assertEquals(metadataEpoch, siblings[1].snapshotId());
+						for (NativeLmdbQuerySource.ParallelSource sibling : siblings) {
+							assertEquals(expected, records(sibling));
+						}
+					} finally {
+						close(siblings);
+					}
+				}
+				assertEquals(availableBefore, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+						"closing the fresh family and parent must release all additional native readers");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
 
 	@ParameterizedTest
 	@EnumSource(NativeGuard.class)

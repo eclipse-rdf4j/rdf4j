@@ -115,12 +115,18 @@ final class NativeBindingSetMultiProjectionStep implements QueryEvaluationStep, 
 						currentBindings = delegate.next();
 						nextProjectionIndex = 0;
 					} else {
+						if (lease != null) {
+							lease.exhausted();
+						}
 						close();
 						return false;
 					}
 				}
 				return next != null;
 			} catch (RuntimeException | Error e) {
+				if (lease != null) {
+					lease.failed();
+				}
 				try {
 					close();
 				} catch (RuntimeException | Error cleanup) {

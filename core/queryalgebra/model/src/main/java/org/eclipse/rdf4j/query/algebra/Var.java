@@ -40,6 +40,9 @@ import com.google.common.annotations.VisibleForTesting;
  */
 public class Var extends AbstractQueryModelNode implements ValueExpr {
 
+	// Preserve the serialized identity of the pre-metadata model class.
+	private static final long serialVersionUID = -2002917920842280721L;
+
 	/**
 	 * System property that, when set to a fully qualified class name implementing {@link Var.Provider}, selects that
 	 * provider. If absent, the first provider discovered by {@link ServiceLoader} is used; if none are found, a default
@@ -57,7 +60,8 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	private boolean isBNode = false;
 
-	private int cachedHashCode = 0;
+	// Derived from the current equality/hash algorithm; never trust a cache restored from an older form.
+	private transient int cachedHashCode = 0;
 
 	private int graphContextDepth;
 

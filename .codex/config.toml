@@ -1,2 +1,5 @@
+model_verbosity = "high"
+model_reasoning_summary = "detailed"
+
 [sandbox_workspace_write]
 network_access = true

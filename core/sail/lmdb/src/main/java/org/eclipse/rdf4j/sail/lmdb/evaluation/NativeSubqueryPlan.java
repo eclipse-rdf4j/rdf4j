@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,7 +31,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -59,6 +59,8 @@ final class NativeSubqueryPlan implements SlotPlan {
 	}
 
 	private final QueryEvaluationStep step;
+	private final NativeSubqueryPlan memoIdentity;
+	private final NativeFilterLease filterAttempt;
 	private final int[] outSlots;
 	private final String[] outNames;
 	private final int[] frameInputSlots;
@@ -69,6 +71,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private final Projection projection;
 	private final QueryEvaluationContext context;
 	private final long producedMask;
+	private final NativeTupleFacts movementFacts;
 	private final WorkerFactory workerFactory;
 	private final BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory;
 	private final NativeAggregateCostQuotes.Input physicalInput;
@@ -84,22 +87,33 @@ final class NativeSubqueryPlan implements SlotPlan {
 			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
 			Projection projection, QueryEvaluationContext context) {
 		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
-				projection, context, null, null);
+				projection, context, null, null, null);
 	}
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
 			Projection projection, QueryEvaluationContext context, WorkerFactory workerFactory) {
 		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
-				projection, context, workerFactory, null);
+				projection, context, null, workerFactory, null);
 	}
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
-			Projection projection, QueryEvaluationContext context,
+			Projection projection, QueryEvaluationContext context, WorkerFactory workerFactory,
+			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
+		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
+				projection, context, null, workerFactory, lateralStepFactory);
+	}
+
+	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
+			Projection projection, QueryEvaluationContext context, NativeTupleFacts movementFacts,
 			WorkerFactory workerFactory,
 			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
+		this.movementFacts = movementFacts;
 		this.step = step;
+		this.memoIdentity = this;
+		this.filterAttempt = null;
 		this.outSlots = outSlots.clone();
 		this.outNames = outNames.clone();
 		this.frameInputSlots = frameInputSlots.clone();
@@ -125,8 +139,36 @@ final class NativeSubqueryPlan implements SlotPlan {
 		this.producedMask = mask;
 	}
 
+	private NativeSubqueryPlan(NativeSubqueryPlan source, NativeFilterLease filters) {
+		this.step = source.step;
+		this.memoIdentity = source.memoIdentity;
+		this.filterAttempt = filters;
+		this.outSlots = source.outSlots;
+		this.outNames = source.outNames;
+		this.frameInputSlots = source.frameInputSlots;
+		this.frameInputNames = source.frameInputNames;
+		this.frameParameterNames = source.frameParameterNames;
+		this.privateGraphParameters = source.privateGraphParameters;
+		this.graphFrameInputs = source.graphFrameInputs;
+		this.projection = source.projection;
+		this.context = source.context;
+		this.producedMask = source.producedMask;
+		this.movementFacts = source.movementFacts;
+		this.workerFactory = source.workerFactory;
+		this.lateralStepFactory = source.lateralStepFactory;
+		this.physicalInput = source.physicalInput;
+		this.physicalRecipe = source.physicalRecipe;
+		this.physicalBindings = source.physicalBindings;
+	}
+
+	NativeSubqueryPlan withFilterAttempt(NativeFilterLease filters) {
+		return new NativeSubqueryPlan(this, filters);
+	}
+
 	private NativeSubqueryPlan(NativeSubqueryPlan original, NativePhysicalResultPlan recipe, BindingSet bindings) {
 		step = recipe.step();
+		memoIdentity = this;
+		filterAttempt = original.filterAttempt;
 		outSlots = original.outSlots;
 		outNames = original.outNames;
 		frameInputSlots = original.frameInputSlots;
@@ -137,6 +179,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		projection = original.projection;
 		context = original.context;
 		producedMask = original.producedMask;
+		movementFacts = original.movementFacts;
 		workerFactory = original.workerFactory;
 		lateralStepFactory = null;
 		physicalInput = recipe.input();
@@ -246,8 +289,11 @@ final class NativeSubqueryPlan implements SlotPlan {
 		WORKER_BINDINGS.incrementAndGet();
 		NativeSubqueryPlan result = new NativeSubqueryPlan(bound.step(), outSlots, outNames, frameInputSlots,
 				frameInputNames,
-				frameParameterNames, privateGraphParameters, projection, bound.context(), workerFactory,
+				frameParameterNames, privateGraphParameters, projection, bound.context(), movementFacts, workerFactory,
 				bound.lateralStepFactory());
+		if (filterAttempt != null) {
+			result = result.withFilterAttempt(filterAttempt);
+		}
 		if (physicalInput != null) {
 			NativePhysicalResultPlan recipe;
 			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource
@@ -276,6 +322,14 @@ final class NativeSubqueryPlan implements SlotPlan {
 		return mask;
 	}
 
+	boolean hoistableAcross(Set<String> surroundingNames) {
+		return movementFacts != null && movementFacts.scopeChange() && movementFacts.repeatable()
+				&& !movementFacts.mappingParameterized() && movementFacts.discardable()
+				&& frameInputSlots.length == 0 && privateGraphParameters.length == 0
+				&& Collections.disjoint(movementFacts.observedNames(), surroundingNames)
+				&& Collections.disjoint(movementFacts.producedNames(), surroundingNames);
+	}
+
 	String describe() {
 		String nested = step instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
 				: step.getClass().getSimpleName();
@@ -293,11 +347,15 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
+		return open(row, filterAttempt);
+	}
+
+	RowCursor open(RowState row, NativeFilterLease filters) throws IOException {
 		NativeLazyResultReplay state;
 		boolean ownsState = false;
 		if (frameInputSlots.length == 0) {
 			NativeExecutionContext execution = executionContext(row);
-			state = replayState(execution, this,
+			state = replayState(execution, memoIdentity,
 					() -> evaluateOnce(row, frameBindings(row, execution.queryBase())));
 		} else {
 			// The boundary's solutions depend on the entry base and the frame values only, so one evaluation per
@@ -319,10 +377,11 @@ final class NativeSubqueryPlan implements SlotPlan {
 						frameIds[i] = row.slots[frameInputSlots[i]];
 					}
 				}
-				state = replayState(execution, new FrameKey(this, frameIds, suppliedGraphs),
+				state = replayState(execution, new FrameKey(memoIdentity, frameIds, suppliedGraphs),
 						() -> evaluateOnce(row, frameBindings(row, row.base)));
 			}
 		}
+		state.includeFeedback(filters == null ? NativeFilterLease.parentOf(row) : filters);
 		return new NativeSubqueryCursor(this, row, state.cursor(row.cancellation), ownsState ? state : null);
 	}
 
@@ -412,20 +471,34 @@ final class NativeSubqueryPlan implements SlotPlan {
 	}
 
 	private NativeLazyResultReplay prepareReplay(RowState row, BindingSet input, NativeExecutionContext owner) {
+		NativeFilterLease capture = owner == null ? null : NativeFilterLease.capture(owner);
+		try {
+			return prepareReplay(row, input, owner, capture);
+		} catch (RuntimeException | Error failure) {
+			if (capture != null) {
+				capture.abort(failure);
+			}
+			throw failure;
+		}
+	}
+
+	private NativeLazyResultReplay prepareReplay(RowState row, BindingSet input, NativeExecutionContext owner,
+			NativeFilterLease capture) {
 		row.cancellation.check();
-		QueryEvaluationStep prepared = preparedStep(row);
 		BindingSet bodyInput = NativeEntryBindings.preserve(input, projection == null ? input
 				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context));
 		NativeLmdbQuerySource source = row.source;
 		NativeCancellationToken cancellation = row.cancellation;
-		NativeResultCursor delegate = inLexicalScope(source, cancellation,
-				() -> NativeResultSteps.open(prepared, bodyInput));
+		NativeResultCursor delegate = inLexicalScope(source, cancellation, capture,
+				() -> NativeResultSteps.open(preparedStep(row), bodyInput));
 		NativeResultCursor scoped = new NativeResultCursor() {
+			private boolean closed;
+
 			@Override
 			public NativeResultRow next() {
 				try (NativeExecutionContext.ProducerScope ignored = owner == null ? null
 						: owner.borrowCachedProducer()) {
-					return inLexicalScope(source, cancellation, () -> {
+					return inLexicalScope(source, cancellation, capture, () -> {
 						cancellation.check();
 						NativeResultRow next = delegate.next();
 						cancellation.check();
@@ -451,16 +524,20 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 			@Override
 			public void close() {
+				if (closed) {
+					return;
+				}
+				closed = true;
 				try (NativeExecutionContext.ProducerScope ignored = owner == null ? null
 						: owner.borrowCachedProducer()) {
-					inLexicalScope(source, cancellation, () -> {
+					inLexicalScope(source, cancellation, capture, () -> {
 						delegate.close();
 						return null;
 					});
 				}
 			}
 		};
-		return new NativeLazyResultReplay(outNames, owner, cancellation, scoped);
+		return new NativeLazyResultReplay(outNames, owner, cancellation, scoped, capture);
 	}
 
 	private QueryEvaluationStep preparedStep(RowState row) {
@@ -469,14 +546,19 @@ final class NativeSubqueryPlan implements SlotPlan {
 		}
 		NativeExecutionContext execution = executionContext(row);
 		Set<String> originalDomain = Set.copyOf(row.base.getBindingNames());
-		return execution.nativeState(new ScopedStepKey(this, originalDomain),
+		return execution.nativeState(new ScopedStepKey(memoIdentity, originalDomain),
 				() -> lateralStepFactory.apply(originalDomain, execution));
 	}
 
 	private static <T> T inLexicalScope(NativeLmdbQuerySource source, NativeCancellationToken cancellation,
 			Supplier<T> action) {
+		return inLexicalScope(source, cancellation, null, action);
+	}
+
+	private static <T> T inLexicalScope(NativeLmdbQuerySource source, NativeCancellationToken cancellation,
+			NativeFilterLease capture, Supplier<T> action) {
 		try (NativeCancellationToken.Scope cancellationScope = cancellation.enter();
-				SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
+				SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source, capture)) {
 			// The enclosing decision owns forcing; children may select different physical operators. Restore the
 			// scope after every lazy advance and close, not only after constructing the child.
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
@@ -537,7 +619,9 @@ final class NativeSubqueryPlan implements SlotPlan {
 					NativeResultCell cell = solution.cell(plan.outNames[i]);
 					if (cell.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) {
 						row.bindSummary(plan.outSlots[i], cell);
-					} else if (cell.state() == NativeResultCell.State.BOUND && !row.bindOrCheckTerm(plan.outSlots[i],
+					} else if (cell.state() == NativeResultCell.State.PRESENT_NULL) {
+						row.bindReturnedNull(plan.outSlots[i]);
+					} else if (cell.state() == NativeResultCell.State.BOUND && !row.bindReturnedTerm(plan.outSlots[i],
 							plan.idOfOrIntern(row, cell.value(), plan.outSlots[i]))) {
 						compatible = false;
 						break;

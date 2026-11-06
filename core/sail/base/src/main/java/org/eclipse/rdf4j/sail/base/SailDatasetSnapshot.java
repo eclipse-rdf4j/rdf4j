@@ -188,23 +188,10 @@ public final class SailDatasetSnapshot implements SailClosable {
 				throw new IllegalStateException("Snapshot dataset is closed");
 			}
 			references++;
-			return new DelegatingSailDataset(dataset) {
-				private final AtomicBoolean closed = new AtomicBoolean();
-
-				@Override
-				public void close() {
-					if (closed.compareAndSet(false, true)) {
-						release();
-					}
-				}
-
-				@Override
-				public void abandonUnobserved() {
-					// This borrower is private, but the physical dataset and its observations belong to every lease.
-					// Normal final cleanup preserves anything observed by a sibling or the snapshot owner.
-					close();
-				}
-			};
+			// The private borrower owns only one shared reference. Existing lifetime guards retain that
+			// reference through active cursors and capability callbacks, and refuse new work after close.
+			// Abandoning a borrower must still preserve observations owned by its siblings or the snapshot.
+			return new RetainedSailDataset(dataset, abandon -> release());
 		}
 
 		private void release() {

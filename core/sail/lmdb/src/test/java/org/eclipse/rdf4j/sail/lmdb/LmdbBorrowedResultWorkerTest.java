@@ -151,7 +151,7 @@ class LmdbBorrowedResultWorkerTest {
 			});
 
 			assertTrue(committedResultRetained.await(10, TimeUnit.SECONDS),
-					"the query must commit while its lazy result remains open");
+					() -> "the query must commit while its lazy result remains open\n" + threadDump());
 			try (RepositoryConnection updater = repository.getConnection()) {
 				updater.begin(IsolationLevels.SNAPSHOT);
 				updater.remove(PROBE_SUBJECT, PROBE_PREDICATE, null);
@@ -189,6 +189,7 @@ class LmdbBorrowedResultWorkerTest {
 			throw failure;
 		} finally {
 			BorrowedResultReadFunction function = registeredFunction.get();
+
 			LmdbSailStore.ReadAttemptLease attemptToClose = writerAttempt;
 			LmdbSailStore.MapGrowthAttempt warningToClose = warning;
 			Future<?> queryToClose = queryFuture;
@@ -205,11 +206,11 @@ class LmdbBorrowedResultWorkerTest {
 							attemptToClose.completeTransaction();
 						}
 					},
-					attemptToClose,
-					warningToClose,
+					attemptToClose == null ? null : attemptToClose::close,
+					warningToClose == null ? null : warningToClose::close,
 					() -> writerFinished.set(true),
 					() -> shutdownQueryExecutor(queryExecutor, queryToClose),
-					() -> LmdbTestUtil.shutdownExecutor(workerExecutor, 10, 5, false,
+					() -> LmdbTestUtil.shutdownExecutor(workerExecutor, 10, 5, true,
 							"the borrowed-result worker must terminate"),
 					() -> {
 						if (function != null) {
@@ -223,6 +224,17 @@ class LmdbBorrowedResultWorkerTest {
 	static void shutdownQueryExecutor(ExecutorService queryExecutor, Future<?> queryFuture) throws Exception {
 		LmdbTestUtil.shutdownExecutor(queryExecutor, queryFuture == null ? 0 : 15, 5, queryFuture != null,
 				"the lazy query owner must terminate");
+	}
+
+	private static String threadDump() {
+		StringBuilder dump = new StringBuilder();
+		Thread.getAllStackTraces().forEach((thread, frames) -> {
+			dump.append(thread.getName()).append(' ').append(thread.getState()).append('\n');
+			for (StackTraceElement frame : frames) {
+				dump.append("\tat ").append(frame).append('\n');
+			}
+		});
+		return dump.toString();
 	}
 
 	private static Set<String> readProbeValues(SailConnection connection) {
@@ -269,6 +281,12 @@ class LmdbBorrowedResultWorkerTest {
 		@Override
 		public String getURI() {
 			return functionIri;
+		}
+
+		@Override
+		public boolean mustReturnDifferentResult() {
+			// This callback performs ordered reads and synchronization; planning must not execute it speculatively.
+			return true;
 		}
 
 		@Override

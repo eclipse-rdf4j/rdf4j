@@ -15,10 +15,12 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.RUNTIME_INTERN_BASE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
@@ -175,8 +177,14 @@ final class NativeExecutionContext implements AutoCloseable {
 	/** Native resources finish before captured scopes; only external closers wait for scope settlement too. */
 	static final class WorkerTasks {
 		private final AtomicInteger nativeRemaining;
+		private Runnable afterSettlement;
+		private boolean settlementNotified;
 		private final CountDownLatch nativeDone;
 		private final CountDownLatch settled;
+		/** Allocated only when an owner registers notification; legacy unowned groups keep settled semantics. */
+		private CountDownLatch notificationDone;
+		private Thread notificationThread;
+		private NativeExecutionContext notificationOwner;
 		private final Runnable afterNativeCleanup;
 		private final AtomicReference<Throwable> cleanupProblem = new AtomicReference<>();
 		private final ThreadLocal<Task> current = new ThreadLocal<>();
@@ -193,6 +201,68 @@ final class NativeExecutionContext implements AutoCloseable {
 			this.afterNativeCleanup = afterNativeCleanup;
 		}
 
+		/** One owner may register before or after settlement; admission and external fence reads share this monitor. */
+		void afterSettlement(Runnable callback) {
+			afterSettlement(null, callback);
+		}
+
+		private void afterSettlement(NativeExecutionContext owner, Runnable callback) {
+			synchronized (this) {
+				if (afterSettlement != null || settlementNotified) {
+					throw new IllegalStateException("worker settlement already owned");
+				}
+				notificationOwner = owner;
+				notificationDone = new CountDownLatch(1);
+				afterSettlement = callback;
+			}
+			notifySettlement(null, null);
+		}
+
+		private void notifySettlement(Consumer<Throwable> failureHandler, Throwable primary) {
+			Runnable callback;
+			CountDownLatch completed;
+			synchronized (this) {
+				if (settled.getCount() != 0 || settlementNotified || afterSettlement == null) {
+					return;
+				}
+				settlementNotified = true;
+				callback = afterSettlement;
+				afterSettlement = null;
+				notificationThread = Thread.currentThread();
+				completed = notificationDone;
+			}
+			try {
+				callback.run();
+			} catch (Throwable problem) {
+				// Both the real worker failure destination and startup suppression precede consumer completion.
+				if (primary != null && primary != problem) {
+					primary.addSuppressed(problem);
+				}
+				try {
+					reportCleanupFailure(problem, failureHandler == null ? ignored -> {
+					} : failureHandler);
+				} catch (Throwable reportingFailure) {
+					if (reportingFailure != problem) {
+						problem.addSuppressed(reportingFailure);
+					}
+				}
+				NativeContextClosingIteration.throwFailure(problem);
+			} finally {
+				synchronized (this) {
+					notificationThread = null;
+					notificationOwner = null;
+				}
+				completed.countDown();
+			}
+		}
+
+		private void settledTask(Consumer<Throwable> failureHandler, Throwable primary) {
+			// The notification may reenter resource cleanup that waits for these scopes. Only that exact
+			// finisher may use settled; external consumers also wait for notification failure publication.
+			settled.countDown();
+			notifySettlement(failureHandler, primary);
+		}
+
 		Throwable cleanupFailure() {
 			return cleanupProblem.get();
 		}
@@ -200,13 +270,25 @@ final class NativeExecutionContext implements AutoCloseable {
 		private void reportCleanupFailure(Throwable problem, Consumer<Throwable> handler) {
 			Throwable previous = cleanupProblem.get();
 			if (previous == null && cleanupProblem.compareAndSet(null, problem)) {
-				handler.accept(problem);
+				try {
+					handler.accept(problem);
+				} catch (Throwable reportingFailure) {
+					if (reportingFailure != problem) {
+						problem.addSuppressed(reportingFailure);
+					}
+					NativeContextClosingIteration.throwFailure(problem);
+				}
 				return;
 			}
 			previous = cleanupProblem.get();
 			if (previous != problem) {
 				previous.addSuppressed(problem);
 			}
+		}
+
+		void recordOwnedCleanupFailure(Throwable problem) {
+			reportCleanupFailure(problem, ignored -> {
+			});
 		}
 
 		Task enter(Runnable nativeCleanup, Consumer<Throwable> cleanupFailure) {
@@ -219,43 +301,136 @@ final class NativeExecutionContext implements AutoCloseable {
 			return current.get() != null;
 		}
 
+		private synchronized boolean isNotificationThread() {
+			return notificationThread == Thread.currentThread();
+		}
+
 		long getCount() {
-			return pending().getCount();
+			CountDownLatch worker = workerFence();
+			if (worker != null) {
+				return worker.getCount();
+			}
+			synchronized (this) {
+				return externalFenceLocked().getCount();
+			}
 		}
 
 		/** Accounts for a task whose native resources have already been cleaned without submitting it. */
 		void countDown() {
+			countDown(null);
+		}
+
+		/** Keeps the initiating failure and all later suppression visible before notification completion. */
+		void countDown(Throwable primary) {
 			Task task = current.get();
-			if (task == null) {
-				try {
-					nativeFinished();
-				} finally {
-					settled.countDown();
-				}
-			} else {
+			if (task != null) {
 				task.finishNative();
+				return;
+			}
+			Throwable failure = null;
+			try {
+				nativeFinished();
+			} catch (Throwable problem) {
+				failure = problem;
+				recordOwnedCleanupFailure(problem);
+				if (primary != null && primary != problem) {
+					primary.addSuppressed(problem);
+				}
+			}
+			try {
+				settledTask(null, primary == null ? failure : primary);
+			} catch (Throwable problem) {
+				if (failure == null) {
+					failure = problem;
+				}
+			}
+			if (primary == null && failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
 			}
 		}
 
 		void await() throws InterruptedException {
-			pending().await();
+			while (true) {
+				CountDownLatch fence = pending();
+				fence.await();
+				if (sameFence(fence)) {
+					return;
+				}
+			}
 		}
 
 		boolean await(long timeout, TimeUnit unit) throws InterruptedException {
-			return pending().await(timeout, unit);
+			long limit = unit.toNanos(timeout);
+			long started = System.nanoTime();
+			long remaining = limit;
+			while (true) {
+				CountDownLatch fence = pending();
+				if (!fence.await(remaining, TimeUnit.NANOSECONDS)) {
+					return false;
+				}
+				if (sameFence(fence)) {
+					return true;
+				}
+				remaining = limit - (System.nanoTime() - started);
+				if (remaining <= 0L) {
+					return getCount() == 0L;
+				}
+			}
+		}
+
+		private CountDownLatch workerFence() {
+			Task task = current.get();
+			if (task == null) {
+				return null;
+			}
+			// An activation failure can drain its partially installed owner before any worker body starts.
+			if (task.activating) {
+				task.finishNative();
+			}
+			return nativeDone;
+		}
+
+		/** Caller holds this monitor, shared with late owner admission. */
+		private CountDownLatch externalFenceLocked() {
+			Thread thread = Thread.currentThread();
+			if (notificationThread == thread || (notificationOwner != null
+					&& notificationOwner.ownsFilterFinalization(thread))) {
+				return settled;
+			}
+			return notificationDone == null ? settled : notificationDone;
+		}
+
+		/** Internal cleanup must not consume an error report intended for the external result owner. */
+		boolean isCleanupOwnerThread() {
+			if (current.get() != null) {
+				return true;
+			}
+			synchronized (this) {
+				Thread thread = Thread.currentThread();
+				return notificationThread == thread || (notificationOwner != null
+						&& notificationOwner.ownsFilterFinalization(thread));
+			}
 		}
 
 		private CountDownLatch pending() {
-			Task task = current.get();
-			if (task != null) {
-				// Installing a captured scope can itself fail and drain its partially installed owner. No worker
-				// body has started, so release its admitted native resources before re-entering the owner's drain.
-				if (task.activating) {
-					task.finishNative();
-				}
-				return nativeDone;
+			CountDownLatch worker = workerFence();
+			if (worker != null) {
+				return worker;
 			}
-			return settled;
+			synchronized (this) {
+				return externalFenceLocked();
+			}
+		}
+
+		/** Rebase a wait that began before a concurrent late callback owner was admitted. */
+		private boolean sameFence(CountDownLatch waited) {
+			CountDownLatch worker = workerFence();
+			if (worker != null) {
+				return worker == waited;
+			}
+			synchronized (this) {
+				return externalFenceLocked() == waited;
+			}
 		}
 
 		private void nativeFinished() {
@@ -314,7 +489,11 @@ final class NativeExecutionContext implements AutoCloseable {
 					} catch (Throwable problem) {
 						reportCleanupFailure(problem, cleanupFailure);
 					} finally {
-						nativeFinished();
+						try {
+							nativeFinished();
+						} catch (Throwable problem) {
+							reportCleanupFailure(problem, cleanupFailure);
+						}
 					}
 				}
 			}
@@ -343,7 +522,7 @@ final class NativeExecutionContext implements AutoCloseable {
 					} else {
 						current.set(previous);
 					}
-					settled.countDown();
+					settledTask(cleanupFailure, null);
 				}
 			}
 		}
@@ -396,7 +575,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	/** The evaluation-local generic context (owns the query scope: NOW, BNODE labels); created lazily at first use. */
 	private volatile QueryEvaluationContext genericContext;
 	/** Structural identity, rather than context equality or first-use order, selects a subtree's view. */
-	private final Map<QueryEvaluationContext, QueryEvaluationContext> genericContexts = new IdentityHashMap<>();
+	private Map<QueryEvaluationContext, QueryEvaluationContext> genericContexts;
 	/** The root synthetic source's authority callback for retaining query-scoped representatives such as NOW. */
 	private volatile Consumer<Value> queryScopedValueRegistrar;
 	/** Caller-supplied bindings at the outermost query evaluation, distinct from nested correlation inputs. */
@@ -406,8 +585,245 @@ final class NativeExecutionContext implements AutoCloseable {
 	private volatile boolean closed;
 	/** Set when a carrier reached EOF while an outer semantic consumer still owns a lease. */
 	private boolean closeRequested;
+	/** Admission closes before resources; terminal outcome is published only after every cleanup attempt. */
+	private volatile boolean closeCompleted;
+	private Throwable closeFailure;
+	/** Instance-local reentrant resource owner; never grants execution/source authority. */
+	private volatile Thread closingThread;
 	/** Number of active consumers that may still evaluate against this context after an inner close request. */
 	private int leaseCount;
+	private final AtomicInteger filterResultLeases = new AtomicInteger();
+	private boolean filterResourcesClosed;
+	private final ConcurrentHashMap<WorkerTasks, Boolean> localFilterWorkers = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<WorkerTasks, Boolean> queryFilterWorkers = new ConcurrentHashMap<>();
+	private IdentityHashMap<NativeBooleanFilter, NativeBooleanFilter> filterResources;
+
+	synchronized NativeBooleanFilter ownFilterResource(NativeBooleanFilter filter) {
+		if (closed) {
+			throw new IllegalStateException("execution context is closed");
+		}
+		if (filterResources == null) {
+			filterResources = new IdentityHashMap<>();
+		}
+		return filterResources.computeIfAbsent(filter, CloseOnceNativeBooleanFilter::new);
+	}
+
+	private final Object filterCleanupLock = new Object();
+	private Throwable filterWorkerCleanup;
+
+	void registerFilterWorkers(WorkerTasks tasks) {
+		localFilterWorkers.put(tasks, Boolean.TRUE);
+		queryScopeOwner.queryFilterWorkers.put(tasks, Boolean.TRUE);
+		tasks.afterSettlement(this, () -> {
+			Throwable failure = null;
+			try {
+				recordFilterWorkerCleanup(tasks.cleanupFailure());
+			} catch (Throwable problem) {
+				failure = problem;
+			} finally {
+				// The captured scopes have settled. Other callbacks may now finish this context's local state.
+				localFilterWorkers.remove(tasks);
+				if (queryScopeOwner == this) {
+					queryFilterWorkers.remove(tasks);
+				}
+			}
+			try {
+				retryRequestedClose();
+			} catch (Throwable problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+			if (queryScopeOwner != this) {
+				try {
+					// A child remains represented at the root through its native-state cleanup and failure publication.
+					if (failure != null) {
+						filterFailure();
+						queryScopeOwner.retainFilterWorkerCleanup(failure);
+					}
+				} catch (Throwable problem) {
+					if (failure == null) {
+						failure = problem;
+					} else if (failure != problem) {
+						failure.addSuppressed(problem);
+					}
+				} finally {
+					queryScopeOwner.queryFilterWorkers.remove(tasks);
+				}
+				try {
+					queryScopeOwner.retryRequestedClose();
+				} catch (Throwable problem) {
+					// The root retains its aggregate, which may already contain this child's failure.
+					// Do not reverse that inclusion into a circular child/root suppression graph.
+					if (failure == null) {
+						failure = problem;
+					}
+				}
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		});
+	}
+
+	private void recordFilterWorkerCleanup(Throwable problem) {
+		if (problem == null) {
+			return;
+		}
+		filterFailure();
+		retainFilterWorkerCleanup(problem);
+		if (queryScopeOwner != this) {
+			queryScopeOwner.retainFilterWorkerCleanup(problem);
+		}
+	}
+
+	private void retainFilterWorkerCleanup(Throwable problem) {
+		synchronized (filterCleanupLock) {
+			if (filterWorkerCleanup == null) {
+				filterWorkerCleanup = problem;
+			} else if (filterWorkerCleanup != problem) {
+				filterWorkerCleanup.addSuppressed(problem);
+			}
+		}
+	}
+
+	/** Never hold this context's monitor while waiting for workers that may still initialize native state. */
+	private boolean awaitFilterWorkers(boolean callbackRetry) {
+		ConcurrentHashMap<WorkerTasks, Boolean> groups = queryScopeOwner == this
+				? queryFilterWorkers
+				: localFilterWorkers;
+		boolean interrupted = false;
+		try {
+			while (!groups.isEmpty()) {
+				for (WorkerTasks tasks : groups.keySet()) {
+					// A callback cannot wait for itself or another callback that may need this context's monitor.
+					// The last membership removal retries the pending close; an external caller still awaits
+					// completion.
+					if (callbackRetry || tasks.isWorkerThread() || tasks.isNotificationThread()) {
+						return false;
+					}
+					boolean complete = false;
+					while (!complete) {
+						try {
+							tasks.await();
+							complete = true;
+						} catch (InterruptedException interruption) {
+							interrupted = true;
+						}
+					}
+				}
+			}
+			return true;
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	private final ConcurrentHashMap<RecordingNativeBooleanFilter, NativeFilterLease.Outcome> filterOutcomes = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<RecordingNativeBooleanFilter, NativeFilterLease.Outcome> unqualifiedFilterOutcomes = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<RecordingNativeBooleanFilter, NativeFilterLease.Outcome> discardedFilterOutcomes = new ConcurrentHashMap<>();
+	private final Object filterOwnerIdentity = new Object();
+	private final ConcurrentHashMap<Object, RecordingNativeBooleanFilter> filterTemplates = new ConcurrentHashMap<>();
+	private IdentityHashMap<NativeFilterLease.Frozen, Boolean> includedFilterMemos;
+	private IdentityHashMap<NativeFilterLease.Frozen, Boolean> selectedFilterMemos;
+
+	Object filterOwnerIdentity() {
+		return queryScopeOwner.filterOwnerIdentity;
+	}
+
+	void registerFilterTemplate(RecordingNativeBooleanFilter template) {
+		queryScopeOwner.filterTemplates.putIfAbsent(template.outcomeIdentity, template);
+	}
+
+	synchronized void mergeFrozenFilterOutcomes(NativeFilterLease.Frozen frozen) {
+		frozen.requireOwner(this);
+		if (filterPublicationDone) {
+			throw new IllegalStateException("memo selected after query feedback publication");
+		}
+		// Selection may finish before a shared lazy producer. Keep its receipt, never the finished attempt lease.
+		if (selectedFilterMemos == null) {
+			selectedFilterMemos = new IdentityHashMap<>();
+		}
+		selectedFilterMemos.put(frozen, Boolean.TRUE);
+	}
+
+	void mergeFrozenFilterOutcome(NativeFilterLease.FrozenOutcome frozen, boolean complete) {
+		RecordingNativeBooleanFilter template = filterTemplates.get(frozen.template());
+		if (template == null) {
+			throw new IllegalStateException("memo outcome has no evaluation-owned destination");
+		}
+		NativeFilterLease.Outcome value = new NativeFilterLease.Outcome(template, this);
+		value.opens = frozen.opens();
+		value.terminals = frozen.terminals();
+		value.exhausted = frozen.exhausted();
+		value.passed = frozen.passed();
+		value.rejected = frozen.rejected();
+		value.incomplete = frozen.incomplete() || !complete;
+		value.inputQualified = frozen.inputQualified();
+		mergeFilterOutcome(value);
+	}
+
+	// The existing NativeCancellationToken contract observes the evaluation thread as well as the consumer.
+	// This reference can only veto terminal evidence; it never proves input EOF or attempt selection.
+	private Thread filterEvaluationThread;
+	private volatile boolean filterRootExhausted;
+	private volatile boolean filterResultPartial;
+	private volatile boolean filterFailed;
+	private volatile boolean filterPublicationDone;
+
+	NativeExecutionContext filterOutcomeOwner() {
+		return queryScopeOwner;
+	}
+
+	NativeFilterLease.Outcome openFilterOutcome(RecordingNativeBooleanFilter template) {
+		if (filterPublicationDone) {
+			return null;
+		}
+		NativeFilterLease parent = SyntheticValueSource.activeFilterParent(this);
+		if (parent != null) {
+			return parent.openUnqualified(template, filterOutcomeOwner());
+		}
+		NativeFilterLease.Outcome outcome = unqualifiedFilterOutcomes.computeIfAbsent(template.origin,
+				key -> new NativeFilterLease.Outcome(key, this));
+		outcome.incomplete = true;
+		outcome.open();
+		return outcome;
+	}
+
+	void mergeFilterOutcome(NativeFilterLease.Outcome other) {
+		if (filterPublicationDone) {
+			return;
+		}
+		filterOutcomes.computeIfAbsent(other.template, key -> new NativeFilterLease.Outcome(key, this)).merge(other);
+	}
+
+	void mergeDiscardedFilterOutcome(NativeFilterLease.Outcome other) {
+		if (filterPublicationDone) {
+			return;
+		}
+		discardedFilterOutcomes.computeIfAbsent(other.template,
+				key -> new NativeFilterLease.Outcome(key, this)).merge(other);
+	}
+
+	void filterFailure() {
+		queryScopeOwner.filterFailed = true;
+	}
+
+	void filterRootExhausted() {
+		// A correlated child reaching EOF is not the root result's EOF.
+		if (queryScopeOwner == this) {
+			filterRootExhausted = true;
+		}
+	}
+
+	private void filterResultPartial() {
+		queryScopeOwner.filterResultPartial = true;
+	}
+
 	/** Immutable ownership graph, not retained claims: cached producers must never keep their own owners alive. */
 	private volatile NativeExecutionContext[] leaseOwners;
 
@@ -416,6 +832,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	NativeExecutionContext(QueryExecutionPolicy policy) {
+		this.filterEvaluationThread = Thread.currentThread();
 		this.queryScopeOwner = this;
 		this.cancellation = new NativeCancellationToken();
 		this.queryFrameOwner = this;
@@ -490,8 +907,14 @@ final class NativeExecutionContext implements AutoCloseable {
 			synchronized (this) {
 				if (queryBase == null) {
 					queryBase = bindings == null || bindings.isEmpty()
-							? org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance()
-							: NativeEntryBindings.snapshot(bindings);
+							&& !org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.isTrackedInput(bindings)
+							&& !org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin.of(bindings)
+									.hasRetainedMetadata()
+							&& org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.from(bindings)
+									.retainedParametersForTransport()
+									.isEmpty()
+											? org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance()
+											: NativeEntryBindings.snapshot(bindings);
 				}
 			}
 		}
@@ -546,7 +969,7 @@ final class NativeExecutionContext implements AutoCloseable {
 			if (closed) {
 				throw new IllegalStateException("execution context is closed");
 			}
-			QueryEvaluationContext existing = genericContexts.get(structural);
+			QueryEvaluationContext existing = genericContexts == null ? null : genericContexts.get(structural);
 			if (existing != null) {
 				return existing;
 			}
@@ -556,6 +979,9 @@ final class NativeExecutionContext implements AutoCloseable {
 				throw new IllegalStateException("generic query scope must preserve structural views");
 			}
 			QueryEvaluationContext view = scoped.withStructuralContext(structural);
+			if (genericContexts == null) {
+				genericContexts = new IdentityHashMap<>();
+			}
 			genericContexts.put(structural, view);
 			return view;
 		}
@@ -996,12 +1422,228 @@ final class NativeExecutionContext implements AutoCloseable {
 		return closed || queryScopeOwner.closed;
 	}
 
+	/** Retains the transitive runtime owners used by an admitted cancellation callback. */
+	CancellationLease tryRetainCancellation() {
+		List<NativeExecutionContext> owners = cancellationOwners();
+		CancellationLease lease = new CancellationLease(owners);
+		try {
+			for (NativeExecutionContext owner : owners) {
+				if (!owner.retainCancellationOwner()) {
+					lease.close();
+					return null;
+				}
+				lease.count++;
+			}
+			return lease;
+		} catch (RuntimeException | Error failure) {
+			try {
+				lease.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
+	}
+
+	/** True for an owner currently running cleanup on this thread, including a transitive shared owner. */
+	boolean cancellationOwnerClosingOnCurrentThread() {
+		Thread current = Thread.currentThread();
+		for (NativeExecutionContext owner : cancellationOwners()) {
+			if (owner.closingThread == current) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private List<NativeExecutionContext> cancellationOwners() {
+		// Follow the actual ownership graph. A frame can itself borrow another context's term space, so a
+		// fixed ordering of this context's immediate owners is not sufficient. Build a dependency-first order
+		// before acquiring anything, without recursion even for a deeply nested evaluation.
+		IdentityHashMap<NativeExecutionContext, Boolean> visited = new IdentityHashMap<>();
+		ArrayDeque<CancellationOwnerVisit> pending = new ArrayDeque<>();
+		List<NativeExecutionContext> owners = new ArrayList<>();
+		visited.put(this, Boolean.FALSE);
+		pending.push(new CancellationOwnerVisit(this));
+		while (!pending.isEmpty()) {
+			CancellationOwnerVisit visit = pending.peek();
+			if (visit.nextOwner == 3) {
+				pending.pop();
+				visited.put(visit.context, Boolean.TRUE);
+				owners.add(visit.context);
+				continue;
+			}
+			NativeExecutionContext owner = switch (visit.nextOwner++) {
+			case 0 -> visit.context.queryScopeOwner;
+			case 1 -> visit.context.queryFrameOwner;
+			default -> visit.context.termOwner;
+			};
+			if (owner == visit.context) {
+				continue;
+			}
+			Boolean state = visited.get(owner);
+			if (state == Boolean.FALSE) {
+				throw new IllegalStateException("cycle in native execution context ownership");
+			}
+			if (state == null) {
+				visited.put(owner, Boolean.FALSE);
+				pending.push(new CancellationOwnerVisit(owner));
+			}
+		}
+
+		return owners;
+	}
+
+	private static final class CancellationOwnerVisit {
+		private final NativeExecutionContext context;
+		private int nextOwner;
+
+		private CancellationOwnerVisit(NativeExecutionContext context) {
+			this.context = context;
+		}
+	}
+
+	private synchronized boolean retainCancellationOwner() {
+		// An already accepted consumer can still use an owner whose close is pending. Once the last consumer
+		// has gone, do not revive an owner that has begun closing but has not yet acquired the cleanup monitor.
+		if (closed || closeRequested && leaseCount == 0) {
+			return false;
+		}
+		leaseCount++;
+		return true;
+	}
+
+	/** Runtime-only retention; it must not create or complete a query-result accounting lease. */
+	static final class CancellationLease implements AutoCloseable {
+		private List<NativeExecutionContext> owners;
+		private int count;
+
+		private CancellationLease(List<NativeExecutionContext> owners) {
+			this.owners = owners;
+		}
+
+		@Override
+		public void close() {
+			List<NativeExecutionContext> held;
+			int retained;
+			synchronized (this) {
+				held = owners;
+				retained = count;
+				owners = null;
+				count = 0;
+			}
+			if (held == null) {
+				return;
+			}
+			Throwable failure = null;
+			// Reverse the dependency order so a dependent finishes cleanup before any of its owners retire.
+			for (int i = retained - 1; i >= 0; i--) {
+				try {
+					held.get(i).releaseLease();
+				} catch (RuntimeException | Error cleanup) {
+					if (failure == null) {
+						failure = cleanup;
+					} else if (failure != cleanup) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		}
+	}
+
 	/**
 	 * Retains this context and its actual scalar, entry-frame and term authorities while an accepted consumer may
 	 * continue evaluating after an inner carrier requests close. Unrelated parent contexts are not dependencies.
 	 */
 	Lease retainLease() {
-		return retainLease(false);
+		return retainLease(false, true);
+	}
+
+	/** Retains runtime authorities without claiming an independently observable result. */
+	Lease retainInternalLease() {
+		return retainLease(false, false);
+	}
+
+	/** Upper bound for the retained Lease object and its actual filtered owner-reference array. */
+	long producerLeaseStorageBytes(NativeExecutionContext enclosingOwner) {
+		int count = producerOwnerCount(enclosingOwner);
+		return count == 0 ? 0L : Math.addExact(80L, Math.multiplyExact(8L, count));
+	}
+
+	private int producerOwnerCount(NativeExecutionContext enclosingOwner) {
+		if (this == enclosingOwner) {
+			return 0;
+		}
+		NativeExecutionContext[] actual = leaseOwners();
+		NativeExecutionContext[] enclosing = enclosingOwner == null ? null : enclosingOwner.leaseOwners();
+		int count = 0, outer = 0, tick = 0;
+		for (NativeExecutionContext candidate : actual) {
+			cancellation.poll(tick);
+			LmdbNativeProbeDeadline.poll(tick++);
+			while (enclosing != null && outer < enclosing.length
+					&& enclosing[outer].executionId < candidate.executionId) {
+				cancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
+				outer++;
+			}
+			if (enclosing == null || outer == enclosing.length || enclosing[outer] != candidate) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	/** A new consumer cannot extend pending-close authority without an already accepted producer cursor. */
+	Lease retainProducerLeaseOutside(NativeExecutionContext enclosingOwner) {
+		return retainProducerLeaseOutside(enclosingOwner, false);
+	}
+
+	/** Called only while an actual accepted cursor is still open, before its next EOF/close releases authority. */
+	Lease retainAcceptedProducerLeaseOutside(NativeExecutionContext enclosingOwner) {
+		return retainProducerLeaseOutside(enclosingOwner, true);
+	}
+
+	private Lease retainProducerLeaseOutside(NativeExecutionContext enclosingOwner, boolean accepted) {
+		if (this == enclosingOwner) {
+			return null;
+		}
+		if (enclosingOwner == null) {
+			return accepted ? retainActiveLease() : retainInternalLease();
+		}
+		int count = producerOwnerCount(enclosingOwner);
+		if (count == 0) {
+			return null;
+		}
+		NativeExecutionContext[] actual = leaseOwners(), enclosing = enclosingOwner.leaseOwners();
+		// Both closures are immutable and sorted by execution id. The explicit difference is linear, allocates
+		// only the pre-admitted retained array and cannot introduce an enclosing cache-owner retain cycle.
+		NativeExecutionContext[] retained = new NativeExecutionContext[count];
+		int outer = 0, target = 0, acquired = 0, tick = 0;
+		try {
+			for (NativeExecutionContext candidate : actual) {
+				cancellation.poll(tick);
+				LmdbNativeProbeDeadline.poll(tick++);
+				while (outer < enclosing.length && enclosing[outer].executionId < candidate.executionId) {
+					cancellation.poll(tick);
+					LmdbNativeProbeDeadline.poll(tick++);
+					outer++;
+				}
+				if (outer == enclosing.length || enclosing[outer] != candidate) {
+					retained[target++] = candidate;
+					candidate.retainLocalLease(accepted);
+					acquired++;
+				}
+			}
+			return new Lease(retained, null);
+		} catch (RuntimeException | Error problem) {
+			NativeContextClosingIteration.throwFailure(releaseLeases(retained, acquired, problem));
+			throw new AssertionError("unreachable");
+		}
 	}
 
 	/**
@@ -1009,10 +1651,15 @@ final class NativeExecutionContext implements AutoCloseable {
 	 * reader lease may still need its cached producer. An idle producer must never retain its own state's owner.
 	 */
 	Lease retainActiveLease() {
-		return retainLease(true);
+		return retainLease(true, false);
 	}
 
-	private Lease retainLease(boolean active) {
+	/** An already opened cursor may transfer its accepted result/feedback lifetime while close is pending. */
+	Lease retainAcceptedResultLease() {
+		return retainLease(true, true);
+	}
+
+	private Lease retainLease(boolean active, boolean result) {
 		NativeExecutionContext[] owners = leaseOwners();
 		NativeExecutionContext[] borrowed = active ? null : BORROWED_PRODUCER_OWNERS.get();
 		if (borrowed != null) {
@@ -1034,7 +1681,10 @@ final class NativeExecutionContext implements AutoCloseable {
 				owner.retainLocalLease(active);
 				acquired++;
 			}
-			return new Lease(owners);
+			if (result) {
+				queryScopeOwner.filterResultLeases.incrementAndGet();
+			}
+			return new Lease(owners, result ? this : null);
 		} catch (RuntimeException | Error failure) {
 			NativeContextClosingIteration.throwFailure(releaseLeases(owners, acquired, failure));
 			throw new AssertionError("unreachable");
@@ -1096,43 +1746,104 @@ final class NativeExecutionContext implements AutoCloseable {
 	}
 
 	private void releaseLease() {
-		RuntimeException failure = null;
+		boolean close;
 		synchronized (this) {
 			if (leaseCount <= 0) {
 				throw new IllegalStateException("execution context lease released more than once");
 			}
 			leaseCount--;
-			if (leaseCount == 0 && closeRequested && !closed) {
-				failure = closeResourcesLocked();
-			}
+			close = leaseCount == 0 && closeRequested && !closed;
 		}
-		if (failure != null) {
-			throw failure;
+		if (close) {
+			finishClose();
 		}
 	}
 
 	@Override
 	public void close() {
-		RuntimeException failure = null;
+		// A caller already racing the terminal cleanup must observe its outcome. A genuinely later repeat
+		// close retains the existing idempotent API; semantic resources themselves are always closed once.
+		boolean observeFailure = !closeCompleted;
 		synchronized (this) {
-			if (closed || closeRequested) {
+			if (closed && (!observeFailure || closingThread == Thread.currentThread())) {
 				return;
 			}
 			closeRequested = true;
+			if (!closed && leaseCount != 0) {
+				return;
+			}
+		}
+		finishClose(false, observeFailure);
+	}
+
+	private boolean ownsFilterFinalization(Thread thread) {
+		return closingThread == thread || queryScopeOwner.closingThread == thread;
+	}
+
+	/** A final worker may have released the last lease while it still owned its cleanup scope. */
+	private void retryRequestedClose() {
+		synchronized (this) {
+			if (!closeRequested || leaseCount != 0) {
+				return;
+			}
+		}
+		finishClose(true, true);
+	}
+
+	private void finishClose() {
+		finishClose(false, true);
+	}
+
+	private void finishClose(boolean callbackRetry, boolean observeFailure) {
+		if (!awaitFilterWorkers(callbackRetry)) {
+			// A captured scope cannot wait for its own settlement; its actual notification retries later.
+			return;
+		}
+		Throwable failure = null;
+		synchronized (this) {
 			if (leaseCount != 0) {
 				return;
 			}
-			failure = closeResourcesLocked();
+			if (closed) {
+				if (observeFailure) {
+					failure = closeFailure;
+				}
+			} else {
+				closingThread = Thread.currentThread();
+				try {
+					failure = closeResourcesLocked();
+				} catch (Throwable problem) {
+					filterFailure();
+					failure = problem;
+				} finally {
+					closeFailure = failure;
+					closeCompleted = true;
+					closingThread = null;
+				}
+			}
 		}
 		if (failure != null) {
-			throw failure;
+			NativeContextClosingIteration.throwFailure(failure);
+		}
+	}
+
+	private void releaseFilterResult(boolean exhausted) {
+		synchronized (queryScopeOwner) {
+			if (!exhausted) {
+				queryScopeOwner.filterResultPartial = true;
+			}
+			if (queryScopeOwner.filterResultLeases.get() <= 0) {
+				throw new IllegalStateException("native result lease released more than once");
+			}
+			queryScopeOwner.filterResultLeases.decrementAndGet();
+			queryScopeOwner.publishFilterOutcomesIfReady();
 		}
 	}
 
 	/** Performs terminal cleanup while this context's monitor is held. */
-	private RuntimeException closeResourcesLocked() {
+	private Throwable closeResourcesLocked() {
 		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("cleanup", cancellation)) {
-			RuntimeException failure = closeResourcesUnmeasured();
+			Throwable failure = closeResourcesUnmeasured();
 			if (failure == null) {
 				phase.complete();
 			}
@@ -1140,14 +1851,20 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 	}
 
-	private RuntimeException closeResourcesUnmeasured() {
+	private Throwable closeResourcesUnmeasured() {
 		closed = true;
-		RuntimeException failure = null;
+		Throwable failure;
+		synchronized (filterCleanupLock) {
+			failure = filterWorkerCleanup;
+			filterWorkerCleanup = null;
+		}
 		Object[] states;
 		synchronized (nativeStateLock) {
-			IllegalStateException closedFailure = new IllegalStateException("execution context is closed");
-			for (NativeStateInitialization initialization : nativeStateInitializations.values()) {
-				initialization.result.completeExceptionally(closedFailure);
+			if (!nativeStateInitializations.isEmpty()) {
+				IllegalStateException closedFailure = new IllegalStateException("execution context is closed");
+				for (NativeStateInitialization initialization : nativeStateInitializations.values()) {
+					initialization.result.completeExceptionally(closedFailure);
+				}
 			}
 			nativeStateInitializations.clear();
 			states = nativeStates.values().toArray();
@@ -1157,18 +1874,37 @@ final class NativeExecutionContext implements AutoCloseable {
 			if (state instanceof AutoCloseable closeable) {
 				try {
 					closeable.close();
-				} catch (Exception e) {
-					RuntimeException cleanup = e instanceof RuntimeException
-							? (RuntimeException) e
+				} catch (Throwable e) {
+					Throwable cleanup = e instanceof RuntimeException || e instanceof Error
+							? e
 							: new IllegalStateException("failed to close native evaluation state", e);
 					if (failure == null) {
 						failure = cleanup;
 					} else {
-						failure.addSuppressed(cleanup);
+						if (failure != cleanup) {
+							failure.addSuppressed(cleanup);
+						}
 					}
 				}
 			}
 		}
+		NativeBooleanFilter[] filters = filterResources == null ? new NativeBooleanFilter[0]
+				: filterResources.values().toArray(NativeBooleanFilter[]::new);
+		if (filterResources != null) {
+			filterResources.clear();
+		}
+		for (NativeBooleanFilter filter : filters) {
+			try {
+				filter.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (failure == null) {
+					failure = cleanup;
+				} else if (failure != cleanup) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+		}
+
 		if (termOwner == this) {
 			synchronized (runtimeValuesLock) {
 				NativeRuntimeValueTable table = runtimeValues;
@@ -1176,16 +1912,17 @@ final class NativeExecutionContext implements AutoCloseable {
 				if (table != null) {
 					try {
 						table.close();
-					} catch (RuntimeException cleanup) {
+					} catch (RuntimeException | Error cleanup) {
 						if (failure == null) {
 							failure = cleanup;
-						} else {
+						} else if (failure != cleanup) {
 							failure.addSuppressed(cleanup);
 						}
 					}
 				}
 			}
 		}
+
 		if (queryScopeOwner == this) {
 			memoryScope.close();
 			queryScopedValues.clear();
@@ -1204,32 +1941,193 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 		if (queryScopeOwner == this) {
 			genericContext = null;
-			genericContexts.clear();
+			if (genericContexts != null) {
+				genericContexts.clear();
+			}
 			valueCapturer = null;
+		}
+		if (failure != null) {
+			filterFailure();
+		}
+		filterResourcesClosed = true;
+		if (queryScopeOwner == this) {
+			try {
+				publishFilterOutcomesIfReady();
+			} catch (RuntimeException | Error publicationFailure) {
+				if (failure == null) {
+					failure = publicationFailure;
+				} else if (failure != publicationFailure) {
+					failure.addSuppressed(publicationFailure);
+				}
+			}
 		}
 		return failure;
 	}
 
-	/** One-shot ownership token for a context-bearing semantic wrapper. */
+	private void publishFilterOutcomesIfReady() {
+		if (!filterResourcesClosed || filterResultLeases.get() != 0 || filterPublicationDone) {
+			return;
+		}
+		// All cached producers, filter resources and result borrowers have settled. Receipts may form a shared graph;
+		// resolving it here preserves producer completion independently of each candidate's publication lifetime.
+		if (selectedFilterMemos != null) {
+			if (includedFilterMemos == null) {
+				includedFilterMemos = new IdentityHashMap<>();
+			}
+			for (NativeFilterLease.Frozen frozen : selectedFilterMemos.keySet()) {
+				frozen.collect(this, includedFilterMemos, true);
+			}
+		}
+		if (includedFilterMemos != null) {
+			for (var included : includedFilterMemos.entrySet()) {
+				included.getKey().mergeOwnOutcomes(this, included.getValue());
+			}
+		}
+		if (selectedFilterMemos != null) {
+			selectedFilterMemos.clear();
+		}
+		filterPublicationDone = true;
+		boolean complete = filterRootExhausted && !filterResultPartial && !filterFailed
+				&& !Thread.currentThread().isInterrupted()
+				&& (filterEvaluationThread == null || !filterEvaluationThread.isInterrupted());
+		// An old/opaque input owner has no accepted-input proof. If the same template also had a qualified
+		// opening, this unknown opening cannot disappear from its all-opens-exhausted conjunction.
+		for (NativeFilterLease.Outcome unknown : unqualifiedFilterOutcomes.values()) {
+			NativeFilterLease.Outcome selected = filterOutcomes.get(unknown.template);
+			if (selected != null) {
+				selected.merge(unknown);
+			}
+		}
+		Throwable failure = null;
+		for (NativeFilterLease.Outcome outcome : filterOutcomes.values()) {
+			try {
+				outcome.publish(complete);
+			} catch (RuntimeException | Error problem) {
+				if (failure == null) {
+					failure = problem;
+				} else if (failure != problem) {
+					failure.addSuppressed(problem);
+				}
+			}
+		}
+		// Unqualified-only templates may emit diagnostics; they never generate complete evidence.
+		for (NativeFilterLease.Outcome outcome : unqualifiedFilterOutcomes.values()) {
+			if (!filterOutcomes.containsKey(outcome.template)) {
+				try {
+					outcome.publish(false);
+				} catch (RuntimeException | Error problem) {
+					if (failure == null) {
+						failure = problem;
+					} else if (failure != problem) {
+						failure.addSuppressed(problem);
+					}
+				}
+			}
+		}
+		if (filterFailed) {
+			for (NativeFilterLease.Outcome outcome : discardedFilterOutcomes.values()) {
+				if (!filterOutcomes.containsKey(outcome.template)
+						&& !unqualifiedFilterOutcomes.containsKey(outcome.template)) {
+					try {
+						outcome.publish(false);
+					} catch (RuntimeException | Error problem) {
+						if (failure == null) {
+							failure = problem;
+						} else if (failure != problem) {
+							failure.addSuppressed(problem);
+						}
+					}
+				}
+			}
+		}
+		filterOutcomes.clear();
+		unqualifiedFilterOutcomes.clear();
+		discardedFilterOutcomes.clear();
+		filterTemplates.clear();
+		if (includedFilterMemos != null) {
+			includedFilterMemos.clear();
+		}
+		filterEvaluationThread = null;
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
+		}
+	}
+
+	/** One-shot runtime authority token, optionally retaining a result's feedback lifetime. */
 	static final class Lease implements AutoCloseable {
 		private NativeExecutionContext[] owners;
+		private NativeExecutionContext resultOwner;
+		private boolean exhausted;
+		private boolean closed;
 
-		private Lease(NativeExecutionContext[] owners) {
+		private Lease(NativeExecutionContext[] owners, NativeExecutionContext resultOwner) {
 			this.owners = owners;
+			this.resultOwner = resultOwner;
+		}
+
+		synchronized void exhausted() {
+			exhausted = true;
+		}
+
+		synchronized void failed() {
+			if (resultOwner != null) {
+				resultOwner.filterFailure();
+			}
+		}
+
+		/** A blocking result can release native authorities while retaining its terminal feedback claim. */
+		void releaseRuntime() {
+			NativeExecutionContext[] current;
+			NativeExecutionContext result;
+			synchronized (this) {
+				current = owners;
+				owners = null;
+				result = resultOwner;
+			}
+			if (current != null) {
+				Throwable failure = releaseLeases(current, current.length, null);
+				if (failure != null) {
+					if (result != null) {
+						result.filterFailure();
+					}
+					NativeContextClosingIteration.throwFailure(failure);
+				}
+			}
 		}
 
 		@Override
 		public void close() {
 			NativeExecutionContext[] current;
+			NativeExecutionContext result;
+			boolean complete;
 			synchronized (this) {
+				if (closed) {
+					return;
+				}
+				closed = true;
 				current = owners;
 				owners = null;
+				result = resultOwner;
+				resultOwner = null;
+				complete = exhausted;
 			}
-			if (current != null) {
-				Throwable failure = releaseLeases(current, current.length, null);
+			Throwable failure = current == null ? null : releaseLeases(current, current.length, null);
+			if (result != null) {
 				if (failure != null) {
-					NativeContextClosingIteration.throwFailure(failure);
+					result.filterFailure();
 				}
+				try {
+					result.releaseFilterResult(complete);
+				} catch (RuntimeException | Error problem) {
+					if (failure == null) {
+						failure = problem;
+					} else if (failure != problem) {
+						failure.addSuppressed(problem);
+					}
+				}
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
 			}
 		}
 	}

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -74,6 +75,182 @@ class LmdbQueryMemoryManagerTest {
 			assertThat(query.usedBytes()).isEqualTo(160L);
 			assertThat(manager.usedBytes()).isEqualTo(160L);
 		}
+	}
+
+	@Test
+	void reentrantReclaimerClosingTheGrowingReservationCannotResurrectItsClaim() {
+		LmdbQueryMemoryManager manager = new LmdbQueryMemoryManager(512L, 512L);
+		AtomicInteger reclaimCalls = new AtomicInteger();
+		boolean[] growthAccepted = { true };
+		long[] reservationBytes = { -1L }, pressureBytes = { -1L }, queryBytes = { -1L };
+		try (LmdbQueryMemoryManager.QueryLedger query = manager.openQuery()) {
+			LmdbQueryMemoryManager.Reservation growing = query.reserve(128L, null);
+			assertThat(growing).isNotNull();
+			LmdbQueryMemoryManager.Reservation pressure = query.reserve(384L,
+					new LmdbQueryMemoryManager.Reclaimable() {
+						@Override
+						public boolean shed() {
+							reclaimCalls.incrementAndGet();
+							growing.close();
+							return true;
+						}
+					});
+			assertThat(pressure).isNotNull();
+			growthAccepted[0] = growing.tryGrow(64L);
+			reservationBytes[0] = growing.bytes();
+			pressureBytes[0] = pressure.bytes();
+			queryBytes[0] = query.usedBytes();
+		}
+		long managerBytes = manager.usedBytes();
+		assertAll("a reclaimer can close the growing claim reentrantly",
+				() -> assertThat(reclaimCalls.get()).isEqualTo(1),
+				() -> assertThat(growthAccepted[0]).isFalse(),
+				() -> assertThat(reservationBytes[0]).isZero(),
+				() -> assertThat(pressureBytes[0]).isZero(),
+				() -> assertThat(queryBytes[0]).isZero(),
+				() -> assertThat(managerBytes).isZero());
+	}
+
+	@Test
+	void reentrantReclaimerClosingTheQueryLedgerCannotAttachANewClaim() {
+		LmdbQueryMemoryManager manager = new LmdbQueryMemoryManager(256L, 256L);
+		AtomicInteger reclaimCalls = new AtomicInteger();
+		LmdbQueryMemoryManager.QueryLedger query = manager.openQuery();
+		LmdbQueryMemoryManager.Reservation[] admitted = { null };
+		long[] pressureBytes = { -1L }, queryBytes = { -1L };
+		try (query) {
+			LmdbQueryMemoryManager.Reservation pressure = query.reserve(256L,
+					new LmdbQueryMemoryManager.Reclaimable() {
+						@Override
+						public boolean shed() {
+							reclaimCalls.incrementAndGet();
+							query.close();
+							return true;
+						}
+					});
+			assertThat(pressure).isNotNull();
+			admitted[0] = query.reserve(128L, null);
+			pressureBytes[0] = pressure.bytes();
+			queryBytes[0] = query.usedBytes();
+		}
+		long managerBytes = manager.usedBytes();
+		assertAll("reserve must recheck a ledger closed from its reclaim callback",
+				() -> assertThat(reclaimCalls.get()).isEqualTo(1),
+				() -> assertThat(admitted[0]).isNull(),
+				() -> assertThat(pressureBytes[0]).isZero(),
+				() -> assertThat(queryBytes[0]).isZero(),
+				() -> assertThat(managerBytes).isZero());
+	}
+
+	@Test
+	void closingAZeroByteReservationIsIdempotentAndPreventsLaterGrowth() {
+		LmdbQueryMemoryManager manager = new LmdbQueryMemoryManager(128L, 128L);
+		boolean[] growthAccepted = { true };
+		long[] reservationBytes = { -1L }, queryBytes = { -1L };
+		try (LmdbQueryMemoryManager.QueryLedger query = manager.openQuery()) {
+			LmdbQueryMemoryManager.Reservation zero = query.reserve(0L, null);
+			assertThat(zero).isNotNull();
+			zero.close();
+			zero.close();
+			growthAccepted[0] = zero.tryGrow(64L);
+			reservationBytes[0] = zero.bytes();
+			queryBytes[0] = query.usedBytes();
+		}
+		long managerBytes = manager.usedBytes();
+		assertAll("closing an empty reservation must terminally close it exactly once",
+				() -> assertThat(growthAccepted[0]).isFalse(),
+				() -> assertThat(reservationBytes[0]).isZero(),
+				() -> assertThat(queryBytes[0]).isZero(),
+				() -> assertThat(managerBytes).isZero());
+	}
+
+	@Test
+	void failedReclaimerClosingTheRequestLedgerStopsBeforeReclaimingAnotherLedger() {
+		LmdbQueryMemoryManager manager = new LmdbQueryMemoryManager(512L, 512L);
+		AtomicInteger laterVictimCalls = new AtomicInteger();
+		LmdbQueryMemoryManager.QueryLedger requesting = manager.openQuery();
+		LmdbQueryMemoryManager.Reservation[] requestResult = { null };
+		long[] firstVictimBytes = { -1L }, secondVictimBytes = { -1L }, requestingBytes = { -1L };
+		try (LmdbQueryMemoryManager.QueryLedger firstQuery = manager.openQuery();
+				LmdbQueryMemoryManager.QueryLedger secondQuery = manager.openQuery();
+				requesting) {
+			LmdbQueryMemoryManager.Reservation first = firstQuery.reserve(256L,
+					new LmdbQueryMemoryManager.Reclaimable() {
+						@Override
+						public boolean shed() {
+							requesting.close();
+							return false;
+						}
+					});
+			LmdbQueryMemoryManager.Reservation second = secondQuery.reserve(256L,
+					new LmdbQueryMemoryManager.Reclaimable() {
+						@Override
+						public boolean shed() {
+							laterVictimCalls.incrementAndGet();
+							return true;
+						}
+					});
+			assertThat(first).isNotNull();
+			assertThat(second).isNotNull();
+			requestResult[0] = requesting.reserve(128L, null);
+			if (requestResult[0] != null) {
+				requestResult[0].close();
+			}
+			firstVictimBytes[0] = first.bytes();
+			secondVictimBytes[0] = second.bytes();
+			requestingBytes[0] = requesting.usedBytes();
+		}
+		assertAll("a declined reclaimer that closes the requester must end this reservation attempt",
+				() -> assertThat(requestResult[0]).isNull(),
+				() -> assertThat(laterVictimCalls.get()).isZero(),
+				() -> assertThat(firstVictimBytes[0]).isEqualTo(256L),
+				() -> assertThat(secondVictimBytes[0]).isEqualTo(256L),
+				() -> assertThat(requestingBytes[0]).isZero(),
+				() -> assertThat(manager.usedBytes()).isZero());
+	}
+
+	@Test
+	void failedReclaimerClosingTheGrowingReservationDoesNotContinueIntoAnotherLedger() {
+		LmdbQueryMemoryManager manager = new LmdbQueryMemoryManager(512L, 512L);
+		AtomicInteger laterVictimCalls = new AtomicInteger();
+		boolean[] growthAccepted = { true };
+		long[] firstVictimBytes = { -1L }, secondVictimBytes = { -1L }, requestingBytes = { -1L };
+		try (LmdbQueryMemoryManager.QueryLedger requesting = manager.openQuery();
+				LmdbQueryMemoryManager.QueryLedger firstQuery = manager.openQuery();
+				LmdbQueryMemoryManager.QueryLedger secondQuery = manager.openQuery()) {
+			LmdbQueryMemoryManager.Reservation growing = requesting.reserve(64L, null);
+			LmdbQueryMemoryManager.Reservation first = firstQuery.reserve(224L,
+					new LmdbQueryMemoryManager.Reclaimable() {
+						@Override
+						public boolean shed() {
+							growing.close();
+							return false;
+						}
+					});
+			LmdbQueryMemoryManager.Reservation second = secondQuery.reserve(224L,
+					new LmdbQueryMemoryManager.Reclaimable() {
+						@Override
+						public boolean shed() {
+							laterVictimCalls.incrementAndGet();
+							return true;
+						}
+					});
+			assertThat(growing).isNotNull();
+			assertThat(first).isNotNull();
+			assertThat(second).isNotNull();
+			growthAccepted[0] = growing.tryGrow(128L);
+			firstVictimBytes[0] = first.bytes();
+			secondVictimBytes[0] = second.bytes();
+			requestingBytes[0] = requesting.usedBytes();
+		}
+		long managerBytes = manager.usedBytes();
+		assertAll("a declined reclaimer that closes the growing claim must stop before another victim",
+				() -> assertThat(laterVictimCalls.get()).isZero(),
+				() -> assertThat(growthAccepted[0]).isFalse(),
+				() -> assertThat(firstVictimBytes[0]).isEqualTo(224L),
+				() -> assertThat(secondVictimBytes[0]).isEqualTo(224L),
+				() -> assertThat(requestingBytes[0]).isZero(),
+				() -> assertThat(managerBytes).isZero());
 	}
 
 	@Test

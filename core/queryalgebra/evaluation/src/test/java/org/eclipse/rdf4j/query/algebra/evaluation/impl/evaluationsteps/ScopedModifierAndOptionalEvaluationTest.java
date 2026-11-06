@@ -241,6 +241,35 @@ class ScopedModifierAndOptionalEvaluationTest {
 						iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:b"));
 	}
 
+	@Test
+	void nestedSelectRetainsOnlyActuallySuppliedPrivateGraphInputs() {
+		String parameter = "privateGraph";
+		for (String kind : List.of("supplied", "ordinary", "overwritten")) {
+			MutableBindingSet input = new QueryBindingSet();
+			if (!kind.equals("ordinary")) {
+				input = GraphFrameBindings.supply(input, parameter, iriRow(parameter, "urn:g1").getValue(parameter));
+			}
+			if (!kind.equals("supplied")) {
+				input.setBinding(parameter, iriRow(parameter, "urn:g1").getValue(parameter));
+			}
+			input.setBinding("outerOnly", SimpleValueFactory.getInstance().createLiteral("hidden"));
+			AtomicReference<BindingSet> observed = new AtomicReference<>();
+			QueryEvaluationStep child = bindings -> {
+				observed.set(bindings);
+				return QueryEvaluationStep.EMPTY_ITERATION;
+			};
+			try (CloseableIteration<BindingSet> rows = new SubSelectScopeBoundaryQueryEvaluationStep(child,
+					Set.of()).evaluate(input)) {
+				assertThat(rows.hasNext()).isFalse();
+			}
+			assertThat(observed.get()).isNotNull();
+			assertThat(observed.get().hasBinding("outerOnly")).as(kind).isFalse();
+			assertThat(observed.get().hasBinding(parameter)).as(kind).isEqualTo(kind.equals("supplied"));
+			assertThat(GraphFrameBindings.isSupplied(observed.get(), parameter)).as(kind)
+					.isEqualTo(kind.equals("supplied"));
+		}
+	}
+
 	private LeftJoin graphShadowJoin() {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		List<Statement> data = List.of(

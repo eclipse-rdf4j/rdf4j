@@ -242,7 +242,8 @@ class OptimizerInputPreservationTest {
 				"SELECT ?x ?y WHERE { BIND(1 AS ?x) BIND(?x + 1 AS ?y) FILTER(?x = 1 && ?y = 2) }")) {
 			TupleExpr original = parse(query);
 			List<BindingSet> expected = evaluate(strategy(), original.clone(), input);
-			assertThat(expected).singleElement()
+			assertThat(expected).as(query)
+					.singleElement()
 					.satisfies(row -> assertThat(row.getValue(
 							query.contains("?result") ? "result" : "x")).isEqualTo(VF.createLiteral("1", XSD.INTEGER)));
 			for (boolean pipeline : List.of(false, true)) {

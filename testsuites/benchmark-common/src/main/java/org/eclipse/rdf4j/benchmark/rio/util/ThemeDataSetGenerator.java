@@ -49,6 +49,7 @@ public final class ThemeDataSetGenerator {
 		TRAIN,
 		ELECTRICAL_GRID,
 		PHARMA,
+		SPARSE,
 		@Experimental
 		ADAPTIVE_FILTER_PLACEMENT,
 		@Experimental
@@ -118,6 +119,10 @@ public final class ThemeDataSetGenerator {
 		return new PharmaConfig();
 	}
 
+	public static SparseConfig sparseConfig() {
+		return new SparseConfig();
+	}
+
 	@Experimental
 	public static AdaptiveFilterPlacementConfig adaptiveFilterPlacementConfig() {
 		return new AdaptiveFilterPlacementConfig();
@@ -169,6 +174,9 @@ public final class ThemeDataSetGenerator {
 			break;
 		case PHARMA:
 			generatePharma(pharmaConfig(), handler);
+			break;
+		case SPARSE:
+			generateSparse(sparseConfig(), handler);
 			break;
 		case ADAPTIVE_FILTER_PLACEMENT:
 			generateAdaptiveFilterPlacement(adaptiveFilterPlacementConfig(), handler);
@@ -1038,6 +1046,17 @@ public final class ThemeDataSetGenerator {
 		}
 
 		handler.endRDF();
+	}
+
+	public static Model generateSparse(SparseConfig config) {
+		return generateModel(handler -> generateSparse(config, handler));
+	}
+
+	public static void generateSparse(SparseConfig config, RDFHandler handler) {
+		Objects.requireNonNull(config, "config");
+		Objects.requireNonNull(handler, "handler");
+		config.validate();
+		SparseThemeDataSetGenerator.generate(config, handler);
 	}
 
 	@Experimental
@@ -1954,6 +1973,127 @@ public final class ThemeDataSetGenerator {
 			requirePositive(indicationsPerDrug, "indicationsPerDrug");
 			requirePositive(drugsPerCombination, "drugsPerCombination");
 			requirePositive(comparatorCount, "comparatorCount");
+		}
+	}
+
+	public static final class SparseConfig {
+		private int personCount = 60000;
+		private int organizationCount = 1000;
+		private int departmentsPerOrganization = 4;
+		private int offersPerDepartment = 2;
+		private int sparseCoveragePercent = 5;
+		private int reviewFanout = 300;
+		private int knowsFanout = 220;
+		private int employeeFanout = 300;
+		private int eventFanout = 80;
+		private long seed = 42L;
+
+		public SparseConfig withPersonCount(int personCount) {
+			this.personCount = requirePositive(personCount, "personCount");
+			return this;
+		}
+
+		public SparseConfig withOrganizationCount(int organizationCount) {
+			this.organizationCount = requirePositive(organizationCount, "organizationCount");
+			return this;
+		}
+
+		public SparseConfig withDepartmentsPerOrganization(int departmentsPerOrganization) {
+			this.departmentsPerOrganization = requirePositive(departmentsPerOrganization,
+					"departmentsPerOrganization");
+			return this;
+		}
+
+		public SparseConfig withOffersPerDepartment(int offersPerDepartment) {
+			this.offersPerDepartment = requirePositive(offersPerDepartment, "offersPerDepartment");
+			return this;
+		}
+
+		public SparseConfig withSparseCoveragePercent(int sparseCoveragePercent) {
+			if (sparseCoveragePercent <= 0 || sparseCoveragePercent > 100) {
+				throw new IllegalArgumentException("sparseCoveragePercent must be between 1 and 100");
+			}
+			this.sparseCoveragePercent = sparseCoveragePercent;
+			return this;
+		}
+
+		public SparseConfig withReviewFanout(int reviewFanout) {
+			this.reviewFanout = requirePositive(reviewFanout, "reviewFanout");
+			return this;
+		}
+
+		public SparseConfig withKnowsFanout(int knowsFanout) {
+			this.knowsFanout = requirePositive(knowsFanout, "knowsFanout");
+			return this;
+		}
+
+		public SparseConfig withEmployeeFanout(int employeeFanout) {
+			this.employeeFanout = requirePositive(employeeFanout, "employeeFanout");
+			return this;
+		}
+
+		public SparseConfig withEventFanout(int eventFanout) {
+			this.eventFanout = requirePositive(eventFanout, "eventFanout");
+			return this;
+		}
+
+		public SparseConfig withSeed(long seed) {
+			this.seed = seed;
+			return this;
+		}
+
+		int personCount() {
+			return personCount;
+		}
+
+		int organizationCount() {
+			return organizationCount;
+		}
+
+		int departmentsPerOrganization() {
+			return departmentsPerOrganization;
+		}
+
+		int offersPerDepartment() {
+			return offersPerDepartment;
+		}
+
+		int sparseCoveragePercent() {
+			return sparseCoveragePercent;
+		}
+
+		int reviewFanout() {
+			return reviewFanout;
+		}
+
+		int knowsFanout() {
+			return knowsFanout;
+		}
+
+		int employeeFanout() {
+			return employeeFanout;
+		}
+
+		int eventFanout() {
+			return eventFanout;
+		}
+
+		long seed() {
+			return seed;
+		}
+
+		private void validate() {
+			requirePositive(personCount, "personCount");
+			requirePositive(organizationCount, "organizationCount");
+			requirePositive(departmentsPerOrganization, "departmentsPerOrganization");
+			requirePositive(offersPerDepartment, "offersPerDepartment");
+			requirePositive(reviewFanout, "reviewFanout");
+			requirePositive(knowsFanout, "knowsFanout");
+			requirePositive(employeeFanout, "employeeFanout");
+			requirePositive(eventFanout, "eventFanout");
+			if (sparseCoveragePercent <= 0 || sparseCoveragePercent > 100) {
+				throw new IllegalArgumentException("sparseCoveragePercent must be between 1 and 100");
+			}
 		}
 	}
 

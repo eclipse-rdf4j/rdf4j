@@ -86,6 +86,8 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 	private transient volatile ChildVersion datatypeVersion;
 
 	private volatile boolean initialized = false;
+	/** Guarded by this value's monitor; a copied payload is not published until its resolver returns. */
+	private transient boolean resolutionInProgress;
 	private transient volatile boolean externallyOwned;
 
 	/*--------------*
@@ -160,11 +162,7 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			long internalID) {
 		assert label != null;
 		this.label = label;
-		assert datatype != null;
-		assert coreDatatype != null;
-		assert coreDatatype == CoreDatatype.NONE || coreDatatype.getIri() == datatype;
-		this.datatype = datatype;
-		this.coreDatatype = coreDatatype;
+		setDatatype(datatype, coreDatatype);
 		setInternalID(internalID, revision);
 		this.initialized = true;
 	}
@@ -251,6 +249,9 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 			this.datatype = lmdbLiteral.datatype;
 			this.coreDatatype = lmdbLiteral.coreDatatype;
 			datatypeVersion = ChildVersion.capture(datatype);
+			if (!resolutionInProgress) {
+				this.initialized = true;
+			}
 		} else {
 			throw new IllegalArgumentException("Initialized value is not of type LmdbLiteral");
 		}
@@ -341,6 +342,16 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		datatypeVersion = ChildVersion.capture(datatype);
 	}
 
+	public void setDatatype(IRI datatype, CoreDatatype coreDatatype) {
+		payloadChanged();
+		assert datatype != null;
+		assert coreDatatype != null;
+		assert coreDatatype == CoreDatatype.NONE || coreDatatype.getIri().equals(datatype);
+		this.datatype = datatype;
+		this.coreDatatype = coreDatatype;
+		datatypeVersion = ChildVersion.capture(datatype);
+	}
+
 	public void setDatatype(CoreDatatype coreDatatype) {
 		payloadChanged();
 		this.coreDatatype = coreDatatype;
@@ -405,13 +416,18 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {
-					InternalIdentity resolving = identity;
-					boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
-					datatypeVersion = ChildVersion.capture(datatype);
-					initialized = resolved;
-					assert resolved;
-					if (resolved) {
-						resolving.revision().valueInitialized(resolving.id(), this);
+					resolutionInProgress = true;
+					try {
+						InternalIdentity resolving = identity;
+						boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
+						datatypeVersion = ChildVersion.capture(datatype);
+						initialized = resolved;
+						assert resolved;
+						if (resolved) {
+							resolving.revision().valueInitialized(resolving.id(), this);
+						}
+					} finally {
+						resolutionInProgress = false;
 					}
 				}
 			}
@@ -424,13 +440,19 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {
-					InternalIdentity resolving = getInternalIdentity();
-					boolean resolved = resolver.resolve(resolving.id(), this);
-					initialized = resolved;
-					if (resolved) {
-						resolving.revision().valueInitialized(resolving.id(), this);
+					resolutionInProgress = true;
+					try {
+						InternalIdentity resolving = identity;
+						boolean resolved = resolver.resolve(resolving.id(), this);
+						datatypeVersion = ChildVersion.capture(datatype);
+						initialized = resolved;
+						assert resolved;
+						if (resolved) {
+							resolving.revision().valueInitialized(resolving.id(), this);
+						}
+					} finally {
+						resolutionInProgress = false;
 					}
-					assert resolved;
 				}
 			}
 		}

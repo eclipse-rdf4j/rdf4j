@@ -131,3 +131,31 @@ assert_matches "${CAPTURED}" \
 assert_matches "${CAPTURED}" \
 	'ThemeQueryBenchmark\.executeQuery[[:space:]]+true[[:space:]]+MEDICAL_RECORDS[[:space:]]+0' \
 	"capture should synthesize the Janino-enabled result row"
+
+cat >"${CAPTURE_INPUT}" <<'FIXTURE'
+# Parameters: (queryExplanationLevel = Timed, sketchEstimatorEnabled = true, themeName = SPARSE, z_queryIndex = 7)
+Result "org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark.executeQuery":
+  2293.608 +/- 76.134 ms/op [Average]
+
+Benchmark                         (queryExplanationLevel)  (sketchEstimatorEnabled)  (themeName)  (z_queryIndex)  Mode  Cnt     Score    Error  Units
+ThemeQueryBenchmark.executeQuery                    Timed                      true       SPARSE               7  avgt    5  2293.608 +/- 76.134  ms/op
+ThemeQueryBenchmark.executeQuery                    Timed                      true       SPARSE               8  avgt    5  1362.811 +/- 29.739  ms/op
+FIXTURE
+
+bash "${RESULTS_SCRIPT}" capture --output "${CAPTURE_OUTPUT}" "${CAPTURE_INPUT}"
+CAPTURED="$(cat "${CAPTURE_OUTPUT}")"
+
+assert_contains "${CAPTURED}" "SPARSE" \
+	"capture should preserve theme/query columns when an extra JMH parameter is present"
+assert_contains "${CAPTURED}" "               7  avgt" \
+	"capture should preserve query index 7 when an extra JMH parameter is present"
+assert_contains "${CAPTURED}" "               8  avgt" \
+	"capture should preserve query index 8 when an extra JMH parameter is present"
+assert_contains "${CAPTURED}" "2293.608" \
+	"capture should preserve the score when multiple JMH parameters precede the theme"
+assert_not_contains "${CAPTURED}" "ThemeQueryBenchmark.executeQuery                                       avgt" \
+	"capture should not synthesize blank theme/query rows"
+SUMMARY_HEADER_COUNT="$(grep -c '^Benchmark[[:space:]]' "${CAPTURE_OUTPUT}")"
+if [[ "${SUMMARY_HEADER_COUNT}" -ne 1 ]]; then
+	fail "capture should remove the original reordered summary table"
+fi

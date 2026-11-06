@@ -133,7 +133,7 @@ class LmdbNativeStreamingReadContextTest {
 				return releases::incrementAndGet;
 			});
 					RepositoryConnection reader = repository.getConnection();
-					TupleQueryResult result = reader.prepareTupleQuery(query).evaluate()) {
+					TupleQueryResult result = evaluateWithTimeLimit(reader, query)) {
 				List<String> actual = new ArrayList<>();
 				assertThat(result.hasNext()).isTrue();
 				BindingSet first = result.next();
@@ -220,6 +220,12 @@ class LmdbNativeStreamingReadContextTest {
 		}
 		assertThat(retained.stringValue()).isEqualTo(retainedLexical);
 		System.out.println("STREAM_ROUNDS_COMPLETE " + route);
+	}
+
+	private static TupleQueryResult evaluateWithTimeLimit(RepositoryConnection connection, String query) {
+		var prepared = connection.prepareTupleQuery(query);
+		prepared.setMaxExecutionTime(15);
+		return prepared.evaluate();
 	}
 
 	private static List<String> seed(SailRepository repository, boolean path) {

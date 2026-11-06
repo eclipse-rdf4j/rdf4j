@@ -184,7 +184,8 @@ final class LmdbNativeHashJoin {
 		} else {
 			return reject(row, "bushy-shape");
 		}
-		if (probe.hasRuntimeBoundSlot(row)) {
+		if (probe.hasEntryDependentFields() || (SlotPlan.fixedValueOutputMask(build) & probe.producedMask()) != 0L
+				|| probe.hasRuntimeBoundSlot(row)) {
 			// correlated entry: this cursor is re-opened per outer row; the build sweep would repeat per entry
 			return reject(row, "correlated-entry");
 		}
@@ -232,7 +233,8 @@ final class LmdbNativeHashJoin {
 	static LmdbNativeStrategyProposal<BatchCursor> propose(MultiJoinPlan plan, RowState row, int capacity) {
 		Candidate candidate = tryPlan(plan, row);
 		return candidate == null ? null
-				: new LmdbNativeStrategyProposal<>(() -> candidate.open(plan, row, capacity), candidate.estCost,
+				: new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters.borrow(plan), row, capacity),
+						candidate.estCost,
 						LmdbNativeAttemptMetrics.PATH_BATCH);
 	}
 
@@ -251,7 +253,9 @@ final class LmdbNativeHashJoin {
 		}
 		PatternPlan left = (PatternPlan) plan.children[0];
 		PatternPlan right = (PatternPlan) plan.children[1];
-		if (left.hasRuntimeBoundSlot(row) || right.hasRuntimeBoundSlot(row)) {
+		if (!left.canCommuteWith(right) || !right.canCommuteWith(left)
+				|| left.readOnlyMask() != 0L || right.readOnlyMask() != 0L
+				|| left.hasRuntimeBoundSlot(row) || right.hasRuntimeBoundSlot(row)) {
 			// correlated entry: this cursor is re-opened per outer row, so a build would sweep the store
 			// each time, and the static estimates below don't describe the bound-prefix scans anyway —
 			// the nested-loop chain is the strategy that exploits the entry binding
@@ -317,7 +321,9 @@ final class LmdbNativeHashJoin {
 		if (row.source == null) {
 			return null;
 		}
-		if (left.hasRuntimeBoundSlot(row) || right.hasRuntimeBoundSlot(row)) {
+		if (!left.canCommuteWith(right) || !right.canCommuteWith(left)
+				|| left.readOnlyMask() != 0L || right.readOnlyMask() != 0L
+				|| left.hasRuntimeBoundSlot(row) || right.hasRuntimeBoundSlot(row)) {
 			return null;
 		}
 		long keyMask = left.producedMask() & right.producedMask() & ~row.boundMask();
@@ -862,8 +868,13 @@ final class HashJoinBatchCursor implements BatchCursor {
 	}
 
 	static boolean bindTerm(Term term, long id, long[] slots) {
+		if (term.readOnly) { return true; }
 		if (term.isConstant()) {
-			return term.constant == id && (!term.bindConstant || bindSlot(term.slot, id, slots));
+			if (term.constant != id) { return false; }
+			if (!term.bindConstant) { return true; }
+			long current = slots[term.slot];
+			if (term.preserveExisting && current != UNKNOWN) { return current != 0L; }
+			return bindSlot(term.slot, id, slots);
 		}
 		return term.slot < 0 || bindSlot(term.slot, id, slots);
 	}

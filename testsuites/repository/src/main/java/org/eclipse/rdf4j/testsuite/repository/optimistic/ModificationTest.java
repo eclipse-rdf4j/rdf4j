@@ -27,6 +27,7 @@ import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.junit.jupiter.api.Timeout;
 
 public class ModificationTest {
 
@@ -71,6 +72,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testAdd() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER);
@@ -79,6 +81,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testAutoCommit() {
 		con.add(PICASSO, RDF.TYPE, PAINTER);
 		con.close();
@@ -87,6 +90,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testInsertData() {
 		con.begin(level);
 		con.prepareUpdate(QueryLanguage.SPARQL, "INSERT DATA { <picasso> a <Painter> }", NS).execute();
@@ -95,6 +99,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testInsertDataAutoCommit() {
 		con.prepareUpdate(QueryLanguage.SPARQL, "INSERT DATA { <picasso> a <Painter> }", NS).execute();
 		con.close();
@@ -103,6 +108,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testRemove() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER);
@@ -114,6 +120,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testAddIn() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO);
@@ -122,6 +129,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testRemoveFrom() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO);
@@ -133,6 +141,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testMove() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO);
@@ -146,6 +155,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testMoveOut() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO);
@@ -159,6 +169,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testCancel() {
 		con.begin(level);
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO);
@@ -168,6 +179,7 @@ public class ModificationTest {
 	}
 
 	@Test
+	@Timeout(10)
 	public void testRemoveDuplicate() {
 		con.add(PICASSO, RDF.TYPE, PAINTER, PICASSO, PAINTER);
 		assertTrue(con.hasStatement(PICASSO, RDF.TYPE, PAINTER, false, PAINTER));

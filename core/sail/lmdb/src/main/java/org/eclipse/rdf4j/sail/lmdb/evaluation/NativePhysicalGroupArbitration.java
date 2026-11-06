@@ -46,6 +46,7 @@ final class NativePhysicalGroupArbitration {
 		LmdbNativeStrategySelection<NativeResultCursor> selected = null;
 		try (LmdbNativeStrategyArbiter<NativeResultCursor> arbiter = LmdbNativeStrategyArbiter
 				.<NativeResultCursor>forExpr(iteration.explainTarget, iteration.source)
+				.filterParent(iteration.filterAttempt == null ? NativeFilterLease.parentOf(row) : iteration.filterAttempt)
 				.forcing(iteration.forcedExecutionStrategy, iteration.decisionPoint())) {
 			// A streaming producer must never be drained by a blocking probe merely to choose its representation.
 			offerTyped(arbiter, quotes, NativeGroupResultCursor.tablePlan(iteration), iteration, row, owner);
@@ -75,11 +76,14 @@ final class NativePhysicalGroupArbitration {
 			}
 			return new Selection(selected, arbiter.winningTag(), arbiter.winningPredictedWork(), started);
 		} catch (IOException | RuntimeException | Error failure) {
+			Throwable retained = failure;
 			if (selected != null) {
-				selected.failed(failure);
-				KernelRuntime.closeResource(selected.value(), failure);
-				KernelRuntime.closeResource(selected, failure);
+				LmdbNativeStrategySelection<NativeResultCursor> accepted = selected;
+				retained = KernelRuntime.closeResource(() -> accepted.failed(failure), retained);
+				retained = KernelRuntime.closeResource(accepted.value(), retained);
+				retained = KernelRuntime.closeResource(accepted, retained);
 			}
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
 			throw failure;
 		}
 	}
@@ -91,7 +95,8 @@ final class NativePhysicalGroupArbitration {
 		NativeGroupResultCursor.GroupingPlan actual = quotedInput == null ? plan
 				: new NativeGroupResultCursor.GroupingPlan(quotedInput, plan.channels(), plan.streaming(), plan.tag());
 		arbiter.offer(() -> quotes.attach(new LmdbNativeStrategyProposal<NativeResultCursor>(
-				() -> actual.open(iteration, owner.executionContext()),
+				filters -> new NativeGroupResultCursor.GroupingPlan(filters.borrow(actual.input()), actual.channels(),
+						actual.streaming(), actual.tag()).open(iteration.withFilterAttempt(filters), owner.executionContext()),
 				actual.input().estimateWork(row, row.boundMask()), LmdbNativeWork.ZERO,
 				iteration.groupSlots.length == 0 && iteration.havingCondition == null ? 1D : Double.NaN,
 				actual.tag(), () -> {
@@ -104,11 +109,10 @@ final class NativePhysicalGroupArbitration {
 		private final RowState row;
 		private final SyntheticValueSource evaluation;
 		private final boolean closeContext;
-		private final NativeFilterLease filters = new NativeFilterLease();
 		private final LmdbNativeAttemptMetrics metrics;
 		private final SlotPlan originalArg;
 		private final boolean seeded;
-		private boolean closed, selected;
+		private boolean closed;
 
 		FullAttempt(NativeGroupStep full, NativeGroupIteration parent) {
 			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(parent.source)) {
@@ -122,7 +126,7 @@ final class NativePhysicalGroupArbitration {
 			NativeGroupIteration accepted = null;
 			RowState acceptedRow = null;
 			try {
-				accepted = new NativeGroupIteration(evaluation, filters.borrow(full.arg), full.layout, full.groupSlots,
+				accepted = new NativeGroupIteration(evaluation, full.arg, full.layout, full.groupSlots,
 						full.aggregates, full.strictCompare, parent.base, full.prefixPattern, full.prefixRunPlan,
 						full.prefixCountRunRows, full.prefixDistinctRuns, full.prefixRunFilter,
 						full.prefixRootKindFilter,
@@ -143,7 +147,6 @@ final class NativePhysicalGroupArbitration {
 				if (acceptedRow != null) {
 					KernelRuntime.closeResource(acceptedRow::closeDecodedInputs, failure);
 				}
-				filters.abort(failure);
 				if (closeContext) {
 					KernelRuntime.closeResource(evaluation.executionContext(), failure);
 				}
@@ -189,7 +192,6 @@ final class NativePhysicalGroupArbitration {
 				metrics.commitToParent();
 				LmdbNativeExplain.recordExecutionPath(iteration.explainTarget, actualTag);
 				NativeResultCursor cursor = cursor(rows);
-				selected = true;
 				return cursor;
 			}, tag);
 		}
@@ -242,7 +244,6 @@ final class NativePhysicalGroupArbitration {
 			Throwable failure = KernelRuntime.closeResource(iteration, null);
 			failure = KernelRuntime.closeResource(iteration.aggContext::close, failure);
 			failure = KernelRuntime.closeResource(row::closeDecodedInputs, failure);
-			failure = KernelRuntime.closeResource(selected ? filters::commit : () -> filters.abort(null), failure);
 			failure = KernelRuntime.closeResource(
 					iteration.prefixRunFilter == null ? null : iteration.prefixRunFilter::close,
 					failure);

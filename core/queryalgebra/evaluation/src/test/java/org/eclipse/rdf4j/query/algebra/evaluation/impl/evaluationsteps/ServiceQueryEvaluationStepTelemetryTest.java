@@ -23,7 +23,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -44,6 +46,39 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class ServiceQueryEvaluationStepTelemetryTest {
+
+	@Test
+	void remoteMetricsPublishOnlyThroughRootCloseCoordinator() {
+		Service service = new Service(
+				Var.of("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
+				new SingletonSet(),
+				"{ VALUES ?x { 1 } }",
+				Collections.emptyMap(),
+				null,
+				false);
+		service.setRuntimeTelemetryEnabled(true);
+		AtomicReference<Runnable> rootPublisher = new AtomicReference<>();
+		service.setQueryModelMetadata(RootCloseTelemetryRegistrar.METADATA_KEY,
+				(Consumer<Runnable>) rootPublisher::set);
+
+		FederatedService federatedService = mock(FederatedService.class);
+		when(federatedService.ask(eq(service), any(BindingSet.class), eq(service.getBaseURI()))).thenReturn(true);
+		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
+		when(resolver.getService("http://example.com/service")).thenReturn(federatedService);
+
+		ServiceQueryEvaluationStep step = new ServiceQueryEvaluationStep(service, service.getServiceRef(), resolver);
+		try (CloseableIteration<BindingSet> result = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(result.hasNext()).isTrue();
+			result.next();
+		}
+
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL))
+				.as("remote counters must remain execution-local before the root publisher runs")
+				.isLessThanOrEqualTo(0L);
+		assertThat(rootPublisher.get()).isNotNull();
+		rootPublisher.get().run();
+		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL)).isEqualTo(1L);
+	}
 
 	@Test
 	void recordsLatencyQuantilesForAskRequests() {

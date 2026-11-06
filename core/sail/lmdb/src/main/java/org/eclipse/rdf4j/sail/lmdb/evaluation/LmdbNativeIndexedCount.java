@@ -245,6 +245,6 @@ final class LmdbNativeIndexedCount {
 
 	private static boolean conflictingConstant(Term term, RowState row) {
 		return term.bindConstant && term.slot >= 0 && row.slots[term.slot] != UNKNOWN
-				&& row.slots[term.slot] != term.constant;
+				&& (term.preserveExisting ? row.slots[term.slot] == 0L : row.slots[term.slot] != term.constant);
 	}
 }

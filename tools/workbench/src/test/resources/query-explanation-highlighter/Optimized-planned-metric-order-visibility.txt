@@ -1,0 +1,3 @@
+Join (plannedWorkRows=9, plannedCostWorkRows=4.00, plannedEstimateUsage=join_order_candidate, plannedEstimateDecisionId=decision-id, plannedCardinalityShape=range, plannedCostShape=vector, plannedIndexName=spoc, plannedIndexAccessMode=scan, plannedLookupComponents=sp, plannedMissingLookupComponents=o, plannedBoundVars=s,p, plannerId=planned-planner, plannerAlgorithm=algorithm, plannerPath=path, customRootMetric=kept, plannedEstimateSource=source)
+   StatementPattern (customNested=kept)
+      Filter (customDeep=kept)

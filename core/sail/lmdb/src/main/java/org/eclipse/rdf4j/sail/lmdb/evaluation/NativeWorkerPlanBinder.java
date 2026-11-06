@@ -26,12 +26,30 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 	final NativeScalarPlan.WorkerContext context;
 	private final NativeFilterLease filters = new NativeFilterLease(true);
 	private final IdentityHashMap<NativeBooleanFilter, NativeBooleanFilter> copies = new IdentityHashMap<>();
+	private final IdentityHashMap<SlotPlan, SlotPlan> plans = new IdentityHashMap<>();
 
 	NativeWorkerPlanBinder(NativeScalarPlan.WorkerContext context) {
 		this.context = context;
 	}
 
 	static boolean canBind(SlotPlan input) {
+		return canBind(input, null);
+	}
+
+	static boolean canBind(SlotPlan input, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
+		if (facts == null) {
+			if (!(input instanceof NativeValuesFoldPlan)) { return canBindUncached(input, null); }
+			facts = new java.util.IdentityHashMap<>();
+		}
+		Boolean previous = facts.get(input);
+		if (previous != null) { return previous; }
+		boolean result = canBindUncached(input, facts);
+		facts.put(input, result);
+		return result;
+	}
+
+	static boolean canBindUncached(SlotPlan input, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
+		if (input instanceof NativeValuesFoldPlan guard) { return canBind(guard.folded, facts) && canBind(guard.original, facts); }
 		if (input instanceof NativeSubqueryPlan subquery) {
 			return subquery.workerBindable();
 		}
@@ -44,10 +62,10 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			return true;
 		}
 		if (input instanceof FilterPlan filter) {
-			return filter.filter.parallelWorkerForkable() && canBind(filter.arg);
+			return filter.filter.parallelWorkerForkable() && canBind(filter.arg, facts);
 		}
 		if (input instanceof EntryBindingCompatibilityPlan entry) {
-			return canBind(entry.arg);
+			return canBind(entry.arg, facts);
 		}
 		if (input instanceof ExtensionPlan extension) {
 			for (CopyBinding binding : extension.copies) {
@@ -63,45 +81,46 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 					return false;
 				}
 			}
-			return canBind(extension.arg);
+			return canBind(extension.arg, facts);
 		}
 		if (input instanceof MultiJoinPlan multi) {
 			for (SlotPlan child : multi.children) {
-				if (!canBind(child)) {
+				if (!canBind(child, facts)) {
 					return false;
 				}
 			}
 			return LmdbNativeParallelPipelines.parallelWorkerForkable(multi.filters);
 		}
 		if (input instanceof NativeAliasJoinPlan alias) {
-			return canBind(alias.original);
+			return canBind(alias.original, facts);
 		}
 		if (input instanceof NativeAliasJoinMemoPlan memo) {
-			return canBind(memo.original);
+			return canBind(memo.original, facts);
 		}
 		if (input instanceof JoinPlan join) {
-			return canBind(join.left) && canBind(join.right);
+			return canBind(join.left, facts) && canBind(join.right, facts);
 		}
 		if (input instanceof LeftJoinPlan optional) {
-			return canBind(optional.left) && canBind(optional.right);
+			return (optional.lexicalCondition == null || optional.lexicalCondition.parallelWorkerForkable())
+					&& canBind(optional.left, facts) && canBind(optional.right, facts);
 		}
 		if (input instanceof UnionPlan union) {
-			return canBind(union.left) && canBind(union.right);
+			return canBind(union.left, facts) && canBind(union.right, facts);
 		}
 		if (input instanceof OrderedUnionPlan union) {
-			return canBind(union.left) && canBind(union.right);
+			return canBind(union.left, facts) && canBind(union.right, facts);
 		}
 		if (input instanceof MinusPlan minus) {
-			return canBind(minus.left) && canBind(minus.right);
+			return canBind(minus.left, facts) && canBind(minus.right, facts);
 		}
 		if (input instanceof LateralPlan lateral) {
-			return canBind(lateral.left) && canBind(lateral.right);
+			return canBind(lateral.left, facts) && canBind(lateral.right, facts);
 		}
 		if (input instanceof RowDistinctPlan distinct) {
-			return canBind(distinct.arg);
+			return canBind(distinct.arg, facts);
 		}
 		if (input instanceof DrainGuardPlan guard) {
-			return canBind(guard.delegate) && canBind(guard.drained);
+			return canBind(guard.delegate, facts) && canBind(guard.drained, facts);
 		}
 		return false;
 	}
@@ -126,6 +145,17 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 	}
 
 	SlotPlan bind(SlotPlan input) throws IOException {
+		SlotPlan existing = plans.get(input);
+		if (existing != null) { return existing; }
+		SlotPlan result = bindUncached(input);
+		plans.put(input, result);
+		return result;
+	}
+
+	private SlotPlan bindUncached(SlotPlan input) throws IOException {
+		if (input instanceof NativeValuesFoldPlan guard) {
+			return new NativeValuesFoldPlan(bind(guard.folded), bind(guard.original), guard.inputNames, guard.inputSlots);
+		}
 		SlotPlan replacement = replacement(input);
 		if (replacement != null) {
 			return replacement;
@@ -157,7 +187,9 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 		}
 		if (input instanceof LeftJoinPlan optional) {
 			return new LeftJoinPlan(bind(optional.left), bind(optional.right), optional.lexicalSharedSlots,
-					optional.lexicalHashKeys, optional.lexicalProblemSlots);
+					optional.lexicalHashKeys, optional.lexicalProblemSlots,
+					optional.lexicalCondition == null ? null : bindFilter(optional.lexicalCondition),
+					optional.lexicalConditionMask);
 		}
 		if (input instanceof UnionPlan union) {
 			return new UnionPlan(bind(union.left), bind(union.right));

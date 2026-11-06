@@ -14,13 +14,18 @@
 
 package org.eclipse.rdf4j.query.impl;
 
+import java.util.concurrent.TimeUnit;
+
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryOperationContext;
+import org.eclipse.rdf4j.query.QueryOperationDeadline;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 
 /**
@@ -63,12 +68,23 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 
 	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
 			CloseableIteration<? extends BindingSet> bindingsIter) {
-		// Within modern hook dispatch the public result already owns the time limit.
-		if (getMaxExecutionTime() > 0 && LEGACY_HOOK_OWNER.get() != this) {
-			bindingsIter = new QueryInterruptIteration<>(bindingsIter, 1000L * getMaxExecutionTime());
+		if (LEGACY_HOOK_OWNER.get() == this) { return bindingsIter; }
+		QueryOperationDeadline deadline = QueryOperationContext.getDeadline().orElse(null);
+		if (getMaxExecutionTime() > 0) {
+			try (QueryOperationContext.Scope scope = QueryOperationContext.open(
+					QueryOperationDeadline.after(getMaxExecutionTime(), TimeUnit.SECONDS))) {
+				return enforceMaxQueryTime(bindingsIter, scope.getDeadline());
+			}
 		}
+		return enforceMaxQueryTime(bindingsIter, deadline);
+	}
 
-		return bindingsIter;
+	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
+			CloseableIteration<? extends BindingSet> bindingsIter, QueryOperationDeadline deadline) {
+		if (deadline == null) { return bindingsIter; }
+		deadline.throwIfExpired();
+		return new QueryInterruptIteration<>(new QueryOperationContextIteration<>(bindingsIter, deadline),
+				deadline.remainingMillis());
 	}
 
 	/**
@@ -80,10 +96,16 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	 * @return the started time limit, or {@code null} when the query has no maximum execution time
 	 */
 	protected InterruptingTimeLimit startEvaluationTimeLimit() {
-		if (getMaxExecutionTime() > 0) {
-			return InterruptingTimeLimit.start(1000L * getMaxExecutionTime());
-		}
-		return null;
+		return startEvaluationTimeLimit(getMaxExecutionTime());
+	}
+
+	protected InterruptingTimeLimit startEvaluationTimeLimit(int timeoutSeconds) {
+		QueryOperationDeadline ambient = QueryOperationContext.getDeadline().orElse(null);
+		if (ambient != null) { ambient.throwIfExpired(); }
+		if (timeoutSeconds <= 0 && ambient == null) { return null; }
+		long remaining = timeoutSeconds > 0 ? TimeUnit.SECONDS.toMillis(timeoutSeconds) : Long.MAX_VALUE;
+		if (ambient != null) { remaining = Math.min(remaining, ambient.remainingMillis()); }
+		return InterruptingTimeLimit.start(remaining);
 	}
 
 	/**
@@ -158,7 +180,10 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	protected <T> CloseableIteration<? extends T> enforceResultMaxQueryTime(
 			CloseableIteration<? extends T> iteration, InterruptingTimeLimit timeLimit) {
 		if (timeLimit != null) {
-			return new QueryInterruptIteration<>(iteration, timeLimit.remainingMillis());
+			QueryOperationDeadline deadline = QueryOperationContext.getDeadline().orElse(null);
+			CloseableIteration<? extends T> scoped = deadline == null ? iteration
+					: new QueryOperationContextIteration<>(iteration, deadline);
+			return new QueryInterruptIteration<>(scoped, timeLimit.remainingMillis());
 		}
 		return iteration;
 	}
@@ -193,6 +218,53 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 		@Override
 		protected void throwInterruptedException() throws QueryEvaluationException {
 			throw new QueryInterruptedException(TIMEOUT_MESSAGE);
+		}
+	}
+
+	private static final class QueryOperationContextIteration<T> extends IterationWrapper<T> {
+
+		private final QueryOperationDeadline deadline;
+
+		private QueryOperationContextIteration(CloseableIteration<? extends T> iter,
+				QueryOperationDeadline deadline) {
+			super(iter);
+			this.deadline = deadline;
+		}
+
+		@Override
+		public boolean hasNext() {
+			try (QueryOperationContext.Scope ignored = QueryOperationContext.open(deadline)) {
+				QueryOperationContext.throwIfDeadlineExpired();
+				boolean hasNext = super.hasNext();
+				QueryOperationContext.throwIfDeadlineExpired();
+				return hasNext;
+			}
+		}
+
+		@Override
+		public T next() {
+			try (QueryOperationContext.Scope ignored = QueryOperationContext.open(deadline)) {
+				QueryOperationContext.throwIfDeadlineExpired();
+				T next = super.next();
+				QueryOperationContext.throwIfDeadlineExpired();
+				return next;
+			}
+		}
+
+		@Override
+		public void remove() {
+			try (QueryOperationContext.Scope ignored = QueryOperationContext.open(deadline)) {
+				QueryOperationContext.throwIfDeadlineExpired();
+				super.remove();
+				QueryOperationContext.throwIfDeadlineExpired();
+			}
+		}
+
+		@Override
+		protected void handleClose() {
+			try (QueryOperationContext.Scope ignored = QueryOperationContext.open(deadline)) {
+				super.handleClose();
+			}
 		}
 	}
 

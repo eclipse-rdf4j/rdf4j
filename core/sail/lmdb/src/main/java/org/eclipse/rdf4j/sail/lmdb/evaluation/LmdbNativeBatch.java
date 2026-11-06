@@ -243,8 +243,13 @@ final class PatternBatchCursor implements BatchCursor {
 	}
 
 	boolean bindTerm(Term term, long id, NativeBatch batch, int row) {
+		if (term.readOnly) { return true; }
 		if (term.isConstant()) {
-			return term.constant == id && (!term.bindConstant || bindSlot(term.slot, id, batch, row));
+			if (term.constant != id) { return false; }
+			if (!term.bindConstant) { return true; }
+			long current = batch.get(term.slot, row);
+			if (term.preserveExisting && current != UNKNOWN) { return current != 0L; }
+			return bindSlot(term.slot, id, batch, row);
 		}
 		return term.slot < 0 || bindSlot(term.slot, id, batch, row);
 	}
@@ -356,7 +361,7 @@ final class FilterBatchCursor implements WeightedBatchCursor {
 
 	FilterBatchCursor(BatchCursor arg, NativeBooleanFilter filter, RowState row, long readMask) {
 		this.arg = arg;
-		this.filter = filter;
+		this.filter = NativeFilterLease.openInput(filter, row, arg);
 		this.row = row;
 		this.entrySlots = Arrays.copyOf(row.slots, row.slots.length);
 		this.readMask = readMask;
@@ -379,11 +384,22 @@ final class FilterBatchCursor implements WeightedBatchCursor {
 			// per batch (a batch amortizes hundreds of rows, so the unmasked check is cheap here)
 			LmdbNativeProbeDeadline.poll(0);
 			observedRows += batch.selectedCount;
+			if (arg instanceof WeightedBatchCursor weighted) {
+				for (int i = 0; i < batch.selectedCount; i++) {
+					if (weighted.weight(batch.selection[i]) != 1L) {
+						filter.incompleteInput();
+						break;
+					}
+				}
+			}
 			int accepted = LmdbNativeSpecialization.applyFilter(batch, row, filter, observedRows, readMask);
 			NativeBatch.FILTER_BATCHES.incrementAndGet();
 			if (accepted > 0) {
 				return accepted;
 			}
+		}
+		if (!row.cancellation.isCancellationRequested()) {
+			filter.inputExhausted();
 		}
 		close();
 		return 0;
@@ -405,6 +421,7 @@ final class FilterBatchCursor implements WeightedBatchCursor {
 			arg.close();
 		} catch (RuntimeException | Error problem) {
 			failure = problem;
+			filter.incompleteInput();
 		}
 		try {
 			filter.close();

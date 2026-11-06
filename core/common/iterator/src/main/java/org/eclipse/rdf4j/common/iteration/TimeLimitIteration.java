@@ -13,10 +13,16 @@
 package org.eclipse.rdf4j.common.iteration;
 
 import java.lang.ref.WeakReference;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.NoSuchElementException;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,10 +45,15 @@ import org.slf4j.LoggerFactory;
 public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 
 	private static final String PROPERTY_PREFIX = "org.eclipse.rdf4j.common.iteration.TimeLimitIteration.";
-
-	private static final long DEFAULT_INTERRUPT_GRACE_MILLIS = Long.getLong(PROPERTY_PREFIX + "interruptGraceMillis",
-			2000L);
+	private static final long DEFAULT_INTERRUPT_GRACE_MILLIS = Long.getLong(PROPERTY_PREFIX + "interruptGraceMillis", 2000L);
 	private static final long DEFAULT_CLOSE_GRACE_MILLIS = Long.getLong(PROPERTY_PREFIX + "closeGraceMillis", 2000L);
+	private static final AsyncLauncher DEFAULT_ASYNC_LAUNCHER = task -> Thread.startVirtualThread(task);
+
+	/** Per-instance seam for exercising asynchronous launch failures. */
+	@FunctionalInterface
+	interface AsyncLauncher {
+		void start(Runnable action);
+	}
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
@@ -50,61 +61,72 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private final long interruptGraceMillis;
 	private final long closeGraceMillis;
 	private final boolean expiredAtCreation;
+	private final List<Thread> activeThreads = new ArrayList<>(1);
+	private final Set<Thread> interruptedThreads = Collections.newSetFromMap(new IdentityHashMap<>());
+	private boolean escalationStarted;
+	private boolean forceCloseRequested;
+	private boolean cancellationStarted;
+	private TimeLimitScheduler.Task interruptStep;
+	private TimeLimitScheduler.Task closeStep;
+	private final AsyncLauncher asyncLauncher;
 
 	private final AtomicBoolean isInterrupted = new AtomicBoolean(false);
+	protected final long timeLimitMillis;
 	private final Object lifecycleLock = new Object();
-	private final List<Thread> activeThreads = new ArrayList<>(1);
-	private final List<Thread> interruptedThreads = new ArrayList<>(1);
+	private final Object failureReportLock = new Object();
 	private boolean closeRequested;
 	private boolean timeoutCloseRequested;
 	private boolean timeoutStarted;
-	private boolean escalationStarted;
-	private TimeLimitScheduler.Task interruptStep;
-	private TimeLimitScheduler.Task closeStep;
-	private boolean cooperativeCancellationStarted;
+	private boolean timeoutObserved;
+	private boolean timeoutCancellationInFlight;
+	private boolean timeoutCancellationRetryPending;
+	private DispatchClaim timeoutCancellationClaim;
+	private Thread timeoutCancellationThread;
+	private boolean timeoutForwardingAvailable;
 	private boolean delegateCloseStarted;
 	private boolean delegateCloseCompleted;
+	private DispatchClaim delegateCloseClaim;
 	private Thread delegateCloseThread;
 	private Throwable delegateCloseFailure;
 	private boolean delegateCloseFailureReported;
 	private boolean closeHandled;
+	private LaunchFailureSummary launchFailureSummary;
+	private boolean launchFailurePending;
+	private Thread failureReportingThread;
 
-	/**
-	 * @param iter      the iteration to limit
-	 * @param timeLimit the time limit in milliseconds; a non-positive limit has already elapsed
-	 */
-	protected TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimit) {
-		this(iter, timeLimit, DEFAULT_INTERRUPT_GRACE_MILLIS, DEFAULT_CLOSE_GRACE_MILLIS);
+	protected TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimitMillis) {
+		this(iter, timeLimitMillis, DEFAULT_INTERRUPT_GRACE_MILLIS, DEFAULT_CLOSE_GRACE_MILLIS, DEFAULT_ASYNC_LAUNCHER);
 	}
 
-	/**
-	 * @param iter                 the iteration to limit
-	 * @param timeLimit            the time limit in milliseconds; a non-positive limit has already elapsed
-	 * @param interruptGraceMillis how long cooperative cancellation may take before active calls are interrupted
-	 * @param closeGraceMillis     how long an interrupt may take before the wrapped iteration is closed
-	 */
-	protected TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimit, long interruptGraceMillis,
-			long closeGraceMillis) {
+	TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimitMillis, AsyncLauncher asyncLauncher) {
+		this(iter, timeLimitMillis, DEFAULT_INTERRUPT_GRACE_MILLIS, DEFAULT_CLOSE_GRACE_MILLIS, asyncLauncher);
+	}
+
+	protected TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimitMillis,
+			long interruptGraceMillis, long closeGraceMillis) {
+		this(iter, timeLimitMillis, interruptGraceMillis, closeGraceMillis, DEFAULT_ASYNC_LAUNCHER);
+	}
+
+	TimeLimitIteration(CloseableIteration<? extends E> iter, long timeLimitMillis,
+			long interruptGraceMillis, long closeGraceMillis, AsyncLauncher asyncLauncher) {
 		super(iter);
 		long startNanos = System.nanoTime();
+		this.asyncLauncher = Objects.requireNonNull(asyncLauncher, "asyncLauncher");
+		this.timeLimitMillis = timeLimitMillis;
 		this.interruptGraceMillis = Math.max(0L, interruptGraceMillis);
 		this.closeGraceMillis = Math.max(0L, closeGraceMillis);
-		expiredAtCreation = timeLimit <= 0;
+		expiredAtCreation = timeLimitMillis <= 0;
 		interruptTask = new TimeLimitScheduler.Task(new InterruptTask<>(this));
-		interruptTask.schedule(new TimeLimitScheduler.Deadline(timeLimit, startNanos));
+		interruptTask.schedule(new TimeLimitScheduler.Deadline(timeLimitMillis, startNanos));
 	}
 
-	long interruptGraceMillis() {
-		return interruptGraceMillis;
-	}
+	long interruptGraceMillis() { return interruptGraceMillis; }
 
-	long closeGraceMillis() {
-		return closeGraceMillis;
-	}
+	long closeGraceMillis() { return closeGraceMillis; }
 
 	@Override
 	public boolean hasNext() {
-		checkInterrupted();
+		checkInterruptedAtEntry();
 		if (isClosed()) {
 			return false;
 		}
@@ -143,7 +165,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 
 	@Override
 	public E next() {
-		checkInterrupted();
+		checkInterruptedAtEntry();
 		if (isClosed()) {
 			throw new NoSuchElementException("The iteration has been closed.");
 		}
@@ -179,7 +201,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 
 	@Override
 	public void remove() {
-		checkInterrupted();
+		checkInterruptedAtEntry();
 		if (isClosed()) {
 			throw new IllegalStateException("The iteration has been closed.");
 		}
@@ -225,24 +247,37 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	@Override
 	protected void handleClose() {
 		boolean closeDelegate;
-		boolean signalActiveCalls;
+		DispatchClaim cancellation;
+		boolean revoked;
 		synchronized (lifecycleLock) {
 			closeRequested = true;
-			closeDelegate = claimDelegateCloseIfIdle();
-			signalActiveCalls = !closeDelegate && hasActiveCallOnAnotherThread();
-		}
-		if (signalActiveCalls) {
-			// The active caller owns the wrapped iteration until it returns; ask it to return soon.
-			requestDelegateCancellationAndEscalate();
+			revoked = timeoutCancellationClaim != null && !timeoutCancellationClaim.acceptancePublished
+					&& timeoutCancellationClaim.revoke();
+			if (revoked) {
+				timeoutCancellationClaim = null;
+				timeoutCancellationInFlight = false;
+				timeoutCancellationRetryPending = false;
+			}
+			cancellation = claimTimeoutCancellationRetry();
+			if (cancellation == null && !cancellationStarted && hasActiveCallOnAnotherThread()) {
+				cancellation = newTimeoutCancellationClaim();
+			}
+			closeDelegate = cancellation == null && claimDelegateCloseIfIdle();
 		}
 		interruptTask.cancel();
+		if (cancellation != null) {
+			launchAsync(cancellation, "cooperative cancellation");
+		}
+		if (revoked) {
+			startEscalation();
+		}
 		if (closeDelegate) {
 			Throwable failure = closeDelegateNow();
 			synchronized (lifecycleLock) {
 				closeHandled = true;
 				delegateCloseFailureReported = true;
 			}
-			throwUnchecked(failure);
+			throwUnchecked(includeLaunchFailures(failure, false));
 		} else {
 			awaitDelegateCloseInProgress();
 		}
@@ -258,25 +293,37 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	/** Waits for a delegate close started by timeout cleanup; a close deferred behind an active call is not awaited. */
 	private void awaitDelegateCloseInProgress() {
 		Throwable failure = null;
+		boolean closeDelegate;
 		boolean interrupted = false;
 		synchronized (lifecycleLock) {
-			while (delegateCloseStarted && !delegateCloseCompleted && delegateCloseThread != Thread.currentThread()) {
+			while (delegateCloseStarted && !delegateCloseCompleted && delegateCloseThread != Thread.currentThread()
+					&& !timeoutCancellationInFlight) {
 				try {
 					lifecycleLock.wait();
 				} catch (InterruptedException e) {
 					interrupted = true;
 				}
 			}
-			closeHandled = true;
-			if (delegateCloseCompleted && !delegateCloseFailureReported) {
+			closeDelegate = claimDelegateCloseIfIdle();
+			if (!closeDelegate) {
+				closeHandled = true;
+			}
+			if (!closeDelegate && delegateCloseCompleted && !delegateCloseFailureReported) {
 				delegateCloseFailureReported = true;
 				failure = delegateCloseFailure;
+			}
+		}
+		if (closeDelegate) {
+			failure = closeDelegateNow();
+			synchronized (lifecycleLock) {
+				closeHandled = true;
+				delegateCloseFailureReported = true;
 			}
 		}
 		if (interrupted) {
 			Thread.currentThread().interrupt();
 		}
-		throwUnchecked(failure);
+		throwUnchecked(includeLaunchFailures(failure, false));
 	}
 
 	private Throwable closeDelegateNow() {
@@ -298,23 +345,22 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 				failure.addSuppressed(hookFailure);
 			}
 		}
-		TimeLimitScheduler.Task pendingInterrupt;
-		TimeLimitScheduler.Task pendingClose;
 		synchronized (lifecycleLock) {
 			delegateCloseCompleted = true;
 			delegateCloseFailure = failure;
+			delegateCloseClaim = null;
 			delegateCloseThread = null;
-			pendingInterrupt = interruptStep;
-			pendingClose = closeStep;
 			lifecycleLock.notifyAll();
 		}
 		interruptTask.cancel();
-		if (pendingInterrupt != null) {
-			pendingInterrupt.cancel();
+		TimeLimitScheduler.Task pendingInterrupt;
+		TimeLimitScheduler.Task pendingClose;
+		synchronized (lifecycleLock) {
+			pendingInterrupt = interruptStep;
+			pendingClose = closeStep;
 		}
-		if (pendingClose != null) {
-			pendingClose.cancel();
-		}
+		if (pendingInterrupt != null) { pendingInterrupt.cancel(); }
+		if (pendingClose != null) { pendingClose.cancel(); }
 		return failure;
 	}
 
@@ -343,8 +389,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		synchronized (lifecycleLock) {
 			Thread current = Thread.currentThread();
 			activeThreads.remove(current);
-			if (interruptedThreads.remove(current) && !activeThreads.contains(current)) {
-				// Interrupts are only delivered to registered threads under this lock, so this clears ours.
+			if (!activeThreads.contains(current) && interruptedThreads.remove(current)) {
 				Thread.interrupted();
 			}
 			closeDelegate = claimDelegateCloseIfIdle();
@@ -372,8 +417,10 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	}
 
 	private boolean claimDelegateCloseIfIdle() {
-		if (closeRequested && activeThreads.isEmpty() && !delegateCloseStarted) {
+		if (closeRequested && !timeoutCancellationInFlight
+				&& (activeThreads.isEmpty() || forceCloseRequested) && !delegateCloseStarted) {
 			delegateCloseStarted = true;
+			timeoutCancellationRetryPending = false;
 			return true;
 		}
 		return false;
@@ -382,45 +429,103 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private boolean hasActiveCallOnAnotherThread() {
 		Thread current = Thread.currentThread();
 		for (Thread thread : activeThreads) {
-			if (thread != current) {
-				return true;
-			}
+			if (thread != current) { return true; }
 		}
 		return false;
 	}
 
-	/** The first step: report the time limit from now on and ask the wrapped iteration to stop. */
 	private void startTimeout() {
+		DispatchClaim claim;
 		synchronized (lifecycleLock) {
-			// A deferred outer close does not hide a timeout from a still-active delegate call.
+			isInterrupted.set(true);
 			if (timeoutStarted || delegateCloseStarted) {
 				return;
 			}
 			timeoutStarted = true;
 			closeRequested = true;
 			timeoutCloseRequested = true;
-			isInterrupted.set(true);
+			claim = cancellationStarted ? null : newTimeoutCancellationClaim();
 		}
-		requestDelegateCancellationAndEscalate();
+		if (claim != null) { launchAsync(claim, "cooperative cancellation"); }
 	}
 
-	/** The outer wrapper may already be closed while its delegate is still active and owned by its caller. */
-	private void requestDelegateCancellationAndEscalate() {
+	/** The lifecycle lock protects each claim and the source ownership it represents. */
+	private DispatchClaim newTimeoutCancellationClaim() {
+		assert Thread.holdsLock(lifecycleLock);
+		cancellationStarted = true;
+		timeoutCancellationRetryPending = false;
+		timeoutCancellationInFlight = true;
+		timeoutCancellationClaim = new DispatchClaim(this::deliverTimeoutCancellation);
+		return timeoutCancellationClaim;
+	}
+
+	private DispatchClaim claimTimeoutCancellationRetry() {
+		assert Thread.holdsLock(lifecycleLock);
+		if (!timeoutCancellationRetryPending || timeoutCancellationInFlight || delegateCloseStarted
+				|| delegateCloseCompleted) {
+			return null;
+		}
+		return newTimeoutCancellationClaim();
+	}
+
+	private void deliverTimeoutCancellation() {
 		synchronized (lifecycleLock) {
-			if (cooperativeCancellationStarted) {
-				return;
-			}
-			cooperativeCancellationStarted = true;
+			timeoutCancellationThread = Thread.currentThread();
+			timeoutForwardingAvailable = true;
 		}
 		try {
-			if (wrappedIter instanceof CooperativeCancellation cancellation) {
-				cancellation.requestCancellation();
-			}
+			requestCancellation();
 		} catch (RuntimeException | Error failure) {
-			logger.warn("TimeLimitIteration cooperative cancellation failed: ", failure);
+			logger.warn("TimeLimitIteration timed out and cooperative cancellation failed: ", failure);
+		} finally {
+			boolean cleanup;
+			synchronized (lifecycleLock) {
+				timeoutCancellationThread = null;
+				timeoutForwardingAvailable = false;
+				timeoutCancellationInFlight = false;
+				timeoutCancellationClaim = null;
+				cleanup = (closeHandled || timeoutObserved || !timeoutCloseRequested || forceCloseRequested) && claimDelegateCloseIfIdle();
+				lifecycleLock.notifyAll();
+			}
+			if (cleanup) {
+				closeDelegateAsync();
+			} else {
+				startEscalation();
+			}
 		}
-		// The caller that made the request owns escalation, so concurrent close cannot overtake the request.
-		startEscalation();
+	}
+
+	private void requestCloseOnTimeout(boolean retryCleanup) {
+		startTimeout();
+		DispatchClaim retry;
+		boolean cleanup;
+		synchronized (lifecycleLock) {
+			timeoutObserved |= retryCleanup;
+			retry = claimTimeoutCancellationRetry();
+			cleanup = retryCleanup && retry == null && claimDelegateCloseIfIdle();
+		}
+		if (retry != null) {
+			launchAsync(retry, "cooperative cancellation");
+		} else if (cleanup) {
+			closeDelegateAsync();
+		}
+	}
+
+	/** Preserve direct forwarding while allowing an already queued timeout to reach a still-owned delegate. */
+	@Override
+	public boolean requestCancellation() {
+		boolean reservedForward;
+		synchronized (lifecycleLock) {
+			reservedForward = timeoutCancellationInFlight && timeoutCancellationThread == Thread.currentThread()
+					&& timeoutForwardingAvailable;
+			if (reservedForward) {
+				timeoutForwardingAvailable = false;
+			}
+		}
+		if (reservedForward) {
+			return wrappedIter instanceof CooperativeCancellation cancellation && cancellation.requestCancellation();
+		}
+		return super.requestCancellation();
 	}
 
 	private void startEscalation() {
@@ -455,22 +560,20 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 
 	/** The last step: close the wrapped iteration even beneath an active call. */
 	private void forceClose() {
+		boolean cleanup;
 		synchronized (lifecycleLock) {
-			if (delegateCloseStarted || !closeRequested) {
-				return;
-			}
-			delegateCloseStarted = true;
+			forceCloseRequested = true;
+			cleanup = claimDelegateCloseIfIdle();
 		}
-		closeDelegateAsync();
+		if (cleanup) { closeDelegateAsync(); }
 	}
 
 	/**
-	 * Closes the delegate without blocking the timed-out caller or the shared scheduler. This does not mark the
-	 * iteration closed, so a later {@link #close()} still runs {@link #handleClose()} and waits for the cleanup to
-	 * finish.
+	 * Closes the delegate without blocking the timed-out caller. This does not mark the iteration closed, so a later
+	 * {@link #close()} still runs {@link #handleClose()} and waits for the cleanup to finish.
 	 */
 	private void closeDelegateAsync() {
-		Runnable cleanup = () -> {
+		DispatchClaim claim = new DispatchClaim(() -> {
 			Throwable failure = closeDelegateNow();
 			boolean unreported;
 			synchronized (lifecycleLock) {
@@ -482,27 +585,339 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			if (unreported) {
 				logger.warn("TimeLimitIteration timed out and failed to close successfully: ", failure);
 			}
-		};
+		});
+		synchronized (lifecycleLock) {
+			delegateCloseClaim = claim;
+		}
+		launchAsync(claim, "timeout cleanup");
+	}
+
+	/** A launcher may queue or start an action and may throw even after accepting it. */
+	private void launchAsync(DispatchClaim claim, String operation) {
+		if (claim.revoked()) {
+			return;
+		}
 		try {
-			Thread.startVirtualThread(cleanup);
-		} catch (RuntimeException | Error failure) {
-			logger.warn("TimeLimitIteration could not schedule timeout cleanup; closing inline", failure);
-			cleanup.run();
+			asyncLauncher.start(claim);
+			publishLaunchAcceptance(claim);
+		} catch (RuntimeException | Error primary) {
+			try {
+				asyncLauncher.start(() -> {
+					try {
+						claim.run();
+					} finally {
+						logger.warn("TimeLimitIteration used a fallback for " + operation + ": ", primary);
+					}
+				});
+				publishLaunchAcceptance(claim);
+			} catch (RuntimeException | Error fallback) {
+				synchronized (lifecycleLock) {
+					boolean revoked = claim.revoke();
+					recordLaunchFailure(primary, fallback);
+					if (revoked && timeoutCancellationClaim == claim) {
+						timeoutCancellationClaim = null;
+						timeoutCancellationInFlight = false;
+						timeoutCancellationRetryPending = true;
+					} else if (revoked && delegateCloseClaim == claim) {
+						delegateCloseClaim = null;
+						delegateCloseStarted = false;
+					}
+					lifecycleLock.notifyAll();
+				}
+			}
 		}
 	}
 
+	private void publishLaunchAcceptance(DispatchClaim claim) {
+		synchronized (lifecycleLock) {
+			claim.acceptancePublished = true;
+		}
+	}
+
+	private static final class DispatchClaim implements Runnable {
+		private static final int PENDING = 0;
+		private static final int STARTED = 1;
+		private static final int FINISHED = 2;
+		private static final int REVOKED = 3;
+
+		private final AtomicInteger state = new AtomicInteger(PENDING);
+		private final Runnable action;
+		// Guarded by lifecycleLock; the atomic state decides whether close or the worker wins.
+		private boolean acceptancePublished;
+
+		private DispatchClaim(Runnable action) {
+			this.action = action;
+		}
+
+		@Override
+		public void run() {
+			if (!state.compareAndSet(PENDING, STARTED)) {
+				return;
+			}
+			try {
+				action.run();
+			} finally {
+				state.set(FINISHED);
+			}
+		}
+
+		private boolean revoke() {
+			return state.compareAndSet(PENDING, REVOKED);
+		}
+
+		private boolean revoked() {
+			return state.get() == REVOKED;
+		}
+	}
+
+	private void recordLaunchFailure(Throwable primary, Throwable fallback) {
+		assert Thread.holdsLock(lifecycleLock);
+		if (launchFailureSummary == null) {
+			launchFailureSummary = new LaunchFailureSummary(primary, fallback);
+		} else {
+			launchFailureSummary.recordAdditional(primary, fallback);
+		}
+		launchFailurePending = true;
+	}
+
+	/** A fixed-size receipt for launch failures; later pairs are counted instead of retained individually. */
+	private static final class LaunchFailureSummary extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+		private volatile long additionalPairs;
+		private volatile long additionalErrors;
+		private volatile long inspectionFailures;
+		private volatile boolean pairsSaturated;
+		private volatile boolean errorsSaturated;
+		private volatile boolean inspectionsSaturated;
+		private volatile Error firstAdditionalError;
+		private Throwable firstInspectionFailure;
+
+		private LaunchFailureSummary(Throwable primary, Throwable fallback) {
+			super(null, primary, true, false);
+			if (fallback != primary) {
+				addSuppressed(fallback);
+			}
+		}
+
+		private void recordAdditional(Throwable primary, Throwable fallback) {
+			if (additionalPairs == Long.MAX_VALUE) {
+				pairsSaturated = true;
+			} else {
+				additionalPairs++;
+			}
+			if (primary instanceof Error error) {
+				recordAdditionalError(error);
+			}
+			if (fallback != primary && fallback instanceof Error error) {
+				recordAdditionalError(error);
+			}
+		}
+
+		private void recordAdditionalError(Error error) {
+			if (firstAdditionalError == null) {
+				firstAdditionalError = error;
+			}
+			if (additionalErrors == Long.MAX_VALUE) {
+				errorsSaturated = true;
+			} else {
+				additionalErrors++;
+			}
+		}
+
+		private void recordInspectionFailure(Throwable failure) {
+			if (firstInspectionFailure == null) {
+				firstInspectionFailure = failure;
+			}
+			if (inspectionFailures == Long.MAX_VALUE) {
+				inspectionsSaturated = true;
+			} else {
+				inspectionFailures++;
+			}
+		}
+
+		@Override
+		public String getMessage() {
+			return "Timeout dispatch failed; " + count(additionalPairs, pairsSaturated)
+					+ " additional failed launch pairs, including " + count(additionalErrors, errorsSaturated)
+					+ " additional Error instances; later failure details were coalesced; "
+					+ count(inspectionFailures, inspectionsSaturated) + " throwable inspection failures";
+		}
+
+		private static String count(long value, boolean saturated) {
+			return saturated ? "at least " + value : Long.toString(value);
+		}
+	}
+
+	/** Move diagnostics to a caller without running logging or external throwable code on the timer. */
+	private Throwable includeLaunchFailures(Throwable failure, boolean includeReported) {
+		synchronized (failureReportLock) {
+			if (failureReportingThread == Thread.currentThread()) {
+				synchronized (lifecycleLock) {
+					if (launchFailureSummary != null) {
+						launchFailurePending = true;
+					}
+				}
+				return failure;
+			}
+			failureReportingThread = Thread.currentThread();
+			try {
+				LaunchFailureSummary summary;
+				boolean wasPending;
+				synchronized (lifecycleLock) {
+					summary = launchFailureSummary;
+					if (summary == null || (!includeReported && !launchFailurePending)) {
+						return failure;
+					}
+					wasPending = launchFailurePending;
+					launchFailurePending = false;
+				}
+				boolean reported = false;
+				try {
+					Throwable report = failureReportRoot(summary);
+					if (report != null) {
+						if (failure == null) {
+							failure = report;
+							reported = true;
+						} else {
+							reported = attachWithoutCycle(failure, report);
+						}
+					} else if (failure == null) {
+						failure = summary;
+					}
+				} catch (RuntimeException | Error inspectionFailure) {
+					synchronized (lifecycleLock) {
+						summary.recordInspectionFailure(inspectionFailure);
+						launchFailurePending = true;
+					}
+					if (failure == null) {
+						failure = summary;
+					}
+				}
+				if (wasPending && !reported) {
+					synchronized (lifecycleLock) {
+						launchFailurePending = true;
+					}
+				}
+				return failure;
+			} finally {
+				failureReportingThread = null;
+			}
+		}
+	}
+
+	private static Throwable failureReportRoot(LaunchFailureSummary summary) {
+		Error additionalError = summary.firstAdditionalError;
+		if (additionalError == null) {
+			return summary;
+		}
+		Reachability fromSummary = reaches(summary, additionalError);
+		if (fromSummary == Reachability.FOUND) {
+			return summary;
+		}
+		if (fromSummary == Reachability.UNKNOWN) {
+			return null;
+		}
+		Reachability fromError = reaches(additionalError, summary);
+		if (fromError == Reachability.FOUND) {
+			return additionalError;
+		}
+		if (fromError == Reachability.UNKNOWN) {
+			return null;
+		}
+		return addSuppressedIfPossible(summary, additionalError) ? summary : null;
+	}
+
+	private static boolean attachWithoutCycle(Throwable target, Throwable report) {
+		Reachability existing = reaches(target, report);
+		if (existing == Reachability.FOUND) {
+			return true;
+		}
+		if (existing == Reachability.UNKNOWN || reaches(report, target) != Reachability.ABSENT) {
+			return false;
+		}
+		return addSuppressedIfPossible(target, report);
+	}
+
+	private enum Reachability {
+		FOUND,
+		ABSENT,
+		UNKNOWN
+	}
+
+	// Bound traversal of external graphs; getSuppressed() itself makes a JDK-specified array copy.
+	private static final int MAX_FAILURE_GRAPH_ENTRIES = 1024;
+
+	private static Reachability reaches(Throwable root, Throwable target) {
+		Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+		ArrayDeque<Throwable> pending = new ArrayDeque<>();
+		pending.add(root);
+		int edges = 0;
+		while (!pending.isEmpty()) {
+			Throwable current = pending.remove();
+			if (current == target) {
+				return Reachability.FOUND;
+			}
+			if (seen.contains(current)) {
+				continue;
+			}
+			if (seen.size() == MAX_FAILURE_GRAPH_ENTRIES) {
+				return Reachability.UNKNOWN;
+			}
+			seen.add(current);
+			Throwable cause = current.getCause();
+			if (cause != null) {
+				if (++edges > MAX_FAILURE_GRAPH_ENTRIES) {
+					return Reachability.UNKNOWN;
+				}
+				pending.add(cause);
+			}
+			Throwable[] suppressed = current.getSuppressed();
+			if (suppressed.length > MAX_FAILURE_GRAPH_ENTRIES - edges) {
+				return Reachability.UNKNOWN;
+			}
+			edges += suppressed.length;
+			Collections.addAll(pending, suppressed);
+		}
+		return Reachability.ABSENT;
+	}
+
+	private static boolean addSuppressedIfPossible(Throwable target, Throwable suppressed) {
+		if (target == suppressed) {
+			return true;
+		}
+		synchronized (target) {
+			for (Throwable existing : target.getSuppressed()) {
+				if (existing == suppressed) {
+					return true;
+				}
+			}
+			target.addSuppressed(suppressed);
+			for (Throwable existing : target.getSuppressed()) {
+				if (existing == suppressed) {
+					return true;
+				}
+			}
+			return false;
+		}
+	}
+
+	private void checkInterruptedAtEntry() {
+		checkInterrupted(true);
+	}
+
 	private void checkInterrupted() {
+		checkInterrupted(false);
+	}
+
+	private void checkInterrupted(boolean retryCleanup) {
 		if (isInterrupted.get() || expiredAtCreation) {
-			startTimeout();
-			// A caller observing the time limit owns the idle delegate, which stops the escalation.
-			boolean closeDelegate;
-			synchronized (lifecycleLock) {
-				closeDelegate = claimDelegateCloseIfIdle();
+			requestCloseOnTimeout(retryCleanup);
+			try {
+				throwInterruptedException();
+			} catch (RuntimeException | Error failure) {
+				includeLaunchFailures(failure, true);
+				throw failure;
 			}
-			if (closeDelegate) {
-				closeDelegateAsync();
-			}
-			throwInterruptedException();
 		}
 	}
 
@@ -522,17 +937,25 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	/**
 	 * If the iteration is interrupted by its time limit, this method is called to generate and throw the appropriate
 	 * exception.
+	 *
 	 */
 	protected abstract void throwInterruptedException();
 
 	/**
-	 * Starts stopping the iteration as if its time limit had elapsed: it requests cooperative cancellation now and
-	 * escalates to interrupting and closing as described in the class documentation. It does not block. <br/>
+	 * Users of this class must call this method to interrupt the execution at the next available point. It does not
+	 * immediately interrupt the running method, but will call close() and set a flag to increase the chances of it
+	 * being picked up as soon as possible and to cleanup its resources. <br/>
 	 * Note, this method does not generate {@link InterruptedException}s that would occur if {@link Thread#interrupt()}
 	 * were called on this thread.
 	 */
 	void interrupt() {
-		startTimeout();
+		try {
+			startTimeout();
+		} finally {
+			if (interruptTask != null) {
+				interruptTask.cancel();
+			}
+		}
 	}
 
 	private static final class EscalationTask<E> implements Runnable {

@@ -90,7 +90,12 @@ final class LmdbNativeStrategyPreview {
 		if (!QueryExplanationContext.inspectOnce(plan)) {
 			return;
 		}
-		if (plan instanceof NativeGraphPlan graph) {
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			QueryExplanationContext.withRuntimeCondition("The eliminated VALUES input is absent at operand entry", () -> inspect(guard.folded));
+			QueryExplanationContext.withRuntimeCondition("The VALUES target is supplied by the current caller frame", () -> inspect(guard.original));
+		} else if (LmdbNativeInteriorPlans.carrier(plan)) {
+			LmdbNativeInteriorPlans.preview(plan);
+		} else if (plan instanceof NativeGraphPlan graph) {
 			graph.explainStrategies();
 		} else if (plan instanceof NativeLogicalResultTransferPlan transfer) {
 			inspect(transfer.input);
@@ -109,6 +114,10 @@ final class LmdbNativeStrategyPreview {
 		} else if (plan instanceof LeftJoinPlan join) {
 			inspect(join.left);
 			inspect(join.right);
+			if (join.lexicalCondition != null) {
+				QueryExplanationContext.withRuntimeCondition("Compatible left and right OPTIONAL bindings are required",
+						() -> inspect(join.lexicalCondition));
+			}
 		} else if (plan instanceof LateralPlan join) {
 			inspect(join.left);
 			QueryExplanationContext.withRuntimeCondition("Outer LATERAL row bindings are required",

@@ -125,6 +125,23 @@ class LmdbRepositoryValueExposureTest {
 		}
 	}
 
+	@Test
+	void rawSailTupleResultsRemainLazy(@TempDir File directory) {
+		seed(directory, 1);
+		LmdbStore store = newStore(directory);
+		store.init();
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, SELECT, null).getTupleExpr();
+		try (NotifyingSailConnection connection = store.getConnection();
+				CloseableIteration<? extends BindingSet> result = connection.evaluate(expression, null,
+						EmptyBindingSet.getInstance(), false)) {
+			assertTrue(result.hasNext());
+			assertLazy(result.next().getValue("value"));
+			assertFalse(result.hasNext());
+		} finally {
+			store.shutDown();
+		}
+	}
+
 	@ParameterizedTest
 	@EnumSource(Route.class)
 	void repositoryRoutesExposeReadyValuesThroughWrapperStack(Route route, @TempDir File directory) {

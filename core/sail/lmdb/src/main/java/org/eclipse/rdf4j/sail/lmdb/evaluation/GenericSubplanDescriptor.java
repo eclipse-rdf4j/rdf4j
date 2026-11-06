@@ -99,6 +99,26 @@ final class GenericSubplanDescriptor {
 				() -> strategy.precompile(this.<TupleExpr>pinnedExpr(), context));
 	}
 
+	/** An internal component retains its caller's exact entry authority; it is not a new public request entry. */
+	QueryEvaluationStep precompileRuntimeSubtree(LmdbNativeEvaluationStrategy strategy,
+			QueryEvaluationContext context) {
+		return precompileRuntimeSubtree(this.<TupleExpr>pinnedExpr(), strategy, context);
+	}
+
+	/** One view into the same pinned template; only its selected preparation owns a mutable subtree clone. */
+	QueryEvaluationStep precompileRuntimeSubtree(TupleExpr original, LmdbNativeEvaluationStrategy strategy,
+			QueryEvaluationContext context) {
+		// Ordinary preparation and its retained runtime steps update model metadata/algorithms. Independent
+		// invocations/workers must not compile or execute against the same mutable nodes in this pinned template.
+		// Clone already-pinned functions without resolving the registry again, and remap every node-owned proof.
+		TupleExpr prepared = original.clone();
+		NativeGraphFusion.preserveLexicalScopes(original, prepared);
+		NativeValuePositionAnalysis positions = valuePositions == null ? null
+				: valuePositions.copySubtree(original, prepared);
+		return strategy.withValuePositions(positions,
+				() -> strategy.precompileRuntimeSubtree(prepared, context));
+	}
+
 	QueryValueEvaluationStep precompileValue(LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {
 		return strategy.withValuePositions(valuePositions,
 				() -> strategy.precompile(this.<ValueExpr>pinnedExpr(), context));

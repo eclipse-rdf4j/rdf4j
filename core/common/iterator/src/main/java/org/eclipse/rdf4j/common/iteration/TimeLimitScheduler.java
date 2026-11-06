@@ -30,7 +30,21 @@ final class TimeLimitScheduler {
 	// Leave room for a delayed wake-up while subtracting successive nanoTime readings.
 	static final long MAX_CHECK_INTERVAL_NANOS = Long.MAX_VALUE / 2;
 
-	private static final ScheduledThreadPoolExecutor EXECUTOR = createExecutor();
+	private static ScheduledThreadPoolExecutor executor;
+	private static int leases;
+
+	private static synchronized ScheduledThreadPoolExecutor retainExecutor() {
+		if (executor == null) { executor = createExecutor(); }
+		leases++;
+		return executor;
+	}
+
+	private static synchronized void releaseExecutor() {
+		if (--leases == 0) {
+			executor.shutdown();
+			executor = null;
+		}
+	}
 
 	private TimeLimitScheduler() {
 	}
@@ -110,7 +124,10 @@ final class TimeLimitScheduler {
 	static final class Task {
 
 		private final Runnable action;
-		private final ScheduledExecutorService executor;
+		private ScheduledExecutorService executor;
+		private final boolean sharedExecutor;
+		private boolean ownsLease;
+		private boolean actionStarted;
 		private final Consumer<Runnable> dispatch;
 		private boolean canceled;
 		private boolean armed;
@@ -118,12 +135,13 @@ final class TimeLimitScheduler {
 		private ScheduledFuture<?> future;
 
 		Task(Runnable action) {
-			this(action, EXECUTOR, runnable -> Thread.startVirtualThread(runnable));
+			this(action, null, runnable -> Thread.startVirtualThread(runnable));
 		}
 
 		Task(Runnable action, ScheduledExecutorService executor, Consumer<Runnable> dispatch) {
 			this.action = action;
 			this.executor = executor;
+			this.sharedExecutor = executor == null;
 			this.dispatch = dispatch;
 		}
 
@@ -133,7 +151,16 @@ final class TimeLimitScheduler {
 			}
 			armed = true;
 			this.deadline = deadline;
-			scheduleNext();
+			if (sharedExecutor) {
+				executor = retainExecutor();
+				ownsLease = true;
+			}
+			try {
+				scheduleNext();
+			} catch (RuntimeException | Error failure) {
+				releaseLease();
+				throw failure;
+			}
 		}
 
 		synchronized void cancel() {
@@ -141,6 +168,14 @@ final class TimeLimitScheduler {
 			if (future != null) {
 				future.cancel(false);
 				future = null;
+			}
+			releaseLease();
+		}
+
+		private void releaseLease() {
+			if (ownsLease) {
+				ownsLease = false;
+				releaseExecutor();
 			}
 		}
 
@@ -163,15 +198,23 @@ final class TimeLimitScheduler {
 				// User callbacks and iteration locks must never block the shared scheduler thread.
 				dispatch.accept(this::runAction);
 			} catch (RuntimeException | Error failure) {
-				LOGGER.warn("Could not dispatch time limit task", failure);
+				try {
+					dispatch.accept(this::runAction);
+				} catch (RuntimeException | Error retryFailure) {
+					LOGGER.warn("Could not dispatch time limit task", failure);
+					LOGGER.warn("Could not dispatch time limit task on retry", retryFailure);
+				}
+			} finally {
+				synchronized (this) { releaseLease(); }
 			}
 		}
 
 		private void runAction() {
 			synchronized (this) {
-				if (canceled) {
+				if (canceled || actionStarted) {
 					return;
 				}
+				actionStarted = true;
 			}
 			try {
 				action.run();

@@ -56,6 +56,42 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		HEDGE_BACKUP
 	}
 
+	private volatile Throwable filterCleanupFailure;
+
+	void filterCleanupFailed(Throwable problem) {
+		filterCleanupFailure = problem;
+	}
+
+	Throwable filterCleanupFailure() {
+		return filterCleanupFailure;
+	}
+
+	private NativeFilterLease filterAttempt;
+
+	void bindFilterAttempt(NativeFilterLease filters) {
+		if (filterAttempt != null && filterAttempt != filters) {
+			throw new IllegalStateException("cost observation already has a native filter attempt");
+		}
+		filterAttempt = filters;
+	}
+
+	NativeFilterLease filterAttempt() {
+		return filterAttempt;
+	}
+
+	NativeFilterLease openFilterAttempt(NativeFilterLease parent) {
+		if (filterAttempt == null) {
+			filterAttempt = new NativeFilterLease(parent);
+		}
+		return filterAttempt;
+	}
+
+	void discardUnselectedFilters() {
+		if (filterAttempt != null && !filterAttempt.isSelected()) {
+			filterAttempt.discard();
+		}
+	}
+
 	private static final int FEATURE_COUNT = LmdbNativeCostVector.Feature.values().length;
 	private static final int OPEN_STATE = 0;
 	private static final int COMPLETED_STATE = 1;

@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
@@ -100,7 +101,7 @@ class ValueStoreCountAuthorityTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
-	void unknownCountCertificateSurvivesReadOnlyOpenAndClose(boolean legacy) throws Exception {
+	void unsupportedCountCertificateRejectsOpenWithoutMutation(boolean legacy) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig().setSketchEstimatorEnabled(false);
 		if (legacy) {
 			LmdbCompatibilityFixtures.extract("v2-601-minimal.zip", directory);
@@ -117,40 +118,33 @@ class ValueStoreCountAuthorityTest {
 				.putInt(0)
 				.array();
 		LmdbCompatibilityFixtures.nativePut(directory, "ref_counts", new byte[] { 0 }, certificate);
+		byte[] before = Files.readAllBytes(directory.resolve("values/data.mdb"));
 		for (int reopen = 0; reopen < 2; reopen++) {
-			LmdbStore conservative = new LmdbStore(directory.toFile(), config);
-			conservative.init();
-			try {
-				assertFalse(conservative.getStartupStatus().exactReferenceCounts());
-				assertTrue(conservative.getStartupStatus().referenceCountVerificationPending());
-			} finally {
-				conservative.shutDown();
-			}
+			LmdbStore refused = new LmdbStore(directory.toFile(), config);
+			SailException failure = assertThrows(SailException.class, refused::init);
+			assertTrue(String.valueOf(failure.getCause()).contains("Unsupported ValueStore ref-count metadata schema"));
+			refused.shutDown();
+			assertArrayEquals(before, Files.readAllBytes(directory.resolve("values/data.mdb")),
+					"unsupported schema must be rejected before native mutation");
 			assertArrayEquals(certificate,
-					LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 }),
-					"ordinary admission must preserve an unsupported certificate without endorsing it");
+					LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 }));
 		}
 	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
-	void unknownOwnerMutationPreservesUnsupportedCertificateWithoutPromotingCounts(boolean legacy) throws Exception {
-		LmdbStoreConfig config = new LmdbStoreConfig().setSketchEstimatorEnabled(false);
+	void recognizedUnknownOwnerMutationDoesNotPromoteCounts(boolean legacy) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setSketchEstimatorEnabled(false)
+				.setLegacyReferenceCountRepairEnabled(true);
 		if (legacy) {
 			LmdbCompatibilityFixtures.extract("v2-601-minimal.zip", directory);
-		} else {
-			LmdbStore created = new LmdbStore(directory.toFile(), config);
-			created.init();
-			created.shutDown();
 		}
-		byte[] certificate = ByteBuffer.allocate(18)
-				.putInt(0x52434654)
-				.put((byte) 99)
-				.put((byte) 1)
-				.putLong(0L)
-				.putInt(0)
-				.array();
-		LmdbCompatibilityFixtures.nativePut(directory, "ref_counts", new byte[] { 0 }, certificate);
+		LmdbStore created = new LmdbStore(directory.toFile(), config);
+		created.init();
+		created.shutDown();
+		// Missing recognized authority means UNKNOWN, unlike a future certificate whose schema cannot be read.
+		LmdbCompatibilityFixtures.nativePut(directory, "ref_counts", new byte[] { 0 }, null);
+		LmdbCompatibilityFixtures.nativePut(directory, "gc_meta", ReferenceCountProof.KEY, null);
 		var vf = SimpleValueFactory.getInstance();
 		var subject = vf.createIRI("urn:unknown-certificate:subject");
 		var predicate = vf.createIRI("urn:unknown-certificate:predicate");
@@ -159,6 +153,9 @@ class ValueStoreCountAuthorityTest {
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (var connection = repository.getConnection()) {
+			assertFalse(store.getStartupStatus().exactReferenceCounts());
+			assertTrue(store.getStartupStatus().referenceCountVerificationPending());
+			assertFalse(((ValueStore) store.getValueFactory()).isValueReclamationEnabled());
 			connection.begin();
 			connection.add(subject, predicate, object);
 			connection.commit();
@@ -166,14 +163,13 @@ class ValueStoreCountAuthorityTest {
 		} finally {
 			repository.shutDown();
 		}
-		assertArrayEquals(certificate, LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 }),
-				"an unsupported certificate cannot be rewritten by an untracked owner mutation");
 		assertNull(LmdbCompatibilityFixtures.nativeGet(directory, "gc_meta", ReferenceCountProof.KEY));
 		LmdbStore reopened = new LmdbStore(directory.toFile(), config);
 		repository = new SailRepository(reopened);
 		repository.init();
 		try (var connection = repository.getConnection()) {
 			assertFalse(reopened.getStartupStatus().exactReferenceCounts());
+			assertFalse(((ValueStore) reopened.getValueFactory()).isValueReclamationEnabled());
 			assertTrue(connection.hasStatement(subject, predicate, object, false));
 		} finally {
 			repository.shutDown();
@@ -277,6 +273,7 @@ class ValueStoreCountAuthorityTest {
 			// No writer runs while copying this committed native image. Omit close, just as a JVM crash does.
 			Files.createDirectories(crashed);
 			Files.copy(live.resolve("data.mdb"), crashed.resolve("data.mdb"));
+			Files.copy(live.resolve(StoreProperties.FILE_NAME), crashed.resolve(StoreProperties.FILE_NAME));
 			List<LmdbStartupDiagnostics.Operation> observed = new ArrayList<>();
 			LmdbStartupDiagnostics.OBSERVER.set(observed::add);
 			try (ClosingValueStore reopened = new ClosingValueStore(crashed.toFile(), new LmdbStoreConfig())) {

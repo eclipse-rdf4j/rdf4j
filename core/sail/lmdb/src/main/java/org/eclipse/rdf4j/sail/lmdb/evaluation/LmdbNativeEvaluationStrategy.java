@@ -26,8 +26,10 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -41,11 +43,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
+import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPartitionedDistinctIteration;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPreparedFilterOutcome;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStableOrderPlanner;
 
 /**
@@ -55,7 +58,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStableOrderPlanner;
 @SuppressWarnings("deprecation")
 @Experimental
 @InternalUseOnly
-public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
+public final class LmdbNativeEvaluationStrategy extends LmdbEvaluationStrategy
 		implements org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider.Host {
 
 	private final NativeLmdbQuerySource nativeSource;
@@ -77,6 +80,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private volatile boolean trackTimeShadow;
 	private volatile boolean trackResultSizeShadow;
 	private volatile LmdbNativeEvaluationStrategy genericOnlyView;
+	private volatile LmdbNativeEvaluationStrategy exactOriginView;
+	private final boolean requireExactOrigins;
 	private volatile NativeValuePositionAnalysis valuePositions;
 	private ThreadLocal<NativeValuePositionAnalysis> scopedValuePositions = new ThreadLocal<>();
 	/** The enclosing generic join owns this temporary input hint only while its children are prepared. */
@@ -104,6 +109,11 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		}
 	}
 
+	/** Freeze the existing owning analysis while composing a consumer's nested semantic aggregate stack. */
+	<T> T withValuePositionsFor(TupleExpr expression, Supplier<T> action) {
+		return withValuePositions(selectValuePositions(expression), action);
+	}
+
 	private void setValuePositions(NativeValuePositionAnalysis positions) {
 		if (scopedValuePositions.get() != null) {
 			scopedValuePositions.set(positions);
@@ -111,6 +121,9 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			valuePositions = positions;
 			if (genericOnlyView != null) {
 				genericOnlyView.valuePositions = positions;
+			}
+			if (exactOriginView != null) {
+				exactOriginView.valuePositions = positions;
 			}
 		}
 	}
@@ -170,13 +183,23 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private LmdbNativeEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
 			EvaluationStatistics evaluationStatistics, boolean trackResultSize, boolean nativeEnabled) {
+		this(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics,
+				trackResultSize, nativeEnabled, false);
+	}
+
+	private LmdbNativeEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
+			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
+			EvaluationStatistics evaluationStatistics, boolean trackResultSize, boolean nativeEnabled,
+			boolean requireExactOrigins) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics,
 				trackResultSize);
+		setQueryEvaluationMode(QueryEvaluationMode.STRICT);
 		NativeLmdbQuerySource extracted = extractNativeSource(tripleSource);
 		// legacy stores without canonical language tags can hold two ids for one RDF term, so every id-keyed
 		// native path could diverge from the generic engine there — decline them entirely
 		this.nativeSource = extracted != null && extracted.hasCanonicalIds() ? extracted : null;
 		this.nativeEnabled = nativeEnabled;
+		this.requireExactOrigins = requireExactOrigins;
 		this.forceRootGeneric = Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceRootGeneric");
 		this.forcedExecutionStrategy = resolveForcedExecutionStrategy();
 		this.evaluationStatistics = evaluationStatistics;
@@ -287,6 +310,41 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		return view;
 	}
 
+	/** The standalone compiler may supply its actual native source separately from this strategy's TripleSource. */
+	LmdbNativeEvaluationStrategy exactOriginView(NativeLmdbQuerySource actualSource) {
+		return nativeSource == actualSource ? exactOriginView() : forWorker(actualSource).exactOriginView();
+	}
+
+	/** Immutable preparation capability; lazy callbacks and source-confined worker views retain this requirement. */
+	LmdbNativeEvaluationStrategy exactOriginView() {
+		if (requireExactOrigins) {
+			return this;
+		}
+		LmdbNativeEvaluationStrategy view = exactOriginView;
+		if (view == null) {
+			synchronized (this) {
+				view = exactOriginView;
+				if (view == null) {
+					view = new LmdbNativeEvaluationStrategy(tripleSourceArg, datasetArg, serviceResolverShadow,
+							iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, nativeEnabled,
+							true);
+					view.setCollectionFactory(getCollectionFactory());
+					view.setTrackTime(trackTimeShadow);
+					view.setTrackResultSize(trackResultSizeShadow);
+					view.setQueryEvaluationMode(getQueryEvaluationMode());
+					view.setQueryExecutionPolicy(getQueryExecutionPolicy());
+					view.valuePositions = valuePositions;
+					view.scopedValuePositions = scopedValuePositions;
+					if (optimizerPipelineShadow != null) {
+						view.setOptimizerPipeline(optimizerPipelineShadow);
+					}
+					exactOriginView = view;
+				}
+			}
+		}
+		return view;
+	}
+
 	QueryEvaluationContext evaluationContext(QueryEvaluationContext structural) {
 		return new EvaluationScopedQueryEvaluationContext(structural, valueCapturer());
 	}
@@ -318,7 +376,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source, NativeValuePositionAnalysis positions) {
 		LmdbNativeEvaluationStrategy worker = new LmdbNativeEvaluationStrategy(
 				new NativeWorkerTripleSource(source, valueFactory()), datasetArg, serviceResolverShadow,
-				iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, nativeEnabled);
+				iterationCacheSyncThresholdArg, evaluationStatistics, trackResultSizeArg, nativeEnabled,
+				requireExactOrigins);
 		worker.setCollectionFactory(getCollectionFactory());
 		worker.setTrackTime(trackTimeShadow);
 		worker.setTrackResultSize(trackResultSizeShadow);
@@ -339,6 +398,10 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		if (view != null) {
 			view.setFederatedServiceResolver(resolver);
 		}
+		view = exactOriginView;
+		if (view != null) {
+			view.setFederatedServiceResolver(resolver);
+		}
 	}
 
 	@Override
@@ -346,6 +409,10 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		super.setOptimizerPipeline(pipeline);
 		this.optimizerPipelineShadow = pipeline;
 		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setOptimizerPipeline(pipeline);
+		}
+		view = exactOriginView;
 		if (view != null) {
 			view.setOptimizerPipeline(pipeline);
 		}
@@ -359,6 +426,10 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		if (view != null) {
 			view.setTrackTime(trackTime);
 		}
+		view = exactOriginView;
+		if (view != null) {
+			view.setTrackTime(trackTime);
+		}
 	}
 
 	@Override
@@ -366,6 +437,10 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		super.setTrackResultSize(trackResultSize);
 		this.trackResultSizeShadow = trackResultSize;
 		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setTrackResultSize(trackResultSize);
+		}
+		view = exactOriginView;
 		if (view != null) {
 			view.setTrackResultSize(trackResultSize);
 		}
@@ -378,6 +453,10 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		if (view != null) {
 			view.setCollectionFactory(collectionFactory);
 		}
+		view = exactOriginView;
+		if (view != null) {
+			view.setCollectionFactory(collectionFactory);
+		}
 	}
 
 	@Override
@@ -387,12 +466,44 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		if (view != null) {
 			view.setQueryEvaluationMode(queryEvaluationMode);
 		}
+		view = exactOriginView;
+		if (view != null) {
+			view.setQueryEvaluationMode(queryEvaluationMode);
+		}
+	}
+
+	@Override
+	public synchronized void setQueryExecutionPolicy(QueryExecutionPolicy policy) {
+		super.setQueryExecutionPolicy(policy);
+		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setQueryExecutionPolicy(policy);
+		}
+		view = exactOriginView;
+		if (view != null) {
+			view.setQueryExecutionPolicy(policy);
+		}
 	}
 
 	@Override
 	protected QueryEvaluationContext createArrayBindingContext(QueryEvaluationContext context, String[] allVariables) {
 		return new LmdbQueryEvaluationContext(super.createArrayBindingContext(context, allVariables),
 				new QueryWideVarLayout(allVariables));
+	}
+
+	LmdbPreparedFilterOutcome prepareFilterOutcomeFeedback(Filter surface, Filter origin) {
+		return prepareNativeFilterOutcome(surface, origin);
+	}
+
+	@Override
+	public QueryEvaluationStep precompileFinalTupleResult(TupleExpr expr) {
+		return precompileFinalTupleResultWithCommonSetup(expr);
+	}
+
+	@Override
+	protected QueryEvaluationStep precompileFinalTupleResultExpr(TupleExpr expr, QueryEvaluationContext context) {
+		NativeValuePositionAnalysis positions = selectValuePositions(expr);
+		return withValuePositions(positions, () -> precompileWithPreparedValues(expr, context, true));
 	}
 
 	@Override
@@ -419,7 +530,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 
 	@Override
 	protected QueryEvaluationStep prepare(Join join, QueryEvaluationContext context) {
-		NativeUniformValuesJoin.Hint hint = nativeEnabled && nativeSource != null && !forceRootGeneric
+		NativeUniformValuesJoin.Hint hint = !requireExactOrigins && nativeEnabled && nativeSource != null
+				&& !forceRootGeneric
 				&& !Boolean.TRUE.equals(KERNEL_SUBPLAN.get())
 						? NativeUniformValuesJoin.prepare(join, context, this, nativeSource)
 						: null;
@@ -440,19 +552,51 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context) {
+		return precompileWithPreparedValues(expr, context, false);
+	}
+
+	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context,
+			boolean finalTupleResult) {
+		if (requireExactOrigins) {
+			if (nativeEnabled && nativeSource != null && nativeSource.hasStatementsInSource()
+					&& NativeExactOriginStep.supports(expr)) {
+				QueryEvaluationStep nativeLeaf = LmdbNativeAggregateCompiler.tryCompile(expr, context, this,
+						nativeSource);
+				if (nativeLeaf != null) {
+					return new NativeExactOriginStep(nativeLeaf,
+							new NativeSemanticOriginStep(expr, context, this, nativeSource), expr);
+				}
+			}
+			// Composite primitive rows have no actual branch/failed-BIND origin carrier. Preserve their semantic
+			// operators before consumption, recursively admitting only children with the same exact capability.
+			return super.precompileTupleExpr(expr, context);
+		}
 		if (nativeEnabled && nativeSource != null) {
 			if (expr instanceof QueryRoot) {
-				return compileHostedPlan(expr, context);
+				return compileHostedPlan(expr, context, finalTupleResult);
 			}
 			if (nativeSource.hasStatementsInSource()) {
 				QueryEvaluationStep aggregateStep = LmdbNativeAggregateCompiler.tryCompile(expr, context, this,
 						nativeSource);
 				if (aggregateStep != null) {
-					return aggregateStep;
+					return fullRowOriginBoundary(expr, aggregateStep, context);
 				}
 			}
 		}
 		return super.precompileTupleExpr(expr, context);
+	}
+
+	/** Generic hosts also observe the exact authority of independently admitted, projection-less native children. */
+	private QueryEvaluationStep fullRowOriginBoundary(TupleExpr expression, QueryEvaluationStep step,
+			QueryEvaluationContext context) {
+		if (!(step instanceof NativeRowsStep) || NativeBGPOrigin.hasProjection(expression)) {
+			return step;
+		}
+		LmdbNativeEvaluationStrategy semantic = exactOriginView(nativeSource);
+		return NativeExactOriginStep.supports(expression)
+				? new NativeExactOriginStep(step, new NativeSemanticOriginStep(expression, context, this, nativeSource),
+						expression)
+				: semantic.precompileRuntimeSubtree(expression, context);
 	}
 
 	/**
@@ -466,17 +610,20 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 * is today's generic compilation, whose per-child recursion re-enters this strategy's {@code precompile} and keeps
 	 * claiming interior native fragments exactly as before.
 	 */
-	private QueryEvaluationStep compileHostedPlan(TupleExpr expr, QueryEvaluationContext context) {
+	private QueryEvaluationStep compileHostedPlan(TupleExpr expr, QueryEvaluationContext context,
+			boolean finalTupleResult) {
 		LmdbNativeAggregateCompiler.CompileOutcome outcome;
 		if (forceRootGeneric) {
 			outcome = LmdbNativeAggregateCompiler.CompileOutcome.unsupported("forceRootGeneric");
 		} else if (!nativeSource.hasStatementsInSource()) {
 			outcome = LmdbNativeAggregateCompiler.CompileOutcome.unsupported("known-empty-source");
 		} else {
-			outcome = LmdbNativeAggregateCompiler.compileRoot(expr, context, this, nativeSource);
+			outcome = finalTupleResult
+					? LmdbNativeAggregateCompiler.compileFinalTupleResult(expr, context, this, nativeSource)
+					: LmdbNativeAggregateCompiler.compileRoot(expr, context, this, nativeSource);
 		}
 		if (outcome.isSupported()) {
-			return outcome.step();
+			return fullRowOriginBoundary(expr, outcome.step(), context);
 		}
 		// forceRootGeneric compiles through the claim-suppressed view so every lazy runtime precompile callback from
 		// generic operators lands on it; default mode keeps today's generic compilation, whose recursion re-enters
@@ -495,7 +642,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		Optional<LmdbStableOrderPlanner.Resolution> resolution = getQueryExecutionPolicy()
+		Optional<LmdbStableOrderPlanner.Resolution> resolution = !requireExactOrigins && getQueryExecutionPolicy()
 				.experimentalQueryOptimizations()
 						? stableOrderPlanner.plan(node.getArg())
 						: Optional.empty();
@@ -508,7 +655,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		Optional<LmdbStableOrderPlanner.Resolution> resolution = getQueryExecutionPolicy()
+		Optional<LmdbStableOrderPlanner.Resolution> resolution = !requireExactOrigins && getQueryExecutionPolicy()
 				.experimentalQueryOptimizations()
 						? stableOrderPlanner.plan(node.getArg())
 						: Optional.empty();
@@ -567,12 +714,12 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 
 	@Override
 	public org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider batchCorrelatedJoinProvider() {
-		return nativeEnabled && nativeSource != null ? LmdbNativeAccumulateJoin.INSTANCE : null;
+		return !requireExactOrigins && nativeEnabled && nativeSource != null ? LmdbNativeAccumulateJoin.INSTANCE : null;
 	}
 
 	QueryEvaluationStep genericPrecompile(TupleExpr expr, QueryEvaluationContext context) {
 		if (AdaptiveFilterEvaluationStep.isPlanningContext(context)) {
-			return super.precompileTupleExpr(expr, context);
+			return super.precompileGenericRuntimeSubtree(expr, context);
 		}
 		// Runtime bridges may supply a fresh structural view. Re-enter reservation, capture and planning setup while
 		// selecting the ordinary compiler for this operand; its children can still claim native fragments.

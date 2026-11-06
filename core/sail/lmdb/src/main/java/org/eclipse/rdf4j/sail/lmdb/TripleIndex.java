@@ -107,7 +107,12 @@ public class TripleIndex {
 	}
 
 	public char[] getFieldSeq() {
-		return fieldSeq;
+		// Defensive copy: pattern scoring and key encoding must always use the constructor's field sequence.
+		return fieldSeq.clone();
+	}
+
+	boolean isSpoc() {
+		return fieldSeq[0] == 's' && fieldSeq[1] == 'p' && fieldSeq[2] == 'o' && fieldSeq[3] == 'c';
 	}
 
 	@InternalUseOnly
@@ -431,6 +436,10 @@ public class TripleIndex {
 		}
 	}
 
+	void keyToQuad(long keyAddress, int keyLength, long[] quad) {
+		Varint.readQuadUnsigned(keyAddress, keyLength, indexMap, quad);
+	}
+
 	int keyToQuadMatchStatus(ByteBuffer key, int rangePrefixLength, long matchSubj, long matchPred, long matchObj,
 			long matchContext, long[] quad) {
 		for (int i = 0; i < indexMap.length; i++) {
@@ -579,6 +588,15 @@ public class TripleIndex {
 	}
 
 	static TripleIndex getBestIndex(List<TripleIndex> indexes, long subj, long pred, long obj, long context) {
+		if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
+			// Wildcard scans iterate subject-locally; prefer spoc when it exists.
+			for (TripleIndex index : indexes) {
+				if (index.isSpoc()) {
+					return index;
+				}
+			}
+		}
+
 		int bestScore = -1;
 		TripleIndex bestIndex = null;
 
@@ -587,6 +605,9 @@ public class TripleIndex {
 			if (score > bestScore) {
 				bestScore = score;
 				bestIndex = index;
+				if (score == 4) {
+					return bestIndex;
+				}
 			}
 		}
 
