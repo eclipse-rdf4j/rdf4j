@@ -14,20 +14,20 @@ package org.eclipse.rdf4j.repository.util;
 import org.eclipse.rdf4j.rio.helpers.LongRioSetting;
 
 /**
- * Resource limits applied by {@link RDFLoader} to nested compressed RDF input.
+ * Resource limits applied by {@link RDFLoader} to compressed RDF input.
  */
 public final class RDFLoaderSettings {
 
-	/** Maximum aggregate number of bytes produced below the first archive or compression layer. */
+	/** Maximum aggregate number of bytes produced by archive and compression layers. */
 	public static final LongRioSetting MAX_EXPANDED_BYTES = new LongRioSetting(
-			"org.eclipse.rdf4j.rio.loader.max_expanded_bytes", "Maximum aggregate nested expanded RDF input bytes",
+			"org.eclipse.rdf4j.rio.loader.max_expanded_bytes", "Maximum aggregate expanded RDF input bytes",
 			4L * 1024 * 1024 * 1024);
 
-	/** Maximum nested expanded-to-top-level compressed byte ratio after the grace window. */
+	/** Maximum expanded-to-top-level compressed byte ratio after the grace window. */
 	public static final LongRioSetting MAX_EXPANSION_RATIO = new LongRioSetting(
-			"org.eclipse.rdf4j.rio.loader.max_expansion_ratio", "Maximum nested RDF input expansion ratio", 200L);
+			"org.eclipse.rdf4j.rio.loader.max_expansion_ratio", "Maximum RDF input expansion ratio", 200L);
 
-	/** Nested expanded bytes exempted from expansion-ratio enforcement. */
+	/** Expanded bytes exempted from expansion-ratio enforcement. */
 	public static final LongRioSetting EXPANSION_RATIO_GRACE_BYTES = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.loader.expansion_ratio_grace_bytes", "RDF input expansion ratio grace bytes",
 			1024L * 1024);

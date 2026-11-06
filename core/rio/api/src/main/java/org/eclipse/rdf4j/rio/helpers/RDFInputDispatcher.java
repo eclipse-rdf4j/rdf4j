@@ -43,10 +43,10 @@ public final class RDFInputDispatcher {
 	private static final int TAR_SIGNATURE_LENGTH = 512;
 	private static final String LIMIT_PREFIX = "RDF input decompression limit exceeded: ";
 	private static final LongRioSetting MAX_EXPANDED_BYTES = new LongRioSetting(
-			"org.eclipse.rdf4j.rio.loader.max_expanded_bytes", "Maximum aggregate nested expanded RDF input bytes",
+			"org.eclipse.rdf4j.rio.loader.max_expanded_bytes", "Maximum aggregate expanded RDF input bytes",
 			4L * 1024 * 1024 * 1024);
 	private static final LongRioSetting MAX_EXPANSION_RATIO = new LongRioSetting(
-			"org.eclipse.rdf4j.rio.loader.max_expansion_ratio", "Maximum nested RDF input expansion ratio", 200L);
+			"org.eclipse.rdf4j.rio.loader.max_expansion_ratio", "Maximum RDF input expansion ratio", 200L);
 	private static final LongRioSetting EXPANSION_RATIO_GRACE_BYTES = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.loader.expansion_ratio_grace_bytes", "RDF input expansion ratio grace bytes",
 			1024L * 1024);
@@ -119,7 +119,7 @@ public final class RDFInputDispatcher {
 		if (decompressedInput != decoderSource) {
 			try (InputStream decoder = decompressedInput) {
 				long compressionDepth = enterLayer(budget, depth);
-				InputStream nestedInput = compressionDepth > 1 ? budget.expanded(decompressedInput) : decompressedInput;
+				InputStream nestedInput = budget.expanded(decompressedInput);
 				InputStream recursiveInput = nonClosingMarkable(nestedInput);
 				int terminalCount = dispatch(recursiveInput,
 						RioCompression.removeCompressionExtension(sourceName, archiveMember), fallbackFormat, consumer,
@@ -155,7 +155,7 @@ public final class RDFInputDispatcher {
 		try (ZipInputStream zipInput = new ZipInputStream(compressedInput)) {
 			for (ZipEntry entry = zipInput.getNextEntry(); entry != null; entry = zipInput.getNextEntry()) {
 				budget.enterArchiveEntry("ZIP");
-				InputStream entryInput = entryInput(zipInput, budget, depth);
+				InputStream entryInput = entryInput(zipInput, budget);
 				try {
 					if (!entry.isDirectory()) {
 						terminalCount += dispatch(entryInput, entry.getName(), fallbackFormat, consumer, budget, depth,
@@ -179,7 +179,7 @@ public final class RDFInputDispatcher {
 			for (Object entry = CommonsTarSupport.nextEntry(tarInput); entry != null; entry = CommonsTarSupport
 					.nextEntry(tarInput)) {
 				budget.enterArchiveEntry("TAR");
-				InputStream entryInput = entryInput(tarInput, budget, depth);
+				InputStream entryInput = entryInput(tarInput, budget);
 				String entryName = CommonsTarSupport.name(entry);
 				try {
 					if (CommonsTarSupport.isRegularFile(entry)) {
@@ -195,9 +195,8 @@ public final class RDFInputDispatcher {
 		return requireArchiveMember(terminalCount, sourceName);
 	}
 
-	private static InputStream entryInput(InputStream container, Budget budget, long depth) {
-		InputStream entry = new UncloseableInputStream(container);
-		return depth > 1 ? budget.expanded(entry) : entry;
+	private static InputStream entryInput(InputStream container, Budget budget) {
+		return budget.expanded(new UncloseableInputStream(container));
 	}
 
 	private static int requireArchiveMember(int terminalCount, String sourceName) {
