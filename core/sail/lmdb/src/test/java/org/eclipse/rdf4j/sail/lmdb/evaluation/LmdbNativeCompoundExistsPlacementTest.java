@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -35,6 +36,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -147,6 +150,58 @@ class LmdbNativeCompoundExistsPlacementTest {
 		assertThat(alias.inverted).isNull();
 		assertThat(drainInOrder(alias)).isEqualTo(1);
 		assertThat(((NativeAliasJoinPlan) alias.clonePlan(left, right)).inverted).isNull();
+	}
+
+	@Test
+	void compiledEmptyGraphWitnessKeepsTheKnownScalarPlacementFrame() throws Exception {
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addDefaultGraph(SimpleValueFactory.getInstance().createIRI("urn:default"));
+		LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
+		QueryValueEvaluationStep value = bindings -> SimpleValueFactory.getInstance().createLiteral(false);
+		when(strategy.precompile(any(ValueExpr.class), any(QueryEvaluationContext.class))).thenReturn(value);
+		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
+				new QueryEvaluationContext.Minimal(dataset), strategy, mock(NativeLmdbQuerySource.class));
+		assertThat(planner.slot("source")).isZero();
+		assertThat(planner.slot("value")).isEqualTo(1);
+		assertThat(planner.slot("alias")).isEqualTo(2);
+		StatementPattern named = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				new Var("witness"), new Var("p", SimpleValueFactory.getInstance().createIRI("urn:p")),
+				new Var("object"), new Var("graph"));
+		NativeBooleanFilter predicate = planner.compileBoolean(new Or(
+				new Compare(new Var("value"), new Var("value"), Compare.CompareOp.EQ), new Exists(named)));
+		assertThat(predicate).isInstanceOf(BooleanCombinationFilter.class);
+		assertThat(predicate.capabilities().correlationReads()).isEqualTo(-1L);
+		assertThat(predicate.capabilities().requiresCompleteReads()).isFalse();
+
+		long valueId = ValueIds.createId(ValueIds.T_URI, 100L);
+		SlotPlan both = new MultiJoinPlan(new SlotPlan[] { values(0, 10L), values(1, valueId) },
+				new MaskedFilter[0]);
+		SlotPlan base = new FilterPlan(new UnionPlan(both, values(0, 10L)), predicate, 1L << 1);
+		SlotPlan left = new ExtensionPlan(base, new CopyBinding[] { CopyBinding.slot(2, 0) });
+		SlotPlan right = new MultiJoinPlan(new SlotPlan[] { values(2, 10L), values(1, valueId) },
+				new MaskedFilter[0]);
+		SlotPlan joined = SlotPlan.join(left, right);
+		assertThat(joined).isInstanceOf(NativeAliasJoinPlan.class);
+		NativeAliasJoinPlan alias = (NativeAliasJoinPlan) joined;
+		assertThat(drainInOrder(alias.original)).isEqualTo(1);
+		assertThat(alias.inverted).isNull();
+		assertThat(drainInOrder(alias)).isEqualTo(1);
+	}
+
+	@Test
+	void aLegacyCompositeMayStillInvertWhenItsPlacementInputsAreAssured() throws Exception {
+		NativeBooleanFilter predicate = new BooleanCombinationFilter(slotEquals(1, 100L), row -> false, false);
+		SlotPlan both = new MultiJoinPlan(new SlotPlan[] { values(0, 10L), values(1, 100L) },
+				new MaskedFilter[0]);
+		SlotPlan left = new ExtensionPlan(new FilterPlan(both, predicate, 1L << 1),
+				new CopyBinding[] { CopyBinding.slot(2, 0) });
+		SlotPlan right = new MultiJoinPlan(new SlotPlan[] { values(2, 10L), values(1, 100L) },
+				new MaskedFilter[0]);
+		SlotPlan joined = SlotPlan.join(left, right);
+		assertThat(joined).isInstanceOf(NativeAliasJoinPlan.class);
+		NativeAliasJoinPlan alias = (NativeAliasJoinPlan) joined;
+		assertThat(alias.inverted).isNotNull();
+		assertThat(drainInOrder(alias.original)).isEqualTo(drainInOrder(alias.inverted));
 	}
 
 	@Test

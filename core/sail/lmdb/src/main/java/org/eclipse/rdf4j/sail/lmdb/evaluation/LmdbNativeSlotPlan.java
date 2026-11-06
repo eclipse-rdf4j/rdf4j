@@ -422,7 +422,7 @@ interface SlotPlan {
 		}
 		// Legacy predicates retain their established placement-mask contract. Witnesses and semantic callbacks
 		// explicitly require a separate complete read proof, including through worker and composition wrappers.
-		return capabilities.requiresCompleteReads();
+		return capabilities.requiresCompleteReads() || (placementMask & ~assuredBefore & siblingSlots) != 0L;
 	}
 
 	/**
