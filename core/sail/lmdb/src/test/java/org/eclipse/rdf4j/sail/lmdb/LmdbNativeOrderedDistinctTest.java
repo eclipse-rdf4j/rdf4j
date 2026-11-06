@@ -110,7 +110,6 @@ class LmdbNativeOrderedDistinctTest {
 		String previousInterpreter = System.getProperty(INTERPRETER_FLAG);
 		System.setProperty(JANINO_FLAG, "false");
 		System.setProperty(INTERPRETER_FLAG, "false");
-		KernelExecutionTestAccess.resetCostCalibration();
 		SailRepository repository = repository("group-argument", "spoc");
 		try {
 			addNumericGroups(repository);
@@ -120,8 +119,10 @@ class LmdbNativeOrderedDistinctTest {
 			assertThat(explain(repository, query))
 					.contains("distinctChannels=[MONOTONIC]")
 					.contains("groupOrderPrefix=1");
-			assertNativeMatchesGeneric(repository, query, 2);
-			assertThat(strategy(repository, query)).isEqualTo("orderedDistinctGroups");
+			// the ordered-distinct group operator carries a fixed cost no fixture of this size amortises against
+			// the sequential path; this test is about that operator, so it forces it
+			assertNativeMatchesGeneric(repository, query, 2, "orderedDistinctGroups");
+			assertThat(strategy(repository, query, "orderedDistinctGroups")).isEqualTo("orderedDistinctGroups");
 		} finally {
 			repository.shutDown();
 			restoreProperty(JANINO_FLAG, previousJanino);
@@ -496,8 +497,16 @@ class LmdbNativeOrderedDistinctTest {
 	}
 
 	private String strategy(SailRepository repository, String query) {
+		return strategy(repository, query, null);
+	}
+
+	private String strategy(SailRepository repository, String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			String strategy = findStrategy(connection.prepareTupleQuery(query)
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			String strategy = findStrategy(prepared
 					.explain(Explanation.Level.Telemetry)
 					.toGenericPlanNode());
 			assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
@@ -542,7 +551,12 @@ class LmdbNativeOrderedDistinctTest {
 	}
 
 	private void assertNativeMatchesGeneric(SailRepository repository, String query, int expectedRows) {
-		List<String> nativeRows = rows(repository, query);
+		assertNativeMatchesGeneric(repository, query, expectedRows, null);
+	}
+
+	private void assertNativeMatchesGeneric(SailRepository repository, String query, int expectedRows,
+			String forcedStrategy) {
+		List<String> nativeRows = rows(repository, query, forcedStrategy);
 		String previous = System.getProperty(NATIVE_FLAG);
 		List<String> genericRows;
 		try {
@@ -559,9 +573,17 @@ class LmdbNativeOrderedDistinctTest {
 	}
 
 	private List<String> rows(SailRepository repository, String query) {
+		return rows(repository, query, null);
+	}
+
+	private List<String> rows(SailRepository repository, String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
 			ArrayList<String> rows = new ArrayList<>();
-			for (BindingSet row : QueryResults.asList(connection.prepareTupleQuery(query).evaluate())) {
+			for (BindingSet row : QueryResults.asList(prepared.evaluate())) {
 				ArrayList<String> names = new ArrayList<>(row.getBindingNames());
 				names.sort(String::compareTo);
 				StringBuilder canonical = new StringBuilder();

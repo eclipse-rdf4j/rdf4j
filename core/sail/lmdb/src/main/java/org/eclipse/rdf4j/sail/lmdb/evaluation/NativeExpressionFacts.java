@@ -30,12 +30,11 @@ import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 
 /**
  * Conservative semantic facts for one SPARQL value expression.
@@ -61,15 +60,17 @@ final class NativeExpressionFacts {
 	private final boolean repeatable;
 	private final boolean mayError;
 	private final boolean scopeChanging;
+	private final boolean readsComplete;
 	private final Map<String, String> aliases;
 
 	private NativeExpressionFacts(ValueExpr expression, Set<String> requiredNames, boolean repeatable,
-			boolean mayError, boolean scopeChanging, Map<String, String> aliases) {
+			boolean mayError, boolean scopeChanging, boolean readsComplete, Map<String, String> aliases) {
 		this.expression = expression;
 		this.requiredNames = Collections.unmodifiableSet(requiredNames);
 		this.repeatable = repeatable;
 		this.mayError = mayError;
 		this.scopeChanging = scopeChanging;
+		this.readsComplete = readsComplete;
 		this.aliases = Map.copyOf(aliases);
 	}
 
@@ -78,12 +79,13 @@ final class NativeExpressionFacts {
 	}
 
 	static NativeExpressionFacts of(ValueExpr expression, Map<String, String> aliases) {
+		var reads = FilterBindingScope.conditionBindingReads(expression);
 		Set<String> names = new HashSet<>();
-		for (String name : VarNameCollector.process(expression)) {
+		for (String name : reads.bindingNames()) {
 			names.add(resolveAlias(name, aliases));
 		}
 		return new NativeExpressionFacts(expression, names, isNativeRepeatable(expression), mayError(expression),
-				containsScopeChange(expression), aliases);
+				containsScopeChange(expression), reads.complete(), aliases);
 	}
 
 	Set<String> requiredNames() {
@@ -100,6 +102,10 @@ final class NativeExpressionFacts {
 
 	boolean scopeChanging() {
 		return scopeChanging;
+	}
+
+	boolean readsComplete() {
+		return readsComplete;
 	}
 
 	/** Returns the source-order conjuncts. No conjunct is reordered or evaluated independently by this operation. */
@@ -241,20 +247,8 @@ final class NativeExpressionFacts {
 	}
 
 	private static boolean isNativeRepeatable(ValueExpr expression) {
-		if (expression instanceof Exists) {
-			return ((Exists) expression).getSubQuery() instanceof StatementPattern;
-		}
-		if (expression instanceof Not) {
-			return isNativeRepeatable(((Not) expression).getArg());
-		}
-		if (expression instanceof And) {
-			return isNativeRepeatable(((And) expression).getLeftArg())
-					&& isNativeRepeatable(((And) expression).getRightArg());
-		}
-		if (expression instanceof Or) {
-			return isNativeRepeatable(((Or) expression).getLeftArg())
-					&& isNativeRepeatable(((Or) expression).getRightArg());
-		}
+		// The shared preparation proof recursively checks the whole witness, including nested expressions,
+		// OPTIONAL/UNION/MINUS and lexical subqueries. Repeatability does not grant permission to cross its scope.
 		return QueryEvaluationUtility.isRepeatableWithinPreparation(expression);
 	}
 

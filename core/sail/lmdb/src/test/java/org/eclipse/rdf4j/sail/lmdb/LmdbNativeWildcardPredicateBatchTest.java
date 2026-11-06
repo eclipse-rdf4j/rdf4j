@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -42,9 +44,6 @@ class LmdbNativeWildcardPredicateBatchTest {
 	private static final String JANINO_PROPERTY = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String JANINO_THRESHOLD_PROPERTY = "rdf4j.lmdb.janinoCodegen.thresholdRows";
 	private static final String KERNEL_INTERPRETER_PROPERTY = "rdf4j.lmdb.kernelInterpreter.enabled";
-	private static final String COST_CALIBRATION_PROPERTY = "rdf4j.lmdb.costCalibration.enabled";
-	private static final String ADAPTIVE_PROBE_PROPERTY = "rdf4j.lmdb.adaptiveProbe.enabled";
-	private static final String ADAPTIVE_HEDGE_PROPERTY = "rdf4j.lmdb.adaptiveHedge.enabled";
 	private static final String PREFIX_RUN_PROPERTY = "rdf4j.lmdb.prefixRun.enabled";
 	private static final String ADJACENCY_AGGREGATE_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 	private static final String NATIVE_BATCH_PROPERTY = "rdf4j.lmdb.nativeBatch.enabled";
@@ -70,9 +69,6 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.clearProperty(JANINO_PROPERTY);
 		System.clearProperty(JANINO_THRESHOLD_PROPERTY);
 		System.clearProperty(KERNEL_INTERPRETER_PROPERTY);
-		System.clearProperty(COST_CALIBRATION_PROPERTY);
-		System.clearProperty(ADAPTIVE_PROBE_PROPERTY);
-		System.clearProperty(ADAPTIVE_HEDGE_PROPERTY);
 		System.clearProperty(PREFIX_RUN_PROPERTY);
 		System.clearProperty(ADJACENCY_AGGREGATE_PROPERTY);
 		System.clearProperty(NATIVE_BATCH_PROPERTY);
@@ -614,6 +610,56 @@ class LmdbNativeWildcardPredicateBatchTest {
 	}
 
 	@Test
+	void payloadBatchBehindAPrefixIsPricedAsPlaneProbesPerPrefixRow(@TempDir File dataDir) {
+		// the wildcard batch at a row site carried only its legacy work interval, bridged as scanned rows (5.2 ms
+		// here), so once nestedLoop's rows were honest (120 µs) it lost the small-store decisions this suite's
+		// subquery and UNION shapes rely on (2026-11-03); the executor probes the six predicate planes once per
+		// prefix row and delivers the statements in batch form without interpreting a row
+		open(dataDir);
+		String query = "SELECT ?s ?p ?o WHERE { ?s a <" + NS + "SomeClass> . ?s ?p ?o }";
+		GenericPlanNode plan;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			plan = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toGenericPlanNode();
+		}
+		Map<String, Double> batch = NativeProposalFeatures.offering(plan, "wildcardPredicateBatch")
+				.get("wildcardPredicateBatch");
+		Map<String, Double> costs = NativeProposalFeatures.costs(plan, "wildcardPredicateBatch");
+		assertThat(batch.getOrDefault("INTERPRETED_ROW", 0D)).as("batch quote: %s", batch).isZero();
+		assertThat(batch.getOrDefault("HASH_PROBE", 0D)).as("one plane probe per prefix row and plane: %s", batch)
+				.isGreaterThanOrEqualTo(96D * 6D);
+		assertThat(batch.getOrDefault("BATCH_ROW", 0D)).as("the prefix rows and the delivered statements: %s", batch)
+				.isGreaterThan(96D);
+		assertThat(costs.get("wildcardPredicateBatch"))
+				.as("the batch never interprets the rows the sequential path does: %s", costs)
+				.isLessThan(costs.get("nestedLoop"));
+	}
+
+	@Test
+	void hashedExpressionDomainIsPricedAboveTheRowsItHashes(@TempDir File dataDir) {
+		// BIND(STR(?p)) over the UNION offers the hashed expression-domain variant of the row path: it runs the same
+		// nested cursors as nestedLoop and hashes every row on top, yet it was quoted from the plain plan vector
+		// without the generic-row premium, 18 % below nestedLoop and 1 % below batch, and took the root from the
+		// batch (measured warm minima of 500 runs, 2026-11-03: batch 642 µs, nestedLoop 704 µs, hashed 732 µs)
+		open(dataDir);
+		String query = "SELECT ?s ?p ?o ?label WHERE { "
+				+ "{ ?s a <" + NS + "SomeClass> . ?s ?p ?o } UNION "
+				+ "{ ?s a <" + NS + "SomeClass> . ?s ?p ?o . FILTER(?p = <" + NS + "common>) } "
+				+ "BIND(STR(?p) AS ?label) }";
+		GenericPlanNode plan;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			plan = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toGenericPlanNode();
+		}
+		Map<String, Double> costs = NativeProposalFeatures.costs(plan, "nestedLoop");
+		String hashed = costs.keySet()
+				.stream()
+				.filter(tag -> tag.startsWith("rowTermDomainHash"))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("no hashed expression-domain candidate in " + costs));
+		assertThat(costs.get(hashed)).as("quotes: %s", costs).isGreaterThan(costs.get("nestedLoop"));
+		assertThat(costs.get("batch")).as("quotes: %s", costs).isLessThan(costs.get(hashed));
+	}
+
+	@Test
 	void expandedPayloadRemainsBatchedThroughUnionAndBind(@TempDir File dataDir) {
 		open(dataDir);
 		String query = "SELECT ?s ?p ?o ?label WHERE { "
@@ -1040,9 +1086,8 @@ class LmdbNativeWildcardPredicateBatchTest {
 			long folded = LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded();
 			try (RepositoryConnection connection = repository.getConnection()) {
 				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
-				if (strategy != null) {
-					prepared.setForcedLmdbExecutionStrategy(strategy);
-				}
+				prepared.setForcedLmdbExecutionStrategy(strategy != null ? strategy
+						: "wildcardPredicateBatch,wildcardPredicateReduced");
 				List<BindingSet> result = QueryResults.asList(prepared.evaluate());
 				List<String> actual = result.stream()
 						.map(bindings -> bindings.getBindingNames()
@@ -1096,9 +1141,9 @@ class LmdbNativeWildcardPredicateBatchTest {
 	private List<String> executeComputedWildcardQuery(String query, String strategy) {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
-			if (!"withoutIr".equals(strategy)) {
-				prepared.setForcedLmdbExecutionStrategy(strategy);
-			}
+			prepared.setForcedLmdbExecutionStrategy("withoutIr".equals(strategy)
+					? "wildcardPredicateBatch,wildcardPredicateReduced"
+					: strategy);
 			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
@@ -1194,9 +1239,6 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.setProperty(JANINO_PROPERTY, "false");
 		System.setProperty(JANINO_THRESHOLD_PROPERTY, "0");
 		System.setProperty(KERNEL_INTERPRETER_PROPERTY, "false");
-		System.setProperty(COST_CALIBRATION_PROPERTY, "false");
-		System.setProperty(ADAPTIVE_PROBE_PROPERTY, "false");
-		System.setProperty(ADAPTIVE_HEDGE_PROPERTY, "false");
 		System.setProperty(PREFIX_RUN_PROPERTY, "false");
 		System.setProperty(ADJACENCY_AGGREGATE_PROPERTY, "false");
 		System.setProperty(NATIVE_BATCH_PROPERTY, "true");
@@ -1261,7 +1303,7 @@ class LmdbNativeWildcardPredicateBatchTest {
 
 	private List<String> rows(String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			return QueryResults.asList(wildcardQuery(connection, query).evaluate())
 					.stream()
 					.map(LmdbNativeWildcardPredicateBatchTest::canonical)
 					.sorted()
@@ -1271,7 +1313,7 @@ class LmdbNativeWildcardPredicateBatchTest {
 
 	private List<String> allRows(String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			return QueryResults.asList(wildcardQuery(connection, query).evaluate())
 					.stream()
 					.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
 					.sorted()
@@ -1299,11 +1341,22 @@ class LmdbNativeWildcardPredicateBatchTest {
 
 	private String explain(String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
+			return wildcardQuery(connection, query).explain(Explanation.Level.Optimized).toString();
 		}
 	}
 
 	private static String canonical(BindingSet row) {
 		return row.getValue("p").stringValue();
 	}
+
+	/**
+	 * This suite tests the wildcard-predicate batch operator; the measured selector may prefer a rival on these small
+	 * stores, so the shared helpers force whichever wildcard form applies at each decision point.
+	 */
+	private static SailTupleQuery wildcardQuery(RepositoryConnection connection, String query) {
+		SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+		prepared.setForcedLmdbExecutionStrategy("wildcardPredicateBatch,wildcardPredicateReduced");
+		return prepared;
+	}
+
 }

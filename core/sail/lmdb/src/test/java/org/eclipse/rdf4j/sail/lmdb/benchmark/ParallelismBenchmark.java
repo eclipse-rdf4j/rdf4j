@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -67,6 +68,9 @@ import org.openjdk.jmh.annotations.Warmup;
  * Trial setup verifies result parity and query-local execution paths. Under the current complete-group scheduler, a
  * {@code parallelPipelines} path means exactly the configured worker group was admitted; the engagement record exposes
  * that count so an elastic scheduler can replace it with granted-worker telemetry without changing benchmark methods.
+ * Each selector forces its operator ({@code parallelPipelines} or {@code batch}) onto the query: the harness isolates
+ * the operators themselves, and the measured selector would otherwise price the sequential path below the parallel one
+ * on the small fixture the unit test uses.
  */
 @Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
@@ -92,7 +96,6 @@ public class ParallelismBenchmark {
 	private static final String ADAPTIVE_FILTER_PLACEMENT_ENABLED = "rdf4j.lmdb.adaptiveFilterPlacement.enabled";
 	private static final String JANINO_CODEGEN_ENABLED = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String KERNEL_INTERPRETER_ENABLED = "rdf4j.lmdb.kernelInterpreter.enabled";
-	private static final String COST_CALIBRATION_ENABLED = "rdf4j.lmdb.costCalibration.enabled";
 	private static final String PARALLEL_ENABLED = "rdf4j.lmdb.parallel.enabled";
 	private static final String PARALLEL_MIN_ROOT_ESTIMATE = "rdf4j.lmdb.parallel.minWorkEstimate";
 	private static final String PARALLEL_THREADS = "rdf4j.lmdb.parallel.threads";
@@ -175,7 +178,7 @@ public class ParallelismBenchmark {
 			for (String property : List.of(NATIVE_ENABLED, NATIVE_BATCH_ENABLED, MERGE_JOIN_ENABLED,
 					HASH_JOIN_ENABLED, HASH_JOIN_MIN_ROWS, HASH_JOIN_MAX_BUILD_ROWS, FACTORIZED_ROWS_ENABLED,
 					WCOJ_ENABLED, PACKED_FTREE_ENABLED, PREFIX_RUN_ENABLED, ADAPTIVE_FILTER_PLACEMENT_ENABLED,
-					JANINO_CODEGEN_ENABLED, KERNEL_INTERPRETER_ENABLED, COST_CALIBRATION_ENABLED, PARALLEL_ENABLED,
+					JANINO_CODEGEN_ENABLED, KERNEL_INTERPRETER_ENABLED, PARALLEL_ENABLED,
 					PARALLEL_MIN_ROOT_ESTIMATE, PARALLEL_THREADS, PARALLEL_MAX_TASKS, PARALLEL_STARTUP_WORK,
 					RANGE_PARTITION_ENABLED)) {
 				previousProperties.put(property, System.getProperty(property));
@@ -201,7 +204,6 @@ public class ParallelismBenchmark {
 			System.setProperty(ADAPTIVE_FILTER_PLACEMENT_ENABLED, "false");
 			System.setProperty(JANINO_CODEGEN_ENABLED, "false");
 			System.setProperty(KERNEL_INTERPRETER_ENABLED, "false");
-			System.setProperty(COST_CALIBRATION_ENABLED, "false");
 			System.setProperty(PARALLEL_ENABLED, Boolean.toString(selected.parallelEnabled));
 			System.setProperty(PARALLEL_MIN_ROOT_ESTIMATE, "0");
 			System.setProperty(PARALLEL_THREADS, Integer.toString(Math.max(2, workersPerQuery)));
@@ -275,7 +277,7 @@ public class ParallelismBenchmark {
 			long rows = 0L;
 			long digest = 0L;
 			try (SailRepositoryConnection connection = repository.getConnection();
-					TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
+					TupleQueryResult result = prepare(connection).evaluate()) {
 				while (result.hasNext()) {
 					BindingSet bindings = result.next();
 					long left = literalLong(bindings.getValue("left"), "left");
@@ -310,9 +312,19 @@ public class ParallelismBenchmark {
 			return observed;
 		}
 
+		/** The benchmark query with the selector's operator forced ({@link Selector#forcedStrategy()}). */
+		private SailTupleQuery prepare(SailRepositoryConnection connection) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(QUERY);
+			String forced = selector().forcedStrategy();
+			if (forced != null) {
+				query.setForcedLmdbExecutionStrategy(forced);
+			}
+			return query;
+		}
+
 		private String executionPath() {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				GenericPlanNode plan = connection.prepareTupleQuery(QUERY)
+				GenericPlanNode plan = prepare(connection)
 						.explain(Explanation.Level.Telemetry)
 						.toGenericPlanNode();
 				String path = findExecutionPath(plan);
@@ -511,6 +523,19 @@ public class ParallelismBenchmark {
 			this.parallelEnabled = parallelEnabled;
 			this.batchEnabled = batchEnabled;
 			this.queryCount = queryCount;
+		}
+
+		/**
+		 * The operator this selector isolates, forced onto every query; {@code null} leaves the sequential path free.
+		 */
+		String forcedStrategy() {
+			if (parallelEnabled) {
+				return "parallelPipelines";
+			}
+			if (batchEnabled) {
+				return "batch";
+			}
+			return null;
 		}
 	}
 }

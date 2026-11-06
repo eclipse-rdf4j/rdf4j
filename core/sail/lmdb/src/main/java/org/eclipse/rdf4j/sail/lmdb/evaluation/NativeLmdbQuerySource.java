@@ -157,21 +157,21 @@ public interface NativeLmdbQuerySource {
 	}
 
 	/**
-	 * The owning store's persistence and regime signals for the adaptive cost model, or {@code null} when the source
-	 * has no backing store directory (tests, synthetic sources) — the model then degrades to a single steady regime
-	 * with no persistence. Wrappers delegate to their backing store, exactly like {@link #costModelIdentity()}.
+	 * What the advisory learner needs from the owning store, or {@code null} when the source has no backing store
+	 * directory (tests, synthetic sources), which leaves the learner off for it. Wrappers delegate to their backing
+	 * store, exactly like {@link #costModelIdentity()}.
 	 */
 	default LmdbNativeCostModelContext costModelContext() {
 		return null;
 	}
 
 	/**
-	 * Releases the adaptive model registered under a closing store's {@link #costModelIdentity()} token. This is an
-	 * internal lifecycle bridge for the LMDB store package; query-source wrappers must not call it when only a dataset
-	 * or evaluation closes because their backing persistent store is still live.
+	 * Releases the learner registered under a closing store's {@link #costModelIdentity()} token. This is an internal
+	 * lifecycle bridge for the LMDB store package; query-source wrappers must not call it when only a dataset or
+	 * evaluation closes because their backing persistent store is still live.
 	 */
 	static void releaseCostModel(Object identity) {
-		LmdbNativeAdaptiveCostModel.release(identity);
+		LmdbNativeAdvisoryLearner.release(identity);
 	}
 
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
@@ -2403,6 +2403,14 @@ public interface NativeLmdbQuerySource {
 
 	long count(long subj, long pred, long obj, long context) throws IOException;
 
+	/**
+	 * Whether {@link #count} answers a count of everything in {@code context} from the context catalog alone. When it
+	 * cannot, that count walks an index or the exact view, so it must not be priced as a lookup.
+	 */
+	default boolean countsContextFromMetadata(long context) throws IOException {
+		return false;
+	}
+
 	boolean has(long subj, long pred, long obj, long context) throws IOException;
 
 	default boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer)
@@ -2446,6 +2454,44 @@ public interface NativeLmdbQuerySource {
 	/** Exact distinct-key count for a revision-valid adjacency entry, used for cost admission before opening it. */
 	default OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
 		return OptionalLong.empty();
+	}
+
+	/**
+	 * Conservative, non-opening capability for wildcard views. False means the source knows such views are disabled,
+	 * not merely that metadata or a current view is unavailable. Unknown sources remain possible, and wrappers must
+	 * preserve the capability of their actual data sources. A true result never guarantees a successful later bind.
+	 */
+	default boolean mayHaveWildcardViews() {
+		return true;
+	}
+
+	/**
+	 * The number of distinct predicates the snapshot's complete adjacency plane catalog holds, for pricing the group
+	 * domain of a variable-predicate slot before any plane is opened; empty when no exact full-coverage view serves the
+	 * snapshot.
+	 */
+	default OptionalLong predicateDomainCardinality() {
+		return OptionalLong.empty();
+	}
+
+	/**
+	 * Advisory mean number of statements one node carries across every predicate on its subject (or object) side: the
+	 * expected rows of a variable-predicate probe from that bound end. Known when an exact full-coverage adjacency
+	 * snapshot serves the read: the side's quads over its node count, the node count taken as the geometric mean of its
+	 * bounds (the largest single predicate's key domain below, the sum of the key domains above). Measured 2026-11-03
+	 * on the three-tier FOAF fixtures (600 and 5000 people): true out-degree 3.5, estimated 3.9; true in-degree 1.7,
+	 * estimated 3.8; the sum alone halves the out-degree and the maximum alone more than doubles it.
+	 */
+	default OptionalDouble meanNodeDegree(boolean bySubject) {
+		return OptionalDouble.empty();
+	}
+
+	/**
+	 * Advisory mean number of distinct predicates one node carries on its subject (or object) side: the (node,
+	 * predicate) pairs a predicate-plane sweep delivers per node, from the same statistics as {@link #meanNodeDegree}.
+	 */
+	default OptionalDouble meanNodePredicates(boolean bySubject) {
+		return OptionalDouble.empty();
 	}
 
 	/** Exact degree when a revision-valid adjacency entry contains the requested predicate direction. */
@@ -2539,6 +2585,18 @@ public interface NativeLmdbQuerySource {
 	 */
 	default ParallelSource[] openParallelSources(int count) throws IOException {
 		return null;
+	}
+
+	/**
+	 * Metadata-only upper bound on the number of partitions returned by {@link #planRootScanPartitions} for this exact
+	 * pattern and target, or empty when no bound is available. A present bound must be nonnegative. It does not prove
+	 * that partitioning is supported, that the scan is nonempty, or that the returned count equals the bound.
+	 * Implementations must not plan ranges, open probes or read records to answer this question. Composite sources must
+	 * account for every active member rather than treating the requested target as a global partition count.
+	 */
+	default OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+			int targetPartitions) {
+		return OptionalLong.empty();
 	}
 
 	/**

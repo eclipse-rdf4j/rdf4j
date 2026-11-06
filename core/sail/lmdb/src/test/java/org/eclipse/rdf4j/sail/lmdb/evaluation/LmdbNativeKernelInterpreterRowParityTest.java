@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -363,7 +364,6 @@ class LmdbNativeKernelInterpreterRowParityTest {
 	private void assertParityInterpreterServed(String query) {
 		List<String> compiled = canonical(rows(query, true));
 		LmdbNativeKernelExecution.resetMetrics();
-		KernelExecutionTestAccess.resetCostCalibration();
 		List<String> interpreted = canonical(rows(query, false));
 		assertThat(interpreted).isEqualTo(compiled);
 		assertThat(LmdbNativeKernelExecution.OPENED.get())
@@ -375,7 +375,6 @@ class LmdbNativeKernelInterpreterRowParityTest {
 	private void assertOrderedParity(String query) {
 		List<String> compiled = ordered(rows(query, true));
 		LmdbNativeKernelExecution.resetMetrics();
-		KernelExecutionTestAccess.resetCostCalibration();
 		List<String> interpreted = ordered(rows(query, false));
 		assertThat(interpreted).isEqualTo(compiled);
 		assertThat(LmdbNativeKernelExecution.OPENED.get())
@@ -386,7 +385,6 @@ class LmdbNativeKernelInterpreterRowParityTest {
 	private void assertParityStaysSemanticNative(String query) {
 		List<String> compiled = canonical(rows(query, true));
 		LmdbNativeKernelExecution.resetMetrics();
-		KernelExecutionTestAccess.resetCostCalibration();
 		long compiledBefore = KernelExecutionTestAccess.semanticNativeCompiles();
 		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
 		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
@@ -400,7 +398,12 @@ class LmdbNativeKernelInterpreterRowParityTest {
 	private List<BindingSet> rows(String query, boolean janino) {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janino));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			// the row kernel tiers are the subject of this suite; the measured selector may prefer another strategy,
+			// so the tier under test is forced wherever a kernel applies
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(janino ? "irKernel,irAggregate"
+					: "irKernelInterpreted,irAggregateInterpreted");
+			return QueryResults.asList(prepared.evaluate());
 		}
 	}
 

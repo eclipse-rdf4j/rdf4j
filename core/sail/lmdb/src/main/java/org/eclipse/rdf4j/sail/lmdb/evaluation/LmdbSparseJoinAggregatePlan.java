@@ -235,31 +235,6 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 	}
 
 	@Override
-	public NativeAggregatePhysicalPlan.KeyProperties keyProperties() {
-		// One streamed endpoint partitions the output; compact ordinals index the other endpoint's accumulator.
-		// The dictionaries used to remap inputs are separately charged as HASH_BUILD_ROW/HASH_PROBE work.
-		return new NativeAggregatePhysicalPlan.KeyProperties(
-				LmdbNativePhysicalVariantKey.GroupingMode.PARTITIONED_GROUPS, false);
-	}
-
-	@Override
-	public LmdbNativePhysicalVariantKey variantKey(LmdbNativePhysicalVariantKey base,
-			NativeAggregatePhysicalPlan.Work quotedWork) {
-		double scans = quotedWork.input().scanned() + quotedWork.input().inherited().expected(SCANNED_ROW);
-		double products = quotedWork.extra().expected(GROUP_UPDATE);
-		// Coarse work and expansion bands separate timing histories without embedding raw cardinalities. Both
-		// expressions are symmetric under transposition; orientation remains a separate physical property.
-		return base.toBuilder()
-				.cardinalityBucket(workBucket(scans + products + quotedWork.input().rows()))
-				.fanoutBucket(workBucket(products / Math.max(1D, scans)))
-				.build();
-	}
-
-	private static int workBucket(double count) {
-		return count <= 1D ? 0 : Math.min(63, Math.getExponent(count) + 1);
-	}
-
-	@Override
 	public NativeAggregatePhysicalPlan.ColdAnchor coldAnchor(RowState row,
 			NativeAggregatePhysicalPlan.Work quotedWork) {
 		if (quotedWork == null || !handles(row) || contextBuffers() != 0) {

@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Featur
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.MEMBERSHIP_TEST;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.SCANNED_ROW;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -120,51 +121,47 @@ class SparseJoinAggregateCostTest {
 	}
 
 	@Test
-	void sparseAdaptiveKeysSeparateInputSizesWithoutChangingThePhysicalRecipe() {
+	void largerSparseInputsIncreaseTheQuoteWithoutChangingThePhysicalRecipe() {
 		try (Fixture small = new Fixture(1024L, 1024L, 256L, 512L, 512L, 256L, false);
 				Fixture large = new Fixture(16384L, 16384L, 256L, 8192L, 8192L, 256L, false)) {
-			LmdbNativeCostEstimate smallEstimate = quotedEstimate(small);
-			LmdbNativeCostEstimate largeEstimate = quotedEstimate(large);
-			assertNotEquals(smallEstimate.variantKey().cardinalityBucket(),
-					largeEstimate.variantKey().cardinalityBucket(),
-					"completed timings for a small plane must not become exact evidence for a much larger plane");
-			assertEquals(smallEstimate.variantKey().fanoutBucket(), largeEstimate.variantKey().fanoutBucket());
-			assertEquals(smallEstimate.variantKey().physicalOrderAndProperties(),
-					largeEstimate.variantKey().physicalOrderAndProperties(),
-					"cardinality bands belong to the existing adaptive key, not the physical recipe string");
-			assertEquals(0.5D, smallEstimate.structuralUncertainty());
-			assertEquals(0.5D, largeEstimate.structuralUncertainty(),
-					"key specificity must not turn an uncertain quote into exact expected work");
+			NativePhysicalWorkQuote smallQuote = quotedWork(small);
+			NativePhysicalWorkQuote largeQuote = quotedWork(large);
+			assertTrue(largeQuote.total().expected(SCANNED_ROW) > smallQuote.total().expected(SCANNED_ROW));
+			assertTrue(largeQuote.total().expected(GROUP_UPDATE) > smallQuote.total().expected(GROUP_UPDATE));
+			assertEquals(small.plan.prepare(small.row).properties(), large.plan.prepare(large.row).properties());
 			verify(small.source, never()).newProbe();
 			verify(large.source, never()).newProbe();
 		}
 	}
 
 	@Test
-	void sparseAdaptiveKeysSeparateBranchingFromUnitSharedDegrees() {
+	void sparseQuotesSeparateBranchingFromUnitSharedDegrees() {
 		try (Fixture branching = new Fixture(16384L, 16384L, 256L, 512L, 512L, 256L, false);
 				Fixture unit = new Fixture(16384L, 16384L, 256L, 16384L, 16384L, 256L, false)) {
-			LmdbNativePhysicalVariantKey branchingKey = quotedEstimate(branching).variantKey();
-			LmdbNativePhysicalVariantKey unitKey = quotedEstimate(unit).variantKey();
-			assertNotEquals(branchingKey.fanoutBucket(), unitKey.fanoutBucket(),
-					"equal input sizes with different join expansion need different timing evidence");
-			assertEquals(branchingKey.physicalOrderAndProperties(), unitKey.physicalOrderAndProperties());
+			NativePhysicalWorkQuote branchingQuote = quotedWork(branching);
+			NativePhysicalWorkQuote unitQuote = quotedWork(unit);
+			assertEquals(branchingQuote.total().expected(SCANNED_ROW), unitQuote.total().expected(SCANNED_ROW));
+			assertTrue(branchingQuote.total().expected(GROUP_UPDATE) > unitQuote.total().expected(GROUP_UPDATE),
+					"equal input sizes with different join expansion must quote their distinct product work");
+			assertEquals(branching.plan.prepare(branching.row).properties(), unit.plan.prepare(unit.row).properties());
 			verify(branching.source, never()).newProbe();
 			verify(unit.source, never()).newProbe();
 		}
 	}
 
 	@Test
-	void pureVariableRenamingPreservesTheSparseAdaptiveKey() {
+	void pureVariableRenamingPreservesTheSparseRecipeAndQuote() {
 		try (Fixture original = new Fixture(16384L, 16384L, 256L, 512L, 512L, 256L, false);
 				Fixture renamed = new Fixture(16384L, 16384L, 256L, 512L, 512L, 256L, false,
 						List.of("outerLeft", "innerShared", "outerRight"))) {
-			assertEquals(quotedEstimate(original).variantKey(), quotedEstimate(renamed).variantKey());
+			assertEquals(original.plan.prepare(original.row).properties(),
+					renamed.plan.prepare(renamed.row).properties());
+			assertEquals(quotedWork(original).total(), quotedWork(renamed).total());
 		}
 	}
 
 	@Test
-	void producersWithoutKeyRefinementKeepTheirExistingAdaptiveIdentity() {
+	void producersWithoutBlockingWorkKeepTheirStreamingQuote() {
 		try (Fixture fixture = new Fixture(16384L, 16384L, 256L, 512L, 512L, 256L, false)) {
 			NativeAggregatePhysicalPlan.Producer producer = new NativeAggregatePhysicalPlan.Producer() {
 				@Override
@@ -177,10 +174,8 @@ class SparseJoinAggregateCostTest {
 					return fixture.plan.properties();
 				}
 			};
-			LmdbNativeCostEstimate estimate = quotedEstimate(fixture, producer);
-			assertEquals(0, estimate.variantKey().cardinalityBucket());
-			assertEquals(0, estimate.variantKey().fanoutBucket());
-			assertEquals(0.5D, estimate.structuralUncertainty());
+			NativePhysicalWorkQuote estimate = quotedWork(fixture, producer);
+			assertTrue(estimate.total().expected(SCANNED_ROW) > estimate.startup().expected(SCANNED_ROW));
 		}
 	}
 
@@ -234,11 +229,11 @@ class SparseJoinAggregateCostTest {
 			proposal.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(fixture.input,
 					NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE, fixture.plan));
 			new NativeAggregateCostQuotes(fixture.iteration, fixture.row, null, false).attach(proposal);
-			LmdbNativeCostEstimate full = proposal.adaptiveEstimate(-1D);
+			NativePhysicalWorkQuote full = proposal.typedQuote();
 			assertNotNull(full);
 			assertEquals(full.total(), full.startup(),
 					"sparse multiplication and private replay finish before the first output mapping is available");
-			assertEquals(full.total(), proposal.adaptiveEstimate(1D).total(),
+			assertEquals(full.total(), LmdbNativeStrategyProposal.quote(proposal).forSlice(1D),
 					"LIMIT 1 cannot discount the already completed contraction, setup or output preparation");
 			verify(fixture.source, never()).newProbe();
 			proposal.close();
@@ -250,6 +245,9 @@ class SparseJoinAggregateCostTest {
 		try (Fixture fixture = new Fixture(4096L, 4096L, 64L, 64L, 64L, 64L, false)) {
 			when(fixture.source.exactPredicateCount(21L)).thenReturn(OptionalLong.empty());
 			assertNull(fixture.plan.quote(fixture.row));
+			NativePhysicalWorkQuote incomplete = quotedWork(fixture);
+			assertFalse(incomplete.workEvidence().isComplete());
+			assertFalse(incomplete.quote().outputProvenEmpty());
 			verify(fixture.source, never()).newProbe();
 		}
 	}
@@ -368,14 +366,15 @@ class SparseJoinAggregateCostTest {
 			assertEquals(0D, work.input().highRows());
 			assertEquals(0D, work.extra().high(GROUP_UPDATE));
 			assertNull(fixture.plan.coldAnchor(fixture.row, work));
+			assertTrue(quotedWork(fixture).quote().outputProvenEmpty());
 		}
 	}
 
-	private static LmdbNativeCostEstimate quotedEstimate(Fixture fixture) {
-		return quotedEstimate(fixture, fixture.plan.prepare(fixture.row));
+	private static NativePhysicalWorkQuote quotedWork(Fixture fixture) {
+		return quotedWork(fixture, fixture.plan.prepare(fixture.row));
 	}
 
-	private static LmdbNativeCostEstimate quotedEstimate(Fixture fixture,
+	private static NativePhysicalWorkQuote quotedWork(Fixture fixture,
 			NativeAggregatePhysicalPlan.Producer producer) {
 		LmdbNativeStrategyProposal<List<BindingSet>> proposal = new LmdbNativeStrategyProposal<>(List::of,
 				LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE, () -> {
@@ -384,7 +383,7 @@ class SparseJoinAggregateCostTest {
 			proposal.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(fixture.input,
 					NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE, producer));
 			new NativeAggregateCostQuotes(fixture.iteration, fixture.row, null, false).attach(proposal);
-			LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(-1D);
+			NativePhysicalWorkQuote estimate = proposal.typedQuote();
 			assertNotNull(estimate);
 			return estimate;
 		} finally {

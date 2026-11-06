@@ -19,6 +19,10 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
       - name: Clean install
         run: mvn -B clean install --fail-at-end -Pquick -DskipTests
       - name: Package

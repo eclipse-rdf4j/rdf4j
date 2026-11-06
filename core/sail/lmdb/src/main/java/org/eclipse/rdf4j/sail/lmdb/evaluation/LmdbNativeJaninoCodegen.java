@@ -393,6 +393,7 @@ final class LmdbNativeJaninoCodegen {
 					|| problem instanceof KernelQueryCancelledException
 					|| problem instanceof KernelPeerCancelledException
 					|| problem instanceof KernelRuntime.AllocationDeniedException
+					|| problem instanceof KernelRuntime.HashBuildRefusedException
 					|| problem instanceof LmdbNativeKernelPartitions.ParallelKernelDecline
 					|| problem instanceof LmdbNativeProbeDeadlineExceeded) {
 				return true;

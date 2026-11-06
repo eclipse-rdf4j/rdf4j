@@ -46,8 +46,8 @@ unbound-aggregate	true	-
 # r14 resumable producer composition; real RDF4J execution remains an integration requirement.
 rows-local-star-path-service-first	false	-
 rows-local-plus-path-service-first	false	-
-rows-dynamic-predicate-service-first	false	-	wildcard
-rows-dynamic-predicate-service-resume	false	-	wildcard
+rows-dynamic-predicate-service-first	false	-	scan
+rows-dynamic-predicate-service-resume	false	-	scan
 rows-dynamic-predicate-service-singleton-control	false	-
 rows-optional-missing-service-resume	false	-
 rows-identity-optional-service	false	-

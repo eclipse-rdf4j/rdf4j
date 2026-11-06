@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -84,7 +85,35 @@ class SparseJoinAggregateAutomaticTest {
 		Observation actual = executeFixture(directory, true);
 		assertEquals(expectedCounts(), actual.counts());
 		assertTrue(hasSparsePath(actual.paths()),
-				() -> "Expected automatic sparse execution, observed " + actual.paths());
+				() -> "Expected automatic sparse execution, observed " + actual.paths()
+						+ "; costs=" + actual.costs() + "; features=" + actual.features()
+						+ "; decisions=" + actual.decisions());
+	}
+
+	@Test
+	void projectedIrCandidateQuotesItsGroupedProduct(@TempDir Path directory) {
+		Observation actual = executeFixture(directory, true);
+		assertEquals(expectedCounts(), actual.counts());
+		assertIrGroupWork(actual);
+	}
+
+	@Test
+	void marginalIrCandidateQuotesItsDistinctGroupedProduct(@TempDir Path directory) {
+		Observation actual = executeFixture(directory, true, QUERY.replace("COUNT(?j)", "COUNT(DISTINCT ?j)"));
+		assertEquals(expectedCounts(), actual.counts());
+		assertIrGroupWork(actual);
+	}
+
+	private static void assertIrGroupWork(Observation actual) {
+		String expected = "GROUP_UPDATE:" + ENDPOINTS * ENDPOINTS * JOIN_KEYS;
+		String ir = actual.features()
+				.stream()
+				.flatMap(features -> Arrays.stream(features.split(",")))
+				.filter(features -> features.startsWith("irAggregate="))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("IR candidate not admitted: " + actual.features()));
+		assertTrue(Arrays.asList(ir.substring(ir.indexOf('=') + 1).split("\\|")).contains(expected),
+				() -> "Expected " + expected + " in the IR quote: " + ir);
 	}
 
 	@Test
@@ -103,6 +132,10 @@ class SparseJoinAggregateAutomaticTest {
 	}
 
 	private static Observation executeFixture(Path directory, boolean adjacency) {
+		return executeFixture(directory, adjacency, QUERY);
+	}
+
+	private static Observation executeFixture(Path directory, boolean adjacency, String queryText) {
 		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,psoc,posc,ospc")
 				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(adjacency)
@@ -131,9 +164,17 @@ class SparseJoinAggregateAutomaticTest {
 			try (var connection = repository.getConnection()) {
 				// Explain the first execution on a fresh store, before any query can train adaptive history.
 				Set<String> paths = new LinkedHashSet<>();
-				collectPaths(prepare(connection).explain(Explanation.Level.Telemetry).toGenericPlanNode(), paths);
+				GenericPlanNode plan = prepare(connection, queryText).explain(Explanation.Level.Telemetry)
+						.toGenericPlanNode();
+				collectPaths(plan, paths);
+				Set<String> costs = new LinkedHashSet<>();
+				Set<String> features = new LinkedHashSet<>();
+				Set<String> decisions = new LinkedHashSet<>();
+				collectMetric(plan, "nativeStrategyProposalCosts", costs);
+				collectMetric(plan, "nativeStrategyProposalFeatures", features);
+				collectMetric(plan, "nativeDecision.GROUP.0", decisions);
 				Map<Pair, Long> counts = new HashMap<>();
-				try (var result = prepare(connection).evaluate()) {
+				try (var result = prepare(connection, queryText).evaluate()) {
 					while (result.hasNext()) {
 						var row = result.next();
 						Pair pair = new Pair(row.getValue("a").stringValue(), row.getValue("b").stringValue());
@@ -141,15 +182,15 @@ class SparseJoinAggregateAutomaticTest {
 								"Duplicate group " + pair);
 					}
 				}
-				return new Observation(counts, paths);
+				return new Observation(counts, paths, costs, features, decisions);
 			}
 		} finally {
 			repository.shutDown();
 		}
 	}
 
-	private static SailTupleQuery prepare(SailRepositoryConnection connection) {
-		SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(QUERY);
+	private static SailTupleQuery prepare(SailRepositoryConnection connection, String queryText) {
+		SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(queryText);
 		query.setLmdbResultCacheRequested(false);
 		return query;
 	}
@@ -180,9 +221,22 @@ class SparseJoinAggregateAutomaticTest {
 		}
 	}
 
+	private static void collectMetric(GenericPlanNode node, String name, Set<String> values) {
+		String value = node.getStringMetricActual(name);
+		if (value != null) {
+			values.add(value);
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				collectMetric(child, name, values);
+			}
+		}
+	}
+
 	private record Pair(String left, String right) {
 	}
 
-	private record Observation(Map<Pair, Long> counts, Set<String> paths) {
+	private record Observation(Map<Pair, Long> counts, Set<String> paths, Set<String> costs, Set<String> features,
+			Set<String> decisions) {
 	}
 }
