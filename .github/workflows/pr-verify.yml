@@ -24,12 +24,16 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
       - name: Check formatting
         run: mvn -B -Pformatting spotless:check --fail-at-end
       - name: Check SPARQL AST patches
         run: python3 scripts/manage-sparql-ast.py --check --online
       - name: Quick compile
-        run: mvn -B --quiet -T 2C compile --fail-at-end -DskipTests -Pquick
+        run: mvn -B --quiet -T 2C test-compile --fail-at-end -DskipTests -Pquick
       - name: Download all other dependencies
         run: mvn -B --quiet -T 2C dependency:go-offline --fail-at-end
 
@@ -46,6 +50,10 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
       - name: Compile (mvn clean install)
         run: mvn -B clean install --fail-at-end -DskipTests -DskipITs
 
@@ -71,6 +79,10 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: 'temurin'
           cache: maven
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
       - name: Build
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Test
@@ -164,6 +176,10 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: 'temurin'
           cache: maven
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
       - name: Build
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Test
@@ -210,6 +226,10 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
       - name: Build
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
@@ -240,6 +260,10 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
       - name: Build
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Verify
@@ -264,6 +288,10 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
       - name: Run install
         run: mvn --quiet clean --fail-at-end && mvn -B --quiet -T 2C install --fail-at-end -Pquick
       - name: Package assembly

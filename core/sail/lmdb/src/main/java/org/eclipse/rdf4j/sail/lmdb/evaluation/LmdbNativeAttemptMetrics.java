@@ -127,6 +127,8 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_DATATYPE_HISTOGRAM = "datatypeHistogram";
 	static final String PATH_PREDICATE_PLANE_GROUPS = "predicatePlaneGroups";
 	static final String PATH_TYPE_MATRIX = "typeMatrix";
+	/** Join of a one-row-per-key subquery with another operand through a keyed lookup provider. */
+	static final String PATH_KEYED_SUBQUERY_JOIN = "keyedSubqueryJoin";
 	static final String PATH_CONSTANT_FALSE_FILTER = "constantFalseFilter";
 
 	static final String STRATEGY_MERGE_JOIN = "mergeJoin";
@@ -165,7 +167,7 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED, PATH_IR_KERNEL_DISTINCT,
 			PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 			PATH_WCOJ,
-			PATH_CONSTANT_FALSE_FILTER);
+			PATH_CONSTANT_FALSE_FILTER, PATH_KEYED_SUBQUERY_JOIN);
 
 	private static final LmdbNativeAttemptMetrics DIRECT = new LmdbNativeAttemptMetrics(null, true, null);
 

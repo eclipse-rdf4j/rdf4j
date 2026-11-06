@@ -21,6 +21,10 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
 
       - name: Prepare custom Maven repository directory
         run: mkdir -p .m2_repo
@@ -37,7 +41,7 @@ jobs:
         run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo spotless:check --fail-at-end
 
       - name: Quick compile (skip tests)
-        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo compile --fail-at-end -DskipTests -Pquick
+        run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo test-compile --fail-at-end -DskipTests -Pquick
 
       - name: Download Maven dependencies for offline use
         run: mvn -B -T 2C -Dmaven.repo.local=.m2_repo dependency:go-offline --fail-at-end

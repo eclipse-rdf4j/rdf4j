@@ -1777,7 +1777,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	private List<BindingSet> evaluateTypeMatrixFallback() {
 		try (NativeReplayBindingList.Builder result = collectResults()) {
-			try (CloseableIteration<BindingSet> rows = typeMatrix.evaluate(base, source)) {
+			try (CloseableIteration<BindingSet> rows = typeMatrix.evaluate(base, source, cancellation)) {
 				while (rows.hasNext()) {
 					cancellation.check();
 					result.add(rows.next());

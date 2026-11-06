@@ -95,6 +95,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbSubqueryKeyShapes;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
@@ -1626,6 +1627,77 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	/**
+	 * Replaces the join of a one-row-per-key subquery with another operand by a keyed lookup: the subquery is evaluated
+	 * and indexed once and its non-key columns are attached to each probe row by key, instead of replaying every
+	 * subquery solution for every probe row. Both operands have already been compiled exactly as the ordinary join
+	 * compiles them, so declining (returning null) leaves today's plan untouched.
+	 *
+	 * <p>
+	 * Applies when exactly one operand is a plain subquery with at most one row per value of a single key variable, the
+	 * operands share only that key, the key is assured in the other operand, the subquery compiled to an independent
+	 * native boundary (no outer-row or GRAPH frame input), neither side is empty or needs physical cells, and neither a
+	 * GRAPH frame, a merge join, forced interior islands nor the kill switch
+	 * {@code rdf4j.lmdb.keyedSubqueryJoin.enabled=false} is involved.
+	 * </p>
+	 */
+	private SlotPlan compileKeyedSubqueryJoin(Join join, TupleExpr leftArg, TupleExpr rightArg, SlotPlan left,
+			SlotPlan right, boolean usesGraphFrame) {
+		if (usesGraphFrame || forceInteriorIslands || join.isMergeJoin()
+				|| "false".equalsIgnoreCase(System.getProperty("rdf4j.lmdb.keyedSubqueryJoin.enabled"))) {
+			return null;
+		}
+		String leftKey = LmdbSubqueryKeyShapes.oneRowPerKeyVariable(leftArg);
+		String rightKey = LmdbSubqueryKeyShapes.oneRowPerKeyVariable(rightArg);
+		if ((leftKey == null) == (rightKey == null)) {
+			// neither operand is keyed, or both are and the shape is ambiguous
+			return null;
+		}
+		boolean subIsLeft = leftKey != null;
+		String key = subIsLeft ? leftKey : rightKey;
+		TupleExpr subArg = subIsLeft ? leftArg : rightArg;
+		TupleExpr probeArg = subIsLeft ? rightArg : leftArg;
+		SlotPlan compiledSub = subIsLeft ? left : right;
+		SlotPlan compiledProbe = subIsLeft ? right : left;
+		if (!(compiledSub instanceof NativeSubqueryPlan subPlan) || !subPlan.independentOfOuterRow()
+				|| compiledProbe == EmptyPlan.INSTANCE || compiledProbe == SingletonPlan.INSTANCE
+				|| SlotPlan.requiresPhysicalCells(compiledSub) || SlotPlan.requiresPhysicalCells(compiledProbe)) {
+			return null;
+		}
+		Set<String> shared = new HashSet<>(subArg.getBindingNames());
+		shared.retainAll(probeArg.getBindingNames());
+		if (shared.size() != 1 || !shared.contains(key) || !probeArg.getAssuredBindingNames().contains(key)) {
+			return null;
+		}
+		long assured = SlotPlan.assuredMask(compiledProbe);
+		for (String name : subArg.getAssuredBindingNames()) {
+			assured |= 1L << slot(name);
+		}
+		return new NativeKeyedSubqueryJoinPlan(compiledProbe, subPlan, keyedProvider(subArg, key, subPlan), slot(key),
+				assured, join, subIsLeft);
+	}
+
+	/**
+	 * The adjacency count provider when the subquery is a single-pattern {@code COUNT(DISTINCT)} over an unrestricted
+	 * dataset with a known predicate, otherwise the generic index.
+	 */
+	private NativeKeyedSubqueryProvider keyedProvider(TupleExpr subArg, String key, NativeSubqueryPlan subPlan) {
+		NativeKeyedSubqueryIndex generic = new NativeKeyedSubqueryIndex(subPlan);
+		if (!LmdbKeyedAdjacencyCountProvider.enabled()) {
+			return generic;
+		}
+		LmdbKeyedAdjacencyCountProvider.Shape shape = LmdbKeyedAdjacencyCountProvider.recognize(subArg, key);
+		if (shape == null
+				|| compileContextConstraint(shape.pattern(), context.getDataset()) != ContextConstraint.UNRESTRICTED) {
+			return generic;
+		}
+		long predicate = idOf(shape.predicate(), ValuePosition.PREDICATE);
+		if (predicate == UNKNOWN) {
+			return generic;
+		}
+		return new LmdbKeyedAdjacencyCountProvider(predicate, shape.keyIsSubject(), generic);
+	}
+
+	/**
 	 * The first facts-gated movement across an island barrier (M-A1c). An island in the middle of a left-deep join
 	 * chain — {@code Join(Join(a, island), b)} — pins the native operands {@code a} and {@code b} on opposite sides of
 	 * an opaque barrier, so they can never flatten into one reorderable MultiJoin bag (islands are deliberately not
@@ -1913,6 +1985,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				// Empty-join elimination would discard an operand the generic engine evaluates before probing the
 				// empty side; its query-fatal effects (e.g. a non-silent SERVICE) must still surface.
 				return new DrainGuardPlan(SlotPlan.empty(), left, true);
+			}
+			SlotPlan keyed = compileKeyedSubqueryJoin(join, leftArg, rightArg, left, right,
+					rightUsesGraph || leftUsesGraph);
+			if (keyed != null) {
+				return keyed;
 			}
 			return joinWithIslandHoist(left, right);
 		}
@@ -2202,6 +2279,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.frameInputMask();
+		}
+		if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
+			return subqueryFrameInputMask(keyed.probe) | keyed.subPlan.frameInputMask();
 		}
 		if (plan instanceof MultiJoinPlan multiJoin) {
 			long mask = 0L;

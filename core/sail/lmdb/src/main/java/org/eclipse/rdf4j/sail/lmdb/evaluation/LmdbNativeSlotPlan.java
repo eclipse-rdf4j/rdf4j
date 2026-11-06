@@ -36,6 +36,9 @@ interface SlotPlan {
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.requiresPhysicalResults();
 		}
+		if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
+			return requiresPhysicalCells(keyed.probe) || keyed.subPlan.requiresPhysicalResults();
+		}
 		if (plan instanceof FilterPlan filter) {
 			return requiresPhysicalCells(filter.arg);
 		}
@@ -209,6 +212,9 @@ interface SlotPlan {
 		if (plan instanceof NativeGraphPlan graph) {
 			return graph.assuredMask();
 		}
+		if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
+			return keyed.assuredMask();
+		}
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
 			return assuredMask(leaf.template);
 		if (plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof TupleFunctionPlan) {
@@ -269,6 +275,9 @@ interface SlotPlan {
 		}
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.workerBindable();
+		}
+		if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
+			return keyed.subPlan.workerBindable() && encounterOrderReplaySafe(keyed.probe);
 		}
 		if (plan instanceof NativeGraphPlan graph) {
 			return graph.workerBindable();

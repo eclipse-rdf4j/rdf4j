@@ -102,6 +102,16 @@ final class LmdbNativeExplain {
 		}
 	}
 
+	/** Whether {@code path} has already been recorded on the expression's logical origin (best effort, lock-free). */
+	static boolean hasExecutionPath(TupleExpr expr, String path) {
+		expr = logicalOrigin(expr);
+		if (expr == null || path == null) {
+			return false;
+		}
+		String rendered = expr.getStringMetricActual(EXECUTION_PATH);
+		return rendered != null && (" | " + rendered + " | ").contains(" | " + path + " | ");
+	}
+
 	/** Records one attempted strategy's reason for declining this query, as a deterministic distinct summary. */
 	static void recordStrategyDecline(TupleExpr expr, String strategy, String reason) {
 		expr = logicalOrigin(expr);
@@ -448,6 +458,12 @@ final class LmdbNativeExplain {
 		}
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.describe();
+		}
+		if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
+			return "KeyedSubqueryJoin(provider=" + keyed.provider.tag() + ", key=" + slot(keyed.keySlot, slotNames)
+					+ ", payload=" + describeSlots(keyed.payloadSlots, slotNames) + ", subqueryFirst="
+					+ keyed.subqueryFirst() + ", probe=" + describe(keyed.probe, slotNames, boundMask)
+					+ ", subquery=" + keyed.subPlan.describe() + ")";
 		}
 		if (plan instanceof DrainGuardPlan guard) {
 			return "DrainGuard(delegate=" + describe(guard.delegate, slotNames, boundMask) + ", drained="
