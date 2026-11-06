@@ -1,0 +1,563 @@
+{
+  "baseline_commit": "2a843fff41f53a118ce92295be76a4af515a58a0",
+  "candidate_source_hashes": {
+    "FastNTriplesParser.java": "5d92d8a3a3f7105679e092074cd82585147892e924e3b31c41ff9e9f33cc84a3",
+    "FastByteScan.java": "5f48ba89dab20c6adacc20ebedb684d29bf388bdac7ca1d6be444c2891db48c4",
+    "CanonicalTermCodec.java": "725b0c57143cc00eb912869c6a719f65a281fa8fa59132ffefb2342873377baf",
+    "FastRdfTermValidation.java": "64883168e4fc46ed4088a31703f72b29dfaf991ef1ba2476b8c25563125ab2d5",
+    "ParallelStager.java": "3571aa7d7ab7fd5c9c2f6aca1daa2c46c92fb1ed3306a12541fec25cdd923d4f",
+    "CanonicalStatementStager.java": "e0500b5f6963acfc619cad75e6d8cd3cc2ddbcd407f3597ce3c9d7a31d5d8add"
+  },
+  "parser": {
+    "baseline_file": "baseline-v3-block.json",
+    "candidate_file": "candidate4-block.json",
+    "baseline_sha256": "5fd8f54e28ff438aa02d36c91c81dc190f9d8c38102ce6aab7f36c000df0d544",
+    "candidate_sha256": "7732eaa914ee66d3fbeab08c1c78050b24f10d3fe0dde9e2f77ded296d03b520",
+    "settings": {
+      "benchmark": "org.eclipse.rdf4j.sail.lmdb.bulk.FastNQuadsParserBenchmark.parseBlock",
+      "mode": "thrpt",
+      "threads": 1,
+      "forks": 2,
+      "jmhVersion": "1.37",
+      "jdkVersion": "25.0.5",
+      "vmName": "OpenJDK 64-Bit Server VM",
+      "vmVersion": "25.0.5+8-LTS",
+      "jvmArgs": [
+        "-Xms512m",
+        "-Xmx512m"
+      ],
+      "warmupIterations": 3,
+      "warmupTime": "1 s",
+      "measurementIterations": 4,
+      "measurementTime": "1 s"
+    },
+    "statements_per_invocation": 4096,
+    "rows": [
+      {
+        "case": "IRI",
+        "baseline_statements_per_second": 2656758.08894253,
+        "candidate_statements_per_second": 6407263.614359305,
+        "baseline_score_error": 95297.3226480703,
+        "candidate_score_error": 304260.2337093186,
+        "baseline_score_confidence": [
+          2561460.76629446,
+          2752055.4115906004
+        ],
+        "candidate_score_confidence": [
+          6103003.380649987,
+          6711523.848068624
+        ],
+        "throughput_ratio": 2.411684993461181,
+        "baseline_bytes_per_statement": 216.0065598700061,
+        "candidate_bytes_per_statement": 112.00506184257382,
+        "allocation_reduction_percent": 48.14737945459663
+      },
+      {
+        "case": "LANGUAGE",
+        "baseline_statements_per_second": 2754545.7151475996,
+        "candidate_statements_per_second": 6454880.264228937,
+        "baseline_score_error": 210118.4802316885,
+        "candidate_score_error": 407523.6306332594,
+        "baseline_score_confidence": [
+          2544427.234915911,
+          2964664.195379288
+        ],
+        "candidate_score_confidence": [
+          6047356.633595678,
+          6862403.894862196
+        ],
+        "throughput_ratio": 2.3433556498019708,
+        "baseline_bytes_per_statement": 287.81115607792634,
+        "candidate_bytes_per_statement": 159.80973758533915,
+        "allocation_reduction_percent": 44.47409900189211
+      },
+      {
+        "case": "ESCAPED",
+        "baseline_statements_per_second": 1848255.7414457134,
+        "candidate_statements_per_second": 6286433.735399194,
+        "baseline_score_error": 118515.01347020877,
+        "candidate_score_error": 166755.56815428188,
+        "baseline_score_confidence": [
+          1729740.7279755047,
+          1966770.7549159222
+        ],
+        "candidate_score_confidence": [
+          6119678.167244912,
+          6453189.303553476
+        ],
+        "throughput_ratio": 3.401279159821205,
+        "baseline_bytes_per_statement": 304.007723194186,
+        "candidate_bytes_per_statement": 136.00507775551387,
+        "allocation_reduction_percent": 55.26262414437407
+      },
+      {
+        "case": "UNICODE",
+        "baseline_statements_per_second": 2561556.5539980745,
+        "candidate_statements_per_second": 5151991.608252613,
+        "baseline_score_error": 116280.72714441181,
+        "candidate_score_error": 334962.90551005676,
+        "baseline_score_confidence": [
+          2445275.8268536627,
+          2677837.2811424863
+        ],
+        "candidate_score_confidence": [
+          4817028.702742556,
+          5486954.51376267
+        ],
+        "throughput_ratio": 2.011273809360715,
+        "baseline_bytes_per_statement": 294.0535350109642,
+        "candidate_bytes_per_statement": 166.0522098152845,
+        "allocation_reduction_percent": 43.529939264599214
+      },
+      {
+        "case": "UNIQUE",
+        "baseline_statements_per_second": 2482152.486624065,
+        "candidate_statements_per_second": 3604943.4807381947,
+        "baseline_score_error": 77967.85562111695,
+        "candidate_score_error": 104474.2208011728,
+        "baseline_score_confidence": [
+          2404184.6310029477,
+          2560120.342245182
+        ],
+        "candidate_score_confidence": [
+          3500469.259937022,
+          3709417.7015393674
+        ],
+        "throughput_ratio": 1.45234569598954,
+        "baseline_bytes_per_statement": 223.987215394371,
+        "candidate_bytes_per_statement": 223.98644017552337,
+        "allocation_reduction_percent": 0.00034609959602693863
+      },
+      {
+        "case": "ESCAPED_IRI",
+        "baseline_statements_per_second": 1898650.5580812334,
+        "candidate_statements_per_second": 2048196.7609900066,
+        "baseline_score_error": 117731.0256469182,
+        "candidate_score_error": 249533.2898557834,
+        "baseline_score_confidence": [
+          1780919.5324343152,
+          2016381.5837281516
+        ],
+        "candidate_score_confidence": [
+          1798663.4711342233,
+          2297730.05084579
+        ],
+        "throughput_ratio": 1.078764468939405,
+        "baseline_bytes_per_statement": 223.98808599978344,
+        "candidate_bytes_per_statement": 223.98782641308048,
+        "allocation_reduction_percent": 0.00011589308502868434
+      },
+      {
+        "case": "VOCABULARY",
+        "baseline_statements_per_second": 2488957.084228164,
+        "candidate_statements_per_second": 4788050.263431397,
+        "baseline_score_error": 152088.4966744107,
+        "candidate_score_error": 155168.5495689848,
+        "baseline_score_confidence": [
+          2336868.5875537535,
+          2641045.5809025746
+        ],
+        "candidate_score_confidence": [
+          4632881.713862413,
+          4943218.813000382
+        ],
+        "throughput_ratio": 1.9237174854367534,
+        "baseline_bytes_per_statement": 216.00673880684118,
+        "candidate_bytes_per_statement": 119.0054537511747,
+        "allocation_reduction_percent": 44.906601336362726
+      },
+      {
+        "case": "LONG_LITERAL",
+        "baseline_statements_per_second": 398701.9975483921,
+        "candidate_statements_per_second": 906633.0170648138,
+        "baseline_score_error": 21122.4760795582,
+        "candidate_score_error": 78939.43114155861,
+        "baseline_score_confidence": [
+          377579.5214688339,
+          419824.4736279503
+        ],
+        "candidate_score_confidence": [
+          827693.5859232552,
+          985572.4482063723
+        ],
+        "throughput_ratio": 2.27396156186745,
+        "baseline_bytes_per_statement": 2519.8262061780097,
+        "candidate_bytes_per_statement": 2415.8163770151973,
+        "allocation_reduction_percent": 4.127658840431348
+      },
+      {
+        "case": "SHORT",
+        "baseline_statements_per_second": 6558314.264291342,
+        "candidate_statements_per_second": 10788645.306816177,
+        "baseline_score_error": 391886.8783377363,
+        "candidate_score_error": 766550.6775239304,
+        "baseline_score_confidence": [
+          6166427.385953606,
+          6950201.142629079
+        ],
+        "candidate_score_confidence": [
+          10022094.629292248,
+          11555195.984340107
+        ],
+        "throughput_ratio": 1.645033292405353,
+        "baseline_bytes_per_statement": 128.00501501340008,
+        "candidate_bytes_per_statement": 64.00456082814422,
+        "allocation_reduction_percent": 49.99839590546983
+      },
+      {
+        "case": "TRIPLE_TERM",
+        "baseline_statements_per_second": 1929670.1494754609,
+        "candidate_statements_per_second": 3905968.8407484195,
+        "baseline_score_error": 277546.2833603262,
+        "candidate_score_error": 336768.46839345305,
+        "baseline_score_confidence": [
+          1652123.8661151347,
+          2207216.432835787
+        ],
+        "candidate_score_confidence": [
+          3569200.3723549666,
+          4242737.309141872
+        ],
+        "throughput_ratio": 2.0241639960125686,
+        "baseline_bytes_per_statement": 527.9880370572382,
+        "candidate_bytes_per_statement": 351.98625620175494,
+        "allocation_reduction_percent": 33.33442587760814
+      }
+    ],
+    "notes": [
+      "Latest baseline rerun used; earlier slower baseline excluded.",
+      "ESCAPED_IRI score intervals overlap; the mean ratio alone is not evidence of a reliable gain."
+    ]
+  },
+  "staging": {
+    "baseline_file": "baseline-v3-staging-ascii.json",
+    "candidate_file": "candidate4-staging-ascii.json",
+    "baseline_sha256": "de126688b4297e614f43b5b7e4a4aef92b15ebb2c6daba0aeae65beec71da7e5",
+    "candidate_sha256": "42d9fce53318d22de2a1eb86d31b562bdb99d36c4459a9133b80a23477f80a1c",
+    "settings": {
+      "benchmark": "org.eclipse.rdf4j.sail.lmdb.bulk.FastNQuadsStagingBenchmark.stage",
+      "mode": "thrpt",
+      "threads": 1,
+      "forks": 2,
+      "jmhVersion": "1.37",
+      "jdkVersion": "25.0.5",
+      "vmName": "OpenJDK 64-Bit Server VM",
+      "vmVersion": "25.0.5+8-LTS",
+      "jvmArgs": [
+        "-Xms1g",
+        "-Xmx1g"
+      ],
+      "warmupIterations": 2,
+      "warmupTime": "1 s",
+      "measurementIterations": 4,
+      "measurementTime": "2 s"
+    },
+    "statements_per_invocation": 131072,
+    "ascii_input_bytes": 28704782,
+    "loader_memory_budget_bytes": 268435456,
+    "partitions": 16,
+    "input_block_bytes": 1048576,
+    "rows": [
+      {
+        "params": {
+          "characters": "ASCII",
+          "compression": "none",
+          "terms": "REPEATED",
+          "workers": "1"
+        },
+        "baseline_statements_per_second": 652996.0385430248,
+        "candidate_statements_per_second": 799401.7111567437,
+        "baseline_score_error": 81239.11809521726,
+        "candidate_score_error": 60644.029489307715,
+        "baseline_score_confidence": [
+          571756.9204478075,
+          734235.1566382421
+        ],
+        "candidate_score_confidence": [
+          738757.681667436,
+          860045.7406460514
+        ],
+        "throughput_ratio": 1.2242060655381335
+      },
+      {
+        "params": {
+          "characters": "ASCII",
+          "compression": "none",
+          "terms": "REPEATED",
+          "workers": "2"
+        },
+        "baseline_statements_per_second": 1589400.8659456219,
+        "candidate_statements_per_second": 2086367.6232258622,
+        "baseline_score_error": 234856.58451625242,
+        "candidate_score_error": 277652.59263356356,
+        "baseline_score_confidence": [
+          1354544.2814293695,
+          1824257.4504618743
+        ],
+        "candidate_score_confidence": [
+          1808715.0305922986,
+          2364020.2158594257
+        ],
+        "throughput_ratio": 1.3126755294578045
+      },
+      {
+        "params": {
+          "characters": "ASCII",
+          "compression": "none",
+          "terms": "REPEATED",
+          "workers": "4"
+        },
+        "baseline_statements_per_second": 2622108.2048009913,
+        "candidate_statements_per_second": 3160160.4044347284,
+        "baseline_score_error": 182794.19823707323,
+        "candidate_score_error": 533129.7452068448,
+        "baseline_score_confidence": [
+          2439314.006563918,
+          2804902.4030380645
+        ],
+        "candidate_score_confidence": [
+          2627030.6592278834,
+          3693290.1496415734
+        ],
+        "throughput_ratio": 1.2051983204387149
+      },
+      {
+        "params": {
+          "characters": "ASCII",
+          "compression": "none",
+          "terms": "REPEATED",
+          "workers": "8"
+        },
+        "baseline_statements_per_second": 2740354.546607993,
+        "candidate_statements_per_second": 3310495.55392973,
+        "baseline_score_error": 233669.3057869268,
+        "candidate_score_error": 141897.9916313238,
+        "baseline_score_confidence": [
+          2506685.2408210663,
+          2974023.85239492
+        ],
+        "candidate_score_confidence": [
+          3168597.562298406,
+          3452393.545561054
+        ],
+        "throughput_ratio": 1.2080537381659087
+      },
+      {
+        "params": {
+          "characters": "ASCII",
+          "compression": "none",
+          "terms": "UNIQUE",
+          "workers": "1"
+        },
+        "baseline_statements_per_second": 505748.3071116102,
+        "candidate_statements_per_second": 546360.803929588,
+        "baseline_score_error": 24430.967142576174,
+        "candidate_score_error": 29448.1019133697,
+        "baseline_score_confidence": [
+          481317.339969034,
+          530179.2742541863
+        ],
+        "candidate_score_confidence": [
+          516912.7020162182,
+          575808.9058429577
+        ],
+        "throughput_ratio": 1.0803017948788018
+      },
+      {
+        "params": {
+          "characters": "ASCII",
+          "compression": "none",
+          "terms": "UNIQUE",
+          "workers": "2"
+        },
+        "baseline_statements_per_second": 843302.7907037006,
+        "candidate_statements_per_second": 936802.9793227812,
+        "baseline_score_error": 44211.642470709725,
+        "candidate_score_error": 43830.5212793135,
+        "baseline_score_confidence": [
+          799091.1482329909,
+          887514.4331744104
+        ],
+        "candidate_score_confidence": [
+          892972.4580434677,
+          980633.5006020947
+        ],
+        "throughput_ratio": 1.1108738043438213
+      },
+      {
+        "params": {
+          "characters": "ASCII",
+          "compression": "none",
+          "terms": "UNIQUE",
+          "workers": "4"
+        },
+        "baseline_statements_per_second": 1054220.7557903414,
+        "candidate_statements_per_second": 1227149.9750693212,
+        "baseline_score_error": 108093.45926692506,
+        "candidate_score_error": 56898.108946036096,
+        "baseline_score_confidence": [
+          946127.2965234164,
+          1162314.2150572664
+        ],
+        "candidate_score_confidence": [
+          1170251.8661232851,
+          1284048.0840153573
+        ],
+        "throughput_ratio": 1.16403511155435
+      },
+      {
+        "params": {
+          "characters": "ASCII",
+          "compression": "none",
+          "terms": "UNIQUE",
+          "workers": "8"
+        },
+        "baseline_statements_per_second": 976466.7004940932,
+        "candidate_statements_per_second": 1260096.4004958323,
+        "baseline_score_error": 161774.76674021807,
+        "candidate_score_error": 106604.44823624686,
+        "baseline_score_confidence": [
+          814691.9337538752,
+          1138241.4672343114
+        ],
+        "candidate_score_confidence": [
+          1153491.9522595855,
+          1366700.8487320791
+        ],
+        "throughput_ratio": 1.2904653070690706
+      }
+    ],
+    "notes": [
+      "Latest baseline rerun used; earlier baseline-staging-ascii.json excluded.",
+      "No GC allocation profiler data is present in this staging result pair.",
+      "Includes canonical staging, not LMDB index construction or a complete import."
+    ]
+  },
+  "integration_parent_commit": "f5710cbcf1050d7613aee308addddef6c8d770a8",
+  "measurement_date_utc": "2026-11-06",
+  "environment": {
+    "logical_cpus_exposed": 9,
+    "cpu_quota": "not available",
+    "architecture": "x86_64",
+    "os": "Linux",
+    "jvm": "OpenJDK 25.0.5+8",
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "physical_memory_bytes_reported": 10451427328,
+    "cpu_model_reported": "AMD EPYC 9V74 80-Core Processor",
+    "memory_limit": "not available"
+  },
+  "validation": {
+    "test_classes": 40,
+    "tests": 1114,
+    "passed": 1112,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 2,
+    "module_verify": "BUILD SUCCESS",
+    "format_check": "passed",
+    "conditional_skips": [
+      "Windows launcher on Linux",
+      "Historical format-six compatibility binary unavailable"
+    ],
+    "root_reactor_limitation": "Workbench exec-maven-plugin dependency resolution failed: Maven Resolver API/util1.9.24 unavailable offline; online retry failed Maven Central DNS. LMDB and dependency install passed."
+  },
+  "profile": {
+    "recording": "final-staging-profile.jfr",
+    "recording_sha256": "2ab5dfb2dba1c7eb4871f8c655f4ab1839446fe5aa1b65afdf16a03f95af254c",
+    "start_utc": "2026-11-06T22:21:13Z",
+    "duration_seconds": 100,
+    "workload": {
+      "candidate": "candidate4",
+      "benchmark": "FastNQuadsStagingBenchmark.stage",
+      "terms": "REPEATED",
+      "characters": "ASCII",
+      "workers": 4,
+      "compression": "none",
+      "heap": "1 GiB",
+      "jmh_gc_profiler": false
+    },
+    "event_counts": {
+      "jdk.ExecutionSample": 25125,
+      "jdk.NativeMethodSample": 2324,
+      "jdk.ObjectAllocationSample": 28715,
+      "jdk.CPUTimeSample": 0,
+      "jdk.GarbageCollection": 1416,
+      "jdk.ThreadStart": 10423,
+      "jdk.DataLoss": 0
+    },
+    "hot_method_scope": "Top frame of jdk.ExecutionSample; percentages use all 25125 Java execution samples, not elapsed time or CPUTimeSample weights.",
+    "hot_methods": [
+      {
+        "method": "CanonicalTermCodec.routeHash64(byte[])",
+        "samples": 10250,
+        "java_execution_sample_percent": 40.79601990049751
+      },
+      {
+        "method": "CanonicalStatementStager.ByteKey.equals(Object)",
+        "samples": 1786,
+        "java_execution_sample_percent": 7.108457711442786
+      },
+      {
+        "method": "FastByteScan.findLineBreak(byte[], int, int)",
+        "samples": 1653,
+        "java_execution_sample_percent": 6.57910447761194
+      },
+      {
+        "method": "FastByteScan.findIriSpecial(byte[], int, int)",
+        "samples": 1116,
+        "java_execution_sample_percent": 4.441791044776119
+      },
+      {
+        "method": "CanonicalStatementStager.countPredicate(Map, byte[])",
+        "samples": 983,
+        "java_execution_sample_percent": 3.9124378109452738
+      },
+      {
+        "method": "FastNTriplesParser.parseIri(int, IriCache)",
+        "samples": 967,
+        "java_execution_sample_percent": 3.8487562189054727
+      },
+      {
+        "method": "CanonicalTermCodec.encodeLiteral(...)",
+        "samples": 838,
+        "java_execution_sample_percent": 3.335323383084577
+      },
+      {
+        "method": "FastByteScan.findLiteralSpecial(byte[], int, int)",
+        "samples": 824,
+        "java_execution_sample_percent": 3.279601990049751
+      },
+      {
+        "method": "java.util.Arrays.copyOf(byte[], int)",
+        "samples": 695,
+        "java_execution_sample_percent": 2.7661691542288556
+      },
+      {
+        "method": "FastNTriplesParser.parseCachedIri(int, IriCache)",
+        "samples": 636,
+        "java_execution_sample_percent": 2.5313432835820895
+      }
+    ],
+    "observations": [
+      "Stable route hashing is the largest sampled Java cost. Any follow-up must preserve the current hash/partition compatibility.",
+      "Predicate-count equality and lookup remain visible after parser optimization; their disjoint top-frame shares total about 11.02 percent.",
+      "Allocation sampling highlights byte-array copying and input blocks. The copy helper view does not distinguish callers, so a specific buffer optimization is not established by this summary."
+    ],
+    "limitations": [
+      "Whole-recording samples include benchmark startup and invocation setup/teardown, not only the timed stage method. Native unlink samples include cleanup activity.",
+      "Java top-frame sample shares are not wall-clock percentages or measured CPU-time shares. Native waits, GC activity, and multithread overlap require separate interpretation; there are no CPUTimeSample events.",
+      "Allocation pressure uses sampled event weights and includes fixtures; it is not an exact byte count or per-statement allocation measurement.",
+      "This profile covers one repeated-vocabulary ASCII workload with four workers and a 1 GiB heap; it is not evidence for other corpora or full LMDB import throughput."
+    ]
+  }
+}

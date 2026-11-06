@@ -36,7 +36,8 @@ public class FastNQuadsParserBenchmark {
 
 	private static final int STATEMENTS = 4096;
 
-	@Param({ "IRI", "LANGUAGE", "ESCAPED", "UNICODE" })
+	@Param({ "IRI", "LANGUAGE", "ESCAPED", "UNICODE", "UNIQUE", "ESCAPED_IRI", "VOCABULARY", "LONG_LITERAL", "SHORT",
+			"TRIPLE_TERM" })
 	public String terms;
 
 	private byte[] input;
@@ -46,19 +47,58 @@ public class FastNQuadsParserBenchmark {
 	public void setup() {
 		StringBuilder document = new StringBuilder(STATEMENTS * 160);
 		for (int i = 0; i < STATEMENTS; i++) {
-			document.append(terms.equals("UNICODE") ? "<https://例え.テスト/項目/" : "<https://example.org/resource/")
+			if (terms.equals("SHORT")) {
+				document.append("<urn:s:")
+						.append(i)
+						.append("> <urn:p> <urn:o:")
+						.append(i)
+						.append("> <urn:g> .\n");
+				continue;
+			}
+			document.append(switch (terms) {
+			case "UNICODE" -> "<https://例え.テスト/項目/";
+			case "ESCAPED_IRI" -> "<https://example.org/res\\u006Furce/";
+			default -> "<https://example.org/resource/";
+			})
 					.append(i)
-					.append("> <https://example.org/predicate> ");
+					.append("> <https://example.org/predicate");
+			if (terms.equals("UNIQUE") || terms.equals("ESCAPED_IRI")) {
+				document.append('/').append(i);
+			} else if (terms.equals("VOCABULARY")) {
+				document.append('/').append(i % 16);
+			}
+			document.append("> ");
 			switch (terms) {
-			case "IRI" -> document.append("<https://example.org/object/").append(i).append('>');
+			case "IRI", "UNIQUE", "VOCABULARY" -> document.append("<https://example.org/object/")
+					.append(i)
+					.append('>');
+			case "ESCAPED_IRI" -> document.append("<https://example.org/\\u006Fbject/")
+					.append(i)
+					.append('>');
 			case "LANGUAGE" -> document.append("\"label-").append(i).append("\"@en-US");
 			case "ESCAPED" -> document.append("\"line\\n")
 					.append(i)
 					.append("\"^^<http://www.w3.org/2001/XMLSchema#str\\u0069ng>");
 			case "UNICODE" -> document.append("\"Grüße αβ ").append(i).append("\"@de");
+			case "LONG_LITERAL" -> document.append('"')
+					.append(i)
+					.append(' ')
+					.append("ordinary ASCII literal text with spaces and punctuation; ".repeat(40))
+					.append('"');
+			case "TRIPLE_TERM" -> document.append("<<( <urn:quoted:subject/")
+					.append(i)
+					.append("> <urn:quoted:predicate> \"label-")
+					.append(i)
+					.append("\"@en )>>");
 			default -> throw new IllegalArgumentException(terms);
 			}
-			document.append(" <https://example.org/graph> .\n");
+			document.append(" <https://example.org/graph");
+			if (terms.equals("UNIQUE") || terms.equals("ESCAPED_IRI")) {
+				document.append('/').append(i);
+			} else if (terms.equals("VOCABULARY")) {
+				document.append('/').append(i % 8);
+			}
+			document.append("> .\n");
 		}
 		input = document.toString().getBytes(StandardCharsets.UTF_8);
 		parser = new FastNTriplesParser(RDFFormat.NQUADS, () -> false);
