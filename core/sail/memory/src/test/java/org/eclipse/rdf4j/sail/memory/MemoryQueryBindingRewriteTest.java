@@ -179,6 +179,42 @@ class MemoryQueryBindingRewriteTest {
 	}
 
 	@Test
+	void distinctWildcardCountPreservesFixedMappingDomains() {
+		assertParity("SELECT (COUNT(DISTINCT *) AS ?count) WHERE { GRAPH ?context { ?instance a ?type } }",
+				binding("type", FOAF.PERSON));
+		assertParity("SELECT (COUNT(DISTINCT *) AS ?count) WHERE { GRAPH ?context { ?subject ?predicate ?object }"
+				+ " FILTER(sameTerm(?context, ?target)) }", binding("target", VF.createIRI("urn:graph")));
+		assertParity("SELECT (COUNT(DISTINCT *) AS ?count) WHERE { ?instance a ?type FILTER(BOUND(?type)) }",
+				binding("type", FOAF.PERSON));
+		assertParity("SELECT (COUNT(DISTINCT *) AS ?count) WHERE { { ?instance a ?type } }",
+				binding("type", FOAF.PERSON));
+		assertParity(
+				"SELECT (COUNT(DISTINCT *) AS ?count) WHERE { FILTER(?type = <http://xmlns.com/foaf/0.1/Person>) }",
+				binding("type", FOAF.PERSON));
+		assertParity("SELECT ?context (COUNT(DISTINCT *) AS ?count) WHERE { GRAPH ?context { ?instance a ?type } }"
+				+ " GROUP BY ?context", binding("type", FOAF.PERSON));
+		assertParity("SELECT (COUNT(DISTINCT *) AS ?count) WHERE { GRAPH ?context { ?instance a ?type }"
+				+ " FILTER EXISTS { ?instance <urn:p> ?object } }", binding("type", FOAF.PERSON));
+		MapBindingSet mixed = binding("type", FOAF.PERSON);
+		mixed.addBinding("object", VF.createIRI("urn:one"));
+		assertParity("SELECT (COUNT(DISTINCT *) AS ?count) WHERE { GRAPH ?context { ?instance a ?type }"
+				+ " ?instance <urn:p> ?object }", mixed);
+	}
+
+	@Test
+	void distinctWildcardCountStillRejectsVariableMappingDomains() {
+		for (String query : new String[] {
+				"SELECT (COUNT(DISTINCT *) AS ?count) WHERE { OPTIONAL { ?instance a ?type } }",
+				"SELECT (COUNT(DISTINCT *) AS ?count) WHERE { ?instance <urn:p> [ <urn:q>* ?type ] }",
+				"SELECT (COUNT(DISTINCT *) AS ?count) WHERE { ?instance <urn:p> (?type) }",
+				"SELECT (COUNT(DISTINCT *) AS ?count) WHERE { { ?instance a ?type } UNION { } }",
+				"SELECT (COUNT(DISTINCT *) AS ?count) WHERE { ?instance a ?type FILTER(BOUND(?type)) } VALUES ?extra { 1 UNDEF }" }) {
+			assertThrows(UnsupportedOperationException.class,
+					() -> SPARQLQueries.withQueryBindings(query, binding("type", FOAF.PERSON)));
+		}
+	}
+
+	@Test
 	void checksOnlyBoundValuesCellsAndResolvesExplicitBase() {
 		assertParity("SELECT ?x WHERE { VALUES (?x ?other) { (<urn:x> <relative>) } }",
 				binding("x", VF.createIRI("urn:x")), "http://example.org/");

@@ -31,11 +31,16 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTAskQuery;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBasicGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingsClause;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBlankNode;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstructQuery;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTCount;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTFalse;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphPatternGroup;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTIRI;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTInlineData;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNumericLiteral;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTObjectList;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathAlternative;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPathElt;
@@ -44,9 +49,12 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTPropertyListPath;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQName;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQuery;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTRDFLiteral;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTSelectQuery;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTriplesSameSubjectPath;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTTrue;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTVar;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTWhereClause;
 import org.eclipse.rdf4j.query.parser.sparql.ast.Node;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ParseException;
 import org.eclipse.rdf4j.query.parser.sparql.ast.SimpleNode;
@@ -93,7 +101,8 @@ final class QueryBindingRewriter {
 					remaining.addBinding(binding);
 				}
 			}
-			if (mentioned.stream().anyMatch(remaining::hasBinding) && containsDistinctWildcardCount(syntax)) {
+			if (mentioned.stream().anyMatch(remaining::hasBinding) && containsDistinctWildcardCount(syntax)
+					&& (root.getBindingsClause() != null || !fixedBindingDomain(root.getWhereClause()))) {
 				throw new UnsupportedOperationException(
 						"Unsupported query-binding transport: COUNT(DISTINCT *) observes solution mapping domains");
 			}
@@ -166,6 +175,50 @@ final class QueryBindingRewriter {
 			}
 		}
 		return true;
+	}
+
+	private static boolean fixedBindingDomain(Node node) {
+		// Adding the same constant to every mapping cannot merge distinct mappings when each variable is
+		// uniformly present or absent. Prove only mandatory joins of simple triples and GRAPH patterns;
+		// FILTER removes mappings without changing their domains. Sparse or independent scopes stay rejected.
+		if (node instanceof ASTConstraint) {
+			return true;
+		}
+		if (node instanceof ASTTriplesSameSubjectPath triples) {
+			if (!plainPredicates(triples) || !simpleTerm(triples.jjtGetChild(0))) {
+				return false;
+			}
+			for (ASTPropertyListPath property = (ASTPropertyListPath) triples
+					.jjtGetChild(1); property != null; property = property.getNextPropertyList()) {
+				ASTObjectList objects = property.getObjectList();
+				for (int i = 0; i < objects.jjtGetNumChildren(); i++) {
+					if (!simpleTerm(objects.jjtGetChild(i))) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+		if (node instanceof ASTGraphGraphPattern graph) {
+			return graph.jjtGetNumChildren() == 2 && fixedBindingDomain(graph.jjtGetChild(1));
+		}
+		if (!(node instanceof ASTWhereClause || node instanceof ASTGraphPatternGroup
+				|| node instanceof ASTBasicGraphPattern)) {
+			return false;
+		}
+		for (int i = 0; i < node.jjtGetNumChildren(); i++) {
+			if (!fixedBindingDomain(node.jjtGetChild(i))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean simpleTerm(Node node) {
+		// Property lists, collections and triple terms may hide paths or reification with different domains.
+		return node instanceof ASTVar || node instanceof ASTIRI || node instanceof ASTQName
+				|| node instanceof ASTBlankNode || node instanceof ASTRDFLiteral || node instanceof ASTNumericLiteral
+				|| node instanceof ASTTrue || node instanceof ASTFalse;
 	}
 
 	private static boolean containsDistinctWildcardCount(Node node) {
