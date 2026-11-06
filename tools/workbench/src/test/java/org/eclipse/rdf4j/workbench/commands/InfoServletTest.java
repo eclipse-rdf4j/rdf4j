@@ -20,6 +20,7 @@ import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
 import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Properties;
@@ -270,6 +271,21 @@ public class InfoServletTest {
 		assertThat(servlet.getCookieNames()).contains("limit", "queryLn", "infer", "query-timeout", "Accept",
 				"Content-Type");
 		assertThatCode(() -> servlet.service(req, resp)).doesNotThrowAnyException();
+	}
+
+	@Test
+	public void relativeServerDisplayDoesNotExposeInternalManagerLocation() throws Exception {
+		when(manager.getLocation()).thenReturn(new URL("http://192.0.2.10:8080/rdf4j-server"));
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		when(req.getAttribute("org.eclipse.rdf4j.workbench.serverDisplay")).thenReturn("/rdf4j-server");
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		CapturingServletOutputStream output = new CapturingServletOutputStream();
+		when(resp.getOutputStream()).thenReturn(output);
+
+		servlet.service(req, resp);
+
+		assertThat(output.content()).containsPattern("(?s)<binding name='server'>\\s*<literal>/rdf4j-server</literal>")
+				.doesNotContain("192.0.2.10:8080");
 	}
 
 	@Test
