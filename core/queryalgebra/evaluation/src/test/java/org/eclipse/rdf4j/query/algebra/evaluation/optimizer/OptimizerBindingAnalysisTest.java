@@ -205,8 +205,14 @@ class OptimizerBindingAnalysisTest {
 			MapBindingSet input = new MapBindingSet();
 			input.addBinding("x", VF.createLiteral(1));
 			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(consumer, input);
-			assertThat(analysis.contextAt(reference).externalValues()).doesNotContainKey("x");
+			var context = analysis.contextAt(reference);
+			// A local write owns this output scope, even on the branch where it leaves the name unbound.
+			assertThat(context.externalValues()).doesNotContainKey("x");
+			assertThat(context.externalGuaranteedNames()).doesNotContain("x");
+			assertThat(context.fixedValues()).doesNotContainKey("x");
 			new BindingAssignerOptimizer().optimize(consumer, null, input);
+			assertThat(((Var) consumer.getElements().getFirst().getExpr()).hasValue()).isFalse();
+			new BindingAssignerOptimizer().optimizeForPreparedQuery(consumer, input);
 			assertThat(((Var) consumer.getElements().getFirst().getExpr()).hasValue()).isFalse();
 		}
 	}

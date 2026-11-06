@@ -71,6 +71,17 @@ import org.slf4j.LoggerFactory;
  */
 public class QueryStringUtil {
 
+	/** The public projection excludes any private column used to execute a fully bound existence check. */
+	public record RenderedTupleQuery(String queryString, Set<String> bindingNames) {
+		public RenderedTupleQuery {
+			bindingNames = Set.copyOf(bindingNames);
+		}
+	}
+
+	/** The private index column needed to associate a batched result with its original input row. */
+	public record RenderedBoundJoin(String queryString, String rowIndexName) {
+	}
+
 	/** Typed operands for an in-process prepared query, kept out of the SPARQL text and projection. */
 	public static final class TypedBindings extends MapBindingSet {
 		private static final long serialVersionUID = 1L;
@@ -172,7 +183,6 @@ public class QueryStringUtil {
 			for (BindingSet input : bindings) {
 				reserved.addAll(input.getBindingNames());
 			}
-			reserved.add(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME);
 			if (graphBindings != null) {
 				reserved.addAll(graphBindings.getBindingNames());
 			}
@@ -180,6 +190,11 @@ public class QueryStringUtil {
 
 		String graphName() {
 			return privateName("__fedx_graph_");
+		}
+
+		String rowIndexName() {
+			String preferred = BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME;
+			return reserved.add(preferred) ? preferred : privateName("__fedx_index_");
 		}
 
 		String privateName(String prefix) {
@@ -240,6 +255,24 @@ public class QueryStringUtil {
 			}
 		});
 		return FilterUtils.toSparqlString(copy);
+	}
+
+	private static boolean canEvaluateFilterRemotely(FilterValueExpr filter, BindingSet bindings) {
+		if (bindings.isEmpty()) {
+			return true;
+		}
+		boolean[] requiresInput = { false };
+		filter.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var variable) {
+				if (!variable.hasValue() && bindings.hasBinding(variable.getName())) {
+					requiresInput[0] = true;
+				}
+			}
+		});
+		// Rendering substitutes incoming values in the graph pattern, so those variable bindings no longer
+		// exist in the remote filter's row. Evaluate such a filter after restoring the incoming mapping.
+		return !requiresInput[0];
 	}
 
 	private static Set<String> projectionVariables(QueryModelNode expression, BindingSet bindings,
@@ -445,7 +478,7 @@ public class QueryStringUtil {
 		appendDatasetClause(res, dataset);
 		res.append("WHERE { ").append(s);
 
-		if (filterExpr != null) {
+		if (filterExpr != null && canEvaluateFilterRemotely(filterExpr, bindings)) {
 			try {
 				String filter = filterString(filterExpr, varNames);
 				res.append("FILTER ").append(filter);
@@ -509,7 +542,7 @@ public class QueryStringUtil {
 		appendDatasetClause(res, dataset);
 		res.append("WHERE { ").append(s);
 
-		if (filterExpr != null) {
+		if (filterExpr != null && canEvaluateFilterRemotely(filterExpr, bindings)) {
 			try {
 				String filter = filterString(filterExpr, varNames);
 				res.append("FILTER ").append(filter);
@@ -574,7 +607,7 @@ public class QueryStringUtil {
 		appendDatasetClause(res, dataset);
 		res.append("WHERE { ").append(sb);
 
-		if (filterExpr != null) {
+		if (filterExpr != null && canEvaluateFilterRemotely(filterExpr, bindings)) {
 			try {
 				String filter = filterString(filterExpr, varNames);
 				res.append("FILTER ").append(filter);
@@ -644,18 +677,38 @@ public class QueryStringUtil {
 
 	public static String selectQueryStringBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
 			FilterValueExpr filterExpr, AtomicBoolean evaluated, Dataset dataset, QueryBindingSet graphBindings) {
+		return renderBoundJoinVALUES(stmt, unionBindings, filterExpr, evaluated, dataset, graphBindings, true)
+				.queryString();
+	}
 
-		Set<String> varNames = new ProjectionVariables(stmt, unionBindings, filterExpr, true, graphBindings);
+	/** Renders a bound join with the exact private row-index name required for result conversion. */
+	public static RenderedBoundJoin renderBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
+			FilterValueExpr filterExpr, AtomicBoolean evaluated, Dataset dataset, QueryBindingSet graphBindings) {
+		return renderBoundJoinVALUES(stmt, unionBindings, filterExpr, evaluated, dataset, graphBindings, false);
+	}
+
+	private static RenderedBoundJoin renderBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
+			FilterValueExpr filterExpr, AtomicBoolean evaluated, Dataset dataset, QueryBindingSet graphBindings,
+			boolean legacyIndex) {
+
+		ProjectionVariables varNames = new ProjectionVariables(stmt, unionBindings, filterExpr, true, graphBindings);
+		String rowIndexName = legacyIndex ? BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME
+				: varNames.rowIndexName();
+		varNames.reserved.add(rowIndexName);
 		StringBuilder res = new StringBuilder();
 
 		String stmtPattern = constructStatement(stmt, varNames, new EmptyBindingSet());
+		if (legacyIndex && varNames.contains(rowIndexName)) {
+			throw new IllegalArgumentException("A pattern projecting ?" + rowIndexName
+					+ " requires renderBoundJoinVALUES and its returned rowIndexName");
+		}
 		res.append("SELECT ");
 
 		for (String var : varNames) {
 			res.append(" ?").append(var);
 		}
 
-		res.append(" ?").append(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME);
+		res.append(" ?").append(rowIndexName);
 
 		res.append(" ");
 		appendDatasetClause(res, dataset);
@@ -673,7 +726,7 @@ public class QueryStringUtil {
 		for (String var : varNames) {
 			res.append("?").append(var).append(" ");
 		}
-		res.append(" ?__index) { ");
+		res.append(" ?").append(rowIndexName).append(") { ");
 
 		int index = 0;
 		for (BindingSet b : unionBindings) {
@@ -695,7 +748,7 @@ public class QueryStringUtil {
 
 		res.append(" }");
 
-		return res.toString();
+		return new RenderedBoundJoin(res.toString(), rowIndexName);
 	}
 
 	/**
@@ -755,6 +808,17 @@ public class QueryStringUtil {
 
 	public static String selectQueryStringTripleRefJoinGroup(TripleRefJoinGroup tripleRefJoinGroup, BindingSet bindings,
 			Dataset dataset, QueryBindingSet graphBindings) {
+		return renderTripleRefJoinGroup(tripleRefJoinGroup, bindings, dataset, graphBindings).queryString();
+	}
+
+	public static RenderedTupleQuery renderTripleRefJoinGroup(TripleRefJoinGroup group, BindingSet bindings,
+			Dataset dataset) {
+		return renderTripleRefJoinGroup(group, bindings, dataset, null);
+	}
+
+	public static RenderedTupleQuery renderTripleRefJoinGroup(TripleRefJoinGroup tripleRefJoinGroup,
+			BindingSet bindings,
+			Dataset dataset, QueryBindingSet graphBindings) {
 
 		Set<String> varNames = projectionVariables(tripleRefJoinGroup, bindings, null, graphBindings);
 
@@ -774,7 +838,7 @@ public class QueryStringUtil {
 
 		res.append(body).append(" }");
 
-		return res.toString();
+		return new RenderedTupleQuery(res.toString(), varNames);
 	}
 
 	public static String askQueryString(TripleRefJoinGroup group, BindingSet bindings, Dataset dataset) {

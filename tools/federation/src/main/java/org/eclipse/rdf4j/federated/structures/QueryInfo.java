@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -57,6 +58,16 @@ public class QueryInfo {
 	private final boolean includeInferred;
 	private final Dataset dataset;
 	private final BlankNodeAllocationScope blankNodes = BlankNodeAllocationScope.currentOrNew();
+	private TupleExpr bindingsCapturedPlan;
+
+	/** Marks the exact final plan whose API parameters were captured; null clears an earlier preparation. */
+	public void markBindingsCaptured(TupleExpr plan) {
+		bindingsCapturedPlan = plan;
+	}
+
+	public boolean hasCapturedBindings(TupleExpr plan) {
+		return bindingsCapturedPlan == plan;
+	}
 
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return blankNodes;

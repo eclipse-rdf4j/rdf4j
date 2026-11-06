@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.federated.endpoint.SparqlEndpointConfiguration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.ConsumingIteration;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.util.BoundFilterUtil;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -95,6 +96,9 @@ public class SparqlTripleSource extends TripleSourceBase {
 	public boolean hasStatements(StatementPattern stmt,
 			BindingSet bindings, QueryInfo queryInfo, Dataset dataset) throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
+		if (!BoundFilterUtil.hasValidValuePositions(stmt, bindings)) {
+			return false;
+		}
 		if (NativeGraphQuery.isRequired(stmt, bindings)) {
 			try (CloseableIteration<BindingSet> rows = getStatements(NativeGraphQuery.select(stmt, bindings, dataset),
 					queryInfo)) {

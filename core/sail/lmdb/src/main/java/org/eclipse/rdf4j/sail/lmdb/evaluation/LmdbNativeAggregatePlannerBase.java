@@ -881,10 +881,12 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 * Whether an aggregate argument variable reads its input slot. The shared ConstantOptimizer annotates an argument
 	 * with the constant it is proven to carry ({@code Var(name, value)}) while the group input still binds that name (a
 	 * single-valued VALUES, a constant BIND); that slot then holds exactly this term on every row, so the slot form
-	 * stays the authoritative, kernel-eligible encoding. Only a constant no input binding supplies is a true constant.
+	 * stays the authoritative, kernel-eligible encoding. API substitutions are different: their value overrides an
+	 * expression read even when VALUES produces a conflicting or unbound slot with the same name.
 	 */
 	static boolean readsInputSlot(Var var, Group group) {
-		return !var.hasValue() || group.getArg().getBindingNames().contains(var.getName());
+		return !var.hasValue()
+				|| !var.hasApiInputOrigin() && group.getArg().getBindingNames().contains(var.getName());
 	}
 
 	Set<String> aggregateRequiredNames(Group group) {
@@ -1053,10 +1055,11 @@ abstract class LmdbNativeAggregatePlannerBase {
 				}
 				continue;
 			}
-			if (!(arg instanceof Var)) {
+			if (!(arg instanceof Var variable) || kind != AggKind.COUNT && !readsInputSlot(variable, group)) {
 				// M-F3 aggregates over expressions: evaluate the argument once per input solution into a hidden
 				// computed slot (error ⇒ slot unbound, matching the generic evaluator's null-on-error skip);
-				// DISTINCT then applies to the computed slot exactly like a plain variable argument.
+				// DISTINCT then applies to the computed slot exactly like a plain variable argument. Captured
+				// constants use this path too, so native aggregation never reinterprets them as input-slot reads.
 				int hidden = slot("#aggExpr" + i);
 				pendingAggregateExpressions.add(new PendingAggregateExpression(hidden, arg));
 				if (kind == AggKind.GROUP_CONCAT) {

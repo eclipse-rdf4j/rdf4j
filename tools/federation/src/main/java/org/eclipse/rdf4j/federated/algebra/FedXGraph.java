@@ -13,9 +13,16 @@ package org.eclipse.rdf4j.federated.algebra;
 
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
 
 /** Keeps the federation query context on an active graph boundary. */
-public final class FedXGraph extends Graph implements QueryRef {
+public final class FedXGraph extends Graph implements QueryRef, BindingAnalysisContract.Standard {
+	@Override
+	public Class<? extends QueryModelNode> bindingContractClass() {
+		return FedXGraph.class;
+	}
+
 	private static final long serialVersionUID = 1L;
 	private final QueryInfo queryInfo;
 
