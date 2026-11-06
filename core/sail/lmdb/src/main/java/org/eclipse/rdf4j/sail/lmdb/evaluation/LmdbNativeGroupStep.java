@@ -1229,7 +1229,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		return iteration;
 	}
 
-	private static void throwRealFailureSuppressedBy(EncounterOrderFallback fallback) {
+	static void throwRealFailureSuppressedBy(EncounterOrderFallback fallback) {
 		Throwable realFailure = EncounterOrderFallback.realFailure(fallback);
 		if (realFailure instanceof Error) {
 			throw (Error) realFailure;
@@ -1627,24 +1627,24 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				}
 			}
 			if (compiledIr) {
-				arbiter.offer(() -> estimatedProposal(() -> {
+				arbiter.offer(() -> withKernelQuote(estimatedProposal(() -> {
 					return LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row,
 							groupSlots, aggregates, this, explainTarget, havingCondition, false,
 							allowFixedContexts);
 				}, compiledSerialTag, irAggregateWork)
 						.withPlanningWork(irAggregatePlanning)
-						.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, false))
-						.withOptionalCostQuote(kernelQuote(arg, row, compiledSerialTag, compiledAdmission)));
+						.withOptionalAggregatePhysicalPlan(compiledAdmission.physicalPlan(arg, row, false)),
+						row, compiledSerialTag, 0, compiledAdmission));
 			}
 			if (interpretedIr) {
-				arbiter.offer(() -> estimatedProposal(() -> {
+				arbiter.offer(() -> withKernelQuote(estimatedProposal(() -> {
 					return LmdbNativeKernelExecution.tryEvaluateAggregateSerial(arg, row,
 							groupSlots, aggregates, this, explainTarget, havingCondition, true,
 							allowFixedContexts);
 				}, interpretedSerialTag, irAggregateWork)
 						.withPlanningWork(irAggregatePlanning)
-						.withOptionalAggregatePhysicalPlan(interpretedAdmission.physicalPlan(arg, row, false))
-						.withOptionalCostQuote(kernelQuote(arg, row, interpretedSerialTag, interpretedAdmission)));
+						.withOptionalAggregatePhysicalPlan(interpretedAdmission.physicalPlan(arg, row, false)),
+						row, interpretedSerialTag, 0, interpretedAdmission));
 			}
 		}
 		if (!typeMatrixOwned && replaySafe && !opaque && orderedSinglePatternHandlesRow()) {
@@ -1800,7 +1800,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			return null;
 		}
 		int workers = reservation.grantedWorkers();
-		return estimatedProposal(
+		return withKernelQuote(estimatedProposal(
 				() -> LmdbNativeKernelExecution.tryEvaluateAggregateParallel(arg, row, groupSlots, aggregates,
 						this, explainTarget, havingCondition, interpreted, allowFixedContexts, reservation),
 				tag, LmdbNativeKernelExecution.parallelProposalWork(serialWork, workers),
@@ -1808,9 +1808,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 						.withParallelReservation(reservation)
 						.withPlanningWork(LmdbNativeKernelExecution.parallelProposalWork(serialPlanning, workers))
 						.withOptionalAggregatePhysicalPlan(admission.physicalPlan(arg, row, true, workers))
-						.withOptionalCostQuote(kernelQuote(arg, row, tag, workers, admission))
 						.withParallelShape(LmdbNativeStaticPrior.ParallelShape.aggregate(arg, row,
-								row.boundMask(), groupSlots));
+								row.boundMask(), groupSlots)),
+				row, tag, workers, admission);
 	}
 
 	private LmdbNativeStrategyProposal<List<BindingSet>> estimatedProposal(
@@ -1873,9 +1873,28 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	 * (witnesses, correlated probes) plus a group update per row; parallel tiers pay a worker start per worker and
 	 * stream at the measured speed-up. Inputs already priced by physical work keep that quote instead.
 	 */
-	private LmdbNativeCostQuote kernelQuote(SlotPlan input, RowState row, String tag,
+	private LmdbNativeStrategyProposal<List<BindingSet>> withKernelQuote(
+			LmdbNativeStrategyProposal<List<BindingSet>> proposal, RowState row, String tag, int workers,
 			LmdbNativeKernelExecution.AggregateAdmission admission) {
-		return kernelQuote(input, row, tag, 0, admission);
+		LmdbNativeCostQuote quote = kernelQuote(arg, row, tag, workers, admission);
+		if (quote == null) {
+			// Keep the existing physical access algorithm and its quote. Legacy work already charges one
+			// assignment per copy, but does not describe the nested expression evaluated by a BIND hook.
+			LmdbNativeCostVector scalar = NativeScalarCosts.additionalForKernel(arg, row, row.boundMask(),
+					admission.lowered().bindings);
+			if (!scalar.isZero()) {
+				quote = LmdbNativeStrategyProposal.quote(proposal);
+				if (workers > 0) {
+					LmdbNativeStaticPrior.ParallelShape shape = LmdbNativeStaticPrior.ParallelShape.aggregate(
+							arg, row, row.boundMask(), groupSlots);
+					scalar = scalar.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(shape, workers));
+				}
+				quote = new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(scalar), quote.outputRows(),
+						quote.ordered(), quote.distinct(), quote.chunked(), quote.inputSpread(),
+						quote.outputProvenEmpty());
+			}
+		}
+		return proposal.withOptionalCostQuote(quote);
 	}
 
 	private LmdbNativeCostQuote kernelQuote(SlotPlan input, RowState row, String tag, int quotedWorkers,
@@ -1901,7 +1920,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		double rows = LmdbNativeWork.rowsOut(input, row, boundMask);
 		LmdbNativeCostVector streaming = LmdbNativePlanExecutionProfile.kernelVector(input, row, boundMask,
 				tag.contains("Interpreted") ? LmdbNativeCostVector.Feature.INTERPRETED_ROW
-						: LmdbNativeCostVector.Feature.GENERATED_ROW)
+						: LmdbNativeCostVector.Feature.GENERATED_ROW,
+				admission.lowered().bindings)
 				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE, rows, row));
 		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D);
 		if (tag.contains("Parallel")) {
@@ -1951,23 +1971,28 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	}
 
 	List<BindingSet> evaluateSequentialFallback(RowState speculativeRow, EncounterOrderFallback.Reason reason) {
-		return evaluateSequentialFallback(speculativeRow, reason, true);
+		return evaluateSequentialFallback(speculativeRow, reason, arg);
+	}
+
+	List<BindingSet> evaluateSequentialFallback(RowState speculativeRow, EncounterOrderFallback.Reason reason,
+			SlotPlan originalInput) {
+		return evaluateSequentialFallback(speculativeRow, reason, true, originalInput);
 	}
 
 	private List<BindingSet> evaluateSequentialFallback(RowState speculativeRow) {
-		return evaluateSequentialFallback(speculativeRow, null, false);
+		return evaluateSequentialFallback(speculativeRow, null, false, arg);
 	}
 
 	private List<BindingSet> evaluateSequentialFallback(RowState speculativeRow,
-			EncounterOrderFallback.Reason reason, boolean encounterOrderRequired) {
+			EncounterOrderFallback.Reason reason, boolean encounterOrderRequired, SlotPlan originalInput) {
 		RowState row = new RowState(source, layout, base, explainTarget, cancellation);
 		row.encounterOrderRequired = encounterOrderRequired;
 		row.runtimePlan = speculativeRow.runtimePlan;
 		if (row.runtimePlan != null) {
 			if (encounterOrderRequired) {
-				row.runtimePlan.restartWithEncounterOrderFallback(reason, arg);
+				row.runtimePlan.restartWithEncounterOrderFallback(reason, originalInput);
 			} else {
-				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, new SlotPlan[] { arg });
+				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, new SlotPlan[] { originalInput });
 			}
 		}
 		if (!initialize(row)) {
@@ -1977,7 +2002,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		LmdbNativeDispatchLoop.logDirect(explainTarget, "GROUP BY fallback",
 				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
 				reason == null ? "Selected candidates declined" : reason.name());
-		List<BindingSet> results = evaluateSequential(row, new AggContext(source, strictCompare), metrics);
+		List<BindingSet> results = evaluateSequential(row, new AggContext(source, strictCompare), metrics,
+				originalInput);
 		metrics.commitToParent();
 		return results;
 	}

@@ -73,6 +73,25 @@ class LmdbNativeFiniteHighRankingTest {
 	}
 
 	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void unknownOutputBoundsDoNotEraseKnownExecutionWork(boolean embeddedOutput) {
+		LmdbNativeCandidate<String> unknown = LmdbNativeCandidate.of("unknown",
+				LmdbNativeCostQuote.ofWork(LmdbNativeWork.UNKNOWN, Double.NaN), () -> "unknown");
+		LmdbNativeCostVector work = LmdbNativeCostVector.point(Feature.SCANNED_ROW, 2D);
+		if (embeddedOutput) {
+			work = work.plus(LmdbNativeCostVector.bounds(Feature.OUTPUT_MATERIALIZATION,
+					0D, 0D, Double.POSITIVE_INFINITY));
+		}
+		LmdbNativeCandidate<String> known = LmdbNativeCandidate.of("known",
+				LmdbNativeCostQuote.streaming(work, Double.NaN), () -> "known");
+		LmdbNativeSelector.Ranking ranked = LmdbNativeSelector.rank(List.of(unknown, known),
+				LmdbNativeStaticPrior.DEFAULT, -1D);
+		assertThat(ranked.winner()).isEqualTo(1);
+		assertThat(ranked.eliminatedBy()[0]).startsWith("Unpriced");
+		assertThat(ranked.nanos()[1].known()).as("unknown output still prevents interval dominance").isFalse();
+	}
+
+	@ParameterizedTest
 	@ValueSource(longs = { 100_000L, 100_001L })
 	void unrelatedSourceRowsDoNotRemoveTheCheaperAdmittedKernelFromAutomaticSelection(long entries) throws Exception {
 		Observed below = automatic(99_999L);

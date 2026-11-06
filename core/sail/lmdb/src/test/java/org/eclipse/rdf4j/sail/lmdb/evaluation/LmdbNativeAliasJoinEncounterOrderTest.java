@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.io.IOException;
@@ -22,6 +23,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -655,7 +657,8 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 		for (boolean adjacency : List.of(false, true)) {
 			SailRepository repository = openRepository("forced-unsupported-adjacency-" + adjacency, adjacency);
 			List<BindingSet> expected = evaluate(repository, query, false, null).rows();
-			Observed forced = evaluate(repository, query, true, "nestedLoop");
+			Observed forced = evaluateWithStrategyEvents(repository, query,
+					"forced-nested-loop-fallback-adjacency-" + adjacency, true, "nestedLoop");
 			writeEvidence("forced-nested-loop-custom-order-adjacency-" + adjacency,
 					query + "\nexpected=exact replay of the generic result\nactual=" + forced.rows() + "\n");
 			softly.assertThat(forced.rows())
@@ -664,6 +667,126 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 					.containsExactlyElementsOf(expected);
 		}
 		softly.assertAll();
+	}
+
+	@Test
+	void forcedPhysicalGroupingPreservesFloatingEncounterOrder() throws Exception {
+		for (boolean adjacency : List.of(false, true)) {
+			SailRepository repository = openRepository("forced-floating-adjacency-" + adjacency, adjacency);
+			for (String aggregate : List.of("SUM", "AVG")) {
+				String query = PREFIX + "SELECT (" + aggregate + "(?number) AS ?numberResult) "
+						+ "(STRLEN(GROUP_CONCAT(?value; SEPARATOR=\",\")) AS ?length) WHERE { "
+						+ "?source ex:input ?value . BIND(?source AS ?focus) ?focus ex:facet ?facetValue . "
+						+ "BIND(IF(?value = \"A1\", 1e16, IF(?value = \"A2\", -1e16, 1e0)) AS ?number) }";
+				List<BindingSet> expected = evaluate(repository, query, false, null).rows();
+				Observed forced = evaluateWithStrategyEvents(repository, query,
+						"forced-floating-" + aggregate + "-adjacency-" + adjacency, true, "nestedLoop");
+				assertThat(forced.rows())
+						.as("%s preserves floating encounter order with physical results, adjacency=%s", aggregate,
+								adjacency)
+						.containsExactlyElementsOf(expected);
+			}
+		}
+	}
+
+	@Test
+	void fullValueFallbackReopensTheOriginalInputForEveryOrderReason() throws Exception {
+		SailRepository repository = openRepository("full-value-order-reasons", false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset((LmdbStore) repository.getSail())) {
+			for (EncounterOrderFallback.Reason reason : EncounterOrderFallback.Reason.values()) {
+				AtomicInteger opens = new AtomicInteger();
+				AtomicInteger filterCloses = new AtomicInteger();
+				SlotPlan input = new FilterPlan(orderRefusingInput(reason, opens, null), new NativeBooleanFilter() {
+					@Override
+					public boolean accept(RowState row) {
+						return true;
+					}
+
+					@Override
+					public void close() {
+						filterCloses.incrementAndGet();
+					}
+				}, 0L);
+				try (NativeResultCursor cursor = fullValueFallbackCursor((NativeLmdbQuerySource) dataset, input)) {
+					NativeResultRow result = cursor.next();
+					assertThat(result).as("fallback produces the original relation for %s", reason).isNotNull();
+					assertThat(result.toBindingSet().getValue("count").stringValue()).isEqualTo("1");
+					assertThat(cursor.next()).isNull();
+				}
+				assertThat(opens.get()).as("one speculative open and one ordered replay for %s", reason).isEqualTo(2);
+				assertThat(filterCloses.get()).as("only the original replay closes the shared filter").isOne();
+			}
+		}
+	}
+
+	@Test
+	void fullValueFallbackPropagatesCursorCleanupFailureWithoutReplay() throws Exception {
+		SailRepository repository = openRepository("full-value-order-cleanup", false);
+		AtomicInteger opens = new AtomicInteger();
+		IllegalStateException closeFailure = new IllegalStateException("original cursor cleanup failed");
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset((LmdbStore) repository.getSail());
+				NativeResultCursor cursor = fullValueFallbackCursor((NativeLmdbQuerySource) dataset,
+						orderRefusingInput(EncounterOrderFallback.Reason.CUSTOM_AGGREGATE_ORDER, opens,
+								closeFailure))) {
+			assertThatThrownBy(cursor::next).isSameAs(closeFailure);
+			assertThat(opens.get()).as("a real cleanup failure must prevent ordered replay").isOne();
+		}
+	}
+
+	private static SlotPlan orderRefusingInput(EncounterOrderFallback.Reason reason, AtomicInteger opens,
+			RuntimeException closeFailure) {
+		return new SlotPlan() {
+			@Override
+			public RowCursor open(RowState row) {
+				opens.incrementAndGet();
+				return new RowCursor() {
+					private boolean emitted;
+
+					@Override
+					public boolean next() {
+						if (!row.encounterOrderRequired) {
+							throw switch (reason) {
+							case FLOATING_SUM_OR_AVG -> EncounterOrderFallback.floatingSumOrAvg();
+							case DISTINCT_TERM_EXTREMA_TIE -> EncounterOrderFallback.distinctTermExtremaTie();
+							case GROUP_CONCAT_ORDER -> EncounterOrderFallback.groupConcatOrder();
+							case CUSTOM_AGGREGATE_ORDER -> EncounterOrderFallback.customAggregateOrder();
+							};
+						}
+						boolean result = !emitted;
+						emitted = true;
+						return result;
+					}
+
+					@Override
+					public void close() {
+						if (closeFailure != null) {
+							throw closeFailure;
+						}
+					}
+				};
+			}
+
+			@Override
+			public long producedMask() {
+				return 0L;
+			}
+		};
+	}
+
+	private static NativeResultCursor fullValueFallbackCursor(NativeLmdbQuerySource source, SlotPlan input) {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of(), null);
+		layout.freeze(List.of());
+		AggregateSpec[] aggregates = { AggregateSpec.star("count") };
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		NativeGroupStep full = new NativeGroupStep(source, input, layout, new int[0], aggregates, false,
+				null, null, context, Set.of(), null, null, false, false, null, 0L, null, null);
+		NativeGroupStep owner = new NativeGroupStep(source, SingletonPlan.INSTANCE, layout, new int[0], aggregates,
+				false, null, null, context, Set.of(), null, null, false, false, null, 0L, null, null);
+		owner.fullValueCompiler = () -> full;
+		NativeGroupIteration iteration = new NativeGroupIteration(source, owner.arg, layout, new int[0], aggregates,
+				false, EmptyBindingSet.getInstance(), null, null, false, false, null, null, 0L, null, null, null,
+				null, "nestedLoop(fullValue)");
+		return new NativeGroupResultCursor(owner, iteration, null, false);
 	}
 
 	@Test

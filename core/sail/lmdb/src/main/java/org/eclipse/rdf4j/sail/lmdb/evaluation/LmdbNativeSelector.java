@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
+
 /**
  * The one ranking rule of the native engine. Given admitted candidates in registry order it prices each with the static
  * prior, removes every candidate another admitted candidate structurally dominates, removes every candidate whose whole
@@ -103,8 +105,10 @@ final class LmdbNativeSelector {
 			nanos[i] = LmdbNativeWork.between(priced.low() + fixed, priced.high() + fixed);
 			expected[i] = prior.expected(vector) + fixed;
 			quotedExpected[i] = expected[i];
-			// A finite ceiling is a proof and an expectation above the floor is an estimate; either one is a price.
-			hasPrice[i] = nanos[i].known() || expected[i] > nanos[i].low();
+			// Unknown output cardinality must not erase a known execution-work quote. Materialization still
+			// keeps the total ceiling unbounded, so that quote cannot establish interval dominance.
+			// Otherwise an expectation above the floor is an estimate; a floor alone is not a price.
+			hasPrice[i] = executionBounded(vector) || nanos[i].known() || expected[i] > nanos[i].low();
 			if (advice != null) {
 				LmdbNativeAdvisoryLearner.Narrowed narrowed = advice.narrow(candidate.id(), candidate.quote(), nanos[i],
 						expected[i]);
@@ -205,6 +209,16 @@ final class LmdbNativeSelector {
 					expected[winner], eligible);
 		}
 		return new Ranking(winner, nanos, expected, quotedExpected, eliminatedBy, reason, estimated);
+	}
+
+	/** Output uncertainty does not remove the price supplied by bounded producer work. */
+	private static boolean executionBounded(LmdbNativeCostVector vector) {
+		for (Feature feature : Feature.values()) {
+			if (feature != Feature.OUTPUT_MATERIALIZATION && Double.isInfinite(vector.high(feature))) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**

@@ -96,6 +96,7 @@ class LmdbNativePackedFtreeSliceQuoteTest {
 	void completeConsumptionPreservesTheExistingWholeRunFeatureCounts() {
 		LmdbNativeCostQuote quote = starQuote(3_000);
 		LmdbNativeCostVector full = quote.forSlice(27_000D);
+		LmdbNativeCostVector unlimited = quote.forSlice(-1D);
 		assertAll(
 				() -> assertThat(full.expected(Feature.INDEX_SEEK)).isEqualTo(6_000D),
 				() -> assertThat(full.expected(Feature.SCANNED_ROW)).isEqualTo(21_000D),
@@ -103,7 +104,15 @@ class LmdbNativePackedFtreeSliceQuoteTest {
 				() -> assertThat(full.expected(Feature.GENERATED_ROW)).isEqualTo(27_000D),
 				() -> assertThat(full.expected(Feature.OPEN)).isEqualTo(3D),
 				() -> assertThat(full.expected(Feature.OUTPUT_MATERIALIZATION)).isEqualTo(27_000D),
-				() -> assertThat(full).isEqualTo(quote.forSlice(-1D)));
+				() -> assertThat(full.high(Feature.OUTPUT_MATERIALIZATION)).isEqualTo(27_000D),
+				() -> assertThat(unlimited.high(Feature.OUTPUT_MATERIALIZATION)).isInfinite());
+		for (Feature feature : Feature.values()) {
+			assertThat(full.low(feature)).as("%s floor", feature).isEqualTo(unlimited.low(feature));
+			assertThat(full.expected(feature)).as("%s expectation", feature).isEqualTo(unlimited.expected(feature));
+			if (feature != Feature.OUTPUT_MATERIALIZATION) {
+				assertThat(full.high(feature)).as("%s ceiling", feature).isEqualTo(unlimited.high(feature));
+			}
+		}
 	}
 
 	@Test

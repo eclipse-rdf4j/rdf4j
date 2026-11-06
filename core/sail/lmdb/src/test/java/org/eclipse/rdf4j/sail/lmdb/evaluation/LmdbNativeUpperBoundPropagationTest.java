@@ -15,8 +15,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.lang.reflect.Method;
-
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePlanExecutionProfile.Mode;
 import org.junit.jupiter.api.Test;
@@ -41,14 +39,14 @@ class LmdbNativeUpperBoundPropagationTest {
 	}
 
 	@Test
-	void genericPremiumPreservesAnUnknownUnrelatedFeature() throws Exception {
-		LmdbNativeCostVector unknown = LmdbNativeCostQuote.ofWork(LmdbNativeWork.UNKNOWN, Double.NaN)
-				.total()
-				.plus(LmdbNativeCostVector.point(Feature.INTERPRETED_ROW, 1D));
-		Method premium = LmdbNativePlanExecutionProfile.class.getDeclaredMethod("withPremium",
-				LmdbNativeCostVector.class);
-		premium.setAccessible(true);
-		LmdbNativeCostVector actual = (LmdbNativeCostVector) premium.invoke(null, unknown);
+	void genericPremiumPreservesAnUnknownUnrelatedFeature() {
+		SlotPlan unknown = mock(SlotPlan.class);
+		when(unknown.estimateWork(null, 0L)).thenReturn(LmdbNativeWork.UNKNOWN);
+		when(unknown.estimateRows(null, 0L)).thenReturn(Double.NaN);
+		SlotPlan assignment = new ExtensionPlan(SingletonPlan.INSTANCE,
+				new CopyBinding[] { CopyBinding.constant(0, 1L) });
+		LmdbNativeCostVector actual = LmdbNativePlanExecutionProfile.profile(
+				new UnionPlan(unknown, assignment), null, 0L, Mode.SEQUENTIAL);
 		assertThat(actual.expected(Feature.INTERPRETED_ROW))
 				.isEqualTo(LmdbNativePlanExecutionProfile.GENERIC_ROW_PREMIUM);
 		assertThat(actual.high(Feature.SCANNED_ROW)).isPositive().isInfinite();

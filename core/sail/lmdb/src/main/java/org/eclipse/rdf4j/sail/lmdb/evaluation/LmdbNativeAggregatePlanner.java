@@ -1781,8 +1781,6 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return visibleInputs.toArray(String[]::new);
 	}
 
-	private QueryAlgebraBindingAnalysis lexicalBindingAnalysis;
-
 	private SlotPlan compileTupleRoot(TupleExpr expr, boolean duplicateInsensitive) {
 		// The caller already selected this operand's lexical entry frame. Re-entering a semantic subquery for the
 		// operand itself would recurse into the same boundary; only descendant boundaries need new frames.

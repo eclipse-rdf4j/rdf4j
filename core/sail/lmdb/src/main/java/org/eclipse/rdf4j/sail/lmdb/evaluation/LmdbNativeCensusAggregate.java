@@ -149,15 +149,17 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 	 * to establish graph coverage, DISTINCT ?s / ?o answered from node metadata when that coverage allows it, then per
 	 * page either a header bulk count, a root decode per row, or a payload decode per quad.
 	 */
-	private record RecipeCount(double planes, double headers, double decoded, double updates, double complement,
+	private record RecipeCount(double planes, double headers, double decoded, double contributions, double complement,
 			boolean payload, boolean reduced, String unavailable) {
 		static RecipeCount unavailable(String reason) {
 			return new RecipeCount(0D, 0D, 0D, 0D, 0D, false, false, reason);
 		}
 
 		/** Every count is exact, so the quote is a point: the recipe knows which pages it will open. */
-		LmdbNativeWork work() {
-			double total = planes + headers + decoded + updates + complement;
+		LmdbNativeWork work(int channelCount) {
+			// The scalar estimate includes per-channel reduction and collector bookkeeping. Keep that
+			// weighting out of the physical contribution count, which the feature model prices separately.
+			double total = planes + headers + decoded + contributions * (channelCount + 3D) + complement;
 			return LmdbNativeWork.between(total, total);
 		}
 	}
@@ -308,13 +310,12 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 				}
 			}
 		}
-		double channelWork = channels.length + 3D;
 		if (domainEligible && (allRowsSelected || excludedQuads < totalQuads - excludedQuads)) {
 			double complement = allRowsSelected ? 0D : excludedQuads;
 			return new RecipeCount(planes, headers + metadataReads, decodedDomain + rootDomainFields * planeKeys,
-					updatesDomain * channelWork, complement, payloadIfDomain, reducedIfDomain, null);
+					updatesDomain, complement, payloadIfDomain, reducedIfDomain, null);
 		}
-		return new RecipeCount(planes, headers, decodedPayload, updatesPayload * channelWork, 0D, payloadIfPayload,
+		return new RecipeCount(planes, headers, decodedPayload, updatesPayload, 0D, payloadIfPayload,
 				reducedIfPayload, null);
 	}
 
@@ -332,13 +333,13 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			for (Channel channel : channels) {
 				distinct |= channel.distinct;
 			}
-			LmdbNativeWork work = count.work();
+			LmdbNativeWork work = count.work(channels.length);
 			// Exact DISTINCT-domain complements and cross-group membership need their own storage/domain quote.
 			// Their legal exact opener remains available, with explicitly unknown structured features meanwhile.
 			if (distinct || groupFields.length != 0) {
 				return new RecipeQuote(null, work, false, null);
 			}
-			double contributions = count.updates();
+			double contributions = count.contributions();
 			NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(contributions,
 					count.planes() + count.headers() + contributions, count.planes(), contributions, count.decoded(),
 					0D, contributions, LmdbNativeCostVector.zero());
@@ -434,7 +435,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 				return LmdbNativeWork.UNKNOWN;
 			}
 			RecipeCount count = countRecipe(probe, wildcard, cancellation);
-			return count.unavailable() != null ? LmdbNativeWork.UNKNOWN : count.work();
+			return count.unavailable() != null ? LmdbNativeWork.UNKNOWN : count.work(channels.length);
 		}
 	}
 

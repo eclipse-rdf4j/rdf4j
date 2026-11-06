@@ -311,9 +311,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}
 
 		double outputRows = Double.isFinite(estRows) && estRows >= 0D ? estRows : 0D;
-		if (outputRows > 0D) {
-			total.add(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, outputRows);
-		}
+		// estRows is a planning estimate, not an exact count of materialized bindings. The selector's consumer
+		// quote supplies its expectation and its independently proven slice ceiling.
 		return NativePhysicalWorkQuote.of(startup.build(), total.build(), outputRows);
 	}
 
@@ -450,7 +449,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	 */
 	static LmdbNativeCostQuote quote(LmdbNativeStrategyProposal<?> proposal, LmdbNativeWork estimate) {
 		if (proposal.costQuote() != null) {
-			return withQuotedWorkerStartup(proposal, proposal.costQuote());
+			return finishQuote(proposal, proposal.costQuote(), proposal.physicalQuote, estimate);
 		}
 		// A physical quote (aggregate producers) or the family-typed quote are feature vectors already; only
 		// strategies with neither fall back to the raw interval.
@@ -476,8 +475,8 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 					startup = startup.plus(LmdbNativeStaticPrior.parallelMerge(proposal.parallelShape, workers));
 				}
 			}
-			return withQuotedWorkerStartup(proposal,
-					new LmdbNativeCostQuote(startup, streaming, typed.outputRows(), false, false));
+			return finishQuote(proposal,
+					new LmdbNativeCostQuote(startup, streaming, typed.outputRows(), false, false), typed, estimate);
 		}
 		LmdbNativeWork comparable = proposal.planningWork() != null ? proposal.planningWork() : proposal.work;
 		LmdbNativeWork startup = estimated(proposal.startupWork == null ? LmdbNativeWork.ZERO : proposal.startupWork,
@@ -486,6 +485,38 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		LmdbNativeCostQuote quote = estimate != null && estimate.known()
 				? LmdbNativeCostQuote.estimated(startup, streaming, proposal.estRows)
 				: LmdbNativeCostQuote.ofWork(startup, streaming, proposal.estRows);
+		return finishQuote(proposal, quote, null, estimate);
+	}
+
+	/** Preserve missing physical work and explicitly owned output facts when entering the selector. */
+	private static LmdbNativeCostQuote finishQuote(LmdbNativeStrategyProposal<?> proposal, LmdbNativeCostQuote quote,
+			NativePhysicalWorkQuote physical, LmdbNativeWork estimate) {
+		if (physical != null) {
+			NativePhysicalWorkEvidence evidence = physical.workEvidence();
+			NativePhysicalWorkEvidence.ExactFacts fixed = evidence.fixedFacts();
+			NativePhysicalWorkEvidence.ExactFacts drained = evidence.fullDrainFacts();
+			LmdbNativeCostVector.Feature output = LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION;
+			if (physical.quote().outputProvenEmpty()
+					|| fixed.contains(output) && fixed.counts().expected(output) == 0D
+					|| drained.contains(output) && drained.counts().expected(output) == 0D) {
+				quote = quote.withProvenEmptyOutput();
+			}
+			if (!evidence.isComplete()) {
+				// The fallback is a whole-plan scan estimate. Subtract the scan already represented in the partial
+				// quote rather than double-counting it; its remaining expectation proves neither a floor nor a ceiling.
+				LmdbNativeWork fallback = estimate != null && estimate.known() ? estimate
+						: proposal.planningWork() != null && proposal.planningWork().known() ? proposal.planningWork()
+								: proposal.work.known() ? proposal.work : null;
+				double expected = fallback == null ? 0D : midpoint(fallback);
+				LmdbNativeCostVector.Feature scan = LmdbNativeCostVector.Feature.SCANNED_ROW;
+				double missing = Math.max(0D, expected - quote.total().expected(scan));
+				LmdbNativeCostVector unknown = LmdbNativeCostVector.bounds(scan, 0D, missing,
+						LmdbNativeCostQuote.UNBOUNDED_COUNT);
+				quote = new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(unknown), quote.outputRows(),
+						quote.ordered(), quote.distinct(), quote.chunked(), quote.inputSpread(),
+						quote.outputProvenEmpty());
+			}
+		}
 		return withQuotedWorkerStartup(proposal, quote);
 	}
 
@@ -498,7 +529,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}
 		return new LmdbNativeCostQuote(withWorkerStarts(quote.startup(), workers),
 				withWorkerStarts(quote.streaming(), 0D), quote.outputRows(), quote.ordered(), quote.distinct(),
-				quote.chunked());
+				quote.chunked(), quote.inputSpread(), quote.outputProvenEmpty());
 	}
 
 	private static LmdbNativeCostVector withWorkerStarts(LmdbNativeCostVector vector, double workers) {

@@ -116,7 +116,9 @@ class LmdbNativePackedFtreeFilteredSliceQuoteTest {
 				.isEqualTo(serial.chunked().vector().expected(Feature.OPEN));
 		LmdbNativeCostQuote parallel = new LmdbNativeCostQuote(serial.startup(), serial.streaming().scale(0.5D),
 				serial.outputRows(), false, false, construction);
-		assertThat(parallel.forSlice(1D).high(Feature.SCANNED_ROW)).isEqualTo(1_506D);
+		assertThat(construction.rawRootWork().high(Feature.SCANNED_ROW)).isEqualTo(1_500D);
+		// The exact root directory remains bounded, but sampled child fan-out is not a physical ceiling.
+		assertThat(parallel.forSlice(1D).high(Feature.SCANNED_ROW)).isInfinite();
 		assertThat(parallel.forSlice(1D).expected(Feature.INDEX_SEEK)).isGreaterThanOrEqualTo(1D);
 	}
 

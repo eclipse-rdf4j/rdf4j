@@ -390,7 +390,9 @@ final class LmdbNativeCostVectors {
 		}
 		if (plan instanceof ExtensionPlan extension) {
 			return plan(extension.arg, row, boundMask, rowFeature)
-					.plus(perInputRow(Feature.INTERPRETED_ROW, extension.copies.length, extension.arg, row, boundMask));
+					.plus(perInputRow(Feature.INTERPRETED_ROW, extension.copies.length, extension.arg, row, boundMask))
+					.plus(NativeScalarCosts.forInput(NativeScalarCosts.additionalCopies(extension.copies),
+							extension.arg, row, boundMask));
 		}
 		if (plan instanceof RowDistinctPlan distinct) {
 			return plan(distinct.arg, row, boundMask, rowFeature)

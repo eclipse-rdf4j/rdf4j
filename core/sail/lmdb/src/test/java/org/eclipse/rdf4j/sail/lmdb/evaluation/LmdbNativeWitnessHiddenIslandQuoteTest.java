@@ -54,10 +54,23 @@ class LmdbNativeWitnessHiddenIslandQuoteTest {
 			"false,false,true,true", "true,false,true,true",
 			"false,true,true,true", "true,true,true,true",
 			"false,false,true,false", "true,false,true,false",
-			"false,true,true,false", "true,true,true,false" })
+			"false,true,true,false", "true,true,true,false",
+			"false,false,false,false", "true,false,false,false",
+			"false,true,false,false", "true,true,false,false" })
 	void pureBindMustNotHideANativeWitnessContainer(boolean compiled, boolean minus, boolean extension,
 			boolean nullable)
 			throws Exception {
+		verifyWitness(compiled, minus, extension, nullable, false);
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	void optionalMustNotHideAnUnsupportedDistinctProducer(boolean compiled, boolean extension) throws Exception {
+		verifyWitness(compiled, false, extension, false, true);
+	}
+
+	private void verifyWitness(boolean compiled, boolean minus, boolean extension, boolean nullable,
+			boolean distinct) throws Exception {
 		Map<String, String> previous = new LinkedHashMap<>();
 		Map<String, String> settings = new LinkedHashMap<>();
 		settings.put(NATIVE, "true");
@@ -120,14 +133,15 @@ class LmdbNativeWitnessHiddenIslandQuoteTest {
 				java.util.Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
 				row.recomputeBoundMask();
 				try {
-					FilterPlan direct = directPlan(source, minus, extension, nullable);
+					FilterPlan direct = directPlan(source, minus, extension, nullable, distinct);
 					LmdbNativeKernelLowering.Lowered lowered = LmdbNativeKernelLowering.lowerRows(direct, row, null,
 							false);
 					assertThat(lowered).as("manual algebra is accepted by native lowering").isNotNull();
 					List<LmdbNativeKernelIr.Node> nodes = new ArrayList<>();
 					LmdbNativeKernelIr.visitNodes(lowered.kernel.pipeline, nodes::add);
-					if (nullable) {
-						assertThat(nodes).as("nullable local graph operands must not enter the unsafe direct witness")
+					boolean nativeWitness = nullable || distinct;
+					if (nativeWitness) {
+						assertThat(nodes).as("unsupported or nullable producers retain their native witness")
 								.noneMatch(LmdbNativeKernelIr.Exists.class::isInstance);
 						assertThat(lowered.bindings.filterHooks).singleElement()
 								.satisfies(hook -> assertThat(hook.source.filter).isSameAs(direct.filter));
@@ -136,13 +150,14 @@ class LmdbNativeWitnessHiddenIslandQuoteTest {
 								.anyMatch(LmdbNativeKernelIr.Exists.class::isInstance);
 						assertThat(lowered.bindings.filterHooks).isEmpty();
 					}
-					assertThat(directRows(source, layout, directPlan(source, minus, extension, nullable), "nestedLoop",
+					assertThat(directRows(source, layout, directPlan(source, minus, extension, nullable, distinct),
+							"nestedLoop",
 							null, expected))
 									.as("the same exact manual algebra agrees with the SPARQL oracle")
 									.isEqualTo(expected);
 					String route = compiled ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL
 							: LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED;
-					assertThat(directRows(source, layout, direct, route, nullable, expected))
+					assertThat(directRows(source, layout, direct, route, nativeWitness, expected))
 							.as("an unbound witness-local endpoint must be fresh, not a NULL lookup key")
 							.isEqualTo(expected);
 				} finally {
@@ -170,7 +185,7 @@ class LmdbNativeWitnessHiddenIslandQuoteTest {
 	}
 
 	private static FilterPlan directPlan(NativeLmdbQuerySource source, boolean minus, boolean extension,
-			boolean nullable) {
+			boolean nullable, boolean distinct) {
 		long yes = id(source, "yes");
 		SlotPlan input = new JoinPlan(pattern(source, 0, "anchor", Term.constant(yes), 1D),
 				pattern(source, 0, "eligible", Term.constant(yes), 1D));
@@ -182,6 +197,10 @@ class LmdbNativeWitnessHiddenIslandQuoteTest {
 						: new JoinPlan(pattern(source, 1, "seed", Term.constant(yes), 1D),
 								pattern(source, 1, "candidate", Term.slot(2), 2D)));
 		SlotPlan body = new JoinPlan(local, pattern(source, 2, "witness", Term.constant(yes), 1D));
+		if (distinct) {
+			// Zero-or-one path compilation can introduce this native producer inside a witness.
+			body = new RowDistinctPlan(body, new int[] { 1, 2 });
+		}
 		SlotPlan wrapped = minus
 				? new MinusPlan(body, pattern(source, 1, "candidate", Term.constant(yes), 1D), 1L << 1)
 				: new LeftJoinPlan(body, pattern(source, 1, "seed", Term.constant(yes), 1D));

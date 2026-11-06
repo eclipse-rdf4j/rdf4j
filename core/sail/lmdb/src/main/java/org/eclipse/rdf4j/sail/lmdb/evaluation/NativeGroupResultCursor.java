@@ -291,7 +291,17 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			}
 			return null;
 		}
-		LmdbNativeDispatchLoop.Selection<NativeResultCursor> selected = loop.dispatch(null);
+		LmdbNativeDispatchLoop.Selection<NativeResultCursor> selected;
+		try {
+			selected = loop.dispatch(null);
+		} catch (EncounterOrderFallback fallback) {
+			// Typed candidates are lazy, but a full-value candidate completes its aggregation inside dispatch.
+			// Preserve the enclosing group's replay contract after dispatch releases the failed proposals.
+			if (fullAttempt == null) {
+				throw fallback;
+			}
+			return fullAttempt.replay(fallback);
+		}
 		iteration.cancellation.check();
 		if (selected == null) {
 			throw new QueryEvaluationException("No legal native physical aggregate candidate could open");
@@ -645,6 +655,15 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 					}
 				}
 			};
+		}
+
+		private NativeResultCursor replay(EncounterOrderFallback fallback) {
+			NativeGroupIteration.throwRealFailureSuppressedBy(fallback);
+			filters.discard();
+			List<BindingSet> rows = iteration.evaluateSequentialFallback(row, fallback.reason, originalArg);
+			NativeResultCursor result = cursor(rows);
+			selected = true;
+			return result;
 		}
 
 		@Override

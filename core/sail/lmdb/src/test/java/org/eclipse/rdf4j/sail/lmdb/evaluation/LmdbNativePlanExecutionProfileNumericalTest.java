@@ -46,7 +46,7 @@ class LmdbNativePlanExecutionProfileNumericalTest {
 	@ParameterizedTest
 	@EnumSource(Mode.class)
 	void theGenericPremiumSaturatesAHugeFiniteInterpretedRowCount(Mode mode) {
-		FilterPlan filter = new FilterPlan(largeInput(), mock(NativeBooleanFilter.class), 0L);
+		FilterPlan filter = new FilterPlan(largeInput(), row -> true, 0L);
 		LmdbNativeCostVector vector = LmdbNativePlanExecutionProfile.profile(filter, null, 0L, mode);
 		// the row count is a sample: it sets the expectation, and the input proves neither bound
 		assertThat(vector.low(Feature.INTERPRETED_ROW)).isZero();
