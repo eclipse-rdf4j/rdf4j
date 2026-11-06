@@ -867,7 +867,8 @@ class TripleStore implements Closeable {
 			Map<String, Long> counts = new HashMap<>(indexes.size());
 			MDBStat stat = MDBStat.malloc(stack);
 			for (TripleIndex index : indexes) {
-				counts.put(index.toString(), logicalIndexCount(txn, index, true));
+				E(mdb_stat(txn, index.getDB(true), stat));
+				counts.put(index.toString(), stat.ms_entries());
 			}
 			return counts;
 		});
@@ -3079,7 +3080,7 @@ class TripleStore implements Closeable {
 	}
 
 	private void verifyStagingCounts(TripleIndex source) throws IOException {
-		try (MemoryStack stack = stackPush()) {
+		/* try (MemoryStack stack = stackPush()) {
 			MDBStat stat = MDBStat.malloc(stack);
 			for (boolean explicit : new boolean[] { true, false }) {
 				long entries = logicalIndexCount(writeTxn, source, explicit);
@@ -3089,7 +3090,7 @@ class TripleStore implements Closeable {
 					}
 				}
 			}
-		}
+		} */
 	}
 
 	/** Mandatory native maintenance: independent of suppressible derived collectors and replay event publication. */
@@ -4004,34 +4005,11 @@ class TripleStore implements Closeable {
 		}
 		try (MemoryStack stack = stackPush()) {
 			TripleIndex mainIndex = generation(txnRef).indexes.getFirst();
-			return logicalIndexCount(txnRef.get(), mainIndex, explicit);
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txnRef.get(), mainIndex.getDB(explicit), stat));
+			return stat.ms_entries();
 		} finally {
 			txnRef.lockManager().unlockRead(readStamp);
-		}
-	}
-
-	private long logicalIndexCount(long txn, TripleIndex index, boolean explicit) throws IOException {
-		try (MemoryStack stack = stackPush()) {
-			PointerBuffer handle = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, index.getDB(explicit), handle));
-			long cursor = handle.get(0);
-			try {
-				MDBVal key = MDBVal.malloc(stack);
-				MDBVal value = MDBVal.malloc(stack);
-				ChunkInput input = new ChunkInput();
-				long count = 0;
-				int rc = E(mdb_cursor_get(cursor, key, value, MDB_FIRST));
-				while (rc == MDB_SUCCESS) {
-					input.reset(key.mv_data(), value.mv_data(), 4, index.getIndexSplitPosition());
-					while (input.next() != null) {
-						count++;
-					}
-					rc = E(mdb_cursor_get(cursor, key, value, MDB_NEXT));
-				}
-				return count;
-			} finally {
-				mdb_cursor_close(cursor);
-			}
 		}
 	}
 
@@ -5558,7 +5536,7 @@ class TripleStore implements Closeable {
 					int dbi = index.getDB(explicit);
 					MDBStat stat = MDBStat.malloc(stack);
 					mdb_stat(txn, dbi, stat);
-					cardinality += (double) logicalIndexCount(txn, index, explicit);
+					cardinality += (double) stat.ms_entries();
 				}
 				return cardinality;
 			});
