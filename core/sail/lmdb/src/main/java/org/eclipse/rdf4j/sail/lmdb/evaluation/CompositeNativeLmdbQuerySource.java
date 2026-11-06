@@ -195,6 +195,26 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+			int targetPartitions) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			OptionalLong bound = active.rootScanPartitionCountUpperBound(subj, pred, obj, context, targetPartitions);
+			return bound.isPresent() && bound.getAsLong() >= 0L ? bound : OptionalLong.empty();
+		}
+		long total = 0L;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalLong bound = source.rootScanPartitionCountUpperBound(subj, pred, obj, context, targetPartitions);
+			if (bound.isEmpty() || bound.getAsLong() < 0L) {
+				return OptionalLong.empty();
+			}
+			long count = bound.getAsLong();
+			total = count > Long.MAX_VALUE - total ? Long.MAX_VALUE : total + count;
+		}
+		return OptionalLong.of(total);
+	}
+
+	@Override
 	public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
 			int targetPartitions) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
@@ -467,6 +487,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean countsContextFromMetadata(long context) throws IOException {
+		for (NativeLmdbQuerySource source : activeSources) {
+			if (!source.countsContextFromMetadata(context)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	@Override
 	public boolean has(long subj, long pred, long obj, long context) throws IOException {
 		return has(subj, pred, obj, context, null);
 	}
@@ -509,6 +539,66 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			fanOut += sourceFanOut.getAsDouble();
 		}
 		return OptionalDouble.of(fanOut);
+	}
+
+	@Override
+	public OptionalDouble distinctFanOutKeys(long predicate, boolean bySubject) {
+		// Without this the default (empty) made every fully bound probe's edge probability fall back to one row,
+		// which inflated a 5-cycle's output estimate from 260 to 4.7 million rows (measured 2026-11-02).
+		NativeLmdbQuerySource active = onlyActiveSource();
+		if (active != null) {
+			return active.distinctFanOutKeys(predicate, bySubject);
+		}
+		if (activeSources.isEmpty()) {
+			return OptionalDouble.empty();
+		}
+		double keys = 0D;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalDouble sourceKeys = source.distinctFanOutKeys(predicate, bySubject);
+			if (sourceKeys.isEmpty()) {
+				return OptionalDouble.empty();
+			}
+			// planes rarely share keys exactly; the sum is an upper bound on the distinct union
+			keys += sourceKeys.getAsDouble();
+		}
+		return OptionalDouble.of(keys);
+	}
+
+	@Override
+	public OptionalDouble meanNodeDegree(boolean bySubject) {
+		// a mean over two planes' nodes is not the sum of two means: only a lone active source can state it
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? OptionalDouble.empty() : active.meanNodeDegree(bySubject);
+	}
+
+	@Override
+	public OptionalDouble meanNodePredicates(boolean bySubject) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? OptionalDouble.empty() : active.meanNodePredicates(bySubject);
+	}
+
+	@Override
+	public boolean mayHaveWildcardViews() {
+		for (NativeLmdbQuerySource source : sources) {
+			if (source.mayHaveWildcardViews()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Override
+	public OptionalLong predicateDomainCardinality() {
+		// the sources (explicit and inferred planes) may share predicates: their catalogs' sum bounds the domain
+		long total = 0L;
+		for (NativeLmdbQuerySource source : activeSources) {
+			OptionalLong cardinality = source.predicateDomainCardinality();
+			if (cardinality.isEmpty()) {
+				return OptionalLong.empty();
+			}
+			total += cardinality.getAsLong();
+		}
+		return OptionalLong.of(total);
 	}
 
 	@Override
@@ -1295,6 +1385,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+				int targetPartitions) {
+			return delegate.rootScanPartitionCountUpperBound(subj, pred, obj, context, targetPartitions);
+		}
+
+		@Override
 		public LmdbRootScanPartition[] planRootScanPartitions(long subj, long pred, long obj, long context,
 				int targetPartitions) throws IOException {
 			return delegate.planRootScanPartitions(subj, pred, obj, context, targetPartitions);
@@ -1337,6 +1433,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public boolean countsContextFromMetadata(long context) throws IOException {
+			return delegate.countsContextFromMetadata(context);
+		}
+
+		@Override
 		public boolean has(long subj, long pred, long obj, long context) throws IOException {
 			return delegate.has(subj, pred, obj, context);
 		}
@@ -1370,6 +1471,26 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
 			return delegate.adjacencyKeyDomainCardinality(predicate, bySubject);
+		}
+
+		@Override
+		public boolean mayHaveWildcardViews() {
+			return delegate.mayHaveWildcardViews();
+		}
+
+		@Override
+		public OptionalLong predicateDomainCardinality() {
+			return delegate.predicateDomainCardinality();
+		}
+
+		@Override
+		public OptionalDouble meanNodeDegree(boolean bySubject) {
+			return delegate.meanNodeDegree(bySubject);
+		}
+
+		@Override
+		public OptionalDouble meanNodePredicates(boolean bySubject) {
+			return delegate.meanNodePredicates(bySubject);
 		}
 
 		@Override

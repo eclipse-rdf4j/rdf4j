@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,7 +44,6 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
-import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
@@ -6969,15 +6967,7 @@ class LmdbSailStore implements SailStore {
 			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
-			LmdbDirectAdjacencyStore adjacencyForContext = directAdjacency;
-			costModelContext = new LmdbNativeCostModelContext(
-					dataDir.toPath(),
-					UUID.nameUUIDFromBytes(dataDir.getAbsolutePath().getBytes(StandardCharsets.UTF_8)),
-					adjacencyForContext == null ? () -> 0L : adjacencyForContext::epochCount,
-					adjacencyForContext == null ? () -> "DISABLED"
-							: () -> adjacencyForContext.maintenanceState().name(),
-					costModelDataGeneration::get,
-					() -> 0L);
+			costModelContext = new LmdbNativeCostModelContext(dataDir.toPath(), tripleStore::indexGeneration);
 			postReadyInitialization = () -> initializePostReadyMaintenance(config, statsFactory,
 					directAdjacencyOptions.buildOnStart());
 			valueStore.setStartupValueOverlayScheduling(valueOverlayStartupScheduling);
@@ -14111,6 +14101,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean mayHaveWildcardViews() {
+			return directAdjacency != null;
+		}
+
+		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 			return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
 		}
@@ -14292,6 +14287,14 @@ class LmdbSailStore implements SailStore {
 						observer, null, subj, pred, obj, context, true);
 			}
 			return statements(subj, pred, obj, context, observer);
+		}
+
+		@Override
+		public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+				int targetPartitions) {
+			// planSplitKeys adds at most target - 1 splits; toRootScanPartitions adds one interval. This bound
+			// depends only on that algorithm, not on source contents, a transaction read or successful admission.
+			return OptionalLong.of(Math.max(1L, targetPartitions));
 		}
 
 		@Override
@@ -14807,6 +14810,12 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean countsContextFromMetadata(long context) throws IOException {
+			checkOpen();
+			return !hasStatementsInSource() || tripleStore.countContextIfAuthoritative(txn, context, explicit) >= 0;
+		}
+
+		@Override
 		public boolean has(long subj, long pred, long obj, long context) throws IOException {
 			return has(subj, pred, obj, context, null);
 		}
@@ -14937,6 +14946,37 @@ class LmdbSailStore implements SailStore {
 			return view == null
 					? OptionalLong.empty()
 					: directAdjacency.keyDomainCardinality(view, predicate, bySubject, explicit);
+		}
+
+		@Override
+		public OptionalLong predicateDomainCardinality() {
+			checkOpen();
+			if (!hasStatementsInSource() || directAdjacency == null) {
+				return OptionalLong.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(false);
+			return view == null ? OptionalLong.empty() : directAdjacency.predicateDomainCardinality(view);
+		}
+
+		@Override
+		public OptionalDouble meanNodeDegree(boolean bySubject) {
+			checkOpen();
+			if (!hasStatementsInSource() || directAdjacency == null) {
+				return OptionalDouble.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(false);
+			return view == null ? OptionalDouble.empty() : directAdjacency.meanNodeDegree(view, bySubject, explicit);
+		}
+
+		@Override
+		public OptionalDouble meanNodePredicates(boolean bySubject) {
+			checkOpen();
+			if (!hasStatementsInSource() || directAdjacency == null) {
+				return OptionalDouble.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(false);
+			return view == null ? OptionalDouble.empty()
+					: directAdjacency.meanNodePredicates(view, bySubject, explicit);
 		}
 
 		@Override
@@ -15580,6 +15620,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean mayHaveWildcardViews() {
+			return directAdjacency != null;
+		}
+
+		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 			return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
 		}
@@ -15856,6 +15901,14 @@ class LmdbSailStore implements SailStore {
 					nativeSourceLock.unlockRead(readStamp);
 				}
 			}
+		}
+
+		@Override
+		public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+				int targetPartitions) {
+			// Same split algorithm as ParallelSnapshotSource: at most target - 1 split keys plus one interval.
+			// The constant bound needs neither a native-source read lock nor any storage work.
+			return OptionalLong.of(Math.max(1L, targetPartitions));
 		}
 
 		@Override
@@ -16436,6 +16489,18 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean countsContextFromMetadata(long context) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			try {
+				assertNativeSourceOpen();
+				return !hasStatementsInSource()
+						|| tripleStore.countContextIfAuthoritative(txn, context, explicit) >= 0;
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
+			}
+		}
+
+		@Override
 		public boolean has(long subj, long pred, long obj, long context) throws IOException {
 			return has(subj, pred, obj, context, null);
 		}
@@ -16586,6 +16651,36 @@ class LmdbSailStore implements SailStore {
 					return OptionalLong.empty();
 				}
 				return directAdjacency.keyDomainCardinality(adjacencyView, predicate, bySubject, explicit);
+			});
+		}
+
+		@Override
+		public OptionalLong predicateDomainCardinality() {
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()) {
+					return OptionalLong.empty();
+				}
+				return directAdjacency.predicateDomainCardinality(adjacencyView);
+			});
+		}
+
+		@Override
+		public OptionalDouble meanNodeDegree(boolean bySubject) {
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()) {
+					return OptionalDouble.empty();
+				}
+				return directAdjacency.meanNodeDegree(adjacencyView, bySubject, explicit);
+			});
+		}
+
+		@Override
+		public OptionalDouble meanNodePredicates(boolean bySubject) {
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()) {
+					return OptionalDouble.empty();
+				}
+				return directAdjacency.meanNodePredicates(adjacencyView, bySubject, explicit);
 			});
 		}
 

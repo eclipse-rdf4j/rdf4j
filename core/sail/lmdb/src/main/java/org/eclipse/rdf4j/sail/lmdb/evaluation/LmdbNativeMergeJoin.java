@@ -66,9 +66,20 @@ final class LmdbNativeMergeJoin {
 
 	static LmdbNativeStrategyProposal<BatchCursor> propose(MultiJoinPlan plan, RowState row, int capacity) {
 		Candidate candidate = tryPlan(plan, row);
-		return candidate == null ? null
-				: new LmdbNativeStrategyProposal<>(() -> candidate.open(plan, row), candidate.estCost,
-						LmdbNativeAttemptMetrics.PATH_BATCH);
+		if (candidate == null) {
+			return null;
+		}
+		// both relations are read once in key order under the entry bindings (no probes), a batch row per row
+		// read, and the joined rows are emitted
+		long boundMask = row.boundMask();
+		LmdbNativeCostVector streaming = LmdbNativeCostVectors
+				.plan(candidate.left.plan, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
+				.plus(LmdbNativeCostVectors.plan(candidate.right.plan, row, boundMask,
+						LmdbNativeCostVector.Feature.BATCH_ROW));
+		return new LmdbNativeStrategyProposal<>(() -> candidate.open(plan, row), candidate.estCost,
+				LmdbNativeAttemptMetrics.PATH_BATCH)
+						.withCostQuote(
+								LmdbNativeCostQuote.streaming(streaming, LmdbNativeWork.rowsOut(plan, row, boundMask)));
 	}
 
 	private static Candidate tryPlan(MultiJoinPlan plan, RowState row) {
@@ -167,7 +178,7 @@ final class LmdbNativeMergeJoin {
 	}
 
 	private static Candidate candidate(Admission admission, RowState row, Side leftSide, Side rightSide) {
-		double estCost = LmdbNativeStrategyProposal.batchCost(
+		double estCost = LmdbNativeWork.batchCost(
 				admission.left.estimateForBoundMask(row.boundMask(), row.source),
 				admission.right.estimateForBoundMask(row.boundMask(), row.source));
 		return new Candidate(admission.keyMask, leftSide.keySeqSlots, leftSide, rightSide,

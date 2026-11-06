@@ -370,14 +370,25 @@ class LmdbNativeAggregateDemandTest {
 			while (candidates.find()) {
 				legal.add(candidates.group(1));
 			}
+			// the sequential group path publishes its physical group representation as its execution path; the
+			// quote inventory lists the strategy that owns that representation
+			String route = sequentialRepresentation(actual) ? LmdbNativeAttemptMetrics.PATH_NESTED_LOOP : actual;
 			assertThat(legal).as("the physical group route %s must belong to its common legal inventory", actual)
-					.contains(actual);
+					.contains(route);
 		}
 		if (node.getPlans() != null) {
 			for (GenericPlanNode child : node.getPlans()) {
 				assertPhysicalGroupInventory(child);
 			}
 		}
+	}
+
+	/** Group-table representations chosen inside the sequential path, not strategies of their own. */
+	private static boolean sequentialRepresentation(String path) {
+		return LmdbNativeAttemptMetrics.PATH_AGG_STATE.equals(path)
+				|| LmdbNativeAttemptMetrics.PATH_SINGLE_SLOT_GROUPS.equals(path)
+				|| LmdbNativeAttemptMetrics.PATH_PRIMITIVE_TUPLE_GROUPS.equals(path)
+				|| LmdbNativeAttemptMetrics.PATH_HASH_GROUPS.equals(path);
 	}
 
 	private List<BindingSet> evaluate(String query, boolean nativeEnabled) {

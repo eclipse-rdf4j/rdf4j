@@ -473,20 +473,15 @@ final class PatternPlan implements SlotPlan {
 		boolean hypotheticalSynthetic = row != null && row.source instanceof SyntheticValueSource
 				&& (producedMask & boundMask & ~row.boundMask()) != 0L;
 		double rows = workRowsForBoundMask(boundMask, row == null ? null : row.source);
-		if (!Double.isFinite(rows) || rows < 0D) {
-			return LmdbNativeWork.atLeast(hypotheticalSynthetic
-					|| row != null && accessProfile != null && accessProfile.adjacencyPossible()
-							? 0D
-							: LmdbNativeWork.SEEK);
-		}
 		if (row == null) {
-			return LmdbNativeWork.exact(LmdbNativeWork.SEEK + rows);
+			return Double.isFinite(rows) && rows >= 0D ? LmdbNativeWork.exact(LmdbNativeWork.SEEK + rows)
+					: LmdbNativeWork.atLeast(LmdbNativeWork.SEEK);
 		}
 		if (accessProfile == null) {
 			return LmdbNativeWork.atLeast(hypotheticalSynthetic ? 0D : LmdbNativeWork.SEEK);
 		}
-		int mask = (termKnown(s, boundMask) ? 1 : 0) | (termKnown(p, boundMask) ? 2 : 0)
-				| (termKnown(o, boundMask) ? 4 : 0) | (termKnown(c, boundMask) ? 8 : 0);
+		LmdbNativeAccessFacts facts = LmdbNativeAccessFacts.forPattern(this, row.source);
+		int mask = physicalMask(boundMask);
 		// The entry row supplies concrete bindings; slots added while costing an upstream producer might be
 		// unbound on some of its rows (VALUES UNDEF, UNION, OPTIONAL, and expression errors). Enumerate the
 		// at-most-four physical fields rather than treating the producer's union mask as a guarantee.
@@ -497,7 +492,11 @@ final class PatternPlan implements SlotPlan {
 		double high = 0D;
 		int subset = varying;
 		while (true) {
-			LmdbNativeWork alternative = physicalWorkForMask((mask & ~varying) | subset, hypotheticalSynthetic);
+			LmdbNativeWork alternative = facts.quote((mask & ~varying) | subset).combined();
+			if (hypotheticalSynthetic) {
+				// a hypothetical synthetic binding can make the probe empty before the source is opened
+				alternative = LmdbNativeWork.between(0D, alternative.high());
+			}
 			low = Math.min(low, alternative.low());
 			high = Math.max(high, alternative.high());
 			if (subset == 0) {
@@ -512,61 +511,10 @@ final class PatternPlan implements SlotPlan {
 		return !term.isConstant() && term.slot >= 0 && (hypothetical & (1L << term.slot)) != 0L;
 	}
 
-	private LmdbNativeWork physicalWorkForMask(int mask, boolean hypotheticalSynthetic) {
-		int scans = contexts.isFixed() && (mask & 8) == 0 ? contexts.ids.length : 1;
-		if (contexts.isFixed()) {
-			mask |= 8;
-		}
-		int prefix = accessProfile.prefixMask(statementOrder, mask);
-		double seek = LmdbNativeWork.SEEK * accessProfile.sources() * scans;
-		if (prefix < 0) {
-			return LmdbNativeWork.atLeast(accessProfile.adjacencyPossible() || hypotheticalSynthetic ? 0D : seek);
-		}
-		double sourceRows = (double) accessProfile.entries() * scans;
-		boolean universalAdjacency = accessProfile.adjacencyPredicateWork() != -1L;
-		if (universalAdjacency && (range != null || statementOrder != null)) {
-			// The alternate source can sort a whole range or merge predicate streams. Its selected cost is not
-			// bounded by one unsorted LMDB pass, and the arbitration may choose either source.
-			return LmdbNativeWork.atLeast(0D);
-		}
-		if (range == null && mask == 0 && !universalAdjacency) {
-			return LmdbNativeWork.exact(seek + sourceRows);
-		}
-		if (range == null && (mask & 7) == 0 && universalAdjacency) {
-			// An adjacency root also walks its predicate catalog, including retained zero-count predicates.
-			// A context restriction can remove every row, so only an unrestricted root has a row floor.
-			double lower = mask == 0 ? sourceRows : 0D;
-			if (accessProfile.adjacencyPredicateWork() == -2L) {
-				return LmdbNativeWork.atLeast(lower);
-			}
-			double directory = (double) accessProfile.adjacencyPredicateWork() * scans;
-			return LmdbNativeWork.between(lower, seek + (sourceRows + directory) * (1D + LmdbNativeWork.SEEK));
-		}
-		boolean nodeAdjacency = range == null
-				&& (statementOrder == null || statementOrder == StatementOrder.P) && (mask & 2) == 0
-				&& (((mask & 1) != 0 && accessProfile.outgoingAdjacencyWork() >= 0L)
-						|| ((mask & 4) != 0 && accessProfile.incomingAdjacencyWork() >= 0L));
-		boolean mayUseAdjacency = accessProfile.adjacencyPossible() && (mask & 7) != 0;
-		if (mayUseAdjacency && !nodeAdjacency) {
-			// A partial or fixed-predicate adjacency row may be selected independently of LMDB. Without a
-			// bound for its lookup and overlay work, retain an unknown ceiling rather than claiming dominance.
-			return LmdbNativeWork.atLeast(0D);
-		}
-		// A residual field can skip index ranges, while a complete node adjacency candidate can inspect its
-		// node-to-predicate projection as well as edge rows. The arbiter can still select LMDB for a particular key,
-		// so do not price the candidate as a guaranteed direct lookup.
-		double projectionWork = 0D;
-		if (nodeAdjacency && (mask & 1) != 0 && accessProfile.outgoingAdjacencyWork() >= 0L) {
-			projectionWork += accessProfile.outgoingAdjacencyWork();
-		}
-		if (nodeAdjacency && (mask & 4) != 0 && accessProfile.incomingAdjacencyWork() >= 0L) {
-			projectionWork += accessProfile.incomingAdjacencyWork();
-		}
-		double scanWork = sourceRows * ((mask & ~prefix) != 0 || range != null ? 1D + LmdbNativeWork.SEEK : 1D);
-		// A future binding can be an evaluation-scoped value. The synthetic wrapper returns an empty iterator
-		// before opening the backing source, so such a hypothetical probe has no guaranteed seek cost.
-		double lower = mayUseAdjacency || hypotheticalSynthetic ? 0D : seek;
-		return LmdbNativeWork.between(lower, seek + scanWork + projectionWork * scans);
+	/** Physical binding bits (s=1, p=2, o=4, c=8) with the given slots bound; constants count as bound. */
+	int physicalMask(long boundMask) {
+		return (termKnown(s, boundMask) ? 1 : 0) | (termKnown(p, boundMask) ? 2 : 0)
+				| (termKnown(o, boundMask) ? 4 : 0) | (termKnown(c, boundMask) ? 8 : 0);
 	}
 
 	/** A concrete synthetic term makes this exact probe empty before the backing source is opened. */
@@ -625,7 +573,53 @@ final class PatternPlan implements SlotPlan {
 			return Math.max(0D, staticEstimate);
 		}
 		OptionalDouble fanOut = fanOutForBoundMask(boundMask, source);
-		return fanOut.isPresent() ? fanOut.getAsDouble() : structuralEstimate(boundMask);
+		return fanOut.isPresent() ? fanOut.getAsDouble() : capAtStatementCount(structuralEstimate(boundMask), source);
+	}
+
+	/**
+	 * A pattern cannot match more statements than the store holds: the pseudo-cardinalities of an unbound predicate (64
+	 * predicates × 4096 objects per bound subject, a billion rows all unbound) are capped at the pinned snapshot's
+	 * statement count when the source can state it. Measured 2026-11-03: without the cap a two-row VALUES join against
+	 * {@code ?a ?p ?v} quoted its non-wildcard rivals at 2.6e14 ns.
+	 */
+	private static double capAtStatementCount(double rows, NativeLmdbQuerySource source) {
+		NativeLmdbQuerySource.IndexAccessProfile profile = source == null ? null : source.indexAccessProfile();
+		return profile == null ? rows : Math.min(rows, profile.entries());
+	}
+
+	/**
+	 * How far {@link #estimateForBoundMask(long, NativeLmdbQuerySource)} can lie from the real rows, by what backs it.
+	 * A probe's ceiling also stops at the most one key can hold, so a functional predicate has no spread upwards.
+	 */
+	LmdbNativeRowSpread rowSpread(long boundMask, NativeLmdbQuerySource source) {
+		if ((producedMask & boundMask) == 0L && Double.isFinite(staticEstimate)) {
+			return LmdbNativeRowSpread.SCAN;
+		}
+		if (fanOutForBoundMask(boundMask, source).isEmpty()) {
+			return LmdbNativeRowSpread.STRUCTURAL;
+		}
+		double rows = estimateForBoundMask(boundMask, source);
+		double largestKey = largestKeyRows(boundMask, source);
+		return rows > 0D && Double.isFinite(largestKey) ? LmdbNativeRowSpread.PROBE.upAtMost(largestKey / rows)
+				: LmdbNativeRowSpread.PROBE;
+	}
+
+	/**
+	 * The most rows one bound end of a constant predicate can reach: with {@code keys} distinct keys sharing
+	 * {@code quads} statements every other key holds at least one. NaN without an exact key count, which a sampled
+	 * distinct count cannot stand in for.
+	 */
+	private double largestKeyRows(long boundMask, NativeLmdbQuerySource source) {
+		boolean subjectKnown = termKnown(s, boundMask);
+		if (!p.isConstant() || subjectKnown == termKnown(o, boundMask)) {
+			return Double.NaN;
+		}
+		java.util.OptionalLong keys = source.adjacencyKeyDomainCardinality(p.constant, subjectKnown);
+		OptionalDouble fanOut = source.meanFanOut(p.constant, subjectKnown);
+		if (keys.isEmpty() || fanOut.isEmpty() || keys.getAsLong() <= 0L) {
+			return Double.NaN;
+		}
+		return 1D + keys.getAsLong() * Math.max(0D, fanOut.getAsDouble() - 1D);
 	}
 
 	/** A binding can restrict a relation's result, but must not cap the physical work of finding it. */
@@ -643,20 +637,66 @@ final class PatternPlan implements SlotPlan {
 	}
 
 	private OptionalDouble fanOutForBoundMask(long boundMask, NativeLmdbQuerySource source) {
-		if (source == null || !p.isConstant()) {
+		if (source == null) {
 			return OptionalDouble.empty();
 		}
 		boolean subjectKnown = termKnown(s, boundMask);
 		boolean objectKnown = termKnown(o, boundMask);
+		if (!p.isConstant()) {
+			// a variable-predicate probe from one bound end reaches that node's statements across every plane: the
+			// side's mean node degree when the plane statistics know it (the 64 × 16 pseudo-domain below priced the
+			// 600-person census fixture's 10,665-row class-predicate join at 279,711 rows, 2026-11-03)
+			return subjectKnown != objectKnown && !termKnown(p, boundMask)
+					? validFanOut(source.meanNodeDegree(subjectKnown))
+					: OptionalDouble.empty();
+		}
+		if (subjectKnown && objectKnown) {
+			return edgeProbability(source, p.constant);
+		}
 		return subjectKnown == objectKnown ? OptionalDouble.empty()
 				: validFanOut(source.meanFanOut(p.constant, subjectKnown));
 	}
 
+	/**
+	 * Expected rows of a probe with subject, predicate and object all known: the probability that this particular edge
+	 * exists, {@code triples(p) / (distinctSubjects(p) × distinctObjects(p))}, computed as the subject fan-out over the
+	 * distinct object keys. Measured on the triangle query: the old estimate of one row per probe (or 256 with an
+	 * unbound context) inflated the chain by two orders of magnitude.
+	 */
+	private static OptionalDouble edgeProbability(NativeLmdbQuerySource source, long predicate) {
+		OptionalDouble fanOut = source.meanFanOut(predicate, true);
+		if (fanOut.isEmpty() || !Double.isFinite(fanOut.getAsDouble())) {
+			return OptionalDouble.empty();
+		}
+		java.util.OptionalLong exactObjects = source.adjacencyKeyDomainCardinality(predicate, false);
+		double objects = exactObjects.isPresent() ? exactObjects.getAsLong()
+				: source.distinctFanOutKeys(predicate, false).orElse(Double.NaN);
+		if (!Double.isFinite(objects) || objects <= 0D) {
+			return OptionalDouble.of(Math.min(1D, fanOut.getAsDouble()));
+		}
+		return OptionalDouble.of(Math.min(1D, fanOut.getAsDouble() / objects));
+	}
+
+	/** Nodes an unbound end enumerates when nothing narrows it. */
+	private static final long NODE_DOMAIN_PSEUDO = 4_096L;
+	/**
+	 * Rows a probe from one bound end reaches on the other end per predicate when no fan-out statistic exists: a node's
+	 * degree, not the node domain. The domain priced a bound-subject wildcard probe at 64 × 4096 rows per instance (a
+	 * 150,000-statement store's whole sweep after the cap), 2026-11-03.
+	 */
+	private static final long NODE_FAN_OUT_PSEUDO = 16L;
+
+	private static long nodePseudoCardinality(boolean thisEndKnown, boolean otherEndKnown) {
+		return thisEndKnown ? 1L : otherEndKnown ? NODE_FAN_OUT_PSEUDO : NODE_DOMAIN_PSEUDO;
+	}
+
 	private long structuralEstimate(long boundMask) {
 		long estimate = 1L;
-		estimate = multiplyEstimate(estimate, termPseudoCardinality(s, boundMask, NativePatternField.SUBJECT));
+		boolean subjectKnown = termKnown(s, boundMask);
+		boolean objectKnown = termKnown(o, boundMask);
+		estimate = multiplyEstimate(estimate, nodePseudoCardinality(subjectKnown, objectKnown));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(p, boundMask, NativePatternField.PREDICATE));
-		estimate = multiplyEstimate(estimate, termPseudoCardinality(o, boundMask, NativePatternField.OBJECT));
+		estimate = multiplyEstimate(estimate, nodePseudoCardinality(objectKnown, subjectKnown));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(c, boundMask, NativePatternField.CONTEXT));
 		if (contexts.isFixed()) {
 			if (contexts.ids.length == 0) {
@@ -675,8 +715,10 @@ final class PatternPlan implements SlotPlan {
 		}
 		return switch (field) {
 		case PREDICATE -> 64L;
-		case CONTEXT -> 256L;
-		case SUBJECT, OBJECT -> 4_096L;
+		// a pattern matches statements, and the statement count already spans every context: the context position
+		// never multiplies rows (a fixed context list is applied separately)
+		case CONTEXT -> 1L;
+		case SUBJECT, OBJECT -> NODE_DOMAIN_PSEUDO;
 		};
 	}
 
@@ -690,9 +732,11 @@ final class PatternPlan implements SlotPlan {
 			return fanOut.getAsDouble();
 		}
 		long estimate = 1L;
-		estimate = multiplyEstimate(estimate, termPseudoCardinality(s, row.slots, NativePatternField.SUBJECT));
+		boolean subjectKnown = termPseudoCardinality(s, row.slots, NativePatternField.SUBJECT) == 1L;
+		boolean objectKnown = termPseudoCardinality(o, row.slots, NativePatternField.OBJECT) == 1L;
+		estimate = multiplyEstimate(estimate, nodePseudoCardinality(subjectKnown, objectKnown));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(p, row.slots, NativePatternField.PREDICATE));
-		estimate = multiplyEstimate(estimate, termPseudoCardinality(o, row.slots, NativePatternField.OBJECT));
+		estimate = multiplyEstimate(estimate, nodePseudoCardinality(objectKnown, subjectKnown));
 		estimate = multiplyEstimate(estimate, termPseudoCardinality(c, row.slots, NativePatternField.CONTEXT));
 		if (contexts.isFixed()) {
 			if (contexts.ids.length == 0) {
@@ -714,6 +758,9 @@ final class PatternPlan implements SlotPlan {
 		long object = o.lookup(row.slots);
 		boolean subjectKnown = subject != UNKNOWN;
 		boolean objectKnown = object != UNKNOWN;
+		if (subjectKnown && objectKnown) {
+			return edgeProbability(row.source, predicate);
+		}
 		if (subjectKnown == objectKnown) {
 			return OptionalDouble.empty();
 		}
@@ -758,8 +805,10 @@ final class PatternPlan implements SlotPlan {
 		}
 		return switch (field) {
 		case PREDICATE -> 64L;
-		case CONTEXT -> 256L;
-		case SUBJECT, OBJECT -> 4_096L;
+		// a pattern matches statements, and the statement count already spans every context: the context position
+		// never multiplies rows (a fixed context list is applied separately)
+		case CONTEXT -> 1L;
+		case SUBJECT, OBJECT -> NODE_DOMAIN_PSEUDO;
 		};
 	}
 

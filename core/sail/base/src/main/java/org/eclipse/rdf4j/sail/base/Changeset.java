@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel;
+import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -506,6 +507,19 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
+	/** Restore the Sail boundary without losing diagnostics from the model or its cleanup scope. */
+	private static SailException asSailException(ModelException failure) {
+		if (failure.getCause() instanceof SailException sailException) {
+			for (Throwable suppressed : failure.getSuppressed()) {
+				if (suppressed != sailException) {
+					sailException.addSuppressed(suppressed);
+				}
+			}
+			return sailException;
+		}
+		return new SailException(failure);
+	}
+
 	private void approveWithoutLock(ModelWriteState state, Statement statement) {
 		validateStatementStructure(statement);
 		if (state.deprecated != null) {
@@ -578,6 +592,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				writeIntentChanged();
 			}
 			return count;
+		} catch (ModelException failure) {
+			throw asSailException(failure);
 		}
 	}
 
@@ -905,6 +921,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			if (signalWritePreflight) {
 				writeIntentChanged();
 			}
+		} catch (ModelException failure) {
+			throw asSailException(failure);
 		}
 	}
 
@@ -946,6 +964,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			if (signalWritePreflight) {
 				writeIntentChanged();
 			}
+		} catch (ModelException failure) {
+			throw asSailException(failure);
 		}
 	}
 
@@ -989,6 +1009,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			if (signalWritePreflight) {
 				writeIntentChanged();
 			}
+		} catch (ModelException failure) {
+			throw asSailException(failure);
 		}
 	}
 
@@ -2464,6 +2486,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			if (signalWritePreflight) {
 				writeIntentChanged();
 			}
+		} catch (ModelException failure) {
+			throw asSailException(failure);
 		}
 	}
 
@@ -2508,6 +2532,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			if (signalWritePreflight) {
 				writeIntentChanged();
 			}
+		} catch (ModelException failure) {
+			throw asSailException(failure);
 		}
 	}
 

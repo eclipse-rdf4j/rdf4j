@@ -15,6 +15,8 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.OptionalDouble;
+import java.util.OptionalLong;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -96,9 +98,74 @@ final class LmdbWildcardPredicateBatch {
 		LmdbNativeWork work = estimatePhysicalWork(shape, row, false);
 		double rows = LmdbNativeWork.rowsOut(shape.prefix, row, row.boundMask());
 		String strategy = shape.demand == Demand.PAYLOAD ? STRATEGY : REDUCED_STRATEGY;
+		ShapeCost cost = shapeCost(shape, row);
 		return new LmdbNativeStrategyProposal<>(() -> shape.open(row, capacity), work,
 				LmdbNativeWork.ZERO, rows, strategy, () -> {
-				}).withPlanningWork(estimatePhysicalWork(shape, row, true));
+				}).withPlanningWork(estimatePhysicalWork(shape, row, true))
+						// the legacy interval alone, bridged as scanned rows, lost every small-store decision to the
+						// honestly priced sequential path once that path's rows stopped being the pseudo-domain
+						// (2026-11-03)
+						.withOptionalCostQuote(cost == null ? null
+								: LmdbNativeCostQuote.streaming(cost.vector(), cost.outputRows()));
+	}
+
+	/** The streaming cost of a wildcard shape behind a prefix, the pairs or rows it delivers and the rows it emits. */
+	private record ShapeCost(LmdbNativeCostVector vector, double delivered, double outputRows) {
+	}
+
+	/**
+	 * The physical cost of {@code shape} behind a prefix: the prefix in batch form, one plane probe per prefix row and
+	 * predicate plane (sorted batch lookups), the join filters per delivered unit, and a batch row per delivered unit:
+	 * a statement for the payload demand, a (node, predicate) pair for the pair demands, one per prefix row for the
+	 * node and predicate set demands; no neighbour is decoded except by the payload. Null for the single-pattern sweep
+	 * and when the shape, the predicate catalog, the prefix rows or the node statistics are unknown.
+	 */
+	private static ShapeCost shapeCost(Shape shape, RowState row) {
+		if (shape == null || shape.scanAll || row.source == null) {
+			return null;
+		}
+		long boundMask = row.boundMask();
+		double prefixRows = LmdbNativeWork.rowsOut(shape.prefix, row, boundMask);
+		OptionalLong predicates = row.source.predicateDomainCardinality();
+		if (!Double.isFinite(prefixRows) || prefixRows < 0D || predicates.isEmpty()) {
+			return null;
+		}
+		double perNode;
+		double outputRows;
+		switch (shape.demand) {
+		case PAYLOAD -> {
+			OptionalDouble degree = row.source.meanNodeDegree(shape.bySubject);
+			if (degree.isEmpty()) {
+				return null;
+			}
+			perNode = degree.getAsDouble();
+			outputRows = prefixRows * perNode;
+		}
+		case PAIR_PRESENCE, PAIR_MULTIPLICITY -> {
+			perNode = row.source.meanNodePredicates(shape.bySubject).orElse(1D);
+			outputRows = prefixRows * perNode;
+		}
+		case PREDICATE_ANY -> {
+			perNode = 1D;
+			outputRows = Math.min(prefixRows, predicates.getAsLong());
+		}
+		case NODE_ANY -> {
+			perNode = 1D;
+			outputRows = prefixRows;
+		}
+		default -> throw new IllegalStateException("unknown demand " + shape.demand);
+		}
+		double delivered = prefixRows * perNode;
+		LmdbNativeCostVector streaming = LmdbNativePlanExecutionProfile
+				.profile(shape.prefix, row, boundMask, LmdbNativePlanExecutionProfile.Mode.BATCH)
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_PROBE,
+						prefixRows * predicates.getAsLong()))
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.BATCH_ROW, delivered));
+		if (shape.filters.length > 0) {
+			streaming = streaming.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.INTERPRETED_ROW,
+					delivered * shape.filters.length));
+		}
+		return new ShapeCost(streaming, delivered, outputRows);
 	}
 
 	private static LmdbNativeWork estimatePhysicalWork(Shape shape, RowState row, boolean planning) {
@@ -392,6 +459,30 @@ final class LmdbWildcardPredicateBatch {
 	/** Work in the wildcard executor's physical order, or unknown when wrappers make that order data-dependent. */
 	static LmdbNativeWork estimateWeightedAggregateWork(SlotPlan plan, RowState row, int[] groupSlots,
 			AggregateSpec[] aggregates) {
+		Shape shape = weightedAggregateShape(plan, row, groupSlots, aggregates);
+		return shape == null ? LmdbNativeWork.UNKNOWN : estimatePhysicalWork(shape, row, false);
+	}
+
+	/**
+	 * The weighted aggregate's streaming cost behind a prefix: the prefix in batch form, one plane probe per prefix row
+	 * and predicate plane (sorted batch lookups), the join filters per delivered pair, and a batch row plus a group
+	 * update per delivered (node, predicate) pair, whose multiplicity is the run size; no neighbour is ever decoded.
+	 * Null for the single-pattern sweep, whose predicate-major scan costs what the sequential profile charges per
+	 * statement (the analytics theme's in-degree query ran 7.6 s against 8.0 s quoted, 2026-11-03), and when the shape,
+	 * the predicate catalog or the prefix rows are unknown. Measured on the 600-person three-tier census fixture: 608
+	 * prefix rows over 16 planes ran in 1.3 ms where the sequential profile quoted 100.7 ms.
+	 */
+	static LmdbNativeCostVector weightedAggregateVector(SlotPlan plan, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates) {
+		ShapeCost cost = shapeCost(weightedAggregateShape(plan, row, groupSlots, aggregates), row);
+		return cost == null ? null
+				: cost.vector()
+						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+								cost.delivered()));
+	}
+
+	private static Shape weightedAggregateShape(SlotPlan plan, RowState row, int[] groupSlots,
+			AggregateSpec[] aggregates) {
 		long liveMask = 0L;
 		for (int slot : groupSlots) {
 			liveMask |= 1L << slot;
@@ -407,10 +498,9 @@ final class LmdbWildcardPredicateBatch {
 				? new MultiJoinPlan(new SlotPlan[] { plan }, new MaskedFilter[0])
 				: plan;
 		if (!(weightedPlan instanceof MultiJoinPlan join)) {
-			return LmdbNativeWork.UNKNOWN;
+			return null;
 		}
-		Shape shape = Shape.match(join, row, LmdbWildcardPhysicalDemand.weighted(liveMask));
-		return shape == null ? LmdbNativeWork.UNKNOWN : estimatePhysicalWork(shape, row, false);
+		return Shape.match(join, row, LmdbWildcardPhysicalDemand.weighted(liveMask));
 	}
 
 	/** Whether this row subtree should be owned by its round-scoped wildcard producer. */

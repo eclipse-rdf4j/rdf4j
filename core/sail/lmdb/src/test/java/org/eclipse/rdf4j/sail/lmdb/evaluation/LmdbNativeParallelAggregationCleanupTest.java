@@ -15,10 +15,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -1121,6 +1123,26 @@ class LmdbNativeParallelAggregationCleanupTest {
 		assertThat(problem).isSameAs(setupFailure);
 		assertThat(problem.getSuppressed()).containsExactly(filterCloseFailure, sourceCloseFailure);
 		assertThat(filter.delegate.closeCalls).isOne();
+		assertThat(((CloseTrackingSource) worker).closeCalls).isOne();
+		assertThat(((CloseTrackingSource) producer).closeCalls).isOne();
+	}
+
+	@Test
+	void closeOfACursorThatNeverStartedReleasesItsWorkersWithoutWaiting() {
+		SetupParallelSource worker = new SetupParallelSource(null, null);
+		SetupParallelSource producer = new SetupParallelSource(null, null);
+		NativeRowsStep step = twoPatternStep(worker);
+		MultiJoinPlan plan = (MultiJoinPlan) step.arg;
+		RowState consumerRow = new RowState(worker, step.layout, EmptyBindingSet.getInstance());
+		LmdbNativeParallelPipelines.ParallelRowCursor cursor = new LmdbNativeParallelPipelines.ParallelRowCursor(step,
+				consumerRow, (PatternPlan) plan.children[0], new MultiJoinPlan[] { plan },
+				new NativeLmdbQuerySource.ParallelSource[] { worker, producer },
+				new LmdbNativeParallelPipelines.TaskReservation(0), false);
+
+		assertTimeoutPreemptively(Duration.ofSeconds(30), cursor::close,
+				"no worker exists to count the task down, so close must not wait for one");
+
+		assertThat(cursor.tasks.getCount()).isZero();
 		assertThat(((CloseTrackingSource) worker).closeCalls).isOne();
 		assertThat(((CloseTrackingSource) producer).closeCalls).isOne();
 	}

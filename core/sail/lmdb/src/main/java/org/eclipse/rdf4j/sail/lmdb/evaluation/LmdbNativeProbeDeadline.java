@@ -37,6 +37,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
  */
 final class LmdbNativeProbeDeadline {
 
+	private static final String BUFFER_ROWS_PROPERTY = "rdf4j.lmdb.adaptiveProbe.bufferRows";
+	private static final int DEFAULT_BUFFER_ROWS = 4_096;
 	private static final ThreadLocal<LmdbNativeProbeDeadline> CURRENT = new ThreadLocal<>();
 	private static final ThreadLocal<AttemptStates> OWNED_ATTEMPTS = new ThreadLocal<>();
 
@@ -215,7 +217,7 @@ final class LmdbNativeProbeDeadline {
 		BooleanSupplier probeOrWorker = workerCancellation == null ? deadline::expired
 				: () -> deadline.expired() || workerCancellation.getAsBoolean();
 		return new KernelCancellation(deadline.deadlineNanoTime, probeOrWorker, queryCancellation,
-				LmdbNativeProbeConfig.system().bufferRows(), deadline::tripCapacity);
+				bufferRows(), deadline::tripCapacity);
 	}
 
 	/**
@@ -232,7 +234,13 @@ final class LmdbNativeProbeDeadline {
 					: KernelCancellation.forOrdinaryExecution(null, queryCancellation, peerCancellation);
 		}
 		return new KernelCancellation(deadline.deadlineNanoTime, deadline::expired, queryCancellation,
-				LmdbNativeProbeConfig.system().bufferRows(), deadline::tripCapacity, peerCancellation);
+				bufferRows(), deadline::tripCapacity, peerCancellation);
+	}
+
+	/** The rows a cancellable kernel may buffer before it trips its capacity. */
+	private static int bufferRows() {
+		int configured = Integer.getInteger(BUFFER_ROWS_PROPERTY, DEFAULT_BUFFER_ROWS);
+		return configured > 0 ? configured : DEFAULT_BUFFER_ROWS;
 	}
 
 	/** Masked poll for sequential drain loops: call as {@code LmdbNativeProbeDeadline.poll(++tick)}. */

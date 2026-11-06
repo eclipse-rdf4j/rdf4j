@@ -145,8 +145,6 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 				new LmdbStoreConfig("spoc,posc,ospc")
 						.setNativeEvaluationEnabled(true)
 						.setDirectAdjacencyEnabled(true)));
-		String previousCalibration = System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
-		LmdbNativeCostCalibration.reset();
 		try {
 			try (SailRepositoryConnection connection = realEstate.getConnection()) {
 				connection.begin(IsolationLevels.NONE);
@@ -160,14 +158,6 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 				connection.commit();
 			}
 			for (int queryIndex = 0; queryIndex < 13; queryIndex++) {
-				if (queryIndex == 8) {
-					for (int sample = 0; sample < 100; sample++) {
-						LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE, 1_000_000D,
-								1_000L);
-						LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_AGG_STATE, 1_000_000D,
-								1_000_000_000L);
-					}
-				}
 				String query = ThemeQueryCatalog.queryFor(Theme.REAL_ESTATE, queryIndex);
 				String previousCheck = System.getProperty(WELL_DESIGNED_FLAG);
 				List<String> uncheckedRows;
@@ -199,8 +189,6 @@ public class LmdbNativeLeftJoinWellDesignedTest {
 			}
 		} finally {
 			realEstate.shutDown();
-			restore(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCalibration);
-			LmdbNativeCostCalibration.reset();
 		}
 	}
 

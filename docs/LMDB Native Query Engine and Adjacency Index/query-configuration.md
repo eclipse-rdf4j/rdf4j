@@ -41,9 +41,7 @@ A property change only affects consumers that sample it afterward; it does not r
 | rdf4j.lmdb.packedFtree.algebra.enabled | On unless exact lowercase false. | Sampled by structural factor-algebra admission; also requires packed f-tree and factor-row gates. |
 | rdf4j.lmdb.generatedKeys.enabled | On unless exact case-insensitive false. | Read when a generated-key plan is activated; this specializes proven duplicate elimination, not arbitrary DISTINCT semantics. |
 | rdf4j.lmdb.leftjoin.wellDesignedCheck | true; Java boolean parser. | Sampled at left-join/island planning to decide whether the conservative well-designedness guard is required. |
-| rdf4j.lmdb.costCalibration.explore | false; Boolean.getBoolean. | Sampled by cost calibration; this is opt-in work-calibration exploration, separate from adaptive strategy probes. |
-| rdf4j.lmdb.costModel.bestObserved | On unless exact case-insensitive false. | Sampled when a per-store latest-complete-observation ledger is created. |
-| rdf4j.lmdb.costModel.trace | false; Boolean.getBoolean. | Debug trace gate configured through the JVM. |
+| rdf4j.lmdb.nativeDecisions.trace | false; Boolean.getBoolean. | Writes every decision record to standard error as it is taken. |
 | rdf4j.lmdb.janinoCodegen.debug | false; Boolean.getBoolean. | Debug diagnostics only, read at the relevant failure/report site. |
 | rdf4j.lmdb.janinoCodegen.failOnError | false; Java boolean parser. | Read when code generation or instantiation fails. True turns those failures into validation failures; by default the failed shape remains cached and a caller may use its supported interpreter/decline route. Execution-time kernel errors still propagate; strict mode wraps non-control failures as validation errors. This is a strict-validation control, not a production eligibility promise. |
 | rdf4j.lmdb.janinoCodegen.dumpDir | Unset; path string. | Read when generated source is dumped after compilation. If set, the codegen service creates the directory and writes generated `.java` diagnostics there; filesystem errors are logged and ignored. |
@@ -121,29 +119,12 @@ worker-supplied-root path, whose implementation deliberately omits merge walks
 and SIP because workers do not share one globally ordered root stream. These
 switches do not make `chunkPipeline` independently forceable.
 
-## Cost learning, probe and hedge tuning
+## Cost learning
 
-The two adaptive config records are created for their owning arbiter/store-model state; an active query, probe or worker does not re-read every numeric setting. The system() config snapshot also captures boolean switches for the current model/arbiter instance.
-
-| Namespace/property | Default and units |
+| Property | Default and meaning |
 |---|---|
-| rdf4j.lmdb.costModel.noiseFloorLog, .noiseInitialLog | 0.05 and 0.09 log-runtime noise values. |
-| rdf4j.lmdb.costModel.varianceFloor.{exact,family,global} | 0.02, 0.01, 0.005 log-runtime variance. |
-| rdf4j.lmdb.costModel.priorVariance.{exact,family,global} | 1.0, 0.5, 0.25 log-runtime variance. |
-| .huberSigmas, .decayHalfLifeMillis | 3.0 standard deviations; 600,000 ms. |
-| .displacementLogGamma, .displacementLogGammaOrderLosing, .cooldownTtlMillis | 0.10, 0.35 log-runtime margins; 300,000 ms. |
-| .changeDetector.delta, .changeDetector.lambda | 0.25, 25.0. |
-| .persist.staleHalfLifeMillis, .persist.kappa, .persist.precisionCap | 86,400,000 ms; 0.8; 400.0. |
-| rdf4j.lmdb.adaptiveProbe.alpha, .gamma, .maxSlowdownFraction, .lambdaInfo, .minWinProbability | 0.05, 1.25, 0.8, 0.1, 0.02. Fractions must be between zero and one; gamma must be at least one. |
-| adaptiveProbe.maxDeadlineMillis, .minDeadlineMicros, .cancelBoundMillis | 10,000 ms; 500 µs; 10 ms. |
-| adaptiveProbe.bufferRows, .maxPerQuery, .minSpacingDecisions | 4,096 rows; 1 probe; 4 decisions. |
-| adaptiveProbe.minSpacingMillis, .cooldownBaseMillis, .coldStartCooldownMillis | 10 ms; 30,000 ms; 100 ms. |
-| adaptiveHedge.launchOverheadMicros, .interferenceFraction, .evidenceWeight, .contentionDiscount | 200 µs; 0.25; 0.5; 0.5. Fractions must be in (0,1). |
-| adaptiveHedge.maxConcurrentHedges, .maxHedgesPerQuery, .overshootQuarantineFactor | max(1, CPUs/4); 1; 4.0. |
-| adaptiveHedge.exchangePages, .exchangePageRows | 4 pages; 1,024 rows/page. |
-| adaptiveHedge.normalGuard.minTriggerMillis, .triggerMargin, .unpricedTriggerFactor, .remainingQuantile, .backupQuantile, .minBackupEvidence | 10 ms; 1.25; 8.0; 0.75; 0.95; 5 samples. |
-
-Posterior/probe/hedge numeric readers trim property text, reject malformed/non-finite values and use the source default when positivity/range checks fail. The log-model quantities are not milliseconds unless their suffix says so. Probe safety-credit alpha is a budget parameter; it is not a guaranteed hard cap on charged time because mandatory first trials and overshoot can create debt. The hedge permit pool is process-wide; the bounded probe scheduler is per store-cost-model. The [cost model guide](query-cost-learning-and-adaptation.md) describes evidence lifetimes and cost-model.lncm persistence.
+| rdf4j.lmdb.advisoryLearner.enabled | false; Boolean.getBoolean, read at each decision. Turns on the [advisory learner](query-cost-learning-and-adaptation.md), which narrows prices inside their quoted intervals and writes `native-advisory-learner.tsv` when the store closes. |
+| rdf4j.lmdb.adaptiveProbe.bufferRows | 4,096 rows; malformed or non-positive values use the default. The rows a cancellable kernel may buffer before it trips its capacity. |
 
 ## Defaults that are easy to mistake for fallback promises
 
@@ -155,4 +136,4 @@ Posterior/probe/hedge numeric readers trim property text, reject malformed/non-f
 
 ## Source and configuration test map
 
-[LmdbRuntimePropertiesTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbRuntimePropertiesTest.java) covers cached hot-counter reads, live adjacency synopsis reads, and selected consumer defaults; it does not establish agreement for every engine property. [LmdbNativeAdaptiveCostModelTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeAdaptiveCostModelTest.java) tests adaptive toggle defaults and opt-out. [LmdbNativeProbeSchedulerTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeProbeSchedulerTest.java), [LmdbNativeHedgePolicyTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeHedgePolicyTest.java), and [LmdbNativePosteriorStoreTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativePosteriorStoreTest.java) characterize representative scheduler, hedge-policy, and posterior behavior, not every numeric property parser. Direct per-feature gate tests are linked in their family guides and [query test map](query-test-map.md). These links identify source contracts, not current pass evidence.
+[LmdbRuntimePropertiesTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbRuntimePropertiesTest.java) covers cached hot-counter reads, live adjacency synopsis reads, and selected consumer defaults; it does not establish agreement for every engine property. [LmdbNativeAdvisoryLearnerTest](../../../core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeAdvisoryLearnerTest.java) covers the learner toggle and what it writes. Direct per-feature gate tests are linked in their family guides and [query test map](query-test-map.md). These links identify source contracts, not current pass evidence.
