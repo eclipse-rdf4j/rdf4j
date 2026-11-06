@@ -18,8 +18,16 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.IOException;
+import java.io.OutputStream;
 import java.io.Reader;
 import java.io.StringReader;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -39,10 +47,13 @@ import org.eclipse.rdf4j.rio.helpers.JSONSettings;
 import org.eclipse.rdf4j.rio.helpers.ParseErrorCollector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.io.ContentReference;
 import com.github.jsonldjava.core.DocumentLoader;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 
 /**
  * Custom (non-manifest) tests for JSON-LD parser.
@@ -144,8 +155,10 @@ public class JSONLDParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() {
-		// 13 supported in JSONLDParser + 12 from AbstractRDFParser
-		assertEquals(25, parser.getSupportedSettings().size());
+		// 15 supported in JSONLDParser + 12 from AbstractRDFParser
+		assertEquals(27, parser.getSupportedSettings().size());
+		assertTrue(parser.getSupportedSettings().contains(JSONLDSettings.SECURE_MODE));
+		assertTrue(parser.getSupportedSettings().contains(JSONLDSettings.WHITELIST));
 	}
 
 	@Test
@@ -430,5 +443,242 @@ public class JSONLDParserCustomTest {
 		parser.getParserConfig().set(JSONLDSettings.DOCUMENT_LOADER, loader);
 		parser.parse(new StringReader(LOADER_JSONLD), "");
 		assertTrue(model.predicates().contains(testPredicate));
+	}
+
+	@Test
+	public void testUnlistedFileContextIsRejectedByDefault(@TempDir Path directory) throws Exception {
+		Path context = directory.resolve("context.jsonld");
+		Files.writeString(context, LOADER_CONTEXT);
+		parser = new JSONLDParser();
+		parser.setRDFHandler(new ContextStatementCollector(model, F));
+		String jsonld = LOADER_JSONLD.replace("http://example.com/context.jsonld", context.toUri().toString());
+
+		assertThatThrownBy(() -> parser.parse(new StringReader(jsonld), ""))
+				.isInstanceOf(RDFParseException.class)
+				.hasMessageContaining("not whitelisted");
+	}
+
+	@Test
+	public void testAllowlistedFileContextStillLoads(@TempDir Path directory) throws Exception {
+		Path context = directory.resolve("context.jsonld");
+		Files.writeString(context, LOADER_CONTEXT);
+		String uri = context.toUri().toString();
+		parser = new JSONLDParser();
+		parser.setRDFHandler(new ContextStatementCollector(model, F));
+		parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of(uri));
+		String jsonld = LOADER_JSONLD.replace("http://example.com/context.jsonld", uri);
+
+		parser.parse(new StringReader(jsonld), "");
+
+		assertTrue(model.predicates().contains(testPredicate));
+	}
+
+	@Test
+	public void testDisabledSecureModeStillLoadsFileContext(@TempDir Path directory) throws Exception {
+		Path context = directory.resolve("context.jsonld");
+		Files.writeString(context, LOADER_CONTEXT);
+		parser = new JSONLDParser();
+		parser.setRDFHandler(new ContextStatementCollector(model, F));
+		parser.getParserConfig().set(JSONLDSettings.SECURE_MODE, false);
+		String jsonld = LOADER_JSONLD.replace("http://example.com/context.jsonld", context.toUri().toString());
+
+		parser.parse(new StringReader(jsonld), "");
+
+		assertTrue(model.predicates().contains(testPredicate));
+	}
+
+	@Test
+	public void testExplicitCustomLoaderStillLoadsInSecureMode() throws Exception {
+		DocumentLoader loader = new DocumentLoader();
+		loader.addInjectedDoc("http://example.com/context.jsonld", LOADER_CONTEXT);
+		parser = new JSONLDParser();
+		parser.setRDFHandler(new ContextStatementCollector(model, F));
+		parser.getParserConfig().set(JSONLDSettings.DOCUMENT_LOADER, loader);
+
+		parser.parse(new StringReader(LOADER_JSONLD), "");
+
+		assertTrue(model.predicates().contains(testPredicate));
+	}
+
+	@Test
+	public void testUnlistedHttpContextIsRejectedBeforeFetch() throws Exception {
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		AtomicInteger requests = new AtomicInteger();
+		server.createContext("/context", exchange -> {
+			requests.incrementAndGet();
+			sendContext(exchange);
+		});
+		server.start();
+		try {
+			String uri = "http://127.0.0.1:" + server.getAddress().getPort() + "/context";
+			parser = new JSONLDParser();
+			String jsonld = LOADER_JSONLD.replace("http://example.com/context.jsonld", uri);
+
+			assertThatThrownBy(() -> parser.parse(new StringReader(jsonld), ""))
+					.isInstanceOf(RDFParseException.class)
+					.hasMessageContaining("not whitelisted");
+			assertEquals(0, requests.get());
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	public void testAllowlistedHttpRedirectCannotFetchUnlistedTarget() throws Exception {
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		AtomicInteger targetRequests = new AtomicInteger();
+		server.createContext("/redirect", exchange -> {
+			exchange.getResponseHeaders().set("Location", "/target");
+			exchange.sendResponseHeaders(302, -1);
+			exchange.close();
+		});
+		server.createContext("/target", exchange -> {
+			targetRequests.incrementAndGet();
+			sendContext(exchange);
+		});
+		server.start();
+		try {
+			String uri = "http://127.0.0.1:" + server.getAddress().getPort() + "/redirect";
+			parser = new JSONLDParser();
+			parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of(uri));
+			String jsonld = LOADER_JSONLD.replace("http://example.com/context.jsonld", uri);
+
+			assertThatThrownBy(() -> parser.parse(new StringReader(jsonld), ""))
+					.isInstanceOf(RDFParseException.class)
+					.hasMessageContaining("not whitelisted");
+			assertEquals(0, targetRequests.get());
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	public void testAllowlistedHttpRedirectStillLoadsWhenTargetIsAllowlisted() throws Exception {
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		AtomicInteger targetRequests = new AtomicInteger();
+		server.createContext("/redirect", exchange -> {
+			exchange.getResponseHeaders().set("Location", "/target");
+			exchange.sendResponseHeaders(302, -1);
+			exchange.close();
+		});
+		server.createContext("/target", exchange -> {
+			targetRequests.incrementAndGet();
+			sendContext(exchange);
+		});
+		server.start();
+		try {
+			String origin = "http://127.0.0.1:" + server.getAddress().getPort();
+			String uri = origin + "/redirect";
+			parser = new JSONLDParser();
+			parser.setRDFHandler(new ContextStatementCollector(model, F));
+			parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of(uri, origin + "/target"));
+			String jsonld = LOADER_JSONLD.replace("http://example.com/context.jsonld", uri);
+
+			parser.parse(new StringReader(jsonld), "");
+
+			assertTrue(model.predicates().contains(testPredicate));
+			assertEquals(1, targetRequests.get());
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	public void testNestedHttpContextCannotFetchUnlistedTarget() throws Exception {
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		AtomicInteger targetRequests = new AtomicInteger();
+		server.createContext("/target", exchange -> {
+			targetRequests.incrementAndGet();
+			sendContext(exchange);
+		});
+		server.createContext("/first", exchange -> {
+			String target = "http://127.0.0.1:" + server.getAddress().getPort() + "/target";
+			sendJson(exchange, "{\"@context\":\"" + target + "\"}");
+		});
+		server.start();
+		try {
+			String uri = "http://127.0.0.1:" + server.getAddress().getPort() + "/first";
+			parser = new JSONLDParser();
+			parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of(uri));
+			String jsonld = LOADER_JSONLD.replace("http://example.com/context.jsonld", uri);
+
+			assertThatThrownBy(() -> parser.parse(new StringReader(jsonld), ""))
+					.isInstanceOf(RDFParseException.class)
+					.hasMessageContaining("not whitelisted");
+			assertEquals(0, targetRequests.get());
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	public void testAllowlistedHttpContextStillLoads() throws Exception {
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		AtomicInteger requests = new AtomicInteger();
+		server.createContext("/context", exchange -> {
+			requests.incrementAndGet();
+			sendContext(exchange);
+		});
+		server.start();
+		try {
+			String uri = "http://127.0.0.1:" + server.getAddress().getPort() + "/context";
+			parser = new JSONLDParser();
+			parser.setRDFHandler(new ContextStatementCollector(model, F));
+			parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of(uri));
+			String jsonld = LOADER_JSONLD.replace("http://example.com/context.jsonld", uri);
+
+			parser.parse(new StringReader(jsonld), "");
+
+			assertTrue(model.predicates().contains(testPredicate));
+			assertEquals(1, requests.get());
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	public void testAllowlistedHttpAlternateLinkCannotFetchUnlistedTarget() throws Exception {
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		AtomicInteger targetRequests = new AtomicInteger();
+		server.createContext("/alternate", exchange -> {
+			byte[] body = "alternate".getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().set("Content-Type", "text/plain");
+			exchange.getResponseHeaders().set("Link", "</target>; rel=\"alternate\"; type=\"application/ld+json\"");
+			exchange.sendResponseHeaders(200, body.length);
+			try (OutputStream out = exchange.getResponseBody()) {
+				out.write(body);
+			}
+		});
+		server.createContext("/target", exchange -> {
+			targetRequests.incrementAndGet();
+			sendContext(exchange);
+		});
+		server.start();
+		try {
+			String uri = "http://127.0.0.1:" + server.getAddress().getPort() + "/alternate";
+			parser = new JSONLDParser();
+			parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of(uri));
+			String jsonld = LOADER_JSONLD.replace("http://example.com/context.jsonld", uri);
+
+			assertThatThrownBy(() -> parser.parse(new StringReader(jsonld), ""))
+					.isInstanceOf(RDFParseException.class)
+					.hasMessageContaining("not whitelisted");
+			assertEquals(0, targetRequests.get());
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	private static void sendContext(HttpExchange exchange) throws IOException {
+		sendJson(exchange, LOADER_CONTEXT);
+	}
+
+	private static void sendJson(HttpExchange exchange, String json) throws IOException {
+		byte[] body = json.getBytes(StandardCharsets.UTF_8);
+		exchange.getResponseHeaders().set("Content-Type", "application/ld+json");
+		exchange.sendResponseHeaders(200, body.length);
+		try (OutputStream out = exchange.getResponseBody()) {
+			out.write(body);
+		}
 	}
 }
