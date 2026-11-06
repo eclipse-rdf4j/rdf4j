@@ -439,7 +439,9 @@ class LmdbNativeScanBackedHashBuildParityTest {
 	void bufferedIncompatibleRowsKeepTheEntryBinding() throws Exception {
 		String route = LmdbNativeAttemptMetrics.PATH_IR_KERNEL;
 		Optimized optimized = optimizeAndRun(QUERY, route, "probe", "build", "key");
-		String boundQuery = "SELECT ?build ?key WHERE { <" + iri("probe/1000") + "> <" + PROBE
+		// The last probe with a build partner, so the buffered rows before it are incompatible with the entry binding.
+		IRI boundProbe = iri("probe/" + (BUILD_ROWS - 1));
+		String boundQuery = "SELECT ?build ?key WHERE { <" + boundProbe + "> <" + PROBE
 				+ "> ?key . ?build <" + BUILD + "> ?key }";
 		int expected = bag(memoryRepository, boundQuery, "build", "key").values()
 				.stream()
@@ -454,7 +456,7 @@ class LmdbNativeScanBackedHashBuildParityTest {
 			try {
 				assertThat(LmdbNativeAggregateCompiler.initializeRow(row, row.base, row.source, row.layout)).isTrue();
 				int slot = row.layout.slot("probe");
-				long bound = row.source.idOf(iri("probe/1000"));
+				long bound = row.source.idOf(boundProbe);
 				try (RowCursor cursor = LmdbNativeKernelExecution.tryOpenRows(step.arg, row, optimized.expression())) {
 					assertThat(cursor).isNotNull();
 					assertThat(row.bind(slot, bound)).isTrue();
