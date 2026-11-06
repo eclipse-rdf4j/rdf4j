@@ -1,0 +1,101 @@
+Source entries: io/opentelemetry/context/ArrayBasedContext.java#L1-L4, io/opentelemetry/context/Context.java#L1-L4, io/opentelemetry/context/ContextExecutorService.java#L1-L4, io/opentelemetry/context/ContextKey.java#L1-L4, io/opentelemetry/context/ContextScheduledExecutorService.java#L1-L4, io/opentelemetry/context/ContextStorage.java#L1-L4, io/opentelemetry/context/ContextStorageProvider.java#L1-L4, io/opentelemetry/context/ContextStorageWrappers.java#L1-L4, io/opentelemetry/context/CurrentContextExecutorService.java#L1-L4, io/opentelemetry/context/CurrentContextScheduledExecutorService.java#L1-L4, io/opentelemetry/context/DefaultContextKey.java#L1-L4, io/opentelemetry/context/ForwardingExecutorService.java#L1-L4, io/opentelemetry/context/ImplicitContextKeyed.java#L1-L4, io/opentelemetry/context/LazyStorage.java#L1-L4, io/opentelemetry/context/Scope.java#L1-L4, io/opentelemetry/context/StrictContextStorage.java#L1-L4, io/opentelemetry/context/ThreadLocalContextStorage.java#L1-L4, io/opentelemetry/context/package-info.java#L1-L4, io/opentelemetry/context/internal/shaded/AbstractWeakConcurrentMap.java#L1-L4, io/opentelemetry/context/internal/shaded/WeakConcurrentMap.java#L1-L4, io/opentelemetry/context/propagation/ContextPropagators.java#L1-L4, io/opentelemetry/context/propagation/DefaultContextPropagators.java#L1-L4, io/opentelemetry/context/propagation/MultiTextMapPropagator.java#L1-L4, io/opentelemetry/context/propagation/NoopTextMapPropagator.java#L1-L4, io/opentelemetry/context/propagation/TextMapGetter.java#L1-L4, io/opentelemetry/context/propagation/TextMapPropagator.java#L1-L4, io/opentelemetry/context/propagation/TextMapSetter.java#L1-L4, io/opentelemetry/context/propagation/package-info.java#L1-L4, io/opentelemetry/context/propagation/internal/ExtendedTextMapGetter.java#L1-L4
+/*
+ * Copyright The OpenTelemetry Authors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+Source entries: io/opentelemetry/context/ArrayBasedContext.java#L7-L21, io/opentelemetry/context/Context.java#L7-L21, io/opentelemetry/context/LazyStorage.java#L7-L21
+/*
+ * Copyright 2015 The gRPC Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: io/opentelemetry/context/ContextStorage.java#L7-L21, io/opentelemetry/context/LazyStorage.java#L22-L36
+/*
+ * Copyright 2020 LINE Corporation
+ *
+ * LINE Corporation licenses this file to you under the Apache License,
+ * version 2.0 (the "License"); you may not use this file except in compliance
+ * with the License. You may obtain a copy of the License at:
+ *
+ *   https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+ * License for the specific language governing permissions and limitations
+ * under the License.
+ */
+
+Source entries: io/opentelemetry/context/StrictContextStorage.java#L7-L19
+/*
+ * Copyright 2013-2020 The OpenZipkin Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
+ * in compliance with the License. You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
+ */
+
+Source entries: io/opentelemetry/context/internal/shaded/AbstractWeakConcurrentMap.java#L7-L21, io/opentelemetry/context/internal/shaded/WeakConcurrentMap.java#L7-L21
+/*
+ * Copyright Rafael Winterhalter
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: io/opentelemetry/context/internal/shaded/AbstractWeakConcurrentMap.java#L37-L49
+/**
+ * A thread-safe map with weak keys. Entries are based on a key's system hash code and keys are
+ * considered equal only by reference equality. This class offers an abstract-base implementation
+ * that allows to override methods. This class does not implement the {@link Map} interface because
+ * this implementation is incompatible with the map contract. While iterating over a map's entries,
+ * any key that has not passed iteration is referenced non-weakly.
+ *
+ * <p>This class has been copied as is from
+ * https://github.com/raphw/weak-lock-free/blob/ad0e5e0c04d4a31f9485bf12b89afbc9d75473b3/src/main/java/com/blogspot/mydailyjava/weaklockfree/WeakConcurrentMap.java
+ *
+ * <p>This class is internal and is hence not for public use. Its APIs are unstable and can change
+ * at any time.
+ */
+
+Source entries: io/opentelemetry/context/internal/shaded/WeakConcurrentMap.java#L34-L45
+/**
+ * A thread-safe map with weak keys. Entries are based on a key's system hash code and keys are
+ * considered equal only by reference equality. This class does not implement the {@link
+ * java.util.Map} interface because this implementation is incompatible with the map contract. While
+ * iterating over a map's entries, any key that has not passed iteration is referenced non-weakly.
+ *
+ * <p>This class has been copied as is from
+ * https://github.com/raphw/weak-lock-free/blob/ad0e5e0c04d4a31f9485bf12b89afbc9d75473b3/src/main/java/com/blogspot/mydailyjava/weaklockfree/WeakConcurrentMap.java
+ *
+ * <p>This class is internal and is hence not for public use. Its APIs are unstable and can change
+ * at any time.
+ */
+

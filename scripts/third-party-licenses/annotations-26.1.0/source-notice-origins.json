@@ -1,0 +1,243 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/26.1.0/annotations-26.1.0-sources.jar",
+  "archiveSha256": "736d7e0e4bd95570ec8856cacffa3c34eb78ad8e45ca78c5df610d7347963b53",
+  "blocks": [
+    {
+      "commentSha256": "f6f448de51747a08a23dbcf9045a01247ff00ddc90c5d1b07d0013efe921e1fa",
+      "sources": [
+        {
+          "entry": "org/jetbrains/annotations/Async.java",
+          "sourceSha256": "90343785a11855f2c3a0a7fd04f6dec87b4d3b7af97ece90e3916bd924cc69dd",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/ApiStatus.java",
+          "sourceSha256": "3979a6de97f8cc73065dd9488ccc8ac583edc4f2b8b5ca869935182730ed762c",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/Contract.java",
+          "sourceSha256": "c01067bec8a38d29fe7de3e8adbe30eeee37cfbf7286dff06dd32ae738f3efd1",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/MustBeInvokedByOverriders.java",
+          "sourceSha256": "3f5844d39cee9d9200b6dc34a2dab9883bbfdd6cfaffd651d1d8f3903c0d2f5a",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/TestOnly.java",
+          "sourceSha256": "9916f24a67bca2d0d717ad8e2856f2d36bc5efc04a64b0d924970e301d98fe02",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/VisibleForTesting.java",
+          "sourceSha256": "23b4685e6f66e18d2857120b4a10d4b62e15dc0bc140f9b05c8ab5f0c2afb052",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/UnknownNullability.java",
+          "sourceSha256": "eca8868c5ff3aae2f4ac5f2be751a423cf116f9816f4f90a1febcc657b0fbbb8",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/NonNls.java",
+          "sourceSha256": "534f79a6314c2f43922297692c881b67fd12cb9886b4f598a0e2ad93543a24cb",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/BlockingExecutor.java",
+          "sourceSha256": "42f21aec94f116f936d867299fdc8b9b5472adcad16179925838d5ac8b109f54",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/NonBlockingExecutor.java",
+          "sourceSha256": "bd6f1bf5bcba111993f6126f346a2e38729b2294cd35eac3b92406cfb2e3d73e",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/Range.java",
+          "sourceSha256": "a4227ebace6203763afe2c9ca9d562fd6290448f0b7b87a9957c31f1b0d77d0b",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/Debug.java",
+          "sourceSha256": "362ca590ea8ccc87d1ae41931567be7cef0cbbca6788297a7679d61638b98bf2",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/PropertyKey.java",
+          "sourceSha256": "155b1f3ac120f22b1633d47273b7c25c28d9d9499256fc3288a065a6ff7cebd4",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/UnmodifiableView.java",
+          "sourceSha256": "d0536de7e94d395a9492d2a0fdb695f1563f76942971066151f68aa080c97f2d",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/Nls.java",
+          "sourceSha256": "a4744344fbe2d0b91d9e6934ec78a4dac556e6405308b7b89376c6a721d7958a",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/NotNull.java",
+          "sourceSha256": "7acb56c4abb5ea37ae9e7d0417c25e7c39a389fd362570ef3ee08b947fcfd2dd",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/Unmodifiable.java",
+          "sourceSha256": "cfedaa1da60ae7273469c2e063621b083cc134abf6c16e7b207ae53f81862e06",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/Blocking.java",
+          "sourceSha256": "58085868b8c0d633278c9343c0a2f48e97e263e756fc718cdcb6863cfa02acf0",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/Nullable.java",
+          "sourceSha256": "ea8fac8455157bedc119e6831c93811f8c95174135f22509a0697c1dca04fee1",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jetbrains/annotations/NonBlocking.java",
+          "sourceSha256": "be86cfb27f200b8aa537ee8693a41effd42926962428c357f398623df81e2527",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/intellij/lang/annotations/Identifier.java",
+          "sourceSha256": "32a67a47cc0d6c14094174bc68c70e707c3529a99c0e5c109a617eda18b6681e",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/intellij/lang/annotations/Pattern.java",
+          "sourceSha256": "cb4f9d8f6831e802a8bef6cd684d42c49a85bdd17f18f6d68417259865de7045",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/intellij/lang/annotations/JdkConstants.java",
+          "sourceSha256": "15a9a5faa0eace015540c62b0284f998933947e917f76f3e372acf02c766231b",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/intellij/lang/annotations/Flow.java",
+          "sourceSha256": "5d577dab3ae474662f0bade1713fdf2c89ee09ac26e27fd452eb6fc97f0a2d85",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/intellij/lang/annotations/PrintFormat.java",
+          "sourceSha256": "0dfee63df3ce7da8012f322662b7549a6c45d4729543f4fa9b3696f67609c288",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/intellij/lang/annotations/Subst.java",
+          "sourceSha256": "a074f361c05cf640a1ca48717abffeb23a1e81bcb01a6496fe8dc7584b5276d0",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/intellij/lang/annotations/MagicConstant.java",
+          "sourceSha256": "b5059f5f23a8be81227b181480cd5619572eebf13c3e8afbb410b8cfe8347b6e",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/intellij/lang/annotations/RegExp.java",
+          "sourceSha256": "90c95a1aa7b6d9a89cd1eb2113b063c4409a2a1da6a402046536cf80d2b79b5e",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/intellij/lang/annotations/Language.java",
+          "sourceSha256": "025ef82f4cfa1a71f08b95e8b7774b058f10cf61ab649b4cdc375cfb7996a708",
+          "startByte": 0,
+          "endByteExclusive": 601,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    }
+  ]
+}

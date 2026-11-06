@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.aayushatharva.brotli4j</groupId>
+        <artifactId>brotli4j-parent</artifactId>
+        <version>1.23.0</version>
+    </parent>
+
+    <artifactId>service</artifactId>
+    <name>Brotli4j</name>
+    <packaging>jar</packaging>
+
+    <properties>
+        <javaModuleName>com.aayushatharva.brotli4j.service</javaModuleName>
+    </properties>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.moditect</groupId>
+                <artifactId>moditect-maven-plugin</artifactId>
+                <version>${moditect.version}</version>
+                <executions>
+                    <execution>
+                        <id>add-module-infos</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>add-module-info</goal>
+                        </goals>
+                        <configuration>
+                            <jvmVersion>9</jvmVersion>
+                            <module>
+                                <moduleInfoSource>
+                                    module ${javaModuleName} {
+                                    exports com.aayushatharva.brotli4j.service;
+                                    }
+                                </moduleInfoSource>
+                            </module>
+                            <jdepsExtraArgs>
+                                <arg>--multi-release</arg>
+                                <arg>9</arg>
+                            </jdepsExtraArgs>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

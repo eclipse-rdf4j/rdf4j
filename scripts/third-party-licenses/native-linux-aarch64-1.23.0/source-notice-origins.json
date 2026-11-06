@@ -1,0 +1,19 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-aarch64/1.23.0/native-linux-aarch64-1.23.0-sources.jar",
+  "archiveSha256": "62757ab416e46147f3c0847278b1c3507ab771e60a51e4984a1bf959931b1d92",
+  "blocks": [
+    {
+      "commentSha256": "269974a7b6406e9f1aadae96666154a1288426133d9b2412441293a68bfa1429",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/linux/aarch64/NativeLoader.java",
+          "sourceSha256": "6ba1da933750c415f623411536c0bcd70a500504be620834543975377c88a10b",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    }
+  ]
+}

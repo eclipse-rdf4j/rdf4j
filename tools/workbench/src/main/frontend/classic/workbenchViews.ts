@@ -1273,7 +1273,14 @@ namespace workbench {
             <main id="content" class="workbench-main">${outlet}</main>
             <p id="workbench-route-status" class="workbench-visually-hidden" role="status" aria-live="polite"></p>
             <div id="workbench-kept-alive" hidden inert></div>
-            <div id="footer" class="workbench-footer"><div>Copyright © Eclipse RDF4J contributors</div></div>`;
+            <div id="footer" class="workbench-footer"><div>
+                <span>Copyright © Eclipse RDF4J contributors</span>
+                <nav aria-label="Legal information" class="workbench-footer__legal">
+                    <a href=${context.basePath + '/legal/NOTICE.md'}>Project notice</a>
+                    <a href=${context.basePath + '/legal/edl-v1.0.txt'}>License</a>
+                    <a href=${context.basePath + '/legal/third-party-notices.html'}>Third-party notices</a>
+                </nav>
+            </div></div>`;
         }
 
         /**

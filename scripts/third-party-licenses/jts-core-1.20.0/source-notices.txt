@@ -1,0 +1,1765 @@
+Source entries: org/locationtech/jts/geomgraph/Node.java#L1-L11, org/locationtech/jts/geomgraph/Label.java#L1-L11, org/locationtech/jts/geomgraph/EdgeIntersectionList.java#L1-L11, org/locationtech/jts/geomgraph/EdgeIntersection.java#L1-L11, org/locationtech/jts/geomgraph/EdgeNodingValidator.java#L1-L11, org/locationtech/jts/geomgraph/EdgeEndStar.java#L1-L11, org/locationtech/jts/geomgraph/EdgeList.java#L1-L11, org/locationtech/jts/geomgraph/TopologyLocation.java#L1-L11, org/locationtech/jts/geomgraph/Depth.java#L1-L11, org/locationtech/jts/geomgraph/EdgeRing.java#L1-L11, org/locationtech/jts/geomgraph/DirectedEdgeStar.java#L1-L11, org/locationtech/jts/geomgraph/NodeMap.java#L1-L11, org/locationtech/jts/geomgraph/GraphComponent.java#L1-L11, org/locationtech/jts/geomgraph/index/SimpleSweepLineIntersector.java#L1-L11, org/locationtech/jts/geomgraph/index/MonotoneChainIndexer.java#L1-L11, org/locationtech/jts/geomgraph/index/SegmentIntersector.java#L1-L11, org/locationtech/jts/geomgraph/index/EdgeSetIntersector.java#L1-L11, org/locationtech/jts/geomgraph/index/SweepLineEvent.java#L1-L11, org/locationtech/jts/geomgraph/index/MonotoneChain.java#L1-L11, org/locationtech/jts/geomgraph/index/SimpleEdgeSetIntersector.java#L1-L11, org/locationtech/jts/geomgraph/index/MonotoneChainEdge.java#L1-L11, org/locationtech/jts/geomgraph/index/SimpleMCSweepLineIntersector.java#L1-L11, org/locationtech/jts/geomgraph/index/SweepLineSegment.java#L1-L11, org/locationtech/jts/geomgraph/index/package-info.java#L1-L11, org/locationtech/jts/geomgraph/DirectedEdge.java#L1-L11, org/locationtech/jts/geomgraph/PlanarGraph.java#L1-L11, org/locationtech/jts/geomgraph/GeometryGraph.java#L1-L11, org/locationtech/jts/geomgraph/NodeFactory.java#L1-L11, org/locationtech/jts/geomgraph/EdgeEnd.java#L1-L11, org/locationtech/jts/geomgraph/Edge.java#L1-L11, org/locationtech/jts/geomgraph/package-info.java#L1-L11, org/locationtech/jts/operation/valid/TopologyValidationError.java#L1-L11, org/locationtech/jts/operation/valid/RepeatedPointTester.java#L1-L11, org/locationtech/jts/operation/valid/package-info.java#L1-L11, org/locationtech/jts/operation/predicate/RectangleIntersects.java#L1-L11, org/locationtech/jts/operation/predicate/RectangleContains.java#L1-L11, org/locationtech/jts/operation/predicate/package-info.java#L1-L11, org/locationtech/jts/operation/overlayng/package-info.java#L1-L11, org/locationtech/jts/operation/distance/DistanceOp.java#L1-L11, org/locationtech/jts/operation/distance/ConnectedElementPointFilter.java#L1-L11, org/locationtech/jts/operation/distance/ConnectedElementLocationFilter.java#L1-L11, org/locationtech/jts/operation/distance/GeometryLocation.java#L1-L11, org/locationtech/jts/operation/distance/package-info.java#L1-L11, org/locationtech/jts/operation/BoundaryOp.java#L1-L11, org/locationtech/jts/operation/polygonize/PolygonizeGraph.java#L1-L11, org/locationtech/jts/operation/polygonize/EdgeRing.java#L1-L11, org/locationtech/jts/operation/polygonize/PolygonizeDirectedEdge.java#L1-L11, org/locationtech/jts/operation/polygonize/Polygonizer.java#L1-L11, org/locationtech/jts/operation/polygonize/PolygonizeEdge.java#L1-L11, org/locationtech/jts/operation/polygonize/package-info.java#L1-L11, org/locationtech/jts/operation/IsSimpleOp.java#L1-L11, org/locationtech/jts/operation/union/UnaryUnionOp.java#L1-L11, org/locationtech/jts/operation/union/UnionInteracting.java#L1-L11, org/locationtech/jts/operation/union/PointGeometryUnion.java#L1-L11, org/locationtech/jts/operation/union/CascadedPolygonUnion.java#L1-L11, org/locationtech/jts/operation/union/package-info.java#L1-L11, org/locationtech/jts/operation/linemerge/LineMergeEdge.java#L1-L11, org/locationtech/jts/operation/linemerge/LineMergeGraph.java#L1-L11, org/locationtech/jts/operation/linemerge/LineSequencer.java#L1-L11, org/locationtech/jts/operation/linemerge/LineMerger.java#L1-L11, org/locationtech/jts/operation/linemerge/LineMergeDirectedEdge.java#L1-L11, org/locationtech/jts/operation/linemerge/package-info.java#L1-L11, org/locationtech/jts/operation/linemerge/EdgeString.java#L1-L11, org/locationtech/jts/operation/relate/EdgeEndBuilder.java#L1-L11, org/locationtech/jts/operation/relate/RelateComputer.java#L1-L11, org/locationtech/jts/operation/relate/RelateNodeFactory.java#L1-L11, org/locationtech/jts/operation/relate/RelateNodeGraph.java#L1-L11, org/locationtech/jts/operation/relate/RelateOp.java#L1-L11, org/locationtech/jts/operation/relate/RelateNode.java#L1-L11, org/locationtech/jts/operation/relate/EdgeEndBundle.java#L1-L11, org/locationtech/jts/operation/relate/EdgeEndBundleStar.java#L1-L11, org/locationtech/jts/operation/relate/package-info.java#L1-L11, org/locationtech/jts/operation/overlay/ConsistentPolygonRingChecker.java#L1-L11, org/locationtech/jts/operation/overlay/validate/FuzzyPointLocator.java#L1-L11, org/locationtech/jts/operation/overlay/validate/OverlayResultValidator.java#L1-L11, org/locationtech/jts/operation/overlay/validate/package-info.java#L1-L11, org/locationtech/jts/operation/overlay/validate/OffsetPointGenerator.java#L1-L11, org/locationtech/jts/operation/overlay/LineBuilder.java#L1-L11, org/locationtech/jts/operation/overlay/PolygonBuilder.java#L1-L11, org/locationtech/jts/operation/overlay/OverlayOp.java#L1-L11, org/locationtech/jts/operation/overlay/PointBuilder.java#L1-L11, org/locationtech/jts/operation/overlay/MinimalEdgeRing.java#L1-L11, org/locationtech/jts/operation/overlay/snap/SnapOverlayOp.java#L1-L11, org/locationtech/jts/operation/overlay/snap/LineStringSnapper.java#L1-L11, org/locationtech/jts/operation/overlay/snap/SnapIfNeededOverlayOp.java#L1-L11, org/locationtech/jts/operation/overlay/snap/package-info.java#L1-L11, org/locationtech/jts/operation/overlay/snap/GeometrySnapper.java#L1-L11, org/locationtech/jts/operation/overlay/MaximalEdgeRing.java#L1-L11, org/locationtech/jts/operation/overlay/OverlayNodeFactory.java#L1-L11, org/locationtech/jts/operation/overlay/package-info.java#L1-L11, org/locationtech/jts/operation/overlay/EdgeSetNoder.java#L1-L11, org/locationtech/jts/operation/GeometryGraphOperation.java#L1-L11, org/locationtech/jts/operation/package-info.java#L1-L11, org/locationtech/jts/operation/buffer/BufferSubgraph.java#L1-L11, org/locationtech/jts/operation/buffer/validate/BufferDistanceValidator.java#L1-L11, org/locationtech/jts/operation/buffer/validate/BufferResultValidator.java#L1-L11, org/locationtech/jts/operation/buffer/validate/BufferCurveMaximumDistanceFinder.java#L1-L11, org/locationtech/jts/operation/buffer/validate/PointPairDistance.java#L1-L11, org/locationtech/jts/operation/buffer/validate/DistanceToPointFinder.java#L1-L11, org/locationtech/jts/operation/buffer/validate/package-info.java#L1-L11, org/locationtech/jts/operation/buffer/BufferInputLineSimplifier.java#L1-L11, org/locationtech/jts/operation/buffer/BufferBuilder.java#L1-L11, org/locationtech/jts/operation/buffer/BufferOp.java#L1-L11, org/locationtech/jts/operation/buffer/RightmostEdgeFinder.java#L1-L11, org/locationtech/jts/operation/buffer/BufferCurveSetBuilder.java#L1-L11, org/locationtech/jts/operation/buffer/BufferParameters.java#L1-L11, org/locationtech/jts/operation/buffer/OffsetCurveBuilder.java#L1-L11, org/locationtech/jts/operation/buffer/SubgraphDepthLocater.java#L1-L11, org/locationtech/jts/operation/buffer/package-info.java#L1-L11, org/locationtech/jts/util/NumberUtil.java#L1-L11, org/locationtech/jts/util/Stopwatch.java#L1-L11, org/locationtech/jts/util/AssertionFailedException.java#L1-L11, org/locationtech/jts/util/StringUtil.java#L1-L11, org/locationtech/jts/util/Assert.java#L1-L11, org/locationtech/jts/util/UniqueCoordinateArrayFilter.java#L1-L11, org/locationtech/jts/util/CoordinateArrayFilter.java#L1-L11, org/locationtech/jts/util/PriorityQueue.java#L1-L11, org/locationtech/jts/util/ObjectCounter.java#L1-L11, org/locationtech/jts/util/Memory.java#L1-L11, org/locationtech/jts/util/Debug.java#L1-L11, org/locationtech/jts/util/GeometricShapeFactory.java#L1-L11, org/locationtech/jts/util/CollectionUtil.java#L1-L11, org/locationtech/jts/util/package-info.java#L1-L11, org/locationtech/jts/util/CoordinateCountFilter.java#L1-L11, org/locationtech/jts/linearref/LocationIndexOfLine.java#L1-L11, org/locationtech/jts/linearref/LinearLocation.java#L1-L11, org/locationtech/jts/linearref/LinearIterator.java#L1-L11, org/locationtech/jts/linearref/LengthIndexOfPoint.java#L1-L11, org/locationtech/jts/linearref/LocationIndexOfPoint.java#L1-L11, org/locationtech/jts/linearref/LengthLocationMap.java#L1-L11, org/locationtech/jts/linearref/LengthIndexedLine.java#L1-L11, org/locationtech/jts/linearref/ExtractLineByLocation.java#L1-L11, org/locationtech/jts/linearref/LocationIndexedLine.java#L1-L11, org/locationtech/jts/linearref/LinearGeometryBuilder.java#L1-L11, org/locationtech/jts/linearref/package-info.java#L1-L11, org/locationtech/jts/JTSVersion.java#L1-L11, org/locationtech/jts/io/WKBConstants.java#L1-L11, org/locationtech/jts/io/WKTFileReader.java#L1-L11, org/locationtech/jts/io/gml2/GMLWriter.java#L1-L11, org/locationtech/jts/io/gml2/GMLConstants.java#L1-L11, org/locationtech/jts/io/gml2/GMLReader.java#L1-L11, org/locationtech/jts/io/gml2/GeometryStrategies.java#L1-L11, org/locationtech/jts/io/gml2/package-info.java#L1-L11, org/locationtech/jts/io/gml2/GMLHandler.java#L1-L11, org/locationtech/jts/io/InStream.java#L1-L11, org/locationtech/jts/io/OutputStreamOutStream.java#L1-L11, org/locationtech/jts/io/ByteOrderDataInStream.java#L1-L11, org/locationtech/jts/io/ParseException.java#L1-L11, org/locationtech/jts/io/WKBReader.java#L1-L11, org/locationtech/jts/io/WKTWriter.java#L1-L11, org/locationtech/jts/io/kml/KMLWriter.java#L1-L11, org/locationtech/jts/io/kml/KMLReader.java#L1-L11, org/locationtech/jts/io/WKTReader.java#L1-L11, org/locationtech/jts/io/ByteArrayInStream.java#L1-L11, org/locationtech/jts/io/WKBWriter.java#L1-L11, org/locationtech/jts/io/ByteOrderValues.java#L1-L11, org/locationtech/jts/io/OutStream.java#L1-L11, org/locationtech/jts/io/InputStreamInStream.java#L1-L11, org/locationtech/jts/io/package-info.java#L1-L11, org/locationtech/jts/densify/Densifier.java#L1-L11, org/locationtech/jts/densify/package-info.java#L1-L11, org/locationtech/jts/planargraph/Node.java#L1-L11, org/locationtech/jts/planargraph/DirectedEdgeStar.java#L1-L11, org/locationtech/jts/planargraph/NodeMap.java#L1-L11, org/locationtech/jts/planargraph/algorithm/ConnectedSubgraphFinder.java#L1-L11, org/locationtech/jts/planargraph/algorithm/package-info.java#L1-L11, org/locationtech/jts/planargraph/GraphComponent.java#L1-L11, org/locationtech/jts/planargraph/Subgraph.java#L1-L11, org/locationtech/jts/planargraph/DirectedEdge.java#L1-L11, org/locationtech/jts/planargraph/PlanarGraph.java#L1-L11, org/locationtech/jts/planargraph/Edge.java#L1-L11, org/locationtech/jts/planargraph/package-info.java#L1-L11, org/locationtech/jts/algorithm/Orientation.java#L1-L11, org/locationtech/jts/algorithm/CGAlgorithms.java#L1-L11, org/locationtech/jts/algorithm/InteriorPointPoint.java#L1-L11, org/locationtech/jts/algorithm/locate/PointOnGeometryLocator.java#L1-L11, org/locationtech/jts/algorithm/locate/IndexedPointInAreaLocator.java#L1-L11, org/locationtech/jts/algorithm/locate/SimplePointInAreaLocator.java#L1-L11, org/locationtech/jts/algorithm/locate/package-info.java#L1-L11, org/locationtech/jts/algorithm/PointLocation.java#L1-L11, org/locationtech/jts/algorithm/InteriorPointArea.java#L1-L11, org/locationtech/jts/algorithm/LineIntersector.java#L1-L11, org/locationtech/jts/algorithm/Centroid.java#L1-L11, org/locationtech/jts/algorithm/Angle.java#L1-L11, org/locationtech/jts/algorithm/match/AreaSimilarityMeasure.java#L1-L11, org/locationtech/jts/algorithm/match/SimilarityMeasure.java#L1-L11, org/locationtech/jts/algorithm/match/HausdorffSimilarityMeasure.java#L1-L11, org/locationtech/jts/algorithm/match/SimilarityMeasureCombiner.java#L1-L11, org/locationtech/jts/algorithm/match/package-info.java#L1-L11, org/locationtech/jts/algorithm/Distance.java#L1-L11, org/locationtech/jts/algorithm/hull/package-info.java#L1-L11, org/locationtech/jts/algorithm/distance/DiscreteHausdorffDistance.java#L1-L11, org/locationtech/jts/algorithm/distance/DistanceToPoint.java#L1-L11, org/locationtech/jts/algorithm/distance/PointPairDistance.java#L1-L11, org/locationtech/jts/algorithm/distance/package-info.java#L1-L11, org/locationtech/jts/algorithm/Length.java#L1-L11, org/locationtech/jts/algorithm/PointLocator.java#L1-L11, org/locationtech/jts/algorithm/ConvexHull.java#L1-L11, org/locationtech/jts/algorithm/InteriorPointLine.java#L1-L11, org/locationtech/jts/algorithm/MinimumDiameter.java#L1-L11, org/locationtech/jts/algorithm/RayCrossingCounter.java#L1-L11, org/locationtech/jts/algorithm/NotRepresentableException.java#L1-L11, org/locationtech/jts/algorithm/Area.java#L1-L11, org/locationtech/jts/algorithm/RobustDeterminant.java#L1-L11, org/locationtech/jts/algorithm/BoundaryNodeRule.java#L1-L11, org/locationtech/jts/algorithm/MinimumBoundingCircle.java#L1-L11, org/locationtech/jts/algorithm/HCoordinate.java#L1-L11, org/locationtech/jts/algorithm/construct/package-info.java#L1-L11, org/locationtech/jts/algorithm/package-info.java#L1-L11, org/locationtech/jts/geom/Polygon.java#L1-L11, org/locationtech/jts/geom/impl/PackedCoordinateSequence.java#L1-L11, org/locationtech/jts/geom/impl/PackedCoordinateSequenceFactory.java#L1-L11, org/locationtech/jts/geom/impl/CoordinateArraySequence.java#L1-L11, org/locationtech/jts/geom/impl/CoordinateArraySequenceFactory.java#L1-L11, org/locationtech/jts/geom/impl/package-info.java#L1-L11, org/locationtech/jts/geom/CoordinateFilter.java#L1-L11, org/locationtech/jts/geom/Envelope.java#L1-L11, org/locationtech/jts/geom/PrecisionModel.java#L1-L11, org/locationtech/jts/geom/prep/BasicPreparedGeometry.java#L1-L11, org/locationtech/jts/geom/prep/PreparedPolygonContains.java#L1-L11, org/locationtech/jts/geom/prep/PreparedPolygonIntersects.java#L1-L11, org/locationtech/jts/geom/prep/PreparedGeometryFactory.java#L1-L11, org/locationtech/jts/geom/prep/PreparedGeometry.java#L1-L11, org/locationtech/jts/geom/prep/PreparedPolygonPredicate.java#L1-L11, org/locationtech/jts/geom/prep/PreparedLineString.java#L1-L11, org/locationtech/jts/geom/prep/PreparedLineStringIntersects.java#L1-L11, org/locationtech/jts/geom/prep/PreparedPolygonCovers.java#L1-L11, org/locationtech/jts/geom/prep/PreparedPolygon.java#L1-L11, org/locationtech/jts/geom/prep/AbstractPreparedPolygonContains.java#L1-L11, org/locationtech/jts/geom/prep/PreparedPolygonContainsProperly.java#L1-L11, org/locationtech/jts/geom/prep/PreparedPoint.java#L1-L11, org/locationtech/jts/geom/prep/package-info.java#L1-L11, org/locationtech/jts/geom/GeometryCollectionIterator.java#L1-L11, org/locationtech/jts/geom/CoordinateArrays.java#L1-L11, org/locationtech/jts/geom/util/PolygonExtracter.java#L1-L11, org/locationtech/jts/geom/util/GeometryEditor.java#L1-L11, org/locationtech/jts/geom/util/LineStringExtracter.java#L1-L11, org/locationtech/jts/geom/util/SineStarFactory.java#L1-L11, org/locationtech/jts/geom/util/AffineTransformation.java#L1-L11, org/locationtech/jts/geom/util/GeometryExtracter.java#L1-L11, org/locationtech/jts/geom/util/GeometryCombiner.java#L1-L11, org/locationtech/jts/geom/util/ShortCircuitedGeometryVisitor.java#L1-L11, org/locationtech/jts/geom/util/ComponentCoordinateExtracter.java#L1-L11, org/locationtech/jts/geom/util/AffineTransformationFactory.java#L1-L11, org/locationtech/jts/geom/util/GeometryCollectionMapper.java#L1-L11, org/locationtech/jts/geom/util/GeometryTransformer.java#L1-L11, org/locationtech/jts/geom/util/LinearComponentExtracter.java#L1-L11, org/locationtech/jts/geom/util/PointExtracter.java#L1-L11, org/locationtech/jts/geom/util/AffineTransformationBuilder.java#L1-L11, org/locationtech/jts/geom/util/NoninvertibleTransformationException.java#L1-L11, org/locationtech/jts/geom/util/package-info.java#L1-L11, org/locationtech/jts/geom/OctagonalEnvelope.java#L1-L11, org/locationtech/jts/geom/CoordinateXYZM.java#L1-L11, org/locationtech/jts/geom/CoordinateSequenceComparator.java#L1-L11, org/locationtech/jts/geom/MultiPoint.java#L1-L11, org/locationtech/jts/geom/Point.java#L1-L11, org/locationtech/jts/geom/CoordinateSequenceFactory.java#L1-L11, org/locationtech/jts/geom/CoordinateSequences.java#L1-L11, org/locationtech/jts/geom/GeometryCollection.java#L1-L11, org/locationtech/jts/geom/Lineal.java#L1-L11, org/locationtech/jts/geom/MultiLineString.java#L1-L11, org/locationtech/jts/geom/LineSegment.java#L1-L11, org/locationtech/jts/geom/Triangle.java#L1-L11, org/locationtech/jts/geom/MultiPolygon.java#L1-L11, org/locationtech/jts/geom/GeometryComponentFilter.java#L1-L11, org/locationtech/jts/geom/Position.java#L1-L11, org/locationtech/jts/geom/IntersectionMatrix.java#L1-L11, org/locationtech/jts/geom/GeometryFactory.java#L1-L11, org/locationtech/jts/geom/Puntal.java#L1-L11, org/locationtech/jts/geom/GeometryFilter.java#L1-L11, org/locationtech/jts/geom/TopologyException.java#L1-L11, org/locationtech/jts/geom/Dimension.java#L1-L11, org/locationtech/jts/geom/Location.java#L1-L11, org/locationtech/jts/geom/CoordinateSequenceFilter.java#L1-L11, org/locationtech/jts/geom/Quadrant.java#L1-L11, org/locationtech/jts/geom/LineString.java#L1-L11, org/locationtech/jts/geom/LinearRing.java#L1-L11, org/locationtech/jts/geom/CoordinateList.java#L1-L11, org/locationtech/jts/geom/Polygonal.java#L1-L11, org/locationtech/jts/geom/package-info.java#L1-L11, org/locationtech/jts/geom/Geometry.java#L1-L11, org/locationtech/jts/edgegraph/MarkHalfEdge.java#L1-L11, org/locationtech/jts/edgegraph/EdgeGraphBuilder.java#L1-L11, org/locationtech/jts/edgegraph/HalfEdge.java#L1-L11, org/locationtech/jts/edgegraph/EdgeGraph.java#L1-L11, org/locationtech/jts/index/ItemVisitor.java#L1-L11, org/locationtech/jts/index/kdtree/KdNode.java#L1-L11, org/locationtech/jts/index/kdtree/KdTree.java#L1-L11, org/locationtech/jts/index/kdtree/package-info.java#L1-L11, org/locationtech/jts/index/kdtree/KdNodeVisitor.java#L1-L11, org/locationtech/jts/index/ArrayListVisitor.java#L1-L11, org/locationtech/jts/index/sweepline/SweepLineOverlapAction.java#L1-L11, org/locationtech/jts/index/sweepline/SweepLineEvent.java#L1-L11, org/locationtech/jts/index/sweepline/SweepLineInterval.java#L1-L11, org/locationtech/jts/index/sweepline/SweepLineIndex.java#L1-L11, org/locationtech/jts/index/sweepline/package-info.java#L1-L11, org/locationtech/jts/index/strtree/SIRtree.java#L1-L11, org/locationtech/jts/index/strtree/AbstractNode.java#L1-L11, org/locationtech/jts/index/strtree/Interval.java#L1-L11, org/locationtech/jts/index/strtree/Boundable.java#L1-L11, org/locationtech/jts/index/strtree/ItemBoundable.java#L1-L11, org/locationtech/jts/index/strtree/AbstractSTRtree.java#L1-L11, org/locationtech/jts/index/strtree/STRtree.java#L1-L11, org/locationtech/jts/index/strtree/package-info.java#L1-L11, org/locationtech/jts/index/chain/MonotoneChainBuilder.java#L1-L11, org/locationtech/jts/index/chain/MonotoneChainOverlapAction.java#L1-L11, org/locationtech/jts/index/chain/MonotoneChainSelectAction.java#L1-L11, org/locationtech/jts/index/chain/package-info.java#L1-L11, org/locationtech/jts/index/SpatialIndex.java#L1-L11, org/locationtech/jts/index/intervalrtree/IntervalRTreeNode.java#L1-L11, org/locationtech/jts/index/intervalrtree/SortedPackedIntervalRTree.java#L1-L11, org/locationtech/jts/index/intervalrtree/IntervalRTreeBranchNode.java#L1-L11, org/locationtech/jts/index/intervalrtree/IntervalRTreeLeafNode.java#L1-L11, org/locationtech/jts/index/intervalrtree/package-info.java#L1-L11, org/locationtech/jts/index/bintree/Root.java#L1-L11, org/locationtech/jts/index/bintree/Node.java#L1-L11, org/locationtech/jts/index/bintree/Interval.java#L1-L11, org/locationtech/jts/index/bintree/Key.java#L1-L11, org/locationtech/jts/index/bintree/Bintree.java#L1-L11, org/locationtech/jts/index/bintree/package-info.java#L1-L11, org/locationtech/jts/index/bintree/NodeBase.java#L1-L11, org/locationtech/jts/index/quadtree/Root.java#L1-L11, org/locationtech/jts/index/quadtree/Node.java#L1-L11, org/locationtech/jts/index/quadtree/IntervalSize.java#L1-L11, org/locationtech/jts/index/quadtree/Quadtree.java#L1-L11, org/locationtech/jts/index/quadtree/DoubleBits.java#L1-L11, org/locationtech/jts/index/quadtree/Key.java#L1-L11, org/locationtech/jts/index/quadtree/package-info.java#L1-L11, org/locationtech/jts/index/quadtree/NodeBase.java#L1-L11, org/locationtech/jts/index/package-info.java#L1-L11, org/locationtech/jts/awt/PolygonShape.java#L1-L11, org/locationtech/jts/awt/PointTransformation.java#L1-L11, org/locationtech/jts/awt/IdentityPointTransformation.java#L1-L11, org/locationtech/jts/awt/ShapeReader.java#L1-L11, org/locationtech/jts/awt/ShapeWriter.java#L1-L11, org/locationtech/jts/awt/FontGlyphReader.java#L1-L11, org/locationtech/jts/awt/GeometryCollectionShape.java#L1-L11, org/locationtech/jts/awt/ShapeCollectionPathIterator.java#L1-L11, org/locationtech/jts/awt/PointShapeFactory.java#L1-L11, org/locationtech/jts/awt/package-info.java#L1-L11, org/locationtech/jts/triangulate/ConstraintSplitPointFinder.java#L1-L11, org/locationtech/jts/triangulate/Segment.java#L1-L11, org/locationtech/jts/triangulate/ConstraintEnforcementException.java#L1-L11, org/locationtech/jts/triangulate/IncrementalDelaunayTriangulator.java#L1-L11, org/locationtech/jts/triangulate/ConstraintVertexFactory.java#L1-L11, org/locationtech/jts/triangulate/VoronoiDiagramBuilder.java#L1-L11, org/locationtech/jts/triangulate/DelaunayTriangulationBuilder.java#L1-L11, org/locationtech/jts/triangulate/quadedge/QuadEdgeUtil.java#L1-L11, org/locationtech/jts/triangulate/quadedge/TriangleVisitor.java#L1-L11, org/locationtech/jts/triangulate/quadedge/Vertex.java#L1-L11, org/locationtech/jts/triangulate/quadedge/QuadEdge.java#L1-L11, org/locationtech/jts/triangulate/quadedge/QuadEdgeLocator.java#L1-L11, org/locationtech/jts/triangulate/quadedge/LocateFailureException.java#L1-L11, org/locationtech/jts/triangulate/quadedge/LastFoundQuadEdgeLocator.java#L1-L11, org/locationtech/jts/triangulate/quadedge/EdgeConnectedTriangleTraversal.java#L1-L11, org/locationtech/jts/triangulate/quadedge/TraversalVisitor.java#L1-L11, org/locationtech/jts/triangulate/quadedge/QuadEdgeSubdivision.java#L1-L11, org/locationtech/jts/triangulate/quadedge/QuadEdgeTriangle.java#L1-L11, org/locationtech/jts/triangulate/quadedge/package-info.java#L1-L11, org/locationtech/jts/triangulate/ConformingDelaunayTriangulationBuilder.java#L1-L11, org/locationtech/jts/triangulate/SplitSegment.java#L1-L11, org/locationtech/jts/triangulate/ConstraintVertex.java#L1-L11, org/locationtech/jts/triangulate/MidpointSplitPointFinder.java#L1-L11, org/locationtech/jts/triangulate/ConformingDelaunayTriangulator.java#L1-L11, org/locationtech/jts/triangulate/package-info.java#L1-L11, org/locationtech/jts/triangulate/VertexTaggedGeometryDataMapper.java#L1-L11, org/locationtech/jts/triangulate/NonEncroachingSplitPointFinder.java#L1-L11, org/locationtech/jts/precision/CommonBitsRemover.java#L1-L11, org/locationtech/jts/precision/CommonBitsOp.java#L1-L11, org/locationtech/jts/precision/CoordinatePrecisionReducerFilter.java#L1-L11, org/locationtech/jts/precision/EnhancedPrecisionOp.java#L1-L11, org/locationtech/jts/precision/SimpleGeometryPrecisionReducer.java#L1-L11, org/locationtech/jts/precision/package-info.java#L1-L11, org/locationtech/jts/precision/CommonBits.java#L1-L11, org/locationtech/jts/simplify/DouglasPeuckerLineSimplifier.java#L1-L11, org/locationtech/jts/simplify/TaggedLineSegment.java#L1-L11, org/locationtech/jts/simplify/DouglasPeuckerSimplifier.java#L1-L11, org/locationtech/jts/simplify/LineSegmentIndex.java#L1-L11, org/locationtech/jts/simplify/VWLineSimplifier.java#L1-L11, org/locationtech/jts/simplify/TaggedLineString.java#L1-L11, org/locationtech/jts/simplify/VWSimplifier.java#L1-L11, org/locationtech/jts/simplify/TaggedLinesSimplifier.java#L1-L11, org/locationtech/jts/simplify/TaggedLineStringSimplifier.java#L1-L11, org/locationtech/jts/simplify/package-info.java#L1-L11, org/locationtech/jts/simplify/TopologyPreservingSimplifier.java#L1-L11, org/locationtech/jts/noding/FastSegmentSetIntersectionFinder.java#L1-L11, org/locationtech/jts/noding/snapround/MCIndexSnapRounder.java#L1-L11, org/locationtech/jts/noding/snapround/HotPixel.java#L1-L11, org/locationtech/jts/noding/snapround/MCIndexPointSnapper.java#L1-L11, org/locationtech/jts/noding/snapround/package-info.java#L1-L11, org/locationtech/jts/noding/NodableSegmentString.java#L1-L11, org/locationtech/jts/noding/Noder.java#L1-L11, org/locationtech/jts/noding/SegmentNode.java#L1-L11, org/locationtech/jts/noding/SegmentSetMutualIntersector.java#L1-L11, org/locationtech/jts/noding/NodedSegmentString.java#L1-L11, org/locationtech/jts/noding/SegmentIntersector.java#L1-L11, org/locationtech/jts/noding/SegmentStringUtil.java#L1-L11, org/locationtech/jts/noding/SimpleNoder.java#L1-L11, org/locationtech/jts/noding/SegmentStringDissolver.java#L1-L11, org/locationtech/jts/noding/SegmentPointComparator.java#L1-L11, org/locationtech/jts/noding/IntersectionFinderAdder.java#L1-L11, org/locationtech/jts/noding/IntersectionAdder.java#L1-L11, org/locationtech/jts/noding/NodingIntersectionFinder.java#L1-L11, org/locationtech/jts/noding/FastNodingValidator.java#L1-L11, org/locationtech/jts/noding/NodingValidator.java#L1-L11, org/locationtech/jts/noding/SegmentNodeList.java#L1-L11, org/locationtech/jts/noding/SegmentIntersectionDetector.java#L1-L11, org/locationtech/jts/noding/MCIndexSegmentSetMutualIntersector.java#L1-L11, org/locationtech/jts/noding/InteriorIntersectionFinderAdder.java#L1-L11, org/locationtech/jts/noding/Octant.java#L1-L11, org/locationtech/jts/noding/BasicSegmentString.java#L1-L11, org/locationtech/jts/noding/SinglePassNoder.java#L1-L11, org/locationtech/jts/noding/SimpleSegmentSetMutualIntersector.java#L1-L11, org/locationtech/jts/noding/SegmentString.java#L1-L11, org/locationtech/jts/noding/IteratedNoder.java#L1-L11, org/locationtech/jts/noding/ScaledNoder.java#L1-L11, org/locationtech/jts/noding/package-info.java#L1-L11, org/locationtech/jts/noding/OrientedCoordinateArray.java#L1-L11, org/locationtech/jts/dissolve/LineDissolver.java#L1-L11, org/locationtech/jts/dissolve/DissolveHalfEdge.java#L1-L11, org/locationtech/jts/dissolve/DissolveEdgeGraph.java#L1-L11
+/*
+ * Copyright (c) 2016 Vivid Solutions.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/operation/distance3d/PlanarPolygon3D.java#L1-L11, org/locationtech/jts/operation/distance3d/Distance3DOp.java#L1-L11, org/locationtech/jts/operation/distance3d/AxisPlaneCoordinateSequence.java#L1-L11, org/locationtech/jts/operation/distance/FacetSequenceTreeBuilder.java#L1-L11, org/locationtech/jts/operation/distance/IndexedFacetDistance.java#L1-L11, org/locationtech/jts/operation/distance/FacetSequence.java#L1-L11, org/locationtech/jts/operation/buffer/OffsetSegmentGenerator.java#L1-L11, org/locationtech/jts/operation/buffer/OffsetSegmentString.java#L1-L11, org/locationtech/jts/shape/fractal/KochSnowflakeBuilder.java#L1-L11, org/locationtech/jts/shape/fractal/SierpinskiCarpetBuilder.java#L1-L11, org/locationtech/jts/shape/GeometricShapeBuilder.java#L1-L11, org/locationtech/jts/shape/random/RandomPointsBuilder.java#L1-L11, org/locationtech/jts/shape/random/RandomPointsInGridBuilder.java#L1-L11, org/locationtech/jts/io/WKBHexFileReader.java#L1-L11, org/locationtech/jts/algorithm/RectangleLineIntersector.java#L1-L11, org/locationtech/jts/algorithm/CGAlgorithms3D.java#L1-L11, org/locationtech/jts/algorithm/CGAlgorithmsDD.java#L1-L11, org/locationtech/jts/algorithm/InteriorPoint.java#L1-L11, org/locationtech/jts/math/Matrix.java#L1-L11, org/locationtech/jts/math/DD.java#L1-L11, org/locationtech/jts/math/Vector2D.java#L1-L11, org/locationtech/jts/math/Plane3D.java#L1-L11, org/locationtech/jts/math/Vector3D.java#L1-L11, org/locationtech/jts/math/MathUtil.java#L1-L11, org/locationtech/jts/geom/util/GeometryMapper.java#L1-L11, org/locationtech/jts/index/strtree/ItemDistance.java#L1-L11, org/locationtech/jts/index/strtree/GeometryItemDistance.java#L1-L11, org/locationtech/jts/index/strtree/BoundablePair.java#L1-L11, org/locationtech/jts/triangulate/quadedge/TrianglePredicate.java#L1-L11, org/locationtech/jts/precision/MinimumClearance.java#L1-L11, org/locationtech/jts/precision/PrecisionReducerCoordinateOperation.java#L1-L11, org/locationtech/jts/precision/SimpleMinimumClearance.java#L1-L11, org/locationtech/jts/precision/GeometryPrecisionReducer.java#L1-L11, org/locationtech/jts/noding/snapround/SnapRoundingIntersectionAdder.java#L1-L11, org/locationtech/jts/noding/snap/SnappingIntersectionAdder.java#L1-L11
+/*
+ * Copyright (c) 2016 Martin Davis.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/operation/valid/PolygonRing.java#L1-L11, org/locationtech/jts/operation/valid/IndexedNestedPolygonTester.java#L1-L11, org/locationtech/jts/operation/valid/PolygonIntersectionAnalyzer.java#L1-L11, org/locationtech/jts/operation/valid/IsValidOp.java#L1-L11, org/locationtech/jts/operation/valid/IndexedNestedHoleTester.java#L1-L11, org/locationtech/jts/operation/valid/IsSimpleOp.java#L1-L11, org/locationtech/jts/operation/valid/PolygonTopologyAnalyzer.java#L1-L11, org/locationtech/jts/operation/buffer/OffsetCurveSection.java#L1-L11, org/locationtech/jts/operation/buffer/SegmentMCIndex.java#L1-L11, org/locationtech/jts/operation/buffer/OffsetCurve.java#L1-L11, org/locationtech/jts/shape/CubicBezierCurve.java#L1-L11, org/locationtech/jts/algorithm/hull/ConcaveHull.java#L1-L11, org/locationtech/jts/algorithm/hull/HullTri.java#L1-L11, org/locationtech/jts/algorithm/hull/HullTriangulation.java#L1-L11, org/locationtech/jts/algorithm/PolygonNodeTopology.java#L1-L11, org/locationtech/jts/geom/util/GeometryFixer.java#L1-L11, org/locationtech/jts/index/VertexSequencePackedRtree.java#L1-L11, org/locationtech/jts/triangulate/tri/TriangulationBuilder.java#L1-L11, org/locationtech/jts/triangulate/tri/Tri.java#L1-L11, org/locationtech/jts/triangulate/tri/TriEdge.java#L1-L11, org/locationtech/jts/triangulate/polygon/PolygonHoleJoiner.java#L1-L11, org/locationtech/jts/triangulate/polygon/PolygonTriangulator.java#L1-L11, org/locationtech/jts/triangulate/polygon/PolygonEarClipper.java#L1-L11, org/locationtech/jts/triangulate/polygon/ConstrainedDelaunayTriangulator.java#L1-L11, org/locationtech/jts/triangulate/polygon/TriDelaunayImprover.java#L1-L11, org/locationtech/jts/precision/PointwisePrecisionReducerTransformer.java#L1-L11, org/locationtech/jts/precision/PrecisionReducerTransformer.java#L1-L11, org/locationtech/jts/simplify/LinkedRing.java#L1-L11
+/*
+ * Copyright (c) 2021 Martin Davis.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/operation/predicate/RectangleIntersects.java#L118-L124
+/**
+ * Tests whether it can be concluded that a rectangle intersects a geometry,
+ * based on the relationship of the envelope(s) of the geometry.
+ * 
+ * @author Martin Davis
+ * @version 1.7
+ */
+
+Source entries: org/locationtech/jts/operation/relateng/AdjacentEdgeLocator.java#L1-L11, org/locationtech/jts/operation/relateng/NodeSection.java#L1-L11, org/locationtech/jts/operation/relateng/RelateNG.java#L1-L11, org/locationtech/jts/operation/relateng/RelateSegmentString.java#L1-L11, org/locationtech/jts/operation/relateng/LinearBoundary.java#L1-L11, org/locationtech/jts/operation/relateng/NodeSections.java#L1-L11, org/locationtech/jts/operation/relateng/RelatePointLocator.java#L1-L11, org/locationtech/jts/operation/relateng/package-info.java#L1-L11, org/locationtech/jts/operation/relateng/IntersectionMatrixPattern.java#L1-L11
+/*
+ * Copyright (c) 2024 Martin Davis.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/operation/relateng/RelateMatrixPredicate.java#L1-L11, org/locationtech/jts/operation/relateng/TopologyPredicateTracer.java#L1-L11, org/locationtech/jts/operation/relateng/IMPredicate.java#L1-L11, org/locationtech/jts/operation/relateng/RelatePredicate.java#L1-L11, org/locationtech/jts/operation/relateng/BasicPredicate.java#L1-L11, org/locationtech/jts/operation/relateng/RelateEdge.java#L1-L11, org/locationtech/jts/operation/relateng/EdgeSetIntersector.java#L1-L11, org/locationtech/jts/operation/relateng/EdgeSegmentOverlapAction.java#L1-L11, org/locationtech/jts/operation/relateng/IMPatternMatcher.java#L1-L11, org/locationtech/jts/operation/relateng/RelateNode.java#L1-L11, org/locationtech/jts/operation/relateng/PolygonNodeConverter.java#L1-L11, org/locationtech/jts/operation/relateng/RelateGeometry.java#L1-L11, org/locationtech/jts/operation/relateng/DimensionLocation.java#L1-L11, org/locationtech/jts/algorithm/Rectangle.java#L1-L11, org/locationtech/jts/algorithm/MinimumAreaRectangle.java#L1-L11, org/locationtech/jts/algorithm/construct/IndexedPointInPolygonsLocator.java#L1-L11, org/locationtech/jts/algorithm/construct/IndexedDistanceToPoint.java#L1-L11, org/locationtech/jts/geom/util/PolygonalExtracter.java#L1-L11, org/locationtech/jts/simplify/ComponentJumpChecker.java#L1-L11
+/*
+ * Copyright (c) 2023 Martin Davis.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/operation/relateng/TopologyPredicate.java#L1-L11, org/locationtech/jts/operation/relateng/EdgeSegmentIntersector.java#L1-L11, org/locationtech/jts/operation/relateng/TopologyComputer.java#L1-L11, org/locationtech/jts/algorithm/hull/ConcaveHullOfPolygons.java#L1-L11, org/locationtech/jts/triangulate/polygon/PolygonNoder.java#L1-L11, org/locationtech/jts/simplify/RingHull.java#L1-L11, org/locationtech/jts/simplify/PolygonHullSimplifier.java#L1-L11, org/locationtech/jts/simplify/LinkedLine.java#L1-L11, org/locationtech/jts/simplify/RingHullIndex.java#L1-L11, org/locationtech/jts/coverage/VertexRingCounter.java#L1-L11, org/locationtech/jts/coverage/InvalidSegmentDetector.java#L1-L11, org/locationtech/jts/coverage/CoverageSimplifier.java#L1-L11, org/locationtech/jts/coverage/Corner.java#L1-L11, org/locationtech/jts/coverage/CoverageEdge.java#L1-L11, org/locationtech/jts/coverage/CoverageValidator.java#L1-L11, org/locationtech/jts/coverage/CoverageGapFinder.java#L1-L11, org/locationtech/jts/coverage/CoverageRingEdges.java#L1-L11, org/locationtech/jts/coverage/CornerArea.java#L1-L11, org/locationtech/jts/coverage/CoveragePolygonValidator.java#L1-L11, org/locationtech/jts/coverage/CoverageRing.java#L1-L11, org/locationtech/jts/coverage/CoverageBoundarySegmentFinder.java#L1-L11, org/locationtech/jts/coverage/TPVWSimplifier.java#L1-L11, org/locationtech/jts/coverage/CoveragePolygon.java#L1-L11, org/locationtech/jts/coverage/CoverageUnion.java#L1-L11, org/locationtech/jts/coverage/package-info.java#L1-L11, org/locationtech/jts/noding/BoundaryChainNoder.java#L1-L11, org/locationtech/jts/noding/BoundarySegmentNoder.java#L1-L11
+/*
+ * Copyright (c) 2022 Martin Davis.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/operation/relateng/TopologyPredicate.java#L16-L22
+/**
+ * The API for strategy classes implementing
+ * spatial predicates based on the DE-9IM topology model.
+ * Predicate values for specific geometry pairs can be evaluated by {@link RelateNG}.
+ * 
+ * @author Martin Davis
+ */
+
+Source entries: org/locationtech/jts/operation/relateng/TopologyPredicate.java#L145-L148
+/**
+   * Indicates that the value of the predicate can be finalized
+   * based on its current state.
+   */
+
+Source entries: org/locationtech/jts/operation/relateng/RelateNG.java#L37-L74
+/**
+ * Computes the value of topological predicates between two geometries based on the 
+ * <a href="https://en.wikipedia.org/wiki/DE-9IM">Dimensionally-Extended 9-Intersection Model</a> (DE-9IM).
+ * Standard and custom topological predicates are provided by {@link RelatePredicate}.
+ * <p>
+ * The RelateNG algorithm has the following capabilities:
+ * <ol>
+ * <li>Efficient short-circuited evaluation of topological predicates
+ *     (including matching custom DE-9IM matrix patterns)
+ * <li>Optimized repeated evaluation of predicates against a single geometry 
+ *     via cached spatial indexes (AKA "prepared mode")
+ * <li>Robust computation (only point-local topology is required,
+ *     so invalid geometry topology does not cause failures)
+ * <li>{@link GeometryCollection} inputs containing mixed types and overlapping polygons
+ *     are supported, using <i>union semantics</i>.
+ * <li>Zero-length LineStrings are treated as being topologically identical to Points.
+ * <li>Support for {@link BoundaryNodeRule}s.
+ * </ol>
+ * 
+ * See {@link IntersectionMatrixPattern} for a description of DE-9IM patterns.
+ * 
+ * If not specified, the standard {@link BoundaryNodeRule#MOD2_BOUNDARY_RULE} is used.
+ * 
+ * RelateNG operates in 2D only; it ignores any Z ordinates.
+ * 
+ * This implementation replaces {@link RelateOp} and {@link PreparedGeometry}.
+ * 
+ * <h3>FUTURE WORK</h3>
+ * <ul>
+ * <li>Support for a distance tolerance to provide "approximate" predicate evaluation
+ * </ul>
+ * 
+ * 
+ * @author Martin Davis
+ *
+ * @see RelateOp
+ * @see PreparedGeometry
+ */
+
+Source entries: org/locationtech/jts/operation/relateng/IMPredicate.java#L114-L116
+/**
+   * Sets the final value based on the state of the IM.
+   */
+
+Source entries: org/locationtech/jts/operation/relateng/BasicPredicate.java#L44-L51
+/**
+   * Tests if two geometries intersect 
+   * based on an interaction at given locations.
+   * 
+   * @param locA the location on geometry A
+   * @param locB the location on geometry B
+   * @return true if the geometries intersect
+   */
+
+Source entries: org/locationtech/jts/operation/relateng/TopologyComputer.java#L41-L43
+/**
+   * Determine a priori partial EXTERIOR topology based on dimensions.
+   */
+
+Source entries: org/locationtech/jts/operation/relateng/package-info.java#L13-L98
+/**
+ * Provides classes to implement the RelateNG algorithm
+ * computes topological relationships of {@link Geometry}s.
+ * Topology is evaluated based on the  
+ * <a href="https://en.wikipedia.org/wiki/DE-9IM">Dimensionally-Extended 9-Intersection Model</a> (DE-9IM).
+ * The {@link RelateNG} class supports computing the value of boolean topological predicates.
+ * Standard OGC named predicates are provided by the {@link RelatePredicate} functions.
+ * Custom relationships can be specified via testing against DE-9IM matrix patterns
+ * (see {@link IntersectionMatrixPattern} for examples).
+ * The full DE-9IM {@link IntersectionMatrix} can also be computed.
+ * <p>
+ * The algorithm has the following capabilities:
+ * <ol>
+ * <li>Efficient short-circuited evaluation of topological predicates
+ *     (including matching custom DE-9IM patterns)
+ * <li>Optimized repeated evaluation of predicates against a single geometry 
+ *     via cached spatial indexes (AKA "prepared mode")
+ * <li>Robust computation (since only point-local topology is required,
+ *     so that invalid geometry topology cannot cause failures)
+ * <li>Support for mixed-type and overlapping {@link GeometryCollection} inputs
+ *     (using <i>union semantics</i>)
+ * <li>Support for {@link BoundaryNodeRule}
+ * </ol>
+ * 
+ * RelateNG operates in 2D only; it ignores any Z ordinates.
+ * 
+ * <h3>Optimized Short-Circuited Evaluation</h3>
+ * The RelateNG algorithm uses strategies to optimize the evaluation of
+ * topological predicates, including matching DE-9IM matrix patterns.
+ * These include fast tests of dimensions and envelopes, and short-circuited evaluation 
+ * once the predicate value is known
+ * (either satisfied or failed) based on the value of matrix entries.
+ * Named predicates used explicit strategy code.
+ * DE-9IM matrix pattern matching are short-circuited where possible 
+ * based on analysis of the pattern matrix entries.
+ * Spatial indexes are used to optimize topological computations
+ * (such as locating points in geometry elements, 
+ * and analyzing the topological relationship between geometry edges). 
+ * 
+ * <h3>Execution Modes</h3>
+ * RelateNG provides two execution modes for evaluating predicates:
+ * <ul>
+ * <li><b>Single-shot</b> mode evaluates a predicate for a single case of two geometries.
+ * It is provided by the {@link RelateNG} static functions which take two input geometries.
+ * <li><b>Prepared</b> mode optimizes repeated evaluation of predicates 
+ * against a fixed geometry.  It is used by creating an instance of {@link RelateNG} 
+ * on the required geometry with the <tt>prepare</tt> functions, 
+ * and then using the <tt>evaluate</tt> methods.
+ * It provides much faster performance for repeated operations against a single geometry.
+ * </ul>
+ * 
+ * <h3>Robustness</h3>
+ * RelateNG provides robust evaluation of topological relationships,
+ * up to the precision of double-precision computation.
+ * It computes topological relationships in the locality of discrete points, 
+ * without constructing a full topology graph of the inputs.
+ * This means that invalid input geometries or numerical round-off do not cause exceptions
+ * (although they may return incorrect answers).
+ * However, it is necessary to node some inputs together (in particular, linear elements)
+ * in order to provide consistent evaluation of the topological structure.
+ * 
+ * <h3>GeometryCollection Handling</h3>
+ * {@link GeometryCollection}s may contain geometries of different dimensions, nested to any level.
+ * The element geometries may overlap in any combination.
+ * The OGC specification did not provide a definition for the topology
+ * of GeometryCollections, or how they behave under the DE-9IM model.
+ * RelateNG defines the topology for arbitrary collections of geometries
+ * using "union semantics".
+ * This is specified as:
+ * <ul>
+ * <li>GeometryCollections are evaluated as if they were replaced by the topological union
+ * of their elements.
+ * <li>The topological location at a point is equal to its location in the geometry of highest
+ * dimension which contains it.  For example, a point located in the interior of a Polygon
+ * and the boundary of a LineString has location <code>Interior</code>.
+ * </ul>
+ * 
+ * <h3>Zero-length LineString Handling</h3>
+ * Zero-length LineStrings are handled as topologically identical to a Point at the same coordinate. 
+ *  
+ * <h2>Package Specification</h2>
+ * <ul>
+ * <li><A HREF="http://www.opengis.org/techno/specs.htm">
+ * OpenGIS Simple Features Specification for SQL</A>
+ * </ul>
+ */
+
+Source entries: org/locationtech/jts/operation/overlayng/IndexedPointOnLineLocator.java#L1-L11, org/locationtech/jts/operation/overlayng/MaximalEdgeRing.java#L1-L11
+/*
+ * Copyright (c) 2020 Martin Davis
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/operation/overlayng/OverlayLabel.java#L1-L11, org/locationtech/jts/operation/overlayng/OverlayEdge.java#L1-L11, org/locationtech/jts/operation/overlayng/EdgeNodingBuilder.java#L1-L11, org/locationtech/jts/operation/overlayng/LineBuilder.java#L1-L11, org/locationtech/jts/operation/overlayng/OverlayEdgeRing.java#L1-L11, org/locationtech/jts/operation/overlayng/LineLimiter.java#L1-L11, org/locationtech/jts/operation/overlayng/PolygonBuilder.java#L1-L11, org/locationtech/jts/operation/overlayng/OverlayGraph.java#L1-L11, org/locationtech/jts/operation/overlayng/InputGeometry.java#L1-L11, org/locationtech/jts/operation/overlayng/EdgeMerger.java#L1-L11, org/locationtech/jts/operation/overlayng/OverlayLabeller.java#L1-L11, org/locationtech/jts/operation/overlayng/UnaryUnionNG.java#L1-L11, org/locationtech/jts/operation/overlayng/ElevationModel.java#L1-L11, org/locationtech/jts/operation/overlayng/OverlayPoints.java#L1-L11, org/locationtech/jts/operation/overlayng/PrecisionReducer.java#L1-L11, org/locationtech/jts/operation/overlayng/PrecisionUtil.java#L1-L11, org/locationtech/jts/operation/overlayng/EdgeKey.java#L1-L11, org/locationtech/jts/operation/overlayng/Edge.java#L1-L11, org/locationtech/jts/operation/overlayng/IntersectionPointBuilder.java#L1-L11, org/locationtech/jts/operation/overlayng/EdgeSourceInfo.java#L1-L11, org/locationtech/jts/operation/overlayng/CoverageUnion.java#L1-L11, org/locationtech/jts/operation/overlayng/RingClipper.java#L1-L11, org/locationtech/jts/operation/overlayng/OverlayNG.java#L1-L11, org/locationtech/jts/operation/overlayng/RobustClipEnvelopeComputer.java#L1-L11, org/locationtech/jts/operation/polygonize/HoleAssigner.java#L1-L11, org/locationtech/jts/operation/union/UnionStrategy.java#L1-L11, org/locationtech/jts/operation/union/OverlapUnion.java#L1-L11, org/locationtech/jts/operation/union/InputExtracter.java#L1-L11, org/locationtech/jts/operation/buffer/VariableBuffer.java#L1-L11, org/locationtech/jts/shape/fractal/MortonCurveBuilder.java#L1-L11, org/locationtech/jts/shape/fractal/HilbertCurveBuilder.java#L1-L11, org/locationtech/jts/shape/fractal/HilbertCode.java#L1-L11, org/locationtech/jts/shape/fractal/MortonCode.java#L1-L11, org/locationtech/jts/util/TestBuilderProxy.java#L1-L11, org/locationtech/jts/util/IntArrayList.java#L1-L11, org/locationtech/jts/io/OrdinateFormat.java#L1-L11, org/locationtech/jts/index/strtree/EnvelopeDistance.java#L1-L11, org/locationtech/jts/index/hprtree/HPRtree.java#L1-L11, org/locationtech/jts/index/hprtree/HilbertEncoder.java#L1-L11, org/locationtech/jts/index/hprtree/Item.java#L1-L11, org/locationtech/jts/noding/snapround/SnapRoundingNoder.java#L1-L11, org/locationtech/jts/noding/snapround/HotPixelIndex.java#L1-L11, org/locationtech/jts/noding/SegmentExtractingNoder.java#L1-L11
+/*
+ * Copyright (c) 2019 Martin Davis.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/operation/overlayng/FastOverlayFilter.java#L1-L11
+/*
+ * Copyright (c) 2020 Martin Davis, and others.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/operation/overlayng/OverlayEdge.java#L24-L32
+/**
+   * Creates a single OverlayEdge.
+   * 
+   * @param pts
+   * @param lbl 
+   * @param direction
+   * 
+   * @return a new edge based on the given coordinates and direction
+   */
+
+Source entries: org/locationtech/jts/operation/overlayng/EdgeNodingBuilder.java#L40-L56
+/**
+ * Builds a set of noded, unique, labelled Edges from 
+ * the edges of the two input geometries.
+ * <p> 
+ * It performs the following steps:
+ * <ul>
+ * <li>Extracts input edges, and attaches topological information
+ * <li>if clipping is enabled, handles clipping or limiting input geometry
+ * <li>chooses a {@link Noder} based on provided precision model, unless a custom one is supplied
+ * <li>calls the chosen Noder, with precision model
+ * <li>removes any fully collapsed noded edges
+ * <li>builds {@link Edge}s and merges them
+ * </ul>
+ * 
+ * @author mdavis
+ *
+ */
+
+Source entries: org/locationtech/jts/operation/overlayng/EdgeNodingBuilder.java#L100-L107
+/**
+   * Creates a new builder, with an optional custom noder.
+   * If the noder is not provided, a suitable one will 
+   * be used based on the supplied precision model.
+   * 
+   * @param pm the precision model to use
+   * @param noder an optional custom noder to use (may be null)
+   */
+
+Source entries: org/locationtech/jts/operation/overlayng/OverlayLabeller.java#L56-L61
+/**
+     * At this point collapsed edges labeled with location UNKNOWN
+     * must be disconnected from the area edges of the parent.
+     * This can occur with a collapsed hole or shell.
+     * The edges can be labeled based on their parent ring role (shell or hole).
+     */
+
+Source entries: org/locationtech/jts/operation/overlayng/OverlayLabeller.java#L69-L75
+/**
+   * Labels edges around nodes based on the arrangement
+   * of incident area boundary edges.
+   * Also propagates the labeling to connected linear edges.
+   *  
+   * @param nodes the nodes to label
+   */
+
+Source entries: org/locationtech/jts/operation/overlayng/OverlayLabeller.java#L176-L199
+/**
+   * At this point collapsed edges with unknown location
+   * must be disconnected from the boundary edges of the parent
+   * (because otherwise the location would have
+   * been propagated from them).
+   * They can be now located based on their parent ring role (shell or hole).
+   * (This cannot be done earlier, because the location
+   * based on the boundary edges must take precedence.
+   * There are situations where a collapsed edge has a location 
+   * which is different to its ring role - 
+   * e.g. a narrow gore in a polygon, which is in 
+   * the interior of the reduced polygon, but whose
+   * ring role would imply the location EXTERIOR.)
+   * 
+   * Note that collapsed edges can NOT have location determined via a PIP location check,
+   * because that is done against the unreduced input geometry,
+   * which may give an invalid result due to topology collapse.
+   * 
+   * The labeling is propagated to other connected linear edges, 
+   * since there may be NOT_PART edges which are connected, 
+   * and they can be labeled in the same way.
+   * (These would get labeled anyway during subsequent disconnected labeling pass,
+   * but may be more efficient and accurate to do it here.)
+   */
+
+Source entries: org/locationtech/jts/operation/overlayng/OverlayNGRobust.java#L1-L11, org/locationtech/jts/operation/overlayng/OverlayUtil.java#L1-L11, org/locationtech/jts/operation/overlayng/OverlayMixedPoints.java#L1-L11, org/locationtech/jts/io/WKTConstants.java#L1-L11, org/locationtech/jts/algorithm/construct/MaximumInscribedCircle.java#L1-L11, org/locationtech/jts/algorithm/construct/LargestEmptyCircle.java#L1-L11, org/locationtech/jts/geom/GeometryRelate.java#L1-L11, org/locationtech/jts/geom/GeometryOverlay.java#L1-L11, org/locationtech/jts/noding/snap/SnappingNoder.java#L1-L11, org/locationtech/jts/noding/snap/SnappingPointIndex.java#L1-L11
+/*
+ * Copyright (c) 2020 Martin Davis.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/operation/overlayng/OverlayNGRobust.java#L305-L311
+/**
+   * Computes the largest magnitude of the ordinates of a geometry,
+   * based on the geometry envelope.
+   * 
+   * @param geom a geometry
+   * @return the magnitude of the largest ordinate
+   */
+
+Source entries: org/locationtech/jts/operation/overlayng/OverlayUtil.java#L153-L162
+/**
+   * Tests if the result can be determined to be empty
+   * based on simple properties of the input geometries
+   * (such as whether one or both are empty, 
+   * or their envelopes are disjoint).
+   * 
+   * @param opCode the overlay operation
+   * @param inputGeom the input geometries
+   * @return true if the overlay result is determined to be empty
+   */
+
+Source entries: org/locationtech/jts/operation/overlayng/OverlayUtil.java#L222-L232
+/**
+   * Creates an empty result geometry of the appropriate dimension,
+   * based on the given overlay operation and the dimensions of the inputs.
+   * The created geometry is an atomic geometry, 
+   * not a collection (unless the dimension is -1,
+   * in which case a <code>GEOMETRYCOLLECTION EMPTY</code> is created.)
+   * 
+   * @param dim the dimension of the empty geometry to create
+   * @param geomFact the geometry factory being used for the operation
+   * @return an empty atomic geometry of the appropriate dimension
+   */
+
+Source entries: org/locationtech/jts/operation/overlayng/package-info.java#L13-L211
+/**
+ * <p>
+ * Contains classes that perform vector overlay
+ * to compute boolean set-theoretic spatial functions.
+ * Overlay operations are used in spatial analysis for computing set-theoretic
+ * operations (boolean combinations) of input {@link org.locationtech.jts.geom.Geometry}s.
+ * </p>
+ * <p>
+ * The {@link org.locationtech.jts.operation.overlayng.OverlayNG} class provides the standard Simple Features
+ * boolean set-theoretic overlay operations.
+ * These are:
+ * <ul>
+ * <li><b>Intersection</b> - all points which lie in both geometries</li>
+ * <li><b>Union</b> - all points which lie in at least one geometry</li>
+ * <li><b>Difference</b> - all points which lie in the first geometry but not the second</li>
+ * <li><b>Symmetric Difference</b> - all points which lie in one geometry but not both</li>
+ * </ul>
+ * These operations are supported for all combinations of the basic geometry types and their homogeneous collections.
+ * <p>
+ * Additional operations include:
+ * <ul>
+ * <li>{@link org.locationtech.jts.operation.overlayng.UnaryUnionNG} unions collections of geometries in an efficient way</li>
+ * <li>{@link org.locationtech.jts.operation.overlayng.CoverageUnion} provides enhanced performance for unioning
+ * valid polygonal and lineal coverages</li>
+ * <li>{@link org.locationtech.jts.operation.overlayng.PrecisionReducer} allows reducing the precision of a geometry
+ * in a topologically-valid way</li>
+ * </ul>
+ * <p>
+ * <h2>Semantics</h2>
+ * The requirements for overlay input are:
+ * <ul>
+ * <li>Input geometries may have different dimension.</li>
+ * <li>Collections must be homogeneous
+ * (all elements must have the same dimension).</li>
+ * <li>Inputs may be <b>simple</b> {@link GeometryCollection}s.
+ * A GeometryCollection is simple if it can be flattened into a valid Multi-geometry;
+ * i.e. it is homogeneous and does not contain any overlapping Polygons.</li>  
+ * <li>In general, inputs must be valid geometries.</li>
+ * <li>However, polygonal inputs may contain the following two kinds of "mild" invalid topology:
+ * <ul>
+ * <li>rings which self-touch at discrete points (sometimes called inverted shells and exverted holes).</li>
+ * <li>rings which touch along line segments (i.e. topology collapse).</li>
+ * </ul>
+ * </li>
+ * </ul>
+ * <p>
+ * The semantics of overlay output are:
+ * <ul>
+ * <li>Results are always valid geometries.
+ * In particular, result <code>MultiPolygon</code>s are valid.</li>
+ * <li>Repeated vertices are removed.</li>
+ * <li>Linear results include all nodes (endpoints) present in the input.
+ * In some cases more nodes will be present.
+ * (If merged lines are required see {@link org.locationtech.jts.operation.linemerge.LineMerger}.)</li>
+ * <li>Polygon edges which undergo topology collapse to lines
+ * (due to rounding or snapping) are included in the result.
+ * This means that all operations may produce a heterogeneous result.
+ * Usually this only occurs when using a fixed-precision model,
+ * but it can happen due to snapping performed to improve robustness.
+ * </li>
+ * <li>The <code>intersection</code> operation result includes
+ * all components of the intersection
+ * for geometries which intersect in components of the same and/or lower dimension.</li>
+ * <li>The <code>difference</code> operation produces a homogeneous result
+ * if no topology collapses are present.
+ * In this case the result dimension is equal to that of the left-hand operand.</li>
+ * <li>The <code>union</code> and <code>symmetric difference</code> operations
+ * may produce a heterogeneous result if the inputs are of mixed dimension.</li>
+ * <li>Homogeneous results are output as <code>Multi</code> geometries.</li>
+ * <li>Heterogeneous results are output as a <code>GeometryCollection</code>
+ * containing a set of atomic geometries.
+ * (This provides backwards compatibility with the original overlay implementation.
+ * However, it loses the information that the polygonal results
+ * have valid <code>MultiPolygon</code> topology.)</li>
+ * <li>Empty results are atomic <code>EMPTY</code> geometries
+ * of dimension appropriate to the operation.</li>
+ * <li>As far as possible, results preserve the order and direction of the inputs.
+ * For instance, a MultiLineString intersection with a Polygon
+ * will have resultants which are in the same order and have the same direction
+ * as the input lines (assuming the input lines are disjoint).
+ * If an input line is split into two or more parts,
+ * they are ordered in the direction of occurence along their parent line.</li>
+ * </ul>
+ * <h2>Features</h2>
+ * <h3>Functionality</h3>
+ * <ul>
+ * <li><b>Precision Model</b> - operations are performed using a defined precision model
+ * (finite or floating)
+ * <li><b>Robust Computation</b> - provides fully robust computation when an appropriate noder is used
+ * <li><b>Performance optimizations</b> - including:
+ * <ul>
+ * <li>Short-circuiting for disjoint input envelopes
+ * <li>Reduction of input segment count via clipping / limiting to overlap envelope
+ * <li>Optimizations can be disabled if required (e.g. for testing or performance evaluation)
+ * </ul>
+ * <li><b>Pluggable Noding</b> - allows using different noders to change characteristics of performance and accuracy
+ * <li><b>Precision Reduction</b> - in a topologically correct way.
+ * Implemented by unioning a single input with an empty geometry
+ * <li><b>Topology Correction / Conversion</b> - handles certain kinds
+ * of polygonal inputs which are invalid
+ * <li><b>Fast Coverage Union</b> - of valid polygonal and linear coverages
+ * </ul>
+ * <h3>Pluggable Noding</h3>
+ * The noding phase of overlay uses a  {@link org.locationtech.jts.noding.Noder} subclass.
+ * This is determine automatically based on the precision model of the input.
+ * Or it can be provided explicity, which allows changing characteristics
+ * of performance and robustness.
+ * Examples of relevant noders include:
+ * <ul>
+ * <li>{@link org.locationtech.jts.noding.MCIndexNoder} - a fast full-precision noder, which however may not produce
+ * a valid noding in some situations.
+ * Should be combined with a {@link org.locationtech.jts.noding.ValidatingNoder} wrapper to detect
+ * noding failures.</li>
+ * <li>{@link org.locationtech.jts.noding.snap.SnappingNoder} - a robust full-precision noder</li>
+ * <li>{@link org.locationtech.jts.noding.snapround.SnapRoundingNoder} - a noder which enforces a supplied fixed precision model
+ * by snapping vertices and intersections to a grid</li>
+ * <li>{@link org.locationtech.jts.noding.SegmentExtractingNoder} - a special-purpose noder that provides very fast noding
+ * for valid polygonal coverages. Requires node-clean input to operate correctly. </li>
+ * </ul>
+ * <h3>Topology Correction / Conversion</h3>
+ * As noted above, the overlay process
+ * can handle polygonal inputs which are invalid according to the OGC topology model
+ * in certain limited ways.
+ * These invalid conditions are:
+ * <ul>
+ * <li>rings which self-touch at discrete points (sometimes called inverted shells and exverted holes).</li>
+ * <li>rings which touch along line segments (i.e. topology collapse).</li>
+ * </ul>
+ * These invalidities are corrected during the overlay process.
+ * <p>
+ * Some of these invalidities are considered as valid in other geometry models.
+ * By peforming a self-overlay these inputs can be converted
+ * into the JTS OGC topological model.
+ * <h3>Codebase</h3>
+ * <ul>
+ * <li>Defines a simple, full-featured topology model, with clear semantics.
+ * The topology model incorporates handling topology collapse, which is
+ * essential for snapping and fixed-precision noding.</li>
+ * <li>Uses a simple topology graph data structure (based on the winged edge pattern).</li>
+ * <li>Decouples noding and topology-build phases.
+ * This makes the code clearer, and makes it possible
+ * to allow supplying alternate implementations and semantics for each phase.</li>
+ * <li>All optimizations are implemented internally,
+ * so that clients do not have to add checks such as envelope overlap.</li>
+ * </ul>
+ * <h2>Algorithm</h2>
+ * For non-point inputs the overlay algorithm is:
+ * <p>
+ * <ol>
+ * <li>Check for empty input geometries, and return a result appropriate for the specified operation
+ * <li>Extract linework and points from input geometries, with topology location information
+ * <li>(If optimization enabled) Apply overlap envelope optimizations:
+ * <ol>
+ * <li>For Intersection, check if the input envelopes are disjoint
+ * (using an envelope expansion adjustment to account for the precision grid).
+ * <li>For Intersection and Difference, clip or limit the linework of the input geometries to the overlap envelope.
+ * <li>If the optimized linework is empty, return an empty result of appropriate type.
+ * </ol>
+ * <li>Node the linework.  For full robustness snap-rounding noding is used.
+ * Other kinds of noder can be used as well (for instance, the full-precision noding algorithm as the original overlay code).
+ * <li>Merge noded edges.
+ * Coincident edges from the two input geometries are merged, along with their topological labelling.
+ * Topology collapses are detected in this step, and are flagged in the labelling so they can be handled appropriately duing result polygon extraction
+ * <li>Build a fully-labelled topology graph.  This includes:
+ * <ol>
+ * <li>Create a graph structure on the noded, merged edges
+ * <li>Propagate topology locations around nodes in the graph
+ * <li>Label edges that have incomplete topology locations.
+ * These occur when edges from an input geometry are isolated (disjoint from the edges of the other geometry in the graph).
+ * </ol>
+ * <li>If result is empty return an empty geometry of appropriate type
+ * <li>Generate the result geometry from the labelled graph:
+ * <ol>
+ * <li>Build result polygons
+ * <ol>
+ * <li>Mark edges which should be included in the result areas
+ * <li>Link maximal rings together
+ * <li>Convert maximal rings to minimal (valid) rings
+ * <li>Determine nesting of holes
+ * <li>Construct result polygons
+ * </ol>
+ * <li>Build result linework
+ * <ol>
+ * <li>Mark edges to be included in the result lines
+ * <li>Extract edges as lines
+ * </ol>
+ * <li>Build result points (certain intersection situations only)
+ * <ol>
+ * <li>Output points occur where the inputs touch at single points
+ * </ol>
+ * <li>Collect result elements into the result geometry
+ * </ol>
+ * </ol>
+ * <h2>Package Specification</h2>
+ * <ul>
+ * <li><A HREF="http://www.opengis.org/techno/specs.htm">
+ * OpenGIS Simple Features Specification for SQL</A>
+ * </ul>
+ */
+
+Source entries: org/locationtech/jts/operation/overlayng/RobustClipEnvelopeComputer.java#L103-L107
+/**
+     * This is a crude test of whether segment intersects envelope.
+     * It could be refined by checking exact intersection.
+     * This could be based on the algorithm in the HotPixel.intersectsScaled method.
+     */
+
+Source entries: org/locationtech/jts/operation/distance/DistanceOp.java#L78-L78
+// MD - could improve this further with a positive short-circuit based on envelope MinMaxDist
+
+Source entries: org/locationtech/jts/operation/distance/FacetSequence.java#L37-L45
+/**
+   * Creates a new sequence of facets based on a {@link CoordinateSequence}
+   * contained in the given {@link Geometry}.
+   * 
+   * @param geom the geometry containing the facets 
+   * @param pts the sequence containing the facet points
+   * @param start the index of the start point
+   * @param end the index of the end point + 1
+   */
+
+Source entries: org/locationtech/jts/operation/distance/FacetSequence.java#L54-L60
+/**
+   * Creates a new sequence of facets based on a {@link CoordinateSequence}.
+   * 
+   * @param pts the sequence containing the facet points
+   * @param start the index of the start point
+   * @param end the index of the end point + 1
+   */
+
+Source entries: org/locationtech/jts/operation/polygonize/EdgeRing.java#L427-L430
+/**
+   * Updates the included status for currently non-included shells
+   * based on whether they are adjacent to an included shell.
+   */
+
+Source entries: org/locationtech/jts/operation/polygonize/EdgeRing.java#L468-L475
+/**
+   * Compares EdgeRings based on their envelope,
+   * using the standard lexicographic ordering.
+   * This ordering is sufficient to make edge ring sorting deterministic.
+   * 
+   * @author mbdavis
+   *
+   */
+
+Source entries: org/locationtech/jts/operation/polygonize/EdgeRing.java#L482-L489
+/**
+   * Compares EdgeRings based on the area of their envelopes.
+   * Smaller envelopes sort before bigger ones.
+   * This effectively sorts EdgeRings in order of containment.
+   * 
+   * @author mdavis
+   *
+   */
+
+Source entries: org/locationtech/jts/operation/overlay/OverlayOp.java#L617-L637
+/**
+   * Creates an empty result geometry of the appropriate dimension,
+   * based on the given overlay operation and the dimensions of the inputs.
+   * The created geometry is always an atomic geometry, 
+   * not a collection.
+   * <p>
+   * The empty result is constructed using the following rules:
+   * <ul>
+   * <li>{@link #INTERSECTION} - result has the dimension of the lowest input dimension
+   * <li>{@link #UNION} - result has the dimension of the highest input dimension
+   * <li>{@link #DIFFERENCE} - result has the dimension of the left-hand input
+   * <li>{@link #SYMDIFFERENCE} - result has the dimension of the highest input dimension
+   * (since the symmetric Difference is the union of the differences).
+   * </ul>
+   * 
+   * @param overlayOpCode the code for the overlay operation being performed
+   * @param a an input geometry
+   * @param b an input geometry
+   * @param geomFact the geometry factory being used for the operation
+   * @return an empty atomic geometry of the appropriate dimension
+   */
+
+Source entries: org/locationtech/jts/operation/overlay/snap/GeometrySnapper.java#L201-L206
+/**
+   * Computes the snap tolerance based on the input geometries.
+   *
+   * @param ringPts
+   * @return
+   */
+
+Source entries: org/locationtech/jts/operation/buffer/VariableBuffer.java#L97-L108
+/**
+   * Computes a list of values for the points along a line by
+   * interpolating between values for the start and end point.
+   * The interpolation is
+   * based on the distance of each point along the line
+   * relative to the total line length.
+   * 
+   * @param line the line to interpolate along
+   * @param startValue the start value 
+   * @param endValue the end value
+   * @return the array of interpolated values
+   */
+
+Source entries: org/locationtech/jts/operation/buffer/VariableBuffer.java#L131-L145
+/**
+   * Computes a list of values for the points along a line by
+   * interpolating between values for the start, middle and end points.
+   * The interpolation is
+   * based on the distance of each point along the line
+   * relative to the total line length.
+   * The middle distance is attained at
+   * the vertex at or just past the half-length of the line.
+   * 
+   * @param line the line to interpolate along
+   * @param startValue the start value 
+   * @param midValue the start value 
+   * @param endValue the end value
+   * @return the array of interpolated values
+   */
+
+Source entries: org/locationtech/jts/operation/buffer/BufferOp.java#L113-L129
+/**
+   * Compute a scale factor to limit the precision of
+   * a given combination of Geometry and buffer distance.
+   * The scale factor is determined by
+   * the number of digits of precision in the (geometry + buffer distance),
+   * limited by the supplied <code>maxPrecisionDigits</code> value.
+   * <p>
+   * The scale factor is based on the absolute magnitude of the (geometry + buffer distance).
+   * since this determines the number of digits of precision which must be handled.
+   *
+   * @param g the Geometry being buffered
+   * @param distance the buffer distance
+   * @param maxPrecisionDigits the max # of digits that should be allowed by
+   *          the precision determined by the computed scale factor
+   *
+   * @return a scale factor for the buffer computation
+   */
+
+Source entries: org/locationtech/jts/operation/buffer/OffsetSegmentGenerator.java#L69-L72
+/**
+   * The angle quantum with which to approximate a fillet curve
+   * (based on the input # of quadrant segments)
+   */
+
+Source entries: org/locationtech/jts/operation/buffer/BufferCurveSetBuilder.java#L342-L345
+/**
+     * Heuristic based on low chance that a ring with many vertices will invert.
+     * This low limit ensures this test is fairly efficient.
+     */
+
+Source entries: org/locationtech/jts/operation/buffer/BufferCurveSetBuilder.java#L402-L413
+/**
+   * Tests whether a ring buffer is eroded completely (is empty)
+   * based on simple heuristics.
+   * 
+   * The ringCoord is assumed to contain no repeated points.
+   * It may be degenerate (i.e. contain only 1, 2, or 3 points).
+   * In this case it has no area, and hence has a minimum diameter of 0.
+   *
+   * @param ringCoord
+   * @param offsetDistance
+   * @return
+   */
+
+Source entries: org/locationtech/jts/operation/buffer/OffsetCurve.java#L35-L73
+/**
+ * Computes an offset curve from a geometry.
+ * An offset curve is a linear geometry which is offset a given distance
+ * from the input.
+ * If the offset distance is positive the curve lies on the left side of the input;
+ * if it is negative the curve is on the right side.
+ * The curve(s) have the same direction as the input line(s).
+ * The result for a zero offset distance is a copy of the input linework.
+ * <p>
+ * The offset curve is based on the boundary of the buffer for the geometry
+ * at the offset distance (see {@link BufferOp}.
+ * The normal mode of operation is to return the sections of the buffer boundary
+ * which lie on the raw offset curve
+ * (obtained via {@link #rawOffset(LineString, double)}.  
+ * The offset curve will contain multiple sections 
+ * if the input self-intersects or has close approaches.
+ * The computed sections are ordered along the raw offset curve.
+ * Sections are disjoint.  They never self-intersect, but may be rings.
+ * <ul>
+ * <li>For a {@link LineString} the offset curve is a linear geometry
+ * ({@link LineString} or {@link MultiLineString}).
+ * <li>For a {@link Point} or {@link MultiPoint} the offset curve is an empty {@link LineString}.
+ * <li>For a {@link Polygon} the offset curve is the boundary of the polygon buffer (which
+ * may be a {@link MultiLineString}.
+ * <li>For a collection the output is a {@link MultiLineString} containing the offset curves of the elements.
+ * </ul>
+ * In "joined" mode (see {@link #setJoined(boolean)}
+ * the sections computed for each input line are joined into a single offset curve line. 
+ * The joined curve may self-intersect. 
+ * At larger offset distances the curve may contain "flat-line" artifacts 
+ * in places where the input self-intersects.
+ * <p>
+ * Offset curves support setting the number of quadrant segments, 
+ * the join style, and the mitre limit (if applicable) via 
+ * the {@link BufferParameters}.
+ * 
+ * @author Martin Davis
+ *
+ */
+
+Source entries: org/locationtech/jts/io/Ordinate.java#L1-L11
+/*
+ * Copyright (c) 2018 Felix Obermaier
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/io/WKTReader.java#L432-L438
+/**
+   * Computes the required dimension based on the given ordinate values.
+   * It is assumed that {@link Ordinate#X} and {@link Ordinate#Y} are included.
+   *
+   * @param ordinateFlags the ordinate bit-mask
+   * @return the number of dimensions required to store ordinates for the given bit-mask.
+   */
+
+Source entries: org/locationtech/jts/io/ByteArrayInStream.java#L29-L33
+/**
+	 * Creates a new stream based on the given buffer.
+	 * 
+	 * @param buffer the bytes to read
+	 */
+
+Source entries: org/locationtech/jts/algorithm/CGAlgorithms.java#L523-L526, org/locationtech/jts/algorithm/CGAlgorithms.java#L556-L559
+/*
+      Based on the Shoelace formula.
+      http://en.wikipedia.org/wiki/Shoelace_formula
+     */
+
+Source entries: org/locationtech/jts/algorithm/RobustLineIntersector.java#L1-L11, org/locationtech/jts/index/chain/MonotoneChain.java#L1-L11, org/locationtech/jts/noding/MCIndexNoder.java#L1-L11, org/locationtech/jts/noding/snapround/GeometryNoder.java#L1-L11
+/*
+ * Copyright (c) 2016 Vivid Solutions, and others.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/algorithm/match/FrechetSimilarityMeasure.java#L1-L11, org/locationtech/jts/algorithm/distance/DiscreteFrechetDistance.java#L1-L11
+/*
+ * Copyright (c) 2021 Felix Obermaier.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/algorithm/distance/DiscreteHausdorffDistance.java#L21-L56
+/**
+ * An algorithm for computing a distance metric
+ * which is an approximation to the Hausdorff Distance
+ * based on a discretization of the input {@link Geometry}.
+ * The algorithm computes the Hausdorff distance restricted to discrete points
+ * for one of the geometries.
+ * The points can be either the vertices of the geometries (the default), 
+ * or the geometries with line segments densified by a given fraction.
+ * Also determines two points of the Geometries which are separated by the computed distance.
+* <p>
+ * This algorithm is an approximation to the standard Hausdorff distance.
+ * Specifically, 
+ * <pre>
+ *    for all geometries a, b:    DHD(a, b) &lt;= HD(a, b)
+ * </pre>
+ * The approximation can be made as close as needed by densifying the input geometries.  
+ * In the limit, this value will approach the true Hausdorff distance:
+ * <pre>
+ *    DHD(A, B, densifyFactor) -&gt; HD(A, B) as densifyFactor -&gt; 0.0
+ * </pre>
+ * The default approximation is exact or close enough for a large subset of useful cases.
+ * Examples of these are:
+ * <ul>
+ * <li>computing distance between Linestrings that are roughly parallel to each other,
+ * and roughly equal in length.  This occurs in matching linear networks.
+ * <li>Testing similarity of geometries.
+ * </ul>
+ * An example where the default approximation is not close is:
+ * <pre>
+ *   A = LINESTRING (0 0, 100 0, 10 100, 10 100)
+ *   B = LINESTRING (0 100, 0 10, 80 10)
+ *   
+ *   DHD(A, B) = 22.360679774997898
+ *   HD(A, B) ~= 47.8
+ * </pre>
+ */
+
+Source entries: org/locationtech/jts/algorithm/distance/DiscreteFrechetDistance.java#L130-L139
+/**
+   * Computes the Fréchet Distance for the given distance matrix.
+   *
+   * @param coords0 an array of {@code Coordinate}s.
+   * @param coords1 an array of {@code Coordinate}s.
+   * @param diagonal an array of alternating col/row index values for the diagonal of the distance matrix
+   * @param distances the distance matrix
+   * @param distanceToPair a lookup for coordinate pairs based on a distance
+   *
+   */
+
+Source entries: org/locationtech/jts/algorithm/distance/DiscreteFrechetDistance.java#L203-L212
+/**
+   * Computes relevant distances between pairs of {@link Coordinate}s for the
+   * computation of the {@code Discrete Fréchet Distance}.
+   *
+   * @param coords0 an array of {@code Coordinate}s.
+   * @param coords1 an array of {@code Coordinate}s.
+   * @param diagonal an array of alternating col/row index values for the diagonal of the distance matrix
+   * @param distances the distance matrix
+   * @param distanceToPair a lookup for coordinate pairs based on a distance
+   */
+
+Source entries: org/locationtech/jts/algorithm/distance/DiscreteFrechetDistance.java#L535-L537
+/**
+   * A sparse matrix based on java's {@link HashMap}.
+   */
+
+Source entries: org/locationtech/jts/algorithm/ConvexHull.java#L496-L504
+/** 
+       * The points are collinear,
+       * so compare based on distance from the origin.  
+       * The points p and q are >= to the origin,
+       * so they lie in the closed half-plane above the origin.
+       * If they are not in a horizontal line, 
+       * the Y ordinate can be tested to determine distance.
+       * This is more robust than computing the distance explicitly.
+       */
+
+Source entries: org/locationtech/jts/algorithm/MinimumDiameter.java#L268-L281
+/**
+   * Gets the rectangular {@link Polygon} which encloses the input geometry
+   * and is based on the minimum diameter supporting segment.
+   * The rectangle has width equal to the minimum diameter, 
+   * and a longer length.
+   * If the convex hull of the input is degenerate (a line or point)
+   * a {@link LineString} or {@link Point} is returned.
+   * <p>
+   * This is not necessarily the enclosing rectangle with minimum area.
+   * 
+   * @return a rectangle enclosing the input (or a line or point if degenerate)
+   * 
+   * @see MinimumAreaRectangle
+   */
+
+Source entries: org/locationtech/jts/algorithm/Area.java#L61-L64, org/locationtech/jts/algorithm/Area.java#L92-L95
+/*
+     * Based on the Shoelace formula.
+     * http://en.wikipedia.org/wiki/Shoelace_formula
+     */
+
+Source entries: org/locationtech/jts/algorithm/RobustDeterminant.java#L20-L45
+/**
+ * Implements an algorithm to compute the
+ * sign of a 2x2 determinant for double precision values robustly.
+ * It is a direct translation of code developed by Olivier Devillers.
+ * <p>
+ * The original code carries the following copyright notice:
+ *
+ * <pre>
+ *************************************************************************
+ * Author : Olivier Devillers
+ * Olivier.Devillers@sophia.inria.fr
+ * http:/www.inria.fr:/prisme/personnel/devillers/anglais/determinant.html
+ *
+ * Relicensed under EDL and EPL with Permission from Olivier Devillers
+ * 
+ **************************************************************************
+ *
+ **************************************************************************
+ *              Copyright (c) 1995  by  INRIA Prisme Project
+ *                  BP 93 06902 Sophia Antipolis Cedex, France.
+ *                           All rights reserved
+ **************************************************************************
+ * </pre>
+ *
+ * @version 1.7
+ */
+
+Source entries: org/locationtech/jts/algorithm/CGAlgorithmsDD.java#L117-L139
+/**
+   * A filter for computing the orientation index of three coordinates.
+   * <p>
+   * If the orientation can be computed safely using standard DP
+   * arithmetic, this routine returns the orientation index.
+   * Otherwise, a value i > 1 is returned.
+   * In this case the orientation index must 
+   * be computed using some other more robust method.
+   * The filter is fast to compute, so can be used to 
+   * avoid the use of slower robust methods except when they are really needed,
+   * thus providing better average performance.
+   * <p>
+   * Uses an approach due to Jonathan Shewchuk, which is in the public domain.
+   * 
+   * @param pax A coordinate
+   * @param pay A coordinate
+   * @param pbx B coordinate
+   * @param pby B coordinate
+   * @param pcx C coordinate
+   * @param pcy C coordinate
+   * @return the orientation index if it can be computed safely
+   * @return i > 1 if the orientation index cannot be computed safely
+   */
+
+Source entries: org/locationtech/jts/algorithm/Intersection.java#L1-L11
+/*
+ * Copyright (c) 2019 martin Davis
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/algorithm/MinimumBoundingCircle.java#L65-L68
+/*
+   * The algorithm used is based on the one by Jon Rokne in 
+   * the article "An Easy Bounding Circle" in <i>Graphic Gems II</i>.
+   */
+
+Source entries: org/locationtech/jts/algorithm/construct/MaximumInscribedCircle.java#L93-L104
+/**
+   * Computes the maximum number of iterations allowed.
+   * Uses a heuristic based on the size of the input geometry
+   * and the tolerance distance.
+   * A smaller tolerance distance allows more iterations.
+   * This is a rough heuristic, intended
+   * to prevent huge iterations for very thin geometries.
+   * 
+   * @param geom the input geometry
+   * @param toleranceDist the tolerance distance
+   * @return the maximum number of iterations allowed
+   */
+
+Source entries: org/locationtech/jts/geom/impl/PackedCoordinateSequence.java#L28-L40
+/**
+ * A {@link CoordinateSequence} implementation based on a packed arrays.
+ * In this implementation, {@link Coordinate}s returned by #toArray and #get are copies
+ * of the internal values.
+ * To change the actual values, use the provided setters.
+ * <p>
+ * For efficiency, created Coordinate arrays
+ * are cached using a soft reference.
+ * The cache is cleared each time the coordinate sequence contents are
+ * modified through a setter method.
+ *
+ * @version 1.7
+ */
+
+Source entries: org/locationtech/jts/geom/impl/PackedCoordinateSequence.java#L240-L242
+/**
+   * Packed coordinate sequence implementation based on doubles
+   */
+
+Source entries: org/locationtech/jts/geom/impl/PackedCoordinateSequence.java#L426-L428
+/**
+   * Packed coordinate sequence implementation based on floats
+   */
+
+Source entries: org/locationtech/jts/geom/impl/CoordinateArraySequence.java#L55-L62
+/**
+   * Constructs a sequence based on the given array
+   * of {@link Coordinate}s (the
+   * array is not copied).
+   * The coordinate dimension defaults to 3.
+   *
+   * @param coordinates the coordinate array that will be referenced.
+   */
+
+Source entries: org/locationtech/jts/geom/impl/CoordinateArraySequence.java#L68-L75
+/**
+   * Constructs a sequence based on the given array 
+   * of {@link Coordinate}s (the
+   * array is not copied).
+   *
+   * @param coordinates the coordinate array that will be referenced.
+   * @param dimension the dimension of the coordinates
+   */
+
+Source entries: org/locationtech/jts/geom/impl/CoordinateArraySequence.java#L80-L90
+/**
+   * Constructs a sequence based on the given array 
+   * of {@link Coordinate}s (the array is not copied).
+   * <p>
+   * It is your responsibility to ensure the array contains Coordinates of the
+   * indicated dimension and measures (See 
+   * {@link CoordinateArrays#enforceConsistency(Coordinate[])} ).</p>
+   *
+   * @param coordinates the coordinate array that will be referenced.
+   * @param dimension the dimension of the coordinates
+   */
+
+Source entries: org/locationtech/jts/geom/impl/CoordinateArraySequence.java#L146-L151
+/**
+   * Creates a new sequence based on a deep copy of the given {@link CoordinateSequence}.
+   * The coordinate dimension is set to equal the dimension of the input.
+   *
+   * @param coordSeq the coordinate sequence that will be copied.
+   */
+
+Source entries: org/locationtech/jts/geom/impl/CoordinateArraySequenceFactory.java#L46-L53
+/**
+   * Returns a {@link CoordinateArraySequence} based on the given array (the array is
+   * not copied).
+   *
+   * @param coordinates
+   *            the coordinates, which may not be null nor contain null
+   *            elements
+   */
+
+Source entries: org/locationtech/jts/geom/Envelope.java#L805-L812
+/**
+   * Compares two envelopes using lexicographic ordering.
+   * The ordering comparison is based on the usual numerical
+   * comparison between the sequence of ordinates.
+   * Null envelopes are less than all non-null envelopes.
+   * 
+   * @param o an Envelope object
+   */
+
+Source entries: org/locationtech/jts/geom/Envelope.java#L823-L823
+// compare based on numerical ordering of ordinates
+
+Source entries: org/locationtech/jts/geom/PrecisionModel.java#L118-L122
+/**
+   * Floating precision corresponds to the standard Java
+   * double-precision floating-point representation, which is
+   * based on the IEEE-754 standard
+   */
+
+Source entries: org/locationtech/jts/geom/PrecisionModel.java#L124-L128
+/**
+   * Floating single precision corresponds to the standard Java
+   * single-precision floating-point representation, which is
+   * based on the IEEE-754 standard
+   */
+
+Source entries: org/locationtech/jts/geom/PrecisionModel.java#L490-L502
+/**
+   *  Compares this {@link PrecisionModel} object with the specified object for order.
+   * A PrecisionModel is greater than another if it provides greater precision.
+   * The comparison is based on the value returned by the
+   * {@link #getMaximumSignificantDigits} method.
+   * This comparison is not strictly accurate when comparing floating precision models
+   * to fixed models; however, it is correct when both models are either floating or fixed.
+   *
+   *@param  o  the <code>PrecisionModel</code> with which this <code>PrecisionModel</code>
+   *      is being compared
+   *@return    a negative integer, zero, or a positive integer as this <code>PrecisionModel</code>
+   *      is less than, equal to, or greater than the specified <code>PrecisionModel</code>
+   */
+
+Source entries: org/locationtech/jts/geom/prep/PreparedGeometryFactory.java#L19-L31
+/**
+ * A factory for creating {@link PreparedGeometry}s.
+ * It chooses an appropriate implementation of PreparedGeometry
+ * based on the geometric type of the input geometry.
+ * <p>
+ * In the future, the factory may accept hints that indicate
+ * special optimizations which can be performed.
+ * <p>
+ * Instances of this class are thread-safe. 
+ * 
+ * @author Martin Davis
+ *
+ */
+
+Source entries: org/locationtech/jts/geom/CoordinateArrays.java#L32-L37
+/**
+   * Determine dimension based on subclass of {@link Coordinate}.
+   *
+   * @param pts supplied coordinates
+   * @return number of ordinates recorded
+   */
+
+Source entries: org/locationtech/jts/geom/CoordinateArrays.java#L49-L54
+/**
+   * Determine number of measures based on subclass of {@link Coordinate}.
+   *
+   * @param pts supplied coordinates
+   * @return number of measures recorded
+   */
+
+Source entries: org/locationtech/jts/geom/CoordinateSequenceFactory.java#L24-L31
+/**
+   * Returns a {@link CoordinateSequence} based on the given array.
+   * Whether the array is copied or simply referenced
+   * is implementation-dependent.
+   * This method must handle null arguments by creating an empty sequence.
+   *
+   * @param coordinates the coordinates
+   */
+
+Source entries: org/locationtech/jts/geom/CoordinateXYM.java#L1-L11, org/locationtech/jts/geom/CoordinateSequence.java#L1-L11, org/locationtech/jts/geom/Coordinate.java#L1-L11, org/locationtech/jts/geom/CoordinateXY.java#L1-L11
+/*
+ * Copyright (c) 2018 Vivid Solutions
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/geom/Coordinates.java#L1-L11
+/*
+ * Copyright (c) 2018 Contributors to the Eclipse Foundation
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/geom/Coordinates.java#L50-L55
+/**
+   * Determine dimension based on subclass of {@link Coordinate}.
+   * 
+   * @param coordinate supplied coordinate
+   * @return number of ordinates recorded
+   */
+
+Source entries: org/locationtech/jts/geom/Coordinates.java#L70-L75
+/**
+   * Check if coordinate can store Z valye, based on subclass of {@link Coordinate}.
+   *
+   * @param coordinate supplied coordinate
+   * @return true if setZ is available
+   */
+
+Source entries: org/locationtech/jts/geom/Coordinates.java#L90-L95
+/**
+   * Determine number of measures based on subclass of {@link Coordinate}.
+   * 
+   * @param coordinate supplied coordinate
+   * @return number of measures recorded
+   */
+
+Source entries: org/locationtech/jts/geom/Geometry.java#L35-L150
+/**
+ * A representation of a planar, linear vector geometry.
+ * <P>
+ *
+ *  <H3>Binary Predicates</H3>
+ * Because it is not clear at this time
+ * what semantics for spatial
+ * analysis methods involving <code>GeometryCollection</code>s would be useful,
+ * <code>GeometryCollection</code>s are not supported as arguments to binary
+ * predicates or the <code>relate</code>
+ * method.
+ *
+ * <H3>Overlay Methods</H3>
+ *
+ * The overlay methods
+ * return the most specific class possible to represent the result. If the
+ * result is homogeneous, a <code>Point</code>, <code>LineString</code>, or
+ * <code>Polygon</code> will be returned if the result contains a single
+ * element; otherwise, a <code>MultiPoint</code>, <code>MultiLineString</code>,
+ * or <code>MultiPolygon</code> will be returned. If the result is
+ * heterogeneous a <code>GeometryCollection</code> will be returned. <P>
+ *
+ * Because it is not clear at this time what semantics for set-theoretic
+ * methods involving <code>GeometryCollection</code>s would be useful,
+ * <code>GeometryCollections</code>
+ * are not supported as arguments to the set-theoretic methods.
+ *
+ *  <H4>Representation of Computed Geometries </H4>
+ *
+ *  The SFS states that the result
+ *  of a set-theoretic method is the "point-set" result of the usual
+ *  set-theoretic definition of the operation (SFS 3.2.21.1). However, there are
+ *  sometimes many ways of representing a point set as a <code>Geometry</code>.
+ *  <P>
+ *
+ *  The SFS does not specify an unambiguous representation of a given point set
+ *  returned from a spatial analysis method. One goal of JTS is to make this
+ *  specification precise and unambiguous. JTS uses a canonical form for
+ *  <code>Geometry</code>s returned from overlay methods. The canonical
+ *  form is a <code>Geometry</code> which is simple and noded:
+ *  <UL>
+ *    <LI> Simple means that the Geometry returned will be simple according to
+ *    the JTS definition of <code>isSimple</code>.
+ *    <LI> Noded applies only to overlays involving <code>LineString</code>s. It
+ *    means that all intersection points on <code>LineString</code>s will be
+ *    present as endpoints of <code>LineString</code>s in the result.
+ *  </UL>
+ *  This definition implies that non-simple geometries which are arguments to
+ *  spatial analysis methods must be subjected to a line-dissolve process to
+ *  ensure that the results are simple.
+ *
+ *  <H4> Constructed Points And The Precision Model </H4>
+ *
+ *  The results computed by the set-theoretic methods may
+ *  contain constructed points which are not present in the input <code>Geometry</code>
+ *  s. These new points arise from intersections between line segments in the
+ *  edges of the input <code>Geometry</code>s. In the general case it is not
+ *  possible to represent constructed points exactly. This is due to the fact
+ *  that the coordinates of an intersection point may contain twice as many bits
+ *  of precision as the coordinates of the input line segments. In order to
+ *  represent these constructed points explicitly, JTS must truncate them to fit
+ *  the <code>PrecisionModel</code>. <P>
+ *
+ *  Unfortunately, truncating coordinates moves them slightly. Line segments
+ *  which would not be coincident in the exact result may become coincident in
+ *  the truncated representation. This in turn leads to "topology collapses" --
+ *  situations where a computed element has a lower dimension than it would in
+ *  the exact result. <P>
+ *
+ *  When JTS detects topology collapses during the computation of spatial
+ *  analysis methods, it will throw an exception. If possible the exception will
+ *  report the location of the collapse. <P>
+ *
+ * <h3>Geometry Equality</h3>
+ *
+ * There are two ways of comparing geometries for equality:
+ * <b>structural equality</b> and <b>topological equality</b>.
+ *
+ * <h4>Structural Equality</h4>
+ *
+ * Structural Equality is provided by the
+ * {@link #equalsExact(Geometry)} method.
+ * This implements a comparison based on exact, structural pointwise
+ * equality.
+ * The {@link #equals(Object)} is a synonym for this method,
+ * to provide structural equality semantics for
+ * use in Java collections.
+ * It is important to note that structural pointwise equality
+ * is easily affected by things like
+ * ring order and component order.  In many situations
+ * it will be desirable to normalize geometries before
+ * comparing them (using the {@link #norm()}
+ * or {@link #normalize()} methods).
+ * {@link #equalsNorm(Geometry)} is provided
+ * as a convenience method to compute equality over
+ * normalized geometries, but it is expensive to use.
+ * Finally, {@link #equalsExact(Geometry, double)}
+ * allows using a tolerance value for point comparison.
+ *
+ *
+ * <h4>Topological Equality</h4>
+ *
+ * Topological Equality is provided by the
+ * {@link #equalsTopo(Geometry)} method.
+ * It implements the SFS definition of point-set equality
+ * defined in terms of the DE-9IM matrix.
+ * To support the SFS naming convention, the method
+ * {@link #equals(Geometry)} is also provided as a synonym.
+ * However, due to the potential for confusion with {@link #equals(Object)}
+ * its use is discouraged.
+ * <p>
+ * Since {@link #equals(Object)} and {@link #hashCode()} are overridden,
+ * Geometries can be used effectively in Java collections.
+ *
+ *@version 1.7
+ */
+
+Source entries: org/locationtech/jts/edgegraph/HalfEdge.java#L366-L370
+/**
+   * Compares edges which originate at the same vertex
+   * based on the angle they make at their origin vertex with the positive X-axis.
+   * This allows sorting edges around their origin vertex in CCW order.
+   */
+
+Source entries: org/locationtech/jts/index/strtree/BoundablePair.java#L21-L33
+/**
+ * A pair of {@link Boundable}s, whose leaf items 
+ * support a distance metric between them.
+ * Used to compute the distance between the members,
+ * and to expand a member relative to the other
+ * in order to produce new branches of the 
+ * Branch-and-Bound evaluation tree.
+ * Provides an ordering based on the distance between the members,
+ * which allows building a priority queue by minimum distance.
+ * 
+ * @author Martin Davis
+ *
+ */
+
+Source entries: org/locationtech/jts/index/strtree/BoundablePair.java#L110-L112
+/**
+   * Compares two pairs based on their minimum distances
+   */
+
+Source entries: org/locationtech/jts/index/strtree/BoundablePairDistanceComparator.java#L1-L11
+/*
+ * Copyright (c) 2017 Jia Yu.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/index/strtree/AbstractSTRtree.java#L26-L42
+/**
+ * Base class for STRtree and SIRtree. STR-packed R-trees are described in:
+ * P. Rigaux, Michel Scholl and Agnes Voisard. <i>Spatial Databases With
+ * Application To GIS.</i> Morgan Kaufmann, San Francisco, 2002.
+ * <p>
+ * This implementation is based on {@link Boundable}s rather than {@link AbstractNode}s,
+ * because the STR algorithm operates on both nodes and
+ * data, both of which are treated as Boundables.
+ * <p>
+ * This class is thread-safe.  Building the tree is synchronized, 
+ * and querying is stateless.
+ *
+ * @see STRtree
+ * @see SIRtree
+ *
+ * @version 1.7
+ */
+
+Source entries: org/locationtech/jts/index/chain/MonotoneChain.java#L19-L72
+/**
+ * Monotone Chains are a way of partitioning the segments of a linestring to
+ * allow for fast searching of intersections.
+ * They have the following properties:
+ * <ol>
+ * <li>the segments within a monotone chain never intersect each other
+ * <li>the envelope of any contiguous subset of the segments in a monotone chain
+ * is equal to the envelope of the endpoints of the subset.
+ * </ol>
+ * Property 1 means that there is no need to test pairs of segments from within
+ * the same monotone chain for intersection.
+ * <p>
+ * Property 2 allows
+ * an efficient binary search to be used to find the intersection points of two monotone chains.
+ * For many types of real-world data, these properties eliminate a large number of
+ * segment comparisons, producing substantial speed gains.
+ * <p>
+ * One of the goals of this implementation of MonotoneChains is to be
+ * as space and time efficient as possible. One design choice that aids this
+ * is that a MonotoneChain is based on a subarray of a list of points.
+ * This means that new arrays of points (potentially very large) do not
+ * have to be allocated.
+ * <p>
+ *
+ * MonotoneChains support the following kinds of queries:
+ * <ul>
+ * <li>Envelope select: determine all the segments in the chain which
+ * intersect a given envelope
+ * <li>Overlap: determine all the pairs of segments in two chains whose
+ * envelopes overlap
+ * </ul>
+ *
+ * This implementation of MonotoneChains uses the concept of internal iterators
+ * ({@link MonotoneChainSelectAction} and {@link MonotoneChainOverlapAction})
+ * to return the results for queries.
+ * This has time and space advantages, since it
+ * is not necessary to build lists of instantiated objects to represent the segments
+ * returned by the query.
+ * Queries made in this manner are thread-safe.
+ * <p>
+ * MonotoneChains support being assigned an integer id value
+ * to provide a total ordering for a set of chains.
+ * This can be used during some kinds of processing to 
+ * avoid redundant comparisons
+ * (i.e. by comparing only chains where the first id is less than the second).
+ * <p>
+ * MonotoneChains support using an tolerance distance for overlap tests.
+ * This allows reporting overlap in situations where 
+ * intersection snapping is being used.
+ * If this is used the chain envelope must be computed
+ * providing an expansion distance using {@link #getEnvelope(double)}.
+ *
+ * @version 1.7
+ */
+
+Source entries: org/locationtech/jts/index/chain/MonotoneChain.java#L82-L88
+/**
+   * Creates a new MonotoneChain based on the given array of points.
+   * @param pts the points containing the chain
+   * @param start the index of the first coordinate in the chain
+   * @param end the index of the last coordinate in the chain 
+   * @param context a user-defined data object
+   */
+
+Source entries: org/locationtech/jts/index/intervalrtree/SortedPackedIntervalRTree.java#L21-L35
+/**
+ * A static index on a set of 1-dimensional intervals,
+ * using an R-Tree packed based on the order of the interval midpoints.
+ * It supports range searching,
+ * where the range is an interval of the real line (which may be a single point).
+ * A common use is to index 1-dimensional intervals which 
+ * are the projection of 2-D objects onto an axis of the coordinate system.
+ * <p>
+ * This index structure is <i>static</i> 
+ * - items cannot be added or removed once the first query has been made.
+ * The advantage of this characteristic is that the index performance 
+ * can be optimized based on a fixed set of items.
+ * 
+ * @author Martin Davis
+ */
+
+Source entries: org/locationtech/jts/index/quadtree/NodeBase.java#L192-L192
+// would be nice to filter items based on search envelope, but can't until they contain an envelope
+
+Source entries: org/locationtech/jts/index/hprtree/HPRtree.java#L24-L59
+/**
+ * A Hilbert-Packed R-tree.  This is a static R-tree
+ * which is packed by using the Hilbert ordering 
+ * of the tree items.
+ * <p>
+ * The tree is constructed by sorting the items
+ * by the Hilbert code of the midpoint of their envelope.  
+ * Then, a set of internal layers is created recursively
+ * as follows:
+ * <ul>
+ * <li>The items/nodes of the previous are partitioned into blocks 
+ * of size <code>nodeCapacity</code>
+ * <li>For each block a layer node is created with range
+ * equal to the envelope of the items/nodess in the block
+ * </ul>
+ * The internal layers are stored using an array to
+ * store the node bounds.
+ * The link between a node and its children is 
+ * stored implicitly in the indexes of the array.
+ * For efficiency, the offsets to the layers
+ * within the node array are pre-computed and stored.
+ * <p>
+ * NOTE: Based on performance testing, 
+ * the HPRtree is somewhat faster than the STRtree.
+ * It should also be more memory-efficent,
+ * due to fewer object allocations.
+ * However, it is not clear whether this 
+ * will produce a significant improvement 
+ * for use in JTS operations.
+ * 
+ * @see STRtree
+ * 
+ * 
+ * @author Martin Davis
+ *
+ */
+
+Source entries: org/locationtech/jts/triangulate/tri/Tri.java#L466-L472
+/**
+   * Gets the edge index which a triangle is adjacent to (if any),
+   * based on the adjacent triangle link.
+   * 
+   * @param tri the tri to find
+   * @return the index of the edge adjacent to the triangle, or -1 if not found
+   */
+
+Source entries: org/locationtech/jts/triangulate/tri/package-info.java#L1-L11, org/locationtech/jts/triangulate/polygon/package-info.java#L1-L11
+/*
+ * Copyright (c) 2021 Martin Davis
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+
+Source entries: org/locationtech/jts/triangulate/IncrementalDelaunayTriangulator.java#L95-L101
+/**
+		 * This code is based on Guibas and Stolfi (1985), with minor modifications
+		 * and a bug fix from Dani Lischinski (Graphic Gems 1993). (The modification
+		 * I believe is the test for the inserted site falling exactly on an
+		 * existing edge. Without this test zero-width triangles have been observed
+		 * to be created)
+		 */
+
+Source entries: org/locationtech/jts/triangulate/quadedge/QuadEdge.java#L363-L369
+/**
+     * Tests if this quadedge and another have the same line segment geometry, 
+     * regardless of orientation.
+     * 
+     * @param qe a quadedge
+     * @return true if the quadedges are based on the same line segment regardless of orientation
+     */
+
+Source entries: org/locationtech/jts/triangulate/quadedge/QuadEdge.java#L378-L384
+/**
+     * Tests if this quadedge and another have the same line segment geometry
+     * with the same orientation.
+     * 
+     * @param qe a quadedge
+     * @return true if the quadedges are based on the same line segment
+     */
+
+Source entries: org/locationtech/jts/triangulate/quadedge/TrianglePredicate.java#L60-L76
+/**
+   * Tests if a point is inside the circle defined by 
+   * the triangle with vertices a, b, c (oriented counter-clockwise). 
+   * This test uses simple
+   * double-precision arithmetic, and thus is not 100% robust.
+   * However, by using normalization to the origin
+   * it provides improved robustness and increased performance.
+   * <p>
+   * Based on code by J.R.Shewchuk.
+   * 
+   * 
+   * @param a a vertex of the triangle
+   * @param b a vertex of the triangle
+   * @param c a vertex of the triangle
+   * @param p the point to test
+   * @return true if this point is inside the circle defined by the points a, b, c
+   */
+
+Source entries: org/locationtech/jts/triangulate/quadedge/QuadEdgeSubdivision.java#L99-L108
+/**
+	 * Creates a new instance of a quad-edge subdivision based on a frame triangle
+	 * that encloses a supplied bounding box. A new super-bounding box that
+	 * contains the triangle is computed and stored.
+	 * 
+	 * @param env
+	 *          the bounding box to surround
+	 * @param tolerance
+	 *          the tolerance value for determining if two sites are equal
+	 */
+
+Source entries: org/locationtech/jts/triangulate/quadedge/QuadEdgeSubdivision.java#L657-L657
+// TODO: choose the most accurate circumcentre based on the edges
+
+Source entries: org/locationtech/jts/triangulate/ConformingDelaunayTriangulator.java#L99-L108
+/**
+	 * Creates a Conforming Delaunay Triangulation based on the given
+	 * unconstrained initial vertices. The initial vertex set should not contain
+	 * any vertices which appear in the constraint set.
+	 * 
+	 * @param initialVertices
+	 *          a collection of {@link ConstraintVertex}
+	 * @param tolerance
+	 *          the distance tolerance below which points are considered identical
+	 */
+
+Source entries: org/locationtech/jts/precision/MinimumClearance.java#L29-L103
+/**
+ * Computes the Minimum Clearance of a {@link Geometry}.
+ * <p>
+ * The <b>Minimum Clearance</b> is a measure of
+ * what magnitude of perturbation of
+ * the vertices of a geometry can be tolerated
+ * before the geometry becomes topologically invalid.
+ * The smaller the Minimum Clearance distance, 
+ * the less vertex perturbation the geometry can tolerate
+ * before becoming invalid.
+ * <p>
+ * The concept was introduced by Thompson and Van Oosterom
+ * [TV06], based on earlier work by Milenkovic [Mi88].
+ * <p>
+ * The Minimum Clearance of a geometry G 
+ * is defined to be the value <i>r</i>
+ * such that "the movement of all points by a distance
+ * of <i>r</i> in any direction will 
+ * guarantee to leave the geometry valid" [TV06].
+ * An equivalent constructive definition [Mi88] is that
+ * <i>r</i> is the largest value such:
+ * <ol>
+ * <li>No two distinct vertices of G are closer than <i>r</i>
+ * <li>No vertex of G is closer than <i>r</i> to an edge of G
+ * of which the vertex is not an endpoint
+ * </ol>
+ * The following image shows an example of the Minimum Clearance
+ * of a simple polygon.
+ * <p>
+ * <center><img src='doc-files/minClearance.png' alt='minimum clearance'></center>
+ * <p>
+ * If G has only a single vertex (i.e. is a
+ * {@link Point}), the value of the minimum clearance 
+ * is {@link Double#MAX_VALUE}.
+ * <p>
+ * If G is a {@link Puntal} or {@link Lineal} geometry, 
+ * then in fact no amount of perturbation
+ * will render the geometry invalid.  
+ * In this case a Minimum Clearance is still computed
+ * based on the vertex and segment distances
+ * according to the constructive definition.
+ * <p>
+ * It is possible for no Minimum Clearance to exist.
+ * For instance, a {@link MultiPoint} with all members identical
+ * has no Minimum Clearance
+ * (i.e. no amount of perturbation will cause 
+ * the member points to become non-identical).
+ * Empty geometries also have no such distance.
+ * The lack of a meaningful MinimumClearance distance is detected
+ * and suitable values are returned by 
+ * {@link #getDistance()} and {@link #getLine()}.
+ * <p>
+ * The computation of Minimum Clearance utilizes 
+ * the {@link STRtree#nearestNeighbour(ItemDistance)}
+ * method to provide good performance even for
+ * large inputs.
+ * <p>
+ * An interesting note is that for the case of {@link MultiPoint}s, 
+ * the computed Minimum Clearance line
+ * effectively determines the Nearest Neighbours in the collection. 
+ *
+ * <h3>References</h3>
+ * <ul>
+ * <li>[Mi88] Milenkovic, V. J., 
+ * <i>Verifiable implementations of geometric algorithms 
+ * using finite precision arithmetic</i>.
+ * in Artificial Intelligence, 377-401. 1988
+ * <li>[TV06] Thompson, Rod and van Oosterom, Peter,
+ * <i>Interchange of Spatial Data-Inhibiting Factors</i>,
+ * Agile 2006, Visegrad, Hungary. 2006
+ * </ul>
+ * 
+ * @author Martin Davis
+ *
+ */
+
+Source entries: org/locationtech/jts/noding/ValidatingNoder.java#L1-L11
+/*
+ * Copyright (c) 2020 Martin Davis, and others
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License 2.0
+ * and Eclipse Distribution License v. 1.0 which accompanies this distribution.
+ * The Eclipse Public License is available at http://www.eclipse.org/legal/epl-v20.html
+ * and the Eclipse Distribution License is available at
+ *
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ */
+

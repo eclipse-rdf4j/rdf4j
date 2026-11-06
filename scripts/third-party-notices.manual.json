@@ -1,0 +1,2051 @@
+{
+  "schemaVersion": 1,
+  "description": "Reviewed evidence for embedded components that have no separate package manifest. Every source slice is anchored to a complete-file SHA-256; never remove unresolved items without resolving their evidence. Add version-specific components and license documents using this schema.",
+  "components": [
+    {
+      "id": "embedded:json2@2016-10-28",
+      "name": "json2 embedded in YASQE",
+      "version": "2016-10-28",
+      "source": "https://registry.npmjs.org/yasgui-yasqe/-/yasgui-yasqe-2.11.22.tgz",
+      "reason": "Embedded source has its own dated public-domain notice rather than a standalone npm identity.",
+      "declaredLicenses": [
+        "Public domain dedication in source"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "tools/workbench/src/main/frontend/static/scripts/yasqe.js",
+          "sha256": "888e2545b7f5f66c867d9449e2140d9491ce5949d528b2758a5ce16b109c572e",
+          "startLine": 7876,
+          "endLine": 7882,
+          "kind": "license"
+        }
+      ]
+    },
+    {
+      "id": "embedded:saurabh-odhyan-trie@2010-11-07",
+      "name": "TRIE implementation in JavaScript by Saurabh Odhyan",
+      "version": "2010-11-07",
+      "source": "https://registry.npmjs.org/yasgui-yasqe/-/yasgui-yasqe-2.11.22.tgz",
+      "reason": "Embedded implementation retains a dated MIT copyright/license block; no independent npm package identity is assumed.",
+      "declaredLicenses": [
+        "MIT"
+      ],
+      "attribution": [
+        "Copyright (c) 2010 Saurabh Odhyan | http://odhyan.com"
+      ],
+      "documents": [
+        {
+          "path": "tools/workbench/src/main/frontend/static/scripts/yasqe.js",
+          "sha256": "888e2545b7f5f66c867d9449e2140d9491ce5949d528b2758a5ce16b109c572e",
+          "startLine": 6131,
+          "endLine": 6154,
+          "kind": "license"
+        }
+      ]
+    },
+    {
+      "id": "embedded:graphviz@16.1.0",
+      "name": "Graphviz embedded in Viz.js",
+      "version": "16.1.0",
+      "includedWhenComponent": "npm:@viz-js/viz@3.31.0",
+      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz",
+      "reason": "Viz.js distribution header explicitly names this object-code component, and package build provenance identifies this exact release. Package MIT metadata does not establish this embedded component license. The packaged provenance subject matches the actual backend SHA-256, and the exact source-archive SHA-256 matches the corresponding resolved material. The pinned build recipe has no source-patch step.",
+      "declaredLicenses": [
+        "EPL-2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "tools/workbench/node_modules/@viz-js/viz/lib/provenance.json",
+          "sha256": "1460f3745ba300377ba738fee8c3f7faf547455190e509490d110c4f69ee7379",
+          "startLine": 28,
+          "endLine": 33,
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/graphviz-16.1.0/COPYING.txt",
+          "sha256": "0becf16567beb77fa252b7664631dd177c8f9a1889e48995b45379c7130e5303",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/graphviz-16.1.0/AUTHORS.txt",
+          "sha256": "182eaf397edc803d0e44a25708ba70ecafc143c0f610ea7048c6b9687a939ff0",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/graphviz-16.1.0/lib__rbtree__LICENSE.txt",
+          "sha256": "fcb423209a3a3909f41e629a4973eab3995ceb93136dd72485fb12ad3de29dfc",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/graphviz-16.1.0/lib__neatogen__legal.c.txt",
+          "sha256": "f0bfebca18c292e4129dc3da8e3361217fefe5cece13c9928d77fce6ef87323c",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/graphviz-16.1.0/debian__copyright.txt",
+          "sha256": "6a182af6b36ab5b2b5705eb750446aabb8e3df0ed5a687c9a999cf9034c36ef2",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/graphviz-16.1.0/source-notices.txt",
+          "sha256": "03c530b8af43d4a7c44e5c6d244b5221a3dfb046eb6e59a2b04f50c9c0acc8a7",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/graphviz-16.1.0/source-notice-origins.json",
+          "sha256": "db7bb212bbcddab20b4a8366ac679a38fe038b6af04796dabe69c68f4d38bcc4",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Exact source-archive and backend provenance hashes match; primary full licenses, authors and source notice blocks are collected. Verify final linked-source notice coverage and release source-availability arrangements; source evidence is a superset, not a per-object link map."
+      ]
+    },
+    {
+      "id": "embedded:expat@2.8.5",
+      "name": "Expat embedded in Viz.js",
+      "version": "2.8.5",
+      "includedWhenComponent": "npm:@viz-js/viz@3.31.0",
+      "source": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz",
+      "reason": "Viz.js distribution header explicitly names this object-code component, and package build provenance identifies this exact release. Package MIT metadata does not establish this embedded component license. The packaged provenance subject matches the actual backend SHA-256, and the exact source-archive SHA-256 matches the corresponding resolved material. The pinned build recipe has no source-patch step.",
+      "declaredLicenses": [
+        "MIT"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "tools/workbench/node_modules/@viz-js/viz/lib/provenance.json",
+          "sha256": "1460f3745ba300377ba738fee8c3f7faf547455190e509490d110c4f69ee7379",
+          "startLine": 22,
+          "endLine": 27,
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/expat-2.8.5/COPYING.txt",
+          "sha256": "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/expat-2.8.5/source-notices.txt",
+          "sha256": "12f0b27a29db5acbf762cf2e2b4ad531d28d844698a031081d2db3209798a20e",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/expat-2.8.5/source-notice-origins.json",
+          "sha256": "255ee49642948e23ed8774ca6e267d3263e0b22c7dba4f2282c2a1dedf91a495",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Exact source-archive and backend provenance hashes match; primary full licenses, authors and source notice blocks are collected. Verify final linked-source notice coverage and release source-availability arrangements; source evidence is a superset, not a per-object link map."
+      ]
+    },
+    {
+      "id": "maven:at.yawk.lz4:lz4-java:1.11.4",
+      "name": "at.yawk.lz4:lz4-java",
+      "version": "1.11.4",
+      "includedWhenComponent": "maven:at.yawk.lz4:lz4-java:1.11.4",
+      "source": "https://repo.maven.apache.org/maven2/at/yawk/lz4/lz4-java/1.11.4/lz4-java-1.11.4.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Exact v1.11.4 release commit 4af910bc99c2f021f0cd56f6ca7f7600f4dda4a0 pins src/lz4 submodule ebb370ca83af193212df4dcbadcc5d87bc0de2f0. Its native headers identify LZ4 1.10.0 and xxHash 0.6.5. Release build workflow and POM compile these sources for the shared-library payloads.",
+      "declaredLicenses": [
+        "Apache License, Version 2.0",
+        "BSD-2-Clause (bundled LZ4 1.10.0 and xxHash 0.6.5)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/lz4-java-1.11.4/pom.xml",
+          "sha256": "907477543a78c8eb3d55fd65a8ad9d7881b8bc3ec61c34f1f953220a6f551be3",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/lz4-java-1.11.4/source-notices.txt",
+          "sha256": "a3f9ee599db0c67b63f18cf265523c1ac75558beb777f2464f7105856acac5ba",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/lz4-java-1.11.4/source-notice-origins.json",
+          "sha256": "1ed932dabcea970450377f725cf4055c0c95a2fd89ca75566cc2abb4645325cd",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-wrapper--.gitmodules",
+          "sha256": "8397ff4ea5de4f9d90829e469505ba89772d0642b909965f306f1a1aefff6dd6",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-wrapper--pom.xml",
+          "sha256": "2f6d365158288f127a8a97b3ccae81e88c325bdefa6ee627ebd8ef4ff956194e",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-wrapper--.github__workflows__build-all-and-publish.yml",
+          "sha256": "ea4ea8d143fb8a673d0c481d407cf5c78d903e12b13158805348dbea15915f4c",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-native--lib__LICENSE",
+          "sha256": "8b58c446121a109ccf32edc094bba3010a3d85e4ee3702950db55e4d3e87736c",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-native--lib__lz4.h",
+          "sha256": "26b82efc53d1570f3b54eef02e9c4764c1ad374ff03cac04e2ced5ea4d4c552f",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-native--lib__lz4.h-license.txt",
+          "sha256": "4af8f46e6ad8dd7302e81bae55f9f5483c862c972d3544c1811984d9dc5747b0",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-native--lib__xxhash.h",
+          "sha256": "aefdd236f35130495c18764cabed3f7b216906855fc5e6a9025cd2040bc84444",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-native--lib__xxhash.h-license.txt",
+          "sha256": "07ab483e553e0d2e5e03480127bce6d80db2d94a8411171785c875affc5cdfa9",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-native--lib__xxhash.c",
+          "sha256": "b667033dc735fb5ea5648e0a61a2e065e5ef5bbda53669730063bd856c643c48",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-native--lib__xxhash.c-license.txt",
+          "sha256": "df5443d0097b2fa47b0e6f2f0b3f42271b40705f5a6f2d14bf3d1c7bcb325c9b",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lz4-release-tree.json",
+          "sha256": "9d7998bc7def62ee284b8eb70e73dad31be4df365d7e6e4e9800d32337dc1d09",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Exact release native LZ4/xxHash BSD-2-Clause texts, submodule pointer, source headers and classifier build workflow collected; review shipped native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:ch.qos.logback:logback-classic:1.6.6",
+      "name": "ch.qos.logback:logback-classic",
+      "version": "1.6.6",
+      "includedWhenComponent": "maven:ch.qos.logback:logback-classic:1.6.6",
+      "source": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-classic/1.6.6/logback-classic-1.6.6.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "EPL-2.0",
+        "LGPL-2.1-only"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/logback-classic-1.6.6/pom.xml",
+          "sha256": "e3c14a0a5ab76cb0ffebd08ed19a5766964c52195ede15bdd5408707142d9cc1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/logback.txt",
+          "sha256": "f1eedf4f2cb9e901d6ae549a06d0c20dcde0136d37e38b50adaf51d4673f66d2",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/logback-epl.txt",
+          "sha256": "0becf16567beb77fa252b7664631dd177c8f9a1889e48995b45379c7130e5303",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/logback-lgpl.txt",
+          "sha256": "a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/logback-classic-1.6.6/source-notices.txt",
+          "sha256": "9dee714ffe59e69c9ae0507eb9db8aa893a5ccad44d05fd96705dbe62c9335df",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/logback-classic-1.6.6/source-notice-origins.json",
+          "sha256": "69640b62c7117f63718a84d03a8d8462325740bfca036f7dfaea1966a44c6de4",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:ch.qos.logback:logback-core:1.6.6",
+      "name": "ch.qos.logback:logback-core",
+      "version": "1.6.6",
+      "includedWhenComponent": "maven:ch.qos.logback:logback-core:1.6.6",
+      "source": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-core/1.6.6/logback-core-1.6.6.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "EPL-2.0",
+        "LGPL-2.1-only"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/logback-core-1.6.6/pom.xml",
+          "sha256": "741545bf1c537ad4f9328ff96cddbc53e9a0f1da8476655590ba071a2f1fe284",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/logback.txt",
+          "sha256": "f1eedf4f2cb9e901d6ae549a06d0c20dcde0136d37e38b50adaf51d4673f66d2",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/logback-epl.txt",
+          "sha256": "0becf16567beb77fa252b7664631dd177c8f9a1889e48995b45379c7130e5303",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/logback-lgpl.txt",
+          "sha256": "a9bdde5616ecdd1e980b44f360600ee8783b1f99b8cc83a2beb163a0a390e861",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/logback-core-1.6.6/source-notices.txt",
+          "sha256": "9758983f31942b7c2d810e6a3acce192f533bd49e7f57c6023cb6d296ed47021",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/logback-core-1.6.6/source-notice-origins.json",
+          "sha256": "f5f412f628b4318a8b33c12d11b95b8ca08e8b1b37d18fd6631535ff216df4bd",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:brotli4j:1.23.0",
+      "name": "com.aayushatharva.brotli4j:brotli4j",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:brotli4j:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/brotli4j/1.23.0/brotli4j-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "Apache License 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/brotli4j-1.23.0/pom.xml",
+          "sha256": "fd8f51d637cb34bed81b8958f26e5c41dcbe4c89f072d91debc2ec0daca095bf",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/brotli4j-1.23.0/source-notices.txt",
+          "sha256": "ff5956e40bf0259a0eec3b98e4396dbd06eb79551d9f7176080198be97e4bf2d",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/brotli4j-1.23.0/source-notice-origins.json",
+          "sha256": "85259ba46ae91f14360d84b5014cd8b6d866e6c641a16476ca2da83b1454fc60",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-aarch64:1.23.0",
+      "name": "com.aayushatharva.brotli4j:native-linux-aarch64",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:native-linux-aarch64:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-aarch64/1.23.0/native-linux-aarch64-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Release v1.23.0 resolves to upstream commit 205afeafd65d1e1c83f88a059e150687a1117426; version header identifies bundled Brotli 1.2.0 and classifier build/CMake inputs compile that vendored source.",
+      "declaredLicenses": [
+        "Apache License 2.0",
+        "MIT (bundled Google Brotli 1.2.0)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/native-linux-aarch64-1.23.0/pom.xml",
+          "sha256": "4448378836320c50909c7770435c0c3bdafb60bb7d255359e468104a59f695fc",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
+          "sha256": "60ae0f13e76cc2eaaa108677eefa4ce16b647f6bbe8cf0a1ac9429d82eca7248",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--brotli__common__version.h",
+          "sha256": "792d03d8feff8168edf639899f72b71a37e9cbd9f178e3be397ccef29d3346b0",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--CMakeLists.txt",
+          "sha256": "ab7551d5648499118a449f60a81480c4d9dd19bf69c55ce362d8ebcf6e4a17d1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--pom.xml",
+          "sha256": "e5396c28d74a0c27262aeafce391c35a1e420fa15d6eba6a2ab4269f4033cf29",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--natives__linux-aarch64__build.sh",
+          "sha256": "9a5d0d488459ae80abae2a7be171a2c0d97e4e38a848a7e961957dc906e0603b",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-aarch64-1.23.0/source-notices.txt",
+          "sha256": "c65eda2afebd7befbe1b33ae24fc26e0b3929577afaec2e28a844dfaccbb5cc9",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-aarch64-1.23.0/source-notice-origins.json",
+          "sha256": "4406dd6fe47730019698f77bcb512dd828fbf48361e9dfaa79a04df2fe050c50",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Wrapper Apache and bundled Brotli MIT texts are collected from the exact release; review native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-armv7:1.23.0",
+      "name": "com.aayushatharva.brotli4j:native-linux-armv7",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:native-linux-armv7:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-armv7/1.23.0/native-linux-armv7-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Release v1.23.0 resolves to upstream commit 205afeafd65d1e1c83f88a059e150687a1117426; version header identifies bundled Brotli 1.2.0 and classifier build/CMake inputs compile that vendored source.",
+      "declaredLicenses": [
+        "Apache License 2.0",
+        "MIT (bundled Google Brotli 1.2.0)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/native-linux-armv7-1.23.0/pom.xml",
+          "sha256": "6b12d633c431acb8c91bbc6da6240702d560a0ffa8a75ac4d26afe74fecbab9f",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
+          "sha256": "60ae0f13e76cc2eaaa108677eefa4ce16b647f6bbe8cf0a1ac9429d82eca7248",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--brotli__common__version.h",
+          "sha256": "792d03d8feff8168edf639899f72b71a37e9cbd9f178e3be397ccef29d3346b0",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--CMakeLists.txt",
+          "sha256": "ab7551d5648499118a449f60a81480c4d9dd19bf69c55ce362d8ebcf6e4a17d1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--pom.xml",
+          "sha256": "e5396c28d74a0c27262aeafce391c35a1e420fa15d6eba6a2ab4269f4033cf29",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--natives__linux-armv7__build.sh",
+          "sha256": "53091e19e45bf0b7b8572d141a2f994232f93147b390b401a8860e6d567adba4",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-armv7-1.23.0/source-notices.txt",
+          "sha256": "41ddc515236702359b8e2c9f8db1c49a4d2ba777836265ab5d91337bd87f8a7c",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-armv7-1.23.0/source-notice-origins.json",
+          "sha256": "e92dcdf86e61a8d6e23103f0d69d1802c0111d69a71f0ffaf339345376afef0f",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Wrapper Apache and bundled Brotli MIT texts are collected from the exact release; review native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-ppc64le:1.23.0",
+      "name": "com.aayushatharva.brotli4j:native-linux-ppc64le",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:native-linux-ppc64le:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-ppc64le/1.23.0/native-linux-ppc64le-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Release v1.23.0 resolves to upstream commit 205afeafd65d1e1c83f88a059e150687a1117426; version header identifies bundled Brotli 1.2.0 and classifier build/CMake inputs compile that vendored source.",
+      "declaredLicenses": [
+        "Apache License 2.0",
+        "MIT (bundled Google Brotli 1.2.0)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/native-linux-ppc64le-1.23.0/pom.xml",
+          "sha256": "f366987e4fcfba980c1f651e497c529b4aca71323aaf3a7451c8d1e42ee72a97",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
+          "sha256": "60ae0f13e76cc2eaaa108677eefa4ce16b647f6bbe8cf0a1ac9429d82eca7248",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--brotli__common__version.h",
+          "sha256": "792d03d8feff8168edf639899f72b71a37e9cbd9f178e3be397ccef29d3346b0",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--CMakeLists.txt",
+          "sha256": "ab7551d5648499118a449f60a81480c4d9dd19bf69c55ce362d8ebcf6e4a17d1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--pom.xml",
+          "sha256": "e5396c28d74a0c27262aeafce391c35a1e420fa15d6eba6a2ab4269f4033cf29",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--natives__linux-ppc64le__build.sh",
+          "sha256": "9be92c1232bcd454f4be372dc8caf441e091656c3f7ac96ad44777c5b2f7dec8",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-ppc64le-1.23.0/source-notices.txt",
+          "sha256": "a07e3606106483307b92864008cd77b2c2c154945c9cd1d595e84d1157ccdc88",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-ppc64le-1.23.0/source-notice-origins.json",
+          "sha256": "094b4971accc154d941e5228545cda58abbb6113e3b80cf2998adfaa60908f09",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Wrapper Apache and bundled Brotli MIT texts are collected from the exact release; review native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-riscv64:1.23.0",
+      "name": "com.aayushatharva.brotli4j:native-linux-riscv64",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:native-linux-riscv64:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-riscv64/1.23.0/native-linux-riscv64-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Release v1.23.0 resolves to upstream commit 205afeafd65d1e1c83f88a059e150687a1117426; version header identifies bundled Brotli 1.2.0 and classifier build/CMake inputs compile that vendored source.",
+      "declaredLicenses": [
+        "Apache License 2.0",
+        "MIT (bundled Google Brotli 1.2.0)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/native-linux-riscv64-1.23.0/pom.xml",
+          "sha256": "c9c55076e2fd7c0d3f7eb002f68b15eb91714a5e5999aa14cf0d5befcacbc717",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
+          "sha256": "60ae0f13e76cc2eaaa108677eefa4ce16b647f6bbe8cf0a1ac9429d82eca7248",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--brotli__common__version.h",
+          "sha256": "792d03d8feff8168edf639899f72b71a37e9cbd9f178e3be397ccef29d3346b0",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--CMakeLists.txt",
+          "sha256": "ab7551d5648499118a449f60a81480c4d9dd19bf69c55ce362d8ebcf6e4a17d1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--pom.xml",
+          "sha256": "e5396c28d74a0c27262aeafce391c35a1e420fa15d6eba6a2ab4269f4033cf29",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--natives__linux-riscv64__build.sh",
+          "sha256": "c461a623198ddcf26e9e06d46f4d1054a1daae091c661054c2aefc4915a33830",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-riscv64-1.23.0/source-notices.txt",
+          "sha256": "75fc2ea78e37a747deba3c0869046e4fe0679fcc29032197c9b877f0c6c90b60",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-riscv64-1.23.0/source-notice-origins.json",
+          "sha256": "5e090c26be872925ee0b65ec6b4d0f7413df3666779a75c58f54705d398b8a4f",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Wrapper Apache and bundled Brotli MIT texts are collected from the exact release; review native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-s390x:1.23.0",
+      "name": "com.aayushatharva.brotli4j:native-linux-s390x",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:native-linux-s390x:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-s390x/1.23.0/native-linux-s390x-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Release v1.23.0 resolves to upstream commit 205afeafd65d1e1c83f88a059e150687a1117426; version header identifies bundled Brotli 1.2.0 and classifier build/CMake inputs compile that vendored source.",
+      "declaredLicenses": [
+        "Apache License 2.0",
+        "MIT (bundled Google Brotli 1.2.0)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/native-linux-s390x-1.23.0/pom.xml",
+          "sha256": "5d52708ef10646984b98c9dac11d133790ee546da1c6c6d2d8c4a8015eb30918",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
+          "sha256": "60ae0f13e76cc2eaaa108677eefa4ce16b647f6bbe8cf0a1ac9429d82eca7248",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--brotli__common__version.h",
+          "sha256": "792d03d8feff8168edf639899f72b71a37e9cbd9f178e3be397ccef29d3346b0",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--CMakeLists.txt",
+          "sha256": "ab7551d5648499118a449f60a81480c4d9dd19bf69c55ce362d8ebcf6e4a17d1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--pom.xml",
+          "sha256": "e5396c28d74a0c27262aeafce391c35a1e420fa15d6eba6a2ab4269f4033cf29",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--natives__linux-s390x__build.sh",
+          "sha256": "080b923940cb2f04e8e1979d0e376eea5f3efc15ebe1dce29caac7433506fd7d",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-s390x-1.23.0/source-notices.txt",
+          "sha256": "fb21fcb3e125fa50715293aa01f19365111dfc025a871e28ffba6cb5ff4a62d0",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-s390x-1.23.0/source-notice-origins.json",
+          "sha256": "7baccaf2261ee6b6acd45dee7efdc3281c77d0e6fa95feebab190e9c21b015e7",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Wrapper Apache and bundled Brotli MIT texts are collected from the exact release; review native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-x86_64:1.23.0",
+      "name": "com.aayushatharva.brotli4j:native-linux-x86_64",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:native-linux-x86_64:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-x86_64/1.23.0/native-linux-x86_64-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Release v1.23.0 resolves to upstream commit 205afeafd65d1e1c83f88a059e150687a1117426; version header identifies bundled Brotli 1.2.0 and classifier build/CMake inputs compile that vendored source.",
+      "declaredLicenses": [
+        "Apache License 2.0",
+        "MIT (bundled Google Brotli 1.2.0)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/native-linux-x86_64-1.23.0/pom.xml",
+          "sha256": "7d49c72349f876b3f995b7878fdeba22b6fbc30491908f6bae7d7d8a0491b4a8",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
+          "sha256": "60ae0f13e76cc2eaaa108677eefa4ce16b647f6bbe8cf0a1ac9429d82eca7248",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--brotli__common__version.h",
+          "sha256": "792d03d8feff8168edf639899f72b71a37e9cbd9f178e3be397ccef29d3346b0",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--CMakeLists.txt",
+          "sha256": "ab7551d5648499118a449f60a81480c4d9dd19bf69c55ce362d8ebcf6e4a17d1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--pom.xml",
+          "sha256": "e5396c28d74a0c27262aeafce391c35a1e420fa15d6eba6a2ab4269f4033cf29",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--natives__linux-x86_64__build.sh",
+          "sha256": "c68b65b596c4d50d603166c28fda456db36c385759387594394ed3a3b7d6cf74",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-x86_64-1.23.0/source-notices.txt",
+          "sha256": "149d1ab7a45bebf250de958257f1d35503b2e5595b88e147c2af8f04db739563",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-linux-x86_64-1.23.0/source-notice-origins.json",
+          "sha256": "581c9770d3f0b6243aa8351d41256592c5fe77b2c8321508fd4f591aff3fb823",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Wrapper Apache and bundled Brotli MIT texts are collected from the exact release; review native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-osx-aarch64:1.23.0",
+      "name": "com.aayushatharva.brotli4j:native-osx-aarch64",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:native-osx-aarch64:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-aarch64/1.23.0/native-osx-aarch64-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Release v1.23.0 resolves to upstream commit 205afeafd65d1e1c83f88a059e150687a1117426; version header identifies bundled Brotli 1.2.0 and classifier build/CMake inputs compile that vendored source.",
+      "declaredLicenses": [
+        "Apache License 2.0",
+        "MIT (bundled Google Brotli 1.2.0)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/native-osx-aarch64-1.23.0/pom.xml",
+          "sha256": "15526a1f36e808ed2740d4d4b43d038e2bd99d3d0fa98ab856e6563027435e92",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
+          "sha256": "60ae0f13e76cc2eaaa108677eefa4ce16b647f6bbe8cf0a1ac9429d82eca7248",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--brotli__common__version.h",
+          "sha256": "792d03d8feff8168edf639899f72b71a37e9cbd9f178e3be397ccef29d3346b0",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--CMakeLists.txt",
+          "sha256": "ab7551d5648499118a449f60a81480c4d9dd19bf69c55ce362d8ebcf6e4a17d1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--pom.xml",
+          "sha256": "e5396c28d74a0c27262aeafce391c35a1e420fa15d6eba6a2ab4269f4033cf29",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--natives__osx-aarch64__build.sh",
+          "sha256": "7a8cc07e98251ccbdfaccefa736fd11ce73a3208bd4ce74e1a53c4dbc1c17c99",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-osx-aarch64-1.23.0/source-notices.txt",
+          "sha256": "50ebc8901dabcabeda89e4b43ceb39bd684595bcaef808448db8f5ce6ec6a41b",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-osx-aarch64-1.23.0/source-notice-origins.json",
+          "sha256": "e34dfd745f6eb83ce34318f0734f16a5f73b5b3a1e44e568e95b805d39282b5f",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Wrapper Apache and bundled Brotli MIT texts are collected from the exact release; review native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-osx-x86_64:1.23.0",
+      "name": "com.aayushatharva.brotli4j:native-osx-x86_64",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:native-osx-x86_64:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-x86_64/1.23.0/native-osx-x86_64-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Release v1.23.0 resolves to upstream commit 205afeafd65d1e1c83f88a059e150687a1117426; version header identifies bundled Brotli 1.2.0 and classifier build/CMake inputs compile that vendored source.",
+      "declaredLicenses": [
+        "Apache License 2.0",
+        "MIT (bundled Google Brotli 1.2.0)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/native-osx-x86_64-1.23.0/pom.xml",
+          "sha256": "585d803a2089f13e6f382d886941eb8a4dbffdf8f37995f31ed05eed3984cca9",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
+          "sha256": "60ae0f13e76cc2eaaa108677eefa4ce16b647f6bbe8cf0a1ac9429d82eca7248",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--brotli__common__version.h",
+          "sha256": "792d03d8feff8168edf639899f72b71a37e9cbd9f178e3be397ccef29d3346b0",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--CMakeLists.txt",
+          "sha256": "ab7551d5648499118a449f60a81480c4d9dd19bf69c55ce362d8ebcf6e4a17d1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--pom.xml",
+          "sha256": "e5396c28d74a0c27262aeafce391c35a1e420fa15d6eba6a2ab4269f4033cf29",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--natives__osx-x86_64__build.sh",
+          "sha256": "81ad32aac5f2ca46af85503269ced11fe05da740dd328b47acce1d0dffc5d068",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-osx-x86_64-1.23.0/source-notices.txt",
+          "sha256": "8dbee2c30a226ebb5ac8390136345f7efdbdc06afbee63980c8752368a757744",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-osx-x86_64-1.23.0/source-notice-origins.json",
+          "sha256": "bd455d00e68fc3164aba45a90a4723d8cac286825667d4719454ab2a1578df3a",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Wrapper Apache and bundled Brotli MIT texts are collected from the exact release; review native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-windows-aarch64:1.23.0",
+      "name": "com.aayushatharva.brotli4j:native-windows-aarch64",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:native-windows-aarch64:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-aarch64/1.23.0/native-windows-aarch64-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Release v1.23.0 resolves to upstream commit 205afeafd65d1e1c83f88a059e150687a1117426; version header identifies bundled Brotli 1.2.0 and classifier build/CMake inputs compile that vendored source.",
+      "declaredLicenses": [
+        "Apache License 2.0",
+        "MIT (bundled Google Brotli 1.2.0)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/native-windows-aarch64-1.23.0/pom.xml",
+          "sha256": "e9995eb11ce3f08bb62ae4bf15e496fcbc9daa733d3fc80be380a4fc4d8036a8",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
+          "sha256": "60ae0f13e76cc2eaaa108677eefa4ce16b647f6bbe8cf0a1ac9429d82eca7248",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--brotli__common__version.h",
+          "sha256": "792d03d8feff8168edf639899f72b71a37e9cbd9f178e3be397ccef29d3346b0",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--CMakeLists.txt",
+          "sha256": "ab7551d5648499118a449f60a81480c4d9dd19bf69c55ce362d8ebcf6e4a17d1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--pom.xml",
+          "sha256": "e5396c28d74a0c27262aeafce391c35a1e420fa15d6eba6a2ab4269f4033cf29",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--natives__windows-aarch64__build.bat",
+          "sha256": "8c793a5680c2292c75ad80af7b32968b498e69bcc064c60a79217211d123200b",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-windows-aarch64-1.23.0/source-notices.txt",
+          "sha256": "f00c8ea57006f59750f01cda395fe04a58ff44a52a651e02a511c622a5cf8c50",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-windows-aarch64-1.23.0/source-notice-origins.json",
+          "sha256": "ee536db3a48743673f6f9dde8baee9c2de8053b69275aea62b385f70dce45475",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Wrapper Apache and bundled Brotli MIT texts are collected from the exact release; review native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-windows-x86_64:1.23.0",
+      "name": "com.aayushatharva.brotli4j:native-windows-x86_64",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:native-windows-x86_64:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-x86_64/1.23.0/native-windows-x86_64-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Release v1.23.0 resolves to upstream commit 205afeafd65d1e1c83f88a059e150687a1117426; version header identifies bundled Brotli 1.2.0 and classifier build/CMake inputs compile that vendored source.",
+      "declaredLicenses": [
+        "Apache License 2.0",
+        "MIT (bundled Google Brotli 1.2.0)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/native-windows-x86_64-1.23.0/pom.xml",
+          "sha256": "f4c21619af52e5f7a02331e15e1f6e78fdeba5d2dbd33953c7d18b0fe2bf2b9a",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
+          "sha256": "60ae0f13e76cc2eaaa108677eefa4ce16b647f6bbe8cf0a1ac9429d82eca7248",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--brotli__common__version.h",
+          "sha256": "792d03d8feff8168edf639899f72b71a37e9cbd9f178e3be397ccef29d3346b0",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--CMakeLists.txt",
+          "sha256": "ab7551d5648499118a449f60a81480c4d9dd19bf69c55ce362d8ebcf6e4a17d1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--pom.xml",
+          "sha256": "e5396c28d74a0c27262aeafce391c35a1e420fa15d6eba6a2ab4269f4033cf29",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--natives__windows-x86_64__build.bat",
+          "sha256": "b85add03dc8f7441e6a0bb1a57b8c6566b0d846bcacc5f1031947bc9b2718d5f",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-windows-x86_64-1.23.0/source-notices.txt",
+          "sha256": "f979c81a67334013a288316a2c4060808fd618b40eb17e50073ed5083f0284b8",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/native-windows-x86_64-1.23.0/source-notice-origins.json",
+          "sha256": "8da16fd1ccbb526347c8e67918341d3f9af825b7d2648651e4e096786a06aa97",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Wrapper Apache and bundled Brotli MIT texts are collected from the exact release; review native binary/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:service:1.23.0",
+      "name": "com.aayushatharva.brotli4j:service",
+      "version": "1.23.0",
+      "includedWhenComponent": "maven:com.aayushatharva.brotli4j:service:1.23.0",
+      "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/service/1.23.0/service-1.23.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "Apache License 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/service-1.23.0/pom.xml",
+          "sha256": "6b28b242770cb508103a855615bb1f96a0fc63988c26a16b96156096a5d90a2e",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.netty.txt",
+          "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/service-1.23.0/source-notices.txt",
+          "sha256": "8ae150df51c3591b7812c7df31686751628fe70d085ecc94be6069f841184e33",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/service-1.23.0/source-notice-origins.json",
+          "sha256": "260c00fcce27a48158d68d5930645b120b11a27bd4c6d9153247cca966ac824c",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:com.github.luben:zstd-jni:1.5.7-25",
+      "name": "com.github.luben:zstd-jni",
+      "version": "1.5.7-25",
+      "includedWhenComponent": "maven:com.github.luben:zstd-jni:1.5.7-25",
+      "source": "https://repo.maven.apache.org/maven2/com/github/luben/zstd-jni/1.5.7-25/zstd-jni-1.5.7-25.pom",
+      "reason": "Exact Central release version and all 40 Java sources match upstream commit b3ef8f51f372053611f65de55952fd563c7aa780 byte-for-byte via Git blob hashes. Its complete wrapper and bundled Zstandard licenses are retained, without assuming native-binary reproducibility. The bundled native COPYING alternative is retained alongside LICENSE; no license selection is made.",
+      "declaredLicenses": [
+        "BSD 2-Clause License",
+        "BSD-3-Clause OR GPL-2.0 (bundled Zstandard; upstream choice retained)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/zstd-jni-1.5.7-25/pom.xml",
+          "sha256": "d1e8ddd182f67d2101347a84fe1af6278a3b73857e356180bcf7d5019adf6470",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/zstd--version",
+          "sha256": "3d03c47ddc6025c3926abd1fbf0cc569c898d329605e858861cc4bfeaa014bab",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/zstd--build.sbt",
+          "sha256": "fd757e967729e1a90c8eff90d21a363567262fa180f4399654aca135c9251e7e",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/zstd--build.gradle.kts",
+          "sha256": "d1859452a7455480bc876febc6528a00926665ff83d23f6739736f2aa78c9ca5",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/zstd--LICENSE",
+          "sha256": "289a6adada5726047b9e68bf607cc44fbbac953bbb4fd29f53ffe75b5cb3e7b1",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/zstd--src__main__native__LICENSE",
+          "sha256": "2c1a7fa704df8f3a606f6fc010b8b5aaebf403f3aeec339a12048f1ba7331a0b",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/zstd-source-comparison.json",
+          "sha256": "c22e107a0aa76101ea5255d86d9e5c8c8fbb6e21fb7daf8dae470c5d1e1b4d08",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/zstd--src__main__native__COPYING",
+          "sha256": "f9c375a1be4a41f7b70301dd83c91cb89e41567478859b77eef375a52d782505",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/zstd-native-license-choice.txt",
+          "sha256": "0f6cddb375cbbdbc0b79d7417db729a456340f38d069f4589382df384deaaf28",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/zstd-jni-1.5.7-25/source-notices.txt",
+          "sha256": "0f7b901e3687bc323df010c1e8f55ab1137da81054487d63e82f660e94830245",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/zstd-jni-1.5.7-25/source-notice-origins.json",
+          "sha256": "4a14f5267f4554baed9deed8d998fa6ce8e6e418e68e86ab71f5820a302d8cb3",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Full wrapper and bundled Zstandard license texts are collected from the source-matched release commit; confirm native classifier/source correspondence and distribution obligations before approval."
+      ]
+    },
+    {
+      "id": "maven:com.google.code.findbugs:jsr305:3.0.2",
+      "name": "com.google.code.findbugs:jsr305",
+      "version": "3.0.2",
+      "includedWhenComponent": "maven:com.google.code.findbugs:jsr305:3.0.2",
+      "source": "https://repo.maven.apache.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache Software License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/jsr305-3.0.2/pom.xml",
+          "sha256": "19889dbdf1b254b2601a5ee645b8147a974644882297684c798afe5d63d78dfe",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/jsr305-3.0.2/source-notices.txt",
+          "sha256": "9ba9295128beaf957fcab102fd7387d930ee5bcb9db5e170507fea4e91063885",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/jsr305-3.0.2/source-notice-origins.json",
+          "sha256": "f234adba476fea772b9ff3ba617b9507525ce5bb1251131a11beec769aae77db",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:com.google.code.gson:gson:2.14.0",
+      "name": "com.google.code.gson:gson",
+      "version": "2.14.0",
+      "includedWhenComponent": "maven:com.google.code.gson:gson:2.14.0",
+      "source": "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.14.0/gson-2.14.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "Apache-2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/gson-2.14.0/pom.xml",
+          "sha256": "1fa0122c0e3733192642861c36be4c6f799a795327a23bdd2922691b6e9ba480",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/gson-2.14.0/source-notices.txt",
+          "sha256": "336babb54617d45cb6a246c29fd023bf20b1c7089d98ded151cde9bbf07ddf46",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/gson-2.14.0/source-notice-origins.json",
+          "sha256": "b3341e4314010f795bfc5f725ae163db89d0f7e630f1eb7c9fbe3fd1edf3760e",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:com.google.errorprone:error_prone_annotations:2.48.0",
+      "name": "com.google.errorprone:error_prone_annotations",
+      "version": "2.48.0",
+      "includedWhenComponent": "maven:com.google.errorprone:error_prone_annotations:2.48.0",
+      "source": "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.48.0/error_prone_annotations-2.48.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "Apache 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/error_prone_annotations-2.48.0/pom.xml",
+          "sha256": "189e09ad0489c325e90daaa9d5c8f406330602fa366609bca07cbcdad03ab9da",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/error_prone_annotations-2.48.0/source-notices.txt",
+          "sha256": "c9df280941700fe56511be36e5e518d495304c0ae7c7e0a75b091effe3d99fd0",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/error_prone_annotations-2.48.0/source-notice-origins.json",
+          "sha256": "379fc022266a6246adc2a3630495cecff0b0169a85e3db3f44884f4afa51724c",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava",
+      "name": "com.google.guava:listenablefuture",
+      "version": "9999.0-empty-to-avoid-conflict-with-guava",
+      "includedWhenComponent": "maven:com.google.guava:listenablefuture:9999.0-empty-to-avoid-conflict-with-guava",
+      "source": "https://repo.maven.apache.org/maven2/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache Software License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava/pom.xml",
+          "sha256": "18d4b1db26153d4e55079ce1f76bb1fe05cdb862ef9954a88cbcc4ff38b8679b",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        }
+      ]
+    },
+    {
+      "id": "maven:com.opencsv:opencsv:5.12.0",
+      "name": "com.opencsv:opencsv",
+      "version": "5.12.0",
+      "includedWhenComponent": "maven:com.opencsv:opencsv:5.12.0",
+      "source": "https://repo.maven.apache.org/maven2/com/opencsv/opencsv/5.12.0/opencsv-5.12.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "Apache 2"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/opencsv-5.12.0/pom.xml",
+          "sha256": "8c3465a823914d67780442bff8eb41b1373b91bbc7e5d1e65c3d5a418258b2a1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/opencsv-5.12.0/source-notices.txt",
+          "sha256": "852288ed7ee47aef41287f5e97effa1bac710a8ba60d59353b55b54440769999",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/opencsv-5.12.0/source-notice-origins.json",
+          "sha256": "6d928fefcb112624a549e9f1bb2db59c5c5941ee4a08068a7bd4a4eceaa8020a",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:io.opentelemetry.semconv:opentelemetry-semconv:1.41.1",
+      "name": "io.opentelemetry.semconv:opentelemetry-semconv",
+      "version": "1.41.1",
+      "includedWhenComponent": "maven:io.opentelemetry.semconv:opentelemetry-semconv:1.41.1",
+      "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/semconv/opentelemetry-semconv/1.41.1/opentelemetry-semconv-1.41.1.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-semconv-1.41.1/pom.xml",
+          "sha256": "9f86b14641b264fc54b7483243e9195ea4d7fd0a795676af20dc330ad37c39de",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-semconv-1.41.1/source-notices.txt",
+          "sha256": "59e23f1a016d891598428ffc85144a81601067a5295df90f44ef628f3ffedd90",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-semconv-1.41.1/source-notice-origins.json",
+          "sha256": "64fc38c127e22bdaaad6cfb7ebedb16ff782e263f71159bc8ababc4fcbda4d90",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:io.opentelemetry:opentelemetry-api:1.66.0",
+      "name": "io.opentelemetry:opentelemetry-api",
+      "version": "1.66.0",
+      "includedWhenComponent": "maven:io.opentelemetry:opentelemetry-api:1.66.0",
+      "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-api/1.66.0/opentelemetry-api-1.66.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-api-1.66.0/pom.xml",
+          "sha256": "ded33d1dc3cc7588ee13f59c5e854b611f71f21795add100f900110639c8adb8",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-api-1.66.0/source-notices.txt",
+          "sha256": "36ad6e93616a325fae8c2555ebad4631d5c74c4a23190f98ad42db47012fccab",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-api-1.66.0/source-notice-origins.json",
+          "sha256": "9edd7e1ba59feb2be5074130ad83236f414a60a80ed0f51314fdf4cec9ccff33",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:io.opentelemetry:opentelemetry-common:1.66.0",
+      "name": "io.opentelemetry:opentelemetry-common",
+      "version": "1.66.0",
+      "includedWhenComponent": "maven:io.opentelemetry:opentelemetry-common:1.66.0",
+      "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-common/1.66.0/opentelemetry-common-1.66.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-common-1.66.0/pom.xml",
+          "sha256": "6702363ac44d37d0fc0fd6bbe96e303f1acf1cfbc374e54b7a36e7a867be9c35",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-common-1.66.0/source-notices.txt",
+          "sha256": "7a81c5df9f482d895861646916a36f38640c200bdf4064e9387a2e81c98d3af1",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-common-1.66.0/source-notice-origins.json",
+          "sha256": "50e62369fc5836e28ae7aa6b20963a4735e710e34c7166a490704061fbb6a7e5",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:io.opentelemetry:opentelemetry-context:1.66.0",
+      "name": "io.opentelemetry:opentelemetry-context",
+      "version": "1.66.0",
+      "includedWhenComponent": "maven:io.opentelemetry:opentelemetry-context:1.66.0",
+      "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-context/1.66.0/opentelemetry-context-1.66.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-context-1.66.0/pom.xml",
+          "sha256": "cfd98a78463e56275f60832079284dc3e989953db83fb2363207f1ee2384b945",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-context-1.66.0/source-notices.txt",
+          "sha256": "2420e47754dab13870302f2ee654c9c17d44e272a0a6ae2b87b7a4e3cfe455d2",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/opentelemetry-context-1.66.0/source-notice-origins.json",
+          "sha256": "f39c9a929def15adb9a860b11e3b1bbd672d48f0cc795c9f4771c688a6238625",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:io.sgr:s2-geometry-library-java:1.0.0",
+      "name": "io.sgr:s2-geometry-library-java",
+      "version": "1.0.0",
+      "includedWhenComponent": "maven:io.sgr:s2-geometry-library-java:1.0.0",
+      "source": "https://repo.maven.apache.org/maven2/io/sgr/s2-geometry-library-java/1.0.0/s2-geometry-library-java-1.0.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache Software License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/s2-geometry-library-java-1.0.0/pom.xml",
+          "sha256": "dd4d0c3c863a4493941e15f0a3fac8683f8acfca515c1e4d807ea475c85ffca1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/s2-geometry-library-java-1.0.0/source-notices.txt",
+          "sha256": "1340a6ae6856f0093627e066729e42266e261b56bc405f860d8b5b69cfd67fbb",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/s2-geometry-library-java-1.0.0/source-notice-origins.json",
+          "sha256": "1f69b51298b59c93c8ebb458485b8344f933be09a153f6e9bafbe52628311230",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:org.codehaus.janino:commons-compiler:3.1.12",
+      "name": "org.codehaus.janino:commons-compiler",
+      "version": "3.1.12",
+      "includedWhenComponent": "maven:org.codehaus.janino:commons-compiler:3.1.12",
+      "source": "https://repo.maven.apache.org/maven2/org/codehaus/janino/commons-compiler/3.1.12/commons-compiler-3.1.12.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "BSD-3-Clause"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/commons-compiler-3.1.12/pom.xml",
+          "sha256": "eb2b5192ee22521179ade955a35984dbdbe020d680628898b3306d4ddb5862de",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/commons-compiler-3.1.12/BSD-3-Clause.txt",
+          "sha256": "4c06b5bce0167bce5d6f68917910daa552f5e8856ae4463cafbf77a6f4ddb562",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/commons-compiler-3.1.12/source-notices.txt",
+          "sha256": "66858f51f9203a00f576a1a11e6ab087db4441933ee0202b4573a9527e8ecca0",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/commons-compiler-3.1.12/source-notice-origins.json",
+          "sha256": "6afa1777ee8865e768f3290449add9c8b9abc7816c95464b0add730545a6d207",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:org.codehaus.janino:janino:3.1.12",
+      "name": "org.codehaus.janino:janino",
+      "version": "3.1.12",
+      "includedWhenComponent": "maven:org.codehaus.janino:janino:3.1.12",
+      "source": "https://repo.maven.apache.org/maven2/org/codehaus/janino/janino/3.1.12/janino-3.1.12.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "BSD-3-Clause"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/janino-3.1.12/pom.xml",
+          "sha256": "7b10e9034d2391572f48590decbe67719fdaee43e98e00aeff31c8011fb79982",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/janino-3.1.12/BSD-3-Clause.txt",
+          "sha256": "86700aa17df2bd60aca40ef229ab38b82bcf5a7bc1453c657250433a2cd5399d",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/janino-3.1.12/source-notices.txt",
+          "sha256": "81c6feeca558d58df11f174b4155143aa473b6a63f670b03cceb8f813172cda9",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/janino-3.1.12/source-notice-origins.json",
+          "sha256": "d29ea2da1455c91cc54844c140a247573088871ef711293a9f18d3bddb77e4da",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
+      "name": "org.jetbrains.kotlin:kotlin-stdlib",
+      "version": "1.9.25",
+      "includedWhenComponent": "maven:org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
+      "source": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/kotlin-stdlib-1.9.25/pom.xml",
+          "sha256": "7dc3318a476d7b902d0d27af9b56f663e8cc4263a2d33ad050c7abb65a5b67a1",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/kotlin-stdlib-1.9.25/source-notices.txt",
+          "sha256": "ed612fda288ce2e331604ea27c952e081edcb86a7e8474ee92da96e4dc7fbb30",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/kotlin-stdlib-1.9.25/source-notice-origins.json",
+          "sha256": "5c00182f065729244b7df212a4364c4018e0a06724286acdaf78d5b57a414097",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:org.jetbrains:annotations:26.1.0",
+      "name": "org.jetbrains:annotations",
+      "version": "26.1.0",
+      "includedWhenComponent": "maven:org.jetbrains:annotations:26.1.0",
+      "source": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/26.1.0/annotations-26.1.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache Software License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/annotations-26.1.0/pom.xml",
+          "sha256": "f8dc50cf3aac4bcec740a90955f2800e41251e9c403630b75b752d3b6ef5bee2",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/annotations-26.1.0/source-notices.txt",
+          "sha256": "8938a43d47c0d96ac582387f0af4b9255be848cdf629554edc509e79ffd2dd12",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/annotations-26.1.0/source-notice-origins.json",
+          "sha256": "91246a9d6698fc86121298187e2bc8a4920b31c6102efe1366742b7d1978e1f9",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:org.jspecify:jspecify:1.0.0",
+      "name": "org.jspecify:jspecify",
+      "version": "1.0.0",
+      "includedWhenComponent": "maven:org.jspecify:jspecify:1.0.0",
+      "source": "https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/jspecify-1.0.0/pom.xml",
+          "sha256": "cdab929a3b95211f43d2090c5e2d0dfe8465960e378bc32b35841dab324433a6",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/jspecify-1.0.0/source-notices.txt",
+          "sha256": "f6134486336a9a782b90a3b53fe00413a4c87e2e8b0477fd98659c04bc45b6e2",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/jspecify-1.0.0/source-notice-origins.json",
+          "sha256": "d03f2bb149416632f096806a913be0eb7c8037fcdd7740c16346093b99843bb2",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:org.locationtech.jts:jts-core:1.20.0",
+      "name": "org.locationtech.jts:jts-core",
+      "version": "1.20.0",
+      "includedWhenComponent": "maven:org.locationtech.jts:jts-core:1.20.0",
+      "source": "https://repo.maven.apache.org/maven2/org/locationtech/jts/jts-core/1.20.0/jts-core-1.20.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "Eclipse Distribution License - v 1.0",
+        "Eclipse Public License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/jts-core-1.20.0/pom.xml",
+          "sha256": "aaab506d3942149d5466c7ea3ea154cc3ea50c06bb39a533799dd9c7ff8b2146",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/jts-edl.txt",
+          "sha256": "e67a91b5489cd78292d2654f1b587fe68296e28df7c766b9b675614fbdce4fd1",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/jts-epl.txt",
+          "sha256": "0becf16567beb77fa252b7664631dd177c8f9a1889e48995b45379c7130e5303",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/jts-core-1.20.0/source-notices.txt",
+          "sha256": "6f1a754180e5e529da9780df75a3a376f741771975f954d0f8638be6009b25ed",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/jts-core-1.20.0/source-notice-origins.json",
+          "sha256": "8c74e40201fe11cd508f74be1f6f1689881a275e0e7ccc68069a643ab6d5c17b",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/jts-1.20.0-LICENSES.md",
+          "sha256": "860b6249d7688b4b84b56c47601c031c96d8317e8289e0f4192e9fa3228ce714",
+          "kind": "notice"
+        }
+      ]
+    },
+    {
+      "id": "maven:org.locationtech.spatial4j:spatial4j:0.8",
+      "name": "org.locationtech.spatial4j:spatial4j",
+      "version": "0.8",
+      "includedWhenComponent": "maven:org.locationtech.spatial4j:spatial4j:0.8",
+      "source": "https://repo.maven.apache.org/maven2/org/locationtech/spatial4j/spatial4j/0.8/spatial4j-0.8.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache Software License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/spatial4j-0.8/pom.xml",
+          "sha256": "108f36cf780a18c325431ee7ab2ce4b37c9be9f2c30bfb3f298b67cedd9cf5d9",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/spatial4j-0.8/source-notices.txt",
+          "sha256": "407aad94366e0048e65ed3d9289f2f3dfcf6bee1e38abffa3ddf93f70f20a794",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/spatial4j-0.8/source-notice-origins.json",
+          "sha256": "5c7f483c422b3ac9099030910180e03b5b8f0dbe0e07f7215dc2064fcf183218",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:org.lwjgl:lwjgl-lmdb:3.4.2",
+      "name": "org.lwjgl:lwjgl-lmdb",
+      "version": "3.4.2",
+      "includedWhenComponent": "maven:org.lwjgl:lwjgl-lmdb:3.4.2",
+      "source": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl-lmdb/3.4.2/lwjgl-lmdb-3.4.2.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Exact LWJGL release commit 32593afe25e2f1394c3425673f1b71a0122f5cd4 retains the LMDB header identifying 0.9.35.",
+      "declaredLicenses": [
+        "BSD-3-Clause",
+        "OpenLDAP-2.8 (bundled LMDB 0.9.35)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/lwjgl-lmdb-3.4.2/pom.xml",
+          "sha256": "d73de998cec6a64dd38365979682987b1425528c05a697efe41fa0a2c35e110c",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/lwjgl.txt",
+          "sha256": "4c2f770897d0cfda4d9a65bb4d6d6983dccfd57d4c7eb74ea5ded0762cbc0e75",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/lmdb-license.txt",
+          "sha256": "3bbb1a49c318982a054416eeeee1c15c10666b44d7fcfa7455200836e2a0ee4f",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lwjgl--modules__lwjgl__lmdb__src__main__c__lmdb.h",
+          "sha256": "41424e4c183de5d8436a8aef4483983991e78903f362edf8cc1681b82f10cffb",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/lwjgl-lmdb-3.4.2/source-notices.txt",
+          "sha256": "260807c6359765003c61ccb568e24dc835a918e54b3015288a3704c8c2de94f6",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/lwjgl-lmdb-3.4.2/source-notice-origins.json",
+          "sha256": "d8a05ef99275143ee86b32c29c7abbcdf20dee48fc23346c4a1d66330d2e7b17",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Native dependency license texts from this exact LWJGL release are retained; confirm which native source components are included in each shipped classifier."
+      ]
+    },
+    {
+      "id": "maven:org.lwjgl:lwjgl:3.4.2",
+      "name": "org.lwjgl:lwjgl",
+      "version": "3.4.2",
+      "includedWhenComponent": "maven:org.lwjgl:lwjgl:3.4.2",
+      "source": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl/3.4.2/lwjgl-3.4.2.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses. Exact release native headers identify libffi 3.7.0 and the bundled liburing API version; original native license texts remain attached.",
+      "declaredLicenses": [
+        "BSD-3-Clause",
+        "MIT (bundled libffi/liburing)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/lwjgl-3.4.2/pom.xml",
+          "sha256": "28d421796770c8ff1f1808fba2bedb34bfe7e2c4d28a8cc5321dd838785dfb83",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/lwjgl.txt",
+          "sha256": "4c2f770897d0cfda4d9a65bb4d6d6983dccfd57d4c7eb74ea5ded0762cbc0e75",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/libffi-license.txt",
+          "sha256": "d66f6a020ebb611afe64b93270d447aa32a9345d2d3a43d296493e9806b944f8",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/liburing-license.txt",
+          "sha256": "1ec30e534aecb8eef3439fe3e36b20be20461bb758ca85107602fdaa3e23d274",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lwjgl--modules__lwjgl__core__src__main__c__libffi__ffi.h",
+          "sha256": "2d9d3c0f7d8e6ac8e05c352d74c2e833651b6031aa546b8f60c0aa114dceb39a",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lwjgl--modules__lwjgl__core__src__main__c__linux__liburing__version.c",
+          "sha256": "44f81afa2b39d188f152cefa886c263cb0014ffc1e8cccd3f9cbb38d3681c76e",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/native/lwjgl--modules__lwjgl__core__src__main__c__linux__liburing__include__liburing__io_uring_version.h",
+          "sha256": "0c3293e4f5465528f0e6f05f68ed7e3855d8c28537e18cf8e9f62cb3e0cc4a9c",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/lwjgl-3.4.2/source-notices.txt",
+          "sha256": "945cc0fc731299a917844851d24c2309bbdf469006c163297ee9167fa797515c",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/lwjgl-3.4.2/source-notice-origins.json",
+          "sha256": "91b62d400c0b6cf632c20de2b40b085a9e1da3478c2bab5d19c11f8cfb1277b8",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Native dependency license texts from this exact LWJGL release are retained; confirm which native source components are included in each shipped classifier."
+      ]
+    },
+    {
+      "id": "maven:org.mapdb:elsa:3.0.0-M5",
+      "name": "org.mapdb:elsa",
+      "version": "3.0.0-M5",
+      "includedWhenComponent": "maven:org.mapdb:elsa:3.0.0-M5",
+      "source": "https://repo.maven.apache.org/maven2/org/mapdb/elsa/3.0.0-M5/elsa-3.0.0-M5.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache Software License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/elsa-3.0.0-M5/pom.xml",
+          "sha256": "7776a66b9df8e5f49771bd8a5131658b1c7c23ee49dfe8c731ff8a945af1a9fe",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/elsa-3.0.0-M5/source-notices.txt",
+          "sha256": "06dac8fd7e7c34f7089c636be23426b172ce8832bae9cff11b26dd4d971ce5f8",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/elsa-3.0.0-M5/source-notice-origins.json",
+          "sha256": "df1877e7f4ad5bc179a9347f828c7fa8782ebd1d3c9c4c48d2cc7935762254c4",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:org.mapdb:mapdb:3.1.0",
+      "name": "org.mapdb:mapdb",
+      "version": "3.1.0",
+      "includedWhenComponent": "maven:org.mapdb:mapdb:3.1.0",
+      "source": "https://repo.maven.apache.org/maven2/org/mapdb/mapdb/3.1.0/mapdb-3.1.0.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "The Apache Software License, Version 2.0"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/mapdb-3.1.0/pom.xml",
+          "sha256": "c28e0170d8901545acb578664170fe2f5ab7a0d5ae1822ed614d8aa4716de0ab",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/apache.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/mapdb-3.1.0/source-notices.txt",
+          "sha256": "57bb06800ec5c066b4cd4e29d824328e2fa8c68d2ed3b1531408f40e4e2df872",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/mapdb-3.1.0/source-notice-origins.json",
+          "sha256": "d503240c1e3aafde52766e28d8d321f9259610b86242dc29345b2137a4760c50",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "maven:org.tukaani:xz:1.12",
+      "name": "org.tukaani:xz",
+      "version": "1.12",
+      "includedWhenComponent": "maven:org.tukaani:xz:1.12",
+      "source": "https://repo.maven.apache.org/maven2/org/tukaani/xz/1.12/xz-1.12.pom",
+      "reason": "Exact release POM and source-artifact notices retained with SHA-256 provenance; primary complete license text supplements artifacts that omit it. This is evidence collection, not approval or a choice among licenses.",
+      "declaredLicenses": [
+        "0BSD"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/xz-1.12/pom.xml",
+          "sha256": "937b44d869c059c39f07ae194d8cd6219f5aebf2200ef9707f0b50b7837da281",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/xz.txt",
+          "sha256": "1e77ef26cee5216d6531e49cbf2f6111a0270dc7b322fc65477063c5aff88766",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/xz-1.12/source-notices.txt",
+          "sha256": "dd2a6f7397bd4507b8b7f3b1cffce855daad2baffb00b9e278fd949e227426c2",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/xz-1.12/source-notice-origins.json",
+          "sha256": "7e59b7c79d1254329fe098fde97ab7467cdecf56f930146c2b0c40de21b40f42",
+          "kind": "provenance"
+        }
+      ]
+    },
+    {
+      "id": "npm:@viz-js/viz@3.31.0",
+      "name": "@viz-js/viz",
+      "version": "3.31.0",
+      "includedWhenComponent": "npm:@viz-js/viz@3.31.0",
+      "source": "https://raw.githubusercontent.com/mdaines/viz-js/c8ce050d28eb0dc1ed1629ea32ab7f3dc117db0f/LICENSE",
+      "reason": "MIT text from the exact source revision recorded in the installed package build provenance; Graphviz and Expat are separately inventoried.",
+      "declaredLicenses": [
+        "MIT"
+      ],
+      "attribution": [
+        "Copyright (c) Michael Daines"
+      ],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/viz.txt",
+          "sha256": "f1fb91bf7cbcb42b2af56949e4fa909e1979d5b57c2826cabacdb4b631457720",
+          "kind": "license"
+        }
+      ]
+    },
+    {
+      "id": "embedded:emscripten-runtime@6.0.10",
+      "name": "Emscripten JS/WASM runtime support embedded in Viz.js",
+      "version": "6.0.10",
+      "includedWhenComponent": "npm:@viz-js/viz@3.31.0",
+      "source": "https://github.com/emscripten-core/emscripten/tree/6.0.10",
+      "reason": "The exact Viz backend build recipe and packaged provenance pin Emscripten 6.0.10. Generated JS runtime support and a libc++abi source path occur in the actual backend. The compiler/build image itself is not shipped. Collected musl, libc++, compiler-rt and libunwind texts are reference coverage evidence, not a claim that every object or library is linked.",
+      "declaredLicenses": [
+        "MIT OR NCSA (Emscripten support code)",
+        "Apache-2.0 WITH LLVM-exception (libc++abi; full text preserves legacy terms)"
+      ],
+      "attribution": [],
+      "documents": [
+        {
+          "path": "scripts/third-party-licenses/emscripten-6.0.10/LICENSE",
+          "sha256": "620a78084fc7ca97c0b5dea9abf891f3ffcadfdbf305276f099c9c4e12fc1d86",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/emscripten-6.0.10/AUTHORS",
+          "sha256": "b865d6074c7f13366cad82990ba58bbe0a3f3eccf5fa47e50aa02693de4e895e",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/emscripten-6.0.10/musl-COPYRIGHT",
+          "sha256": "b870108ec5e7790e9f9919064f1b9421d62d5f9b0e6c230c6adf7ea2da62e97b",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/emscripten-6.0.10/libcxx-LICENSE.TXT",
+          "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/emscripten-6.0.10/libcxx-CREDITS.TXT",
+          "sha256": "054e099bf5954c8821b880f5751d2fbf221bf43cf7c57ac1c2c5ff6263d6d9c3",
+          "kind": "notice"
+        },
+        {
+          "path": "scripts/third-party-licenses/emscripten-6.0.10/libcxxabi-LICENSE.TXT",
+          "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/emscripten-6.0.10/compiler-rt-LICENSE.TXT",
+          "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/emscripten-6.0.10/libunwind-LICENSE.TXT",
+          "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d",
+          "kind": "license"
+        },
+        {
+          "path": "scripts/third-party-licenses/emscripten-6.0.10/viz-Dockerfile",
+          "sha256": "4c687cdcfcca5bd4451e91843aab98c7e5e5e2b8f358bb68734af93601dd1a45",
+          "kind": "provenance"
+        },
+        {
+          "path": "scripts/third-party-licenses/emscripten-6.0.10/runtime-evidence.json",
+          "sha256": "233af8cc50c5815f4b5f685439840813b125f4531d66e2db83ec53e10adaa569",
+          "kind": "provenance"
+        }
+      ],
+      "unresolved": [
+        "Exact Emscripten runtime texts and attribution collected. The backend has no per-object runtime link map; verify which musl/LLVM runtime objects and their file-specific notices are linked, or reproduce the pinned build with an object/link manifest. Do not treat the compiler image or unlinked reference libraries as shipped components."
+      ]
+    }
+  ],
+  "ownedFiles": [
+    {
+      "path": "tools/workbench/src/main/frontend/static/scripts/workbench-theme.js",
+      "sha256": "4cc6c141caa9c1f2890d3a763195d21ab8f01bb514eb5e2e33137db391282fd6",
+      "source": "https://github.com/eclipse-rdf4j/rdf4j/blob/6e51368d6ac0e36f1b806b6146876dfffb53301e/tools/workbench/src/main/frontend/static/scripts/workbench-theme.js",
+      "reason": "Tracked RDF4J Workbench-specific theme logic; project license applies absent a contrary notice. Explicit per-file classification, not a blanket rule for unidentified JavaScript.",
+      "licensePath": "LICENSE",
+      "licenseSha256": "ddbc15d6df4f36620507eebb4575f91888d234490f89eca8757e89abacfd3319"
+    }
+  ]
+}

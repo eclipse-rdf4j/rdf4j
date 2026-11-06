@@ -296,6 +296,15 @@
 	<build>
 		<resources>
 			<resource>
+				<directory>${maven.multiModuleProjectDirectory}</directory>
+				<targetPath>META-INF</targetPath>
+				<filtering>false</filtering>
+				<includes>
+					<include>LICENSE</include>
+					<include>NOTICE.md</include>
+				</includes>
+			</resource>
+			<resource>
 				<directory>src/main/resources</directory>
 			</resource>
 			<resource>
