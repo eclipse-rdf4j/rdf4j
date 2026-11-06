@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.repository.sparql.query;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -128,6 +130,46 @@ public class QueryStringUtilTest {
 		assertTrue(operation.bindingNames().contains("value"));
 		assertEquals("DESCRIBE <urn:bound>", operation.render());
 		SyntaxTreeBuilder.parseQuery(operation.render());
+	}
+
+	@Test
+	public void updateEscapesIriAndDatatypeDelimiters() throws Exception {
+		String payload = "urn:value> } ; INSERT DATA { <urn:injected> <urn:p> <urn:o> } #";
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("value", VF.createIRI(payload));
+		String result = QueryStringUtil.getUpdateString("DELETE WHERE { <urn:s> <urn:p> ?value }", bindings);
+		assertFalse(result.contains("; INSERT DATA"), result);
+		SyntaxTreeBuilder.parseUpdateSequence(result);
+
+		Literal typed = VF.createLiteral("label", VF.createIRI(payload));
+		String serialized = QueryStringUtil.valueToString(typed);
+		assertFalse(serialized.contains("> } ; INSERT DATA"), serialized);
+		SyntaxTreeBuilder.parseQuery("ASK { <urn:s> <urn:p> " + serialized + " }");
+	}
+
+	@Test
+	public void deprecatedOperationEscapesIriAndLiteralSyntax() throws Exception {
+		OperationProbe operation = new OperationProbe("DESCRIBE ?value");
+		operation.setBinding("value", VF.createIRI("urn:value> WHERE { ?s ?p ?o } #"));
+		String result = operation.render();
+		assertFalse(result.contains("> WHERE"), result);
+		SyntaxTreeBuilder.parseQuery(result);
+
+		OperationProbe literalOperation = new OperationProbe("ASK { <urn:s> <urn:p> ?value }");
+		literalOperation.setBinding("value", VF.createLiteral("\\\" } UNION { ?s ?p ?o } #\n"));
+		SyntaxTreeBuilder.parseQuery(literalOperation.render());
+	}
+
+	@Test
+	public void rejectsMalformedLanguageTagsInAllRepositorySerializers() {
+		Literal injected = VF.createLiteral("label", "en . ?s ?p ?o } #");
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("value", injected);
+		assertThrows(IllegalArgumentException.class,
+				() -> QueryStringUtil.getUpdateString("DELETE WHERE { <urn:s> <urn:p> ?value }", bindings));
+		OperationProbe operation = new OperationProbe("DESCRIBE ?value");
+		operation.setBinding("value", injected);
+		assertThrows(IllegalArgumentException.class, operation::render);
 	}
 
 	@Test

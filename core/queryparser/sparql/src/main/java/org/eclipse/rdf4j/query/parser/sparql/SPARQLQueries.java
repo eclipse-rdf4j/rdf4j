@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryParseOptions;
@@ -469,7 +470,11 @@ public class SPARQLQueries {
 		} else if (value instanceof Literal literal) {
 			result.append('"').append(escape(literal.getLabel())).append('"');
 			if (literal.getLanguage().isPresent()) {
-				result.append('@').append(literal.getLanguage().get());
+				String language = literal.getLanguage().get();
+				if (!Literals.isValidLanguageTag(language)) {
+					throw new IllegalArgumentException("Invalid language tag in SPARQL binding: " + language);
+				}
+				result.append('@').append(language);
 				if (literal.getBaseDirection() != Literal.BaseDirection.NONE) {
 					result.append("--").append(literal.getBaseDirection().name().toLowerCase(Locale.ROOT));
 				}

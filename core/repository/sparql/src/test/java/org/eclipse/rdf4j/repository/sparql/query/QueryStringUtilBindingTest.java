@@ -133,6 +133,17 @@ class QueryStringUtilBindingTest {
 	}
 
 	@Test
+	void rejectsMalformedLanguageTagsInBothInlineAndValuesBindings() {
+		Value injected = VF.createLiteral("label", "en . ?s ?p ?o } #");
+		assertThrows(IllegalArgumentException.class,
+				() -> QueryStringUtil.getTupleQueryString("SELECT ?s WHERE { ?s <urn:p> ?value }",
+						binding("value", injected)));
+		assertThrows(IllegalArgumentException.class,
+				() -> QueryStringUtil.getTupleQueryString("SELECT ?value WHERE { ?s <urn:p> ?value }",
+						binding("value", injected)));
+	}
+
+	@Test
 	void preservesUniformExistingValuesAndRejectsUnverifiedBlankNodes() {
 		String query = "SELECT ?type WHERE { VALUES ?type { <http://xmlns.com/foaf/0.1/Person> } }";
 		new SPARQLParser().parseQuery(QueryStringUtil.getTupleQueryString(query, binding("type", FOAF.PERSON)), null);

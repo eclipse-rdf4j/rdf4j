@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Operation;
@@ -136,38 +135,7 @@ public abstract class SPARQLOperation implements Operation {
 	}
 
 	private String getReplacement(Value value) {
-		StringBuilder sb = new StringBuilder();
-		if (value instanceof IRI) {
-			return appendValue(sb, (IRI) value).toString();
-		} else if (value instanceof Literal) {
-			return appendValue(sb, (Literal) value).toString();
-		} else {
-			throw new IllegalArgumentException("BNode references not supported by SPARQL end-points");
-		}
-	}
-
-	private StringBuilder appendValue(StringBuilder sb, IRI uri) {
-		sb.append("<").append(uri.stringValue()).append(">");
-		return sb;
-	}
-
-	private StringBuilder appendValue(StringBuilder sb, Literal lit) {
-		sb.append('"');
-		sb.append(lit.getLabel().replace("\"", "\\\""));
-		sb.append('"');
-
-		if (Literals.isLanguageLiteral(lit)) {
-			sb.append('@');
-			sb.append(lit.getLanguage().get());
-			if (lit.getBaseDirection() != Literal.BaseDirection.NONE) {
-				sb.append(lit.getBaseDirection());
-			}
-		} else {
-			sb.append("^^<");
-			sb.append(lit.getDatatype().stringValue());
-			sb.append('>');
-		}
-		return sb;
+		return QueryStringUtil.valueToString(value);
 	}
 
 }

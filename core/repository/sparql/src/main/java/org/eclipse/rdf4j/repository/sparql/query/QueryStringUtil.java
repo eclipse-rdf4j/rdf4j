@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLVariableSubstitution;
 
@@ -162,7 +163,7 @@ public class QueryStringUtil {
 	}
 
 	private static StringBuilder appendValue(StringBuilder sb, IRI uri) {
-		sb.append("<").append(uri.stringValue()).append(">");
+		sb.append(BlankNodeReferences.toIRIRef(uri.stringValue()));
 		return sb;
 	}
 
@@ -172,16 +173,18 @@ public class QueryStringUtil {
 		sb.append('"');
 
 		if (Literals.isLanguageLiteral(lit)) {
+			String language = lit.getLanguage().orElseThrow();
+			if (!Literals.isValidLanguageTag(language)) {
+				throw new IllegalArgumentException("Invalid language tag in SPARQL binding: " + language);
+			}
 			sb.append('@');
-			sb.append(lit.getLanguage().get());
+			sb.append(language);
 			if (lit.getBaseDirection() != Literal.BaseDirection.NONE) {
-				sb.append(lit.getBaseDirection());
+				sb.append("--").append(lit.getBaseDirection().name().toLowerCase(java.util.Locale.ROOT));
 			}
 		} else if (lit.getCoreDatatype() != CoreDatatype.XSD.STRING) {
 			// Don't append type if it's xsd:string, this keeps it compatible with RDF 1.0
-			sb.append("^^<");
-			sb.append(lit.getDatatype().stringValue());
-			sb.append('>');
+			sb.append("^^").append(BlankNodeReferences.toIRIRef(lit.getDatatype().stringValue()));
 		}
 		return sb;
 	}
