@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 import java.io.IOException;
+import java.io.Writer;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.function.Function;
@@ -785,42 +786,62 @@ public class NTriplesUtil {
 	 */
 	public static void escapeString(String label, Appendable appendable, boolean escapeUnicode) throws IOException {
 		int labelLength = label.length();
+		int runStart = 0;
 
 		for (int i = 0; i < labelLength; i++) {
 			char c = label.charAt(i);
-			int cInt = c;
+			if (c >= 0x20 && c != '\\' && c != '"' && (!escapeUnicode || c != 0x7F && c < 0xFFFE)) {
+				continue;
+			}
 
-			if (c == '\\') {
-				appendable.append("\\\\");
-			} else if (c == '"') {
-				appendable.append("\\\"");
-			} else if (c == '\n') {
-				appendable.append("\\n");
-			} else if (c == '\r') {
-				appendable.append("\\r");
-			} else if (c == '\t') {
-				appendable.append("\\t");
-			} else if (c == '\b') {
-				appendable.append("\\b");
-			} else if (c == '\f') {
-				appendable.append("\\f");
-			} else if (cInt >= 0x0 && cInt <= 0x0007 || cInt >= 0xE && cInt <= 0x1F || cInt == 0xB || cInt == 0x7F
-					|| cInt >= 0xFFFE) {
-				if (escapeUnicode) {
-					appendable.append("\\u");
-					appendable.append(toHexString(cInt, 4));
-				} else {
-					appendable.append(c);
+			String escape;
+			switch (c) {
+			case '\\':
+				escape = "\\\\";
+				break;
+			case '"':
+				escape = "\\\"";
+				break;
+			case '\n':
+				escape = "\\n";
+				break;
+			case '\r':
+				escape = "\\r";
+				break;
+			case '\t':
+				escape = "\\t";
+				break;
+			case '\b':
+				escape = "\\b";
+				break;
+			case '\f':
+				escape = "\\f";
+				break;
+			default:
+				if (!escapeUnicode) {
+					continue;
 				}
-			} else if (cInt >= 0x10000 && cInt <= 0x10FFFF) {
-				if (escapeUnicode) {
-					appendable.append("\\U");
-					appendable.append(toHexString(cInt, 8));
-				} else {
-					appendable.append(c);
-				}
+				escape = null;
+			}
+
+			appendUnescaped(label, appendable, runStart, i);
+			if (escape != null) {
+				appendable.append(escape);
 			} else {
-				appendable.append(c);
+				appendable.append("\\u").append(toHexString(c, 4));
+			}
+			runStart = i + 1;
+		}
+		appendUnescaped(label, appendable, runStart, labelLength);
+	}
+
+	private static void appendUnescaped(String str, Appendable appendable, int start, int end) throws IOException {
+		if (start < end) {
+			if (appendable instanceof Writer) {
+				// Writer.append(CharSequence, int, int) creates a temporary subsequence.
+				((Writer) appendable).write(str, start, end - start);
+			} else {
+				appendable.append(str, start, end);
 			}
 		}
 	}
