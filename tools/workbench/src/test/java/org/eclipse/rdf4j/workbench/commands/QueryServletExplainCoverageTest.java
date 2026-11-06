@@ -202,9 +202,10 @@ class QueryServletExplainCoverageTest {
 				.encodeToString("alice:secret".getBytes(StandardCharsets.UTF_8)));
 		when(request.getAttribute(ServerCredentials.class.getName() + ".current")).thenReturn(credentials);
 
-		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, SavedQueryIdentity.owner(request, null))).thenReturn(true);
-		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query")))
+		String currentOwner = SavedQueryIdentity.owner(request, null);
+		when(storage.selectReadableSavedQuery(anyString(), eq("owner"), eq("saved-query"), eq(currentOwner)))
+				.thenReturn(queryId);
+		when(storage.getReadableQueryText(queryId, currentOwner))
 				.thenThrow(new RepositoryException("storage boom"));
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);

@@ -536,8 +536,8 @@ public class QueryServletTest {
 	public void savedQueryReadsDoNotTrustTheServerCredentialsCookie() throws Exception {
 		QueryStorage storage = prepareSave("false", null);
 		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:private");
-		when(storage.selectSavedQuery(anyString(), eq("alice"), eq("private-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, "")).thenReturn(false);
+		when(storage.selectReadableSavedQuery(anyString(), eq("alice"), eq("private-query"), eq("")))
+				.thenThrow(new BadRequestException("Current user may not read the given query."));
 		MockHttpServletRequest rawRequest = new MockHttpServletRequest("POST", "/query");
 		rawRequest.addParameter("action", "edit");
 		rawRequest.addParameter("ref", "id");
@@ -551,7 +551,7 @@ public class QueryServletTest {
 		assertThatThrownBy(() -> servlet.doPost(request, response))
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("Current user may not read the given query.");
-		verify(storage).canRead(queryId, "");
+		verify(storage).selectReadableSavedQuery(anyString(), eq("alice"), eq("private-query"), eq(""));
 	}
 
 	private static Cookie credentialsCookie(String user, String password) {
@@ -583,7 +583,7 @@ public class QueryServletTest {
 			pageServlet.setRepository(repository);
 			pageServlet.setCookieHandler(mock(CookieHandler.class));
 			QueryStorage storage = mock(QueryStorage.class);
-			when(storage.selectSavedQuery(anyString(), anyString(), eq("deleted-query")))
+			when(storage.selectReadableSavedQuery(anyString(), anyString(), eq("deleted-query"), anyString()))
 					.thenThrow(new BadRequestException("Could not find query entry in storage."));
 			pageServlet.substituteQueryStorage(storage);
 			MockHttpServletRequest rawRequest = new MockHttpServletRequest("POST", "/query");
@@ -1000,11 +1000,65 @@ public class QueryServletTest {
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		QueryStorage storage = mock(QueryStorage.class);
 		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:readable");
-		when(storage.selectSavedQuery(anyString(), anyString(), eq("test save name"))).thenReturn(queryId);
-		when(storage.canRead(queryId, "")).thenReturn(true);
-		when(storage.getQueryText(any(), anyString(), eq("test save name"))).thenReturn(longQuery);
+		when(storage.selectReadableSavedQuery(anyString(), anyString(), eq("test save name"), eq("")))
+				.thenReturn(queryId);
+		when(storage.getReadableQueryText(queryId, "")).thenReturn(longQuery);
 		servlet.substituteQueryStorage(storage);
 		assertThat(servlet.getQueryText(request)).isEqualTo(longQuery);
+	}
+
+	@Test
+	public void duplicateNameMustNotReturnTextFromAnotherQueryAfterReadCheck() throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn("report");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
+		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
+		when(request.getParameter("owner")).thenReturn("alice");
+		mockSignedIn(request, "bob", "secret");
+
+		QueryStorage storage = mock(QueryStorage.class);
+		IRI sharedQuery = SimpleValueFactory.getInstance().createIRI("urn:query:shared");
+		String currentOwner = SavedQueryIdentity.owner(request, null);
+		String sharedText = "ASK { <urn:shared> <urn:p> <urn:o> }";
+		String privateText = "ASK { <urn:private> <urn:p> <urn:o> }";
+		when(storage.selectReadableSavedQuery(anyString(), eq("alice"), eq("report"), eq(currentOwner)))
+				.thenReturn(sharedQuery);
+		// A duplicate (repository, owner, name) can make the second storage lookup choose a different record.
+		when(storage.getQueryText(anyString(), eq("alice"), eq("report"))).thenReturn(privateText);
+		when(storage.getReadableQueryText(sharedQuery, currentOwner))
+				.thenReturn(sharedText);
+		servlet.substituteQueryStorage(storage);
+
+		assertThat(servlet.getQueryText(request)).isEqualTo(sharedText);
+		verify(storage, never()).getQueryText(anyString(), anyString(), anyString());
+	}
+
+	@Test
+	public void sharedDuplicateRemainsReadableWhenPrivateRecordWasSavedFirst() throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(true);
+		when(request.getParameter(QueryServlet.QUERY)).thenReturn("report");
+		when(request.isParameterPresent(QueryServlet.REF)).thenReturn(true);
+		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
+		when(request.getParameter("owner")).thenReturn("alice");
+		mockSignedIn(request, "bob", "secret");
+
+		QueryStorage storage = mock(QueryStorage.class);
+		IRI privateQuery = SimpleValueFactory.getInstance().createIRI("urn:query:private");
+		IRI sharedQuery = SimpleValueFactory.getInstance().createIRI("urn:query:shared");
+		String currentOwner = SavedQueryIdentity.owner(request, null);
+		when(storage.selectSavedQuery(anyString(), eq("alice"), eq("report"))).thenReturn(privateQuery);
+		when(storage.getReadableQueryText(privateQuery, currentOwner))
+				.thenThrow(new BadRequestException("Current user may not read the given query."));
+		when(storage.selectReadableSavedQuery(anyString(), eq("alice"), eq("report"), eq(currentOwner)))
+				.thenReturn(sharedQuery);
+		when(storage.getReadableQueryText(sharedQuery, currentOwner))
+				.thenReturn("ASK { <urn:shared> <urn:p> <urn:o> }");
+		servlet.substituteQueryStorage(storage);
+
+		assertThat(servlet.getQueryText(request)).isEqualTo("ASK { <urn:shared> <urn:p> <urn:o> }");
+		verify(storage, never()).selectSavedQuery(anyString(), anyString(), anyString());
 	}
 
 	@Test
@@ -1148,9 +1202,11 @@ public class QueryServletTest {
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("explain")).thenReturn("Optimized");
 		when(request.getParameter("explain-format")).thenReturn("text");
-		when(storage.selectSavedQuery(anyString(), eq("other-user"), eq("private-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, SavedQueryIdentity.owner(request, null))).thenReturn(false);
-		when(storage.getQueryText(anyString(), eq("other-user"), eq("private-query"))).thenReturn(SHORT_QUERY);
+		String currentOwner = SavedQueryIdentity.owner(request, null);
+		when(storage.selectReadableSavedQuery(anyString(), eq("other-user"), eq("private-query"), eq(currentOwner)))
+				.thenThrow(new BadRequestException("Current user may not read the given query."));
+		when(storage.getReadableQueryText(queryId, currentOwner))
+				.thenReturn(SHORT_QUERY);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
 		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
@@ -1163,7 +1219,8 @@ public class QueryServletTest {
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("Current user may not read the given query.");
 
-		verify(storage).canRead(queryId, SavedQueryIdentity.owner(request, null));
+		verify(storage).selectReadableSavedQuery(anyString(), eq("other-user"), eq("private-query"),
+				eq(currentOwner));
 		verify(repository, never()).getConnection();
 	}
 
@@ -1184,9 +1241,11 @@ public class QueryServletTest {
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("private-query");
 		when(request.getParameter("owner")).thenReturn("other-user");
 		mockSignedIn(request, "current-user", "secret");
-		when(storage.selectSavedQuery(anyString(), eq("other-user"), eq("private-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, SavedQueryIdentity.owner(request, null))).thenReturn(false);
-		when(storage.getQueryText(anyString(), eq("other-user"), eq("private-query"))).thenReturn(SHORT_QUERY);
+		String currentOwner = SavedQueryIdentity.owner(request, null);
+		when(storage.selectReadableSavedQuery(anyString(), eq("other-user"), eq("private-query"), eq(currentOwner)))
+				.thenThrow(new BadRequestException("Current user may not read the given query."));
+		when(storage.getReadableQueryText(queryId, currentOwner))
+				.thenReturn(SHORT_QUERY);
 
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
@@ -1194,8 +1253,9 @@ public class QueryServletTest {
 		assertThatThrownBy(() -> servlet.service(request, response))
 				.isInstanceOf(BadRequestException.class)
 				.hasMessage("Current user may not read the given query.");
-		verify(storage).canRead(queryId, SavedQueryIdentity.owner(request, null));
-		verify(storage, never()).getQueryText(anyString(), anyString(), anyString());
+		verify(storage).selectReadableSavedQuery(anyString(), eq("other-user"), eq("private-query"),
+				eq(currentOwner));
+		verify(storage, never()).getReadableQueryText(any(), anyString());
 	}
 
 	@Test
@@ -1906,8 +1966,8 @@ public class QueryServletTest {
 				IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:saved");
 				QueryStorage storage = mock(QueryStorage.class);
 				policyServlet.substituteQueryStorage(storage);
-				when(storage.selectSavedQuery(anyString(), eq(""), eq("saved-query"))).thenReturn(queryId);
-				when(storage.canRead(queryId, "")).thenReturn(true);
+				when(storage.selectReadableSavedQuery(anyString(), eq(""), eq("saved-query"), eq("")))
+						.thenReturn(queryId);
 				when(storage.getQueryText(anyString(), eq(""), eq("saved-query"))).thenReturn(SHORT_QUERY);
 			}
 
@@ -2045,8 +2105,8 @@ public class QueryServletTest {
 			IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:saved-explain");
 			QueryStorage storage = mock(QueryStorage.class);
 			policyServlet.substituteQueryStorage(storage);
-			when(storage.selectSavedQuery(anyString(), eq(""), eq("saved-query"))).thenReturn(queryId);
-			when(storage.canRead(queryId, "")).thenReturn(true);
+			when(storage.selectReadableSavedQuery(anyString(), eq(""), eq("saved-query"), eq("")))
+					.thenReturn(queryId);
 			when(storage.getQueryText(anyString(), eq(""), eq("saved-query"))).thenReturn(SHORT_QUERY);
 		}
 
