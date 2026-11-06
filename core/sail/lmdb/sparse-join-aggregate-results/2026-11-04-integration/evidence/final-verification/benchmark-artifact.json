@@ -1,7 +1,0 @@
-{
-  "path": "core/sail/lmdb/target/jmh-benchmarks.jar",
-  "bytes": 100040378,
-  "sha256": "2de560b99e7fd9cfdb5e71dfd02579e17935f488cc6d5d152298148bc7a0963f",
-  "build_log": "sparse-integration-complete-install.log",
-  "note": "Artifact identified for final measurements; JAR bytes are not included in the source/evidence bundle."
-}

@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeStrategyArbiterTest
--------------------------------------------------------------------------------
-Tests run: 90, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.715 s -- in org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeStrategyArbiterTest

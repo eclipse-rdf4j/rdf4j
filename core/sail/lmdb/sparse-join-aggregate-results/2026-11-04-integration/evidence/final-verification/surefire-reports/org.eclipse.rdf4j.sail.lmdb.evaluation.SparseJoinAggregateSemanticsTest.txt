@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateSemanticsTest
--------------------------------------------------------------------------------
-Tests run: 10, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.232 s -- in org.eclipse.rdf4j.sail.lmdb.evaluation.SparseJoinAggregateSemanticsTest
