@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lang;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -523,6 +524,10 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			boolean previousValueGuardsSupported = valueGuardsSupported;
 			valueGuardsSupported = false;
 			try {
+				SlotPlan emptyFiniteWitness = compileEmptyFiniteWitness(exists.getSubQuery());
+				if (emptyFiniteWitness != null) {
+					return new ExistsFilter(emptyFiniteWitness);
+				}
 				NativeBooleanFilter direct = compileDirectExists(exists);
 				if (direct != null) {
 					return direct;
@@ -719,6 +724,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 
 	private NativeBooleanFilter compileProjectedBoolean(ValueExpr expression, ConditionBindingScope bindingScope) {
 		if (expression instanceof Exists exists) {
+			SlotPlan emptyFiniteWitness = compileEmptyFiniteWitness(exists.getSubQuery());
+			if (emptyFiniteWitness != null) {
+				return new ExistsFilter(emptyFiniteWitness,
+						bindingScope.retainsAllBindings() ? null : bindingScope.bindingNames());
+			}
 			NativeBooleanFilter direct = compileDirectExists(exists, bindingScope);
 			if (direct != null) {
 				return direct;
@@ -747,6 +757,14 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 					: new BooleanCombinationFilter(left, right, expression instanceof And);
 		}
 		return null;
+	}
+
+	/**
+	 * The direct EXISTS compiler can bypass tuple compilation for its single-pattern fast path. Run the exact finite
+	 * join proof first so an empty pure witness is visible to both direct and scoped EXISTS lowering.
+	 */
+	SlotPlan compileEmptyFiniteWitness(TupleExpr expr) {
+		return expr.getClass() == Join.class ? compileJoinWithAbsentFiniteValues((Join) expr) : null;
 	}
 
 	/**

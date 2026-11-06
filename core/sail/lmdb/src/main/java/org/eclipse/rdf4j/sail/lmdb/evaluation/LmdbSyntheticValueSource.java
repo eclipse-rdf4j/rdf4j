@@ -459,6 +459,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean tryRetainDictionaryTermMembership() {
+		return delegate.tryRetainDictionaryTermMembership();
+	}
+
+	@Override
 	public LmdbNativeValueCodec nativeValueCodec() {
 		// Synthetic ids are resolved by this facade, but stored ids still need the worker's backing dictionary codec.
 		// Delegate once here so WorkerContext.forSource can bind every worker evaluator to its own sibling codec.

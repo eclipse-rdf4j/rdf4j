@@ -351,17 +351,15 @@ final class LmdbQueryValueIdentity {
 								&& nativeType != LmdbBNode.class) || !nativeValue.isInitialized()) {
 							return null; // native nested semantic-version traversal is not a flat readiness witness
 						}
+						Value[] loadedChildren = safeLoadedNativeChildren(nativeValue, nativeType);
+						if (loadedChildren == null) {
+							return null;
+						}
 						version = nativeValue.getSemanticVersion();
 						if (version == LmdbValue.UNKNOWN_ID) {
 							return null;
 						}
-						ArrayList<Value> loaded = new ArrayList<>();
-						nativeValue.visitValueChildren(child -> {
-							if (child != null) {
-								loaded.add(child);
-							}
-						});
-						children = loaded.toArray(Value[]::new);
+						children = loadedChildren;
 					} else {
 						if (!ordinary(value)) {
 							return null;
@@ -437,6 +435,38 @@ final class LmdbQueryValueIdentity {
 		private LmdbQueryValueIdentity child(Value original, Value ready, Value child) {
 			return original == ready ? captured.get(child) : new Capture().of(child);
 		}
+	}
+
+	/**
+	 * Visits the exact loaded native value before asking it for a semantic version. A parent's version implementation
+	 * may inspect child versions, so every raw child must already be a known immutable built-in or an admitted exact
+	 * native value. Today only a literal has one child, its datatype IRI.
+	 */
+	private static Value[] safeLoadedNativeChildren(LmdbValue nativeValue, Class<?> nativeType) {
+		ArrayList<Value> children = new ArrayList<>(1);
+		nativeValue.visitValueChildren(children::add);
+		if (nativeType == LmdbLiteral.class) {
+			if (children.size() != 1 || !(children.get(0) instanceof IRI)) {
+				return null;
+			}
+		} else if (!children.isEmpty()) {
+			return null;
+		}
+
+		for (Value child : children) {
+			if (child == null) {
+				return null;
+			}
+			if (child instanceof LmdbValue) {
+				Class<?> childType = child.getClass();
+				if (childType != LmdbIRI.class && childType != LmdbLiteral.class && childType != LmdbBNode.class) {
+					return null;
+				}
+			} else if (!ordinary(child)) {
+				return null;
+			}
+		}
+		return children.toArray(Value[]::new);
 	}
 
 	private enum NumericFamily {

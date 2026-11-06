@@ -76,6 +76,19 @@ public interface NativeLmdbQuerySource {
 		}
 	}
 
+	/**
+	 * Optionally retains dictionary-term membership for this query source's current paired read view. A successful
+	 * result certifies that subsequent dictionary lookups for the same source continue to use the retained mapping;
+	 * {@code false} declines to certify the mapping. Composite sources may have retained some earlier child views
+	 * before a later contributing source declines, so this operation is intended only after a complete finite candidate
+	 * is already known absent. Implementations must establish retention under the dictionary's native read barrier.
+	 * Synthetic and composite sources may opt in only by delegating to every source whose dictionary lookup or
+	 * statements contribute to the proof. The default is deliberately conservative.
+	 */
+	default boolean tryRetainDictionaryTermMembership() throws QueryEvaluationException {
+		return false;
+	}
+
 	Value lazyValue(long id) throws QueryEvaluationException;
 
 	/** Materializes a value using the complete static position mask of its lexical binding. */

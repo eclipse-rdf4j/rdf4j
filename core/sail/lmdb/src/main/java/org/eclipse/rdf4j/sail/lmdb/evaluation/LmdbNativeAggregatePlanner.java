@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -60,6 +61,7 @@ import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -2014,6 +2016,10 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof Join) {
 			Join join = (Join) expr;
+			SlotPlan finiteJoinAbsence = compileJoinWithAbsentFiniteValues(join);
+			if (finiteJoinAbsence != null) {
+				return finiteJoinAbsence;
+			}
 			TupleExpr leftArg = join.getLeftArg();
 			TupleExpr rightArg = join.getRightArg();
 			boolean rightUsesGraph = GraphFrameMapping.forSubqueries(rightArg, leftArg).length > 0;
@@ -2190,6 +2196,17 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof Filter) {
 			Filter filter = (Filter) expr;
+			if (filter.getCondition().getClass() == Not.class) {
+				ValueExpr operand = ((Not) filter.getCondition()).getArg();
+				if (operand.getClass() == Exists.class) {
+					SlotPlan witness = compileEmptyFiniteWitness(((Exists) operand).getSubQuery());
+					if (witness == EmptyPlan.INSTANCE) {
+						// The exact pure witness is empty for every entry row. Removing this standalone two-valued
+						// predicate leaves the filter input intact and does not skip effects in that input.
+						return compileTupleOrIsland(filter.getArg(), duplicateInsensitive);
+					}
+				}
+			}
 			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
 				Set<String> previousRequired = requiredAggregateNames;
 				requiredAggregateNames = withRequired(previousRequired, filterConditionInputNames(filter));

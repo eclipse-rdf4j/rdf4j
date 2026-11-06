@@ -562,11 +562,14 @@ class LmdbNativeKernelLoweringTest {
 		long secondPredicate = 12L << 7 | 1L << 1;
 		PatternPlan firstType = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(clazz), Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, 10D);
-		PatternPlan secondType = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(clazz), Term.unbound(),
+		PatternPlan secondType = new PatternPlan(Term.slot(0), Term.constant(PRED), Term.constant(clazz),
+				Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, 10D);
-		PatternPlan firstArm = new PatternPlan(Term.slot(0), Term.constant(firstPredicate), Term.slot(1), Term.unbound(),
+		PatternPlan firstArm = new PatternPlan(Term.slot(0), Term.constant(firstPredicate), Term.slot(1),
+				Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, 10D);
-		PatternPlan secondArm = new PatternPlan(Term.slot(0), Term.constant(secondPredicate), Term.slot(2), Term.unbound(),
+		PatternPlan secondArm = new PatternPlan(Term.slot(0), Term.constant(secondPredicate), Term.slot(2),
+				Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, 10D);
 		UnionPlan union = new UnionPlan(
 				new MultiJoinPlan(new SlotPlan[] { firstType, firstArm }, new MaskedFilter[0]),
@@ -953,7 +956,7 @@ class LmdbNativeKernelLoweringTest {
 
 		assertNotNull(lowered, "a runtime OPTIONAL entry binding must remain inside the generated root");
 		String key = lowered.kernel.shapeKey();
-		assertTrue(key.contains("ec(v2,c0);ba(c0->2);"), key);
+		assertTrue(key.contains("ec(v2,c0);ba(c0->2:false);"), key);
 		assertArrayEquals(new long[] { 777L }, lowered.bindings.constants);
 	}
 

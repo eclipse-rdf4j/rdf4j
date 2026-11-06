@@ -76,6 +76,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -224,6 +225,31 @@ class LmdbBuiltinValueCacheAdmissionTest {
 				() -> assertEquals(0, predicate.getterCalls.get(), "nested triple predicate must remain opaque"),
 				() -> assertFalse(LmdbCacheValueCopies.semanticIdentityReady(constantSource(typed))),
 				() -> assertEquals(0, datatype.getterCalls.get(), "AST qualification must remain non-observing"));
+	}
+
+	@Test
+	void nestedUnknownNativeDatatypeIsRejectedBeforeVersionCallback() {
+		ObservedNativeIri datatype = new ObservedNativeIri();
+		LmdbLiteral literal = new LmdbLiteral(new ValueStoreRevision.Default(null), "typed", datatype);
+		datatype.observe = true;
+
+		assertNull(new LmdbQueryValueIdentity.Capture(true).of(literal));
+		assertEquals(0, datatype.getterCalls.get(),
+				"parent native version checks must not dispatch to an untrusted nested datatype");
+	}
+
+	@Test
+	void initializedPrivateNativeLiteralWithKnownDatatypeRemainsCapturable() {
+		ValueStoreRevision revision = new ValueStoreRevision.Default(null);
+		LmdbIRI datatype = new LmdbIRI(revision, CoreDatatype.XSD.STRING.getIri().stringValue());
+		LmdbLiteral literal = new LmdbLiteral(revision, "typed", datatype);
+
+		LmdbQueryValueIdentity identity = new LmdbQueryValueIdentity.Capture(true).of(literal);
+
+		assertNotNull(identity);
+		assertEquals("typed", ((Literal) identity.value()).getLabel());
+		assertEquals(CoreDatatype.XSD.STRING.getIri().stringValue(),
+				((Literal) identity.value()).getDatatype().stringValue());
 	}
 
 	@Test

@@ -17,9 +17,9 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.allValueProbeSafeIds;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.valueProbeSafeId;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
@@ -43,13 +43,40 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentKeyability;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.lmdb.LmdbCacheValueCopies;
 
 @Experimental
 abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatternCompiler {
+	private static final class PureFiniteJoinInspection {
+		static final PureFiniteJoinInspection NOT_PURE = new PureFiniteJoinInspection(false, null, null, null,
+				Set.of());
+
+		final boolean pure;
+		final PureFiniteJoinInspection left;
+		final PureFiniteJoinInspection right;
+		final BindingSetAssignment assignment;
+		final Set<String> statementVariables;
+		boolean absenceProofChecked;
+		SlotPlan absenceProof;
+
+		PureFiniteJoinInspection(boolean pure, PureFiniteJoinInspection left, PureFiniteJoinInspection right,
+				BindingSetAssignment assignment, Set<String> statementVariables) {
+			this.pure = pure;
+			this.left = left;
+			this.right = right;
+			this.assignment = assignment;
+			this.statementVariables = statementVariables;
+		}
+	}
+
+	private record FiniteJoinInspectionFrame(TupleExpr expr, boolean expanded) {
+	}
+
 	private record DomainDrivenPlan(SlotPlan plan, boolean driven) {
 	}
 
@@ -58,6 +85,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 
 	boolean compilingValuesFallback;
 	final IdentityHashMap<TupleExpr, SlotPlan> valuesFallbackPlans = new IdentityHashMap<>();
+	private final IdentityHashMap<TupleExpr, PureFiniteJoinInspection> finiteJoinInspectionCache = new IdentityHashMap<>();
 	private Set<String> valuesFallbackNames;
 	private TupleExpr valuesFallbackRoot;
 
@@ -66,7 +94,9 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 	}
 
 	private SlotPlan guardedValuesFold(SlotPlan folded, TupleExpr original, String[] inputNames) {
-		if (folded == null) { return null; }
+		if (folded == null) {
+			return null;
+		}
 		Set<String> previousRequired = requiredAggregateNames;
 		boolean previousFallback = compilingValuesFallback;
 		boolean previousValueGuards = valueGuardsSupported;
@@ -76,14 +106,18 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			valuesFallbackRoot = null;
 			valuesFallbackNames = null;
 			var observations = org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.tupleBindingObservationDomain(root);
-			if (!observations.known()) { return null; }
+			if (!observations.known()) {
+				return null;
+			}
 			java.util.HashSet<String> names = new java.util.HashSet<>(observations.names());
 			names.addAll(root.getBindingNames());
 			names.addAll(previousRequired);
 			valuesFallbackNames = Set.copyOf(names);
 			valuesFallbackRoot = root;
 		}
-		if (!valuesFallbackNames.containsAll(previousRequired)) { return null; }
+		if (!valuesFallbackNames.containsAll(previousRequired)) {
+			return null;
+		}
 		try {
 			compilingValuesFallback = true;
 			requiredAggregateNames = valuesFallbackNames;
@@ -91,9 +125,13 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			// not add a late value guard to the enclosing fast plan.
 			valueGuardsSupported = false;
 			SlotPlan retained = compileTuple(original, false);
-			if (retained == null) { return null; }
+			if (retained == null) {
+				return null;
+			}
 			int[] inputs = new int[inputNames.length];
-			for (int i = 0; i < inputNames.length; i++) { inputs[i] = slot(inputNames[i]); }
+			for (int i = 0; i < inputNames.length; i++) {
+				inputs[i] = slot(inputNames[i]);
+			}
 			return new NativeValuesFoldPlan(folded, retained, inputNames, inputs);
 		} finally {
 			requiredAggregateNames = previousRequired;
@@ -106,6 +144,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		valuesFallbackPlans.clear();
 		valuesFallbackNames = null;
 		valuesFallbackRoot = null;
+		finiteJoinInspectionCache.clear();
 	}
 
 	final boolean valuesFallbackNamesMatch() {
@@ -114,7 +153,9 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 
 	/** A target read/produced outside its VALUES occurrence cannot be removed as a fixed domain. */
 	private static boolean independentValuesTarget(TupleExpr data, BindingSetAssignment values, String name) {
-		if (data == values) { return true; }
+		if (data == values) {
+			return true;
+		}
 		if (data instanceof Join join) {
 			return independentValuesTarget(join.getLeftArg(), values, name)
 					&& independentValuesTarget(join.getRightArg(), values, name);
@@ -205,6 +246,154 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		return compiled == null || !compiled.driven ? null : compiled.plan;
 	}
 
+	/**
+	 * Proves a complete pure join empty when one stable finite assignment supplies only safe terms that the current
+	 * query-owned dictionary cannot resolve and an ordinary statement pattern reads that binding. The lookup scope
+	 * brackets all negative observations so an in-flight dictionary change cannot be mistaken for absence.
+	 */
+	SlotPlan compileJoinWithAbsentFiniteValues(Join join) {
+		if (!islandsEnabled) {
+			return null;
+		}
+		PureFiniteJoinInspection inspection = inspectPureFiniteJoin(join);
+		if (!inspection.pure) {
+			return null;
+		}
+		if (join.getParentNode() instanceof Join parent && inspectPureFiniteJoin(parent).pure) {
+			// The maximal pure join ancestor owns this complete proof. Its memoized inspection prevents repeated
+			// subtree walks as the ordinary compiler descends a left-deep join tree.
+			return null;
+		}
+		if (inspection.absenceProofChecked) {
+			return inspection.absenceProof;
+		}
+		inspection.absenceProofChecked = true;
+		if (!canDiscardWithoutEvaluation(join)) {
+			return null;
+		}
+
+		PureFiniteJoinContents contents = collectPureFiniteJoinContents(inspection);
+		if (contents.assignments.isEmpty() || contents.statementVariables.isEmpty()) {
+			return null;
+		}
+		Object lookupScope = source.valueLookupScope();
+		if (lookupScope == null) {
+			return null;
+		}
+
+		for (BindingSetAssignment values : contents.assignments) {
+			for (String variable : values.getBindingNames()) {
+				if (!contents.statementVariables.contains(variable)) {
+					continue;
+				}
+				boolean sawRow = false;
+				boolean allAbsent = true;
+				for (BindingSet row : values.getBindingSets()) {
+					sawRow = true;
+					Value value = row.getValue(variable);
+					Value probeValue = LmdbCacheValueCopies.copyValueForFiniteAbsenceProof(value);
+					if (probeValue == null || !termSafeAbsenceProof(probeValue)
+							|| idOf(probeValue, layout.positionMask(variable)) != UNKNOWN) {
+						allAbsent = false;
+						break;
+					}
+				}
+				if (sawRow && allAbsent) {
+					if (source.tryRetainDictionaryTermMembership()
+							&& source.valueLookupScope() == lookupScope) {
+						inspection.absenceProof = SlotPlan.empty();
+					}
+					return inspection.absenceProof;
+				}
+			}
+		}
+		return null;
+	}
+
+	private PureFiniteJoinInspection inspectPureFiniteJoin(TupleExpr root) {
+		PureFiniteJoinInspection known = finiteJoinInspectionCache.get(root);
+		if (known != null) {
+			return known;
+		}
+		ArrayDeque<FiniteJoinInspectionFrame> pending = new ArrayDeque<>();
+		pending.push(new FiniteJoinInspectionFrame(root, false));
+		while (!pending.isEmpty()) {
+			FiniteJoinInspectionFrame frame = pending.pop();
+			TupleExpr expr = frame.expr();
+			if (finiteJoinInspectionCache.containsKey(expr)) {
+				continue;
+			}
+			if (!frame.expanded() && expr.getClass() == Join.class) {
+				Join join = (Join) expr;
+				pending.push(new FiniteJoinInspectionFrame(expr, true));
+				if (!finiteJoinInspectionCache.containsKey(join.getRightArg())) {
+					pending.push(new FiniteJoinInspectionFrame(join.getRightArg(), false));
+				}
+				if (!finiteJoinInspectionCache.containsKey(join.getLeftArg())) {
+					pending.push(new FiniteJoinInspectionFrame(join.getLeftArg(), false));
+				}
+				continue;
+			}
+
+			PureFiniteJoinInspection inspection;
+			if (frame.expanded()) {
+				Join join = (Join) expr;
+				PureFiniteJoinInspection left = finiteJoinInspectionCache.get(join.getLeftArg());
+				PureFiniteJoinInspection right = finiteJoinInspectionCache.get(join.getRightArg());
+				inspection = left.pure && right.pure
+						? new PureFiniteJoinInspection(true, left, right, null, Set.of())
+						: PureFiniteJoinInspection.NOT_PURE;
+			} else if (expr.getClass() == StatementPattern.class) {
+				Set<String> variables = new java.util.HashSet<>();
+				for (Var var : ((StatementPattern) expr).getVarList()) {
+					if (var.getClass() != Var.class) {
+						variables = null;
+						break;
+					}
+					if (!var.hasValue() && !var.isAnonymous() && var.getName() != null) {
+						variables.add(var.getName());
+					}
+				}
+				inspection = variables == null ? PureFiniteJoinInspection.NOT_PURE
+						: new PureFiniteJoinInspection(true, null, null, null, Set.copyOf(variables));
+			} else if (expr.getClass() == BindingSetAssignment.class) {
+				BindingSetAssignment values = (BindingSetAssignment) expr;
+				inspection = BindingSetAssignmentKeyability.canInspect(values) && hasOnlyDeclaredColumns(values)
+						? new PureFiniteJoinInspection(true, null, null, values, Set.of())
+						: PureFiniteJoinInspection.NOT_PURE;
+			} else {
+				inspection = PureFiniteJoinInspection.NOT_PURE;
+			}
+			finiteJoinInspectionCache.put(expr, inspection);
+		}
+		return finiteJoinInspectionCache.get(root);
+	}
+
+	private static PureFiniteJoinContents collectPureFiniteJoinContents(PureFiniteJoinInspection root) {
+		PureFiniteJoinContents contents = new PureFiniteJoinContents();
+		ArrayDeque<PureFiniteJoinInspection> pending = new ArrayDeque<>();
+		pending.push(root);
+		while (!pending.isEmpty()) {
+			PureFiniteJoinInspection inspection = pending.pop();
+			if (inspection.assignment != null) {
+				contents.assignments.add(inspection.assignment);
+			}
+			contents.statementVariables.addAll(inspection.statementVariables);
+			if (inspection.right != null) {
+				pending.push(inspection.right);
+			}
+			if (inspection.left != null) {
+				pending.push(inspection.left);
+			}
+		}
+		return contents;
+	}
+
+	private static final class PureFiniteJoinContents {
+		final ArrayList<BindingSetAssignment> assignments = new ArrayList<>();
+		final Set<String> statementVariables = new java.util.HashSet<>();
+	}
+
 	private BindingSetAssignment firstOptimizerExactValuesLeaf(TupleExpr expr) {
 		if (expr instanceof BindingSetAssignment values) {
 			return values.getLongMetricPlanned(TelemetryMetricNames.OPTIMIZER_EXACT_VALUES) == 1L
@@ -251,23 +440,27 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		}
 		if (expr instanceof Join join) {
 			Set<String> shared = exactJoinRequiredNames(join);
-			if (shared == null) { return null; }
+			if (shared == null) {
+				return null;
+			}
 			Set<String> previousRequired = requiredAggregateNames;
 			try {
 				requiredAggregateNames = withRequired(previousRequired, shared);
-			DomainDrivenPlan left = compileJoinTreeWithoutExactValues(join.getLeftArg(), exactValues, domain,
-					logicalProbeCount, duplicateInsensitive);
-			DomainDrivenPlan right = compileJoinTreeWithoutExactValues(join.getRightArg(), exactValues, domain,
-					logicalProbeCount, duplicateInsensitive);
-			if (left == null || right == null) {
-				return null;
-			}
-			if (right.driven && !left.driven) {
-				return new DomainDrivenPlan(SlotPlan.join(right.plan, left.plan), true);
-			}
-			return new DomainDrivenPlan(SlotPlan.join(left.plan, right.plan), left.driven || right.driven);
+				DomainDrivenPlan left = compileJoinTreeWithoutExactValues(join.getLeftArg(), exactValues, domain,
+						logicalProbeCount, duplicateInsensitive);
+				DomainDrivenPlan right = compileJoinTreeWithoutExactValues(join.getRightArg(), exactValues, domain,
+						logicalProbeCount, duplicateInsensitive);
+				if (left == null || right == null) {
+					return null;
+				}
+				if (right.driven && !left.driven) {
+					return new DomainDrivenPlan(SlotPlan.join(right.plan, left.plan), true);
+				}
+				return new DomainDrivenPlan(SlotPlan.join(left.plan, right.plan), left.driven || right.driven);
 
-			} finally { requiredAggregateNames = previousRequired; }
+			} finally {
+				requiredAggregateNames = previousRequired;
+			}
 		}
 		if (expr.getBindingNames().contains(domain.variable)) {
 			SlotPlan driven = compileTupleWithConstantFilter(expr, domain.variable, domain.ids, domain.values,
@@ -385,7 +578,8 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 				feedback.setConditionBindingScope(FilterBindingScope.resolve(leaf.wrapper()));
 				PlanningGraphDomains.compose(feedback.getArg());
 				PlanningGraphDomains.compose(feedback);
-				return guardedValuesFold(SlotPlan.filter(plan.plan(), recordFoldedValuesFilterOutcomes(feedback, valueSet, leaf.wrapper()),
+				return guardedValuesFold(SlotPlan.filter(plan.plan(),
+						recordFoldedValuesFilterOutcomes(feedback, valueSet, leaf.wrapper()),
 						1L << slot(wrapperFold.filteredVariable)), join, valuesVariable);
 			}
 			return guardedValuesFold(plan.plan(), join, valuesVariable);
@@ -533,14 +727,18 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 				return null;
 			}
 			var reads = FilterBindingScope.conditionBindingReads(filter.getCondition());
-			if (!reads.complete()) { return null; }
+			if (!reads.complete()) {
+				return null;
+			}
 			Set<String> previousRequired = requiredAggregateNames;
 			DomainDrivenPlan arg;
 			try {
 				requiredAggregateNames = withRequired(previousRequired, reads.bindingNames());
 				arg = compileFoldingValues(filter.getArg(), leaf, values, valuesVariable, folds,
 						wrapperFold, wrapperPushed, duplicateInsensitive);
-			} finally { requiredAggregateNames = previousRequired; }
+			} finally {
+				requiredAggregateNames = previousRequired;
+			}
 			if (arg == null) {
 				return null;
 			}
@@ -577,8 +775,10 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			feedback.setConditionBindingScope(FilterBindingScope.resolve(filter));
 			PlanningGraphDomains.compose(feedback.getArg());
 			PlanningGraphDomains.compose(feedback);
-			return new DomainDrivenPlan(SlotPlan.filter(data, recordFoldedValuesFilterOutcomes(feedback, valueSet, filter),
-					1L << slot(fold.filteredVariable)), false);
+			return new DomainDrivenPlan(
+					SlotPlan.filter(data, recordFoldedValuesFilterOutcomes(feedback, valueSet, filter),
+							1L << slot(fold.filteredVariable)),
+					false);
 		} finally {
 			requiredAggregateNames = previousRequired;
 		}
@@ -608,9 +808,12 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 	/** A specialized domain rewrite needs a complete observation proof before pruning either producer. */
 	private Set<String> exactJoinRequiredNames(Join join) {
 		var whole = org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.tupleBindingObservationDomain(join);
-		if (!whole.known()) { return null; }
+		if (!whole.known()) {
+			return null;
+		}
 		var left = org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.tupleBindingObservationDomain(join.getLeftArg());
-		var right = org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.tupleBindingObservationDomain(join.getRightArg());
+		var right = org.eclipse.rdf4j.query.algebra.helpers.TupleExprs
+				.tupleBindingObservationDomain(join.getRightArg());
 		java.util.HashSet<String> shared = new java.util.HashSet<>(left.names());
 		shared.retainAll(right.names());
 		return shared;
@@ -625,17 +828,21 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		if (expr instanceof Join) {
 			Join join = (Join) expr;
 			Set<String> shared = exactJoinRequiredNames(join);
-			if (shared == null) { return null; }
+			if (shared == null) {
+				return null;
+			}
 			Set<String> previousRequired = requiredAggregateNames;
 			try {
 				requiredAggregateNames = withRequired(previousRequired, shared);
-			SlotPlan left = compileJoinTreeWithoutValues(join.getLeftArg(), values, folded, duplicateInsensitive,
-					pushed);
-			SlotPlan right = compileJoinTreeWithoutValues(join.getRightArg(), values, folded, duplicateInsensitive,
-					pushed);
-			return left == null || right == null ? null : SlotPlan.join(left, right);
+				SlotPlan left = compileJoinTreeWithoutValues(join.getLeftArg(), values, folded, duplicateInsensitive,
+						pushed);
+				SlotPlan right = compileJoinTreeWithoutValues(join.getRightArg(), values, folded, duplicateInsensitive,
+						pushed);
+				return left == null || right == null ? null : SlotPlan.join(left, right);
 
-			} finally { requiredAggregateNames = previousRequired; }
+			} finally {
+				requiredAggregateNames = previousRequired;
+			}
 		}
 		if (!pushed[0] && expr.getBindingNames().contains(folded.filteredVariable)) {
 			SlotPlan constrained = compileTupleWithConstantFilter(expr, folded.filteredVariable, folded.ids,
@@ -693,7 +900,8 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		}
 		NativeBooleanFilter valueSet = new ValueSetFilter(source, slot(folded.filteredVariable), folded.ids,
 				folded.values);
-		return guardedValuesFold(SlotPlan.filter(data, recordFoldedValuesFilterOutcomes(feedbackFilterForValuesFold(dataExpr, filter), valueSet, filter),
+		return guardedValuesFold(SlotPlan.filter(data,
+				recordFoldedValuesFilterOutcomes(feedbackFilterForValuesFold(dataExpr, filter), valueSet, filter),
 				1L << slot(folded.filteredVariable)), original, folded.valuesVariable);
 	}
 
@@ -732,51 +940,61 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		if (expr instanceof Join) {
 			Join join = (Join) expr;
 			Set<String> shared = exactJoinRequiredNames(join);
-			if (shared == null) { return null; }
+			if (shared == null) {
+				return null;
+			}
 			Set<String> previousRequired = requiredAggregateNames;
 			try {
 				requiredAggregateNames = withRequired(previousRequired, shared);
-			SlotPlan leftConstrained = compileTupleWithConstantFilter(join.getLeftArg(), variable, ids, values,
-					duplicateInsensitive, exactFilterRewrite, exactProbeCount);
-			if (leftConstrained != null) {
-				SlotPlan right = compileTuple(join.getRightArg(), duplicateInsensitive);
-				return right == null ? null : SlotPlan.join(leftConstrained, right);
-			}
-			SlotPlan rightConstrained = compileTupleWithConstantFilter(join.getRightArg(), variable, ids, values,
-					duplicateInsensitive, exactFilterRewrite, exactProbeCount);
-			if (rightConstrained != null) {
-				SlotPlan left = compileTuple(join.getLeftArg(), duplicateInsensitive);
-				// The exact domain is the selective producer. Put it first so its reverse adjacency becomes a
-				// genuine sideways-information source instead of probing it once for every row produced by the
-				// unconstrained prefix. Inner joins are commutative under bag semantics too; the exact constant domain
-				// is deduplicated before this method, so this reordering preserves every statement multiplicity.
-				return left == null ? null : SlotPlan.join(rightConstrained, left);
-			}
-			return null;
+				SlotPlan leftConstrained = compileTupleWithConstantFilter(join.getLeftArg(), variable, ids, values,
+						duplicateInsensitive, exactFilterRewrite, exactProbeCount);
+				if (leftConstrained != null) {
+					SlotPlan right = compileTuple(join.getRightArg(), duplicateInsensitive);
+					return right == null ? null : SlotPlan.join(leftConstrained, right);
+				}
+				SlotPlan rightConstrained = compileTupleWithConstantFilter(join.getRightArg(), variable, ids, values,
+						duplicateInsensitive, exactFilterRewrite, exactProbeCount);
+				if (rightConstrained != null) {
+					SlotPlan left = compileTuple(join.getLeftArg(), duplicateInsensitive);
+					// The exact domain is the selective producer. Put it first so its reverse adjacency becomes a
+					// genuine sideways-information source instead of probing it once for every row produced by the
+					// unconstrained prefix. Inner joins are commutative under bag semantics too; the exact constant
+					// domain
+					// is deduplicated before this method, so this reordering preserves every statement multiplicity.
+					return left == null ? null : SlotPlan.join(rightConstrained, left);
+				}
+				return null;
 
-			} finally { requiredAggregateNames = previousRequired; }
+			} finally {
+				requiredAggregateNames = previousRequired;
+			}
 		}
 		if (expr instanceof Filter) {
 			Filter filter = (Filter) expr;
 			var reads = FilterBindingScope.conditionBindingReads(filter.getCondition());
-			if (!reads.complete()) { return null; }
+			if (!reads.complete()) {
+				return null;
+			}
 			Set<String> previousRequired = requiredAggregateNames;
 			try {
 				requiredAggregateNames = withRequired(previousRequired, reads.bindingNames());
-			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
-				return null;
-			}
-			SlotPlan arg = compileTupleWithConstantFilter(filter.getArg(), variable, ids, values, duplicateInsensitive,
-					exactFilterRewrite, exactProbeCount);
-			if (arg == null) {
-				return null;
-			}
-			NativeBooleanFilter condition = compileBoolean(filter.getCondition(), SlotPlan.assuredMask(arg));
-			return condition == null ? null
-					: SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
-							placeableFilterMask(filter));
+				if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
+					return null;
+				}
+				SlotPlan arg = compileTupleWithConstantFilter(filter.getArg(), variable, ids, values,
+						duplicateInsensitive,
+						exactFilterRewrite, exactProbeCount);
+				if (arg == null) {
+					return null;
+				}
+				NativeBooleanFilter condition = compileBoolean(filter.getCondition(), SlotPlan.assuredMask(arg));
+				return condition == null ? null
+						: SlotPlan.filter(arg, recordFilterOutcomes(filter, condition),
+								placeableFilterMask(filter));
 
-			} finally { requiredAggregateNames = previousRequired; }
+			} finally {
+				requiredAggregateNames = previousRequired;
+			}
 		}
 		if (expr instanceof Extension) {
 			Extension extension = (Extension) expr;
@@ -784,44 +1002,49 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			try {
 				java.util.HashSet<String> required = new java.util.HashSet<>(previousRequired);
 				for (ExtensionElem element : extension.getElements()) {
-					var reads = org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.conditionBindingDomain(element.getExpr());
-					if (!reads.known()) { return null; }
+					var reads = org.eclipse.rdf4j.query.algebra.helpers.TupleExprs
+							.conditionBindingDomain(element.getExpr());
+					if (!reads.known()) {
+						return null;
+					}
 					required.addAll(reads.names());
 				}
 				requiredAggregateNames = required;
-			SlotPlan arg = compileTupleWithConstantFilter(extension.getArg(), variable, ids, values,
-					duplicateInsensitive, exactFilterRewrite, exactProbeCount);
-			if (arg == null) {
-				return null;
-			}
-			CopyBinding[] copies = new CopyBinding[extension.getElements().size()];
-			for (int i = 0; i < copies.length; i++) {
-				ExtensionElem elem = extension.getElements().get(i);
-				ValueExpr expression = elem.getExpr();
-				if (expression instanceof Var) {
-					Var sourceVar = (Var) expression;
-					if (sourceVar.hasValue()) {
-						long id = idOf(sourceVar.getValue(), layout.positionMask(elem.getName()));
-						if (id == UNKNOWN) {
+				SlotPlan arg = compileTupleWithConstantFilter(extension.getArg(), variable, ids, values,
+						duplicateInsensitive, exactFilterRewrite, exactProbeCount);
+				if (arg == null) {
+					return null;
+				}
+				CopyBinding[] copies = new CopyBinding[extension.getElements().size()];
+				for (int i = 0; i < copies.length; i++) {
+					ExtensionElem elem = extension.getElements().get(i);
+					ValueExpr expression = elem.getExpr();
+					if (expression instanceof Var) {
+						Var sourceVar = (Var) expression;
+						if (sourceVar.hasValue()) {
+							long id = idOf(sourceVar.getValue(), layout.positionMask(elem.getName()));
+							if (id == UNKNOWN) {
+								return null;
+							}
+							copies[i] = CopyBinding.constant(slot(elem.getName()), id);
+						} else {
+							copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
+						}
+					} else {
+						LmdbNativeCompiledInlineId computed = LmdbNativeExpressionCompiler
+								.compileInlineId(expression, source, this::slot,
+										strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
+						if (computed == null) {
 							return null;
 						}
-						copies[i] = CopyBinding.constant(slot(elem.getName()), id);
-					} else {
-						copies[i] = CopyBinding.slot(slot(elem.getName()), slot(sourceVar.getName()));
+						copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
 					}
-				} else {
-					LmdbNativeCompiledInlineId computed = LmdbNativeExpressionCompiler
-							.compileInlineId(expression, source, this::slot,
-									strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
-					if (computed == null) {
-						return null;
-					}
-					copies[i] = CopyBinding.computed(slot(elem.getName()), computed);
 				}
-			}
-			return SlotPlan.extension(arg, configureExtensionErrorMode(extension, copies));
+				return SlotPlan.extension(arg, configureExtensionErrorMode(extension, copies));
 
-			} finally { requiredAggregateNames = previousRequired; }
+			} finally {
+				requiredAggregateNames = previousRequired;
+			}
 		}
 		if (expr instanceof org.eclipse.rdf4j.query.algebra.Union) {
 			org.eclipse.rdf4j.query.algebra.Union union = (org.eclipse.rdf4j.query.algebra.Union) expr;
@@ -1006,15 +1229,20 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 
 	/**
 	 * Removes a VALUES table whose bindings cannot be observed by a duplicate-insensitive aggregate. A non-empty unused
-	 * table is the relational identity after duplicate elimination only when no caller value constrains its cells; retaining it would multiply every intermediate row
-	 * for no semantic effect (the benchmark's {@code VALUES ?limit { 55 }} shape).
+	 * table is the relational identity after duplicate elimination only when no caller value constrains its cells;
+	 * retaining it would multiply every intermediate row for no semantic effect (the benchmark's
+	 * {@code VALUES ?limit { 55 }} shape).
 	 */
 	SlotPlan compileValuesOrIdentity(BindingSetAssignment values, boolean duplicateInsensitive) {
 		if (duplicateInsensitive && values.hasRepeatableBindingSets()
 				&& java.util.Collections.disjoint(values.getPossibleBindingNames(), requiredAggregateNames)) {
-			if (!values.getBindingSets().iterator().hasNext()) { return SlotPlan.empty(); }
+			if (!values.getBindingSets().iterator().hasNext()) {
+				return SlotPlan.empty();
+			}
 			String[] names = values.getPossibleBindingNames().stream().sorted().toArray(String[]::new);
-			if (names.length == 0) { return SlotPlan.singleton(); }
+			if (names.length == 0) {
+				return SlotPlan.singleton();
+			}
 			return guardedValuesFold(SlotPlan.singleton(), values, names);
 		}
 		return compileValues(values);

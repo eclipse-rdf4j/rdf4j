@@ -4905,6 +4905,30 @@ class LmdbSailStore implements SailStore {
 			return declared[0];
 		}
 
+		/**
+		 * Retains dictionary membership only when the paired read view can join the native read barrier immediately.
+		 * This is a conservative proof capability: map-growth races decline without scheduling replay, while lifecycle
+		 * failures and conflicts carrying cleanup failures remain visible to the caller.
+		 */
+		private boolean tryRetainDictionaryTermMembership() throws IOException {
+			var lockManager = valueStore.getTxnManager().lockManager();
+			long stamp = lockManager.tryReadLock();
+			if (stamp == 0L) {
+				return false;
+			}
+			try {
+				ensureNativeSnapshotsValid();
+				return tryRequireDictionaryTermSnapshotUnderReadLock();
+			} catch (MapResizeConflictException conflict) {
+				if (conflict.getSuppressed().length != 0) {
+					throw conflict;
+				}
+				return false;
+			} finally {
+				lockManager.unlockRead(stamp);
+			}
+		}
+
 		boolean hasNativePin(MapResizeKind kind) {
 			if (nativeSnapshotsClosed) {
 				return false;
@@ -17832,6 +17856,21 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean tryRetainDictionaryTermMembership() {
+			try {
+				checkOpen();
+				return lease.readView.tryRetainDictionaryTermMembership();
+			} catch (IOException failure) {
+				throw new QueryEvaluationException(failure);
+			} catch (MapResizeConflictException conflict) {
+				if (conflict.getSuppressed().length != 0) {
+					throw conflict;
+				}
+				return false;
+			}
+		}
+
+		@Override
 		public Object idSpace() {
 			return valueStore;
 		}
@@ -19401,6 +19440,24 @@ class LmdbSailStore implements SailStore {
 				return txn.valueLookupScope(valueStore.valueLookupScope(readView.valueSnapshot()));
 			} catch (IOException failure) {
 				throw new QueryEvaluationException(failure);
+			}
+		}
+
+		@Override
+		public boolean tryRetainDictionaryTermMembership() {
+			try {
+				return withNativeSourceRead(() -> {
+					try {
+						return readView.tryRetainDictionaryTermMembership();
+					} catch (IOException failure) {
+						throw new QueryEvaluationException(failure);
+					}
+				});
+			} catch (MapResizeConflictException conflict) {
+				if (conflict.getSuppressed().length != 0) {
+					throw conflict;
+				}
+				return false;
 			}
 		}
 

@@ -18,6 +18,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
@@ -116,9 +117,26 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
-/** Cache-only complete ownership boundary. Ordinary clones and external query values keep their existing contracts. */
-final class LmdbCacheValueCopies {
+/**
+ * Complete ownership boundary for plan-cache copies and query-local finite-proof value copies. Ordinary clones and
+ * external query values keep their existing contracts.
+ */
+@InternalUseOnly
+public final class LmdbCacheValueCopies {
 	private LmdbCacheValueCopies() {
+	}
+
+	/**
+	 * Copies one finite value through the shared audited identity and materialization boundary. Refusal is represented
+	 * by {@code null}; callers must never fall back to retaining the original value for a source lookup.
+	 */
+	@InternalUseOnly
+	public static Value copyValueForFiniteAbsenceProof(Value value) {
+		if (value == null) {
+			return null;
+		}
+		LmdbQueryValueIdentity identity = new LmdbQueryValueIdentity.Capture(true).of(value);
+		return identity == null ? null : new LmdbQueryValueIdentity.Materializer().of(identity);
 	}
 
 	private static final Set<Class<?>> BUILTIN_NODES = Set.of(
