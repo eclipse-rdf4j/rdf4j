@@ -1,5 +1,7 @@
 > Historical implementation roadmap. Descriptions of retired synopsis, query-index, materialization, and migration paths below are historical evidence, not supported configuration or current behavior. See [the current LMDB estimation guide](../../core/sail/lmdb/README.md) for the surviving V2, quad, and cold-filter systems.
 
+> Current planning addition (2026-11-06): [unify Cascades, native strategies, and LMDB/adjacency physical costing](#2026-11-06-unified-physical-costing-implementation-plan). This dated section specifies the next implementation phases for that scope against branch `GH-0000-lmdb-predicate-guarantees`, commit `ae211fc3869a3a5a7388ff9e0a4793e0bf78396a`. Its preparation is source inspection and documentation only. No implementation, compilation, tests, benchmarks, or sub-agent work was performed. Earlier measurements remain historical evidence, not validation of this proposed work.
+
 # Build the complete Frontier and Cascades query optimizer
 
 This is the only optimizer ExecPlan. It is a living document and must be maintained according to `.agent/PLANS.md`.
@@ -45,6 +47,21 @@ performance may trigger an explicit incomplete status but never disguises candid
 rewrite.
 
 ## Progress
+
+- [x] (2026-11-06) Inspect current physical costing boundaries and design the unified implementation phases.
+  The dated section below is the active plan for this scope; historical unchecked milestones remain obligations
+  where applicable, rather than instructions to restore retired systems.
+- [x] (2026-11-06) Finish the dated implementation plan and inspect its document diff. All implementation phases
+  remain unstarted; validation in this task is limited to source reads and document checks.
+- [ ] Unified phase 0: establish current baseline and executable regression oracles. Execution has not started.
+- [ ] Unified phase 1: connect shared contracts and planning budgets.
+- [ ] Unified phase 2: quote LMDB and adjacency physical access.
+- [ ] Unified phase 3: preserve consumer requirements and comparable costs.
+- [ ] Unified phase 4: deliver the first selected-to-executed physical recipe.
+- [ ] Unified phase 5: integrate remaining native strategy families.
+- [ ] Unified phase 6: qualify bounded search, refinement, and cache reuse.
+- [ ] Unified phase 7: attribute runtime feedback to executed recipes.
+- [ ] Unified phase 8: qualify end-to-end performance and retire duplicate costing.
 
 - [x] (2026-08-18 12:04Z through 15:50Z) Eliminate the typed semi/anti telemetry hot-path cliff and reduce general runtime
   observation overhead. The scoped redesign replaces the saturated exact distinct table with a bounded exact/HLL
@@ -1638,6 +1655,17 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
 
 ## Surprises & Discoveries
 
+- Observation (2026-11-06, static source inspection): the current branch already has 41 stable physical cost
+  dimensions, explicit composition rules, packed physical properties, work/deadline/memory limits, provider memory
+  accounting, and native proposals with deferred openers. The missing work is continuity across these boundaries,
+  not a new object-based optimizer or a second cost-vector schema. Evidence: `PackedCostDimensionRegistry`,
+  `PackedCostAlgebra`, `PackedPlannerLimits`, `PackedProviderMemory`, and `LmdbNativeStrategyProposal`.
+- Observation (2026-11-06, static source inspection): `PackedCostSession.objectiveScore` defaults to `workRows`,
+  while LMDB/native paths also have their own physical pricing and arbitration. Some packed statement-access
+  estimates derive scan work from output estimates; native lowering separately recognizes whole-region strategies.
+  The dated plan therefore separates access work, semantic cardinality, consumer demand, and execution identity.
+  These are source findings and design priorities, not measured regressions or newly observed test failures.
+
 - Observation: the Temurin 26 cached-read improvement is much larger than the OpenJ9 diagnostic suggested, but the
   cold first touch remains slower. In alternating baseline/candidate runs, single-block width-31 random access moves
   from 10.82/10.67 to 2.15/2.28 ns, regular 1,024-block width-31 access from 62.57/62.62 to 4.99/4.92 ns, and irregular
@@ -2355,6 +2383,22 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
 
 ## Decision Log
 
+- Decision: extend this sole roadmap with the 2026-11-06 phased implementation plan; do not create another ExecPlan.
+  Rationale: the repository's optimizer-plan inventory explicitly requires one governing roadmap. Preserve historical
+  evidence while making the current scope, source baseline, dependencies, and unexecuted validation steps explicit.
+  Date/Author: 2026-11-06 / Codex.
+- Decision: let Cascades select executable physical recipes using shared typed work estimates; let native and
+  storage providers recognize, quote, and bind their implementations. Install budgeting with the contracts, then
+  prove one complete access-to-native integration before expanding strategy coverage.
+  Rationale: improving scalar cardinalities cannot account for lost factorization, metadata aggregates, ordering,
+  compilation, or index access. Adding every strategy before controlling recognition and estimation work risks
+  moving execution latency into optimization. Existing packed arenas and resource contracts provide the foundation.
+  Date/Author: 2026-11-06 / Codex.
+- Decision: use structural proofs for semantic rewrites and sound pruning, estimates for ranking, and explicit
+  incomplete status for resource-limited search. Cost-model confidence does not establish semantic or hard work bounds.
+  Rationale: a fast bounded planner is useful; an unjustified exactness claim or sampled empty-result rewrite is not.
+  Date/Author: 2026-11-06 / Codex.
+
 - Decision: report cached lookup, open/close, and cold first-touch as separate shard-reader performance lanes and
   leave cold-p95 qualification open despite the large steady-state win.
   Rationale: one-time checksum validation and registry publication are intentionally paid on first block access, so
@@ -2875,6 +2919,13 @@ Accuracy authority remains provisional until the shadow-mode 1B qualification pa
   Date/Author: 2026-08-16 / Codex.
 
 ## Outcomes & Retrospective
+
+The 2026-11-06 addition is an implementation design only. It maps current source owners to nine dependent phases,
+defines a common physical recipe and costing boundary, and specifies correctness, planning-overhead, execution,
+cache, and feedback acceptance gates. All production changes and executable validation remain unstarted. No earlier
+benchmark result establishes a performance claim for this design. The next implementation work, if requested with
+permission to execute the necessary tools, is phase 0's baseline and smallest failing regression, followed by the
+shared budgeted contracts and storage-access quotes; it is not immediate expansion of every native strategy.
 
 The 2026-08-18 MEDICAL q9 estimator and costing repair is complete. Projected-distinct sampling now averages every
 configured equal-weight lane without sorting or overflowing, treats zero as a valid replica, rejects incomplete and
@@ -3831,3 +3882,712 @@ improvement, about ten-percent higher open allocation, and a 43-to-46-percent is
 cold-p95 remains open. The root formatter was stopped after nine CPU-active minutes because preserved `.mvnf` trees make the
 repository-wide invocation pathological; the scoped LMDB formatter, repeated root quick installs, and
 `git diff --check` pass without unrelated tracked edits.
+
+## 2026-11-06 unified physical costing implementation plan
+
+
+### Purpose, scope, and current status
+
+
+Make RDF4J choose the execution that is expected to finish the requested query fastest, including optimization and
+preparation costs. A rewrite that reduces estimated intermediate rows must compete with an equivalent expression
+that enables an adjacency count, a factorized aggregate, an ordered stream, or a fused native kernel. The selected
+implementation must survive lowering into execution; a planner explanation must identify what was selected, what
+actually ran, and why any substitution occurred.
+
+Optimization must remain economical. Small queries and valid cached plans should need little planning work. Large
+queries may justify deeper search, but every optional recognition, estimation, refinement, and cache-validation
+operation must participate in the same resource accounting. A bounded search must return a complete executable plan
+and an honest completion status even when it cannot finish exploring alternatives.
+
+This is an addition to the sole optimizer roadmap, not a replacement implementation or a separate project. Its
+source baseline is `GH-0000-lmdb-predicate-guarantees` at `ae211fc3869a3a5a7388ff9e0a4793e0bf78396a` in
+`/Users/havardottestad/Documents/Programming/rdf4j-small-things`. Before future implementation, recheck the branch,
+working tree, and named source owners; extend changed abstractions rather than restoring a historical design.
+The phases below are unstarted. Commands are instructions for a later implementation session, not actions authorized
+or executed by this planning request. This request prohibits running project code, compilation, and sub-agents.
+
+The scope includes Cascades search, native strategy recognition and execution, ordinary LMDB indexes, adjacency
+access, consumer-sensitive costing, plan caching, and feedback attribution. It preserves SPARQL semantics and the
+existing query-ready Frontier Statistics V2, quad, and cold-filter evidence sources. It does not require a new
+storage format, new statistics engine, new external dependency, or a second optimizer. Any later discovery requiring
+such a change must be justified here before broadening the implementation.
+
+### Source orientation and existing foundations
+
+
+The core planner package is
+[`optimizer.cascades.packed`](/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed).
+Throughout this section, a `Packed...` class belongs to that directory unless stated otherwise. `PackedCascadesPlanner`
+searches equivalent expressions in a memo, a collection that shares logically equivalent subexpressions. It uses
+integer identifiers and primitive arenas rather than allocating a separate object tree for every candidate.
+`PackedPhysicalPropertyInterner` and `PackedPhysicalMetadataArena` hold physical distinctions. `PackedPlanRecipe`,
+`PackedPlanMaterializer`, `PackedCostingReplay`, `PackedPlanContinuationSeed`, and `PackedPlanCache` already provide
+selection, detachment, replay, and reuse machinery. Extend these mechanisms.
+
+[`PackedCostDimensionRegistry.java`](/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/queryalgebra/evaluation/src/main/java/org/eclipse/rdf4j/query/algebra/evaluation/optimizer/cascades/packed/PackedCostDimensionRegistry.java)
+already declares 41 stable dimensions, including source and result row events, seeks, page walks, storage bytes,
+memory, startup, first-result and final-result latency, compilation, dispatch, first-match, exhaustion, and rebind
+work. `PackedCostAlgebra` already distinguishes sequential, blocking, parallel, and repeated invocation composition.
+`PackedCostVectorArena` records which quantities are known. `PackedCostSession` owns query-local estimator state;
+its default objective is `workRows`, and exact continuation identity is an equivalence proof for future costing,
+not merely a hash. `PackedPlannerLimits`, `PackedProviderMemory`, and provider identity/retention accounting already
+exist. Build on them instead of adding disconnected cost vectors, caches, or budgets.
+
+The storage and LMDB planner package is
+[`org.eclipse.rdf4j.sail.lmdb`](/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb).
+`LmdbCascadesOptimizer`, `LmdbQueryOptimizerPipeline`, `LmdbPackedCostModel`, and
+`LmdbFrontierStatisticsCostSession` connect search to logical and physical estimates. `TripleStore.describePackedAccessPath`
+describes a configured LMDB index path. `LmdbSailStore` contains statement access and work estimates;
+`LmdbStatementAccessArbiter` chooses between statement-access implementations. `LmdbDirectAdjacencyStore`,
+`LmdbAdjacencyReadView`, `LmdbAdjacencyPlannerEvidence`, and `LmdbFrontierReadSelection` provide adjacency access and
+snapshot-qualified evidence. Adjacency here is a derived index with an immutable base and transactional overlays;
+its existence alone does not prove coverage for a particular query snapshot.
+
+The native package is
+[`org.eclipse.rdf4j.sail.lmdb.evaluation`](/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation).
+`LmdbNativeAggregatePatternCompiler` and `LmdbNativePatternPlan` translate query expressions and describe access.
+`LmdbNativeRowStep` and `LmdbNativeGroupStep` assemble strategy choices. `LmdbNativeStrategyProposal` already defers
+opening resources, while `NativeAggregatePhysicalPlan` separates producer quoting from consumption. Reuse their
+ownership rules. `NativePhysicalInputRecipe` records semantic input correspondence; `LmdbNativePhysicalVariantKey`
+records physical distinctions. `LmdbNativeCostVector`, `NativePhysicalWorkEvidence`, `LmdbNativeCostEstimate`,
+`LmdbNativeAdaptiveCostModel`, and `LmdbNativeStrategyArbiter` carry native physical estimates and selection logic.
+`LmdbPhysicalCostObjective` in the LMDB package supplies another pricing boundary that must become consistent with
+the shared policy.
+
+These sources show integration gaps, not an absence of physical costing. Some packed access estimates still derive
+rows visited from estimated rows returned; describing a B-tree prefix does not fix that estimate. Native strategy
+recognition can happen after logical selection, and native and packed decisions do not universally use one objective
+or one selected executable recipe. Source inspection alone does not establish the size of any resulting slowdown.
+
+### The target decision and execution contract
+
+
+A physical alternative consists of a logical expression, an executable implementation recipe, required input
+properties, delivered output properties, evidence assumptions, resource requirements, and a typed cost estimate.
+The recipe names the algorithm and its access paths. It is not a scalar discount attached to a logical node.
+A region implementation may cover several logical operators at once, such as a factorized join followed by COUNT.
+Its internal work must not also be charged as separately executed child operators.
+
+Use a three-stage provider lifecycle. **Recognize** inspects the packed expression, binding information, and requested
+output to report eligible strategies. **Quote** estimates the physical work for each strategy using already available
+or explicitly budgeted evidence. **Bind** validates and prepares only the selected recipe against the execution
+snapshot. Recognition must not open data cursors, enumerate rows, generate code, build hash tables, or reserve
+workers. Quoting may perform bounded metadata reads with explicit charges, but must not run the candidate query to
+discover its price. Existing methods named `prepare` must be audited before reuse because their names do not prove
+that they are cheap or free of storage access.
+
+Keep logical cardinality separate from physical work. A query can produce one result after reading a million index
+entries, or compute a million-result multiplicity from a small number of factor records. Represent access rows,
+emitted rows, distinct probe keys, invocations, range entries skipped, decoded values, bytes, and consumer work
+separately when they differ. Preserve exact facts, statistical estimates with uncertainty, and unavailable evidence
+as distinct states. Unknown work is not zero. A sampled zero cannot prove an empty relation. A statistical confidence
+interval cannot authorize semantic pruning or be presented as a deterministic work bound.
+
+The final objective is expected latency for the requested consumption under the declared resource policy, with
+first-result and complete-result objectives available explicitly. Total user latency includes planning, selected
+preparation, execution, and result conversion. Already-spent planning time is common to all remaining alternatives
+and must not be added repeatedly to candidate scores. The decision to spend more time optimizing compares the
+expected benefit of additional information with its additional planning cost. Compilation or reusable preparation
+can be amortized only over reuse justified by an actual cache contract; do not invent future executions to make a
+plan appear cheap.
+
+Translate physical features into comparable estimated time through a shared versioned pricing policy. Keep memory
+as a feasibility and composition property rather than adding raw bytes to nanoseconds. Charge materialization and
+value decoding at the boundary where they occur. Sum actual work, compose parallel elapsed time according to the
+critical path and available capacity, and compose memory according to overlapping lifetimes. Preserve startup for
+blocking operators under LIMIT. Existence requires separate estimates for finding a match and exhausting an empty
+probe; reducing all work by a result fraction is not sufficient.
+
+Preserve evidence lineage when composing uncertainty. Estimates derived from the same samples or correlated binding
+domains are not independent observations. Summing individual percentile predictions does not establish a percentile
+for total query latency; measured end-to-end distributions remain a separate validation obligation.
+
+Keep a valid incumbent, meaning the best complete executable plan currently available. Begin with the existing safe
+execution route, then improve it. Exhausting an optimization budget must preserve that route. Exact search may claim
+completion only after all work in its declared supported rewrite and physical-provider space is complete. Completion
+does not mean estimates equal actual runtime or that every conceivable algorithm has been searched.
+
+### Interfaces and dependency direction
+
+
+The query-evaluation module owns backend-neutral request, property, budget, recipe, and cost contracts. It must not
+depend on LMDB classes. The LMDB module supplies the storage/native provider and recipe binder. Preserve the
+functional-interface compatibility of `PackedCostModel`; use optional defaults on its session or an internal
+extension rather than breaking scalar providers.
+
+Keep packed arena internals encapsulated. `PackedCostDimensionRegistry` is currently package-private; expose the
+necessary typed mapping through the backend-neutral provider/cost sink contract, rather than making LMDB reach into
+private arena implementation or duplicating stable IDs and units in an unrelated schema.
+
+Introduce `PackedPhysicalStrategyProvider`, `PackedPhysicalStrategyRequest`, and `PackedPhysicalCandidateSink` in
+the core packed package only where the current physical refinement interfaces cannot express region implementations.
+The request is a borrowed query-local view: logical relation/region identity, known and possible binding masks,
+consumer requirement identifier, evidence-state identifier, required properties, and the current budget owner.
+The sink interns compact candidates in existing arenas. The intended provider operations are:
+
+    void recognize(PackedPhysicalStrategyRequest request, PackedPhysicalCandidateSink sink);
+    void quote(int candidateId, PackedPhysicalStrategyRequest request, PackedCostEstimate output);
+
+Provide the optional session entry point `physicalStrategies()` with a no-strategy default. Recognition and quotation
+report unsupported, unavailable, and budget-exhausted outcomes explicitly through the request/sink contract; these
+must not all become an infinite or zero scalar price. The names above are proposed additions, not claims that these
+interfaces already exist. If the same contract fits an existing interface cleanly, extend that interface and update
+this section rather than maintaining two competing provider APIs.
+
+The selected `PackedPlanRecipe` must retain a versioned physical descriptor identifying provider, implementation,
+access choices, required/delivered properties, semantic correspondence, and validity assumptions. Store candidate and
+property IDs in the working memo. Detach only selected or explicitly retained alternatives into immutable descriptors
+before the session closes. Descriptors must not retain a transaction, cursor, adjacency view, estimator session,
+filter lease, mutable scratch, or worker reservation. A recipe's assumptions must be checked when reused.
+
+Add the LMDB implementations under the storage package, provisionally `LmdbPhysicalStrategyProvider` and
+`LmdbAccessCostEstimator`, and a `LmdbPhysicalRecipeBinder` under the native evaluation package. The provider exposes
+existing strategies, the estimator quotes access work for both planners and runtime access arbitration, and the
+binder realizes the selected descriptor using the execution context. Avoid a permanent provider hierarchy for each
+minor strategy variation; dispatch compact family IDs to existing implementations.
+
+Every quote records its evidence quality and provenance, local versus inclusive scope, consumption assumptions,
+pricing version, and feasibility conditions. Version the mapping between native features and stable packed
+dimensions. Add dimensions only when an existing dimension cannot express genuinely distinct work; do not renumber
+stable IDs or silently reinterpret persisted values. Preserve saturation behavior and known/unknown masks.
+
+### Phase 0 — Establish current evidence and regression oracles
+
+
+**Dependency and purpose.** This is the first executable phase after a separate instruction permits implementation
+and execution. Establish what the current branch does before changing its decisions, and make later claims about
+planning speed and execution improvement reproducible. The present document is not its benchmark baseline.
+
+**Work.** Inventory actual call paths from `LmdbQueryOptimizerPipeline` through packed selection, native strategy
+assembly, statement access arbitration, and execution. Record each strategy's recognizer, quote source, binder,
+output properties, coverage restrictions, and feedback identity in this roadmap's implementation catalog. Include
+native subregions inside a generic outer plan. Inspect active test annotations: an existing test that is disabled is
+not coverage. In particular, do not use the name of `LmdbNativeStrategyPriorityTest` as evidence that every former
+priority assertion still runs.
+
+Extend existing plan-quality and native decision diagnostics with a lightweight invocation record: logical region,
+required properties, considered strategy/access IDs, quoted physical dimensions, chosen recipe ID, actual recipe ID,
+and fallback reason. Add counters for candidates recognized and quoted, metadata reads, estimator calls, refinements,
+cache validation, provider scratch high-water, retained memo bytes, and each planning stage. Store primitive counters
+and generate detailed strings only when an explanation or diagnostic is requested. Instrument phase durations at
+boundaries rather than timing every emitted row.
+
+Prepare small deterministic stores with deliberately different access work and result counts, independent-branch
+stars, cyclic joins, skewed hubs, correlated semi/anti queries, and count/distinct/limit consumers. Create an
+exhaustive test oracle for small supported query regions that enumerates legal physical alternatives and compares
+typed costs and result bags. It must independently check the minimum under supplied synthetic prices rather than
+repeat the production ranking expression. Include a case in which a logically smaller alternative has greater
+physical execution cost. Do not assert a real-world latency winner from synthetic prices.
+
+Capture planning-only, selected-preparation-only, fixed-plan execution, and full end-to-end baselines separately.
+Cover cold plan cache, warm plan cache, cold/warm generated-code cache, and repeatable storage-cache regimes. Record
+hardware, JDK, data snapshot, index configuration, concurrency, flags, and result checksum. Use the complete current
+Theme query catalog, not only a remembered count of its historical cells. Keep a fixed-plan control to distinguish
+optimizer overhead from a changed execution plan.
+
+**Proof and exit.** Add the proposed `LmdbUnifiedPhysicalPlanningTest` in the LMDB test package and an independent
+small-plan oracle in core packed tests. Capture the smallest failing behavior test before each later production
+change. Phase 0 itself ends with a reproducible current baseline, an inventory of coverage gaps, and regression
+fixtures that can demonstrate the missing integration. No new strategy is enabled merely because diagnostics exist.
+Set performance tolerances from repeated baseline-versus-baseline variation before measuring a candidate; record
+them here so the acceptance threshold cannot be widened after a disappointing result.
+
+### Phase 1 — Connect shared contracts and budget every provider
+
+
+**Dependency and purpose.** Depends on phase 0. Make physical alternatives representable and optional estimation work
+accountable before adding more alternatives to search. This phase can land with an adapter preserving existing
+selection behavior; subsequent behavioral changes still require their own failing tests.
+
+**Work.** Extend `PackedCostSession`, `PackedPhysicalMetadataArena`, `PackedPhysicalPropertyInterner`,
+`PackedCostEstimate`, and `PackedPlanRecipe` using the provider contract above. Map native physical features and
+evidence into `PackedCostDimensionRegistry` and `PackedCostVectorArena`; preserve startup, unknown quantities,
+structural bounds, and native consumption information. Use `PackedCostAlgebra` for composition. Add explicit tests
+that a region quote replaces its covered internal work rather than summing it twice.
+
+Extend `PackedPlannerLimits` accounting so recognition, costing, optional metadata access, evidence realization,
+refinement, detachment, and cache validation all charge the same query-level budget. Keep work, deadline, retained
+memory, and scratch high-water separately visible. Reserve memory through `PackedProviderMemory` before allocating
+provider storage. Define charges by actual operations, such as metadata directory entries visited or estimator
+transitions, rather than treating an arbitrarily expensive callback as one cheap unit. Check monotonic deadlines at
+bounded batch boundaries and before beginning expensive work. A synchronous page fault or native call can overrun a
+deadline before control returns; document and measure this limit rather than promising hard real-time termination.
+
+Use explicit statuses for inapplicable strategy, unsupported semantics, missing evidence, incomplete exploration,
+and resource rejection. Distinguish optional optimization resources from resources necessary to execute a valid
+fallback. Record the minimum fallback construction/validation work separately; a zero optional-search budget should
+skip optional exploration without promising zero total planning work.
+
+**Proof and exit.** Extend `PackedPhysicalCostContractTest` and `PackedCostAlgebraTest`; add the proposed
+`PackedPhysicalStrategyContractTest` and `PackedPlanningBudgetTest` in the core packed test directory. Tests must
+prove consistent dimension mapping, unknown propagation, no double counting, deterministic budget charging,
+reservation-before-allocation, cleanup on provider failure, and a valid fallback when optional budgets are zero or
+exhausted. Fake providers that attempt cursor work, compilation, or resource acquisition during recognition must be
+rejected by their contract tests. Scalar cost-model implementations remain source-compatible and keep their old
+behavior until deliberately integrated.
+
+### Phase 2 — Make LMDB and adjacency access quotes physically meaningful
+
+
+**Dependency and purpose.** Depends on phase 1. Correct the foundational distinction between entries visited and rows
+returned before tuning strategy preferences. Every later native strategy depends on these access estimates.
+
+**Work.** Extract shared access description and work estimation from `LmdbPackedCostModel`,
+`TripleStore.describePackedAccessPath`, `LmdbSailStore`, `LmdbStatementAccessArbiter`, and `LmdbNativePatternPlan` into
+the LMDB access-cost boundary. Enumerate configured, usable B-tree indexes rather than pricing only the longest-prefix
+choice. For each candidate retain fixed prefix, range interval, residual predicates, repeated-variable checks,
+context handling, delivered order, and binding requirements. Estimate cursor opens, seeks/page walks, visited
+entries, residual checks, decoded values, emitted rows, and bytes independently. If the visited-entry estimate is
+unknown, retain that uncertainty instead of copying output cardinality into the physical field.
+
+Add adjacency alternatives for covered snapshots and supported shapes: forward/reverse runs, membership tests,
+ordered distinct frontiers, range filtering, and aggregate metadata. Describe what the implementation actually does.
+For example, a range implemented by gathering or sorting a broader run must pay for that broader access and sort;
+the existence of a range predicate does not make it a native range seek. Metadata counts can avoid triple iteration
+but may still visit root, predicate, context, or run directories. Charge those visits; do not label all metadata
+aggregates constant-time.
+
+Use `LmdbFrontierReadSelection` and the existing adjacency read-view lifecycle to bind all evidence to one valid
+query snapshot. Distinguish exact empty, no coverage, not yet available, and stale metadata. Handle explicit/inferred
+planes, default/named graphs, multiple contexts, read-your-writes, and concurrent commits according to existing store
+semantics. No cardinality estimate may turn missing adjacency coverage into an empty-result proof.
+
+For parameterized access, quote the current known/possible binding masks, value-domain evidence, outer invocation
+count, distinct key count, and skew. Charge reuse only when the selected implementation really caches or groups those
+keys. A nested loop with ten thousand equal bindings still performs ten thousand probes unless its recipe includes
+reuse. Keep per-probe expected work and conservative feasibility bounds distinct, especially for hubs and all-miss
+semi/anti probes. Reuse already available Frontier/quad/adjacency evidence; prohibit full scans for costing.
+
+Make packed scans, native pattern access, and statement arbitration consume this quote. During migration, a
+compatibility adapter may translate to old fields, but it must preserve provenance and unknown state and must not
+become a second independently maintained formula.
+
+**Proof and exit.** Add the proposed `LmdbUnifiedAccessCostTest`. A broad prefix with a selective residual must quote
+more source events than output events. Equal-result alternatives using different indexes must have different
+physical work when their actual accesses differ. Exercise ranges, repeated variables, object/subject anchors,
+context filtering, unavailable adjacency, overlay updates, duplicate outer keys, and skew. Cross-check the three
+consumers of the shared quote under the same snapshot and properties. Measure estimator work by metadata operations,
+not by assuming a method returning a count is cheap. No production decision may rely on a fabricated exact bound.
+
+### Phase 3 — Carry consumer requirements and preserve physical alternatives
+
+
+**Dependency and purpose.** Depends on phases 1 and 2. Make the memo retain distinctions that affect what the parent
+can do, so a rewrite cannot win merely by reporting fewer logical rows.
+
+**Work.** Represent consumer requirements in `PackedPhysicalPropertyInterner` and propagate them through memo search,
+physical refinement, recipes, continuations, and cache identity. Required information includes live bindings,
+duplicate/multiplicity semantics, full enumeration versus weighted/factorized consumption, group or distinct keys,
+ordering, row goal and offset, existence versus full exhaustion, assured/possible binding masks, and correlation.
+Reuse `LmdbWildcardPhysicalDemand` and native slot/aggregate demand concepts through backend-neutral equivalents;
+do not let their native class types leak into core.
+
+A factorized representation stores independent alternatives and multiplicities without expanding their Cartesian
+product. Retain it when a compatible COUNT, EXISTS, DISTINCT, or grouping consumer can use it. Add and price explicit
+conversion alternatives when a parent needs flat binding rows, a different order, materialized values, or a hash
+table. Full row enumeration must still pay for every emitted row. COUNT of a nullable expression, COUNT(*), DISTINCT,
+empty aggregates, and duplicate-preserving projections have different requirements; sharing a consumer label must
+not erase those semantics. Internal ID order is not automatically SPARQL term order.
+
+Audit `LmdbQueryOptimizerPipeline` and `LmdbCascadesOptimizer` for destructive choices before physical alternatives
+enter the memo. Preserve equivalent shapes whose implementation opportunities differ, while sharing semantic facts.
+First teach recognizers to see through harmless aliases, constant propagation, and normalized syntax when that is
+semantically valid. When equivalent shapes still enable different implementations, retain both. Do not assign a
+permanent cost penalty to a rewrite or a permanent bonus to a strategy name.
+
+Extend dominance and exact-continuation comparisons to include all relevant requirements, delivered properties,
+evidence state, and feasibility assumptions. Remove an alternative only when another can substitute for it for
+every relevant continuation under the declared dominance rule. A cheaper flat scan does not dominate a slightly more
+expensive ordered or factorized producer needed by its parent. A hash match on state is not proof of continuation
+equivalence. Re-cost dependent parents when a useful child alternative appears or a quote is refined.
+
+Route packed final ranking, `LmdbPhysicalCostObjective`, and native arbitration through the same physical-feature
+pricing policy and consumption objective for integrated candidates. Preserve conservative bounds separately from
+expected prices. Existing native cold priors may remain explicit compatibility estimates for an unintegrated family,
+but an arbitrary preferred-strategy order cannot decide among fully integrated comparable alternatives. Do not mix
+raw work rows, time, and memory in a dimensionless sum without a declared conversion.
+
+**Proof and exit.** Extend core physical-property/cost tests and add the proposed `PackedConsumerDemandTest` and
+`PackedStrategyRetentionTest`. Supply deterministic prices where an alternative with fewer logical rows loses to
+one using fewer seeks or a factorized consumer; verify that both remain available until physical selection. Reverse
+the prices and verify that selection reverses. Test late child alternatives, nested consumers, blocking startup under
+LIMIT, all-miss existence, conversion costs, and exact cache-key separation. Compare exact small searches against
+phase 0's independent oracle. These are model-contract tests, not claims about measured wall-clock rankings.
+
+### Phase 4 — Prove one complete Cascades-to-native execution path
+
+
+**Dependency and purpose.** Depends on phases 1–3. Deliver the first observable end-to-end improvement before
+integrating the entire native strategy inventory. The unit of success is a physical recipe that is considered,
+costed, selected, preserved through lowering, executed, and explained consistently.
+
+**Work.** Integrate ordinary statement/B-tree access, covered adjacency access, native indexed count, and a supported
+factorized count/aggregate region. Use `LmdbNativeIndexedCount`, `NativeAggregatePhysicalPlan`,
+`LmdbNativeFactorizedRows`, and the existing aggregate/row steps through the shared provider. Include ordered access
+when it provides a property needed by these consumers. A generic aggregate over ordinary access remains a valid
+competitor, not an emergency route removed by the mere existence of a native candidate.
+
+Connect the selected descriptor in `PackedPlanRecipe` to `NativePhysicalInputRecipe`, pattern compilation, and the
+native binder. Preserve logical slot correspondence, filters, contexts, binding scope, duplicate semantics, and
+physical choices. Native evaluation must not discard the descriptor and independently choose a different algorithm
+using an unrelated scalar estimate. Statement arbitration must honor the access choice or a declared equivalent
+adaptive choice within the recipe. If the descriptor deliberately allows runtime adaptation, quote that policy and
+record the concrete variant that ran.
+
+Validate snapshot assumptions and execution resources at bind time. Worker availability, hash-memory admission,
+code-cache state, or adjacency coverage can change between quote and bind. Use a previously validated equivalent
+fallback with bounded preparation, record the reason and actual identity, and release rejected attempt resources.
+Do not restart an unbounded optimizer in an execution callback. Data or proof assumptions that affect correctness
+must be revalidated; performance assumptions may justify a different feasible implementation without changing results.
+
+Construct a pair of equivalent query shapes where one supported representation allows a metadata/factorized
+aggregate and the other requires row enumeration under current capabilities. Establish the actual capability
+difference in a test rather than assuming every rewrite destroys native support. The integrated planner must choose
+using complete physical cost. A normalization that exposes the same native implementation to both forms is better
+than retaining an artificial syntax-dependent preference.
+
+**Proof and exit.** Extend the proposed `LmdbUnifiedPhysicalPlanningTest` and add `LmdbPhysicalRecipeBindingTest`.
+Assert quoted/selected/executed recipe correspondence, exact result-bag parity, metadata versus row-iteration
+counters, and fallback cleanup. Exercise both a known-cost winner and an unavailable-adjacency snapshot. Test cold
+and cached plans and repeat after a commit that changes relevant assumptions. A real benchmark must then show the
+expected work reduction and whether it improves total latency. Do not proceed to broad strategy integration if
+lowering still silently substitutes an independently ranked plan.
+
+### Phase 5 — Integrate native strategy families in verifiable slices
+
+
+**Dependency and purpose.** Depends on phase 4. Expand physical coverage through the same contracts. Each family must
+complete recognition, quotation, properties, binding, fallback, explanation, and tests before the next family is
+declared integrated. Merely registering its name is not completion. Continue applying phase 1 budgets in every slice.
+
+**Slice 5A: metadata and aggregate producers.** Extend the aggregate path to `LmdbAdjacencyAggregatePlan`,
+`LmdbNativeCensusAggregate`, `LmdbNativeRunCountHistogram`, `LmdbNativeDatatypeHistogram`,
+`LmdbNativePredicatePlaneGroups`, `LmdbTypeMatrixPlan`, and `LmdbNativeExistsIntersection` where supported.
+Price directory visits, distinct values classified, predicate planes visited, ordered intersections, group state,
+and final emitted groups. These can make COUNT, grouped counts, datatype counts, and existence-backed distinct
+counts much cheaper than enumerating their contributing triples. Preserve each implementation's current semantic
+preconditions; no type-matrix claim is valid merely because a query contains `rdf:type`. Test filters, repeated
+variables, nullable expressions, empty groups, named contexts, and unavailable metadata against generic evaluation.
+
+**Slice 5B: factorized and multiway joins.** Integrate `LmdbNativeFactorizedRows`, `LmdbNativePackedFtree`, and
+`LmdbNativeLeapfrogJoin` as region alternatives. Independent branches of a star can remain factorized; cyclic joins
+may benefit from intersecting sorted domains before producing large pairwise intermediates. Estimate run visits,
+intersections, factor records, surviving domains, and expansion requested by the consumer, with degree/skew evidence
+when available. Do not describe all stars or cycles as automatic wins. Keep current recognizer restrictions as
+explicit implementation capabilities; they are not permission to impose arbitrary global search cutoffs. Verify
+consumer changes from COUNT to full row output and correlated branch dependencies that invalidate factorization.
+
+**Slice 5C: binary and ordered joins.** Integrate `LmdbNativeHashJoin`, `LmdbNativeMergeJoin`, ordered prefix/run and
+ordered-distinct strategies assembled by `LmdbNativeRowStep` and `LmdbNativeGroupStep`, and batch alternatives.
+Hash joins pay build input, key construction, probes, memory, and applicable spill/rejection behavior. Merge joins
+must account for available order, duplicate runs, rescans, and any sorting; do not advertise broader merge eligibility
+than the implementation supports. Preserve useful delivered order through `LmdbNativeSlotOrder` so downstream
+grouping or DISTINCT can avoid another materialization. Include correlated nested-loop and memoized semi/anti
+alternatives: a small outer input can favor probing, whereas repeated or wide outer input can favor one build.
+
+**Slice 5D: native kernels, filtering, and parallel execution.** Integrate interpreted and generated kernels through
+`LmdbNativeKernelLowering` and `LmdbNativeKernelExecution`; integrate `LmdbNativeAdaptiveFilterPlacement` and
+`LmdbNativeParallelPipelines`. Quote fusion benefits, actual filter evaluation work, residual callbacks, value
+materialization, code generation/compilation, cached-code reuse, dispatch, partitioning, worker capacity, merge,
+and close work. Pure lowering and eligibility inspection may be cached; compilation is selected-plan preparation.
+Do not assume a filter, UNION, or OPTIONAL always breaks native execution: the current lowering supports multiple
+such compositions, and unsupported regions may still contain native children. Test expensive selective predicates
+both before and after cheaper joins rather than applying a blanket pushdown preference. Parallel candidates must
+use non-reserving capacity estimates and tolerate a smaller actual grant without charging impossible ideal speedup.
+
+**Slice 5E: paths, wildcard access, and mixed execution.** Integrate `LmdbNativePathPlan`, wildcard demand handling,
+and `LmdbNativeInteriorPlans` into the same region/property model. Bound-endpoint traversal, reverse traversal,
+existence, and all-pairs path evaluation need different frontier, edge-visit, deduplication, and termination estimates.
+Preserve supported path semantics rather than treating paths as a row-count multiplier. Wildcard/variable-predicate
+queries must pay for the fields and multiplicities the consumer needs; projection can enable a narrower producer.
+Allow a generic outer operator with native children and charge both transitions. Preserve effect-sensitive lexical,
+filter, and expression boundaries; an opaque operation must not accidentally disappear into a quoted native region.
+
+**Proof and exit for each slice.** Add focused cases to active family tests and to the shared end-to-end fixture.
+Force each supported alternative in a controlled test, compare its result bag to the reference, then verify normal
+planning chooses it only when the supplied costs and properties justify it. Include a losing case and an unsupported
+case with a valid fallback. Extend `LmdbPhysicalWorkPricingRegressionTest`, `LmdbNativeStrategyArbiterTest`,
+`LmdbNativeStrategyProposalTest`, native decision diagnostics, and relevant family parity tests. Measure recognition
+and quote counts as well as execution work. Every previously supported family must be either integrated or explicitly
+listed as a remaining compatibility path; no silent loss of native coverage is acceptable.
+
+### Phase 6 — Qualify fast search, selective refinement, and reuse
+
+
+**Dependency and purpose.** Basic controls already exist from phase 1. This phase qualifies and tunes them with real
+strategy diversity from phases 4 and 5, so search does not repeatedly pay for the same information or grow without a
+declared limit. Individual improvements should land earlier when their dependencies are ready.
+
+**Work: avoid repeated work.** Precompute compact shape, binding, predicate, and consumer summaries once per immutable
+query/memo expression version. Recognize each strategy family once per relevant expression/requirement/evidence key,
+including negative eligibility results. Invalidate that result when a late equivalent expression changes the facts
+on which recognition depends. Cache leaf and parameterized access quotes by canonical pattern, binding mask/domain,
+access path, snapshot assumptions, consumer requirement, and pricing version. Reuse primitive scratch arrays and
+interned IDs; avoid algebra cloning, repeated tree walks, per-candidate collections, and formatting explanations in
+the search loop. Do not merge parameter values or binding domains just because their masks match.
+
+**Work: spend evidence selectively.** Start with exact metadata and available summaries, then existing statistical
+evidence, then explicitly budgeted refinement for candidates whose ranking is uncertain and consequential. Reuse
+one refined evidence state across the transitions it legitimately covers. Refine an estimate only if its possible
+decision benefit can justify additional planning effort; unknown value-of-information remains unknown and the hard
+budget still applies. Statistical intervals can prioritize work but cannot soundly discard a feasible alternative.
+Proven physical lower bounds may prune against an executable incumbent only under compatible properties, resource
+policy, and estimator continuation. The policy for optional refinement must not silently change the meaning of
+exact search completion.
+
+**Work: retain useful alternatives within honest limits.** Keep nondominated alternatives with different order,
+representation, resource, consumption, and continuation properties. Use existing Pareto and continuation machinery,
+where a Pareto set contains alternatives for which no substitutable plan is at least as good in every relevant
+dimension. Avoid multiplying every index, join algorithm, worker count, filter placement, and output representation
+before compatibility is checked. Generate applicable alternatives lazily and re-cost dependent parents incrementally.
+If bounded search stops before exploring or retaining the required frontier, report incomplete search and return the
+incumbent. A top-K cap, beam width, confidence interval, or cheapest-row-count rule must not masquerade as an exact
+pruning proof.
+
+**Work: reuse valid plans safely.** Extend `PackedPlanCache`, `PackedCostingReplay`, `LmdbPlanDecisionCache`,
+`LmdbPipelinePlanCache`, and `LmdbFrontierPlannerSettings` rather than adding another cache or
+background scheduler. Retain the detached physical descriptor and compact validation assumptions. Separate a
+correctness invalidation, such as a changed fact that justified a rewrite, from a ranking refresh, such as changed
+prices or selectivities. A harmless calibration update should not force every cached plan through full search.
+Use bounded validation and refresh with the existing single-flight/refresh mechanisms. Cache hits must avoid opening
+a full estimator session or rebuilding native candidates when descriptor assumptions can be validated cheaply.
+
+Include dataset/context, inferred/explicit semantics, parameter identity/domain, binding layout, consumer demand,
+index/capability version, snapshot-dependent facts, recipe schema, and price-model applicability in validation as
+needed. Do not make a query-local transaction pointer the identity of a reusable plan. Do not retain an old adjacency
+view or mapped-generation lease in the descriptor. A cache entry with incomplete search remains marked incomplete;
+replay cannot promote it to exact merely because its execution is valid.
+
+**Proof and exit.** Extend `PackedPlanningBudgetTest`, `PackedPlanCacheTest`,
+`PackedPlanCacheOperatorParameterIdentityTest`, `PackedPlanCacheFamilyFlightIsolationTest`, and the LMDB packed and
+pipeline cache tests, including commit invalidation, dataset identity, UNDEF rows, and failed-flight cases. Prove
+bounded callback counts and allocation reservations with deterministic fakes, then measure cold/warm latency and
+allocation. Stress concurrent queries and cancellations: per-query compliance must not hide an unbounded shared
+cache, refresh queue, or cumulative memory footprint. Simple queries and cache hits must remain within the phase 0
+performance envelope; expensive queries must justify any additional planning time through better total latency.
+
+### Phase 7 — Learn from the physical work that actually ran
+
+
+**Dependency and purpose.** Recipe identity and quote dimensions must already be stable. Connect feedback to those
+same dimensions without conflating cardinality errors, missing work, and machine-price errors. This work follows a
+correct unlearned model; learning must not conceal an inconsistent implementation contract.
+
+**Work.** Integrate `LmdbMappedFrontierLearningSession`, the packed cost session/replay path,
+`LmdbNativeAdaptiveCostModel`, native execution diagnostics, and statement-access observations through a versioned
+descriptor linking query region, physical recipe, access choice, consumer requirement, and evidence scope. Attribute
+actual work to the variant that ran, including runtime fallback, rather than the preferred variant that was quoted.
+Separate operator-local from inclusive totals so an aggregate region, its pattern scans, and an enclosing pipeline
+do not all train on the same elapsed time as independent work.
+
+Observe source events, seeks, relevant metadata visits, key misses/hits, value decoding, materialization, generated
+code preparation, memory admission, worker grant, first-result time, and completion/close time where inexpensive
+counters exist. Share counters with existing instrumentation; batch feedback at execution close and sample costly
+timing. Do not introduce per-row maps, strings, object allocations, or clock reads to collect a feature whose
+measurement costs more than the expected benefit.
+
+Treat full completion, LIMIT termination, successful existence, exhausted miss, user cancellation, timeout, and
+failed execution as different observation classes. A partial observation can describe a censored prefix, meaning
+that the unobserved remainder is unknown; it must not train a complete cardinality or total-cost target. Keep
+cardinality calibration separate from physical feature correction and feature-to-time pricing. Avoid training a
+coefficient on time already embedded in a feature or applying both global and native residual corrections twice.
+
+Preserve existing safety around model uncertainty, cold priors, applicability, and adaptive experiments. Any
+exploration performed during normal execution remains bounded and must not remove the only valid fallback. Scope
+learning to store/data applicability and relevant machine/concurrency regimes. Version or invalidate incompatible
+persisted evidence when dimensions or recipe identities change; never reinterpret old serialized fields under new
+units. Retain reusable observations when their meaning is unchanged.
+
+**Proof and exit.** Extend native diagnostics/isolation, adaptive-cost, physical-pricing, and Frontier feedback tests.
+Add the proposed `LmdbPhysicalFeedbackAttributionTest` to prove fallback attribution, censored-observation handling,
+snapshot isolation, one-time correction, version compatibility, and no parent/child double counting. Under controlled
+synthetic observations the model should adjust the intended dimension and change a ranking when justified. Under
+real matched fixed-plan measurements, telemetry overhead must stay within the baseline envelope or an explicitly
+measured, pre-agreed observation budget. No measured speedup may rely on disabling correctness checks.
+
+### Phase 8 — Qualify the whole system and remove competing formulas
+
+
+**Dependency and purpose.** Depends on the integration, efficiency, and feedback gates above. Establish improved
+end-to-end behavior across the supported workload and leave one maintained costing path for each integrated family.
+
+**Work.** Run semantics, plan-choice, model-accuracy, planning-overhead, and end-to-end performance campaigns as
+separate gates. Check complete result bags and required ordering, not just result counts. Audit the current Theme
+catalog and generated small-query compositions, plus deliberate adverse distributions and different index layouts.
+Measure time to first requested result and full drain separately, including parse/plan/prepare cost in the relevant
+end-to-end lane. Keep matched fixed-plan controls and serial-versus-concurrent lanes. Explain per-query regressions;
+an aggregate speedup must not hide a severe regression in a fast or frequently cached query.
+
+During development, compare old and new quotes without executing the query twice. Limit any shadow costing to an
+explicit diagnostic experiment with its own budget; do not double expensive estimation on every production query.
+Move families to the unified contract incrementally after their acceptance gates pass. Keep compatibility adapters
+only while a family still needs them, with a recorded owner and removal gate. Remove duplicated formulas, unrelated
+ranking overrides, stale recipe reconstructions, and legacy learning adjustments only after their replacements are
+validated. Update the current LMDB estimation guide and explanation documentation to describe the actual selected
+and executed plan, evidence quality, and search completion scope.
+
+**Proof and exit.** Core and LMDB relevant suites pass, active family coverage is complete for the declared scope,
+the small exact oracle agrees with search, snapshots and caches remain correct, and planning resource limits are
+observable. Baseline and candidate measurements meet the previously recorded per-lane tolerances, with improved
+total latency on the targeted physical-strategy cases. If added planning work exceeds saved execution work, the
+phase fails even when the selected plan has lower estimated execution cost. If a family remains a compatibility
+path, list it explicitly and keep the overall unification work open; do not claim universal physical optimization.
+
+### Validation matrix and measurable acceptance
+
+
+**Semantic coverage.** Combine BGP joins with UNION, OPTIONAL, MINUS, EXISTS/NOT EXISTS, nested subqueries, filters,
+BIND, VALUES including UNDEF, DISTINCT/REDUCED where supported, aggregates, ORDER BY, LIMIT/OFFSET, and property
+paths. Include nested and mixed forms rather than testing each operator only at the root. Cover duplicate rows,
+empty inputs, repeated variables, nullable values, expression errors, datatype/language distinctions, and typed
+value aliases. Preserve context and inference semantics, snapshot isolation, and cancellation/resource closure.
+An unsupported native composition must still produce the correct generic or mixed plan.
+
+**Physical behavior.** Cover broad prefix plus selective residual, useful non-longest-prefix indexes, forward/reverse
+adjacency, ordered distinct, run counts, membership, high-degree hubs, skewed predicate distributions, star branches,
+cycles, selective and unselective filters, expensive expression evaluation, large/small outer probes, all-miss
+existence, full enumeration, factorized consumption, conversion boundaries, and resource-limited parallel/hash
+execution. Vary configured indexes and adjacency availability/coverage without changing logical answers.
+
+**Deterministic planning gates.** Recognition performs zero data-row iterations, zero code generation, and zero
+execution resource reservations. Metadata quotation charges every visited batch and has a cancellation point.
+An unchanged expression/requirement/evidence key is not repeatedly recognized. Optional work never exceeds its
+accounted limit except a documented already-started indivisible operation. Provider reservations include scratch
+high-water and retained payload. Zero optional budget and mid-search exhaustion return a valid plan with truthful
+status. Quote, selected recipe, installed implementation, and executed variant are traceable. Exact-mode tests have
+no hidden frontier caps.
+
+**Measured performance gates.** Record planning p50/p95/p99, selected preparation, first result, full drain,
+end-to-end p50/p95/p99, allocation bytes, peak/retained planning memory, estimator/metadata work, cache hit/validation
+cost, strategy distribution, and actual-to-estimated work by dimension. Tail metrics require an appropriate latency
+harness and sufficient samples; an average-time JMH score does not establish p95 or p99. Compare both query-weighted
+workload totals and individual important cells. Freeze thresholds from control variability and workload requirements
+in phase 0 rather than inventing a universal millisecond cap or accepting whatever regression the new design causes.
+
+**Optimization effort policy.** Use configurable work, deadline, and memory limits already exposed by the planner,
+with deterministic defaults justified by the measured baseline. Prioritize incremental evidence by expected decision
+benefit and reuse, but retain hard resource bounds and honest incomplete status. Distinguish one-off and genuinely
+reused prepared queries when considering amortization. A cheap query should not incur an expensive statistical probe
+merely to prove that its obvious plan is cheapest. A costly uncertain query can justify deeper search without
+requiring exhaustive exploration for every query. Do not encode benchmark names, query IDs, arbitrary shape sizes,
+or a permanently preferred algorithm as production policy.
+
+### Concrete steps for a later authorized implementation session
+
+
+All commands below are prospective. None was executed while writing this plan. Work from
+`/Users/havardottestad/Documents/Programming/rdf4j-small-things`. Use the repository's required JDK 25 or newer and
+record the exact JVM used for every comparison. Inspect the current checkout and existing evidence before edits:
+
+    git status --short --untracked-files=no
+    git log -1 --oneline
+    git diff -- .agent/execplans/GH-0000-frontier-estimator-cost-model-roadmap.md
+
+Once execution and implementation are authorized, use the repository's required initial installation before tests.
+This is an instruction for future work, not an exception to the current prohibition on compilation:
+
+    mvn -B -ntp -Dmaven.compiler.showWarnings=false -T 1C -o -Dmaven.repo.local=.m2_repo -Pquick clean install 2>&1 \
+      | tee maven-build.log \
+      | awk '/\[WARNING\]/ { next } /\[ERROR\]/ { print; next } /Reactor Summary/ { summary=1 } summary { print }'
+
+Give that installation at least a 60-second tool timeout and follow the existing offline-dependency recovery rules.
+For each behavior change, add the smallest relevant failing in-repository test, run it, retain its report snippet,
+then change production code. Use the supported test runner, which handles the required dependency installation.
+Examples for current tests are:
+
+    python3 .codex/skills/mvnf/scripts/mvnf.py PackedCostAlgebraTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py PackedPhysicalCostContractTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbPhysicalWorkPricingRegressionTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbNativeStrategyArbiterTest --retain-logs
+
+The new test names in the phases are proposed files, not existing coverage. Create them in the corresponding core
+packed or LMDB test package, with the same package convention as adjacent tests. For example, phase 2's prospective
+file is
+`/Users/havardottestad/Documents/Programming/rdf4j-small-things/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbUnifiedAccessCostTest.java`.
+Select its smallest failing method first, then the class, then relevant cross-module suites. Future selectors include:
+
+    python3 .codex/skills/mvnf/scripts/mvnf.py PackedPlanningBudgetTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbUnifiedAccessCostTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbUnifiedPhysicalPlanningTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbPhysicalRecipeBindingTest --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py LmdbPhysicalFeedbackAttributionTest --retain-logs
+
+Pass means the specific behavioral assertions described in each phase succeed with zero test failures/errors; a
+skipped test does not satisfy a gate. Do not prescribe a fabricated future test count. Retain compact initial
+failure evidence and later passing evidence with exact report/log paths in a new, non-overwriting local evidence
+artifact named for this work. Preserve any existing `initial-evidence.txt` and all untracked artifacts. Do not use
+`-am` or `-q` when running tests. Inspect existing failures before attributing them to this work.
+
+After focused validation, the affected module selectors are:
+
+    python3 .codex/skills/mvnf/scripts/mvnf.py core/queryalgebra/evaluation --retain-logs
+    python3 .codex/skills/mvnf/scripts/mvnf.py core/sail/lmdb --retain-logs
+
+Add a proposed `LmdbPhysicalPlanningBenchmark` under the LMDB benchmark test package with separate `coldPlan`,
+`cachedPlan`, and `endToEnd` methods. Each must consume a verifiable plan/result and control cache state explicitly.
+Use fixed-plan execution controls and a separate latency harness when tail distributions are needed. The supported
+single-method benchmark invocation, after that class exists, is:
+
+    scripts/run-single-benchmark.sh --module core/sail/lmdb \
+      --class org.eclipse.rdf4j.sail.lmdb.benchmark.LmdbPhysicalPlanningBenchmark --method coldPlan
+
+Use separate invocations with `--method cachedPlan` and `--method endToEnd`. The existing Theme entry point provides
+an end-to-end workload lane, with theme/query parameters recorded explicitly for each run:
+
+    scripts/run-single-benchmark.sh --module core/sail/lmdb \
+      --class org.eclipse.rdf4j.sail.lmdb.benchmark.ThemeQueryBenchmark --method executeQuery
+
+Run ordinary matched measurements before profiling. If allocation or CPU regressions need investigation, use the
+same helper with `--enable-jfr` and its documented fixed profiling settings, keep the JFR path, and do not compare
+that profiling run directly to a differently configured timing control. Reuse the existing plan-quality audit
+support for alternative identity/result checks; update its recorded invocation if its interface has changed.
+
+### Idempotence, recovery, and delivery boundaries
+
+
+Keep implementation slices small and source-compatible while migrating a family. Re-running a test or benchmark must
+not overwrite the only baseline or initial failure evidence. Name retained outputs by immutable revision and run
+identity; never replace tracked source files with recovered artifacts. This plan and working evidence remain local
+and uncommitted unless separately authorized for inclusion. Do not change branches, stage, commit, or push merely
+because an implementation phase completes.
+
+On a provider failure or budget stop, close the query-local cost session and release borrowed views and scratch
+reservations while preserving the valid incumbent. On a bind failure, release unopened/rejected native proposals
+and use the recipe's valid equivalent fallback. If correctness assumptions cannot be revalidated, rebuild a valid
+plan through the existing safe path within its declared policy; do not reuse a stale proof. Distinguish cancellation
+from an invitation to keep optimizing or to run fallback work after the query has been cancelled.
+
+On incompatible recipe or learning-schema versions, invalidate the affected cache/evidence entry through existing
+version handling. Do not delete the store, rebuild adjacency unconditionally, or erase unrelated learning/history.
+For a failed integration slice, preserve the known-correct compatibility path and narrow the cause before retrying.
+No rollback may silence a semantic test or label unavailable evidence exact. Document remaining blockers and their
+evidence here instead of marking a family complete.
+
+### Artifacts, priority, and definition of completion
+
+
+The current artifact is this dated plan and the updates to the roadmap's Progress, Surprises & Discoveries,
+Decision Log, and Outcomes & Retrospective. Source inspection and document-diff checks are the only current evidence.
+Future artifacts are the strategy/access catalog, initial failing and subsequent passing test reports, small-oracle
+results, quote-to-execution traces, fixed-plan controls, benchmark metadata/results, and profiling captures when
+needed. None of those future artifacts is claimed to exist from this planning task.
+
+The first implementation priorities are the budgeted shared contract, correct physical access work, and the
+selected-to-executed recipe handoff. Consumer properties and retention are part of that first complete integration,
+not optional improvements after all algorithms are wired in. Broad strategy expansion and learned coefficient
+tuning follow the working vertical slice. Planning efficiency is implemented from phase 1 and measured at every
+phase; phase 6 qualifies and improves it rather than introducing it late.
+
+Completion means supported equivalent query shapes compete using the physical implementations actually available;
+consumer-compatible representations and ordering survive search; LMDB and adjacency work use the same evidence
+contract; the chosen recipe reaches execution or produces an explicit, correctly attributed fallback; and total
+user latency improves within validated planning, memory, and telemetry budgets. Correctness and search-completion
+claims remain independent of estimation confidence. An estimate that looks logically cheaper, a preferred strategy
+name, or a benchmark improvement obtained by ignoring planning time does not satisfy this contract.
+
+Plan revision note (2026-11-06 / Codex): added a source-grounded nine-phase implementation sequence for unified
+Cascades, native strategy, and LMDB/adjacency costing, including executable recipe ownership, shared physical work,
+consumer requirements, bounded planning, cache validation, and feedback. Updated the required living sections and
+explicitly separated this documentation-only task from future implementation and executable validation. The addition
+preserves the single-roadmap rule and does not treat historical timings as evidence for the proposed design.
