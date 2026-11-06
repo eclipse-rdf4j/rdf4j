@@ -35,7 +35,7 @@ import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
  * permanent semantic group.
  */
 @PackedHotPath
-final class PackedLogicalRuleProgram {
+final class PackedLogicalRuleProgram implements PackedAlternativeSink {
 
 	private static final int[] NO_CHILDREN = new int[0];
 	private static final int MAX_FINITE_VALUES = 64;
@@ -102,6 +102,9 @@ final class PackedLogicalRuleProgram {
 	private boolean aliasRewritten;
 	private PackedDomainFacts domainFacts;
 	private PackedPredicateRange filterFactRange;
+	private int originalRelationCount;
+	private PackedUnionAlternatives unionAlternatives;
+	private PackedOptionalAlternatives optionalAlternatives;
 
 	PackedLogicalRuleProgram(PackedExpressionInterner relations, PackedExpressionInterner scalars,
 			PackedExpressionInterner payloads, PackedBindingSetArena bindingSets, PackedNodeMetadataArena metadata,
@@ -121,6 +124,7 @@ final class PackedLogicalRuleProgram {
 	 */
 	void setRootExpression(int rootExpressionId) {
 		this.rootExpressionId = rootExpressionId;
+		originalRelationCount = relations.size();
 	}
 
 	private int applyingExpressionId;
@@ -148,7 +152,14 @@ final class PackedLogicalRuleProgram {
 		case PackedRelOp.JOIN -> {
 			addEmptyDomainJoinAlternative(expressionId);
 			registerFilterJoinConsumers(expressionId);
+			if (relations.childCount(expressionId) == 2
+					&& (relations.operatorTag(relations.childGroupId(expressionId, 0)) == PackedRelOp.UNION
+							|| relations.operatorTag(relations.childGroupId(expressionId, 1)) == PackedRelOp.UNION)) {
+				addUnionAlternatives(expressionId);
+			}
 		}
+		case PackedRelOp.UNION -> addUnionAlternatives(expressionId);
+		case PackedRelOp.LEFT_JOIN -> addOptionalAlternatives(expressionId);
 		case PackedRelOp.LATERAL -> addEmptyDomainJoinAlternative(expressionId);
 		case PackedRelOp.PROJECTION -> addProjectionAlternatives(expressionId);
 		case PackedRelOp.GROUP -> addGroupAlternatives(expressionId);
@@ -161,6 +172,29 @@ final class PackedLogicalRuleProgram {
 		}
 		}
 		addStoredPredicateRangeAnchorAlternative(expressionId);
+	}
+
+	private void addUnionAlternatives(int expressionId) {
+		if (expressionId > originalRelationCount) {
+			return;
+		}
+		if (unionAlternatives == null) {
+			unionAlternatives = new PackedUnionAlternatives(relations, payloads, metadata, this);
+			unionAlternatives.setOriginalRelationCount(originalRelationCount);
+		}
+		unionAlternatives.apply(expressionId);
+	}
+
+	private void addOptionalAlternatives(int expressionId) {
+		if (expressionId > originalRelationCount) {
+			return;
+		}
+		if (optionalAlternatives == null) {
+			optionalAlternatives = new PackedOptionalAlternatives(relations, payloads, bindingSets, metadata, symbols,
+					this);
+			optionalAlternatives.setOriginalRelationCount(originalRelationCount);
+		}
+		optionalAlternatives.apply(expressionId);
 	}
 
 	/**
@@ -3823,7 +3857,8 @@ final class PackedLogicalRuleProgram {
 		return result;
 	}
 
-	private int addAlternative(int sourceExpressionId, int operator, int payloadId, int[] childGroupIds,
+	@Override
+	public int addAlternative(int sourceExpressionId, int operator, int payloadId, int[] childGroupIds,
 			int childCount) {
 		return addAlternative(sourceExpressionId, operator, payloadId, childGroupIds, 0, childCount);
 	}
@@ -3843,6 +3878,11 @@ final class PackedLogicalRuleProgram {
 			metadata.copyRelation(sourceExpressionId, result);
 		}
 		return result;
+	}
+
+	@Override
+	public void addRuleMask(int expressionId, long proof) {
+		addAlternativeRuleMask(expressionId, proof);
 	}
 
 	private void addAlternativeRuleMask(int alternativeId, long ruleMask) {

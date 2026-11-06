@@ -570,6 +570,7 @@ class PackedQueryCodecTest {
 				PackedCostContext.class,
 				PackedCostEstimate.class, PackedExpressionInterner.class,
 				PackedFilterRules.class, PackedIncumbentSearch.class, PackedIntSequenceInterner.class,
+				PackedOptionalAlternatives.class, PackedUnionAlternatives.class,
 				PackedJoinEnumerator.class, PackedLongSubsetTable.class, PackedMaskInterner.class,
 				PackedMaskLayout.class, PackedMemo.class, PackedNodeMetadataArena.class, PackedObjectPool.class,
 				PackedPhysicalMetadataArena.class, PackedPhysicalPropertyInterner.class, PackedPlanRecipe.class,

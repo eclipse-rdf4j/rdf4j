@@ -120,6 +120,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceCheck
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.TupleFunctionMagicPropertyOptimizer;
@@ -128,6 +129,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -346,6 +348,35 @@ class LmdbOptimizerPipelineTest {
 				OrderLimitOptimizer.class), nonCheckerOptimizerTypesAfter(optimizers, cascadesIndex),
 				"Only the algebra-equivalent IN/VALUES and ORDER/LIMIT finalizers may run after the packed winner");
 		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+	}
+
+	@Test
+	void lmdbPrepassesRetainSharedUnionInputsForCostedSearch() {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		BindingSetAssignment sharedInput = new BindingSetAssignment();
+		sharedInput.setBindingNames(Set.of("s"));
+		sharedInput.setBindingSets(List.of(new ListBindingSet(List.of("s"),
+				values.createIRI("urn:union:subject"))));
+		QueryRoot root = new QueryRoot(new Join(sharedInput,
+				new Union(firstStatementPattern(values.createIRI("urn:union:first")).clone(),
+						firstStatementPattern(values.createIRI("urn:union:second")).clone())));
+		QueryRoot legacy = root.clone();
+		new QueryModelNormalizerOptimizer().optimize(legacy, null, EmptyBindingSet.getInstance());
+		assertInstanceOf(Union.class, legacy.getArg(), "the legacy normalizer still distributes this eligible fixture");
+
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
+				new EvaluationStatistics()).getOptimizers()) {
+			if (optimizer instanceof LmdbCascadesOptimizer) {
+				break;
+			}
+			optimizer.optimize(root, null, EmptyBindingSet.getInstance());
+		}
+		Join retained = assertInstanceOf(Join.class, root.getArg(),
+				"the packed optimizer must receive the shared input before deciding whether distribution is cheaper");
+		assertInstanceOf(BindingSetAssignment.class, retained.getLeftArg());
+		assertInstanceOf(Union.class, retained.getRightArg());
 	}
 
 	@Test

@@ -47,18 +47,24 @@ final class LmdbNativeFactorAlgebra {
 
 	static boolean candidate(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
 		if (facts == null) {
-			if (!(plan instanceof NativeValuesFoldPlan)) { return candidateUncached(plan, null); }
+			if (!(plan instanceof NativeValuesFoldPlan)) {
+				return candidateUncached(plan, null);
+			}
 			facts = new java.util.IdentityHashMap<>();
 		}
 		Boolean previous = facts.get(plan);
-		if (previous != null) { return previous; }
+		if (previous != null) {
+			return previous;
+		}
 		boolean result = candidateUncached(plan, facts);
 		facts.put(plan, result);
 		return result;
 	}
 
 	static boolean candidateUncached(SlotPlan plan, java.util.IdentityHashMap<SlotPlan, Boolean> facts) {
-		if (plan instanceof NativeValuesFoldPlan guard) { return candidate(guard.folded, facts) || candidate(guard.original, facts); }
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return candidate(guard.folded, facts) || candidate(guard.original, facts);
+		}
 		if (!enabled() || plan == null)
 			return false;
 		if (plan instanceof NativeAliasJoinPlan alias)
@@ -297,7 +303,9 @@ final class LmdbNativeFactorAlgebra {
 	}
 
 	private static LmdbNativeFactorCursor open(SlotPlan plan, RowState row, OnePass onePass) throws IOException {
-		if (plan instanceof NativeValuesFoldPlan guard) { return open(guard.select(row), row, onePass); }
+		if (plan instanceof NativeValuesFoldPlan guard) {
+			return open(guard.select(row), row, onePass);
+		}
 		if (plan instanceof NativeAliasJoinPlan alias)
 			return open(alias.select(row), row, onePass);
 		if (plan instanceof UnionPlan union)
@@ -413,6 +421,12 @@ final class LmdbNativeFactorAlgebra {
 
 	private static LmdbNativeFactorCursor join(SlotPlan leftPlan, SlotPlan rightPlan, RowState row,
 			boolean optional, OnePass onePass) throws IOException {
+		if (onePass == null) {
+			RowCursor memoized = LmdbNativeSupportJoin.tryOpen(leftPlan, rightPlan, row, optional);
+			if (memoized != null) {
+				return LmdbNativeFactorRows.scalar(memoized, row.slots.length);
+			}
+		}
 		boolean replaySafe = SlotPlan.encounterOrderReplaySafe(rightPlan);
 		LmdbNativeFactorCursor left = replaySafe ? open(leftPlan, row, onePass)
 				: LmdbNativeFactorRows.scalar(logical(openOrdered(leftPlan, row, onePass), row), row.slots.length);

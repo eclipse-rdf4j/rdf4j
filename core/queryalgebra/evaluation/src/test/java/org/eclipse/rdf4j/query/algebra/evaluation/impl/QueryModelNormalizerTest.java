@@ -156,6 +156,99 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void costedUnionModeRetainsLegacyDistributionForRepeatableFilters() throws Exception {
+		IRI kept = SimpleValueFactory.getInstance().createIRI("urn:union:kept");
+		IRI rejected = SimpleValueFactory.getInstance().createIRI("urn:union:rejected");
+		BindingSetAssignment input = bindingSetAssignment("x", kept);
+		input.setBindingSets(List.of(new ListBindingSet(List.of("x"), kept),
+				new ListBindingSet(List.of("x"), kept), new ListBindingSet(List.of("x"), rejected)));
+		assertLegacyDistributionInCostedMode(new Filter(input,
+				new Compare(new Var("x"), new ValueConstant(kept), Compare.CompareOp.EQ)));
+	}
+
+	@Test
+	public void costedUnionModeRetainsLegacyDistributionForRepeatableExtensions() throws Exception {
+		IRI value = SimpleValueFactory.getInstance().createIRI("urn:union:value");
+		BindingSetAssignment input = bindingSetAssignment("x", value);
+		input.setBindingSets(List.of(new ListBindingSet(List.of("x"), value),
+				new ListBindingSet(List.of("x"), value)));
+		assertLegacyDistributionInCostedMode(new Extension(input,
+				new ExtensionElem(new ValueConstant(value), "generated")));
+	}
+
+	@Test
+	public void costedUnionModeKeepsPureSharedValuesForSearch() throws Exception {
+		IRI value = SimpleValueFactory.getInstance().createIRI("urn:union:value");
+		QueryRoot original = new QueryRoot(new Join(bindingSetAssignment("x", value),
+				new Union(bindingSetAssignment("branch", value), bindingSetAssignment("branch", value))));
+		QueryRoot normalized = original.clone();
+		new QueryModelNormalizerOptimizer(false).optimize(normalized, null, EmptyBindingSet.getInstance());
+		assertThat(normalized.getArg()).isInstanceOf(Join.class);
+		assertThat(evaluate(normalized)).hasSize(2).containsExactlyInAnyOrderElementsOf(evaluate(original));
+	}
+
+	@Test
+	public void costedUnionModeRetainsLegacyDistributionBelowEnclosingFilter() throws Exception {
+		IRI kept = SimpleValueFactory.getInstance().createIRI("urn:union:kept");
+		IRI rejected = SimpleValueFactory.getInstance().createIRI("urn:union:rejected");
+		for (boolean unionOnLeft : new boolean[] { true, false }) {
+			BindingSetAssignment input = bindingSetAssignment("x", kept);
+			input.setBindingSets(List.of(new ListBindingSet(List.of("x"), kept),
+					new ListBindingSet(List.of("x"), kept), new ListBindingSet(List.of("x"), rejected)));
+			Union alternatives = new Union(bindingSetAssignment("branch", kept),
+					bindingSetAssignment("branch", kept));
+			Join filteredJoin = unionOnLeft ? new Join(alternatives, input) : new Join(input, alternatives);
+			Filter filtered = new Filter(filteredJoin,
+					new Compare(new Var("x"), new ValueConstant(kept), Compare.CompareOp.EQ));
+			Join sharedSibling = new Join(bindingSetAssignment("x", kept),
+					new Union(bindingSetAssignment("branch", kept), bindingSetAssignment("branch", kept)));
+			QueryRoot original = new QueryRoot(new Union(filtered, sharedSibling));
+			List<BindingSet> expected = evaluate(original.clone());
+			assertThat(expected).as("filtered duplicates plus the unaffected shared sibling").hasSize(6);
+
+			QueryRoot legacy = original.clone();
+			subject.optimize(legacy, null, EmptyBindingSet.getInstance());
+			Filter legacyFilter = (Filter) ((Union) legacy.getArg()).getLeftArg();
+			assertThat(legacyFilter.getArg()).as("the original normalizer proves this distribution legal")
+					.isInstanceOf(Union.class);
+			assertThat(evaluate(legacy)).containsExactlyInAnyOrderElementsOf(expected);
+
+			QueryRoot normalized = original.clone();
+			new QueryModelNormalizerOptimizer(false).optimize(normalized, null, EmptyBindingSet.getInstance());
+			Union normalizedUnion = (Union) normalized.getArg();
+			Filter normalizedFilter = (Filter) normalizedUnion.getLeftArg();
+			assertThat(normalizedFilter.getArg())
+					.as("later filter placement needs the legacy branch-local normalization")
+					.isInstanceOf(Union.class);
+			assertThat(normalizedUnion.getRightArg()).as("leaving the FILTER restores pure shared search")
+					.isInstanceOf(Join.class);
+			assertThat(evaluate(normalized)).containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	private void assertLegacyDistributionInCostedMode(TupleExpr repeated) throws Exception {
+		IRI branch = SimpleValueFactory.getInstance().createIRI("urn:union:branch");
+		for (boolean unionOnLeft : new boolean[] { true, false }) {
+			Union union = new Union(bindingSetAssignment("branch", branch), bindingSetAssignment("branch", branch));
+			QueryRoot original = new QueryRoot(unionOnLeft ? new Join(union, repeated.clone())
+					: new Join(repeated.clone(), union));
+			List<BindingSet> expected = evaluate(original.clone());
+			assertThat(expected).as("duplicate input rows and UNION arms retain their full bag").hasSize(4);
+			QueryRoot legacy = original.clone();
+			subject.optimize(legacy, null, EmptyBindingSet.getInstance());
+			assertThat(legacy.getArg()).as("the original normalizer proves this distribution legal")
+					.isInstanceOf(Union.class);
+			assertThat(evaluate(legacy)).containsExactlyInAnyOrderElementsOf(expected);
+
+			QueryRoot normalized = original.clone();
+			new QueryModelNormalizerOptimizer(false).optimize(normalized, null, EmptyBindingSet.getInstance());
+			assertThat(normalized.getArg()).as("costed pure UNION search must not remove the legacy complex choice")
+					.isInstanceOf(Union.class);
+			assertThat(evaluate(normalized)).containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	@Test
 	public void doesNotReassociateJoinAcrossNonRepeatableLeftJoin() {
 		LeftJoin volatileLeft = new LeftJoin(pattern("optionalLeft"), pattern("optionalRight"),
 				new FunctionCall("urn:test:volatile:left-join"));

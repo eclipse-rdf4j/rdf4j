@@ -1011,6 +1011,16 @@ final class LmdbNativeKernelLowering {
 					|| LmdbNativeKernelIr.weightedPlanCount(projected.kernel)))
 				return new Lowered(projected.kernel, projected.bindings, "agg:shared-factor-projections");
 		}
+		// A complete VALUES key domain can price repeated INNER/OPTIONAL payload work before any input is opened.
+		// Preserve ordinary IR for unknown/cheap domains and insufficient memory; automatic support routing is
+		// currently restricted to duplicate-sensitive COUNT, whose weighted producer contract is covered directly.
+		if (!preferScans && !scanVariablePredicates
+				&& LmdbNativeSupportJoin.preferCountAggregate(arg, row, aggregates)) {
+			Lowered support = lowerAggregateWithPlanProducer(arg, row, groupSlots, aggregates, having);
+			if (support != null) {
+				return new Lowered(support.kernel, support.bindings, "agg:costed-support-key-memo");
+			}
+		}
 		// Sticky (EXISTS-bearing) filters never flatten into a MultiJoinPlan — they arrive as FilterPlan wrappers
 		// around the producer. Peel the wrapper chain, collecting the conditions, then lower the core.
 		List<MaskedFilter> filters = new ArrayList<>();
