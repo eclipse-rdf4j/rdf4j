@@ -20,7 +20,10 @@ import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -59,6 +62,7 @@ import tools.jackson.databind.ObjectMapper;
 class ExploreSparqlProxyTest {
 
 	private static final ObjectMapper JSON = new ObjectMapper();
+	private final AtomicReference<Map<String, String>> lastRequest = new AtomicReference<>();
 	private SailRepository store;
 	private SPARQLRepository proxy;
 	private ExploreServlet servlet;
@@ -137,6 +141,14 @@ class ExploreSparqlProxyTest {
 	}
 
 	@Test
+	void genericEndpointReceivesBindingsInQueryTextRatherThanNativeParameters() throws Exception {
+		assertThat(rows(call("incoming", "rows", null, "\"literal\"", null))).hasSize(4);
+		Map<String, String> parameters = lastRequest.get();
+		assertThat(parameters.get("query")).contains("VALUES", "\"literal\"");
+		assertThat(parameters.keySet()).noneMatch(name -> name.startsWith("$"));
+	}
+
+	@Test
 	void genericBlankNodeInputReportsUnsupportedIdentity() throws Exception {
 		MockHttpServletRequest request = request("incoming", "rows", null, "_:node", null);
 		MockHttpServletResponse response = new MockHttpServletResponse();
@@ -160,12 +172,18 @@ class ExploreSparqlProxyTest {
 				parameters = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
 			}
 			String query = null;
+			Map<String, String> request = new LinkedHashMap<>();
 			for (String parameter : parameters.split("&")) {
 				String[] pair = parameter.split("=", 2);
+				if (pair.length == 2) {
+					request.put(URLDecoder.decode(pair[0], StandardCharsets.UTF_8),
+							URLDecoder.decode(pair[1], StandardCharsets.UTF_8));
+				}
 				if ("query".equals(URLDecoder.decode(pair[0], StandardCharsets.UTF_8)) && pair.length == 2) {
 					query = URLDecoder.decode(pair[1], StandardCharsets.UTF_8);
 				}
 			}
+			lastRequest.set(request);
 			try (RepositoryConnection connection = store.getConnection()) {
 				if (query != null && query.contains("urn:test:huge") && query.contains("COUNT(")) {
 					MapBindingSet row = new MapBindingSet();
