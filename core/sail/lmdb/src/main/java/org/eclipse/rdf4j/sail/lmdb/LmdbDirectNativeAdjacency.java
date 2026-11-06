@@ -983,6 +983,7 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		private long size = SIZE_UNKNOWN;
 		private long contextSpanEnd;
 		private boolean directBaseRun;
+		private Runnable cancellationPoll;
 
 		private RootScanCursor(ImmutablePagedQuadCsfIndex.KeyCursor baseCursor, long fromOrdinal, long toOrdinal,
 				boolean merged, long boundContext) {
@@ -993,6 +994,14 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			this.boundContext = boundContext;
 			this.contextRun = boundContext < 0 ? null : new LmdbAdjacencyRunCodec.RunCursor();
 			this.emittedOrdinal = merged ? 0 : fromOrdinal;
+		}
+
+		@Override
+		public void cancellationPoll(Runnable cancellationPoll) {
+			this.cancellationPoll = cancellationPoll;
+			if (baseCursor != null) {
+				baseCursor.cancellationPoll(cancellationPoll);
+			}
 		}
 
 		@Override
@@ -1030,6 +1039,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		@Override
 		public boolean advance() {
 			while (emittedOrdinal < toOrdinal && nextCandidate()) {
+				if (cancellationPoll != null) {
+					cancellationPoll.run();
+				}
 				long ordinal = emittedOrdinal++;
 				if (ordinal >= fromOrdinal && run > 0) {
 					if (contextRun != null) {
@@ -1056,6 +1068,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 				return true;
 			}
 			while (true) {
+				if (cancellationPoll != null) {
+					cancellationPoll.run();
+				}
 				if (!baseReady && baseCursor != null) {
 					baseReady = baseCursor.advance();
 				}

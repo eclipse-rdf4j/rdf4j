@@ -370,6 +370,11 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 		}
 
 		@Override
+		public void cancellationPoll(Runnable cancellationPoll) {
+			cursor.cancellationPoll(cancellationPoll);
+		}
+
+		@Override
 		public long distinctNeighborCount() {
 			return cursor.distinctNeighborCount();
 		}

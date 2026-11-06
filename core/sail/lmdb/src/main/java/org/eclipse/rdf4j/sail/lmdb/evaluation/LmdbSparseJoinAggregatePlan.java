@@ -583,6 +583,7 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 			this.namedOnly = namedOnly;
 			this.cancellation = cancellation;
 			this.memory = memory;
+			cursor.cancellationPoll(KernelRuntime.cancellationPoll(cancellation));
 		}
 
 		@Override

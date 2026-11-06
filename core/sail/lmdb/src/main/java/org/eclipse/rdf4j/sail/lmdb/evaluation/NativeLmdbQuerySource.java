@@ -1144,6 +1144,14 @@ public interface NativeLmdbQuerySource {
 
 		static KeyRunCursor boundedKeyRunCursor(KeyRunCursor delegate, long fromOrdinal, long toOrdinal) {
 			return new KeyRunCursor() {
+				private Runnable cancellationPoll;
+
+				@Override
+				public void cancellationPoll(Runnable cancellationPoll) {
+					this.cancellationPoll = cancellationPoll;
+					delegate.cancellationPoll(cancellationPoll);
+				}
+
 				@Override
 				public boolean contextSpan(long fromOffset, ContextSpan target) {
 					return delegate.contextSpan(fromOffset, target);
@@ -1171,6 +1179,9 @@ public interface NativeLmdbQuerySource {
 				@Override
 				public boolean advance() {
 					while (ordinal < fromOrdinal) {
+						if (cancellationPoll != null) {
+							cancellationPoll.run();
+						}
 						if (!delegate.advance()) {
 							return false;
 						}
@@ -1876,6 +1887,10 @@ public interface NativeLmdbQuerySource {
 		 */
 		@Experimental
 		interface KeyRunCursor extends AutoCloseable {
+			/** Installs an optional check invoked during potentially unbounded physical traversal. */
+			default void cancellationPoll(Runnable cancellationPoll) {
+			}
+
 			default boolean contextSpan(long fromOffset, ContextSpan target) {
 				return false;
 			}

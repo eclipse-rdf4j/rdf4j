@@ -37,12 +37,16 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.SparseJoinAggregateTestFixture;
+import org.eclipse.rdf4j.sail.lmdb.csf.CsfPageTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
@@ -79,6 +83,230 @@ class SparseJoinAggregateAdapterTest {
 			System.setProperty(LmdbSparseJoinAggregatePlan.ENABLED_PROPERTY, previousEnabled);
 		}
 		assertEquals(0L, manager.usedBytes());
+	}
+
+	@Test
+	void realMultiPageCursorTraversesLinearlyThroughSparseAdapter() {
+		long[] traversals = new long[2];
+		int[] pageCounts = new int[2];
+		int fixtureNumber = 0;
+		for (int count : new int[] { 40_000, 80_000 }) {
+			try (SparseJoinAggregateTestFixture fixture = new SparseJoinAggregateTestFixture(count, false);
+					NativeAdjacency.KeyRunCursor cursor = fixture.adjacency().openKeyRunCursor();
+					KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+				assertTrue(fixture.pageCount() > 2);
+				var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, new long[] { 0L }, false, null,
+						memory);
+				assertTrue(rows.nextRow());
+				assertEquals(SparseJoinAggregateTestFixture.id(10), rows.key());
+				long before = CsfPageTestAccess.decodes();
+				long[] neighbors = new long[256];
+				long[] weights = new long[256];
+				int seen = 0;
+				int copied;
+				while ((copied = rows.read(neighbors, weights)) != 0) {
+					for (int i = 0; i < copied; i++, seen++) {
+						assertEquals(SparseJoinAggregateTestFixture.id(1_000_000L + (long) seen * seen), neighbors[i]);
+						assertEquals(1L, weights[i]);
+					}
+				}
+				assertEquals(count, seen);
+				traversals[fixtureNumber] = CsfPageTestAccess.decodes() - before;
+				pageCounts[fixtureNumber++] = fixture.pageCount();
+				System.out.printf("SPARSE_ADAPTER_TRAVERSAL quads=%d pages=%d decodes=%d%n", count,
+						fixture.pageCount(), traversals[fixtureNumber - 1]);
+				assertTrue(rows.nextRow());
+				assertEquals(SparseJoinAggregateTestFixture.id(20), rows.key());
+				assertEquals(1, rows.read(neighbors, weights));
+				assertFalse(rows.nextRow());
+			}
+		}
+		for (int i = 0; i < traversals.length; i++) {
+			assertTrue(traversals[i] <= 4L * pageCounts[i] + 4L,
+					"each column may visit a page at most twice around batch boundaries");
+		}
+	}
+
+	@Test
+	void singleAndMixedContextFibersDoBoundedSequentialWork() {
+		long[] workPolls = new long[4];
+		int[] batches = new int[4];
+		int measurement = 0;
+		for (int count : new int[] { 20_000, 40_000 }) {
+			for (int contextsPerNeighbor : new int[] { 4, count }) {
+				try (SparseJoinAggregateTestFixture fixture = new SparseJoinAggregateTestFixture(count,
+						contextsPerNeighbor);
+						NativeAdjacency.KeyRunCursor cursor = fixture.adjacency().openKeyRunCursor();
+						KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+					AtomicLong polls = new AtomicLong();
+					KernelCancellation cancellation = KernelCancellation.forOrdinaryExecution(() -> {
+						polls.incrementAndGet();
+						return false;
+					}, null, null);
+					var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, true, cancellation, memory);
+					assertTrue(rows.nextRow());
+					long before = polls.get();
+					long[] neighbors = new long[256];
+					long[] weights = new long[256];
+					int seen = 0;
+					int copied;
+					while ((copied = rows.read(neighbors, weights)) != 0) {
+						for (int i = 0; i < copied; i++) {
+							long fiber = seen / contextsPerNeighbor;
+							assertEquals(SparseJoinAggregateTestFixture.id(1_000_000L + fiber * fiber), neighbors[i]);
+							assertTrue(
+									weights[i] > 0 && weights[i] <= contextsPerNeighbor - seen % contextsPerNeighbor);
+							seen += (int) weights[i];
+						}
+					}
+					assertEquals(count, seen);
+					workPolls[measurement] = polls.get() - before;
+					batches[measurement] = (count + 255) / 256;
+					System.out.printf("SPARSE_FIBER_WORK quads=%d contextsPerNeighbor=%d batches=%d polls=%d%n",
+							count, contextsPerNeighbor, batches[measurement], workPolls[measurement]);
+					measurement++;
+				}
+			}
+		}
+		for (int i = 0; i < workPolls.length; i++) {
+			assertTrue(workPolls[i] > 2L * batches[i], "both physical column scans must poll their work");
+			assertTrue(workPolls[i] <= 12L * batches[i] + 32L, "sequential work must not rescan page prefixes");
+		}
+	}
+
+	@Test
+	void singlePagePhysicalFiberCopiesAdvanceWithoutRewalkingFibers() {
+		int count = 8_000;
+		int fibers = count / 4;
+		try (SparseJoinAggregateTestFixture fixture = new SparseJoinAggregateTestFixture(count, 4);
+				NativeAdjacency.KeyRunCursor cursor = fixture.adjacency().openKeyRunCursor();
+				KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+			assertEquals(count, fixture.firstPageQuads());
+			AtomicLong polls = new AtomicLong();
+			KernelCancellation cancellation = KernelCancellation.forOrdinaryExecution(() -> {
+				polls.incrementAndGet();
+				return false;
+			}, null, null);
+			var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, false, cancellation, memory);
+			assertTrue(rows.nextRow());
+			assertTrue(cursor.supportsPhysicalFiberCopy());
+			long before = polls.get();
+			long[] neighbors = new long[64];
+			long[] weights = new long[64];
+			int seen = 0;
+			int copied;
+			while ((copied = rows.read(neighbors, weights)) != 0) {
+				for (int i = 0; i < copied; i++, seen++) {
+					assertEquals(SparseJoinAggregateTestFixture.id(1_000_000L + (long) seen * seen), neighbors[i]);
+					assertEquals(4L, weights[i]);
+				}
+			}
+			assertEquals(fibers, seen);
+			int batches = (fibers + neighbors.length - 1) / neighbors.length;
+			long workPolls = polls.get() - before;
+			System.out.printf("SPARSE_PHYSICAL_FIBER_WORK fibers=%d batches=%d polls=%d%n", fibers, batches,
+					workPolls);
+			assertTrue(workPolls > 2L * batches, "physical copies must poll inside page-local work");
+			assertTrue(workPolls <= 12L * batches + 32L, "physical copies must not replay the fiber prefix");
+		}
+	}
+
+	@Test
+	void cancellationInterruptsSinglePagePhysicalFiberCopy() {
+		int count = 8_000;
+		try (SparseJoinAggregateTestFixture fixture = new SparseJoinAggregateTestFixture(count, 4);
+				NativeAdjacency.KeyRunCursor cursor = fixture.adjacency().openKeyRunCursor();
+				KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+			assertEquals(count, fixture.firstPageQuads());
+			AtomicBoolean armed = new AtomicBoolean();
+			AtomicInteger polls = new AtomicInteger();
+			KernelCancellation cancellation = KernelCancellation.forOrdinaryExecution(
+					() -> armed.get() && polls.incrementAndGet() >= 3, null, null);
+			var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, false, cancellation, memory);
+			assertTrue(rows.nextRow());
+			assertTrue(cursor.supportsPhysicalFiberCopy());
+			long[] neighbors = new long[4_096];
+			Arrays.fill(neighbors, -1L);
+			armed.set(true);
+			assertThrows(KernelCancelledException.class, () -> rows.read(neighbors, new long[neighbors.length]));
+			assertEquals(-1L, neighbors[count / 4 - 1], "cancel before the physical fiber batch finishes");
+		}
+	}
+
+	@Test
+	void cancellationInterruptsOverlappingPhysicalFiberCopy() {
+		int count = 8_000;
+		try (SparseJoinAggregateTestFixture fixture = new SparseJoinAggregateTestFixture(count, 4);
+				NativeAdjacency.KeyRunCursor cursor = fixture.adjacency().openKeyRunCursor();
+				KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+			assertEquals(count, fixture.firstPageQuads());
+			AtomicBoolean armed = new AtomicBoolean();
+			AtomicInteger polls = new AtomicInteger();
+			KernelCancellation cancellation = KernelCancellation.forOrdinaryExecution(
+					() -> armed.get() && polls.incrementAndGet() >= 3, null, null);
+			var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, false, cancellation, memory);
+			assertTrue(rows.nextRow());
+			assertTrue(cursor.supportsPhysicalFiberCopy());
+			long[] target = new long[4_096];
+			Arrays.fill(target, -1L);
+			armed.set(true);
+			assertThrows(KernelCancelledException.class, () -> rows.read(target, target));
+			assertEquals(-1L, target[count / 4 - 1], "cancel before the overlapping fiber batch finishes");
+		}
+	}
+
+	@Test
+	void cancellationInterruptsMultiPageRunCounting() {
+		try (SparseJoinAggregateTestFixture fixture = new SparseJoinAggregateTestFixture(80_000, true);
+				NativeAdjacency.KeyRunCursor cursor = fixture.adjacency().openKeyRunCursor();
+				KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+			assertTrue(fixture.pageCount() > 3);
+			long before = CsfPageTestAccess.decodes();
+			KernelCancellation cancellation = KernelCancellation.forOrdinaryExecution(
+					() -> CsfPageTestAccess.decodes() - before >= 2, null, null);
+			var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, false, cancellation, memory);
+			assertThrows(KernelCancelledException.class, rows::nextRow);
+			assertTrue(CsfPageTestAccess.decodes() - before <= 3, "cancel while counting pages");
+		}
+	}
+
+	@Test
+	void cancellationInterruptsSkippingContinuationPages() {
+		try (SparseJoinAggregateTestFixture fixture = new SparseJoinAggregateTestFixture(80_000, true);
+				NativeAdjacency.KeyRunCursor cursor = fixture.adjacency().openKeyRunCursor();
+				KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+			assertTrue(fixture.pageCount() > 3);
+			AtomicBoolean armed = new AtomicBoolean();
+			AtomicLong before = new AtomicLong();
+			KernelCancellation cancellation = KernelCancellation.forOrdinaryExecution(
+					() -> armed.get() && CsfPageTestAccess.decodes() - before.get() >= 2, null, null);
+			var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, false, cancellation, memory);
+			assertTrue(rows.nextRow());
+			before.set(CsfPageTestAccess.decodes());
+			armed.set(true);
+			assertThrows(KernelCancelledException.class, rows::nextRow);
+			assertTrue(CsfPageTestAccess.decodes() - before.get() <= 3, "cancel while skipping pages");
+		}
+	}
+
+	@Test
+	void cancellationInterruptsADeepInPageContextFiberCopy() {
+		try (SparseJoinAggregateTestFixture fixture = new SparseJoinAggregateTestFixture(80_000, true);
+				NativeAdjacency.KeyRunCursor cursor = fixture.adjacency().openKeyRunCursor();
+				KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+			assertTrue(fixture.firstPageQuads() >= 4_096);
+			AtomicBoolean armed = new AtomicBoolean();
+			AtomicInteger polls = new AtomicInteger();
+			KernelCancellation cancellation = KernelCancellation.forOrdinaryExecution(
+					() -> armed.get() && polls.incrementAndGet() >= 3, null, null);
+			var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, null, true, cancellation, memory);
+			assertTrue(rows.nextRow());
+			long[] neighbors = new long[4_096];
+			Arrays.fill(neighbors, -1L);
+			armed.set(true);
+			assertThrows(KernelCancelledException.class, () -> rows.read(neighbors, new long[neighbors.length]));
+			assertEquals(-1L, neighbors[neighbors.length - 1], "cancel before the in-page batch finishes");
+		}
 	}
 
 	@Test
