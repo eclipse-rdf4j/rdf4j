@@ -56,6 +56,7 @@ public class WriterBenchmark {
 
 	@Param({
 			"brf",
+			"jelly",
 			"jsonld",
 			"n3",
 			"nq",

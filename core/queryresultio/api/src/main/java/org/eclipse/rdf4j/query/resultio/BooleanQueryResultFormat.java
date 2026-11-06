@@ -50,6 +50,12 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	public static final BooleanQueryResultFormat TEXT = new BooleanQueryResultFormat("TEXT", "text/boolean",
 			StandardCharsets.US_ASCII, "txt");
 
+	/**
+	 * <a href="https://w3id.org/jelly/">Jelly-SPARQL</a>, a high-performance binary format for SPARQL results.
+	 */
+	public static final BooleanQueryResultFormat JELLY = new BooleanQueryResultFormat("Jelly-SPARQL",
+			"application/x-jelly-sparql", null, "jellys");
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/

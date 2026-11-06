@@ -55,6 +55,12 @@ public class TupleQueryResultFormat extends QueryResultFormat {
 			"application/x-binary-rdf-results-table", null, "brt", SUPPORTS_TRIPLE_TERMS);
 
 	/**
+	 * <a href="https://w3id.org/jelly/">Jelly-SPARQL</a>, a high-performance binary format for SPARQL results.
+	 */
+	public static final TupleQueryResultFormat JELLY = new TupleQueryResultFormat("Jelly-SPARQL",
+			"application/x-jelly-sparql", null, "jellys", SUPPORTS_TRIPLE_TERMS);
+
+	/**
 	 * SPARQL Query Results JSON Format.
 	 */
 	public static final TupleQueryResultFormat JSON = new TupleQueryResultFormat("SPARQL/JSON",

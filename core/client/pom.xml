@@ -73,6 +73,11 @@
 		</dependency>
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-queryresultio-jelly</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-queryresultio-sparqljson</artifactId>
 			<version>${project.version}</version>
 		</dependency>
@@ -134,6 +139,11 @@
 		<dependency>
 			<groupId>org.eclipse.rdf4j</groupId>
 			<artifactId>rdf4j-rio-jsonld</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-rio-jelly</artifactId>
 			<version>${project.version}</version>
 		</dependency>
 		<dependency>
