@@ -28,6 +28,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+      - name: Install Node.js
+        uses: actions/setup-node@v7.0.0
+        with:
+          node-version: 22
 
       - name: Required root quick clean install
         shell: pwsh

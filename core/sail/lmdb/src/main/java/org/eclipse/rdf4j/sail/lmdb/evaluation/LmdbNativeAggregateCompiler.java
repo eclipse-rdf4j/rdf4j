@@ -515,6 +515,9 @@ final class LmdbNativeAggregateCompiler {
 	 * consult state outside declared slot masks.
 	 */
 	static long memoReadMask(SlotPlan plan) {
+		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan) {
+			return 0L;
+		}
 		if (plan instanceof NativeAliasJoinPlan alias) {
 			return memoReadMask(alias.original);
 		}
@@ -540,10 +543,11 @@ final class LmdbNativeAggregateCompiler {
 				mask |= childMask;
 			}
 			for (MaskedFilter filter : multiJoin.filters) {
-				if (filter.mask < 0L) {
+				long reads = NativePredicateCapabilities.groupedReadMask(filter.filter, filter.mask);
+				if (reads < 0L) {
 					return -1L;
 				}
-				mask |= filter.mask;
+				mask |= reads;
 			}
 			return mask;
 		}
@@ -581,11 +585,12 @@ final class LmdbNativeAggregateCompiler {
 		}
 		if (plan instanceof FilterPlan) {
 			FilterPlan filterPlan = (FilterPlan) plan;
-			if (filterPlan.filterMask < 0L) {
+			long reads = filterPlan.groupedReadMask();
+			if (reads < 0L) {
 				return -1L;
 			}
 			long argMask = memoReadMask(filterPlan.arg);
-			return argMask < 0L ? -1L : argMask | filterPlan.filterMask;
+			return argMask < 0L ? -1L : argMask | reads;
 		}
 		if (plan instanceof ExtensionPlan) {
 			// M-F1: plain slot/constant copies are pure functions of the argument's row stream; computed copies keep
