@@ -194,6 +194,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
@@ -415,7 +417,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
 		this.evaluationStatistics = evaluationStatistics == null ? new EvaluationStatistics() : evaluationStatistics;
-		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline(this,
+		this.pipeline = new StandardQueryOptimizerPipeline(this,
 				tripleSource, this.evaluationStatistics);
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
@@ -471,8 +473,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		blankNodes.reserve(bindings);
 		TupleExpr result = withPreparedTupleExpr(expr, prepared -> {
 			QueryEvaluationUtility.pinFunctions(prepared);
+			// Prepared store evaluation starts with empty input. Parameter capture is required even when a caller
+			// replaces the optional optimizer pipeline, and must finish before optimizers can erase unresolved reads.
+			StandardQueryOptimizerPipeline.BINDING_ASSIGNER.optimizeForPreparedQuery(prepared, bindings);
 			TupleExpr optimized = prepared;
 			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
+				if (optimizer.getClass() == BindingAssignerOptimizer.class) {
+					continue; // The standard parameter assignment has already run, with completeness validation.
+				}
 				optimized = QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(optimized, optimizerRoot -> {
 					optimizer.optimize(optimizerRoot, dataset, pipeline.getOptimizerInputBindings(optimizer, bindings));
 					return optimizerRoot;

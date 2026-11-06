@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.federated.evaluation.iterator.SingleBindingSetIteration
 import org.eclipse.rdf4j.federated.evaluation.iterator.StatementConversionIteration;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.util.BoundFilterUtil;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
@@ -70,6 +71,9 @@ public class SailTripleSource extends TripleSourceBase {
 			QueryEvaluationException {
 
 		Dataset dataset = stmt instanceof QueryRef queryRef ? queryRef.getExecutionDataset() : queryInfo.getDataset();
+		if (!BoundFilterUtil.hasValidValuePositions(stmt, bindings)) {
+			return new EmptyIteration<>();
+		}
 		if (EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset)) {
 			return preparedStatements(stmt, bindings, filterExpr, queryInfo,
 					typed -> QueryStringUtil.selectQueryString(stmt, typed, null, new AtomicBoolean(), null),
@@ -173,6 +177,9 @@ public class SailTripleSource extends TripleSourceBase {
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
+		if (!BoundFilterUtil.hasValidValuePositions(stmt, bindings)) {
+			return false;
+		}
 		if (EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset)) {
 			return hasPreparedStatements(stmt, bindings, queryInfo,
 					typed -> QueryStringUtil.askQueryString(stmt, typed, null), dataset);
@@ -254,6 +261,11 @@ public class SailTripleSource extends TripleSourceBase {
 	}
 
 	public CloseableIteration<BindingSet> getStatements(ExclusiveGroup group, BindingSet bindings) {
+		var compatibleBindings = BoundFilterUtil.merge(bindings, group);
+		if (compatibleBindings.isEmpty()) {
+			return new EmptyIteration<>();
+		}
+		bindings = compatibleBindings.get();
 		CloseableIteration<BindingSet> result = preparedStatements(group, bindings, group.getFilterExpr(),
 				group.getQueryInfo(),
 				typed -> QueryStringUtil.selectQueryString(group, typed, null, new AtomicBoolean(), null),
@@ -262,15 +274,33 @@ public class SailTripleSource extends TripleSourceBase {
 	}
 
 	public CloseableIteration<BindingSet> getStatements(ExclusiveTupleExprRenderer expression, BindingSet bindings) {
+		var compatibleBindings = BoundFilterUtil.merge(bindings, expression);
+		if (compatibleBindings.isEmpty()) {
+			return new EmptyIteration<>();
+		}
+		bindings = compatibleBindings.get();
 		return preparedStatements(expression, bindings, null, expression.getQueryInfo(),
 				typed -> QueryStringUtil.selectQueryString(expression, typed, null, new AtomicBoolean(), null),
 				typed -> QueryStringUtil.askQueryString(expression, typed, null), expression.getExecutionDataset());
 	}
 
 	public CloseableIteration<BindingSet> getStatements(TripleRefJoinGroup group, BindingSet bindings) {
-		return preparedStatements(group, bindings, null, group.getQueryInfo(),
-				typed -> QueryStringUtil.selectQueryStringTripleRefJoinGroup(group, typed, null),
-				typed -> QueryStringUtil.askQueryString(group, typed, null), group.getExecutionDataset());
+		var compatibleBindings = BoundFilterUtil.merge(bindings, group);
+		if (compatibleBindings.isEmpty()) {
+			return new EmptyIteration<>();
+		}
+		bindings = compatibleBindings.get();
+		QueryStringUtil.TypedBindings typed = new QueryStringUtil.TypedBindings(group, bindings);
+		var rendered = QueryStringUtil.renderTripleRefJoinGroup(group, typed, null);
+		if (rendered.bindingNames().isEmpty()) {
+			// A private probe projection expresses existence, never a public RDF-star result column.
+			return hasPreparedStatements(group, bindings, group.getQueryInfo(),
+					values -> QueryStringUtil.askQueryString(group, values, null), group.getExecutionDataset())
+							? new SingleBindingSetIteration(bindings)
+							: new EmptyIteration<>();
+		}
+		return getStatements(rendered.queryString(), bindings, typed.getQueryBindings(), null, group.getQueryInfo(),
+				group.getExecutionDataset());
 	}
 
 	@Override

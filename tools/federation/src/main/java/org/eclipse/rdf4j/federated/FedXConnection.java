@@ -156,7 +156,8 @@ public class FedXConnection extends AbstractSailConnection {
 		try {
 			// make sure to apply any external bindings
 			BindingSet queryBindings = EmptyBindingSet.getInstance();
-			if (!FedXRepositoryConnection.FEDX_BINDINGS.containsAll(bindings.getBindingNames())) {
+			if (!queryInfo.hasCapturedBindings(query)
+					&& !FedXRepositoryConnection.FEDX_BINDINGS.containsAll(bindings.getBindingNames())) {
 				MapBindingSet actualQueryBindings = new MapBindingSet();
 				bindings.forEach(binding -> {
 					if (!FedXRepositoryConnection.FEDX_BINDINGS.contains(binding.getName())) {

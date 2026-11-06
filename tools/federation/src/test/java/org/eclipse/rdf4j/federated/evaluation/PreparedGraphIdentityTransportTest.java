@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.FederationContext;
+import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.FilterExpr;
@@ -299,6 +300,9 @@ class PreparedGraphIdentityTransportTest {
 
 	@Test
 	void singlePreparedFilterRetainsItsInputOnlyVariables() {
+		when(context.getManager()).thenReturn(mock(FederationManager.class));
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
 		ExclusiveStatement expression = statement("s");
 		expression.addFilterExpr(new FilterExpr(new Compare(Var.of("o"), Var.of("threshold")),
 				new HashSet<>(Set.of("o", "threshold"))));

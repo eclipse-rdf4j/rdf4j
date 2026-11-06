@@ -17,14 +17,22 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingAnalysisContract;
 
 /**
  * A specialization of {@link ArbitraryLengthPath} to maintain the {@link QueryInfo}
  *
  * @author Andreas Schwarte
  */
-public class FedXArbitraryLengthPath extends ArbitraryLengthPath implements FedXTupleExpr, ExecutionDatasetAware {
+public class FedXArbitraryLengthPath extends ArbitraryLengthPath
+		implements FedXTupleExpr, ExecutionDatasetAware, BindingAnalysisContract.Standard {
+
+	@Override
+	public Class<? extends QueryModelNode> bindingContractClass() {
+		return FedXArbitraryLengthPath.class;
+	}
 
 	private static final long serialVersionUID = -7512248084095130084L;
 
