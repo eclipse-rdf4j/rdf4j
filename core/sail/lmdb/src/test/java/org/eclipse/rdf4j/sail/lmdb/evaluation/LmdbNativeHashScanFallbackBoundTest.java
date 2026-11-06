@@ -174,6 +174,9 @@ class LmdbNativeHashScanFallbackBoundTest {
 		set(NATIVE, "true");
 		Optimized optimized = optimizeAndRun(QUERY);
 		assertThat(optimized.bag()).isEqualTo(expected);
+		// The build view will be refused below. Its scan retry now retains the hash; use a real row-cap refusal
+		// to reach the ordinary repeated-scan chain whose conservative ceiling this test protects.
+		set(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY, Integer.toString(BUILD_ROWS / 2));
 		var previousContext = SlowQueryContextHolder.set("hash repeated scan ceiling", Query.QueryType.TUPLE, ROUTE);
 		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
 			NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
@@ -243,7 +246,12 @@ class LmdbNativeHashScanFallbackBoundTest {
 				assertThat(preferred).isNotNull();
 				assertThat(nodes(preferred)).anyMatch(LmdbNativeKernelIr.HashBuild.class::isInstance)
 						.anyMatch(LmdbNativeKernelIr.HashProbe.class::isInstance);
-				LmdbNativeKernelLowering.Lowered fallback = LmdbNativeKernelLowering.lowerRows(join, row, parsed, true);
+				LmdbNativeKernelLowering.Lowered scanHash = LmdbNativeKernelLowering.lowerRows(join, row, parsed, true);
+				assertThat(scanHash).isNotNull();
+				assertThat(nodes(scanHash)).anyMatch(LmdbNativeKernelIr.HashBuild.class::isInstance)
+						.anyMatch(LmdbNativeKernelIr.HashProbe.class::isInstance);
+				LmdbNativeKernelLowering.Lowered fallback = LmdbNativeKernelLowering.lowerRows(join, row, parsed, true,
+						null, false, true);
 				assertThat(fallback).isNotNull();
 				assertThat(nodes(fallback)).noneMatch(LmdbNativeKernelIr.HashBuild.class::isInstance)
 						.noneMatch(LmdbNativeKernelIr.HashProbe.class::isInstance);
@@ -279,8 +287,9 @@ class LmdbNativeHashScanFallbackBoundTest {
 					.isEqualTo(BUILD_ROWS * PROBE_PER_SUBJECT);
 			assertThat(counted.buildRefusals).as("the actual hash opener encountered the unavailable build view")
 					.isPositive();
-			assertThat(counted.buildOpens).as("the fallback enumerates its prefix once").isEqualTo(1);
-			assertThat(counted.buildReturned).isEqualTo(BUILD_ROWS);
+			assertThat(counted.buildOpens).as("the refused build and fallback each open their prefix once")
+					.isEqualTo(2);
+			assertThat(counted.buildReturned).isEqualTo(2L * BUILD_ROWS);
 			assertThat(counted.probeOpens).as("one actual run scan per real prefix row, not a hash probe pass")
 					.isEqualTo(BUILD_ROWS);
 			assertThat(counted.probeReturned).isEqualTo(BUILD_ROWS * PROBE_PER_SUBJECT);

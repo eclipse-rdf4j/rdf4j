@@ -40,9 +40,9 @@ final class LmdbNativeKernelHashCostQuote {
 		boolean usableOutput = outputRows > 0D && Double.isFinite(outputRows);
 		LmdbNativeCostVector producer = probeVector(plan, row, rowFeature, probeRows, outputRows);
 
-		// A missing build view re-lowers the ordinary chain; a missing probe view can keep the hash and scan only
-		// the probe. Neither outcome is proved by metadata. Retain both full ceilings, without charging either
-		// fallback chain as preferred streaming work or asserting that its hash build is unavoidable.
+		// Missing views can retain the hash while scanning either input. A refused reservation or build may still
+		// fall back to the ordinary chain. Retain all ceilings without charging those alternatives as preferred
+		// streaming work or asserting that the hash build is unavoidable.
 		producer = withAlternativeBounds(producer, fallbackVector(join, plan, row, rowFeature));
 		LmdbNativeCostVector startup = LmdbNativeCostVector.point(Feature.OPEN, 1D)
 				.plus(withAlternativeBounds(build, LmdbNativeCostVector.zero()));
@@ -153,9 +153,16 @@ final class LmdbNativeKernelHashCostQuote {
 	private static LmdbNativeCostVector buildVector(LmdbNativeHashJoin.KernelHashPlan plan, RowState row,
 			Feature rowFeature) {
 		LmdbNativeWork.RowBounds rows = plan.build.rowBounds(row, 0L);
-		return withRowCeiling(LmdbNativePlanExecutionProfile.kernelVector(plan.build, row, 0L, rowFeature),
-				rowFeature, rows)
-						.plus(rowOccurrences(Feature.HASH_BUILD_ROW, plan.buildRowsEstimate, rows));
+		// A retained range must use its exact scan; otherwise adjacency remains preferred but can be replaced by a
+		// scan after view binding fails. Both alternatives complete before any probe row can be published.
+		LmdbNativeCostVector access = plan.build.range == null
+				? LmdbNativePlanExecutionProfile.kernelVector(plan.build, row, 0L, rowFeature)
+				: scanPattern(plan.build, row, 0L, rowFeature);
+		if (plan.build.range == null && LmdbNativeKernelLowering.scanSourcesEnabled()) {
+			access = withAlternativeBounds(access, scanPattern(plan.build, row, 0L, rowFeature));
+		}
+		return withRowCeiling(access, rowFeature, rows)
+				.plus(rowOccurrences(Feature.HASH_BUILD_ROW, plan.buildRowsEstimate, rows));
 	}
 
 	private static LmdbNativeCostVector probeVector(LmdbNativeHashJoin.KernelHashPlan plan, RowState row,

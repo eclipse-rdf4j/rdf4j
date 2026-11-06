@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
+import java.util.function.IntPredicate;
 import java.util.stream.IntStream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -252,9 +253,47 @@ final class LmdbNativeKernelLowering {
 			return null;
 		}
 		LmdbNativeHashJoin.KernelHashPlan plan = LmdbNativeHashJoin.tryPlanKernel(multiJoin, first, second, row);
-		// The build reads adjacency directly and cannot enforce a range whose FILTER compilation removed.
-		// A ranged probe still follows ordinary operand lowering and keeps its range-carrying ScanQuad.
-		return plan == null || plan.build.range != null ? null : plan;
+		// A retained range replaces its FILTER. The private build must be able to open that exact interval while
+		// all its slots are still fresh; the builder repeats the freshness check before committing the hash plan.
+		return plan != null && plan.build.range != null
+				&& !rangeScanCompatible(plan.build, slot -> true) ? null : plan;
+	}
+
+	/** Check that a scan can retain the range planned for the first varying index field. */
+	private static boolean rangeScanCompatible(PatternPlan pattern, IntPredicate freshSlot) {
+		if (!scanSourcesEnabled() || pattern.statementOrder != null || pattern.indexName == null
+				|| !pattern.indexName.equals(pattern.range.indexFieldSeq())) {
+			return false;
+		}
+		int expectedFirst = pattern.range.firstVaryingField();
+		if (expectedFirst < 0) {
+			return true;
+		}
+		for (int i = 0; i < pattern.indexName.length(); i++) {
+			int field = switch (pattern.indexName.charAt(i)) {
+			case 's' -> TripleIndex.SUBJ_IDX;
+			case 'p' -> TripleIndex.PRED_IDX;
+			case 'o' -> TripleIndex.OBJ_IDX;
+			case 'c' -> TripleIndex.CONTEXT_IDX;
+			default -> -1;
+			};
+			if (field < 0) {
+				return false;
+			}
+			Term term = switch (field) {
+			case TripleIndex.SUBJ_IDX -> pattern.s;
+			case TripleIndex.PRED_IDX -> pattern.p;
+			case TripleIndex.OBJ_IDX -> pattern.o;
+			case TripleIndex.CONTEXT_IDX -> pattern.c;
+			default -> throw new IllegalStateException("invalid quad field " + field);
+			};
+			if (!(term.isConstant() && !term.hasSlot())) {
+				// Bindings of later fields do not change the prefix or interval. The first varying field itself
+				// must still be produced by this scan, not a previously bound row.
+				return field == expectedFirst && (!term.hasSlot() || freshSlot.test(term.slot));
+			}
+		}
+		return false;
 	}
 
 	/** Plain adjacency-expressible shape; ordered scans and context work keep their existing lowering. */
@@ -464,6 +503,12 @@ final class LmdbNativeKernelLowering {
 	/** As above, with variable-predicate patterns alone lowered as scans after their shared view refuses binding. */
 	static Lowered lowerRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
 			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates) {
+		return lowerRows(arg, row, declineTarget, preferScans, scanPredicates, scanVariablePredicates, false);
+	}
+
+	/** A refused private hash build retries the same plan with the ordinary producer chain. */
+	static Lowered lowerRows(SlotPlan arg, RowState row, TupleExpr declineTarget, boolean preferScans,
+			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates, boolean suppressHash) {
 		if (SlotPlan.requiresPhysicalCells(arg)) {
 			decline(declineTarget, "row:typed-native-result-boundary");
 			return null;
@@ -510,7 +555,7 @@ final class LmdbNativeKernelLowering {
 			}
 		}
 		return lowerRowCore(arg, core, optionalArms, outerFilters, row, declineTarget, preferScans, scanPredicates,
-				scanVariablePredicates);
+				scanVariablePredicates, suppressHash);
 	}
 
 	/**
@@ -613,10 +658,17 @@ final class LmdbNativeKernelLowering {
 	static Lowered lowerOrderedRows(SlotPlan arg, RowState row, boolean preferScans, int[] orderSlots,
 			boolean[] orderAscending, long limit, long offset, boolean strictCompare,
 			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates) {
+		return lowerOrderedRows(arg, row, preferScans, orderSlots, orderAscending, limit, offset, strictCompare,
+				scanPredicates, scanVariablePredicates, false);
+	}
+
+	static Lowered lowerOrderedRows(SlotPlan arg, RowState row, boolean preferScans, int[] orderSlots,
+			boolean[] orderAscending, long limit, long offset, boolean strictCompare,
+			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates, boolean suppressHash) {
 		if (!outputModsEnabled()) {
 			return null;
 		}
-		Lowered lowered = lowerRows(arg, row, null, preferScans, scanPredicates, scanVariablePredicates);
+		Lowered lowered = lowerRows(arg, row, null, preferScans, scanPredicates, scanVariablePredicates, suppressHash);
 		if (lowered == null || lowered.planBridgeReason != null) {
 			// Bridge-fed kernels bring no fusion win over the engine-side sort machinery; let the ladder serve.
 			declineQuiet("order-sink:" + (lowered == null ? "lowering-declined" : "plan-bridge"));
@@ -1518,11 +1570,12 @@ final class LmdbNativeKernelLowering {
 	 */
 	private static Lowered lowerRowCore(SlotPlan original, SlotPlan core, List<SlotPlan> optionalArms,
 			List<MaskedFilter> outerFilters, RowState row, TupleExpr declineTarget, boolean preferScans,
-			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates) {
+			java.util.Set<Long> scanPredicates, boolean scanVariablePredicates, boolean suppressHash) {
 		Builder builder = new Builder(row, "");
 		builder.preferScans = preferScans;
 		builder.scanPredicates = scanPredicates;
 		builder.scanVariablePredicates = scanVariablePredicates;
+		builder.suppressHash = suppressHash;
 		List<MaskedFilter> coreFilters = new ArrayList<>(0);
 		if (!builder.lowerJoinOperand(core, coreFilters, row)) {
 			return rowDeclineOrBridge(original, row, declineTarget, builder.reason);
@@ -1655,6 +1708,7 @@ final class LmdbNativeKernelLowering {
 		final String reasonPrefix;
 		/** Try a direct LMDB scan before any adjacency view; set on the rungs' retry after a bind-time view failure. */
 		boolean preferScans;
+		boolean suppressHash;
 		/** Predicates whose adjacency views bind time reported unavailable (M10 mixed binding); null = none. */
 		java.util.Set<Long> scanPredicates;
 		/** Bind-time fallback for incomplete wildcard coverage; fixed covered predicates retain adjacency access. */
@@ -3931,44 +3985,7 @@ final class LmdbNativeKernelLowering {
 		}
 
 		private boolean rangeScanCompatible(PatternPlan pattern) {
-			if (!scanSourcesEnabled() || pattern.statementOrder != null || pattern.indexName == null
-					|| !pattern.indexName.equals(pattern.range.indexFieldSeq())) {
-				return false;
-			}
-			int expectedFirst = pattern.range.firstVaryingField();
-			if (expectedFirst < 0) {
-				return true;
-			}
-			for (int i = 0; i < pattern.indexName.length(); i++) {
-				int field = switch (pattern.indexName.charAt(i)) {
-				case 's' -> TripleIndex.SUBJ_IDX;
-				case 'p' -> TripleIndex.PRED_IDX;
-				case 'o' -> TripleIndex.OBJ_IDX;
-				case 'c' -> TripleIndex.CONTEXT_IDX;
-				default -> -1;
-				};
-				if (field < 0) {
-					return false;
-				}
-				Term term = switch (field) {
-				case TripleIndex.SUBJ_IDX -> pattern.s;
-				case TripleIndex.PRED_IDX -> pattern.p;
-				case TripleIndex.OBJ_IDX -> pattern.o;
-				case TripleIndex.CONTEXT_IDX -> pattern.c;
-				default -> throw new IllegalStateException("invalid quad field " + field);
-				};
-				if (!(term.isConstant() && !term.hasSlot())) {
-					// The varying value itself must still be produced by this scan. Bindings of later index fields do
-					// not
-					// alter the planned prefix or half-open interval and remain ordinary exact scan predicates.
-					return field == expectedFirst && rangeTermStable(term);
-				}
-			}
-			return false;
-		}
-
-		private boolean rangeTermStable(Term term) {
-			return !term.hasSlot() || slotFresh(term.slot);
+			return LmdbNativeKernelLowering.rangeScanCompatible(pattern, this::slotFresh);
 		}
 
 		private String rangeDeclineReason(PatternPlan pattern) {
@@ -4606,6 +4623,7 @@ final class LmdbNativeKernelLowering {
 		 * probe-side column mappings are complete.
 		 */
 		private LmdbNativeHashJoin.KernelHashPlan pendingHashBuild;
+		private boolean pendingHashBuildScan;
 
 		/**
 		 * Chooses the in-kernel hash join for a two-pattern MultiJoin when the interpreted hash join's own cost gate
@@ -4614,7 +4632,7 @@ final class LmdbNativeKernelLowering {
 		 * path free to lower the same children.
 		 */
 		private boolean tryLowerHashJoin(MultiJoinPlan multiJoin, RowState row) {
-			if (!hashJoinKernelEnabled() || !reasonPrefix.isEmpty() || distinctRetainedMask != 0L
+			if (suppressHash || !hashJoinKernelEnabled() || !reasonPrefix.isEmpty() || distinctRetainedMask != 0L
 					|| pendingHashBuild != null || multiJoin.children.length != 2
 					|| !(multiJoin.children[0] instanceof PatternPlan)
 					|| !(multiJoin.children[1] instanceof PatternPlan)) {
@@ -4632,12 +4650,18 @@ final class LmdbNativeKernelLowering {
 				return false;
 			}
 			LmdbNativeHashJoin.KernelHashPlan plan = preferredRowHashPlan(multiJoin, row);
-			if (plan == null || prefersPatternScan(plan.build)) {
+			if (plan == null) {
+				return false;
+			}
+			boolean scanBuild = plan.build.range != null || prefersPatternScan(plan.build);
+			if (scanBuild && (!scanSourcesEnabled()
+					|| plan.build.range != null && !rangeScanCompatible(plan.build))) {
 				return false;
 			}
 			// Commit: lower the probe side as the ordinary chain root, then join through the table. The guards above
 			// make the probe-side lowering deterministic, so no failure can leave half-lowered state behind.
 			pendingHashBuild = plan;
+			pendingHashBuildScan = scanBuild;
 			List<MaskedFilter> probeFilters = new ArrayList<>(0);
 			if (!lowerJoinOperand(plan.probe, probeFilters, row, false) || !probeFilters.isEmpty()) {
 				throw new IllegalStateException(
@@ -4823,7 +4847,19 @@ final class LmdbNativeKernelLowering {
 			int subjectCol = pattern.s.hasSlot() ? scratchColumn() : -1;
 			int objectCol = pattern.o.hasSlot() ? scratchColumn() : -1;
 			List<Node> sub = new ArrayList<>(1);
-			if (pattern.s.hasSlot() && pattern.o.hasSlot()) {
+			if (pendingHashBuildScan) {
+				Operand[] terms = new Operand[4];
+				terms[LmdbNativeKernelIr.ScanQuad.SUBJ] = pattern.s.isConstant()
+						? Operand.constant(constantIndex(pattern.s.constant))
+						: null;
+				terms[LmdbNativeKernelIr.ScanQuad.PRED] = Operand.constant(constantIndex(pattern.p.constant));
+				terms[LmdbNativeKernelIr.ScanQuad.OBJ] = pattern.o.isConstant()
+						? Operand.constant(constantIndex(pattern.o.constant))
+						: null;
+				int[] outCols = { subjectCol, -1, objectCol, -1 };
+				sub.add(new LmdbNativeKernelIr.ScanQuad(scan(pattern.statementOrder, pattern.range, false), terms,
+						outCols));
+			} else if (pattern.s.hasSlot() && pattern.o.hasSlot()) {
 				int adj = adjacency(pattern.p.constant, true, true);
 				sub.add(new LmdbNativeKernelIr.EnumerateAdjKeys(adj, subjectCol, objectCol));
 			} else if (pattern.s.isConstant()) {

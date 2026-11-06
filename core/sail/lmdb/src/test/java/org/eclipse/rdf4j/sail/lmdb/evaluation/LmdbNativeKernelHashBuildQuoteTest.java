@@ -148,6 +148,43 @@ class LmdbNativeKernelHashBuildQuoteTest {
 		measure(1);
 	}
 
+	@Test
+	void scanRetryRetainsThePreferredHashBuild() throws Exception {
+		Optimized optimized = optimizeAndRun(QUERY);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			LmdbNativeEvaluationStrategy strategy = spy(new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false));
+			doReturn(ROUTE).when(strategy).forcedExecutionStrategyName();
+			QueryEvaluationStep compiled = LmdbNativeAggregateCompiler.tryCompile(optimized.expression(),
+					new QueryEvaluationContext.Minimal((Dataset) null), strategy, source);
+			assertThat(compiled).isInstanceOf(NativeRowsStep.class);
+			NativeRowsStep step = (NativeRowsStep) compiled;
+			RowState row = new RowState(source, step.layout, EmptyBindingSet.getInstance());
+			try {
+				assertThat(LmdbNativeAggregateCompiler.initializeRow(row, row.base, row.source, row.layout)).isTrue();
+				assertThat(step.arg).isInstanceOf(MultiJoinPlan.class);
+				assertThat(LmdbNativeKernelLowering.preferredRowHashPlan((MultiJoinPlan) step.arg, row))
+						.as("the original uncorrelated join is a preferred hash plan")
+						.isNotNull();
+				var lowered = LmdbNativeKernelLowering.lowerRows(step.arg, row, optimized.expression(), true);
+				assertThat(lowered).isNotNull();
+				List<LmdbNativeKernelIr.Node> nodes = new ArrayList<>();
+				LmdbNativeKernelIr.visitNodes(lowered.kernel.pipeline, nodes::add);
+				List<LmdbNativeKernelIr.HashBuild> builds = nodes.stream()
+						.filter(LmdbNativeKernelIr.HashBuild.class::isInstance)
+						.map(LmdbNativeKernelIr.HashBuild.class::cast)
+						.toList();
+				assertThat(builds).as("the scan retry keeps one private hash build").hasSize(1);
+				assertThat(builds.getFirst().pipeline).anyMatch(LmdbNativeKernelIr.ScanQuad.class::isInstance);
+				assertThat(nodes).anyMatch(LmdbNativeKernelIr.HashProbe.class::isInstance);
+			} finally {
+				row.memoryScope.close();
+			}
+		}
+	}
+
 	@ParameterizedTest
 	@ValueSource(ints = { 1, -1 })
 	void hashBuildWorkCannotBeProratedWithTheRequestedOutput(int limit) throws Exception {

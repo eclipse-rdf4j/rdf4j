@@ -1927,7 +1927,8 @@ final class LmdbNativeParallelKernelAggregate {
 				|| problem instanceof KernelQueryCancelledException || problem instanceof KernelPeerCancelledException
 				|| problem instanceof LmdbNativeProbeDeadlineExceeded
 				|| problem instanceof LmdbNativeKernelPartitions.ParallelKernelDecline
-				|| problem instanceof KernelRuntime.AllocationDeniedException;
+				|| problem instanceof KernelRuntime.AllocationDeniedException
+				|| problem instanceof KernelRuntime.HashBuildRefusedException;
 	}
 
 	private static boolean containsWorkerControl(Throwable problem) {
@@ -1938,7 +1939,8 @@ final class LmdbNativeParallelKernelAggregate {
 					|| problem instanceof KernelPeerCancelledException
 					|| problem instanceof LmdbNativeProbeDeadlineExceeded
 					|| problem instanceof LmdbNativeKernelPartitions.ParallelKernelDecline
-					|| problem instanceof KernelRuntime.AllocationDeniedException) {
+					|| problem instanceof KernelRuntime.AllocationDeniedException
+					|| problem instanceof KernelRuntime.HashBuildRefusedException) {
 				return true;
 			}
 			Throwable cause = problem.getCause();
@@ -2187,7 +2189,8 @@ final class LmdbNativeParallelKernelAggregate {
 					|| problem instanceof KernelPeerCancelledException
 					|| problem instanceof LmdbNativeProbeDeadlineExceeded
 					|| problem instanceof LmdbNativeKernelPartitions.ParallelKernelDecline
-					|| problem instanceof KernelRuntime.AllocationDeniedException) {
+					|| problem instanceof KernelRuntime.AllocationDeniedException
+					|| problem instanceof KernelRuntime.HashBuildRefusedException) {
 				return true;
 			}
 			Throwable cause = problem.getCause();

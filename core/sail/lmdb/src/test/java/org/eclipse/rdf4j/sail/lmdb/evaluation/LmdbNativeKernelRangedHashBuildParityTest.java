@@ -168,7 +168,6 @@ class LmdbNativeKernelRangedHashBuildParityTest {
 			assertThat(ranged).as("one normally compiled executable numeric range").hasSize(1);
 			PatternPlan rangedBuild = ranged.getFirst();
 			assertThat(rangedBuild.statementOrder).isNull();
-			boolean hash;
 			RowState row = new RowState(step.source, step.layout, EmptyBindingSet.getInstance());
 			try {
 				assertThat(LmdbNativeAggregateCompiler.initializeRow(row, row.base, row.source, row.layout)).isTrue();
@@ -181,25 +180,16 @@ class LmdbNativeKernelRangedHashBuildParityTest {
 						.filter(LmdbNativeKernelIr.HashBuild.class::isInstance)
 						.map(LmdbNativeKernelIr.HashBuild.class::cast)
 						.toList();
-				hash = !builds.isEmpty();
-				if (hash) {
-					assertThat(builds).hasSize(1);
-					List<LmdbNativeKernelIr.Node> buildNodes = new ArrayList<>();
-					LmdbNativeKernelIr.visitNodes(builds.getFirst().pipeline, buildNodes::add);
-					assertThat(buildNodes).anySatisfy(node -> {
-						assertThat(node).isInstanceOf(LmdbNativeKernelIr.EnumerateAdjKeys.class);
-						var keys = (LmdbNativeKernelIr.EnumerateAdjKeys) node;
-						assertThat(lowered.bindings.adjacencies[keys.adjacency].predicate)
-								.as("the selected build is exactly the pattern whose FILTER became a range")
-								.isEqualTo(rangedBuild.p.constant);
-					});
-					assertThat(nodes).anyMatch(LmdbNativeKernelIr.HashProbe.class::isInstance);
-				} else {
-					// Refusing the unsafe specialization is a valid repair, provided the ordinary IR keeps the range.
-					assertThat(nodes).anyMatch(LmdbNativeKernelIr.ScanQuad.class::isInstance);
-					assertThat(lowered.bindings.scanSites)
-							.anySatisfy(site -> assertThat(site.range()).isEqualTo(rangedBuild.range));
-				}
+				assertThat(builds).as("the real range-bearing build remains in the selected hash plan").hasSize(1);
+				List<LmdbNativeKernelIr.Node> buildNodes = new ArrayList<>();
+				LmdbNativeKernelIr.visitNodes(builds.getFirst().pipeline, buildNodes::add);
+				assertThat(buildNodes).as("a ranged build without an adjacency view is enumerated by its scan")
+						.anyMatch(LmdbNativeKernelIr.ScanQuad.class::isInstance);
+				assertThat(lowered.bindings.scanSites)
+						.anySatisfy(site -> assertThat(site.range())
+								.as("the scan uses the exact executable range selected by the optimizer")
+								.isEqualTo(rangedBuild.range));
+				assertThat(nodes).anyMatch(LmdbNativeKernelIr.HashProbe.class::isInstance);
 				assertThat(lowered.kernel.resumable).isTrue();
 			} finally {
 				row.memoryScope.close();
@@ -224,10 +214,8 @@ class LmdbNativeKernelRangedHashBuildParityTest {
 			assertThat(selected).as("the requested tier really opened successfully").containsExactly(route);
 			assertThat(interpreted ? LmdbNativeKernelExecution.INTERPRETED_BINDS.get()
 					: LmdbNativeKernelExecution.COMPILED_BINDS.get()).isGreaterThan(binds);
-			if (hash) {
-				assertThat(LmdbNativeKernelLowering.HASH_JOIN_LOWERINGS.get()).isGreaterThan(hashBefore);
-			}
-			System.out.printf("range route=%s hash=%s expectedRows=%d actualRows=%d index=%s%n", route, hash,
+			assertThat(LmdbNativeKernelLowering.HASH_JOIN_LOWERINGS.get()).isGreaterThan(hashBefore);
+			System.out.printf("range route=%s hash=true expectedRows=%d actualRows=%d index=%s%n", route,
 					expected.size(), actual.size(), rangedBuild.indexName);
 			assertThat(optimized.bag()).as("the ordinary optimized repository route must retain the executable range")
 					.isEqualTo(expected);
