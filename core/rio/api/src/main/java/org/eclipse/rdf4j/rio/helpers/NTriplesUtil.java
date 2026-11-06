@@ -35,6 +35,15 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
  * Utility methods for N-Triples encoding/decoding.
  */
 public class NTriplesUtil {
+	// Reuse the hexadecimal suffixes instead of formatting each numeric escape.
+	private static final String[] CONTROL_CHARACTER_HEX = new String[0x20];
+
+	static {
+		for (int c = 0; c < CONTROL_CHARACTER_HEX.length; c++) {
+			CONTROL_CHARACTER_HEX[c] = toHexString(c, 4);
+		}
+	}
+
 	/*
 	 * The following correspond to the N-Triples grammar (https://www.w3.org/TR/n-triples/#n-triples-grammar).
 	 */
@@ -828,11 +837,21 @@ public class NTriplesUtil {
 			if (escape != null) {
 				appendable.append(escape);
 			} else {
-				appendable.append("\\u").append(toHexString(c, 4));
+				appendable.append("\\u").append(numericEscape(c));
 			}
 			runStart = i + 1;
 		}
 		appendUnescaped(label, appendable, runStart, labelLength);
+	}
+
+	private static String numericEscape(char c) {
+		if (c < CONTROL_CHARACTER_HEX.length) {
+			return CONTROL_CHARACTER_HEX[c];
+		}
+		if (c == 0x7F) {
+			return "007F";
+		}
+		return c == 0xFFFE ? "FFFE" : "FFFF";
 	}
 
 	private static void appendUnescaped(String str, Appendable appendable, int start, int end) throws IOException {

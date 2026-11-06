@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.VersionLabel;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.rio.nquads.NQuadsWriter;
+import org.eclipse.rdf4j.rio.ntriples.NTriplesWriter;
 import org.eclipse.rdf4j.rio.ntriples.NTriplesWriterSettings;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -43,10 +44,14 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 
 /**
- * Measures complete N-Quads documents, including writer construction, version announcements and the final flush. Values
- * are created once per trial; both output paths consume every emitted byte or character with bounded reusable checksum
- * state. Run with {@code -prof gc} to report allocation per statement as well as statements per second. The default
- * matrix uses Unicode escaping; select {@code -p escapeUnicode=false} for the unescaped path.
+ * Measures complete N-Triples and N-Quads documents, including writer construction, version announcements and the final
+ * flush. Values are created once per trial; both output paths consume every emitted byte or character with bounded
+ * reusable checksum state. Each method has a constant statement count and reports statements per second and, with
+ * {@code -prof gc}, allocation per statement. The large-document method repeats the same 256 prepared statements to
+ * isolate document-size amortization from data preparation and working-set size. The default matrix uses Unicode
+ * escaping; select {@code -p escapeUnicode=false} for the unescaped path. Select
+ * {@code -p dataset=CONTROL_LITERAL,PERCENT_IRI} explicitly to measure numeric literal escapes and the writer's
+ * established percent-encoding of disallowed IRI characters.
  */
 @State(Scope.Thread)
 @BenchmarkMode(Mode.Throughput)
@@ -63,6 +68,9 @@ public class NQuadsWriterBenchmark {
 
 	@Param({ "OUTPUT_STREAM", "WRITER" })
 	public String output;
+
+	@Param({ "NTRIPLES", "NQUADS" })
+	public String format;
 
 	@Param({ "true" })
 	public boolean escapeUnicode;
@@ -94,6 +102,15 @@ public class NQuadsWriterBenchmark {
 			case "ESCAPED":
 				object = vf.createLiteral("Line " + i + ": \"quoted\"\\path\tvalue\nnext\r\n\b\f");
 				break;
+			case "CONTROL_LITERAL":
+				object = vf.createLiteral("Record " + i + ": \0field\u0007value\u000Bpart\u001Fend\u007F\uFFFE\uFFFF");
+				break;
+			case "PERCENT_IRI":
+				subject = vf.createIRI("http://example.org/subject " + i + "/<>\"\\\u0080");
+				graph = i % 4 == 0 ? null
+						: vf.createIRI("http://example.org/graph " + i % 8 + "/<>\"\\\u009F");
+				object = vf.createIRI("http://example.org/object " + i + "/<>\"\\\u0080\u009F");
+				break;
 			case "UNICODE":
 				subject = vf.createIRI("http://example.org/café/日本語/😀/" + i);
 				graph = vf.createIRI("http://example.org/graph/Ελληνικά/" + i % 8);
@@ -119,14 +136,40 @@ public class NQuadsWriterBenchmark {
 	@Benchmark
 	@OperationsPerInvocation(STATEMENTS)
 	public long write() {
-		NQuadsWriter writer;
+		return writeDocument(STATEMENTS);
+	}
+
+	@Benchmark
+	@OperationsPerInvocation(1)
+	public long writeSingle() {
+		return writeDocument(1);
+	}
+
+	@Benchmark
+	@OperationsPerInvocation(16)
+	public long writeSmall() {
+		return writeDocument(16);
+	}
+
+	@Benchmark
+	@OperationsPerInvocation(4096)
+	public long writeLarge() {
+		return writeDocument(4096);
+	}
+
+	private long writeDocument(int statementCount) {
+		NTriplesWriter writer;
+		boolean nquads = "NQUADS".equals(format);
+		if (!nquads && !"NTRIPLES".equals(format)) {
+			throw new IllegalArgumentException("Unknown format: " + format);
+		}
 		boolean outputStream = "OUTPUT_STREAM".equals(output);
 		if (outputStream) {
 			bytes.reset();
-			writer = new NQuadsWriter(bytes);
+			writer = nquads ? new NQuadsWriter(bytes) : new NTriplesWriter(bytes);
 		} else if ("WRITER".equals(output)) {
 			characters.reset();
-			writer = new NQuadsWriter(characters);
+			writer = nquads ? new NQuadsWriter(characters) : new NTriplesWriter(characters);
 		} else {
 			throw new IllegalArgumentException("Unknown output: " + output);
 		}
@@ -137,8 +180,8 @@ public class NQuadsWriterBenchmark {
 				.set(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL, true)
 				.set(NTriplesWriterSettings.ESCAPE_UNICODE, escapeUnicode);
 		writer.startRDF();
-		for (Statement statement : statements) {
-			writer.handleStatement(statement);
+		for (int i = 0; i < statementCount; i++) {
+			writer.handleStatement(statements[i & (STATEMENTS - 1)]);
 		}
 		writer.endRDF();
 		return outputStream ? bytes.result() : characters.result();
