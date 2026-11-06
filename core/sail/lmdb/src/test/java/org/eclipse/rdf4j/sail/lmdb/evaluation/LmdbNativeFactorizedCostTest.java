@@ -52,7 +52,7 @@ public class LmdbNativeFactorizedCostTest {
 	}
 
 	private static double cost(SlotPlan[] order, int prefixLength) {
-		return LmdbNativeStrategyProposal.factorizedCost(order, prefixLength, 0L, null);
+		return LmdbNativeWork.factorizedCost(order, prefixLength, 0L, null);
 	}
 
 	@Test
@@ -123,10 +123,13 @@ public class LmdbNativeFactorizedCostTest {
 
 		double chained = cost(new SlotPlan[] { prefix, second }, 2);
 
+		// The chain is priced in planning units: one seek plus the rows of each probe, repeated per prefix row.
+		double prefixRows = prefix.estimateForBoundMask(0L, null);
+		double secondRows = second.estimateForBoundMask(prefix.producedMask(), null);
+		double expected = (LmdbNativeWork.SEEK + prefixRows) + prefixRows * (LmdbNativeWork.SEEK + secondRows);
 		assertThat(chained)
 				.as("with no tail branches the cost is exactly the nested-loop chain work")
-				.isEqualTo(
-						LmdbNativeOrderPlanner.cumulativePatternWork(new SlotPlan[] { prefix, second }, 2, 0L, null));
+				.isEqualTo(expected);
 	}
 
 	@Test

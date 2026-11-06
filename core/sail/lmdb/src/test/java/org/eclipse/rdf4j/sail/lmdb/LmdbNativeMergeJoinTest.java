@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -62,7 +63,6 @@ class LmdbNativeMergeJoinTest {
 	private String previousFactorizedRowsEnabled;
 	private String previousChunkPipelineEnabled;
 	private String previousAccumulateJoinEnabled;
-	private String previousCostCalibrationEnabled;
 	private String previousParallelEnabled;
 
 	@BeforeEach
@@ -73,7 +73,6 @@ class LmdbNativeMergeJoinTest {
 		previousFactorizedRowsEnabled = System.getProperty("rdf4j.lmdb.factorizedRows.enabled");
 		previousChunkPipelineEnabled = System.getProperty("rdf4j.lmdb.chunkPipeline.enabled");
 		previousAccumulateJoinEnabled = System.getProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY);
-		previousCostCalibrationEnabled = System.getProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
 		previousParallelEnabled = System.getProperty(PARALLEL_FLAG);
 		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
 		System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
@@ -81,8 +80,6 @@ class LmdbNativeMergeJoinTest {
 		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
 		System.setProperty("rdf4j.lmdb.chunkPipeline.enabled", "false");
 		System.setProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, "false");
-		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
-		LmdbNativeCostCalibration.reset();
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
 				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
@@ -125,8 +122,6 @@ class LmdbNativeMergeJoinTest {
 		restoreProperty("rdf4j.lmdb.factorizedRows.enabled", previousFactorizedRowsEnabled);
 		restoreProperty("rdf4j.lmdb.chunkPipeline.enabled", previousChunkPipelineEnabled);
 		restoreProperty(LmdbNativeAccumulateJoin.ENABLED_PROPERTY, previousAccumulateJoinEnabled);
-		restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCostCalibrationEnabled);
-		LmdbNativeCostCalibration.reset();
 		repository.shutDown();
 	}
 
@@ -238,7 +233,8 @@ class LmdbNativeMergeJoinTest {
 		resetCounters();
 		System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
 
-		assertThat(rows(MANY_TO_MANY_QUERY)).isEqualTo(generic).hasSize(2000);
+		// the batch strategy is forced so the test observes which join carries it once the merge join is off
+		assertThat(rows(MANY_TO_MANY_QUERY, "batch")).isEqualTo(generic).hasSize(2000);
 		assertThat(LmdbNativeMergeJoin.JOINS.get()).isZero();
 		assertThat(LmdbNativeHashJoin.BUILDS.get()).isOne();
 	}
@@ -412,7 +408,9 @@ class LmdbNativeMergeJoinTest {
 
 		assertThat(explain(query)).contains("distinctStrategy=ADJACENT")
 				.contains("MergeOrderedJoin(keySlots=[?a#0, ?p#1]");
-		assertThat(rows(query)).isEqualTo(generic);
+		// the ordered DISTINCT route owns the merge join; on this fixture the hash-join batch is priced below it,
+		// so the test of the merge join forces the route that executes it
+		assertThat(rows(query, "orderedDistinct")).isEqualTo(generic);
 		assertThat(LmdbNativeMergeJoin.JOINS.get()).isOne();
 	}
 
@@ -485,8 +483,16 @@ class LmdbNativeMergeJoinTest {
 	}
 
 	private List<String> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<String> rows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(LmdbNativeMergeJoinTest::canonical)
 					.sorted()

@@ -55,7 +55,7 @@ class LmdbNativePackedAlgebraTest {
 	private static final String EX = "urn:packed:algebra:";
 	private static final String PREFIX = "PREFIX ex: <" + EX + ">\n";
 	private static final String NATIVE = "rdf4j.lmdb.nativeQueryEngine.enabled";
-	private static final String[] PROPERTIES = { NATIVE, "rdf4j.lmdb.costCalibration.enabled",
+	private static final String[] PROPERTIES = { NATIVE,
 			"rdf4j.lmdb.janinoCodegen.enabled", "rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.packedFtree.enabled", "rdf4j.lmdb.packedFtree.algebra.enabled",
 			"rdf4j.lmdb.factor.transport.enabled", "rdf4j.lmdb.janinoCodegen.factorMarginals" };
@@ -71,7 +71,6 @@ class LmdbNativePackedAlgebraTest {
 			previous.put(property, System.getProperty(property));
 			System.setProperty(property, "true");
 		}
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
@@ -271,6 +270,44 @@ class LmdbNativePackedAlgebraTest {
 	}
 
 	@Test
+	void aPreferenceListLedByPackedFtreeTakesTheEffectfulFastPathLikeForcingItAlone() {
+		// the effectful bag algebra (UUID below a UNION) is admitted only through the forced fast path; that path
+		// compared the whole forced value against "packedFtree", so a preference list led by it fell through to
+		// the ordinary ladder and nestedLoop ran instead (source-validated review finding, 2026-11-03)
+		String query = "SELECT ?u WHERE { { ?s ex:p ?p } UNION { ?s ex:p ?p } BIND(UUID() AS ?u) }";
+		assertEquals("packedFtree(serial)", executionPath(query, "packedFtree"));
+		assertEquals("packedFtree(serial)", executionPath(query, "packedFtree,nestedLoop"));
+		List<BindingSet> rows = evaluate(query, "packedFtree,nestedLoop", null);
+		assertEquals(20, rows.size());
+		assertEquals(20, rows.stream().map(r -> r.getValue("u")).collect(Collectors.toSet()).size());
+	}
+
+	private String executionPath(String query, String forced) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(PREFIX + query);
+			prepared.setForcedLmdbExecutionStrategy(forced);
+			return executionPath(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode());
+		}
+	}
+
+	private static String executionPath(GenericPlanNode node) {
+		if (node == null) {
+			return null;
+		}
+		String path = node.getStringMetricActual("nativeExecutionPath");
+		if (path != null) {
+			return path;
+		}
+		for (GenericPlanNode child : node.getPlans()) {
+			String found = executionPath(child);
+			if (found != null) {
+				return found;
+			}
+		}
+		return null;
+	}
+
+	@Test
 	void groupConcatPreservesAllLogicalCopiesWithoutAssumingAnUnspecifiedOrder() {
 		String query = "SELECT (GROUP_CONCAT(?tag; separator=',') AS ?tags) WHERE { "
 				+ "{ ?s ex:tag ?tag } UNION { ?s ex:tag ?tag } OPTIONAL { ?s ex:r ?r } }";
@@ -301,9 +338,9 @@ class LmdbNativePackedAlgebraTest {
 	@Test
 	void telemetryConfirmsBothForcedFamiliesRatherThanGenericFallback() {
 		assertPath("SELECT * WHERE { ?s ex:p ?p OPTIONAL { ?s ex:r ?r } BIND(?p + 1 AS ?x) }",
-				"packedFtree", "packedFtree");
+				"packedFtree", "packedFtree(serial)");
 		assertPath("SELECT (COUNT(*) AS ?n) WHERE { ?s ex:p ?p OPTIONAL { ?s ex:r ?r } BIND(?p + 1 AS ?x) }",
-				"packedFtreeAggregate", "packedFtreeAggregate");
+				"packedFtreeAggregate", "packedFtreeAggregate(serial)");
 	}
 
 	private void assertPath(String query, String forced, String expected) {

@@ -48,10 +48,12 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeProposalFeatures;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -131,8 +133,6 @@ public class LmdbTypeMatrixTest {
 		captureProperty("rdf4j.lmdb.parallel.minWorkEstimate");
 		captureProperty("rdf4j.lmdb.parallel.startupWork");
 		captureProperty("rdf4j.lmdb.irAggregateParallel.enabled");
-		captureProperty("rdf4j.lmdb.costCalibration.enabled");
-		captureProperty("rdf4j.lmdb.adaptiveProbe.enabled");
 		captureProperty("rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled");
 		captureProperty(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY);
 		captureProperty(SYNOPSIS_PROPERTY);
@@ -414,19 +414,19 @@ public class LmdbTypeMatrixTest {
 		Expected expected = openRepository(4000, true);
 		AtomicLong parallelMorsels = metric("PARALLEL_ADJACENCY_MORSELS");
 		long before = parallelMorsels.get();
+		// the parallel IR rung pays one worker start per worker, which the structural type-matrix specialist does
+		// not; this test is about the parallel IR rung, so it forces the tier it names
+		String route = janinoEnabled ? "irAggregateTypeMatrixParallel" : "irAggregateTypeMatrixParallelInterpreted";
 
-		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links")).isEqualTo(expected.linkage);
+		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links", route)).isEqualTo(expected.linkage);
 		assertThat(parallelMorsels.get())
 				.as("projection-free linkage should schedule disjoint predicate/root windows")
 				.isGreaterThan(before);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			String telemetry = connection.prepareTupleQuery(LINKAGE_MATRIX)
-					.explain(Explanation.Level.Telemetry)
-					.toString();
+			String telemetry = telemetry(connection, LINKAGE_MATRIX, route);
 			assertThat(telemetry)
 					.as("the type-matrix algorithm must be represented and executed by the native IR")
-					.contains("nativeExecutionPath=" + (janinoEnabled ? "irAggregateTypeMatrixParallel"
-							: "irAggregateTypeMatrixParallelInterpreted"))
+					.contains("nativeExecutionPath=" + route)
 					.contains("nativeIrSelectedOperatorActual=TypeMatrixAggregate")
 					.matches("(?s).*nativeIrParallelPartitionCountActual=(?:[2-9]|[1-9][0-9]+).*")
 					.matches("(?s).*nativeIrParallelWorkersStartedActual=(?:[2-9]|[1-9][0-9]+).*")
@@ -439,6 +439,28 @@ public class LmdbTypeMatrixTest {
 		}
 	}
 
+	@Test
+	public void parallelTypeMatrixMergeIsPricedByTheGroupDomainNotTheJoinedRows() {
+		enableTypeMatrixIr(true);
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
+		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "4");
+		openRepository(4000, true);
+		Map<String, Map<String, Double>> features;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			features = NativeProposalFeatures.offering(prepare(connection, USAGE_MATRIX, null)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode(), "irAggregateTypeMatrixParallel");
+		}
+		Map<String, Double> parallel = features.get("irAggregateTypeMatrixParallel");
+		// the workers' partial tables hold at most one group per (type, predicate) pair: ten types (Person, Employee,
+		// Place, T0..T6) by ten predicates, merged from three of the four workers. The merge used to be priced per
+		// joined row (the analytics theme's usage matrix quoted 44 billion group updates and lost to the serial
+		// kernel at 8x, 2026-11-03)
+		assertThat(parallel.getOrDefault("GROUP_UPDATE", 0D)).as("parallel merge: %s", features)
+				.isLessThanOrEqualTo(10D * 10D * 3D);
+	}
+
 	private static void enableTypeMatrixIr(boolean janinoEnabled) {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janinoEnabled));
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
@@ -448,8 +470,6 @@ public class LmdbTypeMatrixTest {
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
 		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "true");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
-		System.setProperty("rdf4j.lmdb.adaptiveProbe.enabled", "false");
 	}
 
 	@ParameterizedTest(name = "serialJaninoEnabled={0}")
@@ -459,17 +479,16 @@ public class LmdbTypeMatrixTest {
 		System.setProperty("rdf4j.lmdb.parallel.threads", "1");
 		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "1");
 		Expected expected = openRepository(0, true);
+		// the serial IR tier quotes the same price as the structural type-matrix specialist and the tie goes to
+		// the specialist; this test is about the IR tier, so it forces the tier it names
+		String expectedPath = janinoEnabled ? "irAggregateTypeMatrix" : "irAggregateTypeMatrixInterpreted";
 
-		assertThat(matrix(USAGE_MATRIX, "type", "p", "statements")).isEqualTo(expected.usage);
-		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links")).isEqualTo(expected.linkage);
+		assertThat(matrix(USAGE_MATRIX, "type", "p", "statements", expectedPath)).isEqualTo(expected.usage);
+		assertThat(matrix(LINKAGE_MATRIX, "sourceType", "targetType", "links", expectedPath))
+				.isEqualTo(expected.linkage);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			String usageTelemetry = connection.prepareTupleQuery(USAGE_MATRIX)
-					.explain(Explanation.Level.Telemetry)
-					.toString();
-			String linkageTelemetry = connection.prepareTupleQuery(LINKAGE_MATRIX)
-					.explain(Explanation.Level.Telemetry)
-					.toString();
-			String expectedPath = janinoEnabled ? "irAggregateTypeMatrix" : "irAggregateTypeMatrixInterpreted";
+			String usageTelemetry = telemetry(connection, USAGE_MATRIX, expectedPath);
+			String linkageTelemetry = telemetry(connection, LINKAGE_MATRIX, expectedPath);
 			assertThat(usageTelemetry)
 					.contains("nativeExecutionPath=" + expectedPath)
 					.contains("nativeIrSelectedOperatorActual=TypeMatrixAggregate");
@@ -903,14 +922,32 @@ public class LmdbTypeMatrixTest {
 	}
 
 	private Map<String, Long> matrix(String query, String key1, String key2, String countBinding) {
+		return matrix(query, key1, key2, countBinding, null);
+	}
+
+	private Map<String, Long> matrix(String query, String key1, String key2, String countBinding,
+			String forcedStrategy) {
 		Map<String, Long> counts = new HashMap<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			for (BindingSet bs : QueryResults.asList(conn.prepareTupleQuery(query).evaluate())) {
+			for (BindingSet bs : QueryResults.asList(prepare(conn, query, forcedStrategy).evaluate())) {
 				counts.put(bs.getValue(key1).stringValue() + "|" + bs.getValue(key2).stringValue(),
 						((Literal) bs.getValue(countBinding)).longValue());
 			}
 		}
 		return counts;
+	}
+
+	private static String telemetry(SailRepositoryConnection connection, String query, String forcedStrategy) {
+		return prepare(connection, query, forcedStrategy).explain(Explanation.Level.Telemetry).toString();
+	}
+
+	private static SailTupleQuery prepare(SailRepositoryConnection connection, String query,
+			String forcedStrategy) {
+		SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+		if (forcedStrategy != null) {
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+		}
+		return prepared;
 	}
 
 	private static AtomicLong metric(String name) throws ReflectiveOperationException {

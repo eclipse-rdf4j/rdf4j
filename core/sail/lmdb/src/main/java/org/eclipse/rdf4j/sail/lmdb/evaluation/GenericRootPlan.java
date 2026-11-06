@@ -48,7 +48,7 @@ final class GenericRootPlan implements QueryEvaluationStep, LmdbNativePhysicalPl
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		LmdbNativeStrategyArbiter.logDirect(originalExpr, "generic dispatch",
+		LmdbNativeDispatchLoop.logDirect(originalExpr, "generic dispatch",
 				LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK, reason);
 		return generic.evaluate(bindings);
 	}
