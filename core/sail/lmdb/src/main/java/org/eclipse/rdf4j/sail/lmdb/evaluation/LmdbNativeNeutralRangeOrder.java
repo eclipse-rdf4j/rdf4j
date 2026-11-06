@@ -35,23 +35,45 @@ final class LmdbNativeNeutralRangeOrder {
 				return input;
 			}
 		}
-		return prepare(input, row, quotedMask);
+		return prepare(input, row, quotedMask, countedRootSlot(aggregates));
 	}
 
 	static SlotPlan prepare(SlotPlan input, RowState row, long quotedMask) {
+		return prepare(input, row, quotedMask, -1);
+	}
+
+	private static SlotPlan prepare(SlotPlan input, RowState row, long quotedMask, int countedRootSlot) {
 		if (row == null || quotedMask != 0L || row.boundMask() != 0L) {
 			return input;
 		}
-		Prepared changed = prepareChanged(input, row, quotedMask);
+		Prepared changed = prepareChanged(input, row, quotedMask, countedRootSlot);
 		return changed == null ? input : changed.plan;
+	}
+
+	private static int countedRootSlot(AggregateSpec[] aggregates) {
+		int root = -1;
+		for (AggregateSpec aggregate : aggregates) {
+			if (aggregate.kind != AggKind.COUNT || !aggregate.distinct || aggregate.slot < 0
+					|| aggregate.slot >= Long.SIZE || root >= 0 && root != aggregate.slot) {
+				return -1;
+			}
+			root = aggregate.slot;
+		}
+		return root;
 	}
 
 	/** The mask belongs only to this private changed view; it never escapes into a general slot assurance. */
 	private record Prepared(SlotPlan plan, long assured) {
 	}
 
-	private static Prepared prepareChanged(SlotPlan input, RowState row, long quotedMask) {
+	private static Prepared prepareChanged(SlotPlan input, RowState row, long quotedMask, int countedRootSlot) {
 		if (input instanceof MultiJoinPlan join) {
+			if (countedRootSlot >= 0 && neutralStoredBag(join, row, quotedMask)) {
+				SlotPlan[] rooted = cheaperDistinctRootOrder(join, row, quotedMask, countedRootSlot);
+				if (rooted != null) {
+					return new Prepared(new MultiJoinPlan(rooted, join.filters), join.producedMask());
+				}
+			}
 			if (!allows(join, row, quotedMask)) {
 				return null;
 			}
@@ -64,7 +86,7 @@ final class LmdbNativeNeutralRangeOrder {
 			if (proof == null || !proof.atPlacement(filter.filterMask).replaySafe()) {
 				return null;
 			}
-			Prepared arg = prepareChanged(filter.arg, row, quotedMask);
+			Prepared arg = prepareChanged(filter.arg, row, quotedMask, countedRootSlot);
 			return arg == null ? null
 					: new Prepared(new FilterPlan(arg.plan, filter.filter, filter.filterMask, filter.termKindFilter),
 							arg.assured);
@@ -79,7 +101,7 @@ final class LmdbNativeNeutralRangeOrder {
 					return null;
 				}
 			}
-			Prepared arg = prepareChanged(extension.arg, row, quotedMask);
+			Prepared arg = prepareChanged(extension.arg, row, quotedMask, countedRootSlot);
 			if (arg == null) {
 				return null;
 			}
@@ -98,6 +120,19 @@ final class LmdbNativeNeutralRangeOrder {
 	}
 
 	static boolean allows(MultiJoinPlan join, RowState row, long mask) {
+		if (!neutralStoredBag(join, row, mask)) {
+			return false;
+		}
+		for (SlotPlan child : join.children) {
+			if (((PatternPlan) child).range != null) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** The same ownership and entry-frame proof used by ordinary neutral range reordering. */
+	private static boolean neutralStoredBag(MultiJoinPlan join, RowState row, long mask) {
 		if (row == null || mask != 0L || row.boundMask() != 0L || row.base.size() != 0
 				|| row.baseBindingMask != 0L || row.lexicalInputMask != 0L || row.encounterOrderRequired
 				|| row.slots.length > Long.SIZE
@@ -120,7 +155,6 @@ final class LmdbNativeNeutralRangeOrder {
 		if (physical == null || !(physical.idSpace() instanceof ValueStore) || !physical.hasCanonicalIds()) {
 			return false;
 		}
-		boolean ranged = false;
 		for (int index = 0; index < join.children.length; index++) {
 			if (!(join.children[index] instanceof PatternPlan pattern) || pattern.accessProfile == null
 					|| pattern.accessSource != physical
@@ -133,7 +167,6 @@ final class LmdbNativeNeutralRangeOrder {
 				return false;
 			}
 			if (pattern.range != null) {
-				ranged = true;
 				Term value = switch (pattern.range.firstVaryingField()) {
 				case TripleIndex.SUBJ_IDX -> pattern.s;
 				case TripleIndex.PRED_IDX -> pattern.p;
@@ -152,7 +185,91 @@ final class LmdbNativeNeutralRangeOrder {
 				}
 			}
 		}
-		return ranged;
+		return true;
+	}
+
+	/**
+	 * Offer a connected join order rooted at a physical enumeration of the counted variable. The comparison uses the
+	 * existing full-join expected-work model for both orders, including its conditional fan-out estimates. Those
+	 * estimates do not prove overlap between key domains, and this comparison assigns no additional saving for early
+	 * witness success. The latter is a benefit only if lowering proves it safe.
+	 */
+	private static SlotPlan[] cheaperDistinctRootOrder(MultiJoinPlan join, RowState row, long mask, int rootSlot) {
+		SlotPlan[] children = join.children;
+		for (int left = 0; left < children.length; left++) {
+			PatternPlan first = (PatternPlan) children[left];
+			for (int right = left + 1; right < children.length; right++) {
+				PatternPlan second = (PatternPlan) children[right];
+				if (!first.canCommuteWith(second) || !second.canCommuteWith(first)) {
+					return null;
+				}
+			}
+		}
+		LmdbNativeWork.Chain incumbent = LmdbNativeWork.chain(children, children.length, row, mask);
+		if (!incumbent.estimatedPriceable()) {
+			return null;
+		}
+
+		// A cheapest eligible root and a connected greedy suffix keep this planning pass quadratic in bag size.
+		// The completed order is still compared with the incumbent before it can be selected.
+		int rootIndex = -1;
+		double rootWork = Double.POSITIVE_INFINITY;
+		for (int index = 0; index < children.length; index++) {
+			PatternPlan pattern = (PatternPlan) children[index];
+			if (!enumeratesCountedRoot(pattern, rootSlot)) {
+				continue;
+			}
+			double work = LmdbNativeWork.expectedWork(pattern, row, mask);
+			if (Double.isFinite(work) && work >= 0D && work < rootWork) {
+				rootIndex = index;
+				rootWork = work;
+			}
+		}
+		if (rootIndex < 0) {
+			return null;
+		}
+		SlotPlan[] candidate = new SlotPlan[children.length];
+		boolean[] used = new boolean[children.length];
+		candidate[0] = children[rootIndex];
+		used[rootIndex] = true;
+		long bound = mask | candidate[0].producedMask();
+		for (int depth = 1; depth < candidate.length; depth++) {
+			int best = -1;
+			double bestWork = Double.POSITIVE_INFINITY;
+			for (int index = 0; index < children.length; index++) {
+				SlotPlan child = children[index];
+				if (used[index] || (child.producedMask() & bound) == 0L) {
+					continue;
+				}
+				double work = LmdbNativeWork.expectedWork(child, row, bound);
+				if (Double.isFinite(work) && work >= 0D && work < bestWork) {
+					best = index;
+					bestWork = work;
+				}
+			}
+			if (best < 0) {
+				return null;
+			}
+			candidate[depth] = children[best];
+			used[best] = true;
+			bound |= candidate[depth].producedMask();
+		}
+		if (Arrays.equals(candidate, children)) {
+			return null;
+		}
+		LmdbNativeWork.Chain alternative = LmdbNativeWork.chain(candidate, candidate.length, row, mask);
+		return alternative.estimatedPriceable() && alternative.estimatedWork() < incumbent.estimatedWork()
+				? candidate : null;
+	}
+
+	/** A fixed predicate and opposite endpoint give the lowerer a sorted domain of the counted endpoint. */
+	private static boolean enumeratesCountedRoot(PatternPlan pattern, int slot) {
+		if (pattern.range != null || !pattern.p.isConstant() || pattern.hasRepeatedSlot()
+				|| pattern.producedMask() != (1L << slot)) {
+			return false;
+		}
+		return pattern.s.hasSlot() && !pattern.s.isConstant() && pattern.s.slot == slot && pattern.o.isConstant()
+				|| pattern.o.hasSlot() && !pattern.o.isConstant() && pattern.o.slot == slot && pattern.s.isConstant();
 	}
 
 	private static boolean neutralPhysicalTerm(Term term, SyntheticValueSource synthetic, int slots) {
