@@ -80,8 +80,10 @@ class LmdbNativeScanBackedHashBuildParityTest {
 	private static final IRI OBJECT_BUILD = iri("object-build");
 	private static final IRI OBJECT_PROBE = iri("object-probe");
 	private static final IRI OBJECT_BUILD_VALUE = iri("object-build-value");
-	private static final int PROBE_ROWS = 2048;
-	private static final int BUILD_ROWS = 1024;
+	// The store only has the spoc index, so a query without a hash build rescans the whole store for every probe. The
+	// time-limited native runs must stay well inside optimizeAndRun's limit on slow CI runners, so keep these small.
+	private static final int PROBE_ROWS = 1024;
+	private static final int BUILD_ROWS = 512;
 	private static final int CAP = 8;
 	private static final int BOUNDARY_CAP = 512;
 	private static final String QUERY = "SELECT ?probe ?build ?key WHERE { ?probe <" + PROBE + "> ?key . ?build <"
@@ -1054,9 +1056,11 @@ class LmdbNativeScanBackedHashBuildParityTest {
 	void scanCloseFailureDuringCapRefusalPropagatesAndReleasesEveryResource(boolean interpreted) throws Exception {
 		String route = route(interpreted);
 		set(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, Boolean.toString(!interpreted));
-		set(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY, Integer.toString(CAP));
 		set(NATIVE, "true");
 		Optimized optimized = optimizeAndRun(QUERY, route, "probe", "build", "key");
+		// Tightened only after the plan capture: a refused build falls back to a full scan of the one index per probe,
+		// too slow for the capture query's time limit.
+		set(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY, Integer.toString(CAP));
 		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
 			CountedSource counted = new CountedSource((NativeLmdbQuerySource) dataset);
 			IllegalStateException closeFailure = new IllegalStateException("injected build scan close failure");

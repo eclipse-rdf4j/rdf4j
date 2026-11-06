@@ -314,11 +314,9 @@ class GraphExplorerBlankNodeTest {
 		if (answer != null) {
 			graph.put("answer", answer);
 		}
-		Path node = Path.of("target/node", System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node")
-				.toAbsolutePath();
 		Path errors = Files.createTempFile(temporary, "query-generator-", ".log");
 		Path output = Files.createTempFile(temporary, "query-generator-", ".json");
-		try (TestProcess child = TestProcess.start(new ProcessBuilder(node.toString(), "--experimental-strip-types",
+		try (TestProcess child = TestProcess.start(new ProcessBuilder(TestProcess.NODE, "--experimental-strip-types",
 				"src/test/frontend/graph-explorer/fixed-blank-node-query-fixture.mjs", raw, scope,
 				JSON.writeValueAsString(graph))
 						.redirectError(errors.toFile())
