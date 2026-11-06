@@ -2187,7 +2187,8 @@ final class LmdbNativeParallelKernelAggregate {
 				probe = causeOf(problem, KernelCancelledException.class);
 			}
 			if (probe != null) {
-				if (probeCancellation == null) {
+				// The ambient deadline owns a kernel probe signal regardless of worker completion order.
+				if (probeCancellation == null || probe instanceof LmdbNativeProbeDeadlineExceeded) {
 					probeCancellation = probe;
 				}
 				return;
