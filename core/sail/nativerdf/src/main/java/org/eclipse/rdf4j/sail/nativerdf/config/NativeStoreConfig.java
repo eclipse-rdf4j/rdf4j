@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
+import org.eclipse.rdf4j.sail.nativerdf.wal.WalDirectoryResolver;
 
 /**
  * @author Arjohn Kampman
@@ -250,6 +251,9 @@ public class NativeStoreConfig extends BaseSailConfig {
 	}
 
 	public void setWalDirectoryName(String walDirectoryName) {
+		if (walDirectoryName != null && !walDirectoryName.isEmpty()) {
+			WalDirectoryResolver.validateDirectoryName(walDirectoryName);
+		}
 		this.walDirectoryName = walDirectoryName;
 	}
 
@@ -486,7 +490,14 @@ public class NativeStoreConfig extends BaseSailConfig {
 					});
 
 			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walDirectoryName)
-					.ifPresent(lit -> setWalDirectoryName(lit.getLabel()));
+					.ifPresent(lit -> {
+						try {
+							setWalDirectoryName(lit.getLabel());
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException("Invalid " + CONFIG.Native.walDirectoryName + " property: "
+									+ e.getMessage(), e);
+						}
+					});
 
 			Configurations.getLiteralValue(m, implNode, CONFIG.Native.walSyncBootstrapOnOpen)
 					.ifPresent(lit -> {
