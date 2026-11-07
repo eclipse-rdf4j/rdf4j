@@ -1,6 +1,6 @@
 # Sparse two-pattern join aggregation
 
-The native LMDB planner can compute grouped counts directly from weighted adjacency runs with the `sparseJoinAggregate` strategy. It is **available by default** and participates in ordinary aggregate selection, physical cost estimates, adaptive execution evidence, explanation, and resource fallback. No sparse-specific enable switch or forced strategy is required.
+The native LMDB planner can compute grouped counts directly from adjacency runs with the `sparseJoinAggregate` strategy. It is **available by default** and participates in ordinary aggregate selection, physical cost estimates, measured advisory evidence, explanation, and resource fallback. No sparse-specific enable switch or forced strategy is required.
 
 For example:
 
@@ -15,6 +15,8 @@ HAVING (COUNT(?join) >= 10)
 ```
 
 `COUNT(*)`, `COUNT(1)`, and counts of guaranteed-bound aliases also work. In this mandatory fragment they count the same solution multiplicity. The existing serial packed factorized implementation accepts the bound-variable form; the benchmark uses that common form for comparisons and checks the star form separately.
+
+Each input can also be an independent `SELECT DISTINCT` projection of the shared variable and one endpoint from a single fixed-predicate pattern. For example, two such subqueries can collect distinct `(subject, class)` pairs across named graphs and group their join by the two class values. A hidden graph selector is applied before duplicates are collapsed. A repeatable filter whose complete reads are limited to the endpoint group keys may be evaluated once per completed group through the ordinary SPARQL expression evaluator.
 
 ## Automatic selection and diagnostics
 
@@ -41,23 +43,23 @@ try (TupleQueryResult result = query.evaluate()) {
 
 This is a diagnostic selection example; complete executable fixtures are in `SparseJoinAggregateAdmissionTest`, `SparseJoinAggregateAutomaticTest`, and `SparseJoinAggregateBenchmark`. A forced strategy that is unavailable raises the existing forced-strategy error. With automatic selection, ineligible queries and clean resource refusals continue through existing alternatives. Default availability does not guarantee selection for every eligible query.
 
-The strategy publishes `sparseJoinAggregatePlan` and `sparseJoinAggregateWork` in executed explanations. The first identifies streamed and retained endpoint slots, binding names and directions, context-processing modes, and whether threshold pruning is active. Its `contextBuffers` field is a structural bound of zero, one, or two fixed context arrays; each holds 256 IDs and is allocated only when that input needs context filtering. The second reports retained rows/fibers/endpoints, streamed rows/fibers, multiply-adds, pruned rows/products, and emitted groups. After a transpose, “right” in the kernel counters names the chosen retained plane, not necessarily the second pattern as written in SPARQL. These counters describe actual work, not elapsed-time estimates.
+The strategy publishes `sparseJoinAggregatePlan` and `sparseJoinAggregateWork` in executed explanations. The first identifies streamed and retained endpoint slots, binding names and directions, whether either input is distinct, context-processing modes, endpoint-filter count, and whether threshold pruning is active. Its `contextBuffers` field is a structural bound of zero, one, or two fixed context arrays; each holds 256 IDs and is allocated only when that input needs context filtering. The second reports retained rows/fibers/endpoints, streamed rows/fibers, multiply-adds, pruned rows/products, and candidate groups. After a transpose, “right” in the kernel counters names the chosen retained plane, not necessarily the second pattern as written in SPARQL. These counters describe actual work, not elapsed-time estimates.
 
 The common `nativeAggregateCostQuotesEstimated` telemetry includes the sparse producer's physical quote. Bounded, snapshot-valid predicate counts and directional key-domain counts establish finite bounds for scanning, dictionary setup, probing, product updates, and output groups. The planner does not open input cursors to obtain that quote. Fixed graphs and dataset context restrictions also receive finite quotes when this metadata is available: filtering cannot increase the whole-plane domains or product bounds. Scoped inputs are charged for raw quad traversal, bounded context-membership comparisons, and their fixed context buffers. These are conservative bounds, not exact filtered cardinalities. Missing snapshot metadata leaves the candidate unpriced.
 
 Shared-domain overlap and the distribution of degrees are unknown from these totals. Product and output lower bounds remain zero, and upper bounds remain conservative. The central product estimate uses uniform shared-key degrees and containment: `Fleft * Fright / max(Sleft, Sright)`, capped by the product bound, where `F` is the metadata-derived fiber estimate and `S` is the shared-key domain size. The central group estimate is capped by both expected products and the endpoint cross product. These assumptions affect expected work only; they never narrow the bounds for disjoint domains, skew, graph filtering, or split physical fibers.
 
-For unrestricted contexts, a branching or provably weighted contraction with a kernel-state bound inside the query memory cap can be a normal first choice before timing evidence exists. This is a proof of the executable representation and bounded state, not a claim that every such query is faster. Unit-fanout input has no such initial preference. Scoped inputs also receive no cold-choice proof, because whole-plane branching does not establish useful contraction within the selected graphs. They remain eligible for normal cost and adaptive comparison. Completed timing evidence still participates in the common arbiter and can select another strategy.
+The common selector considers all admitted candidates, removes those dominated by structural or proven price bounds, applies its parallel-work cut, and chooses the lowest expected price among survivors. Learned advice can narrow a quoted interval; without advice the static prior and quotes decide. A candidate whose opening declines is removed and the remaining candidates are ranked again. This is a general selection rule, not a mandatory trial or a guarantee that sparse wins.
 
-The sparse producer also fills the existing adaptive cardinality and fanout bands from its captured quote. Power-of-two bands describe total expected scans, products and groups, and the expected product-to-scan ratio. This keeps exact-variant timing evidence for materially different work sizes and expansion separate, while retaining shared family evidence. The bands are unchanged by transposition or variable renaming; physical orientation and context processing remain separate recipe properties. This refinement changes neither the cost vector nor its uncertainty, and producers without a refinement retain their existing keys.
+An unrestricted branching or provably weighted contraction can additionally expose a bounded-state cold anchor to downstream physical-result evidence when the retained state fits the query memory cap. A scoped plane has no such proof from whole-plane metadata alone. For endpoint filters, the quote accounts for known scalar work at group cardinality; lexical operations retain an unbounded upper work bound. Callback or witness work without an adequate scalar recipe remains explicitly incomplete.
 
 The quote also marks sparse execution as blocking: multiplication and the private result replay finish before the first group is exposed. A downstream LIMIT therefore cannot discount this completed setup and aggregation work.
 
-Sparse is registered with the existing bounded-specialist exploration policy. An unmeasured candidate can receive a deadline-limited trial once an exactly measured fallback is available; the existing query budget, spacing, cancellation, cooldown and confirmation rules apply. A measured slower specialist receives no mandatory repeated confirmations. As with the other specialists, structural admission can also keep a legal candidate available when metadata is missing, while execution still checks adjacency availability and the query memory ledger before any results escape.
+Structural admission can keep a legal forced candidate available when metadata is missing, while execution still checks adjacency availability and the query memory ledger before any results escape. A normal choice is determined by the common selector and available quotes, rather than a sparse-specific exploration rule.
 
 ## Computation and storage
 
-Let `L(x,z)` and `R(z,y)` be positive multiplicities after the query's context restrictions have been applied. The output is:
+Let `L(x,z)` and `R(z,y)` be positive multiplicities after the query's context restrictions have been applied. A plain pattern supplies the number of admitted quads (`BAG_QUADS`); a proven distinct pair projection supplies one when at least one admitted context contains the pair (`DISTINCT_PAIR`). Either mode can occur on either side. The output is:
 
 ```text
 C(x,y) = sum over matching z of L(x,z) * R(z,y)
@@ -73,7 +75,7 @@ If `J` is the number of shared rows on the right, `F_R` the number of right fibe
 
 The implementation remaps the entire eligible retained plane on each execution. For unrestricted contexts, the adapter consumes physical neighbor/multiplicity batches directly when the positioned source cursor certifies bounded physical copying. Both direct and decoded adjacency cursors expose this capability for immutable single-page rows, and bounded cursor wrappers preserve it. Multiplicities therefore need not be expanded into individual quads and then recombined.
 
-The capability is checked again after every row advance. Context-filtered, merged, generic, and multi-page rows use bounded quad batches and form weights after filtering. This fallback matters because the storage layer's general fiber copier may traverse a long same-neighbor extent chain before returning; compressed representation alone does not prove cancellation responsiveness. Output density can dominate result construction, and a low-fanout join can be cheaper through an existing route. There is no cross-query matrix cache, AMX path, native library, or JNI dependency.
+The capability is checked again after every row advance. Context-filtered, merged, generic, and multi-page rows use bounded quad batches and form weights after filtering. Sequential positioned copies reuse their page coordinates and poll cancellation during long runs. A distinct input remembers the last accepted neighbor across batches and pages, including batches in which every context is rejected. Output density can dominate result construction, and a low-fanout join can be cheaper through an existing route. There is no cross-query matrix cache, AMX path, native library, or JNI dependency.
 
 ## HAVING bounds
 
@@ -91,16 +93,19 @@ The integration recognizes necessary exact-integer comparisons through the exist
 | Input or aggregate | Behavior |
 | --- | --- |
 | Exactly two mandatory fixed-predicate patterns, sharing one subject/object variable | Eligible when their other two endpoint variables are exactly the group keys |
+| Independent `SELECT DISTINCT` of a pattern's two endpoints, including safe copied aliases | Supported on either input when lexical and graph scope are proven independent |
 | Subject-subject, subject-object, object-subject, object-object joins | Supported |
 | Predicate self-join | Supported; both pair orders and diagonal groups are retained |
 | `COUNT(*)`, `COUNT(1)`, or non-distinct COUNT of a proven-bound endpoint/shared variable or alias | Supported |
 | Pure constant/copy assignments above the join | Supported when targets are fresh and sources are already guaranteed bound |
 | Multiple equivalent supported COUNT outputs, including HAVING's anonymous output | Supported |
 | Fixed `GRAPH` and compiled dataset context restrictions | Filtered before multiplicities are formed |
-| The same incidence in several admitted contexts | Preserved as a weight; the product of input weights contributes to COUNT |
-| Optional inputs, extra patterns, residual filters, guarded VALUES input, extra join dimensions | Existing alternatives |
-| Graph variables, repeated pattern slots, range-constrained patterns, bound incoming active slots | Existing alternatives |
-| DISTINCT, other aggregates, possibly unbound COUNT arguments | Existing alternatives |
+| The same incidence in several admitted contexts | Plain patterns preserve its weight; distinct-pair projections collapse it to one after context filtering |
+| Replay-safe filters reading only endpoint group keys | Supported using the original expression's value and error semantics |
+| Optional inputs, extra patterns, unsafe or non-group-key filters, guarded VALUES input, extra join dimensions | Existing alternatives |
+| Hidden local graph variable in an admitted distinct projection | Supported; graph variables retained as result/join dimensions keep existing alternatives |
+| Repeated pattern slots, range-constrained patterns, bound incoming active slots, inherited graph/LATERAL frames | Existing alternatives |
+| DISTINCT aggregates, other aggregates, possibly unbound COUNT arguments | Existing alternatives |
 | Computed/effectful expression COUNT, including `COUNT(1 / 0)` | Existing alternatives; no new expression-error or unbound semantics |
 | Empty or disjoint inputs | No grouped result rows; zero-count endpoint pairs are not synthesized |
 

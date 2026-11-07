@@ -37,8 +37,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Sparse multiplication of two mandatory predicate planes, grouped by their non-shared endpoints. The recognizer proves
- * non-null COUNT inputs, including constants and aliases. Arbitrary expressions, graph variables, filters, DISTINCT and
- * optional inputs continue through the existing aggregate alternatives.
+ * non-null COUNT inputs, including constants and aliases. Independently proven distinct endpoint projections can
+ * collapse graph multiplicity, and replay-safe endpoint filters keep their ordinary expression semantics.
  */
 final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.Producer {
 
@@ -47,6 +47,10 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 
 	private final PatternPlan left;
 	private final PatternPlan right;
+	private final boolean leftDistinct;
+	private final boolean rightDistinct;
+	private final List<String> entryNames;
+	private final List<NativeBooleanFilter> filters;
 	private final int leftEndpoint;
 	private final int rightEndpoint;
 	private final int shared;
@@ -56,15 +60,15 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 	private final long[] rightContexts;
 	private final Metadata metadata;
 
-	private LmdbSparseJoinAggregatePlan(PatternPlan left, PatternPlan right, int leftEndpoint, int rightEndpoint,
-			int shared, long minimumCount, long inputMask) {
-		this(left, right, leftEndpoint, rightEndpoint, shared, minimumCount, inputMask, null);
-	}
-
-	private LmdbSparseJoinAggregatePlan(PatternPlan left, PatternPlan right, int leftEndpoint, int rightEndpoint,
-			int shared, long minimumCount, long inputMask, Metadata metadata) {
+	private LmdbSparseJoinAggregatePlan(PatternPlan left, PatternPlan right, boolean leftDistinct,
+			boolean rightDistinct, List<String> entryNames, List<NativeBooleanFilter> filters, int leftEndpoint,
+			int rightEndpoint, int shared, long minimumCount, long inputMask, Metadata metadata) {
 		this.left = left;
 		this.right = right;
+		this.leftDistinct = leftDistinct;
+		this.rightDistinct = rightDistinct;
+		this.entryNames = List.copyOf(entryNames);
+		this.filters = List.copyOf(filters);
 		this.leftEndpoint = leftEndpoint;
 		this.rightEndpoint = rightEndpoint;
 		this.shared = shared;
@@ -82,23 +86,42 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 			return null;
 		}
 		List<ExtensionPlan> extensions = new ArrayList<>();
-		while (input instanceof ExtensionPlan extension) {
-			extensions.add(extension);
-			input = extension.arg;
+		List<FilterPlan> wrappers = new ArrayList<>();
+		while (true) {
+			if (input instanceof ExtensionPlan extension) {
+				extensions.add(extension);
+				input = extension.arg;
+			} else if (input instanceof FilterPlan filter) {
+				wrappers.add(filter);
+				input = filter.arg;
+			} else {
+				break;
+			}
 		}
-		PatternPlan left;
-		PatternPlan right;
-		if (input instanceof MultiJoinPlan join && join.children.length == 2 && join.filters.length == 0
-				&& join.children[0] instanceof PatternPlan first && join.children[1] instanceof PatternPlan second) {
-			left = first;
-			right = second;
-		} else if (input instanceof JoinPlan join && join.left instanceof PatternPlan first
-				&& join.right instanceof PatternPlan second) {
-			left = first;
-			right = second;
+		SlotPlan first;
+		SlotPlan second;
+		MaskedFilter[] joinFilters;
+		boolean orderedJoin;
+		if (input instanceof MultiJoinPlan join && join.children.length == 2) {
+			first = join.children[0];
+			second = join.children[1];
+			joinFilters = join.filters;
+			orderedJoin = false;
+		} else if (input instanceof JoinPlan join) {
+			first = join.left;
+			second = join.right;
+			joinFilters = new MaskedFilter[0];
+			orderedJoin = true;
 		} else {
 			return null;
 		}
+		Input firstInput = input(first);
+		Input secondInput = input(second);
+		if (firstInput == null || secondInput == null) {
+			return null;
+		}
+		PatternPlan left = firstInput.pattern;
+		PatternPlan right = secondInput.pattern;
 		if (!eligible(left) || !eligible(right)) {
 			return null;
 		}
@@ -114,6 +137,24 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		long endpointMask = (1L << leftEndpoint) | (1L << rightEndpoint);
 		if (((1L << groups[0]) | (1L << groups[1])) != endpointMask) {
 			return null;
+		}
+		List<NativeBooleanFilter> filters = new ArrayList<>();
+		if (!appendInputFilters(firstInput, 1L << leftEndpoint, filters)
+				|| !appendInputFilters(secondInput, orderedJoin ? endpointMask : 1L << rightEndpoint, filters)) {
+			return null;
+		}
+		for (MaskedFilter filter : joinFilters) {
+			if (!safeEndpointFilter(filter.filter, filter.mask, endpointMask)) {
+				return null;
+			}
+			filters.add(filter.filter);
+		}
+		for (int i = wrappers.size() - 1; i >= 0; i--) {
+			FilterPlan filter = wrappers.get(i);
+			if (!safeEndpointFilter(filter.filter, filter.filterMask, endpointMask)) {
+				return null;
+			}
+			filters.add(filter.filter);
 		}
 		long guaranteedBindings = leftMask | rightMask;
 		// Resolve only assignments whose value is guaranteed to be bound, in their actual evaluation order.
@@ -137,8 +178,50 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 				return null;
 			}
 		}
-		return new LmdbSparseJoinAggregatePlan(left, right, leftEndpoint, rightEndpoint, shared,
-				minimumCount(having, aggregates), guaranteedBindings);
+		List<String> entryNames = new ArrayList<>(firstInput.entryNames);
+		entryNames.addAll(secondInput.entryNames);
+		return new LmdbSparseJoinAggregatePlan(left, right, firstInput.distinct, secondInput.distinct, entryNames,
+				filters, leftEndpoint, rightEndpoint, shared, minimumCount(having, aggregates), guaranteedBindings,
+				null);
+	}
+
+	private record Input(PatternPlan pattern, boolean distinct, List<String> entryNames,
+			List<FilterPlan> wrappers) {
+	}
+
+	private static Input input(SlotPlan plan) {
+		List<FilterPlan> wrappers = new ArrayList<>();
+		while (plan instanceof FilterPlan filter) {
+			wrappers.add(filter);
+			plan = filter.arg;
+		}
+		if (plan instanceof PatternPlan pattern) {
+			return new Input(pattern, false, List.of(), wrappers);
+		}
+		if (plan instanceof NativeSubqueryPlan subquery) {
+			NativeSubqueryPlan.Incidence incidence = subquery.incidence();
+			if (incidence != null) {
+				return new Input(incidence.pattern(), true, incidence.entryNames(), wrappers);
+			}
+		}
+		return null;
+	}
+
+	private static boolean appendInputFilters(Input input, long availableEndpoints,
+			List<NativeBooleanFilter> filters) {
+		for (int i = input.wrappers.size() - 1; i >= 0; i--) {
+			FilterPlan filter = input.wrappers.get(i);
+			if (!safeEndpointFilter(filter.filter, filter.filterMask, availableEndpoints)) {
+				return false;
+			}
+			filters.add(filter.filter);
+		}
+		return true;
+	}
+
+	private static boolean safeEndpointFilter(NativeBooleanFilter filter, long mask, long endpoints) {
+		long reads = NativePredicateCapabilities.groupedReadMask(filter, mask);
+		return reads >= 0L && (reads & ~endpoints) == 0L && filter.capabilities().replaySafe();
 	}
 
 	static boolean enabled() {
@@ -181,6 +264,11 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		if (!enabled() || (row.boundMask() & inputMask) != 0L) {
 			return false;
 		}
+		for (String name : entryNames) {
+			if (row.base.hasBinding(name)) {
+				return false;
+			}
+		}
 		for (long remaining = inputMask; remaining != 0L; remaining &= remaining - 1L) {
 			int slot = Long.numberOfTrailingZeros(remaining);
 			if (row.slots[slot] != UNKNOWN || row.summaryCell(slot) != null) {
@@ -211,11 +299,11 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		int contextBuffers = contextBuffers();
 		if (transposed.retainedBytes(minimumCount, contextBuffers) < facts.retainedBytes(minimumCount,
 				contextBuffers)) {
-			return new LmdbSparseJoinAggregatePlan(right, left, rightEndpoint, leftEndpoint, shared, minimumCount,
-					inputMask, transposed);
+			return new LmdbSparseJoinAggregatePlan(right, left, rightDistinct, leftDistinct, entryNames, filters,
+					rightEndpoint, leftEndpoint, shared, minimumCount, inputMask, transposed);
 		}
-		return new LmdbSparseJoinAggregatePlan(left, right, leftEndpoint, rightEndpoint, shared, minimumCount,
-				inputMask, facts);
+		return new LmdbSparseJoinAggregatePlan(left, right, leftDistinct, rightDistinct, entryNames, filters,
+				leftEndpoint, rightEndpoint, shared, minimumCount, inputMask, facts);
 	}
 
 	@Override
@@ -224,9 +312,36 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 			return null;
 		}
 		Metadata facts = metadata == null ? metadata(row) : metadata;
-		return facts == null ? null
-				: facts.work(minimumCount, contextChecks(leftContexts, left.namedContextScope),
-						contextChecks(rightContexts, right.namedContextScope));
+		if (facts == null) {
+			return null;
+		}
+		NativeAggregatePhysicalPlan.Work work = facts.work(minimumCount,
+				contextChecks(leftContexts, left.namedContextScope),
+				contextChecks(rightContexts, right.namedContextScope));
+		if (filters.isEmpty()) {
+			return work;
+		}
+		NativeAggregateCostQuotes.Input input = work.input().expressions(filters.size());
+		LmdbNativeCostVector scalarWork = LmdbNativeCostVector.zero();
+		boolean unproved = false;
+		for (NativeBooleanFilter filter : filters) {
+			NativeScalarPlan scalar = filter.scalarPlan();
+			if (scalar == null) {
+				unproved = true;
+				continue;
+			}
+			scalarWork = scalarWork.plus(LmdbNativeCostVectors.repeated(NativeScalarCosts.expression(scalar),
+					input.rows(), new LmdbNativeWork.RowBounds(input.lowRows(), input.highRows())));
+			unproved |= NativeScalarCosts.hasUnquotedWitness(scalar);
+		}
+		if (unproved) {
+			input = new NativeAggregateCostQuotes.Input(input.rows(), input.scanned(), input.seeks(),
+					input.expressions(), input.decoded(), input.lowRows(), input.highRows(), input.inherited(),
+					input.workEvidence()
+							.withMissingProof("Sparse endpoint filter callback or witness work is unproved"));
+		}
+		return new NativeAggregatePhysicalPlan.Work(input, work.extra().plus(scalarWork), work.retainedRows(),
+				work.outputProof());
 	}
 
 	@Override
@@ -262,10 +377,13 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 	public String properties() {
 		return "SPARSE_JOIN_COUNT[streamSlot=" + leftEndpoint + ",streamDirection="
 				+ (left.s.slot == leftEndpoint ? "S" : "O")
+				+ ",streamDistinct=" + leftDistinct
 				+ ",streamContexts=" + contextMode(leftContexts, left.namedContextScope)
 				+ ",retainedSlot=" + rightEndpoint
 				+ ",retainedDirection=" + (right.s.slot == shared ? "S" : "O")
+				+ ",retainedDistinct=" + rightDistinct
 				+ ",retainedContexts=" + contextMode(rightContexts, right.namedContextScope)
+				+ ",endpointFilters=" + filters.size()
 				+ ",contextBuffers=" + contextBuffers()
 				+ ",thresholdPruning=" + (minimumCount > 1L) + ";retention=right-plane]";
 	}
@@ -441,12 +559,11 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 			}
 			inputs.memory = KernelRuntime.AggregateMemory.forLedger(owner.resultLedger());
 			WeightedRuns leftRows = new WeightedRuns(inputs.leftRuns, leftContexts, left.namedContextScope,
-					cancellation,
-					inputs.memory);
+					leftDistinct,
+					cancellation, inputs.memory);
 			WeightedRuns rightRows = new WeightedRuns(inputs.rightRuns, rightContexts, right.namedContextScope,
-					cancellation,
-					inputs.memory);
-			SparseOutput output = new SparseOutput(owner, results, cancellation);
+					rightDistinct, cancellation, inputs.memory);
+			SparseOutput output = new SparseOutput(owner, row, results, cancellation);
 			SparseJoinAggregateKernel.Statistics statistics = SparseJoinAggregateKernel.multiply(leftRows, rightRows,
 					minimumCount, output, inputs.memory, cancellation);
 			inputs.scan.complete();
@@ -512,12 +629,14 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 
 	private final class SparseOutput implements SparseJoinAggregateKernel.Sink {
 		private final NativeGroupIteration owner;
+		private final RowState row;
 		private final NativeReplayBindingList.Builder results;
 		private final KernelCancellation cancellation;
 
-		SparseOutput(NativeGroupIteration owner, NativeReplayBindingList.Builder results,
+		SparseOutput(NativeGroupIteration owner, RowState row, NativeReplayBindingList.Builder results,
 				KernelCancellation cancellation) {
 			this.owner = owner;
+			this.row = row;
 			this.results = results;
 			this.cancellation = cancellation;
 		}
@@ -526,6 +645,21 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		public void accept(long leftId, long rightId, long count) {
 			// Replay bounds resident bytes and spills; total output rows are not a growing private array.
 			KernelRuntime.checkCancelled(cancellation);
+			if (!filters.isEmpty()) {
+				int mark = row.mark();
+				try {
+					if (!row.bind(leftEndpoint, leftId) || !row.bind(rightEndpoint, rightId)) {
+						throw new IllegalStateException("sparse endpoints were bound during group evaluation");
+					}
+					for (NativeBooleanFilter filter : filters) {
+						if (!filter.accept(row)) {
+							return;
+						}
+					}
+				} finally {
+					row.rollback(mark);
+				}
+			}
 			QueryBindingSet result = new QueryBindingSet(2 + owner.aggregates.length);
 			result.addBinding(owner.slotNames[leftEndpoint],
 					owner.source.lazyValue(leftId, owner.layout.positionMask(leftEndpoint)));
@@ -544,18 +678,27 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		private final NativeAdjacency.KeyRunCursor cursor;
 		private final long[] acceptedContexts;
 		private final boolean namedOnly;
+		private final boolean distinct;
 		private final KernelCancellation cancellation;
 		private final KernelRuntime.MemoryAccount memory;
 		private long[] contexts;
 		private long offset;
 		private long size;
 		private boolean physicalFibers;
+		private boolean hasPrevious;
+		private long previous;
 
 		WeightedRuns(NativeAdjacency.KeyRunCursor cursor, long[] acceptedContexts, boolean namedOnly,
+				KernelCancellation cancellation, KernelRuntime.MemoryAccount memory) {
+			this(cursor, acceptedContexts, namedOnly, false, cancellation, memory);
+		}
+
+		WeightedRuns(NativeAdjacency.KeyRunCursor cursor, long[] acceptedContexts, boolean namedOnly, boolean distinct,
 				KernelCancellation cancellation, KernelRuntime.MemoryAccount memory) {
 			this.cursor = cursor;
 			this.acceptedContexts = acceptedContexts;
 			this.namedOnly = namedOnly;
+			this.distinct = distinct;
 			this.cancellation = cancellation;
 			this.memory = memory;
 			cursor.cancellationPoll(KernelRuntime.cancellationPoll(cancellation));
@@ -565,6 +708,7 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		public boolean nextRow() {
 			KernelRuntime.checkCancelled(cancellation);
 			offset = 0L;
+			hasPrevious = false;
 			if (!cursor.advance()) {
 				return false;
 			}
@@ -606,6 +750,16 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 						continue;
 					}
 					long neighbor = neighbors[i];
+					if (distinct) {
+						if (hasPrevious && previous == neighbor) {
+							continue;
+						}
+						previous = neighbor;
+						hasPrevious = true;
+						neighbors[output] = neighbor;
+						weights[output++] = 1L;
+						continue;
+					}
 					if (output != 0 && neighbors[output - 1] == neighbor) {
 						weights[output - 1]++;
 					} else {
@@ -621,25 +775,38 @@ final class LmdbSparseJoinAggregatePlan implements NativeAggregatePhysicalPlan.P
 		}
 
 		private int readPhysicalFibers(long[] neighbors, long[] weights) {
-			if (offset == size) {
-				return 0;
-			}
-			KernelRuntime.checkCancelled(cancellation);
-			int requested = (int) Math.min(neighbors.length, size - offset);
-			int copied = cursor.copyFibers(offset, requested, neighbors, 0, weights, 0);
-			if (copied <= 0 || copied > requested) {
-				throw new IllegalStateException("Incomplete adjacency fiber run");
-			}
-			long nextOffset = offset;
-			for (int i = 0; i < copied; i++) {
-				long weight = weights[i];
-				if (weight <= 0L || weight > size - nextOffset) {
-					throw new IllegalStateException("Invalid adjacency fiber multiplicity");
+			while (offset < size) {
+				KernelRuntime.checkCancelled(cancellation);
+				int requested = (int) Math.min(neighbors.length, size - offset);
+				int copied = cursor.copyFibers(offset, requested, neighbors, 0, weights, 0);
+				if (copied <= 0 || copied > requested) {
+					throw new IllegalStateException("Incomplete adjacency fiber run");
 				}
-				nextOffset += weight;
+				long nextOffset = offset;
+				int output = 0;
+				for (int i = 0; i < copied; i++) {
+					long weight = weights[i];
+					if (weight <= 0L || weight > size - nextOffset) {
+						throw new IllegalStateException("Invalid adjacency fiber multiplicity");
+					}
+					nextOffset += weight;
+					long neighbor = neighbors[i];
+					if (distinct && hasPrevious && previous == neighbor) {
+						continue;
+					}
+					if (distinct) {
+						previous = neighbor;
+						hasPrevious = true;
+					}
+					neighbors[output] = neighbor;
+					weights[output++] = distinct ? 1L : weight;
+				}
+				offset = nextOffset;
+				if (output != 0) {
+					return output;
+				}
 			}
-			offset = nextOffset;
-			return copied;
+			return 0;
 		}
 
 		private boolean accepts(long context) {

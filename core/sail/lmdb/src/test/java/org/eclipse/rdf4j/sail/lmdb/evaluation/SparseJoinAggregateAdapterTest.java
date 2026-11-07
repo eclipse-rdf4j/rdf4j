@@ -175,6 +175,42 @@ class SparseJoinAggregateAdapterTest {
 	}
 
 	@Test
+	void distinctIncidencesCollapseAcceptedContextsAcrossBatchesAndPages() {
+		int contextsPerNeighbor = 40_000;
+		for (boolean filterContexts : new boolean[] { false, true }) {
+			try (SparseJoinAggregateTestFixture fixture = new SparseJoinAggregateTestFixture(80_000,
+					contextsPerNeighbor);
+					NativeAdjacency.KeyRunCursor cursor = fixture.adjacency().openKeyRunCursor();
+					KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(null)) {
+				assertTrue(fixture.pageCount() > 2);
+				long[] accepted = filterContexts ? new long[] {
+						SparseJoinAggregateTestFixture.id(2L),
+						SparseJoinAggregateTestFixture.id(1L + 255L * 255L),
+						SparseJoinAggregateTestFixture.id(1L + 256L * 256L),
+						SparseJoinAggregateTestFixture.id(1L + 39_999L * 39_999L) } : null;
+				var rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor, accepted, filterContexts, true, null,
+						memory);
+				assertTrue(rows.nextRow());
+				long[] neighbors = new long[256];
+				long[] weights = new long[256];
+				int seen = 0;
+				int copied;
+				while ((copied = rows.read(neighbors, weights)) != 0) {
+					for (int i = 0; i < copied; i++) {
+						assertEquals(SparseJoinAggregateTestFixture.id(1_000_000L + (long) seen * seen), neighbors[i]);
+						assertEquals(1L, weights[i]);
+						seen++;
+					}
+				}
+				assertEquals(2, seen);
+				assertTrue(rows.nextRow());
+				assertEquals(filterContexts ? 0 : 1, rows.read(neighbors, weights));
+				assertFalse(rows.nextRow());
+			}
+		}
+	}
+
+	@Test
 	void singlePagePhysicalFiberCopiesAdvanceWithoutRewalkingFibers() {
 		int count = 8_000;
 		int fibers = count / 4;

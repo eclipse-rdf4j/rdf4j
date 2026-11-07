@@ -270,6 +270,11 @@ final class NativeFilterLease {
 		}
 
 		@Override
+		public NativeScalarPlan scalarPlan() {
+			return entry.attempt.scalarPlan();
+		}
+
+		@Override
 		public boolean parallelWorkerForkable() {
 			return entry.attempt.parallelWorkerForkable();
 		}

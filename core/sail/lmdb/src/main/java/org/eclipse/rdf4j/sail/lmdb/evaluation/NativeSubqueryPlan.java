@@ -48,6 +48,13 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 final class NativeSubqueryPlan implements SlotPlan {
 	static final AtomicLong WORKER_BINDINGS = new AtomicLong();
 
+	/** An independent DISTINCT projection of one predicate plane, expressed in the caller's slots. */
+	record Incidence(PatternPlan pattern, List<String> entryNames) {
+		Incidence {
+			entryNames = List.copyOf(entryNames);
+		}
+	}
+
 	@FunctionalInterface
 	interface WorkerFactory {
 		BoundExecution bind(NativeScalarPlan.WorkerContext worker);
@@ -74,6 +81,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private final NativeAggregateCostQuotes.Input physicalInput;
 	private final NativePhysicalResultPlan physicalRecipe;
 	private final BindingSet physicalBindings;
+	private final Incidence incidence;
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames) {
@@ -99,6 +107,15 @@ final class NativeSubqueryPlan implements SlotPlan {
 			Projection projection, QueryEvaluationContext context,
 			WorkerFactory workerFactory,
 			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
+		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
+				projection, context, workerFactory, lateralStepFactory, null);
+	}
+
+	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
+			Projection projection, QueryEvaluationContext context, WorkerFactory workerFactory,
+			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory,
+			Incidence incidence) {
 		this.step = step;
 		this.outSlots = outSlots.clone();
 		this.outNames = outNames.clone();
@@ -118,6 +135,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		this.physicalInput = null;
 		this.physicalRecipe = null;
 		this.physicalBindings = null;
+		this.incidence = incidence;
 		long mask = 0L;
 		for (int slot : outSlots) {
 			mask |= 1L << slot;
@@ -142,6 +160,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		physicalInput = recipe.input();
 		physicalRecipe = recipe;
 		physicalBindings = NativeEntryBindings.copyValues(bindings);
+		incidence = original.incidence;
 	}
 
 	boolean workerBindable() {
@@ -244,6 +263,8 @@ final class NativeSubqueryPlan implements SlotPlan {
 			throw new IllegalStateException("native lexical boundary has no worker construction recipe");
 		}
 		WORKER_BINDINGS.incrementAndGet();
+		// The incidence descriptor embeds the coordinator's resolved IDs and dataset scope. The ordinary worker
+		// recipe is rebound above; leave sparse admission unavailable until its descriptor is rebound as well.
 		NativeSubqueryPlan result = new NativeSubqueryPlan(bound.step(), outSlots, outNames, frameInputSlots,
 				frameInputNames,
 				frameParameterNames, privateGraphParameters, projection, bound.context(), workerFactory,
@@ -332,6 +353,10 @@ final class NativeSubqueryPlan implements SlotPlan {
 	/** Whether this boundary's solutions depend on the entry base only, never on the current outer row. */
 	boolean independentOfOuterRow() {
 		return frameInputSlots.length == 0 && privateGraphParameters.length == 0 && lateralStepFactory == null;
+	}
+
+	Incidence incidence() {
+		return independentOfOuterRow() ? incidence : null;
 	}
 
 	/** Visible output variable names, parallel to {@link #outSlots()}. */
