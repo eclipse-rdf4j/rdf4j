@@ -45,7 +45,7 @@ import org.openjdk.jmh.infra.Blackhole;
 @Fork(value = 2, jvmArgs = { "-Xms256m", "-Xmx256m", "-XX:ActiveProcessorCount=2" })
 public class NQuadsPublicParserBenchmark {
 	@Param({ "REPEATED", "UNIQUE", "ESCAPED", "UNICODE", "LANGUAGE", "RDF12", "LONG_LITERAL", "LONG_IRI", "COLLISION",
-			"DATATYPE", "BNODE" })
+			"DATATYPE", "BNODE", "UNIQUE_UNICODE", "LATE_UNICODE", "OTHER_SCHEME", "IPV4", "PORT_IRI", "PERCENT_IRI" })
 	public String workload;
 
 	@Param({ "1", "16", "4096" })
@@ -70,7 +70,9 @@ public class NQuadsPublicParserBenchmark {
 			String predicate = "<https://example.org/predicate/" + (workload.equals("UNIQUE") ? i : i % 16) + ">";
 			String context = "<https://example.org/context/" + (workload.equals("UNIQUE") ? i : i % 4) + ">";
 			String object = switch (workload) {
-			case "REPEATED", "UNIQUE", "LONG_IRI", "COLLISION", "BNODE" -> "\"value-" + i + "\"";
+			case "REPEATED", "UNIQUE", "LONG_IRI", "COLLISION", "BNODE", "UNIQUE_UNICODE", "LATE_UNICODE",
+					"OTHER_SCHEME", "IPV4", "PORT_IRI", "PERCENT_IRI" ->
+				"\"value-" + i + "\"";
 			case "ESCAPED" -> "\"first\\nsecond\\tquote\\\"scalar\\u00E9-" + i + "\\U0001F600\"";
 			case "UNICODE" -> "\"日本語-Ελληνικά-é-😀-" + i + "\"";
 			case "DATATYPE" -> "\"" + i + "\"^^<http://www.w3.org/2001/XMLSchema#integer>";
@@ -98,6 +100,21 @@ public class NQuadsPublicParserBenchmark {
 			} else if (workload.equals("BNODE")) {
 				subject = "_:subject" + i;
 				context = "_:graph" + i % 4;
+			}
+			// Unique fallback cases expose shortcut overhead that repeated vocabulary could hide in the cache.
+			String uniquePrefix = switch (workload) {
+			case "UNIQUE_UNICODE" -> "https://example.org/日本語/";
+			case "LATE_UNICODE" -> "https://example.org/" + "path/".repeat(100) + "日本語/";
+			case "OTHER_SCHEME" -> "tag:example.org,2026:";
+			case "IPV4" -> "http://127.0.0.1/";
+			case "PORT_IRI" -> "https://example.org:8443/";
+			case "PERCENT_IRI" -> "https://example.org/%E2%82%AC/";
+			default -> null;
+			};
+			if (uniquePrefix != null) {
+				subject = "<" + uniquePrefix + "subject/" + i + ">";
+				predicate = "<" + uniquePrefix + "predicate/" + i + ">";
+				context = "<" + uniquePrefix + "context/" + i + ">";
 			}
 			corpus.append(subject)
 					.append(' ')

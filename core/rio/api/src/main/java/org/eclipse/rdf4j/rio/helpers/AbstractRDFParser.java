@@ -384,7 +384,9 @@ public abstract class AbstractRDFParser implements RDFParser {
 			}
 			if (cacheIndex < 0 || !uri.equals(verifiedIRIs[cacheIndex])) {
 				try {
-					new ParsedIRI(uri);
+					if (!isSimpleAsciiIRI(uri)) {
+						new ParsedIRI(uri);
+					}
 				} catch (URISyntaxException e) {
 					reportError(e.getMessage(), BasicParserSettings.VERIFY_URI_SYNTAX);
 					return null;
@@ -410,6 +412,96 @@ public abstract class AbstractRDFParser implements RDFParser {
 			reportFatalError(e);
 			return null; // required by compiler
 		}
+	}
+
+	/**
+	 * Certifies a common subset of the inputs accepted by ParsedIRI without allocating its discarded components. A
+	 * negative result means that the original validator must run, not that the IRI is invalid. Keep unusual
+	 * authorities, Unicode and all errors on that path so its exact acceptance rules and diagnostics remain
+	 * authoritative.
+	 */
+	private static boolean isSimpleAsciiIRI(String iri) {
+		if (iri == null) {
+			return false;
+		}
+		int length = iri.length();
+		int index;
+		if (iri.startsWith("http://")) {
+			index = 7;
+		} else if (iri.startsWith("https://")) {
+			index = 8;
+		} else if (iri.startsWith("urn:") && length > 4 && isAsciiLetterOrDigit(iri.charAt(4))) {
+			return isSimpleAsciiSuffix(iri, 4);
+		} else {
+			return false;
+		}
+		// Digit-leading hosts have special IPv4 and top-level-domain rules in ParsedIRI.
+		if (index == length || !isAsciiLetter(iri.charAt(index))) {
+			return false;
+		}
+		while (++index < length) {
+			char c = iri.charAt(index);
+			if (!isAsciiLetterOrDigit(c) && c != '-' && c != '.' && c != '_' && c != '~') {
+				break;
+			}
+		}
+		if (index < length && iri.charAt(index) == ':') {
+			int start = ++index;
+			while (index < length && iri.charAt(index) >= '0' && iri.charAt(index) <= '9') {
+				index++;
+			}
+			// Longer ports may overflow Integer.parseInt. Let ParsedIRI preserve even unchecked errors.
+			if (index == start || index - start > 9) {
+				return false;
+			}
+		}
+		if (index == length) {
+			return true;
+		}
+		char delimiter = iri.charAt(index);
+		return (delimiter == '/' || delimiter == '?' || delimiter == '#') && isSimpleAsciiSuffix(iri, index);
+	}
+
+	private static boolean isSimpleAsciiSuffix(String iri, int index) {
+		boolean fragment = false;
+		for (int length = iri.length(); index < length; index++) {
+			char c = iri.charAt(index);
+			if (isAsciiLetterOrDigit(c)) {
+				continue;
+			}
+			switch (c) {
+			case '-', '.', '_', '~', '!', '$', '&', '\'', '(', ')', '*', '+', ',', ';', '=', ':', '@', '/', '?':
+				break;
+			case '#':
+				if (fragment) {
+					return false;
+				}
+				fragment = true;
+				break;
+			case '%':
+				if (length - index < 3 || !isAsciiHexDigit(iri.charAt(index + 1))
+						|| !isAsciiHexDigit(iri.charAt(index + 2))) {
+					return false;
+				}
+				index += 2;
+				break;
+			default:
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isAsciiLetter(char c) {
+		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z';
+	}
+
+	private static boolean isAsciiLetterOrDigit(char c) {
+		return isAsciiLetter(c) || c >= '0' && c <= '9';
+	}
+
+	private static boolean isAsciiHexDigit(char c) {
+		return c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F';
 	}
 
 	/**
