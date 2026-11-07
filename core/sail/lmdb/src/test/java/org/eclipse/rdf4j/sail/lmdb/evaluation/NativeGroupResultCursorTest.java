@@ -184,7 +184,7 @@ class NativeGroupResultCursorTest {
 			}
 		};
 		NativeCustomAggregate custom = new NativeCustomAggregate(null, null, new NativeBindingSetValueEvaluator[0],
-				() -> () -> SimpleValueFactory.getInstance().createLiteral("unused"), false, false);
+				() -> () -> SimpleValueFactory.getInstance().createLiteral("unused"), -1, false);
 		NativeGroupIteration iteration = new NativeGroupIteration(source, input, layout(), new int[0],
 				new AggregateSpec[] { AggregateSpec.custom("opaque", custom) }, false,
 				EmptyBindingSet.getInstance(), null, null, false, null);
