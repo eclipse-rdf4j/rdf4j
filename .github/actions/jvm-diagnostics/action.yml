@@ -1,0 +1,43 @@
+name: JVM crash diagnostics
+description: Enable CI-only JVM heap/fatal diagnostics, or upload every generated dump.
+inputs:
+  mode:
+    description: setup before JVM execution, upload in an always-run final step
+    required: true
+  artifact-name:
+    description: Unique job/matrix artifact name
+    required: false
+    default: jvm-diagnostics
+  extra-paths:
+    description: Additional diagnostic paths, for example host-backed QEMU results
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Enable JVM diagnostics
+      if: ${{ inputs.mode == 'setup' }}
+      shell: bash
+      run: node "${{ github.action_path }}/setup.js"
+    - name: Make container-owned diagnostics readable
+      if: ${{ always() && inputs.mode == 'upload' && env.RDF4J_JVM_DIAGNOSTICS_DIR != '' }}
+      shell: bash
+      run: node "${{ github.action_path }}/prepare-upload.js"
+    - name: Upload generated JVM diagnostics
+      # A caught OOM need not fail Maven. Never turn an unset directory into a root glob.
+      if: ${{ always() && inputs.mode == 'upload' && env.RDF4J_JVM_DIAGNOSTICS_DIR != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ env.RDF4J_JVM_DIAGNOSTICS_DIR }}/**/*.hprof
+          ${{ env.RDF4J_JVM_DIAGNOSTICS_DIR }}/**/*.hprof.gz
+          ${{ env.RDF4J_JVM_DIAGNOSTICS_DIR }}/**/*hs_err_pid*.log
+          ${{ github.workspace }}/**/java_pid*.hprof
+          ${{ github.workspace }}/**/java_pid*.hprof.gz
+          ${{ github.workspace }}/**/*hs_err_pid*.log
+          ${{ inputs.extra-paths }}
+        if-no-files-found: ignore
+        # Host/guest JDK 25 writes gzip directly. Portable container HPROF is compressed here.
+        compression-level: 1
+        retention-days: 7

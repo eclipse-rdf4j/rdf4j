@@ -80,7 +80,8 @@ def _copy_tree(source_root: Path, output_root: Path, directory: str,
     return copied
 
 
-def package_ci_evidence(source_root: Path, output_root: Path) -> dict[str, Any]:
+def package_ci_evidence(source_root: Path, output_root: Path, *,
+                        separate_diagnostics: bool = False) -> dict[str, Any]:
     source_root = source_root.resolve()
     output_root = output_root.resolve()
     if output_root == source_root or source_root in output_root.parents:
@@ -89,6 +90,7 @@ def package_ci_evidence(source_root: Path, output_root: Path) -> dict[str, Any]:
 
     copied: list[str] = []
     images: list[dict[str, Any]] = []
+    separately_uploaded_diagnostics: list[str] = []
     campaigns = source_root / "campaigns"
     if campaigns.exists():
         if campaigns.is_symlink() or not campaigns.is_dir():
@@ -101,10 +103,16 @@ def package_ci_evidence(source_root: Path, output_root: Path) -> dict[str, Any]:
         for results in sorted(campaigns.glob("*/results")):
             if results.is_symlink() or not results.is_dir():
                 raise ValueError(f"refusing non-directory results path: {results}")
+            diagnostics = results / "jvm-diagnostics"
+            if separate_diagnostics and diagnostics.is_dir() and not diagnostics.is_symlink():
+                separately_uploaded_diagnostics.append(diagnostics.relative_to(source_root).as_posix())
             for path in sorted(results.rglob("*")):
                 if path.is_symlink():
                     raise ValueError(f"refusing symlink in campaign results: {path}")
                 if not path.is_file():
+                    continue
+                # The CI JVM artifact uploads these directly, avoiding a second multi-GB copy.
+                if separate_diagnostics and diagnostics in path.parents:
                     continue
                 if path.name == "data.raw" and path.parent.name == "pre-recovery-image":
                     _compress_crash_image(path, source_root, output_root, images)
@@ -139,6 +147,7 @@ def package_ci_evidence(source_root: Path, output_root: Path) -> dict[str, Any]:
 
     manifest = {
         "format_version": 1,
+        "separately_uploaded_diagnostics": sorted(separately_uploaded_diagnostics),
         "crash_images": sorted(images, key=lambda image: image["source_path"]),
         "preserved_files": sorted(set(copied)),
         "excluded_regenerable_inputs": [
@@ -157,8 +166,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--crashlab-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--separate-diagnostics", action="store_true",
+                        help="Leave JVM diagnostics in place for a separate CI artifact upload")
     args = parser.parse_args()
-    manifest = package_ci_evidence(args.crashlab_root, args.output_root)
+    manifest = package_ci_evidence(args.crashlab_root, args.output_root,
+                                   separate_diagnostics=args.separate_diagnostics)
     total = sum(path.stat().st_size for path in args.output_root.rglob("*") if path.is_file())
     print(f"packaged {len(manifest['preserved_files'])} evidence files and "
           f"{len(manifest['crash_images'])} compressed crash images ({total} bytes)")

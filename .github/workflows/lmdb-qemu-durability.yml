@@ -7,6 +7,7 @@ on:
       - 'core/sail/base/**'
       - 'scripts/lmdb-crashlab/**'
       - '.github/workflows/lmdb-qemu-durability.yml'
+      - '.github/actions/jvm-diagnostics/**'
 
 permissions:
   contents: read
@@ -25,6 +26,10 @@ jobs:
           distribution: temurin
           java-version: 25
           cache: maven
+      - name: Enable JVM crash diagnostics
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: setup
       - name: Install Node.js
         uses: actions/setup-node@v7.0.0
         with:
@@ -185,7 +190,7 @@ jobs:
           else
             python3 scripts/lmdb-crashlab/package_ci_artifact.py \
               --crashlab-root "$CRASHLAB_ROOT" \
-              --output-root "$evidence_root"
+              --output-root "$evidence_root" --separate-diagnostics
           fi
 
       - name: Preserve compact guest, campaign, and test evidence
@@ -197,3 +202,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
+      - name: Upload JVM crash diagnostics
+        if: ${{ always() }}
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: upload
+          artifact-name: jvm-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
+          extra-paths: ${{ runner.temp }}/rdf4j-lmdb-qemu/campaigns/**/results/jvm-diagnostics/**
+

@@ -24,6 +24,12 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Enable JVM crash diagnostics
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: setup
+      - name: Check JVM diagnostic coverage
+        run: python3 scripts/test_ci_jvm_diagnostics.py
       - name: Install Node.js
         uses: actions/setup-node@v7.0.0
         with:
@@ -36,6 +42,12 @@ jobs:
         run: mvn -B --quiet -T 2C test-compile --fail-at-end -DskipTests -Pquick
       - name: Download all other dependencies
         run: mvn -B --quiet -T 2C dependency:go-offline --fail-at-end
+      - name: Upload JVM crash diagnostics
+        if: ${{ always() }}
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: upload
+          artifact-name: jvm-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
 
   compile:
     needs: formatting-and-quick-compile
@@ -79,6 +91,10 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: 'temurin'
           cache: maven
+      - name: Enable JVM crash diagnostics
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: setup
       - name: Install Node.js
         uses: actions/setup-node@v7.0.0
         with:
@@ -155,6 +171,13 @@ jobs:
           check_name: Test report - LMDB unit tests - ${{ matrix.jdk }}
           # Read-only fork and Dependabot tokens retain parsed failure details in the action log.
           skip_publishing: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
+      - name: Upload JVM crash diagnostics
+        if: ${{ always() }}
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: upload
+          artifact-name: jvm-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
+
   unit-tests:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
@@ -176,6 +199,10 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: 'temurin'
           cache: maven
+      - name: Enable JVM crash diagnostics
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: setup
       - name: Install Node.js
         uses: actions/setup-node@v7.0.0
         with:
@@ -190,6 +217,12 @@ jobs:
         with:
           check_name: Test report - other unit tests - ${{ matrix.jdk }}
           skip_publishing: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
+      - name: Upload JVM crash diagnostics
+        if: ${{ always() }}
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: upload
+          artifact-name: jvm-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
 
   build:
     needs: [unit-tests, lmdb-unit-tests]
@@ -226,6 +259,10 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Enable JVM crash diagnostics
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: setup
       - name: Install Node.js
         uses: actions/setup-node@v7.0.0
         with:
@@ -242,6 +279,12 @@ jobs:
         with:
           check_name: Test report - integration-tests
           skip_publishing: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
+      - name: Upload JVM crash diagnostics
+        if: ${{ always() }}
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: upload
+          artifact-name: jvm-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
 
   slow-tests:
     needs: formatting-and-quick-compile
@@ -260,6 +303,10 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Enable JVM crash diagnostics
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: setup
       - name: Install Node.js
         uses: actions/setup-node@v7.0.0
         with:
@@ -274,6 +321,12 @@ jobs:
         with:
           check_name: Test report - slow-tests
           skip_publishing: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
+      - name: Upload JVM crash diagnostics
+        if: ${{ always() }}
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: upload
+          artifact-name: jvm-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
 
   package-assembly:
     needs: formatting-and-quick-compile
@@ -322,6 +375,10 @@ jobs:
           java-version: 25
           distribution: 'temurin'
           cache: maven
+      - name: Enable JVM crash diagnostics
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: setup
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y libxml2-utils xvfb
       - name: Install Node.js
@@ -344,6 +401,12 @@ jobs:
             e2e/playwright-report/
           if-no-files-found: warn
           retention-days: 7
+      - name: Upload JVM crash diagnostics
+        if: ${{ always() }}
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: upload
+          artifact-name: jvm-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
 
   frontend-unit-tests:
     needs: formatting-and-quick-compile

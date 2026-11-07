@@ -42,9 +42,13 @@ class LmdbIndexRebuildGrowthTest {
 	void capacityDerivedStatementRebuildKeepsEverySourceRow(int format, boolean inline, boolean inferred)
 			throws Exception {
 		Path output = directory.resolve("rebuild-child.log");
+		String ciDiagnostics = System.getenv("RDF4J_JVM_DIAGNOSTICS_DIR");
+		Path diagnosticsDirectory = ciDiagnostics == null || ciDiagnostics.isBlank() ? directory
+				: Path.of(ciDiagnostics);
 		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		Process child = new ProcessBuilder(java, "-ea", "-XX:-CreateCoredumpOnCrash",
-				"-XX:ErrorFile=" + directory.resolve("hs_err_pid%p.log"), "-cp", System.getProperty("java.class.path"),
+				"-XX:ErrorFile=" + diagnosticsDirectory.resolve("hs_err_pid%p.log"), "-cp",
+				System.getProperty("java.class.path"),
 				GrowthChild.class.getName(), directory.toString(), Integer.toString(format),
 				Boolean.toString(inline), Boolean.toString(inferred))
 						.redirectErrorStream(true)

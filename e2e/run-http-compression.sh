@@ -14,6 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${PROJECT_ROOT}/docker/ci-jvm-diagnostics.sh"
 MVN_BIN="${MVN_BIN:-mvn}"
 RUN_REGULAR_DOCKER="${RUN_REGULAR_DOCKER:-1}"
 SKIP_REACTOR_INSTALL="${SKIP_REACTOR_INSTALL:-0}"
@@ -38,7 +39,7 @@ cleanup() {
   fi
 
   if [[ "${DOCKER_STARTED}" == "1" ]]; then
-    (cd "${PROJECT_ROOT}/docker" && docker compose down -v)
+    (cd "${PROJECT_ROOT}/docker" && rdf4j_ci_docker_compose down -v)
   fi
 }
 

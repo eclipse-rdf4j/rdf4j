@@ -27,6 +27,10 @@ jobs:
         with:
           java-version: '25'
           distribution: temurin
+      - name: Enable JVM crash diagnostics
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: setup
       - name: Cache workspace Maven dependencies
         uses: actions/cache@v4
         with:
@@ -51,3 +55,10 @@ jobs:
             /tmp/rdf4j-sparql-ast-*/**/*.log
             /tmp/rdf4j-sparql-ast-*/diffs/**
           if-no-files-found: ignore
+      - name: Upload JVM crash diagnostics
+        if: ${{ always() }}
+        uses: ./.github/actions/jvm-diagnostics
+        with:
+          mode: upload
+          artifact-name: jvm-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
+

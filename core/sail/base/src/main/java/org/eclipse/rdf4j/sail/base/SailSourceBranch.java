@@ -2877,23 +2877,46 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 				}
 
-				while (changes.size() > 1) {
-					Changeset pop = changes.removeLast();
-					if (pop.isFrozen() || changes.peekLast().isFrozen() || changes.peekLast().isRetained()
-							|| pop.sharesModelWith(changes.peekLast())) {
-						changes.addLast(pop);
+				if (changes.size() < 2) {
+					return;
+				}
+
+				// Find the same eligible suffix as reverse pairwise compaction, but keep its oldest model as
+				// the accumulator. Retired models cannot be disposed until the enclosing guards are released.
+				// Repeatedly copying a growing suffix into a new predecessor would retain quadratic payload.
+				List<Changeset> suffix = new ArrayList<>();
+				Iterator<Changeset> descending = changes.descendingIterator();
+				Changeset accumulator = descending.next();
+				suffix.add(accumulator);
+				while (descending.hasNext()) {
+					Changeset preceding = descending.next();
+					if (!canCompressInto(accumulator, preceding)) {
+						break;
+					}
+					suffix.add(preceding);
+					accumulator = preceding;
+				}
+				if (suffix.size() < 2) {
+					return;
+				}
+				// An accumulator may also alias a non-adjacent generation. Detect that before any write,
+				// rather than discovering the alias after an earlier fold has already changed its contents.
+				for (Changeset other : changes) {
+					if (other != accumulator && accumulator.sharesModelWith(other)) {
 						return;
 					}
-
-					try {
-						prepare(pop, changes.getLast());
-						flush(pop, changes.getLast());
-					} catch (RuntimeException | Error failure) {
-						changes.addLast(pop);
-						throw failure;
+				}
+				for (int index = suffix.size() - 2; index >= 0; index--) {
+					Changeset source = suffix.get(index);
+					if (!canCompressInto(source, accumulator)) {
+						return;
 					}
-					StreamingWritePreflight.removed(pop);
-					pop.close();
+					prepare(source, accumulator);
+					flush(source, accumulator);
+					// Keep the source and untouched tail in order if preparation or application fails.
+					changes.remove(source);
+					StreamingWritePreflight.removed(source);
+					source.close();
 				}
 
 			} finally {
@@ -2901,6 +2924,11 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			}
 
 		}
+	}
+
+	private static boolean canCompressInto(Changeset source, Changeset destination) {
+		return !source.isFrozen() && !destination.isFrozen() && !destination.isRetained()
+				&& !source.sharesModelWith(destination);
 	}
 
 	void autoFlush() throws SailException {
