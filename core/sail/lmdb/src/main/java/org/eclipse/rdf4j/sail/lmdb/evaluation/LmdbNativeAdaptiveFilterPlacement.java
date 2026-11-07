@@ -447,17 +447,14 @@ final class AdaptiveFilterMetadata {
 		CostClassifier classifier = new CostClassifier();
 		condition.visit(classifier);
 
-		if (classifier.containsExists) {
-			return ineligible(filterId, classifier.cost(), AdaptiveDeclineReason.EXISTS_FILTER);
-		}
-		if (!QueryEvaluationUtility.isRepeatableWithinPreparation(condition)) {
+		if (!NativeExpressionFacts.of(condition).repeatable()) {
 			return ineligible(filterId, classifier.cost(), AdaptiveDeclineReason.VOLATILE_FILTER);
 		}
 		return eligible(filterId, classifier.cost());
 	}
 
 	AdaptiveFilterMetadata withRequiredMask(long requiredMask) {
-		if (this.requiredMask == requiredMask) {
+		if (this.requiredMask == requiredMask && (requiredMask >= 0L || !adaptiveEligible)) {
 			return this;
 		}
 		if (requiredMask < 0L) {
@@ -469,7 +466,6 @@ final class AdaptiveFilterMetadata {
 
 	private static final class CostClassifier extends AbstractQueryModelVisitor<RuntimeException> {
 		private int units;
-		private boolean containsExists;
 
 		int cost() {
 			return Math.max(CHEAP, Math.min(MAX_COMPOSITE_COST, units));
@@ -536,7 +532,6 @@ final class AdaptiveFilterMetadata {
 
 		@Override
 		public void meet(Exists node) {
-			containsExists = true;
 			add(EXPENSIVE);
 			super.meet(node);
 		}
@@ -600,6 +595,11 @@ final class NonOwningAdaptiveFilter implements NativeBooleanFilter {
 	@Override
 	public long batchReadMask() {
 		return delegate.batchReadMask();
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		return delegate.capabilities();
 	}
 
 	@Override

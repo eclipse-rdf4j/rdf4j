@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
@@ -57,7 +58,6 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			PARALLEL_FLAG,
 			JANINO_CODEGEN_FLAG,
 			"rdf4j.lmdb.kernelInterpreter.enabled",
-			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.factorizedRows.enabled",
 			"rdf4j.lmdb.wcoj.enabled",
 			"rdf4j.lmdb.nativeBatch.enabled",
@@ -82,7 +82,6 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 		System.setProperty(PARALLEL_FLAG, "false");
 		System.setProperty(JANINO_CODEGEN_FLAG, "false");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
 		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
 		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");
@@ -136,18 +135,11 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 	void tailBranchSkipsValueMemoWhenProbeIsCacheBacked() {
 		long engagedBefore = JoinDispatchTestAccess.factorizedEngaged();
 		long skipsBefore = JoinDispatchTestAccess.factorizedCacheBackedMemoSkips();
-		List<String> rows;
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			rows = QueryResults
-					.asList(conn.prepareTupleQuery("PREFIX ex: <" + EX + ">\nSELECT ?s ?y WHERE {\n"
-							+ "  ?s ex:p1 ?a .\n"
-							+ "  ?a ex:p2 ?y .\n"
-							+ "}").evaluate())
-					.stream()
-					.map(LmdbNativeFactorizedAdjacencyMemoTest::canonical)
-					.sorted()
-					.collect(Collectors.toList());
-		}
+		// This is a cache-backed factorized-tail contract, independent of the automatic price winner.
+		List<String> rows = queryRows("PREFIX ex: <" + EX + ">\nSELECT ?s ?y WHERE {\n"
+				+ "  ?s ex:p1 ?a .\n"
+				+ "  ?a ex:p2 ?y .\n"
+				+ "}", "factorizedRows");
 		assertThat(rows).hasSize(64 * 3);
 		assertThat(JoinDispatchTestAccess.factorizedEngaged())
 				.as("the factorized rows path must engage for this shape")
@@ -167,14 +159,13 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 		String previousJanino = System.getProperty(JANINO_CODEGEN_FLAG);
 		String previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
 		String previousSynchronous = System.getProperty("rdf4j.lmdb.janinoCodegen.synchronous");
-		String previousCalibration = System.getProperty("rdf4j.lmdb.costCalibration.enabled");
 		int expectedRowCount = 64 * 3;
 		try {
 			System.setProperty(JANINO_CODEGEN_FLAG, "false");
 			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
 			JaninoPipelineTestAccess.resetAll();
 			long factorizedBefore = JoinDispatchTestAccess.factorizedEngaged();
-			List<String> factorizedRows = queryRows(query);
+			List<String> factorizedRows = queryRows(query, "factorizedRows");
 			assertThat(factorizedRows).hasSize(expectedRowCount);
 			assertThat(JoinDispatchTestAccess.factorizedEngaged())
 					.as("the fixture must be eligible for factorized rows")
@@ -183,11 +174,12 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			System.setProperty(JANINO_CODEGEN_FLAG, "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
-			System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 
+			// 192 rows do not amortise the kernel's fixed cost against the nested loop, so the compiled kernel is
+			// forced: this test is about the kernel executing the shape and the factorized path standing aside
 			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
 			JaninoPipelineTestAccess.resetAll();
-			List<String> compiledOnlyRows = queryRows(query);
+			List<String> compiledOnlyRows = queryRows(query, "irKernel");
 			assertThat(compiledOnlyRows).containsExactlyElementsOf(factorizedRows);
 			assertThat(JaninoPipelineTestAccess.opened())
 					.as("fixture must be executable by the generated row kernel")
@@ -196,10 +188,10 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "true");
 			JaninoPipelineTestAccess.resetAll();
 			long factorizedBeforeBoth = JoinDispatchTestAccess.factorizedEngaged();
-			List<String> bothRows = queryRows(query);
+			List<String> bothRows = queryRows(query, "irKernel");
 			assertThat(bothRows).containsExactlyElementsOf(factorizedRows);
 			assertThat(JoinDispatchTestAccess.factorizedEngaged())
-					.as("the higher-ranked compiled kernel must win the shared arbiter")
+					.as("the forced compiled kernel must win the shared dispatch over the eligible factorized rows")
 					.isEqualTo(factorizedBeforeBoth);
 			assertThat(JaninoPipelineTestAccess.opened())
 					.as("the selected compiled kernel must open")
@@ -209,14 +201,21 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			restoreProperty(JANINO_CODEGEN_FLAG, previousJanino);
 			restoreProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", previousThreshold);
 			restoreProperty("rdf4j.lmdb.janinoCodegen.synchronous", previousSynchronous);
-			restoreProperty("rdf4j.lmdb.costCalibration.enabled", previousCalibration);
 			JaninoPipelineTestAccess.resetAll();
 		}
 	}
 
 	private List<String> queryRows(String query) {
+		return queryRows(query, null);
+	}
+
+	private List<String> queryRows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(LmdbNativeFactorizedAdjacencyMemoTest::canonical)
 					.sorted()

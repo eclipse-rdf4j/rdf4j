@@ -1,0 +1,33 @@
+# Controlled fixture: urn:person/<i>; predicates urn:p (ring/fanout edges), urn:age (i mod 10, explicitly xsd:integer to match SPARQL numeric constants), urn:name (unique), urn:city (i mod 4), urn:nick (none/one/two), rdf:type urn:Person; named graph urn:g mirrors selected p edges. Sizes 0,1,6,64,200 then3000. Compare exact bags with MemoryStore before timing. All nonzero slices below have total projected-key order.
+# id	validation	query
+emptyMissing	bag	SELECT ?s WHERE { ?s <urn:missing> ?o }
+singleCount	bag	SELECT (COUNT(*) AS ?count) WHERE { ?s <urn:p> ?o }
+starTwo	bag	SELECT ?s ?age ?name WHERE { ?s <urn:age> ?age ; <urn:name> ?name }
+starThree	bag	SELECT ?s ?age ?name ?city WHERE { ?s <urn:age> ?age ; <urn:name> ?name ; <urn:city> ?city }
+chainTwo	bag	SELECT ?a ?c WHERE { ?a <urn:p> ?b . ?b <urn:p> ?c }
+chainThree	bag	SELECT ?a ?d WHERE { ?a <urn:p> ?b . ?b <urn:p> ?c . ?c <urn:p> ?d }
+cycleThree	bag	SELECT ?a ?b ?c WHERE { ?a <urn:p> ?b . ?b <urn:p> ?c . ?c <urn:p> ?a FILTER(?a != ?b && ?b != ?c && ?c != ?a) }
+selectiveEarly	bag	SELECT ?a ?b WHERE { ?a <urn:age> 0 ; <urn:p> ?b }
+selectiveLate	bag	SELECT ?a ?b WHERE { ?a <urn:p> ?b . ?b <urn:age> 0 }
+objectBound	bag	SELECT ?s WHERE { ?s <urn:p> <urn:person/0> }
+groupFew	bag	SELECT ?city (COUNT(*) AS ?count) WHERE { ?s <urn:city> ?city ; <urn:p> ?o } GROUP BY ?city
+groupMany	bag	SELECT ?s (COUNT(*) AS ?count) WHERE { ?s <urn:p> ?o } GROUP BY ?s
+groupDistinct	bag	SELECT ?city (COUNT(DISTINCT ?o) AS ?count) WHERE { ?s <urn:city> ?city ; <urn:p> ?o } GROUP BY ?city
+groupHaving	bag	SELECT ?s (COUNT(*) AS ?count) WHERE { ?s <urn:p> ?o } GROUP BY ?s HAVING(COUNT(*) > 1)
+distinctCity	bag	SELECT DISTINCT ?city WHERE { ?s <urn:city> ?city ; <urn:p> ?o }
+optionalMultiplicity	bag	SELECT ?s ?nick WHERE { ?s <urn:name> ?name OPTIONAL { ?s <urn:nick> ?nick } }
+exists	bag	SELECT ?s WHERE { ?s <urn:name> ?name FILTER EXISTS { ?s <urn:p> ?o } }
+notExists	bag	SELECT ?s WHERE { ?s <urn:name> ?name FILTER NOT EXISTS { ?s <urn:nick> ?nick } }
+minus	bag	SELECT ?s WHERE { ?s <urn:name> ?name MINUS { ?s <urn:nick> ?nick } }
+valuesDuplicates	bag	SELECT ?s ?age WHERE { VALUES ?age { 0 0 1 UNDEF } ?s <urn:age> ?age }
+valuesEmpty	bag	SELECT ?s WHERE { VALUES ?s { } ?s <urn:p> ?o }
+wildcardHistogram	bag	SELECT ?p (COUNT(*) AS ?count) WHERE { ?s ?p ?o } GROUP BY ?p
+boundWildcard	bag	SELECT ?p ?o WHERE { <urn:person/0> ?p ?o }
+typeMatrix	bag	SELECT ?type ?p (COUNT(*) AS ?count) WHERE { ?s a ?type . ?s ?p ?o } GROUP BY ?type ?p
+namedGraph	bag	SELECT ?g (COUNT(*) AS ?count) WHERE { GRAPH ?g { ?s <urn:p> ?o } } GROUP BY ?g
+repeatedGroupSites	bag+diagnostic-only-site-quotes	SELECT ?count WHERE { { SELECT (COUNT(*) AS ?count) WHERE { ?s <urn:p> ?o } } UNION { SELECT (COUNT(*) AS ?count) WHERE { ?s <urn:name> ?o } } }
+orderedTopOne	total-order-slice	SELECT ?s ?age WHERE { ?s <urn:age> ?age } ORDER BY DESC(?age) ?s LIMIT 1
+orderedTopTen	total-order-slice	SELECT ?s ?age WHERE { ?s <urn:age> ?age } ORDER BY DESC(?age) ?s LIMIT 10
+orderedOffset	total-order-slice	SELECT ?s ?age WHERE { ?s <urn:age> ?age } ORDER BY DESC(?age) ?s OFFSET 1 LIMIT 10
+orderedPairs	total-order-slice	SELECT ?s ?o WHERE { ?s <urn:p> ?o } ORDER BY ?s ?o LIMIT 10
+limitZero	exact-empty-terminal	SELECT ?s WHERE { ?s <urn:p> ?o } LIMIT 0

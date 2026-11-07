@@ -62,6 +62,13 @@ public class LmdbNativeKernelAggregateTest {
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String WCOJ_FLAG = "rdf4j.lmdb.wcoj.enabled";
 	private static final String EX = "http://example.org/";
+	// Soft preference lists (see LmdbNativeDispatchLoop): the compiled tier is forced where it is a candidate and the
+	// interpreted tier takes over when the compile is still pending. On this 150-statement fixture the measured
+	// selector prices the sequential path below every kernel, so engagement must be requested, not inferred.
+	private static final String ROW_KERNEL_TIERS = LmdbNativeAttemptMetrics.PATH_IR_KERNEL + ","
+			+ LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED;
+	private static final String AGGREGATE_KERNEL_TIERS = LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE + ","
+			+ LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED;
 
 	// HC-q10 shape: candidates with a NOT EXISTS witness, counted distinct.
 	private static final String NOT_EXISTS_COUNT_QUERY = "PREFIX ex: <" + EX + ">\n"
@@ -160,17 +167,17 @@ public class LmdbNativeKernelAggregateTest {
 			+ "SELECT ?x (COUNT(*) AS ?n) WHERE { ?s ex:word ?w . BIND(5 AS ?x) }\n"
 			+ "GROUP BY ?x";
 
-	// M7 output mods: ORDER BY + LIMIT over a two-pattern chain (fusion opportunity) must sink into the kernel
-	// terminal's OutputMods so the generated flush() top-Ks the rows itself (OUTPUT_MODS_LOWERINGS witness). The
-	// compound key ?l ?a is unique per row, so the ordered result list is deterministic across tiers.
+	// Emitted ORDER keys require a whole-result sort, so the semantic native materializer serves these queries.
+	// Direct OutputMods lowering and its non-resumable refusal are covered by OrderedOutputModsLoweringTest.
+	// The compound key ?l ?a is unique per row, so the ordered sequence is deterministic across tiers.
 	private static final String ORDER_LIMIT_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT ?a ?b ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }\n"
 			+ "ORDER BY ?l ?a LIMIT 3";
-	// Descending key plus OFFSET: the kernel top-K keeps offset+limit rows, then flush drops the offset.
+	// Descending key plus OFFSET: semantic top-K keeps offset+limit rows, then drops the offset.
 	private static final String ORDER_DESC_OFFSET_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT ?a ?b ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }\n"
 			+ "ORDER BY DESC(?l) ?a OFFSET 2 LIMIT 3";
-	// No LIMIT: the sink still applies (full in-kernel sort instead of the engine-side spill sort).
+	// No LIMIT: the semantic native materializer performs a full sort.
 	private static final String ORDER_NO_LIMIT_QUERY = "PREFIX ex: <" + EX + ">\n"
 			+ "SELECT ?a ?b ?l WHERE { ?a ex:knows ?b . ?b ex:label ?l }\n"
 			+ "ORDER BY ?l ?a";
@@ -256,9 +263,6 @@ public class LmdbNativeKernelAggregateTest {
 		save(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "true");
 		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
 		save(LmdbNativeKernelLowering.UNION_SOURCES_PROPERTY, "true");
-		save(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
-		save(LmdbNativeCostCalibration.ENABLED_PROPERTY + ".record", "true");
-		save(LmdbNativeCostCalibration.EXPLORATION_PROPERTY, "false");
 		save("rdf4j.lmdb.janinoCodegen.debug", "true");
 		save(LmdbNativeJaninoCodegen.DUMP_DIR_PROPERTY, "target/kernel-dump");
 
@@ -435,12 +439,6 @@ public class LmdbNativeKernelAggregateTest {
 	public void resetCounters() {
 		KernelExecutionTestAccess.resetMetrics();
 		LmdbNativeJaninoCodegen.resetForTests();
-		LmdbNativeCostCalibration.reset();
-		for (int i = 0; i < 100; i++) {
-			// Existing row-kernel engagement cases retain their calibration setup. Aggregate operator contracts use
-			// explicit executor requests and do not need fabricated aggregate timing evidence.
-			LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, 1_000_000D, 1_000L);
-		}
 	}
 
 	private void warmAggregateSeeds() {
@@ -498,7 +496,7 @@ public class LmdbNativeKernelAggregateTest {
 	private void awaitColdAggregateEngagement(String query) {
 		warmAggregateSeeds();
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0L; round++) {
-			rows(query);
+			rows(query, AGGREGATE_KERNEL_TIERS);
 		}
 	}
 
@@ -568,22 +566,16 @@ public class LmdbNativeKernelAggregateTest {
 	@Test
 	public void nullRejectedOptionalsRetainColdJaninoAggregateEngagement() {
 		List<String> expected = genericRows(NULL_REJECTED_OPTIONALS_COUNT_QUERY);
-		String previousCalibration = System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
-		try {
-			LmdbNativeCostCalibration.reset();
-			awaitColdAggregateEngagement(NULL_REJECTED_OPTIONALS_COUNT_QUERY);
-			String executedPlan = KernelExecutionTestAccess.aggOpened() == 0L
-					? explanation(NULL_REJECTED_OPTIONALS_COUNT_QUERY, Explanation.Level.Executed)
-					: "";
-			assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
-					"the enabled Janino aggregate was never attempted from a cold preference tie (planned="
-							+ KernelExecutionTestAccess.aggPlanned() + ", declined="
-							+ KernelExecutionTestAccess.aggDeclined() + ", compileFailures="
-							+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")\n" + executedPlan);
-			assertEquals(expected, rows(NULL_REJECTED_OPTIONALS_COUNT_QUERY));
-		} finally {
-			restoreProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, previousCalibration);
-		}
+		awaitColdAggregateEngagement(NULL_REJECTED_OPTIONALS_COUNT_QUERY);
+		String executedPlan = KernelExecutionTestAccess.aggOpened() == 0L
+				? explanation(NULL_REJECTED_OPTIONALS_COUNT_QUERY, Explanation.Level.Executed)
+				: "";
+		assertTrue(KernelExecutionTestAccess.aggOpened() > 0L,
+				"the enabled Janino aggregate was never attempted from a cold preference tie (planned="
+						+ KernelExecutionTestAccess.aggPlanned() + ", declined="
+						+ KernelExecutionTestAccess.aggDeclined() + ", compileFailures="
+						+ LmdbNativeJaninoCodegen.COMPILE_FAILURES.get() + ")\n" + executedPlan);
+		assertEquals(expected, rows(NULL_REJECTED_OPTIONALS_COUNT_QUERY));
 	}
 
 	@Test
@@ -873,7 +865,7 @@ public class LmdbNativeKernelAggregateTest {
 		assertFalse(expected.isEmpty(), "fixture must join knows into labels");
 		warmRowSeeds();
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.opened() == 0L; round++) {
-			rows(HASH_JOIN_QUERY);
+			rows(HASH_JOIN_QUERY, ROW_KERNEL_TIERS);
 		}
 		assertTrue(KernelExecutionTestAccess.opened() > 0L,
 				"row rung never engaged for the two-pattern join (planned="
@@ -891,16 +883,20 @@ public class LmdbNativeKernelAggregateTest {
 		String parallel = System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		String packed = System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 		String interpreter = System.setProperty(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
+		// The interpreter is off, so the compiled tier is the only kernel candidate; compile synchronously so that
+		// forcing it does not meet a pending compile on the first open.
+		String synchronous = System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
 		try {
 			List<String> expected = genericRows(HASH_JOIN_TWO_KEY_QUERY);
 			warmRowSeeds();
 			for (int round = 0; round < 300 && KernelExecutionTestAccess.hashJoinLowerings() == 0L; round++) {
-				rows(HASH_JOIN_TWO_KEY_QUERY);
+				rows(HASH_JOIN_TWO_KEY_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
 			}
 			assertTrue(KernelExecutionTestAccess.hashJoinLowerings() > 0L,
 					"the two-key join was not lowered through HashBuild/HashProbe");
 			assertEquals(expected, rows(HASH_JOIN_TWO_KEY_QUERY));
 		} finally {
+			restoreProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, synchronous);
 			restoreProperty("rdf4j.lmdb.nativeHashJoin.minRows", hashRows);
 			restoreProperty(LmdbNativeHashJoin.ENABLED_PROPERTY, hashEnabled);
 			restoreProperty("rdf4j.lmdb.factorizedRows.enabled", factorized);
@@ -963,7 +959,7 @@ public class LmdbNativeKernelAggregateTest {
 		for (int round = 0; round < 300
 				&& (KernelExecutionTestAccess.opened() == 0L
 						|| KernelExecutionTestAccess.rowExistsLowerings() == 0L); round++) {
-			rows(ROW_EXISTS_QUERY);
+			rows(ROW_EXISTS_QUERY, ROW_KERNEL_TIERS);
 		}
 		assertTrue(KernelExecutionTestAccess.rowExistsLowerings() > 0L,
 				"the sticky EXISTS filter was not lowered to an in-kernel witness on the row rung");
@@ -979,7 +975,7 @@ public class LmdbNativeKernelAggregateTest {
 		for (int round = 0; round < 300
 				&& (KernelExecutionTestAccess.opened() == 0L
 						|| KernelExecutionTestAccess.wcojLowerings() == 0L); round++) {
-			rows(TRIANGLE_QUERY);
+			rows(TRIANGLE_QUERY, ROW_KERNEL_TIERS);
 		}
 		assertTrue(KernelExecutionTestAccess.wcojLowerings() > 0L,
 				"the triangle was not lowered through the kernel Intersect seam");
@@ -1013,41 +1009,24 @@ public class LmdbNativeKernelAggregateTest {
 	}
 
 	@Test
-	public void orderByLimitLowersTopKThenServesTheSemanticNativeOrderTier() {
+	public void orderByLimitUsesTheSemanticNativeTopK() throws Exception {
 		List<String> expected = genericOrderedRows(ORDER_LIMIT_QUERY);
 		assertEquals(3, expected.size(), "fixture must fill the LIMIT, got " + expected);
-		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
-		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
-		warmUntilRowEngaged(ORDER_LIMIT_QUERY);
-		assertTrue(KernelExecutionTestAccess.planned() > 0L,
-				"the ordered shape must reach semantic kernel lowering");
-		assertTrue(KernelExecutionTestAccess.declined() > 0L,
-				"whole-result OutputMods must decline the non-resumable specialized kernel");
-		assertTrue(KernelExecutionTestAccess.outputModsLowerings() > 0L,
-				"ORDER BY + LIMIT was not sunk into the kernel terminal's OutputMods");
-		assertEquals(expected, orderedRows(ORDER_LIMIT_QUERY));
-		assertEquals(hostedBefore, KernelExecutionTestAccess.hostedGenericCompiles());
-		assertEquals(islandsBefore, KernelExecutionTestAccess.islandCompiles());
+		assertSemanticOrderedRows(ORDER_LIMIT_QUERY, expected);
 	}
 
 	@Test
-	public void orderByDescendingWithOffsetMatchesGeneric() {
+	public void orderByDescendingWithOffsetMatchesGeneric() throws Exception {
 		List<String> expected = genericOrderedRows(ORDER_DESC_OFFSET_QUERY);
 		assertEquals(3, expected.size(), "fixture must fill the OFFSET+LIMIT window, got " + expected);
-		warmUntilRowEngaged(ORDER_DESC_OFFSET_QUERY);
-		assertTrue(KernelExecutionTestAccess.outputModsLowerings() > 0L,
-				"descending ORDER BY + OFFSET was not sunk into the kernel terminal's OutputMods");
-		assertEquals(expected, orderedRows(ORDER_DESC_OFFSET_QUERY));
+		assertSemanticOrderedRows(ORDER_DESC_OFFSET_QUERY, expected);
 	}
 
 	@Test
-	public void orderByWithoutLimitSinksTheFullSort() {
+	public void orderByWithoutLimitUsesTheSemanticNativeFullSort() throws Exception {
 		List<String> expected = genericOrderedRows(ORDER_NO_LIMIT_QUERY);
-		assertFalse(expected.isEmpty(), "fixture must produce ordered rows");
-		warmUntilRowEngaged(ORDER_NO_LIMIT_QUERY);
-		assertTrue(KernelExecutionTestAccess.outputModsLowerings() > 0L,
-				"ORDER BY without LIMIT was not sunk into the kernel terminal's OutputMods");
-		assertEquals(expected, orderedRows(ORDER_NO_LIMIT_QUERY));
+		assertEquals(8, expected.size(), "fixture must produce the full ordered sequence");
+		assertSemanticOrderedRows(ORDER_NO_LIMIT_QUERY, expected);
 	}
 
 	@Test
@@ -1203,16 +1182,34 @@ public class LmdbNativeKernelAggregateTest {
 		}
 	}
 
-	/** Exercises row-kernel lowering after the keyed adjacency inputs have warmed. */
-	private void warmUntilRowEngaged(String query) {
+	/** Proves the safe native sort path without relying on a doomed ordered kernel's lowering counters. */
+	private void assertSemanticOrderedRows(String query, List<String> expected) throws Exception {
 		warmRowSeeds();
-		// The seed queries themselves can open kernels once their shapes sit warm in the compile cache, so gating on
-		// opened() alone can exit before the ordered query ever ran — loop until the query itself both engaged the
-		// rung and sank its mods.
-		for (int round = 0; round < 300
-				&& (KernelExecutionTestAccess.opened() == 0L
-						|| KernelExecutionTestAccess.outputModsLowerings() == 0L); round++) {
-			orderedRows(query);
+		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
+		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
+		long modsBefore = KernelExecutionTestAccess.outputModsLowerings();
+		List<LmdbNativeDecisionTestAccess.CapturedDecision> decisions = new ArrayList<>();
+		List<LmdbNativeDecisionTestAccess.Selected> selections = new ArrayList<>();
+		try (AutoCloseable capture = LmdbNativeDecisionTestAccess.captureGroups(decisions);
+				AutoCloseable selected = LmdbNativeDecisionTestAccess.captureSelections(selections)) {
+			assertEquals(expected, orderedRows(query));
 		}
+		assertTrue(decisions.stream().anyMatch(decision -> "ORDER".equals(decision.point())),
+				"the actual query must reach ORDER admission");
+		assertFalse(decisions.stream()
+				.filter(decision -> "ORDER".equals(decision.point()))
+				.flatMap(decision -> decision.candidates().stream())
+				.filter(LmdbNativeDecisionTestAccess.Captured::admitted)
+				.anyMatch(candidate -> candidate.id().startsWith(LmdbNativeAttemptMetrics.PATH_IR_KERNEL)),
+				"emitted sort keys must not offer non-resumable ordered row kernels");
+		assertFalse(selections.stream().anyMatch(selection -> "ORDER".equals(selection.point())),
+				"with factorization disabled the direct semantic materializer owns sorting");
+		assertEquals(1L, selections.stream().filter(selection -> "ROW".equals(selection.point())).count(),
+				"the semantic sort must open its real native row producer");
+		assertEquals(modsBefore, KernelExecutionTestAccess.outputModsLowerings(),
+				"a doomed ordered kernel should not be lowered just for its telemetry");
+		assertEquals(hostedBefore, KernelExecutionTestAccess.hostedGenericCompiles());
+		assertEquals(islandsBefore, KernelExecutionTestAccess.islandCompiles());
 	}
+
 }

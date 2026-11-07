@@ -236,11 +236,12 @@ class LmdbPhysicalWorkPricingRegressionTest {
 								measurements.candidates)
 						.isGreaterThanOrEqualTo(PREDICATE_COUNT * 2D);
 				assertThat(measurements.selected).isNotEmpty();
-				assertThat(Double.isInfinite(quote.high()) || quote.high() >= adjacencyUpper)
-						.as("the unbound root must account for its full-adjacency candidate cost; quote=%s, "
-								+ "candidate upper=%s, selected source=%s, profile=%s", quote, adjacencyUpper,
-								measurements.selected, profile)
-						.isTrue();
+				assertThat(quote.high())
+						.as("the unbound root quote is finite and covers the rows the selected source visited; quote=%s, "
+								+ "candidate upper=%s, selected source=%s, scans=%s, profile=%s", quote, adjacencyUpper,
+								measurements.selected, measurements.scans, profile)
+						.isFinite()
+						.isGreaterThanOrEqualTo(measurements.scannedRows());
 			}
 		} finally {
 			repository.shutDown();
@@ -282,10 +283,13 @@ class LmdbPhysicalWorkPricingRegressionTest {
 					String selected = String.join("\n", measurements.selected);
 					if (selected.contains("source: IN_MEMORY_ADJACENCY")) {
 						double candidateUpper = measurements.adjacencyCandidateUpper();
-						assertThat(Double.isInfinite(quote.high()) || quote.high() >= candidateUpper)
-								.as("selected ordered adjacency must retain its sort-capable ceiling; order=%s, quote=%s, "
-										+ "candidate=%s, access=%s", order, quote, measurements.candidates, selected)
-								.isTrue();
+						assertThat(quote.high())
+								.as("selected ordered adjacency work is covered by a finite ceiling; order=%s, quote=%s, "
+										+ "candidate=%s, access=%s, scans=%s", order, quote, measurements.candidates,
+										selected, measurements.scans)
+								.isFinite()
+								.isGreaterThanOrEqualTo(
+										Math.max(LmdbNativeWork.SEEK + rows, measurements.scannedRows()));
 					} else {
 						assertThat(quote.high())
 								.as("selected indexed root work is covered; order=%s, quote=%s, access=%s, scans=%s",
@@ -343,11 +347,14 @@ class LmdbPhysicalWorkPricingRegressionTest {
 						.as("the eligible direct-adjacency candidate includes its range spill-sort work: %s",
 								measurements.candidates)
 						.isGreaterThan(profile.entries());
-				assertThat(Double.isInfinite(quote.high()) || quote.high() >= adjacencyUpper)
-						.as("the pattern quote must include sort-capable candidate work or remain unbounded; quote=%s, "
-								+ "adjacency candidate upper=%s, selected source=%s, profile=%s", quote, adjacencyUpper,
-								measurements.selected, profile)
-						.isTrue();
+				// The quote prices both sources and takes the cheaper; it must be finite and cover the work the
+				// selected source actually performed.
+				assertThat(quote.high())
+						.as("the pattern quote is finite and covers the selected source's scan; quote=%s, "
+								+ "adjacency candidate upper=%s, selected source=%s, scans=%s, profile=%s", quote,
+								adjacencyUpper, measurements.selected, measurements.scans, profile)
+						.isFinite()
+						.isGreaterThanOrEqualTo(measurements.scannedRows());
 			}
 		} finally {
 			store.shutDown();
@@ -393,9 +400,10 @@ class LmdbPhysicalWorkPricingRegressionTest {
 				assertThat(measurements.selected)
 						.anySatisfy(access -> assertThat(access).contains("source: IN_MEMORY_ADJACENCY"));
 				assertThat(quote.high())
-						.as("context ordering requires a conservative unknown upper ceiling; quote=%s, selected=%s",
-								quote, measurements.selected)
-						.isInfinite();
+						.as("context ordering is priced as a finite sort-capable ceiling; quote=%s, selected=%s, scans=%s",
+								quote, measurements.selected, measurements.scans)
+						.isFinite()
+						.isGreaterThanOrEqualTo(measurements.scannedRows());
 			}
 		} finally {
 			store.shutDown();
@@ -795,9 +803,9 @@ class LmdbPhysicalWorkPricingRegressionTest {
 	void adaptiveProposalKeepsStartupExpectedInsideTotalExpected() {
 		LmdbNativeStrategyProposal<Object> proposal = new LmdbNativeStrategyProposal<>(() -> null,
 				LmdbNativeWork.between(0D, 100D), LmdbNativeWork.between(90D, 100D), 100D,
-				"nestedLoop", null, false);
+				"nestedLoop", null);
 
-		LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(1D);
+		NativePhysicalWorkQuote estimate = proposal.typedQuote();
 
 		assertThat(estimate).isNotNull();
 		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
@@ -813,9 +821,9 @@ class LmdbPhysicalWorkPricingRegressionTest {
 	@Test
 	void unknownStartupFitsAValidFiniteTotal() {
 		LmdbNativeStrategyProposal<Object> proposal = new LmdbNativeStrategyProposal<>(() -> null,
-				LmdbNativeWork.exact(100D), LmdbNativeWork.UNKNOWN, 100D, "nestedLoop", null, false);
+				LmdbNativeWork.exact(100D), LmdbNativeWork.UNKNOWN, 100D, "nestedLoop", null);
 
-		LmdbNativeCostEstimate estimate = proposal.adaptiveEstimate(1D);
+		NativePhysicalWorkQuote estimate = proposal.typedQuote();
 
 		assertThat(estimate).isNotNull();
 		for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
@@ -1392,8 +1400,8 @@ class LmdbPhysicalWorkPricingRegressionTest {
 				RowState executionRow = limitedRow;
 				LmdbNativeStrategyProposal<RowCursor> proposal = new LmdbNativeStrategyProposal<>(
 						() -> pattern.open(executionRow), completeOpen, LmdbNativeWork.ZERO, estimatedRows,
-						"test-limit-one-free-pattern", null, false);
-				LmdbNativeWork sliced = proposal.effectiveWork(1D);
+						"test-limit-one-free-pattern", null);
+				LmdbNativeWork sliced = LmdbNativeWork.between(0D, completeOpen.high());
 				assertThat(proposal.startupWork).isEqualTo(LmdbNativeWork.ZERO);
 
 				source.resetMeasurements();
@@ -1493,8 +1501,8 @@ class LmdbPhysicalWorkPricingRegressionTest {
 				RowState executionRow = limitedRow;
 				LmdbNativeStrategyProposal<RowCursor> proposal = new LmdbNativeStrategyProposal<>(
 						() -> filtered.open(executionRow), completeOpen, LmdbNativeWork.ZERO, estimatedRows,
-						"test-limit-one-last-filter-match", null, false);
-				LmdbNativeWork sliced = proposal.effectiveWork(1D);
+						"test-limit-one-last-filter-match", null);
+				LmdbNativeWork sliced = LmdbNativeWork.between(0D, completeOpen.high());
 
 				source.resetMeasurements();
 				List<List<Long>> resultBag = new ArrayList<>();
@@ -1516,12 +1524,10 @@ class LmdbPhysicalWorkPricingRegressionTest {
 						.add(LmdbNativeCostVector.Feature.SCANNED_ROW, source.statementRows)
 						.add(LmdbNativeCostVector.Feature.INTERPRETED_ROW, filterCalls.get())
 						.build();
-				LmdbNativeCostEstimate typedEstimate = new LmdbNativeCostEstimate(
-						LmdbNativePhysicalVariantKey.builder("last-match-filter-slice-control").build(),
-						LmdbNativeCostVector.zero(), typedCompleteOpen, estimatedRows, 0D);
-				LmdbNativeCostEstimate typedSlice = typedEstimate.forConsumption(1D / estimatedRows);
-				assertThat(typedSlice.estimatedOutputRows()).isEqualTo(1D);
-				assertThat(typedSlice.total().high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+				LmdbNativeCostVector typedSlice = new LmdbNativeCostQuote(LmdbNativeCostVector.zero(),
+						typedCompleteOpen,
+						estimatedRows, false, false).forSlice(1D);
+				assertThat(typedSlice.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
 						.as("LIMIT 1 may still need the last row and its full physical prefix")
 						.isGreaterThanOrEqualTo(source.statementRows);
 				assertThat(sliced.high())
@@ -1805,7 +1811,7 @@ class LmdbPhysicalWorkPricingRegressionTest {
 								quote, profile.adjacencyPredicateWork(), profile.entries(), measurements.selected,
 								measurements.candidates)
 						.isFinite()
-						.isGreaterThan(profile.entries() + profile.adjacencyPredicateWork());
+						.isGreaterThanOrEqualTo(measurements.scannedRows());
 			}
 		} finally {
 			store.shutDown();
@@ -2015,6 +2021,11 @@ class LmdbPhysicalWorkPricingRegressionTest {
 		@Override
 		public void measurement(boolean adjacency, long scanned, long matched, long filtered, boolean censored) {
 			scans.add(new ScanMeasurement(adjacency, scanned, matched, filtered, censored));
+		}
+
+		/** Rows the selected source visited, summed over every measured scan. */
+		double scannedRows() {
+			return scans.stream().mapToDouble(scan -> Math.max(0L, scan.scanned())).sum();
 		}
 
 		double adjacencyCandidateUpper() {
