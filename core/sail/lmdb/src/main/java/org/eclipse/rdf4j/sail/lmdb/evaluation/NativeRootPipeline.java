@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Distinct;
-import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -43,8 +43,10 @@ import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.function.lmdb.LmdbIndexOrderFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.OrderByHint;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 
 /**
@@ -178,8 +180,11 @@ final class NativeRootPipeline {
 		OrderKey[] keys = new OrderKey[order.getElements().size()];
 		for (int i = 0; i < keys.length; i++) {
 			OrderElem element = order.getElements().get(i);
-			if (LmdbIndexOrder.isFunctionCall(element.getExpr())) {
-				throw new QueryEvaluationException(LmdbIndexOrderFunction.ERROR_MESSAGE);
+			if (element.getExpr() instanceof FunctionCall functionCall) {
+				Function function = QueryEvaluationUtility.resolveFunction(functionCall).orElse(null);
+				if (function instanceof OrderByHint hint) {
+					throw new QueryEvaluationException(hint.getUnsupportedOrderByMessage());
+				}
 			}
 			NativeBindingSetValueEvaluator evaluator = NativeBindingSetValueCompiler.compile(element.getExpr(),
 					strategy,

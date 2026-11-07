@@ -1191,7 +1191,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return false;
 		}
 		FunctionCall call = (FunctionCall) expression;
-		if (!FN.REPLACE.stringValue().equals(call.getURI()) || call.getArgs().size() != 3
+		if (LmdbNativeFunctionLibrary.entry(call) == null || !FN.REPLACE.stringValue().equals(call.getURI())
+				|| call.getArgs().size() != 3
 				|| !(call.getArgs().get(0) instanceof Str)
 				|| !(((Str) call.getArgs().get(0)).getArg() instanceof Var)
 				|| !((Var) ((Str) call.getArgs().get(0)).getArg()).getName().equals(predicateName)) {
