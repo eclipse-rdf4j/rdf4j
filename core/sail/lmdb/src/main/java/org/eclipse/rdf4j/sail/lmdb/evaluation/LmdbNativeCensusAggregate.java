@@ -30,17 +30,20 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.ThreadSafeDelayedIteration;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.If;
@@ -141,87 +144,210 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		}
 	}
 
-	/** Metadata inspection never opens payload rows and owns no native view after the quote returns. */
+	/**
+	 * The page-level work of the selected recipe, counted exactly the way {@link #collect} executes it: one header pass
+	 * to establish graph coverage, DISTINCT ?s / ?o answered from node metadata when that coverage allows it, then per
+	 * page either a header bulk count, a root decode per row, or a payload decode per quad.
+	 */
+	private record RecipeCount(double planes, double headers, double decoded, double contributions, double complement,
+			boolean payload, boolean reduced, String unavailable) {
+		static RecipeCount unavailable(String reason) {
+			return new RecipeCount(0D, 0D, 0D, 0D, 0D, false, false, reason);
+		}
+
+		/** Every count is exact, so the quote is a point: the recipe knows which pages it will open. */
+		LmdbNativeWork work(int channelCount) {
+			// The scalar estimate includes per-channel reduction and collector bookkeeping. Keep that
+			// weighting out of the physical contribution count, which the feature model prices separately.
+			double total = planes + headers + decoded + contributions * (channelCount + 3D) + complement;
+			return LmdbNativeWork.between(total, total);
+		}
+	}
+
+	/**
+	 * Metadata inspection never opens payload rows and owns no native view after the quote returns. One header pass
+	 * accumulates the page work under both hypotheses (DISTINCT ?s / ?o answered from the node domain, or decoded from
+	 * payload) because the executor's choice depends on the graph coverage that pass establishes.
+	 */
+	/**
+	 * Plain COUNT(*) over one constant graph (the default graph through rdf4j:nil included) with nothing else to
+	 * reduce: the store's per-context statement count answers it without visiting a plane or page. With no named graphs
+	 * the default graph's entry is the whole store. The catalog combines the explicit and inferred planes, so when it
+	 * cannot answer for this source's plane the graph is counted from its pages, which is also what the recipe prices.
+	 */
+	private boolean metadataCountOnly() throws IOException {
+		// the context constant itself needs the context id and nothing else may
+		if (groupFields.length != 0 || kindMask != 0 || (idMask & ~(1 << C)) != 0 || constants[S] != UNKNOWN
+				|| constants[P] != UNKNOWN || constants[O] != UNKNOWN || constants[C] == UNKNOWN) {
+			return false;
+		}
+		for (boolean accepted : acceptedKinds) {
+			if (!accepted) {
+				return false;
+			}
+		}
+		for (Channel channel : channels) {
+			if (channel.distinct || channel.sum || channel.field >= 0 || channel.expression != null) {
+				return false;
+			}
+		}
+		return source.countsContextFromMetadata(constants[C]);
+	}
+
+	private RecipeCount countRecipe(NativeProbe probe, WildcardAdjacency wildcard,
+			NativeCancellationToken cancellation) throws IOException {
+		if (metadataCountOnly()) {
+			return new RecipeCount(1D, 1D, 0D, 0D, 0D, false, true, null);
+		}
+		int requiredIds = idMask;
+		int distinctNodeIds = 0;
+		for (int field = 0; field < 4; field++) {
+			if (distinctFields[field]) {
+				requiredIds |= 1 << field;
+				if (field == S || field == O) {
+					distinctNodeIds |= 1 << field;
+				}
+			}
+		}
+		boolean allRowsSelected = constants[S] == UNKNOWN && constants[P] == UNKNOWN && constants[O] == UNKNOWN;
+		for (boolean accepted : acceptedKinds) {
+			allRowsSelected &= accepted;
+		}
+		boolean domainEligible = canonicalPatternIds(source) && allRowsSelected && groupFields.length == 0
+				&& distinctNodeIds != 0;
+		double metadataReads = 0D;
+		int rootDomainFields = 0;
+		if (domainEligible) {
+			for (int field : new int[] { S, O }) {
+				if (!distinctFields[field]) {
+					continue;
+				}
+				NodePredicates projection = probe.nodePredicates(field == S);
+				if (projection != null && projection.nodeCount() >= 0L) {
+					metadataReads += 1D; // one metadata read answers the whole DISTINCT domain
+				} else {
+					rootDomainFields++; // the root-domain merge decodes every key of every selected plane
+				}
+			}
+		}
+		int domainIds = requiredIds & ~distinctNodeIds;
+		double planes = wildcard.predicateCount();
+		double headers = 0D, totalQuads = 0D, excludedQuads = 0D, planeKeys = 0D;
+		double decodedPayload = 0D, updatesPayload = 0D, decodedDomain = 0D, updatesDomain = 0D;
+		boolean payloadIfPayload = false, reducedIfPayload = false, payloadIfDomain = false,
+				reducedIfDomain = false;
+		for (int p = 0; p < wildcard.predicateCount(); p++) {
+			cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
+			long predicate = wildcard.predicateAt(p);
+			if (constants[P] != UNKNOWN && constants[P] != predicate) {
+				continue;
+			}
+			wildcard.bind(p);
+			long keys = wildcard.keyCount();
+			if (keys == 0L) {
+				continue;
+			}
+			planeKeys += keys;
+			NativeAdjacency view = probe.adjacency(predicate, true);
+			if (view == null) {
+				return RecipeCount.unavailable("adjacency view unavailable");
+			}
+			try (AdjacencyPageCursor pages = view.openPageCursor()) {
+				if (pages == null) {
+					return RecipeCount.unavailable("page cursor unavailable");
+				}
+				while (pages.advance()) {
+					cancellation.check();
+					LmdbNativeProbeDeadline.poll(0);
+					headers += 2D; // the exact opener performs coverage and reduction passes
+					boolean common = pages.hasCommonContext();
+					long quads = pages.quadCount();
+					totalQuads += quads;
+					if (common && !acceptsContext(pages.commonContext())) {
+						allRowsSelected = false;
+						excludedQuads += quads;
+						continue;
+					}
+					allRowsSelected &= common;
+					long rows = pages.rowCount();
+					boolean rootKind = (kindMask & 1 << S) != 0 && !pages.uniformRowTermKind();
+					boolean neighborKind = (kindMask & 1 << O) != 0 && !pages.uniformNeighborTermKind();
+					for (int hypothesis = 0; hypothesis < 2; hypothesis++) {
+						int ids = hypothesis == 0 ? requiredIds : domainIds;
+						boolean roots = (ids & 1 << S) != 0 || rootKind;
+						boolean neighbors = (ids & 1 << O) != 0 || neighborKind;
+						double decoded, updates;
+						boolean payload, reduced;
+						if (common && !roots && !neighbors) {
+							decoded = 0D;
+							updates = 1D; // header bulk count
+							payload = false;
+							reduced = true;
+						} else if (common && !neighbors) {
+							decoded = rows;
+							updates = rows;
+							payload = true;
+							reduced = rows < quads;
+						} else {
+							decoded = rows + (common ? quads : 2D * quads);
+							updates = quads;
+							payload = true;
+							reduced = false;
+						}
+						if (hypothesis == 0) {
+							decodedPayload += decoded;
+							updatesPayload += updates;
+							payloadIfPayload |= payload;
+							reducedIfPayload |= reduced;
+						} else {
+							decodedDomain += decoded;
+							updatesDomain += updates;
+							payloadIfDomain |= payload;
+							reducedIfDomain |= reduced;
+						}
+					}
+				}
+			}
+		}
+		if (domainEligible && (allRowsSelected || excludedQuads < totalQuads - excludedQuads)) {
+			double complement = allRowsSelected ? 0D : excludedQuads;
+			return new RecipeCount(planes, headers + metadataReads, decodedDomain + rootDomainFields * planeKeys,
+					updatesDomain, complement, payloadIfDomain, reducedIfDomain, null);
+		}
+		return new RecipeCount(planes, headers, decodedPayload, updatesPayload, 0D, payloadIfPayload,
+				reducedIfPayload, null);
+	}
+
 	private RecipeQuote inspectRecipe() throws IOException {
 		NativeCancellationToken cancellation = NativeCancellationToken.forSource(source);
 		try (NativeProbe probe = source.newProbe(); WildcardAdjacency wildcard = probe.wildcardAdjacency(true)) {
 			if (wildcard == null) {
 				return RecipeQuote.unavailable("wildcard adjacency unavailable");
 			}
-			int requiredIds = idMask;
+			RecipeCount count = countRecipe(probe, wildcard, cancellation);
+			if (count.unavailable() != null) {
+				return RecipeQuote.unavailable(count.unavailable());
+			}
 			boolean distinct = false;
 			for (Channel channel : channels) {
 				distinct |= channel.distinct;
-				if (channel.distinct && channel.field >= 0) {
-					requiredIds |= 1 << channel.field;
-				}
 			}
-			double planes = wildcard.predicateCount();
-			double headers = 0D, contributions = 0D, decoded = 0D, complement = 0D;
-			boolean reduced = false, payload = false;
-			for (int p = 0; p < wildcard.predicateCount(); p++) {
-				cancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
-				long predicate = wildcard.predicateAt(p);
-				if (constants[P] != UNKNOWN && constants[P] != predicate) {
-					continue;
-				}
-				wildcard.bind(p);
-				if (wildcard.keyCount() == 0L) {
-					continue;
-				}
-				NativeAdjacency view = probe.adjacency(predicate, true);
-				if (view == null) {
-					return RecipeQuote.unavailable("adjacency view unavailable");
-				}
-				try (AdjacencyPageCursor pages = view.openPageCursor()) {
-					if (pages == null) {
-						return RecipeQuote.unavailable("page cursor unavailable");
-					}
-					while (pages.advance()) {
-						cancellation.check();
-						LmdbNativeProbeDeadline.poll(0);
-						headers += 2D; // The exact opener performs coverage and reduction passes.
-						boolean common = pages.hasCommonContext();
-						if (common && !acceptsContext(pages.commonContext())) {
-							if (distinct) {
-								complement += pages.quadCount();
-							}
-							continue;
-						}
-						boolean roots = (requiredIds & 1 << S) != 0
-								|| (kindMask & 1 << S) != 0 && !pages.uniformRowTermKind();
-						boolean neighbors = (requiredIds & 1 << O) != 0
-								|| (kindMask & 1 << O) != 0 && !pages.uniformNeighborTermKind();
-						payload |= !common || neighbors;
-						double updates = common && !neighbors ? roots ? pages.rowCount() : 1D : pages.quadCount();
-						contributions += updates;
-						decoded += roots || neighbors || !common ? pages.rowCount() : 0D;
-						if (!common) {
-							decoded += 2D * pages.quadCount();
-						} else if (neighbors) {
-							decoded += pages.quadCount();
-						}
-						reduced |= common && updates < pages.quadCount();
-					}
-				}
-			}
-			double low = planes + headers;
-			double high = low + contributions * (channels.length + 3D) + complement;
-			LmdbNativeWork work = LmdbNativeWork.between(low, high);
+			LmdbNativeWork work = count.work(channels.length);
 			// Exact DISTINCT-domain complements and cross-group membership need their own storage/domain quote.
 			// Their legal exact opener remains available, with explicitly unknown structured features meanwhile.
 			if (distinct || groupFields.length != 0) {
 				return new RecipeQuote(null, work, false, null);
 			}
+			double contributions = count.contributions();
 			NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(contributions,
-					planes + headers + contributions, planes, contributions, decoded, 0D, contributions,
-					LmdbNativeCostVector.zero());
+					count.planes() + count.headers() + contributions, count.planes(), contributions, count.decoded(),
+					0D, contributions, LmdbNativeCostVector.zero());
 			NativeAggregatePhysicalPlan.Work physical = new NativeAggregatePhysicalPlan.Work(input,
 					LmdbNativeCostVector.zero(), 1D);
 			// A partially compressed recipe can still require a large payload sweep. Keep that legal work quoted,
 			// but only use this cold anchor when the entire selected recipe avoids neighbor/context expansion.
-			return new RecipeQuote(physical, work, reduced && !payload, null);
+			return new RecipeQuote(physical, work, count.reduced() && !count.payload(), null);
 		}
 	}
 
@@ -257,19 +383,6 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			return new NativeAggregatePhysicalPlan.ColdAnchor(
 					"same-snapshot common-context page/root contributions carry exact quad multiplicity",
 					"query ledger owns catalog, page buffers, finite argument IDs, one bounded global reducer and bounded output replay");
-		}
-
-		@Override
-		public NativeAggregatePhysicalPlan.KeyProperties keyProperties() {
-			if (quote.physical != null) {
-				return new NativeAggregatePhysicalPlan.KeyProperties(LmdbNativePhysicalVariantKey.GroupingMode.NONE,
-						false);
-			}
-			// A grouped recipe without a physical quote retains per-group membership state: input-sized hashing,
-			// not the bounded page/root-domain work that lets the ungrouped census keep its cold prior.
-			return groupFields.length == 0 ? null
-					: new NativeAggregatePhysicalPlan.KeyProperties(
-							LmdbNativePhysicalVariantKey.GroupingMode.HASHED, true);
 		}
 
 		@Override
@@ -321,64 +434,15 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			if (wildcard == null) {
 				return LmdbNativeWork.UNKNOWN;
 			}
-			int requiredIds = idMask;
-			for (int field = 0; field < 4; field++) {
-				if (distinctFields[field]) {
-					requiredIds |= 1 << field;
-				}
-			}
-			double low = wildcard.predicateCount(), high = low;
-			for (int index = 0; index < wildcard.predicateCount(); index++) {
-				cancellation.check();
-				LmdbNativeProbeDeadline.poll(0);
-				long predicate = wildcard.predicateAt(index);
-				if (constants[P] != UNKNOWN && constants[P] != predicate) {
-					continue;
-				}
-				wildcard.bind(index);
-				if (wildcard.keyCount() == 0L) {
-					continue;
-				}
-				NativeAdjacency adjacency = probe.adjacency(predicate, true);
-				if (adjacency == null) {
-					return LmdbNativeWork.UNKNOWN;
-				}
-				try (AdjacencyPageCursor pages = adjacency.openPageCursor()) {
-					if (pages == null) {
-						return LmdbNativeWork.UNKNOWN;
-					}
-					while (pages.advance()) {
-						cancellation.check();
-						LmdbNativeProbeDeadline.poll(0);
-						// Execution makes one coverage pass and one reduction pass over these exact visible headers.
-						low += 2D;
-						high += 2D;
-						boolean common = pages.hasCommonContext();
-						if (common && !acceptsContext(pages.commonContext())) {
-							// The optional distinct-domain complement can inspect the excluded payload.
-							high += pages.quadCount();
-							continue;
-						}
-						boolean roots = (requiredIds & 1 << S) != 0
-								|| (kindMask & 1 << S) != 0 && !pages.uniformRowTermKind();
-						boolean neighbors = (requiredIds & 1 << O) != 0
-								|| (kindMask & 1 << O) != 0 && !pages.uniformNeighborTermKind();
-						double minimumUpdates = common && !roots && !neighbors ? 1D : pages.rowCount();
-						double maximumUpdates = common && !neighbors ? minimumUpdates : pages.quadCount();
-						low += minimumUpdates;
-						// Reducer channels, grouping/membership and output are bounded by the physical input grain.
-						high += maximumUpdates * (channels.length + 3D);
-					}
-				}
-			}
-			return LmdbNativeWork.between(low, high);
+			RecipeCount count = countRecipe(probe, wildcard, cancellation);
+			return count.unavailable() != null ? LmdbNativeWork.UNKNOWN : count.work(channels.length);
 		}
 	}
 
 	private LmdbNativeCensusAggregate(NativeLmdbQuerySource source, LmdbNativeEvaluationStrategy strategy,
 			QueryEvaluationContext context, Group group, TupleExpr explainTarget, StatementPattern pattern,
-			ContextConstraint contexts, long[] constants, String[] groupNames, int[] groupFields, Channel[] channels,
-			BooleanExpression filter) {
+			ContextConstraint contexts, long[] constants, boolean named, String[] groupNames, int[] groupFields,
+			Channel[] channels, BooleanExpression filter) {
 		this.source = source;
 		this.strategy = strategy;
 		this.valuePositions = strategy.valuePositionSnapshot();
@@ -387,7 +451,7 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		this.explainTarget = explainTarget;
 		this.contexts = contexts;
 		this.constants = constants;
-		this.named = pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS;
+		this.named = named;
 		this.groupNames = groupNames;
 		this.groupPositionMasks = new int[groupNames.length];
 		Map<String, Integer> positions = strategy.valuePositionMasks(group.getArg());
@@ -423,7 +487,11 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 	static QueryEvaluationStep tryCreate(Group group, NativeLmdbQuerySource source,
 			LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context, TupleExpr explainTarget,
 			Function<StatementPattern, ContextConstraint> contextCompiler) {
-		if (group.getGroupElements().isEmpty() || strategy.forcedExecutionStrategyName() != null
+		// a forced strategy other than the census itself bypasses this alternative; a forced census (alone or in a
+		// preference list) must still be offered so the dispatch loop can honour it
+		String forced = strategy.forcedExecutionStrategyName();
+		boolean forcedElsewhere = forced != null && !LmdbNativeForceableStrategies.forces(forced, PATH);
+		if (group.getGroupElements().isEmpty() || forcedElsewhere
 				|| !Boolean.parseBoolean(
 						System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true"))) {
 			return null;
@@ -440,12 +508,25 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 				input = filter.getArg();
 			}
 		}
+		// GRAPH <g> { ?s ?p ?o } and GRAPH rdf4j:nil { ... } reach the group as a Graph node over the pattern
+		Var graphContext = null;
+		if (input instanceof Graph graph && graph.getGraphName() != null && graph.getGraphName().hasValue()
+				&& graph.getArg() instanceof StatementPattern) {
+			graphContext = graph.getGraphName();
+			input = graph.getArg();
+		}
 		if (!(input instanceof StatementPattern pattern)
-				|| !NativeContextSelection.supportsCensus(pattern, context)) {
+				|| (graphContext == null && !NativeContextSelection.supportsCensus(pattern, context))
+				|| (graphContext != null && !NativeContextSelection.hasCompleteGraphSets(
+						context == null ? null : context.getDataset()))) {
 			return null;
 		}
 		Var[] vars = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),
-				pattern.getContextVar() };
+				pattern.getContextVar() != null ? pattern.getContextVar() : graphContext };
+		// a Graph node the fusion pass kept (the dataset names rdf4j:nil, or the graph is rdf4j:nil itself) scopes
+		// its pattern to the named graphs exactly as a fused NAMED_CONTEXTS pattern does
+		boolean named = graphContext != null || pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS;
+		ContextConstraint boundGraph = null;
 		Map<String, Integer> fields = new HashMap<>();
 		long[] constants = { UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN };
 		for (int field = 0; field < vars.length; field++) {
@@ -462,6 +543,24 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 				// source with aliases can otherwise hide other rows for the exact same RDF constant.
 				if (!canonicalPatternIds(source)) {
 					return null;
+				}
+				if (field == C && named) {
+					// GRAPH <g> follows the generic evaluator's dataset rules: with named graphs in the dataset the
+					// graph must be one of them and is read as the physical context it names (rdf4j:nil included,
+					// which then is the context named rdf4j:nil, not the default context); with none, rdf4j:nil is
+					// the default (null) context; a dataset with default graphs but no named ones selects nothing
+					// (measured against the generic evaluator on eight dataset forms, 2026-11-03)
+					Dataset dataset = context == null ? null : context.getDataset();
+					boundGraph = boundGraphConstraint(source, var.getValue(), dataset, constants);
+					if (boundGraph == null) {
+						return null;
+					}
+					continue;
+				}
+				if (field == C && LmdbNativeAggregateCompiler.isNullContextValue(var.getValue())) {
+					// GRAPH rdf4j:nil names the default (null) context, which no stored value identifies
+					constants[field] = NULL_CONTEXT_ID;
+					continue;
 				}
 				constants[field] = source.idOf(var.getValue(), 1 << field);
 				if (constants[field] == UNKNOWN) {
@@ -528,15 +627,51 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		}
 		// Closed kind predicates need the census coefficients even when every consumer is COUNT. Other COUNT-only
 		// demands retain the existing root/domain alternatives; admission never makes this algorithm mandatory.
+		// A context-restricted count (GRAPH <g> or GRAPH rdf4j:nil) is a header census too: the root/domain
+		// alternatives refuse any context restriction, so without the census it fell to a full scan.
 		boolean needsCensus = Arrays.stream(channels).anyMatch(channel -> channel.sum || channel.field == C)
 				|| Arrays.stream(groups).anyMatch(field -> field == C) || filter.mask != 0
+				|| constants[C] != UNKNOWN
 				|| Arrays.stream(channels)
 						.anyMatch(channel -> channel.expression != null && channel.expression.mask != 0);
 		if (!needsCensus) {
 			return null;
 		}
 		return new LmdbNativeCensusAggregate(source, strategy, context, group, explainTarget, pattern,
-				contextCompiler.apply(pattern), constants, names, groups, channels, filter);
+				boundGraph != null ? boundGraph : contextCompiler.apply(pattern), constants, named, names, groups,
+				channels, filter);
+	}
+
+	/**
+	 * The context id and constraint of a constant named graph under {@code dataset}, mirroring
+	 * {@code StatementPatternQueryEvaluationStep.extractContextsFromDatasets}: null when the graph is absent from the
+	 * store, so the generic path answers.
+	 */
+	private static ContextConstraint boundGraphConstraint(NativeLmdbQuerySource source, Value graph, Dataset dataset,
+			long[] constants) {
+		Set<Resource> namedGraphs = dataset == null ? Set.of() : dataset.getNamedGraphResources();
+		boolean emptyGraph = dataset != null && namedGraphs.isEmpty()
+				&& (dataset.isExplicitReadDataset() || !dataset.getDefaultGraphResources().isEmpty());
+		if (emptyGraph) {
+			constants[C] = LmdbNativeAggregateCompiler.isNullContextValue(graph) ? NULL_CONTEXT_ID
+					: source.idOf(graph, 1 << C);
+			return ContextConstraint.EMPTY;
+		}
+		if (namedGraphs.isEmpty()) {
+			if (LmdbNativeAggregateCompiler.isNullContextValue(graph)) {
+				constants[C] = NULL_CONTEXT_ID;
+				return ContextConstraint.UNRESTRICTED;
+			}
+			constants[C] = source.idOf(graph, 1 << C);
+			return constants[C] == UNKNOWN ? null : ContextConstraint.UNRESTRICTED;
+		}
+		if (!graph.isResource() || !namedGraphs.contains((Resource) graph)) {
+			constants[C] = LmdbNativeAggregateCompiler.isNullContextValue(graph) ? NULL_CONTEXT_ID
+					: source.idOf(graph, 1 << C);
+			return ContextConstraint.EMPTY;
+		}
+		constants[C] = source.idOf(graph, 1 << C);
+		return constants[C] == UNKNOWN ? null : new ContextConstraint(new long[] { constants[C] });
 	}
 
 	@Override
@@ -730,6 +865,19 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		boolean transferred = false;
 		Throwable failure = null;
 		try {
+			if (metadataCountOnly()) {
+				long count = acceptsContext(constants[C])
+						? source.count(UNKNOWN, UNKNOWN, UNKNOWN, constants[C])
+						: 0L;
+				if (telemetry != null) {
+					telemetry.planeMetadataRead();
+				}
+				collector = new Collector(new long[] { -1L, -1L, -1L, -1L }, evaluation, cancellation);
+				collector.accept(new long[] { UNKNOWN, UNKNOWN, UNKNOWN, constants[C] }, count);
+				NativeResultCursor results = collector.results();
+				transferred = true;
+				return results;
+			}
 			int predicates = wildcard.predicateCount();
 			NativeAdjacency[] views = new NativeAdjacency[predicates];
 			boolean allRowsSelected = constants[S] == UNKNOWN && constants[P] == UNKNOWN && constants[O] == UNKNOWN;
@@ -1098,7 +1246,8 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 	}
 
 	private boolean acceptsContext(long id) {
-		return (!named || id != NULL_CONTEXT_ID) && contexts.contains(id)
+		// GRAPH ?g never matches the null context, but GRAPH rdf4j:nil names exactly that context
+		return (!named || id != NULL_CONTEXT_ID || constants[C] == NULL_CONTEXT_ID) && contexts.contains(id)
 				&& (constants[C] == UNKNOWN || constants[C] == id);
 	}
 

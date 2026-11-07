@@ -309,6 +309,11 @@ final class NativeSubqueryPlan implements SlotPlan {
 	}
 
 	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		return LmdbNativeCostVectors.algebraRows(projection, row == null ? null : row.source);
+	}
+
+	@Override
 	public long producedMask() {
 		return producedMask;
 	}
@@ -354,9 +359,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		NativeLazyResultReplay state;
 		boolean ownsState = false;
 		if (frameInputSlots.length == 0) {
-			NativeExecutionContext execution = executionContext(row);
-			state = replayState(execution, memoIdentity,
-					() -> evaluateOnce(row, frameBindings(row, execution.queryBase())));
+			state = frameFreeState(row);
 		} else {
 			// The boundary's solutions depend on the entry base and the frame values only, so one evaluation per
 			// distinct frame serves every outer row that carries it (a per-row open with a repeating GRAPH frame).
@@ -385,12 +388,61 @@ final class NativeSubqueryPlan implements SlotPlan {
 		return new NativeSubqueryCursor(this, row, state.cursor(row.cancellation), ownsState ? state : null);
 	}
 
+	/** Whether this boundary's solutions depend on the entry base only, never on the current outer row. */
+	boolean independentOfOuterRow() {
+		return frameInputSlots.length == 0 && privateGraphParameters.length == 0 && lateralStepFactory == null;
+	}
+
+	/** Visible output variable names, parallel to {@link #outSlots()}. */
+	String[] outNames() {
+		return outNames;
+	}
+
+	/** Slots of the visible output variables, parallel to {@link #outNames()}. */
+	int[] outSlots() {
+		return outSlots;
+	}
+
+	NativeExecutionContext executionContextOf(RowState row) {
+		return executionContext(row);
+	}
+
+	/** Interns a solution value for the slot it will be bound to, exactly as the replay cursor does. */
+	long internTerm(RowState row, Value value, int targetSlot) {
+		return idOfOrIntern(row, value, targetSlot);
+	}
+
+	/**
+	 * Opens one reader over this independent boundary's once-evaluated solutions. The caller owns (and must close) the
+	 * returned cursor; the shared replay state stays cached in the execution for other readers.
+	 */
+	NativeResultCursor openSolutions(RowState row) {
+		if (frameInputSlots.length != 0) {
+			throw new IllegalStateException("frame-parameterized boundary has no frame-free solutions");
+		}
+		return frameFreeState(row).cursor(row.cancellation);
+	}
+
+	private NativeLazyResultReplay frameFreeState(RowState row) {
+		NativeExecutionContext execution = executionContext(row);
+		return replayState(execution, memoIdentity, () -> evaluateOnce(row, frameBindings(row, execution.queryBase())));
+	}
+
 	/** A withheld trial cannot publish its mutable producer, terminal signal or first-row prefix to another attempt. */
 	private static NativeLazyResultReplay replayState(NativeExecutionContext execution, Object lexicalKey,
 			Supplier<NativeLazyResultReplay> factory) {
+		return attemptScopedState(execution, lexicalKey, factory);
+	}
+
+	/**
+	 * Evaluation-cached state with attempt semantics: a probe attempt that is later declined discards exactly the state
+	 * it published, so no withheld trial leaks a mutable producer, terminal signal or partial prefix to another
+	 * attempt. Other owners (such as a keyed-join index) use the same discipline for their cached values.
+	 */
+	static <T> T attemptScopedState(NativeExecutionContext execution, Object lexicalKey, Supplier<T> factory) {
 		LmdbNativeProbeDeadline attempt = LmdbNativeProbeDeadline.currentOrNull();
 		Object key = attempt == null ? lexicalKey : new AttemptKey(lexicalKey, attempt);
-		NativeLazyResultReplay state = execution.nativeState(key, factory);
+		T state = execution.nativeState(key, factory);
 		if (attempt != null) {
 			attempt.retainAttemptState(new AttemptOwner(execution, key),
 					() -> execution.discardNativeState(key, state));

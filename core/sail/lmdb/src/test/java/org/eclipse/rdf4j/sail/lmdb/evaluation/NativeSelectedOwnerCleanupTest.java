@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
-import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /** Owning result adapters must retain cleanup before a terminal value can escape or be discarded. */
@@ -98,163 +97,34 @@ class NativeSelectedOwnerCleanupTest {
 			@Override public boolean accept(RowState row) { return true; }
 			@Override public void close() { filterCloses.incrementAndGet(); throw filterFailure; }
 		};
-		try (var arbiter = LmdbNativeStrategyArbiter.<Carrier>forExpr(null)) {
-			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
-				opens.incrementAndGet(); filters.borrow(filter).accept(null); return new Carrier(valueCloses, valueFailure);
-			}, 1D, "batch", () -> { }));
-			arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
-				throw new AssertionError("the strictly more expensive loser cannot execute");
-			}, 1000D, "parallelPipelines", () -> {
-				firstLoserCloses.incrementAndGet(); RuntimeException observed = cancellation(kind);
-				signal.set(observed); throw observed;
-			}));
-			if (extraFailure) {
-				arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
-					throw new AssertionError("the second expensive loser cannot execute");
-				}, 2000D, "nestedLoop", () -> { secondLoserCloses.incrementAndGet(); throw loserFailure; }));
-			}
-			Throwable actual = assertThrows(RuntimeException.class, arbiter::selectWithObservation);
-			RuntimeException expected = extraFailure ? loserFailure : valueFailure;
-			assertAll(() -> assertEquals(1, opens.get()), () -> assertEquals(1, firstLoserCloses.get()),
-					() -> assertEquals(extraFailure ? 1 : 0, secondLoserCloses.get()),
-					() -> assertEquals(1, valueCloses.get()), () -> assertEquals(1, filterCloses.get()),
-					() -> assertSame(expected, actual));
-			assertTrue(Arrays.stream(expected.getSuppressed()).anyMatch(problem -> problem == filterFailure));
-			if (extraFailure) {
-				assertTrue(Arrays.stream(expected.getSuppressed()).anyMatch(problem -> problem == valueFailure));
-			}
-			assertControlEvidence(expected, signal.get());
+		LmdbNativeOffers<Carrier> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+		offers.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
+			opens.incrementAndGet(); filters.borrow(filter).accept(null); return new Carrier(valueCloses, valueFailure);
+		}, 1D, "batch", () -> { }));
+		offers.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+			throw new AssertionError("the strictly more expensive loser cannot execute");
+		}, 1000D, "parallelPipelines", () -> {
+			firstLoserCloses.incrementAndGet(); RuntimeException observed = cancellation(kind);
+			signal.set(observed); throw observed;
+		}));
+		if (extraFailure) {
+			offers.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+				throw new AssertionError("the second expensive loser cannot execute");
+			}, 2000D, "nestedLoop", () -> { secondLoserCloses.incrementAndGet(); throw loserFailure; }));
 		}
-		assertEquals(1, valueCloses.get()); assertEquals(1, filterCloses.get());
-	}
-
-	@ParameterizedTest
-	@EnumSource(value = ControlKind.class, names = "PROBE_SINGLETON", mode = EnumSource.Mode.EXCLUDE)
-	void cancelledWithheldProbeCannotHideItsActualValueCloseFailure(ControlKind kind) throws Exception {
-		var store = new LmdbNativeStoreCostModel(null, LmdbNativePosteriorConfig.defaults(),
-				LmdbNativeProbeConfig.defaults(), () -> 1000L, () -> 1_000_000_000L);
-		var model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
-				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
-		AtomicInteger trialOpens = new AtomicInteger(), fallbackOpens = new AtomicInteger(), closes = new AtomicInteger();
-		RuntimeException cleanup = new IllegalStateException("withheld probe value close");
-		Carrier trialValue = new Carrier(closes, cleanup);
-		AtomicReference<RuntimeException> signal = new AtomicReference<>();
-		var incumbent = new LmdbNativeStrategyProposal<Carrier>(() -> {
-			fallbackOpens.incrementAndGet(); return new Carrier(new AtomicInteger(), null);
-		}, LmdbNativeWork.exact(1000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> { });
-		var estimate = incumbent.adaptiveEstimate(-1D);
-		for (int sample = 0; sample < 30; sample++) {
-			model.recordCompleted(estimate, estimate.total(), 5_000_000D, 1D, model.currentRegime());
+		Throwable actual = assertThrows(RuntimeException.class,
+				() -> new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
+						.dispatch(null));
+		RuntimeException expected = extraFailure ? loserFailure : valueFailure;
+		assertAll(() -> assertEquals(1, opens.get()), () -> assertEquals(1, firstLoserCloses.get()),
+				() -> assertEquals(extraFailure ? 1 : 0, secondLoserCloses.get()),
+				() -> assertEquals(1, valueCloses.get()), () -> assertEquals(1, filterCloses.get()),
+				() -> assertSame(expected, actual));
+		assertTrue(Arrays.stream(expected.getSuppressed()).anyMatch(problem -> problem == filterFailure));
+		if (extraFailure) {
+			assertTrue(Arrays.stream(expected.getSuppressed()).anyMatch(problem -> problem == valueFailure));
 		}
-		store.safetyLedger().earn(1_000_000_000_000L);
-		try (var arbiter = LmdbNativeStrategyArbiter.<Carrier>forModel(null, -1D, model)
-				.probeHarness(new LmdbNativeProbeHarness<>() {
-					@Override public Carrier drainBounded(Carrier value, LmdbNativeCostObservation observation, int cap) {
-						assertSame(trialValue, value);
-						assertNotNull(LmdbNativeProbeDeadline.currentOrNull(), "the actual arbiter admitted a withheld probe");
-						RuntimeException observed = cancellation(kind); signal.set(observed); throw observed;
-					}
-					@Override public void discard(Carrier value) { value.close(); }
-				})) {
-			arbiter.offer(() -> incumbent).offer(() -> new LmdbNativeStrategyProposal<>(() -> {
-				trialOpens.incrementAndGet(); return trialValue;
-			}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> { }));
-			Throwable actual = assertThrows(RuntimeException.class, arbiter::selectWithObservation);
-			assertAll(() -> assertEquals(1, trialOpens.get()), () -> assertEquals(0, fallbackOpens.get()),
-					() -> assertEquals(1, closes.get()), () -> assertSame(cleanup, actual));
-			assertControlEvidence(cleanup, signal.get());
-		}
-	}
-
-	@ParameterizedTest
-	@EnumSource(value = ControlKind.class, names = "PROBE_SINGLETON", mode = EnumSource.Mode.EXCLUDE)
-	void cancelledProbeStillPromotesARealAttemptStateCloseFailure(ControlKind kind) throws Exception {
-		var store = new LmdbNativeStoreCostModel(null, LmdbNativePosteriorConfig.defaults(),
-				LmdbNativeProbeConfig.defaults(), () -> 1000L, () -> 1_000_000_000L);
-		var model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
-				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
-		AtomicInteger trialOpens = new AtomicInteger(), fallbackOpens = new AtomicInteger(), valueCloses = new AtomicInteger();
-		AtomicInteger stateCloses = new AtomicInteger();
-		RuntimeException stateFailure = new IllegalStateException("cancelled probe state close");
-		AtomicReference<RuntimeException> signal = new AtomicReference<>();
-		Carrier value = new Carrier(valueCloses, null);
-		var incumbent = new LmdbNativeStrategyProposal<Carrier>(() -> {
-			fallbackOpens.incrementAndGet(); return new Carrier(new AtomicInteger(), null);
-		}, LmdbNativeWork.exact(1000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> { });
-		var estimate = incumbent.adaptiveEstimate(-1D);
-		for (int sample = 0; sample < 30; sample++) {
-			model.recordCompleted(estimate, estimate.total(), 5_000_000D, 1D, model.currentRegime());
-		}
-		store.safetyLedger().earn(1_000_000_000_000L);
-		try (var arbiter = LmdbNativeStrategyArbiter.<Carrier>forModel(null, -1D, model)
-				.probeHarness(new LmdbNativeProbeHarness<>() {
-					@Override public Carrier drainBounded(Carrier actual, LmdbNativeCostObservation observation, int cap) {
-						assertSame(value, actual); RuntimeException observed = cancellation(kind);
-						signal.set(observed); throw observed;
-					}
-					@Override public void discard(Carrier actual) { actual.close(); }
-				})) {
-			arbiter.offer(() -> incumbent).offer(() -> new LmdbNativeStrategyProposal<>(() -> {
-				trialOpens.incrementAndGet();
-				LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull(); assertNotNull(deadline);
-				deadline.retainAttemptState(new Object(), () -> { stateCloses.incrementAndGet(); throw stateFailure; });
-				return value;
-			}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> { }));
-			Throwable actual = assertThrows(RuntimeException.class, arbiter::selectWithObservation);
-			assertAll(() -> assertEquals(1, trialOpens.get()), () -> assertEquals(0, fallbackOpens.get()),
-					() -> assertEquals(1, valueCloses.get()), () -> assertEquals(1, stateCloses.get()),
-					() -> assertSame(stateFailure, actual));
-			assertControlEvidence(stateFailure, signal.get());
-		}
-	}
-
-	@Test
-	void lateAttemptStateFailureAlsoClosesTheAlreadySelectedValueAndFilter() throws Exception {
-		var store = new LmdbNativeStoreCostModel(null, LmdbNativePosteriorConfig.defaults(),
-				LmdbNativeProbeConfig.defaults(), () -> 1000L, () -> 1_000_000_000L);
-		var model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
-				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
-		AtomicInteger trialOpens = new AtomicInteger(), fallbackOpens = new AtomicInteger(), valueCloses = new AtomicInteger();
-		AtomicInteger filterCloses = new AtomicInteger(), stateCloses = new AtomicInteger(), lateStops = new AtomicInteger();
-		RuntimeException stateFailure = new IllegalStateException("late selected attempt state close");
-		RuntimeException valueFailure = new IllegalArgumentException("late selected value close");
-		RuntimeException filterFailure = new IllegalStateException("late selected filter close");
-		NativeBooleanFilter filter = new NativeBooleanFilter() {
-			@Override public boolean accept(RowState row) { return true; }
-			@Override public void close() { filterCloses.incrementAndGet(); throw filterFailure; }
-		};
-		var incumbent = new LmdbNativeStrategyProposal<Carrier>(() -> {
-			fallbackOpens.incrementAndGet(); return new Carrier(new AtomicInteger(), null);
-		}, LmdbNativeWork.exact(1000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
-			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull();
-			assertNotNull(deadline, "loser retirement is still within the actually opened probe scope");
-			lateStops.incrementAndGet(); deadline.trip();
-		});
-		var estimate = incumbent.adaptiveEstimate(-1D);
-		for (int sample = 0; sample < 30; sample++) {
-			model.recordCompleted(estimate, estimate.total(), 5_000_000D, 1D, model.currentRegime());
-		}
-		store.safetyLedger().earn(1_000_000_000_000L);
-		try (var arbiter = LmdbNativeStrategyArbiter.<Carrier>forModel(null, -1D, model)
-				.probeHarness(LmdbNativeProbeHarness.blocking())) {
-			arbiter.offer(() -> incumbent).offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
-				trialOpens.incrementAndGet(); filters.borrow(filter).accept(null);
-				LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull(); assertNotNull(deadline);
-				deadline.retainAttemptState(new Object(), () -> { stateCloses.incrementAndGet(); throw stateFailure; });
-				return new Carrier(valueCloses, valueFailure);
-			}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> { }));
-			Throwable actual = assertThrows(RuntimeException.class, arbiter::selectWithObservation);
-			assertAll(
-					() -> assertEquals(1, trialOpens.get(), "the candidate must actually open in the private probe"),
-					() -> assertEquals(0, fallbackOpens.get(), "terminal probe failure must not start the fallback"),
-					() -> assertEquals(1, lateStops.get(), "the accepted losing-owner cleanup must stop the active probe"),
-					() -> assertEquals(1, stateCloses.get(), "the selected attempt state must be retired"),
-					() -> assertEquals(1, valueCloses.get(), "the selected result value must be retired"),
-					() -> assertEquals(1, filterCloses.get(), "the selected filter lease must be retired"),
-					() -> assertSame(stateFailure, actual, "the real attempt-state cleanup failure remains primary"));
-			assertTrue(Arrays.stream(stateFailure.getSuppressed()).anyMatch(problem -> problem == valueFailure));
-			assertTrue(Arrays.stream(stateFailure.getSuppressed()).anyMatch(problem -> problem == filterFailure));
-		}
+		assertControlEvidence(expected, signal.get());
 		assertEquals(1, valueCloses.get()); assertEquals(1, filterCloses.get());
 	}
 

@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.lmdb.LmdbEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryOptimizerPipeline;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStandardQueryOptimizerPipeline;
 
 @Experimental
 @InternalUseOnly
@@ -47,7 +48,9 @@ public final class LmdbNativeEvaluationStrategyFactory extends StrictEvaluationS
 				getFederatedServiceResolver(), getQuerySolutionCacheThreshold(), effective, isTrackResultSize());
 		strategy.setQueryExecutionPolicy(policy);
 		QueryOptimizerPipeline pipeline = getOptimizerPipeline()
-				.orElseGet(() -> new LmdbQueryOptimizerPipeline(strategy, source, effective));
+				.orElseGet(() -> effective.supportsJoinEstimation()
+						? new LmdbQueryOptimizerPipeline(strategy, source, effective, false, true)
+						: new LmdbStandardQueryOptimizerPipeline(strategy, source, effective, true));
 		strategy.setOptimizerPipeline(pipeline);
 		strategy.setCollectionFactory(collectionFactorySupplier);
 		return strategy;

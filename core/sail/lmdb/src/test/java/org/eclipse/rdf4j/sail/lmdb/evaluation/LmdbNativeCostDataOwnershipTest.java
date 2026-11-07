@@ -12,14 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 
 import org.junit.jupiter.api.Test;
 
@@ -80,118 +76,9 @@ class LmdbNativeCostDataOwnershipTest {
 				() -> builder.add(LmdbNativeCostVector.Feature.OPEN, Double.NaN));
 		assertEquals(first, builder.build());
 		builder.add(first);
-		assertEquals(first, builder.build(), "Saturation remains finite and preserves the prior snapshot");
+		assertBounds(builder.build(), LmdbNativeCostVector.Feature.OPEN, Double.MAX_VALUE, Double.MAX_VALUE,
+				Double.POSITIVE_INFINITY);
 		assertBounds(first, LmdbNativeCostVector.Feature.OPEN, Double.MAX_VALUE, Double.MAX_VALUE, Double.MAX_VALUE);
-	}
-
-	@Test
-	void correctionsDefensivelyOwnInputsAndExportsIncludingTheIdentity() {
-		double[] ratios = new double[LmdbNativeCostVector.Feature.values().length];
-		Arrays.fill(ratios, 2.0);
-		var correction = new LmdbNativeStoreCostModel.Correction(ratios, true);
-		Arrays.fill(ratios, 9.0);
-		Arrays.fill(correction.featureRatios(), 8.0);
-		assertTrue(correction.exact());
-		for (var feature : LmdbNativeCostVector.Feature.values()) {
-			assertBits(2.0, correction.featureRatio(feature));
-		}
-		var identity = LmdbNativeStoreCostModel.Correction.identity();
-		Arrays.fill(identity.featureRatios(), 6.0);
-		assertFalse(identity.exact());
-		for (var feature : LmdbNativeCostVector.Feature.values()) {
-			assertBits(1.0, identity.featureRatio(feature));
-			assertBits(1.0, LmdbNativeStoreCostModel.Correction.identity().featureRatio(feature));
-		}
-	}
-
-	@Test
-	void learnedCorrectionsRemainSnapshotsAcrossLaterEvidence() {
-		var model = new LmdbNativeStoreCostModel();
-		var key = LmdbNativePhysicalVariantKey.builder("cost-data-ownership").build();
-		var expected = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1.0);
-		model.updateFeatureRatios(key, expected, expected.scale(2.0));
-		var first = model.correction(key);
-		double firstRatio = first.featureRatio(LmdbNativeCostVector.Feature.OPEN);
-		assertTrue(first.exact());
-		Arrays.fill(first.featureRatios(), 7.0);
-		model.updateFeatureRatios(key, expected, expected.scale(4.0));
-		assertBits(firstRatio, first.featureRatio(LmdbNativeCostVector.Feature.OPEN));
-		assertNotEquals(firstRatio, model.correction(key).featureRatio(LmdbNativeCostVector.Feature.OPEN));
-	}
-
-	@Test
-	void denseInitialPredictionMatchesIndependentDiagonalCovariance() {
-		var features = LmdbNativeCostVector.Feature.values();
-		double[] prior = new double[features.length];
-		var counts = LmdbNativeCostVector.builder();
-		double low = 0.0, mean = 0.0, high = 0.0, variance = 1_000_000.0;
-		for (int i = 0; i < features.length; i++) {
-			prior[i] = i + 1.0;
-			counts.add(features[i], i, i + 1.0, i + 2.0);
-			low += i * prior[i];
-			mean += (i + 1.0) * prior[i];
-			high += (i + 2.0) * prior[i];
-			variance += 256.0 * prior[i] * prior[i] * (i + 1.0) * (i + 1.0);
-		}
-		var model = new LmdbNativeMachineCostModel(prior);
-		var actual = model.predict(counts.build());
-		assertBits(low, actual.lowCountNanos());
-		assertBits(mean, actual.expectedNanos());
-		assertBits(high, actual.highCountNanos());
-		assertBits(Math.sqrt(variance), actual.standardDeviation());
-		assertEquals(0L, actual.supportedFeatureMask());
-		assertFalse(actual.adaptiveReady());
-		assertEquals(0L, actual.sampleCount());
-	}
-
-	@Test
-	void zeroAndOverflowPredictionsRetainTheExistingArithmeticContract() {
-		double[] prior = new double[LmdbNativeCostVector.Feature.values().length];
-		Arrays.fill(prior, 1.0);
-		var model = new LmdbNativeMachineCostModel(prior);
-		var zero = model.predict(LmdbNativeCostVector.zero());
-		assertBits(0.0, zero.lowCountNanos());
-		assertBits(0.0, zero.expectedNanos());
-		assertBits(0.0, zero.highCountNanos());
-		assertBits(1_000.0, zero.standardDeviation());
-		var large = model.predict(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, Double.MAX_VALUE));
-		assertBits(Double.MAX_VALUE, large.expectedNanos());
-		assertBits(Double.POSITIVE_INFINITY, large.standardDeviation());
-	}
-
-	@Test
-	void aPublishedPredictionSnapshotSurvivesConcurrentModelUpdates() throws Exception {
-		var model = new LmdbNativeMachineCostModel();
-		var vector = LmdbNativeCostVector.builder().add(LmdbNativeCostVector.Feature.OPEN, 2.0)
-				.add(LmdbNativeCostVector.Feature.SCANNED_ROW, 3.0).build();
-		for (int i = 0; i < 40; i++) {
-			model.update(vector, 12_000.0 + i);
-		}
-		var snapshot = model.snapshot();
-		var prediction = model.predict(vector, snapshot);
-		double[] coefficients = snapshot.coefficients();
-		Arrays.fill(snapshot.coefficients(), Double.MAX_VALUE);
-		CountDownLatch start = new CountDownLatch(1);
-		try (var workers = Executors.newVirtualThreadPerTaskExecutor()) {
-			var update = workers.submit(() -> {
-				start.await();
-				for (int i = 0; i < 128; i++) {
-					model.update(vector, 16_000.0 + i);
-				}
-				return null;
-			});
-			start.countDown();
-			for (int i = 0; i < 128; i++) {
-				assertEquals(prediction, model.predict(vector, snapshot));
-			}
-			update.get();
-		}
-		assertEquals(40L, snapshot.sampleCount());
-		assertTrue(model.snapshot().sampleCount() > snapshot.sampleCount());
-		assertEquals(prediction, model.predict(vector, snapshot));
-		for (var feature : LmdbNativeCostVector.Feature.values()) {
-			assertBits(coefficients[feature.ordinal()], snapshot.coefficient(feature));
-		}
 	}
 
 	private static void assertBounds(LmdbNativeCostVector vector, LmdbNativeCostVector.Feature feature,

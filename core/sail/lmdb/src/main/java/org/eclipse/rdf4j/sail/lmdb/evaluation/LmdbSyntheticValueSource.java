@@ -769,6 +769,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean countsContextFromMetadata(long context) throws IOException {
+		return anySynthetic(-1L, -1L, -1L, context) || delegate.countsContextFromMetadata(context);
+	}
+
+	@Override
 	public boolean has(long subj, long pred, long obj, long context) throws IOException {
 		return has(subj, pred, obj, context, null);
 	}
@@ -808,6 +813,27 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean mayHaveWildcardViews() {
+		return delegate.mayHaveWildcardViews();
+	}
+
+	@Override
+	public OptionalLong predicateDomainCardinality() {
+		// synthetic ids stand for query constants absent from the store: they add no predicate to the catalog
+		return delegate.predicateDomainCardinality();
+	}
+
+	@Override
+	public OptionalDouble meanNodeDegree(boolean bySubject) {
+		return delegate.meanNodeDegree(bySubject);
+	}
+
+	@Override
+	public OptionalDouble meanNodePredicates(boolean bySubject) {
+		return delegate.meanNodePredicates(bySubject);
+	}
+
+	@Override
 	public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 		return synthetic(predicate) || synthetic(key) ? OptionalLong.empty()
 				: delegate.exactDegree(predicate, key, bySubject);
@@ -833,6 +859,13 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public boolean hasStatementsInSource() {
 		return delegate.hasStatementsInSource();
+	}
+
+	@Override
+	public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+			int targetPartitions) {
+		return anySynthetic(subj, pred, obj, context) ? OptionalLong.of(0L)
+				: delegate.rootScanPartitionCountUpperBound(subj, pred, obj, context, targetPartitions);
 	}
 
 	@Override

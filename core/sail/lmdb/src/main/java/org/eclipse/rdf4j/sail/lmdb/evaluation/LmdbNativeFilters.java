@@ -171,7 +171,7 @@ final class PlannedNativeBooleanFilter implements NativeBooleanFilter {
 
 	@Override
 	public NativePredicateCapabilities capabilities() {
-		return NativePredicateCapabilities.scalar(plan);
+		return NativePredicateCapabilities.scalar(plan).withRuntimeReads(delegate.capabilities());
 	}
 
 	@Override
@@ -325,13 +325,14 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 	@Override
 	public NativePredicateCapabilities capabilities() {
 		return replaySafe ? NativePredicateCapabilities.snapshot(readMask, true, false)
-				: NativeBooleanFilter.super.capabilities();
+				: NativePredicateCapabilities.semantic(readMask);
 	}
 
 	@Override
 	public long batchReadMask() {
 		return readMask;
 	}
+
 }
 
 @Experimental

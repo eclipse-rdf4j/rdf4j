@@ -579,6 +579,7 @@
 										<exclude>**/target/**</exclude>
 										<exclude>**/node_modules/**</exclude>
 										<exclude>/core/sail/lmdb/work/**</exclude>
+										<exclude>/core/sail/lmdb/logs/**</exclude>
 										<exclude>/work/**</exclude>
 										<exclude>**/site/themes/**</exclude>
 										<exclude>**/.*/**</exclude>

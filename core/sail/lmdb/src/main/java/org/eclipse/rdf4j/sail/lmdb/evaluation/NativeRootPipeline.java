@@ -373,7 +373,7 @@ final class NativeRootPipeline {
 
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-			LmdbNativeStrategyArbiter.logDirect(null, "ORDER BY dispatch", LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K,
+			LmdbNativeDispatchLoop.logDirect(null, "ORDER BY dispatch", LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K,
 					"Bounded top-K over the staged input");
 			return openOrder(arg, bindings, keys, strict, policy, offset, limit, Math.toIntExact(retained));
 		}
@@ -710,7 +710,7 @@ final class NativeRootPipeline {
 
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-			LmdbNativeStrategyArbiter.logDirect(null, "ORDER BY dispatch",
+			LmdbNativeDispatchLoop.logDirect(null, "ORDER BY dispatch",
 					LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT, "Sort the complete staged input");
 			return openOrder(arg, bindings, keys, strict, policy, 0L, Long.MAX_VALUE, -1);
 		}

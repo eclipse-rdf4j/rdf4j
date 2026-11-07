@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.sail.StackableSail;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 
 /**
- * The catalogue of execution-strategy names a caller may legally force onto {@link LmdbNativeStrategyArbiter} via
- * {@link LmdbNativeStrategyArbiter#forcing(String, String)}, together with a short human-readable description of each.
+ * The catalogue of execution-strategy names a caller may legally force onto the dispatch loop via
+ * {@code LmdbNativeDispatchLoop#forcing(String)}, together with a short human-readable description of each.
  * <p>
  * This is a curated subset of {@link LmdbNativeAttemptMetrics#EXECUTION_PATH_VOCABULARY}, not the whole vocabulary.
  * Many vocabulary entries are internal, structural terminals recorded by a direct
@@ -39,13 +39,13 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
  * deliberately excluded from the public vocabulary itself: they are an internal sub-decision made inside
  * {@code LmdbWildcardPredicateBatch}/multi-join batch proposal building, never independently offered as a candidate at
  * a top-level arbiter site, so forcing them could only ever coincidentally match rather than actually override
- * anything. {@code chunkPipeline} is listed in the vocabulary and in {@link LmdbNativeStrategyPreference}'s
- * specialization order, but as of this writing no code path ever tags a proposal with it — it is unreachable, and is
- * excluded here until (if ever) a real candidate uses it again.
+ * anything. {@code chunkPipeline} is listed in the vocabulary and in the former preference ladder's specialization
+ * order, but as of this writing no code path ever tags a proposal with it — it is unreachable, and is excluded here
+ * until (if ever) a real candidate uses it again.
  * <p>
- * Every entry below was confirmed by reading the three call sites that actually construct an
- * {@link LmdbNativeStrategyArbiter} for a real, user-reachable query: {@code NativeRowsStep.openUnorderedInput} (row
- * and join dispatch), {@code NativeRowsStep.evaluateAllInitialized} (the {@code ORDER BY} fusion decision), and
+ * Every entry below was confirmed by reading the three call sites that actually construct an the dispatch loop for a
+ * real, user-reachable query: {@code NativeRowsStep.openUnorderedInput} (row and join dispatch),
+ * {@code NativeRowsStep.evaluateAllInitialized} (the {@code ORDER BY} fusion decision), and
  * {@code NativeGroupStep.evaluateArbitrated} ({@code GROUP BY}/aggregate dispatch). A fourth site,
  * {@code LmdbNativeTypeMatrix.arbitrateLinkageMorselKernel}, also builds an arbiter, but its candidates are internal
  * parameterized morsel-scheduling tags that are never part of this public vocabulary; forcing never applies there.
@@ -161,6 +161,37 @@ public final class LmdbNativeForceableStrategies {
 				"Morsel-parallel rung of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE + ".");
 		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
 				"Morsel-parallel rung of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED + ".");
+		// Structural specialists of the GROUP BY dispatch. They were catalogued but not forceable while the ladder
+		// placed them above every priced rival; a priced selector may pass them over on small stores, so their tests
+		// (and operators) must be able to name them.
+		d.put(LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX,
+				"Type usage and linkage matrices answered from adjacency metadata without enumerating statements.");
+		d.put(LmdbNativeCensusAggregate.PATH,
+				"Global census counts answered from adjacency page summaries and exact term domains.");
+		d.put(LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM,
+				"Histogram of run lengths read from index run metadata.");
+		d.put(LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM,
+				"Datatype histogram read from the value dictionary instead of every statement.");
+		d.put(LmdbNativeAttemptMetrics.PATH_PREDICATE_PLANE_GROUPS,
+				"Grouped counts answered per predicate plane of the adjacency index.");
+		d.put(NativeTermDomainPlan.PATH,
+				"Scalar aggregate answered from an exact term domain without producing rows.");
+		d.put(NativeExpressionDomainPolicy.HASHED_PATH,
+				"Row-root term-domain hash carrier for scalar expressions over a reusable domain.");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION,
+				"Compiled aggregation kernel rooted on a node-domain intersection.");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION_INTERPRETED,
+				"Interpreted execution of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_NODE_DOMAIN_INTERSECTION
+						+ ".");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX,
+				"Compiled aggregation kernel for the type-matrix algorithm.");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED,
+				"Interpreted execution of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX + ".");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL,
+				"Morsel-parallel rung of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX + ".");
+		d.put(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_PARALLEL_INTERPRETED,
+				"Morsel-parallel rung of " + LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_TYPE_MATRIX_INTERPRETED
+						+ ".");
 		return Collections.unmodifiableMap(d);
 	}
 
@@ -198,12 +229,81 @@ public final class LmdbNativeForceableStrategies {
 	}
 
 	/**
-	 * Whether {@code tag} is a name a caller may legally pass to
-	 * {@link LmdbNativeStrategyArbiter#forcing(String, String)}. The spellings that mean "do not force anything" are
-	 * not themselves forceable, so they are not included here; callers must rule them out with
-	 * {@link #isNoForcing(String)} before calling this method.
+	 * Whether {@code tag} is a name a caller may legally pass to {@code LmdbNativeDispatchLoop#forcing(String)}. The
+	 * spellings that mean "do not force anything" are not themselves forceable, so they are not included here; callers
+	 * must rule them out with {@link #isNoForcing(String)} before calling this method. A known family followed by a
+	 * balanced parenthesized suffix names an exact variant; dispatch still verifies that the variant is admitted.
 	 */
 	public static boolean isForceable(String tag) {
-		return tag != null && DESCRIPTIONS.containsKey(tag);
+		if (tag == null) {
+			return false;
+		}
+		if (DESCRIPTIONS.containsKey(tag)) {
+			return true;
+		}
+		int opening = tag.indexOf('(');
+		if (opening <= 0 || !tag.endsWith(")") || tag.substring(opening + 1, tag.length() - 1).isBlank()
+				|| !DESCRIPTIONS.containsKey(tag.substring(0, opening))) {
+			return false;
+		}
+		int depth = 0;
+		for (int i = opening; i < tag.length(); i++) {
+			char character = tag.charAt(i);
+			if (character == '(') {
+				depth++;
+			} else if (character == ')' && (--depth < 0 || depth == 0 && i != tag.length() - 1)) {
+				return false;
+			}
+		}
+		return depth == 0;
+	}
+
+	/** Preference separators are top-level commas; commas inside an exact variant belong to its name. */
+	static List<String> options(String requested) {
+		if (isNoForcing(requested)) {
+			return List.of();
+		}
+		List<String> options = new ArrayList<>();
+		int start = 0;
+		int depth = 0;
+		for (int i = 0; i < requested.length(); i++) {
+			char character = requested.charAt(i);
+			if (character == '(') {
+				depth++;
+			} else if (character == ')') {
+				depth--;
+			} else if (character == ',' && depth == 0) {
+				options.add(requested.substring(start, i).trim());
+				start = i + 1;
+			}
+		}
+		options.add(requested.substring(start).trim());
+		return List.copyOf(options);
+	}
+
+	/** A bare name selects its family; a decorated name selects precisely that admitted variant. */
+	static boolean matches(String requested, String candidate) {
+		return requested != null && (requested.equals(candidate)
+				|| requested.indexOf('(') < 0 && requested.equals(LmdbNativeCandidate.baseId(candidate)));
+	}
+
+	/**
+	 * Whether a forced value (one name, or a comma-separated preference list) names any of {@code tags}. Admission
+	 * heuristics such as minimum-work thresholds are selection aids, not capabilities, so a strategy that is forced by
+	 * name is offered regardless of them.
+	 */
+	public static boolean forces(String requested, String... tags) {
+		if (isNoForcing(requested)) {
+			return false;
+		}
+		for (String option : options(requested)) {
+			for (String tag : tags) {
+				// Admission asks whether its family is requested; dispatch enforces an exact variant afterward.
+				if (matches(option, tag) || matches(tag, option)) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 }

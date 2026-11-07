@@ -10251,7 +10251,7 @@ final class LmdbNativeKernelEmitter {
 						.append(build.payloadCols.length)
 						.append(", ")
 						.append(build.maxRows)
-						.append(");\n")
+						.append(", context.hashBuildMemory);\n")
 						.append(indent)
 						.append(first)
 						.append("();\n")

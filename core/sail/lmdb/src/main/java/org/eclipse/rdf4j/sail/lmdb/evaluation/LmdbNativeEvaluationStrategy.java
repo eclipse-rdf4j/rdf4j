@@ -223,10 +223,15 @@ public final class LmdbNativeEvaluationStrategy extends LmdbEvaluationStrategy
 	 */
 	private static String resolveForcedExecutionStrategy() {
 		String requested = currentForcedExecutionStrategy();
-		if (requested != null && !LmdbNativeForceableStrategies.isForceable(requested)) {
-			throw new QueryEvaluationException("Unknown LMDB execution strategy '" + requested
-					+ "'. Valid values: (empty), " + LmdbNativeForceableStrategies.NOT_ACTIVATED + ", "
-					+ String.join(", ", LmdbNativeForceableStrategies.names()) + ".");
+		if (requested != null) {
+			// a comma-separated list is a preference order: the first entry admitted at a decision point is forced
+			for (String option : LmdbNativeForceableStrategies.options(requested)) {
+				if (!LmdbNativeForceableStrategies.isForceable(option.trim())) {
+					throw new QueryEvaluationException("Unknown LMDB execution strategy '" + option.trim()
+							+ "'. Valid values: (empty), " + LmdbNativeForceableStrategies.NOT_ACTIVATED + ", "
+							+ String.join(", ", LmdbNativeForceableStrategies.names()) + ".");
+				}
+			}
 		}
 		return requested;
 	}
@@ -262,6 +267,17 @@ public final class LmdbNativeEvaluationStrategy extends LmdbEvaluationStrategy
 	 */
 	static String forcedExecutionStrategyForCurrentThread() {
 		return Boolean.TRUE.equals(KERNEL_SUBPLAN.get()) ? null : currentForcedExecutionStrategy();
+	}
+
+	/**
+	 * The strategy the query requested, whether or not the current thread is inside a kernel sub-plan. Admission
+	 * heuristics of a strategy that is itself being forced (a parallel rung's minimum-work threshold) consult this,
+	 * because the kernel-sub-plan mask exists to free the kernel's internal operators, not to hide the request from the
+	 * strategy being asked to run.
+	 */
+	static String requestedForcedExecutionStrategy() {
+		String active = LmdbNativeDispatchLoop.activeForcing();
+		return active != null ? active : currentForcedExecutionStrategy();
 	}
 
 	/** The enclosing kernel honors the forced strategy; its internal operators choose their own access paths. */

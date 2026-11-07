@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -28,10 +29,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 /** Terminal opener failure owns cleanup; a genuine declined attempt must preserve its reusable filter. */
 class NativeTerminalFilterAttemptOwnershipTest {
 	static Stream<Arguments> failures() {
-		return Stream.of(Arguments.of("legacy", "runtime"), Arguments.of("legacy", "cancel"),
-				Arguments.of("legacy", "io"), Arguments.of("legacy", "error"),
-				Arguments.of("adaptive", "runtime"), Arguments.of("adaptive", "cancel"),
-				Arguments.of("terminal", "runtime"), Arguments.of("terminal", "io"));
+		return Stream.of(Arguments.of("offer", "runtime"), Arguments.of("offer", "cancel"),
+				Arguments.of("offer", "io"), Arguments.of("offer", "error"),
+				Arguments.of("terminalFallback", "runtime"), Arguments.of("terminalFallback", "io"));
 	}
 
 	@ParameterizedTest(name = "route={0}, failure={1}")
@@ -69,30 +69,26 @@ class NativeTerminalFilterAttemptOwnershipTest {
 			filters.borrow(semantic).accept(null);
 			throw (IOException) primary;
 		}, 1D, "nestedLoop", () -> { });
-		LmdbNativeAdaptiveCostModel model = route.equals("adaptive")
-				? new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), new LmdbNativeStoreCostModel(),
-						new LmdbNativeAdaptiveCostModel.Configuration(true, true))
-				: null;
-		try (var arbiter = LmdbNativeStrategyArbiter.<String>forModel(null, -1D, model)) {
-			if (route.equals("terminal")) {
-				arbiter.terminalFallback(() -> proposal);
-			} else {
-				arbiter.offer(() -> proposal);
-			}
-			Throwable actual = assertThrows(Throwable.class, arbiter::selectWithObservation);
-			assertSame(kind.equals("cancel") ? cleanup : primary, actual);
-			assertEquals(1, calls.get(), "the input filter really ran before the fatal opening outcome");
-			assertEquals(1, closes.get(), "cleanup settles before this terminal opening returns");
-			assertEquals(1, primary.getSuppressed().length);
-			assertSame(cleanup, primary.getSuppressed()[0]);
-			if (kind.equals("cancel")) {
-				assertEquals(1, cleanup.getSuppressed().length);
-				KernelQueryCancelledException evidence = (KernelQueryCancelledException) cleanup.getSuppressed()[0];
-				assertSame(((KernelQueryCancelledException) primary).origin(), evidence.origin());
-				assertEquals(0, evidence.getSuppressed().length);
-			}
+		LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+		if (route.equals("terminalFallback")) {
+			offers.terminalFallback(() -> proposal);
+		} else {
+			offers.offer(() -> proposal);
 		}
-		assertEquals(1, closes.get(), "later arbiter close cannot close the original filter twice");
+		var dispatch = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null);
+		Throwable actual = assertThrows(Throwable.class, () -> dispatch.dispatch(null));
+		assertSame(kind.equals("cancel") ? cleanup : primary, actual);
+		assertEquals(1, calls.get(), "the input filter really ran before the fatal opening outcome");
+		assertEquals(1, closes.get(), "cleanup settles before this terminal opening returns");
+		assertEquals(1, primary.getSuppressed().length);
+		assertSame(cleanup, primary.getSuppressed()[0]);
+		if (kind.equals("cancel")) {
+			assertEquals(1, cleanup.getSuppressed().length);
+			KernelQueryCancelledException evidence = (KernelQueryCancelledException) cleanup.getSuppressed()[0];
+			assertSame(((KernelQueryCancelledException) primary).origin(), evidence.origin());
+			assertEquals(0, evidence.getSuppressed().length);
+		}
+		assertEquals(1, closes.get(), "later candidate release cannot close the original filter twice");
 	}
 
 	@Test
@@ -110,18 +106,20 @@ class NativeTerminalFilterAttemptOwnershipTest {
 				closes.incrementAndGet();
 			}
 		};
-		try (var arbiter = LmdbNativeStrategyArbiter.<String>forExpr(null)) {
-			arbiter.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
-				filters.borrow(semantic).accept(null);
-				return null;
-			}, 1D, "nestedLoop", () -> { }));
-			arbiter.terminalFallback(() -> new LmdbNativeStrategyProposal<>(filters -> {
-				assertEquals(0, closes.get(), "a declined arm cannot revoke its fallback's reusable input");
-				filters.borrow(semantic).accept(null);
-				return "selected";
-			}, 1D, "nestedLoop", () -> { }));
-			assertEquals("selected", arbiter.select());
-		}
+		LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+		offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+			filters.borrow(semantic).accept(null);
+			return null;
+		}, 1D, "nestedLoop", () -> { }));
+		offers.terminalFallback(() -> new LmdbNativeStrategyProposal<>(filters -> {
+			assertEquals(0, closes.get(), "a declined arm cannot revoke its fallback's reusable input");
+			filters.borrow(semantic).accept(null);
+			return "selected";
+		}, 1D, "nestedLoop", () -> { }));
+		var selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
+				.dispatch(null);
+		assertEquals("selected", selected.value());
+		assertNull(selected.finish(null));
 		assertEquals(2, calls.get());
 		assertEquals(1, closes.get());
 	}

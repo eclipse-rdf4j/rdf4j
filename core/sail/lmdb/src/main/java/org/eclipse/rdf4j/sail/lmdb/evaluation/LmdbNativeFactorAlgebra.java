@@ -343,14 +343,15 @@ final class LmdbNativeFactorAlgebra {
 		if (plan instanceof JoinPlan join)
 			return join(join.left, join.right, row, false, onePass);
 		if (plan instanceof FilterPlan filter) {
-			if (filter.filterMask < 0L) {
+			long reads = filter.groupedReadMask();
+			if (reads < 0L) {
 				// An opaque predicate may observe a new RAND/UUID/BNODE value on every logical mapping.
 				return LmdbNativeFactorRows.scalar(new FilterCursor(
 						logical(openOrdered(filter.arg, row, onePass), row), filter.filter, row), row.slots.length);
 			}
 			LmdbNativeFactorCursor input = open(filter.arg, row, onePass);
 			try {
-				return LmdbNativeFactorRows.restrict(input, filter.filter, row, filter.filterMask);
+				return LmdbNativeFactorRows.restrict(input, filter.filter, row, reads);
 			} catch (RuntimeException | Error failure) {
 				closeSuppressing(input, failure);
 				throw failure;

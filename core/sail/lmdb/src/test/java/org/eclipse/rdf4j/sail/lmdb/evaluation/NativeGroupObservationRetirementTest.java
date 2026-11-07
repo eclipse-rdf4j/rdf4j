@@ -23,8 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
@@ -64,7 +62,6 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 /** Normal compiler/source contracts only: no assignment to a compiled Group's supplier or runtime state. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -75,7 +72,7 @@ class NativeGroupObservationRetirementTest {
 
 	@Test
 	void normalCompilerOwnsAndPreparesTheActualFullValueAlternative() {
-		try (ModelConfiguration ignored = new ModelConfiguration(); Fixture fixture = new Fixture()) {
+		try (Fixture fixture = new Fixture()) {
 			NativeGroupStep summary = fixture.compile();
 			assertTrue(summary.requiresPhysicalResults());
 			assertNotNull(summary.fullValueCompiler, "the normal planner must install its own FULL supplier");
@@ -95,57 +92,12 @@ class NativeGroupObservationRetirementTest {
 		}
 	}
 
-	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void sourceObservationFailureCannotStrandTheSelectedFilterReceipt(boolean failObservation) {
-		try (ModelConfiguration ignored = new ModelConfiguration(); Fixture fixture = new Fixture()) {
-			NativeGroupStep step = fixture.compile();
-			assertFalse(step.inputSemantics.needsSemantic(EmptyBindingSet.getInstance()));
-			int opened = fixture.source.memory.opened;
-			NativeResultCursor rows = step.evaluateNative(EmptyBindingSet.getInstance());
-			NativeExecutionContext owner = rows.executionContext(); assertNotNull(owner);
-			// A real enclosing accepted consumer holds runtime authority through inner selection settlement.
-			NativeExecutionContext.Lease enclosing = owner.retainActiveLease();
-			try (enclosing; rows) {
-				NativeResultRow first = rows.next(); assertNotNull(first);
-				NativeResultCell value = first.cell("cat");
-				assertEquals(NativeResultCell.State.BOUND, value.state());
-				if (value.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) {
-					assertEquals(O.stringValue().length(), value.codePointLength());
-				} else { assertEquals(O.stringValue(), value.value().stringValue()); }
-				assertTrue(fixture.source.memory.opened > opened, "the actual native input ran after compilation");
-				assertTrue(fixture.statistics.events.isEmpty(), "the selected receipt is still owned before outer retirement");
-				fixture.source.atFinish.set(false); fixture.source.failedReads.set(0);
-				fixture.source.armed.set(failObservation);
-				if (failObservation) {
-					RuntimeException actual = assertThrows(RuntimeException.class, rows::next);
-					assertTrue(fixture.source.atFinish.get(),
-							"classify a different callback site as route/setup, not finishSelection evidence");
-					assertSame(fixture.source.failure, actual);
-					assertEquals(1, fixture.source.failedReads.get());
-				} else {
-					assertNull(rows.next());
-					assertTrue(fixture.source.atFinish.get(), "the admitted Group really completed its cost observation");
-				}
-			}
-			assertTrue(owner.isClosed());
-			assertEquals(fixture.source.memory.opened, fixture.source.memory.closed);
-			assertEquals(1, fixture.statistics.events.size(),
-					"terminal observation must not strand the selected lease's actual filter-input census");
-			EvaluationStatistics.FilterOutcomeObservation outcome = fixture.statistics.events.getFirst();
-			assertEquals(1L, outcome.passedCount()); assertEquals(0L, outcome.filteredCount());
-			assertFalse(outcome.completed(),
-					"a borrowed inner Group is not authority to declare a public QueryRoot completed");
-		}
-	}
-
-
-	private enum RetirementControl { ERROR_NOTIFICATION, CANCELLED_ADVANCE, EARLY_CLOSE }
+	private enum RetirementControl { CANCELLED_ADVANCE, EARLY_CLOSE }
 
 	@ParameterizedTest
 	@EnumSource(RetirementControl.class)
 	void selectedReceiptRetiresForErrorCancellationAndEarlyClose(RetirementControl control) {
-		try (ModelConfiguration ignored = new ModelConfiguration(); Fixture fixture = new Fixture()) {
+		try (Fixture fixture = new Fixture()) {
 			NativeGroupStep step = fixture.compile();
 			assertFalse(step.inputSemantics.needsSemantic(EmptyBindingSet.getInstance()));
 			int opened = fixture.source.memory.opened;
@@ -159,16 +111,7 @@ class NativeGroupObservationRetirementTest {
 				assertEquals(NativeResultCell.State.BOUND, first.cell("cat").state());
 				assertTrue(fixture.source.memory.opened > opened);
 				assertTrue(fixture.statistics.events.isEmpty());
-				if (control == RetirementControl.ERROR_NOTIFICATION) {
-					AssertionError injected = new AssertionError("source regime observation error");
-					fixture.source.notificationError = injected;
-					fixture.source.atFinish.set(false);
-					fixture.source.failedReads.set(0);
-					fixture.source.armed.set(true);
-					assertSame(injected, assertThrows(AssertionError.class, rows::next));
-					assertTrue(fixture.source.atFinish.get());
-					assertEquals(1, fixture.source.failedReads.get());
-				} else if (control == RetirementControl.CANCELLED_ADVANCE) {
+				if (control == RetirementControl.CANCELLED_ADVANCE) {
 					assertTrue(rows.requestCancellation());
 					KernelQueryCancelledException stopped = assertThrows(KernelQueryCancelledException.class, rows::next);
 					assertTrue(rows.cancellation().owns(stopped));
@@ -218,32 +161,13 @@ class NativeGroupObservationRetirementTest {
 			return assertInstanceOf(NativeGroupStep.class, compiled, "normal Group compilation must admit this source/input");
 		}
 
-		@Override public void close() {
-			source.armed.set(false); NativeLmdbQuerySource.releaseCostModel(source.costModelIdentity());
-		}
+		@Override public void close() { }
 	}
 
 	private static final class ObservedSource implements TripleSource, NativeLmdbQuerySource {
 		final LmdbNativeRepeatedStatementTermRoleTest.MemorySource memory =
 				new LmdbNativeRepeatedStatementTermRoleTest.MemorySource(
 						List.of(VF.createStatement(VF.createIRI("urn:group-observer:s"), P, O)), O);
-		final AtomicBoolean armed = new AtomicBoolean(), atFinish = new AtomicBoolean();
-		final AtomicInteger failedReads = new AtomicInteger();
-		final RuntimeException failure = new IllegalStateException("source regime observation failed");
-		volatile AssertionError notificationError;
-		final LmdbNativeCostModelContext cost = new LmdbNativeCostModelContext(null, null, () -> 0L, () -> {
-			boolean finish = StackWalker.getInstance().walk(frames -> frames.anyMatch(frame -> frame.getClassName()
-					.equals(NativeGroupResultCursor.class.getName()) && frame.getMethodName().equals("finishSelection")));
-			if (finish) { atFinish.set(true); }
-			if (armed.getAndSet(false)) {
-				failedReads.incrementAndGet();
-				if (notificationError != null) { throw notificationError; }
-				throw failure;
-			}
-			return "DISABLED";
-		}, () -> 0L, () -> 0L);
-
-		@Override public LmdbNativeCostModelContext costModelContext() { return cost; }
 		@Override public Object idSpace() { return memory.idSpace(); }
 		@Override public ValueFactory getValueFactory() { return VF; }
 		@Override public long idOf(Value value) { return memory.idOf(value); }
@@ -265,18 +189,4 @@ class NativeGroupObservationRetirementTest {
 		@Override public void recordFilterOutcome(Filter filter, FilterOutcomeObservation observation) { events.add(observation); }
 	}
 
-	private static final class ModelConfiguration implements AutoCloseable {
-		final String enabled = System.getProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY);
-		final String record = System.getProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
-		ModelConfiguration() {
-			System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
-			System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
-		}
-		@Override public void close() {
-			restore(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, enabled); restore(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, record);
-		}
-		private static void restore(String name, String value) {
-			if (value == null) { System.clearProperty(name); } else { System.setProperty(name, value); }
-		}
-	}
 }

@@ -140,6 +140,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
@@ -2542,6 +2543,130 @@ class LmdbOptimizerPipelineTest {
 		ProcessResult result = runLowHeapProbe(dataDir, true);
 		assertEquals(0, result.exitCode, result.output);
 		assertTrue(result.output.contains("LOW_HEAP_NATIVE_ENGINE_OK"), result.output);
+	}
+
+	@Test
+	void automaticLmdbStoreUsesDefaultEvaluationStrategyFactoryUntilSketchesAreReady() {
+		LmdbStore store = new LmdbStore();
+
+		assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+	}
+
+	@Test
+	void defaultEvaluationStrategyFactoryUsesOptedInSketchPipelineWhenJoinEstimationIsReady() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(config);
+		EvaluationStatistics readyStatistics = new EvaluationStatistics() {
+			@Override
+			public boolean supportsJoinEstimation() {
+				return true;
+			}
+		};
+		EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
+		EvaluationStrategy strategy = createExperimentalEvaluationStrategy(factory, readyStatistics);
+		List<QueryOptimizer> optimizers = optimizers(strategy);
+
+		assertInstanceOf(DefaultEvaluationStrategyFactory.class, factory);
+		assertInstanceOf(DefaultEvaluationStrategy.class, strategy);
+		assertTrue(optimizers.stream().anyMatch(LmdbCascadesOptimizer.class::isInstance));
+		assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+	}
+
+	@Test
+	void automaticLmdbStoreUsesNativeEvaluationWithStandardPipelineUntilSketchesAreReady() throws Exception {
+		LmdbStore store = new LmdbStore(new LmdbStoreConfig().setNativeEvaluationEnabled(true));
+
+		EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
+		EvaluationStrategy strategy = createEvaluationStrategy(factory);
+		List<QueryOptimizer> optimizers = optimizers(strategy);
+
+		assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, factory);
+		assertInstanceOf(LmdbNativeEvaluationStrategy.class, strategy);
+		assertTrue(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+		assertFalse(optimizers.stream().anyMatch(LmdbCascadesOptimizer.class::isInstance));
+	}
+
+	@Test
+	void nativeStandardPipelineAddsGroupPushdownAfterFilterOptimizer() throws Exception {
+		LmdbStore store = new LmdbStore(new LmdbStoreConfig().setNativeEvaluationEnabled(true));
+		for (EvaluationStrategy strategy : List.of(createEvaluationStrategy(store.getEvaluationStrategyFactory()),
+				createExperimentalEvaluationStrategy(store.getEvaluationStrategyFactory()))) {
+			List<QueryOptimizer> optimizers = optimizers(strategy);
+			int pushdown = indexOf(optimizers, LmdbSubqueryGroupPushdownOptimizer.class);
+			assertTrue(pushdown >= 0, "native pipelines add the group pushdown");
+			assertTrue(pushdown > indexOf(optimizers, FilterOptimizer.class), "after FilterOptimizer");
+		}
+	}
+
+	@Test
+	void nativeLmdbPipelineAddsGroupPushdownBetweenIterativeEvaluationAndJoinOptimizers() throws Exception {
+		LmdbStore store = new LmdbStore(new LmdbStoreConfig().setNativeEvaluationEnabled(true));
+		EvaluationStatistics readyStatistics = new EvaluationStatistics() {
+			@Override
+			public boolean supportsJoinEstimation() {
+				return true;
+			}
+		};
+		List<QueryOptimizer> optimizers = optimizers(
+				createExperimentalEvaluationStrategy(store.getEvaluationStrategyFactory(), readyStatistics));
+		int pushdown = indexOf(optimizers, LmdbSubqueryGroupPushdownOptimizer.class);
+		assertTrue(pushdown > indexOf(optimizers, FilterOptimizer.class));
+		assertTrue(pushdown < indexOf(optimizers, LmdbCascadesOptimizer.class));
+	}
+
+	@Test
+	void genericEvaluationPipelinesDoNotAddGroupPushdown() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(config);
+		assertFalse(optimizers(createExperimentalEvaluationStrategy(store.getEvaluationStrategyFactory()))
+				.stream()
+				.anyMatch(LmdbSubqueryGroupPushdownOptimizer.class::isInstance));
+		assertFalse(optimizers(createEvaluationStrategy(store.getEvaluationStrategyFactory()))
+				.stream()
+				.anyMatch(LmdbSubqueryGroupPushdownOptimizer.class::isInstance));
+	}
+
+	@Test
+	void automaticLmdbStoreUsesNativeEvaluationWithCascadesPipelineAfterSketchesAreReady(@TempDir File dataDir)
+			throws Exception {
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc").setNativeEvaluationEnabled(true));
+		store.init();
+		try {
+			addSingleStatement(store, "urn:ready");
+			LmdbGcTestMaintenance.awaitPostReady(store);
+
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.rebuild();
+
+			assertTrue(estimator.isReadyNonBlocking());
+			assertTrue(store.awaitSketchesReady(1, TimeUnit.SECONDS));
+			EvaluationStrategyFactory factory = store.getEvaluationStrategyFactory();
+			EvaluationStrategy strategy = createExperimentalEvaluationStrategy(factory, store.getBackingStore()
+					.getEvaluationStatistics());
+			List<QueryOptimizer> optimizers = optimizers(strategy);
+
+			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, factory);
+			assertInstanceOf(LmdbNativeEvaluationStrategy.class, strategy);
+			assertTrue(optimizers.stream().anyMatch(LmdbCascadesOptimizer.class::isInstance));
+			assertFalse(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void lowHeapStoreRespectsConfiguredEvaluationFactory(@TempDir File dataDir) throws Exception {
+		File unifiedDir = Files.createDirectory(dataDir.toPath().resolve("unified")).toFile();
+		File nativeDir = Files.createDirectory(dataDir.toPath().resolve("native")).toFile();
+		ProcessResult unified = runLowHeapProbe(unifiedDir);
+		assertEquals(0, unified.exitCode, unified.output);
+		assertTrue(unified.output.contains("LOW_HEAP_UNIFIED_ENGINE_OK"), unified.output);
+		ProcessResult nativeResult = runLowHeapProbe(nativeDir, true);
+		assertEquals(0, nativeResult.exitCode, nativeResult.output);
+		assertTrue(nativeResult.output.contains("LOW_HEAP_NATIVE_ENGINE_OK"), nativeResult.output);
 	}
 
 	@Test

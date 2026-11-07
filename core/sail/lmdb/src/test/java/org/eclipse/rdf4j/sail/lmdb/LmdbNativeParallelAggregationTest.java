@@ -54,10 +54,20 @@ import org.junit.jupiter.api.io.TempDir;
  * generic evaluator ({@code rdf4j.lmdb.nativeQueryEngine.enabled=false}) — and all results must match. Single-pattern
  * aggregation also proves that the order-preserving parallel path still engages. The star dataset includes a hub with a
  * zero-match branch, duplicate values across hubs, and a named-graph triple.
+ * <p>
+ * Engagement and fallback cases force the parallel sink ({@code parallelAggregation}): on this fixture of a few hundred
+ * statements the measured selector prices the sequential path far below the parallel startup cost, so the operator
+ * under test must be requested. A forced parallel attempt that discovers floating-point or representative ties still
+ * falls back through {@code EncounterOrderFallback} to the sequential path, which is exactly the contract those cases
+ * assert. Only the selection cases ({@link #singlePatternPlainCountDefaultsToExactIndexedCardinality},
+ * {@link #smallDistinctStarKeepsTheSequentialPathBelowParallelStartupCost}, {@link #defaultThresholdGatesSmallStores})
+ * stay unforced.
  */
 public class LmdbNativeParallelAggregationTest {
 
 	private static final String EX = "http://example.com/";
+	private static final String PARALLEL_AGGREGATION = LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION;
+	private static final String FACTORIZED_TAIL = LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL;
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String PARALLEL_FLAG = "rdf4j.lmdb.parallel.enabled";
 	private static final String THRESHOLD_FLAG = "rdf4j.lmdb.parallel.minWorkEstimate";
@@ -65,9 +75,7 @@ public class LmdbNativeParallelAggregationTest {
 	private static final String MAX_TASKS_FLAG = "rdf4j.lmdb.parallel.maxTasks";
 	private static final String MERGE_FLAG = "rdf4j.lmdb.chunkPipeline.merge.enabled";
 	private static final String EXTERNAL_ROOT_CANDIDATE_FLAG = "rdf4j.lmdb.chunkPipeline.externalRoot.experimental";
-	private static final String COST_CALIBRATION_FLAG = "rdf4j.lmdb.costCalibration.enabled";
-	private static final String COST_EXPLORATION_FLAG = "rdf4j.lmdb.costCalibration.explore";
-	private static final String PARALLEL_STARTUP_WORK_FLAG = LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY;
+	private static final String PARALLEL_STARTUP_WORK_FLAG = LmdbNativeWork.PARALLEL_STARTUP_COST_PROPERTY;
 	private static final String PACKED_FTREE_FLAG = "rdf4j.lmdb.packedFtree.enabled";
 	private static final String FACTORIZED_TAIL_FLAG = "rdf4j.lmdb.factorizedTail.enabled";
 	private static final String JANINO_FLAG = "rdf4j.lmdb.janinoCodegen.enabled";
@@ -83,8 +91,8 @@ public class LmdbNativeParallelAggregationTest {
 	@BeforeEach
 	public void setUp() {
 		previousProperties = snapshotProperties(NATIVE_FLAG, PARALLEL_FLAG, THRESHOLD_FLAG, THREADS_FLAG,
-				MAX_TASKS_FLAG, MERGE_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG, COST_CALIBRATION_FLAG,
-				COST_EXPLORATION_FLAG, PARALLEL_STARTUP_WORK_FLAG, PACKED_FTREE_FLAG, FACTORIZED_TAIL_FLAG, JANINO_FLAG,
+				MAX_TASKS_FLAG, MERGE_FLAG, EXTERNAL_ROOT_CANDIDATE_FLAG,
+				PARALLEL_STARTUP_WORK_FLAG, PACKED_FTREE_FLAG, FACTORIZED_TAIL_FLAG, JANINO_FLAG,
 				KERNEL_INTERPRETER_FLAG);
 		System.setProperty(PARALLEL_FLAG, "true");
 		System.setProperty(THRESHOLD_FLAG, "0");
@@ -93,15 +101,12 @@ public class LmdbNativeParallelAggregationTest {
 		// These operator-level tests validate the parallel implementation. Remove startup work from the fixture so the
 		// common arbiter selects that proposal without restoring the former call-order priority.
 		System.setProperty(PARALLEL_STARTUP_WORK_FLAG, "0");
-		System.setProperty(COST_CALIBRATION_FLAG, "false");
-		System.setProperty(COST_EXPLORATION_FLAG, "false");
 		System.setProperty(PACKED_FTREE_FLAG, "false");
 		// DISTINCT value marginals are now also supported by the factorized tail. These operator tests isolate the
 		// ordinary parallel sink, including its external-root chunk implementation and exact worker merge contracts.
 		System.setProperty(FACTORIZED_TAIL_FLAG, "false");
 		System.setProperty(JANINO_FLAG, "false");
 		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
-		LmdbNativeCostCalibration.reset();
 		repository = new SailRepository(new LmdbStore(dataDir, config(false)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
@@ -157,7 +162,6 @@ public class LmdbNativeParallelAggregationTest {
 				repository.shutDown();
 			}
 		} finally {
-			LmdbNativeCostCalibration.reset();
 			restoreProperties(previousProperties);
 		}
 	}
@@ -202,7 +206,7 @@ public class LmdbNativeParallelAggregationTest {
 		}
 	}
 
-	private List<String> rowsWithProperties(String query, String... propertyValuePairs) {
+	private List<String> rowsWithProperties(String query, String forcedStrategy, String... propertyValuePairs) {
 		assertThat(propertyValuePairs.length).isEven();
 		String[] previous = new String[propertyValuePairs.length / 2];
 		try {
@@ -210,7 +214,7 @@ public class LmdbNativeParallelAggregationTest {
 				previous[i / 2] = System.getProperty(propertyValuePairs[i]);
 				System.setProperty(propertyValuePairs[i], propertyValuePairs[i + 1]);
 			}
-			return rows(query);
+			return rows(query, forcedStrategy);
 		} finally {
 			for (int i = propertyValuePairs.length - 2; i >= 0; i -= 2) {
 				if (previous[i / 2] == null) {
@@ -232,7 +236,7 @@ public class LmdbNativeParallelAggregationTest {
 
 	private void assertParallelEngagesAndAllThreeAgree(String query) {
 		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		List<String> parallelRows = rows(query);
+		List<String> parallelRows = rows(query, PARALLEL_AGGREGATION);
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("parallel path should engage for:\n" + query)
 				.isGreaterThan(before);
@@ -319,15 +323,18 @@ public class LmdbNativeParallelAggregationTest {
 		assertThat(findMetric(plan, "nativeExecutionPath"))
 				.as("default arbitration should use exact index cardinality instead of materializing rows")
 				.isEqualTo("indexedCount");
-		assertThat(findMetric(plan, "nativeStrategyProposalCosts")).contains("indexedCount=");
-		assertThat(findMetric(plan, "nativeAdaptiveCostDecision")).contains("winner=indexedCount");
+		// The exact count structurally dominates every row-producing candidate, so it wins regardless of price; the
+		// proposal-cost metric still lists the admitted rivals it displaced.
+		assertThat(findMetric(plan, "nativeStrategyProposalCosts"))
+				.contains("indexedCount=")
+				.contains("parallelAggregation=");
 		assertAllThreeAgree(query);
 	}
 
 	@Test
 	public void singlePatternDistinctPrefersMonotonicAggregation() {
 		String previousStartup = System.setProperty(PARALLEL_STARTUP_WORK_FLAG,
-				Double.toString(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST));
+				Double.toString(LmdbNativeWork.PARALLEL_STARTUP_COST));
 		try {
 			String query = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT (COUNT(?s) AS ?c) (COUNT(DISTINCT ?a) AS ?d) WHERE { ?s ex:p1 ?a . }";
@@ -345,10 +352,15 @@ public class LmdbNativeParallelAggregationTest {
 		}
 	}
 
+	/**
+	 * Selection case (unforced). Measured selection on this 500-statement star (2026-11-03): the sequential path is
+	 * priced at tens of microseconds, the factorized tail at about 2.4 ms and the parallel sink at its 2 ms startup
+	 * cost, so neither specialist may run and the losing parallel proposal must still hand back its worker grant.
+	 */
 	@Test
-	public void smallFactorizedDistinctStarBeatsParallelStartupCost() {
+	public void smallDistinctStarKeepsTheSequentialPathBelowParallelStartupCost() {
 		String previousStartup = System.setProperty(PARALLEL_STARTUP_WORK_FLAG,
-				Double.toString(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST));
+				Double.toString(LmdbNativeWork.PARALLEL_STARTUP_COST));
 		String previousTail = System.setProperty(FACTORIZED_TAIL_FLAG, "true");
 		try {
 			String query = star("(COUNT(DISTINCT ?b) AS ?d)", "");
@@ -357,16 +369,17 @@ public class LmdbNativeParallelAggregationTest {
 
 			GenericPlanNode plan = explain(query);
 
-			assertThat(findMetric(plan, "nativeExecutionPath")).startsWith("factorizedTail(");
+			assertThat(findMetric(plan, "nativeExecutionPath")).isEqualTo("aggState");
 			assertThat(findMetric(plan, "nativeStrategyProposalCosts"))
 					.contains("factorizedTail=")
-					.contains("parallelAggregation=");
-			assertThat(findMetric(plan, "nativeStrategyDeclines"))
-					.contains("parallelAggregation:outranked");
+					.contains("parallelAggregation=")
+					.contains("nestedLoop=");
 			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
-					.as("parallel startup must not run when the factorized proposal is cheaper")
+					.as("parallel startup must not run when a sequential proposal is cheaper")
 					.isEqualTo(parallelBefore);
-			assertThat(FactorizedTail.ENGAGED.get()).isGreaterThan(factorizedBefore);
+			assertThat(FactorizedTail.ENGAGED.get())
+					.as("the factorized tail is priced above the sequential path on this fixture")
+					.isEqualTo(factorizedBefore);
 			try (LmdbNativeParallelPipelines.TaskReservation reservation = LmdbNativeParallelPipelines
 					.tryReserveTasks(false, 4)) {
 				assertThat(reservation)
@@ -386,7 +399,7 @@ public class LmdbNativeParallelAggregationTest {
 		long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-		List<String> parallel = rows(query);
+		List<String> parallel = rows(query, PARALLEL_AGGREGATION);
 
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("the eligible multi-pattern aggregate must run through the parallel sink")
@@ -405,7 +418,7 @@ public class LmdbNativeParallelAggregationTest {
 			long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 			long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-			List<String> parallel = rows(query);
+			List<String> parallel = rows(query, PARALLEL_AGGREGATION);
 
 			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore);
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
@@ -429,7 +442,7 @@ public class LmdbNativeParallelAggregationTest {
 			long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 			long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-			List<String> parallel = rows(query);
+			List<String> parallel = rows(query, PARALLEL_AGGREGATION);
 
 			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore);
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
@@ -475,7 +488,9 @@ public class LmdbNativeParallelAggregationTest {
 		long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
 		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-		List<String> parallel = rows(query);
+		// the test is about the parallel aggregation's refill, so it forces the operator: on a fixture this small
+		// the measured selector prices the serial paths below it (the parallel cut rule, 2026-11-03)
+		List<String> parallel = rows(query, "parallelAggregation");
 
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("the refill regression must exercise parallel aggregation")
@@ -513,7 +528,7 @@ public class LmdbNativeParallelAggregationTest {
 		String query = star("(COUNT(?s) AS ?c) (MIN(DISTINCT ?b) AS ?min)",
 				"  FILTER(?b != ex:b1)\n");
 		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		List<String> nativeRows = rows(query);
+		List<String> nativeRows = rows(query, PARALLEL_AGGREGATION);
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("deterministic compiled filters must use worker-confined owners")
 				.isGreaterThan(before);
@@ -573,10 +588,10 @@ public class LmdbNativeParallelAggregationTest {
 				+ "WHERE { ?s ex:floatingValue ?v }";
 
 		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		List<String> actual = rows(query);
+		List<String> actual = rows(query, PARALLEL_AGGREGATION);
 		assertThat(actual).isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
 		assertThat(actual).isEqualTo(rowsWithProperty(NATIVE_FLAG, "false", query));
-		assertThat(strategy(query)).isEqualTo("aggState");
+		assertThat(strategy(query, PARALLEL_AGGREGATION)).isEqualTo("aggState");
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("an aborted floating-point attempt must not claim a successful parallel run")
 				.isEqualTo(before);
@@ -584,7 +599,7 @@ public class LmdbNativeParallelAggregationTest {
 		String exactQuery = starWithValues(
 				"(COUNT(*) AS ?count) (SUM(?v) AS ?sum) (AVG(?v) AS ?avg) (MIN(DISTINCT ?v) AS ?min)");
 		long exactBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		assertAllThreeAgree(exactQuery);
+		assertForcedParallelAndAllThreeAgree(exactQuery);
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("a fallback must not disable a subsequent exact integer/decimal parallel query")
 				.isGreaterThan(exactBefore);
@@ -723,7 +738,7 @@ public class LmdbNativeParallelAggregationTest {
 
 		String controlQuery = cancellationSequenceQuery("parallelCancellationControl");
 		long controlBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		assertThat(rows(controlQuery)).containsExactly(
+		assertThat(rows(controlQuery, PARALLEL_AGGREGATION)).containsExactly(
 				"[sum=" + repository.getValueFactory().createLiteral("1", CoreDatatype.XSD.INTEGER) + "]");
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("the all-PatternPlan control must clear the parallel gate")
@@ -733,7 +748,9 @@ public class LmdbNativeParallelAggregationTest {
 		SpeculativeCounters before = SpeculativeCounters.snapshot();
 		List<BindingSet> result;
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			result = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			preparedQuery.setForcedLmdbExecutionStrategy(PARALLEL_AGGREGATION);
+			result = QueryResults.asList(preparedQuery.evaluate());
 		}
 		assertThat(SpeculativeCounters.snapshot())
 				.as("the discarded all-pattern parallel attempt must publish no strategy counters")
@@ -749,7 +766,7 @@ public class LmdbNativeParallelAggregationTest {
 		List<String> actual = serializedRows(result);
 		assertThat(actual).isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
 		assertThat(actual).isEqualTo(rowsWithProperty(NATIVE_FLAG, "false", query));
-		assertThat(strategy(query)).isEqualTo("aggState");
+		assertThat(strategy(query, PARALLEL_AGGREGATION)).isEqualTo("aggState");
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("floating fallback must not claim a completed parallel run")
 				.isEqualTo(before.parallelRuns());
@@ -878,20 +895,22 @@ public class LmdbNativeParallelAggregationTest {
 				+ "} GROUP BY ?group";
 
 		SpeculativeCounters before = SpeculativeCounters.snapshot();
-		List<String> actual = rows(query);
+		List<String> actual = rows(query, PARALLEL_AGGREGATION);
 		assertThat(SpeculativeCounters.snapshot())
 				.as("a late floating group must publish no counters from its discarded optimized attempt")
 				.isEqualTo(before);
 		assertThat(actual).isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
 		assertThat(actual).isEqualTo(rowsWithProperty(NATIVE_FLAG, "false", query));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			SailTupleQuery preparedQuery = (SailTupleQuery) conn.prepareTupleQuery(query);
+			preparedQuery.setForcedLmdbExecutionStrategy(PARALLEL_AGGREGATION);
+			List<BindingSet> result = QueryResults.asList(preparedQuery.evaluate());
 			assertThat(result).hasSize(3);
 			assertGroup(result, exactA, 2L, "30", CoreDatatype.XSD.INTEGER);
 			assertGroup(result, exactB, 2L, "70", CoreDatatype.XSD.INTEGER);
 			assertGroup(result, floating, 2L, "1.1", CoreDatatype.XSD.DOUBLE);
 		}
-		assertThat(strategy(query)).isEqualTo("singleSlotGroups");
+		assertThat(strategy(query, PARALLEL_AGGREGATION)).isEqualTo("singleSlotGroups");
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("a late fallback must discard exact groups and mixed COUNT/SUM state from every worker")
 				.isEqualTo(before.parallelRuns());
@@ -905,7 +924,8 @@ public class LmdbNativeParallelAggregationTest {
 
 		String controlQuery = speculativeCounterQuery("counterControl");
 		SpeculativeCounters beforeControl = SpeculativeCounters.snapshot();
-		rowsWithProperties(controlQuery, PARALLEL_FLAG, "false", MERGE_FLAG, "false", FACTORIZED_TAIL_FLAG, "true");
+		rowsWithProperties(controlQuery, FACTORIZED_TAIL, PARALLEL_FLAG, "false", MERGE_FLAG, "false",
+				FACTORIZED_TAIL_FLAG, "true");
 		SpeculativeCounters afterControl = SpeculativeCounters.snapshot();
 		assertThat(afterControl.chunkEngaged()).isGreaterThan(beforeControl.chunkEngaged());
 		assertThat(afterControl.hashBuilds()).isGreaterThan(beforeControl.hashBuilds());
@@ -915,8 +935,8 @@ public class LmdbNativeParallelAggregationTest {
 
 		String fallbackQuery = speculativeCounterQuery("counterFallback");
 		SpeculativeCounters beforeFallback = SpeculativeCounters.snapshot();
-		List<String> actual = rowsWithProperties(fallbackQuery, PARALLEL_FLAG, "false", MERGE_FLAG, "false",
-				FACTORIZED_TAIL_FLAG, "true");
+		List<String> actual = rowsWithProperties(fallbackQuery, FACTORIZED_TAIL, PARALLEL_FLAG, "false", MERGE_FLAG,
+				"false", FACTORIZED_TAIL_FLAG, "true");
 		assertThat(SpeculativeCounters.snapshot())
 				.as("discarded serial factorization must roll back chunk, hash, SIP, memo, and tail counters")
 				.isEqualTo(beforeFallback);
@@ -937,7 +957,7 @@ public class LmdbNativeParallelAggregationTest {
 				+ "WHERE { ?s ex:equivalentExtreme ?v }";
 
 		SpeculativeCounters before = SpeculativeCounters.snapshot();
-		List<String> actual = rows(query);
+		List<String> actual = rows(query, PARALLEL_AGGREGATION);
 		assertThat(SpeculativeCounters.snapshot())
 				.as("an extrema representative fallback must publish no optimized-path counters")
 				.isEqualTo(before);
@@ -945,7 +965,7 @@ public class LmdbNativeParallelAggregationTest {
 				.as("parallel extrema must preserve the exact RDF-term representative chosen by encounter order")
 				.isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
 		assertThat(actual).isEqualTo(rowsWithProperty(NATIVE_FLAG, "false", query));
-		assertThat(strategy(query)).isEqualTo("aggState");
+		assertThat(strategy(query, PARALLEL_AGGREGATION)).isEqualTo("aggState");
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("an equivalent-but-distinct extrema tie must restart sequentially")
 				.isEqualTo(before.parallelRuns());
@@ -1041,13 +1061,13 @@ public class LmdbNativeParallelAggregationTest {
 		String query = starWithValues("(SUM(DISTINCT ?v) AS ?sum) (AVG(DISTINCT ?v) AS ?avg)");
 
 		SpeculativeCounters before = SpeculativeCounters.snapshot();
-		List<String> actual = rows(query);
+		List<String> actual = rows(query, PARALLEL_AGGREGATION);
 		assertThat(SpeculativeCounters.snapshot())
 				.as("floating DISTINCT recompute must discard every speculative parallel counter")
 				.isEqualTo(before);
 		assertThat(actual).isEqualTo(rowsWithProperty(PARALLEL_FLAG, "false", query));
 		assertThat(actual).isEqualTo(rowsWithProperty(NATIVE_FLAG, "false", query));
-		assertThat(strategy(query)).isEqualTo("aggState");
+		assertThat(strategy(query, PARALLEL_AGGREGATION)).isEqualTo("aggState");
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
 				.as("floating DISTINCT recompute must restart sequentially")
 				.isEqualTo(before.parallelRuns());
@@ -1157,16 +1177,26 @@ public class LmdbNativeParallelAggregationTest {
 	}
 
 	private String strategy(String query) {
-		String strategy = findMetric(explain(query), "nativeExecutionPath");
+		return strategy(query, null);
+	}
+
+	private String strategy(String query, String forcedStrategy) {
+		String strategy = findMetric(explain(query, forcedStrategy), "nativeExecutionPath");
 		assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
 		return strategy;
 	}
 
 	private GenericPlanNode explain(String query) {
+		return explain(query, null);
+	}
+
+	private GenericPlanNode explain(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query)
-					.explain(Explanation.Level.Telemetry)
-					.toGenericPlanNode();
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return preparedQuery.explain(Explanation.Level.Telemetry).toGenericPlanNode();
 		}
 	}
 

@@ -103,6 +103,11 @@ final class NativeGraphPlan implements SlotPlan {
 		return assured;
 	}
 
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		return LmdbNativeCostVectors.algebraRows(graph, row == null ? null : row.source);
+	}
+
 	long frameInputMask() {
 		long mask = 0L;
 		for (int slot : frameInputSlots) {

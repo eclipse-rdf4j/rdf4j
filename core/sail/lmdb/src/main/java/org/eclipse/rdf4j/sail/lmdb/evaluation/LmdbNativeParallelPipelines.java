@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -188,10 +187,226 @@ final class LmdbNativeParallelPipelines {
 		if (proposal == null) {
 			return null;
 		}
+		NativeExecutionContext.Lease contextLease = null;
+		RowCursor cursor = null;
+		NativeUnorderedInput input = null;
 		try {
-			return proposal.open();
-		} finally {
+			SyntheticValueSource scope = consumerRow.evaluationScope();
+			NativeExecutionContext context = scope == null ? null : scope.executionContext();
+			contextLease = context == null ? null : context.retainInternalLease();
+			proposal.filterParent(NativeFilterLease.parentOf(consumerRow));
+			cursor = proposal.open();
+			consumerRow.cancellation.check();
+			if (cursor == null) {
+				Throwable failure = KernelRuntime.closeResource(proposal, null);
+				failure = KernelRuntime.closeResource(contextLease, failure);
+				KernelRuntime.rethrowCloseFailure(failure);
+				return null;
+			}
+			input = NativeUnorderedInput.directRows(consumerRow, cursor);
+			input.ownFilterAttempt(proposal.filterAttempt());
+			RowCursor result = new DirectParallelRowCursor(input, cursor, contextLease);
+			proposal.selected();
+			consumerRow.cancellation.check();
 			proposal.close();
+			return result;
+		} catch (IOException | RuntimeException | Error failure) {
+			Throwable retained;
+			if (input == null) {
+				retained = KernelRuntime.closeResource(cursor, failure);
+			} else {
+				input.failScalarFilterAttempt(failure, true);
+				retained = KernelRuntime.closeResource(input, failure);
+			}
+			retained = LmdbNativeDispatchLoop.finishFilters(proposal.filterAttempt(), retained);
+			retained = KernelRuntime.closeResource(proposal, retained);
+			retained = KernelRuntime.closeResource(contextLease, retained);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+			throw failure;
+		}
+	}
+
+	/** Holds the selected receipt until the producer and every worker have finished cleanup. */
+	private static final class DirectParallelRowCursor implements RowCursor {
+		private final NativeUnorderedInput input;
+		private final RowCursor cursor;
+		private final NativeExecutionContext.Lease contextLease;
+		private final Object lifecycle = new Object();
+		private boolean advancing;
+		private Thread advancingThread;
+		private boolean closing;
+		private boolean cleanupClaimed;
+		private Thread cleanupThread;
+		private boolean workerCleanupScheduled;
+		private boolean workerCleanupOwner;
+		private boolean workerCleanupObserved;
+		private boolean closed;
+		private Throwable closeFailure;
+
+		DirectParallelRowCursor(NativeUnorderedInput input, RowCursor cursor,
+				NativeExecutionContext.Lease contextLease) {
+			this.input = input;
+			this.cursor = cursor;
+			this.contextLease = contextLease;
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			synchronized (lifecycle) {
+				if (closing) {
+					return false;
+				}
+				if (advancing) {
+					throw new IllegalStateException("parallel row cursor already advancing");
+				}
+				advancing = true;
+				advancingThread = Thread.currentThread();
+			}
+			boolean advanced = false;
+			Throwable problem = null;
+			try {
+				advanced = input.advance();
+			} catch (IOException | RuntimeException | Error failure) {
+				problem = failure;
+			} finally {
+				synchronized (lifecycle) {
+					if (problem != null) {
+						input.failScalarFilterAttempt(problem, true);
+					} else if (!advanced && !closing && input.row.cancellation.pollCancellation() == null) {
+						input.markExhausted();
+					}
+					advancing = false;
+					advancingThread = null;
+					lifecycle.notifyAll();
+				}
+			}
+			if (problem != null) {
+				Throwable retained = KernelRuntime.closeResource(this, problem);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, problem);
+				if (problem instanceof IOException io) {
+					throw io;
+				}
+				NativeContextClosingIteration.throwFailure(problem);
+			}
+			boolean closingNow;
+			synchronized (lifecycle) {
+				closingNow = closing;
+			}
+			if (!advanced || closingNow) {
+				close();
+				return false;
+			}
+			return true;
+		}
+
+		@Override
+		public void close() {
+			close(false);
+		}
+
+		private void closeAfterWorkerSettlement() {
+			close(true);
+		}
+
+		private void close(boolean workerSettlement) {
+			boolean interrupted = false;
+			boolean alreadyClaimed = false;
+			boolean observeFailure = false;
+			boolean awaitWorkerSettlement = false;
+			Throwable observedFailure = null;
+			synchronized (lifecycle) {
+				if (!closing) {
+					closing = true;
+					// Wake a pull without cancelling the caller's query token on an ordinary early close.
+					if (cursor instanceof ParallelRowCursor parallel) {
+						parallel.ownerStopped.set(true);
+					}
+				}
+				if (advancing && advancingThread == Thread.currentThread()) {
+					// The active pull completes cleanup after it unwinds from this reentrant close.
+					return;
+				}
+				if (cursor instanceof ParallelRowCursor parallel && parallel.tasks.isWorkerThread()) {
+					if (!advancing && !cleanupClaimed && !workerCleanupScheduled) {
+						workerCleanupScheduled = true;
+						// Wake peers without cancelling the enclosing query. The last settled worker hands ownership
+						// back after every worker resource and captured scope has closed.
+						parallel.cancelled.set(true);
+						parallel.tasks.beforeOwnerSettlement(this::closeAfterWorkerSettlement);
+					}
+					// This particular worker must finish before any owner can retire its receipt.
+					return;
+				}
+				if (cleanupClaimed) {
+					if (workerSettlement || cleanupThread == Thread.currentThread()
+							|| workerCleanupOwner && cursor instanceof ParallelRowCursor parallel
+									&& parallel.tasks.isCleanupOwnerThread()) {
+						// Resource cleanup can synchronously close its own cursor again.
+						// A settlement callback must not await another owner that is awaiting this callback.
+						return;
+					}
+					boolean waited = !closed || workerCleanupOwner && cursor instanceof ParallelRowCursor parallel
+							&& parallel.tasks.getCount() != 0L;
+					while (!closed) {
+						try {
+							lifecycle.wait();
+						} catch (InterruptedException e) {
+							interrupted = true;
+						}
+					}
+					alreadyClaimed = true;
+					observeFailure = waited || workerCleanupOwner && !workerCleanupObserved;
+					awaitWorkerSettlement = workerCleanupOwner && observeFailure;
+					workerCleanupObserved |= observeFailure;
+					observedFailure = closeFailure;
+				} else {
+					cleanupClaimed = true;
+					cleanupThread = Thread.currentThread();
+					workerCleanupOwner = workerSettlement;
+				}
+			}
+			if (alreadyClaimed) {
+				if (awaitWorkerSettlement && cursor instanceof ParallelRowCursor parallel) {
+					parallel.awaitTasks();
+					Throwable workerFailure = parallel.tasks.cleanupFailure();
+					if (workerFailure != null) {
+						// The group already retained this cursor's callback failure with earlier worker failures.
+						observedFailure = workerFailure;
+					}
+				}
+				if (interrupted) {
+					Thread.currentThread().interrupt();
+				}
+				if (observeFailure) {
+					KernelRuntime.rethrowCloseFailure(observedFailure);
+				}
+				return;
+			}
+			synchronized (lifecycle) {
+				while (advancing) {
+					try {
+						lifecycle.wait();
+					} catch (InterruptedException e) {
+						interrupted = true;
+					}
+				}
+			}
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+			KernelQueryCancelledException cancellation = input.row.cancellation.pollCancellation();
+			if (cancellation != null) {
+				input.failScalarFilterAttempt(cancellation, true);
+			}
+			Throwable failure = KernelRuntime.closeResource(input, null);
+			failure = KernelRuntime.closeResource(contextLease, failure);
+			synchronized (lifecycle) {
+				closeFailure = failure;
+				closed = true;
+				cleanupThread = null;
+				lifecycle.notifyAll();
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 
@@ -238,7 +453,9 @@ final class LmdbNativeParallelPipelines {
 		}
 		PatternPlan root = (PatternPlan) derived.order[0];
 		double totalWork = plan.estimate(consumerRow);
-		if (!(totalWork >= minimumWorkEstimate())) {
+		if (!(totalWork >= minimumWorkEstimate()) && !LmdbNativeForceableStrategies.forces(
+				LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES)) {
 			return reject(step, "below-threshold");
 		}
 		if (!parallelWorkerForkable(plan.filters)) {
@@ -258,8 +475,8 @@ final class LmdbNativeParallelPipelines {
 		}
 		int workers = reservation.grantedWorkers();
 		int sourceCount = workers + (morselMode ? 1 : 0);
-		double startupCost = LmdbNativeStrategyProposal.parallelStartupCost();
-		double estCost = LmdbNativeStrategyProposal.parallelCost(totalWork, workers, startupCost);
+		double startupCost = LmdbNativeWork.parallelStartupCost();
+		double estCost = LmdbNativeWork.parallelCost(totalWork, workers, startupCost);
 		ParallelCandidate candidate = new ParallelCandidate(step, consumerRow, plan, root, partitions, reservation,
 				workers, sourceCount);
 		// Worker threads, snapshot sources and read transactions are all created before the first row can be
@@ -268,9 +485,29 @@ final class LmdbNativeParallelPipelines {
 		// estRows is a ROWS quantity (gap-analysis C1): prorating a LIMIT slice against work units made the
 		// fraction sliceRows/totalWork vanishingly small and systematically underpriced parallel pipelines under
 		// LIMIT — the exact inversion the startup split above exists to prevent.
+		long boundMask = consumerRow.boundMask();
+		double outputRows = LmdbNativeWork.rowsOut(plan, consumerRow, boundMask);
+		// The opener admits this exact quoted group, or declines if capacity changed. Pricing the configured
+		// maximum instead would claim a speed-up from workers this candidate never owns under contention.
+		LmdbNativeCostVector streaming = LmdbNativePlanExecutionProfile
+				.profile(plan, consumerRow, boundMask, LmdbNativePlanExecutionProfile.Mode.BATCH)
+				.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(
+						LmdbNativeStaticPrior.ParallelShape.rows(plan, consumerRow, boundMask), workers))
+				// Consumer allocations are serial, and sampled output is neither their floor nor their ceiling.
+				.plus(LmdbNativeCostVectors.boundedRows(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION,
+						outputRows, LmdbNativeCostVectors.rowBounds(plan, consumerRow, boundMask)));
+		if (step.distinct && step.orderSlots.length == 0) {
+			// This ordinary producer leaves root ID-key deduplication to the serial consumer after worker replay.
+			streaming = streaming.plus(LmdbNativeCostVectors.boundedRows(
+					LmdbNativeCostVector.Feature.DISTINCT_UPDATE, outputRows,
+					LmdbNativeCostVectors.rowBounds(plan, consumerRow, boundMask)));
+		}
+		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D)
+				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, workers));
 		return new LmdbNativeStrategyProposal<>(filters -> candidate.open(filters), LmdbNativeWork.exact(estCost),
-				LmdbNativeWork.exact(startupCost), LmdbNativeWork.rowsOut(plan, consumerRow, consumerRow.boundMask()),
-				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, reservation::close);
+				LmdbNativeWork.exact(startupCost), outputRows,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, reservation::close)
+						.withCostQuote(new LmdbNativeCostQuote(startup, streaming, outputRows, false, false));
 	}
 
 	private static RowCursor open(ParallelCandidate candidate) throws IOException {
@@ -734,6 +971,8 @@ final class LmdbNativeParallelPipelines {
 		boolean producerScanComplete;
 		boolean producerClosed;
 		boolean metricsCommitted;
+		/** A worker was submitted, or a caller took over a worker's accounting through runTask or taskFinished. */
+		volatile boolean started;
 		boolean closed;
 		boolean exhausted;
 
@@ -791,6 +1030,7 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void start() {
+			started = true;
 			int submitted = 0;
 			try {
 				for (int i = 0; i < workerPlans.length; i++) {
@@ -809,19 +1049,7 @@ final class LmdbNativeParallelPipelines {
 			} catch (RuntimeException | Error problem) {
 				recordStartupFailure(problem);
 				cancelled.set(true);
-				for (int i = submitted; i < workerPlans.length; i++) {
-					Throwable filterFailure = closePlanFilters(workerPlans[i], null);
-					if (filterFailure != null) {
-						recordCleanupFailure(filterFailure);
-					}
-					try {
-						sources[i].close();
-					} catch (Throwable closeFailure) {
-						recordCleanupFailure(closeFailure);
-					} finally {
-						tasks.countDown(problem);
-					}
-				}
+				releaseUnsubmittedWorkers(submitted, problem);
 				closeProducer();
 				awaitTasks();
 				Throwable retained = retainRecordedCleanupFailures(problem);
@@ -835,7 +1063,30 @@ final class LmdbNativeParallelPipelines {
 			}
 		}
 
+		/** A worker that was never submitted cannot run its own cleanup or count its task down, so this does both. */
+		private void releaseUnsubmittedWorkers(int firstUnsubmitted) {
+			releaseUnsubmittedWorkers(firstUnsubmitted, null);
+		}
+
+		private void releaseUnsubmittedWorkers(int firstUnsubmitted, Throwable primary) {
+			for (int i = firstUnsubmitted; i < workerPlans.length; i++) {
+				Throwable filterFailure = closePlanFilters(workerPlans[i], null);
+				if (filterFailure != null) {
+					recordCleanupFailure(filterFailure);
+				}
+				try {
+					sources[i].close();
+				} catch (Throwable closeFailure) {
+					recordCleanupFailure(closeFailure);
+				} finally {
+					started = true;
+					tasks.countDown(primary);
+				}
+			}
+		}
+
 		void runTask(IoTask task, MultiJoinPlan ownedPlan, NativeLmdbQuerySource.ParallelSource ownedSource) {
+			started = true;
 			runTask(task, ownedPlan, ownedSource, NativeExecutionContext.captureWorkerContext());
 		}
 
@@ -981,6 +1232,7 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void taskFinished() {
+			started = true;
 			tasks.countDown();
 		}
 
@@ -1378,9 +1630,15 @@ final class LmdbNativeParallelPipelines {
 			}
 			closed = true;
 			cancelled.set(true);
+			// Only a cursor no worker ever ran has tasks nobody will count down. A caller that drives runTask or
+			// taskFinished itself owns that worker's cleanup, so releasing it here would close its source twice.
+			boolean noWorkerRan = !started;
+			if (noWorkerRan) {
+				releaseUnsubmittedWorkers(0);
+			}
 			closeProducer();
 			awaitTasks();
-			if (!exhausted && failure.get() == null && cleanupFailures.isEmpty()) {
+			if (!noWorkerRan && !exhausted && failure.get() == null && cleanupFailures.isEmpty()) {
 				CANCELLED_RUNS.incrementAndGet();
 			}
 			reservation.close();

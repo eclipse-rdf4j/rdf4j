@@ -28,7 +28,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
@@ -57,13 +56,12 @@ class NativeSelectedGroupCancellationTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
 	static Stream<Arguments> entries() {
-		return Stream.of(false, true).flatMap(throughCursor -> Stream.of("complete", "cancel", "cancel-close")
-				.map(outcome -> Arguments.of(throughCursor, outcome)));
+		return Stream.of("complete", "cancel", "cancel-close").map(Arguments::of);
 	}
 
-	@ParameterizedTest(name = "throughCursor={0}, outcome={1}")
+	@ParameterizedTest(name = "outcome={0}")
 	@MethodSource("entries")
-	void selectedMaterializedGroupRetiresItsFilterAfterTheOwningPostSelectionCheck(boolean throughCursor, String outcome)
+	void selectedMaterializedGroupRetiresItsFilterAfterTheOwningPostSelectionCheck(String outcome)
 			throws Exception {
 		String expected = ordinaryConcat();
 		assertEquals("x".repeat(ROWS), expected, "the independent ordinary complete population is established first");
@@ -77,7 +75,6 @@ class NativeSelectedGroupCancellationTest {
 		ValuesRow[] values = new ValuesRow[ROWS];
 		for (int row = 0; row < ROWS; row++) { values[row] = new ValuesRow(new int[] { 0 }, new long[] { 10L }); }
 		AtomicInteger calls = new AtomicInteger(), closes = new AtomicInteger();
-		AtomicBoolean closeInsideAcceptedGroup = new AtomicBoolean();
 		AtomicReference<NativeCancellationToken> ownerCancellation = new AtomicReference<>();
 		RuntimeException cleanup = new IllegalStateException("selected GROUP filter release");
 		NativeBooleanFilter filter = new NativeBooleanFilter() {
@@ -90,11 +87,6 @@ class NativeSelectedGroupCancellationTest {
 			@Override public long batchReadMask() { return 1L; }
 			@Override public void close() {
 				closes.incrementAndGet();
-				List<StackWalker.StackFrame> stack = StackWalker.getInstance().walk(frames -> frames.toList());
-				closeInsideAcceptedGroup.set(stack.stream().anyMatch(frame -> frame.getClassName().equals(
-						NativePhysicalGroupArbitration.class.getName()) && frame.getMethodName().equals("prepare"))
-						&& stack.stream().anyMatch(frame -> frame.getClassName().equals(
-								LmdbNativeStrategySelection.class.getName()) && frame.getMethodName().equals("close")));
 				if (outcome.equals("cancel-close")) { throw cleanup; }
 			}
 		};
@@ -114,39 +106,17 @@ class NativeSelectedGroupCancellationTest {
 				(org.eclipse.rdf4j.query.algebra.TupleExpr) null,
 				iteration.cancellation);
 		assertTrue(iteration.initialize(row));
-		AtomicReference<NativePhysicalGroupArbitration.Selection> returned = new AtomicReference<>();
 		try (NativeExecutionContext.Lease live = source.executionContext().retainActiveLease();
 				NativeGroupResultCursor owner = new NativeGroupResultCursor(summary, iteration, source.executionContext(), false)) {
 			if (outcome.equals("complete")) {
-				if (throughCursor) {
-					NativeResultRow result = owner.next(); assertNotNull(result);
-					NativeResultCell cell = result.cell("cat");
-					if (cell.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) { assertEquals(ROWS, cell.codePointLength()); }
-					else { assertEquals(expected, cell.value().stringValue()); }
-					assertNull(owner.next()); assertEquals(ROWS, calls.get());
-				} else {
-					NativePhysicalGroupArbitration.Selection selected = NativePhysicalGroupArbitration.select(summary, owner,
-							iteration, row);
-					returned.set(selected);
-					assertEquals(ROWS, calls.get(), () -> "natural FULL materialization must precede the returned cursor; selected="
-							+ selected.tag());
-					NativeResultRow result = selected.selected().value().next(); assertNotNull(result);
-					assertEquals(NativeResultCell.Kind.RDF_TERM, result.cell("cat").kind());
-					assertEquals(expected, result.cell("cat").value().stringValue());
-					assertNull(selected.selected().value().next()); selected.selected().exhausted();
-				}
+				NativeResultRow result = owner.next(); assertNotNull(result);
+				NativeResultCell cell = result.cell("cat");
+				if (cell.kind() == NativeResultCell.Kind.LEXICAL_SUMMARY) { assertEquals(ROWS, cell.codePointLength()); }
+				else { assertEquals(expected, cell.value().stringValue()); }
+				assertNull(owner.next()); assertEquals(ROWS, calls.get());
 			} else {
-				Throwable actual = throughCursor ? assertThrows(RuntimeException.class, owner::next)
-						: assertThrows(RuntimeException.class, () -> returned.set(
-								NativePhysicalGroupArbitration.select(summary, owner, iteration, row)),
-								() -> "natural materializing GROUP route required; returned="
-										+ (returned.get() == null ? "none" : returned.get().tag()));
+				Throwable actual = assertThrows(RuntimeException.class, owner::next);
 				assertEquals(ROWS, calls.get(), "the owning cursor reached the filter producer for the full input population");
-				assertNull(returned.get(), "the owning post-selection cancellation check must prevent publication");
-				if (!throughCursor) {
-					assertTrue(closeInsideAcceptedGroup.get(),
-							"actual filter retirement must pass through selected.close inside the real GROUP factory catch");
-				}
 				if (outcome.equals("cancel-close")) { assertSame(cleanup, actual); }
 				else { assertTrue(actual instanceof KernelQueryCancelledException); }
 				assertEquals(1, closes.get(), "terminal failure must retire the selected filter before next() returns");
@@ -154,8 +124,6 @@ class NativeSelectedGroupCancellationTest {
 			assertFalse(source.executionContext().cancellation().isCancellationRequested(),
 					"a local GROUP owner stop cannot cancel the shared query scope");
 		} finally {
-			NativePhysicalGroupArbitration.Selection selected = returned.get();
-			if (selected != null) { selected.selected().value().close(); selected.selected().close(); }
 			iteration.close(); iteration.aggContext.close(); row.closeDecodedInputs(); source.executionContext().close();
 		}
 		assertEquals(1, closes.get());

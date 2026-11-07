@@ -4233,7 +4233,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}, false);
 		return () -> {
 			hashTables[build.tableId] = new KernelRuntime.LongRowMap(build.keyCols.length, build.payloadCols.length,
-					build.maxRows);
+					build.maxRows, context.hashBuildMemory);
 			drain.run();
 			// The continuation runs exactly once, after the drain.
 			return next.run();

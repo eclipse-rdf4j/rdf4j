@@ -112,7 +112,6 @@ public class LmdbNativeParallelPipelinesTest {
 		System.setProperty(MAX_TASKS_FLAG, "5");
 		System.setProperty(PACKED_FTREE_FLAG, "false");
 		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
-		LmdbNativeCostCalibration.reset();
 		repository = new SailRepository(new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -143,7 +142,6 @@ public class LmdbNativeParallelPipelinesTest {
 				repository.shutDown();
 			}
 		} finally {
-			LmdbNativeCostCalibration.reset();
 			restoreProperties(previousProperties);
 		}
 	}

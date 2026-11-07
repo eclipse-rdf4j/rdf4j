@@ -89,6 +89,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	private final EvaluationStatistics evaluationStatistics;
 	private final EvaluationStatistics invocationStatistics;
 	private final boolean preserveSerializableObservationOrder;
+	private final boolean nativeEngine;
 	private final LmdbEstimatorRuntime runtime;
 	private final LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots;
 	private final LmdbPipelinePlanCache planCache;
@@ -97,15 +98,28 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	@InternalUseOnly
 	public LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		this(strategy, tripleSource, evaluationStatistics, false);
+		this(strategy, tripleSource, evaluationStatistics, false, false);
 	}
 
 	LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics, boolean preserveSerializableObservationOrder) {
+		this(strategy, tripleSource, evaluationStatistics, preserveSerializableObservationOrder, false);
+	}
+
+	/**
+	 * @param preserveSerializableObservationOrder when {@code true}, access rewrites preserve the transaction's
+	 *                                             serializable observation order.
+	 * @param nativeEngine                         when {@code true}, the pipeline enables native group pushdown.
+	 */
+	@InternalUseOnly
+	public LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, boolean preserveSerializableObservationOrder,
+			boolean nativeEngine) {
+		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
+		this.nativeEngine = nativeEngine;
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
-		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
 		this.runtime = evaluationStatistics instanceof LmdbEstimatorRuntimeProvider provider
 				? provider.estimatorRuntime()
 				: null;
@@ -479,6 +493,8 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 				.append(';');
 		signature.append("query.policy.experimental=")
 				.append(strategy.getQueryExecutionPolicy().experimentalQueryOptimizations())
+				.append(";native.engine=")
+				.append(nativeEngine)
 				.append(';');
 		for (String name : names) {
 			String value = properties.getProperty(name, "");
@@ -573,6 +589,10 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		optimizers.add(QUERY_MODEL_NORMALIZER);
 		optimizers.add(new LmdbOptionalNormalFormOptimizer(invocationStatistics));
 		optimizers.add(new FilterOptimizer(null, false, false, strategy));
+		if (nativeEngine) {
+			// FilterOptimizer has pushed filters onto their patterns; rewrite before the custom Cascades plan is built.
+			optimizers.add(new LmdbSubqueryGroupPushdownOptimizer());
+		}
 		optimizers.add(new LmdbBoundSimplifierOptimizer());
 		if (!preserveSerializableObservationOrder) {
 			optimizers.add(new LmdbSetSemanticsOptimizer());

@@ -46,11 +46,8 @@ class GraphExplorerLabelPreferencesTest {
 
 	@Test
 	void orderedPredicatePolicyControlsDisplayedLabels(@TempDir Path temporary) throws Exception {
-		Path node = Path.of("target/node", System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node")
-				.toAbsolutePath();
-		assertThat(Files.isExecutable(node)).as("the Workbench frontend's bundled Node runtime").isTrue();
 		Path output = temporary.resolve("label-preference-tests.log");
-		try (TestProcess child = TestProcess.start(new ProcessBuilder(node.toString(),
+		try (TestProcess child = TestProcess.start(new ProcessBuilder(TestProcess.NODE,
 				"--experimental-strip-types", "--test",
 				"src/test/frontend/graph-explorer/label-preference-policy.test.mjs")
 						.redirectErrorStream(true)
@@ -167,11 +164,9 @@ class GraphExplorerLabelPreferencesTest {
 	}
 
 	private String nodeFixture(Map<String, ?> input, Path temporary) throws Exception {
-		Path node = Path.of("target/node", System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node")
-				.toAbsolutePath();
 		Path output = temporary.resolve("label-fixture-output.json");
 		Path errors = temporary.resolve("label-fixture-errors.log");
-		try (TestProcess child = TestProcess.start(new ProcessBuilder(node.toString(), "--experimental-strip-types",
+		try (TestProcess child = TestProcess.start(new ProcessBuilder(TestProcess.NODE, "--experimental-strip-types",
 				"src/test/frontend/graph-explorer/label-preference-rdf4j-fixture.mjs")
 						.redirectOutput(output.toFile())
 						.redirectError(errors.toFile()))) {

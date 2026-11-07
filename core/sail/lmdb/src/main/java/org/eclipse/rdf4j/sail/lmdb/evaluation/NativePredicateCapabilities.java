@@ -19,11 +19,17 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
  * shared or rebound. The read mask is -1 when a lexical dependency is not expressible in the current slot frame.
  */
 record NativePredicateCapabilities(long correlationReads, EffectClass effects, boolean fixedPlacement,
-		boolean replaySafe, boolean workerBindable, boolean requiresQueryScope) {
+		boolean replaySafe, boolean workerBindable, boolean requiresQueryScope, boolean requiresCompleteReads) {
 
 	static NativePredicateCapabilities opaque(long reads) {
 		return new NativePredicateCapabilities(reads, EffectClass.SIDE_EFFECTING_OR_UNSUPPORTED, true, false, false,
-				false);
+				false, false);
+	}
+
+	/** Semantic callbacks may read implicit input names that a placement mask alone cannot describe. */
+	static NativePredicateCapabilities semantic(long reads) {
+		return new NativePredicateCapabilities(reads, EffectClass.SIDE_EFFECTING_OR_UNSUPPORTED, true, false, false,
+				false, true);
 	}
 
 	static NativePredicateCapabilities scalar(NativeScalarPlan plan) {
@@ -31,17 +37,49 @@ record NativePredicateCapabilities(long correlationReads, EffectClass effects, b
 			return opaque(-1L);
 		}
 		return new NativePredicateCapabilities(plan.dependencyMask(), plan.effect(), false,
-				plan.canReuseAcrossSolutions(true), plan.workerBindable(), plan.effect() == EffectClass.QUERY_STABLE);
+				plan.canReuseAcrossSolutions(true), plan.workerBindable(), plan.effect() == EffectClass.QUERY_STABLE,
+				false);
 	}
 
 	static NativePredicateCapabilities snapshot(long reads, boolean replaySafe, boolean workerBindable) {
 		return new NativePredicateCapabilities(reads, EffectClass.QUERY_STABLE, true, replaySafe, workerBindable,
-				false);
+				false, true);
 	}
 
 	NativePredicateCapabilities atPlacement(long placementMask) {
 		return new NativePredicateCapabilities(correlationReads, effects, placementMask < 0L, replaySafe,
-				workerBindable, requiresQueryScope);
+				workerBindable, requiresQueryScope, requiresCompleteReads);
+	}
+
+	/** A specialized wrapper must not erase an underlying callback's independent runtime read contract. */
+	NativePredicateCapabilities withRuntimeReads(NativePredicateCapabilities underlying) {
+		if (!underlying.requiresCompleteReads) {
+			return this;
+		}
+		long reads = correlationReads < 0L || underlying.correlationReads < 0L ? -1L
+				: correlationReads | underlying.correlationReads;
+		return new NativePredicateCapabilities(reads, effects, fixedPlacement, replaySafe, workerBindable,
+				requiresQueryScope, true);
+	}
+
+	/**
+	 * A fixed lexical position need not force logical-row replay. Only an independent replay proof and complete read
+	 * set allow that predicate to restrict a grouped relation without expanding unrelated factors.
+	 */
+	long groupedReadMask(long placementMask) {
+		if (requiresCompleteReads && correlationReads < 0L) {
+			return -1L;
+		}
+		if (placementMask >= 0L) {
+			// Placement names the slots needed at a cut. The predicate may additionally observe witness-local
+			// slots, so a grouped or memoized execution must retain the complete runtime read set as well.
+			return correlationReads >= 0L ? placementMask | correlationReads : placementMask;
+		}
+		return replaySafe ? correlationReads : -1L;
+	}
+
+	static long groupedReadMask(NativeBooleanFilter filter, long placementMask) {
+		return filter.capabilities().groupedReadMask(placementMask);
 	}
 
 	NativePredicateCapabilities and(NativePredicateCapabilities other) {
@@ -50,6 +88,6 @@ record NativePredicateCapabilities(long correlationReads, EffectClass effects, b
 		EffectClass effect = effects.ordinal() >= other.effects.ordinal() ? effects : other.effects;
 		return new NativePredicateCapabilities(reads, effect, fixedPlacement || other.fixedPlacement,
 				replaySafe && other.replaySafe, workerBindable && other.workerBindable,
-				requiresQueryScope || other.requiresQueryScope);
+				requiresQueryScope || other.requiresQueryScope, requiresCompleteReads || other.requiresCompleteReads);
 	}
 }

@@ -78,6 +78,7 @@ import org.eclipse.rdf4j.sail.features.SailResultValueExposure;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
@@ -267,7 +268,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (lmdbStore.usesDefaultAutomaticOptimizerPipeline() && isolationLevel != null
 				&& isolationLevel.isCompatibleWith(IsolationLevels.SERIALIZABLE)) {
 			EvaluationStatistics statistics = lmdbStore.getSailStore().getEvaluationStatistics();
-			strategy.setOptimizerPipeline(new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics, true));
+			strategy.setOptimizerPipeline(new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics, true,
+					strategy instanceof LmdbNativeEvaluationStrategy));
 		}
 		return strategy;
 	}

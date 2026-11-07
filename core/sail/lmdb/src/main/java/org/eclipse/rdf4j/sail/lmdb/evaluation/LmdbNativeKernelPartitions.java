@@ -863,19 +863,24 @@ final class LmdbNativeKernelPartitions {
 		}
 	}
 
-	/** Contiguous ordinal windows {@code [from, to)} covering {@code [0, total)}, over-partitioned for stealing. */
-	static ConcurrentLinkedQueue<long[]> ranges(long total, int threads, int rangesPerWorker) {
-		ConcurrentLinkedQueue<long[]> ranges = new ConcurrentLinkedQueue<>();
+	/** Count the same ordinal windows that {@link #ranges} creates, without allocating or opening a source. */
+	static long rangeCount(long total, int threads, int rangesPerWorker) {
 		if (total < 0L) {
 			throw new IllegalArgumentException("range total must be non-negative");
 		}
 		if (threads <= 0 || rangesPerWorker <= 0) {
 			throw new IllegalArgumentException("range workers and ranges-per-worker must be positive");
 		}
-		if (total == 0L) {
+		return Math.min(total, (long) threads * rangesPerWorker);
+	}
+
+	/** Contiguous ordinal windows {@code [from, to)} covering {@code [0, total)}, over-partitioned for stealing. */
+	static ConcurrentLinkedQueue<long[]> ranges(long total, int threads, int rangesPerWorker) {
+		ConcurrentLinkedQueue<long[]> ranges = new ConcurrentLinkedQueue<>();
+		long chunkCount = rangeCount(total, threads, rangesPerWorker);
+		if (chunkCount == 0L) {
 			return ranges;
 		}
-		long chunkCount = Math.min(total, (long) threads * rangesPerWorker);
 		long chunk = total / chunkCount;
 		long remainder = total % chunkCount;
 		long at = 0L;

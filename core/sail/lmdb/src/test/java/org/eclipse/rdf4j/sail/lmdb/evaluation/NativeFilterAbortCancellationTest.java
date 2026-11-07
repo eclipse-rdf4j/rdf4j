@@ -70,7 +70,7 @@ class NativeFilterAbortCancellationTest {
 	}
 
 	static Stream<Arguments> openings() {
-		return Stream.of("legacy", "adaptive", "terminal").flatMap(route -> Arrays.stream(ControlKind.values())
+		return Stream.of("candidate", "terminal").flatMap(route -> Arrays.stream(ControlKind.values())
 				.map(kind -> Arguments.of(route, kind)));
 	}
 
@@ -132,43 +132,43 @@ class NativeFilterAbortCancellationTest {
 			filters.borrow(semantic).accept(null);
 			throw new AssertionError("the actual runtime cancellation must leave this opening");
 		}, 1D, "nestedLoop", () -> { });
-		LmdbNativeAdaptiveCostModel model = route.equals("adaptive")
-				? new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), new LmdbNativeStoreCostModel(),
-						new LmdbNativeAdaptiveCostModel.Configuration(true, true))
-				: null;
-		try (var arbiter = LmdbNativeStrategyArbiter.<String>forModel(null, -1D, model)) {
-			if (route.equals("terminal")) {
-				arbiter.terminalFallback(() -> proposal);
-			} else {
-				arbiter.offer(() -> proposal);
-				arbiter.terminalFallback(() -> new LmdbNativeStrategyProposal<>(() -> {
-					laterOpens.incrementAndGet(); return "must not restart after a terminal failure";
-				}, 1D, "nestedLoop"));
-			}
-			assertSame(cleanup, assertThrows(RuntimeException.class, arbiter::selectWithObservation));
-			assertEquals(1, calls.get(), "the selected materializing input executed before cleanup");
-			assertEquals(1, closes.get());
-			assertEquals(0, laterOpens.get(), "a terminal control or real release failure is not a decline");
-			assertEvidence(control, observed.get(), cleanup);
+		LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+		if (route.equals("terminal")) {
+			offers.terminalFallback(() -> proposal);
+		} else {
+			offers.offer(() -> proposal);
+			offers.terminalFallback(() -> new LmdbNativeStrategyProposal<>(() -> {
+				laterOpens.incrementAndGet(); return "must not restart after a terminal failure";
+			}, 1D, "nestedLoop"));
 		}
+		var dispatch = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null).eager();
+		assertSame(cleanup, assertThrows(RuntimeException.class, () -> dispatch.dispatch(null)));
+		assertEquals(1, calls.get(), "the selected materializing input executed before cleanup");
+		assertEquals(1, closes.get());
+		assertEquals(0, laterOpens.get(), "a terminal control or real release failure is not a decline");
+		assertEvidence(control, observed.get(), cleanup);
 		assertEquals(1, closes.get());
 	}
 
 	@ParameterizedTest
 	@EnumSource(ControlKind.class)
-	void selectedResultCloseCannotResuppressThePromotedFailureUnderCancellation(ControlKind kind) {
+	void selectedResultCloseCannotResuppressThePromotedFailureUnderCancellation(ControlKind kind) throws Exception {
 		Control control = control(kind);
 		RuntimeException signal = control.observe();
 		RuntimeException cleanup = new IllegalStateException("accepted filter release");
 		AtomicInteger closes = new AtomicInteger();
-		NativeFilterLease lease = new NativeFilterLease();
-		lease.borrow(filter(closes, cleanup)).accept(null);
-		LmdbNativeStrategySelection<String> selected = new LmdbNativeStrategySelection<>("accepted", null, lease);
-		selected.failed(signal);
-		assertSame(cleanup, assertThrows(RuntimeException.class, selected::close));
+		NativeBooleanFilter semantic = filter(closes, cleanup);
+		LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+		offers.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
+			filters.borrow(semantic).accept(null);
+			return "accepted";
+		}, 1D, "nestedLoop"));
+		var dispatch = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null);
+		var selected = dispatch.dispatch(null);
+		assertSame(cleanup, selected.finish(signal));
 		assertEquals(1, closes.get());
 		assertEvidence(control, signal, cleanup);
-		selected.close();
+		selected.finish(signal);
 		assertEquals(1, closes.get());
 	}
 

@@ -520,6 +520,11 @@ public class TupleExprs {
 		return bindingObservationDomain(condition);
 	}
 
+	/** FunctionCall evaluation reads its argument expressions, including pinned function-call subclasses. */
+	static ConditionBindingDomain conditionFunctionArgumentDomain(ValueExpr condition) {
+		return bindingObservationDomain(condition, true);
+	}
+
 	public static ConditionBindingDomain tupleBindingObservationDomain(TupleExpr expression) {
 		return bindingObservationDomain(expression);
 	}
@@ -556,12 +561,18 @@ public class TupleExprs {
 	}
 
 	private static ConditionBindingDomain bindingObservationDomain(QueryModelNode expression) {
+		return bindingObservationDomain(expression, false);
+	}
+
+	private static ConditionBindingDomain bindingObservationDomain(QueryModelNode expression,
+			boolean functionArgumentsAreExplicit) {
 		Set<String> names = new HashSet<>();
 		boolean[] known = { true };
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
-				known[0] &= BindingObservationTypes.COMPLETE.contains(node.getClass());
+				known[0] &= BindingObservationTypes.COMPLETE.contains(node.getClass())
+						|| functionArgumentsAreExplicit && node instanceof FunctionCall;
 				if (node instanceof Var var && (!var.hasValue() || !var.isConstant()) && var.getName() != null) {
 					// Optimizer values do not remove named caller compatibility or parameter reification.
 					names.add(var.getName());

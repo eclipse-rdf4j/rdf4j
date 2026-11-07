@@ -261,17 +261,14 @@ class GraphExplorerQueryTest {
 
 	@Test
 	void generatedGraphExportPreservesBlankNodeIdentityAndDirectionalLiterals(@TempDir Path tempDir) throws Exception {
-		Path node = Path.of("target/node", System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node")
-				.toAbsolutePath();
 		Path fixture = Path.of("src/test/frontend/graph-explorer/graph-export-rio-fixture.mjs");
-		assertThat(Files.isExecutable(node)).as("the Workbench Node runtime installed by the frontend build").isTrue();
 		assertThat(Files.isRegularFile(fixture)).as("the generated export fixture").isTrue();
 
 		Path output = tempDir.resolve("graph-export.ttl");
 		Path errors = tempDir.resolve("node-stderr.log");
 		String turtle;
 		try (TestProcess child = TestProcess.start(
-				new ProcessBuilder(node.toString(), "--experimental-strip-types", fixture.toString())
+				new ProcessBuilder(TestProcess.NODE, "--experimental-strip-types", fixture.toString())
 						.redirectOutput(output.toFile())
 						.redirectError(errors.toFile()))) {
 			Process process = child.process();

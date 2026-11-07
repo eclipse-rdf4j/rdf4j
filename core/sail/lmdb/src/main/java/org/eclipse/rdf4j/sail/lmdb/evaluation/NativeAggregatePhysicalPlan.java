@@ -15,15 +15,10 @@ import java.util.Arrays;
 import java.util.List;
 
 /** Actual producer and reducer storage chosen by an aggregate proposal, independently of its strategy label. */
-record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer producer,
-		KeyProperties keyProperties) {
+record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer producer) {
 
 	NativeAggregatePhysicalPlan(SlotPlan input, Retention retention) {
-		this(input, retention, null, null);
-	}
-
-	NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer producer) {
-		this(input, retention, producer, producer == null ? null : producer.keyProperties());
+		this(input, retention, null);
 	}
 
 	/** A candidate's own immutable execution recipe; pricing may inspect metadata, never open its row producer. */
@@ -31,10 +26,6 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 		Work quote(RowState row);
 
 		String properties();
-
-		default KeyProperties keyProperties() {
-			return null;
-		}
 
 		/** Resource facts from this producer's same successful quote; absence is an unproved cold choice. */
 		default ColdAnchor coldAnchor(RowState row, Work quotedWork) {
@@ -53,10 +44,6 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 				throw new IllegalArgumentException("a cold anchor needs both input and retained-state proofs");
 			}
 		}
-	}
-
-	/** Proven reducer keying, kept separate from compatibility flags inferred from a strategy's name. */
-	record KeyProperties(LmdbNativePhysicalVariantKey.GroupingMode groupingMode, boolean requiresHashing) {
 	}
 
 	record OutputProof(NativePhysicalOutputEvidence evidence, long outputMask, List<Integer> integerSlots) {
@@ -181,21 +168,10 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 						: iteration.groupSlots.length == 0 && plan.channels().channelCount() == 0
 								? Retention.STREAMING
 								: Retention.RETAINED_GROUPS;
-		boolean hashKeys = retention == Retention.RETAINED_GROUPS;
-		if (plan.streaming()) {
-			for (NativeDistinctChannelMode mode : plan.channels().modes) {
-				hashKeys |= mode == NativeDistinctChannelMode.HASH;
-			}
-		}
-		LmdbNativePhysicalVariantKey.GroupingMode grouping = iteration.groupSlots.length == 0
-				? LmdbNativePhysicalVariantKey.GroupingMode.NONE
-				: retention == Retention.RETAINED_GROUPS ? LmdbNativePhysicalVariantKey.GroupingMode.HASHED
-						: LmdbNativePhysicalVariantKey.GroupingMode.STREAMING_GROUPS;
 		Producer producer = NativeTypedGroupingProducer.create(plan, iteration);
 		if (producer == null) {
 			producer = NativeSelectedResultProducer.create(plan, iteration);
 		}
-		return new NativeAggregatePhysicalPlan(plan.input(), retention, producer,
-				new KeyProperties(grouping, hashKeys));
+		return new NativeAggregatePhysicalPlan(plan.input(), retention, producer);
 	}
 }

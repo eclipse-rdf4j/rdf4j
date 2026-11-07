@@ -29,10 +29,13 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -42,6 +45,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
@@ -69,6 +73,8 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -458,249 +464,6 @@ class LmdbNativeFilterAttemptCompletionTest {
 		}
 	}
 
-	@Test
-	void actualBlockingProbeDiscardsCompletedPrivateCountsBeforeSelectedFallback() throws Exception {
-		try (Fixture fixture = new Fixture(directory)) {
-			TrackingFilter semantic = new TrackingFilter();
-			RecordingNativeBooleanFilter template = fixture.recording(semantic);
-			AtomicInteger trialOpens = new AtomicInteger();
-			AtomicInteger fallbackOpens = new AtomicInteger();
-			AtomicInteger materializations = new AtomicInteger();
-			AtomicInteger discards = new AtomicInteger();
-			fixture.block(row -> {
-				// Same real adaptive setup as LmdbNativeArbiterExecutionConsistencyTest; costs choose a trial,
-				// never certify the filter input or mark the result selected.
-				var store = new LmdbNativeStoreCostModel(null, LmdbNativePosteriorConfig.defaults(),
-						LmdbNativeProbeConfig.defaults(), () -> 1000L, () -> 1_000_000_000L);
-				var model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
-						new LmdbNativeAdaptiveCostModel.Configuration(true, true));
-				var incumbent = new LmdbNativeStrategyProposal<String>(filters -> {
-					fallbackOpens.incrementAndGet();
-					assertThat(semantic.closes).hasValue(0);
-					drainValues(row, filters.borrow(template), 8, false);
-					return "fallback";
-				}, LmdbNativeWork.exact(1000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
-				});
-				var estimate = incumbent.adaptiveEstimate(-1D);
-				for (int i = 0; i < 30; i++) {
-					model.recordCompleted(estimate, estimate.total(), 5_000_000D, 1D, model.currentRegime());
-				}
-				store.safetyLedger().earn(1_000_000_000_000L);
-				var trial = new LmdbNativeStrategyProposal<String>(filters -> {
-					trialOpens.incrementAndGet();
-					drainValues(row, filters.borrow(template), 16, false);
-					return "fully materialized trial";
-				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
-				});
-				try (var arbiter = LmdbNativeStrategyArbiter.<String>forModel(null, -1D, model)
-						.probeHarness(new LmdbNativeProbeHarness<>() {
-							@Override
-							public String drainBounded(String value, LmdbNativeCostObservation observation, int cap) {
-								assertThat(value).isEqualTo("fully materialized trial");
-								materializations.incrementAndGet();
-								// Actual private-output capacity refusal AFTER the filter owner reached input EOF and
-								// closed.
-								throw LmdbNativeProbeDeadline.capacityExhausted();
-							}
-
-							@Override
-							public void discard(String value) {
-								assertThat(value).isEqualTo("fully materialized trial");
-								discards.incrementAndGet();
-							}
-						})) {
-					arbiter.offer(() -> incumbent).offer(() -> trial);
-					assertThat(arbiter.select()).isEqualTo("fallback");
-				}
-			});
-			assertThat(trialOpens).hasValue(1);
-			assertThat(fallbackOpens).hasValue(1);
-			assertThat(materializations).hasValue(1);
-			assertThat(discards).hasValue(1);
-			assertThat(semantic.accepts).hasValue(24);
-			assertThat(semantic.closes).hasValue(1);
-			assertComplete(fixture.statistics, 8L, 0L);
-		}
-	}
-
-	@ParameterizedTest
-	@CsvSource({ "false,false", "true,false", "true,true" })
-	void actualHedgeBackupMustSettleItsShadowOwnerBeforeTerminalPublication(
-			boolean failCleanup, boolean error) throws Exception {
-		try (Fixture fixture = new Fixture(directory)) {
-			TrackingFilter semantic = new TrackingFilter();
-			RecordingNativeBooleanFilter template = fixture.recording(semantic);
-			AtomicInteger trialOpens = new AtomicInteger();
-			AtomicInteger backupOpens = new AtomicInteger();
-			AtomicInteger serialOpens = new AtomicInteger();
-			AtomicBoolean cleanupSettled = new AtomicBoolean();
-			Throwable late = error ? new AssertionError("actual hedge shadow cleanup")
-					: new IllegalStateException("actual hedge shadow cleanup");
-			fixture.statistics.beforeTyped = () -> assertThat(cleanupSettled)
-					.as("the real backup task's finally precedes the sole root publisher")
-					.isTrue();
-			Runnable run = () -> fixture.block(row -> {
-				var store = new LmdbNativeStoreCostModel();
-				var model = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
-						new LmdbNativeAdaptiveCostModel.Configuration(true, true));
-				var incumbent = new LmdbNativeStrategyProposal<String>(filters -> {
-					serialOpens.incrementAndGet();
-					drainValues(row, filters.borrow(template), 8, false);
-					return "serial";
-				}, LmdbNativeWork.exact(1000D), LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
-				});
-				var estimate = incumbent.adaptiveEstimate(-1D);
-				for (int i = 0; i < 30; i++) {
-					model.recordCompleted(estimate, estimate.total(), 5_000_000D, 1D, model.currentRegime());
-				}
-				store.safetyLedger().earn(1_000_000_000_000L);
-				var trial = new LmdbNativeStrategyProposal<String>(filters -> {
-					trialOpens.incrementAndGet();
-					drainValues(row, filters.borrow(template), 16, false);
-					// The existing production hedge deadline cancels this provisional actual input owner.
-					assertThat(LmdbNativeProbeDeadline.currentOrNull())
-							.as("the real trial owns a bounded cooperative hedge deadline")
-							.isNotNull();
-					int tick = 0;
-					while (true) {
-						LmdbNativeProbeDeadline.poll(++tick);
-					}
-				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
-				});
-				LmdbNativeHedgeSupport<String> support = new LmdbNativeHedgeSupport<>() {
-					@Override
-					public ShadowContext openShadowContext() throws IOException {
-						var siblings = row.source.openParallelSources(1);
-						assertThat(siblings).as("actual committed source must support the real hedge sibling")
-								.hasSize(1);
-						var actual = siblings[0];
-						RowState shadow = new RowState(actual, row.layout, row.base);
-						// This wrapper is only the close owner. The evaluated row retains the exact actual source.
-						return new ShadowContext(new CloseOwner(actual, () -> {
-							cleanupSettled.set(true);
-							if (failCleanup) {
-								raise(late);
-							}
-						}), shadow);
-					}
-
-					@Override
-					public String produceBackup(ShadowContext context, String tag,
-							LmdbNativeCostObservation observation) throws IOException {
-						assertThat(context.shadowRow.source).isInstanceOf(SyntheticValueSource.class);
-						backupOpens.incrementAndGet();
-						NativeFilterLease filters = observation
-								.openFilterAttempt(NativeFilterLease.parentOf(context.shadowRow));
-						drainValues(context.shadowRow, filters.borrow(template), 8, false);
-						return "backup";
-					}
-
-					@Override
-					public String adopt(String result) {
-						return result;
-					}
-
-					@Override
-					public void discard(String result) {
-					}
-
-					@Override
-					public boolean supportsTag(String tag) {
-						return LmdbNativeAttemptMetrics.PATH_BATCH.equals(tag);
-					}
-				};
-				try (var arbiter = LmdbNativeStrategyArbiter.<String>forModel(null, -1D, model)
-						.probeHarness(LmdbNativeProbeHarness.blocking())
-						.hedgeSupport(support)) {
-					arbiter.offer(() -> incumbent).offer(() -> trial);
-					assertThat(arbiter.select()).isEqualTo("backup");
-				}
-			});
-			if (failCleanup) {
-				assertThatThrownBy(run::run).isSameAs(late);
-			} else {
-				run.run();
-				assertComplete(fixture.statistics, 8L, 0L);
-			}
-			assertThat(trialOpens).hasValue(1);
-			assertThat(backupOpens).hasValue(1);
-			assertThat(serialOpens).as("the actual backup wins without a serial rerun").hasValue(0);
-			assertThat(semantic.accepts).hasValue(24);
-			assertThat(semantic.closes).hasValue(1);
-			assertThat(cleanupSettled).isTrue();
-			if (failCleanup) {
-				assertIncomplete(fixture.statistics);
-			}
-		}
-	}
-
-	/** Lifetime-only decorator; evaluated rows keep the unmodified sibling, never this source wrapper. */
-	private static final class CloseOwner implements NativeLmdbQuerySource.ParallelSource {
-		final NativeLmdbQuerySource.ParallelSource actual;
-		final Runnable afterClose;
-		boolean closed;
-
-		CloseOwner(NativeLmdbQuerySource.ParallelSource actual, Runnable afterClose) {
-			this.actual = actual;
-			this.afterClose = afterClose;
-		}
-
-		@Override
-		public long idOf(Value value) {
-			return actual.idOf(value);
-		}
-
-		@Override
-		public Value lazyValue(long id) {
-			return actual.lazyValue(id);
-		}
-
-		@Override
-		public Object idSpace() {
-			return actual.idSpace();
-		}
-
-		@Override
-		public long snapshotId() {
-			return actual.snapshotId();
-		}
-
-		@Override
-		public RecordIterator statements(long s, long p, long o, long c) throws IOException {
-			return actual.statements(s, p, o, c);
-		}
-
-		@Override
-		public long count(long s, long p, long o, long c) throws IOException {
-			return actual.count(s, p, o, c);
-		}
-
-		@Override
-		public boolean has(long s, long p, long o, long c) throws IOException {
-			return actual.has(s, p, o, c);
-		}
-
-		@Override
-		public double estimate(long s, long p, long o, long c) {
-			return actual.estimate(s, p, o, c);
-		}
-
-		@Override
-		public boolean hasStatementsInSource() {
-			return actual.hasStatementsInSource();
-		}
-
-		@Override
-		public void close() {
-			if (closed) {
-				return;
-			}
-			closed = true;
-			actual.close();
-			afterClose.run();
-		}
-	}
-
 	enum WeightedOwner {
 		ROW,
 		BATCH,
@@ -808,32 +571,525 @@ class LmdbNativeFilterAttemptCompletionTest {
 
 	@Test
 	void actualArbiterDiscardsACompletedDecliningOpeningBeforeSelectedFallback() throws Exception {
-		assertThat(LmdbNativeStrategyPreference.rank(LmdbNativeAttemptMetrics.PATH_BATCH))
-				.isLessThan(LmdbNativeStrategyPreference.rank(
-						LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES));
 		try (Fixture fixture = new Fixture(directory)) {
 			TrackingFilter semantic = new TrackingFilter();
 			RecordingNativeBooleanFilter template = fixture.recording(semantic);
 			AtomicInteger trials = new AtomicInteger();
 			fixture.block(row -> {
-				try (var arbiter = LmdbNativeStrategyArbiter.<String>forExpr(null)) {
-					arbiter.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
+				LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW);
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
 						trials.incrementAndGet();
 						drainValues(row, filters.borrow(template), 16, false);
 						return null; // A fully materialized physical candidate declined its private output.
 					}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
-					}));
-					arbiter.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
+					}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1D), 1D)));
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
 						assertThat(semantic.closes).as("loser release preserves the reusable semantic original")
 								.hasValue(0);
 						drainValues(row, filters.borrow(template), 8, false);
 						return "selected";
 					}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
-					}));
-					assertThat(arbiter.select()).isEqualTo("selected");
-				}
+					}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1000D), 1D)));
+				consumeSelected(select(LmdbNativeDecisionPoint.ROW, offers, row, null),
+						value -> assertThat(value).isEqualTo("selected"));
 			});
 			assertThat(trials).hasValue(1);
+			assertThat(semantic.accepts).hasValue(24);
+			assertThat(semantic.closes).hasValue(1);
+			assertComplete(fixture.statistics, 8L, 0L);
+		}
+	}
+
+	@Test
+	void fullValueGroupEncounterOrderReplayDiscardsThePrivateFilterAttempt() throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			RecordingNativeBooleanFilter recorded = fixture.recording(semantic);
+			AtomicInteger opens = new AtomicInteger();
+			SlotPlan refusing = new SlotPlan() {
+				@Override
+				public RowCursor open(RowState row) {
+					opens.incrementAndGet();
+					return new RowCursor() {
+						int emitted;
+
+						@Override
+						public boolean next() {
+							if (emitted++ < 8) {
+								return true;
+							}
+							if (!row.encounterOrderRequired) {
+								throw EncounterOrderFallback.floatingSumOrAvg();
+							}
+							return false;
+						}
+
+						@Override
+						public void close() {
+						}
+					};
+				}
+
+				@Override
+				public long producedMask() {
+					return 0L;
+				}
+			};
+			SlotPlan input = new FilterPlan(refusing, recorded, 0L);
+			fixture.block(parent -> {
+				NativeSlotLayout layout = new NativeSlotLayout(Map.of(), null);
+				layout.freeze(List.of());
+				AggregateSpec[] aggregates = { AggregateSpec.star("count") };
+				QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+				NativeGroupStep full = new NativeGroupStep(parent.source, input, layout, new int[0], aggregates,
+						false, null, null, context, Set.of(), null, null, false, false, null, 0L, null, null);
+				NativeGroupStep owner = new NativeGroupStep(parent.source, SingletonPlan.INSTANCE, layout, new int[0],
+						aggregates, false, null, null, context, Set.of(), null, null, false, false, null, 0L, null,
+						null);
+				owner.fullValueCompiler = () -> full;
+				NativeGroupIteration iteration = new NativeGroupIteration(parent.source, owner.arg, layout, new int[0],
+						aggregates, false, EmptyBindingSet.getInstance(), null, null, false, false, null, null,
+						0L, null, null, null, null, "nestedLoop(fullValue)");
+				try (NativeResultCursor cursor = new NativeGroupResultCursor(owner, iteration,
+						parent.evaluationScope().executionContext(), false)) {
+					NativeResultRow result = cursor.next();
+					assertThat(result).isNotNull();
+					assertThat(((Literal) result.toBindingSet().getValue("count")).longValue()).isEqualTo(8L);
+					assertThat(cursor.next()).isNull();
+				}
+			});
+			assertThat(opens).as("the selected full-value producer opens once and the fallback replays it").hasValue(2);
+			assertThat(semantic.accepts).hasValue(16);
+			assertThat(semantic.closes).as("only the selected replay retires the shared semantic filter").hasValue(1);
+			assertComplete(fixture.statistics, 8L, 0L);
+		}
+	}
+
+	@Test
+	void materializedGroupEncounterOrderReplayRetainsOnlyTheReplayedOutcome() throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			AtomicInteger speculative = new AtomicInteger();
+			AtomicInteger replayed = new AtomicInteger();
+			AtomicInteger closes = new AtomicInteger();
+			NativeBooleanFilter semantic = new NativeBooleanFilter() {
+				@Override
+				public boolean accept(RowState row) {
+					(row.encounterOrderRequired ? replayed : speculative).incrementAndGet();
+					return true;
+				}
+
+				@Override
+				public void close() {
+					closes.incrementAndGet();
+				}
+			};
+			RecordingNativeBooleanFilter recorded = fixture.recording(semantic);
+			fixture.block(parent -> {
+				NativeSlotLayout layout = new NativeSlotLayout(Map.of("v", 0), null);
+				layout.freeze(List.of("v"));
+				SyntheticValueSource source = parent.evaluationScope();
+				ValueFactory values = fixture.repository.getValueFactory();
+				long integer = source.internComputedValue(values.createLiteral(1));
+				long floating = source.internComputedValue(values.createLiteral(0.5D));
+				assertThat(integer).isNotEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+				assertThat(floating).isNotEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+				ValuesRow[] inputRows = new ValuesRow[8];
+				Arrays.setAll(inputRows, index -> new ValuesRow(new int[] { 0 },
+						new long[] { index == 7 ? floating : integer }));
+				SlotPlan input = new FilterPlan(new ValuesPlan(inputRows), recorded, 0L);
+				assertThat(SlotPlan.encounterOrderReplaySafe(input)).isTrue();
+				AggregateSpec[] aggregates = { AggregateSpec.star("count"),
+						AggregateSpec.slot("sum", 0, false, AggKind.SUM) };
+				NativeGroupIteration iteration = new NativeGroupIteration(parent.source, input, layout,
+						new int[0], aggregates, false, EmptyBindingSet.getInstance(), null, null, false, false,
+						null, null, 0L, null, null, null, null, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+				try (AutoCloseable context = iteration.aggContext::close; iteration) {
+					List<BindingSet> rows = iteration.evaluateAll();
+					try {
+						assertThat(rows).hasSize(1);
+						assertThat(((Literal) rows.getFirst().getValue("count")).longValue()).isEqualTo(8L);
+						assertThat(((Literal) rows.getFirst().getValue("sum")).doubleValue()).isEqualTo(7.5D);
+					} finally {
+						if (rows instanceof AutoCloseable resource) {
+							resource.close();
+						}
+					}
+				}
+			});
+			assertThat(speculative).as("floating SUM triggers fallback after the eighth speculative row").hasValue(8);
+			assertThat(replayed).as("the encounter-order replay evaluates all eight rows").hasValue(8);
+			assertThat(closes).hasValue(1);
+			assertComplete(fixture.statistics, 8L, 0L);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void fullValueGroupReplayPromotesInputCleanupFailure(boolean error) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			RecordingNativeBooleanFilter recorded = fixture.recording(semantic);
+			AtomicInteger opens = new AtomicInteger();
+			Throwable cleanup = error ? new AssertionError("encounter input cleanup")
+					: new IllegalStateException("encounter input cleanup");
+			SlotPlan input = new FilterPlan(encounterFallbackInput(opens, cleanup), recorded, 0L);
+			Runnable execute = () -> fixture.block(parent -> {
+				AggregateSpec[] aggregates = { AggregateSpec.star("count") };
+				QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+				NativeGroupStep full = new NativeGroupStep(parent.source, input, parent.layout, new int[0], aggregates,
+						false, null, null, context, Set.of(), null, null, false, false, null, 0L, null, null);
+				NativeGroupStep owner = new NativeGroupStep(parent.source, SingletonPlan.INSTANCE, parent.layout,
+						new int[0], aggregates, false, null, null, context, Set.of(), null, null, false, false, null,
+						0L, null, null);
+				owner.fullValueCompiler = () -> full;
+				NativeGroupIteration iteration = new NativeGroupIteration(parent.source, owner.arg, parent.layout,
+						new int[0], aggregates, false, EmptyBindingSet.getInstance(), null, null, false, false,
+						null, null, 0L, null, null, null, null, "nestedLoop(fullValue)");
+				try (NativeResultCursor cursor = new NativeGroupResultCursor(owner, iteration,
+						parent.evaluationScope().executionContext(), false)) {
+					cursor.next();
+				}
+			});
+			assertThatThrownBy(execute::run).isSameAs(cleanup);
+			assertThat(opens).as("a real cleanup failure must prevent replay").hasValue(1);
+			assertThat(semantic.accepts).hasValue(8);
+			assertThat(semantic.closes).hasValue(1);
+			assertIncomplete(fixture.statistics);
+		}
+	}
+
+	private static SlotPlan encounterFallbackInput(AtomicInteger opens, Throwable cleanup) {
+		return new SlotPlan() {
+			@Override
+			public RowCursor open(RowState row) {
+				opens.incrementAndGet();
+				return new RowCursor() {
+					int emitted;
+
+					@Override
+					public boolean next() {
+						if (emitted++ < 8) {
+							return true;
+						}
+						if (!row.encounterOrderRequired) {
+							throw EncounterOrderFallback.floatingSumOrAvg();
+						}
+						return false;
+					}
+
+					@Override
+					public void close() {
+						if (cleanup != null) {
+							raise(cleanup);
+						}
+					}
+				};
+			}
+
+			@Override
+			public long producedMask() {
+				return 0L;
+			}
+		};
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void encounterReplayPromotesUnopenedLoserCleanupFailure(boolean error) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			RecordingNativeBooleanFilter recorded = fixture.recording(semantic);
+			Throwable cleanup = error ? new AssertionError("encounter loser cleanup")
+					: new IllegalStateException("encounter loser cleanup");
+			AtomicInteger rivalOpens = new AtomicInteger();
+			Runnable execute = () -> fixture.block(row -> {
+				LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					drainValues(row, filters.borrow(recorded), 8, false);
+					throw EncounterOrderFallback.floatingSumOrAvg();
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1D), 1D)));
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					rivalOpens.incrementAndGet();
+					return "unused";
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> raise(cleanup))
+						.withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1000D), 1D)));
+				new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
+						.sharedRow(row).encounterOrderReplay(row.cancellation).dispatch(null);
+			});
+			assertThatThrownBy(execute::run).isSameAs(cleanup);
+			assertThat(rivalOpens).hasValue(0);
+			assertThat(semantic.closes).hasValue(1);
+			assertIncomplete(fixture.statistics);
+		}
+	}
+
+	@Test
+	void encounterReplayAbortsWhenTheOwnerIsAlreadyCancelled() throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			RecordingNativeBooleanFilter recorded = fixture.recording(semantic);
+			Runnable execute = () -> fixture.block(row -> {
+				LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					drainValues(row, filters.borrow(recorded), 8, false);
+					row.cancellation.requestCancellation();
+					throw EncounterOrderFallback.floatingSumOrAvg();
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1D), 1D)));
+				new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
+						.sharedRow(row).encounterOrderReplay(row.cancellation).dispatch(null);
+			});
+			assertThatThrownBy(execute::run).isInstanceOf(KernelQueryCancelledException.class);
+			assertThat(semantic.closes).hasValue(1);
+			assertIncomplete(fixture.statistics);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "true,true" })
+	void budgetRefusalDiscardsPrivateFilterAndRetainsCleanupFailureIdentity(boolean failCleanup, boolean error)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			RecordingNativeBooleanFilter recorded = fixture.recording(semantic);
+			Throwable cleanup = error ? new AssertionError("refused cursor cleanup")
+					: new IllegalStateException("refused cursor cleanup");
+			AtomicInteger trialOpens = new AtomicInteger(), fallbackOpens = new AtomicInteger();
+			AtomicInteger cursorCloses = new AtomicInteger();
+			Runnable execute = () -> fixture.block(row -> {
+				LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					trialOpens.incrementAndGet();
+					RowCursor input = new RowCursor() {
+						int emitted;
+						@Override public boolean next() { return emitted++ < 16; }
+						@Override public void close() {
+							cursorCloses.incrementAndGet();
+							if (failCleanup) { raise(cleanup); }
+						}
+					};
+					try (RowCursor cursor = new FilterCursor(input, filters.borrow(recorded), row)) {
+						int count = 0;
+						while (cursor.next()) { count++; }
+						assertThat(count).isEqualTo(16);
+						throw new KernelRuntime.AllocationDeniedException();
+					}
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1D), 1D)));
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					fallbackOpens.incrementAndGet();
+					assertThat(semantic.closes).as("the declined owner must leave the shared template usable")
+							.hasValue(0);
+					drainValues(row, filters.borrow(recorded), 8, false);
+					return "fallback";
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1000D), 1D)));
+				var selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
+						.sharedRow(row).budgetRefusals(true).dispatch(null);
+				consumeSelected(selected, value -> assertThat(value).isEqualTo("fallback"));
+			});
+			if (failCleanup) {
+				assertThatThrownBy(execute::run).isSameAs(cleanup);
+				assertThat(fallbackOpens).as("a real cleanup failure cannot become a retry").hasValue(0);
+				assertIncomplete(fixture.statistics);
+			} else {
+				execute.run();
+				assertThat(fallbackOpens).hasValue(1);
+				assertThat(semantic.accepts).hasValue(24);
+				assertComplete(fixture.statistics, 8L, 0L);
+			}
+			assertThat(trialOpens).hasValue(1);
+			assertThat(cursorCloses).hasValue(1);
+			assertThat(semantic.closes).hasValue(1);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "true,false,false", "true,true,false", "false,true,false", "true,true,true" })
+	void terminalBudgetRefusalRetainsUsedFiltersAcrossDeclinesAndForcing(boolean retry, boolean decliningRival,
+			boolean forced) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter refusedFilter = new TrackingFilter();
+			TrackingFilter rivalFilter = new TrackingFilter();
+			RecordingNativeBooleanFilter refusedRecording = fixture.recording(refusedFilter);
+			RecordingNativeBooleanFilter rivalRecording = fixture.recording(rivalFilter);
+			KernelRuntime.AllocationDeniedException refusal = new KernelRuntime.AllocationDeniedException();
+			AtomicInteger rivalOpens = new AtomicInteger();
+			Runnable execute = () -> fixture.block(row -> {
+				LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					drainValues(row, filters.borrow(refusedRecording), 16, false);
+					throw refusal;
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1D), 1D)));
+				if (decliningRival) {
+					offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+						rivalOpens.incrementAndGet();
+						assertThat(refusedFilter.closes).hasValue(0);
+						drainValues(row, filters.borrow(rivalRecording), 3, false);
+						return null;
+					}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+					}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1000D), 1D)));
+				}
+				new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
+						.sharedRow(row)
+						.forcing(forced ? LmdbNativeAttemptMetrics.PATH_BATCH : null)
+						.budgetRefusals(retry)
+						.dispatch(null);
+			});
+			assertThatThrownBy(execute::run).isInstanceOf(QueryEvaluationException.class).satisfies(failure -> {
+				if (forced) {
+					assertThat(failure).hasMessageContaining("could not be forced");
+				} else {
+					assertThat(failure).hasMessageContaining("memory budget").hasCause(refusal);
+				}
+			});
+			boolean openedRival = retry && decliningRival && !forced;
+			assertThat(rivalOpens).hasValue(openedRival ? 1 : 0);
+			assertThat(refusedFilter.closes).hasValue(1);
+			assertThat(rivalFilter.closes).hasValue(openedRival ? 1 : 0);
+			assertIncomplete(fixture.statistics);
+			if (openedRival) {
+				assertThat(fixture.statistics.typed).extracting(observation -> observation.passedCount())
+						.containsExactlyInAnyOrder(16L, 3L);
+			} else {
+				assertThat(fixture.statistics.typed).hasSize(1);
+				assertThat(fixture.statistics.typed.getFirst().passedCount()).isEqualTo(16L);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false,OPEN", "true,false,OPEN", "false,true,OPEN", "true,true,OPEN",
+			"false,false,ACCEPT", "false,true,ACCEPT", "false,false,BATCH", "false,true,BATCH" })
+	void exhaustedBudgetRefusalsCloseARealSharedUnrecordedFilterOnce(boolean mapped, boolean unscoped, String use)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			KernelRuntime.AllocationDeniedException first = new KernelRuntime.AllocationDeniedException();
+			KernelRuntime.AllocationDeniedException second = new KernelRuntime.AllocationDeniedException();
+			AtomicInteger opens = new AtomicInteger();
+			Runnable execute = () -> fixture.block(parent -> {
+				RowState row = unscoped
+						? new RowState((NativeLmdbQuerySource) fixture.dataset, parent.layout, EmptyBindingSet.getInstance())
+						: parent;
+				LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+				offers.offer(() -> {
+					LmdbNativeStrategyProposal<String> proposal = new LmdbNativeStrategyProposal<>(filters -> {
+						opens.incrementAndGet();
+						useUnrecordedFilter(row, filters.borrow(semantic), 4, use);
+						throw first;
+					}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+					});
+					proposal.withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1D), 1D));
+					return mapped ? proposal.map(value -> value, LmdbNativeAttemptMetrics.PATH_BATCH) : proposal;
+				});
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					opens.incrementAndGet();
+					assertThat(semantic.closes).hasValue(0);
+					useUnrecordedFilter(row, filters.borrow(semantic), 8, use);
+					throw second;
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1000D), 1D)));
+				new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
+						.sharedRow(row).budgetRefusals(true).dispatch(null);
+			});
+			assertThatThrownBy(execute::run).isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("memory budget").hasCause(second);
+			assertThat(opens).hasValue(2);
+			assertThat(semantic.accepts).hasValue(12);
+			assertThat(semantic.closes).as("one shared semantic original has one terminal owner").hasValue(1);
+		}
+	}
+
+	private static void useUnrecordedFilter(RowState row, NativeBooleanFilter filter, int count, String use)
+			throws IOException {
+		if ("OPEN".equals(use)) {
+			drainValues(row, filter, count, false);
+		} else if ("ACCEPT".equals(use)) {
+			for (int i = 0; i < count; i++) {
+				assertThat(filter.accept(row)).isTrue();
+			}
+		} else {
+			NativeBatch batch = new NativeBatch(row.slots.length, count);
+			int[] selected = new int[count];
+			Arrays.setAll(selected, index -> index);
+			assertThat(filter.selectBatch(batch, selected, count, row)).isEqualTo(count);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void loserCleanupFailureAbortsRefusedAndOpenedReplacementAttempts(boolean error) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter refusedFilter = new TrackingFilter();
+			TrackingFilter replacementFilter = new TrackingFilter();
+			RecordingNativeBooleanFilter refusedRecording = fixture.recording(refusedFilter);
+			RecordingNativeBooleanFilter replacementRecording = fixture.recording(replacementFilter);
+			Throwable cleanup = error ? new AssertionError("loser cleanup") : new IllegalStateException("loser cleanup");
+			AtomicInteger replacementOpens = new AtomicInteger();
+			Runnable execute = () -> fixture.block(row -> {
+				LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					drainValues(row, filters.borrow(refusedRecording), 8, false);
+					throw new KernelRuntime.AllocationDeniedException();
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1D), 1D)));
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					replacementOpens.incrementAndGet();
+					drainValues(row, filters.borrow(replacementRecording), 4, false);
+					return "unpublished";
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1000D), 1D)));
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> "unused", LmdbNativeWork.UNKNOWN,
+						LmdbNativeAttemptMetrics.PATH_WCOJ, () -> raise(cleanup))
+								.withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1_000_000_000D), 1D)));
+				new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
+						.sharedRow(row).budgetRefusals(true).dispatch(null);
+			});
+			assertThatThrownBy(execute::run).isSameAs(cleanup);
+			assertThat(replacementOpens).hasValue(1);
+			assertThat(refusedFilter.closes).hasValue(1);
+			assertThat(replacementFilter.closes).hasValue(1);
+			assertIncomplete(fixture.statistics);
+			assertThat(fixture.statistics.typed).extracting(observation -> observation.passedCount())
+					.containsExactlyInAnyOrder(8L, 4L);
+		}
+	}
+
+	@Test
+	void budgetRefusalSurvivesADecliningRivalUntilSoftForcedFallbackOpens() throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			RecordingNativeBooleanFilter recorded = fixture.recording(semantic);
+			AtomicInteger declines = new AtomicInteger();
+			fixture.block(row -> {
+				LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					drainValues(row, filters.borrow(recorded), 16, false);
+					throw new KernelRuntime.AllocationDeniedException();
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_BATCH, () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1D), 1D)));
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					declines.incrementAndGet();
+					assertThat(semantic.closes).hasValue(0);
+					return null;
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(decline)", () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(10D), 1D)));
+				offers.offer(() -> new LmdbNativeStrategyProposal<String>(filters -> {
+					assertThat(semantic.closes).hasValue(0);
+					drainValues(row, filters.borrow(recorded), 8, false);
+					return "fallback";
+				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(fallback)", () -> {
+				}).withCostQuote(LmdbNativeCostQuote.ofWork(LmdbNativeWork.exact(1000D), 1D)));
+				var selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(), null)
+						.sharedRow(row)
+						.forcing(LmdbNativeAttemptMetrics.PATH_BATCH + "," + LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)
+						.budgetRefusals(true).dispatch(null);
+				consumeSelected(selected, value -> assertThat(value).isEqualTo("fallback"));
+			});
+			assertThat(declines).hasValue(1);
 			assertThat(semantic.accepts).hasValue(24);
 			assertThat(semantic.closes).hasValue(1);
 			assertComplete(fixture.statistics, 8L, 0L);
@@ -898,18 +1154,25 @@ class LmdbNativeFilterAttemptCompletionTest {
 						try (AutoCloseable decodedInputs = row::closeDecodedInputs) {
 							NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(owner, row);
 							AtomicReference<LmdbNativeStrategyProposal<List<BindingSet>>> matrix = new AtomicReference<>();
-							try (var inventory = LmdbNativeStrategyArbiter
-									.<List<BindingSet>>forExpr(step.originalExpr, evaluation)
-									.estimateWith(candidate -> {
+							List<LmdbNativeCandidate<List<BindingSet>>> admitted = new ArrayList<>();
+							LmdbNativeOffers<List<BindingSet>> inventory = new LmdbNativeOffers<>(
+									LmdbNativeDecisionPoint.GROUP, candidate -> {
 										quotes.attach(candidate);
 										if (LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX.equals(candidate.tag)) {
-											@SuppressWarnings("unchecked")
-											var proposal = (LmdbNativeStrategyProposal<List<BindingSet>>) candidate;
-											matrix.compareAndSet(null, proposal);
+											matrix.compareAndSet(null, candidate);
 										}
-									})) {
+										return candidate;
+									});
+							try {
 								owner.offerCandidates(row, LmdbNativeAttemptMetrics.root(step.originalExpr), step.arg,
 										inventory);
+								// Offers retain proposers lazily; admit the real inventory before inspecting and releasing it.
+								for (var offeredStrategy : inventory.strategies()) {
+									var admission = offeredStrategy.admit(null);
+									if (admission.admitted()) {
+										admitted.addAll(admission.candidates());
+									}
+								}
 								assertThat(matrix.get())
 										.as("capture the production fallback from its real candidate inventory")
 										.isNotNull();
@@ -930,16 +1193,20 @@ class LmdbNativeFilterAttemptCompletionTest {
 									}
 									matrix.get().close();
 								}
+							} finally {
+								for (var candidate : admitted) {
+									candidate.release().run();
+								}
 							}
 							if (selectRows) {
-								try (var selected = LmdbNativeStrategyArbiter.<String>forExpr(null, evaluation)) {
-									selected.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
+								LmdbNativeOffers<String> selected = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW);
+								selected.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
 										assertThat(drainPlan(filters.borrow(step.arg), row)).isEqualTo(128);
 										return "selected-row-input";
 									}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
 									}));
-									assertThat(selected.select()).isEqualTo("selected-row-input");
-								}
+								consumeSelected(select(LmdbNativeDecisionPoint.ROW, selected, row, null),
+										value -> assertThat(value).isEqualTo("selected-row-input"));
 							}
 						}
 					}
@@ -965,13 +1232,13 @@ class LmdbNativeFilterAttemptCompletionTest {
 				NativeFilterLease parent = new NativeFilterLease(NativeFilterLease.parentOf(row));
 				NativeGroupIteration nested = owner.withFilterAttempt(parent);
 				AtomicInteger declined = new AtomicInteger();
-				try (var selected = LmdbNativeStrategyArbiter.<List<BindingSet>>forExpr(step.originalExpr, owner.source)
-						.filterParent(parent)) {
+				LmdbNativeOffers<List<BindingSet>> selected = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+				try {
 					nested.offerCandidates(row, LmdbNativeAttemptMetrics.root(step.originalExpr), step.arg,
 							new LmdbNativeCandidateOffers<>() {
 								@Override
 								LmdbNativeCandidateOffers<List<BindingSet>> offer(
-										LmdbNativeStrategyArbiter.Proposer<List<BindingSet>> proposer)
+										LmdbNativeCandidateOffers.Proposer<List<BindingSet>> proposer)
 										throws IOException {
 									LmdbNativeStrategyProposal<List<BindingSet>> proposal = proposer.propose();
 									if (proposal != null) {
@@ -990,14 +1257,15 @@ class LmdbNativeFilterAttemptCompletionTest {
 
 								@Override
 								LmdbNativeCandidateOffers<List<BindingSet>> terminalFallback(
-										LmdbNativeStrategyArbiter.Proposer<List<BindingSet>> proposer) {
+										LmdbNativeCandidateOffers.Proposer<List<BindingSet>> proposer) {
 									if (terminal) {
 										selected.terminalFallback(proposer);
 									}
 									return this;
 								}
 							});
-					assertTypeMatrixRowsAndClose(selected.select());
+					consumeSelected(select(LmdbNativeDecisionPoint.GROUP, selected, row, parent),
+							LmdbNativeFilterAttemptCompletionTest::assertTypeMatrixRowsAndClose);
 					assertThat(declined).as("the terminal route retries after a fully cleaned discarded open")
 							.hasValue(terminal ? 1 : 0);
 					if (discardParent) {
@@ -1051,10 +1319,10 @@ class LmdbNativeFilterAttemptCompletionTest {
 				}, LmdbNativeWork.UNKNOWN, "retained-matrix-generic", () -> {
 				})) {
 					if (selected) {
-						try (var arbiter = LmdbNativeStrategyArbiter.<List<BindingSet>>forExpr(null, owner.source)) {
-							arbiter.offer(() -> proposal);
-							assertThat(arbiter.select()).hasSize(128);
-						}
+						LmdbNativeOffers<List<BindingSet>> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP);
+						offers.offer(() -> proposal);
+						consumeSelected(select(LmdbNativeDecisionPoint.GROUP, offers, row, null),
+								results -> assertThat(results).hasSize(128));
 					} else {
 						assertThat(proposal.open()).hasSize(128);
 					}
@@ -1298,6 +1566,190 @@ class LmdbNativeFilterAttemptCompletionTest {
 			assertThat(semantic.accepts).hasValue(10);
 			assertThat(semantic.closes).hasValue(1);
 			assertComplete(fixture.statistics, 8L, 0L);
+		}
+	}
+
+	@Test
+	void nullOnlyCaptureRetiresItsFilterEvenAfterAnotherRecorderBindsTheContext() throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			AtomicInteger closes = new AtomicInteger();
+			IllegalStateException cleanup = new IllegalStateException("unscoped capture cleanup");
+			TrackingFilter contextual = new TrackingFilter();
+			fixture.block(row -> {
+				NativeFilterLease capture = NativeFilterLease.capture(row.evaluationScope().executionContext());
+				NativeBooleanFilter unscoped = new NativeBooleanFilter() {
+					@Override
+					public boolean accept(RowState ignored) {
+						return true;
+					}
+
+					@Override
+					public void close() {
+						closes.incrementAndGet();
+						throw cleanup;
+					}
+				};
+				assertThat(capture.borrow(unscoped).accept(null)).isTrue();
+				drainValues(row, capture.borrow(fixture.recording(contextual)), 2, false);
+				assertThatThrownBy(() -> capture.abort(KernelQueryCancelledException.INSTANCE)).isSameAs(cleanup);
+				assertThat(cleanup.getSuppressed()).contains(KernelQueryCancelledException.INSTANCE);
+				assertThat(closes).hasValue(1);
+				assertThat(contextual.closes).hasValue(0);
+			});
+			assertThat(closes).hasValue(1);
+			assertThat(contextual.accepts).hasValue(2);
+			assertThat(contextual.closes).hasValue(1);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "OPEN", "ACCEPT", "BATCH" })
+	void nullOnlyCaptureUseCanUpgradeToRealRowOwnership(String operation) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			fixture.block(row -> {
+				NativeFilterLease capture = NativeFilterLease.capture(row.evaluationScope().executionContext());
+				NativeBooleanFilter borrowed = capture.borrow(semantic);
+				assertThat(borrowed.accept(null)).isTrue();
+				switch (operation) {
+				case "OPEN":
+					borrowed.open(row).close();
+					break;
+				case "ACCEPT":
+					assertThat(borrowed.accept(row)).isTrue();
+					break;
+				case "BATCH":
+					NativeBatch batch = new NativeBatch(row.slots.length, 1);
+					assertThat(borrowed.selectBatch(batch, new int[] { 0 }, 1, row)).isEqualTo(1);
+					break;
+				default:
+					throw new AssertionError(operation);
+				}
+				capture.abort(new IllegalStateException("aborted captured producer"));
+				assertThat(semantic.closes).as("a contextual capture leaves its reusable template open").hasValue(0);
+			});
+			assertThat(semantic.closes).hasValue(1);
+		}
+	}
+
+	@Test
+	void nullOnlyCaptureUseCannotHideADifferentRealEvaluationOwner() throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			fixture.block(row -> {
+				NativeFilterLease capture = NativeFilterLease.capture(row.evaluationScope().executionContext());
+				NativeBooleanFilter borrowed = capture.borrow(semantic);
+				assertThat(borrowed.accept(null)).isTrue();
+				SyntheticValueSource other = SyntheticValueSource.forEvaluation((NativeLmdbQuerySource) fixture.dataset);
+				try {
+					RowState different = new RowState(other, row.layout, EmptyBindingSet.getInstance());
+					assertThatThrownBy(() -> borrowed.accept(different)).isInstanceOf(IllegalArgumentException.class)
+							.hasMessage("native filter attempt crossed evaluation owners");
+				} finally {
+					other.executionContext().close();
+					capture.abort(new IllegalStateException("abort after foreign owner"));
+				}
+			});
+			assertThat(semantic.closes).hasValue(1);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "ROW", "WORKER" })
+	void realFilterUseCannotCrossToAnotherEvaluationOwner(String operation) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			fixture.block(row -> {
+				NativeFilterLease capture = NativeFilterLease.capture(row.evaluationScope().executionContext());
+				NativeBooleanFilter borrowed = capture.borrow(semantic);
+				assertThat(borrowed.accept(row)).isTrue();
+				SyntheticValueSource other = SyntheticValueSource.forEvaluation((NativeLmdbQuerySource) fixture.dataset);
+				try {
+					RowState different = new RowState(other, row.layout, EmptyBindingSet.getInstance());
+					assertThatThrownBy(() -> {
+						if (operation.equals("ROW")) {
+							borrowed.accept(different);
+						} else {
+							borrowed.forkForParallelWorker(NativeScalarPlan.WorkerContext.forSource(other, null));
+						}
+					}).isInstanceOf(IllegalArgumentException.class)
+							.hasMessage("native filter attempt crossed evaluation owners");
+				} finally {
+					other.executionContext().close();
+					capture.abort(new IllegalStateException("abort after foreign owner"));
+				}
+			});
+			assertThat(semantic.accepts).hasValue(1);
+			assertThat(semantic.closes).hasValue(1);
+		}
+	}
+
+	@Test
+	void emptyNestedPlainFilterOpeningKeepsCapturedTemplateInTheQueryOwner() throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			TrackingFilter semantic = new TrackingFilter();
+			fixture.block(row -> {
+				NativeFilterLease capture = NativeFilterLease.capture(row.evaluationScope().executionContext());
+				NativeFilterLease middle = new NativeFilterLease();
+				NativeFilterLease child = new NativeFilterLease();
+				NativeBooleanFilter filter = child.borrow(middle.borrow(capture.borrow(semantic)));
+				filter.open(row).close();
+				child.commit();
+				middle.commit();
+				capture.abort(new IllegalStateException("aborted empty producer"));
+				assertThat(semantic.closes).as("the empty opening still carries its real owner through both facades")
+						.hasValue(0);
+			});
+			assertThat(semantic.accepts).hasValue(0);
+			assertThat(semantic.closes).hasValue(1);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void workerForkRetainsCapturedTemplateAcrossLaterOwnerBinding(boolean contextualFork) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			AtomicInteger originalCloses = new AtomicInteger();
+			AtomicInteger workerAccepts = new AtomicInteger();
+			AtomicInteger workerCloses = new AtomicInteger();
+			NativeBooleanFilter semantic = new NativeBooleanFilter() {
+				@Override
+				public boolean accept(RowState row) {
+					return true;
+				}
+
+				@Override
+				public NativeBooleanFilter forkForParallelWorker() {
+					return new NativeBooleanFilter() {
+						@Override public boolean accept(RowState row) { workerAccepts.incrementAndGet(); return true; }
+						@Override public void close() { workerCloses.incrementAndGet(); }
+					};
+				}
+
+				@Override
+				public void close() {
+					originalCloses.incrementAndGet();
+				}
+			};
+			fixture.block(row -> {
+				NativeFilterLease capture = NativeFilterLease.capture(row.evaluationScope().executionContext());
+				NativeFilterLease child = new NativeFilterLease(capture);
+				NativeBooleanFilter borrowed = child.borrow(semantic);
+				NativeBooleanFilter worker = contextualFork
+						? borrowed.forkForParallelWorker(NativeScalarPlan.WorkerContext.forSource(row.source, null))
+						: borrowed.forkForParallelWorker();
+				assertThat(worker).isNotNull();
+				assertThat(worker.accept(row)).isTrue();
+				worker.close();
+				// The no-context fork becomes query-owned when a separate actual recording binds this attempt.
+				drainValues(row, child.borrow(fixture.recording(new TrackingFilter())), 1, false);
+				child.abort(new IllegalStateException("aborted worker producer"));
+				capture.abort(new IllegalStateException("aborted captured producer"));
+				assertThat(originalCloses).hasValue(0);
+			});
+			assertThat(workerAccepts).hasValue(1);
+			assertThat(workerCloses).hasValue(1);
+			assertThat(originalCloses).hasValue(1);
 		}
 	}
 
@@ -2308,6 +2760,99 @@ class LmdbNativeFilterAttemptCompletionTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void workerHandoffFailurePrecedesAndSurvivesContextSettlement(boolean error) throws Exception {
+		NativeExecutionContext context = new NativeExecutionContext();
+		NativeExecutionContext.WorkerTasks tasks = new NativeExecutionContext.WorkerTasks(1);
+		AtomicInteger workerCloses = new AtomicInteger();
+		AtomicInteger contextCloses = new AtomicInteger();
+		AtomicInteger handoffs = new AtomicInteger();
+		AtomicInteger reports = new AtomicInteger();
+		AtomicReference<Throwable> reported = new AtomicReference<>();
+		Throwable handoffFailure = error ? new AssertionError("cursor settlement")
+				: new IllegalStateException("cursor settlement");
+		Throwable contextFailure = new IllegalArgumentException("context settlement");
+		context.registerFilterWorkers(tasks);
+		context.ownFilterResource(new NativeBooleanFilter() {
+			@Override public boolean accept(RowState row) { return true; }
+			@Override public void close() { contextCloses.incrementAndGet(); raise(contextFailure); }
+		});
+		var worker = tasks.enter(workerCloses::incrementAndGet, problem -> {
+			reports.incrementAndGet();
+			reported.set(problem);
+		});
+		context.close();
+		assertThat(context.isClosed()).isFalse();
+		tasks.beforeOwnerSettlement(() -> {
+			handoffs.incrementAndGet();
+			assertThat(workerCloses).hasValue(1);
+			assertThat(tasks.getCount()).as("the handoff can join its settled group").isZero();
+			try {
+				assertThat(tasks.await(0L, TimeUnit.NANOSECONDS)).isTrue();
+			} catch (InterruptedException problem) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(problem);
+			}
+			raise(handoffFailure);
+		});
+		assertThatThrownBy(worker::close).isSameAs(handoffFailure);
+		assertThat(tasks.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(tasks.cleanupFailure()).isSameAs(handoffFailure);
+		assertThat(handoffFailure.getSuppressed()).containsExactly(contextFailure);
+		assertThat(context.isClosed()).isTrue();
+		assertThat(workerCloses).hasValue(1);
+		assertThat(contextCloses).hasValue(1);
+		assertThat(handoffs).hasValue(1);
+		assertThat(reports).hasValue(1);
+		assertThat(reported.get()).isSameAs(handoffFailure);
+		worker.close();
+		context.close();
+		assertThat(workerCloses).hasValue(1);
+		assertThat(contextCloses).hasValue(1);
+		assertThat(handoffs).hasValue(1);
+	}
+
+	@Test
+	void workerHandoffCanOwnAnUnscopedSettledGroup() throws Exception {
+		NativeExecutionContext.WorkerTasks tasks = new NativeExecutionContext.WorkerTasks(1);
+		AtomicInteger handoffs = new AtomicInteger();
+		var worker = tasks.enter(() -> { }, ignored -> { });
+		tasks.beforeOwnerSettlement(() -> {
+			assertThat(tasks.getCount()).isZero();
+			handoffs.incrementAndGet();
+		});
+		worker.close();
+		assertThat(tasks.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(handoffs).hasValue(1);
+		assertThatThrownBy(() -> tasks.beforeOwnerSettlement(() -> { }))
+				.isInstanceOf(IllegalStateException.class).hasMessage("worker settlement handoff already owned");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void unscopedWorkerHandoffRejectsLateNotificationOwner(boolean alreadySettled) throws Exception {
+		NativeExecutionContext.WorkerTasks tasks = new NativeExecutionContext.WorkerTasks(1);
+		AtomicInteger handoffs = new AtomicInteger();
+		AtomicInteger lateOwners = new AtomicInteger();
+		var worker = tasks.enter(() -> { }, ignored -> { });
+		try {
+			tasks.beforeOwnerSettlement(handoffs::incrementAndGet);
+			if (alreadySettled) {
+				worker.close();
+			}
+			assertThat(handoffs).hasValue(alreadySettled ? 1 : 0);
+			assertThatThrownBy(() -> tasks.afterSettlement(lateOwners::incrementAndGet))
+					.isInstanceOf(IllegalStateException.class).hasMessage("worker settlement already owned");
+		} finally {
+			worker.close();
+		}
+		assertThat(tasks.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(handoffs).hasValue(1);
+		assertThat(lateOwners).hasValue(0);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void settlementCallbackFailureKeepsItsIdentityAndCannotStrandTheTask(boolean error) throws Exception {
 		NativeExecutionContext.WorkerTasks tasks = new NativeExecutionContext.WorkerTasks(1);
 		AtomicInteger nativeCloses = new AtomicInteger();
@@ -2651,6 +3196,28 @@ class LmdbNativeFilterAttemptCompletionTest {
 		return count;
 	}
 
+	private static <T> LmdbNativeDispatchLoop.Selection<T> select(LmdbNativeDecisionPoint point,
+			LmdbNativeOffers<T> offers, RowState row, NativeFilterLease parent) throws IOException {
+		return new LmdbNativeDispatchLoop<>(point, offers.strategies(), null)
+				.sharedRow(row)
+				.filterParent(parent == null ? NativeFilterLease.parentOf(row) : parent)
+				.dispatch(null);
+	}
+
+	private static <T> void consumeSelected(LmdbNativeDispatchLoop.Selection<T> selected, Consumer<T> consume) {
+		assertThat(selected).as("the production selector must open a candidate").isNotNull();
+		Throwable primary = null;
+		try {
+			consume.accept(selected.value());
+		} catch (RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			Throwable retained = selected.finish(primary);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, primary);
+		}
+	}
+
 	@Test
 	void unrelatedBorrowedAttemptsRemainRejected() {
 		NativeFilterLease left = new NativeFilterLease();
@@ -2674,7 +3241,7 @@ class LmdbNativeFilterAttemptCompletionTest {
 			throws Exception {
 		try (Fixture fixture = new Fixture(directory)) {
 			AtomicInteger forks = new AtomicInteger();
-			List<String> actual = parallelOwnershipOpening(fixture, rangeEnabled, captured, forks, null);
+			List<String> actual = parallelOwnershipOpening(fixture, rangeEnabled, captured, forks, null, false, false);
 			List<String> expected = new ArrayList<>();
 			for (int value = 0; value < 128; value++) {
 				expected.add("urn:native-attempt:s" + value + "|" + value);
@@ -2688,13 +3255,572 @@ class LmdbNativeFilterAttemptCompletionTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
+	void directParallelRowHelperRetainsSelectedFilterUntilCursorClose(boolean captured) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			AtomicInteger forks = new AtomicInteger();
+			List<String> actual = parallelOwnershipOpening(fixture, false, captured, forks, null, true);
+			List<String> expected = new ArrayList<>();
+			for (int value = 0; value < 128; value++) {
+				expected.add("urn:native-attempt:s" + value + "|" + value);
+			}
+			expected.sort(String::compareTo);
+			assertThat(actual).containsExactlyElementsOf(expected);
+			assertThat(forks).as("both workers use the real direct-open path").hasValue(2);
+			assertComplete(fixture.statistics, 128L, 0L);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void directParallelAggregateHelperRetainsSelectedFilterOutcome(boolean captured) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			AtomicInteger forks = new AtomicInteger();
+			List<String> actual = parallelOwnershipOpening(fixture, false, captured, forks, null, false, true);
+			assertThat(actual).containsExactly("128");
+			assertThat(forks).as("both aggregate workers use the real direct helper").hasValue(2);
+			assertComplete(fixture.statistics, 128L, 0L);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void parallelConsumerSourceBindingPreservesInitiatingWorkerThrowable(boolean error) throws Exception {
 		try (Fixture fixture = new Fixture(directory)) {
 			Throwable initiating = error ? new AssertionError("owned worker semantic failure")
 					: new IllegalStateException("owned worker semantic failure");
-			assertThatThrownBy(() -> parallelOwnershipOpening(fixture, false, true, new AtomicInteger(), initiating))
+			assertThatThrownBy(() -> parallelOwnershipOpening(fixture, false, true, new AtomicInteger(), initiating,
+					false, false))
 					.isSameAs(initiating);
 			assertIncomplete(fixture.statistics);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void directParallelRowHelperPreservesWorkerFailureAndAbortsCapturedOutcome(boolean error) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			Throwable initiating = error ? new AssertionError("direct worker semantic failure")
+					: new IllegalStateException("direct worker semantic failure");
+			assertThatThrownBy(() -> parallelOwnershipOpening(fixture, false, true, new AtomicInteger(), initiating,
+					true, false)).isSameAs(initiating);
+			assertIncomplete(fixture.statistics);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void directParallelAggregateHelperPreservesWorkerFailureAndAbortsCapturedOutcome(boolean error) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			Throwable initiating = error ? new AssertionError("direct aggregate worker failure")
+					: new IllegalStateException("direct aggregate worker failure");
+			assertThatThrownBy(() -> parallelOwnershipOpening(fixture, false, true, new AtomicInteger(), initiating,
+					false, true)).isInstanceOf(QueryEvaluationException.class).hasCause(initiating);
+			assertIncomplete(fixture.statistics);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void directParallelRowHelperAbortsWhenCancellationPreventsTheNextPull(boolean captured) throws Exception {
+		try (Fixture fixture = new Fixture(directory)) {
+			parallelOwnershipOpening(fixture, false, captured, new AtomicInteger(), null, true, false, true);
+			assertIncomplete(fixture.statistics);
+		}
+	}
+
+	@Test
+	void directParallelRowCloseAllowsSemanticFilterToCloseCursorReentrantly() throws Exception {
+		CountDownLatch callbackStarted = new CountDownLatch(1);
+		AtomicInteger callbacks = new AtomicInteger();
+		FutureTask<Void> execution = new FutureTask<>(() -> {
+			try (Fixture fixture = new Fixture(directory)) {
+				List<String> rows = parallelOwnershipOpening(fixture, false, false, new AtomicInteger(), null,
+						true, false, false, cursor -> {
+							callbacks.incrementAndGet();
+							callbackStarted.countDown();
+							assertThat(cursor).as("the semantic filter closes the returned cursor").isNotNull();
+							cursor.close();
+						});
+				assertThat(rows).hasSize(128);
+				assertComplete(fixture.statistics, 128L, 0L);
+			} finally {
+				callbackStarted.countDown();
+			}
+			return null;
+		});
+		// A deadlocked regression cannot retain a non-daemon thread in the isolated Surefire fork.
+		Thread.ofVirtual().name("reentrant-parallel-cursor-close").start(execution);
+		try {
+			boolean reached = callbackStarted.await(40, TimeUnit.SECONDS);
+			if (callbacks.get() == 0 && execution.isDone()) {
+				execution.get();
+			}
+			assertThat(reached && callbacks.get() != 0)
+					.as("semantic-filter cleanup must reach the reentrant close").isTrue();
+			try {
+				execution.get(5, TimeUnit.SECONDS);
+			} catch (TimeoutException timeout) {
+				throw new AssertionError("semantic-filter cleanup deadlocked in reentrant cursor close", timeout);
+			}
+			assertThat(callbacks).hasValue(1);
+		} finally {
+			if (!execution.isDone()) {
+				execution.cancel(true);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	void directParallelRowCloseWaiterObservesCleanupFailure(boolean error, boolean foreignWorker) throws Exception {
+		Throwable cleanup = error ? new AssertionError("parallel semantic cleanup")
+				: new IllegalStateException("parallel semantic cleanup");
+		CountDownLatch cleanupStarted = new CountDownLatch(1);
+		CountDownLatch releaseCleanup = new CountDownLatch(1);
+		CountDownLatch waiterStarted = new CountDownLatch(1);
+		AtomicReference<RowCursor> cursor = new AtomicReference<>();
+		AtomicReference<NativeLmdbQuerySource> source = new AtomicReference<>();
+		AtomicReference<NativeExecutionContext> firstQuery = new AtomicReference<>();
+		AtomicReference<Throwable> foreignCleanup = new AtomicReference<>();
+		AtomicInteger callbacks = new AtomicInteger();
+		FutureTask<Throwable> owner = new FutureTask<>(() -> {
+			try (Fixture fixture = new Fixture(directory)) {
+				source.set((NativeLmdbQuerySource) fixture.dataset);
+				try {
+					parallelOwnershipOpening(fixture, false, false, new AtomicInteger(), null,
+							true, false, false, opened -> {
+								cursor.set(opened);
+								firstQuery.set(SyntheticValueSource.activeEvaluation().executionContext());
+								callbacks.incrementAndGet();
+								cleanupStarted.countDown();
+								try {
+									if (!releaseCleanup.await(15, TimeUnit.SECONDS)) {
+										throw new AssertionError("the competing close did not release cleanup");
+									}
+								} catch (InterruptedException interrupted) {
+									Thread.currentThread().interrupt();
+									throw new IllegalStateException(interrupted);
+								}
+								raise(cleanup);
+							});
+					return null;
+				} catch (RuntimeException | Error failure) {
+					if (failure == cleanup) {
+						assertIncomplete(fixture.statistics);
+					}
+					return failure;
+				}
+			} catch (Throwable failure) {
+				return failure;
+			} finally {
+				cleanupStarted.countDown();
+			}
+		});
+		Thread.ofVirtual().name("parallel-cursor-cleanup-owner").start(owner);
+		FutureTask<Throwable> waiter = null;
+		boolean reached = false;
+		boolean started = false;
+		boolean blocked = false;
+		try {
+			reached = cleanupStarted.await(40, TimeUnit.SECONDS);
+			RowCursor opened = cursor.get();
+			if (reached && opened != null) {
+				waiter = new FutureTask<>(() -> {
+					try {
+						if (foreignWorker) {
+							SyntheticValueSource otherSource = SyntheticValueSource.forEvaluation(source.get());
+							try (NativeExecutionContext otherQuery = otherSource.executionContext()) {
+								assertThat(otherQuery).isNotSameAs(firstQuery.get());
+								NativeExecutionContext.WorkerTasks otherTasks = new NativeExecutionContext.WorkerTasks(1);
+								otherQuery.registerFilterWorkers(otherTasks);
+								try (var ignored = otherTasks.enter(() -> {
+								}, foreignCleanup::set)) {
+									assertThat(otherTasks.isWorkerThread()).isTrue();
+									waiterStarted.countDown();
+									opened.close();
+								}
+							}
+						} else {
+							waiterStarted.countDown();
+							opened.close();
+						}
+						return null;
+					} catch (RuntimeException | Error failure) {
+						return failure;
+					}
+				});
+				Thread competing = Thread.ofPlatform().daemon().name("parallel-cursor-close-waiter").start(waiter);
+				started = waiterStarted.await(5, TimeUnit.SECONDS);
+				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+				while (started && !waiter.isDone() && System.nanoTime() < deadline) {
+					if (competing.getState() == Thread.State.WAITING) {
+						blocked = true;
+						break;
+					}
+					Thread.onSpinWait();
+				}
+			}
+		} finally {
+			releaseCleanup.countDown();
+		}
+		try {
+			Throwable ownerFailure = owner.get(20, TimeUnit.SECONDS);
+			Throwable waiterFailure = waiter == null ? null : waiter.get(20, TimeUnit.SECONDS);
+			assertThat(reached && cursor.get() != null).as("the semantic cleanup callback must run").isTrue();
+			assertThat(started).as("the competing close must start before cleanup ends").isTrue();
+			assertThat(blocked).as("a different close thread must wait for the cleanup owner").isTrue();
+			assertThat(ownerFailure).isSameAs(cleanup);
+			assertThat(waiterFailure).isSameAs(cleanup);
+			assertThat(foreignCleanup.get()).isNull();
+			assertThat(callbacks).hasValue(1);
+		} finally {
+			if (!owner.isDone()) {
+				owner.cancel(true);
+			}
+			if (waiter != null && !waiter.isDone()) {
+				waiter.cancel(true);
+			}
+		}
+	}
+
+	@Test
+	void directParallelRowWorkerCloseCanReenterWhileOwnerAwaitsSettlement() throws Exception {
+		WorkerCloseProbe probe = new WorkerCloseProbe();
+		FutureTask<Void> execution = new FutureTask<>(() -> {
+			try (Fixture fixture = new Fixture(directory)) {
+				List<String> rows = parallelOwnershipOpening(fixture, false, false, new AtomicInteger(), null,
+						true, false, false, null, probe);
+				assertThat(rows).isEmpty();
+				assertIncomplete(fixture.statistics);
+			} finally {
+				probe.workerEntered.countDown();
+				probe.ownerClosing.countDown();
+				probe.workerClosing.countDown();
+			}
+			return null;
+		});
+		Thread.ofVirtual().name("parallel-cursor-worker-reentry-pull").start(execution);
+		try {
+			boolean entered = probe.workerEntered.await(40, TimeUnit.SECONDS);
+			boolean ownerStarted = probe.ownerClosing.await(5, TimeUnit.SECONDS);
+			if ((!entered || !ownerStarted) && execution.isDone()) {
+				execution.get();
+			}
+			assertThat(entered).as("a real worker must begin evaluating the filter").isTrue();
+			assertThat(ownerStarted).as("the cursor owner must start cleanup").isTrue();
+			Thread owner = probe.cleanupOwner.get();
+			assertThat(owner).isNotNull();
+			boolean ownerWaiting = false;
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+			while (!execution.isDone() && System.nanoTime() < deadline) {
+				Thread.State state = owner.getState();
+				if (state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING) {
+					ownerWaiting = true;
+					break;
+				}
+				Thread.onSpinWait();
+			}
+			assertThat(ownerWaiting).as("cursor cleanup must be waiting for its workers").isTrue();
+			probe.releaseWorkers.countDown();
+			boolean workerClosing = probe.workerClosing.await(10, TimeUnit.SECONDS);
+			if (!workerClosing && execution.isDone()) {
+				execution.get();
+			}
+			assertThat(workerClosing && probe.workerCloseCalls.get() > 0)
+					.as("a worker filter must reenter the returned cursor's close").isTrue();
+			try {
+				execution.get(5, TimeUnit.SECONDS);
+			} catch (TimeoutException timeout) {
+				throw new AssertionError("worker filter cleanup deadlocked in cursor close", timeout);
+			}
+		} finally {
+			probe.releaseWorkers.countDown();
+			if (!execution.isDone()) {
+				execution.cancel(true);
+			}
+		}
+	}
+
+	@Test
+	void directParallelRowWorkerCanInitiateCloseDuringActivePull() throws Exception {
+		WorkerCloseProbe probe = new WorkerCloseProbe(true);
+		FutureTask<Void> execution = new FutureTask<>(() -> {
+			try (Fixture fixture = new Fixture(directory)) {
+				List<String> rows = parallelOwnershipOpening(fixture, false, false, new AtomicInteger(), null,
+						true, false, false, null, probe);
+				assertThat(rows).isEmpty();
+				assertIncomplete(fixture.statistics);
+			} finally {
+				probe.workerClosing.countDown();
+			}
+			return null;
+		});
+		Thread.ofVirtual().name("parallel-cursor-worker-initiated-close").start(execution);
+		try {
+			boolean started = probe.workerClosing.await(40, TimeUnit.SECONDS);
+			if (probe.workerCloseCalls.get() == 0 && execution.isDone()) {
+				execution.get();
+			}
+			assertThat(started && probe.workerCloseCalls.get() > 0)
+					.as("the real worker must initiate cursor close from its filter").isTrue();
+			try {
+				execution.get(5, TimeUnit.SECONDS);
+			} catch (TimeoutException timeout) {
+				throw new AssertionError("worker-initiated cursor close did not settle the active pull", timeout);
+			}
+		} finally {
+			probe.releaseWorkers.countDown();
+			if (!execution.isDone()) {
+				execution.cancel(true);
+			}
+		}
+	}
+
+	@Test
+	void directParallelRowWorkerInitiatedCloseSettlesWithoutAnyPull() throws Exception {
+		WorkerCloseProbe probe = new WorkerCloseProbe(false, true);
+		FutureTask<Void> execution = new FutureTask<>(() -> {
+			try (Fixture fixture = new Fixture(directory, 4096)) {
+				List<String> rows = parallelOwnershipOpening(fixture, false, false, new AtomicInteger(), null,
+						true, false, false, null, probe);
+				assertThat(rows).isEmpty();
+				assertIncomplete(fixture.statistics);
+			} finally {
+				probe.workerClosing.countDown();
+			}
+			return null;
+		});
+		Thread.ofVirtual().name("parallel-cursor-worker-unpulled-close").start(execution);
+		try {
+			boolean started = probe.workerClosing.await(40, TimeUnit.SECONDS);
+			if (probe.workerCloseCalls.get() == 0 && execution.isDone()) {
+				execution.get();
+			}
+			assertThat(started && probe.workerCloseCalls.get() > 0)
+					.as("a real worker must request cursor close before any pull").isTrue();
+			try {
+				execution.get(5, TimeUnit.SECONDS);
+			} catch (TimeoutException timeout) {
+				throw new AssertionError("worker-initiated unpulled cursor close did not settle", timeout);
+			}
+		} finally {
+			probe.releaseWorkers.countDown();
+			if (!execution.isDone()) {
+				execution.cancel(true);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "SETTLEMENT", "CLOSER", "FOREIGN_WORKER" })
+	void directParallelRowUnpulledWorkerCloseRetainsCleanupWithOrWithoutRacingCloser(String mode)
+			throws Exception {
+		boolean racingCloser = !mode.equals("SETTLEMENT");
+		boolean foreignCloser = mode.equals("FOREIGN_WORKER");
+		IllegalStateException cleanup = new IllegalStateException("unpulled cursor semantic cleanup");
+		IllegalArgumentException contextCleanup = new IllegalArgumentException("unpulled context cleanup");
+		AtomicInteger semanticCloses = new AtomicInteger();
+		WorkerCloseProbe probe = new WorkerCloseProbe(false, true, racingCloser, foreignCloser, cleanup,
+				racingCloser ? null : contextCleanup);
+		FutureTask<Void> execution = new FutureTask<>(() -> {
+			try (Fixture fixture = new Fixture(directory, 4096)) {
+				Consumer<RowCursor> close = ignored -> {
+					semanticCloses.incrementAndGet();
+					throw cleanup;
+				};
+				if (racingCloser) {
+					assertThat(parallelOwnershipOpening(fixture, false, false, new AtomicInteger(), null,
+							true, false, false, close, probe)).isEmpty();
+					assertIncomplete(fixture.statistics);
+				} else {
+					assertThatThrownBy(() -> parallelOwnershipOpening(fixture, false, false, new AtomicInteger(), null,
+							true, false, false, close, probe)).isSameAs(cleanup);
+					assertThat(cleanup.getSuppressed()).containsExactly(contextCleanup);
+					assertThat(probe.contextCloses).hasValue(1);
+				}
+				assertThat(semanticCloses).hasValue(1);
+				assertThat(probe.foreignCloses).hasValue(foreignCloser ? 1 : 0);
+			} finally {
+				probe.workerClosing.countDown();
+			}
+			return null;
+		});
+		Thread.ofVirtual().name("parallel-unpulled-close-cleanup").start(execution);
+		try {
+			boolean started = probe.workerClosing.await(40, TimeUnit.SECONDS);
+			if (probe.workerCloseCalls.get() == 0 && execution.isDone()) {
+				execution.get();
+			}
+			assertThat(started && probe.workerCloseCalls.get() > 0)
+					.as("the exact parallel worker initiates the unpulled close").isTrue();
+			try {
+				execution.get(10, TimeUnit.SECONDS);
+			} catch (TimeoutException timeout) {
+				throw new AssertionError("unpulled cursor cleanup did not settle", timeout);
+			}
+		} finally {
+			probe.releaseWorkers.countDown();
+			if (!execution.isDone()) {
+				execution.cancel(true);
+			}
+		}
+	}
+
+	private static final class WorkerCloseProbe {
+		final CountDownLatch workerEntered = new CountDownLatch(1);
+		final CountDownLatch ownerClosing = new CountDownLatch(1);
+		final CountDownLatch releaseWorkers = new CountDownLatch(1);
+		final CountDownLatch workerClosing = new CountDownLatch(1);
+		final AtomicInteger workerCloseCalls = new AtomicInteger();
+		final AtomicReference<Thread> cleanupOwner = new AtomicReference<>();
+		final AtomicBoolean initiated = new AtomicBoolean();
+		final CountDownLatch workerCloseReturned = new CountDownLatch(1);
+		final AtomicInteger contextCloses = new AtomicInteger();
+		final AtomicInteger foreignCloses = new AtomicInteger();
+		final boolean initiateDuringPull;
+		final boolean initiateWithoutPull;
+		final boolean racingCloser;
+		final boolean foreignCloser;
+		final Throwable expectedCleanup;
+		final Throwable contextCleanup;
+
+		WorkerCloseProbe() {
+			this(false);
+		}
+
+		WorkerCloseProbe(boolean initiateDuringPull) {
+			this(initiateDuringPull, false);
+		}
+
+		WorkerCloseProbe(boolean initiateDuringPull, boolean initiateWithoutPull) {
+			this(initiateDuringPull, initiateWithoutPull, false, false, null, null);
+		}
+
+		WorkerCloseProbe(boolean initiateDuringPull, boolean initiateWithoutPull, boolean racingCloser,
+				boolean foreignCloser, Throwable expectedCleanup, Throwable contextCleanup) {
+			this.initiateDuringPull = initiateDuringPull;
+			this.initiateWithoutPull = initiateWithoutPull;
+			this.racingCloser = racingCloser;
+			this.foreignCloser = foreignCloser;
+			this.expectedCleanup = expectedCleanup;
+			this.contextCleanup = contextCleanup;
+		}
+
+		void beforeAccept(RowCursor cursor) {
+			workerEntered.countDown();
+			if (initiateDuringPull || initiateWithoutPull) {
+				if (initiated.compareAndSet(false, true)) {
+					assertThat(cursor).isNotNull();
+					workerCloseCalls.incrementAndGet();
+					workerClosing.countDown();
+					cursor.close();
+					workerCloseReturned.countDown();
+					if (expectedCleanup != null) {
+						awaitRelease();
+					}
+				}
+			} else {
+				awaitRelease();
+			}
+		}
+
+		void workerClose(RowCursor cursor) {
+			if (!initiateDuringPull && !initiateWithoutPull) {
+				awaitRelease();
+			}
+			assertThat(cursor).isNotNull();
+			workerCloseCalls.incrementAndGet();
+			workerClosing.countDown();
+			cursor.close();
+		}
+
+		void driveAndClose(RowState row, RowCursor cursor) throws Exception {
+			if (initiateWithoutPull) {
+				if (!workerCloseReturned.await(30, TimeUnit.SECONDS)) {
+					throw new AssertionError("the unpulled worker close did not return");
+				}
+				NativeExecutionContext context = row.evaluationScope().executionContext();
+				if (contextCleanup != null) {
+					context.ownFilterResource(new NativeBooleanFilter() {
+						@Override public boolean accept(RowState ignored) { return true; }
+						@Override public void close() { contextCloses.incrementAndGet(); raise(contextCleanup); }
+					});
+				}
+				if (racingCloser) {
+					FutureTask<Throwable> close = new FutureTask<>(() -> {
+						try {
+							if (foreignCloser) {
+								NativeExecutionContext other = new NativeExecutionContext();
+								NativeExecutionContext.WorkerTasks tasks = new NativeExecutionContext.WorkerTasks(1);
+								other.registerFilterWorkers(tasks);
+								try (var task = tasks.enter(foreignCloses::incrementAndGet, ignored -> { })) {
+									cursor.close();
+								} finally {
+									other.close();
+								}
+							} else {
+								cursor.close();
+							}
+							return null;
+						} catch (Throwable problem) {
+							return problem;
+						}
+					});
+					Thread owner = Thread.ofVirtual().name("parallel-unpulled-racing-closer").start(close);
+					long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+					boolean waiting = false;
+					while (!close.isDone() && System.nanoTime() < deadline) {
+						Thread.State state = owner.getState();
+						if (state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING) {
+							waiting = true;
+							break;
+						}
+						Thread.onSpinWait();
+					}
+					assertThat(waiting).as("the external closer owns cleanup and awaits the held worker").isTrue();
+					releaseWorkers.countDown();
+					assertThat(close.get(10, TimeUnit.SECONDS)).isSameAs(expectedCleanup);
+					context.close();
+					return;
+				}
+				context.close();
+				releaseWorkers.countDown();
+				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+				while (!context.isClosed() && System.nanoTime() < deadline) {
+					Thread.onSpinWait();
+				}
+				assertThat(context.isClosed())
+						.as("worker settlement must release the cursor's retained context without a pull").isTrue();
+				return;
+			}
+			if (initiateDuringPull) {
+				assertThat(row.advance(cursor)).as("worker close stops the active pull").isFalse();
+				return;
+			}
+			FutureTask<Void> close = new FutureTask<>(() -> {
+				if (!workerEntered.await(30, TimeUnit.SECONDS)) {
+					throw new AssertionError("parallel worker did not begin evaluating the filter");
+				}
+				ownerClosing.countDown();
+				cursor.close();
+				return null;
+			});
+			Thread owner = Thread.ofVirtual().name("parallel-cursor-worker-reentry-closer").unstarted(close);
+			cleanupOwner.set(owner);
+			owner.start();
+			assertThat(row.advance(cursor)).as("owner close stops the active pull").isFalse();
+			close.get(20, TimeUnit.SECONDS);
+		}
+
+		private void awaitRelease() {
+			try {
+				if (!releaseWorkers.await(30, TimeUnit.SECONDS)) {
+					throw new AssertionError("parallel worker was not released during cursor cleanup");
+				}
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(interrupted);
+			}
 		}
 	}
 
@@ -2706,7 +3832,31 @@ class LmdbNativeFilterAttemptCompletionTest {
 	}
 
 	private static List<String> parallelOwnershipOpening(Fixture fixture, boolean rangeEnabled, boolean captured,
-			AtomicInteger forks, Throwable initiating) {
+			AtomicInteger forks, Throwable initiating, boolean direct) {
+		return parallelOwnershipOpening(fixture, rangeEnabled, captured, forks, initiating, direct, false);
+	}
+
+	private static List<String> parallelOwnershipOpening(Fixture fixture, boolean rangeEnabled, boolean captured,
+			AtomicInteger forks, Throwable initiating, boolean direct, boolean aggregate) {
+		return parallelOwnershipOpening(fixture, rangeEnabled, captured, forks, initiating, direct, aggregate, false);
+	}
+
+	private static List<String> parallelOwnershipOpening(Fixture fixture, boolean rangeEnabled, boolean captured,
+			AtomicInteger forks, Throwable initiating, boolean direct, boolean aggregate, boolean cancelAfterFirst) {
+		return parallelOwnershipOpening(fixture, rangeEnabled, captured, forks, initiating, direct, aggregate,
+				cancelAfterFirst, null);
+	}
+
+	private static List<String> parallelOwnershipOpening(Fixture fixture, boolean rangeEnabled, boolean captured,
+			AtomicInteger forks, Throwable initiating, boolean direct, boolean aggregate, boolean cancelAfterFirst,
+			Consumer<RowCursor> onSemanticClose) {
+		return parallelOwnershipOpening(fixture, rangeEnabled, captured, forks, initiating, direct, aggregate,
+				cancelAfterFirst, onSemanticClose, null);
+	}
+
+	private static List<String> parallelOwnershipOpening(Fixture fixture, boolean rangeEnabled, boolean captured,
+			AtomicInteger forks, Throwable initiating, boolean direct, boolean aggregate, boolean cancelAfterFirst,
+			Consumer<RowCursor> onSemanticClose, WorkerCloseProbe workerCloseProbe) {
 		Map<String, String> requested = Map.of("rdf4j.lmdb.parallel.enabled", "true",
 				"rdf4j.lmdb.parallel.threads", "2", "rdf4j.lmdb.parallel.maxTasks", "2",
 				"rdf4j.lmdb.parallel.minWorkEstimate", "0",
@@ -2727,6 +3877,8 @@ class LmdbNativeFilterAttemptCompletionTest {
 				assertThat(carrier.executionContext()).as("the retained compile carrier has no runtime owner").isNull();
 				NativeExecutionContext owner = parentRow.evaluationScope().executionContext();
 				NativeFilterLease capture = captured ? NativeFilterLease.capture(owner) : null;
+				CountDownLatch releaseWorkers = direct ? new CountDownLatch(1) : null;
+				AtomicReference<RowCursor> directCursor = new AtomicReference<>();
 				try (var ignored = SyntheticValueSource.attachEvaluation(parentRow.source, capture)) {
 					SyntheticValueSource evaluated = carrier.forEvaluation();
 					assertThat(evaluated.executionContext()).isSameAs(owner);
@@ -2739,34 +3891,82 @@ class LmdbNativeFilterAttemptCompletionTest {
 							.idOf(fixture.repository.getValueFactory().createIRI("urn:native-attempt:p"));
 					PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(predicate), Term.slot(1),
 							Term.unbound(), ContextConstraint.UNRESTRICTED, false, 128D);
+					Runnable semanticClose = onSemanticClose == null ? null : () -> onSemanticClose.accept(directCursor.get());
+					Runnable workerAccept = workerCloseProbe == null ? null
+							: () -> workerCloseProbe.beforeAccept(directCursor.get());
+					Runnable workerClose = workerCloseProbe == null ? null
+							: () -> workerCloseProbe.workerClose(directCursor.get());
 					RecordingNativeBooleanFilter recorded = fixture
-							.recording(new WorkerScopeFilter(evaluated, forks, initiating));
+							.recording(new WorkerScopeFilter(evaluated, forks, initiating, releaseWorkers, semanticClose,
+									workerAccept, workerClose));
 					MultiJoinPlan plan = new MultiJoinPlan(new SlotPlan[] { pattern, pattern },
 							new MaskedFilter[] { new MaskedFilter(recorded, 3L) });
 					NativeRowsStep step = new NativeRowsStep(carrier, plan, layout, new int[] { 0, 1 },
 							new String[] { "s", "v" }, false, new int[0], new boolean[0], 0L, -1L, false,
 							null, null, null, Set.of(), null, null);
-					try (var proposal = LmdbNativeParallelPipelines.propose(step, row)) {
-						assertThat(proposal).as("the actual repository plan admits a parallel proposal").isNotNull();
-						proposal.filterParent(NativeFilterLease.parentOf(row));
-						RowCursor cursor = proposal.open();
-						if (cursor == null) {
-							assertThat(cursor).as("parallel open declined: %s; available task capacity: %s",
-									LmdbNativeParallelPipelines.LAST_REJECTION.get(), availableParallelTaskCapacity())
-									.isNotNull();
-						}
-						var selection = new LmdbNativeStrategySelection<>(cursor, null, proposal.filterAttempt());
-						try (selection; cursor) {
+					if (aggregate) {
+						AggregateSpec[] aggregates = { AggregateSpec.star("count") };
+						NativeGroupIteration group = new NativeGroupIteration(evaluated, plan, layout, new int[0],
+								aggregates, false, EmptyBindingSet.getInstance(), null, null, false, null);
+						try (AutoCloseable aggregateContext = group.aggContext::close; group) {
+							assertThat(group.initialize(row)).isTrue();
+							List<BindingSet> results = LmdbNativeParallelAggregation.tryEvaluate(group, plan, row);
+							assertThat(results).as("the actual direct aggregate must be admitted").hasSize(1);
 							try {
-								while (row.advance(cursor)) {
-									actual.add(evaluated.lazyValue(row.slots[0]).stringValue() + "|"
-											+ ((Literal) evaluated.lazyValue(row.slots[1])).intValue());
+								actual.add(results.getFirst().getValue("count").stringValue());
+							} finally {
+								if (results instanceof AutoCloseable resource) {
+									resource.close();
 								}
-								selection.exhausted();
-							} catch (IOException | RuntimeException | Error failure) {
-								selection.failed(failure);
-								throw failure;
 							}
+						}
+					} else if (direct) {
+						NativeScalarFilterAttempt callerAttempt = new NativeScalarFilterAttempt(null, null);
+						AtomicInteger callerGuard = new AtomicInteger();
+						row.scalarFilterAttempt = callerAttempt;
+						row.guardScalarFilterAcceptance(callerGuard::incrementAndGet);
+						RowCursor cursor;
+						try {
+							cursor = LmdbNativeParallelPipelines.tryOpen(step, row);
+							directCursor.set(cursor);
+						} finally {
+							// Workers cannot open a filter until after tryOpen has returned its owned cursor.
+							releaseWorkers.countDown();
+						}
+						assertThat(cursor).as("direct parallel open declined: %s", LmdbNativeParallelPipelines.LAST_REJECTION.get())
+								.isNotNull();
+						try (cursor) {
+							assertThat(fixture.statistics.typed).as("the open cursor has not published terminal feedback")
+									.isEmpty();
+							if (workerCloseProbe != null) {
+								workerCloseProbe.driveAndClose(row, cursor);
+							} else if (cancelAfterFirst) {
+								assertThat(row.advance(cursor)).isTrue();
+								row.cancellation.requestCancellation();
+								assertThat(row.advance(cursor)).isFalse();
+							} else {
+								drainParallelRows(row, evaluated, cursor, actual);
+							}
+						}
+						assertThat(row.scalarFilterAttempt).as("direct ownership leaves caller telemetry attached")
+								.isSameAs(callerAttempt);
+						assertThat(callerGuard).as("direct ownership does not accept caller telemetry").hasValue(0);
+					} else {
+						LmdbNativeOffers<RowCursor> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW);
+						offers.offer(() -> LmdbNativeParallelPipelines.propose(step, row));
+						var selection = select(LmdbNativeDecisionPoint.ROW, offers, row, null);
+						assertThat(selection).as("parallel open declined: %s; available task capacity: %s",
+								LmdbNativeParallelPipelines.LAST_REJECTION.get(), availableParallelTaskCapacity())
+								.isNotNull();
+						Throwable selectedFailure = null;
+						try (RowCursor cursor = selection.value()) {
+							drainParallelRows(row, evaluated, cursor, actual);
+						} catch (IOException | RuntimeException | Error failure) {
+							selectedFailure = failure;
+							throw failure;
+						} finally {
+							Throwable retained = selection.finish(selectedFailure);
+							KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, selectedFailure);
 						}
 					}
 					if (capture != null) {
@@ -2810,15 +4010,39 @@ class LmdbNativeFilterAttemptCompletionTest {
 		return actual;
 	}
 
+	private static void drainParallelRows(RowState row, SyntheticValueSource source, RowCursor cursor,
+			List<String> actual) throws IOException {
+		while (row.advance(cursor)) {
+			actual.add(source.lazyValue(row.slots[0]).stringValue() + "|"
+					+ ((Literal) source.lazyValue(row.slots[1])).intValue());
+		}
+	}
+
 	private static final class WorkerScopeFilter implements NativeBooleanFilter {
 		private final SyntheticValueSource expected;
 		private final AtomicInteger forks;
 		private final Throwable initiating;
+		private final CountDownLatch releaseWorkers;
+		private final Runnable semanticClose;
+		private final Runnable workerAccept;
+		private final Runnable workerClose;
 
-		WorkerScopeFilter(SyntheticValueSource expected, AtomicInteger forks, Throwable initiating) {
+		WorkerScopeFilter(SyntheticValueSource expected, AtomicInteger forks, Throwable initiating,
+				CountDownLatch releaseWorkers, Runnable semanticClose, Runnable workerAccept, Runnable workerClose) {
 			this.expected = expected;
 			this.forks = forks;
 			this.initiating = initiating;
+			this.releaseWorkers = releaseWorkers;
+			this.semanticClose = semanticClose;
+			this.workerAccept = workerAccept;
+			this.workerClose = workerClose;
+		}
+
+		@Override
+		public void close() {
+			if (semanticClose != null) {
+				semanticClose.run();
+			}
 		}
 
 		@Override
@@ -2837,12 +4061,35 @@ class LmdbNativeFilterAttemptCompletionTest {
 			assertThat(sibling.idSpace()).isSameAs(expected.idSpace());
 			assertThat(sibling.filterParent()).isSameAs(expected.filterParent());
 			forks.incrementAndGet();
-			return row -> {
-				assertThat(row.source).isSameAs(sibling);
-				if (initiating != null) {
-					raise(initiating);
+			if (releaseWorkers != null) {
+				try {
+					if (!releaseWorkers.await(30, TimeUnit.SECONDS)) {
+						throw new AssertionError("the direct opener did not release the worker gate");
+					}
+				} catch (InterruptedException failure) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(failure);
 				}
-				return true;
+			}
+			return new NativeBooleanFilter() {
+				@Override
+				public boolean accept(RowState row) {
+					assertThat(row.source).isSameAs(sibling);
+					if (workerAccept != null) {
+						workerAccept.run();
+					}
+					if (initiating != null) {
+						raise(initiating);
+					}
+					return true;
+				}
+
+				@Override
+				public void close() {
+					if (workerClose != null) {
+						workerClose.run();
+					}
+				}
 			};
 		}
 
@@ -2927,13 +4174,17 @@ class LmdbNativeFilterAttemptCompletionTest {
 			NativeSlotLayout layout = new NativeSlotLayout(Map.of(), null);
 			layout.freeze(List.of());
 			RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
-			try (var arbiter = LmdbNativeStrategyArbiter.<List<BindingSet>>forExpr(null, source)) {
-				arbiter.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
+			try {
+				LmdbNativeOffers<List<BindingSet>> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW);
+				offers.offer(() -> new LmdbNativeStrategyProposal<>(filters -> {
 					drainValues(row, filters.borrow(template), count, false);
 					return new ArrayList<BindingSet>(Collections.nCopies(count, EmptyBindingSet.getInstance()));
 				}, LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
 				}));
-				return new CloseableIteratorIteration<>(arbiter.select().iterator());
+				var selected = select(LmdbNativeDecisionPoint.ROW, offers, row, null);
+				AtomicReference<List<BindingSet>> result = new AtomicReference<>();
+				consumeSelected(selected, result::set);
+				return new CloseableIteratorIteration<>(result.get().iterator());
 			} catch (IOException failure) {
 				throw new IllegalStateException(failure);
 			}
@@ -3031,6 +4282,10 @@ class LmdbNativeFilterAttemptCompletionTest {
 		TupleExpr lastRoot;
 
 		Fixture(File directory) throws Exception {
+			this(directory, 128);
+		}
+
+		Fixture(File directory, int statements) throws Exception {
 			LmdbStoreConfig config = new LmdbStoreConfig();
 			config.setExperimentalQueryOptimizations(true);
 			store = new LmdbStore(directory, config);
@@ -3040,7 +4295,7 @@ class LmdbNativeFilterAttemptCompletionTest {
 			try (var connection = repository.getConnection()) {
 				var vf = connection.getValueFactory();
 				connection.begin();
-				for (int i = 0; i < 128; i++) {
+				for (int i = 0; i < statements; i++) {
 					connection.add(vf.createIRI("urn:native-attempt:s" + i), vf.createIRI("urn:native-attempt:p"),
 							vf.createLiteral(i));
 				}

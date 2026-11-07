@@ -55,7 +55,7 @@ public final class FilterBindingScope {
 
 	/** Reuses the model-owned structural domain, including VALUES headers and non-Var declarations. */
 	public static ConditionBindingReads conditionBindingReads(ValueExpr condition) {
-		TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(condition);
+		TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionFunctionArgumentDomain(condition);
 		return new ConditionBindingReads(domain.names(), domain.known());
 	}
 

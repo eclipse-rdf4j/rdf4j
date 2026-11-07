@@ -178,6 +178,8 @@ final class NativeExecutionContext implements AutoCloseable {
 	static final class WorkerTasks {
 		private final AtomicInteger nativeRemaining;
 		private Runnable afterSettlement;
+		private Runnable beforeOwnerSettlement;
+		private boolean beforeOwnerRegistered;
 		private boolean settlementNotified;
 		private final CountDownLatch nativeDone;
 		private final CountDownLatch settled;
@@ -218,7 +220,32 @@ final class NativeExecutionContext implements AutoCloseable {
 			notifySettlement(null, null);
 		}
 
+		/**
+		 * Transfers an owning cursor's cleanup to this exact group once its workers and captured scopes settle.
+		 * An existing context owner runs afterwards, including when the cursor's cleanup fails.
+		 *
+		 * Without an existing owner, the handoff occupies the sole notification-owner slot. Later owner admission is
+		 * rejected both before and after settlement. A scoped {@link LmdbNativeParallelPipelines.ParallelRowCursor}
+		 * registers its context owner before starting workers, so its handoff precedes that owner instead.
+		 */
+		void beforeOwnerSettlement(Runnable callback) {
+			synchronized (this) {
+				if (beforeOwnerRegistered || settlementNotified) {
+					throw new IllegalStateException("worker settlement handoff already owned");
+				}
+				beforeOwnerRegistered = true;
+				if (afterSettlement == null) {
+					notificationDone = new CountDownLatch(1);
+					afterSettlement = callback;
+				} else {
+					beforeOwnerSettlement = callback;
+				}
+			}
+			notifySettlement(null, null);
+		}
+
 		private void notifySettlement(Consumer<Throwable> failureHandler, Throwable primary) {
+			Runnable beforeOwner;
 			Runnable callback;
 			CountDownLatch completed;
 			synchronized (this) {
@@ -226,33 +253,60 @@ final class NativeExecutionContext implements AutoCloseable {
 					return;
 				}
 				settlementNotified = true;
+				beforeOwner = beforeOwnerSettlement;
+				beforeOwnerSettlement = null;
 				callback = afterSettlement;
 				afterSettlement = null;
 				notificationThread = Thread.currentThread();
 				completed = notificationDone;
 			}
 			try {
-				callback.run();
-			} catch (Throwable problem) {
-				// Both the real worker failure destination and startup suppression precede consumer completion.
-				if (primary != null && primary != problem) {
-					primary.addSuppressed(problem);
-				}
-				try {
-					reportCleanupFailure(problem, failureHandler == null ? ignored -> {
-					} : failureHandler);
-				} catch (Throwable reportingFailure) {
-					if (reportingFailure != problem) {
-						problem.addSuppressed(reportingFailure);
+				Throwable failure = null;
+				boolean handoffFailed = false;
+				if (beforeOwner != null) {
+					try {
+						beforeOwner.run();
+					} catch (Throwable problem) {
+						retainNotificationFailure(problem, failureHandler, primary);
+						failure = problem;
+						handoffFailed = true;
 					}
 				}
-				NativeContextClosingIteration.throwFailure(problem);
+				try {
+					callback.run();
+				} catch (Throwable problem) {
+					retainNotificationFailure(problem, failureHandler, primary);
+					if (failure == null) {
+						failure = problem;
+					}
+				}
+				if (failure != null) {
+					// The pre-owner failure has already been incorporated into the group's first cleanup failure.
+					// Reuse that aggregate rather than creating a suppression cycle if context cleanup returns it.
+					NativeContextClosingIteration.throwFailure(handoffFailed ? cleanupProblem.get() : failure);
+				}
 			} finally {
 				synchronized (this) {
 					notificationThread = null;
 					notificationOwner = null;
 				}
 				completed.countDown();
+			}
+		}
+
+		private void retainNotificationFailure(Throwable problem, Consumer<Throwable> failureHandler,
+				Throwable primary) {
+			// Both the real worker failure destination and startup suppression precede consumer completion.
+			if (primary != null && primary != problem) {
+				primary.addSuppressed(problem);
+			}
+			try {
+				reportCleanupFailure(problem, failureHandler == null ? ignored -> {
+				} : failureHandler);
+			} catch (Throwable reportingFailure) {
+				if (reportingFailure != problem) {
+					problem.addSuppressed(reportingFailure);
+				}
 			}
 		}
 

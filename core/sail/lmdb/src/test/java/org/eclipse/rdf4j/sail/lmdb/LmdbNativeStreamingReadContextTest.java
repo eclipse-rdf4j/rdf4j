@@ -91,8 +91,6 @@ class LmdbNativeStreamingReadContextTest {
 		Map<String, String> properties = Map.ofEntries(
 				Map.entry("rdf4j.lmdb.janinoCodegen.enabled", "false"),
 				Map.entry("rdf4j.lmdb.kernelInterpreter.enabled", "false"),
-				Map.entry("rdf4j.lmdb.costCalibration.enabled", "false"),
-				Map.entry("rdf4j.lmdb.adaptiveHedge.enabled", "false"),
 				Map.entry("rdf4j.lmdb.parallel.enabled", "true"),
 				Map.entry("rdf4j.lmdb.parallel.threads", "2"),
 				Map.entry("rdf4j.lmdb.parallel.maxTasks", "2"),

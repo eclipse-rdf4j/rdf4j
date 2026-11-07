@@ -3837,6 +3837,69 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				&& !writeTransactionBlocksAdjacency() && view.snapshotRevision() == view.state().appliedRevision();
 	}
 
+	/**
+	 * The mean statements one node carries on one side of the planes (its expected variable-predicate probe), when
+	 * {@code view} is an exact, fully covering snapshot and the planner statistics are on; else empty.
+	 */
+	OptionalDouble meanNodeDegree(LmdbAdjacencyReadView view, boolean bySubject, boolean explicit) {
+		double[] profile = nodeProfile(view, bySubject, explicit);
+		return profile == null ? OptionalDouble.empty() : OptionalDouble.of(profile[0] / profile[2]);
+	}
+
+	/** The mean distinct predicates one node carries on one side of the planes, under the same conditions. */
+	OptionalDouble meanNodePredicates(LmdbAdjacencyReadView view, boolean bySubject, boolean explicit) {
+		double[] profile = nodeProfile(view, bySubject, explicit);
+		return profile == null ? OptionalDouble.empty() : OptionalDouble.of(profile[1] / profile[2]);
+	}
+
+	/**
+	 * The quads, the (node, predicate) pairs and the estimated nodes of one plane side, or null when unavailable. The
+	 * plane statistics count keys per predicate, so a node under several predicates is one key in each plane and the
+	 * node count is only bounded: by the largest plane's key count from below and by the key counts' sum from above.
+	 * Their geometric mean stands in for it (measured 2026-11-03 on the three-tier FOAF fixtures at 600 and 5000
+	 * people: subjects 5028 and 40828 in truth, estimated 4578 and 36814; objects 10280 and 77480, estimated 4661 and
+	 * 36066). An empty side reports one node and no statements.
+	 */
+	private double[] nodeProfile(LmdbAdjacencyReadView view, boolean bySubject, boolean explicit) {
+		if (!plannerStatsEnabled() || view == null || !view.servesSnapshot() || closed
+				|| options.mode() != DirectAdjacencyMode.PREFER || writeTransactionBlocksAdjacency()
+				|| view.snapshotRevision() != view.state().appliedRevision()
+				|| !view.state().base().coverage().isFull()) {
+			return null;
+		}
+		LmdbAdjacencyPlaneStatistics statistics = view.state().planeStatistics();
+		LmdbAdjacencyPlaneStatistics.PredicateDomain domain = statistics.predicateDomain();
+		int plane = plane(bySubject, explicit);
+		double quads = 0D;
+		double pairs = 0D;
+		double largest = 0D;
+		for (int ordinal = 0; ordinal < domain.size(); ordinal++) {
+			long predicate = domain.predicateAt(ordinal);
+			long keys = statistics.keyCount(predicate, plane);
+			quads += statistics.quadCount(predicate, plane);
+			pairs += keys;
+			largest = Math.max(largest, keys);
+		}
+		if (quads <= 0D) {
+			return new double[] { 0D, 0D, 1D };
+		}
+		if (pairs <= 0D) {
+			// counter drift (quads with no keys) declines like every other stats seam
+			return null;
+		}
+		return new double[] { quads, pairs, Math.sqrt(pairs * largest) };
+	}
+
+	/** The predicate plane catalog's size when {@code view} is an exact, fully covering snapshot; else empty. */
+	OptionalLong predicateDomainCardinality(LmdbAdjacencyReadView view) {
+		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
+				|| writeTransactionBlocksAdjacency() || view.snapshotRevision() != view.state().appliedRevision()
+				|| !view.state().base().coverage().isFull()) {
+			return OptionalLong.empty();
+		}
+		return OptionalLong.of(view.state().planeStatistics().predicateDomain().size());
+	}
+
 	@Override
 	public int tryHas(LmdbAdjacencyReadView view, long subject, long predicate, long object, long context,
 			boolean explicit) {
