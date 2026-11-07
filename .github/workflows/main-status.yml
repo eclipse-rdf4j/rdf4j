@@ -22,6 +22,10 @@ jobs:
       with:
         java-version: ${{ matrix.jdk }}
         distribution: 'temurin'
+    - name: Enable JVM crash diagnostics
+      uses: ./.github/actions/jvm-diagnostics
+      with:
+        mode: setup
     - name: Install Node.js
       uses: actions/setup-node@v7.0.0
       with:
@@ -42,6 +46,12 @@ jobs:
       uses: ScalableCapital/action-surefire-report@v2.0.5
       with:
         check_name: Test report - main status - ${{ matrix.jdk }}
+    - name: Upload JVM crash diagnostics
+      if: ${{ always() }}
+      uses: ./.github/actions/jvm-diagnostics
+      with:
+        mode: upload
+        artifact-name: jvm-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}-${{ strategy.job-index }}
 
   frontend-unit-tests:
     runs-on: ubuntu-latest

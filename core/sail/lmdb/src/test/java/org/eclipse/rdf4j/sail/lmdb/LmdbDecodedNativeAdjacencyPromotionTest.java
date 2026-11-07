@@ -110,6 +110,11 @@ class LmdbDecodedNativeAdjacencyPromotionTest {
 			for (String option : new String[] { "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS" }) {
 				builder.environment().remove(option);
 			}
+			// Retain only CI diagnostics, not external heap/agent/admission overrides.
+			String ciDiagnostics = System.getenv("RDF4J_CI_JVM_DIAGNOSTIC_OPTIONS");
+			if (ciDiagnostics != null && !ciDiagnostics.isBlank()) {
+				builder.environment().put("JAVA_TOOL_OPTIONS", ciDiagnostics);
+			}
 			Process process = builder.start();
 			safeToDelete[0] = false;
 			try (AutoCloseable child = () -> {
