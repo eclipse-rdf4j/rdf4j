@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.SparseJoinAggregateTestFixture;
@@ -558,6 +559,32 @@ class SparseJoinAggregateAdapterTest {
 	}
 
 	@Test
+	void rejectedEndpointFilterPrecedesOverflowingProduct() throws Exception {
+		try (Fixture fixture = new Fixture()) {
+			fixture.useOverflowingProduct();
+			LmdbSparseJoinAggregatePlan plan = fixture.filteredPlan(false);
+			List<BindingSet> result = assertDoesNotThrow(() -> plan.evaluate(fixture.owner, fixture.row));
+			assertNotNull(result);
+			try {
+				assertTrue(result.isEmpty());
+			} finally {
+				if (result instanceof AutoCloseable closeable) {
+					closeable.close();
+				}
+			}
+		}
+	}
+
+	@Test
+	void acceptedEndpointFilterStillRejectsOverflowingProduct() throws Exception {
+		try (Fixture fixture = new Fixture()) {
+			fixture.useOverflowingProduct();
+			LmdbSparseJoinAggregatePlan plan = fixture.filteredPlan(true);
+			assertThrows(QueryEvaluationException.class, () -> plan.evaluate(fixture.owner, fixture.row));
+		}
+	}
+
+	@Test
 	void unorderedAdjacencyDeclinesBeforeOpeningRuns() throws Exception {
 		try (Fixture fixture = new Fixture()) {
 			when(fixture.left.runsNeighborOrdered()).thenReturn(false);
@@ -716,6 +743,43 @@ class SparseJoinAggregateAdapterTest {
 			row = new RowState(source, layout, EmptyBindingSet.getInstance());
 			assertTrue(owner.initialize(row));
 			ledger = owner.resultLedger();
+		}
+
+		void useOverflowingProduct() {
+			NativeAdjacency.KeyRunCursor leftRun = weightedRun(1L, 10L, Long.MAX_VALUE);
+			NativeAdjacency.KeyRunCursor rightRun = weightedRun(10L, 101L, 2L);
+			when(left.openKeyRunCursor()).thenReturn(leftRun);
+			when(right.openKeyRunCursor()).thenReturn(rightRun);
+		}
+
+		LmdbSparseJoinAggregatePlan filteredPlan(boolean accepted) {
+			PatternPlan first = new PatternPlan(Term.slot(0), Term.constant(20L), Term.slot(1), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 2D);
+			PatternPlan second = new PatternPlan(Term.slot(1), Term.constant(21L), Term.slot(2), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 2D);
+			long endpoints = (1L << 0) | (1L << 2);
+			NativeBooleanFilter filter = mock(NativeBooleanFilter.class);
+			when(filter.capabilities()).thenReturn(NativePredicateCapabilities.snapshot(endpoints, true, false));
+			when(filter.accept(any())).thenReturn(accepted);
+			AggregateSpec[] counts = { AggregateSpec.star("count", new int[] { 0, 1, 2 }) };
+			LmdbSparseJoinAggregatePlan filtered = LmdbSparseJoinAggregatePlan.tryCreate(
+					new FilterPlan(new JoinPlan(first, second), filter, endpoints), new int[] { 0, 2 }, counts, null);
+			assertNotNull(filtered);
+			return filtered;
+		}
+
+		private static NativeAdjacency.KeyRunCursor weightedRun(long key, long neighbor, long weight) {
+			NativeAdjacency.KeyRunCursor cursor = mock(NativeAdjacency.KeyRunCursor.class);
+			when(cursor.advance()).thenReturn(true, false);
+			when(cursor.key()).thenReturn(key);
+			when(cursor.runSize()).thenReturn(weight);
+			when(cursor.supportsPhysicalFiberCopy()).thenReturn(true);
+			doAnswer(call -> {
+				call.<long[]>getArgument(2)[0] = neighbor;
+				call.<long[]>getArgument(4)[0] = weight;
+				return 1;
+			}).when(cursor).copyFibers(anyLong(), anyInt(), any(long[].class), anyInt(), any(long[].class), anyInt());
+			return cursor;
 		}
 
 		@Override

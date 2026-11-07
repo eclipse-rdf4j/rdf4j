@@ -47,6 +47,11 @@ final class SparseJoinAggregateKernel {
 
 	@FunctionalInterface
 	interface Sink {
+		/** Input filters on the endpoint pair must run before its count is accumulated. */
+		default boolean accepts(long left, long right) {
+			return true;
+		}
+
 		void accept(long left, long right, long count);
 	}
 
@@ -121,7 +126,7 @@ final class SparseJoinAggregateKernel {
 							buffered.add(row, weight);
 							bound = saturatedAdd(bound, saturatedMultiply(weight, matrix.maximum[row]));
 						} else {
-							touchedSize = matrix.add(row, weight, 0L, counts, touched, touchedSize);
+							touchedSize = matrix.add(row, weight, 0L, leftKey, sink, counts, touched, touchedSize);
 						}
 					}
 				}
@@ -134,8 +139,8 @@ final class SparseJoinAggregateKernel {
 					for (int i = 0; i < buffered.size; i++) {
 						workspace.poll();
 						int row = buffered.rows[i];
-						touchedSize = matrix.add(row, buffered.weights[i], buffered.maximum, counts, touched,
-								touchedSize);
+						touchedSize = matrix.add(row, buffered.weights[i], buffered.maximum, leftKey, sink, counts,
+								touched, touchedSize);
 					}
 				}
 				for (int i = 0; i < touchedSize; i++) {
@@ -216,6 +221,7 @@ final class SparseJoinAggregateKernel {
 					}
 				}
 				long previous = 0L;
+				long combinedWeight = 0L;
 				boolean hasPrevious = false;
 				for (int read; (read = SparseJoinAggregateKernel.read(input, neighbors, batchWeights)) != 0;) {
 					for (int i = 0; i < read; i++) {
@@ -227,10 +233,18 @@ final class SparseJoinAggregateKernel {
 							throw new IllegalArgumentException("sparse adjacency neighbors must be unsigned ordered");
 						}
 						if (hasPrevious && previous == neighbor) {
-							weight = FactorizedTail.addCounts(weights == null ? 1L : weights[size - 1], weight);
-							ensureWeights();
-							weights[size - 1] = weight;
+							combinedWeight = saturatedAdd(combinedWeight, weight);
+							long previousWeight = weights == null ? 1L : weights[size - 1];
+							if (previousWeight <= Long.MAX_VALUE - weight) {
+								ensureWeights();
+								weights[size - 1] = previousWeight + weight;
+							} else {
+								// A filtered or unmatched pair must not overflow during preparation. Keep positive
+								// fragments and let the accepted pair's checked accumulation detect overflow.
+								append(columns[size - 1], weight);
+							}
 						} else {
+							combinedWeight = weight;
 							append(endpoints.getOrInsert(neighbor), weight);
 						}
 						if (requiredLeftWeight != null) {
@@ -241,7 +255,7 @@ final class SparseJoinAggregateKernel {
 							requiredLeftWeight[column] = saturatedAdd(requiredLeftWeight[column], additionalWeight);
 						}
 						if (maximum != null) {
-							maximum[row] = Math.max(maximum[row], weight);
+							maximum[row] = Math.max(maximum[row], combinedWeight);
 						}
 						previous = neighbor;
 						hasPrevious = true;
@@ -286,9 +300,11 @@ final class SparseJoinAggregateKernel {
 			}
 		}
 
-		int add(int row, long leftWeight, long maximumLeftWeight, long[] counts, int[] touched, int touchedSize) {
+		int add(int row, long leftWeight, long maximumLeftWeight, long leftKey, Sink sink, long[] counts,
+				int[] touched, int touchedSize) {
 			int end = offsets[row + 1];
 			int skipped = 0;
+			int filtered = 0;
 			if (weights == null) {
 				for (int i = offsets[row]; i < end; i++) {
 					workspace.poll();
@@ -300,7 +316,14 @@ final class SparseJoinAggregateKernel {
 					long current = counts[column];
 					if (current == 0L) {
 						touched[touchedSize++] = column;
+						if (!sink.accepts(leftKey, endpoints.keyAt(column))) {
+							counts[column] = -1L;
+							filtered++;
+							continue;
+						}
 						counts[column] = leftWeight;
+					} else if (current < 0L) {
+						filtered++;
 					} else {
 						counts[column] = FactorizedTail.addCounts(current, leftWeight);
 					}
@@ -313,18 +336,28 @@ final class SparseJoinAggregateKernel {
 						skipped++;
 						continue;
 					}
-					long contribution = leftWeight == 1L ? weights[i]
-							: FactorizedTail.multiplyCounts(leftWeight, weights[i]);
 					long current = counts[column];
 					if (current == 0L) {
 						touched[touchedSize++] = column;
+						if (!sink.accepts(leftKey, endpoints.keyAt(column))) {
+							counts[column] = -1L;
+							filtered++;
+							continue;
+						}
+					} else if (current < 0L) {
+						filtered++;
+						continue;
+					}
+					long contribution = leftWeight == 1L ? weights[i]
+							: FactorizedTail.multiplyCounts(leftWeight, weights[i]);
+					if (current == 0L) {
 						counts[column] = contribution;
 					} else {
 						counts[column] = FactorizedTail.addCounts(current, contribution);
 					}
 				}
 			}
-			operations = saturatedAdd(operations, end - offsets[row] - skipped);
+			operations = saturatedAdd(operations, end - offsets[row] - skipped - filtered);
 			prunedProducts = saturatedAdd(prunedProducts, skipped);
 			return touchedSize;
 		}
@@ -336,6 +369,7 @@ final class SparseJoinAggregateKernel {
 		private long[] weights;
 		private int size;
 		private long maximum;
+		private long combinedWeight;
 
 		LeftRow(Workspace workspace) {
 			this.workspace = workspace;
@@ -345,9 +379,14 @@ final class SparseJoinAggregateKernel {
 
 		void add(int row, long weight) {
 			if (size > 0 && rows[size - 1] == row) {
-				weights[size - 1] = FactorizedTail.addCounts(weights[size - 1], weight);
-				maximum = Math.max(maximum, weights[size - 1]);
-				return;
+				combinedWeight = saturatedAdd(combinedWeight, weight);
+				maximum = Math.max(maximum, combinedWeight);
+				if (weights[size - 1] <= Long.MAX_VALUE - weight) {
+					weights[size - 1] += weight;
+					return;
+				}
+			} else {
+				combinedWeight = weight;
 			}
 			if (size == rows.length) {
 				rows = workspace.grow(rows);

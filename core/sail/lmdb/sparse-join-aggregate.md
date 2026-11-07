@@ -16,7 +16,19 @@ HAVING (COUNT(?join) >= 10)
 
 `COUNT(*)`, `COUNT(1)`, and counts of guaranteed-bound aliases also work. In this mandatory fragment they count the same solution multiplicity. The existing serial packed factorized implementation accepts the bound-variable form; the benchmark uses that common form for comparisons and checks the star form separately.
 
-Each input can also be an independent `SELECT DISTINCT` projection of the shared variable and one endpoint from a single fixed-predicate pattern. For example, two such subqueries can collect distinct `(subject, class)` pairs across named graphs and group their join by the two class values. A hidden graph selector is applied before duplicates are collapsed. A repeatable filter whose complete reads are limited to the endpoint group keys may be evaluated once per completed group through the ordinary SPARQL expression evaluator.
+Each input can also be an independent `SELECT DISTINCT` projection of the shared variable and one endpoint from a single pattern. For example, two fixed-predicate subqueries can collect distinct `(subject, class)` pairs across named graphs. Variable-predicate inputs can instead project a subject or object together with its predicate:
+
+```sparql
+SELECT ?p1 ?p2 (COUNT(*) AS ?count)
+WHERE {
+  { SELECT DISTINCT ?s ?p1 WHERE { GRAPH ?g1 { ?s ?p1 ?o1 } } }
+  { SELECT DISTINCT ?s ?p2 WHERE { GRAPH ?g2 { ?s ?p2 ?o2 } } }
+  FILTER(STR(?p1) < STR(?p2))
+}
+GROUP BY ?p1 ?p2
+```
+
+Here the hidden object and graph are filtered before projection, and repeated accepted statements with the same `(subject, predicate)` produce one incidence per subquery. A plain pattern preserves the multiplicity of its accepted mappings instead. Presence and bag inputs can be combined, the shared node can be a subject or an object on either side, and safe projection aliases are supported. A replay-safe filter whose complete reads are limited to the endpoint group keys uses the ordinary SPARQL expression evaluator before any checked product or count update for an accepted pair. The complete outer HAVING expression still runs after aggregation.
 
 ## Automatic selection and diagnostics
 
@@ -26,7 +38,7 @@ Ordinary query preparation considers the strategy automatically. To explicitly d
 System.setProperty("rdf4j.lmdb.sparseJoinAggregate.enabled", "false");
 ```
 
-The native engine needs canonical physical term IDs and complete adjacency views whose runs are ordered by unsigned `(neighbor, context)`. Existing native-evaluation/direct-adjacency store configuration and snapshot ownership remain authoritative. In this repository, a plain `LmdbStoreConfig` still defaults to the generic evaluator with direct adjacency disabled; this feature is automatically available within a configured native evaluator. The benchmark enables that evaluator and explicitly builds the persistent adjacency before running queries. The strategy does not build a persistent index on demand.
+The native engine needs canonical physical term IDs and complete adjacency views with the ordering required by the chosen recipe. Existing native-evaluation/direct-adjacency store configuration and snapshot ownership remain authoritative. In this repository, a plain `LmdbStoreConfig` still defaults to the generic evaluator with direct adjacency disabled; this feature is automatically available within a configured native evaluator. The benchmark enables that evaluator and explicitly builds the persistent adjacency before running queries. The strategy does not build a persistent index on demand.
 
 For an exact comparison, use the existing public force API on a `SailTupleQuery`:
 
@@ -43,7 +55,9 @@ try (TupleQueryResult result = query.evaluate()) {
 
 This is a diagnostic selection example; complete executable fixtures are in `SparseJoinAggregateAdmissionTest`, `SparseJoinAggregateAutomaticTest`, and `SparseJoinAggregateBenchmark`. A forced strategy that is unavailable raises the existing forced-strategy error. With automatic selection, ineligible queries and clean resource refusals continue through existing alternatives. Default availability does not guarantee selection for every eligible query.
 
-The strategy publishes `sparseJoinAggregatePlan` and `sparseJoinAggregateWork` in executed explanations. The first identifies streamed and retained endpoint slots, binding names and directions, whether either input is distinct, context-processing modes, endpoint-filter count, and whether threshold pruning is active. Its `contextBuffers` field is a structural bound of zero, one, or two fixed context arrays; each holds 256 IDs and is allocated only when that input needs context filtering. The second reports retained rows/fibers/endpoints, streamed rows/fibers, multiply-adds, pruned rows/products, and candidate groups. After a transpose, “right” in the kernel counters names the chosen retained plane, not necessarily the second pattern as written in SPARQL. These counters describe actual work, not elapsed-time estimates.
+The strategy publishes `sparseJoinAggregatePlan` and `sparseJoinAggregateWork` in executed explanations. For fixed predicates, the plan identifies streamed and retained endpoint slots, binding names and directions, whether either input is distinct, context-processing modes, endpoint-filter count, and whether threshold pruning is active. Its `contextBuffers` field is a structural bound of zero, one, or two fixed context arrays; each holds 256 IDs and is allocated only when that input needs context filtering. The work counters report retained rows/fibers/endpoints, streamed rows/fibers, multiply-adds, pruned rows/products, and candidate groups. After a transpose, “right” in the kernel counters names the chosen retained plane, not necessarily the second pattern as written in SPARQL.
+
+For projected predicates, the plan instead reports the shared-node directions, each input's `PRESENCE` or `SUM` reduction, context modes, `ordered-plane-sweep` schedule, and `dense` or `bounded-spill` accumulator. Its work counters report roots, left and right incidences, products, groups and input reuse. These counters describe actual work, not elapsed-time estimates.
 
 The common `nativeAggregateCostQuotesEstimated` telemetry includes the sparse producer's physical quote. Bounded, snapshot-valid predicate counts and directional key-domain counts establish finite bounds for scanning, dictionary setup, probing, product updates, and output groups. The planner does not open input cursors to obtain that quote. Fixed graphs and dataset context restrictions also receive finite quotes when this metadata is available: filtering cannot increase the whole-plane domains or product bounds. Scoped inputs are charged for raw quad traversal, bounded context-membership comparisons, and their fixed context buffers. These are conservative bounds, not exact filtered cardinalities. Missing snapshot metadata leaves the candidate unpriced.
 
@@ -55,7 +69,9 @@ An unrestricted branching or provably weighted contraction can additionally expo
 
 The quote also marks sparse execution as blocking: multiplication and the private result replay finish before the first group is exposed. A downstream LIMIT therefore cannot discount this completed setup and aggregation work.
 
-Structural admission can keep a legal forced candidate available when metadata is missing, while execution still checks adjacency availability and the query memory ledger before any results escape. A normal choice is determined by the common selector and available quotes, rather than a sparse-specific exploration rule.
+For the projected-predicate recipe, automatic selection requires complete snapshot metadata and a dense predicate-pair accumulator whose peak allocation fits the query memory cap. The quote accounts for predicate-plane setup, key and context traversal, dictionary collisions, products, filters and retained state. Output replay has an unbounded upper work estimate when term width cannot be proved. Missing metadata or an oversized domain keeps the automatic candidate unpriced and lets existing alternatives execute. Forced execution can use a separately reported ledger-bounded spilling accumulator; it does not inherit the dense recipe's price. A memory refusal closes private output before fallback.
+
+The projected-predicate sweep currently requires a complete immutable base with a flat predicate catalog and no pending or overlay generations. If that capability is absent, it declines and leaves the ordinary path authoritative. Mixing a fixed-predicate operand with a projected-predicate operand is also outside the two supported physical recipes. A normal choice is determined by the common selector and available quotes, rather than a sparse-specific exploration rule.
 
 ## Computation and storage
 
@@ -65,17 +81,19 @@ Let `L(x,z)` and `R(z,y)` be positive multiplicities after the query's context r
 C(x,y) = sum over matching z of L(x,z) * R(z,y)
 ```
 
-`SparseJoinAggregateKernel.multiply` performs row-wise sparse multiplication. Preparation compares conservative peak memory bounds for both orientations, then binds one immutable recipe for pricing and execution. Transposing the multiplication preserves the endpoint bindings and counts while allowing the plane with the smaller state bound to be retained. Context constraints travel with their patterns, and both orientations account for the same bounded context scratch space. Missing metadata preserves the original deterministic orientation.
+For fixed predicates, `SparseJoinAggregateKernel.multiply` performs row-wise sparse multiplication. Preparation compares conservative peak memory bounds for both orientations, then binds one immutable recipe for pricing and execution. Transposing the multiplication preserves the endpoint bindings and counts while allowing the plane with the smaller state bound to be retained. Context constraints travel with their patterns, and both orientations account for the same bounded context scratch space. Missing metadata preserves the original deterministic orientation.
 
 The kernel reads the chosen right adjacency plane once, combines duplicate neighbors, assigns observed right endpoints dense integer ordinals, and stores compressed rows. The left side stays a run stream. For one left endpoint, each matching right row contributes directly into an ordinal-indexed counter array. A touched-ordinal list identifies the only counters that need emission and clearing. The kernel never creates an intermediate binding set for each joined pair, and never allocates an endpoint-by-endpoint matrix.
 
-Unit-weight right planes omit the weight array. Weighted fibers use checked multiplication and addition. All 64 bits of physical IDs are supported; IDs are hash keys rather than direct array subscripts. Real result counts follow the current factorized arithmetic and fail above `Long.MAX_VALUE`. Saturation is used only for safe pruning bounds and diagnostic work counters.
+Unit-weight right planes omit the weight array. Weighted fibers use checked multiplication and addition. If adjacent positive fibers cannot be combined within `long`, the row-wise kernel retains separate fibers until an endpoint pair has passed its filter; an accepted overflowing count still fails. All 64 bits of physical IDs are supported; IDs are hash keys rather than direct array subscripts. Real result counts follow the current factorized arithmetic and fail above `Long.MAX_VALUE`. Saturation is used only for safe pruning bounds and diagnostic work counters.
 
 If `J` is the number of shared rows on the right, `F_R` the number of right fibers, `Y` the number of observed right endpoints, and `D_L` the largest relevant left run, working memory is `O(J + F_R + Y + D_L)`, plus bounded input buffers and the separately owned result replay. The left-run buffer is needed only for thresholds greater than one. Primitive maps have expected constant-time lookups. With no pruning, arithmetic work is proportional to the number of matching fiber products; setup also scans the input runs, and emission costs at least the number of output groups.
 
 The implementation remaps the entire eligible retained plane on each execution. For unrestricted contexts, the adapter consumes physical neighbor/multiplicity batches directly when the positioned source cursor certifies bounded physical copying. Both direct and decoded adjacency cursors expose this capability for immutable single-page rows, and bounded cursor wrappers preserve it. Multiplicities therefore need not be expanded into individual quads and then recombined.
 
 The capability is checked again after every row advance. Context-filtered, merged, generic, and multi-page rows use bounded quad batches and form weights after filtering. Sequential positioned copies reuse their page coordinates and poll cancellation during long runs. A distinct input remembers the last accepted neighbor across batches and pages, including batches in which every context is rejected. Output density can dominate result construction, and a low-fanout join can be cheaper through an existing route. There is no cross-query matrix cache, AMX path, native library, or JNI dependency.
+
+For two projected-predicate inputs, the alternative sweep merges the explicitly ordered predicate-plane cursors by shared node. It forms the accepted predicate incidences for that node and contributes their products to a bounded predicate-pair accumulator. Equal directions and scopes can reuse the same sweep and incidence row; different scopes or reductions remain independent. A `PRESENCE` incidence has weight one after the first accepted object/context, while `SUM` retains the exact accepted multiplicity. Positioned run reads use bounded context batches and poll cancellation, including during long rejected runs. The dense accumulator is used only when its domain and peak memory fit the quote; the forced spill recipe uses the existing bounded count-group store. Variable-predicate inputs do not currently have a separate row-wise sparse recipe.
 
 ## HAVING bounds
 
@@ -93,6 +111,7 @@ The integration recognizes necessary exact-integer comparisons through the exist
 | Input or aggregate | Behavior |
 | --- | --- |
 | Exactly two mandatory fixed-predicate patterns, sharing one subject/object variable | Eligible when their other two endpoint variables are exactly the group keys |
+| Two variable-predicate patterns or independent projected incidences, sharing a subject/object variable | Eligible when the two predicate variables are the group keys and omitted payload/context dimensions can be reduced safely |
 | Independent `SELECT DISTINCT` of a pattern's two endpoints, including safe copied aliases | Supported on either input when lexical and graph scope are proven independent |
 | Subject-subject, subject-object, object-subject, object-object joins | Supported |
 | Predicate self-join | Supported; both pair orders and diagonal groups are retained |
@@ -104,6 +123,7 @@ The integration recognizes necessary exact-integer comparisons through the exist
 | Replay-safe filters reading only endpoint group keys | Supported using the original expression's value and error semantics |
 | Optional inputs, extra patterns, unsafe or non-group-key filters, guarded VALUES input, extra join dimensions | Existing alternatives |
 | Hidden local graph variable in an admitted distinct projection | Supported; graph variables retained as result/join dimensions keep existing alternatives |
+| One fixed-predicate and one projected-predicate operand | Existing alternatives |
 | Repeated pattern slots, range-constrained patterns, bound incoming active slots, inherited graph/LATERAL frames | Existing alternatives |
 | DISTINCT aggregates, other aggregates, possibly unbound COUNT arguments | Existing alternatives |
 | Computed/effectful expression COUNT, including `COUNT(1 / 0)` | Existing alternatives; no new expression-error or unbound semantics |

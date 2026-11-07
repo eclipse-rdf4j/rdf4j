@@ -124,6 +124,97 @@ class SparseJoinAggregateKernelTest {
 	}
 
 	@Test
+	void endpointFilterIsCachedPerPairAndResetBetweenRows() {
+		List<Row> left = List.of(row(1, 10, 1, 11, 1), row(2, 10, 1, 11, 1));
+		List<Row> right = List.of(row(10, 20, 1), row(11, 20, 1));
+		for (long minimum : new long[] { 1L, 2L }) {
+			Map<Pair, Long> counts = new HashMap<>();
+			List<Pair> evaluated = new ArrayList<>();
+			TrackingMemory memory = new TrackingMemory(Long.MAX_VALUE);
+			SparseJoinAggregateKernel.Sink sink = new SparseJoinAggregateKernel.Sink() {
+				@Override
+				public boolean accepts(long a, long b) {
+					evaluated.add(new Pair(a, b));
+					return a == 2L;
+				}
+
+				@Override
+				public void accept(long a, long b, long count) {
+					counts.put(new Pair(a, b), count);
+				}
+			};
+			SparseJoinAggregateKernel.multiply(new Rows(left), new Rows(right), minimum, sink, memory, null);
+			assertEquals(List.of(new Pair(1, 20), new Pair(2, 20)), evaluated);
+			assertEquals(Map.of(new Pair(2, 20), 2L), counts);
+			assertEquals(0L, memory.used);
+		}
+	}
+
+	@Test
+	void rejectedPairDoesNotOverflowWhenContributionsAreAdded() {
+		List<Row> left = List.of(row(1, 10, Long.MAX_VALUE, 11, 1));
+		List<Row> right = List.of(row(10, 20, 1), row(11, 20, 1));
+		TrackingMemory memory = new TrackingMemory(Long.MAX_VALUE);
+		SparseJoinAggregateKernel.Sink rejecting = new SparseJoinAggregateKernel.Sink() {
+			@Override
+			public boolean accepts(long a, long b) {
+				return false;
+			}
+
+			@Override
+			public void accept(long a, long b, long count) {
+				throw new AssertionError("rejected group escaped");
+			}
+		};
+		SparseJoinAggregateKernel.multiply(new Rows(left), new Rows(right), 1L, rejecting, memory, null);
+		assertEquals(0L, memory.used);
+		assertThrows(QueryEvaluationException.class, () -> multiply(left, right, 1L));
+	}
+
+	@Test
+	void rejectedPairSkipsOverflowInRetainedRightFiber() {
+		List<Row> left = List.of(row(1, 10, 1));
+		List<Row> right = List.of(row(10, 20, Long.MAX_VALUE, 20, 1));
+		TrackingMemory memory = new TrackingMemory(Long.MAX_VALUE);
+		SparseJoinAggregateKernel.multiply(new Rows(left), new Rows(right), 1L, rejectEveryPair(), memory, null);
+		assertEquals(0L, memory.used);
+		assertTrue(multiply(List.of(row(1, 11, 1)), right, 1L).counts.isEmpty());
+		assertThrows(QueryEvaluationException.class, () -> multiply(left, right, 1L));
+	}
+
+	@Test
+	void rejectedPairSkipsOverflowInBufferedLeftFiber() {
+		List<Row> left = List.of(row(1, 10, Long.MAX_VALUE, 10, 1));
+		List<Row> right = List.of(row(10, 20, 1));
+		TrackingMemory memory = new TrackingMemory(Long.MAX_VALUE);
+		SparseJoinAggregateKernel.multiply(new Rows(left), new Rows(right), 2L, rejectEveryPair(), memory, null);
+		assertEquals(0L, memory.used);
+		assertThrows(QueryEvaluationException.class, () -> multiply(left, right, 2L));
+	}
+
+	@Test
+	void pruningUsesCombinedMultiplicityOfRepeatedFibers() {
+		assertEquals(Map.of(new Pair(1, 20), 5L),
+				multiply(List.of(row(1, 10, 1)), List.of(row(10, 20, 2, 20, 3)), 4L).counts);
+		assertEquals(Map.of(new Pair(1, 20), 5L),
+				multiply(List.of(row(1, 10, 2, 10, 3)), List.of(row(10, 20, 1)), 4L).counts);
+	}
+
+	private static SparseJoinAggregateKernel.Sink rejectEveryPair() {
+		return new SparseJoinAggregateKernel.Sink() {
+			@Override
+			public boolean accepts(long a, long b) {
+				return false;
+			}
+
+			@Override
+			public void accept(long a, long b, long count) {
+				throw new AssertionError("rejected group escaped");
+			}
+		};
+	}
+
+	@Test
 	void emptyAndDisjointInputsNeverCreateZeroGroups() {
 		assertTrue(multiply(List.of(), List.of(row(1, 2, 1)), 0).counts.isEmpty());
 		assertTrue(multiply(List.of(row(1, 2, 1)), List.of(), 0).counts.isEmpty());

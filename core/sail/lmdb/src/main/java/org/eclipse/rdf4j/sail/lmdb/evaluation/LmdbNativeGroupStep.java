@@ -1381,7 +1381,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS)));
 		}
 		LmdbSparseJoinAggregatePlan sparse = sparseJoinAggregate == null ? null : sparseJoinAggregate.prepare(row);
-		if (sparse != null) {
+		if (sparse != null && (forcedExecutionStrategy != null || sparse.automaticCandidate(row))) {
 			arbiter.offer(() -> estimatedProposal(() -> {
 				List<BindingSet> result = sparse.evaluate(this, row);
 				if (result != null) {

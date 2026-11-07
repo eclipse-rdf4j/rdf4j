@@ -48,10 +48,23 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 final class NativeSubqueryPlan implements SlotPlan {
 	static final AtomicLong WORKER_BINDINGS = new AtomicLong();
 
-	/** An independent DISTINCT projection of one predicate plane, expressed in the caller's slots. */
-	record Incidence(PatternPlan pattern, List<String> entryNames) {
+	enum IncidenceReduction {
+		PRESENCE,
+		SUM
+	}
+
+	/** An independent projection of one statement pattern, expressed in the caller's exposed slots. */
+	record Incidence(PatternPlan pattern, List<String> entryNames, long axes, IncidenceReduction reduction) {
+		Incidence(PatternPlan pattern, List<String> entryNames) {
+			this(pattern, entryNames, (1L << pattern.s.slot) | (1L << pattern.o.slot),
+					IncidenceReduction.PRESENCE);
+		}
+
 		Incidence {
 			entryNames = List.copyOf(entryNames);
+			if (Long.bitCount(axes) != 2 || (axes & ~pattern.producedMask) != 0L || reduction == null) {
+				throw new IllegalArgumentException("incidence needs two exposed pattern axes and a reduction");
+			}
 		}
 	}
 

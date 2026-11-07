@@ -3427,6 +3427,58 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return new LmdbDirectWildcardAdjacency(view, plane(bySubject, explicit), this::scheduleAdaptiveAcceleration);
 	}
 
+	/** No overlay preparation may run before a key cursor can install its cancellation callback. */
+	NativeLmdbQuerySource.WildcardAdjacency bindBoundedPredicateSweep(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit) {
+		if (!boundedPredicateSweepAvailable(view)) {
+			return null;
+		}
+		return bindWildcardAdjacency(view, bySubject, explicit, null);
+	}
+
+	private boolean boundedPredicateSweepAvailable(LmdbAdjacencyReadView view) {
+		if (view == null || view.state().pending().length != 0) {
+			return false;
+		}
+		LmdbAdjacencyOverlaySet overlays = view.state().overlays();
+		// Flattening a history of summary levels allocates and sorts a catalog without a cancellation poll.
+		// A base-only sweep can use the already-flat immutable domain; otherwise leave it to the ordinary path.
+		return view.state().planeStatistics().summaryLevelCount() == 0
+				&& (overlays == null || overlays.generationCount() == 0) && exactFullSnapshot(view)
+				&& view.snapshotRevision() == view.state().appliedRevision();
+	}
+
+	NativeLmdbQuerySource.PredicateProjectionStatistics predicateProjectionStatistics(LmdbAdjacencyReadView view,
+			boolean bySubject, boolean explicit, Runnable cancellationPoll) {
+		if (!boundedPredicateSweepAvailable(view)) {
+			return null;
+		}
+		LmdbAdjacencyPlaneStatistics statistics = view.state().planeStatistics();
+		LmdbAdjacencyPlaneStatistics.PredicateDomain domain = statistics.predicateDomain();
+		int plane = plane(bySubject, explicit);
+		long quads = 0L, incidences = 0L, largest = 0L;
+		try {
+			for (int ordinal = 0; ordinal < domain.size(); ordinal++) {
+				if ((ordinal & 1023) == 0) {
+					cancellationPoll.run();
+				}
+				long predicate = domain.predicateAt(ordinal);
+				long keys = statistics.keyCount(predicate, plane);
+				long count = statistics.quadCount(predicate, plane);
+				if (keys < 0L || count < keys || (keys == 0L) != (count == 0L)) {
+					return null;
+				}
+				quads = Math.addExact(quads, count);
+				incidences = Math.addExact(incidences, keys);
+				largest = Math.max(largest, keys);
+			}
+			return new NativeLmdbQuerySource.PredicateProjectionStatistics(quads, incidences, largest,
+					domain.size());
+		} catch (ArithmeticException overflow) {
+			return null;
+		}
+	}
+
 	private void observeWildcardPredicate(AdjacencyAccessObserver observer, boolean used, String reason,
 			boolean bySubject) {
 		observe(observer, used, reason, bySubject ? StatementOrder.S : StatementOrder.O,

@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
@@ -144,6 +145,234 @@ class SparseJoinAggregateSemanticsTest {
 			assertEquals(2, expected.size());
 			assertTrue(expected.stream().allMatch(row -> row.contains("count=\"1\"")), expected.toString());
 			assertEquals(expected, fixture.sparse(query));
+		}
+	}
+
+	@Test
+	void distinctPredicateIncidenceForgetsObjectsAndNamedGraphs(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory)) {
+			String query = PREFIX + """
+					SELECT ?p1 ?p2 (COUNT(*) AS ?count) WHERE {
+					  { SELECT DISTINCT ?s ?p1 WHERE { GRAPH ?g1 { ?s ?p1 ?o1 } } }
+					  { SELECT DISTINCT ?s ?p2 WHERE { GRAPH ?g2 { ?s ?p2 ?o2 } } }
+					  FILTER(STR(?p1) < STR(?p2))
+					} GROUP BY ?p1 ?p2
+					""";
+			List<String> expected = fixture.generic(query);
+			assertEquals(1, expected.size(), expected.toString());
+			assertTrue(expected.get(0).contains("p1=urn:sparse:pr"), expected.toString());
+			assertTrue(expected.get(0).contains("p2=urn:sparse:q"), expected.toString());
+			assertTrue(expected.get(0).contains("count=\"1\""), expected.toString());
+			assertEquals(expected, fixture.sparse(query));
+		}
+	}
+
+	@Test
+	void predicateIncidenceDoesNotRequireOptionalNodeProjection(@TempDir Path directory) {
+		String property = "rdf4j.lmdb.directAdjacency.nodePredicateProjection.serve.enabled";
+		String previous = System.setProperty(property, "false");
+		try (Fixture fixture = new Fixture(directory)) {
+			String query = PREFIX + """
+					SELECT ?p1 ?p2 (COUNT(*) AS ?count) WHERE {
+					  { SELECT DISTINCT ?s ?p1 WHERE { GRAPH ?g1 { ?s ?p1 ?o1 } } }
+					  { SELECT DISTINCT ?s ?p2 WHERE { GRAPH ?g2 { ?s ?p2 ?o2 } } }
+					  FILTER(STR(?p1) < STR(?p2))
+					} GROUP BY ?p1 ?p2
+					""";
+			List<String> expected = fixture.generic(query);
+			assertEquals(1, expected.size());
+			assertEquals(expected, fixture.sparse(query));
+		} finally {
+			restore(property, previous);
+		}
+	}
+
+	@Test
+	void predicateIncidencePreservesBagMultiplicity(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory)) {
+			String query = PREFIX + """
+					SELECT ?a ?b (COUNT(*) AS ?count) WHERE {
+					  ?s ?a ?left . ?s ?b ?right .
+					  FILTER(STR(?a) < STR(?b))
+					} GROUP BY ?a ?b
+					""";
+			List<String> expected = fixture.generic(query);
+			assertFalse(expected.isEmpty());
+			assertTrue(expected.stream().anyMatch(row -> !row.contains("count=\"1\"")), expected.toString());
+			assertEquals(expected, fixture.sparse(query));
+		}
+	}
+
+	@Test
+	void mixedPredicateReductionsAndDistinctGraphScopes(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory)) {
+			for (boolean distinctLeft : new boolean[] { false, true }) {
+				String distinct = "{ SELECT DISTINCT ?s ?p WHERE { GRAPH ex:g1 { ?s ?p ?object1 } } }";
+				String bag = "GRAPH ex:g2 { ?s ?q ?object2 }";
+				String query = PREFIX + "SELECT ?p ?q (COUNT(*) AS ?count) WHERE { "
+						+ (distinctLeft ? distinct + " " + bag : bag + " " + distinct)
+						+ " FILTER(STR(?p) < STR(?q)) } GROUP BY ?p ?q";
+				List<String> expected = fixture.generic(query);
+				assertFalse(expected.isEmpty(), query);
+				assertEquals(expected, fixture.sparse(query), query);
+			}
+			String scoped = PREFIX + "SELECT ?p ?q (COUNT(*) AS ?count) FROM NAMED ex:g1 FROM NAMED ex:g2 "
+					+ "WHERE { { SELECT DISTINCT ?s ?p WHERE { GRAPH ex:g1 { ?s ?p ?a } } } "
+					+ "{ SELECT DISTINCT ?s ?q WHERE { GRAPH ex:g2 { ?s ?q ?b } } } "
+					+ "FILTER(STR(?p) < STR(?q)) } GROUP BY ?p ?q";
+			assertEquals(fixture.generic(scoped), fixture.sparse(scoped));
+		}
+	}
+
+	@Test
+	void mixedFixedAndVariablePredicateOperandsFallBack(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory)) {
+			String query = PREFIX + "SELECT ?a ?b (COUNT(*) AS ?count) WHERE { "
+					+ "{ SELECT DISTINCT ?s ?a WHERE { GRAPH ?g1 { ?s ?a ?o } } } "
+					+ "{ SELECT DISTINCT ?s ?b WHERE { GRAPH ?g2 { ?s ex:q ?b } } } "
+					+ "FILTER(STR(?a) < STR(?b)) } GROUP BY ?a ?b";
+			assertEquals(fixture.generic(query), fixture.automatic(query));
+			assertFalse(fixture.paths(query, Map.of()).contains("sparseJoinAggregate"));
+			assertThrows(QueryEvaluationException.class, () -> fixture.sparse(query));
+		}
+	}
+
+	@Test
+	void predicateIncidenceRespectsDatasetContextsAndEmptyGraphs(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory)) {
+			String named = "{ SELECT DISTINCT ?s ?p WHERE { GRAPH ?g1 { ?s ?p ?a } } } "
+					+ "{ SELECT DISTINCT ?s ?q WHERE { GRAPH ?g2 { ?s ?q ?b } } } ";
+			String bag = "?s ?p ?a . ?s ?q ?b . ";
+			for (String[] scope : new String[][] {
+					{ "FROM NAMED ex:g1", named },
+					{ "FROM NAMED ex:g1 FROM NAMED ex:g2", named },
+					{ "FROM ex:g1 FROM ex:g2", bag } }) {
+				String query = PREFIX + "SELECT ?p ?q (COUNT(*) AS ?count) " + scope[0] + " WHERE { "
+						+ scope[1] + "FILTER(STR(?p) < STR(?q)) } GROUP BY ?p ?q";
+				assertEquals(fixture.generic(query), fixture.automatic(query), query);
+				assertEquals(fixture.generic(query), fixture.sparse(query), query);
+			}
+			String empty = PREFIX + "SELECT ?p ?q (COUNT(*) AS ?count) FROM NAMED ex:missing WHERE { "
+					+ named + "FILTER(STR(?p) < STR(?q)) } GROUP BY ?p ?q";
+			assertTrue(fixture.generic(empty).isEmpty());
+			assertEquals(fixture.generic(empty), fixture.automatic(empty));
+		}
+	}
+
+	@Test
+	void predicateIncidenceRejectsInheritedBindingsAndGraphProjection(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory)) {
+			String inputs = "{ SELECT DISTINCT ?s ?p WHERE { GRAPH ?g1 { ?s ?p ?a } } } "
+					+ "{ SELECT DISTINCT ?s ?q WHERE { GRAPH ?g2 { ?s ?q ?b } } } ";
+			String query = PREFIX + "SELECT ?p ?q (COUNT(*) AS ?count) WHERE { " + inputs
+					+ "FILTER(STR(?p) < STR(?q)) } GROUP BY ?p ?q";
+			ValueFactory values = SimpleValueFactory.getInstance();
+			for (Map<String, Value> bindings : List.of(
+					Map.<String, Value>of("g1", RDF4J.NIL),
+					Map.<String, Value>of("g2", values.createIRI("urn:sparse:g2")),
+					Map.<String, Value>of("p", values.createIRI("urn:sparse:pr")),
+					Map.<String, Value>of("s", values.createIRI("urn:sparse:j1")),
+					Map.<String, Value>of("a", values.createIRI("urn:sparse:a1")))) {
+				assertEquals(fixture.generic(query, bindings), fixture.automatic(query, bindings), bindings.toString());
+				assertFalse(fixture.paths(query, bindings).contains("sparseJoinAggregate"), bindings.toString());
+			}
+			String graph = PREFIX + "SELECT ?p ?q (COUNT(*) AS ?count) WHERE { "
+					+ "{ SELECT DISTINCT ?s ?p ?g1 WHERE { GRAPH ?g1 { ?s ?p ?a } } } "
+					+ "{ SELECT DISTINCT ?s ?q WHERE { GRAPH ?g2 { ?s ?q ?b } } } "
+					+ "FILTER(STR(?p) < STR(?q)) } GROUP BY ?p ?q";
+			assertEquals(fixture.generic(graph), fixture.automatic(graph));
+			assertFalse(fixture.paths(graph, Map.of()).contains("sparseJoinAggregate"));
+			assertThrows(QueryEvaluationException.class, () -> fixture.sparse(graph));
+		}
+	}
+
+	@Test
+	void predicateIncidenceRespectsVolatileAndCorrelatedScopes(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory)) {
+			String inputs = "{ SELECT DISTINCT ?s ?p WHERE { GRAPH ?g1 { ?s ?p ?a } } } "
+					+ "{ SELECT DISTINCT ?s ?q WHERE { GRAPH ?g2 { ?s ?q ?b } } } ";
+			for (String where : List.of(
+					inputs + "FILTER(RAND() >= 0)",
+					"GRAPH ?outer { " + inputs + "FILTER(STR(?p) < STR(?q)) }",
+					"VALUES ?p { ex:pr } LATERAL { " + inputs + "FILTER(STR(?p) < STR(?q)) }")) {
+				String query = PREFIX + "SELECT ?p ?q (COUNT(*) AS ?count) WHERE { " + where + " } GROUP BY ?p ?q";
+				assertEquals(fixture.generic(query), fixture.automatic(query), query);
+				assertFalse(fixture.paths(query, Map.of()).contains("sparseJoinAggregate"), query);
+			}
+		}
+	}
+
+	@Test
+	void largePredicateDomainFallsBackAutomaticallyAndForcedSpillIsExact(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory)) {
+			try (SailRepositoryConnection connection = fixture.repository.getConnection()) {
+				ValueFactory values = connection.getValueFactory();
+				IRI graph = values.createIRI("urn:sparse:g1");
+				connection.begin();
+				for (int i = 0; i < 100; i++) {
+					connection.add(values.createIRI("urn:sparse:filler-subject-" + i),
+							values.createIRI("urn:sparse:filler-predicate-" + i),
+							values.createIRI("urn:sparse:filler-object"), graph);
+				}
+				connection.commit();
+			}
+			assertTrue(AdjacencyEngagementTestAccess.buildNow(fixture.store));
+			String query = PREFIX + "SELECT ?p ?q (COUNT(*) AS ?count) WHERE { "
+					+ "{ SELECT DISTINCT ?s ?p WHERE { GRAPH ?g1 { ?s ?p ?a } } } "
+					+ "{ SELECT DISTINCT ?s ?q WHERE { GRAPH ?g2 { ?s ?q ?b } } } "
+					+ "FILTER(STR(?p) < STR(?q)) } GROUP BY ?p ?q";
+			List<String> expected = fixture.generic(query);
+			assertFalse(expected.isEmpty());
+			LmdbQueryMemoryManager previous = LmdbNativeHashJoin.queryMemoryOverride;
+			LmdbQueryMemoryManager limited = LmdbQueryMemoryManager.createForTesting(270_000L, 270_000L);
+			LmdbNativeHashJoin.queryMemoryOverride = limited;
+			try {
+				assertEquals(expected, fixture.automatic(query));
+				assertFalse(fixture.paths(query, Map.of()).contains("sparseJoinAggregate"));
+				assertEquals(expected, fixture.sparse(query));
+				assertTrue(fixture.forcedPlans(query)
+						.stream()
+						.anyMatch(plan -> plan.contains("accumulator=bounded-spill")));
+			} finally {
+				LmdbNativeHashJoin.queryMemoryOverride = previous;
+			}
+			assertEquals(0L, limited.usedBytes());
+		}
+	}
+
+	@Test
+	void predicateIncidenceSupportsOppositeDirectionsAndAliases(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory)) {
+			String query = PREFIX + """
+					SELECT ?a ?b (COUNT(*) AS ?count) WHERE {
+					  { SELECT DISTINCT (?source AS ?j) (?predicate AS ?a)
+					    WHERE { GRAPH ?g1 { ?source ?predicate ?object } } }
+					  { SELECT DISTINCT (?target AS ?j) (?property AS ?b)
+					    WHERE { GRAPH ?g2 { ?subject ?property ?target } } }
+					  FILTER(STR(?a) < STR(?b))
+					} GROUP BY ?a ?b
+					""";
+			List<String> expected = fixture.generic(query);
+			assertFalse(expected.isEmpty());
+			assertEquals(expected, fixture.sparse(query));
+		}
+	}
+
+	@Test
+	void predicateIncidenceKeepsHiddenPayloadFiltersOnOrdinaryRoute(@TempDir Path directory) {
+		try (Fixture fixture = new Fixture(directory)) {
+			String query = PREFIX + """
+					SELECT ?a ?b (COUNT(*) AS ?count) WHERE {
+					  { SELECT DISTINCT ?s ?a WHERE {
+					    GRAPH ?g1 { ?s ?a ?o1 FILTER(?o1 = ex:b2) }
+					  } }
+					  { SELECT DISTINCT ?s ?b WHERE { GRAPH ?g2 { ?s ?b ?o2 } } }
+					  FILTER(STR(?a) < STR(?b))
+					} GROUP BY ?a ?b
+					""";
+			assertEquals(fixture.generic(query), fixture.automatic(query));
+			assertFalse(fixture.paths(query, Map.of()).contains("sparseJoinAggregate"));
+			assertThrows(QueryEvaluationException.class, () -> fixture.sparse(query));
 		}
 	}
 
@@ -540,6 +769,28 @@ class SparseJoinAggregateSemanticsTest {
 				Set<String> paths = new LinkedHashSet<>();
 				collectPaths(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode(), paths);
 				return paths;
+			}
+		}
+
+		Set<String> forcedPlans(String query) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+				prepared.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE);
+				Set<String> plans = new LinkedHashSet<>();
+				collectPlans(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode(), plans);
+				return plans;
+			}
+		}
+
+		private static void collectPlans(GenericPlanNode node, Set<String> plans) {
+			String plan = node.getStringMetricActual("sparseJoinAggregatePlan");
+			if (plan != null) {
+				plans.add(plan);
+			}
+			if (node.getPlans() != null) {
+				for (GenericPlanNode child : node.getPlans()) {
+					collectPlans(child, plans);
+				}
 			}
 		}
 

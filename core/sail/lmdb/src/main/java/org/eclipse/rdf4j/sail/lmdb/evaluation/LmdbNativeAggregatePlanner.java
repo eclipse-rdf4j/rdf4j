@@ -2529,6 +2529,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		Var predicate = statement.getPredicateVar();
 		Var object = statement.getObjectVar();
 		Var graph = statement.getContextVar();
+		if (!predicate.hasValue()) {
+			return compileDistinctPredicateIncidence(statement, projection, extensions);
+		}
 		if (subject.hasValue() || object.hasValue() || subject.hasApiInputOrigin() || object.hasApiInputOrigin()
 				|| subject.getName().equals(object.getName()) || !predicate.hasValue()
 				|| predicate.hasApiInputOrigin() || !predicate.isAnonymous() && !predicate.isConstant()
@@ -2590,6 +2593,87 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				predicate.clone(), new Var(objectOutput), fixedGraph);
 		PatternPlan pattern = compileStatementPattern(physical);
 		return pattern == null ? null : new NativeSubqueryPlan.Incidence(pattern, List.copyOf(entryNames));
+	}
+
+	/** Prove an independent DISTINCT of predicate and either subject or object, omitting the other node. */
+	private NativeSubqueryPlan.Incidence compileDistinctPredicateIncidence(StatementPattern statement,
+			Projection projection, List<Extension> extensions) {
+		Var subject = statement.getSubjectVar();
+		Var predicate = statement.getPredicateVar();
+		Var object = statement.getObjectVar();
+		Var graph = statement.getContextVar();
+		if (subject.hasValue() || predicate.hasValue() || object.hasValue() || subject.hasApiInputOrigin()
+				|| predicate.hasApiInputOrigin() || object.hasApiInputOrigin()
+				|| subject.getName().equals(predicate.getName()) || subject.getName().equals(object.getName())
+				|| predicate.getName().equals(object.getName())
+				|| graph != null && (graph.hasApiInputOrigin() || !graph.hasValue()
+						&& (graph.getName().equals(subject.getName()) || graph.getName().equals(predicate.getName())
+								|| graph.getName().equals(object.getName())))) {
+			return null;
+		}
+		Map<String, String> origins = new LinkedHashMap<>();
+		origins.put(subject.getName(), subject.getName());
+		origins.put(predicate.getName(), predicate.getName());
+		origins.put(object.getName(), object.getName());
+		Set<String> localNames = new LinkedHashSet<>(statement.getBindingNames());
+		for (int i = extensions.size() - 1; i >= 0; i--) {
+			for (ExtensionElem element : extensions.get(i).getElements()) {
+				if (!(element.getExpr() instanceof Var sourceVar) || sourceVar.hasValue()
+						|| sourceVar.hasApiInputOrigin() || !origins.containsKey(sourceVar.getName())
+						|| !localNames.add(element.getName())) {
+					return null;
+				}
+				origins.put(element.getName(), origins.get(sourceVar.getName()));
+			}
+		}
+		String subjectOutput = null;
+		String predicateOutput = null;
+		String objectOutput = null;
+		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+			if (element.hasAggregateOperatorInExpression()) {
+				return null;
+			}
+			String output = element.getProjectionAlias().orElse(element.getName());
+			String origin = origins.get(element.getName());
+			if (subject.getName().equals(origin)) {
+				subjectOutput = output;
+			} else if (predicate.getName().equals(origin)) {
+				predicateOutput = output;
+			} else if (object.getName().equals(origin)) {
+				objectOutput = output;
+			} else {
+				return null;
+			}
+		}
+		String nodeOutput = subjectOutput == null ? objectOutput : subjectOutput;
+		if (predicateOutput == null || nodeOutput == null || subjectOutput != null && objectOutput != null
+				|| nodeOutput.equals(predicateOutput) || graph != null && !graph.hasValue()
+						&& (graph.getName().equals(nodeOutput) || graph.getName().equals(predicateOutput))) {
+			return null;
+		}
+		Set<String> entryNames = new LinkedHashSet<>(localNames);
+		entryNames.add(nodeOutput);
+		entryNames.add(predicateOutput);
+		if (graph != null && !graph.isConstant()) {
+			entryNames.add(graph.getName());
+		}
+		if (!Collections.disjoint(entryNames, context.getSubstitutionBindingNames())
+				|| !Collections.disjoint(entryNames, inheritedFrameInputNames)
+				|| !Collections.disjoint(entryNames, inheritedLateralFrameInputNames)) {
+			return null;
+		}
+		Var fixedGraph = graph != null && graph.hasValue() ? graph.clone() : null;
+		StatementPattern physical = new StatementPattern(statement.getScope(),
+				subjectOutput == null ? subject.clone() : new Var(subjectOutput), new Var(predicateOutput),
+				objectOutput == null ? object.clone() : new Var(objectOutput), fixedGraph);
+		PatternPlan pattern = compileStatementPattern(physical);
+		if (pattern == null) {
+			return null;
+		}
+		int node = subjectOutput == null ? pattern.o.slot : pattern.s.slot;
+		long axes = (1L << node) | (1L << pattern.p.slot);
+		return new NativeSubqueryPlan.Incidence(pattern, List.copyOf(entryNames), axes,
+				NativeSubqueryPlan.IncidenceReduction.PRESENCE);
 	}
 
 	/** One lexical preparation recipe, bound independently to the coordinator or an actual worker authority. */

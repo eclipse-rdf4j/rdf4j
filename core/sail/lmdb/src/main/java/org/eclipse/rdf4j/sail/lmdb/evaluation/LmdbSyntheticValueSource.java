@@ -701,6 +701,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			}
 
 			@Override
+			public WildcardAdjacency boundedPredicateSweep(boolean bySubject) throws IOException {
+				return inner.boundedPredicateSweep(bySubject);
+			}
+
+			@Override
 			public void close() {
 				inner.close();
 			}
@@ -768,6 +773,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	public OptionalLong predicateDomainCardinality() {
 		// synthetic ids stand for query constants absent from the store: they add no predicate to the catalog
 		return delegate.predicateDomainCardinality();
+	}
+
+	@Override
+	public PredicateProjectionStatistics predicateProjectionStatistics(boolean bySubject, Runnable cancellationPoll) {
+		return delegate.predicateProjectionStatistics(bySubject, cancellationPoll);
 	}
 
 	@Override

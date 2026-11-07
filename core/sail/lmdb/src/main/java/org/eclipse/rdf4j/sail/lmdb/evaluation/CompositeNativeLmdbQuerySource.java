@@ -602,6 +602,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public PredicateProjectionStatistics predicateProjectionStatistics(boolean bySubject, Runnable cancellationPoll) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null : active.predicateProjectionStatistics(bySubject, cancellationPoll);
+	}
+
+	@Override
 	public OptionalLong adjacencyKeyDomainCardinality(long predicate, boolean bySubject) {
 		if (activeSources.isEmpty()) {
 			return OptionalLong.of(0L);
@@ -1481,6 +1487,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalLong predicateDomainCardinality() {
 			return delegate.predicateDomainCardinality();
+		}
+
+		@Override
+		public PredicateProjectionStatistics predicateProjectionStatistics(boolean bySubject,
+				Runnable cancellationPoll) {
+			return delegate.predicateProjectionStatistics(bySubject, cancellationPoll);
 		}
 
 		@Override

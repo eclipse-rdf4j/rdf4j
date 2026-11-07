@@ -23,6 +23,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -88,6 +90,81 @@ class SparseJoinAggregateAutomaticTest {
 				() -> "Expected automatic sparse execution, observed " + actual.paths()
 						+ "; costs=" + actual.costs() + "; features=" + actual.features()
 						+ "; decisions=" + actual.decisions());
+	}
+
+	@Test
+	void choosesProjectedPredicateIncidenceAutomatically(@TempDir Path directory) {
+		String query = """
+				SELECT ?a ?b (COUNT(*) AS ?count) WHERE {
+				  { SELECT DISTINCT ?s ?a WHERE { GRAPH ?g1 { ?s ?a ?o1 } } }
+				  { SELECT DISTINCT ?s ?b WHERE { GRAPH ?g2 { ?s ?b ?o2 } } }
+				  FILTER(STR(?a) < STR(?b))
+				} GROUP BY ?a ?b
+				""";
+		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,psoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL));
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				var vf = connection.getValueFactory();
+				var graph1 = vf.createIRI(EX, "graph1");
+				var graph2 = vf.createIRI(EX, "graph2");
+				connection.begin();
+				for (int subject = 0; subject < JOIN_KEYS; subject++) {
+					for (int predicate = 0; predicate < ENDPOINTS; predicate++) {
+						var s = vf.createIRI(EX, "subject" + subject);
+						var p = vf.createIRI(EX, "predicate" + predicate);
+						connection.add(s, p, vf.createIRI(EX, "object1"), graph1, graph2);
+						connection.add(s, p, vf.createIRI(EX, "object2"), graph1, graph2);
+					}
+				}
+				connection.commit();
+			}
+			assertTrue(AdjacencyEngagementTestAccess.buildNow(store));
+			try (var connection = repository.getConnection()) {
+				Set<String> paths = new LinkedHashSet<>();
+				Set<String> quotes = new LinkedHashSet<>();
+				GenericPlanNode plan = prepare(connection, query).explain(Explanation.Level.Telemetry)
+						.toGenericPlanNode();
+				collectPaths(plan, paths);
+				collectMetric(plan, "nativeAggregateCostQuotesEstimated", quotes);
+				int groups = 0;
+				try (var results = prepare(connection, query).evaluate()) {
+					while (results.hasNext()) {
+						var result = results.next();
+						assertEquals(JOIN_KEYS, ((Literal) result.getValue("count")).longValue());
+						assertTrue(
+								result.getValue("a").stringValue().compareTo(result.getValue("b").stringValue()) < 0);
+						groups++;
+					}
+				}
+				assertEquals(ENDPOINTS * (ENDPOINTS - 1) / 2, groups);
+				assertTrue(hasSparsePath(paths),
+						() -> "Expected automatic projected sparse execution, observed " + paths);
+				assertTrue(quotes.stream()
+						.anyMatch(value -> value.contains(
+								"\"strategy\":\"sparseJoinAggregate\",\"physicalFeaturesKnown\":true")),
+						() -> "Expected a complete physical quote for the executed sparse recipe: " + quotes);
+				String sparseQuote = quotes.stream()
+						.filter(value -> value.contains(
+								"\"strategy\":\"sparseJoinAggregate\",\"physicalFeaturesKnown\":true"))
+						.findFirst()
+						.orElseThrow();
+				Matcher probe = Pattern.compile("\\\"HASH_PROBE\\\":\\{[^}]*\\\"high\\\":([^}]+)\\}")
+						.matcher(sparseQuote);
+				assertTrue(probe.find(), sparseQuote);
+				assertTrue(Double.parseDouble(probe.group(1)) >= 2D * JOIN_KEYS * ENDPOINTS * ENDPOINTS * ENDPOINTS,
+						() -> "Hash probe bound must cover collisions: " + sparseQuote);
+				assertTrue(sparseQuote.matches("(?s).*\\\"OUTPUT_MATERIALIZATION\\\":\\{[^}]*\\\"high\\\":null\\}.*"),
+						() -> "Replay bytes remain unbounded without a term-width proof: " + sparseQuote);
+			}
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@Test

@@ -215,6 +215,11 @@ public final class LmdbDecodedNativeAdjacency implements NativeLmdbQuerySource.N
 	}
 
 	@Override
+	public boolean orderedKeyRunsWithBoundedOpen() {
+		return true;
+	}
+
+	@Override
 	public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor() {
 		return openKeyRunCursor(0, keys.keyCount());
 	}

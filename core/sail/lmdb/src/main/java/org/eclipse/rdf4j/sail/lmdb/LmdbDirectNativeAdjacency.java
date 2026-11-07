@@ -693,6 +693,13 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	}
 
 	@Override
+	public boolean orderedKeyRunsWithBoundedOpen() {
+		// Overlay key-domain preparation can scan and sort all changed rows before a cursor can install a
+		// cancellation callback. The immutable base requires only a constant-time setup.
+		return baseOnly;
+	}
+
+	@Override
 	public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor() {
 		return rootScanCursor(0, keyCount());
 	}

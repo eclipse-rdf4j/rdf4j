@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -291,6 +293,41 @@ class SparseJoinAggregateCostTest {
 			assertFalse(incomplete.workEvidence().isComplete());
 			assertFalse(incomplete.quote().outputProvenEmpty());
 			verify(fixture.source, never()).newProbe();
+		}
+	}
+
+	@Test
+	void projectedPredicateUnknownOrLargeDomainUsesUnpricedFallback() throws Exception {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.hasCanonicalIds()).thenReturn(true);
+		List<String> names = List.of("p", "s", "q", "a", "b");
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("p", 0, "s", 1, "q", 2, "a", 3, "b", 4), null);
+		layout.freeze(names);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		try {
+			assertTrue(NativeRowSeeder.seed(row.slots, layout, row.base, source));
+			PatternPlan left = new PatternPlan(Term.slot(1), Term.slot(0), Term.slot(3), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 100_000L);
+			PatternPlan right = new PatternPlan(Term.slot(1), Term.slot(2), Term.slot(4), Term.unbound(),
+					ContextConstraint.UNRESTRICTED, false, 100_000L);
+			AggregateSpec[] counts = { AggregateSpec.star("count", new int[] { 0, 1, 2, 3, 4 }) };
+			LmdbSparseJoinAggregatePlan plan = LmdbSparseJoinAggregatePlan.tryCreate(new JoinPlan(left, right),
+					new int[] { 0, 2 }, counts, null);
+			assertNotNull(plan);
+			LmdbSparseJoinAggregatePlan unknown = plan.prepare(row);
+			assertNull(unknown.quote(row));
+			assertFalse(unknown.automaticCandidate(row));
+			assertTrue(unknown.properties().contains("accumulator=bounded-spill"));
+			when(source.predicateProjectionStatistics(eq(true), any())).thenReturn(
+					new NativeLmdbQuerySource.PredicateProjectionStatistics(100_000L, 100_000L, 1L, 100_000L));
+			LmdbSparseJoinAggregatePlan large = plan.prepare(row);
+			assertNull(large.quote(row));
+			assertFalse(large.automaticCandidate(row));
+			assertTrue(large.properties().contains("accumulator=bounded-spill"));
+			verify(source, never()).newProbe();
+		} finally {
+			row.closeDecodedInputs();
+			row.memoryScope.close();
 		}
 	}
 
