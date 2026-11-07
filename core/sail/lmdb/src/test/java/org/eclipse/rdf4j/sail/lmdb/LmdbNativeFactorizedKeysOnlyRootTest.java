@@ -51,7 +51,6 @@ public class LmdbNativeFactorizedKeysOnlyRootTest {
 			NATIVE_FLAG,
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.kernelInterpreter.enabled",
-			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.wcoj.enabled",
 			"rdf4j.lmdb.nativeBatch.enabled",
@@ -78,7 +77,6 @@ public class LmdbNativeFactorizedKeysOnlyRootTest {
 		System.setProperty(NATIVE_FLAG, "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
 		System.setProperty("rdf4j.lmdb.nativeBatch.enabled", "false");

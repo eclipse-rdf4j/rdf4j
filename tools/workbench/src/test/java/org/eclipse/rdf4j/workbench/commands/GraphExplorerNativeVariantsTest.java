@@ -2469,11 +2469,9 @@ class GraphExplorerNativeVariantsTest {
 	}
 
 	private String generate(String script, List<String> arguments) throws Exception {
-		Path node = Path.of("target/node", System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node")
-				.toAbsolutePath();
 		Path output = Files.createTempFile(temporary, "producer-", ".json");
 		Path errors = Files.createTempFile(temporary, "producer-", ".log");
-		List<String> command = new ArrayList<>(List.of(node.toString(), "--experimental-strip-types", script));
+		List<String> command = new ArrayList<>(List.of(TestProcess.NODE, "--experimental-strip-types", script));
 		command.addAll(arguments);
 		try (TestProcess child = TestProcess.start(new ProcessBuilder(command).redirectOutput(output.toFile())
 				.redirectError(errors.toFile()))) {

@@ -216,7 +216,7 @@ class WorkbenchNativePageQueriesTest {
 		for (String resource : List.of("<" + NS + "focus>", "<_:focus>", "<" + NS + "unknown>")) {
 			JsonNode generated;
 			try (TestProcess child = TestProcess.start(
-					new ProcessBuilder(Path.of("target", "node", "node").toAbsolutePath().toString(),
+					new ProcessBuilder(TestProcess.NODE,
 							"src/test/frontend/classic/fixtures/native-generated-query-bridge.cjs",
 							JSON.writeValueAsString(Map.of("graph", NS + "graph", "resource", resource)))
 									.redirectError(ProcessBuilder.Redirect.appendTo(output.toFile())))) {

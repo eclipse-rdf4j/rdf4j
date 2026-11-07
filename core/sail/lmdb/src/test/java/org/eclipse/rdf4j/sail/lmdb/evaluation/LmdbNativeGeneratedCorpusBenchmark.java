@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest.GeneratedQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.JaninoCeilingKernels;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -116,6 +117,12 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 		queries = new TupleQuery[sparql.size()];
 		for (int i = 0; i < queries.length; i++) {
 			queries[i] = connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql.get(i));
+			if (janino) {
+				// the workload measures the generated kernels, which the measured selector may pass over on this
+				// corpus; force the kernel family (compiled first, interpreted while a compile is pending)
+				((SailTupleQuery) queries[i]).setForcedLmdbExecutionStrategy(
+						"irKernel,irKernelInterpreted,irAggregate,irAggregateInterpreted");
+			}
 		}
 		primeAndVerifyAdmission(janino, bridge);
 	}

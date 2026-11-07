@@ -109,7 +109,9 @@ public final class FilterBindingScope {
 		condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
-				if (node instanceof ValueExpr
+				// Every function call is evaluated from its argument list, including the pinned subclass that query
+				// preparation installs, so it stays explicit whatever its concrete class.
+				if (node instanceof ValueExpr && !(node instanceof FunctionCall)
 						&& !SCALAR_READS_ARE_EXPLICIT.contains(node.getClass())) {
 					// Unknown expressions own their input contract, including reads not represented by Var children.
 					complete[0] = false;
