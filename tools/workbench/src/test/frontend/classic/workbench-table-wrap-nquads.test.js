@@ -20,6 +20,7 @@ const vm = require('node:vm');
 const { FakeDocument } = require('./browser-fakes.js');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 const { renderPageResultTables, settle } = require('./page-result-table-harness.js');
+const { createExploreModel } = require('./explore-section-fixtures.js');
 
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
@@ -175,12 +176,17 @@ test('Explore Display chooses the N-Quads layout and wrapping for every table of
         [resource, iri('urn:p2'), iri('urn:o'), null],
         [iri('urn:x'), iri('urn:p3'), resource, iri('urn:g')]
     ];
-    const model = { viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'], rows, rowCount: rows.length,
-        rowStart: 0, namespaceMap: {}, links: [], metadata: { 'explore-resource': '<urn:s>' } };
+    const model = createExploreModel({
+        metadata: { resource: '<urn:s>', 'explore-resource': '<urn:s>' },
+        sections: {
+            outgoing: { rows: rows.slice(0, 2) },
+            incoming: { rows: [rows[2]] }
+        }
+    });
     const page = await renderPageResultTables(workbench, model, pageContext);
     const outgoing = page.host('explore-outgoing');
     const incoming = page.host('explore-incoming');
-    assert.ok(outgoing && incoming, 'rows about the resource are grouped');
+    assert.ok(outgoing && incoming, 'each supplied role section has its own statement table');
     const template = workbench.views.outletOf(page.mount).template;
     const layout = findHandlers(template, /id="explore-result-layout"[^>]*@change=$/);
     const wrap = findHandlers(template, /id="explore-wrap-values"[^>]*@change=$/);
@@ -202,7 +208,7 @@ test('Explore Display chooses the N-Quads layout and wrapping for every table of
 
     // A table built later on the page (the next Explore page) starts with the chosen presentation.
     workbench.views.releasePage(model);
-    const next = await renderPageResultTables(workbench, Object.assign({}, model, { rowStore: null }), pageContext);
+    const next = await renderPageResultTables(workbench, Object.assign({}, model, { rowStore: {} }), pageContext);
     assert.equal(next.host('explore-outgoing').getAttribute('data-effective-layout'), 'nquads');
     assert.equal(next.host('explore-outgoing').getAttribute('data-wrap'), 'false');
     layout[0]({ currentTarget: { value: 'auto' } });

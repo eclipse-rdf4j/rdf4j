@@ -108,7 +108,8 @@ final class LmdbNativeParallelAggregation {
 			return reject(it, "single-thread");
 		}
 		double totalWork = plan.estimate(row);
-		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
+		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate()) && !LmdbNativeForceableStrategies
+				.forces(it.forcedExecutionStrategy, LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION)) {
 			return reject(it, "below-threshold");
 		}
 		// commit to the same order the workers will select: sunk only when the tail engages, so a declined or
@@ -142,15 +143,32 @@ final class LmdbNativeParallelAggregation {
 		}
 		int threads = reservation.grantedWorkers();
 		int sourceCount = threads + (morselMode ? 1 : 0);
-		double estCost = LmdbNativeStrategyProposal.parallelCost(totalWork, threads);
+		double estCost = LmdbNativeWork.parallelCost(totalWork, threads);
 		AggregateCandidate candidate = new AggregateCandidate(it, plan, parentMetrics, derived, root,
 				preflightAggregateSlots, partitions, reservation, threads, sourceCount);
 		// declare the genuinely front-loaded worker-start cost separately (gap-analysis C4): workers, snapshot
 		// sources and read transactions all exist before the first group can be produced, exactly as in the
 		// parallel row pipelines' proposal
+		// the workers run the derived order as batch pipelines over the whole join (its access work included, as
+		// the row site prices it) and update a group per joined row; the streaming part scales by the measured
+		// parallel speed-up and every worker is started up front
+		long boundMask = row.boundMask();
+		LmdbNativeStaticPrior.ParallelShape shape = LmdbNativeStaticPrior.ParallelShape.aggregate(plan, row,
+				boundMask, it.groupSlots);
+		LmdbNativeCostVector streaming = LmdbNativeCostVectors
+				.chain(derived.order, derived.order.length, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+						LmdbNativeWork.rowsOut(plan, row, boundMask), row))
+				.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(shape, threads));
+		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D)
+				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, threads))
+				.plus(LmdbNativeStaticPrior.parallelMerge(shape, threads));
 		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
-				LmdbNativeWork.exact(LmdbNativeStrategyProposal.parallelStartupCost()), Double.NaN,
-				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close);
+				LmdbNativeWork.exact(LmdbNativeWork.parallelStartupCost()), Double.NaN,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close)
+						.withCostQuote(new LmdbNativeCostQuote(startup, streaming,
+								it.groupSlots.length == 0 && it.havingCondition == null ? 1D : Double.NaN, false,
+								false));
 	}
 
 	private static List<BindingSet> open(AggregateCandidate candidate) {

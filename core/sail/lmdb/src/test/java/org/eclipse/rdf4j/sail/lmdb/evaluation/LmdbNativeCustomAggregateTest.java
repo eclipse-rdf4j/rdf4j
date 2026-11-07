@@ -570,7 +570,7 @@ public class LmdbNativeCustomAggregateTest {
 				List<String> routeEvidence = telemetry.lines()
 						.filter(line -> line.contains("nativePhysicalPlan=")
 								|| line.contains("nativeExecutionPath=")
-								|| line.contains("nativeAdaptiveCostDecision=")
+								|| line.contains("nativeDecisionOutcome=")
 								|| line.contains("nativeInvocationsActual=")
 								|| line.contains("rowsScannedActual:")
 								|| line.contains("rowsMatchedActual:")
@@ -596,7 +596,7 @@ public class LmdbNativeCustomAggregateTest {
 				if (expectedRoute.equals("nativeExecutionPath=" + LmdbNativeAttemptMetrics.PATH_AGG_STATE)) {
 					softly.assertThat(telemetry)
 							.as("the forced sequential route must reach native aggregate state")
-							.contains("nativeAdaptiveCostDecision=winner=nestedLoop", "nativeInvocationsActual=1");
+							.contains("nativeDecisionOutcome=winner=nestedLoop", "nativeInvocationsActual=1");
 					if (adjacencyEnabled) {
 						softly.assertThat(telemetry).contains("actualOrder:\n      <not opened; entryPlan=Empty>");
 					} else {

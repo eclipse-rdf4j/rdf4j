@@ -39,7 +39,13 @@ final class LmdbNativeExplain {
 	static final String EXECUTION_PATH = TelemetryMetricNames.NATIVE_EXECUTION_PATH;
 	static final String STRATEGY_DECLINES = "nativeStrategyDeclines";
 	static final String STRATEGY_PROPOSAL_COSTS = "nativeStrategyProposalCosts";
-	static final String ADAPTIVE_COST_DECISION = "nativeAdaptiveCostDecision";
+	/** Per admitted candidate, its expected feature counts: {@code tag=FEATURE:count|FEATURE:count,...}. */
+	static final String STRATEGY_PROPOSAL_FEATURES = "nativeStrategyProposalFeatures";
+	static final String DECISION_OUTCOME = "nativeDecisionOutcome";
+	/** One metric per decision: {@code nativeDecision.<point>.<n>}, with {@code n} counting that point on the node. */
+	static final String DECISION_PREFIX = "nativeDecision.";
+	/** A point that dispatches per entry row keeps its first decisions; the rest would only repeat them. */
+	private static final int MAX_DECISIONS_PER_POINT = 8;
 	static final String RUNTIME_ENTRY_PLAN = "nativeRuntimeEntryPlan";
 	static final String INITIAL_BOUND_MASK = "nativeInitialBoundMask";
 
@@ -96,6 +102,16 @@ final class LmdbNativeExplain {
 		}
 	}
 
+	/** Whether {@code path} has already been recorded on the expression's logical origin (best effort, lock-free). */
+	static boolean hasExecutionPath(TupleExpr expr, String path) {
+		expr = logicalOrigin(expr);
+		if (expr == null || path == null) {
+			return false;
+		}
+		String rendered = expr.getStringMetricActual(EXECUTION_PATH);
+		return rendered != null && (" | " + rendered + " | ").contains(" | " + path + " | ");
+	}
+
 	/** Records one attempted strategy's reason for declining this query, as a deterministic distinct summary. */
 	static void recordStrategyDecline(TupleExpr expr, String strategy, String reason) {
 		expr = logicalOrigin(expr);
@@ -124,28 +140,50 @@ final class LmdbNativeExplain {
 		}
 	}
 
-	/** Records the two jointly admissible C/D costs that drove runtime arbitration. */
-	static void recordStrategyProposalCosts(TupleExpr expr, double batchCost, double parallelCost) {
-		recordStrategyProposalCosts(expr, LmdbNativeAttemptMetrics.PATH_BATCH, batchCost,
-				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, parallelCost);
-	}
-
-	static void recordStrategyProposalCosts(TupleExpr expr, String firstTag, double firstCost, String secondTag,
-			double secondCost) {
-		recordStrategyProposalCosts(expr, firstTag + "=" + firstCost + "," + secondTag + "=" + secondCost);
-	}
-
-	/**
-	 * Records the jointly admissible strategy costs that drove runtime arbitration, for any number of candidates.
-	 * Rendered as {@code tag=cost} pairs separated by commas, the same shape the two-way form has always emitted.
-	 */
+	/** Records the admissible strategy costs of a decision, rendered as {@code tag=cost} pairs separated by commas. */
 	static void recordStrategyProposalCosts(TupleExpr expr, String rendered) {
 		setRuntimeMetric(expr, STRATEGY_PROPOSAL_COSTS, rendered);
 	}
 
-	/** Records the typed prediction interval and evidence that selected the physical strategy. */
-	static void recordAdaptiveCostDecision(TupleExpr expr, String rendered) {
-		setRuntimeMetric(expr, ADAPTIVE_COST_DECISION, rendered);
+	static void recordStrategyProposalFeatures(TupleExpr expr, String rendered) {
+		setRuntimeMetric(expr, STRATEGY_PROPOSAL_FEATURES, rendered);
+	}
+
+	/** Records which strategy won a decision, why, and its expected price. */
+	static void recordDecisionOutcome(TupleExpr expr, String rendered) {
+		setRuntimeMetric(expr, DECISION_OUTCOME, rendered);
+	}
+
+	/**
+	 * Records one rendered decision record and returns its slot. A re-ranking of the same dispatch passes the slot it
+	 * got back, so a retry replaces its first ranking instead of counting as another decision.
+	 */
+	static int recordDecision(TupleExpr expr, LmdbNativeDecisionPoint point, int slot, String rendered) {
+		expr = logicalOrigin(expr);
+		if (expr == null || rendered == null || !recordsExecutionPaths(expr)) {
+			return slot;
+		}
+		String prefix = DECISION_PREFIX + point.name() + '.';
+		synchronized (expr) {
+			int taken = slot;
+			if (taken < 0) {
+				taken = 0;
+				while (taken < MAX_DECISIONS_PER_POINT && expr.getStringMetricActual(prefix + taken) != null) {
+					taken++;
+				}
+			}
+			if (taken >= MAX_DECISIONS_PER_POINT) {
+				return taken;
+			}
+			expr.setStringMetricActual(prefix + taken, rendered);
+			if (expr instanceof QueryRoot root) {
+				TupleExpr arg = root.getArg();
+				synchronized (arg) {
+					arg.setStringMetricActual(prefix + taken, rendered);
+				}
+			}
+			return taken;
+		}
 	}
 
 	/**
@@ -420,6 +458,12 @@ final class LmdbNativeExplain {
 		}
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.describe();
+		}
+		if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
+			return "KeyedSubqueryJoin(provider=" + keyed.provider.tag() + ", key=" + slot(keyed.keySlot, slotNames)
+					+ ", payload=" + describeSlots(keyed.payloadSlots, slotNames) + ", subqueryFirst="
+					+ keyed.subqueryFirst() + ", probe=" + describe(keyed.probe, slotNames, boundMask)
+					+ ", subquery=" + keyed.subPlan.describe() + ")";
 		}
 		if (plan instanceof DrainGuardPlan guard) {
 			return "DrainGuard(delegate=" + describe(guard.delegate, slotNames, boundMask) + ", drained="

@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -63,6 +64,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.IntegerCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.StringCast;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -71,6 +73,19 @@ import org.junit.jupiter.api.Test;
  * @author Håvard M. Ottestad
  */
 public class QueryEvaluationUtilityTest {
+
+	@Test
+	void pinnedFunctionCallsKeepTheirExplicitReads() {
+		Filter filter = new Filter(new SingletonSet(), new FunctionCall(FN.CONCAT.stringValue(), Var.of("value")));
+
+		QueryEvaluationUtility.pinFunctions(filter);
+
+		assertTrue(filter.getCondition().getClass() != FunctionCall.class, "preparation pins the call");
+		FilterBindingScope.ConditionBindingReads reads = FilterBindingScope
+				.conditionBindingReads(filter.getCondition());
+		assertTrue(reads.complete());
+		assertEquals(Set.of("value"), reads.bindingNames());
+	}
 
 	@Test
 	void namedGraphInheritsBodyRepeatabilityAndKeepsItsInjectionBoundary() {

@@ -18,6 +18,9 @@ import java.io.OutputStream;
 /** Owns a fixture process, including exceptional and interrupted test exits. */
 public final class TestProcess implements AutoCloseable {
 
+	/** The node on the PATH, the same runtime the Maven front-end build uses (see tools/workbench/pom.xml). */
+	public static final String NODE = "node";
+
 	private final Process process;
 
 	TestProcess(Process process) {

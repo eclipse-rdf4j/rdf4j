@@ -28,6 +28,16 @@ final class LmdbNativePackedAlgebraAggregate {
 
 	static List<BindingSet> evaluate(SlotPlan plan, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			NativeGroupIteration owner, TupleExpr explainTarget) throws IOException {
+		return evaluate(plan, row, groupSlots, aggregates, owner, explainTarget, true);
+	}
+
+	static List<BindingSet> evaluateSerial(SlotPlan plan, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
+			NativeGroupIteration owner, TupleExpr explainTarget) throws IOException {
+		return evaluate(plan, row, groupSlots, aggregates, owner, explainTarget, false);
+	}
+
+	private static List<BindingSet> evaluate(SlotPlan plan, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
+			NativeGroupIteration owner, TupleExpr explainTarget, boolean allowParallel) throws IOException {
 		if (!LmdbNativeFactorAlgebra.candidate(plan))
 			return null;
 		boolean ordered = row.encounterOrderRequired || !SlotPlan.encounterOrderReplaySafe(plan);
@@ -42,8 +52,8 @@ final class LmdbNativePackedAlgebraAggregate {
 			NativeFilterLease lease = new NativeFilterLease();
 			try {
 				SlotPlan attempt = lease.borrow(plan);
-				results = LmdbNativePackedMorsels.tryAggregate(attempt, row, groupSlots, aggregates, owner,
-						explainTarget);
+				results = allowParallel ? LmdbNativePackedMorsels.tryAggregate(attempt, row, groupSlots, aggregates,
+						owner, explainTarget) : null;
 				if (results == null)
 					results = collect(attempt, row, groupSlots, aggregates, owner,
 							Arrays.stream(aggregates)
@@ -69,9 +79,11 @@ final class LmdbNativePackedAlgebraAggregate {
 				throw failure;
 			}
 		}
+		String tag = allowParallel ? LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE
+				: LmdbNativePackedFtree.AGGREGATE_SERIAL;
 		if (row.runtimePlan != null)
-			row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE, new SlotPlan[] { plan });
-		LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
+			row.runtimePlan.activate(tag, new SlotPlan[] { plan });
+		LmdbNativeExplain.recordExecutionPath(explainTarget, tag);
 		return results;
 	}
 

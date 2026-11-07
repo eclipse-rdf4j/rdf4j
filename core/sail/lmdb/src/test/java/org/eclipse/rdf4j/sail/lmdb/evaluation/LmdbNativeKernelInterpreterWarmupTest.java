@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -45,6 +46,11 @@ import org.junit.jupiter.api.parallel.Resources;
  * the warm-up-on and warm-up-off cases both require exact results, interpreter engagement, and zero compiled binds.
  * Separate interpreter-disabled controls prove that the compiled tier declines and the sequential ladder keeps
  * answering correctly when no interpreted candidate is available.
+ * <p>
+ * The interpreter-engagement cases force the interpreted tier ({@code irAggregateInterpreted} / {@code
+ * irKernelInterpreted}): on this 30-statement fixture the measured selector prices the sequential path below every
+ * kernel, so engagement must be requested rather than left to the price comparison. The interpreter-disabled controls
+ * stay unforced, since they assert that nothing kernel-shaped opens at all.
  */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativeKernelInterpreterWarmupTest {
@@ -154,7 +160,8 @@ class LmdbNativeKernelInterpreterWarmupTest {
 		List<String> expected = generic(AGGREGATE_QUERY);
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "true");
 		LmdbNativeKernelExecution.resetMetrics();
-		assertThat(nativeRows(AGGREGATE_QUERY)).isEqualTo(expected);
+		assertThat(nativeRows(AGGREGATE_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED))
+				.isEqualTo(expected);
 		assertThat(LmdbNativeKernelExecution.AGG_OPENED.get())
 				.as("the independently offered aggregate interpreter must serve while compile is unavailable; this counter "
 						+ "does not identify AUTO fallback")
@@ -169,7 +176,8 @@ class LmdbNativeKernelInterpreterWarmupTest {
 		List<String> expected = generic(AGGREGATE_QUERY);
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "false");
 		LmdbNativeKernelExecution.resetMetrics();
-		assertThat(nativeRows(AGGREGATE_QUERY)).isEqualTo(expected);
+		assertThat(nativeRows(AGGREGATE_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED))
+				.isEqualTo(expected);
 		assertThat(LmdbNativeKernelExecution.AGG_OPENED.get())
 				.as("warmup=false must leave the independently offered aggregate interpreter available")
 				.isPositive();
@@ -188,7 +196,7 @@ class LmdbNativeKernelInterpreterWarmupTest {
 		List<String> expected = generic(ROW_QUERY);
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "true");
 		LmdbNativeKernelExecution.resetMetrics();
-		assertThat(nativeRows(ROW_QUERY)).isEqualTo(expected);
+		assertThat(nativeRows(ROW_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED)).isEqualTo(expected);
 		assertThat(LmdbNativeKernelExecution.OPENED.get())
 				.as("the independently offered row interpreter must serve while compile is unavailable; this counter does "
 						+ "not identify AUTO fallback")
@@ -203,7 +211,7 @@ class LmdbNativeKernelInterpreterWarmupTest {
 		List<String> expected = generic(ROW_QUERY);
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "false");
 		LmdbNativeKernelExecution.resetMetrics();
-		assertThat(nativeRows(ROW_QUERY)).isEqualTo(expected);
+		assertThat(nativeRows(ROW_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED)).isEqualTo(expected);
 		assertThat(LmdbNativeKernelExecution.OPENED.get())
 				.as("warmup=false must leave the independently offered row interpreter available")
 				.isPositive();
@@ -257,12 +265,25 @@ class LmdbNativeKernelInterpreterWarmupTest {
 	}
 
 	private List<String> nativeRows(String query) {
-		return canonical(rows(query));
+		return canonical(rows(query, null));
+	}
+
+	/** Native rows with the given operator forced onto every decision point where it is a candidate. */
+	private List<String> nativeRows(String query, String forcedStrategy) {
+		return canonical(rows(query, forcedStrategy));
 	}
 
 	private List<BindingSet> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<BindingSet> rows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return QueryResults.asList(preparedQuery.evaluate());
 		}
 	}
 
