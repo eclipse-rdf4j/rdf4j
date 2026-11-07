@@ -475,6 +475,57 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		assertThat(result.get()).isNull();
 	}
 
+	@ParameterizedTest(name = "ambientDeadline={0}")
+	@CsvSource({ "true", "false" })
+	void workerKernelProbeCancellationRetainsItsCoordinatorOwner(boolean ambientDeadline) throws Exception {
+		ProbeSource source = new ProbeSource(null, false);
+		Scenario scenario = scenario(source);
+		LmdbNativeProbeDeadline deadline = ambientDeadline ? LmdbNativeProbeDeadline.trippableOnly() : null;
+		AtomicInteger kernelCancellations = new AtomicInteger();
+		AtomicReference<List<BindingSet>> result = new AtomicReference<>();
+		ExecutorService workers = Executors.newFixedThreadPool(2);
+		try {
+			Throwable failure;
+			try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(deadline)) {
+				// Trip only after binding a worker's real cancellation token. Every worker polls through the kernel,
+				// so the first published probe failure is the kernel signal. The coordinator then observes the
+				// ambient deadline after joining the workers, independent of which worker reaches the poll first.
+				failure = catchThrowable(
+						() -> result.set(LmdbNativeParallelKernelAggregate.tryEvaluate(typeMatrixLowered(),
+								new NativeLmdbQuerySource.NativeAdjacency[0], null, null,
+								new TypeMatrixContext[] { typeMatrix() }, emptyDomains(), SlotPlan.singleton(),
+								scenario.row,
+								scenario.emitter, null,
+								ignoredKernel -> new KernelProbeCancellation(deadline, kernelCancellations), workers)));
+			}
+
+			assertThat(kernelCancellations.get())
+					.as("at least one bound worker must observe the real kernel probe signal")
+					.isPositive();
+			assertThat(failure)
+					.as("the ambient coordinator deadline owns a kernel probe signal only when that deadline exists")
+					.isSameAs(ambientDeadline ? LmdbNativeProbeDeadlineExceeded.INSTANCE
+							: KernelCancelledException.INSTANCE);
+			assertThat(result.get()).isNull();
+			assertThat(scenario.emitter.cancellation.isCancellationRequested())
+					.as("probe cancellation must not cancel the query")
+					.isFalse();
+			assertThat(source.children).hasSize(2);
+			for (ProbeSource child : source.children) {
+				assertThat(child.workerFinished).isTrue();
+				assertThat(child.closeCalls).hasValue(1);
+				assertThat(child.closedWhileWorkerActive).isFalse();
+			}
+		} finally {
+			workers.shutdownNow();
+			try {
+				assertThat(workers.awaitTermination(10L, TimeUnit.SECONDS)).isTrue();
+			} finally {
+				scenario.emitter.close();
+			}
+		}
+	}
+
 	@Test
 	void realWorkerFailureRetainsCleanupFailureIdentityThroughOuterAggregate() {
 		IllegalStateException workerFailure = new IllegalStateException("worker probe failure");
@@ -1495,6 +1546,43 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 					delegate.close();
 				}
 			};
+		}
+	}
+
+	private static final class KernelProbeCancellation implements JaninoKernel {
+		private final LmdbNativeProbeDeadline deadline;
+		private final AtomicInteger observed;
+		private KernelContext context;
+
+		private KernelProbeCancellation(LmdbNativeProbeDeadline deadline, AtomicInteger observed) {
+			this.deadline = deadline;
+			this.observed = observed;
+		}
+
+		@Override
+		public void bind(KernelContext context) {
+			this.context = context;
+		}
+
+		@Override
+		public int fill(long[] rowBuffer, int maxRows) {
+			throw new AssertionError("cancelled worker must not publish aggregate rows");
+		}
+
+		@Override
+		public void runBound() {
+			if (deadline == null) {
+				context.cancellation.cancel();
+			} else {
+				deadline.trip();
+			}
+			try {
+				KernelRuntime.checkCancelled(context.cancellation);
+			} catch (KernelCancelledException cancellation) {
+				observed.incrementAndGet();
+				throw cancellation;
+			}
+			throw new AssertionError("kernel probe cancellation check returned without throwing");
 		}
 	}
 
