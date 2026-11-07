@@ -60,6 +60,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -715,6 +716,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	final long prefixMinRunCount;
 	final LmdbNativeExistsIntersection existsIntersection;
 	final LmdbAdjacencyAggregatePlan adjacencyAggregate;
+	final LmdbSparseJoinAggregatePlan sparseJoinAggregate;
 	LmdbNativeTypeMatrix typeMatrix;
 	List<NativeGroupStep.Alternative> alternatives = List.of();
 	/** The externally enforced HAVING condition, offered to the aggregate kernel as a sinkable pre-filter. */
@@ -841,6 +843,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		this.prefixMinRunCount = prefixMinRunCount;
 		this.existsIntersection = existsIntersection;
 		this.adjacencyAggregate = adjacencyAggregate;
+		this.sparseJoinAggregate = LmdbSparseJoinAggregatePlan.tryCreate(arg, groupSlots, aggregates, havingCondition);
 		this.havingCondition = havingCondition;
 		this.explainTarget = explainTarget;
 		this.cancellation = cancellation;
@@ -1377,6 +1380,18 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
 							LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS)));
 		}
+		LmdbSparseJoinAggregatePlan sparse = sparseJoinAggregate == null ? null : sparseJoinAggregate.prepare(row);
+		if (sparse != null) {
+			arbiter.offer(() -> estimatedProposal(() -> {
+				List<BindingSet> result = sparse.evaluate(this, row);
+				if (result != null) {
+					metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE);
+				}
+				return result;
+			}, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE, LmdbNativeWork.UNKNOWN)
+					.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(arg,
+							NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE, sparse)));
+		}
 		if (typeMatrix != null && base.isEmpty()) {
 			arbiter.offer(() -> estimatedProposal(this::evaluateTypeMatrixFallback,
 					LmdbNativeAttemptMetrics.PATH_TYPE_MATRIX, typeMatrixWork));
@@ -1882,19 +1897,66 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			// assignment per copy, but does not describe the nested expression evaluated by a BIND hook.
 			LmdbNativeCostVector scalar = NativeScalarCosts.additionalForKernel(arg, row, row.boundMask(),
 					admission.lowered().bindings);
-			if (!scalar.isZero()) {
+			LmdbNativeCostVector projectedGroups = projectedKernelGroupWork(arg, row, admission);
+			if (!scalar.isZero() || projectedGroups != null) {
 				quote = LmdbNativeStrategyProposal.quote(proposal);
+				LmdbNativeCostVector additional = projectedGroups == null ? scalar : scalar.plus(projectedGroups);
 				if (workers > 0) {
 					LmdbNativeStaticPrior.ParallelShape shape = LmdbNativeStaticPrior.ParallelShape.aggregate(
 							arg, row, row.boundMask(), groupSlots);
-					scalar = scalar.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(shape, workers));
+					additional = additional.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(shape, workers));
 				}
-				quote = new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(scalar), quote.outputRows(),
+				quote = new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(additional), quote.outputRows(),
 						quote.ordered(), quote.distinct(), quote.chunked(), quote.inputSpread(),
 						quote.outputProvenEmpty());
 			}
 		}
 		return proposal.withOptionalCostQuote(quote);
+	}
+
+	/** Price group updates for the exact packed projections a single plan-backed IR aggregate consumes. */
+	private static LmdbNativeCostVector projectedKernelGroupWork(SlotPlan input, RowState row,
+			LmdbNativeKernelExecution.AggregateAdmission admission) {
+		LmdbNativeKernelIr.Kernel kernel = admission.lowered().kernel;
+		if (!(input instanceof MultiJoinPlan join) || kernel.pipeline.size() != 1
+				|| !(kernel.pipeline.getFirst() instanceof LmdbNativeKernelIr.PlanRows producer)
+				|| producer instanceof LmdbNativeKernelIr.PlanFactors) {
+			return null;
+		}
+		boolean weighted = LmdbNativeKernelIr.weightedPlanCount(kernel);
+		LmdbNativeKernelIr.AggregateProjections projections = kernel.aggregateProjections;
+		if (!weighted && projections == null) {
+			return null;
+		}
+		LmdbNativeKernelBindings.PlanRequest request = admission.lowered().bindings.planRequests[producer.plan];
+		if (request.plan != input || request.inputSlots.length != 0 || !request.batchSafe) {
+			return null;
+		}
+		int[][] outputSlots;
+		int[] channels;
+		if (weighted) {
+			outputSlots = new int[][] { request.outputSlots };
+			channels = new int[] { 1 };
+		} else {
+			FactorProjectionLayout layout = projections.layout;
+			outputSlots = new int[layout.size()][];
+			channels = new int[layout.size()];
+			for (int i = 0; i < outputSlots.length; i++) {
+				int[] columns = layout.columns(i);
+				outputSlots[i] = new int[columns.length];
+				for (int column = 0; column < columns.length; column++) {
+					outputSlots[i][column] = request.outputSlots[columns[column]];
+				}
+				channels[i] = layout.channels(i).length;
+			}
+		}
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, request.outputSlots);
+		LmdbNativeCostVector work = plan == null ? null
+				: LmdbNativePackedFtreeQuote.projectedGroupWork(plan, row,
+						outputSlots, channels, LmdbNativeWork.rowsOut(input, row, row.boundMask()));
+		return work != null ? work
+				: LmdbNativeCostVector.bounds(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+						0D, 0D, LmdbNativeCostQuote.UNBOUNDED_COUNT);
 	}
 
 	private LmdbNativeCostQuote kernelQuote(SlotPlan input, RowState row, String tag, int quotedWorkers,

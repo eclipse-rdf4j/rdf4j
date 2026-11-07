@@ -54,6 +54,11 @@ interface NativeBooleanFilter {
 		return NativePredicateCapabilities.opaque(batchReadMask());
 	}
 
+	/** Immutable expression recipe for pricing, or null when callback work is not described. */
+	default NativeScalarPlan scalarPlan() {
+		return null;
+	}
+
 	default void explainStrategies() {
 	}
 
@@ -132,6 +137,11 @@ final class PlannedNativeBooleanFilter implements NativeBooleanFilter {
 	@Override
 	public NativePredicateCapabilities capabilities() {
 		return NativePredicateCapabilities.scalar(plan).withRuntimeReads(delegate.capabilities());
+	}
+
+	@Override
+	public NativeScalarPlan scalarPlan() {
+		return plan;
 	}
 
 	@Override
@@ -313,6 +323,11 @@ final class RecordingNativeBooleanFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public NativeScalarPlan scalarPlan() {
+		return delegate.scalarPlan();
+	}
+
+	@Override
 	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
 		int accepted = delegate.selectBatch(batch, sel, n, scratch);
 		localPassed += accepted;
@@ -487,6 +502,11 @@ final class CloseOnceNativeBooleanFilter implements NativeBooleanFilter {
 	@Override
 	public NativePredicateCapabilities capabilities() {
 		return delegate.capabilities();
+	}
+
+	@Override
+	public NativeScalarPlan scalarPlan() {
+		return delegate.scalarPlan();
 	}
 
 	@Override
@@ -1446,6 +1466,12 @@ final class ValueSetFilter implements NativeBooleanFilter {
 @Experimental
 final class CachedCompareFilter implements NativeBooleanFilter {
 	private NativeScalarPlan scalarPlan;
+
+	@Override
+	public NativeScalarPlan scalarPlan() {
+		return scalarPlan;
+	}
+
 	final int slot;
 	final long constant;
 	final boolean constantOnLeft;
@@ -1888,6 +1914,12 @@ final class BooleanCombinationFilter implements NativeBooleanFilter {
 @Experimental
 final class OrderedSlotCompareFilter implements NativeBooleanFilter {
 	private NativeScalarPlan scalarPlan;
+
+	@Override
+	public NativeScalarPlan scalarPlan() {
+		return scalarPlan;
+	}
+
 	final int leftSlot;
 	final int rightSlot;
 	final Compare.CompareOp op;

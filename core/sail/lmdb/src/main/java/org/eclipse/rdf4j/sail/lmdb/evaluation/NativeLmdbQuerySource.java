@@ -1144,6 +1144,14 @@ public interface NativeLmdbQuerySource {
 
 		static KeyRunCursor boundedKeyRunCursor(KeyRunCursor delegate, long fromOrdinal, long toOrdinal) {
 			return new KeyRunCursor() {
+				private Runnable cancellationPoll;
+
+				@Override
+				public void cancellationPoll(Runnable cancellationPoll) {
+					this.cancellationPoll = cancellationPoll;
+					delegate.cancellationPoll(cancellationPoll);
+				}
+
 				@Override
 				public boolean contextSpan(long fromOffset, ContextSpan target) {
 					return delegate.contextSpan(fromOffset, target);
@@ -1171,6 +1179,9 @@ public interface NativeLmdbQuerySource {
 				@Override
 				public boolean advance() {
 					while (ordinal < fromOrdinal) {
+						if (cancellationPoll != null) {
+							cancellationPoll.run();
+						}
 						if (!delegate.advance()) {
 							return false;
 						}
@@ -1201,6 +1212,18 @@ public interface NativeLmdbQuerySource {
 				@Override
 				public long distinctNeighborCount() {
 					return delegate.distinctNeighborCount();
+				}
+
+				@Override
+				public boolean supportsPhysicalFiberCopy() {
+					return delegate.supportsPhysicalFiberCopy();
+				}
+
+				@Override
+				public int copyFibers(long runOffset, int length, long[] neighborTarget, int neighborOffset,
+						long[] multiplicityTarget, int multiplicityOffset) {
+					return delegate.copyFibers(runOffset, length, neighborTarget, neighborOffset, multiplicityTarget,
+							multiplicityOffset);
 				}
 
 				@Override
@@ -1864,6 +1887,10 @@ public interface NativeLmdbQuerySource {
 		 */
 		@Experimental
 		interface KeyRunCursor extends AutoCloseable {
+			/** Installs an optional check invoked during potentially unbounded physical traversal. */
+			default void cancellationPoll(Runnable cancellationPoll) {
+			}
+
 			default boolean contextSpan(long fromOffset, ContextSpan target) {
 				return false;
 			}
@@ -2005,6 +2032,19 @@ public interface NativeLmdbQuerySource {
 			 */
 			default int fillFibers(FiberBatch target, boolean classifyTermTraits) {
 				return fillFibers(target);
+			}
+
+			/**
+			 * Whether the positioned run copies physical fibers without scanning one entry per represented context row.
+			 * The capability may change after each {@link #advance()}. A true result permits a bounded fiber batch
+			 * between cancellation polls, independent of the fibers' logical multiplicities. The scalar fallback in
+			 * {@link #copyFibers(long, int, long[], int, long[], int)} does not provide this guarantee; consumers
+			 * requiring bounded cancellation must keep their bounded quad-copy path when this is false. Current CSF
+			 * providers advertise this only for single-page rows: an extent chain can span arbitrarily many pages for
+			 * one logical fiber, so its complete traversal is not a bounded fiber batch.
+			 */
+			default boolean supportsPhysicalFiberCopy() {
+				return false;
 			}
 
 			/**

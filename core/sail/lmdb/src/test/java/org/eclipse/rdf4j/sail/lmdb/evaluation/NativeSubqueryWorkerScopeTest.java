@@ -40,6 +40,21 @@ import org.junit.jupiter.api.Test;
 
 class NativeSubqueryWorkerScopeTest {
 	@Test
+	void workerDoesNotReuseCoordinatorIncidenceAuthority() {
+		QueryEvaluationStep step = ignored -> QueryEvaluationStep.EMPTY_ITERATION;
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(42L), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1D);
+		NativeSubqueryPlan.Incidence incidence = new NativeSubqueryPlan.Incidence(pattern, List.of("s", "o"));
+		NativeSubqueryPlan original = new NativeSubqueryPlan(step, new int[] { 0, 1 }, new String[] { "s", "o" },
+				new int[0], new String[0], new String[0], new String[0], null, null,
+				worker -> new NativeSubqueryPlan.BoundExecution(step, null, null), null, incidence);
+		assertThat(original.incidence()).isSameAs(incidence);
+		NativeLmdbQuerySource workerSource = mock(NativeLmdbQuerySource.class);
+		NativeSubqueryPlan worker = original.forWorker(new NativeScalarPlan.WorkerContext(workerSource, null, null));
+		assertThat(worker.incidence()).as("a worker cannot reuse source-bound coordinator IDs").isNull();
+	}
+
+	@Test
 	void workersPrepareIndependentOriginalDomainsAndGraphFramesBeforeLazyExistsReplay() throws Exception {
 		NativeLmdbQuerySource store = mock(NativeLmdbQuerySource.class);
 		when(store.idOf(any(Value.class), anyInt())).thenReturn(NativeLmdbQuerySource.UNKNOWN_ID);

@@ -158,10 +158,12 @@ abstract class LmdbNativeAggregatePlannerBase {
 	final List<PendingAggregateExpression> pendingAggregateExpressions = new ArrayList<>();
 
 	static final class PendingAggregateExpression {
+		final String name;
 		final int slot;
 		final ValueExpr expression;
 
-		PendingAggregateExpression(int slot, ValueExpr expression) {
+		PendingAggregateExpression(String name, int slot, ValueExpr expression) {
+			this.name = name;
 			this.slot = slot;
 			this.expression = expression;
 		}
@@ -1057,8 +1059,9 @@ abstract class LmdbNativeAggregatePlannerBase {
 				// M-F3 aggregates over expressions: evaluate the argument once per input solution into a hidden
 				// computed slot (error ⇒ slot unbound, matching the generic evaluator's null-on-error skip);
 				// DISTINCT then applies to the computed slot exactly like a plain variable argument.
-				int hidden = slot("#aggExpr" + i);
-				pendingAggregateExpressions.add(new PendingAggregateExpression(hidden, arg));
+				String hiddenName = "#aggExpr" + i;
+				int hidden = slot(hiddenName);
+				pendingAggregateExpressions.add(new PendingAggregateExpression(hiddenName, hidden, arg));
 				if (kind == AggKind.GROUP_CONCAT) {
 					String separator = groupConcatSeparator((org.eclipse.rdf4j.query.algebra.GroupConcat) op);
 					if (separator == null) {

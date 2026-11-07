@@ -27,6 +27,11 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 
 		String properties();
 
+		/** True when the complete quoted work finishes before the first result can reach the consumer. */
+		default boolean blocksBeforeOutput() {
+			return false;
+		}
+
 		/** Resource facts from this producer's same successful quote; absence is an unproved cold choice. */
 		default ColdAnchor coldAnchor(RowState row, Work quotedWork) {
 			return null;
