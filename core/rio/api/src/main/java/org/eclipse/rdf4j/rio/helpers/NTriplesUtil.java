@@ -887,7 +887,7 @@ public class NTriplesUtil {
 		StringBuilder sb = new StringBuilder(sLength);
 
 		while (backSlashIdx != -1) {
-			sb.append(s.substring(startIdx, backSlashIdx));
+			sb.append(s, startIdx, backSlashIdx);
 
 			if (backSlashIdx + 1 >= sLength) {
 				throw new IllegalArgumentException("Unescaped backslash in: " + s);
@@ -924,17 +924,16 @@ public class NTriplesUtil {
 				if (backSlashIdx + 5 >= sLength) {
 					throw new IllegalArgumentException("Incomplete Unicode escape sequence in: " + s);
 				}
-				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 6);
-
 				try {
-					final int codePoint = Integer.parseInt(xx, 16);
+					final int codePoint = Integer.parseInt(s, backSlashIdx + 2, backSlashIdx + 6, 16);
 					if (codePoint >= 0xD800 && codePoint <= 0xDFFF) {
 						throw new IllegalArgumentException("Illegal Unicode escape sequence: " + s);
 					}
-					sb.append(Character.toChars(codePoint));
+					sb.appendCodePoint(codePoint);
 
 					startIdx = backSlashIdx + 6;
 				} catch (NumberFormatException e) {
+					String xx = s.substring(backSlashIdx + 2, backSlashIdx + 6);
 					throw new IllegalArgumentException("Illegal Unicode escape sequence '\\u" + xx + "' in: " + s);
 				}
 			} else if (c == 'U') {
@@ -942,17 +941,16 @@ public class NTriplesUtil {
 				if (backSlashIdx + 9 >= sLength) {
 					throw new IllegalArgumentException("Incomplete Unicode escape sequence in: " + s);
 				}
-				String xx = s.substring(backSlashIdx + 2, backSlashIdx + 10);
-
 				try {
-					final int codePoint = Integer.parseInt(xx, 16);
+					final int codePoint = Integer.parseInt(s, backSlashIdx + 2, backSlashIdx + 10, 16);
 					if (codePoint >= 0xD800 && codePoint <= 0xDFFF) {
 						throw new IllegalArgumentException("Illegal Unicode escape sequence: " + s);
 					}
-					sb.append(Character.toChars(codePoint));
+					sb.appendCodePoint(codePoint);
 
 					startIdx = backSlashIdx + 10;
 				} catch (NumberFormatException e) {
+					String xx = s.substring(backSlashIdx + 2, backSlashIdx + 10);
 					throw new IllegalArgumentException("Illegal Unicode escape sequence '\\U" + xx + "' in: " + s);
 				}
 			} else {
@@ -962,7 +960,7 @@ public class NTriplesUtil {
 			backSlashIdx = s.indexOf('\\', startIdx);
 		}
 
-		sb.append(s.substring(startIdx));
+		sb.append(s, startIdx, sLength);
 
 		return sb.toString();
 	}
