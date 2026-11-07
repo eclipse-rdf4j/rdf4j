@@ -30,14 +30,26 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.api.Test;
 
 /** Compaction must not retain cumulative intermediate model copies. */
 class ModelCompressionRetentionTest {
-	@ParameterizedTest
-	@ValueSource(ints = { 4, 16, 64 })
-	void compressionKeepsLinearLiveModelEntries(int n) {
+	@Test
+	void compressionKeepsLinearLiveModelEntriesForFourChangesets() {
+		assertLinearLiveModelEntries(4);
+	}
+
+	@Test
+	void compressionKeepsLinearLiveModelEntriesForSixteenChangesets() {
+		assertLinearLiveModelEntries(16);
+	}
+
+	@Test
+	void compressionKeepsLinearLiveModelEntriesForSixtyFourChangesets() {
+		assertLinearLiveModelEntries(64);
+	}
+
+	private void assertLinearLiveModelEntries(int n) {
 		Factory factory = new Factory();
 		var vf = SimpleValueFactory.getInstance();
 		Set<Statement> expected = new HashSet<>();
