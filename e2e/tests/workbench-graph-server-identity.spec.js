@@ -75,8 +75,8 @@ test('same repository keeps distinct workspaces and queues on two servers and re
     await graph(page);
     await expect(page.locator('.graph-node[aria-label^="Server A source."]')).toHaveCount(1);
     await expect(page.locator('.graph-node[aria-label^="Server B source."]')).toHaveCount(0);
-    const queueA=`rdf4j-workbench-graph-additions:${JSON.stringify(['repository-v2',new URL(workbenchBaseUrl()).pathname,identityA,repositoryId])}`;
-    const queueB=`rdf4j-workbench-graph-additions:${JSON.stringify(['repository-v2',new URL(workbenchBaseUrl()).pathname,identityB,repositoryId])}`;
+    const queueA=`rdf4j-workbench-graph-additions:${JSON.stringify(['repository-v3',new URL(workbenchBaseUrl()).pathname,identityA.split(':').slice(0,2).join(':'),'',repositoryId])}`;
+    const queueB=`rdf4j-workbench-graph-additions:${JSON.stringify(['repository-v3',new URL(workbenchBaseUrl()).pathname,identityB.split(':').slice(0,2).join(':'),'',repositoryId])}`;
     const other=await context.newPage();
     await other.goto(repositoryPageUrl(repositoryId,'summary'));
     await other.evaluate(([key])=>localStorage.setItem(key,JSON.stringify([{kind:'statement',subject:'<urn:queued-b>',predicate:'<urn:property>',object:'<urn:b-target>'}])),[queueB]);
