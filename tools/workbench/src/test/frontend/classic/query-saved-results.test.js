@@ -161,6 +161,7 @@ test('a trimmed saved result shows the rows it kept and continues after them; a 
     later.controller.restore(saved);
     await settle();
     assert.equal(later.lastSummary().rowCount, 1);
+    assert.match(later.target.textContent, /Saved the first 1 of 2 rows/);
     assert.equal(later.target.querySelector('.query-result-load-more').hidden, false,
         'Load more fetches the rows trimmed away');
     later.controller.loadMore();
@@ -244,3 +245,54 @@ test('a result that failed or is still running is not saved', async () => {
     assert.equal(await first.controller.saveResult(KEPT_FOR), null);
     first.controller.dispose();
 });
+
+test('when browser storage is full even after trimming, the result keeps the rows that fit and Load more the rest',
+    async () => {
+        const { MemoryWorker } = require('./query-load-more-harness.js');
+        const refusing = { on: false };
+        class FullWorker extends MemoryWorker {
+            postMessage(message) {
+                if (message.op === 'append' && refusing.on) {
+                    queueMicrotask(() => {
+                        const answer = { requestId: message.requestId, ok: false, error: 'QuotaExceededError: full',
+                            errorName: 'QuotaExceededError' };
+                        for (const callback of this.listeners.get('message') || []) callback({ data: answer });
+                    });
+                    return;
+                }
+                super.postMessage(message);
+            }
+        }
+        const loaded = loadApi({ localStorage: mapStorage() });
+        const { api, document } = loaded;
+        const form = document.createElement('form');
+        form.setAttribute('action', '/repositories/owned/query');
+        for (const [name, value] of Object.entries({ query: 'SELECT ?value {}', 'batch-size': '2' })) {
+            const control = document.createElement('input');
+            control.name = name;
+            control.value = value;
+            form.appendChild(control);
+        }
+        const target = document.createElement('section');
+        document.body.appendChild(form);
+        document.body.appendChild(target);
+        const responses = [batch([0, 1], 0, true, { 'total-result-count': 4 }),
+            batch([2, 3], 2, false, { 'total-result-count': 4 })];
+        const controller = api.bindMainQueryForm(form, target, {
+            rowStoreOptions: { workerFactory: () => new FullWorker(), spillRowLimit: 0 },
+            async fetcher() { return response(responses.shift()); }
+        });
+        controller.submit();
+        await settle();
+        refusing.on = true;
+        controller.loadMore();
+        await settle(200);
+        const saved = await controller.saveResult(KEPT_FOR);
+        assert.ok(saved, 'what fits is saved');
+        assert.equal(saved.rows, 2);
+        assert.equal(saved.terminalMetadata['result-has-more'], true);
+        assert.equal(saved.terminalMetadata['result-next-offset'], 2);
+        assert.match(target.textContent, /Browser storage is full: 2 rows are kept/);
+        assert.equal(target.querySelector('.query-result-load-more').hidden, false);
+        controller.dispose();
+    });
