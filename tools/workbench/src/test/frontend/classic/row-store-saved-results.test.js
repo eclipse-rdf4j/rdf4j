@@ -253,3 +253,35 @@ test('a saved result cannot be opened under a shared memory budget', async () =>
     await assert.rejects(page.api.openRowStore({ id: 'rows-x', count: 1, bytes: 1, created: 1 }, options),
         /memory budget/);
 });
+
+test('a saved result answers a window it read again without asking its worker, until its rows change', async () => {
+    // A result table renders its window again on every layout change; once the rows are in the worker each render
+    // would cross to it, which a slow browser cannot keep up with (Load more then never ends in time).
+    const page = browser().page();
+    const store = await page.api.createRowStore(page.options);
+    await store.append(rows(0, 3));
+    await store.persist();
+    const reads = () => page.workers.workers.flatMap((worker) => worker.messages).filter((message) => message.op === 'read')
+        .length;
+    const before = reads();
+    assert.deepEqual(values(await store.read(0, 3)), ['0', '1', '2']);
+    assert.equal(reads(), before + 1);
+    assert.deepEqual(values(await store.read(0, 3)), ['0', '1', '2']);
+    assert.deepEqual(values(await store.read(0, 3)), ['0', '1', '2']);
+    assert.equal(reads(), before + 1, 'the same window is read once');
+
+    await store.append(rows(3, 5));
+    await store.persist();
+    assert.deepEqual(values(await store.read(0, 3)), ['0', '1', '2'], 'rows added after a full window leave it as it is');
+    assert.deepEqual(values(await store.read(0, 10)), ['0', '1', '2', '3', '4']);
+    await store.append(rows(5, 6));
+    await store.persist();
+    assert.deepEqual(values(await store.read(0, 10)), ['0', '1', '2', '3', '4', '5'],
+        'a window that reached the end shows the rows added after it');
+    await store.truncate(2);
+    assert.deepEqual(values(await store.read(0, 3)), ['0', '1'], 'a truncate drops the rows a window held');
+    const copy = await store.read(0, 2);
+    copy.pop();
+    assert.deepEqual(values(await store.read(0, 2)), ['0', '1'], 'a caller changing its rows leaves the next read whole');
+    await store.dispose();
+});

@@ -407,6 +407,8 @@ namespace workbench {
         export var STORAGE_TIMEOUT = 30000;
         /** How long one IndexedDB call (deleting a database, listing them) may take before the page stops waiting. */
         export var STORAGE_CALL_TIMEOUT = 5000;
+        /** The most rows of a window a stored result keeps to answer the same read again (a result table's window). */
+        export var ROW_STORE_WINDOW_CACHE_ROWS = 2000;
 
         /**
          * A row store that moved to browser storage (a "stored result") is an IndexedDB database of its own, named
@@ -3883,6 +3885,14 @@ namespace workbench {
             var transferReservationReleased = false;
             var lastRegistryWrite = 0;
             var cancelRegistryWrite: () => void = null;
+            /**
+             * The window read last, while its rows cannot have changed: a result table reads its window again on every
+             * render, and each read would otherwise cross to the worker. A window that reached the end holds only
+             * while no rows were added; a truncate drops it. Not kept under a shared memory budget, which it would
+             * escape.
+             */
+            var lastWindow: { start: number; count: number; total: number; rows: any[][] } = null;
+            var windowGeneration = 0;
 
             function register(): void {
                 if (cancelRegistryWrite) {
@@ -4231,8 +4241,24 @@ namespace workbench {
                             throw error;
                         });
                     },
-                    read: (start: number, count: number): Promise<any[][]> =>
-                        readWindow(start, count, false).then(window => window.rows),
+                    read: (start: number, count: number): Promise<any[][]> => {
+                        var first = Math.floor(start);
+                        var rowCount = Math.floor(count);
+                        var known = lastWindow;
+                        if (known && !disposed && known.start === first && known.count === rowCount
+                                && (known.rows.length === rowCount || known.total === storedRowCount)) {
+                            return Promise.resolve(known.rows.slice());
+                        }
+                        var generation = windowGeneration;
+                        var total = storedRowCount;
+                        return readWindow(start, count, false).then(window => {
+                            if (!config.memoryBudget && generation === windowGeneration && !disposed
+                                    && rowCount <= ROW_STORE_WINDOW_CACHE_ROWS) {
+                                lastWindow = { start: first, count: rowCount, total: total, rows: window.rows.slice() };
+                            }
+                            return window.rows;
+                        });
+                    },
                     readOwned: (start: number, count: number): Promise<RowStoreWindow> =>
                         readWindow(start, count, true),
                     count: (): Promise<number> => send('count').then(result => result.count),
@@ -4240,6 +4266,8 @@ namespace workbench {
                         if (!Number.isSafeInteger(count) || count < 0) {
                             return Promise.reject(new Error('A non-negative safe truncate count is required.'));
                         }
+                        lastWindow = null;
+                        windowGeneration++;
                         return send('count').then(current => {
                             if (count > current.count) {
                                 throw new Error('The truncate count cannot exceed the stored row count.');
