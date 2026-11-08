@@ -77,10 +77,13 @@ test.describe('Query tabs', () => {
         await ensureRepository(request);
         await page.goto(`${workbenchBase}/repositories/${repositoryId}/query`);
         await expect(tabs(page)).toHaveCount(1);
-        // A clean slate: forget the tabs an earlier run left in this browser profile.
-        await page.evaluate(() => Object.keys(localStorage)
-            .filter((key) => key.startsWith('rdf4j.workbench.query.tabs.v2:'))
-            .forEach((key) => localStorage.removeItem(key)));
+        // A clean slate: forget the tabs and pages an earlier run left in this browser profile.
+        await page.evaluate(() => {
+            for (const storage of [localStorage, sessionStorage]) {
+                Object.keys(storage).filter((key) => key.startsWith('rdf4j.workbench.query.tabs.v2:')
+                    || key.startsWith('rdf4j.workbench.workspace.v1:')).forEach((key) => storage.removeItem(key));
+            }
+        });
         await page.reload();
         await expect(tabs(page)).toHaveCount(1);
     });
@@ -133,6 +136,81 @@ test.describe('Query tabs', () => {
         await expect(selectedTab(page).locator('.query-tabs__title')).toHaveText('SELECT ?t WHERE { ?t a ex:Thing }');
         await expect(tabs(page).nth(0).locator('.query-tabs__badge')).toHaveText('2');
         await expect(tabs(page).nth(1).locator('.query-tabs__badge')).toHaveText('3');
+    });
+
+    test('a reload shows the saved result again without asking the server', async ({ page }) => {
+        await runAndWaitForBadge(page, 'PREFIX ex: <http://example.org/>\nSELECT ?t WHERE { ?t a ex:Thing }');
+        await expect.poll(() => page.evaluate(() => {
+            const key = Object.keys(sessionStorage).find((name) => name.startsWith('rdf4j.workbench.query.tabs.v2:'));
+            const state = key ? JSON.parse(sessionStorage.getItem(key)) : null;
+            return state && state.tabs[0].lastRun && state.tabs[0].lastRun.saved ? state.tabs[0].lastRun.saved.rows : null;
+        }), { timeout: 10000 }).toBe(2);
+        const executions = [];
+        page.on('request', (request) => {
+            if (request.method() === 'POST' && (request.postData() || '').includes('action=exec')) {
+                executions.push(request.url());
+            }
+        });
+        await page.reload();
+        await expect(page.locator('#query-results')).toContainText('2 rows', { timeout: 15000 });
+        await expect(page.locator('#query-results')).toContainText('ex:a');
+        expect(executions.length).toBe(0);
+    });
+
+    test('a saved result older than 15 minutes says how long ago its query ran', async ({ page }) => {
+        await runAndWaitForBadge(page, 'PREFIX ex: <http://example.org/>\nSELECT ?t WHERE { ?t a ex:Thing }');
+        await expect.poll(() => page.evaluate(() => Object.keys(sessionStorage).some((name) =>
+            name.startsWith('rdf4j.workbench.query.tabs.v2:') && sessionStorage.getItem(name).includes('"saved":{')
+        )), { timeout: 10000 }).toBe(true);
+        // As if the query ran two hours ago: the saved result keeps when it ran.
+        await page.evaluate(() => {
+            for (const storage of [localStorage, sessionStorage]) {
+                const key = Object.keys(storage).find((name) => name.startsWith('rdf4j.workbench.query.tabs.v2:'));
+                const state = JSON.parse(storage.getItem(key));
+                const before = Date.now() - 2 * 60 * 60 * 1000 - 60000;
+                state.tabs[0].lastRun.at = before;
+                state.tabs[0].lastRun.saved.ranAt = before;
+                storage.setItem(key, JSON.stringify(state));
+            }
+        });
+        await page.reload();
+        await expect(page.locator('#query-results')).toContainText('ran 2 h ago', { timeout: 15000 });
+        await page.click('#query-tabs .query-tabs__menu-button');
+        await expect(page.locator('#query-tabs .query-tabs__menu-meta').first()).toContainText('ran 2 h ago');
+    });
+
+    test('switching repositories opens one as it was left, and Undo can start it afresh', async ({ page, request }) => {
+        const other = repositoryId + '-other';
+        const exists = await request.get(`${serverBase}/repositories/${other}/size`);
+        if (!exists.ok()) {
+            const created = await request.put(`${serverBase}/repositories/${other}`, {
+                headers: { 'Content-Type': 'text/turtle' }, data: `@prefix config: <tag:rdf4j.org,2023:config/> .
+[] a config:Repository ; config:rep.id "${other}" ;
+   config:rep.impl [ config:rep.type "openrdf:SailRepository" ; config:sail.impl [ config:sail.type "openrdf:MemoryStore" ] ] .`
+            });
+            expect(created.ok()).toBeTruthy();
+        }
+        await runAndWaitForBadge(page, 'PREFIX ex: <http://example.org/>\nSELECT ?t WHERE { ?t a ex:Thing }');
+        await page.click('#query-tabs .query-tabs__new');
+        await setEditorText(page, 'ASK { ?s ?p ?o }');
+
+        // Over to the other repository with the switcher, then back.
+        await page.goto(`${workbenchBase}/repositories/${other}/summary`);
+        await page.click('#workbench-repository-switcher, [aria-controls="workbench-repository-panel"]');
+        await page.locator(`a.workbench-popover__option[data-repository-id="${repositoryId}"]`).click();
+        await expect(page).toHaveURL(new RegExp(`/repositories/${repositoryId}/query`), { timeout: 15000 });
+        await expect(tabs(page)).toHaveCount(2);
+        const toast = page.locator('.workbench-toast');
+        await expect(toast).toContainText(`Restored ${repositoryId} as you left it: Query page, 2 query tabs.`);
+
+        await toast.locator('.workbench-toast__action').click();
+        const dialog = page.locator('dialog.workbench-dialog--choice');
+        await expect(dialog).toBeVisible();
+        await dialog.locator('[data-choice="empty"]').click();
+        await expect(page).toHaveURL(new RegExp(`/repositories/${repositoryId}/summary`), { timeout: 15000 });
+        await page.goto(`${workbenchBase}/repositories/${repositoryId}/query`);
+        await expect(tabs(page)).toHaveCount(1);
+        await expect(selectedTab(page).locator('.query-tabs__title')).toHaveText('Untitled query');
     });
 
     test('a failed query marks its tab; closing tabs falls back to a neighbour and finally to one empty tab', async ({ page }) => {
