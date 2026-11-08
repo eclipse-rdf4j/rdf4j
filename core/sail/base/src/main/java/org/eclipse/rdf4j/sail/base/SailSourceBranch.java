@@ -2877,23 +2877,29 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 				}
 
-				while (changes.size() > 1) {
-					Changeset pop = changes.removeLast();
-					if (pop.isFrozen() || changes.peekLast().isFrozen() || changes.peekLast().isRetained()
-							|| pop.sharesModelWith(changes.peekLast())) {
-						changes.addLast(pop);
+				Changeset[] pending = changes.toArray(new Changeset[0]);
+				if (pending.length < 2) {
+					return;
+				}
+				int into = pending.length - 1;
+				while (into > 0 && canFold(pending[into], pending[into - 1])) {
+					into--;
+				}
+				// Replay the foldable tail oldest-first into its first change. Folding each change into its
+				// predecessor instead copies the accumulated tail once per change, and every copy stays alive until
+				// the deferred model disposal runs.
+				Changeset target = pending[into];
+				for (int index = into + 1; index < pending.length; index++) {
+					Changeset source = pending[index];
+					if (!canFold(source, target)) {
+						// Leaving the rest unfolded keeps the change order; compression is only an optimisation.
 						return;
 					}
-
-					try {
-						prepare(pop, changes.getLast());
-						flush(pop, changes.getLast());
-					} catch (RuntimeException | Error failure) {
-						changes.addLast(pop);
-						throw failure;
-					}
-					StreamingWritePreflight.removed(pop);
-					pop.close();
+					prepare(source, target);
+					flush(source, target);
+					changes.removeFirstOccurrence(source);
+					StreamingWritePreflight.removed(source);
+					source.close();
 				}
 
 			} finally {
@@ -2901,6 +2907,12 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			}
 
 		}
+	}
+
+	/** Neither change is frozen, no reader retains the predecessor, and the two own separate models. */
+	private static boolean canFold(Changeset change, Changeset predecessor) {
+		return !change.isFrozen() && !predecessor.isFrozen() && !predecessor.isRetained()
+				&& !change.sharesModelWith(predecessor);
 	}
 
 	void autoFlush() throws SailException {
