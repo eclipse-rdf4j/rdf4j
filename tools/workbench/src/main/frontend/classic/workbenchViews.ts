@@ -910,11 +910,16 @@ namespace workbench {
          * The repository whose Graph page "Add to graph" feeds (workbench.graphAdditions), or undefined when this
          * page has no repository or the Graph page is hidden by the Workbench policy.
          */
-        export function graphContext(context: ViewContext): { basePath: string; repositoryId: string; serverIdentity: string } {
+        export function graphContext(context: ViewContext): { basePath: string; repositoryId: string; serverIdentity: string; serverUser: string } {
             if (!context || !context.repositoryId || !context.serverIdentity || !(workbench as any).graphAdditions || !pageEnabled(context, 'graph')) {
                 return undefined;
             }
-            return { basePath: context.basePath || '', repositoryId: context.repositoryId, serverIdentity: context.serverIdentity };
+            return {
+                basePath: context.basePath || '',
+                repositoryId: context.repositoryId,
+                serverIdentity: context.serverIdentity,
+                serverUser: serverUser(context)
+            };
         }
 
         /**

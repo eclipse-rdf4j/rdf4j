@@ -55,6 +55,8 @@ export function useRepositoryFacets(input: {
   basePath: string;
   repositoryId: string;
   serverIdentity: string;
+  /** The signed-in server user, "" when nobody is: the cached values are kept per user. */
+  serverUser?: string;
   endpoint: string;
   /** Sends a query without counting it as the explorer's own (foreground) query. */
   execute: (endpoint: string, query: string, signal?: AbortSignal) => Promise<SparqlResponse>;
@@ -74,6 +76,7 @@ export function useRepositoryFacets(input: {
   foreground: { idle(): Promise<void> };
 }) {
   const { basePath, repositoryId, serverIdentity, endpoint, execute, scope } = input;
+  const serverUser = input.serverUser ?? "";
   const revisionKey = useMemo(
     () => dataRevisionKey(basePath, repositoryId, serverIdentity),
     [basePath, repositoryId, serverIdentity],
@@ -84,8 +87,8 @@ export function useRepositoryFacets(input: {
     return watchDataRevision(revisionKey, setRevision);
   }, [revisionKey]);
   const namespace = useMemo(
-    () => facetNamespace(repositoryScope(basePath, repositoryId, serverIdentity), String(scope), inferenceOn()),
-    [basePath, repositoryId, serverIdentity, scope],
+    () => facetNamespace(repositoryScope(basePath, repositoryId, serverIdentity, serverUser), String(scope), inferenceOn()),
+    [basePath, repositoryId, serverIdentity, serverUser, scope],
   );
   // Read through refs so a new label or candidate function does not start a new store.
   const knownLabelRef = useRef(input.knownLabel);

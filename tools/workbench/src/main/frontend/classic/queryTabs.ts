@@ -69,10 +69,14 @@ namespace workbench {
         export const MAX_TABS = 20;
         export const UNTITLED = 'Untitled query';
         const TITLE_LENGTH = 40;
-        const STORAGE_PREFIX = 'rdf4j.workbench.query.tabs.v1:';
+        export const STORAGE_PREFIX = 'rdf4j.workbench.query.tabs.v2:';
 
-        export function storageKey(serverIdentity: string, repositoryId: string): string {
-            return STORAGE_PREFIX + (serverIdentity || '') + ':' + (repositoryId || '');
+        /**
+         * The tabs of a repository on a server for a user (workbench.workspace scopes: the server's digest, the user,
+         * the repository), the same in every browser session.
+         */
+        export function storageKey(scope: { digest: string; user: string; repositoryId: string }): string {
+            return STORAGE_PREFIX + JSON.stringify([scope.digest || '', scope.user || '', scope.repositoryId || '']);
         }
 
         let idCounter = 0;

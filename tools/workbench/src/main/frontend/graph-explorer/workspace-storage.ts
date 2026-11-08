@@ -116,28 +116,34 @@ async function remove(scope?: string) {
     localStorage.removeItem(legacyKey(scope));
   } catch {}
 }
-/** The Workbench, server and repository of a stored graph's scope (see repositoryScope), and its whole identity. */
-function scopeParts(scope: string): { place: string; identity: string } | null {
+/**
+ * The Workbench, server and repository of a stored graph's scope (see repositoryScope), its version, and what tells two
+ * scopes of the same place apart: the session's identity (v2) or the user (v3).
+ */
+function scopeParts(scope: string): { version: 2 | 3; place: string; identity: string } | null {
   try {
     const parts = JSON.parse(scope.replace(/:unreadable$/, ""));
-    if (!Array.isArray(parts) || parts.length !== 4 || parts[0] !== "repository-v2" || typeof parts[2] !== "string")
-      return null;
-    // The server identity is the server's digest ("sha256:…"), then the browser session's or connection's scope.
-    return { place: JSON.stringify([parts[1], parts[2].split(":").slice(0, 2).join(":"), parts[3]]), identity: parts[2] };
+    if (Array.isArray(parts) && parts.length === 4 && parts[0] === "repository-v2" && typeof parts[2] === "string")
+      // The server identity is the server's digest ("sha256:…"), then the browser session's or connection's scope.
+      return { version: 2, place: JSON.stringify([parts[1], parts[2].split(":").slice(0, 2).join(":"), parts[3]]), identity: parts[2] };
+    if (Array.isArray(parts) && parts.length === 5 && parts[0] === "repository-v3" && typeof parts[2] === "string")
+      return { version: 3, place: JSON.stringify([parts[1], parts[2], parts[4]]), identity: String(parts[3]) };
+    return null;
   } catch {
     return null;
   }
 }
 
 /**
- * Deletes the graphs stored for the same Workbench, server and repository under another scope: an earlier browser
- * session's or connection's, which no page can open again.
+ * Deletes the graphs stored for the same Workbench, server and repository under an earlier scope, which no page opens
+ * again: an earlier browser session's or connection's (v2). Other users' graphs (v3) are kept.
  */
 export function removeEarlierScopes(scope: string): Promise<void> {
   const own = scopeParts(scope);
   const earlier = (other: string) => {
     const parts = scopeParts(other);
-    return Boolean(own && parts && parts.place === own.place && parts.identity !== own.identity);
+    if (!own || !parts || parts.place !== own.place || parts.version !== 2) return false;
+    return own.version === 3 || parts.identity !== own.identity;
   };
   return queued(async () => {
     try {
@@ -208,11 +214,16 @@ const opens = (raw: string) => parseWorkspacePayload(raw, { repositoryReferences
  * The stored graph, and whether a stored graph could not be opened. One that cannot is set aside before anything can
  * be saved over it, and is reported each time the page opens until it is recovered or discarded.
  */
-export async function openStoredWorkspace(scope: string): Promise<{ saved: WorkspacePayload | null; unreadable: boolean }> {
+export async function openStoredWorkspace(scope: string, legacyScope?: string): Promise<{ saved: WorkspacePayload | null; unreadable: boolean }> {
   let saved: WorkspacePayload | null = null;
   let unreadable = false;
   try {
-    const raw = await loadWorkspaceText(scope);
+    let raw = await loadWorkspaceText(scope);
+    if (!raw && legacyScope && legacyScope !== scope) {
+      // The graph this browser session kept before graphs were kept per user moves to the user's scope, once.
+      raw = await loadWorkspaceText(legacyScope);
+      if (raw) await saveWorkspaceText(raw, scope).catch(() => {});
+    }
     saved = raw ? opens(raw) : null;
     if (raw && !saved) {
       unreadable = true;

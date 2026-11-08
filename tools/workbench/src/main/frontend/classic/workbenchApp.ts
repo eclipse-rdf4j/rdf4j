@@ -766,8 +766,8 @@ namespace workbench {
 
         function loadSharedRuntime(basePath: string, dependencies: any): Promise<void> {
             // Requested together: scripts inserted with async=false still run in the order they were inserted.
-            const loads = ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js',
-                'graphAdditions.js', 'workbench-theme.js'].map((name: string) => loadClassicScript(scriptUrl(basePath, name), dependencies));
+            const loads = ['workbenchWorkspace.js', 'workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js',
+                'queryStream.js', 'graphAdditions.js', 'workbench-theme.js'].map((name: string) => loadClassicScript(scriptUrl(basePath, name), dependencies));
             return Promise.all(loads).then(() => {
                 if (!workbench.views || typeof workbench.views.render !== 'function') {
                     throw new Error('The Workbench route renderer is unavailable');

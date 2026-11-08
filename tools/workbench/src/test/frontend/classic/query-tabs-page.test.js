@@ -16,7 +16,7 @@ const assert = require('node:assert/strict');
 const { createQueryBrowserHarness } = require('./query-browser-harness.js');
 
 const HREF = 'http://localhost:8080/rdf4j-workbench/repositories/test/query';
-const STORAGE_KEY = 'rdf4j.workbench.query.tabs.v1:test-session:test';
+const STORAGE_KEY = 'rdf4j.workbench.query.tabs.v2:' + JSON.stringify(['test-session', '', 'test']);
 
 function mapStorage() {
     const values = new Map();

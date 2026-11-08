@@ -5,6 +5,7 @@
 /// <reference path="yasqe.d.ts" />
 /// <reference path="yasqeHelper.ts" />
 /// <reference path="queryTabs.ts" />
+/// <reference path="workbenchWorkspace.ts" />
 
 // WARNING: Do not edit the *.js version of this file. Instead, always edit the
 // corresponding *.ts source in the ts subfolder, and then invoke the
@@ -5177,7 +5178,8 @@ namespace workbench {
 
         /**
          * Query tabs are on when the page renders the #query-tabs row (the query-tabs feature). The store is keyed
-         * by server identity and repository; with nothing stored, the first tab holds the text the page restored.
+         * by server, user and repository (workbench.workspace); with nothing stored, the first tab holds the text the
+         * page restored.
          */
         function initializeQueryTabs(outlet: HTMLElement, opened: { text: string; savedName?: string }): void {
             disposeQueryTabs();
@@ -5186,11 +5188,12 @@ namespace workbench {
                 return;
             }
             var tabs = workbench.queryTabs;
-            var mount = document.getElementById('workbench-app');
-            var scope = (mount && mount.getAttribute('data-workbench-server-identity')) || '';
+            var repositoryId = currentRepositoryId();
+            var scope = workbench.workspace.currentScope(document, repositoryId)
+                || { digest: '', user: '', repositoryId: repositoryId };
             var seed = tabs.emptyState();
             seed = tabs.update(seed, seed.activeId, { query: getPaneRawQueryValue('primary') });
-            var key = tabs.storageKey(scope, currentRepositoryId());
+            var key = tabs.storageKey(scope);
             if (queryTabControllersKey !== key) {
                 disposeQueryTabResults();
                 queryTabControllersKey = key;

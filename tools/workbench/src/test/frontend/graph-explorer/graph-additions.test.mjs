@@ -32,7 +32,11 @@ function memoryStorage(initial = {}) {
 test("the queue key matches the Workbench pages' (classic/graphAdditions.ts)", () => {
   assert.equal(
     additionsKey("/wb/", "my repo", "server"),
-    'rdf4j-workbench-graph-additions:["repository-v2","/wb","server","my repo"]',
+    'rdf4j-workbench-graph-additions:["repository-v3","/wb","server","","my repo"]',
+  );
+  assert.equal(
+    additionsKey("/wb/", "my repo", "sha256:abc:session", "ada"),
+    'rdf4j-workbench-graph-additions:["repository-v3","/wb","sha256:abc","ada","my repo"]',
   );
 });
 

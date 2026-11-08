@@ -30,8 +30,8 @@ export type GraphAddition =
 type QueueStorage = Pick<Storage, "getItem" | "removeItem">;
 type WritableQueueStorage = Pick<Storage, "getItem" | "setItem">;
 
-export function additionsKey(basePath: string, repositoryId: string, serverIdentity: string) {
-  return `${ADDITIONS_PREFIX}${repositoryScope(basePath, repositoryId, serverIdentity)}`;
+export function additionsKey(basePath: string, repositoryId: string, serverIdentity: string, serverUser = "") {
+  return `${ADDITIONS_PREFIX}${repositoryScope(basePath, repositoryId, serverIdentity, serverUser)}`;
 }
 
 function isAddition(entry: unknown): entry is GraphAddition {
@@ -51,7 +51,8 @@ function isAddition(entry: unknown): entry is GraphAddition {
 }
 
 /** Reads and empties the repository's queue; malformed entries are dropped. */
-export function takeAdditions(basePath: string, repositoryId: string, storage?: QueueStorage, serverIdentity?: string): GraphAddition[] {
+export function takeAdditions(basePath: string, repositoryId: string, storage?: QueueStorage, serverIdentity?: string,
+  serverUser = ""): GraphAddition[] {
   // Older queues do not identify their server. Keep them for recovery without claiming them for today's connection.
   if (!serverIdentity) return [];
   let store: QueueStorage | undefined = storage;
@@ -60,7 +61,7 @@ export function takeAdditions(basePath: string, repositoryId: string, storage?: 
   } catch {
     return [];
   }
-  const key = additionsKey(basePath, repositoryId, serverIdentity);
+  const key = additionsKey(basePath, repositoryId, serverIdentity, serverUser);
   let raw: string | null = null;
   try {
     raw = store.getItem(key);
@@ -84,11 +85,12 @@ export function returnAdditions(
   additions: readonly GraphAddition[],
   storage?: WritableQueueStorage,
   serverIdentity?: string,
+  serverUser = "",
 ) {
   if (!additions.length || !serverIdentity) return;
   try {
     const store = storage ?? localStorage;
-    const key = additionsKey(basePath, repositoryId, serverIdentity);
+    const key = additionsKey(basePath, repositoryId, serverIdentity, serverUser);
     let queued: unknown = [];
     try {
       queued = JSON.parse(store.getItem(key) ?? "[]");

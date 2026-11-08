@@ -79,7 +79,7 @@ test.describe('Query tabs', () => {
         await expect(tabs(page)).toHaveCount(1);
         // A clean slate: forget the tabs an earlier run left in this browser profile.
         await page.evaluate(() => Object.keys(localStorage)
-            .filter((key) => key.startsWith('rdf4j.workbench.query.tabs.v1:'))
+            .filter((key) => key.startsWith('rdf4j.workbench.query.tabs.v2:'))
             .forEach((key) => localStorage.removeItem(key)));
         await page.reload();
         await expect(tabs(page)).toHaveCount(1);

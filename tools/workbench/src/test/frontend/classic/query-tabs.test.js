@@ -157,8 +157,10 @@ test('setQuery marks the tab dirty, recordRun clears it, update patches fields a
 
 test('the store reads, persists and notifies; a throwing storage keeps the state in memory', () => {
     const tabs = loadQueryTabs();
-    const key = tabs.storageKey('server-1', 'lmdb');
-    assert.equal(key, 'rdf4j.workbench.query.tabs.v1:server-1:lmdb');
+    const key = tabs.storageKey({ digest: 'sha256:abc', user: '', repositoryId: 'lmdb' });
+    assert.equal(key, 'rdf4j.workbench.query.tabs.v2:["sha256:abc","","lmdb"]');
+    assert.notEqual(tabs.storageKey({ digest: 'sha256:abc', user: 'ada', repositoryId: 'lmdb' }), key,
+        'each user has their own tabs');
     const storage = mapStorage({ [key]: 'garbage' });
     const store = tabs.createStore(storage, null, key);
     assert.equal(store.get().tabs.length, 1, 'bad JSON falls back to one empty tab');
@@ -190,7 +192,7 @@ test('the store reads, persists and notifies; a throwing storage keeps the state
 
 test('each browser page keeps its own working copy; the latest state seeds a page that has none', () => {
     const tabs = loadQueryTabs();
-    const key = tabs.storageKey('server-1', 'lmdb');
+    const key = tabs.storageKey({ digest: 'sha256:abc', user: '', repositoryId: 'lmdb' });
     const local = mapStorage();
     const pageA = mapStorage();
     const pageB = mapStorage();

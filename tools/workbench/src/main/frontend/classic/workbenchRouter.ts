@@ -1183,6 +1183,8 @@ namespace workbench {
             } else {
                 session.mount.removeAttribute('data-workbench-server-identity');
             }
+            // The signed-in user of the page shown: what the Workbench keeps in this browser is kept per user.
+            session.mount.setAttribute('data-workbench-server-user', context.serverUser || '');
             views().render(session.mount, model, context, session.runtime);
             adoptBusy();
             if (parked) {
