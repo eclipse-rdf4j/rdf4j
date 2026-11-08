@@ -296,3 +296,34 @@ test('when browser storage is full even after trimming, the result keeps the row
         assert.equal(target.querySelector('.query-result-load-more').hidden, false);
         controller.dispose();
     });
+
+test('a result whose query ran more than 15 minutes ago says how long ago, the exact time in its tooltip', async () => {
+    const shared = browser();
+    const first = shared.page([batch([0, 1], 0, false, { 'query-elapsed-ms': 109, 'query-result-status': 'completed',
+        'total-result-count': 2 })]);
+    first.controller.submit();
+    await settle();
+    assert.ok(!/ran .* ago/.test(first.target.textContent), 'a fresh result gives no age');
+    const saved = await first.controller.saveResult(KEPT_FOR);
+    assert.ok(Math.abs(saved.ranAt - Date.now()) < 5000, 'the snapshot keeps when the query ran');
+    first.controller.dispose();
+
+    const later = shared.page();
+    later.controller.restore(Object.assign({}, saved, { ranAt: Date.now() - 2 * 60 * 60 * 1000 - 1000 }));
+    await settle();
+    assert.match(later.target.textContent, /2 rows · complete in 109 ms · ran 2 h ago/);
+    const shownStatus = [...later.target.querySelectorAll('[title]')].filter(element => /^Ran /.test(element.getAttribute('title')));
+    assert.equal(shownStatus.length, 1, 'the exact time is in the tooltip');
+    later.controller.dispose();
+});
+
+test('the age reads in minutes, hours and days', () => {
+    const { api } = loadApi();
+    const now = Date.UTC(2026, 10, 8, 12);
+    assert.equal(api.ranAgo(now - 14 * 60000, now), '');
+    assert.equal(api.ranAgo(now - 16 * 60000, now), 'ran 16 min ago');
+    assert.equal(api.ranAgo(now - 90 * 60000, now), 'ran 1 h ago');
+    assert.equal(api.ranAgo(now - 25 * 3600000, now), 'ran 1 day ago');
+    assert.equal(api.ranAgo(now - 72 * 3600000, now), 'ran 3 days ago');
+    assert.equal(api.ranAgo(0, now), '');
+});

@@ -240,3 +240,18 @@ test('a tab keeps its saved result through runs it reports and storage, and drop
     assert.equal(tabs.savedResult(tabs.parseState(JSON.stringify(broken)).tabs[0]), null);
     assert.equal(tabs.saveRun(state, 'nope', saved), state);
 });
+
+test('the tab menu says how long ago a query ran once it is more than 15 minutes old', () => {
+    const context = vm.createContext({ workbench: { queryStream: { ranAgo: (at, now) => now - at > 900000 ? 'ran 2 h ago' : '' } },
+        console, Intl, Date, Math, JSON });
+    vm.runInContext(fs.readFileSync(workbenchScriptPath('queryTabs.js'), 'utf8'), context, { filename: 'queryTabs.js' });
+    const tabs = context.workbench.queryTabs;
+    const now = 10 * 3600000;
+    let state = tabs.emptyState();
+    state = tabs.recordRun(state, state.activeId, { status: 'done', rowCount: 17, total: 17, elapsedMs: null,
+        at: now - 2 * 3600000 });
+    const tab = tabs.activeTab(state);
+    assert.equal(tabs.runText(tab, false, now), '17 rows · ran 2 h ago');
+    assert.equal(tabs.runText(tab, false, tab.lastRun.at + 1000), '17 rows');
+    assert.equal(tabs.runText(tab, true, now), 'Running');
+});

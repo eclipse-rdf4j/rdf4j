@@ -621,7 +621,10 @@ namespace workbench {
             if (status) {
                 select.appendChild(status);
             }
-            select.appendChild(element(doc, 'span', 'query-tabs__menu-meta', runText(tab, running)));
+            const meta = element(doc, 'span', 'query-tabs__menu-meta', runText(tab, running, Date.now()));
+            // Opening the menu later says the age then (renderTabRow refreshes it).
+            (<any>meta).queryTab = tab;
+            select.appendChild(meta);
             select.addEventListener('click', function() {
                 const popover: any = (<any>workbench).popover;
                 if (popover && typeof popover.closeAll === 'function') {
@@ -644,7 +647,13 @@ namespace workbench {
         }
 
         /** A short description of the last run for the menu: '17 rows', 'Running', 'Failed', 'Not run yet'. */
-        export function runText(tab: QueryTab, running: boolean): string {
+        /** 'ran 2 h ago' once the run is more than 15 minutes old (queryStream.ranAgo); '' without the streamed page. */
+        function ranAgo(run: QueryTabRun, now: number): string {
+            const stream: any = (<any>workbench).queryStream;
+            return run && now && stream && typeof stream.ranAgo === 'function' ? stream.ranAgo(run.at, now) : '';
+        }
+
+        export function runText(tab: QueryTab, running: boolean, now?: number): string {
             if (running) {
                 return 'Running';
             }
@@ -655,12 +664,13 @@ namespace workbench {
             if (run.status === 'error') {
                 return 'Failed';
             }
-            if (run.status === 'ready') {
-                return 'Finished';
+            const age = ranAgo(run, now);
+            if (run.status === 'ready' && run.rowCount === null) {
+                return 'Finished' + (age ? ' · ' + age : '');
             }
             const count = formatCount(run);
             const rows = count ? count + (count === '1' ? ' row' : ' rows') : 'Complete';
-            return rows + (tab.dirty ? ' · edited since' : '');
+            return rows + (age ? ' · ' + age : '') + (tab.dirty ? ' · edited since' : '');
         }
 
         /**
@@ -738,6 +748,15 @@ namespace workbench {
             menu.appendChild(menuButton);
             menu.appendChild(panel);
             container.appendChild(menu);
+            menuButton.addEventListener('click', function() {
+                const metas: any = panel.querySelectorAll ? panel.querySelectorAll('.query-tabs__menu-meta') : [];
+                for (let index = 0; index < metas.length; index++) {
+                    const meta: any = metas[index];
+                    if (meta.queryTab) {
+                        meta.textContent = runText(meta.queryTab, callbacks.isRunning(meta.queryTab.id), Date.now());
+                    }
+                }
+            });
             const popover: any = (<any>workbench).popover;
             if (popover && typeof popover.bind === 'function') {
                 popover.bind(menuButton, panel);

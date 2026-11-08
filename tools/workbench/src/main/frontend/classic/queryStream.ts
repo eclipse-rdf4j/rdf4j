@@ -5309,6 +5309,27 @@ namespace workbench {
                 : { type: type, bubbles: true, detail: detail });
         }
 
+        /** A result whose query ran longer ago than this says when (ExecPlan .agent/execplan-query-tabs-g2.md, M5). */
+        export var RESULT_AGE_NOTE_MS = 15 * 60 * 1000;
+
+        /** 'ran 17 min ago', 'ran 2 h ago', 'ran 3 days ago' once the query ran more than RESULT_AGE_NOTE_MS ago. */
+        export function ranAgo(at: number, now: number): string {
+            var age = now - at;
+            if (!(at > 0) || !(age > RESULT_AGE_NOTE_MS)) {
+                return '';
+            }
+            var minutes = Math.floor(age / 60000);
+            if (minutes < 60) {
+                return 'ran ' + minutes + ' min ago';
+            }
+            var hours = Math.floor(minutes / 60);
+            if (hours < 24) {
+                return 'ran ' + hours + ' h ago';
+            }
+            var days = Math.floor(hours / 24);
+            return 'ran ' + days + (days === 1 ? ' day' : ' days') + ' ago';
+        }
+
         function formatCount(value: number): string {
             var format = (<any>workbench).format;
             return format && typeof format.count === 'function' ? format.count(value) : String(value);
@@ -5690,6 +5711,8 @@ namespace workbench {
             storeId: string | null;
             /** The rows the store held when the result was saved. */
             rows: number;
+            /** When the query ran: its first batch ended. */
+            ranAt?: number;
             view: string;
             vars: string[];
             namespaces: { prefix: string; name: string }[];
@@ -5792,6 +5815,11 @@ namespace workbench {
             private batchContexts: ResultBatchContext[] = [];
             /** Said beside the rows while they are fewer than the result: trimmed to make room, or storage full. */
             private rowsNote = '';
+            /** When the query ran (its first batch ended), for the age the status gives an older result. */
+            private ranAt = 0;
+            /** The status text without the age, and the timer that ages it every minute while shown. */
+            private ageBase = '';
+            private cancelAgeTick: () => void = null;
 
             constructor(private target: any, options?: QueryResultRendererOptions) {
                 this.options = options || {};
@@ -6290,6 +6318,9 @@ namespace workbench {
                         }
                         this.state.terminalMetadata = metadata;
                         this.state.complete = true;
+                        if (this.batchOffset === 0) {
+                            this.ranAt = this.now();
+                        }
                     }
                 } catch (error) {
                     return Promise.reject(error);
@@ -6326,6 +6357,10 @@ namespace workbench {
                     return;
                 }
                 this.suspended = true;
+                if (this.cancelAgeTick) {
+                    this.cancelAgeTick();
+                    this.cancelAgeTick = null;
+                }
                 this.windowListeners.forEach((entry) => entry[0].removeEventListener(entry[1], entry[2], entry[3]));
                 this.resultTable.suspend();
                 // Full screen locks the document's scrolling: a hidden result gives the viewport back.
@@ -6344,6 +6379,8 @@ namespace workbench {
                 if (this.renderDeferred) {
                     this.renderDeferred = false;
                     this.renderAndReport();
+                } else if (this.ageBase) {
+                    this.showAge();
                 }
             }
 
@@ -6949,6 +6986,7 @@ namespace workbench {
                     url: '',
                     batchSize: this.requestedLimit,
                     knownTotal: null,
+                    ranAt: this.ranAt || Date.now(),
                     savedAt: Date.now()
                 };
                 if (rows === 0) {
@@ -6983,6 +7021,7 @@ namespace workbench {
             restore(snapshot: SavedResultSnapshot, opening: Promise<RowStore>): Promise<number> {
                 var state = this.state;
                 this.started = true;
+                this.ranAt = snapshot.ranAt > 0 ? snapshot.ranAt : snapshot.savedAt;
                 state.view = <any>snapshot.view;
                 state.variables = (snapshot.vars || []).slice();
                 state.namespaces = snapshot.namespaces || [];
@@ -7056,6 +7095,10 @@ namespace workbench {
                 this.clearTimerTick();
                 this.clearCancelReveal();
                 this.disposed = true;
+                if (this.cancelAgeTick) {
+                    this.cancelAgeTick();
+                    this.cancelAgeTick = null;
+                }
                 this.resultTable.dispose();
                 this.leaveTarget();
                 this.disposers.forEach(dispose => dispose());
@@ -7519,6 +7562,8 @@ namespace workbench {
                 } else if (!state.complete) {
                     this.status.textContent = 'Receiving… ' + rowsText(state.rowCount);
                 }
+                this.ageBase = this.status.textContent;
+                this.showAge();
                 if (state.error || state.complete) {
                     this.announce(this.status.textContent);
                 }
@@ -7537,6 +7582,32 @@ namespace workbench {
                     settled();
                     throw error;
                 });
+            }
+
+            /**
+             * A complete result whose query ran more than RESULT_AGE_NOTE_MS ago says so in its status ("· ran 2 h
+             * ago", the exact time in the tooltip), checked again every minute while it is shown.
+             */
+            private showAge(): void {
+                if (this.cancelAgeTick) {
+                    this.cancelAgeTick();
+                    this.cancelAgeTick = null;
+                }
+                var state = this.state;
+                var aging = !this.disposed && !state.error && state.complete && this.ranAt > 0;
+                var note = aging ? ranAgo(this.ranAt, this.now()) : '';
+                this.status.textContent = this.ageBase + (note ? ' · ' + note : '');
+                if (note) {
+                    this.status.setAttribute('title', 'Ran ' + new Date(this.ranAt).toLocaleString());
+                } else if (this.status.getAttribute('title')) {
+                    this.status.removeAttribute('title');
+                }
+                if (aging && !this.suspended) {
+                    this.cancelAgeTick = startTimer(() => {
+                        this.cancelAgeTick = null;
+                        this.showAge();
+                    }, 60000);
+                }
             }
 
             /** Nothing to show yet: the first request has not brought a row, an answer, an error or its end. */
