@@ -314,7 +314,8 @@ namespace workbench {
             persist?(): Promise<SavedRowStore>;
             /**
              * Records the persisted store as kept for a query tab: cleanup keeps it until the space is needed, and
-             * this page's unload no longer deletes it. False where the registry cannot record it.
+             * neither disposing it nor this page's unload deletes it any more (discardRowStore does). False where the
+             * registry cannot record it.
              */
             retain?(retained: RetainedRowStore): boolean;
             /** Closes the store without deleting its rows: a kept store stays for openRowStore. */
@@ -2078,7 +2079,7 @@ namespace workbench {
         /**
          * Opens a store an earlier page persisted and kept (RowStore.persist, retain) for this page alone. Rejects with
          * code 'gone' when the store no longer exists, and 'busy' while another page has it open. Its rows can be read,
-         * and appended to (Load more); disposing deletes it, releasing keeps it.
+         * and appended to (Load more). Disposing or releasing it keeps it; discardRowStore gives it up.
          */
         export function openRowStore(saved: SavedRowStore, options?: RowStoreOptions): Promise<RowStore> {
             var config = options || {};
@@ -2139,8 +2140,18 @@ namespace workbench {
             return writeRowStoreEntry(registry, id, entry);
         }
 
-        /** Gives a kept store up: cleanup deletes it once no page has it open. */
-        export function discardRowStore(id: string): boolean {
+        /**
+         * Gives a kept store up: cleanup deletes it once no page has it open. With `owner`, only a store that page
+         * saved: another page (a window whose tabs were copied from this one's) may still show it.
+         */
+        export function discardRowStore(id: string, owner?: string): boolean {
+            if (owner) {
+                var registry = rowStoreRegistryStorage();
+                var entry = registry && id ? readRowStoreEntry(registry, id) : null;
+                if (!entry || !entry.retained || entry.retained.owner !== owner) {
+                    return false;
+                }
+            }
             var discarded = !!id && id.indexOf('rows-') === 0 && flagRowStoreForCleanup(id);
             if (discarded) {
                 scheduleRowStoreMaintenance();
@@ -3896,8 +3907,9 @@ namespace workbench {
                         if (disposed) {
                             return disposePromise || Promise.resolve();
                         }
-                        if (retained && documentUnloading) {
-                            // A saved result outlives the page: the next page opens it again.
+                        if (retained) {
+                            // A result kept for a query tab outlives its page and its renderer: the next page opens it
+                            // again. It goes only when it is given up (discardRowStore) or trimmed for room.
                             return keep();
                         }
                         disposed = true;
@@ -5317,6 +5329,40 @@ namespace workbench {
         }
 
         /** Renders records as they arrive and keeps unlimited-result DOM bounded. */
+        /** A batch's rows and what their terms are read with: blank-node scope and namespaces. */
+        interface ResultBatchContext {
+            start: number;
+            end: number;
+            scope: string;
+            /** Null in a saved snapshot: the same namespaces as the batch before. */
+            namespaces: { prefix: string; name: string }[];
+        }
+
+        /**
+         * A result as a query tab keeps it in this browser (query tabs, ExecPlan .agent/execplan-query-tabs-g2.md
+         * Part 2): the result's records, the saved row store that holds its rows, and the request that continues it.
+         */
+        export interface SavedResultSnapshot {
+            /** The saved row store (openRowStore); null for an answer or a result without rows. */
+            storeId: string | null;
+            /** The rows the store held when the result was saved. */
+            rows: number;
+            view: string;
+            vars: string[];
+            namespaces: { prefix: string; name: string }[];
+            links: string[];
+            metadata: { [key: string]: any };
+            terminalMetadata: { [key: string]: any };
+            booleanValue: boolean | null;
+            batchContexts: ResultBatchContext[];
+            /** The request the result came from, as form data, its endpoint, and its batch size and exact total. */
+            request: string;
+            url: string;
+            batchSize: number;
+            knownTotal: number | null;
+            savedAt: number;
+        }
+
         export class QueryResultRenderer {
             readonly state = new QueryResultState();
             readonly root: any;
@@ -5400,8 +5446,7 @@ namespace workbench {
             private resultHeadingId: string;
             /** Stops following the full-screen state of the results area (it changes when the result moves). */
             private presentationDisposer: () => void = () => {};
-            private batchContexts: { start: number; end: number; scope: string;
-                namespaces: { prefix: string; name: string }[] }[] = [];
+            private batchContexts: ResultBatchContext[] = [];
 
             constructor(private target: any, options?: QueryResultRendererOptions) {
                 this.options = options || {};
@@ -6132,7 +6177,7 @@ namespace workbench {
                 var error = this.state.error;
                 var message = this.errorMessageForDisplay();
                 var classified = this.appendFailure || !error
-                    || ['timeout', 'cancelled', 'circuit-breaker', 'incomplete', 'empty-query'].indexOf(error.code) >= 0
+                    || ['timeout', 'cancelled', 'circuit-breaker', 'incomplete', 'empty-query', 'saved-result'].indexOf(error.code) >= 0
                     || message !== error.message;
                 var location = classified ? null : errorLocation(message);
                 this.errorResult.textContent = '';
@@ -6493,6 +6538,129 @@ namespace workbench {
                     view.clearTimeout(this.timerTick);
                 }
                 this.timerTick = null;
+            }
+
+            /**
+             * The complete result, ready to keep for a query tab: its rows persisted to browser storage (an answer or
+             * a result without rows needs no store). Null while the result is not complete, failed, or cannot be kept.
+             */
+            persistResult(): Promise<{ snapshot: SavedResultSnapshot; store: RowStore }> {
+                var state = this.state;
+                if (this.disposed || this.busy || !state.complete || state.error || this.appendFailure
+                        || !(state.view === 'tuple' || state.view === 'graph' || state.view === 'boolean')) {
+                    return Promise.resolve(null);
+                }
+                var previous: { prefix: string; name: string }[] = null;
+                var contexts = this.batchContexts.map(context => {
+                    var same = previous && JSON.stringify(previous) === JSON.stringify(context.namespaces);
+                    previous = context.namespaces;
+                    return { start: context.start, end: context.end, scope: context.scope,
+                        namespaces: same ? null : context.namespaces };
+                });
+                var rows = state.rowCount;
+                var snapshot: SavedResultSnapshot = {
+                    storeId: null,
+                    rows: rows,
+                    view: state.view,
+                    vars: state.variables.slice(),
+                    namespaces: state.namespaces,
+                    links: state.links,
+                    metadata: state.metadata,
+                    terminalMetadata: state.terminalMetadata,
+                    booleanValue: state.booleanValue,
+                    batchContexts: contexts,
+                    request: '',
+                    url: '',
+                    batchSize: this.requestedLimit,
+                    knownTotal: null,
+                    savedAt: Date.now()
+                };
+                if (rows === 0) {
+                    return Promise.resolve({ snapshot: snapshot, store: null });
+                }
+                var store = this.rowStore;
+                if (!store || typeof store.persist !== 'function') {
+                    return Promise.resolve(null);
+                }
+                return store.persist().then((saved: SavedRowStore) => {
+                    if (this.disposed || this.rowStore !== store || saved.count !== rows || this.state.rowCount !== rows
+                            || this.busy) {
+                        return null;
+                    }
+                    snapshot.storeId = saved.id;
+                    return { snapshot: snapshot, store: store };
+                });
+            }
+
+            /**
+             * Shows a result an earlier page saved for a query tab: its records from the snapshot, its rows from the
+             * saved store once it opens. A store with fewer rows than were saved was trimmed to make room: Load more
+             * then continues after the rows it kept. A store with more (a Load more the page left before saving) is
+             * cut back. A store that is gone, or open in another window, is said so. Resolves the rows shown.
+             */
+            restore(snapshot: SavedResultSnapshot, opening: Promise<RowStore>): Promise<number> {
+                var state = this.state;
+                this.started = true;
+                state.view = <any>snapshot.view;
+                state.variables = (snapshot.vars || []).slice();
+                state.namespaces = snapshot.namespaces || [];
+                state.links = snapshot.links || [];
+                state.metadata = snapshot.metadata || {};
+                state.booleanValue = typeof snapshot.booleanValue === 'boolean' ? snapshot.booleanValue : null;
+                state.terminalMetadata = Object.assign({}, snapshot.terminalMetadata || {});
+                state.progress = {};
+                state.error = null;
+                state.complete = true;
+                state.rowCount = 0;
+                this.committedMetadata = state.terminalMetadata;
+                this.committedComplete = true;
+                var contexts = (snapshot.batchContexts || []).map(context => ({
+                    start: context.start, end: context.end, scope: context.scope, namespaces: context.namespaces }));
+                contexts.forEach((context, index) => {
+                    if (!context.namespaces) {
+                        context.namespaces = index > 0 ? contexts[index - 1].namespaces : state.namespaces;
+                    }
+                });
+                var shown = (count: number) => {
+                    state.rowCount = count;
+                    this.batchContexts = contexts.filter(context => context.start < count || count === 0 && !context.end)
+                        .map(context => Object.assign({}, context, { end: Math.min(context.end, count) }));
+                    if (count < snapshot.rows) {
+                        // Trimmed to make room: Load more continues after the rows kept.
+                        state.terminalMetadata = Object.assign({}, state.terminalMetadata,
+                            { 'result-has-more': true, 'result-next-offset': count });
+                        this.committedMetadata = state.terminalMetadata;
+                    }
+                    return this.render().then(() => count);
+                };
+                if (!opening) {
+                    return shown(0);
+                }
+                this.ownsRowStore = true;
+                this.status.textContent = 'Opening the saved result…';
+                this.rowStorePromise = opening.then(store => {
+                    if (this.disposed) {
+                        store.dispose().then(null, () => {});
+                        throw new Error('The query result was closed.');
+                    }
+                    this.rowStore = store;
+                    return store;
+                });
+                return this.rowStorePromise.then(store => store.count().then(count =>
+                    count > snapshot.rows ? store.truncate(snapshot.rows) : count
+                )).then((count: number) => this.disposed ? count : shown(count), (error: any) => {
+                    this.rowStore = null;
+                    this.rowStorePromise = null;
+                    this.ownsRowStore = false;
+                    if (!this.disposed) {
+                        this.batchContexts = [];
+                        this.fail(error && error.code === 'busy'
+                            ? 'This saved result is open in another window. Close it there, or execute the query again.'
+                            : 'The saved result is no longer stored in this browser. Execute the query again to see it.',
+                            'saved-result');
+                    }
+                    return 0;
+                });
             }
 
             dispose() {
@@ -8779,6 +8947,15 @@ namespace workbench {
             adopt?(form: any, target: any): void;
             dispose(): void;
             hasActiveRequest(): boolean;
+            /** What the page that shows the result calls it by: the query tab whose result this is (query tabs). */
+            tag?: string;
+            /**
+             * Query tabs: the complete result, persisted and kept in this browser for the tab `keptFor` names (see
+             * RowStore.retain); null when it cannot be kept. The caller records the snapshot in the same turn.
+             */
+            saveResult?(keptFor: { scope: string; tabId: string }): Promise<SavedResultSnapshot>;
+            /** Query tabs: show a result an earlier page saved, from its snapshot and its saved row store. */
+            restore?(saved: SavedResultSnapshot): void;
         }
 
         function formControls(form: any): any[] {
@@ -9279,6 +9456,10 @@ namespace workbench {
                     }
                     finishRequest(requestGeneration);
                     revealOnce();
+                    // Every batch that ends, Load more's too, even out of sight: the page may keep the result.
+                    if (typeof config.onBatchEnd === 'function') {
+                        config.onBatchEnd(controller);
+                    }
                 }, (error: any) => {
                     if (generation !== requestGeneration || disposed) {
                         return;
@@ -9328,25 +9509,7 @@ namespace workbench {
                     frozenBody.set('infer', inferControl.checked ? 'true' : 'false');
                 }
                 batchSize = frozenBody.has('batch-size') ? Number(frozenBody.get('batch-size')) : 1000000;
-                var rendererConstructor = (<any>workbench.queryStream).QueryResultRenderer;
-                renderer = new rendererConstructor(target, {
-                    requestedOffset: 0,
-                    requestedLimit: batchSize,
-                    batched: true,
-                    maxDomRows: config.maxDomRows,
-                    executionForm: form,
-                    executionSnapshot: { url: frozenUrl, body: frozenBody },
-                    rowStoreOptions: config.rowStoreOptions,
-                    workbench: config.workbench,
-                    features: config.features || config.workbench && config.workbench.queryFeatures,
-                    downloadFormatsByView: config.downloadFormatsByView,
-                    downloadLimits: config.downloadLimits,
-                    graphContext: config.graphContext,
-                    reservedHeight: reservedHeight,
-                    onLoadMore: () => loadMore(),
-                    onCancel: () => cancel(true),
-                    onRetry: () => { submit(); }
-                });
+                renderer = createRenderer(reservedHeight);
                 target.hidden = false;
                 showResultTab(target);
                 revealPending = !resultShown;
@@ -9365,6 +9528,28 @@ namespace workbench {
                 return startBatch(0);
             }
 
+            function createRenderer(reservedHeight: number): QueryResultRenderer {
+                var rendererConstructor = (<any>workbench.queryStream).QueryResultRenderer;
+                return new rendererConstructor(target, {
+                    requestedOffset: 0,
+                    requestedLimit: batchSize,
+                    batched: true,
+                    maxDomRows: config.maxDomRows,
+                    executionForm: form,
+                    executionSnapshot: { url: frozenUrl, body: frozenBody },
+                    rowStoreOptions: config.rowStoreOptions,
+                    workbench: config.workbench,
+                    features: config.features || config.workbench && config.workbench.queryFeatures,
+                    downloadFormatsByView: config.downloadFormatsByView,
+                    downloadLimits: config.downloadLimits,
+                    graphContext: config.graphContext,
+                    reservedHeight: reservedHeight,
+                    onLoadMore: () => loadMore(),
+                    onCancel: () => cancel(true),
+                    onRetry: () => { submit(); }
+                });
+            }
+
             function loadMore(): boolean {
                 if (!renderer || !renderer.canLoadMore()) {
                     return false;
@@ -9372,7 +9557,62 @@ namespace workbench {
                 return startBatch(renderer.nextOffset());
             }
 
-            return {
+            function saveResult(keptFor: { scope: string; tabId: string }): Promise<SavedResultSnapshot> {
+                if (disposed || !renderer || activeId || recovering || !frozenBody || !keptFor) {
+                    return Promise.resolve(null);
+                }
+                var current = renderer;
+                var saving = generation;
+                return current.persistResult().then(function(persisted) {
+                    if (!persisted || disposed || renderer !== current || generation !== saving || activeId) {
+                        return null;
+                    }
+                    var snapshot = persisted.snapshot;
+                    snapshot.request = frozenBody.toString();
+                    snapshot.url = frozenUrl;
+                    snapshot.batchSize = batchSize;
+                    snapshot.knownTotal = knownTotal;
+                    if (persisted.store && !(persisted.store.retain && persisted.store.retain({
+                        scope: keptFor.scope,
+                        tabId: keptFor.tabId,
+                        owner: rowStoreDocumentOwner,
+                        shownAt: Date.now(),
+                        rows: snapshot.rows
+                    }))) {
+                        // Not recorded in the registry: cleanup could delete it under the tab.
+                        return null;
+                    }
+                    return snapshot;
+                });
+            }
+
+            function restore(saved: SavedResultSnapshot): void {
+                if (disposed || !saved) {
+                    return;
+                }
+                cancel(false);
+                recovering = false;
+                if (renderer) {
+                    renderer.dispose();
+                }
+                frozenBody = new URLSearchParams(saved.request || '');
+                frozenUrl = saved.url || executionUrl(form);
+                frozenCancelUrl = absoluteUrl(frozenUrl, form.ownerDocument || (typeof document !== 'undefined'
+                    ? document : null));
+                batchSize = Number.isSafeInteger(saved.batchSize) && saved.batchSize > 0 ? saved.batchSize : 1000000;
+                knownTotal = Number.isSafeInteger(saved.knownTotal) ? saved.knownTotal : null;
+                renderer = createRenderer(0);
+                target.hidden = false;
+                showResultTab(target);
+                // Shown as the page left it: nothing scrolls into view.
+                revealPending = false;
+                resultShown = true;
+                var opening = saved.storeId ? openRowStore({ id: saved.storeId, count: saved.rows, bytes: 0,
+                    created: 0 }, config.rowStoreOptions) : null;
+                renderer.restore(saved, opening);
+            }
+
+            var controller: BoundExecutionController = {
                 submit: submit,
                 loadMore: loadMore,
                 cancel: () => cancel(true),
@@ -9421,8 +9661,11 @@ namespace workbench {
                         renderer.dispose();
                     }
                 },
-                hasActiveRequest: () => !!activeId
+                hasActiveRequest: () => !!activeId,
+                saveResult: saveResult,
+                restore: restore
             };
+            return controller;
         }
 
         /**
@@ -9571,6 +9814,14 @@ namespace workbench {
             var mountedSuspended = false;
             /** Repositories whose query finished while no Query page showed it, until it is shown (M13.5). */
             var ready: { [scope: string]: boolean } = {};
+            /** Query tabs: told when a batch of any result of the page ends, shown or kept out of sight. */
+            var resultEndListener: (controller: BoundExecutionController) => void = null;
+
+            function batchEnded(controller: BoundExecutionController): void {
+                if (resultEndListener) {
+                    resultEndListener(controller);
+                }
+            }
 
             function repositoryScope(repositoryId: string, serverIdentity?: string, basePath?: string): string {
                 return JSON.stringify([String(basePath || '').replace(/\/+$/, ''), serverIdentity || null, repositoryId]);
@@ -9736,6 +9987,7 @@ namespace workbench {
                 }
                 mountedBind = () => bindMainQueryForm(form, target, {
                     onActivity: activityChanged,
+                    onBatchEnd: batchEnded,
                     workbench: shellContext && shellContext.workbench,
                     features: shellContext && shellContext.workbench && shellContext.workbench.queryFeatures,
                     rowStoreOptions: shellContext && shellContext.rowStoreOptions,
@@ -9855,6 +10107,55 @@ namespace workbench {
                 activityChanged();
             }
 
+            /**
+             * Query tabs: show a result an earlier page saved (its snapshot) in the mounted page, for the tab `tag`
+             * names, replacing whatever the page shows. False when no Query page is mounted.
+             */
+            export function restoreResult(saved: SavedResultSnapshot, tag: string): boolean {
+                if (!mountedForm || !mountedBind || !saved) {
+                    return false;
+                }
+                var leaving = mountedController;
+                var controller = mountedBind();
+                controller.tag = tag;
+                if (leaving && leaving !== controller) {
+                    leaving.dispose();
+                }
+                mountedController = controller;
+                controller.restore(saved);
+                seen(mountedScope, controller);
+                activityChanged();
+                return true;
+            }
+
+            /** Query tabs: the shown result now belongs to the tab `tag` names (a query started for it). */
+            export function tagMountedResult(tag: string): void {
+                if (mountedController) {
+                    mountedController.tag = tag;
+                }
+            }
+
+            /** The tab the shown result belongs to, and whether there is one (a result kept for the repository). */
+            export function mountedResult(): { tag: string; hasResult: boolean; running: boolean } {
+                return mountedController ? {
+                    tag: mountedController.tag || '',
+                    hasResult: !!mountedController.hasResult && mountedController.hasResult(),
+                    running: mountedController.hasActiveRequest()
+                } : null;
+            }
+
+            /** Query tabs: keep each result whose batch ends (null stops). */
+            export function onResultEnd(listener: (controller: BoundExecutionController) => void): void {
+                resultEndListener = listener;
+            }
+
+            /** Query tabs: offer the shown result for keeping now (a result that ended while no Query page showed it). */
+            export function offerMountedResult(): void {
+                if (mountedController && !mountedController.hasActiveRequest()) {
+                    batchEnded(mountedController);
+                }
+            }
+
             function disposeMountedPage() {
                 if (mountedDispose) {
                     mountedDispose();
@@ -9953,6 +10254,27 @@ namespace workbench {
         /** Query tabs: take the shown result out of the page, alive, and leave an empty controller in its place. */
         export function detachController(): queryStream.BoundExecutionController {
             return queryStream.queryPage.detachController();
+        }
+
+        /** Query tabs: show a result an earlier page saved, for the tab `tag` names. */
+        export function restoreResult(saved: queryStream.SavedResultSnapshot, tag: string): boolean {
+            return queryStream.queryPage.restoreResult(saved, tag);
+        }
+
+        export function tagMountedResult(tag: string): void {
+            queryStream.queryPage.tagMountedResult(tag);
+        }
+
+        export function mountedResult(): { tag: string; hasResult: boolean; running: boolean } {
+            return queryStream.queryPage.mountedResult();
+        }
+
+        export function onResultEnd(listener: (controller: queryStream.BoundExecutionController) => void): void {
+            queryStream.queryPage.onResultEnd(listener);
+        }
+
+        export function offerMountedResult(): void {
+            queryStream.queryPage.offerMountedResult();
         }
 
         /** Query tabs: show a kept result in the page (null shows nothing). */

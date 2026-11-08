@@ -436,3 +436,148 @@ test('at most six background results are kept; the oldest goes first, a running 
     assert.equal(kept[3].disposed, false);
     assert.equal(kept.filter(controller => !controller.disposed).length, 6);
 });
+
+// ---------------------------------------------------------------- saved results (Part 2, M3)
+
+const REGISTRY = 'rdf4j.workbench.row-store.v2:';
+
+/**
+ * The fake result page, with what saving needs: results tagged with their tab, told when a batch ends, saved (the
+ * snapshot, and the registry entry RowStore.retain writes) and restored from a snapshot.
+ */
+function savingResultPage() {
+    const page = fakeResultPage();
+    const base = page.attachController;
+    let saves = 0;
+    page.listener = null;
+    page.owner = '';
+    page.registry = null;
+    page.onResultEnd = (listener) => { page.listener = listener; };
+    page.mountedResult = () => ({ tag: page.mounted.tag || '', hasResult: page.mounted.result,
+        running: page.mounted.active });
+    page.tagMountedResult = (tag) => { page.mounted.tag = tag; };
+    page.offerMountedResult = () => { if (!page.mounted.active && page.listener) page.listener(page.mounted); };
+    page.restoreResult = (saved, tag) => {
+        page.mounted.dispose();
+        base(null);
+        page.calls[page.calls.length - 1] = 'restore ' + saved.storeId;
+        page.mounted.tag = tag;
+        page.mounted.restored = saved;
+        page.mounted.result = true;
+        return true;
+    };
+    page.attachController = (next) => base(next);
+    /** The batch of a controller's result ends: it saves itself as the real controller does. */
+    page.end = async (controller, rows = 3) => {
+        controller.active = false;
+        controller.saveResult = () => {
+            saves += 1;
+            const storeId = 'rows-' + controller.name + '-' + saves;
+            page.registry.setItem(REGISTRY + storeId, JSON.stringify({ created: 1, used: 1, bytes: 10,
+                retained: { scope: 's', tabId: controller.tag, owner: page.owner, shownAt: 1, rows } }));
+            return Promise.resolve({ storeId, rows, savedAt: 1000, request: 'query=SELECT', url: '/q', view: 'tuple',
+                vars: ['x'] });
+        };
+        page.listener(controller);
+        await new Promise((resolve) => setImmediate(resolve));
+    };
+    return page;
+}
+
+function mountSaving(options = {}) {
+    const page = savingResultPage();
+    const mounted = mount(Object.assign({}, options, {
+        harness: Object.assign({ query: 'SELECT 1 {}' }, options.harness, { workbench: { queryPage: page } })
+    }));
+    page.owner = mounted.harness.context.workbench.queryStream.rowStoreDocumentOwner;
+    page.registry = mounted.localStorage;
+    mounted.harness.document.getElementById('action').value = 'exec';
+    return Object.assign(mounted, { page });
+}
+
+function registryEntry(localStorage, id) {
+    const value = localStorage.getItem(REGISTRY + id);
+    return value ? JSON.parse(value) : null;
+}
+
+test('a result is saved for the tab it ran in, let go when the tab is left, and opened again when it is shown',
+    async () => {
+        const { query, page } = mountSaving();
+        const firstId = query.getQueryTabsState().activeId;
+        query.doSubmit();
+        const ran = page.mounted;
+        assert.equal(ran.tag, firstId, 'the result belongs to the tab that ran it');
+        await page.end(ran);
+        let [tab] = query.getQueryTabsState().tabs;
+        assert.equal(tab.lastRun.saved.storeId, 'rows-c1-1');
+        assert.equal(tab.lastRun.rowCount, 3);
+
+        query.newQueryTab();
+        assert.equal(ran.disposed, true, 'a saved result keeps nothing open while its tab is not shown');
+        query.selectQueryTab(firstId);
+        assert.equal(page.calls[page.calls.length - 1], 'restore rows-c1-1');
+        assert.equal(page.mounted.tag, firstId);
+        assert.equal(page.mounted.restored.storeId, 'rows-c1-1');
+        [tab] = query.getQueryTabsState().tabs;
+        assert.equal(tab.lastRun.saved.storeId, 'rows-c1-1', 'showing it again keeps it saved');
+    });
+
+test('a reload shows the saved result of the shown tab again', async () => {
+    const first = mountSaving();
+    first.query.doSubmit();
+    await first.page.end(first.page.mounted);
+    const later = mountSaving({ localStorage: first.localStorage });
+    assert.deepEqual(later.page.calls, ['restore rows-c1-1']);
+    assert.equal(later.page.mounted.tag, later.query.getQueryTabsState().activeId);
+});
+
+test('a result that ends out of sight is saved for its tab and let go; running again gives the old one up',
+    async () => {
+        const { query, page, localStorage } = mountSaving();
+        const firstId = query.getQueryTabsState().activeId;
+        query.doSubmit();
+        const running = page.mounted;
+        query.newQueryTab();
+        assert.equal(running.disposed, false, 'a running query is kept alive');
+        await page.end(running);
+        assert.equal(running.disposed, true, 'once saved, the background result is let go');
+        const [tab] = query.getQueryTabsState().tabs;
+        assert.equal(tab.lastRun.saved.storeId, 'rows-c1-1');
+        assert.equal(tab.lastRun.rowCount, 3);
+
+        query.selectQueryTab(firstId);
+        query.doSubmit();
+        assert.equal(registryEntry(localStorage, 'rows-c1-1').dispose, true, 'running again gives the old result up');
+        assert.equal(query.getQueryTabsState().tabs[0].lastRun, null);
+    });
+
+test('closing a tab gives up a result this page saved, but not one another page saved', async () => {
+    const { query, page, localStorage } = mountSaving();
+    query.doSubmit();
+    await page.end(page.mounted);
+    query.newQueryTab();
+    query.doSubmit();
+    page.owner = 'page-elsewhere';
+    await page.end(page.mounted);
+    const [first, second] = query.getQueryTabsState().tabs;
+    assert.ok(first.lastRun.saved && second.lastRun.saved);
+
+    query.closeQueryTab(first.id);
+    assert.equal(registryEntry(localStorage, first.lastRun.saved.storeId).dispose, true);
+    query.closeQueryTab(second.id);
+    assert.equal(registryEntry(localStorage, second.lastRun.saved.storeId).dispose, undefined,
+        'another page may still show it; cleanup removes it once no tab refers to it');
+});
+
+test('a saved result keeps the time its query ran when it is shown again', async () => {
+    const { harness, query, page } = mountSaving();
+    query.doSubmit();
+    summary(harness, { rows: true, rowCount: 3, total: 3, complete: true, error: false });
+    const ranAt = query.getQueryTabsState().tabs[0].lastRun.at;
+    await page.end(page.mounted);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    summary(harness, { rows: true, rowCount: 3, total: 3, complete: true, error: true });
+    summary(harness, { rows: true, rowCount: 3, total: 3, complete: true, error: false });
+    assert.equal(query.getQueryTabsState().tabs[0].lastRun.at, ranAt);
+    assert.equal(query.getQueryTabsState().tabs[0].lastRun.saved.storeId, 'rows-c1-1');
+});

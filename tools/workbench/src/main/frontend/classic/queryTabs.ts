@@ -32,6 +32,22 @@ namespace workbench {
             total: number | null;
             elapsedMs: number | null;
             at: number;
+            /** The result as saved in this browser (queryStream SavedResultSnapshot), shown again by a later page. */
+            saved?: SavedResult | null;
+        }
+
+        /**
+         * What a later page needs to show a tab's result again: the row store that holds its rows (none for an answer
+         * or an empty result), the rows it held when saved, and the request that continues it. The rest of the
+         * snapshot is the result renderer's (queryStream.ts, SavedResultSnapshot).
+         */
+        export interface SavedResult {
+            storeId: string | null;
+            rows: number;
+            savedAt: number;
+            request: string;
+            url: string;
+            [key: string]: any;
         }
 
         export interface QueryTab {
@@ -163,9 +179,41 @@ namespace workbench {
                     rowCount: typeof run.rowCount === 'number' ? run.rowCount : null,
                     total: typeof run.total === 'number' ? run.total : null,
                     elapsedMs: typeof run.elapsedMs === 'number' ? run.elapsedMs : null,
-                    at: typeof run.at === 'number' ? run.at : 0
+                    at: typeof run.at === 'number' ? run.at : 0,
+                    saved: isSavedResult(run.saved) ? run.saved : null
                 } : null
             };
+        }
+
+        function isSavedResult(value: any): boolean {
+            return !!value && typeof value === 'object'
+                && (value.storeId === null || typeof value.storeId === 'string' && value.storeId.indexOf('rows-') === 0)
+                && typeof value.rows === 'number' && value.rows >= 0 && Math.floor(value.rows) === value.rows
+                && typeof value.request === 'string' && typeof value.url === 'string'
+                && typeof value.savedAt === 'number' && typeof value.view === 'string';
+        }
+
+        /** The saved result of a tab's last run, or null. */
+        export function savedResult(tab: QueryTab): SavedResult | null {
+            return tab && tab.lastRun && tab.lastRun.saved || null;
+        }
+
+        /**
+         * Records the saved result of a tab's last run. A run reported as ready (it ended out of sight) learns its row
+         * count from it; a tab without a run gets one, as of when the result was saved.
+         */
+        export function saveRun(state: QueryTabsState, id: string, saved: SavedResult | null): QueryTabsState {
+            const tab = findTab(state, id);
+            if (!tab) {
+                return state;
+            }
+            const run: QueryTabRun = tab.lastRun ? Object.assign({}, tab.lastRun)
+                : { status: 'done', rowCount: null, total: null, elapsedMs: null, at: saved ? saved.savedAt : Date.now() };
+            run.saved = saved;
+            if (saved && run.rowCount === null && run.status !== 'error') {
+                run.rowCount = saved.rows;
+            }
+            return update(state, id, { lastRun: run });
         }
 
         /** The stored JSON as a state, or null when it is not one this version understands. */
@@ -281,8 +329,12 @@ namespace workbench {
             return update(state, id, { query: text, dirty: true });
         }
 
+        /** Records how a tab's run went; the result it saved stays unless the run says otherwise. */
         export function recordRun(state: QueryTabsState, id: string, run: QueryTabRun): QueryTabsState {
-            return update(state, id, { lastRun: run, dirty: false });
+            const tab = findTab(state, id);
+            const kept = tab && tab.lastRun && tab.lastRun.saved;
+            const next = typeof run.saved === 'undefined' && kept ? Object.assign({}, run, { saved: kept }) : run;
+            return update(state, id, { lastRun: next, dirty: false });
         }
 
         function indexOf(state: QueryTabsState, id: string): number {

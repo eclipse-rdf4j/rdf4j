@@ -157,7 +157,11 @@ test('a small result is persisted and kept for its tab; a later page opens it ag
     const third = await pageC.api.openRowStore(saved, pageC.options);
     assert.equal(await third.count(), 5);
     await third.dispose();
-    assert.ok(!shared.storage.databases.has(DATABASE + saved.id), 'disposing a saved result deletes it');
+    assert.ok(shared.storage.databases.has(DATABASE + saved.id), 'disposing a kept result keeps it too');
+    assert.equal(pageC.api.discardRowStore(saved.id), true);
+    const report = await pageC.api.maintainRowStores({ indexedDB: shared.storage.indexedDB, locks: undefined,
+        storage: shared.localStorage, document: { visibilityState: 'visible' } });
+    assert.deepEqual([...report.deleted], [saved.id], 'a result given up is deleted by cleanup');
     assert.equal(entryOf(shared.localStorage, saved.id), null);
 });
 

@@ -213,3 +213,30 @@ test('each browser page keeps its own working copy; the latest state seeds a pag
     const newPage = tabs.createStore(local, mapStorage(), key);
     assert.equal(newPage.get().tabs[0].query, 'ASK { ?s ?p ?o }', 'a new page starts from the latest state any page wrote');
 });
+
+test('a tab keeps its saved result through runs it reports and storage, and drops one that is malformed', () => {
+    const tabs = loadQueryTabs();
+    let state = tabs.emptyState();
+    const id = state.activeId;
+    const saved = { storeId: 'rows-1', rows: 3, savedAt: 1000, request: 'query=ASK', url: '/q', view: 'tuple' };
+    state = tabs.saveRun(state, id, saved);
+    assert.equal(tabs.savedResult(tabs.findTab(state, id)).storeId, 'rows-1');
+    assert.equal(tabs.findTab(state, id).lastRun.rowCount, 3, 'a tab without a run learns its rows from it');
+    assert.equal(tabs.findTab(state, id).lastRun.at, 1000);
+
+    state = tabs.recordRun(state, id, { status: 'done', rowCount: 3, total: 3, elapsedMs: null, at: 2000 });
+    assert.equal(tabs.savedResult(tabs.findTab(state, id)).storeId, 'rows-1', 'reporting the run keeps it');
+    state = tabs.recordRun(state, id, { status: 'ready', rowCount: null, total: null, elapsedMs: null, at: 3000,
+        saved: null });
+    assert.equal(tabs.savedResult(tabs.findTab(state, id)), null, 'a run that says so replaces it');
+    state = tabs.saveRun(state, id, saved);
+    assert.equal(tabs.findTab(state, id).lastRun.status, 'ready');
+    assert.equal(tabs.findTab(state, id).lastRun.rowCount, 3, 'a run that ended out of sight learns its rows');
+
+    const parsed = tabs.parseState(tabs.serializeState(state));
+    assert.equal(tabs.savedResult(tabs.findTab(parsed, id)).storeId, 'rows-1', 'it survives storage');
+    const broken = JSON.parse(tabs.serializeState(state));
+    broken.tabs[0].lastRun.saved = { storeId: 'elsewhere', rows: -1 };
+    assert.equal(tabs.savedResult(tabs.parseState(JSON.stringify(broken)).tabs[0]), null);
+    assert.equal(tabs.saveRun(state, 'nope', saved), state);
+});
