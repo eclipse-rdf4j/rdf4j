@@ -179,7 +179,7 @@ class FedXBindingAnalysisContractTest {
 		var emptyStatement = new EmptyStatementPattern(pattern("s", "p", "o"));
 		var emptyJoin = new EmptyNJoin(new NJoin(List.of(pattern("s", "p", "o")), info), info);
 		var emptyUnion = new EmptyNUnion(List.of(pattern("s", "p", "o")), info);
-		for (var expression : List.of(emptyStatement, emptyJoin, emptyUnion)) {
+		for (TupleExpr expression : List.<TupleExpr>of(emptyStatement, emptyJoin, emptyUnion)) {
 			var analysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(expression, Set.of());
 			assertTrue(analysis.outputFacts(expression).isKnownEmpty(), expression.getClass().getSimpleName());
 		}
