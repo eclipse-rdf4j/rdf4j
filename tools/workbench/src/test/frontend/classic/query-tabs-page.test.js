@@ -581,3 +581,16 @@ test('a saved result keeps the time its query ran when it is shown again', async
     assert.equal(query.getQueryTabsState().tabs[0].lastRun.at, ranAt);
     assert.equal(query.getQueryTabsState().tabs[0].lastRun.saved.storeId, 'rows-c1-1');
 });
+
+test('a Query page that reuses another repository\'s textarea opens with its own tabs, not the text left there', () => {
+    const localStorage = mapStorage();
+    const first = mount({ localStorage, harness: { query: 'SELECT ?mine {}' } });
+    assert.equal(first.query.getQueryTabsState().tabs.length, 1);
+    const harness = createQueryBrowserHarness({ href: HREF, query: '', window: { localStorage } });
+    // What another repository's Query page left in the reused textarea (Lit keeps the element and its value).
+    harness.document.getElementById('query').value = 'SELECT ?theirs {}';
+    harness.runPageLoad();
+    const state = harness.context.workbench.query.getQueryTabsState();
+    assert.deepEqual(Array.from(state.tabs, (tab) => tab.query), ['SELECT ?mine {}']);
+    assert.equal(harness.context.workbench.query.getQueryValue(), 'SELECT ?mine {}');
+});

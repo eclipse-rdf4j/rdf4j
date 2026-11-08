@@ -91,7 +91,10 @@ test.afterAll(async ({ request }) => {
 	}
 });
 
-test('releases batched query rows on reload and page navigation', async ({ page, browserName }, testInfo) => {
+// Query tabs keep their results (.agent/execplan-query-tabs-g2.md, Part 2): a reload, a full page load and Back show
+// the saved result again from its own store without a request; running the tab again gives the old result up, and
+// cleanup deletes it.
+test('keeps a query tab\'s batched rows across reload and page navigation, and gives them up when run again', async ({ page, browserName }, testInfo) => {
 	test.skip(browserName === 'firefox', 'Playwright Firefox does not dispatch pagehide to the page that page.reload() replaces');
 	test.setTimeout(120000);
 	const pageErrors = [];
@@ -144,15 +147,22 @@ test('releases batched query rows on reload and page navigation', async ({ page,
 		expect(afterReloadStorage.logicalRowCount).toBe(firstActiveStorage.logicalRowCount);
 		expect(afterReloadStorage.physicalRowRecordCount).toBe(firstActiveStorage.physicalRowRecordCount);
 	} else {
-		afterReloadStorage = await waitForExecutionStoreReleased(page, baselineStorage,
-			firstPageOwnedStoreIds);
+		// Saved for its tab: the reloaded page shows the result again from its store.
+		await expect(page.locator('#query-results .query-result-status')).toHaveText(/^20,?000 rows · complete/,
+			{ timeout: 15000 });
+		afterReloadStorage = await readRowStoreSnapshot(page);
+		expect(afterReloadStorage.storeRecords.map(store => store.id)).toContain(firstExecutionStoreId);
+		expect(afterReloadStorage.registry[firstExecutionStoreId].retained, 'kept for its query tab').toBeTruthy();
 		expect(afterReloadStorage.orphanRowRecordCount).toBe(baselineStorage.orphanRowRecordCount);
-		expect(await page.locator('#query-results .query-result-layout').count()).toBe(0);
 	}
+	expect(executions, 'the saved result is shown without a request').toHaveLength(1);
 
 	await runBatchedQuery(page);
 	const secondActiveStorage = await waitForStoredQueryRows(page, afterReloadStorage, ROW_COUNT);
-	const secondExecutionStoreId = assertAddedQueryRows(afterReloadStorage, secondActiveStorage, ROW_COUNT);
+	const secondExecutionStoreId = secondActiveStorage.storeRecords
+		.filter(store => !afterReloadStorage.storeRecords.some(previous => previous.id === store.id))[0].id;
+	// Running the tab again gives its old result up: cleanup deletes it.
+	await waitForExecutionStoreReleased(page, baselineStorage, firstPageOwnedStoreIds);
 	const secondResult = await visibleQueryResult(page);
 	expect(secondResult.status).toMatch(/^20,?000 rows · complete/);
 
@@ -165,15 +175,10 @@ test('releases batched query rows on reload and page navigation', async ({ page,
 	const afterNavigationLifecycle = await readLifecycleState(page);
 	const queryPageHide = afterNavigationLifecycle.pagehide.filter(event => event.path.endsWith('/query')).slice(-1)[0];
 	expect(queryPageHide, 'leaving the query page should dispatch pagehide').toBeTruthy();
-	const afterNavigationStorage = queryPageHide.persisted
-		? await readRowStoreSnapshot(page)
-		: await waitForExecutionStoreReleased(page, baselineStorage, secondPageStoreIds);
-	if (queryPageHide.persisted) {
-		expect(afterNavigationStorage.logicalRowCount).toBe(secondActiveStorage.logicalRowCount);
-		expect(afterNavigationStorage.physicalRowRecordCount).toBe(secondActiveStorage.physicalRowRecordCount);
-	} else {
-		expect(afterNavigationStorage.orphanRowRecordCount).toBe(baselineStorage.orphanRowRecordCount);
-	}
+	// Kept or cached, the result's store stays.
+	const afterNavigationStorage = await readRowStoreSnapshot(page);
+	expect(afterNavigationStorage.storeRecords.map(store => store.id)).toContain(secondExecutionStoreId);
+	expect(afterNavigationStorage.orphanRowRecordCount).toBe(baselineStorage.orphanRowRecordCount);
 	const awayPage = await page.evaluate(() => ({ url: location.href, title: document.title }));
 
 	await page.goBack({ waitUntil: 'domcontentloaded' });
@@ -190,19 +195,14 @@ test('releases batched query rows on reload and page navigation', async ({ page,
 	}));
 	const backPageShow = returnedPage.lifecycle.pageshow.filter(event => event.path.endsWith('/query')).slice(-1)[0];
 	const bfcacheRestored = !!(queryPageHide.persisted && backPageShow && backPageShow.persisted);
-	const afterBackStorage = bfcacheRestored
-		? await readRowStoreSnapshot(page)
-		: await waitForExecutionStoreReleased(page, baselineStorage, secondPageStoreIds);
-	if (bfcacheRestored) {
-		expect(returnedPage.queryResultCount, 'a BFCache-restored result view must retain its row store').toBe(1);
-		expect(returnedPage.queryResultStatus).toMatch(/^20,?000 rows · complete/);
-		expect(afterBackStorage.logicalRowCount).toBe(secondActiveStorage.logicalRowCount);
-		expect(afterBackStorage.physicalRowRecordCount).toBe(secondActiveStorage.physicalRowRecordCount);
-	} else {
-		expect(returnedPage.queryResultCount, 'back navigation must not restore the disposed query result view').toBe(0);
-		expect(afterBackStorage.storeRecords.some(store => secondPageStoreIds.includes(store.id))).toBe(false);
-		expect(afterBackStorage.orphanRowRecordCount).toBe(baselineStorage.orphanRowRecordCount);
-	}
+	// Restored from the back-forward cache or from the saved store, the result is shown again.
+	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^20,?000 rows · complete/,
+		{ timeout: 15000 });
+	expect(await page.locator('#query-results .query-result-layout').count()).toBe(1);
+	const afterBackStorage = await readRowStoreSnapshot(page);
+	expect(afterBackStorage.storeRecords.filter(store => store.id === secondExecutionStoreId)
+		.map(store => store.count)).toEqual([ROW_COUNT]);
+	expect(afterBackStorage.orphanRowRecordCount).toBe(baselineStorage.orphanRowRecordCount);
 	expect(pageErrors).toEqual([]);
 	expect(executions).toHaveLength(2);
 	expect(executions.every(request => request.accept.includes('application/vnd.rdf4j.workbench+ndjson'))).toBe(true);
@@ -240,7 +240,7 @@ test('releases batched query rows on reload and page navigation', async ({ page,
 	});
 });
 
-test('closing the query tab flags its stored result, and cleanup in a fresh same-origin tab deletes it', async ({ page, context, browserName }, testInfo) => {
+test('closing the browser tab keeps its query tab\'s result, and a fresh same-origin tab shows it again', async ({ page, context, browserName }, testInfo) => {
 	test.skip(browserName === 'webkit', 'Playwright WebKit never closes a page closed with runBeforeUnload: true');
 	test.setTimeout(120000);
 	await installPageLifecycleRecorder(page);
@@ -262,16 +262,21 @@ test('closing the query tab flags its stored result, and cleanup in a fresh same
 	recoveryPage.on('pageerror', error => recordPageError(pageErrors, error));
 	await recoveryPage.goto(SUMMARY_URL, { waitUntil: 'domcontentloaded' });
 	await recoveryPage.locator('#workbench-app').waitFor({ state: 'visible' });
-	let after;
-	await expect.poll(async () => {
-		after = await readRowStoreSnapshot(recoveryPage);
-		return after.storeRecords.some(store => store.id === resultStoreId) || resultStoreId in after.registry;
-	}, { timeout: 10000, message: 'cleanup deletes the closed tab\'s store and forgets it' }).toBe(false);
+	// Cleanup in the fresh tab keeps a result kept for a query tab.
+	await recoveryPage.waitForTimeout(1500);
+	let after = await readRowStoreSnapshot(recoveryPage);
+	expect(after.storeRecords.filter(store => store.id === resultStoreId).map(store => store.count)).toEqual([ROW_COUNT]);
+	expect(after.registry[resultStoreId].retained, 'kept for its query tab').toBeTruthy();
+	expect(after.registry[resultStoreId].dispose).toBeUndefined();
 	expect(after.orphanRowRecordCount).toBe(0);
+	await recoveryPage.goto(QUERY_URL, { waitUntil: 'domcontentloaded' });
+	await expect(recoveryPage.locator('#query-results .query-result-status')).toHaveText(/^20,?000 rows · complete/,
+		{ timeout: 15000 });
+	after = await readRowStoreSnapshot(recoveryPage);
 	expect(pageErrors).toEqual([]);
 	const report = { before, active, resultStoreId, after, pageErrors,
 		sequence: ['query 20000 rows with default batch-size=1000000', 'close query tab',
-			'open fresh same-origin tab', 'visit Summary'] };
+			'open fresh same-origin tab', 'visit Summary', 'visit Query'] };
 	console.log(`[query-row-store-close-tab] ${JSON.stringify(report)}`);
 	await testInfo.attach('query-row-store-close-tab.json', {
 		body: Buffer.from(JSON.stringify(report, null, 2)), contentType: 'application/json'

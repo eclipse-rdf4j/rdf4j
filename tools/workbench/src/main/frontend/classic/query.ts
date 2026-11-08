@@ -4273,9 +4273,12 @@ namespace workbench {
                     && typeof streamedQueryPage.submitExecution === 'function') {
                 // The return value says whether the browser should post the form (never: results stream in). A run
                 // that started has a request out.
+                // The result shown is this page's own while it is open here, whoever saved it.
+                var shownSaved = activeSavedResultId();
+                var shownHere = !!shownSaved && savedResultStores().isRowStoreOpenHere(shownSaved);
                 var posted = streamedQueryPage.submitExecution();
                 if (typeof streamedQueryPage.hasActiveRequest === 'function' && streamedQueryPage.hasActiveRequest()) {
-                    noteQueryTabRunStarted();
+                    noteQueryTabRunStarted(shownHere);
                 }
                 return posted;
             }
@@ -5003,8 +5006,17 @@ namespace workbench {
             return stream && typeof stream.discardRowStore === 'function' ? stream : {
                 rowStoreDocumentOwner: '',
                 discardRowStore: function() { return false; },
-                updateRetainedRowStore: function() { return false; }
+                updateRetainedRowStore: function() { return false; },
+                isRowStoreOpenHere: function() { return false; }
             };
+        }
+
+        /** The saved result of the tab shown, if any. */
+        function activeSavedResultId(): string {
+            var tabs = workbench.queryTabs;
+            var tab = queryTabStore && tabs ? tabs.activeTab(queryTabStore.get()) : null;
+            var saved = tab ? tabs.savedResult(tab) : null;
+            return saved && saved.storeId || '';
         }
 
         /** The streamed result page, when it drives this page's form and can swap results (query tabs). */
@@ -5199,14 +5211,16 @@ namespace workbench {
          * Execute was pressed on the shown tab: its old marks and its saved result go, the result now coming is the
          * tab's, and the row shows it running.
          */
-        function noteQueryTabRunStarted(): void {
+        function noteQueryTabRunStarted(shownHere?: boolean): void {
             if (!queryTabStore) {
                 return;
             }
             var state = queryTabStore.get();
             var saved = workbench.queryTabs.savedResult(workbench.queryTabs.findTab(state, state.activeId));
             if (saved && saved.storeId) {
-                savedResultStores().discardRowStore(saved.storeId, savedResultStores().rowStoreDocumentOwner);
+                // Shown here until now, no other window had it open: it goes whoever saved it.
+                savedResultStores().discardRowStore(saved.storeId,
+                    shownHere ? undefined : savedResultStores().rowStoreDocumentOwner);
             }
             queryTabStore.set(workbench.queryTabs.update(state, state.activeId, { dirty: false, lastRun: null }));
             var page = queryTabResultPage();
@@ -5534,6 +5548,16 @@ namespace workbench {
                 document.removeEventListener('workbench:query-activity', onQueryActivity, false);
             }
             listen();
+
+            if (outlet.querySelector('#query-tabs')) {
+                // Lit reuses the textarea when another Query page (another repository's) replaces this one, and that
+                // page's editor left its text in it. With query tabs the page opens with what was rendered into it
+                // (Saved queries' Edit) or else its tabs, never with the text another repository left.
+                var renderedQuery = <HTMLTextAreaElement>document.getElementById(primaryPaneState.queryId);
+                if (renderedQuery && renderedQuery.value !== renderedQuery.defaultValue) {
+                    renderedQuery.value = renderedQuery.defaultValue;
+                }
+            }
 
             // Start with initializing our YASQE instance, given that 'SPARQL' is the selected query language
             // (all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance).

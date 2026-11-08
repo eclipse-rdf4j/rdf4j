@@ -229,6 +229,23 @@ test('a saved result keeps its size and what it is kept for in the registry, and
     await assert.rejects(page.api.openRowStore(saved, page.options), (error) => error.code === 'gone');
 });
 
+test('a page gives up a saved result it saved or has open, but not one another page saved and it has not open', async () => {
+    const shared = browser();
+    const pageA = shared.page();
+    const store = await pageA.api.createRowStore(pageA.options);
+    await store.append(rows(0, 2));
+    const saved = await store.persist();
+    store.retain(Object.assign({}, KEPT, { owner: 'page-elsewhere' }));
+    await store.release();
+    const pageB = shared.page();
+    assert.equal(pageB.api.discardRowStore(saved.id, pageB.api.rowStoreDocumentOwner), false);
+    const opened = await pageB.api.openRowStore(saved, pageB.options);
+    assert.equal(pageB.api.discardRowStore(saved.id, pageB.api.rowStoreDocumentOwner), true,
+        'shown here, so no other window has it open');
+    await opened.release();
+    assert.equal(entryOf(shared.localStorage, saved.id).dispose, true);
+});
+
 test('a saved result cannot be opened under a shared memory budget', async () => {
     const shared = browser();
     const page = shared.page();

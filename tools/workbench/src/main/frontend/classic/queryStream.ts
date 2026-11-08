@@ -2419,12 +2419,18 @@ namespace workbench {
             return writeRowStoreEntry(registry, id, entry);
         }
 
+        /** Whether this page has the store open now (shown, or being written). */
+        export function isRowStoreOpenHere(id: string): boolean {
+            return !!id && openHereRowStoreIds[id] === true;
+        }
+
         /**
          * Gives a kept store up: cleanup deletes it once no page has it open. With `owner`, only a store that page
-         * saved: another page (a window whose tabs were copied from this one's) may still show it.
+         * saved or has open now (no other page can have it open then): another page, a window whose tabs were copied
+         * from this one's, may still show a store it neither saved nor has open.
          */
         export function discardRowStore(id: string, owner?: string): boolean {
-            if (owner) {
+            if (owner && !openHereRowStoreIds[id]) {
                 var registry = rowStoreRegistryStorage();
                 var entry = registry && id ? readRowStoreEntry(registry, id) : null;
                 if (!entry || !entry.retained || entry.retained.owner !== owner) {
@@ -9413,6 +9419,8 @@ namespace workbench {
             saveResult?(keptFor: { scope: string; tabId: string }): Promise<SavedResultSnapshot>;
             /** Query tabs: show a result an earlier page saved, from its snapshot and its saved row store. */
             restore?(saved: SavedResultSnapshot): void;
+            /** The result shown is the one saved in this browser (saveResult, restore): a later page opens it again. */
+            isSaved?(): boolean;
         }
 
         function formControls(form: any): any[] {
@@ -9708,6 +9716,8 @@ namespace workbench {
             var frozenCancelUrl = '';
             var batchSize = 1000000;
             var cancelRevealTimer: any = null;
+            /** The result shown is the one saved in this browser for its query tab (saveResult, restore). */
+            var saved = false;
             /** When the running request started, for the delay before its Cancel shows. */
             var requestStartedAt = 0;
             // Only the first result shown here is scrolled into view: later runs, whatever they show (an empty result
@@ -9955,6 +9965,7 @@ namespace workbench {
                 if (disposed) {
                     return false;
                 }
+                saved = false;
                 cancel(false);
                 recovering = false;
                 knownTotal = null;
@@ -10034,6 +10045,7 @@ namespace workbench {
                 if (disposed || !renderer || activeId || recovering || !frozenBody || !keptFor) {
                     return Promise.resolve(null);
                 }
+                saved = false;
                 var current = renderer;
                 var saving = generation;
                 return current.persistResult().then(function(persisted) {
@@ -10055,14 +10067,17 @@ namespace workbench {
                         // Not recorded in the registry: cleanup could delete it under the tab.
                         return null;
                     }
+                    saved = true;
                     return snapshot;
                 });
             }
 
-            function restore(saved: SavedResultSnapshot): void {
-                if (disposed || !saved) {
+            function restore(snapshot: SavedResultSnapshot): void {
+                if (disposed || !snapshot) {
                     return;
                 }
+                var saved = snapshot;
+                markSaved();
                 cancel(false);
                 recovering = false;
                 if (renderer) {
@@ -10085,8 +10100,13 @@ namespace workbench {
                 renderer.restore(saved, opening);
             }
 
+            function markSaved(): void {
+                saved = true;
+            }
+
             var controller: BoundExecutionController = {
                 submit: submit,
+                isSaved: () => saved && !!renderer && !disposed,
                 loadMore: loadMore,
                 cancel: () => cancel(true),
                 cancelOnLeave: () => cancel(true, true),
@@ -10513,9 +10533,11 @@ namespace workbench {
                     var leaving = mountedController;
                     mountedController = null;
                     mountedSuspended = false;
-                    if (reason === 'navigate' && repositoryId && leaving.hasResult()) {
+                    var savedHere = !!leaving.isSaved && leaving.isSaved() && !leaving.hasActiveRequest();
+                    if (reason === 'navigate' && repositoryId && leaving.hasResult() && !savedHere) {
                         shelve(repositoryId, scope, leaving);
                     } else {
+                        // A result saved in this browser is opened again by the next Query page; nothing stays open.
                         leaving.dispose();
                     }
                     mountedForm = null;
