@@ -4947,9 +4947,9 @@ namespace workbench {
             }
         }
 
-        function queryTabsStorage(): workbench.queryTabs.StorageLike {
+        function queryTabsStorage(kind: 'localStorage' | 'sessionStorage'): workbench.queryTabs.StorageLike {
             try {
-                return window.localStorage;
+                return (<any>window)[kind] || null;
             } catch (error) {
                 return null;
             }
@@ -5195,7 +5195,7 @@ namespace workbench {
                 disposeQueryTabResults();
                 queryTabControllersKey = key;
             }
-            queryTabStore = tabs.createStore(queryTabsStorage(), key, seed);
+            queryTabStore = tabs.createStore(queryTabsStorage('localStorage'), queryTabsStorage('sessionStorage'), key, seed);
             queryTabsContainer = container;
             if (!opened && pendingSavedQueryName && $.trim(getPaneRawQueryValue('primary'))) {
                 // The saved query's text already arrived (a cached or synchronous answer).

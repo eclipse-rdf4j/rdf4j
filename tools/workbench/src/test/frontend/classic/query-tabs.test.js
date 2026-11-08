@@ -160,7 +160,7 @@ test('the store reads, persists and notifies; a throwing storage keeps the state
     const key = tabs.storageKey('server-1', 'lmdb');
     assert.equal(key, 'rdf4j.workbench.query.tabs.v1:server-1:lmdb');
     const storage = mapStorage({ [key]: 'garbage' });
-    const store = tabs.createStore(storage, key);
+    const store = tabs.createStore(storage, null, key);
     assert.equal(store.get().tabs.length, 1, 'bad JSON falls back to one empty tab');
     const seen = [];
     const unsubscribe = store.subscribe(state => seen.push(state));
@@ -173,7 +173,7 @@ test('the store reads, persists and notifies; a throwing storage keeps the state
     store.set(tabs.open(next, tabs.newTab('SELECT 2 {}')));
     assert.equal(seen.length, 1);
 
-    const reopened = tabs.createStore(storage, key);
+    const reopened = tabs.createStore(storage, null, key);
     assert.equal(reopened.get().tabs.length, 2);
     assert.equal(reopened.get().tabs[0].query, 'ASK {}');
 
@@ -181,9 +181,31 @@ test('the store reads, persists and notifies; a throwing storage keeps the state
         getItem() { throw new Error('denied'); },
         setItem() { throw new Error('denied'); }
     };
-    const memory = tabs.createStore(broken, key);
+    const memory = tabs.createStore(broken, broken, key);
     memory.set(tabs.setQuery(memory.get(), memory.get().activeId, 'SELECT 1 {}'));
     assert.equal(memory.get().tabs[0].query, 'SELECT 1 {}');
-    const none = tabs.createStore(null, key, tabs.open(tabs.emptyState(), tabs.newTab('seed')));
+    const none = tabs.createStore(null, null, key, tabs.open(tabs.emptyState(), tabs.newTab('seed')));
     assert.equal(none.get().tabs.length, 2);
+});
+
+test('each browser page keeps its own working copy; the latest state seeds a page that has none', () => {
+    const tabs = loadQueryTabs();
+    const key = tabs.storageKey('server-1', 'lmdb');
+    const local = mapStorage();
+    const pageA = mapStorage();
+    const pageB = mapStorage();
+
+    const a = tabs.createStore(local, pageA, key);
+    const b = tabs.createStore(local, pageB, key);
+    assert.ok(pageA.getItem(key) && pageB.getItem(key), 'each page writes its working copy at once');
+    a.set(tabs.setQuery(a.get(), a.get().activeId, 'SELECT * WHERE { ?s ?p ?o } LIMIT 1'));
+    b.set(tabs.setQuery(b.get(), b.get().activeId, 'ASK { ?s ?p ?o }'));
+
+    const refreshedA = tabs.createStore(local, pageA, key);
+    const refreshedB = tabs.createStore(local, pageB, key);
+    assert.equal(refreshedA.get().tabs[0].query, 'SELECT * WHERE { ?s ?p ?o } LIMIT 1', 'a refresh shows this page\'s tabs');
+    assert.equal(refreshedB.get().tabs[0].query, 'ASK { ?s ?p ?o }');
+
+    const newPage = tabs.createStore(local, mapStorage(), key);
+    assert.equal(newPage.get().tabs[0].query, 'ASK { ?s ?p ?o }', 'a new page starts from the latest state any page wrote');
 });

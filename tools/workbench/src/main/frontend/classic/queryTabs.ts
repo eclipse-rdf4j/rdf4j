@@ -291,35 +291,47 @@ namespace workbench {
         }
 
         /**
-         * A store over one storage key. Reading a bad or missing value gives `initial` (or one empty tab); writing
-         * persists the JSON and tells the subscribers. Storage failures (private mode, quota) are ignored: the
-         * state then lives in memory for this page.
+         * A store over one storage key, kept in two places. This browser page's working copy lives in `session`
+         * (sessionStorage), so two pages open on the same repository keep their own tabs across a refresh; the latest
+         * state any page wrote lives in `local` (localStorage) and seeds a page that has no working copy yet (a new
+         * browser tab, or the browser restarted). Reading a bad or missing value gives `initial` (or one empty tab).
+         * Storage failures (private mode, quota) are ignored: the state then lives in memory for this page.
          */
-        export function createStore(storage: StorageLike, key: string, initial?: QueryTabsState): Store {
+        export function createStore(local: StorageLike, session: StorageLike, key: string,
+                                    initial?: QueryTabsState): Store {
             let state: QueryTabsState = null;
             const listeners: ((state: QueryTabsState) => void)[] = [];
-            try {
-                state = storage ? parseState(storage.getItem(key)) : null;
-            } catch (error) {
-                state = null;
+            function read(storage: StorageLike): QueryTabsState {
+                try {
+                    return storage ? parseState(storage.getItem(key)) : null;
+                } catch (error) {
+                    return null;
+                }
             }
+            state = read(session) || read(local);
             let seeded = false;
             if (!state) {
                 state = initial || emptyState();
                 seeded = true;
             }
-            function persist(): void {
+            function write(storage: StorageLike, text: string): void {
                 if (!storage) {
                     return;
                 }
                 try {
-                    storage.setItem(key, serializeState(state));
+                    storage.setItem(key, text);
                 } catch (error) {
                     // Storage unavailable: keep the state for this page only.
                 }
             }
-            if (seeded) {
-                // A fresh page keeps its first tab's identity across a reload.
+            function persist(): void {
+                const text = serializeState(state);
+                write(session, text);
+                write(local, text);
+            }
+            // The page's working copy exists from the start, so a refresh shows this page's tabs, not the latest
+            // tabs another page wrote.
+            if (seeded || !read(session)) {
                 persist();
             }
             return {

@@ -22,24 +22,28 @@ const repositoryId = process.env.RDF4J_E2E_QUERY_TABS_REPOSITORY || 'e2e-query-t
 const tabs = (page) => page.locator('#query-tabs [role="tab"]');
 const selectedTab = (page) => page.locator('#query-tabs [role="tab"][aria-selected="true"]');
 
+const STATEMENTS = `@prefix ex: <http://example.org/> .
+ex:a a ex:Thing ; ex:label "a" . ex:b a ex:Thing ; ex:label "b" . ex:c a ex:Other ; ex:label "c" .`;
+
+/** The spec's repository with exactly its six statements (an in-memory store loses them when the server restarts). */
 async function ensureRepository(request) {
     const existing = await request.get(`${serverBase}/repositories/${repositoryId}/size`);
-    if (existing.ok()) {
+    if (existing.ok() && (await existing.text()).trim() === '6') {
         return;
     }
-    const config = `@prefix config: <tag:rdf4j.org,2023:config/> .
+    if (!existing.ok()) {
+        const config = `@prefix config: <tag:rdf4j.org,2023:config/> .
 [] a config:Repository ;
    config:rep.id "${repositoryId}" ;
    config:rep.impl [ config:rep.type "openrdf:SailRepository" ;
        config:sail.impl [ config:sail.type "openrdf:MemoryStore" ] ] .`;
-    const created = await request.put(`${serverBase}/repositories/${repositoryId}`, {
-        headers: { 'Content-Type': 'text/turtle' }, data: config
-    });
-    expect(created.ok(), `create repository ${repositoryId}: ${created.status()}`).toBeTruthy();
+        const created = await request.put(`${serverBase}/repositories/${repositoryId}`, {
+            headers: { 'Content-Type': 'text/turtle' }, data: config
+        });
+        expect(created.ok(), `create repository ${repositoryId}: ${created.status()}`).toBeTruthy();
+    }
     const loaded = await request.put(`${serverBase}/repositories/${repositoryId}/statements`, {
-        headers: { 'Content-Type': 'text/turtle' },
-        data: `@prefix ex: <http://example.org/> .
-ex:a a ex:Thing ; ex:label "a" . ex:b a ex:Thing ; ex:label "b" . ex:c a ex:Other ; ex:label "c" .`
+        headers: { 'Content-Type': 'text/turtle' }, data: STATEMENTS
     });
     expect(loaded.ok(), `load statements: ${loaded.status()}`).toBeTruthy();
 }
@@ -84,7 +88,8 @@ test.describe('Query tabs', () => {
     test('the tab row is the island\'s top part and the editor sits flush under it', async ({ page }) => {
         const row = page.locator('#query-tabs');
         const form = page.locator('#query-form');
-        const editor = page.locator('#query-page .CodeMirror');
+        // The editor's surface: its wrapper reaches the card edges; CodeMirror sits inside its padding.
+        const editor = page.locator('#query-primary-pane .yasqe');
         const rowBox = await row.boundingBox();
         const formBox = await form.boundingBox();
         const editorBox = await editor.boundingBox();

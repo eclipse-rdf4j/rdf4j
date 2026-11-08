@@ -2064,13 +2064,31 @@ body.workbench-body .workbench-page-surface .query-tabs__menu-action:disabled {
     font-size: 11px;
 }
 
-/* The island around the tabs: no inset around the editor, the action row inset below a hairline. */
+/* The island around the tabs keeps its card inset; only the tab row and the editor reach the card's edges (a
+ * negative margin of the inset), so the action row and its panels keep the edges every other card uses. Compare mode
+ * keeps the classic layout: two boxed editors with their headers, and no tab row. */
 body.workbench-body .query-page.query-page--tabs > form#query-form {
-    padding: 0;
+    padding-top: 0;
 }
 
 body.workbench-body #query-page.query-page--tabs .query-form {
     gap: 0;
+}
+
+body.workbench-body #query-page.query-page--tabs .query-tabs {
+    margin: 0 calc(-1 * var(--workbench-card-inset, 24px));
+}
+
+body.query-compare-mode #query-page.query-page--tabs .query-tabs {
+    display: none;
+}
+
+body.query-compare-mode #query-page.query-page--tabs > form#query-form {
+    padding-top: var(--workbench-card-inset, 24px);
+}
+
+body.query-compare-mode #query-page.query-page--tabs .query-form {
+    gap: var(--workbench-space-subgroup, 16px);
 }
 
 /* The "Query" label row is the tab row now; compare mode still needs the header for its close button. */
@@ -2078,53 +2096,59 @@ body:not(.query-compare-mode) #query-page.query-page--tabs .query-editor-header 
     display: none;
 }
 
-body.workbench-body #query-page.query-page--tabs .query-compare-pane--primary > .query-form__row:nth-of-type(2) {
+body:not(.query-compare-mode) #query-page.query-page--tabs #query-compare-layout {
+    margin: 0 calc(-1 * var(--workbench-card-inset, 24px));
+}
+
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-compare-pane--primary > .query-form__row:nth-of-type(2) {
     padding: 0 var(--workbench-card-inset, 24px);
 }
 
-body.workbench-body #query-page.query-page--tabs .query-compare-pane--primary > .query-form__row:nth-of-type(2):has(.error:empty) {
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-compare-pane--primary > .query-form__row:nth-of-type(2):has(.error:empty) {
     display: none;
 }
 
-body.workbench-body #query-page.query-page--tabs .yasqe .CodeMirror {
-    padding: 14px 16px 10px 12px;
-    border-width: 0 0 1px;
-    border-color: var(--workbench-soft-rule);
+/* The editor's inner space sits on its wrapper, so CodeMirror's own box (and the hint drawn in it) keeps its usual
+ * geometry; the text column ends on the card's content edge, in line with the action row. */
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-compare-pane--primary .yasqe {
+    padding: 14px var(--workbench-card-inset, 24px) 10px calc(var(--workbench-card-inset, 24px) - 12px);
+    border-bottom: 1px solid var(--workbench-soft-rule);
     border-radius: 0;
+    background: var(--workbench-editor-surface);
 }
 
 /* Flush in the island, the editor marks focus on its hairline instead of with a ring around the island. */
-body.workbench-body #query-page.query-page--tabs .yasqe .CodeMirror-focused {
-    box-shadow: none;
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-compare-pane--primary .yasqe:has(.CodeMirror-focused) {
     border-bottom-color: var(--workbench-teal);
 }
 
-body.workbench-body #query-page.query-page--tabs .yasqe .CodeMirror-gutters {
-    border-right: 0;
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-compare-pane--primary .yasqe .CodeMirror {
+    border: 0;
+    border-radius: 0;
+}
+
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-compare-pane--primary .yasqe .CodeMirror-focused {
+    box-shadow: none;
+}
+
+/* No tinted gutter and no gutter rule: the query reads as text on the island. The rule keeps its colour at zero width,
+ * so the theme's editor colours stay the ones develop uses. */
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-compare-pane--primary .yasqe .CodeMirror-gutters {
+    border-right-width: 0;
     background: transparent;
 }
 
-body.workbench-body #query-page.query-page--tabs .yasqe .CodeMirror-linenumber {
-    color: var(--workbench-muted);
-    opacity: .7;
-}
-
-body.workbench-body #query-page.query-page--tabs .yasqe .CodeMirror-scroll {
-    min-height: 200px;
-}
-
-body.workbench-body #query-page.query-page--tabs .query-editor-resize {
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-editor-resize {
     margin: 0;
 }
 
-body.workbench-body #query-page.query-page--tabs .yasqe .yasqe_buttons {
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-compare-pane--primary .yasqe .yasqe_buttons {
     top: 14px;
-    right: 16px;
+    right: var(--workbench-card-inset, 24px);
 }
 
-body.workbench-body #query-page.query-page--tabs .query-actions-toolbar {
-    margin: 0;
-    padding: var(--workbench-space-subgroup, 16px) var(--workbench-card-inset, 24px) var(--workbench-card-inset, 24px);
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-actions-toolbar {
+    margin-top: var(--workbench-space-subgroup, 16px);
 }
 
 @media (max-width: 900px) {

@@ -80,6 +80,23 @@ test('the tabs and the active one survive a reload through localStorage', () => 
     assert.equal(selectedTitle(second.harness), 'ASK { ?s ?p ?o }');
 });
 
+test('two browser pages on one repository keep their own tabs across a refresh (separate session copies)', () => {
+    const localStorage = mapStorage();
+    const sessionA = mapStorage();
+    const sessionB = mapStorage();
+    const pageA = mount({ localStorage, window: { sessionStorage: sessionA } });
+    const pageB = mount({ localStorage, window: { sessionStorage: sessionB } });
+    pageA.harness.yasqeState.instances.query.setValue('SELECT * WHERE { ?s ?p ?o } LIMIT 1');
+    pageA.harness.yasqeState.instances.query.triggerChange();
+    pageB.harness.yasqeState.instances.query.setValue('ASK { ?s ?p ?o }');
+    pageB.harness.yasqeState.instances.query.triggerChange();
+
+    const refreshedA = mount({ localStorage, window: { sessionStorage: sessionA } });
+    assert.equal(refreshedA.query.getQueryValue(), 'SELECT * WHERE { ?s ?p ?o } LIMIT 1');
+    const refreshedB = mount({ localStorage, window: { sessionStorage: sessionB } });
+    assert.equal(refreshedB.query.getQueryValue(), 'ASK { ?s ?p ?o }');
+});
+
 test('a new tab is empty and active; typing renames it live and marks it edited', () => {
     const { harness, query } = mount({ harness: { query: 'SELECT 1 {}' } });
     query.newQueryTab();
