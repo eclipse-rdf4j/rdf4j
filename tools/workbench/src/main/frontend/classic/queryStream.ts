@@ -9099,6 +9099,9 @@ namespace workbench {
 
         export namespace queryPage {
             var mountedForm: any = null;
+            var mountedTarget: any = null;
+            /** How the mounted page binds a controller, kept so query tabs can bind a fresh one (query-tabs). */
+            var mountedBind: () => BoundExecutionController = null;
             var mountedController: BoundExecutionController = null;
             var mountedSubmitHandler: (event: any) => void = null;
             var mountedDispose: (reason?: string) => void = null;
@@ -9137,6 +9140,13 @@ namespace workbench {
 
             /** A request started or ended: a query that ended out of sight has results ready (M13.5). */
             function activityChanged(): void {
+                // The Query page's tab row re-renders its running / finished marks (query-tabs): told through the
+                // mounted page's document, which is the page's own in the browser and in the tests alike.
+                var pageDocument: any = mountedTarget && mountedTarget.ownerDocument
+                    || (typeof document !== 'undefined' ? document : null);
+                if (pageDocument) {
+                    dispatchResultEvent(pageDocument.body || pageDocument, 'workbench:query-activity', null);
+                }
                 backgroundResults().forEach(entry => {
                     var holder: any = entry.controller;
                     var active = entry.controller.hasActiveRequest();
@@ -9263,6 +9273,7 @@ namespace workbench {
                 }
 
                 mountedForm = form;
+                mountedTarget = target;
                 var repositoryId = shellContext && shellContext.repositoryId || '';
                 var scope = repositoryScope(repositoryId, shellContext && shellContext.serverIdentity,
                     shellContext && shellContext.basePath);
@@ -9276,23 +9287,24 @@ namespace workbench {
                     waiting.dispose();
                     waiting = null;
                 }
+                mountedBind = () => bindMainQueryForm(form, target, {
+                    onActivity: activityChanged,
+                    workbench: shellContext && shellContext.workbench,
+                    features: shellContext && shellContext.workbench && shellContext.workbench.queryFeatures,
+                    rowStoreOptions: shellContext && shellContext.rowStoreOptions,
+                    downloadFormatsByView: shellContext && shellContext.downloadFormatsByView,
+                    downloadLimits: shellContext && shellContext.downloadLimits,
+                    maxDomRows: shellContext && shellContext.maxDomRows,
+                    graphContext: graphContextOf(shellContext),
+                    serverIdentity: shellContext && shellContext.serverIdentity
+                });
                 if (waiting) {
                     restoreExecutedRequest(form, waiting.executedRequest());
                     waiting.adopt(form, target);
                     seen(scope, waiting);
                     mountedController = waiting;
                 } else {
-                    mountedController = bindMainQueryForm(form, target, {
-                        onActivity: activityChanged,
-                        workbench: shellContext && shellContext.workbench,
-                        features: shellContext && shellContext.workbench && shellContext.workbench.queryFeatures,
-                        rowStoreOptions: shellContext && shellContext.rowStoreOptions,
-                        downloadFormatsByView: shellContext && shellContext.downloadFormatsByView,
-                        downloadLimits: shellContext && shellContext.downloadLimits,
-                        maxDomRows: shellContext && shellContext.maxDomRows,
-                        graphContext: graphContextOf(shellContext),
-                        serverIdentity: shellContext && shellContext.serverIdentity
-                    });
+                    mountedController = mountedBind();
                 }
                 mountedSubmitHandler = (event: any) => {
                     if (event && typeof event.preventDefault === 'function') {
@@ -9335,11 +9347,65 @@ namespace workbench {
                         leaving.dispose();
                     }
                     mountedForm = null;
+                    mountedTarget = null;
+                    mountedBind = null;
                     mountedController = null;
                     mountedSubmitHandler = null;
                     mountedDispose = null;
                 };
                 return mountedDispose;
+            }
+
+            /**
+             * Query tabs (.agent/execplan-query-tabs-g2.md): take the shown result out of the page, alive with its
+             * request, and leave the page with a fresh empty controller, so another tab's result can be shown.
+             * Null when no Query page is mounted.
+             */
+            export function detachController(): BoundExecutionController {
+                if (!mountedForm || !mountedController || !mountedBind) {
+                    return null;
+                }
+                var leaving = mountedController;
+                if (typeof leaving.shelve === 'function') {
+                    leaving.shelve();
+                }
+                if (mountedTarget) {
+                    mountedTarget.hidden = true;
+                }
+                mountedController = mountedBind();
+                activityChanged();
+                return leaving;
+            }
+
+            /**
+             * Show a result kept by query tabs in the mounted page's form and results area, replacing (and
+             * disposing) whatever the page shows; null shows nothing. A controller handed in while no Query page is
+             * mounted is disposed.
+             */
+            export function attachController(controller: BoundExecutionController): void {
+                if (!mountedForm || !mountedBind) {
+                    if (controller) {
+                        controller.dispose();
+                    }
+                    return;
+                }
+                if (mountedController && mountedController !== controller) {
+                    mountedController.dispose();
+                }
+                if (controller && typeof controller.adopt === 'function') {
+                    controller.adopt(mountedForm, mountedTarget);
+                    mountedController = controller;
+                    seen(mountedScope, controller);
+                } else {
+                    if (controller) {
+                        controller.dispose();
+                    }
+                    if (mountedTarget) {
+                        mountedTarget.hidden = true;
+                    }
+                    mountedController = mountedBind();
+                }
+                activityChanged();
             }
 
             function disposeMountedPage() {
@@ -9435,6 +9501,16 @@ namespace workbench {
 
         export function hasActiveRequest(): boolean {
             return queryStream.queryPage.hasActiveRequest();
+        }
+
+        /** Query tabs: take the shown result out of the page, alive, and leave an empty controller in its place. */
+        export function detachController(): queryStream.BoundExecutionController {
+            return queryStream.queryPage.detachController();
+        }
+
+        /** Query tabs: show a kept result in the page (null shows nothing). */
+        export function attachController(controller: queryStream.BoundExecutionController): void {
+            queryStream.queryPage.attachController(controller);
         }
     }
 }

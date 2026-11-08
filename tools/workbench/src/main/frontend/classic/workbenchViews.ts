@@ -4855,7 +4855,9 @@ namespace workbench {
                     data-editor-namespaces-enabled=${queryFeatureEnabled(context, 'editor-namespaces') ? 'true' : 'false'}
                     ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
                     @click=${() => invoke('workbench.query.insertPrefixes')}>Insert prefixes</button></div>`);
-            return h`<div id="query-page" class="query-page"
+            // Query tabs (G2): the tab row is the island's top part and the editor sits flush under it.
+            const tabsEnabled = queryFeatureEnabled(context, 'query-tabs');
+            return h`<div id="query-page" class=${tabsEnabled ? 'query-page query-page--tabs' : 'query-page'}
                     data-editor-fullscreen-enabled=${queryFeatureEnabled(context, 'editor-fullscreen') ? 'true' : 'false'}>
                 <form id="query-form" action="query" method="post"
                     data-workbench-query-execution="true" data-workbench-results-target="query-results">
@@ -4865,6 +4867,7 @@ namespace workbench {
                     <input type="hidden" name="include-query-text" id="include-query-text" value="false" />
                     <input type="hidden" name="query-request-id" id="query-request-id" value="" />
                     <div class="query-form">
+                        ${tabsEnabled ? h`<div id="query-tabs" class="query-tabs"></div>` : ''}
                         <div id="query-language-row" class="query-form__row"
                             ?hidden=${hideQueryLanguageRow || !languageEnabled}>
                             <label class="query-form__label" for="queryLn">Query language</label>

@@ -1679,3 +1679,461 @@ body.query-result-embedded-body .query-result-embedded .workbench-select-control
         display: none;
     }
 }
+
+/* ---------------------------------------------------------------------------------------------------------
+ * Query tabs (G2): the tab row is the top part of the query island, in the geometry of the results island's
+ * Results / Explanation tabs; the editor sits flush under it without a boxed look, and the action row follows
+ * under a hairline. Everything is scoped to .query-page--tabs, which the template adds while the query-tabs
+ * feature is on; without it the page keeps its previous layout. */
+.query-tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    padding: 0 calc(var(--workbench-card-inset, 24px) - 12px);
+    border-bottom: 1px solid var(--workbench-soft-rule);
+}
+
+.query-tabs__strip {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 260px;
+    min-height: 44px;
+    margin: 0 0 -1px;
+    padding: 0 8px 0 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--workbench-muted);
+    font: 500 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__tab:hover {
+    background: transparent;
+    color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__tab[aria-selected="true"] {
+    border-bottom-color: var(--workbench-teal);
+    color: var(--workbench-ink);
+    font-weight: 600;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__tab:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: -4px;
+    border-radius: var(--workbench-control-radius);
+}
+
+.query-tabs__title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.query-tabs__title--derived {
+    font-family: var(--workbench-code-font);
+    font-size: 12px;
+}
+
+.query-tabs__saved {
+    display: inline-flex;
+    flex: none;
+    color: var(--workbench-muted);
+}
+
+.query-tabs__tab[aria-selected="true"] .query-tabs__saved {
+    color: var(--workbench-teal);
+}
+
+.query-tabs__saved-icon {
+    width: 14px;
+    height: 14px;
+}
+
+.query-tabs__badge {
+    flex: none;
+    min-width: 1.5em;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: var(--workbench-inset);
+    color: var(--workbench-muted);
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.query-tabs__tab[aria-selected="true"] .query-tabs__badge {
+    background: var(--workbench-selected);
+    color: var(--workbench-ink);
+}
+
+.query-tabs__dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.query-tabs__dot--ready {
+    background: var(--workbench-teal);
+}
+
+.query-tabs__dot--error {
+    background: var(--workbench-danger);
+}
+
+.query-tabs__spinner {
+    flex: none;
+    box-sizing: border-box;
+    width: 13px;
+    height: 13px;
+    border: 2px solid var(--workbench-soft-rule);
+    border-top-color: var(--workbench-teal);
+    border-radius: 50%;
+    animation: query-tabs-spin var(--workbench-motion-spin, 800ms) linear infinite;
+}
+
+@keyframes query-tabs-spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .query-tabs__spinner {
+        animation: none;
+    }
+}
+
+/* The close control: hidden until the tab is hovered or selected; a dirty tab shows a dot there instead,
+ * which becomes the × on hover. */
+.query-tabs__close {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    margin-right: -2px;
+    border-radius: 5px;
+    color: var(--workbench-muted);
+    opacity: 0;
+}
+
+.query-tabs__close-icon {
+    width: 12px;
+    height: 12px;
+}
+
+.query-tabs__close:hover {
+    background: var(--workbench-soft-rule);
+    color: var(--workbench-ink);
+}
+
+.query-tabs__tab:hover .query-tabs__close,
+.query-tabs__tab[aria-selected="true"] .query-tabs__close,
+.query-tabs__tab.is-dirty .query-tabs__close {
+    opacity: 1;
+}
+
+.query-tabs__dirty {
+    display: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--workbench-muted);
+}
+
+.query-tabs__tab.is-dirty .query-tabs__close-icon {
+    display: none;
+}
+
+.query-tabs__tab.is-dirty .query-tabs__dirty {
+    display: block;
+}
+
+.query-tabs__tab.is-dirty:hover .query-tabs__close-icon,
+.query-tabs__tab.is-dirty .query-tabs__close:hover .query-tabs__close-icon {
+    display: block;
+}
+
+.query-tabs__tab.is-dirty:hover .query-tabs__dirty,
+.query-tabs__tab.is-dirty .query-tabs__close:hover .query-tabs__dirty {
+    display: none;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__new,
+body.workbench-body .workbench-page-surface .query-tabs__menu-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    align-self: center;
+    width: 30px;
+    height: 30px;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--workbench-control-radius);
+    background: transparent;
+    box-shadow: none;
+    color: var(--workbench-muted);
+    cursor: pointer;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__new {
+    margin-left: 4px;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__new:hover,
+body.workbench-body .workbench-page-surface .query-tabs__menu-button:hover {
+    border-color: transparent;
+    background: var(--workbench-inset);
+    color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__new:disabled {
+    opacity: .45;
+    cursor: default;
+}
+
+.query-tabs__menu {
+    position: relative;
+    display: flex;
+    align-items: center;
+    flex: none;
+    margin-left: auto;
+}
+
+body.workbench-body .query-tabs__menu-panel {
+    left: auto;
+    right: 0;
+    width: 420px;
+}
+
+.query-tabs__menu-heading {
+    padding: 4px 8px 8px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.query-tabs__menu-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.query-tabs__menu-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 4px;
+    border-radius: var(--workbench-control-radius);
+}
+
+.query-tabs__menu-row.is-active {
+    background: var(--workbench-selected);
+}
+
+.query-tabs__menu-row:hover:not(.is-active) {
+    background: var(--workbench-inset);
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__menu-select {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    min-height: 34px;
+    margin: 0;
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--workbench-control-radius);
+    background: transparent;
+    box-shadow: none;
+    color: var(--workbench-muted);
+    font: 500 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__menu-select:hover {
+    background: transparent;
+    color: var(--workbench-ink);
+}
+
+.query-tabs__menu-row.is-active .query-tabs__menu-select {
+    color: var(--workbench-ink);
+    font-weight: 600;
+}
+
+.query-tabs__menu-select .query-tabs__title {
+    flex: 1 1 auto;
+}
+
+.query-tabs__menu-meta {
+    color: var(--workbench-muted);
+    font-size: 11px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__menu-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    min-height: 0;
+    margin: 0 4px 0 0;
+    padding: 0;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--workbench-muted);
+    cursor: pointer;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__menu-close:hover {
+    background: var(--workbench-soft-rule);
+    color: var(--workbench-ink);
+}
+
+.query-tabs__menu-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 6px;
+    padding: 8px 8px 2px;
+    border-top: 1px solid var(--workbench-soft-rule);
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__menu-action {
+    min-height: 28px;
+    margin: 0;
+    padding: 0 10px;
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-control-radius);
+    background: transparent;
+    box-shadow: none;
+    color: var(--workbench-muted);
+    font: 500 12px/1.2 var(--workbench-font);
+    cursor: pointer;
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__menu-action:hover {
+    border-color: var(--workbench-rule);
+    background: var(--workbench-inset);
+    color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-page-surface .query-tabs__menu-action:disabled {
+    opacity: .45;
+    cursor: default;
+}
+
+.query-tabs__menu-hint {
+    margin-left: auto;
+    color: var(--workbench-muted);
+    font-size: 11px;
+}
+
+/* The island around the tabs: no inset around the editor, the action row inset below a hairline. */
+body.workbench-body .query-page.query-page--tabs > form#query-form {
+    padding: 0;
+}
+
+body.workbench-body #query-page.query-page--tabs .query-form {
+    gap: 0;
+}
+
+/* The "Query" label row is the tab row now; compare mode still needs the header for its close button. */
+body:not(.query-compare-mode) #query-page.query-page--tabs .query-editor-header {
+    display: none;
+}
+
+body.workbench-body #query-page.query-page--tabs .query-compare-pane--primary > .query-form__row:nth-of-type(2) {
+    padding: 0 var(--workbench-card-inset, 24px);
+}
+
+body.workbench-body #query-page.query-page--tabs .query-compare-pane--primary > .query-form__row:nth-of-type(2):has(.error:empty) {
+    display: none;
+}
+
+body.workbench-body #query-page.query-page--tabs .yasqe .CodeMirror {
+    padding: 14px 16px 10px 12px;
+    border-width: 0 0 1px;
+    border-color: var(--workbench-soft-rule);
+    border-radius: 0;
+}
+
+/* Flush in the island, the editor marks focus on its hairline instead of with a ring around the island. */
+body.workbench-body #query-page.query-page--tabs .yasqe .CodeMirror-focused {
+    box-shadow: none;
+    border-bottom-color: var(--workbench-teal);
+}
+
+body.workbench-body #query-page.query-page--tabs .yasqe .CodeMirror-gutters {
+    border-right: 0;
+    background: transparent;
+}
+
+body.workbench-body #query-page.query-page--tabs .yasqe .CodeMirror-linenumber {
+    color: var(--workbench-muted);
+    opacity: .7;
+}
+
+body.workbench-body #query-page.query-page--tabs .yasqe .CodeMirror-scroll {
+    min-height: 200px;
+}
+
+body.workbench-body #query-page.query-page--tabs .query-editor-resize {
+    margin: 0;
+}
+
+body.workbench-body #query-page.query-page--tabs .yasqe .yasqe_buttons {
+    top: 14px;
+    right: 16px;
+}
+
+body.workbench-body #query-page.query-page--tabs .query-actions-toolbar {
+    margin: 0;
+    padding: var(--workbench-space-subgroup, 16px) var(--workbench-card-inset, 24px) var(--workbench-card-inset, 24px);
+}
+
+@media (max-width: 900px) {
+    body.workbench-body .workbench-page-surface .query-tabs__tab {
+        flex: 0 0 auto;
+        max-width: 200px;
+    }
+
+    body.workbench-body .query-tabs__menu-panel {
+        width: min(420px, calc(100vw - 24px));
+    }
+}

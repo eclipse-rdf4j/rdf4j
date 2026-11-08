@@ -1473,3 +1473,87 @@ test('the stable queryPage.activity hook reports activity per base path, server 
     assert.equal(activity('repo-a', identity, '/wb/'), 'ready');
     assert.equal(activity('repo-a', 'sha256:server-b', '/wb/'), '');
 });
+
+// Query tabs (.agent/execplan-query-tabs-g2.md, M3): the shown result can be taken out of the page alive and put back.
+test('a result detached for another query tab keeps its rows and request and shows again when attached', async () => {
+    const queryStream = loadQueryStreamApi();
+    const workbench = queryStream.__testWorkbench;
+    const window = queryStream.__testWindow;
+    window.addEventListener = () => {};
+    window.removeEventListener = () => {};
+    const records = [
+        { type: 'head', version: 1 },
+        { type: 'view', id: 'tuple' },
+        { type: 'vars', values: ['item'] },
+        { type: 'rows', values: [[{ kind: 'literal', value: 'tab row' }]] },
+        { type: 'end', metadata: { 'result-offset': 0, 'result-limit': 1000000, 'result-batch-count': 1,
+            'result-has-more': false, 'result-next-offset': 1 } }
+    ].map(record => JSON.stringify(record) + '\n').join('');
+    let executions = 0;
+    window.fetch = async () => {
+        executions += 1;
+        const bytes = new TextEncoder().encode(records);
+        let delivered = false;
+        return { body: { getReader: () => ({
+            read: async () => delivered ? { done: true } : (delivered = true, { done: false, value: bytes }),
+            cancel: async () => {}
+        }) } };
+    };
+    const worker = new InMemoryWorker();
+    const document = new FakeDocument();
+    const form = document.createElement('form');
+    form.setAttribute('id', 'query-form');
+    form.setAttribute('action', 'query');
+    const query = document.createElement('textarea');
+    query.name = 'query';
+    query.value = 'SELECT ?item WHERE { VALUES ?item { "tab row" } }';
+    form.appendChild(query);
+    const action = document.createElement('input');
+    action.name = 'action';
+    action.type = 'hidden';
+    action.value = 'exec';
+    form.appendChild(action);
+    const target = document.createElement('section');
+    target.setAttribute('id', 'query-results');
+    document.body.appendChild(form);
+    document.body.appendChild(target);
+    const activity = [];
+    document.body.addEventListener('workbench:query-activity', () => activity.push('activity'));
+    const dispose = workbench.queryPage.renderInto(document.body, {}, {
+        executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId: 'repo-tabs',
+        rowStoreOptions: { spillRowLimit: 0, workerFactory: () => worker }
+    });
+    const settle = async (condition) => {
+        for (let attempt = 0; attempt < 30 && !condition(); attempt += 1) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+    };
+
+    assert.equal(workbench.queryPage.submitExecution(), false, 'false: the result streams in, the form is not posted');
+    assert.equal(workbench.queryPage.hasActiveRequest(), true, 'the request is out');
+    await settle(() => /1 row · complete/.test(target.textContent));
+    assert.match(target.textContent, /1 row · complete/);
+    assert.ok(activity.length > 0, 'a request starting or ending announces itself to the page');
+
+    const kept = workbench.queryPage.detachController();
+    assert.ok(kept, 'the shown result is handed out');
+    assert.equal(kept.hasResult(), true);
+    assert.equal(target.querySelectorAll('.query-result-layout').length, 0, 'the results area is empty again');
+    assert.equal(target.hidden, true, 'and hidden, so the empty state shows');
+    assert.equal(workbench.queryPage.hasActiveRequest(), false, 'the page has a fresh, idle controller');
+
+    workbench.queryPage.attachController(kept);
+    assert.equal(target.querySelectorAll('.query-result-layout').length, 1, 'the kept result is shown again');
+    assert.match(target.textContent, /1 row · complete/);
+    assert.equal(target.hidden, false);
+    assert.equal(executions, 1, 'without running the query again');
+
+    const again = workbench.queryPage.detachController();
+    assert.equal(again, kept);
+    workbench.queryPage.attachController(null);
+    assert.equal(target.querySelectorAll('.query-result-layout').length, 0, 'nothing is shown for a tab without a result');
+    kept.dispose();
+    await settle(() => worker.rows.length === 0);
+    assert.equal(worker.rows.length, 0, 'disposing the kept result releases its rows');
+    dispose();
+});

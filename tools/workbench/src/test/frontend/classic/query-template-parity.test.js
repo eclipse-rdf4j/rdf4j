@@ -565,3 +565,30 @@ test('query settings, timeout and prefix insertion use clear names and units', (
     assert.equal(dynamicAttributeValue(disabled, 'id="query-timeout-field"', '\\?hidden'), true,
         'a disabled timeout hides its whole field, label included');
 });
+
+test('query page renders the tab row as the form\'s first row unless the query-tabs feature is off (G2)', () => {
+    const page = queryTemplate();
+    const markup = page.templates.map(template => template.strings.join('')).join('');
+    assert.ok(markup.includes('id="query-tabs" class="query-tabs"'), 'the tab row container is rendered');
+    const pageClass = bindingFor(page.bindings,
+        binding => binding.before.includes('id="query-page" class='), 'query page class');
+    assert.equal(pageClass.value, 'query-page query-page--tabs');
+    const slot = bindingFor(page.bindings,
+        binding => binding.before.trimEnd().endsWith('<div class="query-form">')
+            && binding.after.trimStart().startsWith('<div id="query-language-row"'),
+        'the slot between the form start and the query language row');
+    assert.ok(slot.value && slot.value.strings.join('').includes('id="query-tabs"'),
+        'the tab row comes first inside the form, before the query language row');
+
+    const off = queryTemplate({ queryFeatures: { 'query-tabs': false } });
+    const offMarkup = off.templates.map(template => template.strings.join('')).join('');
+    assert.ok(!offMarkup.includes('id="query-tabs"'), 'no tab row when the feature is off');
+    const offClass = bindingFor(off.bindings,
+        binding => binding.before.includes('id="query-page" class='), 'query page class without tabs');
+    assert.equal(offClass.value, 'query-page');
+    const offSlot = bindingFor(off.bindings,
+        binding => binding.before.trimEnd().endsWith('<div class="query-form">')
+            && binding.after.trimStart().startsWith('<div id="query-language-row"'),
+        'the empty slot without tabs');
+    assert.equal(offSlot.value, '');
+});

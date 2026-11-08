@@ -729,6 +729,13 @@ class FakeDocument {
         this.eventHandlers.get(type).push(handler);
     }
 
+    /** Document-level events (a page script may listen on the document for events other scripts dispatch). */
+    dispatchEvent(event) {
+        const normalizedEvent = typeof event === 'string' ? { type: event } : Object.assign({}, event);
+        (this.eventHandlers.get(normalizedEvent.type) || []).slice().forEach((handler) => handler.call(this, normalizedEvent));
+        return true;
+    }
+
     removeEventListener(type, handler) {
         if (!this.eventHandlers.has(type)) {
             return;

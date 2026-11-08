@@ -217,7 +217,12 @@ function createQueryBrowserHarness(options = {}) {
     const navigation = registerElement('div', { id: 'navigation' });
     const titleHeading = registerElement('div', { id: 'title_heading', textContent: 'Query' });
     const queryFormContainer = registerElement('div', { className: 'query-form' });
-    const queryPageOptions = { id: 'query-page' };
+    // Query tabs (G2): the row inside the form the page renders unless the query-tabs feature is off.
+    const queryTabs = options.tabs === false ? null : registerElement('div', { id: 'query-tabs', className: 'query-tabs' });
+    if (queryTabs) {
+        queryFormContainer.appendChild(queryTabs);
+    }
+    const queryPageOptions = { id: 'query-page', className: queryTabs ? 'query-page query-page--tabs' : 'query-page' };
     if (options.editorFullscreenEnabled === false) {
         queryPageOptions.attributes = { 'data-editor-fullscreen-enabled': 'false' };
     }
@@ -583,6 +588,7 @@ function createQueryBrowserHarness(options = {}) {
     }
     harness.runScript('scripts/queryCancelPolicy.js');
     harness.runScript('scripts/queryExplanationHighlighter.js');
+    harness.runScript('scripts/queryTabs.js');
     harness.runScript(options.queryScriptPath || 'scripts/query.js');
 
     explainTrigger.onclick = () => context.workbench.query.runExplain(null, 'explain-trigger');
