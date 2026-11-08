@@ -161,6 +161,8 @@ test('the store reads, persists and notifies; a throwing storage keeps the state
     assert.equal(key, 'rdf4j.workbench.query.tabs.v2:["sha256:abc","","lmdb"]');
     assert.notEqual(tabs.storageKey({ digest: 'sha256:abc', user: 'ada', repositoryId: 'lmdb' }), key,
         'each user has their own tabs');
+    assert.equal(tabs.STORAGE_PREFIX, require(workbenchScriptPath('workbenchWorkspace.js')).QUERY_TABS_PREFIX,
+        'cleanup finds the saved results tabs refer to under the same keys');
     const storage = mapStorage({ [key]: 'garbage' });
     const store = tabs.createStore(storage, null, key);
     assert.equal(store.get().tabs.length, 1, 'bad JSON falls back to one empty tab');

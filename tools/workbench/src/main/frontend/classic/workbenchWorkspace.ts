@@ -86,6 +86,61 @@ namespace workbench {
         export function sameScope(a: Scope | null, b: Scope | null): boolean {
             return !!a && !!b && a.digest === b.digest && a.user === b.user && a.repositoryId === b.repositoryId;
         }
+
+        /** The query tabs of every repository (queryTabs.STORAGE_PREFIX): the latest state, and each page's copy. */
+        export const QUERY_TABS_PREFIX = 'rdf4j.workbench.query.tabs.v2:';
+
+        function browserStorage(kind: string): Storage {
+            try {
+                return typeof window !== 'undefined' ? (<any>window)[kind] || null : null;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        /** Every key of a storage that starts with the prefix. */
+        export function keysWithPrefix(storage: Storage, prefix: string): string[] {
+            const keys: string[] = [];
+            for (let index = 0; storage && index < storage.length; index++) {
+                const key = storage.key(index);
+                if (typeof key === 'string' && key.indexOf(prefix) === 0) {
+                    keys.push(key);
+                }
+            }
+            return keys;
+        }
+
+        /**
+         * The saved results (row store ids) that a query tab in this browser refers to: in the latest tab states and in
+         * this page's own copies. Another window's own copy cannot be read; its shown result is held by its lock.
+         * Null where the storage cannot be read.
+         */
+        export function referencedRowStores(local?: Storage, session?: Storage): { [id: string]: boolean } {
+            const referenced: { [id: string]: boolean } = {};
+            try {
+                [local || browserStorage('localStorage'), session || browserStorage('sessionStorage')]
+                    .forEach(function(storage) {
+                        keysWithPrefix(storage, QUERY_TABS_PREFIX).forEach(function(key) {
+                            let state: any = null;
+                            try {
+                                state = JSON.parse(storage.getItem(key));
+                            } catch (error) {
+                                return;
+                            }
+                            const tabs = state && state.tabs instanceof Array ? state.tabs : [];
+                            tabs.forEach(function(tab: any) {
+                                const saved = tab && tab.lastRun && tab.lastRun.saved;
+                                if (saved && typeof saved.storeId === 'string') {
+                                    referenced[saved.storeId] = true;
+                                }
+                            });
+                        });
+                    });
+            } catch (error) {
+                return null;
+            }
+            return referenced;
+        }
     }
 }
 

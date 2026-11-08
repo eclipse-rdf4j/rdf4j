@@ -53,3 +53,19 @@ test('a scope key can be read back, so a repository\'s keys can be found again',
     assert.equal(workspace.parseScopeKey('prefix:', 'prefix:{broken'), null);
     assert.equal(workspace.parseScopeKey('prefix:', 'prefix:["a","b"]'), null);
 });
+
+test('the saved results query tabs refer to are found in the latest tab states and this page\'s copies', () => {
+    const storage = (entries) => {
+        const values = new Map(Object.entries(entries));
+        return { get length() { return values.size; }, key: (index) => [...values.keys()][index] || null,
+            getItem: (key) => (values.has(key) ? values.get(key) : null) };
+    };
+    const state = (...ids) => JSON.stringify({ activeId: 't0', tabs: ids.map((id, index) => ({ id: 't' + index,
+        query: 'ASK {}', lastRun: id ? { status: 'done', saved: { storeId: id, rows: 1 } } : null })) });
+    const key = (repository) => workspace.QUERY_TABS_PREFIX + JSON.stringify([SERVER, '', repository]);
+    const local = storage({ [key('a')]: state('rows-1', null), [key('b')]: '{broken', other: state('rows-x') });
+    const session = storage({ [key('a')]: state('rows-2') });
+    assert.deepEqual(workspace.referencedRowStores(local, session), { 'rows-1': true, 'rows-2': true });
+    const failing = { get length() { throw new Error('denied'); } };
+    assert.equal(workspace.referencedRowStores(failing, session), null);
+});

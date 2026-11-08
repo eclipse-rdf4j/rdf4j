@@ -16,7 +16,7 @@
 
 interface QueryRowStoreMessage {
     requestId: number;
-    op: 'create' | 'append' | 'read' | 'count' | 'truncate' | 'dispose'
+    op: 'create' | 'open' | 'append' | 'read' | 'count' | 'truncate' | 'dispose'
         | 'identity-create' | 'identity-add' | 'identity-filter' | 'identity-dispose';
     /** The store, named by the page; a worker serves the one store it created. */
     storeId?: string;
@@ -43,6 +43,10 @@ interface QueryRowStoreResponse {
     error?: string;
     /** IndexedDB cannot be opened here: the page keeps its rows in memory instead. */
     unavailable?: boolean;
+    /** The store to open no longer exists (deleted by cleanup or another page): it is not created again. */
+    gone?: boolean;
+    /** The name of the browser's error (QuotaExceededError when browser storage is full). */
+    errorName?: string;
     indexId?: string;
     baselineRows?: number;
     addedBytes?: number;
@@ -66,6 +70,8 @@ var queryRowStoreDatabasePrefix = 'rdf4j-workbench-row-store:';
 var queryRowStoreId: string = null;
 /** Set once the store's database is deleted (disposed here or by cleanup): it must not be created again. */
 var queryRowStoreGone = false;
+/** True when this worker opens a store an earlier page saved ('open'), rather than creating one ('create'). */
+var queryRowStoreReopening = false;
 /**
  * Rows are stored as text: a block holds the JSON of its rows, one row per line. The browser copies one long string
  * when it writes or reads a block; rows kept as arrays of terms made it copy every array and string of every row, which
@@ -215,7 +221,15 @@ function queryRowStoreDatabase(): Promise<QueryRowStoreDatabase> {
             reject(error);
             return;
         }
-        request.onupgradeneeded = function() {
+        request.onupgradeneeded = function(event: IDBVersionChangeEvent) {
+            if (queryRowStoreReopening && (!event || event.oldVersion === 0)) {
+                // The saved store's database is gone: opening it must not create an empty one in its place.
+                queryRowStoreGone = true;
+                if (request.transaction) {
+                    request.transaction.abort();
+                }
+                return;
+            }
             var database = request.result;
             if (!database.objectStoreNames.contains('stores')) {
                 database.createObjectStore('stores', { keyPath: 'id' });
@@ -236,7 +250,8 @@ function queryRowStoreDatabase(): Promise<QueryRowStoreDatabase> {
         };
         request.onerror = function() {
             queryRowStoreDatabasePromise = null;
-            reject(request.error || new Error('Unable to open Workbench query result storage.'));
+            reject(queryRowStoreGone ? queryRowStoreGoneError()
+                : request.error || new Error('Unable to open Workbench query result storage.'));
         };
         request.onblocked = function() {
             queryRowStoreDatabasePromise = null;
@@ -257,6 +272,11 @@ function queryRowStoreError(error: any): string {
         return name;
     }
     return name && name !== 'Error' && message.indexOf(name) < 0 ? name + ': ' + message : message;
+}
+
+/** Marks a store that no longer exists, as opposed to browser storage that fails. */
+function queryRowStoreGoneError(): any {
+    return { queryRowStoreGone: true, message: 'The saved query result is no longer stored in this browser.' };
 }
 
 /** Marks a failure to open IndexedDB at all, as opposed to a failing operation on an open database. */
@@ -364,11 +384,12 @@ function queryRowStoreRun(message: QueryRowStoreMessage): Promise<QueryRowStoreR
     if (typeof message.storeId !== 'string' || !message.storeId) {
         return Promise.reject(new Error('A row-store id is required.'));
     }
-    if (message.op === 'create') {
+    if (message.op === 'create' || message.op === 'open') {
         if (queryRowStoreId !== null) {
             return Promise.reject(new Error('This row-store worker already holds a store.'));
         }
         queryRowStoreId = message.storeId;
+        queryRowStoreReopening = message.op === 'open';
     } else if (message.storeId !== queryRowStoreId) {
         return Promise.reject(new Error('This row-store worker holds another store.'));
     }
@@ -376,9 +397,36 @@ function queryRowStoreRun(message: QueryRowStoreMessage): Promise<QueryRowStoreR
         return queryRowStoreDelete(message);
     }
     if (queryRowStoreGone) {
-        return Promise.reject(new Error('The query result storage has been deleted.'));
+        return Promise.reject(message.op === 'open' ? queryRowStoreGoneError()
+            : new Error('The query result storage has been deleted.'));
     }
-    return queryRowStoreDatabase().then(null, error => Promise.reject(queryRowStoreUnavailable(error))).then(database => {
+    return queryRowStoreDatabase().then(null, error => Promise.reject(error && error.queryRowStoreGone ? error
+        : queryRowStoreUnavailable(error))).then(database => {
+        if (message.op === 'open') {
+            return new Promise<QueryRowStoreResponse>((resolve, reject) => {
+                var transaction = database.transaction(['stores'], 'readonly');
+                var request = transaction.objectStore('stores').get(message.storeId);
+                var count = -1;
+                request.onsuccess = function() {
+                    if (queryRowStoreMetadataValid(request.result)) {
+                        count = request.result.count;
+                    }
+                };
+                transaction.oncomplete = function() {
+                    if (count < 0) {
+                        // A database without this store's record (an interrupted creation): nothing to show.
+                        queryRowStoreGone = true;
+                        reject(queryRowStoreGoneError());
+                        return;
+                    }
+                    resolve({ requestId: message.requestId, ok: true, storeId: message.storeId, count: count });
+                };
+                transaction.onerror = transaction.onabort = function() {
+                    reject(transaction.error || request.error || new Error('Unable to open the saved query result.'));
+                };
+            });
+        }
+
         if (message.op === 'create') {
             var storeId = message.storeId;
             return new Promise<QueryRowStoreResponse>((resolve, reject) => {
@@ -619,13 +667,21 @@ if (queryRowStoreScope && typeof queryRowStoreScope.addEventListener === 'functi
         queryRowStoreQueue = queryRowStoreQueue.then(() => queryRowStoreRun(message))
             .then(response => queryRowStoreScope.postMessage(response), error => {
                 var unavailable = !!(error && error.queryRowStoreUnavailable);
+                var gone = !!(error && error.queryRowStoreGone);
+                var cause = unavailable ? error.cause : error;
                 var response: QueryRowStoreResponse = {
                     requestId: message && message.requestId,
                     ok: false,
-                    error: queryRowStoreError(unavailable ? error.cause : error)
+                    error: gone ? error.message : queryRowStoreError(cause)
                 };
                 if (unavailable) {
                     response.unavailable = true;
+                }
+                if (gone) {
+                    response.gone = true;
+                }
+                if (!gone && cause && typeof cause.name === 'string' && cause.name) {
+                    response.errorName = cause.name;
                 }
                 queryRowStoreScope.postMessage(response);
             });
